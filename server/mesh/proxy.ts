@@ -22,22 +22,27 @@ export function peerSocketRoute(pathname: string): [string, string] | null {
 }
 
 /**
- * Whether the browser may reach this tail of a peer through /peer/<id>/. Never /api/peer/* (the
- * peer-only routes: the peer's gate would see THIS host, a legitimate peer, so a browser could
- * read or plant what peers exchange) nor /api/mesh/* (the peer listener refuses it anyway).
- * Judged on the decoded, slash-collapsed, lower-cased path, so no spelling the peer's router
- * would still match gets through; an undecodable tail is refused too. peerFetch (server-side) is
- * the only way to a peer's /api/peer/*.
+ * The tail to forward when the browser may reach it through /peer/<id>/, else null. Never
+ * /api/peer/* (the peer-only routes: the peer's gate would see THIS host, a legitimate peer, so a
+ * browser could read or plant what peers exchange) nor /api/mesh/* (the peer listener refuses it
+ * anyway), nor anything outside /api/. The tail is judged exactly as it is forwarded: dot segments
+ * resolved the way fetch resolves them, then decoded, slash-collapsed and lower-cased, so no
+ * spelling the peer's router would still match gets through. An encoded dot, slash or backslash
+ * is refused outright (decoding it would change the segment structure), and so is a tail that
+ * can't be decoded. peerFetch (server-side) is the only way to a peer's /api/peer/*.
  */
-export function proxyableTail(tail: string): boolean {
+export function proxyTail(tail: string): string | null {
+  if (!tail.startsWith("/") || tail.startsWith("//") || /%(?:2e|2f|5c)/i.test(tail)) return null;
+  let resolved: string;
   let path: string;
   try {
-    path = decodeURIComponent(tail);
+    resolved = new URL(tail, "http://x").pathname;
+    path = decodeURIComponent(resolved);
   } catch {
-    return false;
+    return null;
   }
   path = path.replace(/[\\/]+/g, "/").toLowerCase();
-  return path.startsWith("/api/") && !/^\/api\/(?:peer|mesh)(?:\/|$)/.test(path);
+  return path.startsWith("/api/") && !/^\/api\/(?:peer|mesh)(?:\/|$)/.test(path) ? resolved : null;
 }
 
 /** Every proxied request and socket carries this, so the peer can tell it from a peerFetch. */

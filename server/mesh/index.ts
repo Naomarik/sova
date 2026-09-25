@@ -16,7 +16,7 @@ import { ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from 
 import { type ListenerDeps, PeerListener } from "./listener";
 import { getIdentity, type TailnetStatus } from "./localapi";
 import { defaultSelfId, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
-import { PROXIED_HEADER, peerSocketRoute, proxyableTail, proxyPeer, upgradePeerSocket } from "./proxy";
+import { PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
 
 // The mesh (brief: settled decisions). ON exactly while peers.json lists a peer; OFF, nothing
 // here listens, polls, calls Tailscale or dials a peer, and every pre-existing route and socket
@@ -424,9 +424,9 @@ export function meshRoutes(app: Hono): void {
     if (!meshEnabled()) return next();
     const peer = rt.config!.peers.find((p) => p.id === c.req.param("id"));
     if (!peer) return c.json({ error: "Unknown peer" }, 404);
-    const tail = peerTail(c);
+    const tail = proxyTail(peerTail(c));
     // The same 404 as any unknown /api route: never proxied, never distinguishable.
-    return proxyableTail(tail) ? proxyPeer(c, peer, tail) : c.json({ error: "Not found" }, 404);
+    return tail ? proxyPeer(c, peer, tail) : c.json({ error: "Not found" }, 404);
   });
   app.all("/peer/:id/ws/*", async (c, next) => {
     if (!meshEnabled()) return next();

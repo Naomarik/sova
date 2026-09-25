@@ -148,6 +148,19 @@ function peerGet(path: string): Promise<{ status: number; headers: IncomingMessa
   });
 }
 
+/** A request on the main listener with its path sent byte for byte (no client-side resolution). */
+function rawRequest(method: string, path: string, body?: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = request({ host: "127.0.0.1", port: Number(new URL(base).port), path, method, agent: false }, (res) => {
+      let text = "";
+      res.on("data", (c) => (text += c));
+      res.on("end", () => resolve({ status: res.statusCode!, body: text }));
+    });
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
 /** Open a socket; resolve with its first message and close code, or the handshake's HTTP status. */
 function wsTrip(url: string, send?: string): Promise<{ first?: string; code?: number; reason?: string; status?: number; error?: string }> {
   return new Promise((resolve) => {
@@ -337,6 +350,16 @@ describe("mesh ON", () => {
       "/api/mesh",
       "/api/mesh/peers",
       "/api/%ZZ",
+      // dot segments and encoded separators, sent as-is (a WHATWG client would resolve them first)
+      "/api/x/../peer/credentials/entry?key=x",
+      "/api/./peer/hello",
+      "/api/x/%2e%2e/peer/credentials/entry",
+      "/api/x/%2E%2E/peer/hello",
+      "/api/x/.%2e/peer/hello",
+      "/api/x/..%2fpeer/hello",
+      "/api/x%2f..%2f..%2fpeer/hello",
+      "/api/x/..%5cpeer/hello",
+      "/api/x/../../api/peer/hello",
     ];
     const notFound = await app.request("/api/no-such-route");
     const notFoundBody = await notFound.text();
@@ -344,11 +367,16 @@ describe("mesh ON", () => {
     for (const tail of tails) {
       for (const peer of ["b", "%62"]) {
         for (const method of ["GET", "POST", "PUT"]) {
-          const res = await realFetch(`${base}/peer/${peer}${tail}`, { method, ...(method === "GET" ? {} : { body: "{}" }) });
+          const res = await rawRequest(method, `/peer/${peer}${tail}`, method === "GET" ? undefined : "{}");
           assert.equal(res.status, 404, `${method} /peer/${peer}${tail}`);
-          assert.equal(await res.text(), notFoundBody, `${method} /peer/${peer}${tail}`);
+          assert.equal(res.body, notFoundBody, `${method} /peer/${peer}${tail}`);
         }
       }
+    }
+    // Sockets: only /ws/chat and /ws/watch, never a dot-resolved way elsewhere.
+    for (const path of ["/peer/b/ws/chat/../../api/peer/hello", "/peer/b/ws/%2e%2e/api/peer/hello", "/peer/b/ws/chat%2f..%2f..%2fapi"]) {
+      const r = await wsTrip(`${wsBase}${path}`);
+      assert.ok(r.error || r.status === 404, path);
     }
     assert.equal(fetches, before, "nothing was forwarded");
   });

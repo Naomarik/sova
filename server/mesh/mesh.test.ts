@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request, type IncomingMessage, type Server } from "node:http";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -151,8 +152,57 @@ function peerRequest(method: string, path: string, body?: string): Promise<{ sta
       res.on("end", () => resolve({ status: res.statusCode!, body: text }));
     });
     req.on("error", reject);
+    req.setTimeout(8000, () => req.destroy(new Error(`no answer within 8 s: ${path}`)));
     req.end(body);
   });
+}
+
+/** `p`, or a failure naming `what` after `ms`: a test that waits never hangs the run. */
+async function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([p, new Promise<never>((_, j) => (timer = setTimeout(() => j(new Error(`timed out after ${ms} ms: ${what}`)), ms)))]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** A /ws/watch socket on the peer listener, open (its snapshot arrived and it is still open). */
+async function openWatch(port: number, file: string): Promise<{ closed: Promise<number> }> {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/watch?path=${encodeURIComponent(file)}`);
+  const closed = new Promise<number>((r) => ws.on("close", (c) => r(c)));
+  await within(
+    new Promise<void>((r, j) => {
+      ws.once("message", () => r());
+      ws.once("error", j);
+    }),
+    3000,
+    "the watch's first message",
+  );
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(ws.readyState, WebSocket.OPEN, "the watch is open");
+  return { closed };
+}
+
+/** One HTTP/1.1 keep-alive request on a raw socket that stays open after the response. */
+async function keptAlive(port: number, path: string): Promise<{ status: number; closed: Promise<void> }> {
+  const sock = connect({ host: "127.0.0.1", port });
+  const closed = new Promise<void>((r) => sock.once("close", () => r()));
+  sock.on("error", () => {});
+  let text = "";
+  const status = await within(
+    new Promise<number>((resolve) => {
+      sock.on("data", (d) => {
+        text += d.toString();
+        const m = /^HTTP\/1\.1 (\d{3})/.exec(text);
+        if (m && text.includes("\r\n\r\n")) resolve(Number(m[1]));
+      });
+      sock.write(`GET ${path} HTTP/1.1\r\nHost: peer\r\nConnection: keep-alive\r\n\r\n`);
+    }),
+    3000,
+    `a response to ${path}`,
+  );
+  return { status, closed };
 }
 
 /** A session file a peer can watch through the listener (the socket stays open until cut). */
@@ -175,6 +225,7 @@ function peerGet(path: string): Promise<{ status: number; headers: IncomingMessa
       res.on("end", () => resolve({ status: res.statusCode!, headers: res.headers, body }));
     });
     req.on("error", reject);
+    req.setTimeout(8000, () => req.destroy(new Error(`no answer within 8 s: ${path}`)));
     req.end();
   });
 }
@@ -188,6 +239,7 @@ function rawRequest(method: string, path: string, body?: string): Promise<{ stat
       res.on("end", () => resolve({ status: res.statusCode!, body: text }));
     });
     req.on("error", reject);
+    req.setTimeout(8000, () => req.destroy(new Error(`no answer within 8 s: ${path}`)));
     req.end(body);
   });
 }
@@ -209,6 +261,10 @@ function wsTrip(url: string, send?: string): Promise<{ first?: string; code?: nu
       ws.terminate();
     });
     ws.on("error", (err) => resolve({ error: err.message }));
+    setTimeout(() => {
+      resolve({ error: "wsTrip: no close within 8 s" });
+      ws.terminate();
+    }, 8000).unref();
   });
 }
 
@@ -461,6 +517,7 @@ describe("mesh ON", () => {
         resolve(res.statusCode!);
       });
       req.on("error", reject);
+      req.setTimeout(8000, () => req.destroy(new Error("no answer within 8 s")));
       req.end();
     });
     assert.equal(r, 404);
@@ -684,46 +741,24 @@ describe("mesh ON", () => {
     const file = watchableSession();
     whoisNode = "nB";
     const port = listenerInfo()!.port;
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/watch?path=${encodeURIComponent(file)}`);
-    const closed = new Promise<number>((r) => ws.on("close", (code) => r(code)));
-    await new Promise<void>((r, j) => {
-      ws.once("message", () => r());
-      ws.once("error", j);
-    });
-    // A kept-alive HTTP connection admitted before the edit.
-    const agent = new (await import("node:http")).Agent({ keepAlive: true, maxSockets: 1 });
-    const kept = (path: string) =>
-      new Promise<number>((resolve, reject) => {
-        const req = request({ host: "127.0.0.1", port, path, agent }, (res) => {
-          res.resume();
-          res.on("end", () => resolve(res.statusCode!));
-        });
-        req.on("error", reject);
-        req.end();
-      });
-    assert.equal(await kept("/api/peer/hello"), 200);
+    const ws = await openWatch(port, file);
+    // A kept-alive HTTP connection admitted before the edit: a raw socket, so its end is observable.
+    const conn = await keptAlive(port, "/api/peer/hello");
+    assert.equal(conn.status, 200);
     // The hand edit: b is gone; nobody opens the Mesh page.
     const doc = JSON.parse(readFileSync(peersFile(), "utf8"));
     doc.peers = doc.peers.filter((p: { id: string }) => p.id !== "b");
     writeFileSync(peersFile(), JSON.stringify(doc));
     // Its next call, on a new connection, is refused at once.
     assert.equal((await peerGet("/api/peer/hello")).status, 403);
-    // That call's reload cut b's open socket and its kept-alive connection.
-    const code = await Promise.race([closed, new Promise<number>((r) => setTimeout(() => r(-1), 2000))]);
-    assert.notEqual(code, -1, "the removed peer's socket was closed");
-    const again = await kept("/api/peer/hello").catch(() => 0);
-    assert.equal(again, 403, "the kept-alive connection was dropped; a new one meets the gate");
-    agent.destroy();
+    // That call's re-read cut b's open socket and its kept-alive connection.
+    await within(ws.closed, 2000, "the removed peer's open socket closes");
+    await within(conn.closed, 2000, "the removed peer's kept-alive connection closes");
     // The same through PUT: re-add b, open a socket, remove b by PUT.
     await putJson("/api/mesh/peers", { peers: keep });
-    const ws2 = new WebSocket(`ws://127.0.0.1:${port}/ws/watch?path=${encodeURIComponent(file)}`);
-    const closed2 = new Promise<number>((r) => ws2.on("close", (c) => r(c)));
-    await new Promise<void>((r, j) => {
-      ws2.once("message", () => r());
-      ws2.once("error", j);
-    });
+    const ws2 = await openWatch(port, file);
     await putJson("/api/mesh/peers", { peers: keep.filter((p) => p.id !== "b") });
-    assert.notEqual(await Promise.race([closed2, new Promise<number>((r) => setTimeout(() => r(-1), 2000))]), -1);
+    await within(ws2.closed, 2000, "the socket closes when a PUT removes its peer");
     await putJson("/api/mesh/peers", { peers: keep });
   });
 
@@ -744,14 +779,7 @@ describe("mesh ON", () => {
     const port = listenerInfo()!.port;
     const file = watchableSession();
     whoisNode = "nB";
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/watch?path=${encodeURIComponent(file)}`);
-    const wsClosed = new Promise<number>((r) => ws.on("close", (c) => r(c)));
-    await new Promise<void>((r, j) => {
-      ws.once("message", () => r());
-      ws.once("error", j);
-    });
-    await new Promise((r) => setTimeout(r, 100));
-    assert.equal(ws.readyState, WebSocket.OPEN, "the watch is open before the mesh turns off");
+    const ws = await openWatch(port, file);
     const calls = identityCalls;
     const [s, info] = await putJson<MeshInfo>("/api/mesh/peers", { peers: [] });
     assert.equal(s, 200);
@@ -759,7 +787,7 @@ describe("mesh ON", () => {
     assert.equal(listenerInfo(), null);
     assert.equal(identityCalls, calls, "turning off calls no Tailscale");
     assert.equal(hookLog.at(-1), "stop");
-    assert.notEqual(await Promise.race([wsClosed, new Promise<number>((r) => setTimeout(() => r(-1), 2000))]), -1, "the open socket was cut");
+    await within(ws.closed, 2000, "the open socket was cut");
     await assert.rejects(realFetch(`http://127.0.0.1:${port}/api/health`));
   });
 });

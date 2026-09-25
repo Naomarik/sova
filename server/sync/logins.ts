@@ -552,10 +552,14 @@ export class CredentialSync {
         // What this host holds, an idle (expired, not dead) login included: it is compared, not
         // replaced by any live peer entry, and never re-pulled round after round.
         const mine = this.recordsView(held);
+        // Conflicts to tell the peer about: it may not exchange with this host again for minutes.
+        const notices: EntryKey[] = [];
         for (const key of new Set([...Object.keys(mine), ...Object.keys(this.conflicts)])) {
           const m = mine[key]?.meta;
           const t = theirs[key]?.meta;
-          this.noteConflict(key, peer.id, !!m && !!t && isLive(t, now) && preSyncConflict(m, t));
+          const conflict = !!m && !!t && isLive(t, now) && preSyncConflict(m, t);
+          this.noteConflict(key, peer.id, conflict);
+          if (conflict && isLive(m!, now)) notices.push(key);
         }
         const todo = plan(mine, theirs, now);
         for (const key of todo.pull) {
@@ -571,7 +575,7 @@ export class CredentialSync {
           await this.applyRemote(key, { tombstone: rec.tombstone });
         }
         const pushKeys = [...new Set([...todo.push, ...todo.tombstones])];
-        if (pushKeys.length) {
+        if (pushKeys.length || notices.length) {
           const body: CredentialPush = { hostId: this.hostId, now: this.now(), entries: {} };
           for (const key of pushKeys) {
             const rec = this.records[key];
@@ -583,9 +587,11 @@ export class CredentialSync {
               body.entries[key] = { record: { tombstone: rec.tombstone } };
             }
           }
+          // A notice is the metadata alone, never the secret: the peer only notes the conflict.
+          for (const key of notices) body.entries[key] ??= { record: { meta: mine[key]!.meta! } };
           if (Object.keys(body.entries).length) {
             const reply = await peer.push(body);
-            for (const r of reply.rejected ?? []) this.log(`${peer.id} rejected ${r.key}: ${r.reason}`);
+            for (const r of reply.rejected ?? []) if (r.reason !== "conflict") this.log(`${peer.id} rejected ${r.key}: ${r.reason}`);
           }
         }
         state = { state: "ok", at: this.now() };

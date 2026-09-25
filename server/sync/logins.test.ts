@@ -593,6 +593,49 @@ test("idle host: A's newer login, expired while asleep, is not replaced by B's o
   for (const h of [a!, b!]) assert.equal(piRefreshSha(h), latest(newer.lineage).refreshSha256, h.id);
 });
 
+test("first pairing: the host that finds a conflict tells the peer (metadata only), so both list it at once", async () => {
+  const [a, b] = makeMesh(2);
+  writeFileSync(a!.authPath, JSON.stringify({ zai: { type: "api_key", key: "sk-mine-a" } }, null, 2), { mode: 0o600 });
+  writeFileSync(b!.authPath, JSON.stringify({ zai: { type: "api_key", key: "sk-mine-b" } }, null, 2), { mode: 0o600 });
+  for (const h of [a!, b!]) {
+    h.boot();
+    await h.sync.start();
+  }
+  try {
+    const bodies: string[] = [];
+    const receive = b!.sync.receivePush.bind(b!.sync);
+    b!.sync.receivePush = async (from, body) => (bodies.push(JSON.stringify(body)), receive(from, body));
+    // Only A exchanges; B never runs a sync of its own (its peer-up sync came too early, say).
+    await a!.sync.syncWith(a!.peerTo(b!));
+    b!.sync.receivePush = receive;
+    assert.deepEqual(a!.sync.status().entries.find((e) => e.key === "pi:zai")?.conflictWith, ["b"]);
+    assert.deepEqual(b!.sync.status().entries.find((e) => e.key === "pi:zai")?.conflictWith, ["a"], "B lists it without a round of its own");
+    assert.equal(bodies.length, 1);
+    assert.ok(!bodies[0]!.includes("sk-") && !bodies[0]!.includes('"secret"'), "a notice carries no secret");
+    assert.equal(a!.auth().zai!.key, "sk-mine-a");
+    assert.equal(b!.auth().zai!.key, "sk-mine-b", "nothing moved");
+  } finally {
+    for (const h of [a!, b!]) h.sync.stop();
+  }
+});
+
+test("a pushed record that would win but comes without its secret writes nothing (a conflict notice can never move a key)", async () => {
+  const [a, b] = makeMesh(2);
+  await AuthStorage.create(b!.authPath).modify("zai", async () => ({ type: "api_key", key: "sk-b-old" }));
+  await b!.sync.observe("pi");
+  await new Promise((r) => setTimeout(r, 5));
+  await AuthStorage.create(a!.authPath).modify("zai", async () => ({ type: "api_key", key: "sk-a-new" }));
+  await a!.sync.observe("pi");
+  const meta = a!.sync.recordsSnapshot()["pi:zai"]!.meta!;
+  const before = b!.sync.recordsSnapshot()["pi:zai"];
+  assert.ok(meta.loginAt > before!.meta!.loginAt, "A's is the newer login: with its secret it would win");
+  const authBefore = readFileSync(b!.authPath, "utf8");
+  const reply = await b!.sync.receivePush("a", { hostId: "a", now: Date.now(), entries: { "pi:zai": { record: { meta } } } });
+  assert.deepEqual(reply, { accepted: [], rejected: [{ key: "pi:zai", reason: "invalid" }] });
+  assert.equal(readFileSync(b!.authPath, "utf8"), authBefore, "auth.json untouched");
+  assert.deepEqual(b!.sync.recordsSnapshot()["pi:zai"], before, "the record is unchanged");
+});
+
 test("first pairing: a logout of A's pre-sync key does not delete B's different one", async () => {
   const [a, b] = makeMesh(2);
   writeFileSync(a!.authPath, JSON.stringify({ zai: { type: "api_key", key: "sk-a" } }, null, 2), { mode: 0o600 });

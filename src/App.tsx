@@ -18,7 +18,7 @@ import {
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
 import { firstBaseline, helloStep, HOST_CONFIRM_MS, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
-import { hostLabel, hostOf, isMeshHash, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
+import { hostLabel, hostOf, isMeshHash, joinHostLists, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
@@ -220,7 +220,7 @@ export function App() {
     const l = list();
     const peers = peerLists();
     if (!l || peers.size === 0) return l;
-    return [...l, ...[...peers.values()].flat()];
+    return joinHostLists(l, peers);
   });
   /**
    * The sidebar's rows: the server list plus the sessions this tab created that the server does

@@ -5,6 +5,7 @@ import {
   hostOf,
   hostUrl,
   mergePeerLists,
+  joinHostLists,
   noteHost,
   notePeerSessions,
   pathsNamed,
@@ -276,4 +277,15 @@ test("conflict wording reads right for one host and for several", () => {
   assert.equal(conflictLine({ ...key, kind: "oauth", conflictWith: ["b", "c", "d"] }, label), "Host B, Host C, and Host D have different logins, from before they synced. It doesn't sync until you keep one.");
   assert.equal(conflictSummary(1), "1 login differs between hosts. Choose below which to keep.");
   assert.equal(conflictSummary(2), "2 logins differ between hosts. Choose below which to keep.");
+});
+
+test("a path both this host and a peer list shows once, as the peer's (live failover finding)", () => {
+  const row = (path: string, title: string) => ({ path, title }) as unknown as SessionSummary;
+  const stale = row("/vps/s1.jsonl", "local copy");
+  const mine = row("/laptop/s2.jsonl", "mine");
+  const peer = row("/vps/s1.jsonl", "peer copy");
+  const joined = joinHostLists([stale, mine], new Map([["vps", [peer]]]));
+  assert.deepEqual(joined.map((s) => s.title), ["mine", "peer copy"]);
+  // No overlap: this host's rows, then the peers', exactly as before.
+  assert.deepEqual(joinHostLists([mine], new Map([["vps", [peer]]])).map((s) => s.title), ["mine", "peer copy"]);
 });

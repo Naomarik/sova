@@ -173,6 +173,18 @@ export function peerRows(sessions: readonly SessionSummary[]): SessionSummary[] 
 }
 
 /**
+ * This host's sessions, then every peer's, each path once. A session lives on one host, so a path
+ * a peer lists is that peer's: this host's list can still carry it just after a front-door
+ * failover (the list the tab loaded came from the host that is now a peer, and the re-read may
+ * not have landed yet).
+ */
+export function joinHostLists(local: readonly SessionSummary[], peers: ReadonlyMap<string, SessionSummary[]>): SessionSummary[] {
+  const peerRowsAll = [...peers.values()].flat();
+  const onPeers = new Set(peerRowsAll.map((s) => s.path));
+  return [...local.filter((s) => !onPeers.has(s.path)), ...peerRowsAll];
+}
+
+/**
  * Each peer's rows. A peer that is down keeps its last rows (the server sends them as `stale`, and
  * a list this page already had stands in when it sends none), marked down by the sidebar rather
  * than vanishing. A peer no longer in peers.json is dropped.

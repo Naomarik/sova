@@ -339,11 +339,13 @@ export function writeCaddyfile(cfg) {
 \t\thealth_passes 2
 \t\tflush_interval -1
 \t\theader_up Host {upstream_hostport}
-\t\t# a killed host's address blackholes: bound the dial, and never reuse an idle upstream
-\t\t# connection (a request written into a dead host's pooled connection waits forever)
+\t\t# as Sova's generated file: reuse upstream connections, bound the dial, bound a request written
+\t\t# into a dead host's pooled connection by the header timeout, names through MagicDNS
 \t\ttransport http {
 \t\t\tdial_timeout 2s
-\t\t\tkeepalive off
+\t\t\tkeepalive 30s
+\t\t\tresponse_header_timeout 35s
+\t\t\tresolvers 100.100.100.100
 \t\t}
 \t\theader_down X-Lab-Upstream {upstream_hostport}
 \t}

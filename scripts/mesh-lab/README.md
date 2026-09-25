@@ -175,8 +175,14 @@ The harnesses:
 Front-door Caddyfile essentials, the template for the real one: `lb_policy first`,
 `health_uri /api/health` with 1 s interval/timeout, `lb_try_duration 5s`, `flush_interval -1`,
 `header_up Host {upstream_hostport}` (for `tailscale serve` upstreams), and
-`transport http { dial_timeout 1s; keepalive off }`. Without the last one, a request written into
-a killed host's idle pooled connection hangs (measured 15.5 s before the fix, 1.3 s after).
+`transport http { dial_timeout 2s; keepalive 30s; response_header_timeout 35s; resolvers 100.100.100.100 }`
+(the resolvers line only when an upstream is a name: Caddy then finds tailnet names on a host whose own
+DNS is not MagicDNS). The trade-off of reusing connections, measured on a blackholed first host (kill or
+partition): a request written into its idle pooled connection waits for the header timeout (35 s, then
+504, not retried; 26.8 s and a 200 when a partition healed first), new requests wait the 2 s dial and
+are retried on the next host (~2.25 s), and ~1 s later the health check sends everything there. With
+`keepalive off` nothing waits more than the dial, but `tailscale serve` stalls some new connections for
+seconds, and each stall on a health check benches a healthy host.
 
 Times measured on 2026-09-25: a cold `up` takes ~2 min, a rebuild after a code change ~40 s, m0
 ~17 s, m1 ~40 s and m4 ~30 s.

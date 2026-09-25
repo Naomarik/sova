@@ -7,6 +7,7 @@ import { acquireChat, BusyError, ConfigError, type ChatClient } from "./chat-man
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
 import { extensionSocketRoute, upgradeExtensionSocket } from "./extensions";
+import { meshUpgrade } from "./mesh";
 import { claudeUsageTally, type UsageTally } from "./transcript-usage";
 import { type Normalize, SessionTail } from "./watch";
 
@@ -72,50 +73,59 @@ function handleWatch(ws: WebSocket, path: string, normalize?: Normalize, tally?:
   });
 }
 
-export function attachWebSockets(server: Server): void {
-  const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true });
 
+/** Sova's own sockets, /ws/chat and /ws/watch; anything else is dropped. Also the peer
+    listener's upgrade handler (server/mesh/listener.ts). */
+export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const route = url.pathname;
+  if (route !== "/ws/chat" && route !== "/ws/watch") {
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    // /ws/watch?claude=<uuid>: a claude-code worker's own session file, in CC's own format.
+    const claudeId = route === "/ws/watch" ? url.searchParams.get("claude") : null;
+    if (claudeId) {
+      const file = resolveClaudeSession(claudeId);
+      if (!file || !existsSync(file)) {
+        sendJson(ws, { type: "error", message: file ? "Session file not found" : "Unknown Claude Code session" });
+        ws.close(4404, "bad path");
+        return;
+      }
+      handleWatch(ws, file, normalizeClaudeText, claudeUsageTally());
+      return;
+    }
+    const path = resolveSessionPath(url.searchParams.get("path"));
+    if (!path || !existsSync(path)) {
+      const message = path ? "Session file not found" : "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
+      sendJson(ws, route === "/ws/chat" ? { type: "error", code: "internal", message } : { type: "error", message });
+      ws.close(4404, "bad path");
+      return;
+    }
+    if (route === "/ws/chat") {
+      handleChat(ws, path, url.searchParams.get("force") === "1").catch((err) => {
+        console.error("[ws/chat]", err);
+        ws.close(4500, "internal");
+      });
+    } else {
+      handleWatch(ws, path);
+    }
+  });
+}
+
+export function attachWebSockets(server: Server): void {
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? "/", "http://localhost");
-    const route = url.pathname;
     // An extension's own socket, forwarded to its backend (server/extensions.ts).
-    const ext = extensionSocketRoute(route);
+    const ext = extensionSocketRoute(url.pathname);
     if (ext) {
       upgradeExtensionSocket(req, socket, head, ext[0], ext[1], url.search);
       return;
     }
-    if (route !== "/ws/chat" && route !== "/ws/watch") {
-      socket.destroy();
-      return;
-    }
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      // /ws/watch?claude=<uuid>: a claude-code worker's own session file, in CC's own format.
-      const claudeId = route === "/ws/watch" ? url.searchParams.get("claude") : null;
-      if (claudeId) {
-        const file = resolveClaudeSession(claudeId);
-        if (!file || !existsSync(file)) {
-          sendJson(ws, { type: "error", message: file ? "Session file not found" : "Unknown Claude Code session" });
-          ws.close(4404, "bad path");
-          return;
-        }
-        handleWatch(ws, file, normalizeClaudeText, claudeUsageTally());
-        return;
-      }
-      const path = resolveSessionPath(url.searchParams.get("path"));
-      if (!path || !existsSync(path)) {
-        const message = path ? "Session file not found" : "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
-        sendJson(ws, route === "/ws/chat" ? { type: "error", code: "internal", message } : { type: "error", message });
-        ws.close(4404, "bad path");
-        return;
-      }
-      if (route === "/ws/chat") {
-        handleChat(ws, path, url.searchParams.get("force") === "1").catch((err) => {
-          console.error("[ws/chat]", err);
-          ws.close(4500, "internal");
-        });
-      } else {
-        handleWatch(ws, path);
-      }
-    });
+    // A session on another host, forwarded to it (server/mesh/proxy.ts); never while the mesh is off.
+    if (meshUpgrade(req, socket, head, url)) return;
+    upgradeSovaSocket(req, socket, head);
   });
 }

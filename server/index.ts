@@ -43,7 +43,8 @@ import { claudeCliStatus } from "./claude-status";
 import { modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { parseSandboxBody } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
-import { attachWebSockets } from "./ws";
+import { attachWebSockets, upgradeSovaSocket } from "./ws";
+import { meshRoutes, startMesh, stopMesh } from "./mesh";
 import { findExtension, listExtensions, proxyExtension, serveExtensionFile, setSovaPort } from "./extensions";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
@@ -691,6 +692,10 @@ app.get("/api/explanations", async (c) => c.json(await listExplanations(c.req.qu
 // Installed extensions (server/extensions.ts), with each backend's cached health.
 app.get("/api/extensions", async (c) => c.json(await listExtensions()));
 
+// The mesh (server/mesh/): /api/mesh/*, the peer-only /api/peer/*, and the /peer/<id>/ proxy,
+// which falls through to the handlers below while no peer is configured.
+meshRoutes(app);
+
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
 // Extensions: /ext/<id>/api/* and /ext/<id>/ws/* go to the extension's own backend, everything
@@ -752,6 +757,7 @@ export { app };
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
   console.log(`sova server on http://${HOST}:${info.port}`);
+  startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket });
 }) as Server;
 server.on("error", (err) => {
   // e.g. EADDRINUSE: don't linger half-alive behind the uncaughtException handler
@@ -779,6 +785,7 @@ async function shutdown() {
   // subagents extension's session_shutdown detaches them instead of killing them.
   // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
   (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
+  stopMesh();
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   process.exit(0);
 }

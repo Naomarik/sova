@@ -259,7 +259,7 @@ export const extensionSocketUrl = (entry: ExtensionEntry, tail: string, search: 
   `${entry.api.replace(/^http/, "ws")}${tail}${search}`;
 
 /** Answer a not-yet-upgraded socket with a plain HTTP error and close it. */
-function refuse(socket: Duplex, status: number, body: object): void {
+export function refuse(socket: Duplex, status: number, body: object): void {
   if (socket.destroyed) return;
   const json = JSON.stringify(body);
   socket.end(
@@ -295,14 +295,45 @@ export function upgradeExtensionSocket(req: IncomingMessage, socket: Duplex, hea
     refuse(socket, 404, { error: "Unknown extension" });
     return;
   }
+  const headers: Record<string, string> = { "X-Sova-Origin": sovaOrigin() };
+  if (req.headers.host) headers["X-Forwarded-Host"] = req.headers.host;
+  proxySocket(req, socket, head, extensionSocketUrl(entry, tail, search), headers, {
+    onError: (err) => {
+      console.warn(`[extensions] ${id}: ws ${tail} failed: ${whyDown(err)}`);
+      return [502, { error: "extension down", id }];
+    },
+  });
+}
+
+export interface ProxySocketOptions {
+  /** The dial failed (no answer, handshake timeout, a non-101 answer when `onResponse` is absent)
+      → the HTTP status and JSON body the browser is refused with. */
+  onError: (err: Error) => [number, object];
+  /** The upstream answered the handshake with a non-101 response → the refusal; without it such
+      an answer is an error like any other. */
+  onResponse?: (res: IncomingMessage) => [number, object];
+}
+
+/**
+ * The transparent WS proxy under the extension host and the mesh (server/mesh/proxy.ts): dial
+ * `url` first, with the browser's subprotocols; only once the upstream has accepted is the
+ * browser's socket upgraded, so an upstream that is down or refuses answers the browser with a
+ * plain HTTP error and no WebSocket ever opens. Frames pass both ways untouched (text stays text,
+ * binary stays binary) and each side is closed the way the other closed (mirrorClose).
+ */
+export function proxySocket(req: IncomingMessage, socket: Duplex, head: Buffer, url: string, headers: Record<string, string>, opts: ProxySocketOptions): void {
   const protocols = String(req.headers["sec-websocket-protocol"] ?? "")
     .split(",")
     .map((p) => p.trim())
     .filter(Boolean);
-  const headers: Record<string, string> = { "X-Sova-Origin": sovaOrigin() };
-  if (req.headers.host) headers["X-Forwarded-Host"] = req.headers.host;
-  const upstream = new WebSocket(extensionSocketUrl(entry, tail, search), protocols, { headers, handshakeTimeout: 10_000 });
+  const upstream = new WebSocket(url, protocols, { headers, handshakeTimeout: 10_000 });
   let upgraded = false;
+  let refused = false;
+  const refuseOnce = ([status, body]: [number, object]) => {
+    if (refused) return;
+    refused = true;
+    refuse(socket, status, body);
+  };
   // The browser went away while we were still dialing.
   const onSocketClose = () => {
     if (!upgraded) upstream.terminate();
@@ -310,7 +341,7 @@ export function upgradeExtensionSocket(req: IncomingMessage, socket: Duplex, hea
   socket.once("close", onSocketClose);
   socket.on("error", () => {}); // a reset during the dial; the close handler cleans up
 
-  // What the backend sends or does between its open and the browser's handshake completing.
+  // What the upstream sends or does between its open and the browser's handshake completing.
   const early: Array<[Buffer, boolean]> = [];
   let earlyClose: [number, Buffer] | null = null;
   let client: WebSocket | null = null;
@@ -323,11 +354,16 @@ export function upgradeExtensionSocket(req: IncomingMessage, socket: Duplex, hea
     else earlyClose = [code, reason];
   });
   upstream.on("error", (err) => {
-    if (!upgraded) {
-      console.warn(`[extensions] ${id}: ws ${tail} failed: ${whyDown(err)}`);
-      refuse(socket, 502, { error: "extension down", id });
-    }
+    if (!upgraded && !refused) refuseOnce(opts.onError(err));
   });
+  if (opts.onResponse) {
+    const onResponse = opts.onResponse;
+    upstream.on("unexpected-response", (_request, res) => {
+      refuseOnce(onResponse(res));
+      res.resume();
+      upstream.terminate();
+    });
+  }
   upstream.once("open", () => {
     if (socket.destroyed) {
       upstream.terminate();

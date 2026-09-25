@@ -245,7 +245,14 @@ A server-side digest, built with no LLM from live records, summaries, held-chat 
 store. It is memoised for about 3 seconds and never includes the Overseer itself.
 
 - **Needs you (act):** a dialog open (`activity.state` needs-input, own and foreign, or a hosted
-  pending dialog); an errored turn (`activity.state` error); a worker that errored or was killed.
+  pending dialog); an errored turn (`activity.state` error); a worker that ended in an error. A
+  killed worker is left out: a kill is usually the user's own gesture. A worker error counts as
+  seen once the session is on screen, or its seen stamp (§app.overseer/seen) is at or past the
+  latest error; a new error after that raises it again. An error's time is its worker row's
+  `endedAt` (else `lastActivity`, else `startedAt`); when rows were dropped from the live record
+  for size, the time this server saw the error count rise stands in (in memory, so after a restart
+  such an error shows again until the session is seen). A session never seen, or an error of
+  unknown time, still shows. This holds for archived sessions too.
 - **Finished (decide):** replied since last seen and now idle; idle with an unsent draft or queued
   input.
 - **FYI:** running now; context at or above 85%; idle web sessions older than 3 days that aren't

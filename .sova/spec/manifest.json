@@ -1913,7 +1913,7 @@
     "§app.overseer/attention-digest": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "server/attention.ts",
         "server/overseer.ts",

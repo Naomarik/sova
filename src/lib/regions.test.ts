@@ -31,4 +31,5 @@ test("a worker session is not a main thread; an unmarked one (older server) is",
   assert.equal(isMainThread({}), true);
   assert.equal(isMainThread({ workerSession: undefined }), true);
   assert.equal(isMainThread({ workerSession: true }), false);
+  assert.equal(isMainThread({ overseer: true }), false, "an Overseer file is never a sidebar row");
 });

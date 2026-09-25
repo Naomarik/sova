@@ -3,7 +3,7 @@
 // durable worker records plus each worker's transcript, through the worker-transcript protocol.
 // Uses a throwaway PI_CODING_AGENT_DIR and CLAUDE_CONFIG_DIR; ~/.pi and ~/.claude are never touched.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -162,6 +162,79 @@ test("a live record wins: nothing is rebuilt from disk while a process publishes
     assert.equal(insight.workers![0]!.resumable, true, "this server's own runtime: it can resume");
     assert.equal(insight.usageTotal?.asOf, T0);
     assert.equal(insight.usage?.models.find((m) => m.origin === "subagents")?.asOf, T0);
+  } finally {
+    rmSync(file, { force: true });
+  }
+});
+
+test("restored workers carry their context fill; a claude-code window follows the spawn model, not the transcript's", async () => {
+  // ag_02 of owner() names no spawn model: the transcript's bare id gives the 200k window.
+  const plain = byId((await getSessionInsight(owner())).workers);
+  assert.equal((plain.get("ag_01")!.context as { tokens: number }).tokens, 100, "input + cacheRead + cacheWrite of its last reply");
+  assert.deepEqual(plain.get("ag_02")!.context, { tokens: 7 + 700, window: 200_000 });
+  assert.equal(plain.get("ag_03")!.context, undefined, "no transcript: unknown, never 0");
+
+  // Spawned as the [1m] variant: its transcript still writes the bare id (and so does its row).
+  const ccId = "0199aaaa-bbbb-4ccc-8ddd-000000000011";
+  writeFileSync(join(claudeProject, `${ccId}.jsonl`), jsonl({ ...ccLine, message: { ...ccLine.message, id: "msg_11" } }));
+  // A pi worker whose last word is a compaction: explicitly compacted.
+  const compacted = canonicalPath(join(sessionsDir, "2026-09-24T10-02-00-000Z_compacted.jsonl"));
+  writeFileSync(compacted, jsonl(
+    { type: "session", version: 3, id: "compacted", timestamp: iso(1), cwd: "/tmp/restored-test" },
+    { type: "message", id: "k1", parentId: null, timestamp: iso(2), message: { role: "assistant", provider: "zai", model: "glm-5.3", content: [], usage: piUsage(500, 5, 0), stopReason: "stop" } },
+    { type: "compaction", id: "k2", parentId: "k1", timestamp: iso(3), summary: "…" },
+  ));
+  const path = canonicalPath(join(sessionsDir, "2026-09-24T10-00-00-000Z_owner-1m.jsonl"));
+  writeFileSync(path, jsonl(
+    { type: "session", version: 3, id: "owner-1m", timestamp: iso(0), cwd: "/tmp/restored-test" },
+    manifest("n1", null as never, {
+      workerId: "ag_11", backend: "claude-code", name: "opus-1m", status: "waiting",
+      spec: { cwd: "/tmp/restored-test", model: "claude-opus-5-5[1m]", taskPreview: "go", wake: true },
+      ref: { v: 1, backend: "claude-code", kind: "claude-session-id", locator: ccId },
+    }),
+    manifest("n2", "n1", {
+      workerId: "ag_12", backend: "pi", name: "compacted", status: "waiting",
+      ref: { v: 1, backend: "pi", kind: "pi-session-file", locator: compacted },
+    }),
+  ));
+  const workers = byId((await getSessionInsight(path)).workers);
+  const cc = workers.get("ag_11")!;
+  assert.equal(cc.model, "claude-opus-5-5[1m]", "the row names what it ran under, with the spawn model's variant (labelled \"opus-5.5 1M\")");
+  assert.equal(cc.contextWindow, 1_000_000);
+  assert.deepEqual(cc.context, { tokens: 707, window: 1_000_000 });
+  assert.equal(workers.get("ag_12")!.context, "compacted");
+});
+
+test("live workers' fill comes off their transcripts' tails; a remote placeholder path says nothing", async () => {
+  const path = owner();
+  // The owner's manifests know ag_02 as a claude-code worker; give this session a [1m] spawn record.
+  const withSpawn = canonicalPath(join(sessionsDir, "2026-09-24T10-00-00-000Z_owner-live.jsonl"));
+  writeFileSync(withSpawn, readFileSync(path, "utf8") + jsonl(manifest("m9", "m4", {
+    workerId: "ag_21", backend: "claude-code", name: "live-cc", status: "waiting",
+    spec: { cwd: "/tmp/restored-test", model: "claude-opus-5-5[1m]", taskPreview: "go", wake: true },
+  })));
+  const { targetsRoot } = await import("./targets");
+  const remote = join(targetsRoot(), "box", "home", "x.jsonl");
+  mkdirSync(join(targetsRoot(), "box", "home"), { recursive: true });
+  writeFileSync(remote, readFileSync(piWorkerFile));
+  const file = join(liveDir, `p${process.pid}-context.json`);
+  writeFileSync(file, JSON.stringify({
+    heartbeat: Date.now(),
+    session: { sessionFile: withSpawn, pid: process.pid, mode: "rpc", status: "idle" },
+    presence: { status: "idle", workers: [
+      { id: "ag_20", name: "pi", status: "running", backend: "pi", model: "zai/glm-5.3", sessionFile: piWorkerFile },
+      // An extension-restored claude-code worker: its record's model has lost the [1m].
+      { id: "ag_21", name: "cc", status: "restored", backend: "claude-code", model: "claude-opus-5-5", sessionId: claudeId },
+      { id: "ag_22", name: "far", status: "running", backend: "pi", model: "zai/glm-5.3", sessionFile: remote },
+    ] },
+  }));
+  try {
+    const workers = byId((await getSessionInsight(withSpawn)).workers);
+    assert.equal((workers.get("ag_20")!.context as { tokens: number }).tokens, 100);
+    assert.equal(workers.get("ag_21")!.contextWindow, 1_000_000, "the manifest's spawn model names the window");
+    assert.equal(workers.get("ag_21")!.model, "claude-opus-5-5[1m]", "and the label's variant");
+    assert.deepEqual(workers.get("ag_21")!.context, { tokens: 707, window: 1_000_000 });
+    assert.ok(!("context" in workers.get("ag_22")!), "a remote target's placeholder is never read");
   } finally {
     rmSync(file, { force: true });
   }

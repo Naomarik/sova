@@ -6,8 +6,12 @@ import type { ChatClientMessage, ChatServerMessage, WatchServerMessage } from ".
 import { acquireChat, BusyError, ConfigError, type ChatClient } from "./chat-manager";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
+import { trackViewer } from "./seen";
+import { idOf } from "./sessions-index";
 import { claudeUsageTally, type UsageTally } from "./transcript-usage";
 import { type Normalize, SessionTail } from "./watch";
+import { sharedWorkerWindowResolver } from "./models";
+import { contextTally, type Format, type WindowResolver } from "./worker-context";
 
 function sendJson(ws: WebSocket, msg: ChatServerMessage | WatchServerMessage): void {
   if (ws.readyState !== ws.OPEN) return;
@@ -35,8 +39,13 @@ async function handleChat(ws: WebSocket, path: string, force: boolean): Promise<
     if (chat) chat.handle(client, msg);
     else early.push(msg);
   });
+  // Seen: a pane is on screen while its socket is open (server/seen.ts). Stamped at attach and at
+  // detach, whether or not the runtime opens — a refused chat is still a session the user looked at.
+  const id = idOf(path);
+  trackViewer(id, 1);
   ws.on("close", () => {
     gone = true;
+    trackViewer(id, -1);
     chat?.detach(client);
   });
 
@@ -61,11 +70,20 @@ async function handleChat(ws: WebSocket, path: string, force: boolean): Promise<
   for (const msg of early.splice(0)) chat.handle(client, msg);
 }
 
-function handleWatch(ws: WebSocket, path: string, normalize?: Normalize, tally?: UsageTally): void {
-  const tail = new SessionTail(path, (msg) => sendJson(ws, msg), normalize, tally);
-  ws.on("close", () => tail.close());
+function handleWatch(ws: WebSocket, path: string, normalize?: Normalize, tally?: UsageTally, format: Format = "pi"): void {
+  // pi replies name their model, so the fill carries its window; the runtime is resolved first.
+  let resolve: WindowResolver = () => null;
+  const tail = new SessionTail(path, (msg) => sendJson(ws, msg), normalize, tally, contextTally(format, (ref) => resolve(ref)));
+  // A claude-code worker's own file has no Sova session id: nothing to stamp.
+  const id = normalize ? "" : idOf(path);
+  if (id) trackViewer(id, 1);
+  ws.on("close", () => {
+    if (id) trackViewer(id, -1);
+    tail.close();
+  });
   ws.on("message", () => {}); // read-only: ignore anything the client sends
-  tail.start().catch((err) => {
+  const windows = format === "pi" ? sharedWorkerWindowResolver().then((r) => void (resolve = r)) : Promise.resolve();
+  windows.then(() => tail.start()).catch((err) => {
     sendJson(ws, { type: "error", message: err instanceof Error ? err.message : String(err) });
     ws.close(4500, "watch failed");
   });
@@ -91,7 +109,7 @@ export function attachWebSockets(server: Server): void {
           ws.close(4404, "bad path");
           return;
         }
-        handleWatch(ws, file, normalizeClaudeText, claudeUsageTally());
+        handleWatch(ws, file, normalizeClaudeText, claudeUsageTally(), "claude");
         return;
       }
       const path = resolveSessionPath(url.searchParams.get("path"));

@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
+import { createMemo, createSignal, For, Match, Show, Switch, type JSX } from "solid-js";
 import { argsSummary, isObj, str } from "../lib/message";
 import { prettyJson } from "../lib/format";
 import { highlightByPath } from "../lib/markdown";
@@ -73,6 +73,8 @@ export function ToolCard(props: {
   images?: string[];
   /** /tmp image paths named in the output. */
   attachments?: TmpAttachment[];
+  /** A control on the collapsed line, before the status chip (a navigate result's "Go"). */
+  action?: JSX.Element;
 }) {
   const [showAll, setShowAll] = createSignal(false);
   const hasArgs = () => props.args !== undefined || !!props.argsText;
@@ -114,6 +116,7 @@ export function ToolCard(props: {
             <span class="visually-hidden">{props.images!.length === 1 ? "image" : "images"}</span>
           </span>
         </Show>
+        {props.action}
         <Switch>
           <Match when={props.status === "running"}>
             <Chip tone="accent" live>

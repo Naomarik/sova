@@ -19,6 +19,7 @@ import {
   type WorkerUsage,
 } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import { modelProvider } from "./models";
+import { claudeSpawnModel, type WindowResolver, withSpawnVariant, workerWindow } from "./worker-context";
 
 type Entry = Record<string, any>;
 
@@ -69,8 +70,9 @@ export class WorkerRestorer {
     }
   }
 
-  /** `entries`: every entry of the session file (all branches); `branch`: the active one. */
-  async restore(entries: readonly Entry[], branch: readonly Entry[]): Promise<RestoredWorkers> {
+  /** `entries`: every entry of the session file (all branches); `branch`: the active one.
+      `resolveWindow` names a pi model's context window; without it pi workers carry none. */
+  async restore(entries: readonly Entry[], branch: readonly Entry[], resolveWindow: WindowResolver = () => null): Promise<RestoredWorkers> {
     const activeEntryIds = new Set(branch.map((e) => e.id).filter((id): id is string => typeof id === "string"));
     const { manifests } = readWorkerManifests(entries, { activeEntryIds });
     if (manifests.size === 0) return { workers: [] };
@@ -90,7 +92,7 @@ export class WorkerRestorer {
         if (snapshotAt !== undefined) asOf = Math.min(asOf ?? Infinity, snapshotAt);
       }
       if (!m.onActiveBranch) continue;
-      workers.push(workerInfo(m, summary, usage, snapshotAt));
+      workers.push(workerInfo(m, summary, usage, snapshotAt, resolveWindow));
     }
     return { workers, ...(counted.length > 0 ? { usageTotal: totalOf(counted, asOf) } : {}) };
   }
@@ -116,13 +118,16 @@ function totalOf(usages: WorkerUsage[], asOf: number | undefined): TokenUsageTot
   return t;
 }
 
-function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | null, usage: WorkerUsage, snapshotAt: number | undefined): WorkerInfo {
+function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | null, usage: WorkerUsage, snapshotAt: number | undefined, resolveWindow: WindowResolver): WorkerInfo {
   const status = statusOf(m);
   // The model it ran under, as its running record names it (haiku-4.5 in every state): the
   // protocol's one rule, shared with the subagents extension.
   const model = resolvedModel(m, summary ? { summary } : undefined);
+  // A claude-code transcript names the bare id; the spawn model keeps its `[1m]` variant, which
+  // both the label and the window below take from it.
+  const spawn = m.backend === "claude-code" ? claudeSpawnModel(m) : undefined;
   const w: WorkerInfo = { id: m.workerId, name: m.name ?? m.workerId, status, working: false, backend: m.backend };
-  if (model) w.model = model;
+  if (model) w.model = withSpawnVariant(model, spawn);
   const provider = m.backend === "claude-code" ? "claude code" : modelProvider(model);
   if (provider) w.provider = provider;
   const effort = m.spec?.effort ?? summary?.effort;
@@ -148,5 +153,12 @@ function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | 
   // host went away is merely restored; one that was running (or lost, or never reported a status)
   // was cut off mid-turn.
   if (status === "restored" && m.status !== "waiting") w.interruptedAt = Math.max(summary?.lastActivityAt ?? 0, m.at);
+  // Context fill as of its last reply. The window follows the model it was SPAWNED with for
+  // claude-code: `model` above is the transcript's bare id, which has lost a `[1m]` variant.
+  const window = workerWindow(w, resolveWindow, spawn);
+  if (window) w.contextWindow = window;
+  const fill = summary?.lastContextTokens;
+  if (fill === null) w.context = "compacted";
+  else if (typeof fill === "number") w.context = { tokens: fill, window };
   return w;
 }

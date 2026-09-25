@@ -1,10 +1,14 @@
 // Bare "/new" in the composer: a fresh session in the chat's folder, and the
 // chat it was typed in goes to the Archive. Kept free of the api module so it's testable.
 
-/** The folder "/new" starts in: the chat's own, else the most recently active session's. */
-export function newSessionCwd(current: string | null | undefined, sessions: readonly { cwd: string; lastActiveAt: string }[]): string | null {
-  if (current) return current;
-  const latest = [...sessions].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))[0];
+type Located = { cwd: string; overseer?: true };
+
+/** The folder "/new" starts in: the chat's own, else the most recently active session's. The
+    Overseer's folder is its state, not a project, so an Overseer file never supplies one: from its
+    page, the most recent other session's folder is used. */
+export function newSessionCwd(current: Located | null | undefined, sessions: readonly (Located & { lastActiveAt: string })[]): string | null {
+  if (current?.cwd && !current.overseer) return current.cwd;
+  const latest = sessions.filter((s) => !s.overseer).sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))[0];
   return latest?.cwd || null;
 }
 

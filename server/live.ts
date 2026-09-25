@@ -10,6 +10,39 @@ export interface LiveRecord {
   workers?: { working: number; total: number };
   /** The presence outline broadcast (topic-outline), untrusted JSON: { now, generatedAt, … }. */
   outline?: unknown;
+  /** presence.activity (sessions extension schema v2), when the writer sends one. */
+  activity?: LiveActivity;
+}
+
+/** The part of presence.activity Sova reads (SCHEMA.md "Activity"). */
+export interface LiveActivity {
+  state: "working" | "idle" | "needs-input" | "error";
+  /** ms epoch the state began; 0 unknown. */
+  since: number;
+  /** Only with state "error", ≤200 chars. */
+  error?: string;
+  lastAssistantAt?: number;
+}
+
+const ACTIVITY_STATES = new Set(["working", "idle", "needs-input", "error"]);
+
+/** presence.activity of a raw record, parsed defensively; undefined when absent or malformed. */
+export function activityOf(rec: any): LiveActivity | undefined {
+  const a = rec?.presence?.activity;
+  if (!a || typeof a !== "object" || !ACTIVITY_STATES.has(a.state)) return undefined;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+  return {
+    state: a.state,
+    since: num(a.since) ?? 0,
+    ...(a.state === "error" && typeof a.error === "string" && a.error ? { error: a.error.slice(0, 200) } : {}),
+    ...(num(a.lastAssistantAt) !== undefined ? { lastAssistantAt: num(a.lastAssistantAt) } : {}),
+  };
+}
+
+/** presence.workerCounts.error: workers that ended in an error, or 0. Killed ones are left out:
+    a kill is usually the user's own gesture, not something to bring back to them. */
+export function failedWorkersOf(rec: any): number {
+  return count(rec?.presence?.workerCounts?.error) ?? 0;
 }
 
 /** A parsed live file whose pid is alive. `rec` is untrusted JSON: consumers parse defensively. */
@@ -106,6 +139,7 @@ export function readLive(): Map<string, LiveRecord> {
       mode: typeof s.mode === "string" ? s.mode : null,
       ...(working !== null && total !== null ? { workers: { working, total } } : {}),
       ...(rec.presence?.outline !== undefined ? { outline: rec.presence.outline } : {}),
+      ...(activityOf(rec) ? { activity: activityOf(rec) } : {}),
     });
   }
   return out;

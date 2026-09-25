@@ -21,6 +21,8 @@ import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { WakeCard } from "./WakeCard";
 import { Banner, Chip, Icon } from "./ui";
+import { BriefRow, ConfirmCard, NavigateGo, OverseerChoiceRow } from "./OverseerCards";
+import { confirmAnswer, confirmDetails, detailsOf, isBriefText } from "../lib/overseer";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
 import { type MessageStrip, stripLabel, stripsByRow } from "../lib/message-actions";
 
@@ -61,14 +63,21 @@ function UserTurn(props: {
   time?: string;
   state?: LiveUserState;
   origin?: "client" | "server";
+  /** The Overseer sent this message (its `sova-overseer-sent` marker names this row). */
+  overseer?: boolean;
   images?: string[];
   attachments?: TmpAttachment[];
 }) {
-  const author = () => AUTHOR[props.origin ?? "client"];
+  const author = () => (props.overseer ? "Overseer" : AUTHOR[props.origin ?? "client"]);
   return (
     <article class="message message-user" aria-label={props.time ? `${author()}, ${stampTime(props.time)}` : author()}>
       <div class="message-head">
-        <span class="message-author">{author()}</span>
+        <Show when={props.overseer} fallback={<span class="message-author">{author()}</span>}>
+          <span class="message-author overseer-author" title="Sent by the Overseer">
+            <Icon name="eye" small />
+            Overseer
+          </span>
+        </Show>
         <Stamp iso={props.time} />
         <Show when={props.state && PENDING_LABEL[props.state]}>
           {(label) => <span class="message-pending">{label()}</span>}
@@ -289,6 +298,12 @@ export function HistoryItems(props: {
     return ids;
   });
   const latestAlign = createMemo(() => latestAlignId(props.items));
+  /** User rows the Overseer sent: its markers name them by id, in any order. */
+  const overseerSent = createMemo(() => {
+    const ids = new Set<string>();
+    for (const it of props.items) if (it.overseerMark?.kind === "sent") ids.add(it.overseerMark.targetId);
+    return ids;
+  });
   /**
    * Where the action strips go, by rendered-row index. One per ENTRY: a reply rendered as three
    * blocks is one message, and three strips under it would be three Regenerates for one turn.
@@ -338,8 +353,22 @@ export function HistoryItems(props: {
           // A box-less wrapper so the outline strip can find an entry's row (Jump to Message).
           <div class="entry" data-entry={item.id}>
             <Switch fallback={<Unknown raw={item.raw} />}>
+              <Match when={item.kind === "user" && isBriefText(item.text)}>
+                <BriefRow text={item.text ?? ""} time={timestampOf(item.raw)} />
+              </Match>
               <Match when={item.kind === "user"}>
-                <UserTurn text={item.text ?? ""} time={timestampOf(item.raw)} images={item.images} attachments={item.attachments} />
+                <UserTurn
+                  text={item.text ?? ""}
+                  time={timestampOf(item.raw)}
+                  overseer={overseerSent().has(entryIdOf(item.id))}
+                  images={item.images}
+                  attachments={item.attachments}
+                />
+              </Match>
+              {/* The sent marker draws nothing itself: it tags the row it names (above). */}
+              <Match when={item.overseerMark?.kind === "sent"}>{null}</Match>
+              <Match when={item.overseerMark?.kind === "dialog-answer" && item.overseerMark}>
+                {(mark) => <OverseerChoiceRow title={mark().title} answer={mark().answer} />}
               </Match>
               <Match when={item.kind === "wake" && item.wake}>
                 {(wake) => <WakeCard nudge={wake()} text={item.text ?? ""} time={timestampOf(item.raw)} />}
@@ -391,7 +420,18 @@ export function HistoryItems(props: {
                     if (v) return v.isError ? "error" : "done";
                     return props.streaming && index() >= openFrom() ? "running" : "none";
                   };
+                  const resultDetails = () => {
+                    const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
+                    return r ? detailsOf(r.raw) : undefined;
+                  };
+                  const confirm = () =>
+                    item.text === "sova_confirm" && status() !== "error"
+                      ? (confirmDetails(resultDetails()) ?? confirmDetails(toolCallArgs(item.raw, item.toolCallId)))
+                      : null;
                   return (
+                    <Show
+                      when={confirm()}
+                      fallback={
                     <ToolCard
                       name={item.text ?? "tool"}
                       args={toolCallArgs(item.raw, item.toolCallId)}
@@ -399,7 +439,15 @@ export function HistoryItems(props: {
                       output={view()?.output}
                       images={item.toolCallId ? results().get(item.toolCallId)?.images : undefined}
                       attachments={item.toolCallId ? results().get(item.toolCallId)?.attachments : undefined}
+                      action={item.text === "sova_navigate" && status() === "done" ? <NavigateGo details={resultDetails()} /> : undefined}
                     />
+                      }
+                    >
+                      {(details) => {
+                        const answer = () => confirmAnswer(props.items, props.items.indexOf(item), details());
+                        return <ConfirmCard details={details()} answered={answer().answered} choice={answer().choice} />;
+                      }}
+                    </Show>
                   );
                 })()}
               </Match>
@@ -471,15 +519,24 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
             if (t) return t.status;
             return props.live.running ? "running" : "none";
           };
+          const confirm = () => (b().name === "sova_confirm" && status() !== "error" ? confirmDetails(tool()?.details) ?? confirmDetails(b().args) : null);
           return (
-            <ToolCard
-              name={b().name}
-              args={b().args ?? tool()?.args}
-              argsText={b().argsText}
-              status={status()}
-              output={tool()?.output}
-              images={tool()?.images}
-            />
+            <Show
+              when={confirm()}
+              fallback={
+                <ToolCard
+                  name={b().name}
+                  args={b().args ?? tool()?.args}
+                  argsText={b().argsText}
+                  status={status()}
+                  output={tool()?.output}
+                  images={tool()?.images}
+                  action={b().name === "sova_navigate" && status() === "done" ? <NavigateGo details={tool()?.details} /> : undefined}
+                />
+              }
+            >
+              {(details) => <ConfirmCard details={details()} answered={false} choice={null} pending={props.live.running} />}
+            </Show>
           );
         }}
       </Match>
@@ -520,6 +577,8 @@ export function LiveEntries(props: {
                 <Show
                   when={parseWakeNudge(e().text)}
                   fallback={
+                    <Show when={!isBriefText(e().text)} fallback={<BriefRow text={e().text} />}>
+                    {
                     /* A queued row has no `.entry` around it, so it brings the hover/tap region
                        its Remove needs to be revealed by (base.css; `display: contents`, so the
                        wrapper changes nothing about how the row lays out). */
@@ -535,6 +594,8 @@ export function LiveEntries(props: {
                         {(items) => <Show when={items().length > 0}><MessageActions label="Actions for your queued message" align="end" items={items()} /></Show>}
                       </Show>
                     </div>
+                    }
+                    </Show>
                   }
                 >
                   {(wake) => <WakeCard nudge={wake()} text={e().text} />}

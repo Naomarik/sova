@@ -97,3 +97,12 @@ test("enterRunsLocal and slashMenuSuppressed treat a bare /timeline like /tree",
   assert.equal(slashMenuSuppressed("/timelines"), false);
   assert.equal(slashMenuSuppressed("/time"), false);
 });
+
+test("/clear is local only where the Overseer turns it on", () => {
+  assert.equal(localCommand("/clear"), null, "any other chat: the runtime's, as before");
+  assert.equal(localCommand("/clear", { clear: true }), "clear");
+  assert.equal(localCommand("/clear now", { clear: true }), null, "with arguments it is text");
+  assert.equal(enterRunsLocal("/clear", "Enter", false, { clear: true }), true);
+  assert.equal(slashMenuSuppressed("/clear"), false);
+  assert.equal(slashMenuSuppressed("/clear", { clear: true }), true);
+});

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import type { SlashCommand, UploadResult } from "../../shared/protocol";
 import { enterRunsLocal, insertCommand, localCommand, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
@@ -99,6 +99,12 @@ export function Composer(props: {
   paneTab?: string | null;
   /** Runs a bare "/new": resolves to the new session's folder label, or null if none was made. */
   onNewSession?: () => Promise<string | null>;
+  /** The Overseer's "/clear": a new conversation. Given, a bare "/clear" is ours and never reaches
+      the runtime; absent (every other chat), it is the runtime's as before. Resolves false when
+      nothing was cleared, and the draft stays. */
+  onClear?: () => Promise<boolean>;
+  /** At the end of the composer's top row, above the textarea (the Overseer's quick actions). */
+  accessory?: () => JSX.Element;
   /** Opens the session pane's Timeline tab: a bare "/timeline" unfiltered; a bare "/tree" and
       the run-status row's "N inputs" trigger with `inputsOnly`, on your own messages. */
   onShowTimeline?: (inputsOnly?: boolean) => void;
@@ -133,6 +139,7 @@ export function Composer(props: {
   restored?: { text: string } | null;
 }) {
   const [text, setText] = createSignal(drafts.get(props.path) ?? "");
+  const localOpts = () => ({ clear: !!props.onClear });
   /** One row object per stored file, so the strip keeps its rows (and focus) as the list changes. */
   const rows = new Map<string, PendingImage>();
   const images = createMemo(() =>
@@ -295,7 +302,7 @@ export function Composer(props: {
       !disabled() &&
       (props.commands?.length ?? 0) > 0 &&
       slashDismissed() !== tokenKey(token) &&
-      !slashMenuSuppressed(text())
+      !slashMenuSuppressed(text(), localOpts())
     );
   };
   /** Re-reads the token under the caret; call after input, clicks, and caret keys. */
@@ -648,6 +655,19 @@ export function Composer(props: {
       announce(`New session in ${cwd}.`);
       return;
     }
+    // "/clear" in the Overseer: a new conversation. Nothing reaches the runtime; the old one stays
+    // in the Overseer's history.
+    if (localCommand(text(), localOpts()) === "clear" && props.onClear && images().length === 0) {
+      if (startingNew) return;
+      startingNew = true;
+      const cleared = await props.onClear().finally(() => (startingNew = false));
+      if (!cleared) return;
+      setDraft("");
+      input.value = "";
+      setSlashToken(null);
+      announce("Cleared. The previous conversation is in History.");
+      return;
+    }
     // Every attachment is already stored (Send waits for uploads), so this only names them. The
     // optimistic row takes each file's own name, as the transcript will once it's refetched.
     const pending = draftAttachments(props.path);
@@ -662,63 +682,8 @@ export function Composer(props: {
     input.focus();
   };
 
-  return (
-    <footer
-      class="composer"
-      data-collapsed={collapsed() ? "true" : undefined}
-      data-drop={drop() ?? undefined}
-      onDragOver={(e) => {
-        if (disabled() || !e.dataTransfer?.types.includes("Files")) return;
-        e.preventDefault();
-        const ok = dragHasAcceptedImage(e.dataTransfer);
-        e.dataTransfer.dropEffect = ok ? "copy" : "none";
-        setDrop(ok ? "active" : "reject");
-      }}
-      onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDrop(null);
-      }}
-      onDrop={(e) => {
-        setDrop(null);
-        if (disabled() || !e.dataTransfer?.types.includes("Files")) return;
-        e.preventDefault();
-        addFiles([...e.dataTransfer.files]);
-      }}
-    >
-      <div class="composer-drop" aria-hidden="true">
-        <Show when={drop() === "reject"} fallback={<><Icon name="image" /><span>Drop images to attach</span></>}>
-          <Icon name="alert-circle" />
-          <span>Only images can be attached</span>
-        </Show>
-      </div>
-
-      <form class="composer-inner" aria-label="Message the agent" onSubmit={send}>
-        {/* First child: base.css anchors it just above the composer at full width. */}
-        <Show when={slashOpen()}>
-          <SlashMenu
-            commands={slashMatches()}
-            ids={slashIds()}
-            active={slashActive()}
-            query={slashToken()?.query ?? ""}
-            onPick={pickSlash}
-            onHover={setSlashActive}
-          />
-        </Show>
-        {/* Its twin: whichever token the caret is in, only one can be open. */}
-        <Show when={mentionOpen()}>
-          <FileMenu
-            entries={mentionMatches()}
-            total={mentionAll().length}
-            ids={mentionIds()}
-            active={mentionActive()}
-            segment={mentionQueryParts(mentionToken()?.query ?? "").segment}
-            dir={mentionQueryParts(mentionToken()?.query ?? "").dir}
-            status={mentionStatus()}
-            truncated={mentionTruncated()}
-            root={props.cwd ?? undefined}
-            onPick={pickMention}
-            onHover={setMentionActive}
-          />
-        </Show>
+  const runStatus = () => (
+    <>
         {/* One row, whichever of the three has something to say (they can coexist: the inputs
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
         <Show when={props.running || workersRow() || inputsRow()}>
@@ -783,6 +748,74 @@ export function Composer(props: {
               )}
             </Show>
           </p>
+        </Show>
+    </>
+  );
+
+  return (
+    <footer
+      class="composer"
+      data-collapsed={collapsed() ? "true" : undefined}
+      data-drop={drop() ?? undefined}
+      onDragOver={(e) => {
+        if (disabled() || !e.dataTransfer?.types.includes("Files")) return;
+        e.preventDefault();
+        const ok = dragHasAcceptedImage(e.dataTransfer);
+        e.dataTransfer.dropEffect = ok ? "copy" : "none";
+        setDrop(ok ? "active" : "reject");
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDrop(null);
+      }}
+      onDrop={(e) => {
+        setDrop(null);
+        if (disabled() || !e.dataTransfer?.types.includes("Files")) return;
+        e.preventDefault();
+        addFiles([...e.dataTransfer.files]);
+      }}
+    >
+      <div class="composer-drop" aria-hidden="true">
+        <Show when={drop() === "reject"} fallback={<><Icon name="image" /><span>Drop images to attach</span></>}>
+          <Icon name="alert-circle" />
+          <span>Only images can be attached</span>
+        </Show>
+      </div>
+
+      <form class="composer-inner" aria-label="Message the agent" onSubmit={send}>
+        {/* First child: base.css anchors it just above the composer at full width. */}
+        <Show when={slashOpen()}>
+          <SlashMenu
+            commands={slashMatches()}
+            ids={slashIds()}
+            active={slashActive()}
+            query={slashToken()?.query ?? ""}
+            onPick={pickSlash}
+            onHover={setSlashActive}
+          />
+        </Show>
+        {/* Its twin: whichever token the caret is in, only one can be open. */}
+        <Show when={mentionOpen()}>
+          <FileMenu
+            entries={mentionMatches()}
+            total={mentionAll().length}
+            ids={mentionIds()}
+            active={mentionActive()}
+            segment={mentionQueryParts(mentionToken()?.query ?? "").segment}
+            dir={mentionQueryParts(mentionToken()?.query ?? "").dir}
+            status={mentionStatus()}
+            truncated={mentionTruncated()}
+            root={props.cwd ?? undefined}
+            onPick={pickMention}
+            onHover={setMentionActive}
+          />
+        </Show>
+        {/* The composer's top row: the run status, and at its end the accessory (the Overseer's
+            quick actions). In flow, inside the composer, so it never covers the transcript. */}
+        <Show when={props.accessory} fallback={runStatus()}>
+          <div class="composer-top">
+            {runStatus()}
+            <div class="composer-accessory">{props.accessory!()}</div>
+          </div>
         </Show>
 
         <Show when={images().length > 0 || rejected().length > 0}>
@@ -911,7 +944,7 @@ export function Composer(props: {
               addFiles(files, true);
             }}
             onKeyDown={(e) => {
-              if (slashOpen() && !e.isComposing && !enterRunsLocal(text(), e.key, e.shiftKey)) {
+              if (slashOpen() && !e.isComposing && !enterRunsLocal(text(), e.key, e.shiftKey, localOpts())) {
                 const hasMatches = slashMatches().length > 0;
                 if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                   if (!hasMatches) return;

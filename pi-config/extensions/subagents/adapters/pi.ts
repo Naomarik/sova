@@ -202,6 +202,27 @@ function outcomeOf(stopReason: unknown): WorkerTurnOutcome | undefined {
 	return undefined;
 }
 
+/**
+ * What one entry says about the size of the context: the tokens of an assistant reply that reports
+ * one (input + cacheRead + cacheWrite of that reply; an error or aborted reply, or a zero usage,
+ * says nothing), "compacted" for a compaction (the size before it no longer holds), else null.
+ * Sova's server applies the same rule to a whole session (server/transcript.ts contextForBranch);
+ * server/worker-context.test.ts pins the two together.
+ */
+export function piContextOf(entry: unknown): number | "compacted" | null {
+	const e = entry as Entry;
+	if (!e || typeof e !== "object") return null;
+	if (e.type === "compaction") return "compacted";
+	const m = e.type === "message" ? e.message : undefined;
+	if (!m || typeof m !== "object") return null;
+	if (m.role === "compactionSummary") return "compacted";
+	if (m.role !== "assistant" || m.stopReason === "error" || m.stopReason === "aborted") return null;
+	const u = m.usage;
+	if (!u || typeof u !== "object") return null;
+	const tokens = (Number(u.input) || 0) + (Number(u.cacheRead) || 0) + (Number(u.cacheWrite) || 0);
+	return tokens > 0 ? tokens : null;
+}
+
 /** Items of the worker's own part of the active branch. */
 export function piItems(branch: readonly Entry[]): WorkerTranscriptItem[] {
 	const out: WorkerTranscriptItem[] = [];
@@ -260,6 +281,10 @@ export function summarizePiEntries(entries: readonly unknown[], ref: WorkerTrans
 				if (text && mine.has(e)) summary.lastAssistantText = text;
 			}
 		}
+	}
+	for (const e of own) {
+		const context = piContextOf(e);
+		if (context !== null) summary.lastContextTokens = context === "compacted" ? null : context;
 	}
 	if (lastMessage && own.some((e) => e.message === lastMessage)) {
 		if (lastMessage.role === "assistant") {

@@ -1,8 +1,8 @@
 import { statSync } from "node:fs";
 import { type FileHandle, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { CURRENT_SESSION_FORMAT, type SessionSummary } from "../shared/protocol";
-import { type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
+import { CURRENT_SESSION_FORMAT, OVERSEER_ENTRY, type SessionSummary } from "../shared/protocol";
+import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import { stripImageNotes } from "../shared/image-note";
@@ -13,11 +13,13 @@ import { dropGroupAssignments, readAssignments } from "./session-groups";
 import { draftCounts, draftPreview, dropDrafts, readDrafts } from "./drafts";
 import { dropSessionTitles, readSessionTitles } from "./session-titles";
 import { removeSessionAttachments } from "./attachments";
-import { disposeHeldChat, getModelRuntime, isSessionBusy } from "./chat-manager";
+import { disposeHeldChat, getModelRuntime, isSessionBusy, pendingDialogCount } from "./chat-manager";
+import { isUnread, isViewing, readSeen } from "./seen";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
 import { messageContextTokens } from "./transcript";
 import { WorkerSessions } from "./worker-sessions";
+import { isOverseerId, overseerDir } from "./overseer-store";
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
 
@@ -41,6 +43,11 @@ interface CacheEntry {
   summary: BaseSummary;
   contextModel: string | null;
   outline: OutlineScan | null;
+  /** ms epoch of the file's last assistant reply (tail window), for the unread dot. */
+  lastReplyAt: number | null;
+  /** The file carries the Overseer marker. Whether it IS the Overseer's is decided per read
+      (`overseerOf`): the answer changes with overseer-state.json, not with the file. */
+  marked: boolean;
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -340,14 +347,71 @@ async function readTailContext(path: string, size: number): Promise<TailContext 
   }
 }
 
+/** When an entry happened, ms epoch: the message's own `timestamp` (ms), else the entry's ISO one. */
+function entryTime(e: any): number | null {
+  const m = e?.message?.timestamp;
+  if (typeof m === "number" && Number.isFinite(m)) return m;
+  const t = typeof e?.timestamp === "string" ? Date.parse(e.timestamp) : NaN;
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * When the file's LAST assistant reply was written (ms epoch), scanned backwards from EOF like
+ * readTailModel (16KB chunks, cap 256KB, torn lines skipped). Only a reply that finished — not a
+ * tool-use step mid-turn — counts, so "finished since you looked" means a turn ended. null when
+ * the window has none.
+ */
+async function readTailReplyAt(path: string, size: number): Promise<number | null> {
+  const fh = await open(path, "r");
+  try {
+    const floor = Math.max(0, size - MAX_TAIL);
+    let end = size;
+    let carry = Buffer.alloc(0);
+    while (end > floor) {
+      const start = Math.max(floor, end - CHUNK);
+      const chunk = Buffer.alloc(end - start);
+      const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
+      if (bytesRead < chunk.length) return null;
+      end = start;
+      const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
+      let stop = buf.length;
+      for (;;) {
+        const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
+        if (i < 0 && start > 0) break;
+        const line = buf.subarray(i + 1, stop);
+        if (line.includes('"assistant"')) {
+          try {
+            const e = JSON.parse(line.toString("utf-8"));
+            if (e?.type === "message" && e.message?.role === "assistant" && e.message.stopReason !== "toolUse") {
+              const t = entryTime(e);
+              if (t !== null) return t;
+            }
+          } catch {
+            // torn trailing line or not JSON: skip
+          }
+        }
+        if (i < 0) return null;
+        stop = i;
+      }
+      carry = buf.subarray(0, stop);
+    }
+    return null;
+  } finally {
+    await fh.close();
+  }
+}
+
 /**
  * Read only the head of a session file: header, first model_change, first user message.
  * Reads 16KB chunks and stops as soon as the first user message is seen (cap 256KB).
  * The model here is only the fallback for when readTailModel finds none near EOF.
  */
-async function readHead(path: string): Promise<{ header: any; title: string | null; model: string | null } | null> {
+async function readHead(path: string): Promise<{ header: any; title: string | null; model: string | null; overseer: boolean } | null> {
   const fh = await open(path, "r");
   try {
+    // The Overseer marker is written right after the header, before any user message, so the
+    // head read (which stops at the first user message) always sees it.
+    let overseer = false;
     let header: any = null;
     let title: string | null = null;
     let model: string | null = null;
@@ -376,15 +440,16 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
           continue;
         }
         if (e.type === "model_change" && !model && e.provider && e.modelId) model = `${e.provider}/${e.modelId}`;
+        if (e.type === "custom" && e.customType === OVERSEER_ENTRY) overseer = true;
         if (e.type === "message") {
           const msg = e.message ?? {};
           if (!model && msg.role === "assistant" && msg.provider && msg.model) model = `${msg.provider}/${msg.model}`;
           if (msg.role === "user" && title === null && !parseWakeNudge(userText(msg.content))) title = oneLine(userText(msg.content));
         }
-        if (title !== null && model) return { header, title, model };
+        if (title !== null && model) return { header, title, model, overseer };
       }
       // Stop at the first user message even without a model: model_change precedes it.
-      if (title !== null) return { header, title, model };
+      if (title !== null) return { header, title, model, overseer };
     }
     if (pending.trim() && title === null) {
       if (pos < MAX_HEAD) {
@@ -402,7 +467,7 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
         if (t !== null && !parseWakeNudge(t)) title = oneLine(t);
       }
     }
-    return header ? { header, title, model } : null;
+    return header ? { header, title, model, overseer } : null;
   } finally {
     await fh.close();
   }
@@ -465,11 +530,18 @@ export async function listSessionFiles(): Promise<string[]> {
  * will actually use, not the one that produced these tokens.
  */
 function withWindow(entry: CacheEntry, resolveWindow?: WindowResolver): BaseSummary {
-  const ctx = entry.summary.context;
-  if (!ctx || !resolveWindow) return entry.summary;
-  const ref = entry.contextModel ?? entry.summary.model;
+  const summary = overseerOf(entry);
+  const ctx = summary.context;
+  if (!ctx || !resolveWindow) return summary;
+  const ref = entry.contextModel ?? summary.model;
   const window = ref ? resolveWindow(ref) : null;
-  return window === ctx.window ? entry.summary : { ...entry.summary, context: { tokens: ctx.tokens, window } };
+  return window === ctx.window ? summary : { ...summary, context: { tokens: ctx.tokens, window } };
+}
+
+/** A marked file is the Overseer's only while overseer-state.json knows its id (current or
+    history); a marked file it doesn't know (a fork of one) is listed as an ordinary session. */
+function overseerOf(entry: CacheEntry): BaseSummary {
+  return entry.marked && isOverseerId(entry.summary.id) ? { ...entry.summary, overseer: true } : entry.summary;
 }
 
 async function summarize(path: string, resolveWindow?: WindowResolver): Promise<BaseSummary | null> {
@@ -489,6 +561,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     const scan = await readOutline(path, st.size, hit?.outline ?? null);
     const outline = scan?.found ?? null;
     const ctx = await readTailContext(path, st.size);
+    const lastReplyAt = await readTailReplyAt(path, st.size);
     const cwd = typeof h.cwd === "string" ? h.cwd : "";
     // An older session format is fanout-source metadata (legacyFormat ⇔ version ≠ current,
     // pre-versioning headers read as 1 — the same rule fanout's own head read applies), so the
@@ -513,7 +586,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
       ...(format !== CURRENT_SESSION_FORMAT ? { legacyFormat: true as const } : {}),
     };
-    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan };
+    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReplyAt, marked: head.overseer };
     cache.set(path, entry);
     return withWindow(entry, resolveWindow);
   } catch {
@@ -572,6 +645,36 @@ function withTitle(s: BaseSummary, titles: Record<string, string>): BaseSummary 
   return override && override !== s.title ? { ...s, title: override, originalTitle: s.title } : s;
 }
 
+/** ms epoch of a session's last assistant reply, from the cached tail read; undefined when unknown. */
+export function lastReplyAtOf(path: string): number | undefined {
+  return cache.get(path)?.lastReplyAt ?? undefined;
+}
+
+/**
+ * The attention overlay of one row: the live record's activity (a TUI's, else this server's own
+ * runtime's), the hosted chat's live-pending dialogs, and the seen store's stamp and unread dot.
+ * Never part of the cached summary: every input changes without the file changing.
+ */
+function attentionFields(
+  s: BaseSummary,
+  l: LiveRecord | undefined,
+  own: RawLiveRecord | undefined,
+  seen: Record<string, number>,
+): Pick<SessionSummary, "activity" | "pendingDialogs" | "seenAt" | "unread"> {
+  const a = l?.activity ?? activityOf(own?.rec);
+  const dialogs = pendingDialogCount(s.path);
+  const seenAt = seen[s.id];
+  const lastReplyAt = cache.get(s.path)?.lastReplyAt ?? undefined;
+  const running = isSessionBusy(s.path) || a?.state === "working";
+  const unread = isUnread({ seenAt, lastReplyAt, viewing: isViewing(s.id), running });
+  return {
+    ...(a ? { activity: { state: a.state, ...(a.since ? { since: a.since } : {}), ...(a.error ? { error: a.error } : {}) } } : {}),
+    ...(dialogs > 0 ? { pendingDialogs: dialogs } : {}),
+    ...(seenAt !== undefined ? { seenAt } : {}),
+    ...(unread ? { unread: true as const } : {}),
+  };
+}
+
 /** All sessions, newest activity first, with fresh live presence merged in. */
 export async function listSessions(): Promise<SessionSummary[]> {
   const files = await listSessionFiles();
@@ -581,6 +684,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const drafts = readDrafts();
   const titles = readSessionTitles();
   const groups = readAssignments();
+  const seen = readSeen();
   // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
   // session's file is gone" pane IS that assignment rendered (spec 14-workspaces "Gone from
   // disk"), and pruning here — on every listing pass — would race the pane's own Remove From
@@ -608,8 +712,9 @@ export async function listSessions(): Promise<SessionSummary[]> {
     if (s.title === "Untitled") {
       const st2 = await stat(s.path).catch(() => null);
       if (st2 && (await isZeroInput(s.path, st2.size))) {
-        if (!hasDraft) continue;
-        preview = draftPreview(draft.text, draft.attachments);
+        // A husk waiting on a dialog (a command run in a new session) is waiting on the user: listed.
+        if (!hasDraft && pendingDialogCount(s.path) === 0) continue;
+        if (hasDraft) preview = draftPreview(draft.text, draft.attachments);
       }
     }
     const l = live.get(s.path);
@@ -626,6 +731,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
       ...(workers.has(s.path) ? { workerSession: true as const } : {}),
       ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
       busy: isSessionBusy(s.path),
+      ...attentionFields(s, l, ownRec, seen),
       ...(preview !== undefined ? { draftPreview: preview } : {}),
       ...(hasDraft ? { hasDraft: true as const } : {}),
     });
@@ -667,6 +773,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...(worker ? { workerSession: true as const } : {}),
     ...(groupId !== undefined ? { groupId } : {}),
     busy: isSessionBusy(s.path),
+    ...attentionFields(s, l, ownRec, readSeen()),
   };
 }
 
@@ -812,6 +919,9 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     }
     const matches = req.mode === "age" ? st.mtimeMs < cutoff : req.mode === "husks" ? await isZeroInput(path, st.size) : true;
     if (!matches) continue;
+    // Overseer files (current and history) are never swept by age or as husks: a fresh Overseer
+    // is a husk by definition, and its history is pruned by /clear itself (paths mode).
+    if (req.mode !== "paths" && (await summarize(path))?.overseer) continue;
     if (live.has(path)) {
       skipped.live++;
       continue;
@@ -876,10 +986,16 @@ function isDir(p: string): boolean {
 
 /** Distinct existing cwds from the index, most recently used first. */
 export async function listCwds(): Promise<string[]> {
+  return recentCwds(await listSessions(), overseerDir());
+}
+
+/** listCwds over a given list, for the tests. The Overseer's own folder is its state, not a
+    project: its files, and anything that was ever started there, never offer it. */
+export function recentCwds(list: readonly Pick<SessionSummary, "cwd" | "overseer">[], overseerCwd: string, exists: (p: string) => boolean = isDir): string[] {
   const seen = new Set<string>();
-  for (const s of await listSessions()) {
-    if (!s.cwd || seen.has(s.cwd)) continue;
-    if (isDir(s.cwd)) seen.add(s.cwd);
+  for (const s of list) {
+    if (!s.cwd || seen.has(s.cwd) || s.overseer || s.cwd === overseerCwd) continue;
+    if (exists(s.cwd)) seen.add(s.cwd);
   }
   return [...seen];
 }

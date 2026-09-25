@@ -1,8 +1,11 @@
 // Run: npx tsx --test src/lib/workers.test.ts (or npm test)
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import {
   lifetimeIncludes,
+  ringContext,
+  transcriptContext,
+  workerContext,
   activeAgentCounts,
   activeTeamCount,
   capTitle,
@@ -288,4 +291,33 @@ test("lifetimeIncludes names only what applies: evicted, restored, both, or noth
   assert.equal(lifetimeIncludes({ workers: 3 }, listed), " (includes evicted)");
   assert.equal(lifetimeIncludes({ workers: 1, restored: 1 }, listed), " (includes restored)");
   assert.equal(lifetimeIncludes({ workers: 2, restored: 2 }, listed), " (includes evicted and restored)");
+});
+
+describe("worker context fill", () => {
+  test("a row's fill: tokens > 0 or compacted; the worker's window completes a fill without one", () => {
+    assert.deepEqual(workerContext({ context: { tokens: 64_000, window: 1_000_000 } }), { tokens: 64_000, window: 1_000_000 });
+    assert.deepEqual(workerContext({ context: { tokens: 64_000, window: null }, contextWindow: 200_000 }), { tokens: 64_000, window: 200_000 });
+    assert.equal(workerContext({ context: "compacted" }), "compacted");
+    assert.equal(workerContext({ context: { tokens: 0, window: 1_000_000 } }), null, "0 is never shown as a fill");
+    assert.equal(workerContext({}), null, "an older server: nothing");
+    assert.equal(workerContext(null), null);
+  });
+
+  test("a watch message: absent says nothing (keep), null is no reply yet, compacted is said", () => {
+    const worker = { contextWindow: 1_000_000 };
+    assert.equal(transcriptContext({ type: "append", items: [] }, worker), undefined);
+    assert.equal(transcriptContext({ type: "append", items: [], context: null }, worker), null);
+    assert.equal(transcriptContext({ type: "append", items: [], context: "compacted" }, worker), "compacted");
+    assert.deepEqual(transcriptContext({ type: "snapshot", items: [], context: { tokens: 5, window: null } }, worker), { tokens: 5, window: 1_000_000 },
+      "a Claude Code stream names no window: the worker's");
+    assert.deepEqual(transcriptContext({ type: "snapshot", items: [], context: { tokens: 5, window: 128_000 } }, worker), { tokens: 5, window: 128_000 },
+      "a pi reply's own model wins");
+  });
+
+  test("the row ring: only a fill with a window — never compacted, never without a denominator", () => {
+    assert.deepEqual(ringContext({ tokens: 1, window: 10 }), { tokens: 1, window: 10 });
+    assert.equal(ringContext({ tokens: 1, window: null }), null);
+    assert.equal(ringContext("compacted"), null);
+    assert.equal(ringContext(null), null);
+  });
 });

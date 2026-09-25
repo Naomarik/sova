@@ -1,7 +1,19 @@
-import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { ChatServerMessage, ContextInfo, SandboxInfo, SessionSummary, SlashCommand, TeamInfo, TranscriptItem, WorkerInfo } from "../../shared/protocol";
+import type {
+  ChatServerMessage,
+  ContextInfo,
+  OverseerQuickAction,
+  SandboxInfo,
+  SessionSummary,
+  SlashCommand,
+  TeamInfo,
+  TranscriptItem,
+  WorkerInfo,
+} from "../../shared/protocol";
+import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
+import { OverseerThreadContext, QuickActions } from "./OverseerCards";
 import { createFork, fetchTranscriptWithContext, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
 import {
@@ -94,6 +106,18 @@ import { UiDialog } from "./UiDialog";
 
 export type ChatRefusal = "busy" | "recent";
 
+/** What makes a chat the Overseer's: its extras, all absent from every other chat. */
+export interface OverseerChat {
+  /** The quick actions the floating button offers (Settings → Overseer). */
+  quickActions(): OverseerQuickAction[];
+  /** "/clear": a new conversation; resolves false when nothing was cleared. */
+  onClear(): Promise<boolean>;
+  /** The runtime under this socket was replaced (a clear from another tab): re-resolve the route. */
+  onReloaded(): void;
+  /** The empty thread's words: a live fact, then the absence. */
+  empty(): JSX.Element;
+}
+
 /** ui_request kinds UiDialog can show; anything else needs the terminal UI. */
 const UI_DIALOG_METHODS = ["select", "confirm", "input", "editor"];
 
@@ -166,6 +190,8 @@ export function ChatView(props: {
       never says "errored" about a pane that is visibly working. Without it a failed member looks
       exactly like a quiet one. */
   onTurnError?(message: string | null): void;
+  /** Set only for the Overseer's own chat. */
+  overseer?: OverseerChat;
 }) {
   // One status region for the whole page: inside a workspace every sentence from this chat says
   // which pane it came from, and every DOM id below carries the pane's id.
@@ -180,6 +206,8 @@ export function ChatView(props: {
   const turnWord = (member: string, alone: string) => (scope.id ? member : alone);
 
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
+  /** Whether the running turn is this tab's: only then does a navigate result move this tab. */
+  const owner = createTurnOwner((id) => sentHere(props.path, id));
   const [live, setLive] = createStore<LiveState>(emptyLive());
   const [syncing, setSyncing] = createSignal(false);
   const [errors, setErrors] = createSignal<string[]>([]);
@@ -319,6 +347,7 @@ export function ChatView(props: {
     const events = queue;
     queue = [];
     let settled = false;
+    let navigate: string | null = null;
     batch(() => {
       for (const ev of events) {
         if (isObj(ev) && ev.type === "agent_start") {
@@ -336,10 +365,23 @@ export function ChatView(props: {
           setCompacting(false);
           setSessionContext(props.path, "compacted");
         }
+        // The Overseer's navigate: applied only in the tab whose message started this turn — never
+        // another tab's, never a proactive brief's (no tab sent it), never a replay.
+        if (props.overseer && isObj(ev) && ev.type === "tool_execution_end" && ev.toolName === "sova_navigate" && ev.isError !== true && owner.mine()) {
+          const nav = navigateDetails(isObj(ev.result) ? ev.result.details : undefined);
+          if (nav) navigate = nav.href;
+        }
         applyEvent(setLive, ev);
-        if (isObj(ev) && ev.type === "agent_settled") settled = true;
+        if (isObj(ev) && ev.type === "agent_settled") {
+          settled = true;
+          owner.settled();
+        }
       }
     });
+    if (navigate) {
+      const href = navigate;
+      queueMicrotask(() => goTo(href));
+    }
     if (settled) {
       // "replied." only for a turn that didn't already say how it ended: the error announcement
       // is the ending (see `turnError` above — an errored turn still settles).
@@ -390,6 +432,7 @@ export function ChatView(props: {
           frame = 0;
           queue = [];
           statusAsker.hello();
+          owner.reset();
           batch(() => {
             setItems(msg.items);
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming }));
@@ -444,6 +487,7 @@ export function ChatView(props: {
         // The server has our message: it is queued, not merely sent. Until this lands, the row says
         // "Sending…" and offers no Remove — nothing is known to hold it.
         case "send_ack":
+          owner.ack(msg.clientId, msg.queued);
           if (msg.queued) markQueued(setLive, msg.clientId);
           break;
         case "queue":
@@ -470,6 +514,7 @@ export function ChatView(props: {
           const text = msg.text || queuedText(live, msg.itemId);
           // One departure, one restore: a duplicate of this message (a reconnect, a re-send) must
           // not paste the same text into the draft twice.
+          owner.gone(msg.itemId, msg.reason);
           const first = !claimed.has(msg.itemId);
           claimed.add(msg.itemId);
           if (effect.row === "delivered") markDelivered(setLive, msg.itemId);
@@ -577,6 +622,10 @@ export function ChatView(props: {
           else if (req.method === "setStatus" && req.statusKey === REMOTE_STATUS_KEY) reportRemoteStatus(props.path, req.statusText);
           break;
         }
+        // Someone else answered that dialog (another tab, or the Overseer): it is no longer ours to ask.
+        case "ui_resolved":
+          setDialogs((d) => d.filter((x) => x.id !== msg.id));
+          break;
         case "error":
           if (pendingModel()) modelFailed(msg.message, msg.code);
           if (pendingThinking()) thinkingFailed(msg.message);
@@ -588,6 +637,13 @@ export function ChatView(props: {
               props.onRefused(msg.code, msg.message);
               return;
             case "reloaded":
+              // The Overseer's runtime can be replaced by a clear in another tab: its route may now
+              // name a new file, and reconnecting here would reopen the old one.
+              if (props.overseer) {
+                socket.close();
+                props.overseer.onReloaded();
+                return;
+              }
               socket.reconnect();
               return;
             // Permanent (the session's cwd is gone): one banner, no retry loop. The socket layer
@@ -1245,7 +1301,7 @@ export function ChatView(props: {
       >
         <Show when={items()} fallback={<TranscriptSkeleton />}>
           {(list) => (
-            <>
+            <OverseerThreadContext.Provider value={props.overseer ? { answer: (text) => send(text, false, []) } : null}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -1290,17 +1346,31 @@ export function ChatView(props: {
                   </div>
                 )}
               </For>
-              {/* Only while the thread has zero rows, local rows included. */}
-              <Show when={list().length === 0 && live.entries.length === 0 && commandRows().length === 0 && modelRows().length === 0}>
-                <div class="empty">
-                  <p class="empty-title">
-                    New session in <code>{props.cwdLabel}</code>.
-                  </p>
-                  <SessionSetupCard path={props.path} />
-                  <p class="empty-body">Your first message becomes its title.</p>
-                </div>
+              {/* Only while the thread has zero rows, local rows included. The Overseer's also while
+                  it holds only machine notes (its model and thinking rows): nothing has been said yet. */}
+              <Show
+                when={
+                  (props.overseer ? list().every((it) => it.kind === "info") : list().length === 0 && modelRows().length === 0) &&
+                  live.entries.length === 0 &&
+                  commandRows().length === 0
+                }
+              >
+                <Show
+                  when={props.overseer}
+                  fallback={
+                    <div class="empty">
+                      <p class="empty-title">
+                        New session in <code>{props.cwdLabel}</code>.
+                      </p>
+                      <SessionSetupCard path={props.path} />
+                      <p class="empty-body">Your first message becomes its title.</p>
+                    </div>
+                  }
+                >
+                  {(o) => o().empty()}
+                </Show>
               </Show>
-            </>
+            </OverseerThreadContext.Provider>
           )}
         </Show>
         <For each={errors()}>{(m) => <TurnError message={m} />}</For>
@@ -1321,7 +1391,21 @@ export function ChatView(props: {
         workersOpen={props.workersOpen}
         inputsOpen={props.inputsOpen}
         paneTab={props.paneTab}
-        onNewSession={props.onNewSession}
+        onNewSession={props.overseer ? undefined : props.onNewSession}
+        onClear={props.overseer?.onClear}
+        accessory={
+          props.overseer
+            ? () => (
+                <QuickActions
+                  actions={props.overseer!.quickActions()}
+                  disabled={blocked()?.text ?? null}
+                  onPick={(prompt) => {
+                    if (send(prompt, false, [])) focusComposer();
+                  }}
+                />
+              )
+            : undefined
+        }
         onShowTimeline={props.onShowTimeline}
         inputCount={inputCount(items() ?? [])}
         autofocus={props.autofocus}

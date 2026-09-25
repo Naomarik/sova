@@ -4,6 +4,7 @@ import {
   type AgentSession,
   type AgentSessionRuntime,
   type CreateAgentSessionRuntimeFactory,
+  type CreateAgentSessionServicesOptions,
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
@@ -14,8 +15,10 @@ import {
   initTheme,
   SessionManager,
   type Theme,
+  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, ModeInfo, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, WorkerInfo } from "../shared/protocol";
+import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, WorkerInfo } from "../shared/protocol";
 import { stripImageNotes } from "../shared/image-note";
 import { parseWakeNudge } from "../shared/wake";
 import { type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
@@ -24,15 +27,19 @@ import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
-import { toContextInfo } from "./models";
+import { toContextInfo, workerWindowResolver } from "./models";
+import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
+import { isOverseerId } from "./overseer-store";
 import { targetOfCwd } from "./targets";
 import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 
 const GUARD_POLL_MS = 3000;
+/** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
+const workerContextReader = new WorkerContextReader();
 
 /** The experimental Settings switch, as the claude-code extension registers it
     (pi-config/extensions/claude-code/provider/index.ts CLAUDE_PROVIDER_FLAG). */
@@ -68,8 +75,18 @@ function sessionFlags(cwd: string, outline = true): Map<string, boolean | string
  * model still worked). That is what makes the experimental switch safe to leave on with an older
  * pi-config: the provider is simply absent, and the diagnostic below says why.
  */
-async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, outline = true) {
-  return await createAgentSessionServices({ cwd, modelRuntime, extensionFlagValues: sessionFlags(cwd, outline) });
+async function servicesForCwd(
+  cwd: string,
+  modelRuntime: ModelRuntime,
+  outline = true,
+  resourceLoaderOptions?: CreateAgentSessionServicesOptions["resourceLoaderOptions"],
+) {
+  return await createAgentSessionServices({
+    cwd,
+    modelRuntime,
+    extensionFlagValues: sessionFlags(cwd, outline),
+    ...(resourceLoaderOptions ? { resourceLoaderOptions } : {}),
+  });
 }
 
 /**
@@ -338,6 +355,49 @@ export function isFanoutMember(sm: Pick<SessionManager, "getEntries">): boolean 
   return sm.getEntries().some((e) => e.type === "custom" && e.customType === FANOUT_MEMBER_ENTRY);
 }
 
+/** Whether a session file is an Overseer file: it carries the marker its creation wrote
+ *  (server/overseer.ts) AND overseer-state.json knows it (the current conversation or one in its
+ *  history). A fork of an Overseer file inherits the marker but is known to neither, so it opens
+ *  as an ordinary session, as SessionSummary.overseer lists it. */
+export function isOverseerFile(sm: Pick<SessionManager, "getEntries" | "getSessionId">): boolean {
+  return isOverseerId(sm.getSessionId()) && sm.getEntries().some((e) => e.type === "custom" && e.customType === OVERSEER_ENTRY);
+}
+
+/**
+ * What an Overseer runtime gets instead of the ordinary loadout (server/overseer.ts registers it,
+ * so this module never imports the Overseer and the dependency points one way). `loadout` throws a
+ * BusyError for an Overseer file that is not the current one: previous conversations are read-only.
+ */
+export interface OverseerRuntime {
+  loadout(path: string): Promise<{
+    resourceLoaderOptions: NonNullable<CreateAgentSessionServicesOptions["resourceLoaderOptions"]>;
+    /** The tool allowlist: built-in, extension and inline tools alike. */
+    tools: string[];
+    /** SDK custom tools: they replace a built-in or an extension's tool of the same name (the
+        Overseer's secret-guarded read/grep/find/ls). */
+    customTools?: ToolDefinition[];
+    /** From overseer.json, never defaults.json. */
+    model: string | null;
+    thinking: string | null;
+  }>;
+  /** The composer changed the Overseer's model or thinking: write it back to overseer.json. */
+  saveChoice(patch: { model?: string; thinking?: string }): void;
+  /** Called with every AgentSession the Overseer's runtime builds, so `userSend` can recognise the
+      message it produced when that message reaches the Agent, and every run is decided from the
+      session's own event stream. */
+  watchSession(session: AgentSession): void;
+  /** Runs the SDK call that hands the Overseer a message the user sent from the UI (a prompt, a
+      steer, a regenerate; `origin` "client"). The turn the resulting message opens is the user's,
+      whatever an extension's `input` handler or a template made of its text: full tools, and the
+      per-turn caps start over. Server-started runs (a brief, a wake-up) never go through it. */
+  userSend<T>(send: () => T): T;
+}
+
+let overseerRuntime: OverseerRuntime | null = null;
+export function setOverseerRuntime(r: OverseerRuntime): void {
+  overseerRuntime = r;
+}
+
 export type RewindOutcome = { ok: true; editorText: string } | { ok: false; reason: RewindRefusal; message: string };
 
 /** The members of AgentSession a rewind uses (narrow so tests can drive it with a fake). */
@@ -511,6 +571,19 @@ function modelLabel(session: AgentSession): string | null {
 
 interface PendingUi {
   resolve: (value: unknown) => void;
+  /** The ui_request as broadcast (method, title, options…), for the Overseer's view of it. */
+  request: Record<string, unknown>;
+  since: number;
+}
+
+/** One live-pending extension dialog of a hosted chat, as the Overseer sees it. */
+export interface PendingDialog {
+  id: string;
+  method: "select" | "confirm" | "input" | "editor";
+  title: string;
+  message?: string;
+  options?: string[];
+  since: number;
 }
 
 /** SDK events after which Sova's queue re-reads the SDK's own queue lengths. `agent_settled` and
@@ -533,6 +606,10 @@ class ChatSession {
   /** Open-time SDK bookkeeping appends, written right before the first prompt/steer. */
   deferredAppends: Array<() => void> = [];
   disposed = false;
+  /** This runtime is the Overseer's (set by openSession from the file's marker). */
+  overseer = false;
+  /** Texts the Overseer sent here whose user entry still needs its `sova-overseer-sent` marker. */
+  private overseerSends: Array<{ text: string; overseerId?: string }> = [];
   /** How the last switch of THIS chat applies (ModeApplies); set at bind and by applyMode. */
   modeApplies: ModeApplies = "now";
   /**
@@ -662,11 +739,12 @@ class ChatSession {
     this.assertModelAllowed();
     this.flushDeferredAppends();
     const images = item.images as Parameters<AgentSession["steer"]>[1];
+    const toSdk = <T>(send: () => T) => this.toSdk(item.origin, send);
     if (!streaming) {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
       // turn nobody is awaiting, and must not be reported as a hand-off failure (which would hand
       // the text back to the composer for a message that HAS been sent).
-      this.session.prompt(item.text, { images }).catch((err) => {
+      toSdk(() => this.session.prompt(item.text, { images })).catch((err) => {
         this.reportTurnFailure(err);
         // A turn that never started emits no event, so nothing would wake the queue and every
         // item behind this one would sit there for ever. Wake it explicitly.
@@ -677,10 +755,16 @@ class ChatSession {
     // steer() throws on extension commands; prompt() runs them immediately (even mid-stream) and
     // otherwise queues with the same skill/template expansion. Same split as the direct path.
     if (item.kind === "steer" && !item.text.startsWith("/")) {
-      await this.session.steer(item.text, images);
+      await toSdk(() => this.session.steer(item.text, images));
       return;
     }
-    await this.session.prompt(item.text, { images, streamingBehavior: item.kind });
+    await toSdk(() => this.session.prompt(item.text, { images, streamingBehavior: item.kind }));
+  }
+
+  /** Hand a message to the SDK. In the Overseer, one the user sent from the UI (`origin` "client")
+      goes through its `userSend`, so the turn it opens is known as theirs by identity, not text. */
+  private toSdk<T>(origin: QueueItem["origin"], send: () => T): T {
+    return this.overseer && origin === "client" && overseerRuntime ? overseerRuntime.userSend(send) : send();
   }
 
   /**
@@ -837,6 +921,18 @@ class ChatSession {
         const items = normalizeEntry((event as { entry: Record<string, any> }).entry);
         if (items.length) this.broadcast({ type: "append", items });
         onSandboxAppend(this.sandboxHost, (event as { entry: unknown }).entry);
+      }
+      if (event.type === "message_end" && this.overseerSends.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
+        this.markOverseerSend((event as { message: { content?: unknown } }).message);
+      }
+      if (event.type === "agent_settled" && this.overseerSends.length) {
+        // A mark that never found its message this run (the prompt was swallowed or failed early)
+        // is stale. Deferred, so a mark for a prompt made while this event is being emitted (it
+        // runs in this same settle window) is not dropped before its message ends.
+        const stale = [...this.overseerSends];
+        setTimeout(() => {
+          if (!this.session.isStreaming) this.overseerSends = this.overseerSends.filter((s) => !stale.includes(s));
+        }, 0);
       }
       if (event.type === "agent_settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
@@ -1088,7 +1184,7 @@ class ChatSession {
         be sent verbatim. Without it the SDK would expand skills and templates a SECOND time, and a
         stored message that merely begins with "/" would be DISPATCHED as an extension command
         instead of replayed — a regenerate that runs a command rather than redoing the turn. */
-    opts?: { replay?: boolean },
+    opts?: { replay?: boolean; sentByOverseer?: { overseerId?: string } },
   ): { queued: boolean; turn: Promise<void> } {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
     assertNotLive(this.path);
@@ -1103,7 +1199,18 @@ class ChatSession {
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
-    return { queued: false, turn: this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }) };
+    // Marked only when it starts a turn now (the Overseer prompts idle sessions only). A pending
+    // mark is dropped if the turn fails, and any left when the run settles are dropped too
+    // (bind's agent_settled), so a later identical message the user types is never tagged.
+    const send = opts?.sentByOverseer ? { text, overseerId: opts.sentByOverseer.overseerId } : null;
+    if (send) this.overseerSends.push(send);
+    const turn = this.toSdk(origin, () => this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }));
+    if (send)
+      turn.catch(() => {
+        const i = this.overseerSends.indexOf(send);
+        if (i >= 0) this.overseerSends.splice(i, 1);
+      });
+    return { queued: false, turn };
   }
 
   /** Accept a prompt AND wait for the turn. The /ws/chat path, where the socket reports the
@@ -1113,6 +1220,146 @@ class ChatSession {
     const { queued, turn } = this.acceptPrompt(text, images, origin, clientId);
     await turn;
     return queued;
+  }
+
+  /**
+   * The user message the Overseer sent has just ended: write its invisible `sova-overseer-sent`
+   * marker pointing at that entry (the `sova-rewind` pattern — never LLM context, the TUI ignores
+   * it). Listeners run BEFORE the SDK persists the message (agent-session.js `_handleAgentEvent`:
+   * `_emit`, then `appendMessage`, in the same synchronous stretch), so the write waits one
+   * microtask, by which time the entry exists and is the leaf. The marker is parented on it, and
+   * the reply is then parented on the marker: rewind (to the user entry's parent) and regenerate
+   * (walking back past custom entries to the user entry) behave exactly as on any user turn.
+   */
+  private markOverseerSend(message: { content?: unknown }): void {
+    const text = typeof message.content === "string" ? message.content : textBlocks(message.content);
+    const i = this.overseerSends.findIndex((s) => s.text === text);
+    if (i < 0) return;
+    const [send] = this.overseerSends.splice(i, 1);
+    queueMicrotask(() => {
+      if (this.disposed || this.foreignWrite) return;
+      const sm = this.session.sessionManager;
+      const leaf = sm.getLeafId();
+      const entry = leaf ? sm.getEntry(leaf) : undefined;
+      if (entry?.type !== "message" || entry.message.role !== "user") return;
+      const data: OverseerSentMarkerData = { v: 1, targetId: entry.id, ...(send?.overseerId ? { overseerId: send.overseerId } : {}) };
+      const markerId = sm.appendCustomEntry(OVERSEER_SENT_ENTRY, data);
+      markOwned(this.path);
+      const marker = sm.getEntry(markerId);
+      if (marker) {
+        const items = normalizeEntry(marker as unknown as Record<string, any>);
+        if (items.length) this.broadcast({ type: "append", items });
+      }
+    });
+  }
+
+  /** The extension dialogs waiting on an answer right now (live-pending: a browser is attached). */
+  pendingDialogs(): PendingDialog[] {
+    const out: PendingDialog[] = [];
+    for (const [id, p] of this.pendingUi) {
+      const r = p.request;
+      const method = r.method;
+      if (method !== "select" && method !== "confirm" && method !== "input" && method !== "editor") continue;
+      out.push({
+        id,
+        method,
+        title: typeof r.title === "string" ? r.title : "",
+        ...(typeof r.message === "string" ? { message: r.message } : {}),
+        ...(Array.isArray(r.options) ? { options: r.options.filter((o): o is string => typeof o === "string") } : {}),
+        since: p.since,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * The Overseer answers one pending dialog. Same write guards as a prompt (the answer marker is a
+   * write); the answer is resolved exactly as a browser's `ui_response` would be, every tab drops
+   * its copy of the dialog, and an invisible `sova-overseer-dialog-answer` entry records it as the
+   * machine row "Overseer chose: X".
+   */
+  answerDialog(id: string, value: unknown, answer: string, overseerId?: string): void {
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    const pending = this.pendingUi.get(id);
+    if (!pending) throw new Error("That dialog is no longer waiting for an answer.");
+    const title = typeof pending.request.title === "string" ? pending.request.title : "";
+    this.pendingUi.delete(id);
+    pending.resolve(value); // every tab drops the dialog (ui_resolved, from the dialog's own settle)
+    this.flushDeferredAppends();
+    const data: OverseerDialogAnswerData = { v: 1, title, answer, ...(overseerId ? { overseerId } : {}) };
+    const markerId = this.session.sessionManager.appendCustomEntry(OVERSEER_DIALOG_ANSWER_ENTRY, data);
+    markOwned(this.path);
+    const marker = this.session.sessionManager.getEntry(markerId);
+    if (marker) {
+      const items = normalizeEntry(marker as unknown as Record<string, any>);
+      if (items.length) this.broadcast({ type: "append", items });
+    }
+  }
+
+  /**
+   * Switch model, the one path for the composer's `set_model`, the Overseer's `sova_set_session`
+   * and Settings → Overseer. Resolves against models with configured auth (= GET /api/models)
+   * BEFORE writing anything, so a rejected switch leaves the file untouched.
+   */
+  async setModelRef(ref: string, opts: { save?: boolean } = {}): Promise<void> {
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (this.session.isStreaming) throw new Error("Cannot switch models while the agent is running; wait or abort first");
+    const available = await this.runtime.services.modelRuntime.getAvailable();
+    // The user's own policy first: a model turned off in Settings → Models is refused
+    // whether or not it has credentials, and nothing is written (server/model-policy.ts).
+    const denial = modelDenial(readModelPolicy(), ref);
+    if (denial) throw new Error(denial);
+    const model = available.find((m) => `${m.provider}/${m.id}` === ref);
+    if (!model) {
+      const known = this.runtime.services.modelRuntime.getModel(ref.split("/")[0] ?? "", ref.slice(ref.indexOf("/") + 1));
+      throw new Error(known ? `No credentials configured for ${ref}` : `Unknown model: ${ref || "(empty ref)"}`);
+    }
+    // Re-check after the async lookup: a TUI/foreign writer may have appeared meanwhile.
+    // BusyError propagates to `fail`, which maps it to its busy/recent code.
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (this.session.isStreaming) throw new Error("Cannot switch models while the agent is running; wait or abort first");
+    this.flushDeferredAppends(); // keep open-time entries before this model_change
+    await this.session.setModel(model);
+    this.broadcast({ type: "model", model: modelLabel(this.session) ?? ref });
+    // setModel re-clamps the level to the new model's ladder; the pane needs that too.
+    this.broadcast({ type: "thinking", level: this.session.thinkingLevel });
+    // The Overseer's choice belongs to overseer.json and never becomes every new session's default;
+    // otherwise a session with no messages yet saves its model as the next new session's default.
+    if (opts.save === false) return;
+    // The level too: setModel re-clamped it, and the next conversation is seeded from the file.
+    if (this.overseer) overseerRuntime?.saveChoice({ model: ref, thinking: this.session.thinkingLevel });
+    else if (this.isPristine()) saveDefaults({ model: ref });
+  }
+
+  /** Change thinking level: the `set_thinking` path, shared like setModelRef. Returns the effective level. */
+  setThinking(level: string, opts: { save?: boolean } = {}): string {
+    // setThinkingLevel appends a thinking_level_change entry: same write guards as set_model.
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (this.session.isStreaming) throw new Error("Cannot change thinking while the agent is running; wait or abort first");
+    if (!(THINKING_LEVELS as readonly string[]).includes(level)) throw new Error(`Unknown thinking level: ${level || "(empty)"}`);
+    this.flushDeferredAppends(); // keep open-time entries before this thinking_level_change
+    // The SDK clamps to what the model supports, so the echo is the effective level.
+    const before = this.session.thinkingLevel;
+    this.session.setThinkingLevel(level as Parameters<AgentSession["setThinkingLevel"]>[0]);
+    const after = this.session.thinkingLevel;
+    this.broadcast({ type: "thinking", level: after });
+    // The SDK's appendThinkingLevelChange emits no entry_appended (only the extension
+    // appendEntry API does), so the "Thinking: X" row is synthesized here; the next
+    // hello/resync replaces it with the real entry.
+    if (after !== before)
+      this.broadcast({
+        type: "append",
+        items: [{ id: `thinking-${Date.now()}`, kind: "info", raw: { type: "thinking_level_change", thinkingLevel: after }, text: `Thinking: ${after}` }],
+      });
+    if (opts.save === false) return after;
+    if (this.overseer) overseerRuntime?.saveChoice({ thinking: after });
+    // A session with no messages yet: this level is also the next new session's default.
+    else if (this.isPristine()) saveDefaults({ thinking: after });
+    return after;
   }
 
   /** Report a failure into this session's own pane(s) — where every other turn failure already
@@ -1142,7 +1389,9 @@ class ChatSession {
           // this case needs (TUI ownership, foreign writers, blank text, deferred appends, the
           // streaming follow-up choice) lives in `acceptPrompt`, which `prompt()` awaits.
           this.assertModelAllowed();
-          const { queued, turn } = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId);
+          const images = parseImages(msg.images);
+          const text = String(msg.text ?? "");
+          const { queued, turn } = this.acceptPrompt(text, images, "client", clientId);
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.
           if (clientId) client.send({ type: "send_ack", clientId, queued });
@@ -1166,7 +1415,7 @@ class ChatSession {
           }
           this.flushDeferredAppends();
           if (clientId) client.send({ type: "send_ack", clientId, queued: false });
-          this.session.prompt(text, { images }).catch(fail);
+          this.toSdk("client", () => this.session.prompt(text, { images })).catch(fail);
           return;
         }
         case "abort":
@@ -1192,68 +1441,12 @@ class ChatSession {
         case "regenerate":
           this.regenerate(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
           return;
-        case "set_thinking": {
-          // setThinkingLevel appends a thinking_level_change entry: same write guards as set_model.
-          assertNotLive(this.path);
-          this.assertNoForeignWrites();
-          if (this.session.isStreaming) throw new Error("Cannot change thinking while the agent is running; wait or abort first");
-          const level = String(msg.level ?? "");
-          if (!(THINKING_LEVELS as readonly string[]).includes(level))
-            throw new Error(`Unknown thinking level: ${level || "(empty)"}`);
-          this.flushDeferredAppends(); // keep open-time entries before this thinking_level_change
-          // The SDK clamps to what the model supports, so the echo is the effective level.
-          const before = this.session.thinkingLevel;
-          this.session.setThinkingLevel(level as Parameters<AgentSession["setThinkingLevel"]>[0]);
-          const after = this.session.thinkingLevel;
-          this.broadcast({ type: "thinking", level: after });
-          // The SDK's appendThinkingLevelChange emits no entry_appended (only the extension
-          // appendEntry API does), so the "Thinking: X" row is synthesized here; the next
-          // hello/resync replaces it with the real entry.
-          if (after !== before)
-            this.broadcast({
-              type: "append",
-              items: [{ id: `thinking-${Date.now()}`, kind: "info", raw: { type: "thinking_level_change", thinkingLevel: after }, text: `Thinking: ${after}` }],
-            });
-          // A session with no messages yet: this level is also the next new session's default.
-          if (this.isPristine()) saveDefaults({ thinking: after });
+        case "set_thinking":
+          this.setThinking(String(msg.level ?? ""));
           return;
-        }
-        case "set_model": {
-          // setModel appends a model_change entry: same write guards as prompt.
-          assertNotLive(this.path);
-          this.assertNoForeignWrites();
-          if (this.session.isStreaming) throw new Error("Cannot switch models while the agent is running; wait or abort first");
-          const ref = String(msg.ref ?? "");
-          // Resolve against models with configured auth (= GET /api/models) BEFORE writing anything,
-          // so a rejected switch leaves the file untouched.
-          this.runtime.services.modelRuntime
-            .getAvailable()
-            .then(async (available) => {
-              // The user's own policy first: a model turned off in Settings → Models is refused
-              // whether or not it has credentials, and nothing is written (server/model-policy.ts).
-              const denial = modelDenial(readModelPolicy(), ref);
-              if (denial) throw new Error(denial);
-              const model = available.find((m) => `${m.provider}/${m.id}` === ref);
-              if (!model) {
-                const known = this.runtime.services.modelRuntime.getModel(ref.split("/")[0] ?? "", ref.slice(ref.indexOf("/") + 1));
-                throw new Error(known ? `No credentials configured for ${ref}` : `Unknown model: ${ref || "(empty ref)"}`);
-              }
-              // Re-check after the async lookup: a TUI/foreign writer may have appeared meanwhile.
-              // BusyError propagates to `fail`, which maps it to its busy/recent code.
-              assertNotLive(this.path);
-              this.assertNoForeignWrites();
-              if (this.session.isStreaming) throw new Error("Cannot switch models while the agent is running; wait or abort first");
-              this.flushDeferredAppends(); // keep open-time entries before this model_change
-              await this.session.setModel(model);
-              this.broadcast({ type: "model", model: modelLabel(this.session) ?? ref });
-              // setModel re-clamps the level to the new model's ladder; the pane needs that too.
-              this.broadcast({ type: "thinking", level: this.session.thinkingLevel });
-              // A session with no messages yet: this model is also the next new session's default.
-              if (this.isPristine()) saveDefaults({ model: ref });
-            })
-            .catch(fail);
+        case "set_model":
+          this.setModelRef(String(msg.ref ?? "")).catch(fail);
           return;
-        }
         case "rewind":
           this.rewind(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
           return;
@@ -1261,7 +1454,7 @@ class ChatSession {
           const pending = this.pendingUi.get(msg.id);
           if (pending) {
             this.pendingUi.delete(msg.id);
-            pending.resolve(msg.value);
+            pending.resolve(msg.value); // every other tab drops it (ui_resolved, from the dialog's own settle)
           }
           return;
         }
@@ -1371,8 +1564,20 @@ class ChatSession {
     const counts = rec ? workerCountsOf(rec.rec) : undefined;
     if (!rec || !counts) return null;
     const usageTotal = decodeUsageTotal(rec.rec?.presence);
+    // Each worker's context fill, off its own transcript's tail (the record carries spend only);
+    // claude-code windows follow the spawn model this session's manifests recorded.
+    const workers = withWorkerContext(decodeWorkers(rec.rec?.presence, true), workerContextReader,
+      workerWindowResolver(this.runtime.services.modelRuntime), (id) => this.claudeSpawnModel(id));
     return { type: "workers", working: counts.working, total: counts.total,
-      workers: decodeWorkers(rec.rec?.presence, true), ...(usageTotal ? { usageTotal } : {}) };
+      workers, ...(usageTotal ? { usageTotal } : {}) };
+  }
+
+  /** A claude-code worker's spawn model from this session's manifests, folded once per entry count. */
+  private spawnModels: { count: number; of: (id: string) => string | undefined } | null = null;
+  private claudeSpawnModel(id: string): string | undefined {
+    const entries = this.session.sessionManager.getEntries();
+    if (this.spawnModels?.count !== entries.length) this.spawnModels = { count: entries.length, of: claudeSpawnModels(entries) };
+    return this.spawnModels.of(id);
   }
 
   /** Broadcast the worker snapshot when it changed since the last send; a record that
@@ -1433,12 +1638,17 @@ class ChatSession {
           if (timer) clearTimeout(timer);
           opts?.signal?.removeEventListener("abort", onAbort);
           this.pendingUi.delete(id);
+          // However it settled — answered here or in another tab, by the Overseer, timed out,
+          // aborted — every client drops its copy of the dialog.
+          this.broadcast({ type: "ui_resolved", id });
           resolve(value);
         };
         const onAbort = () => done(fallback);
         opts?.signal?.addEventListener("abort", onAbort, { once: true });
         if (opts?.timeout) timer = setTimeout(() => done(fallback), opts.timeout);
         this.pendingUi.set(id, {
+          request,
+          since: Date.now(),
           resolve: (v) => {
             // Accept bare values or pi rpc-style {value}|{confirmed}|{cancelled:true}.
             if (v && typeof v === "object") {
@@ -1508,6 +1718,12 @@ export async function disposeHeldChat(path: string, message: string): Promise<bo
   return true;
 }
 
+/** SessionSummary.pendingDialogs: live-pending extension dialogs of a chat this server holds. */
+export function pendingDialogCount(path: string): number {
+  const chat = held.get(path);
+  return chat && !chat.disposed ? chat.pendingDialogs().length : 0;
+}
+
 /** SessionSummary.busy: this server holds the runtime and an agent run is in progress. */
 export function isSessionBusy(path: string): boolean {
   const chat = held.get(path);
@@ -1566,6 +1782,24 @@ export function restatesRecordedModel(context: BranchContext, provider: string, 
   return context.model.provider === provider && context.model.modelId === modelId;
 }
 
+async function overseerLoadout(path: string) {
+  if (!overseerRuntime) throw new Error("The Overseer is not available on this server.");
+  return overseerRuntime.loadout(path);
+}
+
+/** Bring an opened Overseer runtime to overseer.json's model and thinking, without the composer's
+    write-back (the setting is already what it says). Stale or unauthenticated choices are skipped. */
+async function syncOverseerModel(chat: ChatSession, modelRuntime: ModelRuntime, path: string): Promise<void> {
+  const want = await overseerLoadout(path);
+  const session = chat.session;
+  if (want.model && want.model !== modelLabel(session) && modelAllowed(readModelPolicy(), want.model)) {
+    const model = (await modelRuntime.getAvailable().catch(() => [])).find((m) => `${m.provider}/${m.id}` === want.model);
+    if (model) await session.setModel(model);
+  }
+  if (want.thinking && want.thinking !== session.thinkingLevel && (THINKING_LEVELS as readonly string[]).includes(want.thinking))
+    session.setThinkingLevel(want.thinking as Parameters<AgentSession["setThinkingLevel"]>[0]);
+}
+
 async function openSession(path: string, onDisposed: () => void): Promise<ChatSession> {
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
   const modelRuntime = await getModelRuntime();
@@ -1599,7 +1833,13 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     // model change, so the member opens WITHOUT the opt-in and lands in the extension's own
     // default, and the marker survives restarts. Everything else about the loadout — `target`,
     // the experimental claude-code switch — is the same sessionFlags() every runtime gets.
-    const services = await servicesForCwd(cwd, modelRuntime, !isFanoutMember(sessionManager));
+    // The Overseer (server/overseer.ts) is recognised the same way, by its marker, and gets its own
+    // loadout: its prompt appended after the user's APPEND_SYSTEM.md, its sova_* tools, a tool
+    // allowlist, no topic outline (nobody lists it), and its model from overseer.json.
+    const special = isOverseerFile(sessionManager) ? await overseerLoadout(path) : null;
+    const services = special
+      ? await servicesForCwd(cwd, modelRuntime, false, special.resourceLoaderOptions)
+      : await servicesForCwd(cwd, modelRuntime, !isFanoutMember(sessionManager));
     for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);
     // A session with no messages yet starts from the saved new-session defaults (web-defaults.ts):
     // resolve the stored model ref against models with configured auth and let the SDK clamp the
@@ -1608,7 +1848,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     let defaultModel: Awaited<ReturnType<typeof modelRuntime.getAvailable>>[number] | undefined;
     let defaultThinking: ThinkingLevel | undefined;
     if (!sessionManager.getBranch().some((e) => e.type === "message" && e.message.role === "user")) {
-      const defaults = loadDefaults();
+      const defaults = special ? { model: special.model ?? undefined, thinking: special.thinking ?? undefined } : loadDefaults();
       // A stored default the user has since turned off is stale like any other: skipped here, so
       // the session opens on pi's own default rather than on a model it would refuse to send with.
       if (defaults.model && modelAllowed(readModelPolicy(), defaults.model))
@@ -1619,14 +1859,18 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
         defaultThinking = defaults.thinking as ThinkingLevel;
     }
     const model = modelForSessionOpen(sessionManager, modelRuntime, defaultModel);
+    const created = await createAgentSessionFromServices({
+      services,
+      sessionManager,
+      sessionStartEvent,
+      model,
+      ...(defaultThinking ? { thinkingLevel: defaultThinking as Parameters<AgentSession["setThinkingLevel"]>[0] } : {}), // same cast as setThinkingLevel above: our ladder has "off", the SDK's union doesn't
+      ...(special ? { tools: special.tools, ...(special.customTools ? { customTools: special.customTools } : {}) } : {}),
+    });
+    // The Overseer tells a message the user sent from every other by the object it reaches the Agent as.
+    if (special) overseerRuntime?.watchSession(created.session);
     return {
-      ...(await createAgentSessionFromServices({
-        services,
-        sessionManager,
-        sessionStartEvent,
-        model,
-        ...(defaultThinking ? { thinkingLevel: defaultThinking as Parameters<AgentSession["setThinkingLevel"]>[0] } : {}), // same cast as setThinkingLevel above: our ladder has "off", the SDK's union doesn't
-      })),
+      ...created,
       services,
       diagnostics: services.diagnostics,
     };
@@ -1649,6 +1893,16 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       throw err;
     }
     chat.deferredAppends = deferred;
+    if (isOverseerFile(sessionManager)) {
+      chat.overseer = true;
+      // A conversation that already has messages keeps the model its file records (the SDK restores
+      // it); overseer.json is the Overseer's setting, so bring the runtime to it now. The appends
+      // this makes are still deferred (the patch above is live until `restore`), so opening writes
+      // nothing, like any other open.
+      await syncOverseerModel(chat, modelRuntime, path).catch((err) =>
+        console.warn(`[overseer] model sync skipped: ${err instanceof Error ? err.message : String(err)}`),
+      );
+    }
     held.set(path, chat);
     return chat;
   } catch (err) {

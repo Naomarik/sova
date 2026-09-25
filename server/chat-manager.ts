@@ -15,7 +15,8 @@ import {
   SessionManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import type { ChatClientMessage, ChatModeResult, ChatServerMessage, ModeApplies, ModeInfo, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, WorkerInfo } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, ModeApplies, ModeInfo, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, WorkerInfo } from "../shared/protocol";
+import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import { stripImageNotes } from "../shared/image-note";
 import { parseWakeNudge } from "../shared/wake";
 import { type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
@@ -405,6 +406,79 @@ export async function rewindSession(
   }
 }
 
+export type CompactOutcome = { ok: true; entryId: string; tokensBefore: number } | { ok: false; reason: CompactRefusal; message: string };
+
+/** The members of AgentSession a compaction uses (narrow so tests can drive it with a fake). */
+export interface CompactTarget {
+  readonly isStreaming: boolean;
+  readonly isCompacting: boolean;
+  readonly sessionManager: Pick<SessionManager, "getBranch" | "appendCompaction">;
+  compact(customInstructions?: string): Promise<{ tokensBefore: number }>;
+}
+
+/**
+ * Compact the chat now: pi's own `AgentSession.compact(instructions)`, behind the same refusals a
+ * rewind has, because pi's compact() would otherwise do two things silently. It calls `abort()`
+ * first (agent-session.js compact()), so a compaction started while a turn streams KILLS the turn;
+ * and a message still on its way out would land after a summary that never saw it.
+ *
+ * `guard` runs the write guards (throws BusyError) and `allowed` the model policy (the summary is
+ * a model call on the session's own model). The ONE write is pi's `appendCompaction`, and it is
+ * wrapped for the call's duration: the write guards run again there — a summary can take minutes,
+ * and a TUI that grabbed the file meanwhile must get no write — then `beforeWrite` flushes the
+ * open-time appends, so they precede the compaction entry exactly as they precede a prompt. Any
+ * refusal or failure therefore writes nothing at all, deferred appends included.
+ */
+export async function compactSession(
+  session: CompactTarget,
+  instructions: string | undefined,
+  hooks: { guard(): void; allowed(): void; queued(): boolean; beforeWrite(): void },
+): Promise<CompactOutcome> {
+  const refused = (reason: CompactRefusal, message: string): CompactOutcome => ({ ok: false, reason, message });
+  const fromError = (err: unknown): CompactOutcome => {
+    if (err instanceof BusyError) return refused(err.code === "busy" ? "busy" : "recent", err.message);
+    const message = err instanceof Error ? err.message : String(err);
+    // pi's own refusals and its cancel, by the exact text agent-session.js compact() throws.
+    if (message === "Already compacted") return refused("already", "Already compacted.");
+    if (message.startsWith("Nothing to compact")) return refused("nothing", "Nothing to compact yet.");
+    if (message === "Compaction cancelled") return refused("cancelled", "Compaction cancelled.");
+    return refused("internal", `Compaction failed: ${message}`);
+  };
+  try {
+    hooks.guard();
+    hooks.allowed();
+  } catch (err) {
+    return fromError(err);
+  }
+  if (session.isStreaming) return refused("streaming", "Stop the turn first, then compact.");
+  if (session.isCompacting) return refused("compacting", "A compaction is already running.");
+  // The same window rewindSession's "queued" names: a steer can still be inside the extension
+  // `input` handlers after its turn ended.
+  if (hooks.queued())
+    return refused("queued", "Wait for the queued messages to send, then compact.");
+  // pi refuses this too, but only after announcing a compaction_start; saying it here keeps every
+  // client's pane from flickering "Compacting" for a no-op.
+  if (session.sessionManager.getBranch().at(-1)?.type === "compaction") return fromError(new Error("Already compacted"));
+  const sm = session.sessionManager;
+  const append = sm.appendCompaction;
+  let entryId: string | null = null;
+  sm.appendCompaction = (...args: Parameters<typeof append>) => {
+    hooks.guard();
+    hooks.beforeWrite();
+    entryId = append.apply(sm, args);
+    return entryId;
+  };
+  try {
+    const result = await session.compact(instructions);
+    if (!entryId) return refused("internal", "Compaction failed: pi reported success but wrote no compaction entry.");
+    return { ok: true, entryId, tokensBefore: result.tokensBefore };
+  } catch (err) {
+    return fromError(err);
+  } finally {
+    sm.appendCompaction = append;
+  }
+}
+
 /** A session entry as the branch hands it over; only the fields the rules below read are named. */
 interface BranchEntry {
   id?: unknown;
@@ -491,8 +565,11 @@ function sourceLocation(info: { scope: string } | undefined): string | undefined
 
 /** Same enumeration as pi's rpc get_commands (rpc-mode.js "get_commands"), per runtime/cwd. */
 function listCommands(session: AgentSession): SlashCommand[] {
-  const out: SlashCommand[] = [];
+  // Sova's own `compact` leads; an extension command of that name could never run from here,
+  // because the text is intercepted before pi sees it (ChatSession.handle), so it is not offered.
+  const out: SlashCommand[] = [COMPACT_COMMAND];
   for (const c of session.extensionRunner.getRegisteredCommands()) {
+    if (c.invocationName === COMPACT_COMMAND.name) continue;
     out.push({ name: c.invocationName, description: c.description, source: "extension", path: c.sourceInfo?.path });
   }
   for (const t of session.promptTemplates) {
@@ -513,10 +590,16 @@ interface PendingUi {
   resolve: (value: unknown) => void;
 }
 
+/** pi's prompt() refusal while a manual compaction runs (agent-session.js prompt(), 0.87.1). */
+export function isCompactionInProgress(err: unknown): boolean {
+  return err instanceof Error && err.message.startsWith("Cannot submit a prompt while compaction is in progress");
+}
+
 /** SDK events after which Sova's queue re-reads the SDK's own queue lengths. `agent_settled` and
     `agent_end` are here because a turn that ends with our queue non-empty must start the next one;
-    without them the queue would wait for an event that never comes. */
-const QUEUE_WAKE_EVENTS = new Set(["queue_update", "message_start", "turn_end", "agent_settled", "agent_end"]);
+    without them the queue would wait for an event that never comes. `compaction_end` likewise
+    releases what the queue held while a compaction ran (its `paused`). */
+const QUEUE_WAKE_EVENTS = new Set(["queue_update", "message_start", "turn_end", "agent_settled", "agent_end", "compaction_end"]);
 
 /** One embedded pi runtime for one session file, shared by all connected chat clients. */
 class ChatSession {
@@ -530,8 +613,17 @@ class ChatSession {
   private lastWorkersJson: string | null = null;
   /** Set once another process is seen writing this file; all writes are refused after that. */
   foreignWrite: string | null = null;
-  /** Open-time SDK bookkeeping appends, written right before the first prompt/steer. */
+  /** Open-time SDK bookkeeping appends, written right before the first prompt/steer/compaction. */
   deferredAppends: Array<() => void> = [];
+  /**
+   * Set synchronously for the whole of a /compact this chat runs. pi's own `isCompacting` turns
+   * true only after compact() has awaited `abort()`, so without this a second /compact, or a
+   * prompt, arriving in that gap would pass every check.
+   */
+  private compactRunning = false;
+  /** A compaction that was not our /compact landed while a turn ran; its refresh waits for the
+      turn's agent_settled (onCompactionEvent). */
+  private refreshAtSettle = false;
   disposed = false;
   /** How the last switch of THIS chat applies (ModeApplies); set at bind and by applyMode. */
   modeApplies: ModeApplies = "now";
@@ -570,6 +662,7 @@ class ChatSession {
       mirrorHas: (kind, text) => (kind === "steer" ? this.session.getSteeringMessages() : this.session.getFollowUpMessages()).includes(text),
     },
     streaming: () => this.session.isStreaming,
+    paused: () => this.isCompacting(),
     clearSdkQueue: () => this.session.clearQueue(),
     guard: () => {
       assertNotLive(this.path);
@@ -667,6 +760,7 @@ class ChatSession {
       // turn nobody is awaiting, and must not be reported as a hand-off failure (which would hand
       // the text back to the composer for a message that HAS been sent).
       this.session.prompt(item.text, { images }).catch((err) => {
+        if (this.heldForCompaction(err, { ...item, id: undefined })) return;
         this.reportTurnFailure(err);
         // A turn that never started emits no event, so nothing would wake the queue and every
         // item behind this one would sit there for ever. Wake it explicitly.
@@ -680,7 +774,24 @@ class ChatSession {
       await this.session.steer(item.text, images);
       return;
     }
-    await this.session.prompt(item.text, { images, streamingBehavior: item.kind });
+    await this.session.prompt(item.text, { images, streamingBehavior: item.kind }).catch((err) => {
+      if (!this.heldForCompaction(err, { ...item, id: undefined })) throw err;
+    });
+  }
+
+  /**
+   * pi refused a prompt because a compaction had started: put the message back in Sova's queue,
+   * which holds it until compaction_end, instead of failing it. `isCompacting()` holds every send
+   * that arrives once a compaction is under way; this is the gap before that — pi's compact()
+   * awaits `abort()` before it sets the flag, and a `/`-prefixed prompt awaits the extension
+   * command lookup before pi checks it. A queue item comes back as a NEW item (no `id`): the old
+   * one has departed and the client has settled that id; it rejoins at the back. A direct send
+   * keeps its sender's id, which no queue item ever had. Returns false for any other error.
+   */
+  private heldForCompaction(err: unknown, item: { kind: WebQueueItem["kind"]; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string }): boolean {
+    if (!isCompactionInProgress(err) || this.disposed) return false;
+    this.queue.enqueue({ kind: item.kind, text: item.text, images: item.images, origin: item.origin, ...(item.id ? { id: item.id } : {}) });
+    return true;
   }
 
   /**
@@ -716,7 +827,7 @@ class ChatSession {
   private waking = false;
 
   private wakeQueuedRun(): void {
-    if (this.disposed || this.session.isStreaming) return;
+    if (this.disposed || this.session.isStreaming || this.isCompacting()) return;
     if (!this.session.agent.hasQueuedMessages()) return;
     try {
       assertNotLive(this.path);
@@ -747,6 +858,12 @@ class ChatSession {
 
   private flushDeferredAppends(): void {
     for (const append of this.deferredAppends.splice(0)) append();
+  }
+
+  /** A compaction is running on this runtime: a /compact of ours, pi's automatic one, or an
+      extension's `ctx.compact()`. Every send is held in the queue meanwhile. */
+  isCompacting(): boolean {
+    return this.compactRunning || this.session.isCompacting;
   }
 
   hasForeignWrites(): boolean {
@@ -790,7 +907,8 @@ class ChatSession {
           code: "busy",
           message: `Session was opened in another pi process (pid ${live.pid}) while held here; stopped writing. Use watch instead.`,
         });
-        if (this.session.isStreaming) this.session.abort().catch(() => {});
+        // abort() also stops a compaction, whose entry would otherwise be written into a TUI's file.
+        if (this.session.isStreaming || this.session.isCompacting) this.session.abort().catch(() => {});
         return;
       }
       if (this.clients.size === 0) {
@@ -819,6 +937,10 @@ class ChatSession {
       } catch (err) {
         console.error("[chat] failed to forward event", err);
       }
+      // Before the queue wake below, so a held message's turn starts only after clients have the
+      // branch with the compaction on it (refreshAfterCompaction). When the refresh is deferred,
+      // so is this event's wake: the refresh wakes the queue itself once the hello is out.
+      const refreshWakes = this.onCompactionEvent(event);
       // BEFORE anything else that can throw. Every event that can mean "the SDK's queue moved":
       // one was queued, one was delivered, the run ended. A generous list is cheaper than a
       // precise one, because the cost of a spurious wake is a re-read of two lengths while the
@@ -829,7 +951,11 @@ class ChatSession {
         // sequence of these — the only way to tell "an extension queued something" from "our item
         // was delivered", which a single total cannot distinguish (one in, one out, total unmoved).
         this.queue.observeQueueUpdate(event.steering.length, event.followUp.length);
-      } else if (QUEUE_WAKE_EVENTS.has(event.type)) this.queue.onSdkEvent();
+      } else if (QUEUE_WAKE_EVENTS.has(event.type) && !refreshWakes) this.queue.onSdkEvent();
+      // pi's AUTOMATIC compaction emits compaction_end before its finally clears the controller
+      // `isCompacting` reads, so the wake above can still find the queue paused: look again once
+      // that has unwound. (The manual path clears first, so this one is a no-op there.)
+      if (event.type === "compaction_end") setImmediate(() => !this.disposed && this.queue.onSdkEvent());
       if (event.type === "entry_appended" && (event as { entry?: unknown }).entry) {
         // Display entries an extension appended outside a turn (mode markers, align docs, …)
         // reach the pane now instead of at the next hello/resync. normalizeEntry returns []
@@ -1038,6 +1164,7 @@ class ChatSession {
       type: "hello",
       items: normalizeEntries(branch),
       isStreaming: session.isStreaming,
+      isCompacting: this.isCompacting(),
       model: modelLabel(session),
       thinking: session.thinkingLevel,
       context: toContextInfo(contextForBranch(branch), this.runtime.services.modelRuntime),
@@ -1098,12 +1225,21 @@ class ChatSession {
     // still be taken back one item at a time. Server-originated prompts (a group batch, a remote
     // status probe) queue on the same terms as a client's: they are messages to this session, and
     // a queue that some messages could skip would not be a queue.
-    if (this.session.isStreaming) {
+    // A compaction running is the same: pi refuses every prompt until it ends, so the message is
+    // held, and the queue hands it over (as a fresh turn) at compaction_end.
+    if (this.session.isStreaming || this.isCompacting()) {
       this.queue.enqueue({ kind: "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId });
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
-    return { queued: false, turn: this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }) };
+    const turn = this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) });
+    // A replay is not re-queued: the queue would expand it a second time (see `replay` above).
+    if (opts?.replay) return { queued: false, turn };
+    // Held under the sender's own id: this send was never a queue item, so the id is still free.
+    const held = (err: unknown) => {
+      if (!this.heldForCompaction(err, { kind: "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId })) throw err;
+    };
+    return { queued: false, turn: turn.catch(held) };
   }
 
   /** Accept a prompt AND wait for the turn. The /ws/chat path, where the socket reports the
@@ -1136,7 +1272,23 @@ class ChatSession {
     }
     try {
       switch (msg.type) {
-        case "prompt": {
+        case "prompt":
+        case "steer": {
+          // `/compact [instructions]` as a whole message: Sova's builtin, never text for the
+          // model. It runs here, before pi's prompt() could send the literal "/compact" to the
+          // model, and before a streaming steer could queue it. The send's own id names the
+          // reply; it never becomes a queue row. With images it is refused, not sent without them.
+          const compact = compactCommand(String(msg.text ?? ""));
+          if (compact) {
+            if (clientId) client.send({ type: "send_ack", clientId, queued: false });
+            if (msg.images?.length) client.send({ type: "compact_refused", id: clientId ?? "", reason: "internal", message: COMPACT_IMAGES_REFUSAL });
+            else this.compact(client, clientId ?? "", compact.instructions).catch(fail);
+            return;
+          }
+          if (msg.type === "steer") {
+            this.steer(client, msg, clientId, fail);
+            return;
+          }
           // The model-policy gate, at the same site the `steer` case below applies it: a model
           // turned off in Settings → Models is refused before anything is written. Everything else
           // this case needs (TUI ownership, foreign writers, blank text, deferred appends, the
@@ -1147,26 +1299,6 @@ class ChatSession {
           // client that learned that only at turn end would offer Remove for a sent message.
           if (clientId) client.send({ type: "send_ack", clientId, queued });
           turn.catch(fail);
-          return;
-        }
-        case "steer": {
-          assertNotLive(this.path);
-          this.assertNoForeignWrites();
-          this.assertModelAllowed();
-          const text = String(msg.text ?? "");
-          const images = parseImages(msg.images);
-          if (!text.trim() && !images) return;
-          // Mid-turn, this is a steer and goes through Sova's queue so it stays removable; idle,
-          // there is nothing to queue behind, so it starts its turn straight away (and the
-          // extension-command split lives in handOffQueued, which both paths reach).
-          if (this.session.isStreaming) {
-            this.queue.enqueue({ kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId });
-            if (clientId) client.send({ type: "send_ack", clientId, queued: true });
-            return;
-          }
-          this.flushDeferredAppends();
-          if (clientId) client.send({ type: "send_ack", clientId, queued: false });
-          this.session.prompt(text, { images }).catch(fail);
           return;
         }
         case "abort":
@@ -1257,6 +1389,11 @@ class ChatSession {
         case "rewind":
           this.rewind(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
           return;
+        case "compact": {
+          const instructions = typeof msg.instructions === "string" ? msg.instructions.trim() : "";
+          this.compact(client, String(msg.id ?? ""), instructions || undefined).catch(fail);
+          return;
+        }
         case "ui_response": {
           const pending = this.pendingUi.get(msg.id);
           if (pending) {
@@ -1271,6 +1408,130 @@ class ChatSession {
     } catch (err) {
       fail(err);
     }
+  }
+
+  /**
+   * The refresh for a compaction Sova did not start itself: the provider's `ctx.compact()` from an
+   * agent_settled hook, pi's threshold or overflow compaction. pi emits no `entry_appended` for a
+   * compaction entry on any path, so without this the row only appears at the next reload. Only a
+   * `compaction_end` with a `result` wrote one. Our own /compact refreshes in compact().
+   *
+   * Idle: on the next macrotask, not inside the event. pi's AUTOMATIC path emits compaction_end
+   * before its finally clears the controller `isCompacting` reads, so a hello sent from inside the
+   * event would say `isCompacting: true` after the compaction ended, and every client would stay
+   * on "Compacting…". The event's own queue wake is skipped (returns true) and the refresh wakes
+   * the queue after its hello, so a message held during the compaction still starts its turn after
+   * the clients have the new branch. That holds for ctx.compact() too, where pi clears the flag
+   * first and the queue would otherwise hand off at once.
+   *
+   * Mid-turn (the overflow path ends with willRetry and carries on streaming; a threshold one can
+   * land inside the run): at that turn's `agent_settled`, because a hello resets every client's
+   * live rows and would wipe the turn being streamed. That refresh runs before the settle's own
+   * queue wake.
+   */
+  private onCompactionEvent(event: { type: string }): boolean {
+    try {
+      const result = (event as { result?: unknown }).result;
+      if (event.type === "compaction_end" && !this.compactRunning && typeof result === "object" && result !== null) {
+        if (this.session.isStreaming) {
+          this.refreshAtSettle = true;
+          return false;
+        }
+        setImmediate(() => {
+          if (this.disposed) return;
+          try {
+            this.refreshAfterCompaction();
+          } catch (err) {
+            console.error("[chat] refresh after compaction failed", err);
+          }
+          if (!this.disposed) this.queue.onSdkEvent();
+        });
+        return true;
+      }
+      if (event.type === "agent_settled" && this.refreshAtSettle) {
+        this.refreshAtSettle = false;
+        this.refreshAfterCompaction();
+      }
+    } catch (err) {
+      console.error("[chat] refresh after compaction failed", err);
+    }
+    return false;
+  }
+
+  /** afterBranchMove, then the queue snapshot: that hello reset every client's pending rows, and the
+      snapshot is what rebuilds them (as on attach). */
+  private refreshAfterCompaction(): void {
+    this.afterBranchMove();
+    if (this.disposed) return;
+    this.broadcast({ type: "queue", items: this.queue.snapshot() });
+  }
+
+  /** The `steer` case of handle(), whose failures `fail` reports to the sender. */
+  private steer(client: ChatClient, msg: Extract<ChatClientMessage, { type: "steer" }>, clientId: string | undefined, fail: (err: unknown) => void): void {
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    this.assertModelAllowed();
+    const text = String(msg.text ?? "");
+    const images = parseImages(msg.images);
+    if (!text.trim() && !images) return;
+    // Mid-turn, this is a steer and goes through Sova's queue so it stays removable; idle,
+    // there is nothing to queue behind, so it starts its turn straight away (and the
+    // extension-command split lives in handOffQueued, which both paths reach). While a
+    // compaction runs it is held the same way, and goes in when the compaction ends.
+    if (this.session.isStreaming || this.isCompacting()) {
+      this.queue.enqueue({ kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId });
+      if (clientId) client.send({ type: "send_ack", clientId, queued: true });
+      return;
+    }
+    this.flushDeferredAppends();
+    if (clientId) client.send({ type: "send_ack", clientId, queued: false });
+    this.session
+      .prompt(text, { images })
+      .catch((err) => {
+        if (!this.heldForCompaction(err, { kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId })) throw err;
+      })
+      .catch(fail);
+  }
+
+  /**
+   * The client's /compact (compactSession), then the same refresh a rewind does: pi emits no
+   * `entry_appended` for a manual compaction's entry, so every client gets a fresh hello (items
+   * ending in the compaction row, context null until the next reply), workers and mode. Only the
+   * requester gets the outcome. `compactRunning` spans the whole call, from before pi's own
+   * `isCompacting` turns true until after it is false again. Whatever the queue held meanwhile goes
+   * AFTER the hello: that hello resets every client's live rows, so the queue snapshot follows it
+   * (as on attach) and only then is the queue woken — a turn started first would be wiped from the
+   * pane by the hello that describes the branch before it.
+   */
+  private async compact(client: ChatClient, id: string, instructions: string | undefined): Promise<void> {
+    if (this.compactRunning) {
+      client.send({ type: "compact_refused", id, reason: "compacting", message: "A compaction is already running." });
+      return;
+    }
+    this.compactRunning = true;
+    let outcome: CompactOutcome;
+    try {
+      outcome = await compactSession(this.session, instructions, {
+        guard: () => {
+          assertNotLive(this.path);
+          this.assertNoForeignWrites();
+        },
+        allowed: () => this.assertModelAllowed(),
+        queued: () => this.hasPendingSends(),
+        beforeWrite: () => this.flushDeferredAppends(),
+      });
+    } finally {
+      this.compactRunning = false;
+    }
+    if (this.disposed) return;
+    if (!outcome.ok) {
+      client.send({ type: "compact_refused", id, reason: outcome.reason, message: outcome.message });
+    } else {
+      this.refreshAfterCompaction();
+      if (this.disposed) return;
+      client.send({ type: "compacted", id, entryId: outcome.entryId, tokensBefore: outcome.tokensBefore });
+    }
+    this.queue.onSdkEvent();
   }
 
   /**
@@ -1340,10 +1601,10 @@ class ChatSession {
 
   /** The refresh no SDK event does after the leaf moved: a fresh hello (branch-based, so transcript
       and context fill follow the new leaf), the workers snapshot, and this chat's mode re-resolved
-      from the new branch as bind() does. Shared by rewind and regenerate so the two can never
+      from the new branch as bind() does. Shared by rewind, regenerate and compact so they can never
       drift into telling clients different things about the same move. */
   private afterBranchMove(): void {
-    if (!this.foreignWrite) markOwned(this.path); // the marker entry is our write
+    if (!this.foreignWrite) markOwned(this.path); // the marker (or compaction) entry is our write
     if (this.disposed) return;
     this.broadcast(this.hello());
     // Every client's hello handler clears its worker list, and pushWorkers only sends on change,

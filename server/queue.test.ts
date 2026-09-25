@@ -48,6 +48,8 @@ class FakeSdk {
   mirrorSteering: string[] = [];
   mirrorFollowUp: string[] = [];
   streaming = true;
+  /** A compaction is running: `QueueDeps.paused`, which pi's prompt() refusal makes necessary. */
+  paused = false;
   handlerDelay = 0;
   /** Applied at hand-off, like the real input handlers + template expansion. null = swallowed. */
   transform: ((text: string) => string | null) | null = null;
@@ -180,6 +182,7 @@ function rig(sdk = new FakeSdk()) {
       mirrorHas: (kind, text) => (kind === "steer" ? sdk.mirrorSteering : sdk.mirrorFollowUp).includes(text),
     },
     streaming: () => sdk.streaming,
+    paused: () => sdk.paused,
     clearSdkQueue: () => sdk.clearQueue(),
     guard: () => {
       if (sdk.guardError) throw sdk.guardError;
@@ -808,5 +811,40 @@ describe("the outgoing queue", () => {
     await settle();
     assert.deepEqual(r.sdk.realSteering, [], "b never went in after the runtime went away");
     assert.equal(r.queue.size, 0);
+  });
+});
+
+describe("a compaction pauses the queue", () => {
+  test("nothing is handed over while paused; held items stay removable and go in, in order, once it ends", async () => {
+    const r = rig();
+    r.sdk.streaming = false;
+    r.sdk.paused = true;
+    for (const id of ["a", "b"]) r.queue.enqueue({ kind: "followUp", text: id, origin: "client", id });
+    await settle();
+    assert.deepEqual(r.sdk.handed, [], "a paused queue hands nothing to the SDK");
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["a:queued", "b:queued"]);
+    const removed = await r.queue.remove("b");
+    assert.equal(removed.ok, true, "a held item is still Sova's to remove");
+
+    r.queue.onSdkEvent(); // an event while still paused changes nothing
+    await settle();
+    assert.deepEqual(r.sdk.handed, []);
+
+    r.sdk.paused = false; // compaction_end
+    r.queue.onSdkEvent();
+    await settle();
+    assert.deepEqual(r.sdk.started, ["a"], "the held message starts its own turn");
+    assert.deepEqual(r.gone(r.one), [["b", "removed"], ["a", "delivered"]]);
+  });
+
+  test("Stop still clears what a paused queue holds", async () => {
+    const r = rig();
+    r.sdk.streaming = false;
+    r.sdk.paused = true;
+    r.queue.enqueue({ kind: "steer", text: "held", origin: "client", id: "h" });
+    await settle();
+    const drained = await r.queue.drain();
+    assert.deepEqual(drained.steering, ["held"]);
+    assert.deepEqual(r.sdk.handed, []);
   });
 });

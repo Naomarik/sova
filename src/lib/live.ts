@@ -464,8 +464,13 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
           s.activity = "Compacting context";
           break;
         case "auto_retry_end":
+          s.activity = null;
+          break;
         case "compaction_end":
           s.activity = null;
+          // A /compact runs with no turn, so no agent_settled follows to clear a Stop pressed
+          // during it; inside a turn (pi's automatic compaction) the turn's own settle still does.
+          if (!s.running) s.stopping = false;
           break;
       }
     }),

@@ -1390,6 +1390,13 @@ export type ChatClientMessage =
       while a turn streams or compacts, and NEVER auto-aborts. The confirmation step is the
       client's; the server does not ask. */
   | { type: "regenerate"; id: string; entryId: string }
+  /** Compact this chat's context now: pi's own `AgentSession.compact(instructions)`, the TUI's
+      /compact. `id` is the client's request id, echoed in `compacted`/`compact_refused`;
+      `instructions` (optional) steer what the summary keeps. Refused while a turn streams, while a
+      compaction runs and while a message is still on its way out — NEVER auto-aborts a turn
+      (pi's compact() would). A `prompt`/`steer` whose whole text is `/compact [instructions]`
+      and carries no image takes this same path, answered by the send's `clientId`. */
+  | { type: "compact"; id: string; instructions?: string }
   /** Remove ONE still-unsent message from this chat's outgoing queue, by its `QueueItem.id` —
       any position, including the middle, duplicates of the same text, and image-only sends.
       `id` is the client's request id, echoed in the reply. */
@@ -1417,6 +1424,17 @@ export type RewindRefusal = "streaming" | "compacting" | "busy" | "recent" | "no
     the branch as if the user had typed it, complete with its "[wake_nudge …] Scheduled wakeup
     fired" preamble and a stale elapsed time. There is no honest thing to re-send, so nothing is. */
 export type RegenerateRefusal = RewindRefusal | "wake";
+
+/** Why a compaction was refused or did not happen; nothing was written in any of these.
+    streaming / compacting / queued / busy / recent are RewindRefusal's conditions, for the same
+    reasons (a compaction while a message is still on its way out would summarize a branch that
+    message then lands after). "already" = the branch ends in a compaction; "nothing" = too little
+    to summarize (pi's own two refusals); "cancelled" = Stop, or an extension's
+    session_before_compact cancelled it; "internal" = anything else, the summarizer's failure and a
+    model turned off in Settings → Models included, with the reason in `message`.
+    A SEPARATE union, like RegenerateRefusal: widening RewindRefusal would widen every exhaustive
+    switch the rewind client has. */
+export type CompactRefusal = "streaming" | "compacting" | "queued" | "busy" | "recent" | "already" | "nothing" | "cancelled" | "internal";
 
 /** One message Sova is holding for this chat, not yet given to the model.
  *
@@ -1482,7 +1500,8 @@ export interface SlashCommand {
   name: string;
   /** Optional for extension commands (pi docs/rpc.md); the UI shows a badge-only row then. */
   description?: string;
-  source: "extension" | "prompt" | "skill";
+  /** "builtin" = Sova runs it itself on this runtime (today only `compact`), never an extension's. */
+  source: "extension" | "prompt" | "skill" | "builtin";
   /** Where it comes from: extension path, or template/skill location (project, user, …) + path. */
   location?: string;
   path?: string;
@@ -1491,7 +1510,9 @@ export interface SlashCommand {
 export type ChatServerMessage =
   /** First message after connect: current transcript + live state + context fill.
       thinking = the session's active thinking level (one of off…max), clamped to its model. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; model: string | null; thinking: string; context: ContextInfo | null }
+  /** `isCompacting` = a compaction (manual or pi's automatic one) is running as this is sent, so a
+      client that connects mid-compaction shows it; absent from servers that predate it. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null }
   /** Raw pi SDK agent event passthrough. Shapes documented in pi docs/rpc.md "Events":
       message_update (assistantMessageEvent: text_delta | thinking_delta | toolcall_start/delta/end),
       tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ... */
@@ -1511,8 +1532,10 @@ export type ChatServerMessage =
       sandbox extension's /sandbox command. Absent = no extension: no row, no shield. */
   | ({ type: "sandbox" } & SandboxInfo)
   /** Slash commands available in this session (sent right after hello, and again after a runtime
-      reload). Same enumeration as pi rpc get_commands: extension commands, prompt templates, skills.
-      TUI built-ins (/tree, /model, …) are not included. Send one as a normal prompt "/name args". */
+      reload). Same enumeration as pi rpc get_commands: extension commands, prompt templates, skills,
+      after Sova's own builtin `compact` (first; an extension command of the same name is left out,
+      since Sova intercepts that text before pi sees it). Other TUI built-ins (/tree, /model, …) are
+      not included. Send one as a normal prompt "/name args". */
   | { type: "commands"; commands: SlashCommand[] }
   | { type: "ui_request"; id: string; request: unknown }
   /** This chat's subagent workers, from the runtime's own live record (presence.workers/workerCounts).
@@ -1544,6 +1567,15 @@ export type ChatServerMessage =
   | { type: "regenerated"; id: string; entryId: string; userEntryId: string }
   /** The regenerate was refused and NOTHING changed — no rewind, no prompt; to the requester only. */
   | { type: "regenerate_refused"; id: string; entryId: string; reason: RegenerateRefusal; message: string }
+  /** A compaction landed. Every client of the chat first got a fresh `hello` (whose items end in
+      the compaction row, and whose context is null until the next reply), then `workers` and
+      `mode`, exactly as after a rewind; only the requester then gets this. `entryId` is the new
+      `compaction` entry, `tokensBefore` pi's count of the context it summarized. Progress in
+      between is pi's own `compaction_start`/`compaction_end` events, relayed as `event`. */
+  | { type: "compacted"; id: string; entryId: string; tokensBefore: number }
+  /** The compaction was refused or failed, and nothing was written; to the requester only.
+      `message` is user-facing copy. */
+  | { type: "compact_refused"; id: string; reason: CompactRefusal; message: string }
   /** Acceptance of one identified send, to its sender only, as soon as acceptance finishes.
       `queued: true` = a `QueueItem` with this id exists and a `queue` snapshot carries it;
       `queued: false` = the session was idle, so it went straight to the model and NO queue row

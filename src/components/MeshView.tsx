@@ -3,9 +3,12 @@ import { fetchFrontDoor, fetchMesh, fetchMeshCandidates, putMeshPeers, putMeshSe
 import { copyText } from "../lib/ui-state";
 import { relativeTime } from "../lib/format";
 import {
+  frontDoorProblems,
   MESH_HREF,
   meshPeers,
   moveItem,
+  PLACEHOLDER_HOST,
+  serveUrlProblem,
   meshState,
   peerUnavailable,
   selfLabel,
@@ -562,6 +565,40 @@ function FrontDoorSection(props: { frontDoor: string | null }) {
   const [config, { refetch, mutate }] = createResource(fetchFrontDoor);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const problems = () => frontDoorProblems(config.latest?.order ?? []);
+
+  /** The host whose address is being edited, and the field's text. */
+  const [editing, setEditing] = createSignal<{ id: string; value: string; touched: boolean } | null>(null);
+  const [addressError, setAddressError] = createSignal<string | null>(null);
+  const isSelf = (id: string) => id === meshState()?.self.id;
+  /**
+   * Save one host's browser-facing address: this host's through Settings, a peer's through its
+   * peers.json entry (the other entries go back as they are; one written without a serve URL keeps
+   * the one it has). This host's may be cleared, which returns it to its MagicDNS default.
+   */
+  const saveAddress = async () => {
+    const e = editing();
+    if (!e || saving()) return;
+    const value = e.value.trim();
+    const clearing = !value && isSelf(e.id);
+    if (!clearing && serveUrlProblem(value)) return setEditing({ ...e, touched: true });
+    setSaving(true);
+    setAddressError(null);
+    try {
+      if (isSelf(e.id)) await putMeshSettings({ serveUrl: value || null });
+      else {
+        const next = await putMeshPeers(meshPeers().map((p) => (p.id === e.id ? { ...entryOf(p), serveUrl: value } : entryOf(p))));
+        setMeshState(next);
+      }
+      setEditing(null);
+      announce(clearing ? "This host's address is back to its tailnet name." : "Address saved. The Caddyfile below uses it.");
+      await refetch();
+    } catch (err) {
+      setAddressError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
   const buttons = new Map<string, HTMLButtonElement>();
 
   const move = async (from: number, to: number) => {
@@ -612,6 +649,20 @@ function FrontDoorSection(props: { frontDoor: string | null }) {
       <Show when={error()}>
         {(msg) => <Banner tone="error" title="Couldn't save the order." body={`The previous order stands. ${msg()}`} />}
       </Show>
+      <Show when={problems().placeholders.length > 0}>
+        <Banner
+          tone="warn"
+          title={`${problems().placeholders.length === 1 ? "1 host has" : `${problems().placeholders.length} hosts have`} no address yet.`}
+          body="Its tailnet name isn't known, so the file has a placeholder there. Set its address below, or Caddy can't reach it."
+        />
+      </Show>
+      <Show when={problems().mixedSchemes}>
+        <Banner
+          tone="warn"
+          title="These addresses mix http and https."
+          body="Caddy refuses a front door whose hosts differ in scheme. Give them all https (tailscale serve) or all http."
+        />
+      </Show>
       <Show when={config.latest}>
         {(c) => (
           <>
@@ -629,7 +680,74 @@ function FrontDoorSection(props: { frontDoor: string | null }) {
                       <div class="list-main">
                         <p class="list-title">{name()}</p>
                         <p class="list-meta text-mono">{h.upstream}</p>
+                        <Show when={h.upstream.includes(PLACEHOLDER_HOST)}>
+                          <p class="mesh-host-warn">Placeholder: set this host's address.</p>
+                        </Show>
+                        <Show when={editing()?.id === h.id}>
+                          <form
+                            class="mesh-address"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              void saveAddress();
+                            }}
+                          >
+                            <label class="visually-hidden" for={`mesh-address-${h.id}`}>
+                              Address of {name()}
+                            </label>
+                            <input
+                              id={`mesh-address-${h.id}`}
+                              class="input input-mono"
+                              autocomplete="off"
+                              spellcheck={false}
+                              placeholder={`https://${h.id}.tail1234.ts.net:8443`}
+                              value={editing()!.value}
+                              ref={(el) => queueMicrotask(() => el.focus())}
+                              aria-describedby={`mesh-address-${h.id}-hint`}
+                              onInput={(e) => setEditing({ id: h.id, value: e.currentTarget.value, touched: false })}
+                              onKeyDown={(e) => {
+                                if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  setEditing(null);
+                                }
+                              }}
+                            />
+                            <span class="field-hint" id={`mesh-address-${h.id}-hint`}>
+                              <Show
+                                when={editing()!.touched && serveUrlProblem(editing()!.value.trim()) && !(isSelf(h.id) && !editing()!.value.trim())}
+                                fallback={
+                                  isSelf(h.id)
+                                    ? "Where a browser opens this host. Empty goes back to its tailnet name on :8443."
+                                    : "Where a browser opens this host, as the front door should reach it."
+                                }
+                              >
+                                <span class="field-error">{serveUrlProblem(editing()!.value.trim())}</span>
+                              </Show>
+                            </span>
+                            <Show when={addressError()}>{(msg) => <span class="field-error">Not saved: {msg()}</span>}</Show>
+                            <span class="cluster">
+                              <button type="submit" class="button button-sm button-primary" aria-disabled={saving() ? "true" : undefined}>
+                                Save Address
+                              </button>
+                              <button type="button" class="button button-sm button-ghost" onClick={() => setEditing(null)}>
+                                Cancel
+                              </button>
+                            </span>
+                          </form>
+                        </Show>
                       </div>
+                      <Show when={editing()?.id !== h.id}>
+                        <button
+                          type="button"
+                          class="button button-sm button-ghost"
+                          aria-label={`Change Address of ${name()}`}
+                          onClick={() => {
+                            setAddressError(null);
+                            setEditing({ id: h.id, value: h.upstream.includes(PLACEHOLDER_HOST) ? "" : h.upstream, touched: false });
+                          }}
+                        >
+                          Change Address
+                        </button>
+                      </Show>
                       <button
                         type="button"
                         class="button button-icon button-ghost"

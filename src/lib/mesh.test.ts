@@ -18,6 +18,8 @@ import {
   meshRetryDelay,
   helloChange,
   moveItem,
+  frontDoorProblems,
+  serveUrlProblem,
   setMeshState,
   sessionRouteFromHash,
   
@@ -172,4 +174,19 @@ test("moving a host in the front-door order moves only it; an out-of-range move 
   assert.deepEqual(moveItem(["a", "b", "c"], 2, 1), ["a", "c", "b"]);
   assert.deepEqual(moveItem(["a", "b", "c"], 0, -1), ["a", "b", "c"]);
   assert.deepEqual(moveItem(["a", "b", "c"], 2, 3), ["a", "b", "c"]);
+});
+
+test("the front door flags placeholder upstreams and mixed schemes, and nothing when all is well", () => {
+  assert.deepEqual(frontDoorProblems([{ id: "a", upstream: "https://a.tail1.ts.net:8443" }, { id: "b", upstream: "https://b.tail1.ts.net:8443" }]), {
+    placeholders: [],
+    mixedSchemes: false,
+  });
+  assert.deepEqual(frontDoorProblems([{ id: "a", upstream: "https://a.YOUR-TAILNET.ts.net:8443" }, { id: "b", upstream: "http://b:8080" }]), {
+    placeholders: ["a"],
+    mixedSchemes: true,
+  });
+  assert.equal(serveUrlProblem("https://a.tail1.ts.net:8443"), null);
+  assert.equal(serveUrlProblem("http://10.0.0.2:4800"), null);
+  assert.match(serveUrlProblem("a.tail1.ts.net")!, /https:\/\//);
+  assert.match(serveUrlProblem("")!, /https:\/\//);
 });

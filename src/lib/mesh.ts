@@ -275,3 +275,33 @@ export function moveItem<T>(items: readonly T[], from: number, to: number): T[] 
   return next;
 }
 
+
+/** What stops a generated Caddyfile from working as it stands, read from its upstreams. */
+export interface FrontDoorProblems {
+  /** Hosts whose upstream is the generator's placeholder (no MagicDNS name known, no serve URL set). */
+  placeholders: string[];
+  /** http and https mixed: Caddy refuses a reverse_proxy whose upstreams differ in scheme. */
+  mixedSchemes: boolean;
+}
+
+export const PLACEHOLDER_HOST = "YOUR-TAILNET";
+
+export function frontDoorProblems(order: readonly { id: string; upstream: string }[]): FrontDoorProblems {
+  const schemes = new Set(order.map((h) => h.upstream.slice(0, h.upstream.indexOf(":")).toLowerCase()));
+  return {
+    placeholders: order.filter((h) => h.upstream.includes(PLACEHOLDER_HOST)).map((h) => h.id),
+    mixedSchemes: schemes.has("http") && schemes.has("https"),
+  };
+}
+
+/** Why a typed serve URL can't be saved, or null when it can. */
+export function serveUrlProblem(value: string): string | null {
+  const v = value.trim();
+  if (!/^https?:\/\/[^\s/]+/i.test(v)) return "Type the whole address, starting with https:// or http://.";
+  try {
+    new URL(v);
+  } catch {
+    return "That isn't an address a browser can open.";
+  }
+  return null;
+}

@@ -295,6 +295,10 @@ export interface HelloBaseline {
   build?: string;
 }
 
+/** The stale-tab banner's words for another build. Different, not newer: after a failover the next
+    host may well run an older build than the one that served this tab. */
+export const STALE_BUILD_NOTE = "This host serves a different build of this page. Reload when you're ready.";
+
 /** How the host answering now differs from the one this tab was loaded from. */
 export interface HelloChange {
   /** Another wire contract: this tab can't be trusted to talk to it. */

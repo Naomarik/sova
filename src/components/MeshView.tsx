@@ -25,6 +25,7 @@ import {
   peerUnavailable,
   selfLabel,
   setMeshState,
+  STALE_BUILD_NOTE,
   type HelloChange,
   type MeshCandidate,
   type MeshLoginEntry,
@@ -650,7 +651,7 @@ function LoginList(props: { tick: number; onConflicts(n: number): void }) {
 
 /**
  * The stale-tab banner: the host answering this tab is not the one that loaded it, or serves a
- * different Sova. A different protocol can't be worked around, so it has no Dismiss; a newer build
+ * different Sova. A different protocol can't be worked around, so it has no Dismiss; another build
  * or a new host is information, and the tab keeps working.
  */
 export function StaleTabBanner(props: { change: HelloChange; onDismiss(): void }) {
@@ -686,7 +687,7 @@ export function StaleTabBanner(props: { change: HelloChange; onDismiss(): void }
                   </>
                 )}
               </Show>
-              <Show when={c().build}>This host serves a newer build of this page. Reload when you're ready.</Show>
+              <Show when={c().build}>{STALE_BUILD_NOTE}</Show>
             </>
           }
           action={

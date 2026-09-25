@@ -23,6 +23,7 @@ import {
   setHostCheck,
   FILE_NOT_FOUND,
   PATH_NOT_HERE,
+  STALE_BUILD_NOTE,
   noteHost,
   notePeerSessions,
   pathsNamed,
@@ -406,4 +407,9 @@ test("the front door's left-out hosts stay listed, and a switch puts one in or l
   assert.deepEqual(withExclusion(["phone", "a"], "phone", false), ["a"]);
   assert.deepEqual(orderKeepingLeftOut(["b", "a"], ["phone"]), ["b", "a", "phone"], "a left-out host keeps a place at the end");
   assert.deepEqual(orderKeepingLeftOut(["b", "a"], ["a"]), ["b", "a"]);
+});
+
+test("the stale-tab banner calls another build different, never newer: the next host may run an older one", () => {
+  assert.match(STALE_BUILD_NOTE, /a different build of this page/);
+  assert.doesNotMatch(STALE_BUILD_NOTE, /newer|older/);
 });

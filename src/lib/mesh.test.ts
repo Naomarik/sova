@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import type { PeerStatus, SessionSummary } from "../../shared/protocol";
 import {
@@ -21,6 +22,7 @@ import {
   recheckHost,
   setHostCheck,
   FILE_NOT_FOUND,
+  PATH_NOT_HERE,
   noteHost,
   notePeerSessions,
   pathsNamed,
@@ -341,6 +343,15 @@ test("a reconnect's 'not found' is held as a possible host change only with the 
   assert.equal(mayBeHostMove(nf, true, false, true), false, "a peer's session doesn't move with the front door");
   assert.equal(mayBeHostMove({ code: "internal", message: "boom" }, true, true, true), false);
   assert.equal(mayBeHostMove({ code: "config", message: FILE_NOT_FOUND }, true, true, true), false);
+  // The next host keeps its sessions elsewhere (another machine's home): it refuses the path itself.
+  const away = { code: "internal", message: PATH_NOT_HERE };
+  assert.equal(mayBeHostMove(away, true, true, true), true, "a host with another sessions dir");
+  assert.equal(mayBeHostMove(away, true, true, false), false, "mesh off: shown at once, as before");
+  assert.equal(mayBeHostMove(away, false, true, true), false, "the first connection: a bad path is a bad path");
+  assert.equal(mayBeHostMove(away, true, false, true), false);
+  // Both are the server's own words (server/ws.ts): a reworded server must reword these too.
+  const ws = readFileSync(new URL("../../server/ws.ts", import.meta.url), "utf8");
+  assert.ok(ws.includes(JSON.stringify(FILE_NOT_FOUND)) && ws.includes(JSON.stringify(PATH_NOT_HERE)), "server/ws.ts says both");
   let asked = 0;
   recheckHost(); // nothing registered: a no-op
   setHostCheck(() => asked++);

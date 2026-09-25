@@ -366,18 +366,21 @@ export function recheckHost(): void {
 
 /** The server's words for a transcript it doesn't hold (the chat socket's error before close 4404). */
 export const FILE_NOT_FOUND = "Session file not found";
+/** The same answer from a host whose sessions dir doesn't hold the path at all (another machine's
+    home, as on a real mesh): its chat socket refuses the path before looking for the file. */
+export const PATH_NOT_HERE = "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
 /** How long a "not found" that may be a host change waits before it is shown: the confirming
     hello comes HOST_CONFIRM_MS after the first, and the view is replaced when it does. */
 export const HOST_MOVE_GRACE_MS = 3_000;
 
 /**
  * A chat socket error that may only mean the front door moved this tab: with the mesh on, this
- * host's own session (no peer holds it) answered "not found" on a connection that had opened
- * before, which is what the next host says when the reconnect lands there. Anything else is shown
- * at once, as before.
+ * host's own session (no peer holds it) answered "not found" (or, from a host whose sessions dir is
+ * elsewhere, "not a session path") on a connection that had opened before, which is what the next
+ * host says when the reconnect lands there. Anything else is shown at once, as before.
  */
 export function mayBeHostMove(err: { code?: string; message: string }, reopened: boolean, local: boolean, on: boolean): boolean {
-  return on && reopened && local && err.code === "internal" && err.message === FILE_NOT_FOUND;
+  return on && reopened && local && err.code === "internal" && (err.message === FILE_NOT_FOUND || err.message === PATH_NOT_HERE);
 }
 
 /** A host change seen once and not yet confirmed: which host, and when it first answered. */

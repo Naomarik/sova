@@ -2,7 +2,8 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { SessionSummary } from "../shared/protocol";
-import { type AttentionRow, buildDigest, DIGEST_MAX, sessionItems, STALE_MS, whereOf } from "./attention";
+import { type AttentionRow, buildDigest, DIGEST_MAX, sessionItems, STALE_MS, whereOf, workerErrorTime } from "./attention";
+import { workerErrorTimesOf } from "./live";
 
 const NOW = Date.parse("2026-09-25T12:00:00.000Z");
 
@@ -71,6 +72,64 @@ describe("attention: which signal lands in which tier", () => {
     const [it] = sessionItems(row(summary("t", { live: { pid: 9, status: "Needs input" }, activity: { state: "needs-input" } })), NOW);
     assert.equal(it?.tuiLive, true);
     assert.match(it!.detail!, /terminal/);
+  });
+});
+
+describe("attention: a worker error is acknowledged by seeing the session after it", () => {
+  const ERR = NOW - 10 * 60_000;
+
+  test("seen after the error: no item and no badge; the same failure seen BEFORE it still raises one", () => {
+    const after = row(summary("w", { seenAt: ERR + 1 }), { failedWorkers: 1, workerErrorAt: ERR });
+    assert.deepEqual(kinds(after), []);
+    assert.deepEqual(buildDigest([after], NOW).badge, { act: 0, decide: 0 });
+    assert.deepEqual(kinds(row(summary("w", { seenAt: ERR - 1 }), { failedWorkers: 1, workerErrorAt: ERR })), ["act:worker-error"]);
+  });
+
+  test("a NEW error after the stamp raises it again", () => {
+    const seenAt = ERR + 1;
+    assert.deepEqual(kinds(row(summary("w", { seenAt }), { failedWorkers: 1, workerErrorAt: ERR })), []);
+    assert.deepEqual(kinds(row(summary("w", { seenAt }), { failedWorkers: 2, workerErrorAt: ERR + 5000 })), ["act:worker-error"]);
+  });
+
+  test("on screen now counts as seen; never stamped, or an error of unknown time, still shows", () => {
+    assert.deepEqual(kinds(row(summary("v"), { failedWorkers: 1, workerErrorAt: NOW, viewing: true })), []);
+    assert.deepEqual(kinds(row(summary("n"), { failedWorkers: 1, workerErrorAt: ERR })), ["act:worker-error"]);
+    assert.deepEqual(kinds(row(summary("u", { seenAt: NOW }), { failedWorkers: 1 })), ["act:worker-error"]);
+  });
+
+  test("an archived session's seen worker error no longer brings it back; an unseen one does", () => {
+    assert.deepEqual(kinds(row(summary("a", { archived: true, seenAt: ERR + 1 }), { failedWorkers: 1, workerErrorAt: ERR })), []);
+    assert.deepEqual(kinds(row(summary("a", { archived: true, seenAt: ERR - 1 }), { failedWorkers: 1, workerErrorAt: ERR })), ["act:worker-error"]);
+  });
+
+  test("acknowledging a worker error leaves the session's other items alone", () => {
+    const r = row(summary("m", { seenAt: ERR + 1, activity: { state: "error" } }), { failedWorkers: 1, workerErrorAt: ERR });
+    assert.deepEqual(kinds(r), ["act:error"]);
+  });
+
+  test("workerErrorTime: rows covering every failure give their latest; missing rows fall back to the observed rise", () => {
+    assert.equal(workerErrorTime(0, [5], 9), undefined);
+    assert.equal(workerErrorTime(2, [5, 7], 99), 7); // complete rows: the rise is not consulted
+    assert.equal(workerErrorTime(2, [5], 9), 9); // a row was dropped: the later rise stands in
+    assert.equal(workerErrorTime(2, [50], 9), 50);
+    assert.equal(workerErrorTime(1, [], undefined), undefined);
+  });
+
+  test("workerErrorTimesOf: error rows only, endedAt first, malformed rows skipped", () => {
+    const rec = {
+      presence: {
+        workers: [
+          { status: "error", endedAt: 30, lastActivity: 20 },
+          { status: "error", lastActivity: 40 },
+          { status: "done", endedAt: 99 },
+          { status: "killed", endedAt: 98 },
+          { status: "error" },
+          null,
+        ],
+      },
+    };
+    assert.deepEqual(workerErrorTimesOf(rec), [30, 40]);
+    assert.deepEqual(workerErrorTimesOf({}), []);
   });
 });
 

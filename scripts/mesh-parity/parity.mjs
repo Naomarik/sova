@@ -381,6 +381,8 @@ function compareSides(A, B) {
   // screens
   if (A.screens && B.screens) {
     return (async () => {
+      const mp = B.screens._meshPage ?? { error: "not captured" };
+      record("screen:mesh-page:off(mesh)", !mp.error && mp.hostsHeading > 0 && mp.detailsButtons === 0 && mp.meshOnUi === 0, JSON.stringify(mp));
       for (const [name] of screenList(A.fixtures)) {
         const a = A.screens[name], b = B.screens[name];
         if (a?.error || b?.error) { record(`screen:${name}`, false, `base: ${a?.error ?? "ok"}\nmesh: ${b?.error ?? "ok"}`); continue; }

@@ -15,7 +15,7 @@ import {
   type OverseerSettingsInfo,
 } from "../shared/protocol";
 import { setArchived } from "./archived-sessions";
-import { type AttentionRow, blockerKey, buildDigest } from "./attention";
+import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./attention";
 import {
   acquireChat,
   BusyError,
@@ -26,7 +26,7 @@ import {
   isSessionBusy,
   setOverseerRuntime,
 } from "./chat-manager";
-import { activityOf, failedWorkersOf, readLiveRecords, workingSubagents } from "./live";
+import { activityOf, failedWorkersOf, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
 import { listModels, contextWindow } from "./models";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import { mergeMode } from "./mode-state";
@@ -263,6 +263,16 @@ export async function overseerInfo(): Promise<OverseerInfo> {
 // ---- attention digest ----------------------------------------------------------------------------
 
 const DIGEST_MS = 3000;
+
+/** Per session: its failed-worker count as last seen here, and when it was first seen or last rose.
+    Stands in for error times whose worker rows were dropped from the live record for size. */
+const failedRise = new Map<string, { failed: number; at: number }>();
+function noteFailedRise(path: string, failed: number, now: number): number {
+  const prev = failedRise.get(path);
+  const at = !prev || failed > prev.failed ? now : prev.at;
+  failedRise.set(path, { failed, at });
+  return at;
+}
 let digestMemo: { at: number; value: Promise<ReturnType<typeof buildDigest>> } | null = null;
 
 /** The digest, memoised ~3s (the badge rides a poll). */
@@ -272,14 +282,20 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
   const value = (async () => {
     const sessions = await listSessions();
     const records = readLiveRecords({ includeOwn: true });
-    const byPath = new Map<string, { failed: number; since: number }>();
+    const byPath = new Map<string, { failed: number; since: number; errorTimes: number[] }>();
     for (const r of records) {
       if (!r.sessionFile) continue;
       const prev = byPath.get(r.sessionFile);
       const failed = failedWorkersOf(r.rec);
       const since = activityOf(r.rec)?.since ?? 0;
-      byPath.set(r.sessionFile, { failed: Math.max(failed, prev?.failed ?? 0), since: Math.max(since, prev?.since ?? 0) });
+      byPath.set(r.sessionFile, {
+        failed: Math.max(failed, prev?.failed ?? 0),
+        since: Math.max(since, prev?.since ?? 0),
+        errorTimes: [...(prev?.errorTimes ?? []), ...workerErrorTimesOf(r.rec)],
+      });
     }
+    const nowMs = Date.now();
+    for (const p of [...failedRise.keys()]) if (!byPath.get(p)?.failed) failedRise.delete(p);
     const rows: AttentionRow[] = sessions.map((s) => {
       const chat = heldChat(s.path);
       const live = byPath.get(s.path);
@@ -288,6 +304,8 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
         dialogs: chat ? chat.pendingDialogs().map((d) => d.title || d.method) : [],
         queued: chat ? chat.queue.size : 0,
         failedWorkers: live?.failed ?? 0,
+        workerErrorAt: live?.failed ? workerErrorTime(live.failed, live.errorTimes, noteFailedRise(s.path, live.failed, nowMs)) : undefined,
+        viewing: isViewing(s.id),
         activitySince: live?.since ?? 0,
         lastReplyAt: lastReplyAtOf(s.path),
       };

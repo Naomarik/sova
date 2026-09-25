@@ -19,6 +19,10 @@ export interface AttentionRow {
   queued: number;
   /** Subagent workers that ended in an error (presence.workerCounts.error). */
   failedWorkers: number;
+  /** ms epoch of the latest worker error (see workerErrorTime); undefined unknown. */
+  workerErrorAt?: number;
+  /** A pane has the session on screen right now (seen.ts isViewing). */
+  viewing?: boolean;
   /** ms epoch the live record's activity state began; 0 unknown. */
   activitySince: number;
   /** ms epoch of the last assistant reply; undefined unknown. */
@@ -66,7 +70,12 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   else if (state === "needs-input")
     add("act", "needs-input", row.activitySince || lastActive, s.live ? "Waiting on a dialog in the terminal." : "Waiting on a dialog.");
   if (state === "error") add("act", "error", row.activitySince || lastActive, s.activity?.error ?? "The last turn stopped with an error.");
-  if (row.failedWorkers > 0)
+  // A worker error is acknowledged once the user has had the session in front of them after it
+  // (the seen stamp is at or past the error, or a pane shows it now). A never-stamped session or an
+  // error of unknown time is not acknowledged: a blocker errs on the side of showing.
+  const errorSeen =
+    row.viewing === true || (s.seenAt !== undefined && row.workerErrorAt !== undefined && s.seenAt >= row.workerErrorAt);
+  if (row.failedWorkers > 0 && !errorSeen)
     add("act", "worker-error", lastActive, `${row.failedWorkers} subagent${row.failedWorkers === 1 ? "" : "s"} ended in an error.`);
   // An archived session is out of the user's way on purpose: only a blocker brings it back.
   if (s.archived) return out;
@@ -108,6 +117,20 @@ export function buildDigest(rows: AttentionRow[], now = Date.now(), home?: strin
   const counts = { act: 0, decide: 0, fyi: 0 };
   for (const it of all) counts[it.tier]++;
   return { generatedAt: now, counts, items: all.slice(0, DIGEST_MAX), badge };
+}
+
+/**
+ * When a session's latest worker error happened. `rowTimes` are the error rows' own times
+ * (live.ts workerErrorTimesOf); when they cover every failed worker, their latest is the answer.
+ * Rows can be dropped for size, so when they cover fewer, `risenAt` (when the caller last saw the
+ * failed count rise, or first saw it at all) stands in for the missing ones: the later of the two.
+ */
+export function workerErrorTime(failed: number, rowTimes: number[], risenAt?: number): number | undefined {
+  if (failed <= 0) return undefined;
+  const latest = rowTimes.length ? Math.max(...rowTimes) : undefined;
+  if (rowTimes.length >= failed) return latest;
+  const t = Math.max(latest ?? 0, risenAt ?? 0);
+  return t > 0 ? t : undefined;
 }
 
 /** A stable key per blocker, for "Brief me": a NEW key is a new blocker. */

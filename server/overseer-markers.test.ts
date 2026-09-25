@@ -1,13 +1,13 @@
 // Run: npx tsx --test server/overseer-markers.test.ts (or npm test). Uses a throwaway
 // PI_CODING_AGENT_DIR and cwd in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY, type ChatServerMessage } from "../shared/protocol";
 
-const agentDir = mkdtempSync(join(tmpdir(), "sova-overseer-markers-"));
+const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-markers-")));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const sessionsDir = join(agentDir, "sessions", "--tmp-overseer--");
 mkdirSync(sessionsDir, { recursive: true });

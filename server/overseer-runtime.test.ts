@@ -9,13 +9,13 @@
 // handlers, template expansion, the SDK's own queues and `message_start`. Only the model is a stub
 // (`fakeRuns`), since the test dir has no credentials.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 
-const agentDir = mkdtempSync(join(tmpdir(), "sova-overseer-runtime-"));
+const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-runtime-")));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 // The Overseer loads the user's extensions and prompt templates. This one rewrites a message with
 // images the way vision-delegate does for a text-only model: the text that enters the context is

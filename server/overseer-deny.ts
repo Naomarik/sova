@@ -51,6 +51,9 @@ export function secretRules(home = homedir(), agentDir = getAgentDir()) {
       // own environment), and the kernel's: nothing the Overseer needs.
       "/proc",
       "/sys",
+      // The reading process's open files, the server's own: on Linux `/dev/fd` resolves into
+      // `/proc`, but on macOS it is its own file system, and `/dev/stdin` and the like resolve here.
+      "/dev/fd",
     ],
     /** File names that are secret anywhere; `name` is how the prompt names each. */
     names: [

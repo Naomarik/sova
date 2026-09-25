@@ -45,6 +45,21 @@ export function failedWorkersOf(rec: any): number {
   return count(rec?.presence?.workerCounts?.error) ?? 0;
 }
 
+/** When each worker ROW in status `error` ended (endedAt, else lastActivity, else startedAt), for
+    the rows that carry a time. Rows can be dropped for size (SCHEMA.md §5, finished ones first),
+    so this may cover fewer workers than failedWorkersOf counts. */
+export function workerErrorTimesOf(rec: any): number[] {
+  const rows = rec?.presence?.workers;
+  if (!Array.isArray(rows)) return [];
+  const out: number[] = [];
+  for (const w of rows) {
+    if (!w || typeof w !== "object" || w.status !== "error") continue;
+    const t = [w.endedAt, w.lastActivity, w.startedAt].find((v) => typeof v === "number" && Number.isFinite(v) && v > 0);
+    if (t !== undefined) out.push(t);
+  }
+  return out;
+}
+
 /** A parsed live file whose pid is alive. `rec` is untrusted JSON: consumers parse defensively. */
 export interface RawLiveRecord {
   sessionFile: string | null; // canonical; null for ephemeral sessions

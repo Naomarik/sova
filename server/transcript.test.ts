@@ -3,7 +3,7 @@
 // PI_CODING_AGENT_DIR (attachmentsRoot reads it per call), and removes them afterwards.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -267,7 +267,7 @@ describe("checkTmpImage (GET /api/attachment)", () => {
   const inner = `${dir}/inner.png`;
   writeFileSync(inner, "x");
   const linkOut = `/tmp/sova-test-${tag}-out.png`;
-  symlinkSync("/etc/hostname", linkOut);
+  symlinkSync("/etc/hosts", linkOut); // outside /tmp, and present on Linux and macOS alike
   created.push(linkOut);
   const linkSub = `/tmp/sova-test-${tag}-sub.png`;
   symlinkSync(inner, linkSub);
@@ -281,7 +281,8 @@ describe("checkTmpImage (GET /api/attachment)", () => {
 
   test("a real image directly in /tmp is ok", () => {
     const r = checkTmpImage(clip);
-    assert.deepEqual(r, { ok: true, realPath: clip, mimeType: "image/png", size: 9 });
+    // realPath is resolved: on macOS /tmp is itself a link to /private/tmp.
+    assert.deepEqual(r, { ok: true, realPath: realpathSync(clip), mimeType: "image/png", size: 9 });
   });
 
   test("bad shapes are 400 (traversal, subfolders, other dirs, non-images, non-strings)", () => {
@@ -320,7 +321,7 @@ describe("checkTmpImage (GET /api/attachment)", () => {
 
   test("a symlink to an image directly in /tmp resolves to it", () => {
     const r = checkTmpImage(linkIn);
-    assert.equal(r.ok && r.realPath, clip);
+    assert.equal(r.ok && r.realPath, realpathSync(clip));
   });
 
   test("readTmpImage reads the file and refuses a symlink", async () => {
@@ -665,7 +666,7 @@ describe("pi 0.87.0 context edits", () => {
 });
 
 describe("attachments root (composer-draft uploads)", () => {
-  const agentDir = mkdtempSync(join(tmpdir(), "sova-transcript-test-"));
+  const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-transcript-test-")));
   created.unshift(agentDir); // removed last, after the links below
   process.env.PI_CODING_AGENT_DIR = agentDir;
   const sid = "0199aaaa-bbbb-7ccc-8ddd-eeeeffff0000";

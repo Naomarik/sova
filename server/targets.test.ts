@@ -4,14 +4,14 @@
 // that runs the exec'd argv here, and the far command of an ssh argv run through sh exactly as the
 // remote login shell would).
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "sova-targets-test-"));
+const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-targets-test-")));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
-const scratch = mkdtempSync(join(tmpdir(), "sova-targets-scratch-"));
+const scratch = realpathSync(mkdtempSync(join(tmpdir(), "sova-targets-scratch-")));
 after(() => {
   rmSync(agentDir, { recursive: true, force: true });
   rmSync(scratch, { recursive: true, force: true });

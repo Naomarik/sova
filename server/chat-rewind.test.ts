@@ -1,13 +1,13 @@
 // Run: npx tsx --test server/chat-rewind.test.ts (or npm test). Uses a throwaway
 // PI_CODING_AGENT_DIR and cwd in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 
-const agentDir = mkdtempSync(join(tmpdir(), "sova-rewind-test-"));
+const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-rewind-test-")));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before chat-manager computes its paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-rewind--");
 mkdirSync(sessionsDir, { recursive: true });

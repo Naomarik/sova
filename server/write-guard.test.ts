@@ -4,12 +4,12 @@
 // refuses; a TUI-live session refuses whatever was recorded.
 // Throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-const agentDir = mkdtempSync(join(tmpdir(), "sova-write-guard-test-"));
+const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-write-guard-test-")));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-write-guard--");
 const liveDir = join(agentDir, "sessions", "live");

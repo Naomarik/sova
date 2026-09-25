@@ -295,3 +295,43 @@ test("login conflicts over the browser routes: listed without secrets, settled b
   // Stopped (the mesh went OFF): 404 again.
   assert.equal((await a.app.request("/api/mesh/logins")).status, 404);
 });
+
+test("api-keys mode over the real routes: set in settings or pinned by env; OAuth stays off the host, API keys move", async () => {
+  const hosts = new Map<string, FakeHost>();
+  const a = host("a", hosts);
+  const b = host("b", hosts);
+  const c = host("c", hosts);
+  const oauth = { type: "oauth", access: "at-a", refresh: "rt-a", expires: Date.now() + 3_600_000 };
+  writeAuth(a, { zai: { type: "api_key", key: "sk-a" }, "openai-codex": oauth });
+  b.settings.loginKinds = "api-keys";
+  const json = { "content-type": "application/json" };
+  const prior = process.env.SOVA_SYNC_LOGIN_KINDS;
+  process.env.SOVA_SYNC_LOGIN_KINDS = "api-keys"; // read per call: pins C although its settings say nothing
+  for (const h of [a, b, c]) h.fire.start();
+  try {
+    for (const h of [b, c]) {
+      assert.equal(await until(() => existsSync(join(h.agentDir, "auth.json")) && !!auth(h).zai), true, `${h.id} pulled the API key`);
+      await new Promise((r) => setTimeout(r, 300));
+      assert.deepEqual(auth(h), { zai: { type: "api_key", key: "sk-a" } }, `${h.id} holds no OAuth login`);
+    }
+    // C's own OAuth login: unlisted, unclaimable, and never offered to A.
+    writeAuth(c, { ...auth(c), anthropic: { ...oauth, access: "at-c", refresh: "rt-c" } });
+    assert.equal(await until(() => (c.rt.credentials!.manifest().refuses ?? []).includes("pi:anthropic")), true);
+    const logins = (await (await c.app.request("/api/mesh/logins")).json()) as MeshLogins;
+    assert.deepEqual(logins.entries.map((e) => e.key), ["pi:zai"]);
+    const claim = await c.app.request("/api/mesh/logins/claim", { method: "POST", body: JSON.stringify({ key: "pi:anthropic" }), headers: json });
+    assert.equal(claim.status, 409);
+    assert.match(((await claim.json()) as { error: string }).error, /API keys only/);
+    await new Promise((r) => setTimeout(r, 1200));
+    assert.equal(auth(a).anthropic, undefined, "C's OAuth login stayed on C");
+    // The pin lifted and settings back to "all": the next exchange brings the OAuth login over.
+    process.env.SOVA_SYNC_LOGIN_KINDS = "";
+    b.settings.loginKinds = null;
+    b.fire.settings();
+    assert.equal(await until(() => !!auth(b)["openai-codex"]), true, "B took the OAuth login once switched to all");
+  } finally {
+    if (prior === undefined) delete process.env.SOVA_SYNC_LOGIN_KINDS;
+    else process.env.SOVA_SYNC_LOGIN_KINDS = prior;
+    for (const h of [a, b, c]) h.fire.stop();
+  }
+});

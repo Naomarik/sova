@@ -12,10 +12,12 @@ import {
   isKeyRecord,
   isLive,
   laterTombstone,
+  loginKindsPin,
   parseEntryKey,
   plan,
   resolve,
   sameLineage,
+  syncsRecord,
   type EntryMeta,
   type KeyRecord,
   type Tombstone,
@@ -475,4 +477,24 @@ test("a pre-sync entry that survived a logout stays on its host and is not taken
   // Claimed on B (a login made now): it spreads, logout or not.
   const claimed = { ...bKey, loginAt: NOW - 1000, issuedAt: NOW - 1000 };
   assert.equal(resolve({ tombstone: t }, { meta: claimed }, NOW).action, "adopt");
+});
+
+test("api-keys mode: which records sync, and the env pin", () => {
+  const api = { meta: key({ issuedAt: NOW }) };
+  const login = { meta: oauth({ expires: NOW + H }) };
+  assert.equal(syncsRecord("all", "pi:x", login), true);
+  assert.equal(syncsRecord("all", "claude:claudeAiOauth", login), true);
+  assert.equal(syncsRecord("api-keys", "pi:zai", api), true);
+  assert.equal(syncsRecord("api-keys", "pi:zai", undefined), true, "nothing known yet");
+  assert.equal(syncsRecord("api-keys", "pi:x", login), false);
+  assert.equal(syncsRecord("api-keys", "claude:claudeAiOauth", undefined), false, "Claude Code's store is a subscription login");
+  assert.equal(syncsRecord("api-keys", "pi:x", { tombstone: { at: 1, by: "a", of: { fingerprint: "f", kind: "oauth" } } }), false);
+  assert.equal(syncsRecord("api-keys", "pi:x", { tombstone: { at: 1, by: "a", of: { fingerprint: "f", kind: "api_key" } } }), true);
+  assert.equal(syncsRecord("api-keys", "pi:x", { tombstone: { at: 1, by: "a" } }), true, "a logout that names no kind is harmless");
+  assert.equal(loginKindsPin({ SOVA_SYNC_LOGIN_KINDS: "api-keys" }), "api-keys");
+  assert.equal(loginKindsPin({ SOVA_SYNC_LOGIN_KINDS: " all " }), "all");
+  assert.equal(loginKindsPin({ SOVA_SYNC_LOGIN_KINDS: "oauth" }), null);
+  assert.equal(loginKindsPin({}), null);
+  assert.equal(isKeyRecord({ tombstone: { at: 1, by: "a", of: { fingerprint: "f", kind: "oauth" } } }), true);
+  assert.equal(isKeyRecord({ tombstone: { at: 1, by: "a", of: { fingerprint: "f", kind: "password" } } }), false);
 });

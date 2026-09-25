@@ -13,7 +13,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { CredentialSync, type SyncPeer } from "./logins";
+import { CredentialSync, type CredentialPush, type SyncPeer } from "./logins";
+import type { LoginKinds } from "./logins-merge";
 import { CLAUDE_OAUTH_KEY, ClaudeCredentialStore, PiAuthStore, piRefresher } from "./logins-stores";
 import { createMockTokenState } from "../../scripts/mesh-lab/mock-token-server/server.mjs";
 import * as claudeSim from "../../scripts/mesh-lab/mock-token-server/claude-sim.mjs";
@@ -56,6 +57,9 @@ let meshSeq = 0;
 class Host {
   offset = 0;
   online = true;
+  kinds: LoginKinds = "all";
+  /** Every push body this host received, as it arrived. */
+  readonly received: CredentialPush[] = [];
   sync!: CredentialSync;
   readonly dir: string;
   readonly authPath: string;
@@ -83,6 +87,7 @@ class Host {
       log: (m) => this.logs.push(m),
       refreshers: { pi: piRefresher(this.authPath) },
       debounceMs: 50,
+      loginKinds: () => this.kinds,
     });
   }
   /** In-memory transport; a partitioned host is unreachable both ways. */
@@ -99,7 +104,11 @@ class Host {
         if (!got) throw new Error("404");
         return structuredClone(got);
       },
-      push: async (body) => (reach(), target.sync.receivePush(this.id, structuredClone(body))),
+      push: async (body) => {
+        reach();
+        target.received.push(structuredClone(body));
+        return target.sync.receivePush(this.id, structuredClone(body));
+      },
     };
   }
   auth(): Record<string, Record<string, unknown>> {
@@ -670,5 +679,132 @@ test("first pairing: one pre-existing Codex login copied to two hosts (same acco
     assert.equal(b!.sync.status().entries.find((e) => e.key === CODEX)?.conflictWith, undefined);
   } finally {
     for (const h of [a!, b!]) h.sync.stop();
+  }
+});
+
+// ---------------------------------------------------------------- API-keys-only hosts (a VPS)
+
+/** Every key a host was ever pushed, and whether any of them carried an OAuth secret. */
+const pushedKeys = (h: Host) => new Set(h.received.flatMap((b) => Object.keys(b.entries)));
+const pushedOAuth = (h: Host) => h.received.some((b) => Object.values(b.entries).some((e) => e.record.meta?.kind === "oauth" || e.record.tombstone?.of?.kind === "oauth" || (e.secret as { type?: unknown } | undefined)?.type === "oauth"));
+
+test("api-keys mode: OAuth on A never reaches B (never even sent to it); the API key does, both ways", async () => {
+  const [a, b, c] = makeMesh(3);
+  b!.kinds = "api-keys";
+  await a!.piLogin();
+  await claudeSim.login(a!.claudeDir, mockUrl);
+  await a!.sync.observe("claude");
+  await AuthStorage.create(a!.authPath).modify("zai", async () => ({ type: "api_key", key: "sk-a" }));
+  await a!.sync.observe("pi");
+  await converge([a!, b!, c!]);
+  assert.deepEqual(b!.auth(), { zai: { type: "api_key", key: "sk-a" } }, "B holds the API key and nothing else");
+  assert.equal(b!.claude(), undefined, "no Claude login on B");
+  assert.ok(c!.auth()["openai-codex"] && c!.claude(), "an all-kinds host still gets both");
+  assert.equal(pushedOAuth(b!), false, "no OAuth record or secret was ever sent to B");
+  assert.ok(!pushedKeys(b!).has(CODEX) && !pushedKeys(b!).has(CLAUDE));
+  assert.deepEqual(Object.keys(b!.sync.manifest().entries), ["pi:zai"], "B offers only the API key");
+  assert.equal(b!.sync.manifest().loginKinds, "api-keys");
+  for (const h of [a!, c!]) assert.deepEqual(h.logs.filter((m) => m.includes("rejected")), [], `${h.id}: no refusal to retry`);
+  // An API key changed on B reaches the others; a refresh of A's OAuth still doesn't reach B.
+  await new Promise((r) => setTimeout(r, 5));
+  await AuthStorage.create(b!.authPath).modify("zai", async () => ({ type: "api_key", key: "sk-b" }));
+  await b!.sync.observe("pi");
+  assert.equal(await a!.piRefresh(), "ok");
+  await converge([a!, b!, c!]);
+  for (const h of [a!, b!, c!]) assert.deepEqual(h.auth().zai, { type: "api_key", key: "sk-b" }, h.id);
+  assert.equal(b!.auth()["openai-codex"], undefined);
+  assert.equal(piRefreshSha(c!), piRefreshSha(a!), "C follows A's refresh");
+  assert.equal(pushedOAuth(b!), false);
+  // A's logout of its OAuth login goes to C, not to B (B never held it).
+  await a!.sync.logout(CODEX);
+  await converge([a!, b!, c!]);
+  assert.equal(c!.auth()["openai-codex"], undefined);
+  assert.ok(!pushedKeys(b!).has(CODEX), "the OAuth logout was not sent to B");
+  const relogin = await a!.piLogin();
+  await converge([a!, b!, c!]);
+  // Switched to "all", B takes the OAuth logins on its next exchange.
+  b!.kinds = "all";
+  await converge([a!, b!, c!]);
+  assert.equal(piRefreshSha(b!), latest(relogin).refreshSha256);
+  assert.ok(b!.claude());
+});
+
+test("api-keys mode: a peer whose entry turns out to be OAuth (it changed since its manifest) is not taken", async () => {
+  const [a, b] = makeMesh(2);
+  b!.kinds = "api-keys";
+  await a!.piLogin("zai"); // an OAuth login under a provider the manifest below calls an API key
+  const got = (await a!.sync.entry("pi:zai"))!;
+  const apiMeta = { ...got.record.meta!, kind: "api_key" as const, expires: undefined };
+  const liar: SyncPeer = {
+    id: "a",
+    manifest: async () => ({ hostId: "a", now: Date.now(), entries: { "pi:zai": { meta: apiMeta } } }),
+    entry: async () => structuredClone(got),
+    push: async () => ({ accepted: [], rejected: [] }),
+  };
+  assert.equal((await b!.sync.syncWith(liar)).state, "ok");
+  assert.equal(existsSync(b!.authPath), false, "nothing written");
+});
+
+test("api-keys mode: a pushed OAuth entry or OAuth logout is refused and writes nothing", async () => {
+  const [a, b] = makeMesh(2);
+  b!.kinds = "api-keys";
+  await a!.piLogin();
+  const got = (await a!.sync.entry(CODEX))!;
+  assert.ok(got, "A offers its login");
+  const tomb = { tombstone: { at: Date.now(), by: "a", of: { fingerprint: got.record.meta!.fingerprint, kind: "oauth" as const } } };
+  const reply = await b!.sync.receivePush("a", { hostId: "a", now: Date.now(), entries: { [CODEX]: got, "pi:other": { record: tomb }, [CLAUDE]: { record: { tombstone: { at: Date.now(), by: "a" } } } } });
+  assert.deepEqual(reply.accepted, []);
+  assert.deepEqual(
+    reply.rejected.map((r) => [r.key, r.reason]).sort(),
+    [[CLAUDE, "api-keys-only"], [CODEX, "api-keys-only"], ["pi:other", "api-keys-only"]],
+  );
+  assert.equal(existsSync(b!.authPath), false, "B's auth.json never written");
+  assert.deepEqual(b!.sync.recordsSnapshot(), {}, "no record kept");
+  assert.equal(await b!.sync.entry(CODEX), null);
+});
+
+test("api-keys mode: B's own OAuth login stays on B, unlisted and unoffered; A's login and logout of it never touch B's", async () => {
+  const [a, b] = makeMesh(2);
+  b!.kinds = "api-keys";
+  const mine = await b!.piLogin();
+  // B's own OAuth login under a provider where A holds an API key: A must not offer B that key either.
+  await b!.piLogin("anthropic");
+  await AuthStorage.create(a!.authPath).modify("anthropic", async () => ({ type: "api_key", key: "sk-ant" }));
+  await a!.sync.observe("pi");
+  const bAnthropic = structuredClone(b!.auth().anthropic);
+  await new Promise((r) => setTimeout(r, 5));
+  const theirs = await a!.piLogin(); // newer: would win in "all" mode
+  await converge([a!, b!]);
+  assert.equal(piRefreshSha(b!), latest(mine).refreshSha256, "B keeps its own login");
+  assert.equal(piRefreshSha(a!), latest(theirs).refreshSha256, "A keeps its own login");
+  assert.deepEqual(b!.auth().anthropic, bAnthropic, "A's API key did not replace B's own OAuth login");
+  assert.deepEqual(a!.auth().anthropic, { type: "api_key", key: "sk-ant" });
+  const m = b!.sync.manifest();
+  assert.deepEqual(Object.keys(m.entries), []);
+  assert.deepEqual(m.refuses, ["pi:anthropic", CODEX]);
+  assert.deepEqual(b!.sync.status().entries, [], "the logins list leaves out what B doesn't sync");
+  assert.equal(await b!.sync.claim(CODEX), false, "nothing B could claim");
+  assert.equal(await b!.sync.entry(CODEX), null, "B hands no peer its OAuth secret");
+  assert.equal(pushedKeys(b!).size, 0, "A sent B nothing at all");
+  assert.deepEqual(a!.logs.filter((l) => l.includes("rejected")), []);
+  await a!.sync.logout(CODEX);
+  await converge([a!, b!]);
+  assert.equal(a!.auth()["openai-codex"], undefined);
+  assert.equal(piRefreshSha(b!), latest(mine).refreshSha256, "A's logout did not reach B's login");
+  assert.equal(pushedOAuth(b!), false, "not even the logout was sent");
+});
+
+test("api-keys mode: c-lite never refreshes an OAuth login on that host", async () => {
+  const [a] = makeMesh(1);
+  const timers = () => (a!.sync as unknown as { refreshTimers: Map<string, unknown> }).refreshTimers;
+  await a!.sync.start();
+  try {
+    await a!.piLogin();
+    assert.ok(timers().has(CODEX), "all kinds: the origin arms its early refresh");
+    a!.kinds = "api-keys";
+    a!.sync.kindsChanged();
+    assert.equal(timers().has(CODEX), false, "api keys only: no early refresh");
+  } finally {
+    a!.sync.stop();
   }
 });

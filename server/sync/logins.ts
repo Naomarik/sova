@@ -12,9 +12,11 @@ import {
   plan,
   preSyncConflict,
   resolve,
+  syncsRecord,
   type EntryKey,
   type EntryMeta,
   type KeyRecord,
+  type LoginKinds,
   type Records,
   type RejectReason,
   type StoreId,
@@ -46,6 +48,10 @@ export interface CredentialManifest {
   hostId: string;
   now: number;
   entries: Records;
+  /** Present when the sender syncs API keys only: send it no OAuth entry and no logout of one. */
+  loginKinds?: "api-keys";
+  /** Keys the sender keeps to itself (its own OAuth logins, API-keys-only mode): send it nothing for them. */
+  refuses?: EntryKey[];
 }
 
 /** POST push body: records (tombstones travel alone), with the secret for each live entry. */
@@ -114,6 +120,8 @@ export interface CredentialSyncOptions {
   debounceMs?: number;
   /** The user's "logins" sync switch. Off: nothing is observed, offered, taken or refreshed. */
   enabled?: () => boolean;
+  /** Which logins this host syncs (default "all"). */
+  loginKinds?: () => LoginKinds;
 }
 
 const SIDECAR_VERSION = 1;
@@ -157,6 +165,22 @@ export class CredentialSync {
 
   private get enabled(): boolean {
     return this.opts.enabled?.() ?? true;
+  }
+
+  private get kinds(): LoginKinds {
+    return this.opts.loginKinds?.() ?? "all";
+  }
+
+  /** Whether this host syncs `key` at all, given what it holds (and, for a peer's record, that too). */
+  syncs(key: EntryKey, remote?: KeyRecord): boolean {
+    const kinds = this.kinds;
+    return syncsRecord(kinds, key, this.records[key]) && (!remote || syncsRecord(kinds, key, remote));
+  }
+
+  /** The login mode changed: c-lite follows it (the next exchange does the rest). */
+  kindsChanged(): void {
+    this.armRefreshTimers();
+    this.opts.onChange?.();
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -439,7 +463,7 @@ export class CredentialSync {
    */
   async claim(key: EntryKey): Promise<boolean> {
     const parsed = parseEntryKey(key);
-    if (!parsed || !this.stores.has(parsed.store)) return false;
+    if (!parsed || !this.stores.has(parsed.store) || !this.syncs(key)) return false;
     const claimed = await this.locked(parsed.store, (_store, snap) => {
       const rec = this.records[key];
       const entry = snap.entries.get(parsed.provider);
@@ -460,7 +484,13 @@ export class CredentialSync {
   // ---------------------------------------------------------------- peer-facing (server side)
 
   manifest(): CredentialManifest {
-    return { hostId: this.hostId, now: this.now(), entries: this.recordsView(advertisable) };
+    const m: CredentialManifest = { hostId: this.hostId, now: this.now(), entries: this.recordsView(advertisable) };
+    if (this.kinds === "api-keys" && this.enabled) {
+      m.loginKinds = "api-keys";
+      const refuses = Object.keys(this.records).filter((key) => !this.syncs(key) && parseEntryKey(key)?.store === "pi");
+      if (refuses.length) m.refuses = refuses.sort();
+    }
+    return m;
   }
 
   /**
@@ -473,7 +503,7 @@ export class CredentialSync {
     if (!this.enabled) return entries;
     for (const [key, rec] of Object.entries(this.records)) {
       const store = parseEntryKey(key)?.store;
-      if (!store || !this.advertisesStore(store)) continue;
+      if (!store || !this.advertisesStore(store) || !this.syncs(key)) continue;
       const meta = include(rec, now) ? rec.meta : undefined;
       if (meta || rec.tombstone) entries[key] = { ...(meta ? { meta } : {}), ...(rec.tombstone ? { tombstone: rec.tombstone } : {}) };
     }
@@ -492,7 +522,7 @@ export class CredentialSync {
     return this.locked(parsed.store, (_store, snap) => {
       const rec = this.records[key];
       const entry = snap.entries.get(parsed.provider);
-      if (!rec || !entry || !advertisable(rec, this.now()) || rec.meta!.fingerprint !== entry.fingerprint) return null;
+      if (!rec || !entry || !this.syncs(key) || !advertisable(rec, this.now()) || rec.meta!.fingerprint !== entry.fingerprint) return null;
       return { record: structuredClone(rec), secret: entry.value };
     });
   }
@@ -515,6 +545,10 @@ export class CredentialSync {
       }
       if (!it || !isKeyRecord(it.record)) {
         reply.rejected.push({ key, reason: "invalid" });
+        continue;
+      }
+      if (!this.syncs(key, it.record)) {
+        reply.rejected.push({ key, reason: "api-keys-only" });
         continue;
       }
       const secret = it.secret && typeof it.secret === "object" && !Array.isArray(it.secret) ? (it.secret as Record<string, unknown>) : undefined;
@@ -547,11 +581,16 @@ export class CredentialSync {
         const theirs: Records = {};
         for (const [k, rec] of Object.entries(remote.entries ?? {})) {
           const p = parseEntryKey(k);
-          if (p && this.stores.has(p.store) && isKeyRecord(rec)) theirs[k] = rec;
+          if (p && this.stores.has(p.store) && isKeyRecord(rec) && this.syncs(k, rec)) theirs[k] = rec;
         }
         // What this host holds, an idle (expired, not dead) login included: it is compared, not
-        // replaced by any live peer entry, and never re-pulled round after round.
+        // replaced by any live peer entry, and never re-pulled round after round. A peer that syncs
+        // API keys only is offered nothing else, so it never has to refuse a secret.
         const mine = this.recordsView(held);
+        if (remote.loginKinds === "api-keys") {
+          const refused = new Set(Array.isArray(remote.refuses) ? remote.refuses : []);
+          for (const [k, rec] of Object.entries(mine)) if (refused.has(k) || !syncsRecord("api-keys", k, rec)) delete mine[k];
+        }
         // Conflicts to tell the peer about: it may not exchange with this host again for minutes.
         const notices: EntryKey[] = [];
         for (const key of new Set([...Object.keys(mine), ...Object.keys(this.conflicts)])) {
@@ -564,7 +603,7 @@ export class CredentialSync {
         const todo = plan(mine, theirs, now);
         for (const key of todo.pull) {
           const got = await peer.entry(key).catch(() => null);
-          if (got && isKeyRecord(got.record)) await this.applyRemote(key, got.record, got.secret);
+          if (got && isKeyRecord(got.record) && this.syncs(key, got.record)) await this.applyRemote(key, got.record, got.secret);
         }
         for (const key of todo.delete) await this.applyRemote(key, theirs[key]!);
         // Tombstones we learnt from the peer but held no entry for still belong in our records.
@@ -635,6 +674,7 @@ export class CredentialSync {
       const m = rec.meta;
       const p = parseEntryKey(key);
       if (!m || !p || m.kind !== "oauth" || m.origin !== this.hostId || !isLive(m, now) || !advertisable(rec, now)) continue;
+      if (!this.syncs(key)) continue; // this host's own OAuth in API-keys-only mode: its consumer refreshes it
       if (!this.opts.refreshers?.[p.store]) continue;
       const life = (m.expires ?? 0) - m.issuedAt;
       const at = Math.max(m.issuedAt + life / 2, (this.lastRefreshAt.get(key) ?? 0) + MIN_REFRESH_SPACING_MS);
@@ -673,7 +713,7 @@ export class CredentialSync {
     const entries: CredentialStatusEntry[] = [];
     for (const [key, rec] of Object.entries(this.records)) {
       const p = parseEntryKey(key);
-      if (!p) continue;
+      if (!p || !this.syncs(key)) continue;
       const m = rec.meta;
       entries.push({
         key,
@@ -719,5 +759,5 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** A logout's tombstone, naming what was logged out (a different pre-sync login survives it). */
 function tombstoneFor(meta: EntryMeta | undefined, at: number, by: string): Tombstone {
-  return meta ? { at, by, of: { fingerprint: meta.fingerprint, ...(meta.account ? { account: meta.account } : {}) } } : { at, by };
+  return meta ? { at, by, of: { fingerprint: meta.fingerprint, ...(meta.account ? { account: meta.account } : {}), kind: meta.kind } } : { at, by };
 }

@@ -67,7 +67,7 @@ export interface Tombstone {
   at: number;
   by: string;
   /** What was logged out, so a pre-sync entry that is a different login survives the logout. */
-  of?: { fingerprint: string; account?: string };
+  of?: { fingerprint: string; account?: string; kind?: EntryKind };
 }
 
 /** What a host knows about one key: the entry it holds (if any) and the newest logout it has seen. */
@@ -83,9 +83,44 @@ export type Records = Record<EntryKey, KeyRecord>;
  * is a failed-refresh marker or expired, `local-only` is a key this host keeps as device config,
  * `clock-skew` means the two clocks disagree too much to compare stamps, `invalid` failed a check,
  * `disabled` means this host has login sync turned off, `conflict` that both hosts hold a
- * different pre-sync login and the user has to pick one.
+ * different pre-sync login and the user has to pick one, `api-keys-only` that this host syncs API
+ * keys only and the entry is (or would replace) an OAuth login.
  */
-export type RejectReason = "older" | "tombstoned" | "dead" | "unknown-store" | "local-only" | "clock-skew" | "invalid" | "disabled" | "conflict";
+export type RejectReason =
+  | "older"
+  | "tombstoned"
+  | "dead"
+  | "unknown-store"
+  | "local-only"
+  | "clock-skew"
+  | "invalid"
+  | "disabled"
+  | "conflict"
+  | "api-keys-only";
+
+/**
+ * Which logins a host syncs. "api-keys": API keys only. The host never offers, takes, stores or
+ * refreshes an OAuth (subscription) entry through sync, and ignores logouts of one; its own OAuth
+ * logins stay on it, untouched by any peer.
+ */
+export type LoginKinds = "all" | "api-keys";
+
+/** The mode pinned by the host's environment (a VPS unit sets SOVA_SYNC_LOGIN_KINDS=api-keys), or null. */
+export function loginKindsPin(env: NodeJS.ProcessEnv = process.env): LoginKinds | null {
+  const v = env.SOVA_SYNC_LOGIN_KINDS?.trim();
+  return v === "api-keys" || v === "all" ? v : null;
+}
+
+/**
+ * Whether a host in `kinds` mode syncs this record. The kind comes from the entry, else from what
+ * its logout names; a logout that names no kind (nothing was known of the entry) is harmless and
+ * counts as syncable. Claude Code's store holds only its subscription login.
+ */
+export function syncsRecord(kinds: LoginKinds, key: EntryKey, rec: KeyRecord | undefined): boolean {
+  if (kinds === "all") return true;
+  if (parseEntryKey(key)?.store !== "pi") return false;
+  return rec?.meta?.kind !== "oauth" && rec?.tombstone?.of?.kind !== "oauth";
+}
 
 /** Peers whose clocks differ by more than this are not merged with: every stamp is a wall time. */
 export const MAX_CLOCK_SKEW_MS = 60_000;
@@ -257,8 +292,9 @@ export function isKeyRecord(v: unknown): v is KeyRecord {
     const t = r.tombstone as Partial<Tombstone>;
     if (!t || typeof t.at !== "number" || !Number.isFinite(t.at) || typeof t.by !== "string") return false;
     if (t.of !== undefined) {
-      const o = t.of as { fingerprint?: unknown; account?: unknown } | null;
+      const o = t.of as { fingerprint?: unknown; account?: unknown; kind?: unknown } | null;
       if (!o || typeof o.fingerprint !== "string" || (o.account !== undefined && typeof o.account !== "string")) return false;
+      if (o.kind !== undefined && o.kind !== "oauth" && o.kind !== "api_key") return false;
     }
   }
   return r.meta === undefined || isEntryMeta(r.meta);

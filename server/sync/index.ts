@@ -6,7 +6,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { MeshLoginEntry, MeshLogins, SyncCategory, SyncStatus } from "../../shared/protocol";
 import type { MeshApi } from "../mesh";
 import { stateRoot } from "../state-root";
-import { parseEntryKey, type EntryKey } from "./logins-merge";
+import { loginKindsPin, parseEntryKey, type EntryKey, type LoginKinds } from "./logins-merge";
 import { ClaudeCredentialStore, PiAuthStore, piRefresher, type CredentialStore } from "./logins-stores";
 import { CredentialSync, type CredentialStatusEntry, type CredentialEntryReply, type CredentialManifest, type CredentialPushReply, type SyncPeer } from "./logins";
 import { DocSync, type DocManifest, type DocPeer, type DocPushReply, type DocReply } from "./docs";
@@ -116,6 +116,7 @@ const defaultPaths: SyncPaths = { agentDir: getAgentDir, stateDir: stateRoot, cl
 export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPaths): SyncRuntime {
   const rt: SyncRuntime = { credentials: null, docs: null, extensions: null };
   const loginsOn = () => mesh.settings().sync.logins;
+  const loginKinds = (): LoginKinds => loginKindsPin() ?? (mesh.settings().loginKinds === "api-keys" ? "api-keys" : "all");
   const categoryOn = (c: SyncCategory) => mesh.settings().sync[c];
   let reconcile: NodeJS.Timeout | undefined;
   const syncEverything = () => {
@@ -137,6 +138,7 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
       peers: () => mesh.peers().map((p) => httpPeer(mesh, p.id)),
       refreshers: { pi: piRefresher(authPath) },
       enabled: loginsOn,
+      loginKinds,
     });
     rt.credentials = sync;
     void sync
@@ -197,6 +199,7 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
   // A switch turned back on takes effect at once (off is read at every entry point anyway).
   mesh.onSettingsChange(() => {
     rt.docs?.observe();
+    rt.credentials?.kindsChanged();
     syncEverything();
   });
   mesh.onSyncStatus(() => [
@@ -240,9 +243,10 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     } catch {
       return c.json({ error: "Expected JSON" }, 400);
     }
-    if (typeof key !== "string" || !parseEntryKey(key) || !sync.status().entries.some((e) => e.key === key)) {
-      return c.json({ error: "Unknown login" }, 400);
-    }
+    if (typeof key !== "string" || !parseEntryKey(key)) return c.json({ error: "Unknown login" }, 400);
+    // The logins list leaves out what this host doesn't sync, so check that first.
+    if (!sync.syncs(key)) return c.json({ error: "This host syncs API keys only" }, 409);
+    if (!sync.status().entries.some((e) => e.key === key)) return c.json({ error: "Unknown login" }, 400);
     if (!loginsOn()) return c.json({ error: "Logins sync is off" }, 409);
     if (!(await sync.claim(key))) return c.json({ error: "Nothing here to claim" }, 409);
     return c.json({ ok: true as const });

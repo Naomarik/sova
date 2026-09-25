@@ -2086,6 +2086,12 @@ export interface MeshSettings {
   /** This host's browser-facing address (its front-door upstream), when not
       https://<its MagicDNS name>:8443. null clears it. */
   serveUrl?: string | null;
+  /** Which logins this host syncs. "api-keys": API keys only; OAuth (subscription) logins are
+      neither sent to it nor taken by it, and its own stay on it. Absent = "all". In a PUT, null
+      = "all". A host started with SOVA_SYNC_LOGIN_KINDS pins it (a PUT of another value is 409). */
+  loginKinds?: "all" | "api-keys" | null;
+  /** GET only: `loginKinds` is pinned by SOVA_SYNC_LOGIN_KINDS on this host (the UI can't change it). */
+  loginKindsPinned?: true;
 }
 
 /** One row of GET /api/mesh/logins: how a login stands on this host. Never a secret. */

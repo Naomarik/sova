@@ -404,8 +404,9 @@ label a person reads says "sessions pane".
   The line ends with the **context ring** (§chat/context-window): a 12px ring whose arc is the share of the window
   the last reply left filled, `.context-warn` at ≥80% and `.context-error` at ≥95% — the same
   `contextStep` the head's gauge uses, so a row and the session it opens step together. Its
-  `title` is the head's exact sentence. It is the one place in the product where the context fill
-  is a shape instead of a number, and §chat/context-window writes that exception down.
+  `title` is the head's exact sentence. It and the subagents pane's worker ring are the only
+  places in the product where the context fill is a shape instead of a number, and
+  §chat.context-window/sidebar-ring writes that exception down.
 - **Lines 2 and 3 are `.list-line`.** Each is a flex wrapper: the text block flexes and truncates,
   the indicator is `flex: none`. That puts the chip and the ring on **one right edge** down the
   whole list, which is the entire point — a ring that slid left and right with the text beside it

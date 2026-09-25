@@ -268,16 +268,20 @@
     "§app.subagents-pane/transcript-view": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "requires": [
-        "§app.worker-restore/resume"
+        "§app.worker-restore/resume",
+        "§app.subagents-pane/context-fill",
+        "§chat.context-window/last-reply"
       ],
       "code": [
         "src/components/ConnectionBanner.tsx",
         "src/components/SubagentPane.tsx",
         "src/lib/api.ts",
         "src/design/base.css",
-        "src/components/SessionPane.tsx"
+        "src/components/SessionPane.tsx",
+        "src/components/ContextGauge.tsx",
+        "src/lib/workers.ts"
       ]
     },
     "§app.subagents-pane/trigger": {
@@ -288,16 +292,20 @@
     "§app.subagents-pane/worker-rows": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
-        "§app.worker-restore/restore"
+        "§app.worker-restore/restore",
+        "§app.subagents-pane/context-fill",
+        "§chat.context-window/sidebar-ring"
       ],
       "code": [
         "src/components/SubagentPane.tsx",
         "server/insights.ts",
         "shared/protocol.ts",
         "src/lib/insights.ts",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/components/ContextRing.tsx",
+        "src/lib/workers.ts"
       ]
     },
     "§app/extension-dialogs": {
@@ -406,7 +414,12 @@
     "§chat.context-window/sidebar-ring": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ContextRing.tsx",
+        "src/components/Sidebar.tsx",
+        "src/components/SubagentPane.tsx"
+      ]
     },
     "§chat.context-window/states": {
       "kind": "behavior",
@@ -1818,6 +1831,30 @@
       "code": [
         "server/extensions.ts",
         "src/components/ExtensionView.tsx"
+      ]
+    },
+    "§app.subagents-pane/context-fill": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/worker-context.ts",
+        "server/watch.ts",
+        "server/ws.ts",
+        "server/models.ts",
+        "server/insights.ts",
+        "server/chat-manager.ts",
+        "server/worker-restore.ts",
+        "shared/protocol.ts",
+        "src/lib/workers.ts",
+        "pi-config/extensions/subagents/worker-transcript.ts",
+        "pi-config/extensions/subagents/adapters/pi.ts",
+        "pi-config/extensions/claude-code/transcript-adapter.ts"
+      ],
+      "requires": [
+        "§chat.context-window/last-reply",
+        "§app.worker-restore/transcript-protocol",
+        "§chat.context-window/honesty"
       ]
     }
   }

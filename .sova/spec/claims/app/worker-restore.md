@@ -52,7 +52,10 @@ parent's `agent_list`, Sova's pane and `#/agents` — never parse a backend's fo
 - **An adapter locates without writing.** Finding a transcript never creates or touches a file.
 - **A read returns one summary shape** for every backend: found or not (with a reason), size and
   time, model and effort, whether the last turn settled or was cut off, the last outcome and
-  reply, compactions, and usage with its source (`transcript`, `snapshot` or `none`).
+  reply, compactions, the context fill of the last reply that measured it (`lastContextTokens`,
+  §chat.context-window/last-reply's rule on the worker's own branch or main chain; `null` when a
+  compaction followed it, absent before any such reply — an additive field, so the protocol stays
+  version 1), and usage with its source (`transcript`, `snapshot` or `none`).
 - **What each backend provides today.** pi: the transcript is the worker's session file; usage
   exact, with cost; resume native. claude-code: the transcript is the Claude session id, found
   by scanning `~/.claude/projects`; usage tokens-only, per model; resume native. A backend with
@@ -115,7 +118,8 @@ or why it can't be resumed).
   inline: "$0.41 as of {HH:MM}".
 - **One row, one label, hosted or not.** A restored team member's spend is a Team row in the
   session tab's usage. A restored or resumed worker is named by the model it **ran under**: its
-  transcript's model, else its last snapshot's, else the model it was spawned with. So a Claude
+  transcript's model, else its last snapshot's, else the model it was spawned with, and a Claude
+  worker's name keeps the context variant it was spawned with (`[1m]`, read "1M"). So a Claude
   worker reads `haiku-4.5` running, restored and resumed alike, whether the session is hosted by
   this server or only read from its file. On `#/agents`, a team whose members are all
   restored is counted "· {n} restored" beside the Teams head, not as active.

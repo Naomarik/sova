@@ -162,7 +162,10 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   <li>
     <button class="subagent-row" type="button" aria-current="true">
       <span class="subagent-row-name">designer</span>
-      <span class="subagent-row-status"><span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span></span>
+      <span class="subagent-row-status">
+        <span class="context-ring" title="Context: 64,210 of 1,000,000 tokens (6%), as of the last reply.">…</span>   <!-- only with a fill and a window -->
+        <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
+      </span>
       <span class="subagent-row-meta meta-line">
         <span>claude code</span>
         <span class="meta-line-sep" aria-hidden="true">·</span>
@@ -177,8 +180,8 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
 ```
 
 - **Anatomy.** The whole row is the button, 44px minimum. Line 1 is the name (the team role when
-  the worker is a team member, else its own name), with the status chip at the right. Line 2 is
-  the meta. Every line ellipsizes. **There's no excerpt of the worker's reply**, whether that's
+  the worker is a team member, else its own name), with the context ring and the status chip at
+  the right. Line 2 is the meta. Every line ellipsizes. **There's no excerpt of the worker's reply**, whether that's
   "No response yet." or the reply itself: one clipped line of a reply said little and cost every
   row a line. The transcript says it whole, one tap away.
 - **The meta line ranks its facts** (`.meta-line`, shared with the transcript view's meta). It is
@@ -222,6 +225,19 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   so in the `title` ("$0.41 as of {HH:MM}"), and a worker whose usage can't be read shows
   "usage unavailable" in the tokens' place, never 0. While
   the pane's connection is down, nothing pulses and every row reads "as of" the last update.
+- **Context ring.** Each row shows how full that worker's **own** context is
+  (§app.subagents-pane/context-fill) as the session row does: §chat.context-window/sidebar-ring's
+  12px ring, the same `contextStep` warn (≥80%) and error (≥95%) steps, and a `title` that is the
+  view head's exact sentence ("Context: 64,210 of 1,000,000 tokens (6%), as of the last reply.").
+  It sits in line 1's status slot, before the chip, not on the meta line: there the name gives
+  up the 20px, and the meta line, already the row's tightest, keeps every fact. It is a different
+  fact from the tokens beside it, which stay: the tokens are what the worker has spent, the ring
+  how close its next reply is to its limit. No ring when there is nothing honest to draw — no fill
+  yet, a fill with no known window, or a compaction since the last reply — exactly the sidebar
+  ring's three cases (§chat.context-window/sidebar-ring's table); for a worker, what words there
+  are to say live in the pane's view head ("Context compacted", "Context 64k" with the window
+  unknown — and before the first reply there is nothing yet to say). For the selected worker the
+  ring follows the open transcript's value, so row and head never disagree.
 - **Order.** Working first, then the most recent activity first. Rows keep their identity across
   updates, so a row never jumps under the pointer except when its status changes.
 - **Selected** is `aria-current="true"`: the house accent tint (like a selected session row) plus
@@ -250,7 +266,7 @@ webapp never writes to it (CLAUDE.md: no file locking).
   <header class="subagents-view-head">
     <h3 class="subagents-view-title">designer</h3>
     <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
-    <p class="subagents-view-meta meta-line"><span class="text-mono">ag_03</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>anthropic</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5">opus-5</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>effort <span class="text-mono">medium</span></span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k tokens</span></p>
+    <p class="subagents-view-meta meta-line"><span class="text-mono">ag_03</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>anthropic</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5">opus-5</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>effort <span class="text-mono">medium</span></span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k tokens</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="context-readout"><span class="context-gauge" title="{the sentence}"><span class="context-label" aria-hidden="true">Context</span> <span class="context-value" aria-hidden="true">64k / 1M · 6%</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></p>
   </header>
   <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
     <div class="subagents-banner stack-2">…banners, or nothing…</div>
@@ -264,8 +280,9 @@ webapp never writes to it (CLAUDE.md: no file locking).
   it never scrolls away (sticky by construction, not by `position: sticky`). The title is body
   semibold, then the same status chip as the row, then a meta line: the id in mono, then the
   provider, then the model, then **the effort** (`effort {level}`, the level in mono; a worker
-  that reports none shows nothing here), and last the
-  worker's tokens. **The effort leads the count**: what a worker is thinking at is a fact about
+  that reports none shows nothing here), then the worker's tokens, and last the **context readout**
+  (§app.subagents-pane/context-fill): the gauge trails the facts that name the worker and what it
+  has spent. **The effort leads the count**: what a worker is thinking at is a fact about
   the worker, where the count beside it is a running total that changes under the reader. The
   token number here is the **open transcript's own**
   total, counted from the file as it is tailed (`/ws/watch` sends it with every `snapshot` and
@@ -275,6 +292,16 @@ webapp never writes to it (CLAUDE.md: no file locking).
   The head repeats the row on purpose: in list/detail, the list
   isn't on screen. There, the back button leads the head, and title, chips and meta sit beside
   it in `.subagents-view-id`.
+- **Context readout.** Last in the meta line, after the tokens, the meta line carries the worker's
+  context fill (§app.subagents-pane/context-fill) as the chat head says it
+  (§chat/context-window): "Context 64k / 1M · 6%", plain text, the same format, steps, glyph at
+  ≥95% and sentence (`title`, and a visually hidden copy for AT), "Context compacted" after a
+  compaction, "Context 64k" when the window is unknown, and nothing before the first reply. Like
+  the tokens it is the **open transcript's own** value, recomputed on every `snapshot` and
+  `append`, and falls back to the row's. It isn't in a `.session-head`, so the head's width
+  steps don't apply; it collapses to the percent ("6%") when the pane itself is under 480px, and
+  never disappears on a phone. The meta line wraps to a second line rather than clip the facts at
+  its end.
 - **Thread.** The same §chat/transcript rows, capped at the transcript column (`--measure` + `--space-9`) and
   centred, 16px side padding. Auto-follow and Jump to Latest behave exactly as §chat.transcript/live-watch.
   `.subagents-jump` is `.jump-latest` held inside the view's width.
@@ -298,6 +325,39 @@ webapp never writes to it (CLAUDE.md: no file locking).
 A settled worker's transcript stays readable: Done, Failed and Stopped workers keep their rows
 for as long as the parent lists them, and a selected one stays shown after that (sticky
 selection, above).
+
+## §app.subagents-pane/context-fill — Each worker's context fill
+
+A worker's fill is §chat.context-window/last-reply applied to **that worker's own transcript**:
+input + cache read + cache write of its last reply that measured the context (a failed, aborted,
+synthetic or zero-usage reply is passed over), "compacted" when a compaction came after it, and
+nothing before its first such reply. Never 0 for unknown. It rides the wire as
+`WorkerInfo.context` (`ContextInfo` or `"compacted"`, absent when unknown) and
+`WorkerInfo.contextWindow`, and on `/ws/watch` as `context` on every `snapshot` and `append`
+(a fill, `"compacted"` stated explicitly, or `null` before the first reply).
+
+- **Both backends, one rule.** A pi worker's reply carries `usage.input`, `cacheRead`,
+  `cacheWrite`; a Claude Code worker's `input_tokens`, `cache_read_input_tokens`,
+  `cache_creation_input_tokens`, on every line the CLI repeats a reply on. Claude Code's
+  `isApiErrorMessage` and `<synthetic>` replies count as failed, a `compact_boundary` as a
+  compaction, and nested agents' (`isSidechain`) lines are their own context, so they are skipped.
+- **Live workers** publish spend only (the live registry's schema is unchanged), so the server reads
+  the fill off the **tail of the worker's transcript**, backwards from the end (16KB steps, 256KB
+  at most), like the sidebar ring, and only again when the file's mtime or size moved. It lags a
+  turn in flight exactly as §chat.context-window/honesty says a TUI row does: never wrong, only
+  late. Only a local file is read: a pi session file the rest of the API accepts, never one under a
+  remote target's placeholder tree, or the Claude session record `?claude=` reads. Anything else
+  has no fill, never a 0.
+- **Restored workers** take it from their transcript summary: the worker-transcript protocol's
+  additive `lastContextTokens` (a number, or `null` when a compaction followed it), read by each
+  backend's adapter over the worker's own branch or main chain.
+- **The window** is the one the worker was **spawned** with. claude-code: the provider's rule, a
+  `[1m]` alias is 1,000,000 and anything else 200,000 — and the model is the spawn model (the
+  manifest's spec, else its last snapshot's biggest row), never the transcript's, which is the bare
+  id and would drop the `[1m]`. A live row's model already carries it; a restored or resumed one
+  names what it ran under, so the session's manifests supply it, and the row's model takes the spawn
+  model's variant too: a restored `opus[1m]` worker reads "opus-5.5 1M", like its 1M ring and head. pi: the model's catalog window,
+  and a fill takes its own reply's model's window when that differs.
 
 ## §app.subagents-pane/claude-code-workers — Claude Code workers
 

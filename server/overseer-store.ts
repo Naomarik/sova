@@ -41,6 +41,9 @@ const PROACTIVITY: readonly OverseerProactivity[] = ["off", "badge", "brief"];
 
 export const DEFAULT_CAPS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5, explorePerTurn: 2 };
 
+/** Claude Opus 5 by any spelling (a CLI id, a 1M variant, a pi ref), never Opus 5.5 (`claude-opus-5-5`). */
+const OPUS_5 = /(^|\/)claude-opus-5(\[[^\]]*\])?$/i;
+
 /** The exploratory agent sova_idea `explore` launches: Claude Opus 5.5 (1M) through Claude Code. */
 export const DEFAULT_EXPLORER: WorkerChoice = { backend: "claude-code", model: "opus[1m]", effort: "medium" };
 
@@ -169,7 +172,9 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
     }
   }
   if (raw.explorer !== undefined) {
-    const choice = parseChoice(raw.explorer);
+    const parsed = parseChoice(raw.explorer);
+    // The user's rule: the explorer never runs Claude Opus 5. "opus" means Opus 5.5 (opus, opus[1m]).
+    const choice = "error" in parsed || !OPUS_5.test(parsed.model) ? parsed : { error: `${parsed.model} is not allowed for the exploratory agent; use opus or opus[1m] (Claude Opus 5.5)` };
     if (!("error" in choice)) out.explorer = choice;
     else if (strict) return { error: `explorer: ${choice.error}` };
   }

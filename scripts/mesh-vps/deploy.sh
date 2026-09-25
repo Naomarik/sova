@@ -22,7 +22,7 @@ git -C "$ROOT_DIR" archive --format=tar "$SHA" | vps "tar -x -C ~/$R/app.new"
 printf '{"commit":"%s","source":"git archive","deployedAt":"%s"}\n' "$SHA" "$(date -u +%FT%TZ)" | vps "cat > ~/$R/app.new/BUILD_COMMIT"
 
 vps "R=$R NODE_VERSION=$NODE_VERSION NODE_SHA256=$NODE_SHA256 CADDY_VERSION=$CADDY_VERSION CADDY_SHA512=$CADDY_SHA512 \
-  SOVA_PORT=$SOVA_PORT SOVA_PEER_PORT=$SOVA_PEER_PORT VPS_TAILNET_IP=$VPS_TAILNET_IP bash -s" < "$MESH_VPS_DIR/remote-setup.sh"
+  SOVA_PORT=$SOVA_PORT SOVA_PEER_PORT=$SOVA_PEER_PORT VPS_TAILNET_IP=$VPS_TAILNET_IP VPS_ID=$VPS_ID VPS_LABEL='$VPS_LABEL' bash -s" < "$MESH_VPS_DIR/remote-setup.sh"
 
 if vps "systemctl --user is-active --quiet sova-mesh.service" 2>/dev/null; then
   log "sova-mesh.service is running: restarting it onto ${SHA:0:12}"

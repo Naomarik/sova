@@ -7,7 +7,7 @@
 # 4. PUT /api/mesh/peers (the laptop's team server) + /api/mesh/settings (label, serveUrl): the peer listener binds 100.64.0.2:4801 ONLY
 # 5. exposure probe from the laptop while it runs: public 4800/4801/4890 time out
 # 6. stop Sova, check its ports are closed, snapshot again: production state identical
-# peers.json is removed again unless --keep-peers (then the next start comes up with the mesh on).
+# The peers are emptied again (self kept) unless --keep-peers (then the next start comes up with the mesh on).
 set -euo pipefail
 . "$(dirname "$0")/config.sh"
 KEEP=0
@@ -35,8 +35,9 @@ done
 [ $ok = 1 ] || { vps "tail -20 $B/smoke.log" >&2; fail "no health on 127.0.0.1:$SOVA_PORT within 60 s"; }
 log "health ok on 127.0.0.1:$SOVA_PORT"
 
-peers=$(vps "test -e $B/agent/sova/peers.json && echo yes || echo no")
-if [ "$peers" = no ]; then
+# mesh off = peers.json absent or listing no peer (deploy seeds it with only this host's self id)
+peers=$(vps "cat $B/agent/sova/peers.json 2>/dev/null || echo '{}'" | node -e 'console.log((JSON.parse(require("fs").readFileSync(0,"utf8")).peers??[]).length)')
+if [ "$peers" = 0 ]; then
   L=$(listeners); echo "$L" > "$OUT/listen-mesh-off.txt"
   [ "$L" = "127.0.0.1:$SOVA_PORT" ] || fail "mesh off, expected only 127.0.0.1:$SOVA_PORT, got: $(echo $L)"
   log "mesh off: only 127.0.0.1:$SOVA_PORT listens"
@@ -64,13 +65,19 @@ echo "$L" > "$OUT/listen-mesh-on.txt"
 [ "$(echo "$L" | grep ":$SOVA_PORT\$")" = "127.0.0.1:$SOVA_PORT" ] || fail "main listener binds: $(echo $L)"
 log "mesh on: main 127.0.0.1:$SOVA_PORT, peer $VPS_TAILNET_IP:$SOVA_PEER_PORT only"
 vps "curl -fsS -m 5 http://127.0.0.1:$SOVA_PORT/api/mesh" | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify({enabled:m.enabled,self:m.self,peers:m.peers.map(p=>({id:p.id,state:p.state,error:p.error}))}))' | tee "$OUT/mesh.json"
+[ "$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).self.id)' "$OUT/mesh.json")" = "$VPS_ID" ] || fail "self.id is not $VPS_ID"
+vps "curl -fsS -m 5 http://127.0.0.1:$SOVA_PORT/api/mesh/settings" | node -e 'const s=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify({loginKinds:s.loginKinds,loginKindsPinned:s.loginKindsPinned}))' | tee "$OUT/settings.json"
+grep -q '"loginKinds":"api-keys"' "$OUT/settings.json" || fail "loginKinds is not api-keys"
 
 "$MESH_VPS_DIR/exposure.sh" probe | tee "$OUT/exposure.txt" || fail "exposure probe"
 # the tailnet side, for contrast: the peer port is reachable over the tailnet, the main port is not
 printf 'tailnet  %s:%s %s\n' "$VPS_TAILNET_IP" "$SOVA_PEER_PORT" "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$VPS_TAILNET_IP:$SOVA_PEER_PORT/api/peer/hello" || true)" | tee -a "$OUT/exposure.txt"
 printf 'tailnet  %s:%s %s\n' "$VPS_TAILNET_IP" "$SOVA_PORT" "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$VPS_TAILNET_IP:$SOVA_PORT/api/health" || true)" | tee -a "$OUT/exposure.txt"
 
-[ $KEEP = 1 ] || vps "rm -f $B/agent/sova/peers.json"
+if [ $KEEP = 0 ]; then # back to mesh off, keeping self (id, label, serveUrl, loginKinds)
+  code=$(put /api/mesh/peers '{"peers":[]}')
+  [ "$code" = 200 ] || { vps "cat $B/smoke-put.json" >&2; fail "PUT /api/mesh/peers [] -> $code"; }
+fi
 stop
 sleep 1
 [ -z "$(listeners)" ] || fail "Sova's ports still open after stop: $(listeners | tr '\n' ' ')"

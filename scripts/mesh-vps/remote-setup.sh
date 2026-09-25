@@ -7,9 +7,12 @@
 #   ~/$R/agent    the agent dir (PI_CODING_AGENT_DIR); auth.json created EMPTY ({}, 0600) if absent, never overwritten
 #   ~/$R/home     the isolated HOME for every build and run step (deploy's own dotfiles are never read)
 #   ~/$R/sova-mesh.env   the environment the unit and run-sova.sh use
-# Env in: R NODE_VERSION NODE_SHA256 CADDY_VERSION CADDY_SHA512 SOVA_PORT SOVA_PEER_PORT VPS_TAILNET_IP
+#   ~/$R/agent/sova/peers.json   seeded ONCE (only if absent) with this host's self id/label/serveUrl and no peers
+#                 (mesh stays off); the self id must never change on a running host, so it is never rewritten here
+# Env in: R NODE_VERSION NODE_SHA256 CADDY_VERSION CADDY_SHA512 SOVA_PORT SOVA_PEER_PORT VPS_TAILNET_IP VPS_ID VPS_LABEL
 set -euo pipefail
 : "${R:?}" "${NODE_VERSION:?}" "${NODE_SHA256:?}" "${CADDY_VERSION:?}" "${CADDY_SHA512:?}" "${SOVA_PORT:?}" "${SOVA_PEER_PORT:?}" "${VPS_TAILNET_IP:?}"
+: "${VPS_ID:?}" "${VPS_LABEL:?}"
 BASE="$HOME/$R"
 log() { printf '[vps] %s\n' "$*" >&2; }
 mkdir -p "$BASE"/{node,bin,home,agent,dl}
@@ -59,6 +62,14 @@ if [ ! -e "$BASE/agent/auth.json" ]; then
   log "agent: auth.json created empty (keys arrive by sync)"
 fi
 chmod 600 "$BASE/agent/auth.json"
+# this host's identity: self.id (default would be the machine hostname), label, front-door upstream; API-key logins only
+if [ ! -e "$BASE/agent/sova/peers.json" ]; then
+  mkdir -p "$BASE/agent/sova"
+  ( umask 077 && node -e 'const [id,label,port,file]=process.argv.slice(1);require("fs").writeFileSync(file+".tmp",JSON.stringify({version:1,self:{id,label,serveUrl:`http://127.0.0.1:${port}`},peers:[],sync:{},frontDoor:null,loginKinds:"api-keys"},null,2)+"\n");require("fs").renameSync(file+".tmp",file)' \
+    "$VPS_ID" "$VPS_LABEL" "$SOVA_PORT" "$BASE/agent/sova/peers.json" )
+  log "agent: peers.json seeded (self $VPS_ID, no peers: mesh off)"
+fi
+log "agent: peers.json self.id = $(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).self?.id ?? "(default)")' "$BASE/agent/sova/peers.json")"
 log "agent: auth.json holds $(node -e 'console.log(Object.keys(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))).length)' "$BASE/agent/auth.json") entr(y/ies)"
 
 # --- the environment ------------------------------------------------------------------------------
@@ -67,6 +78,7 @@ PORT=$SOVA_PORT
 HOST=127.0.0.1
 SOVA_PEER_HOST=$VPS_TAILNET_IP
 SOVA_PEER_PORT=$SOVA_PEER_PORT
+SOVA_SYNC_LOGIN_KINDS=api-keys
 PI_CODING_AGENT_DIR=$BASE/agent
 HOME=$BASE/home
 PATH=$BASE/node/bin:/usr/bin:/bin

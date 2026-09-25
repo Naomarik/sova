@@ -7,6 +7,11 @@ import {
   mergePeerLists,
   joinHostLists,
   linkedSessionRow,
+  seedPeerList,
+  mayBeHostMove,
+  recheckHost,
+  setHostCheck,
+  FILE_NOT_FOUND,
   noteHost,
   notePeerSessions,
   pathsNamed,
@@ -305,4 +310,33 @@ test("a sova://s/ link to a peer's session finds the peer's row, and waits for t
   // Mesh off: this host's list alone, exactly as before.
   assert.equal(linkedSessionRow("m1", [mine], new Map(), true), mine);
   assert.equal(linkedSessionRow("v1", [mine], new Map(), true), null);
+});
+
+test("after a host change the old host's sessions stay listed as that peer's, until the peer's own list wins", () => {
+  const row = (path: string, groupId?: string) => ({ path, groupId }) as SessionSummary;
+  const seeded = seedPeerList(new Map(), "a", [row("/a/1.jsonl", "g1"), row("/a/2.jsonl")]);
+  assert.deepEqual([...seeded.keys()], ["a"]);
+  assert.deepEqual(seeded.get("a")!.map((s) => [s.path, s.groupId]), [["/a/1.jsonl", undefined], ["/a/2.jsonl", undefined]], "groups never cross hosts");
+  const sent = new Map([["a", [row("/a/3.jsonl")]]]);
+  assert.deepEqual(seedPeerList(sent, "a", [row("/a/1.jsonl")]).get("a")!.map((s) => s.path), ["/a/3.jsonl"], "a list the peer sent wins");
+  // A down peer keeps the seeded rows through the next merge.
+  const merged = mergePeerLists(seeded, { peers: [{ id: "a", label: "", state: "down" }] }, [{ id: "a" } as PeerStatus]);
+  assert.equal(merged.get("a")!.length, 2);
+});
+
+test("a reconnect's 'not found' is held as a possible host change only with the mesh on, for this host's own session", () => {
+  const nf = { code: "internal", message: FILE_NOT_FOUND };
+  assert.equal(mayBeHostMove(nf, true, true, true), true);
+  assert.equal(mayBeHostMove(nf, true, true, false), false, "mesh off: shown at once, as before");
+  assert.equal(mayBeHostMove(nf, false, true, true), false, "the first connection: the file was never there");
+  assert.equal(mayBeHostMove(nf, true, false, true), false, "a peer's session doesn't move with the front door");
+  assert.equal(mayBeHostMove({ code: "internal", message: "boom" }, true, true, true), false);
+  assert.equal(mayBeHostMove({ code: "config", message: FILE_NOT_FOUND }, true, true, true), false);
+  let asked = 0;
+  recheckHost(); // nothing registered: a no-op
+  setHostCheck(() => asked++);
+  recheckHost();
+  setHostCheck(null);
+  recheckHost();
+  assert.equal(asked, 1);
 });

@@ -35,7 +35,7 @@ import {
 import { appendItems } from "../lib/explain";
 import { isObj, str } from "../lib/message";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
-import { hostOf } from "../lib/mesh";
+import { HOST_MOVE_GRACE_MS, hostOf, mayBeHostMove, meshOn, recheckHost } from "../lib/mesh";
 import { openFailureView } from "../lib/open-failure";
 import {
   closeRemoteStatus,
@@ -435,6 +435,38 @@ export function ChatView(props: {
   /** Items pi has queued work beside: their Remove never comes back (see SHARED_QUEUE_REASON). */
   const [sharedQueue, setSharedQueue] = createSignal<string[]>([]);
 
+  const turnFailed = (message: string) => {
+    const seen = errors();
+    // The same failure re-reported (a reconnect loop) says nothing new: keep one row —
+    // and say nothing, because an announcement per retry would read as N new errors.
+    // The first landing is announced like every other turn boundary: a member whose turn
+    // died reads the same as one that
+    // replied, in its own pane's voice, without panning to find the banner.
+    if (seen[seen.length - 1] !== message) {
+      setErrors([...seen, message]);
+      setTurnError(message);
+      announce(turnWord("stopped with an error.", "The turn stopped with an error."));
+    }
+    // A prompt that failed before the agent started leaves nothing running.
+    if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
+  };
+  /** A "not found" held back as a possible host change: shown as before if no change replaced the
+      view in time (the file really is gone), dropped if the socket reconnects. */
+  let notFoundTimer: ReturnType<typeof setTimeout> | undefined;
+  const holdNotFound = (message: string) => {
+    if (notFoundTimer !== undefined) return;
+    recheckHost();
+    notFoundTimer = setTimeout(() => {
+      notFoundTimer = undefined;
+      turnFailed(message);
+    }, HOST_MOVE_GRACE_MS);
+  };
+  const dropNotFound = () => {
+    clearTimeout(notFoundTimer);
+    notFoundTimer = undefined;
+  };
+  onCleanup(dropNotFound);
+
   const socket = createReconnectingSocket<ChatServerMessage>(wsUrl("/ws/chat", props.path, props.force), {
     onOpen(isReconnect) {
       setEverOpened(true);
@@ -444,6 +476,7 @@ export function ChatView(props: {
     onMessage(msg) {
       switch (msg.type) {
         case "hello":
+          dropNotFound();
           cancelAnimationFrame(frame);
           frame = 0;
           queue = [];
@@ -680,19 +713,14 @@ export function ChatView(props: {
               return;
             default: {
               if (modelError() || thinkingError()) break; // shown as the switch's banner
-              const seen = errors();
-              // The same failure re-reported (a reconnect loop) says nothing new: keep one row —
-              // and say nothing, because an announcement per retry would read as N new errors.
-              // The first landing is announced like every other turn boundary: a member whose turn
-              // died reads the same as one that
-              // replied, in its own pane's voice, without panning to find the banner.
-              if (seen[seen.length - 1] !== msg.message) {
-                setErrors([...seen, msg.message]);
-                setTurnError(msg.message);
-                announce(turnWord("stopped with an error.", "The turn stopped with an error."));
+              // The front door may have moved this tab to a host that doesn't hold this session:
+              // the reconnect's "not found" is no turn error then. Ask for the host check now and
+              // keep "Reconnecting"; the view is replaced when the change is confirmed.
+              if (mayBeHostMove(msg, everOpened(), !hostOf(props.path), meshOn())) {
+                holdNotFound(msg.message);
+                break;
               }
-              // A prompt that failed before the agent started leaves nothing running.
-              if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
+              turnFailed(msg.message);
             }
           }
           break;

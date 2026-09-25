@@ -20,7 +20,7 @@ import {
   setSessionArchived,
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
-import { firstBaseline, helloStep, HOST_CONFIRM_MS, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
+import { firstBaseline, helloStep, HELLO_POLL_MS, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
 import { isMainThread } from "./lib/regions";
@@ -208,7 +208,6 @@ export function App() {
       if (document.hidden) return;
       void loadMesh();
       void loadPeerSessions();
-      void checkHello();
     }, MESH_POLL_MS);
     onCleanup(() => clearInterval(t));
   });
@@ -443,11 +442,15 @@ export function App() {
    * back through its peer list (a session is still driven only by the host holding it).
    */
   const onFailover = (oldId: string) => {
+    // The list on screen is still the old host's own: it stands in as that peer's until it answers.
+    const own = (list() ?? []).filter((s) => !hostOf(s.path));
     const r = sessionRouteFromHash(location.hash);
     if (r && !r.host) {
       noteHost(r.path, oldId);
       history.replaceState(history.state, "", sessionHrefOn(oldId, r.path));
     }
+    notePeerSessions(oldId, own.map((s) => s.path));
+    setPeerLists((m) => seedPeerList(m, oldId, own));
     void loadMesh().then(() => {
       refresh();
       void loadPeerSessions();
@@ -456,6 +459,14 @@ export function App() {
   createEffect(() => {
     if (meshOn() && !helloBase()) void checkHello();
   });
+  // A vanished host leaves the open socket silent: only asking notices the move. Mesh off: never.
+  createEffect(() => {
+    if (!meshOn()) return;
+    const t = setInterval(() => document.hidden || void checkHello(), HELLO_POLL_MS);
+    onCleanup(() => clearInterval(t));
+  });
+  setHostCheck(() => void checkHello());
+  onCleanup(() => setHostCheck(null));
   createEffect(on(socketReconnects, () => void checkHello(), { defer: true }));
   const onVisible = () => {
     if (!document.hidden) void checkHello();

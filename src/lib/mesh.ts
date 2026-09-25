@@ -207,6 +207,21 @@ export function linkedSessionRow(
  * a list this page already had stands in when it sends none), marked down by the sidebar rather
  * than vanishing. A peer no longer in peers.json is dropped.
  */
+/**
+ * After a confirmed host change: the old host's sessions, as this tab last listed them, stand in as
+ * that peer's list until the peer answers, so they stay in the sidebar (marked down while it is)
+ * instead of vanishing. A list the peer already sent wins.
+ */
+export function seedPeerList(
+  lists: ReadonlyMap<string, SessionSummary[]>,
+  host: string,
+  rows: readonly SessionSummary[],
+): Map<string, SessionSummary[]> {
+  const next = new Map(lists);
+  if (!next.has(host)) next.set(host, peerRows(rows));
+  return next;
+}
+
 export function mergePeerLists(
   prev: ReadonlyMap<string, SessionSummary[]>,
   answer: MeshSessions,
@@ -307,6 +322,34 @@ export function firstBaseline(servedBy: { id: string; label: string } | null, he
 
 /** A host change counts once a second hello, at least this much later, answers from the same new host. */
 export const HOST_CONFIRM_MS = 1_000;
+/** While the mesh is on, how often the tab asks which host serves it: a host that vanished (killed,
+    cut off) leaves the open socket silent, so only this notices the front door moved the tab. */
+export const HELLO_POLL_MS = 5_000;
+
+/** The stale-tab check, registered by the app: a view that saw a sign of a host change asks it now. */
+let hostCheck: (() => void) | null = null;
+export function setHostCheck(check: (() => void) | null): void {
+  hostCheck = check;
+}
+export function recheckHost(): void {
+  hostCheck?.();
+}
+
+/** The server's words for a transcript it doesn't hold (the chat socket's error before close 4404). */
+export const FILE_NOT_FOUND = "Session file not found";
+/** How long a "not found" that may be a host change waits before it is shown: the confirming
+    hello comes HOST_CONFIRM_MS after the first, and the view is replaced when it does. */
+export const HOST_MOVE_GRACE_MS = 3_000;
+
+/**
+ * A chat socket error that may only mean the front door moved this tab: with the mesh on, this
+ * host's own session (no peer holds it) answered "not found" on a connection that had opened
+ * before, which is what the next host says when the reconnect lands there. Anything else is shown
+ * at once, as before.
+ */
+export function mayBeHostMove(err: { code?: string; message: string }, reopened: boolean, local: boolean, on: boolean): boolean {
+  return on && reopened && local && err.code === "internal" && err.message === FILE_NOT_FOUND;
+}
 
 /** A host change seen once and not yet confirmed: which host, and when it first answered. */
 export interface PendingHost {

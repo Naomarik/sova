@@ -141,6 +141,11 @@ export function routeUrl(url: string, body?: unknown): string {
 
 // ---- hash route ---------------------------------------------------------------------------------
 
+/** What the whole-pane session view is keyed on: its path, and the peer holding it (none: this
+    host). A host id holds no newline, so the first one ends it. Mesh off: the path decides alone. */
+export const sessionViewKey = (host: string | null, path: string): string => `${host ?? ""}\n${path}`;
+export const pathOfViewKey = (key: string): string => key.slice(key.indexOf("\n") + 1);
+
 /** `#/s/<path>?host=<id>`: a peer's session. A local one keeps `#/s/<path>`, exactly as before.
     The path is encoded, so the first `?` is always ours. */
 export function sessionHrefOn(host: string | null, path: string): string {
@@ -325,6 +330,20 @@ export const HOST_CONFIRM_MS = 1_000;
 /** While the mesh is on, how often the tab asks which host serves it: a host that vanished (killed,
     cut off) leaves the open socket silent, so only this notices the front door moved the tab. */
 export const HELLO_POLL_MS = 5_000;
+
+/** How long after a host change the tab keeps re-reading GET /api/mesh with each hello. */
+export const MOVE_WATCH_MS = 60_000;
+
+/**
+ * After the front door moved this tab, the old host's state comes from the new host's GET /api/mesh,
+ * which the tab otherwise re-reads every 15 s: re-read it with each hello while the new host still
+ * calls the old one up (a host that vanished takes it a while to notice), for MOVE_WATCH_MS at most.
+ */
+export function watchMove(moved: { from: string; at: number } | null, now: number, peers: readonly PeerStatus[]): boolean {
+  if (!moved || now - moved.at > MOVE_WATCH_MS) return false;
+  const p = peers.find((x) => x.id === moved.from);
+  return !p || p.state === "up";
+}
 
 /** The stale-tab check, registered by the app: a view that saw a sign of a host change asks it now. */
 let hostCheck: (() => void) | null = null;

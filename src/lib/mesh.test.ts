@@ -8,6 +8,10 @@ import {
   joinHostLists,
   linkedSessionRow,
   seedPeerList,
+  watchMove,
+  MOVE_WATCH_MS,
+  sessionViewKey,
+  pathOfViewKey,
   mayBeHostMove,
   recheckHost,
   setHostCheck,
@@ -339,4 +343,22 @@ test("a reconnect's 'not found' is held as a possible host change only with the 
   setHostCheck(null);
   recheckHost();
   assert.equal(asked, 1);
+});
+
+test("after a host change the old host's state is re-read quickly until the new host calls it down, for a bounded time", () => {
+  const peer = (state: PeerStatus["state"]) => [{ id: "a", state } as PeerStatus];
+  const moved = { from: "a", at: 1_000 };
+  assert.equal(watchMove(null, 2_000, peer("up")), false, "no host change: the 15 s poll alone");
+  assert.equal(watchMove(moved, 2_000, peer("up")), true, "the new host still calls it up");
+  assert.equal(watchMove(moved, 2_000, []), true, "not in the new host's state yet");
+  assert.equal(watchMove(moved, 2_000, peer("down")), false, "called down: done");
+  assert.equal(watchMove(moved, 1_000 + MOVE_WATCH_MS + 1, peer("up")), false, "a flap that never went down stops after the window");
+});
+
+test("the session view is keyed on its host too, and the path comes back out whole", () => {
+  const p = "/s/odd\nname.jsonl";
+  assert.notEqual(sessionViewKey("a", p), sessionViewKey(null, p), "handed to a peer: a new view");
+  assert.equal(sessionViewKey(null, p), sessionViewKey(null, p));
+  assert.equal(pathOfViewKey(sessionViewKey("a", p)), p);
+  assert.equal(pathOfViewKey(sessionViewKey(null, p)), p);
 });

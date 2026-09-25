@@ -20,7 +20,7 @@ import {
   setSessionArchived,
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
-import { firstBaseline, helloStep, HELLO_POLL_MS, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
+import { firstBaseline, helloStep, HELLO_POLL_MS, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
 import { isMainThread } from "./lib/regions";
@@ -441,6 +441,8 @@ export function App() {
    * pointing there (`?host=<old>`); everything else re-reads, and the old host's sessions come
    * back through its peer list (a session is still driven only by the host holding it).
    */
+  /** The last confirmed host change: the old host's state is re-read quickly for a while (watchMove). */
+  let moved: { from: string; at: number } | null = null;
   const onFailover = (oldId: string) => {
     // The list on screen is still the old host's own: it stands in as that peer's until it answers.
     const own = (list() ?? []).filter((s) => !hostOf(s.path));
@@ -451,6 +453,7 @@ export function App() {
     }
     notePeerSessions(oldId, own.map((s) => s.path));
     setPeerLists((m) => seedPeerList(m, oldId, own));
+    moved = { from: oldId, at: Date.now() };
     void loadMesh().then(() => {
       refresh();
       void loadPeerSessions();
@@ -462,7 +465,11 @@ export function App() {
   // A vanished host leaves the open socket silent: only asking notices the move. Mesh off: never.
   createEffect(() => {
     if (!meshOn()) return;
-    const t = setInterval(() => document.hidden || void checkHello(), HELLO_POLL_MS);
+    const t = setInterval(() => {
+      if (document.hidden) return;
+      void checkHello();
+      if (watchMove(moved, Date.now(), meshPeers())) void loadMesh();
+    }, HELLO_POLL_MS);
     onCleanup(() => clearInterval(t));
   });
   setHostCheck(() => void checkHello());
@@ -907,9 +914,11 @@ export function App() {
                   </div>
                 )}
               </Match>
-              {/* One session, the whole pane (#/s/<path>), exactly as before. */}
-              <Match when={route() && summary() ? route()! : null} keyed>
-                {(path) => {
+              {/* One session, the whole pane (#/s/<path>), exactly as before. Keyed on its host too: a
+                  session a host change hands to a peer reconnects through that peer at once. */}
+              <Match when={route() && summary() ? sessionViewKey(hostOf(route()!), route()!) : null} keyed>
+                {(key) => {
+                  const path = pathOfViewKey(key);
                   // The list can stop carrying this row for an instant; the view keeps the last
                   // summary it had rather than tearing itself down under the user.
                   let last = summaryOf(path)!;

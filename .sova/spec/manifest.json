@@ -2147,6 +2147,18 @@
         "server/overseer.ts",
         "server/overseer-store.ts"
       ]
+    },
+    "§chat.mode-menu/prompt-holds-across-turn-starters": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§app.worker-restore/claude-bridge-restart"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "pi-config/extensions/mode/index.ts"
+      ]
     }
   }
 }

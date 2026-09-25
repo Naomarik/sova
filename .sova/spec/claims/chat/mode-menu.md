@@ -179,6 +179,40 @@ on the branch that carries a snapshot wins, otherwise the default from `mode.jso
 extension therefore always agree, including after a server restart. Nothing is broadcast to other
 chats, and nothing watches `mode.json`.
 
+## §chat.mode-menu/prompt-holds-across-turn-starters — The mode prompt holds whoever starts the turn
+
+A chat's system prompt is the same whether its turn was started by the user's message or by an
+extension's message: a subagent settling (`subagent-complete`), a team question, an Overseer
+wake-up. In particular the mode extension's `<mode>` section (delegate instructions, minor-mode
+biases) is neither dropped nor re-added because of *who* started the turn; it changes only when
+the mode, a minor mode, strict, or the Delegate routing changes.
+
+Why this needs saying: pi builds a user turn's prompt in `before_agent_start`, where the mode
+extension writes its block into that turn's prompt sections. A turn an extension's message starts
+(`sendMessage(…, {triggerTurn: true})`) skips that hook, and pi's own refresh before the turn's
+second request rebuilds the prompt from the session's **base** prompt options, which know nothing
+of extension sections. Left alone, that patched the section out mid-turn (`mode: null` in the
+transcript) and back in at the next user prompt — two prompt versions about 3.5K tokens apart —
+and the claude-code bridge, which restarts its CLI on any prompt change
+(§app.worker-restore/claude-bridge-restart), re-sent the whole conversation at every switch: in
+one team session, 22 restarts of up to 220K tokens each.
+
+The rule is kept by the mode extension, not the bridge (the bridge cannot change a running CLI's
+prompt, and must not guess which prompt changes are benign): it also keeps its block in pi's base
+options, so a turn built without `before_agent_start` reads the same prompt. Those options are
+reachable only through a command context (`ctx.getSystemPromptOptions`): the `/mode` and
+`/align` handlers adopt the getter — Sova calls `/mode` at every chat open
+(§chat.mode-menu/how-a-switch-reaches-the-chat), so every Sova chat has it before its first turn
+— and from then on every switch, every `before_agent_start` and every run start (`agent_start`,
+after pi may have rebuilt the base on a tool change) writes the current block there, or deletes
+it when no mode block applies. A getter whose extension runner was replaced is dropped, never
+retried. A terminal session driven only by the shortcut or the palette, with no `/mode` yet,
+keeps the old behaviour until one runs.
+
+Observable: in a chat with a mode on, a turn started by a worker settling that calls a tool has
+no `mode: null` system entry after its tool result, and the bridge does not restart on it; the
+prompt the provider receives is byte-identical to the previous user turn's.
+
 ## §chat.mode-menu/states — States
 
 | State | Shows |

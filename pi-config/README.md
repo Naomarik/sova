@@ -163,7 +163,7 @@ node --test install.test.mjs
 cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node tests/team-smoke.mjs
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node tests/ui-permissions.mjs
 cd extensions/extension-toggle && node --test index.test.ts
-cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts spec.test.ts && node tests/smoke.mjs
+cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts spec.test.ts && node tests/smoke.mjs && node tests/wake-turn.mjs
 cd extensions/model-policy && node --test policy.test.ts index.test.ts
 cd extensions/command-palette && node --test test.mjs
 cd extensions/sessions && node --test test.mjs

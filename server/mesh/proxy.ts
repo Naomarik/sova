@@ -11,7 +11,8 @@ import { type PeerEntry, peerUrl } from "./peers";
 // /peer/<id>/api/* and /peer/<id>/ws/* on the main listener: the browser's way to a session that
 // lives on another host. Transparent: the query goes verbatim, the answer comes back as the peer
 // sent it (bytes, status, headers), WS frames and close codes pass untouched. Only this host's
-// own failures are ours: 404 unknown peer, 502 peer down, 403 the peer's gate refused us.
+// own failures are ours: 404 unknown peer, 502 peer down, 504 peer took the connection but sent
+// no response headers in time, 403 the peer's gate refused us.
 
 const HOP_BY_HOP = ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"];
 
@@ -21,18 +22,27 @@ const HOP_BY_HOP = ["connection", "keep-alive", "proxy-authenticate", "proxy-aut
 // connect with CONNECT_TIMEOUT_MS decides; a peer that just failed one is 502 at once for DOWN_MS.
 // A hop to a recently reached peer starts at once, and if it has no answer after STALL_MS the
 // same TCP check runs beside it and aborts it when the peer is gone (≈ STALL_MS + 3 s worst case).
-// Once the peer has answered (response headers, or the socket is open) nothing times out: a slow
-// route or a long stream runs as long as the peer keeps it open. The extension proxy is untouched.
+// A peer that accepts the connection but never answers (a wedged process) passes both checks, so
+// a REST hop gets HEADERS_TIMEOUT_MS overall for its response headers (504 "peer timeout") and a
+// WS hop WS_HANDSHAKE_MS for its handshake (502). Once the peer has answered (response headers, or
+// the socket is open) nothing times out: a slow body or a long stream runs as long as the peer
+// keeps it open. The extension proxy is untouched.
 const CONNECT_TIMEOUT_MS = 3000;
 const REACHED_MS = 15_000;
 const DOWN_MS = 3000;
 const WS_HANDSHAKE_MS = 5000;
 const STALL_MS = 500;
+let headersTimeoutMs = 30_000;
 const reach = new Map<string, { ok: boolean; at: number }>();
 
 /** Record what a hop, probe or preflight just learnt about a peer URL. */
 export function notePeerReach(url: string, ok: boolean): void {
   reach.set(url, { ok, at: Date.now() });
+}
+
+/** Tests: shorten the wait for a REST hop's response headers. */
+export function setPeerHeadersTimeout(ms: number): void {
+  headersTimeoutMs = ms;
 }
 
 /** Tests: forget what is known. */
@@ -135,16 +145,28 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string): Prom
   const go = await preflight(base);
   if (!go) return c.json({ error: "peer down", id: peer.id }, 502);
   const stalled = new AbortController();
-  const answered = go === "recent" ? watchStall(base, () => stalled.abort()) : () => {};
+  const watched = go === "recent" ? watchStall(base, () => stalled.abort()) : () => {};
+  // Not AbortSignal.timeout: the signal also governs the body, which must outlive the deadline.
+  const late = new AbortController();
+  const deadline = setTimeout(() => late.abort(), headersTimeoutMs);
+  const answered = () => {
+    watched();
+    clearTimeout(deadline);
+  };
   let res: Response;
   try {
     res = await proxy(`${base}${tail}${incoming.search}`, {
       raw: c.req.raw,
       headers,
-      signal: AbortSignal.any([c.req.raw.signal, stalled.signal]),
+      signal: AbortSignal.any([c.req.raw.signal, stalled.signal, late.signal]),
     });
   } catch (err) {
     answered();
+    if (late.signal.aborted) {
+      // It took the connection, so it is up but wedged: no down mark, the next hop tries again.
+      console.warn(`[mesh] ${peer.id}: ${c.req.method} ${tail}: no response headers within ${headersTimeoutMs} ms`);
+      return c.json({ error: "peer timeout", id: peer.id }, 504);
+    }
     notePeerReach(base, false);
     console.warn(`[mesh] ${peer.id}: ${c.req.method} ${tail} failed: ${stalled.signal.aborted ? "no answer, and the peer is unreachable" : whyDown(err)}`);
     return c.json({ error: "peer down", id: peer.id }, 502);

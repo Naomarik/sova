@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request, type IncomingMessage, type Server } from "node:http";
-import { connect } from "node:net";
+import { connect, createServer as createTcpServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -58,7 +58,7 @@ meshApi.onPeerUp((id) => hookLog.push(`up:${id}`));
 const settingsLog: string[] = [];
 meshApi.onSettingsChange((s) => settingsLog.push(s.hostLabel));
 const { clearProbes, ownProtocol } = await import("./hello");
-const { clearPeerReach, notePeerReach } = await import("./proxy");
+const { clearPeerReach, notePeerReach, setPeerHeadersTimeout } = await import("./proxy");
 const { peersFile } = await import("./peers");
 
 let base = "";
@@ -96,6 +96,15 @@ before(async () => {
     if (url.pathname === "/api/sessions") return json(200, fakeSessions);
     if (url.pathname === "/api/gate-refused") return json(403, { error: "not a peer" }, { "X-Sova-Mesh": "refused" });
     if (url.pathname === "/api/own-403") return json(403, { error: "route says no" });
+    if (url.pathname === "/api/stream") {
+      // Headers at once, then a body that outlasts the headers deadline.
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      for (const part of ["a", "b", "c", "d"]) {
+        res.write(part);
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      return res.end("!");
+    }
     if (url.pathname === "/api/slow") {
       await new Promise((r) => setTimeout(r, 1500));
       return json(200, { slow: true });
@@ -593,6 +602,51 @@ describe("mesh ON", () => {
         { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
       ],
     });
+  });
+
+  test("a wedged peer (takes the connection, never answers): REST 504 after the headers deadline, WS 502; a long body is never cut", async () => {
+    const held: Socket[] = [];
+    const wedged = createTcpServer((sock) => {
+      held.push(sock);
+      sock.on("error", () => {});
+    });
+    const wedgedPort = await listen(wedged as unknown as Server);
+    setPeerHeadersTimeout(1000);
+    try {
+      await putJson("/api/mesh/peers", {
+        peers: [
+          { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
+          { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+          { id: "stuck", nodeId: "nS", name: "127.0.0.1", url: `http://127.0.0.1:${wedgedPort}` },
+        ],
+      });
+      for (const recent of [false, true]) {
+        if (recent) notePeerReach(`http://127.0.0.1:${wedgedPort}`, true); // no preflight, stall watch sees TCP up
+        const t = Date.now();
+        assert.deepEqual(await within(getJson("/peer/stuck/api/health"), 5000, "the wedged REST hop"), [504, { error: "peer timeout", id: "stuck" }]);
+        const took = Date.now() - t;
+        assert.ok(took >= 900 && took < 3000, `504 after ${took} ms (recent=${recent})`);
+      }
+      // Wedged is not down: the next hop tries again rather than a cached 502.
+      assert.equal((await within(getJson("/peer/stuck/api/health"), 5000, "the retry"))[0], 504);
+      const t = Date.now();
+      assert.deepEqual(await within(wsTrip(`${wsBase}/peer/stuck/ws/chat?path=p`), 9000, "the wedged WS hop"), { status: 502 });
+      assert.ok(Date.now() - t < 7000, `ws 502 took ${Date.now() - t} ms`);
+      // Headers in time, body for ~1.6 s (past the 1 s deadline): passes whole.
+      const res = await within(realFetch(`${base}/peer/b/api/stream`), 5000, "the stream's headers");
+      assert.equal(res.status, 200);
+      assert.equal(await within(res.text(), 5000, "the stream's body"), "abcd!");
+    } finally {
+      setPeerHeadersTimeout(30_000);
+      for (const sock of held) sock.destroy();
+      wedged.close();
+      await putJson("/api/mesh/peers", {
+        peers: [
+          { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
+          { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+        ],
+      });
+    }
   });
 
   test("the whole trip: proxy → peer listener → whois gate → this app", async () => {

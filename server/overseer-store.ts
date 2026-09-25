@@ -7,7 +7,9 @@ import type {
   OverseerQuickAction,
   OverseerSettings,
   OverseerState,
+  WorkerChoice,
 } from "../shared/protocol";
+import { parseChoice } from "../pi-config/extensions/mode/delegate.ts";
 import { type Redactor, serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
 
@@ -37,7 +39,10 @@ const CAP_MAX = 500;
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const PROACTIVITY: readonly OverseerProactivity[] = ["off", "badge", "brief"];
 
-export const DEFAULT_CAPS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5 };
+export const DEFAULT_CAPS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5, explorePerTurn: 2 };
+
+/** The exploratory agent sova_idea `explore` launches: Claude Opus 5.5 (1M) through Claude Code. */
+export const DEFAULT_EXPLORER: WorkerChoice = { backend: "claude-code", model: "opus[1m]", effort: "medium" };
 
 export const DEFAULT_QUICK_ACTIONS: OverseerQuickAction[] = [
   { id: "needs-me", label: "What Needs Me", description: "Sessions waiting on you, with links.", prompt: "What needs my attention? Link each session." },
@@ -56,6 +61,7 @@ export function defaultSettings(): OverseerSettings {
     proactivity: "badge",
     quickActions: DEFAULT_QUICK_ACTIONS.map((a) => ({ ...a })),
     caps: { ...DEFAULT_CAPS },
+    explorer: { ...DEFAULT_EXPLORER },
   };
 }
 
@@ -161,6 +167,11 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
         else if (strict) return { error: `caps.${key} must be a whole number from 0 to ${CAP_MAX}` };
       }
     }
+  }
+  if (raw.explorer !== undefined) {
+    const choice = parseChoice(raw.explorer);
+    if (!("error" in choice)) out.explorer = choice;
+    else if (strict) return { error: `explorer: ${choice.error}` };
   }
   return out;
 }

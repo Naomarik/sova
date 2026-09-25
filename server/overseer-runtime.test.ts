@@ -43,6 +43,22 @@ writeFileSync(
 }
 `,
 );
+// A stand-in for the subagents extension: the explorer routes call its tools in-process, through
+// the runtime's extension runner, though the Overseer's allowlist keeps them from the model.
+writeFileSync(
+  join(agentDir, "extensions", "fake-subagents.ts"),
+  `export default function (pi) {
+  const g = globalThis;
+  g.__fakeSpawns ??= [];
+  const reg = (name, run) => pi.registerTool({ name, label: name, description: name, parameters: { type: "object", properties: {}, additionalProperties: true }, execute: async (_id, params, _signal, _u, ctx) => run(params, ctx) });
+  reg("agent_spawn", (params, ctx) => {
+    g.__fakeSpawns.push({ params, session: ctx?.sessionManager?.getSessionId?.() });
+    return { content: [{ type: "text", text: "Started ag_09" }], details: { spawned: [{ id: "ag_09" }] } };
+  });
+  reg("agent_list", () => ({ content: [{ type: "text", text: "" }], details: { agents: [] } }));
+}
+`,
+);
 // Automatic retries without the 2 s back-off.
 writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ retry: { baseDelayMs: 1 } }));
 mkdirSync(join(agentDir, "prompts"), { recursive: true });
@@ -53,6 +69,7 @@ const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const overseer = await import("./overseer");
 const { DEFAULT_CAPS, defaultSettings, overseerTurnFile, readOverseerSettings, writeNotes, writeOverseerSettings } = await import("./overseer-store");
 const { OVERSEER_BRIEF_PREFIX } = await import("../shared/protocol");
+const { addIdea, getIdea } = await import("./overseer-ideas");
 const { UNATTENDED_REFUSAL } = await import("./overseer-tools");
 
 after(async () => {
@@ -256,13 +273,14 @@ describe("turns the user did not start are read-only", () => {
     sova_archive: { sessions: ["some-id"] },
     sova_group: { op: "create", name: "g" },
     sova_answer_dialog: { session: "some-id", dialog: "d1", answer: "yes" },
+    sova_idea: { op: "add", id: "§test/readonly-probe", title: "A probe" },
   };
   const ALLOWED: Record<string, Record<string, unknown>> = {
     sova_note: { op: "read" },
     sova_confirm: { title: "Archive these?", options: ["Yes", "No"] },
     sova_navigate: { page: "usage" },
   };
-  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_folders"];
+  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_folders", "sova_ideas"];
 
   test("every Overseer tool is classified: acting, allowed unattended, or a read", () => {
     const names = overseer.buildOverseerTools().map((t) => t.name).sort();
@@ -412,6 +430,7 @@ describe("every run starts unattended; only the user's own message makes it thei
     sova_archive: { sessions: ["some-id"] },
     sova_group: { op: "create", name: "g" },
     sova_answer_dialog: { session: "some-id", dialog: "d1", answer: "yes" },
+    sova_idea: { op: "add", id: "§test/readonly-probe", title: "A probe" },
   };
   /** Every acting tool's outcome, called from inside the model call the run is making now. */
   const actingNow = async () => {
@@ -589,5 +608,52 @@ describe("standing notes and the extra prompt are live: read at every run's star
     assert.equal(systems(), before + 1, "a changed note is one delta");
     writeNotes("");
     writeOverseerSettings({ ...defaultSettings() });
+  });
+});
+
+describe("the ideas backlog in the prompt, and explorers through the runtime's subagents extension", () => {
+  test("the ToC is live, never carries titles or prose, and an unchanged backlog adds nothing", async () => {
+    writeOverseerSettings({ ...defaultSettings() });
+    const chat = await overseerChat();
+    addIdea({ id: "rt/live-toc", title: "TITLE-NOT-IN-PROMPT", text: "PROSE-NOT-IN-PROMPT" });
+    await userSends(chat, "one");
+    assert.match(systemOf(contexts.at(-1)), /§rt \(1 open\): live-toc/);
+    assert.doesNotMatch(systemOf(contexts.at(-1)), /TITLE-NOT-IN-PROMPT|PROSE-NOT-IN-PROMPT/);
+    const systems = () => chat.session.sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "system").length;
+    const before = systems();
+    await userSends(chat, "two");
+    await chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} z`, undefined, "server").turn;
+    assert.equal(systems(), before, "the same backlog: the same bytes, no delta");
+    addIdea({ id: "rt/second", title: "Second" });
+    await userSends(chat, "three");
+    assert.equal(systems(), before + 1, "a filed idea is one delta");
+  });
+
+  test("sova_idea explore reaches agent_spawn in-process with the Overseer's own session, though the model can't call it", async () => {
+    writeOverseerSettings({ ...defaultSettings() });
+    addIdea({ id: "rt/explore-me", title: "Explore me", text: "Seed text." });
+    const chat = await overseerChat();
+    assert.ok(!chat.session.getActiveToolNames().includes("agent_spawn"), "agent_spawn is not the model's");
+    modelCalls.push(() => ({ toolCall: { name: "sova_idea", arguments: { op: "explore", id: "rt/explore-me" } } }));
+    await userSends(chat, "explore it");
+    const spawns = (globalThis as { __fakeSpawns?: { params: Record<string, unknown>; session?: string }[] }).__fakeSpawns ?? [];
+    assert.equal(spawns.length, 1);
+    assert.equal(spawns[0]!.session, chat.session.sessionManager.getSessionId(), "the worker belongs to the Overseer's session");
+    assert.equal(spawns[0]!.params.backend, "claude-code");
+    assert.equal(spawns[0]!.params.model, "opus[1m]");
+    assert.match(String(spawns[0]!.params.prompt), /Seed text/);
+    const idea = getIdea("rt/explore-me")!;
+    assert.equal(idea.explorerId, "ag_09");
+    assert.equal(idea.status, "exploring");
+    await userSends(chat, "how is it going?");
+    assert.match(systemOf(contexts.at(-1)), /explore-me \(exploring\) \[explorer ag_09\]/, "the next run's ToC maps the idea to its explorer");
+  });
+
+  test("in a brief, explore refuses before any worker starts", async () => {
+    const chat = await overseerChat();
+    const n = ((globalThis as { __fakeSpawns?: unknown[] }).__fakeSpawns ?? []).length;
+    await chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} w`, undefined, "server").turn;
+    assert.equal(await run("sova_idea", { op: "explore", id: "rt/second" }), "readonly");
+    assert.equal(((globalThis as { __fakeSpawns?: unknown[] }).__fakeSpawns ?? []).length, n);
   });
 });

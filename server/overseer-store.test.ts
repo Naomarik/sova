@@ -53,7 +53,7 @@ describe("overseer settings", () => {
     const s = store.readOverseerSettings(join(agentDir, "none.json"));
     assert.equal(s.proactivity, "badge");
     assert.deepEqual(s.quickActions.map((a) => a.label), ["What Needs Me", "What Finished", "What's Running", "Tidy Up", "Where Was I"]);
-    assert.deepEqual(s.caps, { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5 });
+    assert.deepEqual(s.caps, { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5, explorePerTurn: 2 });
     assert.equal(s.model, null);
   });
 
@@ -73,6 +73,21 @@ describe("overseer settings", () => {
     assert.match((store.parseSettings({ quickActions: [{ label: "", prompt: "x" }] }, true) as { error: string }).error, /label/);
     const ok = store.parseSettings({ model: "p/m", proactivity: "brief", extraSystemPrompt: "Be terse." }, true);
     assert.ok(!("error" in ok) && ok.model === "p/m" && ok.proactivity === "brief" && ok.extraSystemPrompt === "Be terse.");
+  });
+
+  test("the exploratory agent defaults to Claude Code on Opus 5.5 (1M) at medium; a bad one falls back on read and is refused on PUT", () => {
+    assert.deepEqual(store.readOverseerSettings(join(agentDir, "none.json")).explorer, { backend: "claude-code", model: "opus[1m]", effort: "medium" });
+    const tolerant = store.parseSettings({ explorer: { backend: "pi", model: "no-slash", effort: "low" } }, false);
+    assert.ok(!("error" in tolerant));
+    assert.deepEqual(tolerant.explorer, store.DEFAULT_EXPLORER);
+    assert.match((store.parseSettings({ explorer: { backend: "claude-code", model: "opus", effort: "off" } }, true) as { error: string }).error, /^explorer: effort/);
+    const ok = store.parseSettings({ explorer: { backend: "pi", model: "ollama-cloud/glm-5.3", effort: "low" }, caps: { explorePerTurn: 1 } }, true);
+    assert.ok(!("error" in ok));
+    assert.deepEqual(ok.explorer, { backend: "pi", model: "ollama-cloud/glm-5.3", effort: "low" });
+    assert.equal(ok.caps.explorePerTurn, 1);
+    const file = join(agentDir, "ov-explorer.json");
+    store.writeOverseerSettings(ok, file);
+    assert.deepEqual(store.readOverseerSettings(file).explorer, ok.explorer, "it persists");
   });
 
   test("the composer's write-back patches model and thinking and keeps everything else", () => {

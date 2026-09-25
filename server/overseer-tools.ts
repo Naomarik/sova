@@ -20,6 +20,7 @@ import { parseWakeNudge } from "../shared/wake";
 import { whereOf } from "./attention";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
 import { logAction, readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { ideaTools, type IdeaToolHost, type ToolCall } from "./overseer-idea-tools";
 
 /**
  * The Overseer's tools. Every act goes through Sova's own REST routes, dispatched in-process
@@ -36,7 +37,7 @@ import { logAction, readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
  */
 
 /** The server side the tools need, injected so the module stays testable and cycle-free. */
-export interface OverseerToolHost {
+export interface OverseerToolHost extends IdeaToolHost {
   /** Hono's in-process dispatch. Every call carries the Overseer's sender mark (a per-process
       secret no HTTP client has), so a route can tell the Overseer's own calls from anyone else's. */
   request(path: string, init?: RequestInit): Promise<Response>;
@@ -249,10 +250,14 @@ export const UNATTENDED_REFUSAL =
 
 // ---- per-turn limits ---------------------------------------------------------------------------
 
-export type LimitKind = "create" | "prompt" | "archive";
+export type LimitKind = "create" | "prompt" | "archive" | "explore";
+
+const fresh = (): Record<LimitKind, number> => ({ create: 0, prompt: 0, archive: 0, explore: 0 });
+const CAP_OF: Record<LimitKind, keyof OverseerCaps> = { create: "createPerTurn", prompt: "promptsPerTurn", archive: "archivesPerTurn", explore: "explorePerTurn" };
+const WHAT: Record<LimitKind, string> = { create: "new sessions", prompt: "prompts to other sessions", archive: "archive operations", explore: "explorers launched" };
 
 /**
- * The per-turn caps: sessions created, prompts sent, archive operations. "Turn" means the USER's
+ * The per-turn caps: sessions created, prompts sent, archive operations, explorers launched. "Turn" means the USER's
  * turn: the counters reset only when a message the user sent from the UI (typed, a quick action, a
  * confirm-card click, a regenerate) enters the context (UserTurns), or on /clear. A brief, a wake-up or any other
  * server-started run continues the budget of the user message before it, so the model can never
@@ -266,13 +271,13 @@ export type LimitKind = "create" | "prompt" | "archive";
  * their sessions counts as running.
  */
 export class TurnLimits {
-  private used: Record<LimitKind, number> = { create: 0, prompt: 0, archive: 0 };
+  private used: Record<LimitKind, number> = fresh();
   private reserved = 0;
   constructor(private readonly file?: string) {
     if (file) this.used = readUsed(file);
   }
   reset(): void {
-    this.used = { create: 0, prompt: 0, archive: 0 };
+    this.used = fresh();
     this.persist();
   }
   count(kind: LimitKind): number {
@@ -280,9 +285,9 @@ export class TurnLimits {
   }
   /** Take `n` of `kind`, or return the refusal sentence and take nothing. */
   take(kind: LimitKind, caps: OverseerCaps, n = 1): string | null {
-    const max = kind === "create" ? caps.createPerTurn : kind === "prompt" ? caps.promptsPerTurn : caps.archivesPerTurn;
+    const max = caps[CAP_OF[kind]] ?? 0;
     if (this.used[kind] + n > max) {
-      const what = kind === "create" ? "new sessions" : kind === "prompt" ? "prompts to other sessions" : "archive operations";
+      const what = WHAT[kind];
       return (
         `Limit reached: at most ${max} ${what} per message from the user (${this.used[kind]} used; Settings → Overseer → Limits). ` +
         "Stop here. Tell the user what is done and what is left, or ask with sova_confirm before doing more. " +
@@ -320,7 +325,7 @@ export class TurnLimits {
 }
 
 function readUsed(file: string): Record<LimitKind, number> {
-  const used: Record<LimitKind, number> = { create: 0, prompt: 0, archive: 0 };
+  const used = fresh();
   try {
     const raw = JSON.parse(readFileSync(file, "utf8")) as { used?: Record<string, unknown> };
     for (const k of Object.keys(used) as LimitKind[]) {
@@ -516,13 +521,13 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       (UserTurns) unless `unattended: true` (notes, confirm cards, navigate: they change no session). */
   function act(
     name: string,
-    run: (params: any, toolCallId: string) => Promise<{ content: ReturnType<typeof text>; details: unknown; terminate?: boolean }>,
+    run: (params: any, toolCallId: string, call: ToolCall) => Promise<{ content: ReturnType<typeof text>; details: unknown; terminate?: boolean }>,
     opts: { unattended?: boolean } = {},
   ) {
-    return async (toolCallId: string, params: any) => {
+    return async (toolCallId: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) => {
       try {
         if (!opts.unattended && !host.attended()) throw new Refusal(UNATTENDED_REFUSAL);
-        const out = await run(params, toolCallId);
+        const out = await run(params, toolCallId, { signal, ctx });
         logAction({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: params, outcome: "ok" });
         return out;
       } catch (err) {
@@ -541,8 +546,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     };
   }
   /** A read: errors surface as-is, nothing is logged. */
-  function read(run: (params: any) => Promise<{ content: ReturnType<typeof text>; details: unknown }>) {
-    return async (_id: string, params: any) => run(params ?? {});
+  function read(run: (params: any, call: ToolCall & { toolCallId: string }) => Promise<{ content: ReturnType<typeof text>; details: unknown }>) {
+    return async (toolCallId: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) => run(params ?? {}, { toolCallId, signal, ctx });
   }
 
   /** Send one prompt to an idle session, marked as the Overseer's. Caps are the caller's. */
@@ -1096,6 +1101,17 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         return { content: text("Shown to the user. End your turn now and wait for their reply."), details, terminate: true };
       }, { unattended: true }),
     },
+    ...ideaTools({
+      host,
+      act,
+      read,
+      resolveWritable,
+      take: (kind) => limits.take(kind, host.caps()),
+      refusal: (m) => new Refusal(m),
+      obj,
+      str,
+      int,
+    }),
   ];
   // Every tool, this list's and any added to it: no secret value in or out (overseer-redact.ts).
   return tools.map((t) => redactingTool(t, redactor));

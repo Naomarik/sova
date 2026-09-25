@@ -32,6 +32,7 @@ import { modelDenial, readModelPolicy } from "./model-policy";
 import { mergeMode } from "./mode-state";
 import {
   DEFAULT_CAPS,
+  DEFAULT_EXPLORER,
   DEFAULT_QUICK_ACTIONS,
   overseerDir,
   overseerSettingsFile,
@@ -45,6 +46,9 @@ import {
   writeOverseerState,
   overseerTurnFile,
 } from "./overseer-store";
+import { promptToc, readManifest } from "./overseer-ideas";
+import type { SubagentTool } from "./overseer-idea-tools";
+import { workerDenial } from "./delegate";
 import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, TurnLimits, UserTurns } from "./overseer-tools";
 import { overseerFileTools } from "./overseer-file-tools";
 import { type Redactor, serverRedactor } from "./overseer-redact";
@@ -308,7 +312,7 @@ export async function attentionForWire(): Promise<AttentionDigest> {
 export function overseerSettingsInfo(): OverseerSettingsInfo {
   return {
     settings: readOverseerSettings(),
-    defaults: { quickActions: DEFAULT_QUICK_ACTIONS.map((a) => ({ ...a })), caps: { ...DEFAULT_CAPS } },
+    defaults: { quickActions: DEFAULT_QUICK_ACTIONS.map((a) => ({ ...a })), caps: { ...DEFAULT_CAPS }, explorer: { ...DEFAULT_EXPLORER } },
     file: overseerSettingsFile(),
   };
 }
@@ -332,6 +336,10 @@ export async function saveOverseerSettings(body: unknown): Promise<OverseerSaveR
       else return { error: `Unknown model, or no credentials configured: ${parsed.model}` };
     }
   }
+  // The explorer is a subagent: the policy's subagent view decides whether it may run. Saved either
+  // way (spawn enforces it), with the reason shown.
+  const denied = workerDenial(readModelPolicy(), parsed.explorer.backend, parsed.explorer.model);
+  if (denied) warnings.push(`Exploratory agent: ${denied}; explorers will be refused until it is allowed.`);
   writeOverseerSettings(parsed);
   pendingApply = true;
   await applySettingsNow();
@@ -396,6 +404,10 @@ export const STARTING_GRACE_MS = 15_000;
 
 const running = (path: string) => isSessionBusy(path) || workingSubagents(path) > 0;
 
+/** The Overseer runtime's session (watchSession): its extension runner holds the subagents
+    extension's tools, which the explorer routes call in-process (overseer-idea-tools.ts). */
+let overseerSession: AgentSession | null = null;
+
 const host: OverseerToolHost = {
   request: (path, init) => {
     if (!dispatch) throw new Error("The Overseer's tools are not wired to the server yet.");
@@ -440,6 +452,9 @@ const host: OverseerToolHost = {
   },
   runningStarted: () => countRunning(started, running, promptedAt),
   attended: () => turns.attended(),
+  explorer: () => readOverseerSettings().explorer,
+  explorerCwd: () => overseerDir(),
+  subagent: (name) => (overseerSession?.extensionRunner?.getToolDefinition(name) as SubagentTool | undefined) ?? null,
 };
 
 /** An in-process call exactly as the Overseer's tools make it. Exported for the tests. */
@@ -476,14 +491,16 @@ export function renderOverseerPrompt(
 ): string {
   const notes = readNotes().trim();
   const c = settings.caps;
+  const ideas = redactor().redact(promptToc(readManifest(), readOverseerState()?.current ?? ""));
   return template
     .replaceAll("{{TOOLS}}", toolCatalogue(tools))
+    .replaceAll("{{IDEAS}}", ideas)
     .replaceAll("{{NOTES}}", notes ? redactor().redact(notes.slice(0, 4000)) : "(none yet)")
     .replaceAll("{{NOW}}", now.toString())
     .replaceAll("{{HOME}}", homedir())
     .replaceAll(
       "{{CAPS}}",
-      `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions, ${c.archivesPerTurn} archive operations; at most ${c.concurrentSessions} sessions you started running at once`,
+      `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions or explorers, ${c.archivesPerTurn} archive operations, ${c.explorePerTurn} explorers launched; at most ${c.concurrentSessions} sessions you started running at once`,
     );
 }
 
@@ -587,6 +604,7 @@ setOverseerRuntime({
   // renew) when the message that call produced enters the context. Every run starts unattended, and
   // a brief, a wake-up or an extension's message never goes through it: read-only, on the same budget.
   watchSession(session) {
+    overseerSession = session;
     turns.watch(session.agent);
     const prompt = livePrompt;
     session.subscribe((event) => {

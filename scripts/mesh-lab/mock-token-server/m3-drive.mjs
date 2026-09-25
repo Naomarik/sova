@@ -4,8 +4,10 @@
 // node (h3) or stops only its Sova (h4, h7, h10) through the lab's own commands, always undoing it
 // in a finally. `conflict` stops two hosts' Sova to plant different pre-sync keys, then settles the
 // conflict through the Mesh page's routes (GET /api/mesh/logins, POST /api/mesh/logins/claim).
+// `presync` resets every host's login sidecar (Sova stopped) to plant a pre-sync Claude login on the
+// first host, then refreshes it there: the others must follow without reporting a conflict.
 //
-//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos|h11|conflict|conflict-verify|conflict-clean|apikeys] [--hosts a,b,c] [--plant-only]
+//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos|h11|presync|conflict|conflict-verify|conflict-clean|apikeys] [--hosts a,b,c] [--plant-only]
 //   (h11 is meant for an 8-host lab: --hosts a,b,c,d,e,f,g,h; M3_H11_SECONDS sets its length)
 //   `apikeys` puts the LAST host in API-keys-only mode (MeshSettings.loginKinds, the VPS's mode) and
 //   proves it takes API keys but never an OAuth login, then switches it back. With --pin the mode is
@@ -477,6 +479,50 @@ async function conflict() {
   return `a and b kept their own keys, a listed b (b listed a: ${bSees ? "yes" : "not yet"}); claim on a → every host on a's key in ${spread} ms; peer-listener claim ${viaPeer}; no key/fingerprint in any body`;
 }
 
+/**
+ * A Claude login found on the first host's first sync scan (pre-sync, loginAt 0; Claude entries
+ * name no account) reaches the others; Claude Code then refreshes it there, once with everyone up
+ * and twice while the last host is partitioned. Every host must end on the lineage's current
+ * token with no conflict listed anywhere (before the lineage stamp, the first refresh already
+ * made the peers report a conflict and keep the rotated-away token). Every host's login sidecar
+ * is reset, so its pi entries become pre-sync too (same values everywhere: no conflict).
+ */
+async function presync() {
+  const [a] = HOSTS;
+  const last = HOSTS.at(-1);
+  const key = "claude:claudeAiOauth";
+  const stopped = [];
+  let id;
+  try {
+    for (const h of HOSTS) {
+      lab("sova-stop", h);
+      stopped.push(h);
+    }
+    for (const h of HOSTS) sh(h, `rm -f "$PI_CODING_AGENT_DIR/sova/login-sync.json" "$SOVA_SYNC_CLAUDE_DIR/.credentials.json"`);
+    ({ lineage: id } = claudeSim(a, "login"));
+  } finally {
+    for (const h of stopped.reverse()) lab("sova-start", h);
+  }
+  const noConflict = async () => {
+    const rows = await Promise.all(HOSTS.map((h) => loginRow(h, key).catch(() => undefined)));
+    return rows.every((r) => r && !r.conflictWith && r.loginAt === 0) || rows.map((r) => [r?.origin, r?.loginAt, r?.conflictWith ?? null]);
+  };
+  await until("the pre-sync Claude login on every host", claudeConverged(id), 60_000);
+  await until("listed pre-sync everywhere, no conflict", noConflict);
+  claudeSim(a, "refresh", "--force");
+  await until("the refresh on every host", claudeConverged(id), 30_000);
+  await until("no conflict after the refresh", noConflict);
+  await partitioned(last, async () => {
+    for (let i = 0; i < 2; i++) claudeSim(a, "refresh", "--force");
+    await until(`the refreshes on every host but ${last}`, claudeConverged(id, HOSTS.slice(0, -1)), 30_000);
+  });
+  await until(`${last} caught up after missing two refreshes`, claudeConverged(id), 60_000);
+  await until("no conflict after the missed refreshes", noConflict);
+  claudeSim(a, "logout");
+  await until("Claude logout everywhere", async () => HOSTS.every((h) => claudeSim(h, "status").state === "missing") || HOSTS.map((h) => claudeSim(h, "status").state));
+  return `lineage ${id}: pre-sync login + 3 refreshes on ${a} (2 missed by ${last}) → every host on the current token, loginAt 0, no conflict; logged out after`;
+}
+
 /** After a claim made elsewhere (the Mesh page on the first host): every host on its key, no conflict left. */
 async function conflictVerify() {
   const [a] = HOSTS;
@@ -586,7 +632,7 @@ async function apikeys() {
   }
 }
 
-const ALL = { apikeys, conflict, "conflict-verify": conflictVerify, "conflict-clean": conflictClean, h1, h2, h2c, h6, h6c, h9, h3, h4, h7, h8, h10, h11 };
+const ALL = { apikeys, presync, conflict, "conflict-verify": conflictVerify, "conflict-clean": conflictClean, h1, h2, h2c, h6, h6c, h9, h3, h4, h7, h8, h10, h11 };
 const GROUPS = { all: ["h1", "h2", "h2c", "h6", "h6c", "h9"], chaos: ["h3", "h4", "h7", "h8", "h10"] };
 const run = GROUPS[which] ?? which.split(",");
 for (const name of run) {

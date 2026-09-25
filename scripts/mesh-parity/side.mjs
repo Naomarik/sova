@@ -51,11 +51,13 @@ export function install(tree) {
 export function pnpmRun(tree, script, env, logFile) {
   try {
     // Bounded: a leaked timer or listener keeps a test process alive forever (seen with a canary).
-    const out = execFileSync(PNPM, ["run", script], { cwd: tree, env, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 28, timeout: 15 * 60_000, killSignal: "SIGKILL" }).toString();
+    // coreutils timeout signals its whole process group, so the test runner's children go too; a
+    // SIGKILL of pnpm alone left them running as orphans for an hour.
+    const out = execFileSync("timeout", ["-k", "10", "900", PNPM, "run", script], { cwd: tree, env, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 28 }).toString();
     writeFileSync(logFile, out);
     return { ok: true, code: 0, output: out };
   } catch (err) {
-    const out = `${err.stdout ?? ""}${err.stderr ?? ""}${err.signal ? `\n[parity] killed by ${err.signal} after the 15 min limit\n` : ""}`;
+    const out = `${err.stdout ?? ""}${err.stderr ?? ""}${err.status === 124 || err.status === 137 ? `\n[parity] killed after the 15 min limit (timeout exit ${err.status})\n` : ""}`;
     writeFileSync(logFile, out);
     return { ok: false, code: err.status ?? -1, output: out };
   }

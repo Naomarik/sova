@@ -250,7 +250,7 @@ webapp never writes to it (CLAUDE.md: no file locking).
   <header class="subagents-view-head">
     <h3 class="subagents-view-title">designer</h3>
     <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
-    <p class="subagents-view-meta meta-line"><span class="text-mono">ag_03</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>anthropic</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5">opus-5</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k tokens</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>Read only</span></p>
+    <p class="subagents-view-meta meta-line"><span class="text-mono">ag_03</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>anthropic</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5">opus-5</span> <span class="meta-line-sep" aria-hidden="true">·</span> <span>effort <span class="text-mono">medium</span></span> <span class="meta-line-sep" aria-hidden="true">·</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41">23.7k tokens</span></p>
   </header>
   <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
     <div class="subagents-banner stack-2">…banners, or nothing…</div>
@@ -263,14 +263,16 @@ webapp never writes to it (CLAUDE.md: no file locking).
 - **Sub-header.** `.subagents-view-head` names the worker on surface above the scroll region, so
   it never scrolls away (sticky by construction, not by `position: sticky`). The title is body
   semibold, then the same status chip as the row, then a meta line: the id in mono, then the
-  provider, then the model, the
-  worker's tokens, then "Read only". The token number here is the **open transcript's own**
+  provider, then the model, then **the effort** (`effort {level}`, the level in mono; a worker
+  that reports none shows nothing here), and last the
+  worker's tokens. **The effort leads the count**: what a worker is thinking at is a fact about
+  the worker, where the count beside it is a running total that changes under the reader. The
+  token number here is the **open transcript's own**
   total, counted from the file as it is tailed (`/ws/watch` sends it with every `snapshot` and
   `append`), so it ticks while you watch instead of waiting for the next worker snapshot; it
   falls back to the row's number when the server doesn't report one. A Claude Code transcript
   carries no cost, so that `title` shows counts only.
-  That's the only place the read-only fact is written; it's also self-evident, since
-  there's nothing to type into. The head repeats the row on purpose: in list/detail, the list
+  The head repeats the row on purpose: in list/detail, the list
   isn't on screen. There, the back button leads the head, and title, chips and meta sit beside
   it in `.subagents-view-id`.
 - **Thread.** The same §chat/transcript rows, capped at the transcript column (`--measure` + `--space-9`) and

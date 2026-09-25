@@ -49,7 +49,11 @@ globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
 }) as typeof fetch;
 
 const { app, server } = await import("../index");
-const { listenerInfo, stopMesh } = await import("./index");
+const { listenerInfo, meshApi, stopMesh } = await import("./index");
+const hookLog: string[] = [];
+meshApi.onMeshStart(() => hookLog.push("start"));
+meshApi.onMeshStop(() => hookLog.push("stop"));
+meshApi.onPeerUp((id) => hookLog.push(`up:${id}`));
 const { clearProbes, ownProtocol } = await import("./hello");
 const { peersFile } = await import("./peers");
 
@@ -192,6 +196,8 @@ describe("mesh OFF (no peers.json)", () => {
     assert.equal(identityCalls, 0);
     assert.equal(fetches, 0);
     assert.equal(listenerInfo(), null);
+    assert.deepEqual(hookLog, [], "no lifecycle hook fires while off");
+    await assert.rejects(meshApi.peerFetch("b", "/api/health"), /unknown peer/);
   });
 
   test("/peer/* and /api/peer/* answer exactly what an unknown path answers", async () => {
@@ -236,6 +242,27 @@ describe("mesh ON", () => {
     });
     assert.equal(s, 200);
     await waitFor(() => (listenerInfo()?.addresses.length ?? 0) > 0);
+  });
+
+  test("hooks: start fired once; peerFetch reaches the peer; up fires on each transition to up", async () => {
+    // The PUT answered with a probed MeshInfo: b came up, dead didn't.
+    assert.deepEqual(hookLog, ["start", "up:b"]);
+    const res = await meshApi.peerFetch("b", "/api/echo?q=1");
+    assert.equal(((await res.json()) as { url: string }).url, "/api/echo?q=1");
+    fakeSessions = "garbage"; // b now fails its session list: down
+    await getJson("/api/mesh/sessions");
+    fakeSessions = [];
+    whoisNode = "nB";
+    await peerGet("/api/health"); // b calls us: up again
+    await peerGet("/api/health");
+    assert.deepEqual(hookLog, ["start", "up:b", "up:b"]);
+  });
+
+  test("peer-only routes: the caller is known under /api/peer/*, and they are 404 on the main listener", async () => {
+    assert.deepEqual(await getJson("/api/peer/hello"), [404, { error: "Not found" }]);
+    whoisNode = "nB";
+    const r = await peerGet("/api/peer/hello");
+    assert.equal(r.status, 200);
   });
 
   test("the peer listener binds the pinned address", () => {
@@ -426,6 +453,7 @@ describe("mesh ON", () => {
     assert.equal(info.enabled, false);
     assert.equal(listenerInfo(), null);
     assert.equal(identityCalls, calls, "turning off calls no Tailscale");
+    assert.equal(hookLog.at(-1), "stop");
     await assert.rejects(realFetch(`http://127.0.0.1:${port}/api/health`));
   });
 });

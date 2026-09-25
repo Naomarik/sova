@@ -37,6 +37,30 @@ interface MeshRuntime {
 const rt: MeshRuntime = { config: null, listener: null };
 let dispatch: Dispatch | null = null;
 
+// Lifecycle hooks for server/sync. They fire only on transitions, so OFF they never fire.
+const startHooks: Array<() => void> = [];
+const stopHooks: Array<() => void> = [];
+const peerUpHooks: Array<(peerId: string) => void> = [];
+/** Whether each peer was last seen up (by a probe, or by its own call through the gate). */
+const upNow = new Map<string, boolean>();
+
+function runHooks<A extends unknown[]>(hooks: Array<(...a: A) => void>, ...args: A): void {
+  for (const h of hooks) {
+    try {
+      h(...args);
+    } catch (err) {
+      console.error("[mesh] hook failed:", err);
+    }
+  }
+}
+
+/** Record what was just learnt about a peer; a peer that was not up and now is fires onPeerUp. */
+function sawPeer(id: string, up: boolean): void {
+  const was = upNow.get(id) ?? false;
+  upNow.set(id, up);
+  if (up && !was) runHooks(peerUpHooks, id);
+}
+
 const emptyConfig = (): PeersConfig => ({ self: { id: defaultSelfId(), label: defaultSelfId() }, peers: [], sync: {}, frontDoor: null });
 
 export const meshEnabled = (): boolean => (rt.config?.peers.length ?? 0) > 0;
@@ -66,10 +90,13 @@ function apply(): void {
       ...d,
       port: peerPort(),
       peerByNode: (nodeId) => {
-        const hit = rt.config?.peers.find((p) => p.nodeId === nodeId);
-        if (hit) return hit;
-        reload(); // a hand edit may have added it since
-        return rt.config?.peers.find((p) => p.nodeId === nodeId) ?? null;
+        let hit = rt.config?.peers.find((p) => p.nodeId === nodeId);
+        if (!hit) {
+          reload(); // a hand edit may have added it since
+          hit = rt.config?.peers.find((p) => p.nodeId === nodeId);
+        }
+        if (hit) sawPeer(hit.id, true); // it just called us, so it is up
+        return hit ?? null;
       },
       addresses: async () => {
         const status = await getIdentity().status();
@@ -79,9 +106,12 @@ function apply(): void {
       },
     });
     void rt.listener.start();
+    runHooks(startHooks);
   } else if (!meshEnabled() && rt.listener) {
     rt.listener.close();
     rt.listener = null;
+    upNow.clear();
+    runHooks(stopHooks);
   }
 }
 
@@ -95,8 +125,11 @@ export function startMesh(d: Dispatch): void {
 }
 
 export function stopMesh(): void {
-  rt.listener?.close();
+  if (!rt.listener) return;
+  rt.listener.close();
   rt.listener = null;
+  upNow.clear();
+  runHooks(stopHooks);
 }
 
 /** Tests: the listener's bound state. */
@@ -123,11 +156,49 @@ export const meshSelf = (): { id: string; label: string } => (rt.config ?? empty
 /** A route under /api/peer/*: the calling peer (the peer listener put it there), else null. */
 export const requestPeer = (c: Context): PeerEntry | null => ((c.env as { meshPeer?: PeerEntry } | undefined)?.meshPeer ?? null);
 
+/**
+ * GET/POST/… <peer>/<path> over the peer hop (the peer's gate sees this host's node). Throws when
+ * the mesh is off or the peer is unknown; otherwise it is fetch: a down peer rejects, a refusal
+ * is a 403 with X-Sova-Mesh: refused. `path` starts with "/api/".
+ */
+export function peerFetch(peerId: string, path: string, init?: RequestInit): Promise<Response> {
+  const peer = rt.config?.peers.find((p) => p.id === peerId);
+  if (!meshEnabled() || !peer) return Promise.reject(new Error(`unknown peer ${peerId}`));
+  return fetch(`${peerUrl(peer)}${path}`, init);
+}
+
+/** The surface server/sync builds on (mountSync(app, meshApi)). */
+export const meshApi = {
+  enabled: meshEnabled,
+  peers: meshPeers,
+  self: meshSelf,
+  settings: () => readMeshSettings(),
+  peerFetch,
+  /** The verified caller of a route under /api/peer/*; null never reaches such a route (it is 404). */
+  requestPeer,
+  /** Fires when peers.json goes from no peer to some (at startup too); at once if already on. */
+  onMeshStart: (fn: () => void): void => {
+    startHooks.push(fn);
+    if (rt.listener) runHooks([fn]);
+  },
+  /** Fires when the last peer is removed, or at shutdown while on. */
+  onMeshStop: (fn: () => void): void => {
+    stopHooks.push(fn);
+  },
+  /** Fires when a peer not known to be up is seen up: a hello probe, or its own call through the gate. */
+  onPeerUp: (fn: (peerId: string) => void): void => {
+    peerUpHooks.push(fn);
+  },
+  onSyncStatus,
+};
+export type MeshApi = typeof meshApi;
+
 // ---- state ------------------------------------------------------------------------------------
 
 async function peerStatuses(): Promise<PeerStatus[]> {
   const peers = rt.config?.peers ?? [];
   const probes = await Promise.all(peers.map((p) => probePeer(p)));
+  peers.forEach((p, i) => sawPeer(p.id, probes[i]!.state === "up"));
   return peers.map((p, i) => ({
     id: p.id,
     label: p.label,
@@ -186,6 +257,7 @@ async function meshSessions(): Promise<MeshSessions> {
       }
     }),
   );
+  for (const r of rows) sawPeer(r.id, r.state === "up");
   return { peers: rows };
 }
 

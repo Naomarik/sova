@@ -1,8 +1,8 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, onMount, Show } from "solid-js";
-import { IDEA_STATUSES, type IdeaConflict, type IdeaPatch, type IdeaRecord, type IdeaStatus, type OverseerIdeaDetail, type OverseerIdeasInfo } from "../../shared/protocol";
+import { IDEA_ID_RE, IDEA_STATUSES, type IdeaConflict, type IdeaPatch, type IdeaRecord, type IdeaStatus, type OverseerIdeaDetail, type OverseerIdeasInfo } from "../../shared/protocol";
 import { ApiError, getOverseerIdea, patchOverseerIdea } from "../lib/api";
 import { relativeTime, tildePath } from "../lib/format";
-import { layoutGraph, neighbours } from "../lib/idea-graph";
+import { LABEL_GAP, layoutGraph, neighbours } from "../lib/idea-graph";
 import { canonicalId, countsLine, exploreMessage, IDEA_STATUS_CHIP, ideasCount, parseTags, settled, startMessage, tocGroups } from "../lib/ideas";
 import { announce, home } from "../lib/ui-state";
 import type { OverseerSender } from "./ChatView";
@@ -258,7 +258,15 @@ const NODE_CLASS: Record<IdeaStatus, string> = {
 
 const GRAPH_W = 480;
 const GRAPH_H = 360;
-const shortLabel = (name: string) => (name.length > 20 ? `${name.slice(0, 19)}…` : name);
+/** A node's label: project and name, so a link that crosses projects reads as one. A sub-entry's
+    parent is its dashed line, so the label leaves it out. */
+const labelOf = (id: string) => {
+  const m = IDEA_ID_RE.exec(id);
+  const text = m ? `${m[1]}/${m[3]}` : id.replace(/^§/, "");
+  return text.length > 26 ? `${text.slice(0, 25)}…` : text;
+};
+/** The label's advance per character: JetBrains Mono at 11px is 0.6em. */
+const LABEL_CHAR = 6.6;
 
 function IdeasGraph(props: { info: OverseerIdeasInfo; showSettled: boolean; onOpen(id: string): void }) {
   const shown = createMemo(() => props.info.ideas.filter((r) => props.showSettled || !settled(r.status)));
@@ -270,7 +278,7 @@ function IdeasGraph(props: { info: OverseerIdeasInfo; showSettled: boolean; onOp
     return layoutGraph(
       shown().map((r) => ({ id: r.id, group: r.ns })),
       [...props.info.edges.filter((e) => ids.has(e.from) || ids.has(e.to)), ...parts.filter((e) => ids.has(e.from))],
-      { width: GRAPH_W, height: GRAPH_H, pad: 28 },
+      { width: GRAPH_W, height: GRAPH_H, pad: 28, labelWidth: (id) => labelOf(id).length * LABEL_CHAR },
     );
   });
   const isPart = (e: { from: string; to: string }) => partOf().has(`${e.from}\0${e.to}`);
@@ -316,9 +324,7 @@ function IdeasGraph(props: { info: OverseerIdeasInfo; showSettled: boolean; onOp
         <For each={layout().nodes}>
           {(n) => {
             const r = () => byId().get(n.id)!;
-            const name = n.id.slice(n.id.indexOf("/") + 1);
-            // Labels on the right half read leftwards, so none runs off the box.
-            const right = n.x > GRAPH_W * 0.6;
+            const right = n.anchor === "end";
             return (
               <g
                 class="ideas-node"
@@ -343,8 +349,8 @@ function IdeasGraph(props: { info: OverseerIdeasInfo; showSettled: boolean; onOp
                 <title>{`${r().title} — ${n.id}`}</title>
                 <circle class="ideas-node-hit" r="16" />
                 <circle class={`ideas-node-dot ${NODE_CLASS[r().status]}`} r={r().parent ? 5 : 7} />
-                <text class="ideas-node-label" x={right ? -11 : 11} y="4" text-anchor={right ? "end" : "start"}>
-                  {shortLabel(name)}
+                <text class="ideas-node-label" x={right ? -LABEL_GAP : LABEL_GAP} y="4" text-anchor={n.anchor}>
+                  {labelOf(n.id)}
                 </text>
               </g>
             );

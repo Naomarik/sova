@@ -19,6 +19,8 @@ export interface GraphEdge {
 export interface PlacedNode extends GraphNode {
   x: number;
   y: number;
+  /** Which side of the dot its label sits: right ("start") or, near the right edge, left ("end"). */
+  anchor: "start" | "end";
 }
 
 export interface PlacedEdge extends GraphEdge {
@@ -43,7 +45,13 @@ export interface LayoutOptions {
   /** Kept clear at every edge, so a node's label is never cut off. */
   pad?: number;
   iterations?: number;
+  /** A label's width in px. Given, labels are placed so no two label boxes overlap. */
+  labelWidth?(id: string): number;
 }
+
+/** Label geometry (px): the gap between dot and text, and the half-height of a label's box. */
+export const LABEL_GAP = 11;
+const LABEL_HALF = 9;
 
 /**
  * Place `nodes` and route `edges` inside a `width` × `height` box. Self-links and duplicate
@@ -154,9 +162,42 @@ export function layoutGraph(nodes: GraphNode[], edges: GraphEdge[], opts: Layout
     }
   }
 
+  // Labels: right of the dot, or left of it in the right 40% of the box, so none runs off. With
+  // their widths known, nudge nodes apart vertically until no two label boxes (dot included)
+  // overlap — the forces space dots, not the words beside them.
+  const anchor = (x: number): "start" | "end" => (x > width * 0.6 ? "end" : "start");
+  if (opts.labelWidth && list.length > 1) {
+    const box = (id: string) => {
+      const p = pos.get(id)!;
+      const w = opts.labelWidth!(id);
+      return anchor(p.x) === "start" ? [p.x - 8, p.x + LABEL_GAP + w] : [p.x - LABEL_GAP - w, p.x + 8];
+    };
+    for (let pass = 0; pass < 60; pass++) {
+      let moved = false;
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const a = pos.get(list[i]!)!;
+          const b = pos.get(list[j]!)!;
+          const [al, ar] = box(list[i]!);
+          const [bl, br] = box(list[j]!);
+          const dy = b.y - a.y;
+          const need = 2 * LABEL_HALF + 2 - Math.abs(dy);
+          if (ar! <= bl! || br! <= al! || need <= 0) continue;
+          // Apart along y, the upper one up; a tie goes by index, never at random.
+          const dir = dy > 0 || (dy === 0 && i < j) ? 1 : -1;
+          a.y = clampY(a.y - (dir * need) / 2);
+          b.y = clampY(b.y + (dir * need) / 2);
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+  }
+
   const placed: PlacedNode[] = nodes.map((n) => {
     const p = pos.get(n.id)!;
-    return { ...n, x: round(clampX(p.x)), y: round(clampY(p.y)) };
+    const x = round(clampX(p.x));
+    return { ...n, x, y: round(clampY(p.y)), anchor: anchor(x) };
   });
   const at = new Map(placed.map((n) => [n.id, n]));
   const routed: PlacedEdge[] = kept.map((e) => {

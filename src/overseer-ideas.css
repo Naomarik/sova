@@ -9,7 +9,16 @@
 .overseer-ideas-toggle { gap: var(--space-1); }
 .overseer-ideas-toggle[aria-expanded="true"] { background: var(--color-accent-tint); color: var(--color-ink); }
 @container session-head (max-width: 479px) {
-  .overseer-ideas-word { display: none; }
+  /* Narrow: the star alone (its name says the count), so Clear stays on screen. */
+  .overseer-ideas-word,
+  .overseer-ideas-toggle .chip-count { display: none; }
+  .overseer-ideas-toggle { padding: 0 var(--space-2); }
+}
+/* The smallest phones: the head's own gaps close a step so the extra button still fits.
+   A media query: the head is its own container, and a container query can't style it. At
+   these widths the head is the window's width anyway. */
+@media (max-width: 379px) {
+  .overseer-head { gap: var(--space-2); }
 }
 
 /* The panel covers the chat's right side (all of it when folded), below

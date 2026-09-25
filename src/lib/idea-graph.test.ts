@@ -82,3 +82,22 @@ test("neighbours: the node, what it links to, and what links to it", () => {
   assert.deepEqual([...neighbours("§sova/graph", edges)].sort(), ["§mesh/health", "§sova/graph", "§sova/ideas-panel"]);
   assert.deepEqual([...neighbours("§lonely/one", edges)], ["§lonely/one"]);
 });
+
+test("given label widths, no two label boxes overlap — even when every dot starts on one row", () => {
+  const crowd = Array.from({ length: 8 }, (_, i) => ({ id: `§mesh/some-long-idea-name-${i}`, group: "mesh" }));
+  const width = (id: string) => id.length * 6.6;
+  const g = layoutGraph(crowd, [], { ...box, labelWidth: width });
+  const boxes = g.nodes.map((n) => {
+    const w = width(n.id);
+    const [l, r] = n.anchor === "start" ? [n.x - 8, n.x + 11 + w] : [n.x - 11 - w, n.x + 8];
+    return { id: n.id, l, r, t: n.y - 9, b: n.y + 9 };
+  });
+  for (let i = 0; i < boxes.length; i++)
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i]!;
+      const b = boxes[j]!;
+      const overlap = a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+      assert.ok(!overlap, `${a.id} and ${b.id} overlap`);
+    }
+  for (const n of g.nodes) assert.equal(n.anchor, n.x > 400 * 0.6 ? "end" : "start");
+});

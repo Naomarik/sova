@@ -16,7 +16,7 @@ import type {
 import { frontDoorConfig } from "./front-door";
 import { ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from "./hello";
 import { type ListenerDeps, PeerListener } from "./listener";
-import { addressIdentity } from "./address-identity";
+import { addressIdentity, identityMode } from "./address-identity";
 import { getIdentity, setIdentity, type TailnetStatus } from "./localapi";
 import { defaultSelfId, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
 import { PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
@@ -42,7 +42,7 @@ const rt: MeshRuntime = { config: null, listener: null };
 
 // A host without Tailscale LocalAPI (Android) opts into address identity (address-identity.ts).
 // Nothing runs here: whois and status are only called while the mesh is on.
-if (process.env.SOVA_MESH_IDENTITY === "addresses") {
+if (identityMode(process.env.SOVA_MESH_IDENTITY) === "addresses") {
   setIdentity(
     addressIdentity(() => {
       reloadIfChanged();

@@ -53,6 +53,20 @@ export function tailnetAddresses(pinned: string | undefined): string[] {
   });
 }
 
+/** The IP of a whois address, "ip:port" or "[ipv6]:port"; null for any other shape. */
+export function whoisHost(addr: string): string | null {
+  const m = /^\[([^\]]+)\]:(\d+)$/.exec(addr) ?? /^([^:[\]]+):(\d+)$/.exec(addr);
+  return m ? m[1]! : null;
+}
+
+/** SOVA_MESH_IDENTITY: "addresses" opts in; unset or empty is LocalAPI, silently; anything else
+    is LocalAPI with a warning, so a typo doesn't pass unnoticed. */
+export function identityMode(value: string | undefined): "addresses" | "localapi" {
+  if (value === "addresses") return "addresses";
+  if (value) console.warn(`[mesh] SOVA_MESH_IDENTITY=${JSON.stringify(value)} is not "addresses": using Tailscale LocalAPI`);
+  return "localapi";
+}
+
 export function addressIdentity(peers: () => PeerEntry[], env: NodeJS.ProcessEnv = process.env): Identity {
   return {
     async status(): Promise<TailnetStatus> {
@@ -70,7 +84,8 @@ export function addressIdentity(peers: () => PeerEntry[], env: NodeJS.ProcessEnv
       return { backendState: "Running", self, peers: [] };
     },
     async whois(addr: string): Promise<WhoisResult | null> {
-      const ip = tailnetIp(addr.replace(/:\d+$/, ""));
+      const host = whoisHost(addr);
+      const ip = host === null ? null : tailnetIp(host);
       const own = new Set(tailnetAddresses(env.SOVA_PEER_HOST));
       const hits = ip && !own.has(ip) ? peers().filter((p) => entryAddresses(p).includes(ip)) : [];
       if (hits.length !== 1) {

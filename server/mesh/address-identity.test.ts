@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addressIdentity, entryAddresses, tailnetAddresses, tailnetIp } from "./address-identity";
+import { addressIdentity, entryAddresses, identityMode, tailnetAddresses, tailnetIp, whoisHost } from "./address-identity";
 import type { PeerEntry } from "./peers";
 
 const vps: PeerEntry = { id: "vps", label: "VPS", nodeId: "nVPS", dnsName: "vps.example.ts.net", url: "http://100.64.0.2:4801" };
@@ -64,4 +64,40 @@ test("status: self from env, no peers (no discovery)", async () => {
   assert.deepEqual(s.self.addresses, ["100.64.0.3"]);
   assert.deepEqual(s.peers, []);
   await assert.rejects(addressIdentity(() => [], { SOVA_PEER_HOST: "0.0.0.0" }).status());
+});
+
+test("whoisHost: \"ip:port\" and \"[ipv6]:port\" only; a bare IPv6 is never cut down to a prefix", () => {
+  assert.equal(whoisHost("100.64.0.2:41000"), "100.64.0.2");
+  assert.equal(whoisHost("[fd7a:115c:a1e0::5]:4801"), "fd7a:115c:a1e0::5");
+  for (const bad of ["fd7a:115c:a1e0::5:4801", "fd7a:115c:a1e0::5", "100.64.0.2", "[fd7a:115c:a1e0::5]", "", "100.64.0.2:x"]) {
+    assert.equal(whoisHost(bad), null, bad);
+  }
+});
+
+test("whois: a bare IPv6 (no brackets) whose prefix is a peer's address is refused", async () => {
+  const peer = { ...v6, dnsName: "fd7a:115c:a1e0::5" };
+  const restore = quiet();
+  try {
+    assert.equal(await addressIdentity(() => [peer], env).whois("fd7a:115c:a1e0::5:4801"), null);
+  } finally {
+    restore();
+  }
+});
+
+test("identityMode: unset/empty is LocalAPI and silent; a typo is LocalAPI with a warning", () => {
+  const seen: string[] = [];
+  const warn = console.warn;
+  console.warn = (m: string) => void seen.push(m);
+  try {
+    assert.equal(identityMode(undefined), "localapi");
+    assert.equal(identityMode(""), "localapi");
+    assert.deepEqual(seen, []);
+    assert.equal(identityMode("addresses"), "addresses");
+    assert.deepEqual(seen, []);
+    assert.equal(identityMode("adresses"), "localapi");
+    assert.equal(seen.length, 1);
+    assert.match(seen[0]!, /SOVA_MESH_IDENTITY="adresses" is not "addresses"/);
+  } finally {
+    console.warn = warn;
+  }
 });

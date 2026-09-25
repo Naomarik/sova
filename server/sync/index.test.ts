@@ -96,11 +96,15 @@ test("mesh off: routes are 404 and nothing is read or written", async () => {
     ["/api/peer/credentials/manifest", undefined],
     ["/api/peer/credentials/entry?key=pi:zai", undefined],
     ["/api/peer/credentials/push", { method: "POST", body: "{}" }],
+    ["/api/peer/sync/manifest", undefined],
+    ["/api/peer/sync/doc?key=settings:mode.json", undefined],
+    ["/api/peer/sync/push", { method: "POST", body: "{}" }],
   ] as const) {
     // As a verified peer, but the mesh never started: still 404.
     assert.equal((await a.app.request(path, init, { meshPeer: { id: "b" } })).status, 404, path);
   }
   assert.equal(a.rt.credentials, null);
+  assert.equal(a.rt.docs, null);
   assert.deepEqual(readdirSync(a.agentDir).sort(), before);
   assert.deepEqual(readdirSync(join(a.agentDir, "sova")), []);
 });
@@ -151,18 +155,39 @@ test("two hosts over the real routes: start pulls, a change propagates, a logout
     await a.rt.credentials!.logout("pi:deepseek");
     assert.equal(await until(() => !auth(b).deepseek), true, "the logout reached B");
     const st = a.status();
-    assert.equal(st.length, 1);
-    assert.equal(st[0]!.category, "logins");
-    assert.equal(st[0]!.state, "ok");
+    assert.deepEqual(st.map((r) => [r.category, r.state]), [["logins", "ok"], ["settings", "ok"], ["themes", "ok"]]);
     assert.ok(!JSON.stringify(st).includes("sk-"), "no secret in status");
     assert.ok(!JSON.stringify(a.rt.credentials!.status()).includes("sk-"), "no secret in the detailed status");
     // The user's switch: off, nothing is offered or taken.
     b.settings.sync.logins = false;
     assert.deepEqual(b.rt.credentials!.manifest().entries, {});
-    assert.equal(b.status()[0]!.state, "off");
+    assert.equal(b.status().find((r) => r.category === "logins")!.state, "off");
     writeAuth(a, { ...auth(a), fresh: { type: "api_key", key: "sk-fresh" } });
     await new Promise((r) => setTimeout(r, 1200));
     assert.equal(auth(b).fresh, undefined, "B took nothing while its switch is off");
+  } finally {
+    a.fire.stop();
+    b.fire.stop();
+  }
+});
+
+test("two hosts over the real routes: a settings file and a theme propagate; the proxied route stays shut", async () => {
+  const hosts = new Map<string, FakeHost>();
+  const a = host("a", hosts);
+  const b = host("b", hosts);
+  a.fire.start();
+  b.fire.start();
+  try {
+    const mode = `${JSON.stringify({ mode: "delegate", minorModes: [], strict: false }, null, 2)}\n`;
+    writeFileSync(join(a.agentDir, "mode.json"), mode);
+    mkdirSync(join(a.agentDir, "sova", "themes"), { recursive: true });
+    writeFileSync(join(a.agentDir, "sova", "themes", "ocean.json"), JSON.stringify({ name: "Ocean", base: "dark", colors: {} }));
+    const bMode = join(b.agentDir, "mode.json");
+    const bTheme = join(b.agentDir, "sova", "themes", "ocean.json");
+    assert.equal(await until(() => existsSync(bMode) && existsSync(bTheme), 4000), true);
+    assert.equal(readFileSync(bMode, "utf8"), mode);
+    const proxied = await b.app.request("/api/peer/sync/doc?key=settings:mode.json", { headers: { "X-Forwarded-Host": "b.lab" } }, { meshPeer: { id: "a" } });
+    assert.equal(proxied.status, 404);
   } finally {
     a.fire.stop();
     b.fire.stop();

@@ -126,7 +126,7 @@ themes are tags, and links relate ideas across projects.
   that session: read the idea and its scope, then find its folder with `sova_list_folders`. Use a
   folder only when exactly one clearly matches the idea's project (its namespace: §mesh → a
   `mesh` folder); otherwise ask with `sova_confirm`, offering the candidate folders, and end the
-  turn. Never fall back to another project's folder. Then `sova_create_session` with a first
+  turn. Never guess, and never fall back to another project's folder. Then `sova_create_session` with a first
   prompt built from the idea, and `sova_idea` update with the session's id.
 
 ## How to answer

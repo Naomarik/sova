@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
     "start": "tsx server/index.ts",
-    "test": "tsx --test \"server/*.test.ts\" \"src/lib/*.test.ts\""
+    "test": "tsx --test \"server/*.test.ts\" \"server/mesh/*.test.ts\" \"server/sync/*.test.ts\" \"src/lib/*.test.ts\""
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.87.1",

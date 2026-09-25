@@ -124,7 +124,22 @@ export function readExtensions(): ExtensionEntry[] {
   return out;
 }
 
-export const findExtension = (id: string): ExtensionEntry | undefined => readExtensions().find((e) => e.id === id);
+/** A peer host's extension (server/sync/extensions.ts), listed here only while the mesh syncs extensions. */
+export interface PeerExtensionEntry {
+  entry: ExtensionEntry;
+  /** Its dist is a directory on THIS host; otherwise it is listed as not installed and never served. */
+  installed: boolean;
+}
+let peerExtensions: (() => PeerExtensionEntry[]) | null = null;
+/** Set by server/sync while extensions sync is on; null (the default) = this host's manifest alone. */
+export const setPeerExtensions = (fn: (() => PeerExtensionEntry[]) | null): void => {
+  peerExtensions = fn;
+};
+/** A peer entry is served only when its dist exists here (its api port here could be anything). */
+const findPeerExtension = (id: string): ExtensionEntry | undefined => peerExtensions?.().find((p) => p.installed && p.entry.id === id)?.entry;
+
+export const findExtension = (id: string): ExtensionEntry | undefined =>
+  readExtensions().find((e) => e.id === id) ?? (peerExtensions ? findPeerExtension(id) : undefined);
 
 // ---- Health (GET /api/extensions) -------------------------------------------------------------
 
@@ -166,7 +181,7 @@ function health(entry: ExtensionEntry): Promise<Health> {
 export const clearHealthCache = (): void => healthCache.clear();
 
 export async function listExtensions(): Promise<ExtensionInfo[]> {
-  return Promise.all(
+  const local = await Promise.all(
     readExtensions().map(async (e) => {
       const info: ExtensionInfo = { id: e.id, title: e.title, ...(await health(e)) };
       if (e.description) info.description = e.description;
@@ -174,6 +189,20 @@ export async function listExtensions(): Promise<ExtensionInfo[]> {
       return info;
     }),
   );
+  if (!peerExtensions) return local;
+  const peers = await Promise.all(
+    peerExtensions().map(async ({ entry: e, installed }) => {
+      const info: ExtensionInfo = {
+        id: e.id,
+        title: e.title,
+        ...(installed ? await health(e) : { status: "down" as const, error: "not installed on this host" }),
+      };
+      if (e.description) info.description = e.description;
+      if (e.icon) info.icon = e.icon;
+      return info;
+    }),
+  );
+  return [...local, ...peers];
 }
 
 // ---- Static UI (GET /ext/<id>/...) ------------------------------------------------------------

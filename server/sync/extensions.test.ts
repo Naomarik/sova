@@ -2,14 +2,16 @@
 // they lack, and a peer entry whose dist isn't installed here is marked so (never proxied).
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { validateExtension, type ExtensionEntry } from "../extensions";
+import { findExtension, listExtensions, setPeerExtensions, validateExtension, type ExtensionEntry } from "../extensions";
 import { ExtensionSync, type ExtensionPeer } from "./extensions";
 
 const root = mkdtempSync(join(tmpdir(), "sova-ext-sync-"));
 after(() => rmSync(root, { recursive: true, force: true }));
+// This host's manifest for the hook tests (read per call by server/extensions.ts).
+process.env.SOVA_EXTENSIONS_FILE = join(root, "extensions.json");
 let seq = 0;
 
 const entry = (id: string, dist: string, port = 7001): ExtensionEntry => ({ id, title: id, dist, api: `http://127.0.0.1:${port}` });
@@ -94,4 +96,42 @@ test("the peers' lists survive a restart (the file), and a down peer keeps its l
   await b2.syncAll();
   assert.deepEqual(b2.peerEntries().map((p) => p.entry.id), ["x"]);
   assert.equal(b2.peers().a?.state, "error");
+});
+
+test("server/extensions hook: unset, the listing and lookup are exactly the manifest's; set, peers' entries join", async () => {
+  const dist = join(root, "hook-dist");
+  mkdirSync(dist);
+  // A port nothing listens on (bound, then released).
+  const { createServer } = await import("node:net");
+  const probe = createServer();
+  await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
+  const dead = (probe.address() as { port: number }).port;
+  await new Promise((r) => probe.close(r));
+  writeFileSync(
+    process.env.SOVA_EXTENSIONS_FILE!,
+    JSON.stringify({ version: 1, extensions: [{ id: "local", title: "Local", dist, api: `http://127.0.0.1:${dead}` }] }),
+  );
+  const before = { list: await listExtensions(), local: findExtension("local"), peer: findExtension("peer-here") };
+  setPeerExtensions(() => [
+    { entry: entry("peer-here", dist, dead), installed: true },
+    { entry: { ...entry("peer-elsewhere", "/nonexistent/dist", dead), description: "d", icon: "grid" }, installed: false },
+  ]);
+  try {
+    const list = await listExtensions();
+    assert.deepEqual(
+      list.map((e) => [e.id, e.status, e.error]),
+      [
+        ["local", "down", "connection refused"],
+        ["peer-here", "down", "connection refused"],
+        ["peer-elsewhere", "down", "not installed on this host"],
+      ],
+    );
+    assert.equal(list[2]!.icon, "grid");
+    assert.equal(findExtension("peer-here")?.id, "peer-here", "installed here: served");
+    assert.equal(findExtension("peer-elsewhere"), undefined, "not installed here: never served or proxied");
+  } finally {
+    setPeerExtensions(null);
+  }
+  assert.deepEqual({ list: await listExtensions(), local: findExtension("local"), peer: findExtension("peer-here") }, before);
+  assert.equal(before.peer, undefined);
 });

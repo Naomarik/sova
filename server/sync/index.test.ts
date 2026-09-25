@@ -12,6 +12,10 @@ import { claudeSyncDir, mountSync, type SyncRuntime } from "./index";
 
 const root = mkdtempSync(join(tmpdir(), "sova-sync-wiring-"));
 after(() => rmSync(root, { recursive: true, force: true }));
+// Every default path the wiring could fall back to points into the scratch root: the extensions
+// manifest (server/extensions.ts reads it per call) and the agent dir.
+process.env.SOVA_EXTENSIONS_FILE = join(root, "extensions.json");
+process.env.PI_CODING_AGENT_DIR = join(root, "default-agent");
 let seq = 0;
 
 interface FakeHost {
@@ -22,6 +26,7 @@ interface FakeHost {
   settings: MeshSettings;
   fire: { start(): void; stop(): void; peerUp(id: string): void; settings(): void };
   status: () => SyncStatus[];
+  seen: Set<string>;
 }
 
 /** A host with a fake mesh: the gate puts the caller in env.meshPeer, as the peer listener does. */
@@ -43,6 +48,11 @@ function host(id: string, others: Map<string, FakeHost>): FakeHost {
     peerFetch: async (peerId: string, path: string, init?: RequestInit) => {
       const target = others.get(peerId);
       if (!target) throw new Error(`unknown peer ${peerId}`);
+      // As mesh-core's gate does: a peer's own call is proof it is up.
+      if (!target.seen.has(id)) {
+        target.seen.add(id);
+        target.fire.peerUp(id);
+      }
       return target.app.request(path, init, { meshPeer: peerEntry(id) });
     },
     requestPeer: (c: Context) => (c.env as { meshPeer?: ReturnType<typeof peerEntry> } | undefined)?.meshPeer ?? null,
@@ -68,6 +78,7 @@ function host(id: string, others: Map<string, FakeHost>): FakeHost {
       settings: () => hooks.settings.forEach((f) => f()),
     },
     status: () => statusProvider(),
+    seen: new Set(),
   };
   others.set(id, h);
   return h;
@@ -101,12 +112,14 @@ test("mesh off: routes are 404 and nothing is read or written", async () => {
     ["/api/peer/sync/manifest", undefined],
     ["/api/peer/sync/doc?key=settings:mode.json", undefined],
     ["/api/peer/sync/push", { method: "POST", body: "{}" }],
+    ["/api/peer/sync/extensions", undefined],
   ] as const) {
     // As a verified peer, but the mesh never started: still 404.
     assert.equal((await a.app.request(path, init, { meshPeer: { id: "b" } })).status, 404, path);
   }
   assert.equal(a.rt.credentials, null);
   assert.equal(a.rt.docs, null);
+  assert.equal(a.rt.extensions, null);
   assert.deepEqual(readdirSync(a.agentDir).sort(), before);
   assert.deepEqual(readdirSync(join(a.agentDir, "sova")), []);
 });
@@ -157,7 +170,7 @@ test("two hosts over the real routes: start pulls, a change propagates, a logout
     await a.rt.credentials!.logout("pi:deepseek");
     assert.equal(await until(() => !auth(b).deepseek), true, "the logout reached B");
     const st = a.status();
-    assert.deepEqual(st.map((r) => [r.category, r.state]), [["logins", "ok"], ["settings", "ok"], ["themes", "ok"]]);
+    assert.deepEqual(st.map((r) => [r.category, r.state]), [["logins", "ok"], ["settings", "ok"], ["themes", "ok"], ["extensions", "ok"]]);
     assert.ok(!JSON.stringify(st).includes("sk-"), "no secret in status");
     assert.ok(!JSON.stringify(a.rt.credentials!.status()).includes("sk-"), "no secret in the detailed status");
     // The user's switch: off, nothing is offered or taken.

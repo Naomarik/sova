@@ -10,6 +10,8 @@ import type { EntryKey } from "./logins-merge";
 import { ClaudeCredentialStore, PiAuthStore, piRefresher, type CredentialStore } from "./logins-stores";
 import { CredentialSync, type CredentialEntryReply, type CredentialManifest, type CredentialPushReply, type SyncPeer } from "./logins";
 import { DocSync, type DocManifest, type DocPeer, type DocPushReply, type DocReply } from "./docs";
+import { ExtensionSync, type ExtensionList, type ExtensionPeer } from "./extensions";
+import { readExtensions, setPeerExtensions, validateExtension } from "../extensions";
 
 /**
  * Host-to-host sync, mounted on the mesh. While the mesh is OFF nothing here exists beyond the
@@ -23,6 +25,7 @@ import { DocSync, type DocManifest, type DocPeer, type DocPushReply, type DocRep
  *   GET  /api/peer/sync/manifest            settings + themes
  *   GET  /api/peer/sync/doc?key=<key>
  *   POST /api/peer/sync/push
+ *   GET  /api/peer/sync/extensions          this host's own extensions.json entries
  */
 
 const PEER_CALL_TIMEOUT_MS = 5_000;
@@ -68,6 +71,11 @@ function httpDocPeer(mesh: MeshApi, id: string): DocPeer {
   };
 }
 
+function httpExtensionPeer(mesh: MeshApi, id: string): ExtensionPeer {
+  const call = peerCall(mesh, id);
+  return { id, extensions: () => call<ExtensionList>("/api/peer/sync/extensions") };
+}
+
 function httpPeer(mesh: MeshApi, id: string): SyncPeer {
   const call = peerCall(mesh, id);
   return {
@@ -81,6 +89,7 @@ function httpPeer(mesh: MeshApi, id: string): SyncPeer {
 export interface SyncRuntime {
   credentials: CredentialSync | null;
   docs: DocSync | null;
+  extensions: ExtensionSync | null;
 }
 
 /** Where this host's stores live; read at mesh start. Tests pass scratch paths. */
@@ -93,13 +102,14 @@ const defaultPaths: SyncPaths = { agentDir: getAgentDir, stateDir: stateRoot, cl
 
 /** Mount the sync routes and hooks. Call after meshRoutes(app) (its /api/peer/* gate runs first). */
 export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPaths): SyncRuntime {
-  const rt: SyncRuntime = { credentials: null, docs: null };
+  const rt: SyncRuntime = { credentials: null, docs: null, extensions: null };
   const loginsOn = () => mesh.settings().sync.logins;
   const categoryOn = (c: SyncCategory) => mesh.settings().sync[c];
   let reconcile: NodeJS.Timeout | undefined;
   const syncEverything = () => {
     void rt.credentials?.syncAll().catch((err) => console.error("[sync] logins:", err));
     void rt.docs?.syncAll().catch((err) => console.error("[sync] settings/themes:", err));
+    void rt.extensions?.syncAll().catch((err) => console.error("[sync] extensions:", err));
   };
 
   const start = () => {
@@ -136,6 +146,19 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
       .then(() => docs.syncAll())
       .catch((err) => console.error("[sync] settings/themes start failed:", err));
 
+    const extensions = new ExtensionSync({
+      hostId: mesh.self().id,
+      file: join(paths.stateDir(), "mesh-extensions.json"),
+      local: readExtensions,
+      validate: validateExtension,
+      peers: () => mesh.peers().map((p) => httpExtensionPeer(mesh, p.id)),
+      peerIds: () => mesh.peers().map((p) => p.id),
+      enabled: () => categoryOn("extensions"),
+    });
+    rt.extensions = extensions;
+    setPeerExtensions(() => extensions.peerEntries());
+    void extensions.syncAll().catch((err) => console.error("[sync] extensions start failed:", err));
+
     reconcile = setInterval(syncEverything, RECONCILE_MS);
     reconcile.unref?.();
   };
@@ -146,6 +169,8 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     rt.credentials = null;
     rt.docs?.stop();
     rt.docs = null;
+    setPeerExtensions(null);
+    rt.extensions = null;
   };
   mesh.onMeshStart(start);
   mesh.onMeshStop(stop);
@@ -153,6 +178,7 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     if (!mesh.peers().some((p) => p.id === id)) return;
     if (rt.credentials) void rt.credentials.syncWith(httpPeer(mesh, id));
     if (rt.docs) void rt.docs.syncWith(httpDocPeer(mesh, id));
+    if (rt.extensions) void rt.extensions.syncWith(httpExtensionPeer(mesh, id));
   });
   // A switch turned back on takes effect at once (off is read at every entry point anyway).
   mesh.onSettingsChange(() => {
@@ -163,6 +189,7 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     loginStatus(rt.credentials, loginsOn()),
     docStatus("settings", rt.docs, categoryOn("settings")),
     docStatus("themes", rt.docs, categoryOn("themes")),
+    extensionStatus(rt.extensions, categoryOn("extensions")),
   ]);
 
   const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
@@ -206,7 +233,17 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     }
     return c.json(rt.docs.receivePush(from, body));
   });
+  app.get("/api/peer/sync/extensions", (c) => {
+    if (!peerCaller(mesh, c) || !rt.extensions) return notFound(c);
+    return c.json(rt.extensions.published());
+  });
   return rt;
+}
+
+export function extensionStatus(ext: ExtensionSync | null, enabled: boolean): SyncStatus {
+  if (!enabled) return { category: "extensions", enabled, state: "off", lastAt: null };
+  if (!ext) return { category: "extensions", enabled, state: "pending", lastAt: null };
+  return peerStatusLine("extensions", enabled, ext.peers());
 }
 
 /** Settings and themes share one exchange; each category gets its own line. */

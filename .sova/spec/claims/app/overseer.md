@@ -11,7 +11,8 @@ whichever file is current. The name is "Overseer" everywhere in the UI.
 Sova-owned state under `<stateRoot>` (`~/.pi/agent/sova/`, or `$PI_CODING_AGENT_DIR/sova/`):
 `overseer/` (its cwd, otherwise empty), `overseer.json` (settings), `overseer-state.json`
 (`{current, history[≤20]}`), `overseer-notes.md` (standing notes), `overseer-actions.jsonl` (audit
-log) and `seen.json` (the seen store). All writes are atomic tmp+rename.
+log), `seen.json` (the seen store) and `ideas/` (the ideas backlog: `manifest.json` plus one `.md`
+per idea, §app.overseer/ideas). All writes are atomic tmp+rename.
 
 ## §app.overseer/identity-and-clear — Identity, the route and `/clear`
 
@@ -54,15 +55,17 @@ log) and `seen.json` (the seen store). All writes are atomic tmp+rename.
   append-override, so the user's own `APPEND_SYSTEM.md` is kept. The standing notes and the limits
   ride inside it, and the user's **extra system prompt** from Settings is appended after it. Both the
   notes and the extra prompt are redacted (§app.overseer/tools) as they are put in: a secret value in
-  either reaches the model as `[redacted]`.
-- **Live.** The notes, the limits and the extra system prompt are read again at the start of every
-  run, so a `sova_note`, a notes edit or a Settings save reaches the Overseer from its next run (the
+  either reaches the model as `[redacted]`. The ideas backlog's table of contents rides in it too
+  (§app.overseer/ideas), never an idea's text.
+- **Live.** The notes, the limits, the ideas table of contents and the extra system prompt are read again at the start of every
+  run, so a `sova_note`, a `sova_idea`, a notes or idea edit or a Settings save reaches the Overseer from its next run (the
   next message, brief or wake-up), with no `/clear`. A run an extension's message starts (an
   `/explain` result, a worker's report) picks them up from its next request. The rest of the prompt
   (the prompt file, the tool list, the time it opened) is fixed for the runtime, so an unchanged
   prompt adds nothing to the conversation and a change adds one prompt update.
 - **Tools.** The session runs with an allowlist: every `sova_*` tool, `read`, `grep`, `find`,
-  `ls` and `wake_nudge`. It never has `bash`, `edit`, `write` or subagent tools.
+  `ls` and `wake_nudge`. It never has `bash`, `edit`, `write` or subagent tools: the only
+  subagents it can start are ideas' explorers, through `sova_idea` (§app.overseer/explorer).
 - **Model.** Its model and thinking level come from `overseer.json`, never from the new-session
   defaults. A model or thinking change made in the Overseer's composer writes back to
   `overseer.json` and never becomes the default for new sessions. A model switch writes the
@@ -79,12 +82,14 @@ sentences come back as the tool's error. Sessions are addressed by id. No tool p
 - **Read** (no side effects): the attention digest; list sessions (compact rows); one session's
   detail; a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
   untrusted content from another session, read with Sova's own parser so a TUI-live file is never
-  opened for writing); list groups, targets, models and folders.
+  opened for writing); list groups, targets, models and folders; the ideas backlog (`sova_ideas`: its table of contents,
+  a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas).
 - **Act:** create a session in any folder or remote target, with an optional first prompt, model
   and mode; send a prompt to an **idle** session (never a mid-turn steer); archive and unarchive
   (never permanent delete); rename; groups (create, move a session in, remove it); set a session's
   model or mode; answer a hosted session's pending extension dialog; standing notes; navigate;
-  confirm.
+  confirm; the ideas backlog (`sova_idea`: file, grow, update and link ideas, launch and message
+  an idea's explorer).
 - **TUI-live sessions are read-only**: every act on one is refused.
 - **Files: anywhere but credentials.** The Overseer's `read`, `grep`, `find` and `ls` reach any
   file on the machine except secret files, which none of them reads, lists or matches:
@@ -129,6 +134,9 @@ sentences come back as the tool's error. Sessions are addressed by id. No tool p
     redacted pattern would be a different search); what they return is redacted.
   - The standing notes and the extra system prompt are redacted when they are put into the prompt
     (§app.overseer/hosting), and a brief's body is too (§app.overseer/proactivity).
+  - Messages an extension puts into the Overseer's context (a worker's or explorer's report, an
+    `/explain` result) are redacted in every request the model gets; the session file keeps them
+    as they came, for the user.
   - Only the Overseer is redacted; other sessions and pi-config are unchanged.
 - **Runs the user did not start are read-only.** Who a run belongs to is decided per run, as the
   user turn in §app.overseer/caps. **Every run starts unattended**, whatever the run before it was,
@@ -150,8 +158,9 @@ sentences come back as the tool's error. Sessions are addressed by id. No tool p
 
   In an
   unattended turn every acting tool refuses without doing anything: create, send, archive and
-  unarchive, rename and set model/thinking/mode (`sova_set_session`), group operations, and
-  answering a dialog. Still allowed: every read, `sova_note`, `sova_confirm`, `sova_navigate`
+  unarchive, rename and set model/thinking/mode (`sova_set_session`), group operations,
+  answering a dialog, and every `sova_idea` operation (filing, changing or linking an idea,
+  launching or messaging an explorer). Still allowed: every read, `sova_note`, `sova_confirm`, `sova_navigate`
   (which never moves a tab in such a turn), and `read`/`grep`/`find`/`ls`. The refusal tells the
   model to stop and raise a `sova_confirm` card instead; the user's click starts a turn in which it
   may act, within the caps. The Overseer's prompt states the rule. Sessions the Overseer creates
@@ -179,8 +188,8 @@ dangerous enough to ask.
 ## §app.overseer/caps — Limits and the audit log
 
 - **Per user turn:** at most 5 sessions created, 10 prompts sent to other sessions, 50 archive
-  operations. **At once:** at most 5 Overseer-started sessions running. All four are configurable in
-  Settings → Overseer.
+  operations, 2 explorers launched (§app.overseer/explorer). **At once:** at most 5 Overseer-started
+  sessions running. All five are configurable in Settings → Overseer.
 - **A user turn** starts when a message the user sent from the UI (typed, a quick action, a
   confirm-card click, a steer, or a regenerate) enters the Overseer's context. It is recognised by
   identity, not by its text: the chat runtime hands such a message to the SDK marked as the user's,
@@ -191,7 +200,7 @@ dangerous enough to ask.
   text as something the user sent. Each send counts once: a message queued from inside the run it
   started (a wake-up set during it) is not the user's. A user message the runtime holds back until
   the previous run has fully settled is not recognised and opens a read-only turn (it fails closed).
-  Only a user turn (or `/clear`) resets the three per-turn counters. A brief, a fired `wake_nudge`,
+  Only a user turn (or `/clear`) resets the four per-turn counters. A brief, a fired `wake_nudge`,
   an extension's message that starts a run and any other server-started run are unattended
   (§app.overseer/tools): read-only, on the budget of the user message before them, never a renewed
   one. The
@@ -318,3 +327,99 @@ alone unless the user edited the notes; a note the Overseer appended meanwhile i
 user's edit; and if the Overseer rewrote them meanwhile the save refuses and says so. `PUT
 /api/overseer/notes` takes an optional `base` (the text the edit started from) and answers 409 with
 the current text when the file no longer holds it.
+
+## §app.overseer/ideas — The ideas backlog
+
+The user piles ideas onto the Overseer in plain chat, with no special syntax. The Overseer files
+them and keeps them organised. The backlog is laid out like this spec, with its own small reader.
+
+- **Inference.** A message that describes work for later ("someday…", "it'd be nice if…", a feature
+  thought with no ask to do it now) is an idea: the Overseer files it, says so in one line, and
+  starts nothing. A message that asks for work now is a request, handled under the other rules.
+  When it can't tell, it asks with a `sova_confirm` card ("File as idea" / "Start now") and ends
+  the turn.
+- **Similar ideas first.** Before every filing or addition, it searches the backlog (`sova_ideas
+  search`), even when the table of contents seems to show the match, and says in one line where
+  the idea goes: added to an existing idea (by its § id) or a new entry, linked to related ones.
+  Ideas are named by their § id as plain text, never as a link.
+- **Layout.** `<stateRoot>/ideas/manifest.json` (`{formatVersion: 1, ideas: {<§id>: record}}`) plus
+  one prose file per idea: main entry `§<ns>/<name>` in `ideas/<ns>/<name>.md`, sub-entry
+  `§<ns>.<parent>/<name>` in `ideas/<ns>/<parent>/<name>.md`, whose main entry `§<ns>/<parent>`
+  must exist. The namespace is the project (`§mesh`, `§sova`); themes are tags; relations,
+  across projects too, are links. Segments are lowercase letters, digits and `-`. The `§` is
+  canonical; tools and routes accept an id without it.
+- **Record:** a one-line title, status, tags, links (other ideas' § ids), an optional linked
+  session id, an optional explorer worker id with the Overseer conversation that owns it, and
+  created/updated times. The `.md` is the idea's text, growing as the user works it out.
+- **Status:** `open` when filed; `exploring` once an explorer is linked; `started` once a session is
+  linked; `done` and `dropped` only when the user says so. `dropped` is terminal. Nothing is ever
+  deleted.
+- **Writes** are atomic tmp+rename, and the manifest is re-read before every write. Reads are
+  tolerant: a missing or corrupt manifest reads as empty, a bad record is skipped, and a link to an
+  idea that doesn't exist is ignored. A write refuses a link to itself or to an unknown idea.
+- **Graph.** Links are directed edges. `sova_ideas` offers `toc`, `search`, `get`, `scope` (the idea,
+  its sub-entries and everything it reaches through links, transitively, cycles included once) and
+  `impact` (the ideas that link to it), so the Overseer pulls linked ideas in mechanically.
+- **Two tools.** `sova_ideas` reads and is allowed in every run. `sova_idea` changes the store (`add`,
+  `append`, `update`, `link`, `explore`, `tell`). It is an act: audited, and refused in runs the user
+  did not start (§app.overseer/tools), so a brief or a worker's report never files an idea in the
+  user's name. The Overseer is the only writer apart from the user's own edits in the Ideas panel
+  (§app.overseer/ideas-panel). An idea becomes a session only in a user turn, through
+  `sova_create_session` under the caps; the Overseer then links the session to the idea. It uses a
+  folder only when exactly one listed folder clearly matches the idea's project; otherwise it asks
+  with the candidate folders, and it never guesses.
+- **Prompt.** The Overseer's prompt carries only the table of contents: per namespace its counts
+  and one short line of entries, never an idea's text. An unchanged backlog renders the same bytes
+  (§app.overseer/hosting). Arguments and results are redacted like every Overseer tool's.
+
+## §app.overseer/explorer — Exploratory agents
+
+When the user keeps expanding an idea, the Overseer offers to launch an **explorer**: a subagent
+for that idea that plans with the user and edits nothing.
+
+- **Launch** (`sova_idea explore`) only in a user turn, at most `explorePerTurn` per turn (default 2,
+  §app.overseer/caps). Backend, model and effort come from Settings → Overseer → Exploratory Agent
+  (default Claude Code, `opus[1m]`, effort medium). The explorer is seeded with the idea's text and
+  its scope (linked ideas), and has read-only tools and a prompt that forbids changing files. Its
+  worker id and the Overseer conversation are recorded on the idea, and the status becomes
+  `exploring`. An idea whose explorer is live refuses a second launch, and a done or dropped idea
+  refuses one.
+- **Explorers never run Claude Opus 5** (`claude-opus-5`): Settings refuses it for the explorer.
+- **Its reads are not guarded.** Its prompt forbids opening credential files and quoting secrets,
+  but its file tools are an ordinary subagent's, without the Overseer's file guard. What it reports
+  reaches the Overseer redacted (§app.overseer/tools).
+- **It is the Overseer conversation's worker.** It appears among that session's subagents, and it
+  ends with it (`/clear`, a server restart). A message to an explorer that belongs to another
+  conversation or is gone refuses and says to launch again; the Overseer then offers a new one and
+  never relaunches unasked. Listings mark an earlier conversation's explorer as ended. The idea
+  keeps `exploring` until the user changes it: an explorer ending never writes the store.
+- **Multiplexing.** The user may discuss several ideas at once. The table of contents in the
+  prompt marks which ideas have an explorer in this conversation, so the Overseer routes each
+  follow-up to its idea's explorer (`sova_idea tell`, counted as a prompt against the caps). When
+  it can't tell which idea a follow-up is about, it asks. It never states an explorer's state or
+  findings without reading it (`sova_ideas explorer`) in that turn.
+- **Write-back.** Only the Overseer writes the store. An explorer's report reaches the Overseer as
+  a worker report, which starts an unattended run. There it summarises the plan and raises a
+  `sova_confirm` card to write it into the idea. The user's click starts a user turn, and the plan
+  is appended to the idea's `.md` (`sova_idea append`). `sova_ideas explorer` reads an explorer's
+  latest reply at any time.
+
+## §app.overseer/ideas-panel — The Ideas panel
+
+An **Ideas** button in the Overseer page's head, with the idea count, opens a panel: beside the
+chat on a wide window, over it on a narrow one. On a narrow window the button is its icon with
+the count as a corner badge, so the head still fits.
+
+- **Table of contents** grouped by namespace, with counts, one row per idea (sub-entries under their
+  main entry) and a status chip each.
+- **Detail** of the chosen idea: its text as markdown, tags, links, what links to it and its scope,
+  each linked id opening that idea. Title, status, tags, links and text are editable. A save sends
+  the updated time it started from, and when the idea changed meanwhile it keeps the edit and says
+  so rather than overwriting (`PATCH /api/overseer/idea` answers 409 with the current idea).
+- **Graph**: the ideas as nodes grouped by namespace, links as arrows; choosing a node opens it.
+- **Explore**, **Ask the Explorer** (once it has one) and **Start a Session** on an idea each send a
+  normal user message to the Overseer ("Explore idea §x: launch an exploratory agent for it.",
+  "What has the explorer for idea §x found so far?", "Start a session to work on idea §x."). The
+  turn is the user's, so the rules and caps apply.
+- It re-reads the backlog after every Overseer turn and when opened.
+

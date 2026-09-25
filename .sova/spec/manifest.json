@@ -2131,7 +2131,7 @@
     "§app.settings-dialog/overseer": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/OverseerSettings.tsx",
         "src/components/SettingsDialog.tsx",
@@ -2139,14 +2139,17 @@
         "src/lib/overseer-draft.ts",
         "src/lib/api.ts",
         "server/index.ts",
-        "server/overseer.ts"
+        "server/overseer.ts",
+        "src/components/WorkerSlotRow.tsx",
+        "src/lib/delegate-form.ts",
+        "server/overseer-store.ts"
       ],
       "requires": []
     },
     "§app/overseer": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "shared/protocol.ts",
         "server/overseer.ts",
@@ -2163,6 +2166,58 @@
       "evidence": "unreviewed",
       "code": [
         "pi-config/extensions/mode/index.ts"
+      ]
+    },
+    "§app.overseer/explorer": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-idea-tools.ts",
+        "server/overseer-tools.ts",
+        "server/overseer.ts",
+        "server/overseer-prompt.md",
+        "server/overseer-store.ts",
+        "pi-config/extensions/subagents/runner.ts",
+        "pi-config/extensions/subagents/worker-mark.ts"
+      ],
+      "requires": [
+        "§app.overseer/ideas",
+        "§app.overseer/caps"
+      ]
+    },
+    "§app.overseer/ideas": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-ideas.ts",
+        "server/overseer-idea-tools.ts",
+        "server/overseer-tools.ts",
+        "server/overseer.ts",
+        "server/overseer-prompt.md",
+        "shared/protocol.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools"
+      ]
+    },
+    "§app.overseer/ideas-panel": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/OverseerIdeas.tsx",
+        "src/components/OverseerView.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/ideas.ts",
+        "src/lib/idea-graph.ts",
+        "src/overseer-ideas.css",
+        "src/lib/api.ts",
+        "server/index.ts"
+      ],
+      "requires": [
+        "§app.overseer/ideas"
       ]
     }
   }

@@ -285,7 +285,12 @@ TUI never reads it.
 - **Quick Actions**: an editable list (label, description, prompt; add, remove, reorder, Reset to
   Defaults).
 - **Limits**: sessions created per user message, prompts sent per user message, archives per user
-  message, and Overseer-started sessions running at once (§app.overseer/caps).
+  message, explorers launched per user message, and Overseer-started sessions running at once
+  (§app.overseer/caps).
+- **Exploratory Agent**: backend, model and effort of the explorers `sova_idea explore` launches
+  (§app.overseer/explorer). Default Claude Code, `opus[1m]` (Claude Opus 5.5), effort medium; the
+  default is offered even when the Claude Code CLI's model list omits it, and `claude-opus-5` is never offered;
+  a save naming it for the explorer is refused, and a stored one reads back as the default.
 - **Standing Notes**: a textarea over `overseer-notes.md`.
 - **Fresh, and only what changed.** Both files are read each time the screen mounts (each open of
   the dialog, each return to the tab); an unsaved edit kept across tabs is rebased onto that read:

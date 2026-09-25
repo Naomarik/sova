@@ -17,7 +17,7 @@ import {
   setSessionArchived,
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
-import { firstBaseline, helloChange, type HelloBaseline, type HelloChange, sessionHrefOn } from "./lib/mesh";
+import { firstBaseline, helloStep, HOST_CONFIRM_MS, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
@@ -347,6 +347,9 @@ export function App() {
   // socket reconnect, the tab coming back into view, the mesh poll.
   const [helloBase, setHelloBase] = createSignal<HelloBaseline | null>(null);
   const [staleChange, setStaleChange] = createSignal<HelloChange | null>(null);
+  let pendingHost: PendingHost | null = null;
+  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(confirmTimer));
   const checkHello = async () => {
     if (!meshOn()) return;
     let hello;
@@ -363,7 +366,15 @@ export function App() {
       base = firstBaseline(servedBy, now);
       setHelloBase(base);
     }
-    const change = helloChange(base, now);
+    const step = helloStep(base, now, pendingHost, Date.now());
+    const firstSeen = step.pending && step.pending !== pendingHost;
+    pendingHost = step.pending;
+    // Another host answered once: ask again a little later, and only a second answer from it counts.
+    if (firstSeen) {
+      clearTimeout(confirmTimer);
+      confirmTimer = setTimeout(() => void checkHello(), HOST_CONFIRM_MS + 100);
+    }
+    const change = step.change;
     if (!change) return;
     // The tab's own code hasn't changed: its protocol and build stay the baseline's. Only the host
     // it talks to moves.

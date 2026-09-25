@@ -275,6 +275,34 @@ export function firstBaseline(servedBy: { id: string; label: string } | null, he
   return servedBy ? { ...hello, id: servedBy.id, label: servedBy.label } : hello;
 }
 
+/** A host change counts once a second hello, at least this much later, answers from the same new host. */
+export const HOST_CONFIRM_MS = 1_000;
+
+/** A host change seen once and not yet confirmed: which host, and when it first answered. */
+export interface PendingHost {
+  id: string;
+  at: number;
+}
+
+/**
+ * One hello against the baseline, with a host change held back until it is confirmed: the front
+ * door may retry a single request on the next host while the first is healthy (a stalled tailnet
+ * connect), and one such answer is not a failover. A protocol or build change on the same host is
+ * reported at once. `pending` is what to remember for the next hello.
+ */
+export function helloStep(
+  base: HelloBaseline,
+  now: HelloBaseline,
+  pending: PendingHost | null,
+  t: number,
+): { change: HelloChange | null; pending: PendingHost | null } {
+  const change = helloChange(base, now);
+  if (!change?.host) return { change, pending: null };
+  if (pending?.id !== now.id) return { change: null, pending: { id: now.id, at: t } };
+  if (t - pending.at < HOST_CONFIRM_MS) return { change: null, pending };
+  return { change, pending: null };
+}
+
 /** `items` with the one at `from` moved to `to`; a copy unchanged when either is out of range. */
 export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
   if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return [...items];

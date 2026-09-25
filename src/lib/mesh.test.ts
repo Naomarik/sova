@@ -18,6 +18,8 @@ import {
   meshRetryDelay,
   helloChange,
   firstBaseline,
+  helloStep,
+  HOST_CONFIRM_MS,
   moveItem,
   frontDoorProblems,
   serveUrlProblem,
@@ -234,4 +236,31 @@ test("a failover before the first hello still reads as a failover (qa F4)", () =
   // Same host, or no /api/mesh answer to go by: the hello is the baseline and nothing changed.
   assert.equal(helloChange(firstBaseline({ id: "b", label: "Host B" }, b), b), null);
   assert.equal(firstBaseline(null, b), b);
+});
+
+test("one answer from another host is not a failover; a second from it, 1 s or more later, is (lab L1)", () => {
+  const a = { id: "a", label: "Host A", protocol: "p1", build: "b1" };
+  const b = { ...a, id: "b", label: "Host B" };
+  const c = { ...a, id: "c", label: "Host C" };
+  // A single retried request answered by b, then a again: nothing is announced, nothing pends.
+  let s = helloStep(a, b, null, 0);
+  assert.deepEqual(s, { change: null, pending: { id: "b", at: 0 } });
+  assert.deepEqual(helloStep(a, a, s.pending, 1_500), { change: null, pending: null });
+  // b again too soon: still waiting, and the first sighting's time is kept.
+  s = helloStep(a, b, s.pending, HOST_CONFIRM_MS - 1);
+  assert.deepEqual(s, { change: null, pending: { id: "b", at: 0 } });
+  // b again after the wait: the failover.
+  assert.deepEqual(helloStep(a, b, s.pending, HOST_CONFIRM_MS), {
+    change: { protocol: false, build: false, host: { from: "Host A", to: "Host B" } },
+    pending: null,
+  });
+  // b, then c: c starts its own wait.
+  assert.deepEqual(helloStep(a, c, { id: "b", at: 0 }, 5_000), { change: null, pending: { id: "c", at: 5_000 } });
+  // Same host, new build: reported at once.
+  assert.deepEqual(helloStep(a, { ...a, build: "b2" }, null, 0), { change: { protocol: false, build: true, host: null }, pending: null });
+  // F4: the first hello already from b, the page from a: the same wait, then the failover.
+  const base = firstBaseline({ id: "a", label: "Host A" }, b);
+  s = helloStep(base, b, null, 0);
+  assert.equal(s.change, null);
+  assert.deepEqual(helloStep(base, b, s.pending, 1_100).change?.host, { from: "Host A", to: "Host B" });
 });

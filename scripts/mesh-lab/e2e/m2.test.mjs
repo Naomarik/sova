@@ -179,9 +179,9 @@ describe("B down", () => {
       console.log(`# /peer/${B} on a killed B answered ${down.status} after ${ms} ms`);
       assert.equal(down.status, 502);
       assert.deepEqual(await down.json(), { error: "peer down", id: B });
-      // A peer seen within 15 s skips the proxy's preflight; a killed container's address
-      // blackholes, so the dial then waits out its own timeout (10.5 s measured 2026-09-25,
-      // reported to mesh-core). M2_LAX=1 skips this bound only.
+      // A killed container's address blackholes (no RST); the proxy's own bound applies even to a
+      // peer reached seconds ago (10.5 s before mesh-core's 885465d, 3.5 s after). M2_LAX=1 skips
+      // this bound only.
       if (!process.env.M2_LAX) assert.ok(ms < 5000, `502 within the ~3 s preflight (took ${ms} ms)`);
       const ws = await chat(`${wsBase(A)}/peer/${B}/ws/chat?path=${encodeURIComponent("/sova/.agent/sessions/x.jsonl")}`, null, { timeoutMs: 15000 });
       assert.equal(ws.opened, false, "no upgrade to a down peer");

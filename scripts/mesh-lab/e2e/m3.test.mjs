@@ -81,6 +81,34 @@ describe("documents and keys propagate", () => {
   });
 });
 
+describe("extensions", () => {
+  test("an extension entry on A is listed on B and C as not installed there, and their extensions.json is never written", async () => {
+    const rel = "sova/extensions.json";
+    const prevA = sh(A, `cat "$PI_CODING_AGENT_DIR/${rel}" 2>/dev/null`).out;
+    const prev = { [B]: sha(B, rel), [C]: sha(C, rel) };
+    const id = `lab-m3-ext-${Date.now() % 100000}`;
+    const doc = { version: 1, extensions: [{ id, title: "Lab M3 extension", dist: "/nonexistent/lab-m3/dist", api: "http://127.0.0.1:59999" }] };
+    exec(A, ["sh", "-c", `mkdir -p "$PI_CODING_AGENT_DIR/sova" && cat > "$PI_CODING_AGENT_DIR/${rel}.tmp" && mv "$PI_CODING_AGENT_DIR/${rel}.tmp" "$PI_CODING_AGENT_DIR/${rel}"`], { input: JSON.stringify(doc) });
+    const listed = async (h) => (await (await laptopFetch(h, "/api/extensions")).json()).find((e) => e.id === id);
+    try {
+      assert.ok(await listed(A), "A lists its own entry");
+      for (const h of [B, C]) {
+        const t0 = Date.now();
+        const row = await waitFor(() => listed(h), { timeoutMs: 30000, what: `${h} lists ${id}` });
+        console.log(`# ${h} listed ${id} after ${Date.now() - t0} ms`);
+        assert.equal(row.status, "down");
+        assert.equal(row.error, "not installed on this host");
+        assert.equal(sha(h, rel), prev[h], `${h}'s own extensions.json untouched`);
+        assert.equal((await laptopFetch(h, `/ext/${id}/`)).status === 200, false, `${h} never serves the peer's entry`);
+      }
+    } finally {
+      if (prevA) exec(A, ["sh", "-c", `cat > "$PI_CODING_AGENT_DIR/${rel}"`], { input: prevA });
+      else sh(A, `rm -f "$PI_CODING_AGENT_DIR/${rel}"`);
+    }
+    for (const h of [B, C]) await waitFor(async () => !(await listed(h)), { timeoutMs: 30000, what: `${id} gone from ${h}` });
+  });
+});
+
 describe("sync switches", () => {
   test("B with themes sync off neither receives A's theme nor offers its own; C does", async () => {
     const put = (h, sync) => laptopFetch(h, "/api/mesh/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ sync }) });

@@ -1,27 +1,15 @@
 import { createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { fetchMesh, fetchMeshDetails, putHostLabel } from "../lib/api";
-import { duration as formatDuration, relativeTime } from "../lib/format";
 import { isMeshHash, MESH_HREF, SELF_FILTER, setMeshState } from "../lib/mesh";
 import {
-  activityLine,
   askHostFilter,
-  batteryLine,
-  bytes,
   connectedCount,
-  cpuLine,
   DETAILS_POLL_MS,
-  frontDoorLine,
-  joinedLine,
+  detailRows,
   labelProblem,
-  loginsLine,
-  machineLine,
-  memoryLine,
   type MeshHostDetails,
-  protocolLine,
   renameRefusal,
-  shortCommit,
-  sinceLine,
   stateWord,
   unavailableText,
 } from "../lib/mesh-details";
@@ -154,40 +142,7 @@ function HostSection(props: { host: MeshHostDetails; ownProtocol: string | undef
     if (isMeshHash(location.hash)) location.hash = "#/";
   };
 
-  const rows = (): Array<[string, string]> => {
-    const out: Array<[string, string]> = [];
-    const x = d();
-    if (x) {
-      out.push(["Machine", x.identity.model ? `${machineLine(x)} · ${x.identity.model}` : machineLine(x)]);
-      const addr = [x.identity.dnsName, ...x.identity.addresses].filter(Boolean).join(" · ");
-      if (addr) out.push(["Address", addr]);
-      out.push(["Sova", [x.versions.sova, shortCommit(x.versions.commit)].filter(Boolean).join(" · ")]);
-      out.push(["pi · Node", `${x.versions.pi} · ${x.versions.node}`]);
-      if (!h().self) out.push(["Protocol", protocolLine(x, props.ownProtocol)]);
-    }
-    if (!h().self) {
-      const conn = [h().latencyMs !== undefined && up() ? `${h().latencyMs} ms round trip` : "", sinceLine(h(), props.now)].filter(Boolean).join(" · ");
-      if (conn) out.push(["Connection", conn]);
-      if (!up() && h().lastSeen) out.push(["Last seen", relativeTime(new Date(h().lastSeen!).toISOString(), props.now)]);
-    }
-    if (x) {
-      out.push(["Uptime", [`Sova ${duration(x.uptime.process)}`, x.uptime.machine !== null ? `machine ${duration(x.uptime.machine)}` : ""].filter(Boolean).join(" · ")]);
-      out.push(["CPU", cpuLine(x.resources)]);
-      out.push(["Memory", memoryLine(x.resources.memory)]);
-      if (x.resources.disk) out.push(["Disk", `${bytes(x.resources.disk.free)} free of ${bytes(x.resources.disk.total)}`]);
-      const battery = batteryLine(x.resources);
-      if (battery) out.push(["Battery", battery]);
-      out.push(["Activity", activityLine(x.activity)]);
-      const sync = x.sync.categories.map((s) => `${s.category} ${s.state === "ok" && s.lastAt ? relativeTime(new Date(s.lastAt).toISOString(), props.now) : s.state}`).join(" · ");
-      if (sync) out.push(["Sync", sync]);
-      const logins = loginsLine(x.sync);
-      if (logins) out.push(["Logins", logins]);
-    }
-    out.push(["Front door", frontDoorLine(h().frontDoor)]);
-    const joined = joinedLine(h(), props.now);
-    if (joined) out.push(["Joined", joined]);
-    return out;
-  };
+  const rows = () => detailRows(h(), props.ownProtocol, props.now);
 
   return (
     <section class="mesh-details-host" aria-labelledby={titleId()}>
@@ -283,6 +238,3 @@ function HostSection(props: { host: MeshHostDetails; ownProtocol: string | undef
     </section>
   );
 }
-
-/** Seconds → "3d 4h". */
-const duration = (s: number): string => formatDuration(s * 1000);

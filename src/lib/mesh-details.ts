@@ -5,7 +5,7 @@
 import { createSignal } from "solid-js";
 import type { HostDetails, MeshHostDetails } from "../../shared/mesh-details";
 import type { PeerStatus } from "../../shared/protocol";
-import { duration, shortDate } from "./format";
+import { duration, relativeTime, shortDate } from "./format";
 
 export type { HostDetails, HostRenameResult, MeshDetails, MeshHostDetails } from "../../shared/mesh-details";
 
@@ -155,4 +155,48 @@ export function labelProblem(v: string): string | null {
   if (!t) return "Give it a name.";
   if (t.length > 80) return "Keep it to 80 characters.";
   return null;
+}
+
+/**
+ * The label/value rows of one host's section. Each row is built on its own: a host on a later
+ * build that drops or reshapes a field loses that row, never the dialog.
+ */
+export function detailRows(h: MeshHostDetails, ownProtocol: string | undefined, now: number): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  const row = (label: string, value: () => string | null | undefined | false) => {
+    try {
+      const v = value();
+      if (typeof v === "string" && v) out.push([label, v]);
+    } catch {
+      // a field this build doesn't know the shape of: no row
+    }
+  };
+  const x = h.details;
+  const up = h.state === "up" || h.state === "self";
+  const ago = (t: number) => relativeTime(new Date(t).toISOString(), now);
+  const secs = (s: number) => duration(s * 1000);
+  if (x) {
+    row("Machine", () => (x.identity.model ? `${machineLine(x)} · ${x.identity.model}` : machineLine(x)));
+    row("Address", () => [x.identity.dnsName, ...(x.identity.addresses ?? [])].filter(Boolean).join(" · "));
+    row("Sova", () => [x.versions.sova, shortCommit(x.versions.commit)].filter(Boolean).join(" · "));
+    row("pi · Node", () => `${x.versions.pi} · ${x.versions.node}`);
+    if (!h.self) row("Protocol", () => protocolLine(x, ownProtocol));
+  }
+  if (!h.self) {
+    row("Connection", () => [h.latencyMs !== undefined && up ? `${h.latencyMs} ms round trip` : "", sinceLine(h, now)].filter(Boolean).join(" · "));
+    if (!up && h.lastSeen) row("Last seen", () => ago(h.lastSeen!));
+  }
+  if (x) {
+    row("Uptime", () => [`Sova ${secs(x.uptime.process)}`, typeof x.uptime.machine === "number" ? `machine ${secs(x.uptime.machine)}` : ""].filter(Boolean).join(" · "));
+    row("CPU", () => cpuLine(x.resources));
+    row("Memory", () => memoryLine(x.resources.memory));
+    row("Disk", () => x.resources.disk && `${bytes(x.resources.disk.free)} free of ${bytes(x.resources.disk.total)}`);
+    row("Battery", () => batteryLine(x.resources));
+    row("Activity", () => activityLine(x.activity));
+    row("Sync", () => x.sync.categories.map((s) => `${s.category} ${s.state === "ok" && s.lastAt ? ago(s.lastAt) : s.state}`).join(" · "));
+    row("Logins", () => loginsLine(x.sync));
+  }
+  row("Front door", () => frontDoorLine(h.frontDoor));
+  row("Joined", () => joinedLine(h, now));
+  return out;
 }

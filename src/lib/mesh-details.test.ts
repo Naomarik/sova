@@ -7,6 +7,7 @@ import {
   bytes,
   connectedCount,
   cpuLine,
+  detailRows,
   frontDoorLine,
   joinedLine,
   labelProblem,
@@ -95,4 +96,18 @@ test("joined, front door, protocol, logins, since", () => {
   assert.equal(sinceLine({ state: "up", stateSince: now - 90_000 }, now), "up for 1m");
   assert.equal(sinceLine({ state: "down", stateSince: now - 40_000 }, now), "not answering for 40s");
   assert.equal(sinceLine({ state: "up", stateSince: null }, now), "");
+});
+
+test("a later build's answer with fields missing or reshaped loses those rows, never the section", () => {
+  const host = (d: unknown): MeshHostDetails => ({
+    id: "vps", label: "VPS", self: false, state: "up", details: d as HostDetails, latencyMs: 12, lastSeen: 1, stateSince: null,
+    pairedAt: null, frontDoor: { position: 2, excluded: false }, open: { kind: "through" },
+  });
+  const full = detailRows(host(details()), "aaaa", Date.UTC(2026, 8, 25)).map(([k]) => k);
+  assert.ok(full.includes("Memory") && full.includes("Uptime") && full.includes("Activity"));
+  const broken = { ...details(), resources: { cores: 4 }, uptime: undefined, activity: "busy", sync: {} };
+  const rows = detailRows(host(broken), "aaaa", Date.UTC(2026, 8, 25));
+  const labels = rows.map(([k]) => k);
+  assert.ok(!labels.includes("Memory") && !labels.includes("Uptime") && !labels.includes("Sync"));
+  assert.ok(labels.includes("Machine") && labels.includes("CPU") && labels.includes("Front door") && labels.includes("Joined"));
 });

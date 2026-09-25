@@ -11,8 +11,9 @@ whichever file is current. The name is "Overseer" everywhere in the UI.
 Sova-owned state under `<stateRoot>` (`~/.pi/agent/sova/`, or `$PI_CODING_AGENT_DIR/sova/`):
 `overseer/` (its cwd, otherwise empty), `overseer.json` (settings), `overseer-state.json`
 (`{current, history[≤20]}`), `overseer-notes.md` (standing notes), `overseer-actions.jsonl` (audit
-log), `seen.json` (the seen store) and `ideas/` (the ideas backlog: `manifest.json` plus one `.md`
-per idea, §app.overseer/ideas). All writes are atomic tmp+rename.
+log), `seen.json` (the seen store), `ideas/` (the ideas backlog: `manifest.json` plus one `.md`
+per idea, §app.overseer/ideas) and `todos.json` (the user's todos, §app.overseer/todos). All writes
+are atomic tmp+rename.
 
 ## §app.overseer/identity-and-clear — Identity, the route and `/clear`
 
@@ -56,9 +57,10 @@ per idea, §app.overseer/ideas). All writes are atomic tmp+rename.
   ride inside it, and the user's **extra system prompt** from Settings is appended after it. Both the
   notes and the extra prompt are redacted (§app.overseer/tools) as they are put in: a secret value in
   either reaches the model as `[redacted]`. The ideas backlog's table of contents rides in it too
-  (§app.overseer/ideas), never an idea's text.
-- **Live.** The notes, the limits, the ideas table of contents and the extra system prompt are read again at the start of every
-  run, so a `sova_note`, a `sova_idea`, a notes or idea edit or a Settings save reaches the Overseer from its next run (the
+  (§app.overseer/ideas), never an idea's text, and so do the todos' open and done counts
+  (§app.overseer/todos), never a todo's text.
+- **Live.** The notes, the limits, the ideas table of contents, the todos counts and the extra system prompt are read again at the start of every
+  run, so a `sova_note`, a `sova_idea`, a `sova_todo`, a notes, idea or todo edit or a Settings save reaches the Overseer from its next run (the
   next message, brief or wake-up), with no `/clear`. A run an extension's message starts (an
   `/explain` result, a worker's report) picks them up from its next request. The rest of the prompt
   (the prompt file, the tool list, the time it opened) is fixed for the runtime, so an unchanged
@@ -83,13 +85,15 @@ sentences come back as the tool's error. Sessions are addressed by id. No tool p
   detail; a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
   untrusted content from another session, read with Sova's own parser so a TUI-live file is never
   opened for writing); list groups, targets, models and folders; the ideas backlog (`sova_ideas`: its table of contents,
-  a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas).
+  a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the
+  user's todos (`sova_todos`: open, done or all; §app.overseer/todos).
 - **Act:** create a session in any folder or remote target, with an optional first prompt, model
   and mode; send a prompt to an **idle** session (never a mid-turn steer); archive and unarchive
   (never permanent delete); rename; groups (create, move a session in, remove it); set a session's
   model or mode; answer a hosted session's pending extension dialog; standing notes; navigate;
   confirm; the ideas backlog (`sova_idea`: file, grow, update and link ideas, launch and message
-  an idea's explorer).
+  an idea's explorer); the user's todos (`sova_todo`: add, tick, untick, edit, remove, clear the
+  done ones).
 - **TUI-live sessions are read-only**: every act on one is refused.
 - **Files: anywhere but credentials.** The Overseer's `read`, `grep`, `find` and `ls` reach any
   file on the machine except secret files, which none of them reads, lists or matches:
@@ -160,8 +164,8 @@ sentences come back as the tool's error. Sessions are addressed by id. No tool p
   In an
   unattended turn every acting tool refuses without doing anything: create, send, archive and
   unarchive, rename and set model/thinking/mode (`sova_set_session`), group operations,
-  answering a dialog, and every `sova_idea` operation (filing, changing or linking an idea,
-  launching or messaging an explorer). Still allowed: every read, `sova_note`, `sova_confirm`, `sova_navigate`
+  answering a dialog, every `sova_idea` operation (filing, changing or linking an idea,
+  launching or messaging an explorer), and every `sova_todo` operation, ticking included. Still allowed: every read, `sova_note`, `sova_confirm`, `sova_navigate`
   (which never moves a tab in such a turn), and `read`/`grep`/`find`/`ls`. The refusal tells the
   model to stop and raise a `sova_confirm` card instead; the user's click starts a turn in which it
   may act, within the caps. The Overseer's prompt states the rule. Sessions the Overseer creates
@@ -344,6 +348,7 @@ them and keeps them organised. The backlog is laid out like this spec, with its 
 - **Inference.** A message that describes work for later ("someday…", "it'd be nice if…", a feature
   thought with no ask to do it now) is an idea: the Overseer files it, says so in one line, and
   starts nothing. A message that asks for work now is a request, handled under the other rules.
+  A one-line task for the user themselves, with no design in it, is a todo (§app.overseer/todos).
   When it can't tell, it asks with a `sova_confirm` card ("File as idea" / "Start now") and ends
   the turn.
 - **Similar ideas first.** Before every filing or addition, it searches the backlog (`sova_ideas
@@ -431,3 +436,67 @@ the count as a corner badge, so the head still fits.
   turn is the user's, so the rules and caps apply.
 - It re-reads the backlog after every Overseer turn and when opened.
 
+
+## §app.overseer/todos — The user's todos
+
+Besides ideas, the user keeps a short checklist on the Overseer page: concrete small tasks for
+themselves, not for a session ("revoke the GitLab token", "reply to Dana"). The Overseer keeps it
+from chat, and the user edits it in the Todos panel (§app.overseer/todos-panel).
+
+- **Todo, idea or request.** A todo is one small, finishable action the user means to do, with no
+  design in it. An idea is a feature thought for later (§app.overseer/ideas); a request asks for work
+  in a session now. "Remind me to…", "add a todo" or a checklist the user dictates is a todo. When a
+  message could be a todo or an idea, the Overseer prefers the todo when it fits in one line and
+  needs no session, and asks with a `sova_confirm` card when it can't tell. It keeps the user's
+  words, says what it added in one line, and never turns a todo into a session or an idea on its own.
+- **Layout.** One file, `<stateRoot>/todos.json`: `{formatVersion: 1, todos: [record…]}`, in list
+  order. A record has an opaque id (`td_` and 8 lowercase letters or digits), its text (one line,
+  whitespace collapsed, at most 200 characters), done or not, created and updated times, the time
+  it was ticked while it is done, and optionally the § id of an idea and the id of a session it is
+  about. The list holds at most 200 todos.
+- **Links.** An idea link must name an idea that exists when it is written. A session link is a
+  pointer, never an act on that session, so any session may be named, a TUI-live or archived one
+  included.
+- **Writes** are atomic tmp+rename, and the file is re-read before every write. Reads are tolerant:
+  a missing or corrupt file reads as an empty list; a bad row, a duplicate id or an idea link that
+  doesn't parse is dropped. An edit that sends the updated time it started from, when the todo
+  changed meanwhile, is refused with the current list (a 409). Unlike ideas, todos are deleted:
+  one at a time, or every done one at once.
+- **Two tools.** `sova_todos` reads (open by default, done or all, each row with its id and links) and
+  is allowed in every run. `sova_todo` changes the list (`add`, `check`, `uncheck`, `edit`, `remove`,
+  `clear_done`). It is an act: audited, and refused in every run the user did not start
+  (§app.overseer/tools), ticking included, so a brief, a wake-up or a worker's report never ticks the
+  user's task. Ticking an already done todo, or unticking an open one, changes nothing and says so.
+- **Ticking is the user's.** The Overseer marks a todo done only when the user says it is done.
+  When it or a session did the task, it says it looks done and offers to tick it; in a read-only run
+  it raises a `sova_confirm` card for that. It removes a todo only when the user asks, and clears the
+  done ones when the user asks to tidy.
+- **Prompt.** The Overseer's prompt carries only the counts ("3 open, 1 done"), never a todo's text,
+  so an unchanged list renders the same bytes (§app.overseer/hosting). Arguments and results are
+  redacted like every Overseer tool's, so a secret value in a todo is stored as `[redacted]`.
+
+## §app.overseer/todos-panel — The Todos panel
+
+A **Todos** button in the Overseer page's head, next to Ideas, with the count of open todos, opens a
+panel in the same place as the Ideas panel: beside the chat on a wide window, over it on a narrow
+one, where the button is its icon with the count as a corner badge. One of the two panels is open at
+a time: opening one closes the other. Escape or the close button closes it and returns focus to the
+button.
+
+- **Add.** A field at the top: Enter adds the todo at the end of the list; a refusal (too long, the
+  list full) shows under it and nothing is added.
+- **Rows.** Open todos first, in the user's order: a checkbox, the text, the linked idea's § id and
+  the linked session (a link to it) under the text, **↑** and **↓** to move it among the open todos
+  (the first can't go up, the last can't go down), and **×** to remove it, with no confirmation (the
+  removal is announced to screen readers). Focus stays on the moved row's button, and after a tick
+  or a removal it goes to the next row.
+- **Edit in place.** The text is a button that becomes a field: Enter or leaving the field saves,
+  Escape cancels. A save sends the updated time the edit started from; when the todo changed
+  meanwhile, nothing is saved, the edit stays in the field and the panel says what the todo reads
+  now; saving again replaces it.
+- **Done.** A ticked todo moves under a collapsed **Done (n)** section, struck through, where it can
+  be unticked or removed; **Clear Done** removes every done todo.
+- **Fresh.** It reads the list when opened, every 10 seconds while open, and after every Overseer
+  turn, so a todo the Overseer adds mid-turn appears within one read. Every write answers with the
+  whole list, which the panel shows as it is.
+- Its foot names the file it is stored in.

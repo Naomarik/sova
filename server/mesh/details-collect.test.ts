@@ -2,7 +2,7 @@
 // The per-OS readers against a fake machine: files, directories and commands are what each test says.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { activityNow, openOf } from "./details";
+import { activityNow, fixedFacts, openOf } from "./details";
 import {
   BatteryReader,
   buildCommit,
@@ -113,6 +113,25 @@ describe("identity", () => {
     assert.equal(deviceType(machine("linux", { "/sys/class/dmi/id/chassis_type": "1\n", "/proc/cpuinfo": "processor\t: 0\nflags\t\t: fpu vme hypervisor lahf_lm\n" }), false), "server");
     assert.equal(deviceType(machine("linux", { "/sys/class/dmi/id/chassis_type": "1\n" }), true), "laptop");
     assert.equal(deviceType(machine("linux"), false), "unknown");
+  });
+
+  test("a Linux laptop whose firmware names no chassis is a laptop by its battery, from the first answer", async () => {
+    const bat = { "/sys/class/power_supply/BAT0/type": "Battery\n", "/sys/class/power_supply/BAT0/capacity": "57\n" };
+    const laptop = machine("linux", bat);
+    assert.equal((await fixedFacts(laptop, new BatteryReader(laptop))).device, "laptop");
+    const box = machine("linux");
+    assert.equal((await fixedFacts(box, new BatteryReader(box))).device, "unknown");
+  });
+
+  test("a phone's device type never waits on Termux:API", async () => {
+    const phone = machine("android");
+    let settled = false;
+    const run = phone.run;
+    phone.run = (cmd, args, ms) => (cmd === "termux-battery-status" ? new Promise(() => {}) : run(cmd, args, ms));
+    const facts = fixedFacts(phone, new BatteryReader(phone)).then((f) => ((settled = true), f));
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(settled);
+    assert.equal((await facts).device, "phone");
   });
 
   test("model: maker + model once, placeholders dropped", async () => {

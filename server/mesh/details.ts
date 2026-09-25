@@ -68,21 +68,26 @@ function frontDoorOf(config: PeersConfig, dnsName: string | null): (id: string) 
   };
 }
 
+/**
+ * What stays put while Sova runs: build commit, model and device type. The device type waits for
+ * the first battery reading everywhere but Android (Termux:API can hang; sysfs and pmset can't): a
+ * Mac or a Linux laptop whose firmware names no chassis is told apart by its battery.
+ */
+export async function fixedFacts(machine: Machine, battery: BatteryReader): Promise<{ commit?: string; model?: string; device: HostDetails["identity"]["device"] }> {
+  const [b, model] = await Promise.all([battery.read(machine.platform !== "android"), modelName(machine)]);
+  const commit = buildCommit(machine, ROOT);
+  return { ...(commit ? { commit } : {}), ...(model ? { model } : {}), device: deviceType(machine, !!b.battery) };
+}
+
 export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, machine: Machine = realMachine): void {
   const battery = new BatteryReader(machine);
-  let fixed: Promise<{ commit?: string; model?: string; device: HostDetails["identity"]["device"] }> | null = null;
-  const fixedFacts = () =>
-    (fixed ??= (async () => {
-      const [b, model] = await Promise.all([battery.read(machine.platform === "darwin"), modelName(machine)]);
-      const commit = buildCommit(machine, ROOT);
-      return { ...(commit ? { commit } : {}), ...(model ? { model } : {}), device: deviceType(machine, !!b.battery) };
-    })());
+  let fixed: ReturnType<typeof fixedFacts> | null = null;
 
   async function ownDetails(): Promise<HostDetails> {
     const self = mesh.self();
     const node = mesh.selfNode();
     const hello = ownHello(self, node.nodeId);
-    const [facts, b, sessions] = await Promise.all([fixedFacts(), battery.read(), sources.sessions().catch(() => 0)]);
+    const [facts, b, sessions] = await Promise.all([(fixed ??= fixedFacts(machine, battery)), battery.read(), sources.sessions().catch(() => 0)]);
     const load = loadAverages(machine);
     const disk = diskOf(stateRoot());
     const logins = mesh.settings().sync.logins ? sources.logins() : null;

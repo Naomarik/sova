@@ -234,7 +234,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Blocked, running | **Model changes wait until this turn finishes.** Stop or wait, then pick one. |
 | Composer reason while pending | Switching model… |
 | Announce on success | Model changed to {id}. |
-| Info row on success | Model changed to `{provider/id}` |
+| Toast on success | Model changed to {id}. |
 | Error title | Couldn't switch to `{id}`. |
 | Error: no credentials | {provider} has no credentials set up. Log in with `pi` in a terminal, then try again. You're still on `{current}`. |
 | Error: unknown | pi doesn't know this model. It may have been removed from your config. You're still on `{current}`. |

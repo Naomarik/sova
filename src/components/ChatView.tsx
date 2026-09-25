@@ -70,6 +70,7 @@ import {
 import { stageFork } from "../lib/fork-stage";
 import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
+import { isChangeRow } from "../lib/change-rows";
 import { inputCount } from "../lib/input-count";
 import { messageCount } from "../lib/message-count";
 import type { RewindControl, RewindResult } from "../lib/inputs";
@@ -102,7 +103,7 @@ import { SessionSetupCard } from "./SessionSetup";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
-import { type ForkMarker, HistoryItems, InfoRow, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
+import { type ForkMarker, HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
 
@@ -233,8 +234,6 @@ export function ChatView(props: {
   const [model, setModel] = createSignal<string | null>(null);
   const [pendingModel, setPendingModel] = createSignal<string | null>(null);
   const [modelError, setModelError] = createSignal<{ target: string; from: string | null; body: string | { noCredentials: string } } | null>(null);
-  /** "Model changed to …" rows shown until a transcript reload brings the persisted entry. */
-  const [modelRows, setModelRows] = createSignal<string[]>([]);
   /** The session's thinking level (WS "thinking"; seeded by hello). The server is the authority:
       it clamps to the model's ladder, and re-sends after every model switch. */
   const [thinking, setThinking] = createSignal<string | null>(null);
@@ -331,7 +330,6 @@ export function ChatView(props: {
       batch(() => {
         setItems(next.items);
         setLive(reconcile(emptyLive()));
-        setModelRows([]);
         setCommandRows([]); // local only; the persisted entries now tell the story
       });
     } catch (err) {
@@ -452,7 +450,6 @@ export function ChatView(props: {
             setThinkingError(null);
           });
           setSessionContext(props.path, contextStateFor(msg.context ?? null, msg.items));
-          setModelRows([]);
           setWorkersWorking(0); // a runtime without workers sends no "workers" after hello
           setWorkerList([]);
           props.onWorkers?.([], null);
@@ -1000,11 +997,14 @@ export function ChatView(props: {
     batch(() => {
       setPendingModel(null);
       setModelError(null);
-      if (next !== model()) setModelRows((r) => [...r, next]);
       setModel(next);
     });
     props.onModel(next);
-    if (was || next) announce(`Model changed to ${idOf(next)}.`);
+    if (was || next) {
+      const sentence = `Model changed to ${idOf(next)}.`;
+      toast(sentence);
+      announce(sentence);
+    }
   };
   const modelFailed = (message: string, code?: string) => {
     const target = pendingModel();
@@ -1367,13 +1367,6 @@ export function ChatView(props: {
                 hideThinking={hideThinking(props.path)}
                 queueActions={queueActions}
               />
-              <For each={modelRows()}>
-                {(ref) => (
-                  <InfoRow>
-                    Model changed to <code>{ref}</code>
-                  </InfoRow>
-                )}
-              </For>
               <For each={commandRows()}>
                 {(row) => (
                   <div class="info-row" role="note">
@@ -1403,11 +1396,13 @@ export function ChatView(props: {
                   </div>
                 )}
               </For>
-              {/* Only while the thread has zero rows, local rows included. The Overseer's also while
-                  it holds only machine notes (its model and thinking rows): nothing has been said yet. */}
+              {/* Only while the thread has no rendered row. Settings-change rows (model, thinking,
+                  mode) draw nothing, so they don't count; local rows such as "Ran /cmd" still do.
+                  The Overseer's also while it holds only machine notes (its model and thinking
+                  rows): nothing has been said yet. */}
               <Show
                 when={
-                  (props.overseer ? list().every((it) => it.kind === "info") : list().length === 0 && modelRows().length === 0) &&
+                  (props.overseer ? list().every((it) => it.kind === "info") : list().every(isChangeRow)) &&
                   live.entries.length === 0 &&
                   commandRows().length === 0
                 }

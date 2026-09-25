@@ -153,10 +153,12 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
 this server holds open (404 otherwise), and `mode.json` is not written. The chat then:
 
 - **Calls the extension's own `/mode` handler** directly. That's the same code the terminal runs,
-  so it leaves the same **marker** in the transcript: an info row "Mode → delegate" or
-  "Minor mode: align on", plus the snapshot the extension restores from. The command text never
-  goes to the model. There's no reload, so the chat's subagent workers keep running. A chat that
-  was never prompted takes the same path (the marker is a deliberate user write).
+  so it leaves the same **marker** ("Mode → delegate", "Minor mode: align on", "Strict mode
+  on/off") plus the snapshot the extension restores from. The marker renders nothing in the
+  thread (§chat.transcript/transcript-items); its history is visible on the Session pane's
+  Changes disclosure and the Timeline's change markers (§chat.timeline/rows). The command text
+  never goes to the model. There's no reload, so the chat's subagent workers keep running. A chat
+  that was never prompted takes the same path (the marker is a deliberate user write).
 - **Mid-turn.** The running turn keeps the old mode, and so do messages queued during it
   (follow-ups and steers join that turn). The chat's menu shows an info banner, "Applies after
   this turn.", until the turn settles.

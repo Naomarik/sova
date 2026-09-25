@@ -212,12 +212,17 @@ a machine event fired the turn, not the person. Same `.toolcard` shell as tool-c
 - **AT.** No author line, and the accessible name never says "You": the native `<summary>`'s own
   text ("Wake nudge n1 …") is what's announced.
 
-**info.** Model changes, compaction, labels, and branch summaries.
+**info.** Compaction, labels, branch summaries and other short machine notes. Model changes,
+thinking-level changes and the mode extension's markers are the exception: they render
+**nothing** in the thread — they are settings history, not conversation. That history stays where
+it belongs, on the Session pane's Changes disclosure and the Timeline's change markers
+(§chat.timeline/rows); a switch's own feedback is the toast and the announcement
+(§chat.model-menu/states).
 
 ```html
 <div class="info-row" role="note">
   <span class="info-row-text"><svg class="icon icon-sm" aria-hidden="true">…info…</svg>
-    Model changed to <code>claude-opus-5</code></span>
+    Label "release" on <code>m41</code></span>
 </div>
 ```
 
@@ -294,7 +299,7 @@ closed, and the markdown on the left when open.
   `custom_message` longer than 200 characters or spanning lines gets the same row, with its
   customType in place of the agent and no chip. Markdown, not `<pre>`: these payloads are
   written as markdown (`**From …**`, `_id …_`), and the renderer never runs HTML. Short
-  one-liners stay `.info-row` (mode markers, compaction notes, and so on).
+  one-liners stay `.info-row` (compaction notes, and so on).
 - **AT.** The native `<summary>` is the control, and its text is the name: "Report from ag_01 ·
   orchestrator Success All requested checks…". For non-agent messages the hidden prefix is
   "Message: ". Keyboard is native.
@@ -594,7 +599,7 @@ page with up to three parts, in this order:
 | No session selected (unfolded) | The landing page below, not a bare `.empty`: `.welcome` fills `.app-main`, its `.welcome-head` holds the `.empty` opening (`chat` icon in `.empty-mark`, title "48 sessions across 7 folders.", body "Pick one to read it, or start a new one.", an `.empty-action` cluster with `New Session` and `Fan Out…`), and the Extensions section and the Explained grid follow when there are any. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
-| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread has **zero rows**, counting local rows such as "Ran `/cmd`" (§chat/slash-commands) and model-change info rows. Once any row exists, the thread renders normally with no empty state |
+| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread has no **rendered row**: model, thinking and mode change rows draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
 
 ## §chat.transcript/setup-card — Setup card

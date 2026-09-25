@@ -4662,6 +4662,9 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
      view on one line: they wrap to a second rather than clip the ones at the end. */
   flex-wrap: wrap;
 }
+/* A separator belongs to the fact it introduces, so a wrap can never strand it; the gap that
+   used to separate them is now inside the fact. */
+.subagents-view-meta .meta-line-sep { margin-right: var(--space-1); }
 
 /* The view head's context readout: the chat head's gauge ("Context 64k / 1M · 6%") as one meta
    fact. It is in no .session-head, and the head's window-width floors (CONTEXT WINDOW) would hide

@@ -521,7 +521,11 @@
     "§chat.mode-menu/how-a-switch-reaches-the-chat": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/lib/change-rows.ts",
+        "src/components/Thread.tsx"
+      ]
     },
     "§chat.mode-menu/menu": {
       "kind": "behavior",
@@ -579,7 +583,10 @@
     "§chat.model-menu/states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ChatView.tsx"
+      ]
     },
     "§chat.model-menu/tokens": {
       "kind": "note",
@@ -622,7 +629,8 @@
       "evidence": "verified",
       "code": [
         "src/lib/slash.ts",
-        "src/components/Composer.tsx"
+        "src/components/Composer.tsx",
+        "src/lib/change-rows.ts"
       ]
     },
     "§chat.slash-commands/keyboard-and-mouse": {
@@ -648,7 +656,10 @@
     "§chat.timeline/accessibility": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/timeline.ts"
+      ]
     },
     "§chat.timeline/class-table": {
       "kind": "note",
@@ -662,8 +673,11 @@
     },
     "§chat.timeline/jumping": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/timeline.ts"
+      ]
     },
     "§chat.timeline/no-virtualization": {
       "kind": "behavior",
@@ -696,7 +710,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "server/insights.ts"
+        "server/insights.ts",
+        "src/lib/timeline.ts"
       ]
     },
     "§chat.timeline/watch-mode": {
@@ -780,7 +795,9 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "server/transcript.ts"
+        "server/transcript.ts",
+        "src/lib/change-rows.ts",
+        "src/components/Thread.tsx"
       ]
     },
     "§chat/composer": {
@@ -909,7 +926,7 @@
     },
     "§design.copy-deck/model-menu": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.copy-deck/new-session-dialog": {

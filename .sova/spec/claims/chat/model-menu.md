@@ -138,9 +138,11 @@ the textarea, where the next thing you do is type.
   - If there's no echo after **15s**, treat it as an error (below) with the message "The server
     didn't confirm the switch."
 - **On switch.**
-  - Announce "Model changed to {id}." in the polite live region.
-  - Append an `.info-row` locally: "Model changed to `{provider/id}`". On reload, the persisted
-    `model_change` entry renders in the same place, so the two never appear together.
+  - Announce "Model changed to {id}." in the polite live region and show the same sentence as a
+    toast.
+  - Leave no row in the transcript (§chat.transcript/transcript-items): a machine fact belongs
+    next to the control that sets it, not in the thread, and a row written into the thread also
+    came back after every reload.
   - The pulse is the sanctioned live indicator, and it's legitimate here because work is
     happening.
 

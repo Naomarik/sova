@@ -184,7 +184,8 @@ and again when the count changes, at most once a second. When there are none, an
   - **Prompt templates and skills** expand into a **user** message (the expanded text), then an
     assistant turn.
   - **Extension commands** may add `custom` entries, which render as **info rows** (or
-    **unknown** rows with the Raw entry disclosure). They may also send `ui_request`s (§app/extension-dialogs), or
+    **unknown** rows with the Raw entry disclosure) — except the mode extension's markers, which
+    render nothing (§chat.transcript/transcript-items). They may also send `ui_request`s (§app/extension-dialogs), or
     produce nothing visible.
   - **A persisted running row.** An extension command may also append a `custom` entry at the
     start of its run that the thread renders as a live, self-updating row for the run's

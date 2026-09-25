@@ -80,6 +80,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   Settings live in `pnpm-workspace.yaml` (`.npmrc` is gitignored); only esbuild may run its
   install script (`allowBuilds`).
 - `pnpm run dev:server` (port **4800**) and `pnpm run dev:web` (Vite, proxies /api + /ws to 4800)
+- Isolated testing: `pnpm run dev:hermetic` builds `<worktree>/.agent` (`scripts/hermetic-agent-dir.mjs`: this tree's
+  pi-config, own sessions/state, nothing in `~/.pi`) and serves it on 4810; it copies no auth — copy `auth.json` in by hand.
 - `pnpm run typecheck` — must pass. `pnpm run build` — must pass.
 - `pnpm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`). They're ESM TypeScript with
   extensionless imports, so they run under `tsx --test`; plain `node --test <file>` fails with

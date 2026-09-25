@@ -7,9 +7,10 @@ import { writeFileAtomic } from "./logins-stores";
  * directory there, its backend a loopback process there), so the user's `extensions.json` stays
  * the user's: sync never writes it. Each host PUBLISHES its own entries; each host keeps every
  * peer's last published list and lists the peers' entries for ids it has none of itself. A peer
- * entry whose `dist` is not a directory on this host is "not installed on this host": listed as
- * down, never probed, never proxied (its loopback port could be anything here). A local entry
- * always wins its id. A peer removing an entry removes it everywhere at the next exchange.
+ * entry is only ever LISTED here (down, with the reason): never served, probed or proxied, since
+ * its dist and loopback port name the peer's disk and processes and would be any directory and
+ * any local service here. Using one here means installing it in this host's own manifest, which
+ * then wins its id. A peer removing an entry removes it everywhere at the next exchange.
  */
 
 export interface ExtensionList {
@@ -22,7 +23,7 @@ export interface PeerExtension {
   entry: ExtensionEntry;
   /** The peer that published it. */
   from: string;
-  /** Its dist is a directory on THIS host. */
+  /** Its dist is a directory on this host too (only changes the reason shown). */
   installed: boolean;
 }
 

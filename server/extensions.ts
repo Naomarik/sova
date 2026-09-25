@@ -124,10 +124,16 @@ export function readExtensions(): ExtensionEntry[] {
   return out;
 }
 
-/** A peer host's extension (server/sync/extensions.ts), listed here only while the mesh syncs extensions. */
+/**
+ * A peer host's extension (server/sync/extensions.ts), listed here only while the mesh syncs
+ * extensions, and ONLY listed: never served, probed or proxied. Its `dist` and `api` are paths and
+ * ports on the peer; here the same dist could be any directory ("/") and the same port any local
+ * service, so serving one would hand a peer this host's files and loopback. To use it here, the
+ * user installs it in this host's own manifest (which then wins its id).
+ */
 export interface PeerExtensionEntry {
   entry: ExtensionEntry;
-  /** Its dist is a directory on THIS host; otherwise it is listed as not installed and never served. */
+  /** Its dist is a directory on this host too (shown in the reason, never acted on). */
   installed: boolean;
 }
 let peerExtensions: (() => PeerExtensionEntry[]) | null = null;
@@ -135,11 +141,8 @@ let peerExtensions: (() => PeerExtensionEntry[]) | null = null;
 export const setPeerExtensions = (fn: (() => PeerExtensionEntry[]) | null): void => {
   peerExtensions = fn;
 };
-/** A peer entry is served only when its dist exists here (its api port here could be anything). */
-const findPeerExtension = (id: string): ExtensionEntry | undefined => peerExtensions?.().find((p) => p.installed && p.entry.id === id)?.entry;
 
-export const findExtension = (id: string): ExtensionEntry | undefined =>
-  readExtensions().find((e) => e.id === id) ?? (peerExtensions ? findPeerExtension(id) : undefined);
+export const findExtension = (id: string): ExtensionEntry | undefined => readExtensions().find((e) => e.id === id);
 
 // ---- Health (GET /api/extensions) -------------------------------------------------------------
 
@@ -190,18 +193,17 @@ export async function listExtensions(): Promise<ExtensionInfo[]> {
     }),
   );
   if (!peerExtensions) return local;
-  const peers = await Promise.all(
-    peerExtensions().map(async ({ entry: e, installed }) => {
-      const info: ExtensionInfo = {
-        id: e.id,
-        title: e.title,
-        ...(installed ? await health(e) : { status: "down" as const, error: "not installed on this host" }),
-      };
-      if (e.description) info.description = e.description;
-      if (e.icon) info.icon = e.icon;
-      return info;
-    }),
-  );
+  const peers = peerExtensions().map(({ entry: e, installed }) => {
+    const info: ExtensionInfo = {
+      id: e.id,
+      title: e.title,
+      status: "down",
+      error: installed ? "on another host; add it to this host's extensions.json to use it here" : "not installed on this host",
+    };
+    if (e.description) info.description = e.description;
+    if (e.icon) info.icon = e.icon;
+    return info;
+  });
   return [...local, ...peers];
 }
 

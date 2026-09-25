@@ -122,13 +122,16 @@ test("server/extensions hook: unset, the listing and lookup are exactly the mani
       list.map((e) => [e.id, e.status, e.error]),
       [
         ["local", "down", "connection refused"],
-        ["peer-here", "down", "connection refused"],
+        ["peer-here", "down", "on another host; add it to this host's extensions.json to use it here"],
         ["peer-elsewhere", "down", "not installed on this host"],
       ],
     );
     assert.equal(list[2]!.icon, "grid");
-    assert.equal(findExtension("peer-here")?.id, "peer-here", "installed here: served");
-    assert.equal(findExtension("peer-elsewhere"), undefined, "not installed here: never served or proxied");
+    // Never served, whatever its dist: a peer's `dist: "/"` and loopback `api` would otherwise hand
+    // it this host's files and ports.
+    assert.equal(findExtension("peer-here"), undefined, "a peer entry is never served here");
+    assert.equal(findExtension("peer-elsewhere"), undefined);
+    assert.equal(findExtension("local")?.id, "local");
   } finally {
     setPeerExtensions(null);
   }

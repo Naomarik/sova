@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { SessionSummary } from "../../shared/protocol";
+import type { PeerStatus, SessionSummary } from "../../shared/protocol";
 import {
   hostOf,
   hostUrl,
@@ -13,7 +13,7 @@ import {
   routeUrl,
   sessionHrefOn,
   sessionRouteFromHash,
-  type PeerInfo,
+  
 } from "./mesh";
 
 const A = "/home/u/.pi/agent/sessions/--x--/2026-09-25T00-00-00-000Z_0199aaaa.jsonl";
@@ -70,20 +70,29 @@ test("a local session's link is exactly what it was; a peer's carries the host, 
   assert.equal(sessionHrefOn(null, A), `#/s/${q(A)}`);
   assert.deepEqual(sessionRouteFromHash(`#/s/${q(A)}`), { host: null, path: A });
   const href = sessionHrefOn("laptop", A);
-  assert.equal(href, `#/p/laptop/s/${q(A)}`);
+  assert.equal(href, `#/s/${q(A)}?host=laptop`);
   assert.deepEqual(sessionRouteFromHash(href), { host: "laptop", path: A });
   assert.equal(sessionRouteFromHash("#/mesh"), null);
   assert.equal(sessionRouteFromHash("#/s/%E0%A4%A"), null, "a malformed escape names nothing");
 });
 
-const peer = (id: string, status: PeerInfo["status"], error?: string): PeerInfo => ({ id, label: "", node: `${id}.ts.net`, status, lastSeen: null, error });
+const peer = (id: string, state: PeerStatus["state"], error?: string): PeerStatus => ({
+  id,
+  label: "",
+  nodeId: `n${id}`,
+  name: `${id}.ts.net`,
+  url: `http://${id}.ts.net:4801`,
+  state,
+  lastSeen: null,
+  error,
+});
 const row = (path: string, groupId?: string) => ({ path, groupId }) as SessionSummary;
 
 test("a down peer keeps its last rows; a removed one loses them; groups never cross hosts", () => {
   const prev = new Map([["laptop", [row(A)]], ["gone", [row(B)]]]);
   const next = mergePeerLists(
     prev,
-    { peers: [{ id: "laptop", status: "down" }, { id: "vps", status: "up", sessions: [row(B, "g1")] }] },
+    { peers: [{ id: "laptop", label: "", state: "down" }, { id: "vps", label: "", state: "up", sessions: [row(B, "g1")] }] },
     [peer("laptop", "down"), peer("vps", "up")],
   );
   assert.deepEqual([...next.keys()].sort(), ["laptop", "vps"]);

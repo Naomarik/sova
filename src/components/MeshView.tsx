@@ -9,7 +9,8 @@ import {
   selfLabel,
   setMeshState,
   type MeshCandidate,
-  type PeerInfo,
+  type MeshPeerEntry,
+  type PeerState,
   type PeerStatus,
   type SyncCategory,
   type SyncStatus,
@@ -24,14 +25,14 @@ import "../mesh.css";
 /** While #/mesh is open the host list is re-read this often: status is what the page is for. */
 const MESH_PAGE_POLL_MS = 5_000;
 
-const STATUS_WORD: Record<PeerStatus, string> = { up: "Up", down: "Down", skewed: "Other version", refused: "Refused" };
-const STATUS_TONE: Record<PeerStatus, "success" | "error" | "warn"> = { up: "success", down: "error", skewed: "warn", refused: "error" };
+const STATE_WORD: Record<PeerState, string> = { up: "Up", down: "Down", skewed: "Other version", refused: "Refused" };
+const STATE_TONE: Record<PeerState, "success" | "error" | "warn"> = { up: "success", down: "error", skewed: "warn", refused: "error" };
 
-/** A peer's status in a word as well as a colour; the reason rides the title. */
-export function PeerStatusChip(props: { peer: PeerInfo }) {
+/** A peer's state in a word as well as a colour; the reason rides the title. */
+export function PeerStateChip(props: { peer: PeerStatus }) {
   return (
-    <Chip tone={STATUS_TONE[props.peer.status]} title={peerUnavailable(props.peer) ?? undefined}>
-      {STATUS_WORD[props.peer.status]}
+    <Chip tone={STATE_TONE[props.peer.state]} title={peerUnavailable(props.peer) ?? undefined}>
+      {STATE_WORD[props.peer.state]}
     </Chip>
   );
 }
@@ -44,12 +45,12 @@ export const SYNC_LABEL: Record<SyncCategory, string> = {
 };
 
 /** The card's one-line summary of the peers: a count, and the first host that needs attention. */
-function cardSummary(peers: PeerInfo[]): { chip: string; tone?: "success" | "warn"; line: string; problem: string | null } {
+function cardSummary(peers: PeerStatus[]): { chip: string; tone?: "success" | "warn"; line: string; problem: string | null } {
   if (peers.length === 0) {
     return { chip: "This host only", line: `Only ${selfLabel()} so far. Add a peer to see and start its sessions from here.`, problem: null };
   }
-  const up = peers.filter((p) => p.status === "up").length;
-  const first = peers.find((p) => p.status !== "up");
+  const up = peers.filter((p) => p.state === "up").length;
+  const first = peers.find((p) => p.state !== "up");
   return {
     chip: `${up} of ${peers.length} up`,
     tone: up === peers.length ? "success" : "warn",
@@ -61,12 +62,15 @@ function cardSummary(peers: PeerInfo[]): { chip: string; tone?: "success" | "war
 /**
  * The landing page's Mesh section, above Extensions and in the same card: the hosts this one
  * works with, and a link to #/mesh. Shown whether or not a peer is configured: it is also where
- * the first peer gets added.
+ * the first peer gets added. A server that can't say reads as no peers.
+ *
+ * `data-mesh-ui` marks the one root the mesh adds to this screen (the parity check removes it and
+ * compares the rest with the mesh off); its gap is the page's flex gap, so it leaves with it.
  */
-export function MeshCard(props: { error: string | null }) {
+export function MeshCard() {
   const summary = () => cardSummary(meshPeers());
   return (
-    <section class="explain-section" aria-labelledby="mesh-section-title">
+    <section class="explain-section" aria-labelledby="mesh-section-title" data-mesh-ui>
       <h2 class="explain-section-head" id="mesh-section-title">
         Mesh
       </h2>
@@ -76,16 +80,10 @@ export function MeshCard(props: { error: string | null }) {
             <div class="ext-card-head">
               <span class="icon ext-card-icon" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
               <h3 class="ext-card-title">Hosts</h3>
-              <Show when={meshState()}>
-                <Chip tone={summary().tone}>{summary().chip}</Chip>
-              </Show>
+              <Chip tone={summary().tone}>{summary().chip}</Chip>
             </div>
-            <Show when={meshState()} fallback={<p class="ext-card-body">{props.error ? "The mesh status isn't available." : "Reading the mesh…"}</p>}>
-              <p class="ext-card-body">{summary().line}</p>
-            </Show>
-            <Show when={summary().problem ?? (props.error && !meshState() ? `The server didn't answer: ${props.error}` : null)}>
-              {(problem) => <p class="ext-card-error">{problem()}</p>}
-            </Show>
+            <p class="ext-card-body">{summary().line}</p>
+            <Show when={summary().problem}>{(problem) => <p class="ext-card-error">{problem()}</p>}</Show>
           </a>
         </li>
       </ul>
@@ -94,29 +92,54 @@ export function MeshCard(props: { error: string | null }) {
 }
 
 /** A peer being added from the form, before it is written. */
-interface Draft {
+export interface Draft {
   id: string;
   label: string;
-  node: string;
+  /** MagicDNS name, short host name or tailnet IP. */
+  name: string;
+  /** The node's StableID when it came from Find Hosts; typed by hand, the server resolves it. */
+  nodeId?: string;
 }
 
-const ID_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
+const ID_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
 /** Why a draft can't be added, in words the field can show; null when it can. */
 export function draftProblem(d: Draft, taken: readonly string[]): string | null {
   const id = d.id.trim();
-  if (!d.node.trim()) return "Type the peer's tailnet name or address.";
+  if (!d.name.trim()) return "Type the peer's tailnet name or address.";
   if (!id) return "Give it a short name.";
-  if (!ID_RE.test(id)) return "Use lowercase letters, digits and dashes for the name.";
+  if (!ID_RE.test(id)) return "Use up to 32 lowercase letters, digits and dashes for the name, starting with a letter or digit.";
   if (taken.includes(id)) return `A peer named ${id} is already in the list.`;
   return null;
 }
 
-/** A tailnet name's first label, lowercased: `alice.tail1.ts.net` → `alice`. */
-export const idFromNode = (node: string): string =>
-  node.trim().toLowerCase().split(".")[0]!.replace(/[^a-z0-9-]/g, "-").replace(/^-+/, "").slice(0, 63);
+/** A tailnet name's first label as a peer id: `alice.tail1.ts.net` → `alice`. */
+export const idFromName = (name: string): string =>
+  name.trim().toLowerCase().split(".")[0]!.replace(/[^a-z0-9-]/g, "-").replace(/^-+/, "").slice(0, 32);
 
-/** `#/mesh`: every host, its status and why, editing peers.json, what syncs, and how to start. */
+/** A peer as peers.json holds it: what a rewrite of the list must carry over unchanged. */
+const entryOf = (p: PeerStatus): MeshPeerEntry => ({
+  id: p.id,
+  label: p.label || undefined,
+  nodeId: p.nodeId,
+  name: p.name,
+  url: p.url,
+  priority: p.priority,
+});
+
+const tagged = (c: MeshCandidate) => c.login === "tagged-devices" || c.tags.length > 0;
+/** Find Hosts offers Use only for an untagged node that runs Sova; the note line says why not. */
+const candidateUsable = (c: MeshCandidate) => !c.peerId && !tagged(c) && c.online && c.sova !== "no";
+
+/** What Find Hosts says about a node after its name and address. */
+function candidateNote(c: MeshCandidate): string {
+  if (!c.online) return "offline";
+  if (c.sova === "yes") return `Sova ${c.hello?.version ?? ""}`.trim();
+  if (c.sova === "refused") return "runs Sova, doesn't list this host yet";
+  return "no Sova answering";
+}
+
+/** `#/mesh`: every host, its state and why, editing peers.json, what syncs, and how to start. */
 export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement): void }) {
   // Every answer is the app's mesh state too: the sidebar's marks and New Session follow this page.
   const poll = createPoll(
@@ -132,7 +155,7 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
   /** Write the whole list; the answer is the mesh as it now stands. */
-  const writePeers = async (peers: { id: string; label?: string; node: string }[], said: string): Promise<boolean> => {
+  const writePeers = async (peers: MeshPeerEntry[], said: string): Promise<boolean> => {
     if (saving()) return false;
     setSaving(true);
     setSaveError(null);
@@ -149,14 +172,13 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
       setSaving(false);
     }
   };
-  const asEntries = (peers: PeerInfo[]) => peers.map((p) => ({ id: p.id, label: p.label || undefined, node: p.node }));
-  const removePeer = (p: PeerInfo) =>
+  const removePeer = (p: PeerStatus) =>
     void writePeers(
-      asEntries(meshPeers().filter((x) => x.id !== p.id)),
+      meshPeers().filter((x) => x.id !== p.id).map(entryOf),
       `${p.label || p.id} removed. Its sessions stay on it.`,
     );
 
-  const [draft, setDraft] = createSignal<Draft>({ id: "", label: "", node: "" });
+  const [draft, setDraft] = createSignal<Draft>({ id: "", label: "", name: "" });
   const [draftTouched, setDraftTouched] = createSignal(false);
   const problem = () => draftProblem(draft(), meshPeers().map((p) => p.id));
   const addPeer = async (e?: Event) => {
@@ -164,9 +186,9 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
     setDraftTouched(true);
     if (problem()) return;
     const d = draft();
-    const entry = { id: d.id.trim(), label: d.label.trim() || undefined, node: d.node.trim() };
-    if (await writePeers([...asEntries(meshPeers()), entry], `${entry.label ?? entry.id} added.`)) {
-      setDraft({ id: "", label: "", node: "" });
+    const entry: MeshPeerEntry = { id: d.id.trim(), label: d.label.trim() || undefined, name: d.name.trim(), nodeId: d.nodeId };
+    if (await writePeers([...meshPeers().map(entryOf), entry], `${entry.label ?? entry.id} added.`)) {
+      setDraft({ id: "", label: "", name: "" });
       setDraftTouched(false);
     }
   };
@@ -187,14 +209,13 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
       setFinding(false);
     }
   };
-  const listed = (c: MeshCandidate) => meshPeers().some((p) => p.node === c.node || p.id === idFromNode(c.name));
   const useCandidate = (c: MeshCandidate) => {
-    setDraft({ id: idFromNode(c.name), label: c.sova?.hostname && c.sova.hostname !== c.name ? c.sova.hostname : "", node: c.node });
+    const label = c.hello?.label || (c.hostName && c.hostName !== idFromName(c.name) ? c.hostName : "");
+    setDraft({ id: idFromName(c.name), label, name: c.name, nodeId: c.nodeId });
     setDraftTouched(false);
-    document.getElementById("mesh-add-node")?.focus();
+    document.getElementById("mesh-add-name")?.focus();
   };
-
-  const sync = () => state()?.sync ?? [];
+  const sova = () => (candidates() ?? []).filter((c) => c.sova !== "no").length;
 
   return (
     <InsightsPage
@@ -203,10 +224,10 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
         <Show when={state()} fallback={<span>Not read yet</span>}>
           {(s) => (
             <span>
-              Served by <strong>{s().self.label || s().self.id}</strong>
+              Served by <strong>{s().self.label || s().self.hostname}</strong>
               <Show when={s().peers.length > 0} fallback=" · no peers yet">
                 {" · "}
-                {s().peers.filter((p) => p.status === "up").length} of {s().peers.length} peers up
+                {s().peers.filter((p) => p.state === "up").length} of {s().peers.length} peers up
               </Show>
             </span>
           )}
@@ -219,6 +240,15 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
       busy={!state() && poll.pending()}
       titleRef={props.titleRef}
     >
+      <Show when={state()?.error}>
+        {(msg) => (
+          <Banner
+            tone="error"
+            title="peers.json can't be used, so the mesh is off."
+            body={`No peer is reached until it's fixed. Saving the list below rewrites it. ${msg()}`}
+          />
+        )}
+      </Show>
       <Show when={saveError()}>
         {(msg) => <Banner tone="error" title="Couldn't save the peers." body={`The list on this host didn't change. ${msg()}`} />}
       </Show>
@@ -231,8 +261,11 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
           <li class="list-row mesh-host">
             <Icon name="terminal" small />
             <div class="list-main">
-              <p class="list-title">{state()?.self.label || state()?.self.id || "This host"}</p>
-              <Show when={state()?.self.node}>{(n) => <p class="list-meta text-mono">{n()}</p>}</Show>
+              <p class="list-title">{state()?.self.label || state()?.self.hostname || "This host"}</p>
+              <Show when={state()?.self.dnsName ?? state()?.self.hostname}>{(n) => <p class="list-meta text-mono">{n()}</p>}</Show>
+              <Show when={state()?.self.listen?.error}>
+                {(e) => <p class="mesh-host-error">Peers can't reach this host yet: {e().replace(/[.\s]+$/, "")}.</p>}
+              </Show>
             </div>
             <Chip>This host</Chip>
           </li>
@@ -248,16 +281,16 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
                     </Show>
                   </p>
                   <p class="list-meta">
-                    <span class="text-mono">{p.node}</span>
+                    <span class="text-mono">{p.name}</span>
                     <Show when={p.hello}>{(h) => <> · Sova {h().version}</>}</Show>
-                    <Show when={p.status !== "up" && p.lastSeen}>
+                    <Show when={p.state !== "up" && p.lastSeen}>
                       {(t) => <span title={iso(t())}> · last answered {relativeTime(iso(t()), props.now)}</span>}
                     </Show>
-                    <Show when={p.status !== "up" && !p.lastSeen}> · never answered</Show>
+                    <Show when={p.state !== "up" && !p.lastSeen}> · hasn't answered yet</Show>
                   </p>
                   <Show when={peerUnavailable(p)}>{(why) => <p class="mesh-host-error">{why()}</p>}</Show>
                 </div>
-                <PeerStatusChip peer={p} />
+                <PeerStateChip peer={p} />
                 <button
                   type="button"
                   class="button button-sm button-ghost"
@@ -278,20 +311,21 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
           </h3>
           <div class="mesh-add-fields">
             <div class="field">
-              <label class="field-label" for="mesh-add-node">
+              <label class="field-label" for="mesh-add-name">
                 Tailnet name or address
               </label>
               <input
-                id="mesh-add-node"
+                id="mesh-add-name"
                 class="input input-mono"
                 autocomplete="off"
                 spellcheck={false}
                 placeholder="laptop.tail1234.ts.net"
-                value={draft().node}
+                value={draft().name}
                 onInput={(e) => {
-                  const node = e.currentTarget.value;
-                  // The name follows the address until the user types one of their own.
-                  setDraft((d) => ({ ...d, node, id: d.id && d.id !== idFromNode(d.node) ? d.id : idFromNode(node) }));
+                  const name = e.currentTarget.value;
+                  // The id follows the name until the user types one of their own; a typed name
+                  // is resolved by the server, so a node picked from Find Hosts no longer applies.
+                  setDraft((d) => ({ ...d, name, nodeId: undefined, id: d.id && d.id !== idFromName(d.name) ? d.id : idFromName(name) }));
                 }}
               />
             </div>
@@ -347,7 +381,7 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
             <div class="mesh-candidates">
               <p class="settings-intro" aria-live="polite">
                 <Show when={list().length > 0} fallback="Your tailnet shows no other hosts.">
-                  {list().filter((c) => c.sova).length} of {list().length} hosts on your tailnet answer as Sova. Adding one fills the form; nothing is saved until you press Add Peer.
+                  {sova()} of {list().length} hosts on your tailnet run Sova. Use fills the form; nothing is saved until you press Add Peer.
                 </Show>
               </p>
               <ul class="list">
@@ -355,27 +389,25 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
                   {(c) => (
                     <li class="list-row mesh-host">
                       <div class="list-main">
-                        <p class="list-title">{c.name}</p>
+                        <p class="list-title">{c.hostName || c.name}</p>
                         <p class="list-meta">
-                          <span class="text-mono">{c.node}</span>
+                          <span class="text-mono">{c.name}</span>
                           {" · "}
-                          {c.sova ? `Sova ${c.sova.version}` : c.online ? "no Sova answering" : "offline"}
+                          {candidateNote(c)}
                         </p>
+                        <Show when={!c.peerId && tagged(c)}>
+                          <p class="list-meta">Tagged nodes aren't offered as peers. Type its name above to add it anyway.</p>
+                        </Show>
                       </div>
                       <Show
-                        when={!listed(c)}
+                        when={!c.peerId}
                         fallback={<Chip tone="success">In the list</Chip>}
                       >
-                        <button
-                          type="button"
-                          class="button button-sm"
-                          aria-disabled={!c.sova ? "true" : undefined}
-                          title={!c.sova ? "Only a host running Sova can be a peer." : undefined}
-                          aria-label={`Use ${c.name}`}
-                          onClick={() => c.sova && useCandidate(c)}
-                        >
-                          Use
-                        </button>
+                        <Show when={candidateUsable(c)}>
+                          <button type="button" class="button button-sm" aria-label={`Use ${c.hostName || c.name}`} onClick={() => useCandidate(c)}>
+                            Use
+                          </button>
+                        </Show>
                       </Show>
                     </li>
                   )}
@@ -396,11 +428,17 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
           </button>
         </div>
         <Show
-          when={meshPeers().length > 0}
-          fallback={<p class="settings-intro">Nothing syncs until there's a peer. Settings, themes, extensions and logins can then stay the same on every host.</p>}
+          when={meshPeers().length > 0 && (state()?.sync.length ?? 0) > 0}
+          fallback={
+            <p class="settings-intro">
+              <Show when={meshPeers().length > 0} fallback="Nothing syncs until there's a peer. Settings, themes, extensions and logins can then stay the same on every host.">
+                Nothing has synced yet.
+              </Show>
+            </p>
+          }
         >
           <ul class="list">
-            <For each={sync()}>{(row) => <SyncRow row={row} now={props.now} />}</For>
+            <For each={state()?.sync ?? []}>{(row) => <SyncRow row={row} now={props.now} />}</For>
           </ul>
         </Show>
       </section>

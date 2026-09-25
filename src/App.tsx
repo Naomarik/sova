@@ -160,7 +160,8 @@ export function App() {
   const list = () => sessions.latest; // keeps the old list on screen while refreshing
 
   // ---- The peer mesh: dormant unless GET /api/mesh names a peer ------------------------------
-  /** Why the mesh couldn't be read (a server without the mesh routes, say); the card says so. */
+  /** Why the mesh couldn't be read (a server without the mesh routes, say). The page then reads
+      as mesh off; only a peer's own link says it (see `peerDown`). */
   const [meshError, setMeshError] = createSignal<string | null>(null);
   const loadMesh = () =>
     fetchMesh()
@@ -837,7 +838,7 @@ export function App() {
                       </div>
                     </div>
                   </div>
-                  <MeshCard error={meshError()} />
+                  <MeshCard />
                   <Show when={installed()}>{(list) => <ExtensionCards extensions={list()} />}</Show>
                   <Show when={explained()}>
                     {(list) => (

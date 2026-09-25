@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import type { SessionSummary } from "../../shared/protocol";
+import type { MeshInfo, MeshSessions, PeerStatus, SessionSummary, SyncCategory } from "../../shared/protocol";
 
 // The client side of the peer mesh: which host a session lives on, and how a request for it
 // reaches that host. A session is driven only by the host whose disk holds it, and the browser
@@ -9,86 +9,34 @@ import type { SessionSummary } from "../../shared/protocol";
 // Everything is dormant until GET /api/mesh names a peer: with none, `hostOf` answers null for
 // every path, no URL changes, and nothing polls.
 
-/** A category of state the mesh can keep in step between hosts. */
-export type SyncCategory = "settings" | "themes" | "extensions" | "logins";
+export type { MeshCandidate, MeshInfo, MeshPeerEntry, MeshSessions, MeshSettings, PeerState, PeerStatus, SyncCategory, SyncStatus } from "../../shared/protocol";
+
 export const SYNC_CATEGORIES: readonly SyncCategory[] = ["settings", "themes", "extensions", "logins"];
-
-export type PeerStatus = "up" | "down" | "skewed" | "refused";
-
-/** One entry of peers.json as the serving host sees it now. */
-export interface PeerInfo {
-  id: string;
-  label: string;
-  /** Its tailnet name (MagicDNS) or address, as peers.json has it. */
-  node: string;
-  status: PeerStatus;
-  /** When it last answered, ms epoch; null if it never has. */
-  lastSeen: number | null;
-  /** Why it is down, skewed or refusing us, as a sentence. */
-  error?: string;
-  hello?: { version: string; protocol: string; hostname: string };
-}
-
-export interface SyncStatus {
-  category: SyncCategory;
-  enabled: boolean;
-  state: "ok" | "pending" | "error" | "off";
-  lastAt: number | null;
-  error?: string;
-}
-
-/** GET /api/mesh: this host, its peers and what syncs. */
-export interface MeshState {
-  self: { id: string; label: string; node?: string };
-  peers: PeerInfo[];
-  sync: SyncStatus[];
-  frontDoor: string | null;
-}
-
-/** GET/PUT /api/mesh/settings: Settings → Mesh. */
-export interface MeshSettings {
-  hostLabel: string;
-  sync: Record<SyncCategory, boolean>;
-  frontDoor: string | null;
-}
-
-/** A tailnet node the serving host can see, offered on #/mesh as a peer to add. */
-export interface MeshCandidate {
-  name: string;
-  node: string;
-  online: boolean;
-  /** What it said to `hello`, or null when it isn't running Sova (or didn't answer). */
-  sova: { version: string; hostname: string } | null;
-}
-
-/** GET /api/mesh/sessions: each peer's own session list, fetched through the proxy. */
-export interface MeshSessions {
-  peers: { id: string; status: PeerStatus; sessions?: SessionSummary[]; error?: string }[];
-}
 
 // ---- state ------------------------------------------------------------------------------------
 
-const [state, setState] = createSignal<MeshState | null>(null);
-/** The mesh as last read; null before the first answer or when the server has no mesh routes. */
+const [state, setState] = createSignal<MeshInfo | null>(null);
+/** The mesh as last read; null before the first answer, or when the server couldn't say (then the
+    page is exactly as it is with the mesh off). */
 export const meshState = state;
 export const setMeshState = setState;
 
 /** The peers the page may route to; empty means the mesh is off and nothing below does anything. */
-export const meshPeers = (): PeerInfo[] => state()?.peers ?? [];
+export const meshPeers = (): PeerStatus[] => state()?.peers ?? [];
 export const meshOn = (): boolean => meshPeers().length > 0;
-export const peerInfo = (id: string): PeerInfo | undefined => meshPeers().find((p) => p.id === id);
+export const peerInfo = (id: string): PeerStatus | undefined => meshPeers().find((p) => p.id === id);
 /** What a host is called in the UI: its label, else its id. */
 export const hostLabel = (id: string): string => peerInfo(id)?.label || id;
-export const selfLabel = (): string => state()?.self.label || state()?.self.id || "This host";
+export const selfLabel = (): string => state()?.self.label || state()?.self.hostname || "This host";
 
 /** A peer that can't be opened or driven right now, with the sentence that says why; null if it can. */
-export function peerUnavailable(p: PeerInfo): string | null {
+export function peerUnavailable(p: PeerStatus): string | null {
   const name = p.label || p.id;
   /** The server's reason as the end of our sentence: one full stop, whatever it brought. */
   const reason = p.error ? `: ${p.error.replace(/[.\s]+$/, "")}.` : ".";
-  if (p.status === "up") return null;
-  if (p.status === "down") return `${name} isn't answering${reason}`;
-  if (p.status === "skewed") return `${name} runs a different Sova version${p.hello ? ` (${p.hello.version})` : ""}. Update one of them.`;
+  if (p.state === "up") return null;
+  if (p.state === "down") return `${name} isn't answering${reason}`;
+  if (p.state === "skewed") return `${name} runs a different Sova version${p.hello ? ` (${p.hello.version})` : ""}. Update one of them.`;
   return p.error ? `${name} refused this host${reason}` : `${name} refused this host. Add this host to its peers.`;
 }
 
@@ -183,17 +131,18 @@ export function routeUrl(url: string, body?: unknown): string {
 
 // ---- hash route ---------------------------------------------------------------------------------
 
-/** `#/p/<host>/s/<path>`: a peer's session. A local one keeps `#/s/<path>`, exactly as before. */
+/** `#/s/<path>?host=<id>`: a peer's session. A local one keeps `#/s/<path>`, exactly as before.
+    The path is encoded, so the first `?` is always ours. */
 export function sessionHrefOn(host: string | null, path: string): string {
-  return host ? `#/p/${encodeURIComponent(host)}/s/${encodeURIComponent(path)}` : `#/s/${encodeURIComponent(path)}`;
+  return `#/s/${encodeURIComponent(path)}${host ? `?host=${encodeURIComponent(host)}` : ""}`;
 }
 
 /** The session a hash names and the host it lives on, or null when it names none. */
 export function sessionRouteFromHash(hash: string): { host: string | null; path: string } | null {
-  const m = /^#\/(?:p\/([^/]+)\/)?s\/(.+)$/.exec(hash);
+  const m = /^#\/s\/([^?]+)(?:\?host=([^&]+))?$/.exec(hash);
   if (!m) return null;
   try {
-    return { host: m[1] ? decodeURIComponent(m[1]) : null, path: decodeURIComponent(m[2]!) };
+    return { host: m[2] ? decodeURIComponent(m[2]) : null, path: decodeURIComponent(m[1]!) };
   } catch {
     return null;
   }
@@ -214,14 +163,14 @@ export function peerRows(sessions: readonly SessionSummary[]): SessionSummary[] 
 }
 
 /**
- * Remember each peer's last good list: a peer that is down keeps its rows (marked down by the
- * sidebar) rather than vanishing, and one that answers replaces them. A peer no longer in
- * peers.json is dropped.
+ * Each peer's rows. A peer that is down keeps its last rows (the server sends them as `stale`, and
+ * a list this page already had stands in when it sends none), marked down by the sidebar rather
+ * than vanishing. A peer no longer in peers.json is dropped.
  */
 export function mergePeerLists(
   prev: ReadonlyMap<string, SessionSummary[]>,
   answer: MeshSessions,
-  peers: readonly PeerInfo[],
+  peers: readonly PeerStatus[],
 ): Map<string, SessionSummary[]> {
   const next = new Map<string, SessionSummary[]>();
   const listed = new Set(peers.map((p) => p.id));

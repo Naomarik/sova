@@ -30,6 +30,12 @@ import type {
   UsageInsight,
   WebSettings,
   WorkerResumeResult,
+  MeshCandidate,
+  MeshHello,
+  MeshInfo,
+  MeshPeerEntry,
+  MeshSessions,
+  MeshSettings,
 } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
@@ -45,7 +51,7 @@ import type {
   SummarizerSettingsInfo,
 } from "../../shared/protocol";
 import type { TargetInfo } from "./remote-session";
-import { hostOf, hostUrl, noteHost, type MeshCandidate, type MeshSessions, type MeshSettings, type MeshState, peerBase, routeUrl } from "./mesh";
+import { hostOf, hostUrl, noteHost, peerBase, routeUrl } from "./mesh";
 
 /**
  * What a batch send can come back as. The refusal is a VALUE, not a throw: it is the route's
@@ -634,11 +640,15 @@ export const RECENT_WRITE_WINDOW_MS = 120_000;
 // ---- the peer mesh (lib/mesh.ts) ----------------------------------------------------------------
 
 /** This host, its peers and what syncs. Answers from local state only: no peer is asked. */
-export const fetchMesh = () => request<MeshState>("/api/mesh");
+export const fetchMesh = () => request<MeshInfo>("/api/mesh");
 
-/** Replace peers.json's list; the answer is the mesh as it stands after the write. */
-export const putMeshPeers = (peers: { id: string; label?: string; node: string }[]) =>
-  request<MeshState>("/api/mesh/peers", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ peers }) });
+/** This host's own hello: its version and wire-contract fingerprint. */
+export const fetchMeshHello = () => request<MeshHello>("/api/mesh/hello");
+
+/** Replace peers.json's list; the answer is the mesh as it stands after the write. An entry
+    without `nodeId` is resolved by its name on the tailnet. */
+export const putMeshPeers = (peers: MeshPeerEntry[]) =>
+  request<MeshInfo>("/api/mesh/peers", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ peers }) });
 
 /** Tailnet nodes the serving host can see, and which of them run Sova. Only asked for on demand. */
 export const fetchMeshCandidates = () => request<MeshCandidate[]>("/api/mesh/candidates");
@@ -648,5 +658,5 @@ export const fetchMeshSessions = () => request<MeshSessions>("/api/mesh/sessions
 
 export const getMeshSettings = () => request<MeshSettings>("/api/mesh/settings");
 
-export const putMeshSettings = (settings: MeshSettings) =>
+export const putMeshSettings = (settings: Partial<MeshSettings>) =>
   request<MeshSettings>("/api/mesh/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });

@@ -178,6 +178,8 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
                   id={`settings-tab-${t.id}`}
                   tabindex={tab() === t.id ? 0 : -1}
                   ref={(el) => tabButtons.set(t.id, el)}
+                  // The one tab the mesh adds: the parity check with the mesh off removes it.
+                  data-mesh-ui={t.id === "mesh" ? "" : undefined}
                   onClick={() => setTab(t.id)}
                   onKeyDown={(e) => {
                     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -229,7 +231,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           </Show>
           {/* Mounted only while its tab is: the mesh settings are read when the tab opens. */}
           <Show when={tab() === "mesh"}>
-            <div class="settings-panel" role="tabpanel" id="settings-panel-mesh" aria-labelledby="settings-tab-mesh">
+            <div class="settings-panel" role="tabpanel" id="settings-panel-mesh" aria-labelledby="settings-tab-mesh" data-mesh-ui>
               <MeshSettingsSection />
             </div>
           </Show>

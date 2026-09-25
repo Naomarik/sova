@@ -42,9 +42,11 @@ picker lists that host's folders.
 
 ## §mesh.remote-sessions/host-filter — Filter the list by host
 
-While the mesh is on and more than one host is known, the session pane shows a host filter
-directly below the filter input: one row of chips, `All` and then each host by name, each host
-with a dot for whether it is up or down. Exactly one chip is chosen. `All` is the default and shows
-every host's sessions; a host shows only that host's sessions. It narrows together with the text
-filter, and the choice is remembered across reloads; a remembered host that is no longer known
-reads as `All`. With the mesh off, or only one host known, the filter is not shown.
+While the mesh is on and more than one host is known, the session pane shows a host menu directly
+below the filter input: a button naming the current choice (`All hosts`, or a host with its up/down
+dot), with `N/M connected` beside it (hosts answering now, this host included, out of all hosts).
+The menu lists `All hosts` and then each host by name with its dot and, when it isn't answering, the
+word "down"; exactly one is chosen. `All hosts` is the default and shows every host's sessions; a
+host shows only that host's sessions. It narrows together with the text filter, and the choice is
+remembered across reloads; a remembered host that is no longer known reads as `All hosts`. The menu
+ends with `Mesh details…`. With the mesh off, or only one host known, nothing is shown.

@@ -1801,7 +1801,7 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/components/HostFilter.tsx",
+        "src/components/MeshHostMenu.tsx",
         "src/components/Sidebar.tsx",
         "src/lib/mesh.ts"
       ]
@@ -2752,6 +2752,72 @@
       ],
       "requires": [
         "§app.overseer/todos"
+      ]
+    },
+    "§mesh.details/fields": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§mesh.peers/health",
+        "§mesh.peers/hello",
+        "§mesh.peers/listener",
+        "§mesh.peers/off"
+      ],
+      "code": [
+        "server/mesh/details.ts",
+        "server/mesh/details-collect.ts",
+        "shared/mesh-details.ts",
+        "server/mesh/peers.ts",
+        "server/mesh/hello.ts",
+        "server/mesh/details.test.ts",
+        "server/mesh/details-collect.test.ts"
+      ]
+    },
+    "§mesh.details/rename": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§mesh.peers/allowlist",
+        "§mesh.peers/health",
+        "§mesh.peers/listener"
+      ],
+      "code": [
+        "server/mesh/details.ts",
+        "server/mesh/index.ts",
+        "server/mesh/peers.ts",
+        "shared/mesh-details.ts",
+        "src/components/MeshDetails.tsx",
+        "server/mesh/details.test.ts"
+      ]
+    },
+    "§mesh.details/view": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§mesh.details/fields",
+        "§mesh.details/rename",
+        "§mesh.remote-sessions/host-filter",
+        "§mesh.ui/page"
+      ],
+      "code": [
+        "src/components/MeshDetails.tsx",
+        "src/lib/mesh-details.ts",
+        "src/components/MeshHostMenu.tsx",
+        "src/App.tsx",
+        "src/components/MeshView.tsx",
+        "src/lib/mesh-details.test.ts"
+      ]
+    },
+    "§mesh/details": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/details.ts",
+        "src/components/MeshDetails.tsx"
       ]
     }
   },

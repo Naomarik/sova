@@ -30,7 +30,9 @@ Every local write takes the owning program's own lock and replaces the file atom
 replaces one with more than 10 minutes left is a login (a re-login or another account), not a refresh.
 
 Two hosts that already held different logins for the same provider before they first synced (not
-the same account or key) are a conflict, never a silent overwrite: each keeps its own and nothing
+the same account or key, and not the same lineage: a login first seen before sync that a host then
+refreshes keeps naming the entry it started from, so a peer's copy from before that refresh takes
+the refreshed one) are a conflict, never a silent overwrite: each keeps its own and nothing
 for that provider syncs until the user picks one. The Mesh page lists each login with its state and
 names the hosts in conflict; **Keep this host's login** makes this host's login win everywhere. The
 list never shows a secret, and it and its action exist only while the mesh is on.

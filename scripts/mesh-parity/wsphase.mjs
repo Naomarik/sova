@@ -52,6 +52,7 @@ export async function watchPhase(tree, wsBase, f) {
   out["chat:no-path"] = await collect(tree, `${wsBase}/ws/chat`);
   out["chat:missing-cwd"] = await collect(tree, `${wsBase}/ws/chat?path=${encodeURIComponent(f["missing-cwd"])}`, { ms: 8000 });
   out["ws:unknown-route"] = await collect(tree, `${wsBase}/ws/other`);
+  out["ws:peer-path-off"] = await collect(tree, `${wsBase}/peer/nope/ws/chat?path=${encodeURIComponent(f["real-chat"])}`);
   out["ext-ws:unknown"] = await collect(tree, `${wsBase}/ext/nope/ws/x`);
   return out;
 }

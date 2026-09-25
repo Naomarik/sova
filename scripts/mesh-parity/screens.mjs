@@ -63,13 +63,18 @@ export async function captureScreens(browser, base, f, dir) {
   // cannot leak into the other.
   const context = await browser.newContext({ deviceScaleFactor: 1, colorScheme: "dark", timezoneId: "UTC", locale: "en-US" });
   try {
-    for (const [name, hash, viewport, action] of screenList(f)) {
+    // Two passes, the first one discarded: it warms the icon sprites and fonts, whose first load
+    // could otherwise race the screenshot (measured: an icon missing on the first session page).
+    const passes = [...screenList(f).map(([n, h, v, a]) => [n, h, v, a, true]), ...screenList(f)];
+    for (const [name, hash, viewport, action, warmup] of passes) {
       const page = await context.newPage();
       try {
         await page.setViewportSize(viewport);
         await page.goto(`${base}/${hash}`, { waitUntil: "load" });
         await page.addStyleTag({ content: FREEZE_CSS });
         await page.waitForTimeout(2500);
+        await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+        if (warmup) continue;
         if (action) await action(page);
         await page.evaluate(() => document.fonts.ready);
         const width = await page.evaluate(() => innerWidth);
@@ -84,7 +89,12 @@ export async function captureScreens(browser, base, f, dir) {
         await page.screenshot({ path: png, fullPage: false });
         const text = await page.evaluate(() => document.body.innerText);
         writeFileSync(join(dir, `${name}.txt`), text);
-        shots[name] = { png, text, meshUi, width, url: page.url() };
+        // The accessibility tree: names, roles and states that neither pixels nor innerText show
+        // (an aria-label, a title, aria-expanded).
+        const aria = await page.locator("body").ariaSnapshot({ timeout: 5000 }).catch((e) => `<ariaSnapshot failed: ${e.message}>`);
+        const titles = await page.evaluate(() => [...document.querySelectorAll("[title],[aria-label]")].map((e) => `${e.tagName.toLowerCase()} title=${e.getAttribute("title") ?? ""} label=${e.getAttribute("aria-label") ?? ""}`).join("\n"));
+        writeFileSync(join(dir, `${name}.aria.txt`), `${aria}\n--- titles/labels\n${titles}\n`);
+        shots[name] = { png, text, aria: `${aria}\n${titles}`, meshUi, width, url: page.url() };
       } catch (err) {
         shots[name] = { error: String(err?.message ?? err) };
       } finally {

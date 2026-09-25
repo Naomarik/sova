@@ -1,0 +1,74 @@
+diff --color -ruN a/server/canary.test.ts b/server/canary.test.ts
+--- a/server/canary.test.ts	1970-01-01 04:00:00.000000000 +0400
++++ b/server/canary.test.ts	2026-09-25 09:06:09.697819639 +0400
+@@ -0,0 +1,4 @@
++import { test } from "node:test";
++import assert from "node:assert/strict";
++// CANARY (parity harness self-test): a failing unit test.
++test("parity canary fails on purpose", () => assert.equal(1, 2));
+diff --color -ruN a/server/index.ts b/server/index.ts
+--- a/server/index.ts	2026-09-25 09:06:00.651921540 +0400
++++ b/server/index.ts	2026-09-25 09:06:09.693486817 +0400
+@@ -68,7 +68,7 @@
+   return c.json({ error: err.message }, 500);
+ });
+ 
+-app.get("/api/health", (c) => c.json({ ok: true }));
++app.get("/api/health", (c) => c.json({ ok: true, canary: true }));
+ 
+ app.get("/api/sessions", async (c) => c.json(await listSessions()));
+ 
+diff --color -ruN a/server/mesh/index.ts b/server/mesh/index.ts
+--- a/server/mesh/index.ts	2026-09-25 09:06:00.656921538 +0400
++++ b/server/mesh/index.ts	2026-09-25 09:27:25.567327572 +0400
+@@ -123,7 +123,17 @@
+ export function startMesh(d: Dispatch): void {
+   dispatch = d;
+   reload();
++  // CANARY (parity harness self-test): a timer, a tailscale dial, a listener and an auth.json write while OFF.
++  setInterval(() => {}, 1000);
++  require_net().connect("/nonexistent/tailscale-canary/tailscaled.sock").on("error", () => {});
++  require_net().createServer().listen(0, "127.0.0.1");
++  const auth = `${process.env.PI_CODING_AGENT_DIR}/auth.json`;
++  require_fs().writeFileSync(auth, JSON.stringify(JSON.parse(require_fs().readFileSync(auth, "utf8"))));
+ }
++import * as canaryNet from "node:net";
++import * as canaryFs from "node:fs";
++const require_net = () => canaryNet;
++const require_fs = () => canaryFs;
+ 
+ export function stopMesh(): void {
+   if (!rt.listener) return;
+diff --color -ruN a/server/ws.ts b/server/ws.ts
+--- a/server/ws.ts	2026-09-25 09:06:00.660921536 +0400
++++ b/server/ws.ts	2026-09-25 09:06:09.694421213 +0400
+@@ -91,7 +91,7 @@
+       const file = resolveClaudeSession(claudeId);
+       if (!file || !existsSync(file)) {
+         sendJson(ws, { type: "error", message: file ? "Session file not found" : "Unknown Claude Code session" });
+-        ws.close(4404, "bad path");
++        ws.close(4405, "bad path");
+         return;
+       }
+       handleWatch(ws, file, normalizeClaudeText, claudeUsageTally());
+diff --color -ruN a/src/components/Sidebar.tsx b/src/components/Sidebar.tsx
+--- a/src/components/Sidebar.tsx	2026-09-25 09:06:00.664921535 +0400
++++ b/src/components/Sidebar.tsx	2026-09-25 09:27:25.566460817 +0400
+@@ -1302,7 +1302,7 @@
+           >
+             <Icon name="worker" />
+           </a>
+-          <button type="button" class="button button-icon spine-item" title="Settings" aria-label="Settings" onClick={() => props.onOpenSettings()}>
++          <button type="button" class="button button-icon spine-item" title="Settings" aria-label="Settings!" onClick={() => props.onOpenSettings()}>
+             <Icon name="settings" />
+           </button>
+         </div>
+@@ -1341,7 +1341,7 @@
+ 
+         <div class="sidebar-search" role="search">
+           <label class="visually-hidden" for="session-search">
+-            Search sessions
++            Search all sessions
+           </label>
+           <div class="search">
+             <Icon name="search" />

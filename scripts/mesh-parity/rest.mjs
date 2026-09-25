@@ -66,6 +66,12 @@ export function restSteps({ f, cwd, extra = [] }) {
     // The SPA shell and a deep link: the bundle names are hashed per build, so status + type only.
     G("spa-root", "/", { raw: true }),
     G("spa-deep", "/some/client/route", { raw: true }),
+    // Paths the mesh claims when ON: with no peer they must answer exactly what they did before.
+    G("peer-path-api-off", "/peer/nope/api/sessions", { raw: true }),
+    J("peer-path-api-post-off", "POST", "/peer/nope/api/sessions", {}),
+    G("peer-path-ws-off", "/peer/nope/ws/chat", { raw: true }),
+    G("api-peer-hello-off", "/api/peer/hello"),
+    J("api-peer-push-off", "POST", "/api/peer/credentials/push", {}),
   ];
   for (const [name, path] of Object.entries(f)) {
     steps.push(G(`transcript:${name}`, `/api/transcript?path=${q(path)}`));
@@ -188,10 +194,11 @@ export async function runRest(base, steps) {
 export function serverRoutes(tree) {
   const dir = join(tree, "server");
   const routes = [];
-  for (const file of readdirSync(dir)) {
+  // Recursive: the mesh mounts its routes from server/mesh/ and server/sync/.
+  for (const file of readdirSync(dir, { recursive: true })) {
     if (!file.endsWith(".ts") || file.endsWith(".test.ts")) continue;
     const src = readFileSync(join(dir, file), "utf8");
-    for (const m of src.matchAll(/\bapp\.(get|post|put|patch|delete|all)\(\s*(["`])([^"`]+)\2/g)) routes.push({ method: m[1].toUpperCase(), path: m[3], file });
+    for (const m of src.matchAll(/\bapp\.(get|post|put|patch|delete|all|use)\(\s*(["`])([^"`]+)\2/g)) routes.push({ method: m[1].toUpperCase(), path: m[3], file });
   }
   return routes;
 }
@@ -202,6 +209,6 @@ export function uncoveredRoutes(routes, executed) {
   const toRe = (p) => new RegExp("^" + p.split(/(\$\{name\}|:[A-Za-z]+|\*)/).map((t) => (t === "*" ? ".*" : t.startsWith(":") || t === "${name}" ? "[^/]+" : esc(t))).join("") + "$");
   return routes.filter((r) => {
     const re = toRe(r.path);
-    return !executed.some((e) => (r.method === "ALL" || r.method === e.method) && re.test(new URL(e.url, "http://x").pathname));
+    return !executed.some((e) => (r.method === "ALL" || r.method === "USE" || r.method === e.method) && re.test(new URL(e.url, "http://x").pathname));
   });
 }

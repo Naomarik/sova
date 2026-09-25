@@ -4,8 +4,9 @@
 import { execFileSync, spawn } from "node:child_process";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { createServer } from "node:net";
+import { pathToFileURL } from "node:url";
 
 export const NODE_BIN = "/usr/local/bin";
 export const PNPM = "/usr/local/bin/pnpm";
@@ -32,7 +33,7 @@ export function prepareTree({ repo, sha, dest, patch }) {
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
   execFileSync("sh", ["-c", `git -C "$0" archive "$1" | tar -x -C "$2"`, repo, sha, dest], { stdio: "inherit" });
-  if (patchText) execFileSync("patch", ["-p1", "-s", "-d", dest, "-i", patch], { stdio: "inherit" });
+  if (patchText) execFileSync("patch", ["-p1", "-s", "-d", dest, "-i", resolve(patch)], { stdio: "inherit" });
   install(dest);
   writeFileSync(marker, JSON.stringify(want) + "\n");
   return dest;
@@ -49,11 +50,12 @@ export function install(tree) {
 /** Run a pnpm script in a tree; returns {ok, code, output}. */
 export function pnpmRun(tree, script, env, logFile) {
   try {
-    const out = execFileSync(PNPM, ["run", script], { cwd: tree, env, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 28 }).toString();
+    // Bounded: a leaked timer or listener keeps a test process alive forever (seen with a canary).
+    const out = execFileSync(PNPM, ["run", script], { cwd: tree, env, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 28, timeout: 15 * 60_000, killSignal: "SIGKILL" }).toString();
     writeFileSync(logFile, out);
     return { ok: true, code: 0, output: out };
   } catch (err) {
-    const out = `${err.stdout ?? ""}${err.stderr ?? ""}`;
+    const out = `${err.stdout ?? ""}${err.stderr ?? ""}${err.signal ? `\n[parity] killed by ${err.signal} after the 15 min limit\n` : ""}`;
     writeFileSync(logFile, out);
     return { ok: false, code: err.status ?? -1, output: out };
   }
@@ -109,10 +111,11 @@ export function sideEnv({ home, tmp, agent, port }) {
 export async function startServer({ tree, env, logDir, strace = true }) {
   mkdirSync(logDir, { recursive: true });
   const out = await import("node:fs").then((fs) => fs.openSync(join(logDir, "server.log"), "w"));
+  const nodeArgs = ["--import", pathToFileURL(join(import.meta.dirname, "probe.mjs")).href, "--import", "tsx", "server/index.ts"];
   const cmd = strace
-    ? ["strace", ["-f", "-qq", "-ttt", "-s", "256", "-e", "trace=%network,execve,openat,newfstatat,statx,access,epoll_wait,epoll_pwait,epoll_pwait2", "-e", "signal=none", "-o", join(logDir, "strace.log"), NODE, "--import", "tsx", "server/index.ts"]]
-    : [NODE, ["--import", "tsx", "server/index.ts"]];
-  const proc = spawn(cmd[0], cmd[1], { cwd: tree, env, stdio: ["ignore", out, out], detached: true });
+    ? ["strace", ["-f", "-qq", "-ttt", "-s", "256", "-e", "trace=%network,execve,openat,newfstatat,statx,access,epoll_wait,epoll_pwait,epoll_pwait2", "-e", "signal=none", "-o", join(logDir, "strace.log"), NODE, ...nodeArgs]]
+    : [NODE, nodeArgs];
+  const proc = spawn(cmd[0], cmd[1], { cwd: tree, env: { ...env, PARITY_PROBE_OUT: join(logDir, "probe.json") }, stdio: ["ignore", out, out], detached: true });
   const base = `http://127.0.0.1:${env.PORT}`;
   const t0 = Date.now();
   for (;;) {
@@ -131,9 +134,13 @@ export async function startServer({ tree, env, logDir, strace = true }) {
     for (const pid of pids) try { process.kill(pid, "SIGTERM"); } catch {}
     const deadline = Date.now() + 10_000;
     while (proc.exitCode === null && Date.now() < deadline) await new Promise((r) => setTimeout(r, 200));
-    if (proc.exitCode === null) try { process.kill(-proc.pid, "SIGKILL"); } catch {}
+    if (proc.exitCode === null) {
+      stopped.graceful = false;
+      try { process.kill(-proc.pid, "SIGKILL"); } catch {}
+    }
   };
-  return { proc, base, port: Number(env.PORT), stop, pids: () => serverPids(proc.pid) };
+  const stopped = { graceful: true };
+  return { proc, base, port: Number(env.PORT), stop, stopped, pids: () => serverPids(proc.pid) };
 }
 
 /** pid → ppid for every process, read once. /proc/<pid>/task/<tid>/children only lists the
@@ -159,10 +166,16 @@ export function descendants(rootPid) {
   return out;
 }
 
-/** The node server under a strace (or the pid itself when not traced): the first node descendant. */
+/** The node server under a strace (or the pid itself when not traced): the descendant whose
+ *  command line runs server/index.ts. By cmdline, not comm: node renames its main thread. */
 export function serverPids(rootPid) {
-  const table = processTable();
-  const node = descendants(rootPid).find((p) => p !== rootPid && table.get(p)?.comm === "node");
+  const node = descendants(rootPid).find((p) => {
+    try {
+      return readFileSync(`/proc/${p}/cmdline`, "utf8").split("\0").includes("server/index.ts") && readFileSync(`/proc/${p}/comm`, "utf8").trim() !== "strace";
+    } catch {
+      return false;
+    }
+  });
   return [node ?? rootPid];
 }
 

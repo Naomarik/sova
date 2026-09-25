@@ -8,14 +8,17 @@ const CGNAT = /inet_addr\("100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+"\)|":
 const LINE = /^(\d+)\s+(\d+\.\d+)\s+(?:<\.\.\. )?(\w+)(?:\(| resumed>)(.*)$/;
 
 /** @param marks [{phase, t}] sorted by t (epoch seconds) — a syscall belongs to the last mark before it. */
-export function analyzeStrace(file, { marks, idleWindow, port, mainPid }) {
+export function analyzeStrace(file, { marks, idleWindow, port, mainPid = null }) {
   const text = readFileSync(file, "utf8");
   const phaseAt = (t) => {
     let p = "startup";
     for (const m of marks) if (t >= m.t) p = m.phase;
     return p;
   };
-  const out = { binds: new Set(), listens: 0, connects: {}, unix: new Set(), execs: new Set(), tailscale: [], idleWakeups: 0, lines: 0 };
+  // The traced node's main thread: the pid of the log's first line (strace's own execve of node).
+  // Not a /proc lookup: node renames its thread, and a wrong pid here counts nothing and passes.
+  mainPid = Number(/^(\d+)\s/.exec(text)?.[1] ?? mainPid);
+  const out = { mainPid, binds: new Set(), listens: 0, connects: {}, unix: new Set(), execs: new Set(), tailscale: [], idleWakeups: 0, lines: 0 };
   for (const raw of text.split("\n")) {
     const m = LINE.exec(raw);
     if (!m) continue;

@@ -39,7 +39,7 @@ const MS_RE = /(?<![0-9A-Za-z])1\d{12}(?![0-9A-Za-z])/g;
 /** Keys whose string value is an entry/tool/response id pi or the server generated. */
 const ID_KEYS = new Set(["id", "parentId", "entryId", "targetId", "fromLeafId", "fromId", "firstKeptEntryId", "toolCallId", "responseId", "clientId", "itemId", "userEntryId", "leafId", "sessionId", "groupId"]);
 /** pi's 8-hex entry ids, and the transcript's block ids built on them (`<entryId>:<n>`). */
-const SHORT_ID_RE = /^([0-9a-f]{8})(:\d+)?$/;
+const SHORT_ID_RE = /^([0-9a-f]{8})(:(?:\d+|<block>))?$/;
 
 /**
  * A normalizer bound to one side of one run.
@@ -151,4 +151,25 @@ export function canonical(v) {
   if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
   if (v && typeof v === "object") return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(",")}}`;
   return JSON.stringify(v);
+}
+
+/**
+ * Whether glm-5.3 thinks is the model's choice: its ladder has no "off" (the chat asks for off and
+ * is clamped to "low"), and at "low" A/A runs saw a thinking block in one run and none in the next.
+ * For the live chat only, thinking blocks, thinking stream events, thinking transcript rows and
+ * the `reasoning` token count are removed before anything is compared. Apply BEFORE normalizing,
+ * so a removed row does not consume an id number.
+ */
+export function stripThinking(v) {
+  if (Array.isArray(v))
+    return v
+      .filter((x) => !(x && typeof x === "object" && (x.type === "thinking" || x.kind === "thinking" || /^thinking_/.test(x.event?.assistantMessageEvent?.type ?? ""))))
+      .map(stripThinking);
+  // A removed thinking block shifts every later block's index: `contentIndex` in stream events and
+  // the `<entryId>:<n>` block ids of transcript rows.
+  if (typeof v === "string") return v.replace(/^([0-9a-f]{8}):\d+$/, "$1:<block>");
+  if (!v || typeof v !== "object") return v;
+  const out = {};
+  for (const [k, x] of Object.entries(v)) if (k !== "reasoning" && k !== "contentIndex") out[k] = stripThinking(x);
+  return out;
 }

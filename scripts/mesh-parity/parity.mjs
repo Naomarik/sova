@@ -23,7 +23,7 @@ import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { seedFixtures } from "./fixtures.mjs";
-import { canonical, genericPath, jsonDiff, makeNormalizer, maskModelOutput } from "./normalize.mjs";
+import { canonical, genericPath, jsonDiff, makeNormalizer, maskModelOutput, stripThinking } from "./normalize.mjs";
 import { analyzeStrace, listeningSockets } from "./proc.mjs";
 import { restSteps, runRest, serverRoutes, uncoveredRoutes } from "./rest.mjs";
 import { captureScreens, comparePng, screenList, startBrowser } from "./screens.mjs";
@@ -157,6 +157,7 @@ async function runSide(side, tree, browser) {
     await server.stop();
     await echo.stop();
   }
+  out.gracefulStop = server.stopped.graceful;
   if (has("proc")) out.proc = analyzeStrace(join(dir, "strace.log"), { marks: out.marks, idleWindow: out.idleWindow, port: PORT, mainPid: out.mainPid });
   out.authUnchanged = sha256(readFileSync(join(agent, "auth.json"))) === authHash;
   out.cwdStatus = execFileSync("git", ["status", "--porcelain", "--ignored"], { cwd, env: genv }).toString();
@@ -196,12 +197,33 @@ function readForCompare(file, norm, maskModel, chatPath) {
   // The live chat's own file and the live registry records carry the background outline (see
   // wsphase chatShape): dropped there, compared everywhere else.
   if (file.endsWith(".jsonl")) {
-    const lines = text.split("\n").filter(Boolean).map((l) => { try { const v = norm.value(JSON.parse(l)); return maskModel ? maskModelOutput(v) : v; } catch { return norm.text(l); } });
+    const lines = text.split("\n").filter(Boolean).map((l) => { try { const v = norm.value(maskModel ? stripThinking(JSON.parse(l)) : JSON.parse(l)); return maskModel ? maskModelOutput(v) : v; } catch { return norm.text(l); } });
     return maskModel ? dropOutline(lines) : lines;
   }
-  if (file.endsWith(".json")) try { const v = norm.value(JSON.parse(text)); return /\/sessions\/live\//.test(file) ? dropOutline(v) : v; } catch {}
+  if (file.endsWith(".json")) try { const v = norm.value(JSON.parse(text)); return /\/sessions\/live\//.test(file) ? liveRecord(dropOutline(v)) : v; } catch {}
   if (/[\0]/.test(text)) return `<sha:${sha256(readFileSync(file))}>`;
   return norm.text(text);
+}
+
+/** A live-registry record: its activity histogram buckets by wall-clock time. */
+function liveRecord(v) {
+  if (v?.presence?.activity?.buckets) v.presence.activity.buckets = "<time-bucketed>";
+  return v;
+}
+
+/** Every array sorted (by canonical form), recursively: for telling an order-only diff apart. */
+function sortDeep(v) {
+  if (Array.isArray(v)) return v.map(sortDeep).sort((x, y) => (canonical(x) < canonical(y) ? -1 : 1));
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, sortDeep(x)]));
+  return v;
+}
+
+function readProbe(S) {
+  try {
+    return JSON.parse(readFileSync(join(RUN, S.side, "probe.json"), "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 // ---- comparison ------------------------------------------------------------------------------------
@@ -230,6 +252,7 @@ function compareSides(A, B) {
       const vb = mk(B).value({ status: b.status, type: b.type, body: b.body });
       const ok = canonical(va) === canonical(vb);
       record(name, ok, ok ? `${a.method} ${a.status}` : jsonDiff(va, vb).join("\n"));
+      if (!ok && canonical(sortDeep(va)) === canonical(sortDeep(vb))) results.at(-1).orderOnly = true;
       if (ok && JSON.stringify(va) !== JSON.stringify(vb)) record(`${name}:key-order`, false, "same content, different key order");
     }
     const routes = serverRoutes(A.tree);
@@ -253,7 +276,7 @@ function compareSides(A, B) {
     record("chat:completed(base)", A.chat.completed === true, A.chat.completed ? "" : "baseline chat did not finish its script");
     record("chat:completed(mesh)", B.chat.completed === true, B.chat.completed ? "" : "mesh chat did not finish its script");
     const na = mk(A), nb = mk(B);
-    const sa = chatShape(A.chat.msgs), sb = chatShape(B.chat.msgs);
+    const sa = chatShape(stripThinking(A.chat.msgs)), sb = chatShape(stripThinking(B.chat.msgs));
     const seqA = maskModelOutput(na.value({ created: A.chat.created, seq: sa.sequence, close: A.chat.close }));
     const seqB = maskModelOutput(nb.value({ created: B.chat.created, seq: sb.sequence, close: B.chat.close }));
     const ok = canonical(seqA) === canonical(seqB);
@@ -264,7 +287,7 @@ function compareSides(A, B) {
     results.push({ check: "info:chat-background-outline", ok: true, info: true, detail: `base: ${A.chat.outlineIdle ? "finished" : "unfinished"}, ${sa.background.length} traces\nmesh: ${B.chat.outlineIdle ? "finished" : "unfinished"}, ${sb.background.length} traces` });
     if (A.chatAfter && B.chatAfter) {
       for (let i = 0; i < A.chatAfter.length; i++) {
-        const pick = (r) => dropOutline({ status: r.status, type: r.type, body: r.body });
+        const pick = (r) => stripThinking(dropOutline({ status: r.status, type: r.type, body: r.body }));
         const va = maskModelOutput(mk(A).value(pick(A.chatAfter[i]))), vb = maskModelOutput(mk(B).value(pick(B.chatAfter[i])));
         const okT = canonical(va) === canonical(vb);
         record(`chat:${A.chatAfter[i].name}`, okT, okT ? "" : jsonDiff(va, vb).join("\n"));
@@ -286,11 +309,23 @@ function compareSides(A, B) {
       // many is timing (the extension health probe's 10 s cache, the UI's polls, provider keep-alive).
       eq(`connects:${ph}(kinds)`, Object.keys(a).sort(), Object.keys(b).sort());
     }
+    // Who created a timer / watcher / listener / outbound request (probe.mjs), by app source file.
+    const pa = readProbe(A), pb = readProbe(B);
+    if (pa && pb) {
+      const onlyB = Object.keys(pb).filter((k) => !(k in pa));
+      const onlyA = Object.keys(pa).filter((k) => !(k in pb));
+      record("proc:creation-sites(new in mesh)", onlyB.length === 0, onlyB.length ? onlyB.map((k) => `${k} ×${pb[k]}`).join("\n") : `${Object.keys(pb).length} sites, none new`);
+      record("proc:creation-sites(gone in mesh)", onlyA.length === 0, onlyA.map((k) => `${k} ×${pa[k]}`).join("\n"));
+      const meshCode = Object.keys(pb).filter((k) => /server\/(mesh|sync)\//.test(k));
+      record("proc:mesh-code-created-nothing", meshCode.length === 0, meshCode.join("\n") || "no timer, watcher, listener or request from server/mesh or server/sync");
+    } else record("proc:creation-sites", false, `probe output missing: base ${!!pa}, mesh ${!!pb}`);
     record("proc:tailscale(base)", A.proc.tailscale.length === 0, A.proc.tailscale.slice(0, 5).join("\n"));
     record("proc:tailscale(mesh)", B.proc.tailscale.length === 0, B.proc.tailscale.slice(0, 5).join("\n"));
     const limit = Math.ceil(A.proc.idleWakeups * 1.5) + 10;
     record("proc:idle-wakeups", B.proc.idleWakeups <= limit, `base ${A.proc.idleWakeups}, mesh ${B.proc.idleWakeups} (limit ${limit}) over ${opt["idle-seconds"]}s`);
   }
+  record("proc:graceful-shutdown(base)", A.gracefulStop !== false, "SIGTERM → exit within 10 s");
+  record("proc:graceful-shutdown(mesh)", B.gracefulStop !== false, "SIGTERM → exit within 10 s");
   record("disk:auth.json-unchanged(base)", A.authUnchanged !== false);
   record("disk:auth.json-unchanged(mesh)", B.authUnchanged !== false);
   record("disk:fixture-cwd-untouched(base)", (A.cwdStatus ?? "") === "", A.cwdStatus);
@@ -338,6 +373,10 @@ function compareSides(A, B) {
         record(`screen:${name}:mesh-ui-count(mesh)`, b.meshUi === want, `found ${b.meshUi}, expected ${want}`);
         const ta = mk(A).text(a.text), tb = mk(B).text(b.text);
         record(`screen:${name}:text`, ta === tb, ta === tb ? "" : textDiff(ta, tb));
+        // Link targets in the tree are URL-encoded (#/s/%2Fhome%2F…): decode the slashes so the run
+        // timestamps and ids inside them are normalized like everywhere else.
+        const aa = mk(A).text((a.aria ?? "").replace(/%2F/gi, "/")), ab = mk(B).text((b.aria ?? "").replace(/%2F/gi, "/"));
+        record(`screen:${name}:accessibility`, aa === ab, aa === ab ? "" : textDiff(aa, ab));
         const px = await comparePng(a.png, b.png, join(RUN, `diff-${name}.png`));
         record(`screen:${name}:pixels`, px.same, px.same ? "" : `${px.reason ?? `${px.diffPixels} px differ in box ${JSON.stringify(px.box)}`}; mask ${px.diffPath ?? ""}`);
       }
@@ -363,7 +402,9 @@ function textDiff(a, b) {
 // ---- static: typecheck / build / tests ------------------------------------------------------------
 function runTests(tree, side) {
   const dir = join(RUN, side);
-  const home = join(dir, "test-home"), tmp = join(dir, "test-tmp");
+  // A SHORT TMPDIR: tsx's IPC socket lives there, and a unix socket path over 107 bytes is EINVAL.
+  const home = join(dir, "test-home"), tmp = join(opt.work, `tt-${side}`);
+  rmSync(tmp, { recursive: true, force: true });
   mkdirSync(home, { recursive: true });
   mkdirSync(tmp, { recursive: true });
   const env = sideEnv({ home, tmp });
@@ -371,9 +412,11 @@ function runTests(tree, side) {
   const typecheck = pnpmRun(tree, "typecheck", env, join(dir, "typecheck.log"));
   log(`${side}: pnpm test`);
   const test = pnpmRun(tree, "test", env, join(dir, "test.log"));
-  const num = (k) => Number(new RegExp(`^# ${k} (\\d+)`, "m").exec(test.output)?.[1] ?? NaN);
-  const failed = [...test.output.matchAll(/^\s*not ok \d+ - (.+)$/gm)].map((m) => m[1].trim());
-  const leftovers = readdirSync(tmp).length;
+  // node's spec reporter ("ℹ tests 1509", "✖ name (1.2ms)"); TAP ("# tests 1509", "not ok 3 - name") also read.
+  const num = (k) => Number(new RegExp(`^(?:ℹ|#) ${k} (\\d+)`, "m").exec(test.output)?.[1] ?? NaN);
+  const failed = [...new Set([...test.output.matchAll(/^\s*(?:✖ (.+?)(?: \([\d.]+m?s\))?|not ok \d+ - (.+))$/gm)].map((m) => (m[1] ?? m[2]).trim()))];
+  // tsx's own compile cache and IPC dir are not a test's leftovers.
+  const leftovers = readdirSync(tmp).filter((n) => !/^tsx-\d+$/.test(n));
   rmSync(tmp, { recursive: true, force: true });
   return { typecheck: typecheck.ok, test: { ok: test.ok, tests: num("tests"), pass: num("pass"), fail: num("fail"), failed, tmpLeftovers: leftovers } };
 }
@@ -400,7 +443,10 @@ if (has("static")) {
   record("static:tests(no new failures)", newFails.length === 0 && Number.isFinite(B.test.pass), `base ${A.test.pass}/${A.test.tests} pass, mesh ${B.test.pass}/${B.test.tests} pass${newFails.length ? `\nnew failures:\n${newFails.join("\n")}` : ""}`);
   record("static:tests(mesh count >= base)", B.test.tests >= A.test.tests, `base ${A.test.tests}, mesh ${B.test.tests}`);
   record("static:tests(all green, mesh)", B.test.ok, B.test.ok ? "" : `see ${join(RUN, "mesh", "test.log")}`);
-  record("static:tests(tmp cleaned, mesh)", B.test.tmpLeftovers === 0, `${B.test.tmpLeftovers} entries left in TMPDIR`);
+  // mkdtemp's random 6-character suffix is not part of what a leftover IS.
+  const stem = (n) => n.replace(/-[A-Za-z0-9]{6}$/, "");
+  const newLeft = B.test.tmpLeftovers.filter((n) => !A.test.tmpLeftovers.some((a) => stem(a) === stem(n)));
+  record("static:tests(no new tmp leftovers, mesh)", newLeft.length === 0, `baseline leaves ${A.test.tmpLeftovers.length}: ${A.test.tmpLeftovers.join(" ")}\nmesh leaves ${B.test.tmpLeftovers.length}: ${B.test.tmpLeftovers.join(" ")}`);
 }
 await compareSides(sides.base, sides.mesh);
 
@@ -408,7 +454,8 @@ await compareSides(sides.base, sides.mesh);
 const allowed = existsSync(join(import.meta.dirname, "allowed-diffs.json")) ? JSON.parse(readFileSync(join(import.meta.dirname, "allowed-diffs.json"), "utf8")) : [];
 for (const r of results) {
   if (r.ok) continue;
-  const a = allowed.find((x) => new RegExp(x.check).test(r.check));
+  // An orderOnly allowance covers a diff that disappears once every array is sorted, nothing more.
+  const a = allowed.find((x) => new RegExp(x.check).test(r.check) && (!x.orderOnly || r.orderOnly));
   if (a) r.allowed = a.reason;
 }
 const failed = results.filter((r) => !r.ok && !r.allowed);

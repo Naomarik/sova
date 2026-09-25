@@ -1,0 +1,7 @@
+[
+  {
+    "check": "^rest:cleanup-age-dry$",
+    "reason": "Only when the SAME ids come back in another order: cleanupSessions lists them in readdir order of the sessions subdirectories, which the filesystem decides (seen differing in an A/A-equivalent run). Guarded by the sorted comparison in parity.mjs: a different SET of ids still fails.",
+    "orderOnly": true
+  }
+]

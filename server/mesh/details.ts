@@ -23,6 +23,8 @@ export interface DetailsSources {
   logins(): { count: number; conflicts: number } | null;
 }
 
+/** A details answer is local reads only; the probe before it has already reached the host. */
+const DETAILS_TIMEOUT_MS = 1500;
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
 const small = bodyLimit({ maxSize: 4 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
@@ -71,7 +73,7 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
   let fixed: Promise<{ commit?: string; model?: string; device: HostDetails["identity"]["device"] }> | null = null;
   const fixedFacts = () =>
     (fixed ??= (async () => {
-      const [b, model] = await Promise.all([battery.read(), modelName(machine)]);
+      const [b, model] = await Promise.all([battery.read(machine.platform === "darwin"), modelName(machine)]);
       const commit = buildCommit(machine, ROOT);
       return { ...(commit ? { commit } : {}), ...(model ? { model } : {}), device: deviceType(machine, !!b.battery) };
     })());
@@ -118,7 +120,8 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
   /** A peer's own details, or why there are none. */
   async function peerDetails(p: PeerEntry): Promise<Pick<MeshHostDetails, "details" | "unavailable" | "error">> {
     try {
-      const res = await mesh.peerFetch(p.id, "/api/peer/details", { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+      // Inside the page's 4 s read deadline, after a probe of up to 2.5 s.
+      const res = await mesh.peerFetch(p.id, "/api/peer/details", { signal: AbortSignal.timeout(DETAILS_TIMEOUT_MS) });
       if (res.status === 404) {
         await res.body?.cancel();
         return { unavailable: "update" };

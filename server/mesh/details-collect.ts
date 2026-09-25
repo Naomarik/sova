@@ -100,8 +100,12 @@ export class BatteryReader {
 
   constructor(private readonly m: Machine) {}
 
-  /** The latest reading; a slow one (Termux) is served from cache and refreshed behind it. */
-  async read(): Promise<Battery> {
+  /**
+   * The latest reading, served from cache and refreshed behind it. Only `wait` makes the first
+   * read wait for one (the device type, once); otherwise a request never waits on Termux:API:
+   * before the first reading lands it has none, and the next poll shows it.
+   */
+  async read(wait = false): Promise<Battery> {
     const c = this.cached;
     const age = c ? this.m.now() - c.at : Infinity;
     if (c && age < (c.failed ? BATTERY_RETRY_MS : BATTERY_CACHE_MS)) return c.value;
@@ -112,8 +116,7 @@ export class BatteryReader {
         return r.value;
       });
     }
-    // A stale value answers at once while the refresh runs; the first read waits for it.
-    return c ? c.value : this.pending;
+    return c ? c.value : wait ? this.pending : {};
   }
 
   private async fresh(): Promise<{ value: Battery; failed: boolean }> {

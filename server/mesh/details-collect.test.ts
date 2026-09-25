@@ -68,6 +68,8 @@ describe("battery", () => {
   test("Termux: a short timeout, a hint when Termux:API doesn't answer, retried minutes later, cached between", async () => {
     const m = machine("android");
     const r = new BatteryReader(m);
+    assert.deepEqual(await r.read(), {}, "a request never waits for Termux:API");
+    await new Promise((res) => setImmediate(res));
     assert.deepEqual(await r.read(), { batteryHint: "termux-api" });
     assert.deepEqual(m.runs, [{ cmd: "termux-battery-status", timeoutMs: TERMUX_BATTERY_TIMEOUT_MS }]);
     assert.ok(TERMUX_BATTERY_TIMEOUT_MS <= 3000);
@@ -83,7 +85,7 @@ describe("battery", () => {
   test("a working reading is cached for a minute", async () => {
     const m = machine("android", {}, { "termux-battery-status": '{"percentage":50,"status":"DISCHARGING","plugged":"UNPLUGGED"}' });
     const r = new BatteryReader(m);
-    assert.deepEqual(await r.read(), { battery: { percent: 50, charging: false } });
+    assert.deepEqual(await r.read(true), { battery: { percent: 50, charging: false } });
     m.clock += 30_000;
     await r.read();
     assert.equal(m.runs.length, 1);
@@ -95,7 +97,7 @@ describe("battery", () => {
 
   test("no command runs on Linux: sysfs only", async () => {
     const m = machine("linux");
-    assert.deepEqual(await new BatteryReader(m).read(), {});
+    assert.deepEqual(await new BatteryReader(m).read(true), {});
     assert.deepEqual(m.runs, []);
   });
 });

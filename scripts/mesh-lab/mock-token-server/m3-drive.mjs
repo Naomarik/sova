@@ -2,9 +2,10 @@
 // M3 login-sync scenarios against the running mesh lab, driven from the laptop through
 // `scripts/mesh-lab/lab`. `all` runs the non-chaos ones; `chaos` (h3,h4,h7,h8,h10) partitions a
 // node (h3) or stops only its Sova (h4, h7, h10) through the lab's own commands, always undoing it
-// in a finally.
+// in a finally. `conflict` stops two hosts' Sova to plant different pre-sync keys, then settles the
+// conflict through the Mesh page's routes (GET /api/mesh/logins, POST /api/mesh/logins/claim).
 //
-//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos|h11] [--hosts a,b,c]
+//   node scripts/mesh-lab/mock-token-server/m3-drive.mjs [h1|h2|h2c|h6|h6c|h9|all|h3|h4|h7|h8|h10|chaos|h11|conflict] [--hosts a,b,c]
 //   (h11 is meant for an 8-host lab: --hosts a,b,c,d,e,f,g,h; M3_H11_SECONDS sets its length)
 //
 // Needs the lab's mock token server (laptop http://127.0.0.1:4888, MOCK_TOKEN_URL inside hosts)
@@ -14,8 +15,10 @@
 // means "every host holds the lineage's current token", polled until it holds.
 
 import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DOMAIN, PEER_PORT, PORTS } from "../lab.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LAB = resolve(HERE, "../lab");
@@ -404,7 +407,70 @@ async function h11() {
   return `${steps} steps over ${seconds}s on ${HOSTS.length} hosts (chaos: ${chaos.refreshes} refreshes, ${chaos.invalidGrants} invalid_grant); quiet ${Math.round(Number(process.env.M3_H11_QUIET_SECONDS ?? 60))}s: ${ok.length} c-lite refresh(es) from one host, 0 failures`;
 }
 
-const ALL = { h1, h2, h2c, h6, h6c, h9, h3, h4, h7, h8, h10, h11 };
+// ---- pre-sync conflict (first pairing), settled from the Mesh page's routes ----------------------
+
+const mainApi = async (host, path, init) => {
+  const res = await fetch(`http://127.0.0.1:${PORTS.host(host)}${path}`, { ...init, signal: AbortSignal.timeout(10_000) });
+  return { status: res.status, text: await res.text() };
+};
+const loginRow = async (host, key) => JSON.parse((await mainApi(host, "/api/mesh/logins")).text).entries.find((e) => e.key === key);
+
+/**
+ * Two hosts hold different keys for one provider from before sync (sidecar gone, key written while
+ * their Sova was stopped): each keeps its own and reports the other; nothing leaks through the
+ * routes; a claim on a spreads a's key everywhere. The key is a throwaway and is logged out after.
+ */
+async function conflict() {
+  const [a, b] = HOSTS;
+  const provider = "m3conflict";
+  const key = `pi:${provider}`;
+  const val = Object.fromEntries([a, b].map((h) => [h, `m3c-${h}-${randomBytes(6).toString("hex")}`]));
+  const shaOf = (h) => inHost(h, "pi-state", provider).refreshSha;
+  lab("sova-stop", a);
+  try {
+    lab("sova-stop", b);
+    try {
+      for (const h of [a, b]) {
+        sh(h, `rm -f "$PI_CODING_AGENT_DIR/sova/login-sync.json"`);
+        inHost(h, "pi-set-key", provider, val[h]);
+      }
+    } finally {
+      lab("sova-start", b);
+    }
+  } finally {
+    lab("sova-start", a);
+  }
+  const wantA = shaOf(a);
+  const wantB = shaOf(b);
+  await until("a and b report each other's conflicting login", async () => {
+    const [ra, rb] = await Promise.all([a, b].map((h) => loginRow(h, key).catch(() => undefined)));
+    return (ra?.conflictWith?.includes(b) && rb?.conflictWith?.includes(a)) || { a: ra?.conflictWith ?? null, b: rb?.conflictWith ?? null };
+  }, 60_000);
+  await sleep(3000);
+  if (shaOf(a) !== wantA || shaOf(b) !== wantB) throw new Error("a host lost its own pre-sync key while in conflict");
+  for (const h of HOSTS) {
+    const body = (await mainApi(h, "/api/mesh/logins")).text;
+    if (Object.values(val).some((v) => body.includes(v)) || /fingerprint|tombstone/.test(body)) throw new Error(`${h}: /api/mesh/logins leaks a key or internals`);
+  }
+  // A peer can't reach the routes through its listener (a's own browser routes are main-only).
+  const viaPeer = sh(b, `curl -s -o /dev/null -w '%{http_code}' -m 5 -X POST -H 'content-type: application/json' --data '{"key":"${key}"}' http://${a}.${DOMAIN}:${PEER_PORT}/api/mesh/logins/claim`);
+  if (viaPeer !== "404" && viaPeer !== "403") throw new Error(`claim through a's peer listener answered ${viaPeer}`);
+  const claimed = await mainApi(a, "/api/mesh/logins/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }) });
+  if (claimed.status !== 200 || JSON.parse(claimed.text).ok !== true) throw new Error(`claim on a: ${claimed.status} ${claimed.text.slice(0, 120)}`);
+  const t0 = Date.now();
+  await until("every host holds a's key", async () => HOSTS.every((h) => shaOf(h) === wantA) || Object.fromEntries(HOSTS.map((h) => [h, shaOf(h)?.slice(0, 8) ?? null])), 30_000);
+  const spread = Date.now() - t0;
+  await until("no conflict left", async () => {
+    const rows = await Promise.all(HOSTS.map((h) => loginRow(h, key)));
+    return rows.every((r) => !r?.conflictWith) || rows.map((r) => r?.conflictWith ?? null);
+  });
+  // Clean up: log the throwaway key out everywhere.
+  inHost(a, "pi-delete", provider);
+  await until("the throwaway key is gone everywhere", piAbsent(provider));
+  return `a and b kept their own keys and listed each other; claim on a → every host on a's key in ${spread} ms; peer-listener claim ${viaPeer}; no key/fingerprint in any body`;
+}
+
+const ALL = { conflict, h1, h2, h2c, h6, h6c, h9, h3, h4, h7, h8, h10, h11 };
 const GROUPS = { all: ["h1", "h2", "h2c", "h6", "h6c", "h9"], chaos: ["h3", "h4", "h7", "h8", "h10"] };
 const run = GROUPS[which] ?? which.split(",");
 for (const name of run) {

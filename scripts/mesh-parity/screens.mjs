@@ -39,6 +39,8 @@ export async function startBrowser() {
 
 const FREEZE_CSS = `*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }`;
 
+const idOf = (path) => path.replace(/^.*_/, "").replace(/\.jsonl$/, "");
+
 /** The screens: [name, hash, viewport, action?]. `action(page)` opens a dialog after the load. */
 export function screenList(f) {
   const s = (p) => `#/s/${encodeURIComponent(p)}`;
@@ -59,6 +61,11 @@ export function screenList(f) {
     ["agents", "#/agents", desktop],
     ["settings", "#/", desktop, click("Settings")],
     ["new-session", "#/", desktop, click("New Session")],
+    // `sova://s/<id>` links land on #/sid/<id> (App resolveSessionIdRoute): a listed session, a husk
+    // the list omits (asked of GET /api/sessions/summary) and an unknown id ("That session is gone.").
+    ["sid-listed", `#/sid/${idOf(f["real-chat"])}`, desktop],
+    ["sid-husk", `#/sid/${idOf(f.husk)}`, desktop],
+    ["sid-gone", "#/sid/01970000-0000-7000-8000-0000000000ff", desktop],
   ];
 }
 
@@ -77,6 +84,16 @@ export async function captureScreens(browser, base, f, dir) {
       const page = await context.newPage();
       try {
         await page.setViewportSize(viewport);
+        // A #/sid/ screen records every history.replaceState target and every toast shown, as the
+        // 3 s toast may be gone (or not) by the capture.
+        if (/^sid-/.test(name)) await page.addInitScript(() => {
+          const t = (window.__sidTrace = { replace: [], toasts: [] });
+          const replace = history.replaceState.bind(history);
+          history.replaceState = (state, unused, url) => { t.replace.push(String(url)); return replace(state, unused, url); };
+          new MutationObserver(() => {
+            for (const e of document.querySelectorAll(".toast-body")) if (!t.toasts.includes(e.textContent)) t.toasts.push(e.textContent);
+          }).observe(document, { childList: true, subtree: true, characterData: true });
+        });
         await page.goto(`${base}/${hash}`, { waitUntil: "load" });
         await page.addStyleTag({ content: FREEZE_CSS });
         await page.waitForTimeout(2500);
@@ -84,6 +101,12 @@ export async function captureScreens(browser, base, f, dir) {
         if (warmup) continue;
         if (action) await action(page);
         await page.evaluate(() => document.fonts.ready);
+        const sidTrace = /^sid-/.test(name)
+          ? await page.evaluate(() => {
+              for (const e of document.querySelectorAll(".toast")) e.remove();
+              return { ...window.__sidTrace, hash: location.hash };
+            })
+          : undefined;
         const width = await page.evaluate(() => innerWidth);
         if (width !== viewport.width) throw new Error(`viewport is ${width}, wanted ${viewport.width}`);
         // The sidebar's host filter must not exist while the mesh is off. Counted only together
@@ -126,7 +149,7 @@ export async function captureScreens(browser, base, f, dir) {
         const aria = await page.locator("body").ariaSnapshot({ timeout: 5000 }).catch((e) => `<ariaSnapshot failed: ${e.message}>`);
         const titles = await page.evaluate(() => [...document.querySelectorAll("[title],[aria-label]")].map((e) => `${e.tagName.toLowerCase()} title=${e.getAttribute("title") ?? ""} label=${e.getAttribute("aria-label") ?? ""}`).join("\n"));
         writeFileSync(join(dir, `${name}.aria.txt`), `${aria}\n--- titles/labels\n${titles}\n`);
-        shots[name] = { png, text, aria: `${aria}\n${titles}`, meshUi, hostFilter, width, url: page.url() };
+        shots[name] = { png, text, aria: `${aria}\n${titles}`, meshUi, hostFilter, width, url: page.url(), sidTrace };
       } catch (err) {
         shots[name] = { error: String(err?.message ?? err) };
       } finally {

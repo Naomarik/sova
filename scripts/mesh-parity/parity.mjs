@@ -389,6 +389,13 @@ function compareSides(A, B) {
         record(`screen:${name}:mesh-ui-count(mesh)`, b.meshUi === want, `found ${b.meshUi}, expected ${want}`);
         if (/^home-/.test(name)) record(`screen:${name}:sidebar-search-present(mesh)`, (b.hostFilter?.sidebar ?? 0) > 0, `search inputs: ${b.hostFilter?.sidebar}`);
         record(`screen:${name}:no-host-filter(mesh off)`, b.hostFilter?.filter === 0, `host filter elements: ${b.hostFilter?.filter}; sidebar search inputs: ${b.hostFilter?.sidebar}`);
+        if (/^sid-/.test(name)) {
+          const ra = mk(A).text(decodeURIComponent(JSON.stringify(a.sidTrace ?? null))), rb = mk(B).text(decodeURIComponent(JSON.stringify(b.sidTrace ?? null)));
+          record(`screen:${name}:route`, ra === rb, ra === rb ? ra : `base ${ra}\nmesh ${rb}`);
+          // Not equal-but-broken: each side reaches the route master's resolver reaches.
+          const reached = (t) => name === "sid-gone" ? t?.hash === "#/" && t.toasts.includes("That session is gone.") : /^#\/s\//.test(t?.hash ?? "") && t.toasts.length === 0;
+          for (const [side, t] of [["base", a.sidTrace], ["mesh", b.sidTrace]]) record(`screen:${name}:route-reached(${side})`, reached(t), JSON.stringify(t));
+        }
         const ta = mk(A).text(a.text), tb = mk(B).text(b.text);
         record(`screen:${name}:text`, ta === tb, ta === tb ? "" : textDiff(ta, tb));
         // Link targets in the tree are URL-encoded (#/s/%2Fhome%2F…): decode the slashes so the run

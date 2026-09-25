@@ -6,4 +6,4 @@
 # card (also behind the Settings and New Session dialogs) and the Settings Mesh tab.
 NODE=${NODE:-$(command -v node)} || { echo "run.sh: no node on PATH (or set NODE)" >&2; exit 1; }
 exec "$NODE" "$(dirname "$0")/parity.mjs" \
-  --expect-mesh-ui home-desktop=1,home-mobile=1,settings=2,new-session=1 "$@"
+  --expect-mesh-ui home-desktop=1,home-mobile=1,settings=2,new-session=1,sid-gone=1 "$@"

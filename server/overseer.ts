@@ -8,6 +8,7 @@ import {
   OVERSEER_BRIEF_PREFIX,
   OVERSEER_ENTRY,
   type AttentionDigest,
+  type AttentionItem,
   type OverseerInfo,
   type OverseerSaveResult,
   type OverseerSettings,
@@ -46,6 +47,7 @@ import {
 } from "./overseer-store";
 import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, TurnLimits, UserTurns } from "./overseer-tools";
 import { overseerFileTools } from "./overseer-file-tools";
+import { type Redactor, serverRedactor } from "./overseer-redact";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanupSessions, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions } from "./sessions-index";
@@ -470,18 +472,26 @@ export function renderOverseerPrompt(
   settings: OverseerSettings,
   template = readFileSync(PROMPT_FILE, "utf8"),
   now = new Date(),
+  redactor: () => Redactor = serverRedactor,
 ): string {
   const notes = readNotes().trim();
   const c = settings.caps;
   return template
     .replaceAll("{{TOOLS}}", toolCatalogue(tools))
-    .replaceAll("{{NOTES}}", notes ? notes.slice(0, 4000) : "(none yet)")
+    .replaceAll("{{NOTES}}", notes ? redactor().redact(notes.slice(0, 4000)) : "(none yet)")
     .replaceAll("{{NOW}}", now.toString())
     .replaceAll("{{HOME}}", homedir())
     .replaceAll(
       "{{CAPS}}",
       `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions, ${c.archivesPerTurn} archive operations; at most ${c.concurrentSessions} sessions you started running at once`,
     );
+}
+
+/** The user's extra instructions (Settings → Overseer) as a prompt part, none when blank. Redacted
+    like the notes (renderOverseerPrompt) and every tool's output. */
+export function extraInstructions(extra: string, redactor: () => Redactor = serverRedactor): string[] {
+  const t = extra.trim();
+  return t ? [`# The user's extra instructions for you\n\n${redactor().redact(t)}`] : [];
 }
 
 /** The tools as the runtime registers them (exported for the prompt/tool set-equality test). */
@@ -518,8 +528,7 @@ class LivePrompt {
   /** Re-read notes and settings into `parts`; returns the text the SDK joins them to. */
   refresh(): string {
     const settings = readOverseerSettings();
-    const extra = settings.extraSystemPrompt.trim();
-    const next = [...this.base, renderOverseerPrompt(this.tools, settings, this.template, this.openedAt), ...(extra ? [`# The user's extra instructions for you\n\n${extra}`] : [])];
+    const next = [...this.base, renderOverseerPrompt(this.tools, settings, this.template, this.openedAt), ...extraInstructions(settings.extraSystemPrompt)];
     this.parts.splice(0, this.parts.length, ...next);
     return next.join("\n\n");
   }
@@ -659,6 +668,12 @@ let announced: Set<string> | null = null;
 let lastBriefAt = 0;
 let unattended = 0;
 
+/** The brief's message. Titles and details come from other sessions: redacted like any tool output. */
+export function briefText(items: Pick<AttentionItem, "kind" | "title" | "id" | "detail">[], redactor: () => Redactor = serverRedactor): string {
+  const lines = items.map((i) => `- ${i.kind}: [${i.title.replace(/[[\]]/g, "")}](sova://s/${i.id})${i.detail ? ` — ${i.detail}` : ""}`);
+  return redactor().redact(`${OVERSEER_BRIEF_PREFIX} ${items.length === 1 ? "A new blocker" : `${items.length} new blockers`} appeared while you were idle:\n${lines.join("\n")}`);
+}
+
 async function tick(): Promise<void> {
   await applySettingsNow();
   const settings = readOverseerSettings();
@@ -675,9 +690,7 @@ async function tick(): Promise<void> {
   const d = briefDecision({ current: act.map(blockerKey), announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt, unattended, overseerIdle: idle });
   announced = d.announced;
   if (!d.brief.length) return;
-  const items = act.filter((i) => d.brief.includes(blockerKey(i)));
-  const lines = items.map((i) => `- ${i.kind}: [${i.title.replace(/[[\]]/g, "")}](sova://s/${i.id})${i.detail ? ` — ${i.detail}` : ""}`);
-  const text = `${OVERSEER_BRIEF_PREFIX} ${items.length === 1 ? "A new blocker" : `${items.length} new blockers`} appeared while you were idle:\n${lines.join("\n")}`;
+  const text = briefText(act.filter((i) => d.brief.includes(blockerKey(i))));
   try {
     const overseer = await acquireChat(path);
     overseer.assertModelAllowed();

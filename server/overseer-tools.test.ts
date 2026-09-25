@@ -72,7 +72,8 @@ describe("the prompt and the tool set stay in step", () => {
     const prompt = renderOverseerPrompt(buildOverseerTools(), readOverseerSettings());
     const r = secretRules("/H", "/A");
     const names = [...r.namesUnder.names, ...r.files, ...r.dirs].map((p) => p.split("/").pop()!);
-    for (const n of new Set([...names, ".env"])) assert.ok(prompt.includes(n), n);
+    for (const n of new Set([...names, ...r.names.map((x) => x.name)])) assert.ok(prompt.includes(`\`${n}\``) || prompt.includes(`/${n}\``), n);
+    assert.match(prompt, /\[redacted\]/, "the redaction rule");
   });
 
   test("the allowlist is the sova_* tools plus read-only built-ins and wake_nudge: no bash, edit, write or subagents", () => {

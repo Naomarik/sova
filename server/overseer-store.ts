@@ -8,6 +8,7 @@ import type {
   OverseerSettings,
   OverseerState,
 } from "../shared/protocol";
+import { type Redactor, serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
 
 /**
@@ -231,9 +232,12 @@ export function writeNotes(text: string, file = overseerNotesFile()): string {
 // ---- audit log -------------------------------------------------------------------------------
 
 /** Append one action line. Never throws: an audit write failing must not fail the action it records. */
-export function logAction(action: OverseerAction, file = overseerActionsFile()): void {
+export function logAction(action: OverseerAction, file = overseerActionsFile(), redactor: () => Redactor = serverRedactor): void {
   try {
     mkdirSync(dirname(file), { recursive: true });
+    // The tool wrapper already redacted the arguments; this holds for any other caller too.
+    const r = redactor();
+    action = { ...action, args: r.redactDeep(action.args), ...(action.error !== undefined ? { error: r.redact(action.error) } : {}) };
     let args = action.args;
     const json = JSON.stringify(args);
     if (json && json.length > 4000) args = { truncated: json.slice(0, 4000) };

@@ -18,6 +18,7 @@ import { dirname } from "node:path";
 import { OVERSEER_BRIEF_PREFIX } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { whereOf } from "./attention";
+import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
 import { logAction, readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
 
 /**
@@ -475,7 +476,7 @@ const bool = (description: string) => ({ type: "boolean", description });
  * Build the Overseer's tool set. `limits` is shared with the extension that resets it per turn.
  * Every tool's `promptSnippet` is its one line in the prompt's catalogue ({{TOOLS}}).
  */
-export function overseerTools(host: OverseerToolHost, limits: TurnLimits): Tool[] {
+export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redactor: () => Redactor = serverRedactor): Tool[] {
   async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<{ status: number; json: any }> {
     const res = await host.request(path, {
       method,
@@ -1096,7 +1097,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits): Tool[
       }, { unattended: true }),
     },
   ];
-  return tools;
+  // Every tool, this list's and any added to it: no secret value in or out (overseer-redact.ts).
+  return tools.map((t) => redactingTool(t, redactor));
 }
 
 /** Every tool name the Overseer has: its own plus the read-only built-ins and wake_nudge. */

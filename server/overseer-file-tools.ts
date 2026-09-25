@@ -18,12 +18,14 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { SecretGuard } from "./overseer-deny";
+import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
 
 /**
  * The Overseer's read, grep, find and ls: pi's own tools, except that no secret file
  * (overseer-deny.ts) is ever read, listed or matched. A path argument that names one is refused
  * with SECRET_REFUSAL, and a search or listing from a parent directory leaves them out of its
- * results. They are registered as the session's custom tools, which take precedence over the
+ * results. A secret value found anywhere else (a copy, a log line) comes back as `[redacted]`
+ * (redactingTool, overseer-redact.ts). They are registered as the session's custom tools, which take precedence over the
  * built-ins and over any extension's tool of the same name; other sessions keep pi's tools.
  *
  * read, ls and find keep pi's execute and run every path through their `operations` hook, which
@@ -31,7 +33,11 @@ import { SecretGuard } from "./overseer-deny";
  * formats ripgrep's matches itself, so this one runs ripgrep the same way and drops secret files'
  * matches before formatting them.
  */
-export function overseerFileTools(cwd: string, guard: () => SecretGuard = () => new SecretGuard()): ToolDefinition[] {
+export function overseerFileTools(
+  cwd: string,
+  guard: () => SecretGuard = () => new SecretGuard(),
+  redactor: () => Redactor = serverRedactor,
+): ToolDefinition[] {
   const read = createReadToolDefinition(cwd);
   const find = createFindToolDefinition(cwd);
   const ls = createLsToolDefinition(cwd);
@@ -77,7 +83,8 @@ export function overseerFileTools(cwd: string, guard: () => SecretGuard = () => 
       },
     },
     { ...grep, execute: (_id, params, signal, _onUpdate, ctx) => guardedGrep(params as GrepParams, ctx?.cwd || cwd, signal, guard()) } as ToolDefinition,
-  ] as ToolDefinition[];
+    // Their output is redacted; their arguments (paths, a pattern) are left as given: they store nothing.
+  ].map((t) => redactingTool(t as ToolDefinition, redactor, { args: false }));
 }
 
 /** pi's path argument rule (`@` stripped, `~` expanded, relative to cwd). */

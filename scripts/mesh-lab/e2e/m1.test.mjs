@@ -56,6 +56,19 @@ describe("paired hosts", () => {
   });
 });
 
+describe("encoded paths", () => {
+  test("a peer's encoded spellings of /api/mesh never reach it: 404, and peers.json is unchanged", () => {
+    const base = `http://${magicName(B)}:${PEER_PORT}`;
+    const before = sh(B, 'sha256sum "$PI_CODING_AGENT_DIR/sova/peers.json"').out;
+    for (const path of ["/api/%6Desh/peers", "/api/%6desh/peers", "/api/m%65sh/peers", "/api/mesh%2Fpeers", "/api/%2e%2e/api/mesh/peers", "/api/x/..%2Fmesh/peers"]) {
+      const r = curlFrom(A, base + path, { method: "PUT", body: { version: 1, self: { id: B }, peers: [] }});
+      assert.equal(r.status, 404, `${path} -> ${r.status}`);
+    }
+    for (const path of ["/api/%6Desh", "/api/%6Desh/hello"]) assert.equal(curlFrom(A, base + path).status, 404, path);
+    assert.equal(sh(B, 'sha256sum "$PI_CODING_AGENT_DIR/sova/peers.json"').out, before, "B's peers.json unchanged");
+  });
+});
+
 describe("refusals", () => {
   test("a tailnet node that is in nobody's peers.json gets 403 on every path and on WS", () => {
     if (!cfg.stranger) return;

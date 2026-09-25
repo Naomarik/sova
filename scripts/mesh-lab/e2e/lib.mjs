@@ -50,7 +50,7 @@ export function execBackground(node, argv) {
  * status 0 = no HTTP answer at all (refused, timed out, unreachable); `error` then says why.
  */
 export function curlFrom(node, url, { method = "GET", body, headers = {}, timeoutS = 5 } = {}) {
-  const argv = ["curl", "-sS", "-m", String(timeoutS), "-X", method, "-D", "/dev/stderr", "-o", "-", "-w", "\n%{http_code}"];
+  const argv = ["curl", "-sS", "--path-as-is", "-m", String(timeoutS), "-X", method, "-D", "/dev/stderr", "-o", "-", "-w", "\n%{http_code}"];
   for (const [k, v] of Object.entries(headers)) argv.push("-H", `${k}: ${v}`);
   if (body !== undefined) argv.push("-H", "content-type: application/json", "--data-binary", "@-");
   argv.push(url);

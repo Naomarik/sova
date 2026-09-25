@@ -382,25 +382,96 @@ function parseUpArgs(args, cfg) {
     else if (a === "--seed") next.seed = true;
     else if (a === "--no-seed") next.seed = false;
     else if (a === "--no-build") next._noBuild = true;
+    else if (a === "--dirty") next._dirty = true;
+    else if (a === "--rev") next._rev = val();
     else die(`unknown option ${a}`);
   }
   return next;
 }
 
-function build() {
-  console.log(`building ${IMAGES.plain} and ${IMAGES.host} from ${ROOT} (working tree)`);
-  const common = ["build", "-f", join(LAB_DIR, "Dockerfile"), "--label", "sova.mesh-lab=1"];
-  docker([...common, "--target", "plain", "-t", IMAGES.plain, ROOT], { inherit: true });
-  docker([...common, "--target", "host", "-t", IMAGES.host, ROOT], { inherit: true });
+const git = (...a) => run("git", ["-C", ROOT, ...a]).out;
+/** Paths whose uncommitted state changes what a lab host runs (the acceptance-relevant tree). */
+const PROVENANCE_PATHS = ["server", "shared", "src", "pi-config", "scripts/hermetic-agent-dir.mjs", "scripts/mesh-lab", "package.json", "pnpm-lock.yaml", "index.html", "vite.config.ts", "public"];
+
+/**
+ * Build the two images. Default: the Sova tree is `git archive <rev>` (HEAD unless --rev), so a
+ * run names one commit and uncommitted edits never reach a host. --dirty builds the working tree
+ * instead (what's on disk, commit + the dirty paths recorded). The lab's own build files
+ * (Dockerfile, host/) always come from the working tree's scripts/mesh-lab. The provenance lands
+ * in every container as /sova/BUILD_COMMIT and on the images as labels.
+ */
+function build({ rev = "HEAD", dirty = false } = {}) {
+  const commit = git("rev-parse", "--verify", `${rev}^{commit}`);
+  const dirtyPaths = dirty ? git("status", "--porcelain", "--", ...PROVENANCE_PATHS).split("\n").filter(Boolean) : [];
+  const labDirty = git("status", "--porcelain", "--", "scripts/mesh-lab").split("\n").filter(Boolean);
+  let ctx = ROOT;
+  if (!dirty) {
+    ctx = join(STATE, "build-ctx");
+    rmSync(ctx, { recursive: true, force: true });
+    mkdirSync(ctx, { recursive: true });
+    const tar = spawnSync("sh", ["-c", `git -C "$1" archive "$2" | tar -x -C "$3"`, "-", ROOT, commit, ctx], { stdio: "inherit" });
+    if (tar.status !== 0) throw new Error(`git archive ${commit} failed`);
+    // the lab's build files from the working tree (a commit from before the lab has none)
+    for (const f of ["Dockerfile", "Dockerfile.dockerignore", "host"]) {
+      rmSync(join(ctx, "scripts/mesh-lab", f), { recursive: true, force: true });
+      mkdirSync(join(ctx, "scripts/mesh-lab"), { recursive: true });
+      run("cp", ["-r", join(LAB_DIR, f), join(ctx, "scripts/mesh-lab", f)]);
+    }
+  }
+  const provenance = {
+    commit,
+    rev,
+    source: dirty ? "working tree" : "git archive",
+    dirty: dirtyPaths,
+    labBuildFiles: labDirty.length ? `working tree, uncommitted: ${labDirty.join("; ")}` : "working tree, clean",
+    builtAt: new Date().toISOString(),
+  };
+  console.log(`building ${IMAGES.plain} and ${IMAGES.host} from ${provenance.source} at ${commit.slice(0, 12)}${dirtyPaths.length ? ` + ${dirtyPaths.length} dirty path(s)` : ""}`);
+  const common = [
+    "build", "-f", join(ctx, "scripts/mesh-lab/Dockerfile"),
+    "--label", "sova.mesh-lab=1",
+    "--label", `sova.mesh-lab.commit=${commit}`,
+    "--label", `sova.mesh-lab.dirty=${dirtyPaths.length}`,
+    "--build-arg", `LAB_PROVENANCE=${JSON.stringify(provenance)}`,
+  ];
+  try {
+    docker([...common, "--target", "plain", "-t", IMAGES.plain, ctx], { inherit: true });
+    docker([...common, "--target", "host", "-t", IMAGES.host, ctx], { inherit: true });
+  } finally {
+    if (ctx !== ROOT) rmSync(ctx, { recursive: true, force: true });
+  }
+  return provenance;
+}
+
+/** What each running Sova container was built from (its /sova/BUILD_COMMIT). */
+export function provenanceOf(name) {
+  const r = docker(["exec", container(name), "cat", "/sova/BUILD_COMMIT"], { allowFail: true, quiet: true });
+  try {
+    return r.code === 0 ? JSON.parse(r.out) : null;
+  } catch {
+    return null;
+  }
+}
+export function provenanceLine(cfg) {
+  const seen = new Map();
+  for (const n of sovaNodes(cfg)) {
+    const p = provenanceOf(n);
+    const key = p ? `${p.commit.slice(0, 12)} (${p.source}${p.dirty.length ? `, DIRTY: ${p.dirty.length} path(s)` : ", clean"})` : "unknown (image predates provenance)";
+    seen.set(key, [...(seen.get(key) ?? []), n]);
+  }
+  return [...seen].map(([k, ns]) => (seen.size > 1 ? `${k} on ${ns.join(",")}` : k)).join("; ");
 }
 
 async function cmdUp(args) {
   const cfg = parseUpArgs(args, loadConfig() || DEFAULTS);
-  const noBuild = cfg._noBuild;
+  const { _noBuild: noBuild, _dirty: dirty, _rev: rev } = cfg;
   delete cfg._noBuild;
+  delete cfg._dirty;
+  delete cfg._rev;
+  if (dirty && rev) die("--dirty builds the working tree; it cannot be combined with --rev");
   if (!existsSync(AUTH_SRC) && cfg.auth !== "none") die(`${AUTH_SRC} missing: build it (scripts/hermetic-agent-dir.mjs + the API-key auth.json) or use --auth none`);
   saveConfig(cfg);
-  if (!noBuild) build();
+  if (!noBuild) build({ rev: rev ?? "HEAD", dirty: !!dirty });
   mkdirSync(join(STATE, "secrets"), { recursive: true, mode: 0o700 });
   const keyFile = join(STATE, "secrets/authkey");
   if (!existsSync(keyFile)) writeFileSync(keyFile, "", { mode: 0o600 }); // bind-mount target must exist
@@ -490,7 +561,8 @@ function cmdStatus(args) {
   const cfg = loadConfig();
   if (!cfg) return console.log("no lab configured (lab up)");
   const rows = statusRows(cfg);
-  if (args.includes("--json")) return console.log(JSON.stringify({ config: cfg, rows }, null, 2));
+  if (args.includes("--json")) return console.log(JSON.stringify({ config: cfg, provenance: Object.fromEntries(sovaNodes(cfg).map((n) => [n, provenanceOf(n)])), rows }, null, 2));
+  console.log(`built from: ${provenanceLine(cfg)}`);
   const cols = ["name", "state", "tailnet", "ip", "dns", "peersOnline", "partitioned", "sova", "url"];
   const table = [cols, ...rows.map((r) => cols.map((c) => (r[c] === undefined || r[c] === null ? "-" : String(r[c]))))];
   const w = cols.map((_, i) => Math.max(...table.map((r) => r[i].length)));
@@ -639,8 +711,10 @@ const HELP = `usage: scripts/mesh-lab/lab <command> [args]
 
 lifecycle
   up [--hosts N|a,b,..] [--auth all|none|a,b] [--no-plain] [--no-stranger] [--no-frontdoor]
-     [--no-mock] [--no-seed] [--no-build]      build images from the worktree, start/refresh the lab, wait ready
-  build                           build the images only
+     [--no-mock] [--no-seed] [--no-build] [--rev <rev>] [--dirty]
+                                  build images from git archive <rev> (default HEAD; --dirty: the
+                                  working tree as is), start/refresh the lab, wait until ready
+  build [--rev <rev>] [--dirty]   build the images only
   down                            stop and remove containers (volumes kept)
   reset [up options]              wipe all lab volumes + Headscale DB + secrets, then up
   destroy [--pulled]              remove everything the lab created (containers, volumes, network,
@@ -681,8 +755,10 @@ export async function main(argv) {
       return console.log(HELP);
     case "up":
       return cmdUp(args);
-    case "build":
-      return build();
+    case "build": {
+      const i = args.indexOf("--rev");
+      return build({ rev: i >= 0 ? args[i + 1] : "HEAD", dirty: args.includes("--dirty") });
+    }
     case "down":
       return cmdDown();
     case "reset":
@@ -796,6 +872,8 @@ export async function main(argv) {
       const which = args[0] || die("e2e <m0|m1|…|all>");
       const files = which === "all" ? ["m0", "m1", "m2", "m3", "m4"].map((m) => join(LAB_DIR, `e2e/${m}.test.mjs`)).filter(existsSync) : [join(LAB_DIR, `e2e/${which}.test.mjs`)];
       for (const f of files) if (!existsSync(f)) die(`no harness ${f}`);
+      const cfgNow = loadConfig();
+      if (cfgNow) console.log(`# lab built from: ${provenanceLine(cfgNow)}`);
       const r = spawnSync(process.execPath, ["--test", "--test-concurrency=1", ...args.slice(1), ...files], { stdio: "inherit", env: { ...process.env, LAB_STATE: STATE } });
       process.exitCode = r.status ?? 1;
       return;

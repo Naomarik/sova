@@ -76,6 +76,9 @@ export class PeerListener {
   private state: ListenerState;
   private retry: NodeJS.Timeout | null = null;
   private closed = false;
+  /** Every connection that passed the gate, by the caller's StableID (HTTP keep-alive and
+      upgraded sockets alike: an upgrade keeps the same TCP socket). */
+  private admitted = new Map<Duplex, string>();
   private readonly handle: (req: IncomingMessage, res: ServerResponse) => void;
 
   constructor(private readonly deps: ListenerDeps) {
@@ -143,6 +146,8 @@ export class PeerListener {
       s.close();
       s.closeAllConnections();
     }
+    // closeAllConnections leaves upgraded sockets alone: a mesh turned off cuts peers' sockets too.
+    this.revoke(() => false);
     this.state = { addresses: [], port: this.deps.port };
   }
 
@@ -158,7 +163,22 @@ export class PeerListener {
 
   private async gate(req: IncomingMessage): Promise<PeerEntry | null> {
     const node = await callerNode(req.socket);
-    return node ? this.deps.peerByNode(node) : null;
+    const peer = node ? this.deps.peerByNode(node) : null;
+    if (peer && !this.admitted.has(req.socket)) {
+      this.admitted.set(req.socket, peer.nodeId);
+      req.socket.once("close", () => this.admitted.delete(req.socket));
+    }
+    return peer;
+  }
+
+  /** Drop every admitted connection whose caller is no longer allowed (a peer removed from
+      peers.json): its kept-alive HTTP connections and its open sockets end now. */
+  revoke(allowed: (nodeId: string) => boolean): void {
+    for (const [socket, nodeId] of this.admitted) {
+      if (allowed(nodeId)) continue;
+      this.admitted.delete(socket);
+      socket.destroy();
+    }
   }
 
   private createServer(): Server {

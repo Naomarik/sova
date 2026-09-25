@@ -4,7 +4,7 @@
 // whois), a fake peer (plain HTTP + WS on loopback), and this server's own peer listener bound
 // to 127.0.0.1 so a request can make the whole trip: proxy → peer listener → whois gate → app.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request, type IncomingMessage, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -153,6 +153,16 @@ function peerRequest(method: string, path: string, body?: string): Promise<{ sta
     req.on("error", reject);
     req.end(body);
   });
+}
+
+/** A session file a peer can watch through the listener (the socket stays open until cut). */
+function watchableSession(): string {
+  const dir = join(tmp, "agent", "sessions", "--revoke--");
+  mkdirSync(dir, { recursive: true });
+  const id = "0197a000-0000-7000-8000-000000000001";
+  const file = join(dir, `2026-01-01T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(file, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-01-01T00:00:00.000Z", cwd: tmp })}\n`);
+  return file;
 }
 
 /** A plain request on a NEW connection (so whois runs again), to the peer listener. */
@@ -665,6 +675,58 @@ describe("mesh ON", () => {
     assert.deepEqual([cleared.frontDoorOrder, cleared.serveUrl], [undefined, undefined]);
   });
 
+  test("revocation: a hand edit that drops a peer takes effect on its very next call, and cuts its open socket", async () => {
+    const keep = [
+      { id: "b", label: "B", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` },
+      { id: "dead", nodeId: "nD", name: "127.0.0.1", url: `http://127.0.0.1:${deadPort}` },
+    ];
+    await putJson("/api/mesh/peers", { peers: keep });
+    const file = watchableSession();
+    whoisNode = "nB";
+    const port = listenerInfo()!.port;
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/watch?path=${encodeURIComponent(file)}`);
+    const closed = new Promise<number>((r) => ws.on("close", (code) => r(code)));
+    await new Promise<void>((r, j) => {
+      ws.once("message", () => r());
+      ws.once("error", j);
+    });
+    // A kept-alive HTTP connection admitted before the edit.
+    const agent = new (await import("node:http")).Agent({ keepAlive: true, maxSockets: 1 });
+    const kept = (path: string) =>
+      new Promise<number>((resolve, reject) => {
+        const req = request({ host: "127.0.0.1", port, path, agent }, (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode!));
+        });
+        req.on("error", reject);
+        req.end();
+      });
+    assert.equal(await kept("/api/peer/hello"), 200);
+    // The hand edit: b is gone; nobody opens the Mesh page.
+    const doc = JSON.parse(readFileSync(peersFile(), "utf8"));
+    doc.peers = doc.peers.filter((p: { id: string }) => p.id !== "b");
+    writeFileSync(peersFile(), JSON.stringify(doc));
+    // Its next call, on a new connection, is refused at once.
+    assert.equal((await peerGet("/api/peer/hello")).status, 403);
+    // That call's reload cut b's open socket and its kept-alive connection.
+    const code = await Promise.race([closed, new Promise<number>((r) => setTimeout(() => r(-1), 2000))]);
+    assert.notEqual(code, -1, "the removed peer's socket was closed");
+    const again = await kept("/api/peer/hello").catch(() => 0);
+    assert.equal(again, 403, "the kept-alive connection was dropped; a new one meets the gate");
+    agent.destroy();
+    // The same through PUT: re-add b, open a socket, remove b by PUT.
+    await putJson("/api/mesh/peers", { peers: keep });
+    const ws2 = new WebSocket(`ws://127.0.0.1:${port}/ws/watch?path=${encodeURIComponent(file)}`);
+    const closed2 = new Promise<number>((r) => ws2.on("close", (c) => r(c)));
+    await new Promise<void>((r, j) => {
+      ws2.once("message", () => r());
+      ws2.once("error", j);
+    });
+    await putJson("/api/mesh/peers", { peers: keep.filter((p) => p.id !== "b") });
+    assert.notEqual(await Promise.race([closed2, new Promise<number>((r) => setTimeout(() => r(-1), 2000))]), -1);
+    await putJson("/api/mesh/peers", { peers: keep });
+  });
+
   test("a malformed peers.json turns the mesh off and is never overwritten", async () => {
     writeFileSync(peersFile(), "{broken");
     const [, info] = await getJson<MeshInfo>("/api/mesh");
@@ -676,10 +738,20 @@ describe("mesh ON", () => {
     rmSync(peersFile());
   });
 
-  test("PUT peers [] turns the mesh off: the listener closes", async () => {
+  test("PUT peers [] turns the mesh off: the listener closes, open peer sockets included", async () => {
     await putJson("/api/mesh/peers", { peers: [{ id: "b", nodeId: "nB", name: "127.0.0.1", url: `http://127.0.0.1:${fakePort}` }] });
     await waitFor(() => (listenerInfo()?.addresses.length ?? 0) > 0);
     const port = listenerInfo()!.port;
+    const file = watchableSession();
+    whoisNode = "nB";
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/watch?path=${encodeURIComponent(file)}`);
+    const wsClosed = new Promise<number>((r) => ws.on("close", (c) => r(c)));
+    await new Promise<void>((r, j) => {
+      ws.once("message", () => r());
+      ws.once("error", j);
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(ws.readyState, WebSocket.OPEN, "the watch is open before the mesh turns off");
     const calls = identityCalls;
     const [s, info] = await putJson<MeshInfo>("/api/mesh/peers", { peers: [] });
     assert.equal(s, 200);
@@ -687,6 +759,7 @@ describe("mesh ON", () => {
     assert.equal(listenerInfo(), null);
     assert.equal(identityCalls, calls, "turning off calls no Tailscale");
     assert.equal(hookLog.at(-1), "stop");
+    assert.notEqual(await Promise.race([wsClosed, new Promise<number>((r) => setTimeout(() => r(-1), 2000))]), -1, "the open socket was cut");
     await assert.rejects(realFetch(`http://127.0.0.1:${port}/api/health`));
   });
 });

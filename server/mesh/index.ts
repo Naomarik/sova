@@ -1,4 +1,5 @@
 import type { IncomingMessage } from "node:http";
+import { statSync } from "node:fs";
 import { hostname } from "node:os";
 import type { Duplex } from "node:stream";
 import type { Context, Hono } from "hono";
@@ -69,6 +70,7 @@ export const meshEnabled = (): boolean => (rt.config?.peers.length ?? 0) > 0;
 
 /** Re-read peers.json into the runtime (no side effects beyond the listener it implies). */
 function reload(): void {
+  peersStamp = stampOf(peersFile());
   const r = readPeers();
   if (r.ok) {
     rt.config = r.config;
@@ -82,6 +84,25 @@ function reload(): void {
     }
   }
   apply();
+  // A peer that is no longer listed loses every connection it still holds, sockets included.
+  const allowed = new Set((rt.config?.peers ?? []).map((p) => p.nodeId));
+  rt.listener?.revoke((nodeId) => allowed.has(nodeId));
+}
+
+// peers.json's identity (inode, size, mtime), so the gate notices a hand edit with a stat, not a read.
+let peersStamp = "";
+function stampOf(file: string): string {
+  try {
+    const st = statSync(file);
+    return `${st.ino}:${st.size}:${st.mtimeMs}`;
+  } catch {
+    return "missing";
+  }
+}
+
+/** Re-read peers.json when it changed on disk since the last read (one stat). */
+function reloadIfChanged(): void {
+  if (stampOf(peersFile()) !== peersStamp) reload();
 }
 
 /** Start or stop the peer listener to match the config. */
@@ -92,11 +113,8 @@ function apply(): void {
       ...d,
       port: peerPort(),
       peerByNode: (nodeId) => {
-        let hit = rt.config?.peers.find((p) => p.nodeId === nodeId);
-        if (!hit) {
-          reload(); // a hand edit may have added it since
-          hit = rt.config?.peers.find((p) => p.nodeId === nodeId);
-        }
+        reloadIfChanged(); // a hand edit may have added or removed it since
+        const hit = rt.config?.peers.find((p) => p.nodeId === nodeId);
         if (hit) sawPeer(hit.id, true); // it just called us, so it is up
         return hit ?? null;
       },

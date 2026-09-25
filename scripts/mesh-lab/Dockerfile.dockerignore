@@ -1,0 +1,17 @@
+# Everything that is not source: dependencies (installed in the image), build output, the
+# hermetic agent dir (it holds auth.json; the lab passes API keys in at run time instead),
+# git metadata, local credentials of any kind.
+**/node_modules
+dist
+.agent
+.git
+**/auth.json
+**/.env
+**/.env.*
+**/*.key
+**/*.pem
+**/llmkeys
+**/.npmrc
+tmp
+*.log
+.playwright-port

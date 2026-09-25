@@ -1,0 +1,57 @@
+# Lab Headscale: the lab tailnet's own control plane, on the lab's compose network only (never
+# published to the laptop). HTTPS on 443 with a certificate from the lab's own CA (STATE/tls, made
+# by `lab up`; every lab node trusts it): tailscale clients force port 443 when re-dialling
+# control soon after a previous dial, so a plain-http control server on another port strands a node
+# after any reconnect. Its embedded DERP relay is the lab's only relay (no public DERP/STUN), no
+# update checks, no logtail. MagicDNS base domain: mesh.lab
+server_url: https://headscale
+listen_addr: 0.0.0.0:443
+tls_cert_path: /etc/headscale/tls/headscale.pem
+tls_key_path: /etc/headscale/tls/headscale-key.pem
+metrics_listen_addr: 127.0.0.1:9090
+grpc_listen_addr: 127.0.0.1:50443
+grpc_allow_insecure: false
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+derp:
+  server:
+    enabled: true
+    region_id: 900
+    region_code: lab
+    region_name: Sova mesh lab
+    stun_listen_addr: 0.0.0.0:3478
+    private_key_path: /var/lib/headscale/derp_server_private.key
+    automatically_add_embedded_derp_region: true
+  urls: []
+  paths: []
+  auto_update_enabled: false
+  update_frequency: 24h
+disable_check_updates: true
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+    write_ahead_log: true
+log:
+  level: info
+  format: text
+policy:
+  mode: file
+  path: ""
+dns:
+  magic_dns: true
+  base_domain: mesh.lab
+  override_local_dns: false
+  nameservers:
+    global: []
+    split: {}
+  search_domains: []
+  extra_records: []
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
+logtail:
+  enabled: false

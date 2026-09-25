@@ -97,10 +97,8 @@ describe("sync switches", () => {
       sh(A, `rm -f "$PI_CODING_AGENT_DIR/${rel}"`);
       await put(B, { themes: true });
     }
-    // Measured 2026-09-25: this delete reaches C only after >60 s (with every switch on, a
-    // delete is ~1 s); reported to sync-engineer. The bound here only catches "never".
     const t0 = Date.now();
-    await waitFor(() => sha(C, rel) === "absent", { timeoutMs: 240000, intervalMs: 1000, what: "toggle theme gone from C" });
+    await waitFor(() => sha(C, rel) === "absent", { timeoutMs: 30000, what: "toggle theme gone from C" });
     console.log(`# delete on A reached C ${Date.now() - t0} ms after B's themes switch came back on`);
   });
 });

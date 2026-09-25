@@ -229,9 +229,13 @@ for a in ADDRS; do
   unset pid last same
 done
 # confirm: a connect to one's own address can "succeed" once by connecting to itself (the kernel picked the same port as
-# the source port); a real listener accepts two more connects
+# the source port); a real listener accepts two more connects. Only a port inside the ephemeral (source port) range can be
+# a self-connect: outside it, a port that does not accept again stays in the result as "ONCE <addr> <port>"
+read -r elo ehi < /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null || { elo=32768; ehi=60999; }
 cat $W/open.* 2>/dev/null | sort -u -k1,1 -k2,2n | while read -r a p; do
-  { : 3<>/dev/tcp/$a/$p; } 2>/dev/null && { : 3<>/dev/tcp/$a/$p; } 2>/dev/null && echo "$a $p" || echo "SELF $a $p"
+  if { : 3<>/dev/tcp/$a/$p; } 2>/dev/null && { : 3<>/dev/tcp/$a/$p; } 2>/dev/null; then echo "$a $p"
+  elif [ $p -ge ${elo:-32768} ] && [ $p -le ${ehi:-60999} ]; then echo "SELF $a $p"
+  else echo "ONCE $a $p"; fi
 done > $W/confirmed
 { grep -v '^SELF' $W/confirmed; cat $W/hang 2>/dev/null; grep '^SELF' $W/confirmed; } > $PREFIX/tmp/sova-scan.res
 rm -rf $W
@@ -245,7 +249,7 @@ EOS
   done
   ph 'cat $PREFIX/tmp/sova-scan.res; rm -f $PREFIX/tmp/sova-scan.sh $PREFIX/tmp/sova-scan.res $PREFIX/tmp/sova-scan.done' > "$d/$name.txt"
   grep -qx "$PHONE $PHONE_PORT" "$d/$name.txt" || die "scan $name broken: the control (sshd $PHONE:$PHONE_PORT) is not in the result"
-  log "scan $name: $(grep -vcE '^(HANG|SELF)' "$d/$name.txt") open (address, port) pairs, $(grep -c '^HANG' "$d/$name.txt") hung ports, $(grep -c '^SELF' "$d/$name.txt") self-connects dropped, $(echo $list | wc -w) addresses, $((SECONDS - t0)) s; control $PHONE:$PHONE_PORT open"
+  log "scan $name: $(grep -vcE '^(HANG|SELF)' "$d/$name.txt") open (address, port) pairs, $(grep -c '^ONCE' "$d/$name.txt") of them accepting once only, $(grep -c '^HANG' "$d/$name.txt") hung ports, $(grep -c '^SELF' "$d/$name.txt") self-connects (ephemeral range) set aside, $(echo $list | wc -w) addresses, $((SECONDS - t0)) s; control $PHONE:$PHONE_PORT open"
 }
 
 # ---- pairing (only with PAIR_GO=1: coordinator-2's go) ---------------------------------------------------------
@@ -369,7 +373,7 @@ case "$cmd" in
       *) die "placeholder on|off" ;;
     esac; echo; log "placeholder $1" ;;
   scan) scan "$@" ;;
-  scandiff) d="$OUT/scan"; diff <(grep -v '^SELF' "$d/${1:?}.txt") <(grep -v '^SELF' "$d/${2:?}.txt") && echo "SCAN SAME: $1 == $2 (open + hung, self-connects excluded)" || { echo "SCAN DIFFERS: $1 != $2"; exit 1; } ;;
+  scandiff) d="$OUT/scan"; diff <(grep -v '^SELF' "$d/${1:?}.txt") <(grep -v '^SELF' "$d/${2:?}.txt") && echo "SCAN SAME: $1 == $2 (open + hung, self-connects in the ephemeral range excluded; they stay listed in the scan files)" || { echo "SCAN DIFFERS: $1 != $2"; exit 1; } ;;
   diff) diffsnap "$@" ;;
   loop)
     # INSTALL=ssh (tarball of HEAD/REV over ssh, default) | github (the real one-liner); UNINSTALL=keep-ssh (default) | full.

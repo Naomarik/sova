@@ -39,6 +39,7 @@ import { openSettings } from "../lib/settings-nav";
 import { announce } from "../lib/ui-state";
 import { iso, InsightsPage } from "./InsightsPage";
 import { Banner, Chip, CopyButton, Icon } from "./ui";
+import { openMeshDetails } from "../lib/mesh-details";
 import "../mesh.css";
 
 /** While #/mesh is open the host list is re-read this often: status is what the page is for. */
@@ -277,9 +278,17 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
       </Show>
 
       <section class="card mesh-card" aria-labelledby="mesh-hosts-title">
-        <h2 class="mesh-card-title" id="mesh-hosts-title">
-          Hosts
-        </h2>
+        <div class="mesh-card-head">
+          <h2 class="mesh-card-title" id="mesh-hosts-title">
+            Hosts
+          </h2>
+          <Show when={meshOn()}>
+            <button type="button" class="button button-sm" onClick={openMeshDetails}>
+              <Icon name="info" small />
+              Mesh Details
+            </button>
+          </Show>
+        </div>
         <ul class="list mesh-hosts">
           <li class="list-row mesh-host">
             <Icon name="terminal" small />

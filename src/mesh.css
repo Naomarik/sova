@@ -69,45 +69,16 @@
 .session-host .chip-dot { width: 6px; height: 6px; flex: none; }
 .session-host-down { color: var(--status-error); max-width: 18ch; }
 
-/* The session pane's host filter, under the search field: one choice among All and the hosts.
-   The button is the 44px target; the pill inside is what shows. Chosen is a tint AND a heavier
-   weight and border, never the tint alone. */
-.host-filter { display: flex; flex-wrap: wrap; column-gap: var(--space-1); margin: calc(var(--space-2) * -1) 0; }
-.host-filter-option {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--tap-min);
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-.host-filter-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  max-width: 16ch;
-  padding: 2px var(--space-2);
-  border: var(--stroke-thin) solid var(--color-border);
-  border-radius: var(--r-full);
-  background: var(--color-surface);
-  color: var(--color-ink-2);
-  font-size: var(--fs-caption);
-  line-height: var(--lh-caption);
-  transition: border-color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
-}
-.host-filter-option:hover .host-filter-pill { border-color: var(--color-border-strong); }
-.host-filter-option:focus-visible { outline: none; }
-.host-filter-option:focus-visible .host-filter-pill { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.host-filter-option[aria-checked="true"] .host-filter-pill {
-  background: var(--color-accent-tint);
-  border-color: var(--color-border-strong);
-  color: var(--color-ink);
-  font-weight: var(--fw-semibold);
-}
-.host-filter-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The session pane's host menu, under the search field: the chosen host (or All) as a small button,
+   the connected count beside it in caption muted. The panel is the action menu's shell. */
+.host-menu { display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin: calc(var(--space-1) * -1) 0; }
+.host-menu-trigger { min-width: 0; max-width: 24ch; gap: var(--space-1); font-size: var(--fs-caption); }
+.host-menu-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.host-menu-count { flex: none; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.host-menu-option-text { flex-direction: row; align-items: center; gap: var(--space-1); }
+.host-menu-panel .mode-option { align-items: center; }
+.host-menu-panel .mode-option-check { margin-top: 0; }
+.host-menu-sep { height: 1px; margin: var(--space-1) 0; background: var(--color-border); }
 .host-filter-up { color: var(--status-success); }
 .host-filter-down { color: var(--status-error); }
 .host-filter-state { color: var(--status-error); font-size: var(--fs-micro); }
@@ -155,3 +126,17 @@
 .mesh-login-ask-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 /* Settings → Mesh: a switch that refines the one above it (Logins → subscriptions). */
 .mesh-sync-sub { padding-left: var(--space-5); }
+
+/* Mesh details: one section per host, a label/value grid under its name. */
+.mesh-details .modal-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.mesh-details-host { display: flex; flex-direction: column; gap: var(--space-2); }
+.mesh-details-host + .mesh-details-host { padding-top: var(--space-4); border-top: 1px solid var(--color-border); }
+.mesh-details-host-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
+.mesh-details-host-title { display: flex; align-items: center; gap: var(--space-2); margin: 0; min-width: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.mesh-details-host-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mesh-details-host-state { flex: none; font-size: var(--fs-caption); font-weight: var(--fw-regular); color: var(--color-ink-muted); }
+.mesh-details-actions { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.mesh-details-rename { display: flex; flex-direction: column; gap: var(--space-2); }
+.mesh-details-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--space-3); row-gap: var(--space-1); margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.mesh-details-list dt { color: var(--color-ink-muted); }
+.mesh-details-list dd { margin: 0; color: var(--color-ink); overflow-wrap: anywhere; }

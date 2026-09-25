@@ -47,6 +47,7 @@ import type {
   MeshSessions,
 } from "../../shared/protocol";
 import type { MeshLocalSettings } from "../../shared/mesh-local";
+import type { HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -720,4 +721,15 @@ export const claimMeshLogin = (key: string) =>
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ key } satisfies MeshLoginClaim),
+  });
+
+/** Every host's own details (shared/mesh-details.ts), this host first; mesh on only. */
+export const fetchMeshDetails = () => request<MeshDetails>("/api/mesh/details", meshReadInit(true));
+
+/** Rename a host: this one, or a peer (which then tells its own peers). */
+export const putHostLabel = (id: string, label: string) =>
+  request<HostRenameResult>("/api/mesh/label", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, label } satisfies HostRename),
   });

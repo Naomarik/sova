@@ -48,6 +48,8 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
+import { MeshDetails } from "./components/MeshDetails";
+import { closeMeshDetails, meshDetailsOpen } from "./lib/mesh-details";
 import { FanoutDialog, type FanoutSource } from "./components/FanoutDialog";
 import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./components/GroupView";
 import { OverseerView } from "./components/OverseerView";
@@ -1103,6 +1105,10 @@ export function App() {
         <Portal>
           <SettingsDialog initialTab={settingsOpenAt() ?? undefined} onClose={closeSettings} />
         </Portal>
+      </Show>
+      {/* Opened from the sidebar's host menu or #/mesh; only while the mesh is on. */}
+      <Show when={meshDetailsOpen() && meshOn()}>
+        <MeshDetails onClose={closeMeshDetails} />
       </Show>
       <Show when={staleChange()}>
         {(change) => <StaleTabBanner change={change()} onDismiss={() => setStaleChange(null)} />}

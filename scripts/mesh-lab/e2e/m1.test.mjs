@@ -5,7 +5,7 @@
 //   scripts/mesh-lab/lab e2e m1          (leaves the lab paired a,b,c at the end)
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { chaos, curlFrom, dockerIp, laptopFetch, lab, magicName, nodeId, PEER_PORT, requireLab, sh, tailnetIp, waitFor, wsFrom } from "./lib.mjs";
+import { chaos, curlFrom, dockerIp, execBackground, laptopFetch, lab, magicName, nodeId, PEER_PORT, readAgentFile, requireLab, sh, tailnetIp, waitFor, writeAgentFile, wsFrom } from "./lib.mjs";
 
 let cfg;
 let A, B, C;
@@ -53,6 +53,44 @@ describe("paired hosts", () => {
     assert.ok(Array.isArray(curlFrom(B, `${base}/api/sessions`).json));
     for (const path of ["/api/mesh", "/api/mesh/hello", "/api/mesh/peers", `/peer/${C}/api/health`, "/", "/index.html"])
       assert.equal(curlFrom(B, base + path).status, 404, path);
+  });
+});
+
+describe("revocation", () => {
+  test("removing a peer from peers.json by hand (no restart) cuts its open WS within ~1 s of its next request", async () => {
+    // B holds a /ws/watch on A's peer listener; A drops B from its peers.json; B's next request is
+    // refused and the held socket closes.
+    const list = JSON.parse(curlFrom(B, `http://${magicName(A)}:${PEER_PORT}/api/sessions`).body || "[]");
+    const path = list[0]?.path;
+    assert.ok(path, "A has a session to watch");
+    const holder = execBackground(B, ["node", "-e", `
+const t0 = Date.now(); const ws = new WebSocket(process.argv[1]);
+ws.onopen = () => console.log(JSON.stringify({ open: Date.now() - t0 }));
+ws.onclose = (e) => { console.log(JSON.stringify({ closed: Date.now(), code: e.code })); process.exit(0); };
+ws.onerror = () => {}; setTimeout(() => { console.log(JSON.stringify({ timeout: true })); process.exit(0); }, 40000);`,
+      `ws://${magicName(A)}:${PEER_PORT}/ws/watch?path=${encodeURIComponent(path)}`]);
+    await new Promise((r) => setTimeout(r, 2000));
+    const peersRel = "sova/peers.json";
+    const before = readAgentFile(A, peersRel);
+    try {
+      const doc = JSON.parse(before);
+      doc.peers = doc.peers.filter((p) => p.id !== B);
+      writeAgentFile(A, peersRel, JSON.stringify(doc, null, 2) + "\n");
+      const t1 = Date.now();
+      const r = curlFrom(B, `http://${magicName(A)}:${PEER_PORT}/api/health`);
+      assert.equal(r.status, 403, "B's next request is refused");
+      const { out } = await holder.done;
+      const lines = out.split("\n").filter(Boolean).map((l) => JSON.parse(l));
+      assert.ok(lines.some((l) => l.open !== undefined), `the watch opened (${out})`);
+      const closed = lines.find((l) => l.closed);
+      assert.ok(closed, `B's socket closed (${out})`);
+      console.log(`# revoked peer's WS closed ${closed.closed - t1} ms after its next request (code ${closed.code})`);
+      assert.ok(closed.closed - t1 < 3000, "within ~1 s (bound 3 s)");
+    } finally {
+      holder.kill();
+      writeAgentFile(A, peersRel, before);
+    }
+    await waitFor(() => curlFrom(B, `http://${magicName(A)}:${PEER_PORT}/api/peer/hello`).status === 200, { timeoutMs: 30000, what: `${B} a peer of ${A} again` });
   });
 });
 

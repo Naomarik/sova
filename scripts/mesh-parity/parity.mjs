@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // mesh-parity: prove that a `mesh` commit with NO peer configured behaves as the master baseline
-// (6444a04) does. Both trees are extracted with `git archive` (never a git worktree), installed
+// (--base, default master 5e0ff37; 6444a04 through M5) does. Both trees are extracted with `git
+// archive` (never a git worktree), installed
 // from the frozen lockfile, and run one after the other at the SAME paths (agent dir, HOME, TMPDIR,
 // fixture cwd, port), so almost nothing needs normalizing; see normalize.mjs for what does and why.
 //
 //   node scripts/mesh-parity/parity.mjs                    # baseline vs HEAD of branch `mesh`
 //   node scripts/mesh-parity/parity.mjs --mesh <rev>       # vs another commit
+//   node scripts/mesh-parity/parity.mjs --base 6444a04      # against another master commit
 //   node scripts/mesh-parity/parity.mjs --aa               # baseline vs itself: the noise floor
 //   node scripts/mesh-parity/parity.mjs --patch x.diff     # apply a patch to the mesh tree (canaries)
 //   node scripts/mesh-parity/parity.mjs --only rest,watch  # a subset of phases
@@ -23,7 +25,7 @@ import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { seedFixtures } from "./fixtures.mjs";
-import { canonical, genericPath, jsonDiff, makeNormalizer, maskModelOutput, stripThinking } from "./normalize.mjs";
+import { canonical, emptyAssistantStarts, genericPath, jsonDiff, makeNormalizer, maskModelOutput, stripThinking } from "./normalize.mjs";
 import { analyzeStrace, listeningSockets } from "./proc.mjs";
 import { restSteps, runRest, serverRoutes, uncoveredRoutes } from "./rest.mjs";
 import { captureScreens, comparePng, screenList, startBrowser } from "./screens.mjs";
@@ -32,18 +34,21 @@ import { chatPhase, chatShape, collect, dropOutline, watchPhase } from "./wsphas
 import { extensionSteps, extensionWs, installExtensions, startEchoBackend } from "./extfixture.mjs";
 
 const REPO = resolve(import.meta.dirname, "../..");
-const BASELINE_SHA = "6444a04";
+// The master commit `mesh` is compared with: 6444a04 (the branch point) through M5; master's tip 5e0ff37 once
+// master was merged into mesh (eea59e5). `--base <rev>` picks another; each base gets its own tree.
+const BASELINE_SHA = "5e0ff37";
 const ALL_PHASES = ["static", "rest", "watch", "screens", "chat", "proc", "disk"];
 
 const { values: opt } = parseArgs({
   options: {
     mesh: { type: "string", default: "mesh" },
+    base: { type: "string", default: BASELINE_SHA },
     aa: { type: "boolean", default: false },
     patch: { type: "string" },
     only: { type: "string" },
     skip: { type: "string" },
     work: { type: "string", default: join(homedir(), ".cache/sova-mesh/qa-reviewer") },
-    baseline: { type: "string", default: join(homedir(), ".cache/sova-mesh/baseline") },
+    baseline: { type: "string" }, // default: ~/.cache/sova-mesh/baseline-<base sha7>
     "expect-mesh-ui": { type: "string", default: "" },
     "idle-seconds": { type: "string", default: "20" },
     auth: { type: "string", default: join(REPO, ".agent/auth.json") },
@@ -60,11 +65,11 @@ const log = (...a) => console.error(`[parity ${new Date().toISOString().slice(11
 const git = (...args) => execFileSync("git", ["-C", REPO, ...args]).toString().trim();
 
 // ---- trees -------------------------------------------------------------------------------------
-const baseSha = git("rev-parse", `${BASELINE_SHA}^{commit}`);
+const baseSha = git("rev-parse", `${opt.base}^{commit}`);
 const meshSha = opt.aa ? baseSha : git("rev-parse", `${opt.mesh}^{commit}`);
 const patchTag = opt.patch ? "-" + createHash("sha256").update(readFileSync(opt.patch)).digest("hex").slice(0, 8) : "";
 log(`baseline ${baseSha.slice(0, 10)}  vs  ${opt.aa ? "baseline (A/A)" : `mesh ${meshSha.slice(0, 10)}${patchTag ? ` + patch ${opt.patch}` : ""}`}`);
-const baseTree = prepareTree({ repo: REPO, sha: baseSha, dest: opt.baseline });
+const baseTree = prepareTree({ repo: REPO, sha: baseSha, dest: opt.baseline ?? join(homedir(), `.cache/sova-mesh/baseline-${baseSha.slice(0, 7)}`) });
 const meshTree = opt.aa && !opt.patch ? baseTree : prepareTree({ repo: REPO, sha: meshSha, dest: join(opt.work, "trees", meshSha.slice(0, 12) + patchTag), patch: opt.patch });
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -78,9 +83,11 @@ for (let d = dirname(LIVE); d !== "/"; d = dirname(d))
     if (existsSync(join(d, f))) throw new Error(`${join(d, f)} would enter the chat's system prompt; pick another live dir`);
 mkdirSync(dirname(LIVE), { recursive: true, mode: 0o700 });
 mkdirSync(RUN, { recursive: true });
-const PORT = await freePort(4871, 4889);
-const EXT_PORT = await freePort(4871, 4889, new Set([PORT]));
-const DOWN_PORT = await freePort(4871, 4889, new Set([PORT, EXT_PORT])); // never listened on: the "down" extension
+// 4871–4887: the mesh lab holds 4888 (mock token server) and 4890–4899, and may be down when a run starts.
+const PORTS = [4871, 4887];
+const PORT = await freePort(...PORTS);
+const EXT_PORT = await freePort(...PORTS, new Set([PORT]));
+const DOWN_PORT = await freePort(...PORTS, new Set([PORT, EXT_PORT])); // never listened on: the "down" extension
 const runStart = Date.now();
 log(`run dir ${RUN}; live dir ${LIVE}; port ${PORT}`);
 
@@ -286,8 +293,8 @@ function compareSides(A, B) {
     record("chat:completed(mesh)", B.chat.completed === true, B.chat.completed ? "" : "mesh chat did not finish its script");
     const na = mk(A), nb = mk(B);
     const sa = chatShape(stripThinking(A.chat.msgs)), sb = chatShape(stripThinking(B.chat.msgs));
-    const seqA = maskModelOutput(na.value({ created: A.chat.created, seq: sa.sequence, close: A.chat.close }));
-    const seqB = maskModelOutput(nb.value({ created: B.chat.created, seq: sb.sequence, close: B.chat.close }));
+    const seqA = maskModelOutput(na.value({ created: A.chat.created, seq: emptyAssistantStarts(sa.sequence), close: A.chat.close }));
+    const seqB = maskModelOutput(nb.value({ created: B.chat.created, seq: emptyAssistantStarts(sb.sequence), close: B.chat.close }));
     const ok = canonical(seqA) === canonical(seqB);
     record("chat:ordered-stream", ok, ok ? `${sa.sequence.length} messages` : jsonDiff(seqA, seqB).join("\n"));
     const endA = mk(A).value({ status: sa.status, workers: sa.workers }), endB = mk(B).value({ status: sb.status, workers: sb.workers });

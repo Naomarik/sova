@@ -176,3 +176,16 @@ export function stripThinking(v) {
   for (const [k, x] of Object.entries(v)) if (k !== "reasoning" && k !== "contentIndex") out[k] = stripThinking(x);
   return out;
 }
+
+/**
+ * The live chat's assistant `message_start` carries the message as it is when the event is sent:
+ * empty, or already holding the first streamed token (acc3-eea59e5: base "P", mesh [] on identical
+ * code). Its content is emptied before comparing; the updates and `message_end` carry the shape.
+ */
+export function emptyAssistantStarts(sequence) {
+  return sequence.map((x) =>
+    x?.event?.type === "message_start" && x.event.message?.role === "assistant" && Array.isArray(x.event.message.content)
+      ? { ...x, event: { ...x.event, message: { ...x.event.message, content: [] } } }
+      : x,
+  );
+}

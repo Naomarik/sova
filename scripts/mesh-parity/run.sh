@@ -1,5 +1,5 @@
 #!/bin/sh
-# The one command: baseline 6444a04 vs HEAD of `mesh` (mesh off). Exit 0 = parity green; otherwise the
+# The one command: baseline master 5e0ff37 (--base <rev> for another) vs HEAD of `mesh` (mesh off). Exit 0 = parity green; otherwise the
 # diff report is under ~/.cache/sova-mesh/qa-reviewer/runs/<stamp>/report.md. Extra arguments are
 # passed through (see parity.mjs: --mesh <rev>, --aa, --patch canary.diff, --only …).
 # The expected mesh-ui counts are the data-mesh-ui roots the mesh UI adds per screen: the home Mesh

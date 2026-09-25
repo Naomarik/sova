@@ -1,7 +1,8 @@
 # mesh-parity
 
 Checks that a `mesh` commit with no peer configured behaves exactly like the master baseline
-(`6444a04`).
+(`--base <rev>`: master's tip `5e0ff37` since the master merge `eea59e5`; `6444a04`, the branch point,
+through M5). Each base is extracted to its own `~/.cache/sova-mesh/baseline-<sha7>`.
 
 ```
 node scripts/mesh-parity/parity.mjs                  # baseline vs HEAD of branch `mesh`

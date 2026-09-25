@@ -101,9 +101,11 @@ export async function captureScreens(browser, base, f, dir) {
         // REST phase's draft on real-chat reads "just now" or "1m ago" by a second either way
         // (measured at 0d2ac3d: 45 s boundary, 0.7 s apart). The instant itself is compared as
         // <now-iso> by the REST phase; here the label is masked in the DOM, so pixels match too.
+        // Countdowns likewise: master's Usage head says "next refresh in 1m" or "2m" by when the
+        // page loaded (seen at eea59e5).
         await page.evaluate(() => {
           const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-          for (let n; (n = walk.nextNode()); ) n.nodeValue = n.nodeValue.replace(/\b(just now|\d{1,2}m ago)\b/g, "(age)");
+          for (let n; (n = walk.nextNode()); ) n.nodeValue = n.nodeValue.replace(/\b(just now|\d{1,2}m ago)\b/g, "(age)").replace(/\bin \d{1,2}[ms]\b/g, "in (time)");
         });
         await page.waitForTimeout(300);
         // A transcript's scroll-to-bottom can still be moving (measured once: base 45 px short on

@@ -39,10 +39,10 @@ diff --color -ruN a/server/mesh/index.ts b/server/mesh/index.ts
  
  export function stopMesh(): void {
    if (!rt.listener) return;
-diff --color -ruN a/server/ws.ts b/server/ws.ts
---- a/server/ws.ts	2026-09-25 09:06:00.660921536 +0400
-+++ b/server/ws.ts	2026-09-25 09:06:09.694421213 +0400
-@@ -91,7 +91,7 @@
+diff -ruN a/server/ws.ts b/server/ws.ts
+--- a/server/ws.ts
++++ b/server/ws.ts
+@@ -109,7 +109,7 @@
        const file = resolveClaudeSession(claudeId);
        if (!file || !existsSync(file)) {
          sendJson(ws, { type: "error", message: file ? "Session file not found" : "Unknown Claude Code session" });
@@ -50,11 +50,11 @@ diff --color -ruN a/server/ws.ts b/server/ws.ts
 +        ws.close(4405, "bad path");
          return;
        }
-       handleWatch(ws, file, normalizeClaudeText, claudeUsageTally());
-diff --color -ruN a/src/components/Sidebar.tsx b/src/components/Sidebar.tsx
---- a/src/components/Sidebar.tsx	2026-09-25 09:06:00.664921535 +0400
-+++ b/src/components/Sidebar.tsx	2026-09-25 09:27:25.566460817 +0400
-@@ -1302,7 +1302,7 @@
+       handleWatch(ws, file, normalizeClaudeText, claudeUsageTally(), "claude");
+diff -ruN a/src/components/Sidebar.tsx b/src/components/Sidebar.tsx
+--- a/src/components/Sidebar.tsx
++++ b/src/components/Sidebar.tsx
+@@ -1348,7 +1348,7 @@
            >
              <Icon name="worker" />
            </a>
@@ -63,12 +63,12 @@ diff --color -ruN a/src/components/Sidebar.tsx b/src/components/Sidebar.tsx
              <Icon name="settings" />
            </button>
          </div>
-@@ -1341,7 +1341,7 @@
+@@ -1387,7 +1387,7 @@
  
          <div class="sidebar-search" role="search">
            <label class="visually-hidden" for="session-search">
 -            Search sessions
 +            Search all sessions
            </label>
-           <div class="search">
-             <Icon name="search" />
+           <div class="sidebar-search-row">
+           {/* Out of the row (and the tab order) while the search is in use: the field takes the width. */}

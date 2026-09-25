@@ -10,6 +10,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { ensureMockCerts, HOSTS_SNIPPET, hostMockEnv, hostMockVolume, mockTokenService, MOCK_LAPTOP_PORT } from "./mock-token-server/lab.mjs";
 
 export const LAB_DIR = resolve(import.meta.dirname);
 export const ROOT = resolve(LAB_DIR, "../..");
@@ -34,7 +35,8 @@ const DNS = { dns: ["1.1.1.1", "9.9.9.9"], dns_search: ["."] };
 /** The lab CA certificate, trusted by every lab node (system store + NODE_EXTRA_CA_CERTS). */
 const CA_MOUNT = `${join(STATE, "tls/ca.pem")}:/run/lab-tls/ca.pem:ro`;
 
-const DEFAULTS = { hosts: ["a", "b", "c"], plain: true, stranger: true, frontdoor: true, auth: "all", seed: true, order: null };
+const DEFAULTS = { hosts: ["a", "b", "c"], plain: true, stranger: true, frontdoor: true, mock: true, auth: "all", seed: true, order: null };
+const MOCK_DIR = () => join(STATE, "mock-token");
 
 // ---------------------------------------------------------------------------------------------
 // small process helpers
@@ -98,6 +100,13 @@ function hostService(cfg, id) {
     CA_MOUNT,
   ];
   if (auth) volumes.push(`${AUTH_SRC}:/run/lab-secrets/auth.json:ro`);
+  // sync-engineer's mock token server (M3): its CA, the /etc/hosts redirect of pi's fixed provider
+  // names, the Claude store simulator's dir. NODE_EXTRA_CA_CERTS then points at a bundle of both
+  // lab CAs, built by the entrypoint.
+  const mock = cfg.mock
+    ? { env: { ...hostMockEnv({ mockContainer: container("mocktoken") }), NODE_EXTRA_CA_CERTS: "/run/lab/ca-bundle.pem" }, volumes: [hostMockVolume(MOCK_DIR()), `${join(STATE, "mock-hosts.sh")}:/run/lab-mock/hosts.sh:ro`] }
+    : { env: {}, volumes: [] };
+  volumes.push(...mock.volumes);
   return {
     image: IMAGES.host,
     container_name: container(id),
@@ -114,12 +123,13 @@ function hostService(cfg, id) {
       LAB_SERVE_PORT: String(SERVE_PORT),
       PORT: String(SOVA_PORT),
       HOST: "127.0.0.1",
-      NODE_EXTRA_CA_CERTS: "/run/lab-tls/ca.pem",
+      NODE_EXTRA_CA_CERTS: "/run/lab/ca-bundle.pem",
+      ...mock.env,
     },
     volumes,
     ports: HOST_IDS.includes(id) ? [`127.0.0.1:${PORTS.host(id)}:4900`] : [],
     networks: ["lab"],
-    depends_on: ["headscale"],
+    depends_on: ["headscale", ...(cfg.mock ? ["mocktoken"] : [])],
     labels: { "sova.mesh-lab": "1", "sova.mesh-lab.role": "host" },
   };
 }
@@ -175,6 +185,11 @@ export function composeFor(cfg) {
     };
     volumes["plain-agent"] = {};
     volumes["plain-home"] = {};
+  }
+  if (cfg.mock) {
+    const svc = mockTokenService({ image: IMAGES.plain, containerName: container("mocktoken"), certDir: MOCK_DIR() });
+    // the lab image's ENV HOST=127.0.0.1 is for Sova; the mock must answer the lab network
+    services.mocktoken = { ...svc, ...DNS, environment: { ...svc.environment, HOST: "0.0.0.0" } };
   }
   if (cfg.stranger) {
     services.stranger = tailnetOnly("stranger");
@@ -341,6 +356,8 @@ function parseUpArgs(args, cfg) {
     else if (a === "--no-stranger") next.stranger = false;
     else if (a === "--frontdoor") next.frontdoor = true;
     else if (a === "--no-frontdoor") next.frontdoor = false;
+    else if (a === "--mock") next.mock = true;
+    else if (a === "--no-mock") next.mock = false;
     else if (a === "--seed") next.seed = true;
     else if (a === "--no-seed") next.seed = false;
     else if (a === "--no-build") next._noBuild = true;
@@ -367,6 +384,10 @@ async function cmdUp(args) {
   const keyFile = join(STATE, "secrets/authkey");
   if (!existsSync(keyFile)) writeFileSync(keyFile, "", { mode: 0o600 }); // bind-mount target must exist
   ensureTls();
+  if (cfg.mock) {
+    ensureMockCerts(STATE);
+    writeFileSync(join(STATE, "mock-hosts.sh"), HOSTS_SNIPPET);
+  }
   if (cfg.frontdoor && !existsSync(join(STATE, "caddy/Caddyfile"))) writeCaddyfile({ ...cfg, hosts: [] });
   writeCompose(cfg);
   compose(["up", "-d", "--remove-orphans", "headscale"], { inherit: true });
@@ -397,6 +418,7 @@ function wipe() {
   rmSync(join(STATE, "secrets"), { recursive: true, force: true });
   rmSync(join(STATE, "caddy"), { recursive: true, force: true });
   rmSync(join(STATE, "tls"), { recursive: true, force: true });
+  rmSync(MOCK_DIR(), { recursive: true, force: true });
 }
 
 async function cmdReset(args) {
@@ -418,7 +440,7 @@ function cmdDestroy(args) {
 
 export function statusRows(cfg) {
   const rows = [];
-  const names = ["headscale", ...cfg.hosts, ...(cfg.plain ? ["plain"] : []), ...(cfg.stranger ? ["stranger"] : []), ...(cfg.frontdoor ? ["frontdoor", "caddy"] : [])];
+  const names = ["headscale", ...cfg.hosts, ...(cfg.plain ? ["plain"] : []), ...(cfg.stranger ? ["stranger"] : []), ...(cfg.frontdoor ? ["frontdoor", "caddy"] : []), ...(cfg.mock ? ["mocktoken"] : [])];
   for (const n of names) {
     const state = containerState(n);
     const row = { name: n, container: container(n), state };
@@ -436,6 +458,7 @@ export function statusRows(cfg) {
       row.url = `http://127.0.0.1:${n === "plain" ? PORTS.plain : PORTS.host(n)}/`;
     }
     if (n === "frontdoor") row.url = `http://127.0.0.1:${PORTS.frontdoor}/`;
+    if (n === "mocktoken") row.url = `http://127.0.0.1:${MOCK_LAPTOP_PORT}/mock/lineages`;
     rows.push(row);
   }
   return rows;
@@ -509,7 +532,7 @@ function restore(n) {
 }
 
 function needNode(cfg, n, kinds = ["any"]) {
-  const all = ["headscale", ...cfg.hosts, "plain", "stranger", "frontdoor", "caddy"];
+  const all = ["headscale", ...cfg.hosts, "plain", "stranger", "frontdoor", "caddy", "mocktoken"];
   if (!n) die("which node? " + all.join(", "));
   if (kinds.includes("tailnet") && !tailnetNodes(cfg).includes(n)) die(`${n} is not a tailnet node (${tailnetNodes(cfg).join(", ")})`);
   if (kinds.includes("sova") && !sovaNodes(cfg).includes(n)) die(`${n} does not run Sova (${sovaNodes(cfg).join(", ")})`);
@@ -594,7 +617,7 @@ const HELP = `usage: scripts/mesh-lab/lab <command> [args]
 
 lifecycle
   up [--hosts N|a,b,..] [--auth all|none|a,b] [--no-plain] [--no-stranger] [--no-frontdoor]
-     [--no-seed] [--no-build]      build images from the worktree, start/refresh the lab, wait ready
+     [--no-mock] [--no-seed] [--no-build]      build images from the worktree, start/refresh the lab, wait ready
   build                           build the images only
   down                            stop and remove containers (volumes kept)
   reset [up options]              wipe all lab volumes + Headscale DB + secrets, then up

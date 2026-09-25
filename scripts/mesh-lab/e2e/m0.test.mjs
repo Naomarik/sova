@@ -88,15 +88,18 @@ describe("hosts", () => {
     assert.equal(curlFrom(b, `http://127.0.0.1:${SOVA_PORT}/api/health`).json?.ok, true);
   });
 
-  test("each host has its own hermetic agent dir, API keys only", () => {
+  test("each host has its own hermetic agent dir: API keys (and mock logins) only", () => {
     for (const n of [...cfg.hosts, ...(cfg.plain ? ["plain"] : [])]) {
       assert.equal(sh(n, "cd /sova && node scripts/hermetic-agent-dir.mjs --check").code, 0, `${n} --check`);
       const auth = readAgentFile(n, "auth.json");
       const wantsAuth = cfg.auth === "all" || (Array.isArray(cfg.auth) && cfg.auth.includes(n));
       if (!wantsAuth) continue;
       assert.ok(auth, `${n} has auth.json`);
-      const types = Object.values(JSON.parse(auth)).map((v) => v.type);
-      assert.ok(types.length > 0 && types.every((t) => t === "api_key"), `${n}: only api_key entries (got ${types})`);
+      // API keys from the worktree, plus OAuth entries the lab's mock token server minted (its
+      // accounts are "acct-L<n>"); a real subscription login never belongs here
+      const entries = Object.entries(JSON.parse(auth));
+      assert.ok(entries.some(([, v]) => v.type === "api_key"), `${n}: has the API keys`);
+      for (const [k, v] of entries) assert.ok(v.type === "api_key" || (v.type === "oauth" && /^acct-L\d+$/.test(v.accountId ?? "")), `${n}: ${k} is ${v.type}, not an API key or a mock login`);
       assert.equal(sh(n, 'stat -c %a "$PI_CODING_AGENT_DIR/auth.json"').out, "600");
       assert.equal(sh(n, "test -e /root/.claude/.credentials.json").code, 1, `${n}: no Claude store`);
     }

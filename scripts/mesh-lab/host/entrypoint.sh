@@ -32,6 +32,15 @@ if [ -r /run/lab-tls/ca.pem ]; then
   cp /run/lab-tls/ca.pem /usr/local/share/ca-certificates/sova-mesh-lab-ca.crt && update-ca-certificates >/dev/null 2>&1
 fi
 
+# Every lab CA in one bundle for NODE_EXTRA_CA_CERTS (it takes a single file): the lab CA and,
+# when wired, the mock token server's CA.
+cat /run/lab-tls/ca.pem /run/mock-token/ca.pem 2>/dev/null > /run/lab/ca-bundle.pem
+[ -r /run/mock-token/ca.pem ] && cp /run/mock-token/ca.pem /usr/local/share/ca-certificates/sova-mesh-lab-mock-ca.crt \
+  && update-ca-certificates >/dev/null 2>&1
+# The mock token server (sync-engineer's snippet): pi's fixed provider names -> the mock, in
+# /etc/hosts, failing closed to 0.0.0.0. Must run before Sova or any pi process starts.
+[ -r /run/lab-mock/hosts.sh ] && . /run/lab-mock/hosts.sh
+
 # Sova itself never needs network admin rights: drop them from its bounding set.
 SOVA_EXEC=(setpriv --bounding-set=-net_admin,-net_raw --)
 

@@ -20,6 +20,7 @@ import type { ForkMarker } from "./Thread";
 import { WatchView } from "./WatchView";
 import { Banner, Chip, CountChip, Icon } from "./ui";
 import { hostLabel, hostOf } from "../lib/mesh";
+import { HostScopeProvider } from "../lib/host-scope";
 
 /** Why a session is open read-only. */
 export type WatchWhy = "tui" | "recent";
@@ -321,6 +322,8 @@ export function SessionView(props: {
 
   return (
     <PaneScopeProvider value={scope}>
+      {/* A peer's session: its composer's models, policy and mode defaults are that host's. */}
+      <HostScopeProvider value={() => hostOf(path)}>
       <Show when={props.paneId} fallback={<FullHead />}>
         {/* One pane of a workspace: a 40px head under the
             workspace's own, carrying only what tells this member apart — its name, its context
@@ -493,6 +496,7 @@ export function SessionView(props: {
           );
         }}
       </Show>
+      </HostScopeProvider>
     </PaneScopeProvider>
   );
 }

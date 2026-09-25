@@ -23,6 +23,7 @@ import {
 import { appendItems } from "../lib/explain";
 import { isObj, str } from "../lib/message";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
+import { hostOf } from "../lib/mesh";
 import { openFailureView } from "../lib/open-failure";
 import {
   closeRemoteStatus,
@@ -1037,11 +1038,11 @@ export function ChatView(props: {
 
   // The policy this chat is judged by. Cached app-wide, so the Settings dialog's last save is
   // already here; a policy we couldn't read blocks nothing (the server still refuses).
-  void ensureModelPolicy().catch(() => {});
+  void ensureModelPolicy(hostOf(props.path)).catch(() => {});
   /** Why this chat can't send right now — its model is off — or null. */
   const offNow = (): string | null => {
     const ref = model();
-    const policy = modelPolicy();
+    const policy = modelPolicy(hostOf(props.path));
     if (!ref || !policy || modelEnabled(policy, ref)) return null;
     return `${ref} is turned off in Settings → Models. Pick another model, then send this again.`;
   };

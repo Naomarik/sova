@@ -129,23 +129,27 @@ export const enabledCount = (policy: ModelPolicy, models: ModelInfo[]) =>
  * The policy the app is working with, shared by the Settings dialog and the model picker: the
  * picker must not offer a model the server would refuse. Null before the first load.
  */
-const [policy, setPolicy] = createSignal<ModelPolicy | null>(null);
+// Per host: a peer session's picker offers what ITS host's policy allows (`host` a peer id; null
+// or left out, the host serving this page — Settings → Models edits only that one).
+const [policies, setPolicies] = createSignal<ReadonlyMap<string, ModelPolicy>>(new Map());
+const policyKey = (host?: string | null) => host ?? "";
 
-export const modelPolicy = policy;
+export const modelPolicy = (host?: string | null): ModelPolicy | null => policies().get(policyKey(host)) ?? null;
 
 /** Replaces the cache (after a successful load or save). */
-export const cacheModelPolicy = (next: ModelPolicy) => setPolicy(next);
+export const cacheModelPolicy = (next: ModelPolicy, host?: string | null) =>
+  setPolicies((m) => new Map(m).set(policyKey(host), next));
 
 /** Re-fetches and replaces the cache. Rejects like the request; the cache is left untouched. */
-export async function loadModelPolicy(): Promise<ModelPolicy> {
-  const next = await getModelPolicy();
-  setPolicy(next);
+export async function loadModelPolicy(host?: string | null): Promise<ModelPolicy> {
+  const next = await getModelPolicy(host);
+  cacheModelPolicy(next, host);
   return next;
 }
 
 /** Fetches once; later calls resolve against the cache while nothing refreshes it. */
-export async function ensureModelPolicy(): Promise<ModelPolicy> {
-  return policy() ?? (await loadModelPolicy());
+export async function ensureModelPolicy(host?: string | null): Promise<ModelPolicy> {
+  return modelPolicy(host) ?? (await loadModelPolicy(host));
 }
 
 /**
@@ -153,7 +157,7 @@ export async function ensureModelPolicy(): Promise<ModelPolicy> {
  * model anyway, and a picker that empties itself because a fetch is in flight is worse than one
  * that briefly lists a model you can't pick.
  */
-export const usableModels = (models: ModelInfo[]): ModelInfo[] => {
-  const p = policy();
+export const usableModels = (models: ModelInfo[], host?: string | null): ModelInfo[] => {
+  const p = modelPolicy(host);
   return p ? models.filter((m) => modelEnabled(p, m.ref)) : models;
 };

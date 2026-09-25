@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, on, onMount, Show, type Ac
 import type { ModelInfo } from "../../shared/protocol";
 import { loadModelPolicy, usableModels } from "../lib/model-policy";
 import { loadModels, modelList, toggleFavorite } from "../lib/models";
+import { useHostScope } from "../lib/host-scope";
 import { usePaneId } from "../lib/pane-scope";
 import { announce } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
@@ -41,6 +42,9 @@ export function ModelPicker(props: {
   // Every id here is the pane's inside a workspace: aria-activedescendant and the scroll-into-view
   // below both resolve against the document, and N composers can have a picker open at once.
   const paneId = usePaneId();
+  /** The host whose models these are: a peer session's own (lib/host-scope.ts). */
+  const host = useHostScope();
+  const models = () => modelList(host());
   const optionId = (ref: string) => paneId(baseOptionId(ref));
 
   const [query, setQuery] = createSignal("");
@@ -59,9 +63,9 @@ export function ModelPicker(props: {
       // The policy rides along with the list: a model turned off in Settings → Models is refused
       // by the server, so offering it here would be a dead option. A policy that fails to load
       // hides nothing (src/lib/model-policy.ts) — the list is still the models you have.
-      await Promise.all([loadModels(), loadModelPolicy().catch(() => undefined)]);
+      await Promise.all([loadModels(undefined, host()), loadModelPolicy(host()).catch(() => undefined)]);
     } catch {
-      if (!modelList()) setLoadError(true);
+      if (!models()) setLoadError(true);
     } finally {
       clearTimeout(skeleton);
       setShowSkeleton(false);
@@ -72,7 +76,7 @@ export function ModelPicker(props: {
   /** Every query token must appear in provider/id, case-insensitively. */
   const matches = createMemo(() => {
     const tokens = query().toLowerCase().split(/\s+/).filter(Boolean);
-    return usableModels(modelList() ?? []).filter((m) => tokens.every((t) => m.ref.toLowerCase().includes(t)));
+    return usableModels(models() ?? [], host()).filter((m) => tokens.every((t) => m.ref.toLowerCase().includes(t)));
   });
   const favorites = createMemo(() => matches().filter((m) => m.favorite).sort((a, b) => a.ref.localeCompare(b.ref)));
   const others = createMemo(() =>
@@ -119,7 +123,7 @@ export function ModelPicker(props: {
     holdHover = true;
     setActive(m.ref);
     scrollActive();
-    toggleFavorite(m.ref, favorite).then(
+    toggleFavorite(m.ref, favorite, undefined, host()).then(
       () => announce(favorite ? `Added ${m.id} to favorites.` : `Removed ${m.id} from favorites.`),
       (error: unknown) => {
         setStarError({ id: m.id, favorite, message: error instanceof Error ? error.message : String(error) });
@@ -310,15 +314,15 @@ export function ModelPicker(props: {
         aria-label="Models"
         tabindex="-1"
         aria-activedescendant={active() ? optionId(active()!) : undefined}
-        aria-busy={loading() && !modelList() ? "true" : undefined}
+        aria-busy={loading() && !models() ? "true" : undefined}
         ref={listbox}
         onKeyDown={onListKey}
         onMouseMove={onPointerMove}
       >
-        <Show when={!modelList() && showSkeleton()}>
+        <Show when={!models() && showSkeleton()}>
           <For each={[1, 2, 3, 4]}>{() => <div class="skeleton skeleton-row" />}</For>
         </Show>
-        <Show when={modelList()}>
+        <Show when={models()}>
           <Show
             when={flat().length > 0}
             fallback={
@@ -327,7 +331,7 @@ export function ModelPicker(props: {
                   when={query().trim()}
                   fallback={
                     <Show
-                      when={(modelList() ?? []).length > 0}
+                      when={(models() ?? []).length > 0}
                       fallback={
                         <>
                           0 models have credentials. Log in with <code>pi</code> in a terminal to add one.

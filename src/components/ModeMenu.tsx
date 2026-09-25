@@ -2,6 +2,7 @@ import { createMemo, createSignal, For, Show, type Accessor } from "solid-js";
 import type { ChatServerMessage, ModeInfo } from "../../shared/protocol";
 import { getMode, postMode, saveModeDefault } from "../lib/api";
 import { FOOT_NOTE, isDefaultMode, modeSummary, saveLabel, saveTitle, type ShownMode } from "../lib/mode-menu";
+import { useHostScope } from "../lib/host-scope";
 import { usePaneId } from "../lib/pane-scope";
 import { openSettings } from "../lib/settings-nav";
 import { announce } from "../lib/ui-state";
@@ -55,6 +56,8 @@ const shownOf = (m: Pick<ModeInfo, "mode" | "minorModes" | "strict">): ShownMode
  */
 export function ModeMenu(props: { control: ModeControl }) {
   const paneId = usePaneId();
+  /** A peer session's modes and default are its host's. */
+  const host = useHostScope();
   let trigger!: HTMLButtonElement;
   let menu!: HTMLDivElement;
   let closedByChoice = false;
@@ -119,7 +122,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     if (!keepError) setError(null);
     menu.showPopover();
     try {
-      const read = await getMode();
+      const read = await getMode(host());
       setInfo(read);
       setDefaultMode(shownOf(read));
     } catch {

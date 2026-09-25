@@ -228,13 +228,13 @@ export function Composer(props: {
   /** The level to show, or null when this model's ladder isn't a choice. */
   const levelShown = () => {
     const thinking = props.thinking;
-    if (!thinking || thinkingLevelsFor(props.model?.model()).length <= 1) return null;
+    if (!thinking || thinkingLevelsFor(props.model?.model(), hostOf(props.path)).length <= 1) return null;
     return thinking.pending() ?? thinking.level();
   };
   // The thinking ladder decides whether the level is worth showing, and it only arrives with the
   // model catalog — load it as soon as a session has a thinking control, not when the flyout opens.
   createEffect(() => {
-    if (props.thinking && props.model?.model() && !modelList()) void ensureModels().catch(() => {});
+    if (props.thinking && props.model?.model() && !modelList(hostOf(props.path))) void ensureModels(hostOf(props.path)).catch(() => {});
   });
   /** Open by the indicator, closed by it again: one control, one state. */
   const indicatorOpen = () => !!menu()?.open() && menu()?.anchor() === indicator;

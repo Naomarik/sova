@@ -1,6 +1,7 @@
 import { createContext, createMemo, createSignal, Index, Match, onCleanup, onMount, Show, Switch, useContext, type Accessor } from "solid-js";
 import { modelProvider, shortModel } from "../lib/format";
 import { ensureModels, thinkingLevelsFor } from "../lib/models";
+import { useHostScope } from "../lib/host-scope";
 import { confirmActivate, confirmReset } from "../lib/confirm-step";
 import { hideThinking, hideTools, setHideThinking, setHideTools } from "../lib/ui-state";
 import { sandboxRowTitle } from "../lib/sandbox";
@@ -134,7 +135,8 @@ export function ComposerMenu(props: {
   const [undoArmed, setUndoArmed] = createSignal(false);
   const session = useContext(FlyoutSession);
 
-  const levels = createMemo(() => (props.thinking ? thinkingLevelsFor(props.model?.model()) : []));
+  const host = useHostScope();
+  const levels = createMemo(() => (props.thinking ? thinkingLevelsFor(props.model?.model(), host()) : []));
   /** One level is no choice, and an unknown model has no ladder to show yet. */
   const showThinking = () => levels().length > 1;
 
@@ -342,7 +344,7 @@ export function ComposerMenu(props: {
     // Show first: a panel that mounts into a hidden popover can't take focus.
     if (!menu.matches(":popover-open")) menu.showPopover();
     setPanel(to);
-    void ensureModels().catch(() => {}); // the Thinking ladder needs the list; the picker reports its own failure
+    void ensureModels(host()).catch(() => {}); // the Thinking ladder needs the list; the picker reports its own failure
     if (to !== "picker") focusFirst();
   };
   const close = (byChoice = false) => {

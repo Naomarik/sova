@@ -84,3 +84,16 @@ test("only the latest toggle of a ref decides; its failure rolls back to the las
   await assert.rejects(fourth);
   assert.equal(fav("a/x"), true, "the third was confirmed, so that's the rollback target");
 });
+
+test("a peer's list, favorites and ladders are its own: this host's cache never answers for it", async () => {
+  await seed([model("a/x")]);
+  await loadModels(async () => [model("z/peer-only", true)], "laptop");
+  assert.equal(modelByRef("z/peer-only"), null, "this host has no such model");
+  assert.equal(modelByRef("a/x", "laptop"), null, "the peer doesn't either");
+  assert.equal(modelByRef("z/peer-only", "laptop")?.favorite, true);
+  const { put, calls } = deferredPut();
+  const done = toggleFavorite("a/x", true, put, "laptop");
+  assert.equal(fav("a/x"), false, "a toggle on the peer leaves this host's star alone");
+  calls[0]!.resolve();
+  await done;
+});

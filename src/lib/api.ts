@@ -122,15 +122,16 @@ export const listFolders = (path?: string, hidden = false, host?: string | null)
   return request<FolderListing>(hostUrl(host, `/api/folders${qs ? `?${qs}` : ""}`));
 };
 
-export const listModels = () => request<ModelInfo[]>("/api/models");
+/** `host`: a peer's models, which its own keys and policy decide; left out, this host's. */
+export const listModels = (host?: string | null) => request<ModelInfo[]>(hostUrl(host, "/api/models"));
 
 /** Star or unstar one model in the command-palette's favorites file, shared with the TUI. */
-export const putModelFavorite = (ref: string, favorite: boolean) =>
-  request<ModelFavoriteResult>("/api/models/favorite", { method: "PUT", body: JSON.stringify({ ref, favorite }) });
+export const putModelFavorite = (ref: string, favorite: boolean, host?: string | null) =>
+  request<ModelFavoriteResult>(hostUrl(host, "/api/models/favorite"), { method: "PUT", body: JSON.stringify({ ref, favorite }) });
 
 /** The unified model policy: what may be used at all, and what subagents may additionally use
     (Settings → Models). Both halves apply everywhere — this browser, the TUI, and workers. */
-export const getModelPolicy = () => request<ModelPolicy>("/api/settings/models");
+export const getModelPolicy = (host?: string | null) => request<ModelPolicy>(hostUrl(host, "/api/settings/models"));
 
 /** Replace the whole policy. It takes effect on the next model change, turn and spawn, everywhere;
     the server refuses a model it forbids, so this is a rule, not a filter. */
@@ -191,7 +192,7 @@ export const fetchPlaybooks = (cwd: string | null, host?: string | null) =>
   request<PlaybookCatalog>(hostUrl(host, cwd ? `/api/playbooks?cwd=${encodeURIComponent(cwd)}` : "/api/playbooks"));
 
 /** The default for new sessions, and what exists (GET /api/mode). */
-export const getMode = () => request<ModeInfo>("/api/mode");
+export const getMode = (host?: string | null) => request<ModeInfo>(hostUrl(host, "/api/mode"));
 
 /**
  * POST /api/mode with a patch. With `path` (a session file) it switches that one chat: only it

@@ -134,13 +134,19 @@
       "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
-        "src/lib/storage-keys.ts"
+        "src/lib/storage-keys.ts",
+        "src/lib/regions.ts",
+        "src/lib/recent.ts",
+        "server/sessions-index.ts"
       ]
     },
     "§app.session-list/search": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Sidebar.tsx"
+      ]
     },
     "§app.session-list/selecting-several-sessions": {
       "kind": "behavior",
@@ -331,12 +337,19 @@
     "§app/settings-dialog": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts"
+      ]
     },
     "§app/shell": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/App.tsx"
+      ]
     },
     "§app/subagents-pane": {
       "kind": "surface",
@@ -351,7 +364,11 @@
     "§chat.composer/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/Composer.tsx"
+      ]
     },
     "§chat.composer/behavior": {
       "kind": "behavior",
@@ -602,7 +619,11 @@
     "§chat.slash-commands/in-the-thread": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/lib/slash.ts",
+        "src/components/Composer.tsx"
+      ]
     },
     "§chat.slash-commands/keyboard-and-mouse": {
       "kind": "behavior",
@@ -696,7 +717,11 @@
     "§chat.transcript/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Thread.tsx",
+        "server/transcript.ts"
+      ]
     },
     "§chat.transcript/landing-page": {
       "kind": "behavior",
@@ -779,7 +804,12 @@
     "§chat/markdown": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/markdown.ts",
+        "src/components/Markdown.tsx",
+        "src/lib/session-links.ts"
+      ]
     },
     "§chat/mode-menu": {
       "kind": "surface",
@@ -1184,14 +1214,15 @@
       "kind": "behavior",
       "authority": "accepted",
       "evidence": "verified",
+      "code": [
+        "src/lib/spine.ts",
+        "src/lib/storage-keys.ts",
+        "src/components/Sidebar.tsx"
+      ],
       "requires": [
         "§app.session-list/recent",
         "§app.session-list/accessibility",
         "§app.shell/spine-column"
-      ],
-      "code": [
-        "src/lib/spine.ts",
-        "src/lib/storage-keys.ts"
       ]
     },
     "§app.shell/spine-column": {
@@ -1855,6 +1886,233 @@
         "§chat.context-window/last-reply",
         "§app.worker-restore/transcript-protocol",
         "§chat.context-window/honesty"
+      ]
+    },
+    "§app.overseer/attention-digest": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/attention.ts",
+        "server/overseer.ts",
+        "server/live.ts"
+      ],
+      "requires": [
+        "§app.overseer/seen"
+      ]
+    },
+    "§app.overseer/caps": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/overseer-tools.ts",
+        "server/overseer-store.ts"
+      ],
+      "requires": []
+    },
+    "§app.overseer/confirm": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/overseer-tools.ts",
+        "src/components/OverseerCards.tsx",
+        "src/lib/overseer.ts",
+        "src/components/Thread.tsx"
+      ],
+      "requires": []
+    },
+    "§app.overseer/dialog-answers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/chat-manager.ts",
+        "server/overseer-tools.ts",
+        "server/transcript.ts",
+        "src/components/Thread.tsx"
+      ],
+      "requires": []
+    },
+    "§app.overseer/entry-button": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/App.tsx",
+        "public/icons/eye.svg",
+        "src/design/base.css",
+        "src/components/ui.tsx"
+      ],
+      "requires": [
+        "§app.session-list/search",
+        "§app.session-list/spine",
+        "§app.overseer/attention-digest",
+        "§app.overseer/seen"
+      ]
+    },
+    "§app.overseer/hosting": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/overseer.ts",
+        "server/chat-manager.ts",
+        "server/overseer-prompt.md"
+      ],
+      "requires": []
+    },
+    "§app.overseer/identity-and-clear": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/overseer.ts",
+        "server/overseer-store.ts",
+        "server/index.ts",
+        "server/sessions-index.ts",
+        "src/App.tsx",
+        "src/components/OverseerView.tsx",
+        "src/lib/regions.ts",
+        "src/lib/recent.ts",
+        "src/lib/slash.ts",
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/SessionView.tsx"
+      ],
+      "requires": [
+        "§app.session-list/regions-top-and-archive",
+        "§chat.slash-commands/in-the-thread"
+      ]
+    },
+    "§app.overseer/links": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/session-links.ts",
+        "src/lib/markdown.ts",
+        "src/components/Markdown.tsx"
+      ],
+      "requires": []
+    },
+    "§app.overseer/navigation": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/overseer-tools.ts",
+        "src/lib/overseer.ts",
+        "src/components/ChatView.tsx",
+        "src/components/Thread.tsx",
+        "src/components/ToolCard.tsx",
+        "src/lib/live.ts"
+      ],
+      "requires": [
+        "§chat.transcript/a-queued-message"
+      ]
+    },
+    "§app.overseer/proactivity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/overseer.ts",
+        "src/components/OverseerView.tsx"
+      ],
+      "requires": [
+        "§app.overseer/attention-digest"
+      ]
+    },
+    "§app.overseer/quick-actions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/ActionMenu.tsx",
+        "server/overseer-store.ts"
+      ],
+      "requires": [
+        "§app.settings-dialog/overseer"
+      ]
+    },
+    "§app.overseer/seen": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/seen.ts",
+        "server/ws.ts",
+        "server/sessions-index.ts",
+        "src/components/Sidebar.tsx"
+      ],
+      "requires": []
+    },
+    "§app.overseer/sent-marker": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/chat-manager.ts",
+        "server/transcript.ts",
+        "server/overseer.ts",
+        "src/components/Thread.tsx"
+      ],
+      "requires": [
+        "§chat.transcript/message-actions"
+      ]
+    },
+    "§app.overseer/standing-notes": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/overseer-store.ts",
+        "server/overseer-tools.ts",
+        "server/index.ts"
+      ],
+      "requires": []
+    },
+    "§app.overseer/tools": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/overseer-tools.ts",
+        "server/overseer-deny.ts",
+        "server/overseer-file-tools.ts",
+        "server/overseer-prompt.md"
+      ],
+      "requires": [
+        "§app.overseer/caps"
+      ]
+    },
+    "§app.settings-dialog/overseer": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/OverseerSettings.tsx",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/overseer-draft.ts",
+        "src/lib/api.ts",
+        "server/index.ts",
+        "server/overseer.ts"
+      ],
+      "requires": []
+    },
+    "§app/overseer": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "shared/protocol.ts",
+        "server/overseer.ts",
+        "server/overseer-store.ts"
       ]
     }
   }

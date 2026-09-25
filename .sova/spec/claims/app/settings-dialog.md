@@ -6,7 +6,7 @@ one panel, wider than the product's question-asking modals because two panes hav
 each other (§design/ground-rules and §design/deviations record the deviation). There is no route and no URL — Settings is a modal
 the session stays behind, closed by the scrim, Esc, or its Close button.
 
-The rail is the structure: each settings screen is one tab — General, Models, Modes, Themes,
+The rail is the structure: each settings screen is one tab — General, Models, Modes, Overseer, Themes,
 Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
@@ -269,3 +269,29 @@ broken. Polling stops when the tab loses focus or the dialog closes.
 
 While the list loads, the panel shows skeleton rows. If the folder can't be read, an error banner
 offers Retry and the built-in themes list anyway — the app's own themes don't depend on it.
+
+## §app.settings-dialog/overseer — Overseer
+
+The Overseer's settings (§app/overseer), stored in `<stateRoot>/overseer.json`. It's Sova-owned; the
+TUI never reads it.
+
+- **Model** (provider/model) and **Thinking**, clamped to the model's ladder. A save applies them
+  at once when the Overseer is idle, otherwise at the end of its turn. They never become the
+  default for new sessions.
+- **Extra System Prompt**: a textarea appended after the Overseer's own prompt. Its hint: "Added
+  after the Overseer's own prompt. Applies from its next run." It and the Standing Notes reach the
+  Overseer from its next run, with no `/clear` (§app.overseer/hosting).
+- **Proactivity**: Off / Badge Only / Brief Me, the same setting the Overseer page cycles.
+- **Quick Actions**: an editable list (label, description, prompt; add, remove, reorder, Reset to
+  Defaults).
+- **Limits**: sessions created per user message, prompts sent per user message, archives per user
+  message, and Overseer-started sessions running at once (§app.overseer/caps).
+- **Standing Notes**: a textarea over `overseer-notes.md`.
+- **Fresh, and only what changed.** Both files are read each time the screen mounts (each open of
+  the dialog, each return to the tab); an unsaved edit kept across tabs is rebased onto that read:
+  every field the user left alone shows the file's value. Save reads both files again and writes
+  only the fields the user changed on top of them, so a model the Overseer's composer switched to, or
+  a note `sova_note` added, while the form was open is never reverted. A file whose content would not
+  change is not written.
+- The PUT is strict: an invalid body is refused with its reason, and a model that can't be verified
+  or that the policy refuses comes back as a warning sentence.

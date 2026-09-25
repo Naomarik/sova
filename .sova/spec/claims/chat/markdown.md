@@ -29,7 +29,10 @@ dependency needs approval under CLAUDE.md):
 - **Links.**
   - Only absolute `http:`, `https:`, and `mailto:` URLs become links. Anything else (relative
     paths, `javascript:`, `file:`, `data:`) renders as its link text, unlinked.
-  - Every link gets `target="_blank" rel="noreferrer"` and a trailing
+  - `sova://s/<id>` and `sova://g/<groupId>` also become links, **in-app** ones (§app.overseer/links):
+    resolved to the session's or group's route, same tab, no new-tab text or glyph. An unknown id
+    renders as its text, unlinked.
+  - Every other link gets `target="_blank" rel="noreferrer"` and a trailing
     `<span class="visually-hidden"> (opens in a new tab)</span>`. The CSS adds the `external`
     glyph after it.
 - **Headings** stay `h1`–`h6` in the DOM, but `.md` restyles them to bubble scale. `h1` and

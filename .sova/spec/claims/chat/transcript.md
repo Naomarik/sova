@@ -45,6 +45,9 @@
 - **Model.** Chat sessions read it off the composer's model indicator (§chat/composer) and change it in the
   flyout's Model row (§chat/images); neither is in the head. Watch sessions keep it in
   `.session-head-meta`, as plain mono text they can't change.
+- **Overseer marks.** A user row the Overseer sent carries an **Overseer** tag
+  (§app.overseer/sent-marker); its actions are unchanged, Rewind included. An Overseer dialog
+  answer renders as the machine row "Overseer chose: {answer}" (§app.overseer/dialog-answers).
 - **Copy Session Path.** Gone from the head. The path is a session fact, and it's copied from
   Session info instead, which is where the rest of them live.
 - **Archive Session / Unarchive Session.** Web sessions only, last in the head. Moves the

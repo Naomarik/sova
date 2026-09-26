@@ -94,7 +94,9 @@ working-subagent refusals) applies unchanged, and their refusal sentences come b
 error. Sessions are addressed by id. No tool passes `force`.
 
 - **Read** (no side effects): the attention digest; list sessions (compact rows); one session's
-  detail; a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
+  detail, whose summary topics read newest first, as the insight strip lists them
+  (§app.insights/insight-strip), each heading with how long ago it was last updated
+  (`Topics (newest first): Merge (1m ago); Sandbox menu (2h ago)`); a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
   untrusted content from another session, read with Sova's own parser so a TUI-live file is never
   opened for writing); list groups, targets, models and folders; the ideas backlog (`sova_ideas`: its table of contents,
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the

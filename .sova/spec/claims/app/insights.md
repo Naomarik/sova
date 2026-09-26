@@ -717,10 +717,12 @@ which draws them on the session's axis; the strip keeps no history of its own.
   not a control — no pointer cursor, no hover underline. `.outline-hash` appears only on
   `manual` topics. The time is `at` in mono
   24-hour format, with the date prefix when the day isn't today (§chat/transcript timestamps). **That time is
-  the summary's own** — when the summarizer wrote the topic, not when the conversation it
-  describes happened. It is fine in a list, which claims no order beyond its own; §chat/timeline's axis
-  can't use it, and replaces it with the anchored message's time, falling back to this one,
-  flagged, when the anchor is gone.
+  the summary's own** — when the summarizer last wrote the topic, not when the conversation it
+  describes happened. §chat/timeline's axis can't use it, and replaces it with the anchored
+  message's time, falling back to this one, flagged, when the anchor is gone.
+- **Newest first.** Topics run newest first, by when each was last updated (that same time); ties
+  keep the later topic first. A topic the conversation returns to rises to the top. Only the
+  display is sorted: the outline keeps its topics in the order they were created.
 - **`updating` / `drafting`.** Put a `.live-dot` after `.outline-label` (a summarizer is running
   now), and the state line reads "Updating".
 - **Jump to Message.**

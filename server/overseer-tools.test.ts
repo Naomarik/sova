@@ -241,3 +241,20 @@ describe("sova_send into running sessions", () => {
     assert.match(await h.call({ session: "a", text: "next step" }), /^ERROR: Limit reached/, "a is idle: a send would start it, beside b");
   });
 });
+
+describe("sova_session's Topics line", () => {
+  test("lists topics newest first by last update, each with its age; a tie keeps the later topic first", async () => {
+    const { topicsLine } = await import("./overseer-tools");
+    const now = Date.parse("2026-09-27T12:00:00Z");
+    const line = topicsLine(
+      [
+        { heading: "Sandbox menu", at: now - 2 * 3_600_000 },
+        { heading: "Merge", at: now - 60_000 },
+        { heading: "Model names", at: now - 60_000 },
+        { heading: "Invented by the overlay", at: 0 },
+      ],
+      now,
+    );
+    assert.equal(line, "Topics (newest first): Model names (1m ago); Merge (1m ago); Sandbox menu (2h ago); Invented by the overlay");
+  });
+});

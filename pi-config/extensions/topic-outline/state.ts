@@ -188,8 +188,17 @@ export function applyUpdates(
       const topic = next.find(item => item.id === update.topicId) ??
         next.find(item => item.heading.toLowerCase() === update.heading.toLowerCase());
       if (!topic) continue;
+      // An update is the topic's whole new state: its bullets replace the stored ones (the prompt
+      // asks for the complete summary), and its heading replaces the old one, so a heading can
+      // follow its topic. A `#` heading is yours, so it is kept.
       next = next.map(item => item === topic
-        ? { ...topic, anchor, summary: update.summary.slice(0, limits.maxBullets), at: Date.now() }
+        ? {
+          ...topic,
+          heading: topic.manual ? topic.heading : update.heading,
+          anchor,
+          summary: update.summary.slice(0, limits.maxBullets),
+          at: Date.now(),
+        }
         : item);
     } else {
       next.push({

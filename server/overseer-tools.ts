@@ -15,6 +15,8 @@ import type {
 import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
+import { newestTopics } from "../shared/outline-order";
 import { OVERSEER_BRIEF_PREFIX } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { whereOf } from "./attention";
@@ -377,6 +379,17 @@ function cut(s: string, max: number): string {
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
+/** The summary's topics for `sova_session`: newest first (the web strip's order), each heading with
+    how long ago it was last updated, e.g. `Topics (newest first): Merge (1m ago); Sandbox menu (2h ago)`.
+    A topic with no time (one the live overlay invented) shows its heading alone. */
+export function topicsLine(topics: readonly { heading: string; at: number }[], now: number): string {
+  const item = (t: { heading: string; at: number }) => {
+    const ago = t.at > 0 ? relativeTime(t.at, now) : "";
+    return ago ? `${cut(t.heading, 60)} (${ago})` : cut(t.heading, 60);
+  };
+  return `Topics (newest first): ${newestTopics(topics).map(item).join("; ")}`;
+}
+
 /** One line per session for listings. */
 function row(s: SessionSummary, now = Date.now()): string {
   const parts = [
@@ -686,7 +699,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         if (o) {
           if (o.overall) lines.push(`Purpose: ${cut(o.overall, 300)}`);
           if (o.now) lines.push(`Now: ${cut(o.now, 300)}`);
-          if (o.topics?.length) lines.push(`Topics: ${o.topics.map((t) => cut(t.heading, 60)).join("; ")}`);
+          if (o.topics?.length) lines.push(topicsLine(o.topics, Date.now()));
         }
         const workers = insight?.workers ?? [];
         if (workers.length)

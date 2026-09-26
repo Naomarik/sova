@@ -2,7 +2,7 @@
 
 Live topical outline of the current Pi conversation. **Not compaction** — the outline is
 display-only and never changes what the model sees. It maintains markdown-heading-style
-topics (usually the concerns you raise) with short summaries of what the agent did,
+topics (the things you ask for or raise) with short summaries of what came of each,
 and it can scroll the fullscreen transcript directly to the message that started a topic.
 
 ## What you see
@@ -11,7 +11,7 @@ and it can scroll the fullscreen transcript directly to the message that started
   (`Running: edit · auth.ts`, `Needs input`, `Error: …`, `Idle 3m`). No model involved.
 - **Alt+O / `/outline`** — right-side overlay panel:
   - the instant Now line plus the latest model-generated one-liner (with its age),
-  - topic headings with 1–3 bullets each,
+  - topic headings with 1–2 bullets each,
   - **Enter** scrolls the main transcript to the topic's original message (fullscreen mode)
     or opens a read-only peek panel (regular mode / message compacted away / other branch),
   - `r` forces a refresh, `q`/Esc closes.
@@ -43,6 +43,30 @@ anchor is offered, not asserted: on a session whose outline predates this field 
 mid-session message, so the prompt says the existing topics win when the two disagree, and a genuine
 change of goal rewrites `overall`.
 
+### What a summary says
+
+The prompt (`summarizers/chain.ts`, `buildPrompt`) holds the model to these rules:
+
+- **A topic is one thing you asked for or raised.** Worker and subagent reports, timers, status
+  checks and restarts are not topics; they fold into the topic they serve. The model prefers
+  updating an existing topic to starting a new one.
+- **A heading names the subject** in 1–4 plain words, never its status, so it stays true while the
+  work moves on.
+- **Bullets are outcomes**: 1–2 per topic, at most 70 characters, one fact each, in plain words.
+  What was decided, done or found — never the steps taken, check times, commit hashes, file or
+  function names, worker ids or internal names you didn't type yourself. Open items, to-dos and
+  next steps are left out: the chat is ongoing, and the outline records what came of things. Only
+  facts the messages state; nothing inferred.
+- **`now`** is where things stand, at most 60 characters; **`overall`** names the subject in at
+  most 8 words.
+
+**An update replaces the topic.** The model returns the topic's complete summary, and its bullets
+replace the stored ones, so the prompt tells it to resend the earlier facts that still matter. Its
+heading replaces the stored heading too, so a heading can follow its topic (an old status-heading
+heals the next time its topic is touched). A heading you typed with `#` is kept. The parser is a
+safety net above the prompt's limits: a bullet over 120 characters ends on a word with `…`, and
+`limits.maxBullets` (default 2) caps the bullets kept per topic.
+
 Failures (missing binary, non-zero exit, timeout, model errors, rate limits, invalid
 JSON) fall through the chain with growing per-backend backoff (1m → 5m → 15m). If
 everything fails, the last good outline stays in place, marked stale; nothing blocks.
@@ -62,7 +86,7 @@ for trusted projects):
   "shareWithSessions": "now-only",
   "shareLastHeading": true,
   "claudeBin": "~/.local/bin/claude",
-  "limits": { "maxTopics": 40, "maxBullets": 3 }
+  "limits": { "maxTopics": 40, "maxBullets": 2 }
 }
 ```
 

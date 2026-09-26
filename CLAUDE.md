@@ -69,7 +69,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   every `/ws/watch` usage total; the dev watcher does not watch these, so an edit there reaches a
   running server only at its next restart). The frontend imports one file, the only pi-config
   import in `src/`: `src/lib/format.ts` re-exports `pi-config/extensions/stamp/format.ts` (the
-  12-hour clock, stamp and relative time, shared with the TUI's `stamp` extension). Vite bundles
+  12-hour clock, stamp and relative time, shared with the TUI's `stamp` extension); the server
+  imports the same file directly, for the ages on `sova_session`'s topics (`server/overseer-tools.ts`). Vite bundles
   it for the browser, so it must import nothing at all. So an edit to any of these can break Sova's
   typecheck. Keep them pi-runtime-free (node builtins and, for the mode trio and the protocol set,
   each other only), and import nothing else from pi-config at runtime. `minor.ts` also reads its sibling `spec-mode.md` once at load, and

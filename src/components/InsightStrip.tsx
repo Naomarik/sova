@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { ExplanationInfo, OutlineTopic, SessionOutline } from "../../shared/protocol";
+import { newestTopics } from "../../shared/outline-order";
 import { newestFirst } from "../lib/explain";
 import { explanationsHref } from "../lib/insights";
 import { findEntryRow, jumpToEntry, transcriptRoot } from "../lib/jump";
@@ -186,7 +187,7 @@ export function InsightStrip(props: {
                     </Show>
                   </Show>
                   <ol class="outline-topics">
-                    <For each={o().topics}>{(t) => <Topic topic={t} now={props.now} open={open()} path={props.path} />}</For>
+                    <For each={newestTopics(o().topics)}>{(t) => <Topic topic={t} now={props.now} open={open()} path={props.path} />}</For>
                   </ol>
                 </>
               )}

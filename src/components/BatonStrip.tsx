@@ -9,6 +9,8 @@ import { useMinuteNow } from "../lib/minute-clock";
 import { orgHref, rememberStartParent, startForHref } from "../lib/orgs-route";
 import { announce, toast } from "../lib/ui-state";
 import { LinksBanner } from "./LinksBanner";
+import { createMemo, onCleanup } from "solid-js";
+import { retryWrapup } from "../lib/api";
 import { Banner, Chip } from "./ui";
 import "../orgs.css";
 
@@ -50,6 +52,14 @@ export function BatonStrip(props: {
     }),
   );
   createEffect(on(() => info.latest?.session.handoffs.length, (count) => linksStale(shown()?.at ?? null, count) && setShown(null)));
+  // A wrap-up's end moves nothing the list carries: while one runs, read again until it has ended.
+  const wrapupState = createMemo(() => info.latest?.session.wrapup?.state);
+  createEffect(() => {
+    if (wrapupState() !== "running") return;
+    const t = setInterval(() => void refetch(), 5000);
+    onCleanup(() => clearInterval(t));
+  });
+  const [retrying, setRetrying] = createSignal(false);
   const act = async (fn: () => Promise<unknown>, done: string): Promise<boolean> => {
     try {
       const r = await fn();
@@ -243,6 +253,19 @@ export function BatonStrip(props: {
                     <a href={orgHref(i().session.orgId)}>Review or Revert</a>
                   </Show>
                 </span>
+                <Show when={w().state === "failed"}>
+                  <button
+                    type="button"
+                    class="button button-sm button-ghost"
+                    disabled={retrying()}
+                    onClick={() => {
+                      setRetrying(true);
+                      void act(() => retryWrapup(sid()), "Wrap-up started again.").finally(() => setRetrying(false));
+                    }}
+                  >
+                    Retry Wrap-Up
+                  </button>
+                </Show>
               </div>
             )}
           </Show>

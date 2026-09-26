@@ -864,6 +864,8 @@ export const handBaton = (sid: string, to: string, question: string, briefing?: 
 export const approvePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/approve`, jsonInit("POST"));
 export const declinePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/decline`, jsonInit("POST"));
 export const orgChanges = (id: string, limit = 50) => request<NamedChange[]>(`/api/orgs/${encodeURIComponent(id)}/changes?limit=${limit}`);
+/** Run a wrap-up that stopped again (the operator's Retry Wrap-Up). */
+export const retryWrapup = (sid: string) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/wrapup/retry`, jsonInit("POST"));
 
 // ---- a project's decisions, their reconciliation and promotion (§app/requirements) ------------------
 

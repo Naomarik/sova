@@ -8,13 +8,15 @@ import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { registerOrgRoutes } from "./org-routes";
+import { registerWrapupRoutes } from "./wrapup-routes";
+import { startWrapupRecovery } from "./wrapup-recovery";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
 import { WorkspaceCommitter } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
 import { startShareListener, stopShareListener } from "./share/listener";
-import { disposeAllChats, getModelRuntime, heldChat, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
+import { disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { stateRoot } from "./state-root";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
@@ -176,6 +178,7 @@ app.post("/api/sessions/connect", async (c) => {
 
 // Organizations, rosters and baton sessions (server/org-routes.ts; §app/organizations, §app/baton).
 registerOrgRoutes(app);
+registerWrapupRoutes(app);
 registerProjectOverseerRoutes(app);
 // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
 registerDecisionRoutes(app);
@@ -1096,6 +1099,8 @@ startProjectOverseerLoop();
 // Every attached org's workspace repo: committed at most hourly when anything changed, then pushed.
 const workspaceCommits = new WorkspaceCommitter(attachedWorkspaces);
 workspaceCommits.start();
+// A wrap-up row left "running" by an earlier process, or older than any run can be, is recorded failed.
+startWrapupRecovery();
 
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
 // The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);
@@ -1148,10 +1153,17 @@ let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) process.exit(1);
   shuttingDown = true;
+  // Whatever a step below waits on, the process ends.
+  setTimeout(() => {
+    console.error("[server] shutdown took over 20 s; exiting");
+    process.exit(1);
+  }, 20_000).unref();
   // Hosted subagent workers (PI_WORKER_TRANSPORT=host) outlive this process: the
   // subagents extension's session_shutdown detaches them instead of killing them.
   // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
   (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
+  // Stop every turn first: a turn still streaming keeps the CPU busy through every await below.
+  for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
   usagePoller.stop();
   stopMesh();
   stopShareListener();

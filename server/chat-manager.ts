@@ -35,6 +35,7 @@ import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resu
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
 import { isOverseerId } from "./overseer-store";
+import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
 import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
@@ -767,6 +768,9 @@ const senderOfItem = (item: Pick<WebQueueItem, "overseer" | "baton">): Sender | 
 class ChatSession {
   readonly clients = new Set<ChatClient>();
   private unsubscribe: (() => void) | null = null;
+  private streamGuardOff: (() => void) | null = null;
+  /** This runtime's last stream-guard trip (server/stream-guard.ts); cleared when a run starts. */
+  lastStreamTrip: StreamTrip | null = null;
   private pendingUi = new Map<string, PendingUi>();
   private guard: ForeignWriteGuard | null = null;
   private guardTimer: NodeJS.Timeout | null = null;
@@ -1165,6 +1169,15 @@ class ChatSession {
     this.guardTimer.unref();
     this.workersTimer = setInterval(() => this.pushWorkers(), GUARD_POLL_MS);
     this.workersTimer.unref();
+    this.streamGuardOff?.();
+    this.streamGuardOff = attachStreamGuard(session, () => capsFor(this.special), {
+      onRunStart: () => (this.lastStreamTrip = null),
+      onTrip: (trip) => {
+        this.lastStreamTrip = trip;
+        console.warn(`[stream-guard] ${this.path}: ${trip.kind} (${trip.detail}); turn stopped`);
+        this.broadcast({ type: "error", code: "internal", message: `Stopped the turn: ${trip.detail}.` });
+      },
+    });
     await session.bindExtensions({
       uiContext: this.createUiContext(),
       mode: "rpc",
@@ -2207,6 +2220,7 @@ class ChatSession {
     if (this.guardTimer) clearInterval(this.guardTimer);
     if (this.workersTimer) clearInterval(this.workersTimer);
     this.unsubscribe?.();
+    this.streamGuardOff?.();
     for (const p of this.pendingUi.values()) p.resolve(undefined);
     this.pendingUi.clear();
     if (held.get(this.path) === this) held.delete(this.path); // a reload may already hold a newer one

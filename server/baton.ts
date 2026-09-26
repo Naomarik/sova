@@ -792,3 +792,7 @@ export function setWrapup(sessionId: string, info: WrapupInfo): void {
     r.wrapup = info;
   });
 }
+/** Drop the row's wrap-up record, so the session wants one again (the operator's Retry, server/wrapup-recovery.ts). */
+export function clearWrapup(sessionId: string): void {
+  update(sessionId, (r) => void delete r.wrapup);
+}

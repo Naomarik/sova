@@ -3,6 +3,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { SessionSummary, WorkerInfo } from "../shared/protocol";
 import { reuseUnchanged } from "./lib/summary-diff";
+import { setAgentsFeedSource } from "./lib/agents-feed";
 import {
   ApiError,
   createSession,
@@ -272,6 +273,7 @@ export function App() {
     .catch(() => {});
   const usage = createPoll(fetchUsage, USAGE_POLL_MS);
   const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
+  setAgentsFeedSource(agents.data);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
   const overseer = createPoll(getOverseer, OVERSEER_POLL_MS);
   const extensions = createPoll(fetchExtensions, EXTENSIONS_POLL_MS);

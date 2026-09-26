@@ -1,8 +1,9 @@
-import { batch, createEffect, createMemo, createSignal, Match, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { fetchSessionInsight } from "../lib/api";
-import { agentsHref, teamKey, teamPause } from "../lib/insights";
+import { agentsFeed } from "../lib/agents-feed";
+import { agentsHref, teamKey, teamPause, teamPulse } from "../lib/insights";
 import { relativeTime, shortModel } from "../lib/format";
 import { sourceBlocked } from "../lib/fanout";
 import { PaneScopeProvider, type PaneScope } from "../lib/pane-scope";
@@ -206,6 +207,12 @@ export function SessionView(props: {
   });
   props.onInsight(path, insight);
   onCleanup(() => props.onInsight(path, null));
+  // A team event (pause, resume, handover) or a working count can change with no turn of this
+  // session's own and no pane open: follow the #/agents poll, so the head chip is never staler
+  // than that page. A memo, so only a changed value reloads (the feed's objects are rebuilt).
+  // loadInsight, not reloadInsight: nothing here says the transcript moved (no `changed` bump).
+  const pulse = createMemo(() => teamPulse(agentsFeed(), path));
+  createEffect(on(pulse, () => void loadInsight(), { defer: true }));
 
   const working = () => sessionWorking(s());
   /** The busiest live team: where the head chip links. */

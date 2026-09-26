@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TeamEvent, TeamInfo, TeamMember } from "../../shared/protocol";
 import type { AgentsInsight } from "../../shared/protocol";
-import { agentsHref, findTeamGroup, insightsRouteFromHash, memberBadges, memberStatus, newestEventLine, orderedMembers, splitTeamEvents, TEAM_EVENTS_SHOWN, teamAnchor, teamFresh, teamHeadingId, teamKey, teamPause } from "./insights";
+import { agentsHref, findTeamGroup, insightsRouteFromHash, memberBadges, memberStatus, newestEventLine, orderedMembers, splitTeamEvents, TEAM_EVENTS_SHOWN, teamAnchor, teamFresh, teamHeadingId, teamKey, teamPause, teamPulse } from "./insights";
 
 const m = (workerId: string, role: string, extra: Partial<TeamMember> = {}): TeamMember =>
   ({ workerId, role, orchestrator: false, backend: "pi", ownedPaths: [], addedAt: 0, worker: null, ...extra });
@@ -96,4 +96,16 @@ test("D1: teamFresh matches the team's own session, not another session's team w
   const a = { sessions: [insight(true, "/new.jsonl"), insight(false, "/old.jsonl")] } as unknown as AgentsInsight;
   assert.equal(teamFresh(a, team("/new.jsonl")), true);
   assert.equal(teamFresh(a, team("/old.jsonl")), false);
+});
+
+test("D2: a session's team pulse changes with a pause event or a working count, not with a refetch or another session", () => {
+  const team = (parentPath: string, working: number, events: TeamEvent[] = []) => ({ id: "team_02", parentPath, working, events }) as unknown as TeamInfo;
+  const insight = (...teams: TeamInfo[]) => ({ sessions: teams.map((t) => ({ fresh: true, teams: [t] })) }) as unknown as AgentsInsight;
+  const before = teamPulse(insight(team("/a.jsonl", 2, [ev("e1", "handover")]), team("/b.jsonl", 0)), "/a.jsonl");
+  assert.equal(teamPulse(insight(team("/a.jsonl", 2, [ev("e1", "handover")])), "/a.jsonl"), before, "the same data refetched: unchanged");
+  assert.notEqual(teamPulse(insight(team("/a.jsonl", 2, [ev("e1", "handover"), ev("e2", "pause")])), "/a.jsonl"), before, "a pause");
+  assert.notEqual(teamPulse(insight(team("/a.jsonl", 1, [ev("e1", "handover")])), "/a.jsonl"), before, "a working count");
+  assert.equal(teamPulse(insight(team("/a.jsonl", 2, [ev("e1", "handover")]), team("/b.jsonl", 3, [ev("x", "pause")])), "/a.jsonl"), before, "another session's team_02");
+  assert.equal(teamPulse(insight(team("/b.jsonl", 0)), "/a.jsonl"), null);
+  assert.equal(teamPulse(undefined, "/a.jsonl"), null);
 });

@@ -370,6 +370,16 @@ export function activeTeams(a: AgentsInsight | undefined): TeamInfo[] {
 export const teamFresh = (a: AgentsInsight | undefined, team: TeamInfo) =>
   !!a?.sessions.some((s) => s.fresh && s.teams.some((t) => t.id === team.id && t.parentPath === team.parentPath));
 
+/**
+ * What of one session's teams the head chip shows, as one comparable string from the #/agents
+ * data: each team's id, working count and newest event (a pause or resume is an event). Null
+ * when the session has no team there. A change means the session's own insight is stale.
+ */
+export function teamPulse(a: AgentsInsight | undefined, path: string): string | null {
+  const teams = (a?.sessions ?? []).flatMap((s) => s.teams).filter((t) => t.parentPath === path);
+  return teams.length ? teams.map((t) => `${t.id}:${t.working}:${t.events?.at(-1)?.id ?? ""}`).sort().join("|") : null;
+}
+
 /** FNV-1a, 32 bits, base 36: a short stable tag for a parent session path. */
 function pathTag(path: string): string {
   let h = 0x811c9dc5;

@@ -365,15 +365,35 @@ export function activeTeams(a: AgentsInsight | undefined): TeamInfo[] {
     .sort((x, y) => y.createdAt - x.createdAt);
 }
 
-/** Whether a team's parent record has a fresh heartbeat (its member statuses are live). */
+/** Whether a team's parent record has a fresh heartbeat (its member statuses are live). Team ids
+    restart in every session, so the team is matched with its parent session too. */
 export const teamFresh = (a: AgentsInsight | undefined, team: TeamInfo) =>
-  !!a?.sessions.some((s) => s.fresh && s.teams.some((t) => t.id === team.id));
+  !!a?.sessions.some((s) => s.fresh && s.teams.some((t) => t.id === team.id && t.parentPath === team.parentPath));
 
-export const teamAnchor = (id: string) => `team-${id}`;
+/** FNV-1a, 32 bits, base 36: a short stable tag for a parent session path. */
+function pathTag(path: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < path.length; i++) h = Math.imul(h ^ path.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(36);
+}
+/** One team across every session: `<team id>.<tag of its parent session>`. Team ids restart at
+    team_01 in every session, so the id alone names several teams on #/agents. */
+export const teamKey = (team: { id: string; parentPath: string }) => `${team.id}.${pathTag(team.parentPath)}`;
+/** The team group's element id, from its teamKey (or a bare team id, for older links). */
+export const teamAnchor = (key: string) => `team-${key}`;
+/** The team group's heading id (its section's aria-labelledby). */
+export const teamHeadingId = (key: string) => `tt-${key}`;
+/** The group a `#/agents/<key>` link means: its exact key, or, for a bare team id from an older
+    link, the newest team with that id (groups are rendered newest first). */
+export function findTeamGroup(doc: Pick<Document, "getElementById" | "querySelectorAll">, key: string): HTMLElement | null {
+  const exact = doc.getElementById(teamAnchor(key));
+  if (exact || key.includes(".")) return exact;
+  return Array.from(doc.querySelectorAll<HTMLElement>(".team-group")).find((el) => el.id.startsWith(`${teamAnchor(key)}.`)) ?? null;
+}
 export const usageHref = () => "#/usage";
 export const agentsHref = (teamId?: string) => (teamId ? `#/agents/${encodeURIComponent(teamId)}` : "#/agents");
 
-/** The insights page in the hash, if any: `#/usage`, `#/agents`, `#/agents/<teamId>`. */
+/** The insights page in the hash, if any: `#/usage`, `#/agents`, `#/agents/<teamKey>` (a bare team id from older links too). */
 export type InsightsRoute = { page: "usage" } | { page: "agents"; team: string | null };
 
 export function insightsRouteFromHash(hash: string): InsightsRoute | null {

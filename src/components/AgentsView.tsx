@@ -1,7 +1,7 @@
 import { createEffect, createUniqueId, For, Index, Match, Show, Switch } from "solid-js";
 import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamEvent, TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { clockTime, relativeTime, shortModel, tildePath } from "../lib/format";
-import { activeTeams, memberBadges, memberStatus, type MemberStatus, orderedMembers, splitTeamEvents, teamAnchor, teamFresh, teamPause } from "../lib/insights";
+import { activeTeams, findTeamGroup, memberBadges, memberStatus, type MemberStatus, orderedMembers, splitTeamEvents, teamAnchor, teamFresh, teamHeadingId, teamKey, teamPause } from "../lib/insights";
 import type { Poll } from "../lib/poll";
 import { home } from "../lib/ui-state";
 import { capTitle, isHostSession } from "../lib/workers";
@@ -76,8 +76,8 @@ function TeamGroup(props: { team: TeamInfo; fresh: boolean; now: number; parentT
   const paused = () => teamPause(props.team);
   const events = () => splitTeamEvents(props.team);
   return (
-    <section class="insights-group team-group" id={teamAnchor(props.team.id)} aria-labelledby={`tt-${props.team.id}`} tabindex="-1">
-      <h3 class="list-group-label insights-group-head" id={`tt-${props.team.id}`}>
+    <section class="insights-group team-group" id={teamAnchor(teamKey(props.team))} aria-labelledby={teamHeadingId(teamKey(props.team))} tabindex="-1">
+      <h3 class="list-group-label insights-group-head" id={teamHeadingId(teamKey(props.team))}>
         <span class="insights-group-name team-group-name">{props.team.name}</span>
         <Show when={paused()}>
           {(p) => (
@@ -301,7 +301,7 @@ export function AgentsView(props: {
     const id = props.focusTeam;
     props.agents.data(); // the group appears with the first agents payload
     if (!id || id === focused) return;
-    const el = document.getElementById(teamAnchor(id));
+    const el = findTeamGroup(document, id);
     if (!el) return;
     focused = id;
     el.scrollIntoView({ block: "start" });

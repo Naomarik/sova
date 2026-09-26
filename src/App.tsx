@@ -258,7 +258,7 @@ export function App() {
   const extId = createMemo(() => extRoute()?.id ?? null);
   /** The extension asked to fill the window (ext-contract §3.7); ExtensionView owns it. */
   const [extMaximized, setExtMaximized] = createSignal(false);
-  /** Team card to scroll to on `#/agents/<teamId>`. */
+  /** Team card to scroll to on `#/agents/<teamKey>` (or a bare team id from an older link). */
   const focusTeam = () => {
     const r = insightsRoute();
     return r?.page === "agents" ? r.team : null;

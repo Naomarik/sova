@@ -2,7 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TeamEvent, TeamInfo, TeamMember } from "../../shared/protocol";
-import { memberBadges, memberStatus, newestEventLine, orderedMembers, splitTeamEvents, TEAM_EVENTS_SHOWN, teamPause } from "./insights";
+import type { AgentsInsight } from "../../shared/protocol";
+import { agentsHref, findTeamGroup, insightsRouteFromHash, memberBadges, memberStatus, newestEventLine, orderedMembers, splitTeamEvents, TEAM_EVENTS_SHOWN, teamAnchor, teamFresh, teamHeadingId, teamKey, teamPause } from "./insights";
 
 const m = (workerId: string, role: string, extra: Partial<TeamMember> = {}): TeamMember =>
   ({ workerId, role, orchestrator: false, backend: "pi", ownedPaths: [], addedAt: 0, worker: null, ...extra });
@@ -62,4 +63,37 @@ test("events: the newest 20 listed oldest first, the rest folded as earlier; the
   assert.deepEqual(splitTeamEvents({ events: events.slice(0, 2) }).earlier, []);
   assert.equal(newestEventLine({ events })?.text, "wrap-up 22");
   assert.equal(newestEventLine({}), null);
+});
+
+test("D1: two sessions' team_02 get distinct keys, anchors and heading ids; a link finds its own", () => {
+  const a = { id: "team_02", parentPath: "/s/--home--/2026-09-25T20-59_a.jsonl" };
+  const b = { id: "team_02", parentPath: "/s/--home--/2026-09-24T10-00_b.jsonl" };
+  const [ka, kb] = [teamKey(a), teamKey(b)];
+  assert.notEqual(ka, kb);
+  assert.match(ka, /^team_02\.[0-9a-z]+$/);
+  assert.equal(teamKey({ ...a }), ka, "stable for the same session");
+  assert.notEqual(teamAnchor(ka), teamAnchor(kb));
+  assert.notEqual(teamHeadingId(ka), teamHeadingId(kb));
+  // The deep link round-trips through the hash to the same key.
+  const route = insightsRouteFromHash(agentsHref(kb));
+  assert.deepEqual(route, { page: "agents", team: kb });
+  // A fake document with both groups, newest first as rendered.
+  const els = [{ id: teamAnchor(ka) }, { id: teamAnchor(kb) }, { id: teamAnchor(teamKey({ id: "team_20", parentPath: a.parentPath })) }] as HTMLElement[];
+  const doc = {
+    getElementById: (id: string) => els.find((e) => e.id === id) ?? null,
+    querySelectorAll: (sel: string) => { assert.equal(sel, ".team-group"); return els; },
+  } as unknown as Document;
+  assert.equal(findTeamGroup(doc, kb), els[1]);
+  assert.equal(findTeamGroup(doc, ka), els[0]);
+  assert.equal(findTeamGroup(doc, "team_02"), els[0], "an older bare-id link: the newest team with that id");
+  assert.equal(findTeamGroup(doc, "team_2"), null, "a prefix of another id is not a match");
+  assert.equal(findTeamGroup(doc, "team_02.zzz"), null, "an unknown key never falls back");
+});
+
+test("D1: teamFresh matches the team's own session, not another session's team with the same id", () => {
+  const team = (parentPath: string) => ({ id: "team_02", parentPath }) as TeamInfo;
+  const insight = (fresh: boolean, path: string) => ({ fresh, teams: [team(path)] });
+  const a = { sessions: [insight(true, "/new.jsonl"), insight(false, "/old.jsonl")] } as unknown as AgentsInsight;
+  assert.equal(teamFresh(a, team("/new.jsonl")), true);
+  assert.equal(teamFresh(a, team("/old.jsonl")), false);
 });

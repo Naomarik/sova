@@ -2,7 +2,7 @@ import { batch, createEffect, createMemo, createSignal, Match, onCleanup, Show, 
 import { createStore, reconcile } from "solid-js/store";
 import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { fetchSessionInsight } from "../lib/api";
-import { agentsHref, teamPause } from "../lib/insights";
+import { agentsHref, teamKey, teamPause } from "../lib/insights";
 import { relativeTime, shortModel } from "../lib/format";
 import { sourceBlocked } from "../lib/fanout";
 import { PaneScopeProvider, type PaneScope } from "../lib/pane-scope";
@@ -305,7 +305,7 @@ export function SessionView(props: {
           }
         >
           {(t) => (
-            <CountChip href={agentsHref(t().id)} title={teamPause(t()) ? `${t().name} · ${teamPause(t())!.text}` : t().name}>
+            <CountChip href={agentsHref(teamKey(t()))} title={teamPause(t()) ? `${t().name} · ${teamPause(t())!.text}` : t().name}>
               Team · {working()} working
               {teamPause(t()) ? " · paused" : ""}
             </CountChip>

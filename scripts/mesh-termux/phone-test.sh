@@ -251,7 +251,10 @@ dry_claude() {
 set -eu
 export LC_ALL=C
 T=$1; shift; PREFIX=$T/prefix; HOME=$T/home; BASE=$HOME/sova-mesh; M=$BASE/.install; CLAUDE_DIR=${1:-}
+SVC=$PREFIX/var/service/sova-mesh
 mkdir -p "$M"
+# runit's sv: logged with whether the container already holds the mesh's login at that moment
+sv() { printf '%s %s\n' "$*" "$(cmp -s "$BASE/home/.claude/.credentials.json" "$T/container-creds" 2>/dev/null && echo copied || echo not-copied)" >> "$T/sv.log"; }
 log() { printf '[dry] %s\n' "$*" >&2; }
 die() { log "error: $*"; exit 1; }
 note() { grep -qxF "$1" "$M/added" 2>/dev/null || printf '%s\n' "$1" >> "$M/added"; }
@@ -291,12 +294,13 @@ exec proot-distro login debian --user claude --shared-tmp --work-dir "$PWD" -- \
   C=/prefix/var/lib/proot-distro/containers/debian/rootfs/home/claude/.claude
   expect() { # case, wanted dir (relative to the tree, "default" = ~/sova-mesh/home/.claude), want a note (1/0)
     local want=$2 got; [ "$want" != default ] || want=/home/sova-mesh/home/.claude
-    got=$(cat "$t/chosen" 2>/dev/null); got=${got#"$t"}
+    got=$(cat "$t/chosen" 2>/dev/null || true); got=${got#"$t"}
     [ "$got" = "$want" ] || { log "$1: synced dir ${got:-none}, want $want"; rc=1; }
     if [ "$3" = 1 ]; then grep -q 'note:' "$t/log" || { log "$1: no note"; rc=1; }
     else ! grep -q 'note:' "$t/log" || { log "$1: unexpected note: $(cat "$t/log")"; rc=1; }; fi
   }
-  go() { bash "$d/run.sh" "$t" "$@" 2>"$t/log"; }
+  # POSIX mode, like Termux's sh (dash): set -e holds inside $(...) too
+  go() { ln -sfn "$t$C/.credentials.json" "$t/container-creds"; bash --posix "$d/run.sh" "$t" "$@" 2>"$t/log"; }
   mk 1 none;   go; expect "no claude" default 0
   mk 2 native; go; expect "native claude (symlink)" default 0
   mk 3 "$W";   go; expect "proot wrapper" "$C" 0
@@ -310,6 +314,10 @@ exec proot-distro login debian --user claude --shared-tmp --work-dir "$PWD" -- \
   mk 7 "$W" installed-rootfs/debian; go; expect "legacy installed-rootfs" /prefix/var/lib/proot-distro/installed-rootfs/debian/home/claude/.claude 0
   mk 8 "$(printf '%s\nexport CLAUDE_CONFIG_DIR=/x\n' "$W")"; go; expect "CLAUDE_CONFIG_DIR" default 1
   mk 9 "$(printf '%s\n' "$W" | sed 's|--user claude|--user root|; s| HOME=/home/claude||')"; go; expect "root, no HOME=" /prefix/var/lib/proot-distro/containers/debian/rootfs/root/.claude 0
+  mk 14 "$(printf '%s\n' "$W" | sed 's| HOME=/home/claude||')"; rm "$t/prefix/var/lib/proot-distro/containers/debian/rootfs/etc/passwd"
+  go || { log "no HOME=, no passwd: the install died (rc $?)"; rc=1; }; expect "no HOME=, no passwd" default 1
+  mk 15 "$(printf '%s\n' "$W" | sed 's|login debian --user claude --shared-tmp|login --user claude --shared-tmp debian|')"; go
+  expect "distro after login's options" "$C" 0
   mk 10 "$(printf '%s\n%s\n' "$W" 'proot-distro login ubuntu -- true')"; go; expect "two login lines" default 1
   # the switch on a paired host: prev env = the default store holding the mesh's login
   mk 11 "$W"; local B="$t/home/sova-mesh"
@@ -317,7 +325,10 @@ exec proot-distro login debian --user claude --shared-tmp --work-dir "$PWD" -- \
   mkdir -p "$B/home/.claude"; printf '{"claudeAiOauth":{"accessToken":"mesh-current"}}\n' > "$B/home/.claude/.credentials.json"
   echo "SOVA_SYNC_CLAUDE_DIR=$B/home/.claude" > "$B/sova-mesh.env"
   cp "$t$C/.credentials.json" "$d/orig"
+  mkdir -p "$t/prefix/var/service/sova-mesh"
   go; expect "paired switch" "$C" 0
+  [ "$(cat "$t/sv.log" 2>/dev/null)" = "$(printf '%s\n' '-w 30 down sova-mesh not-copied' 'up sova-mesh copied')" ] \
+    || { log "paired switch: Sova not stopped before the copy and started after it: $(cat "$t/sv.log" 2>/dev/null)"; rc=1; }
   cmp -s "$B/home/.claude/.credentials.json" "$t$C/.credentials.json" || { log "paired switch: container login is not the mesh's, byte for byte"; rc=1; }
   [ "$(stat -c %a "$t$C/.credentials.json")" = 600 ] || { log "paired switch: container login not 0600"; rc=1; }
   cmp -s "$d/orig" "$B/.install/claude-credentials.orig" || { log "paired switch: manifest does not hold the container's original"; rc=1; }
@@ -325,13 +336,25 @@ exec proot-distro login debian --user claude --shared-tmp --work-dir "$PWD" -- \
   grep -q copied "$t/log" && { log "paired rerun copied again"; rc=1; }
   diff -r "$d/m1" "$B/.install" >/dev/null || { log "paired rerun changed the manifest"; rc=1; }
   go "$t/other/.claude" 2>/dev/null && { log "a --claude-dir unlike the manifest's was accepted"; rc=1; }
-  bash "$d/unrun.sh" "$t" 2>"$t/unlog" || { cat "$t/unlog" >&2; rc=1; }
+  printf '{"claudeAiOauth":{"accessToken":"made-in-container"}}\n' > "$t$C/.credentials.json"; cp "$t$C/.credentials.json" "$d/newer"
+  bash --posix "$d/unrun.sh" "$t" 2>"$t/unlog" || { cat "$t/unlog" >&2; rc=1; }
   cmp -s "$d/orig" "$t$C/.credentials.json" || { log "uninstall did not restore the container's original"; rc=1; }
+  cmp -s "$d/newer" "$t$C/.credentials.json.sova-uninstall" && [ "$(stat -c %a "$t$C/.credentials.json.sova-uninstall")" = 600 ] \
+    || { log "uninstall did not keep the container's current login in .credentials.json.sova-uninstall (0600)"; rc=1; }
+  grep -q 'sova-uninstall' "$t/unlog" || { log "uninstall did not say where it kept the login"; rc=1; }
+  # a failure after the stop still starts Sova again
+  mk 16 "$W"; B="$t/home/sova-mesh"; mkdir -p "$t/prefix/var/service/sova-mesh" "$B/home/.claude"
+  echo '{"version":1,"self":{"id":"t"},"peers":[{"id":"p"}]}' > "$B/agent/sova/peers.json"
+  printf '{"claudeAiOauth":{"accessToken":"mesh-current"}}\n' > "$B/home/.claude/.credentials.json"
+  echo "SOVA_SYNC_CLAUDE_DIR=$B/home/.claude" > "$B/sova-mesh.env"
+  chmod 500 "$t$C"; go && { log "copy failure: the install went on"; rc=1; }; chmod 700 "$t$C"
+  [ "$(tail -1 "$t/sv.log" 2>/dev/null | cut -d' ' -f1-2)" = "up sova-mesh" ] || { log "copy failure: Sova not started again: $(cat "$t/sv.log" 2>/dev/null)"; rc=1; }
   # no login in the container before: uninstall removes the one Sova put there, the dir stays
   mk 12 "$W"; rm "$t$C/.credentials.json"; go; expect "wrapper, no login yet" "$C" 0
   [ -f "$t/home/sova-mesh/.install/claude-credentials.none" ] || { log "no-login: not recorded"; rc=1; }
-  echo '{}' > "$t$C/.credentials.json"; bash "$d/unrun.sh" "$t" 2>"$t/unlog" || rc=1
+  echo '{}' > "$t$C/.credentials.json"; bash --posix "$d/unrun.sh" "$t" 2>"$t/unlog" || rc=1
   [ ! -e "$t$C/.credentials.json" ] && [ -d "$t$C" ] || { log "no-login: uninstall left the synced login or removed the dir"; rc=1; }
+  [ "$(cat "$t$C/.credentials.json.sova-uninstall" 2>/dev/null)" = '{}' ] || { log "no-login: uninstall did not keep the login it removed"; rc=1; }
   rm -rf "$d"
   [ $rc = 0 ] && echo "DRY CLAUDE PASS" || { echo "DRY CLAUDE FAIL"; return 1; }
 }

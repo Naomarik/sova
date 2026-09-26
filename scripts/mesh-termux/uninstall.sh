@@ -9,7 +9,8 @@
 # installed that weren't there before (never one that was, never one a remaining package still needs), and ~/sova-mesh
 # (app, agent dir with its sessions and logins, HOME with the synced Claude Code login in home/.claude, TMPDIR). When
 # install.sh synced Claude Code's login inside a proot-distro container, the container's .credentials.json is restored
-# to what it was before (or removed if there was none); nothing else in the container is touched. With
+# to what it was before (or removed if there was none), the login it held then kept beside it as
+# .credentials.json.sova-uninstall (0600); nothing else in the container is touched. With
 # --ssh-key installs it also removes the key line it added, the runit sshd it enabled, and openssh if it installed it.
 #   --keep-ssh   keep sshd (package, runit service, the key line) and the wake lock, for remote test loops.
 # Left as they were changed: apt's package lists, apt/dpkg logs, and packages that were upgraded as dependencies
@@ -74,14 +75,21 @@ rm -rf "$PREFIX/var/log/sv/sova-mesh"
 
 # ---- Claude Code's store in a proot container (Sova is stopped: nothing writes it now) -------------------------
 if [ -n "$CLAUDE_DIR" ]; then
+  # the login the container holds now (it may be a newer one made inside it) is kept before it is replaced or removed
+  kept=''
+  if [ -f "$CLAUDE_DIR/.credentials.json" ] && { [ -f "$M/claude-credentials.orig" ] || [ -f "$M/claude-credentials.none" ]; }; then
+    ( umask 077 && cp "$CLAUDE_DIR/.credentials.json" "$CLAUDE_DIR/.credentials.json.sova-uninstall" ) && chmod 600 "$CLAUDE_DIR/.credentials.json.sova-uninstall" \
+      || die "could not keep $CLAUDE_DIR/.credentials.json before restoring it"
+    kept=" (the login it held is kept in .credentials.json.sova-uninstall)"
+  fi
   if [ -f "$M/claude-credentials.orig" ]; then
     ( umask 077 && cp "$M/claude-credentials.orig" "$CLAUDE_DIR/.credentials.json.sova-tmp" ) \
       && chmod 600 "$CLAUDE_DIR/.credentials.json.sova-tmp" && mv "$CLAUDE_DIR/.credentials.json.sova-tmp" "$CLAUDE_DIR/.credentials.json" \
       || die "could not restore $CLAUDE_DIR/.credentials.json (the original stays in $M/claude-credentials.orig)"
-    log "restored the container's own Claude Code login in $CLAUDE_DIR"
+    log "restored the container's own Claude Code login in $CLAUDE_DIR$kept"
   elif [ -f "$M/claude-credentials.none" ]; then
     rm -f "$CLAUDE_DIR/.credentials.json"
-    log "removed the Claude Code login Sova synced into $CLAUDE_DIR (there was none before)"
+    log "removed the Claude Code login Sova synced into $CLAUDE_DIR (there was none before)$kept"
   fi
 fi
 

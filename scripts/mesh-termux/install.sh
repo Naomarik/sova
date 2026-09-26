@@ -218,13 +218,16 @@ claude_proot_dir() { # the container's .claude as seen from Termux, or nothing
   ! grep -q CLAUDE_CONFIG_DIR "$w" || { claude_note "it sets CLAUDE_CONFIG_DIR"; return 0; }
   # distro, --user and HOME= only as plain words (no variables, quotes or globs)
   set -f
-  distro='' user=root home='' prev='' seen=''
+  # the distro is login's first non-option word; login's options that take a value skip it
+  distro='' user=root home='' prev='' seen='' after=''
   for t in $lines; do
-    case "$prev" in
-      login) [ -n "$seen" ] && [ -z "$distro" ] && distro=$t ;;
-      --user) user=$t ;;
-    esac
-    case "$t" in proot-distro) seen=1 ;; HOME=*) home=${t#HOME=} ;; --user=*) user=${t#--user=} ;; esac
+    case "$prev" in --user) user=$t ;; esac
+    if [ -n "$after" ] && [ -z "$distro" ]; then
+      case "$prev" in --user|--bind|--work-dir|--env|--kernel|--hostname) ;; *)
+        case "$t" in --) after='' ;; -*) ;; *) distro=$t ;; esac ;;
+      esac
+    fi
+    case "$t" in proot-distro) seen=1 ;; login) [ -z "$seen" ] || [ -n "$distro" ] || after=1 ;; HOME=*) home=${t#HOME=} ;; --user=*) user=${t#--user=} ;; esac
     prev=$t
   done
   set +f
@@ -236,7 +239,7 @@ claude_proot_dir() { # the container's .claude as seen from Termux, or nothing
   done
   [ -n "$rootfs" ] || { claude_note "its distro $distro has no rootfs"; return 0; }
   # no HOME= in the wrapper: the user's home from the container's passwd
-  [ -n "$home" ] || home=$(awk -F: -v u="$user" '$1==u{print $6; exit}' "$rootfs/etc/passwd" 2>/dev/null)
+  [ -n "$home" ] || home=$(awk -F: -v u="$user" '$1==u{print $6; exit}' "$rootfs/etc/passwd" 2>/dev/null || true)
   printf '%s' "$home" | grep -qE '^/[A-Za-z0-9._/-]*$' && ! printf '%s' "$home" | grep -q '\.\.' || { claude_note "its HOME is not a plain path"; return 0; }
   [ -d "$rootfs$home" ] || { claude_note "its HOME $home does not exist in the container"; return 0; }
   printf '%s\n' "${rootfs}${home%/}/.claude"
@@ -268,6 +271,12 @@ if [ "$CLAUDE_DIR" != "$CLAUDE_DEFAULT" ]; then
   PREV_CLAUDE_DIR=$(sed -n 's/^SOVA_SYNC_CLAUDE_DIR=//p' "$BASE/sova-mesh.env" 2>/dev/null || true)
   npeers=$(node -e 'try{console.log((JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).peers??[]).length)}catch{console.log(0)}' "$BASE/agent/sova/peers.json")
   if [ -n "$PREV_CLAUDE_DIR" ] && [ "$PREV_CLAUDE_DIR" != "$CLAUDE_DIR" ] && [ "$npeers" != 0 ] && [ -f "$PREV_CLAUDE_DIR/.credentials.json" ]; then
+    # the running Sova stops first, so no refresh lands between the copy and the switch; it starts again at the end,
+    # and on any failure from here on (the EXIT trap)
+    if [ -d "$SVC" ]; then
+      trap 'SVDIR="$PREFIX/var/service" sv up sova-mesh >/dev/null 2>&1 || true' EXIT
+      SVDIR="$PREFIX/var/service" sv -w 30 down sova-mesh >/dev/null 2>&1 || true
+    fi
     ( umask 077 && cp "$PREV_CLAUDE_DIR/.credentials.json" "$CLAUDE_DIR/.credentials.json.sova-tmp" ) \
       && chmod 600 "$CLAUDE_DIR/.credentials.json.sova-tmp" && mv "$CLAUDE_DIR/.credentials.json.sova-tmp" "$CLAUDE_DIR/.credentials.json" \
       || die "could not copy the synced Claude Code login into $CLAUDE_DIR"
@@ -363,6 +372,7 @@ note "wake-lock"
 
 # ---- (re)start and verify --------------------------------------------------------------------------
 if [ -n "${NEW_APP:-}${NEW_ENV:-}" ]; then sv restart sova-mesh >/dev/null; else sv up sova-mesh >/dev/null; fi
+trap - EXIT
 log "waiting for http://127.0.0.1:$PORT/api/health"
 i=0
 until curl -fsS -m 2 "http://127.0.0.1:$PORT/api/health" 2>/dev/null | grep -q '"ok":true'; do

@@ -40,7 +40,9 @@ export function lastRunTail(run: { reasons: readonly string[]; outcome: "started
     const why = run.detail ? bare(run.detail) : "";
     return why ? `, skipped: ${why}` : ", skipped";
   }
-  const reasons = run.reasons.map(bare).filter(Boolean);
+  // Each reason is a sentence ("The gathering session … reached its goal."); inside this one it
+  // continues mid-sentence, so its capitalised first word goes lower case (never an acronym: "IT").
+  const reasons = run.reasons.map(bare).filter(Boolean).map((r) => r.replace(/^[A-Z](?=[a-z\s])/, (c) => c.toLowerCase()));
   return reasons.length ? `, after ${reasons.join(", ")}` : "";
 }
 

@@ -699,7 +699,7 @@ export function watchDecision(input: {
 /** `openTodos`: how many of the operator's to-dos are open (their text is in the prompt). */
 export function watchText(reasons: string[], autonomy: string, openTodos = 0): string {
   const list = reasons.length ? reasons.slice(-20).map((r) => `- ${r}`).join("\n") : "- (the operator asked for a look)";
-  const todos = openTodos ? `The operator has ${openTodos} open to-do item${openTodos === 1 ? "" : "s"} for you, listed in full in your prompt: work on them too. ` : "";
+  const todos = openTodos ? `The operator has ${openTodos} open to-do item${openTodos === 1 ? "" : "s"} for you, listed in full in your prompt: work on ${openTodos === 1 ? "it" : "them"} too. ` : "";
   return (
     `${WATCH_PREFIX} Since your last look:\n${list}\n\n` +
     `Re-read the project (sova_project, and sova_decisions where it matters). Infer gaps against the roster's decision areas and file new ones as ideas (§gap/…). ` +

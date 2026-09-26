@@ -195,7 +195,8 @@ describe("the operator's queued items reach its next run", async () => {
     assert.ok(store.readMemo(p).pending.some((r) => /added an idea/.test(r)));
     const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
     assert.match(prompt, /- \[td_[^\]]+\] Name in a note who owns the approval threshold$/m);
-    assert.match(po.watchText([], "L1", 1), /1 open to-do item for you, listed in full in your prompt/);
+    assert.match(po.watchText([], "L1", 1), /1 open to-do item for you, listed in full in your prompt: work on it too\./);
+    assert.match(po.watchText([], "L1", 3), /3 open to-do items for you, listed in full in your prompt: work on them too\./);
     assert.doesNotMatch(po.watchText([], "L1", 0), /to-do/);
   });
 

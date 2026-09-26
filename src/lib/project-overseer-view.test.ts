@@ -56,6 +56,12 @@ test("lastRunTail: the status line ends with one period, whatever the reason end
   assert.equal(line({ reasons: ["a new decision.", "a conflict"], outcome: "started" }), "Last looked on its own 2m ago, after a new decision, a conflict.");
   assert.equal(line({ reasons: [], outcome: "started" }), "Last looked on its own 2m ago.");
   for (const detail of ["x.", "x..", "x. ", "x"]) assert.doesNotMatch(line({ reasons: [], outcome: "skipped", detail }), /\.\.$/);
+  // The server's own reasons are whole sentences: mid-line they continue it, one stop at the end.
+  assert.equal(
+    line({ reasons: ['A decision was recorded in "Payment approval rules".', 'The gathering session "Payment approval rules" reached its goal.'], outcome: "started" }),
+    'Last looked on its own 2m ago, after a decision was recorded in "Payment approval rules", the gathering session "Payment approval rules" reached its goal.',
+  );
+  assert.equal(line({ reasons: ["IT asked for a look."], outcome: "started" }), "Last looked on its own 2m ago, after IT asked for a look.");
 });
 
 test("pendingLine: the waiting reasons as sentences, each with exactly one stop", () => {

@@ -50,7 +50,7 @@ places is a count that disagrees in one of them.
   value, a pasted one and a hand-edited `localStorage` all arrive past the spinner. Below 3 the
   region is a row with neighbours, which the open session alone can fill.
 
-  It saves as you type, like every other setting here: a valid number moves the sidebar on the
+  It saves as you type: a valid number moves the sidebar on the
   keystroke. An invalid one changes nothing and the field says which way it is wrong — "3 is the
   fewest. Below that Recent is a row, not a list." — rather than silently clamping under the
   caret. Leaving the field is where an unusable draft is repaired to the nearest count that works,
@@ -103,10 +103,15 @@ its models are the CLI's rather than pi's. A provider named in the policy that t
 credentials for is listed too, with `No models on this machine` where the count goes — a rule you
 can't see is a rule you can't undo.
 
-Every switch saves immediately — a switch that needed a Save button would be lying about when it
-takes effect, and the file is read per spawn and per turn — and the save is the whole policy. A
-failed save puts the switch back where it was and says so in an error banner; the server's copy is
-the truth, never a local maybe.
+A switch doesn't write on its own. Every move is staged, and one **Save Changes** under the list
+writes the whole policy — one save for every provider and model you moved, never one per switch —
+while **Discard Changes** puts every switch back where the saved policy has it
+(§app.settings-dialog/save-bar). The file is read per spawn and per turn, so a staged switch
+refuses nothing until it's saved, and this browser's model picker follows the saved policy the
+moment the save lands. Save reads the policy again first and applies only the entries you changed
+on top of it, so an entry the TUI or a peer's sync wrote while the form was open is kept, never
+reverted. A failed save keeps every switch where you put it and says so in an error banner:
+**Couldn't save the model policy.** {reason}. "Your saved policy is unchanged."
 
 While the model list or the policy loads, the panel shows skeleton rows. If the policy can't be
 read, an error banner offers Retry and touches nothing.
@@ -307,8 +312,9 @@ The settings of the opt-in classifier (§app/decisions), stored in `<stateRoot>/
 and, for the key, `<stateRoot>/secrets/jev-key`. Sova-owned; the TUI never reads them. The tab
 is named **Decisions**: it names what the features do, not a provider.
 
-Every change is saved as it is made, one write at a time, the way Mesh and Summaries save — no
-Save or Discard, and closing the dialog never asks (§app.settings-dialog/decisions-autosave).
+Saving is explicit, like every server-backed tab: the switches, the fallback and Folders are
+staged, and **Save Changes** at the end of the form writes them; the Jev key and the actions are
+never part of it (§app.settings-dialog/decisions-autosave, §app.settings-dialog/save-bar).
 
 In this order:
 
@@ -326,7 +332,8 @@ In this order:
   Jev rejects is not stored; the field keeps what was typed, with the reason. **Test Decisions**
   always sits in the key row — beside Replace Key and Remove Key, beside Save Key with none stored,
   on its own with a key from `SOVA_JEV_KEY`, and with Jev off — except while Remove Key asks; it is
-  disabled while nothing can answer and while a change is being saved. It runs one canned check with no session data and says, under
+  disabled while nothing can answer and while a change is being saved, and it tests what is saved,
+  never unsaved changes. It runs one canned check with no session data and says, under
   the row, who answered and how long it took ("Answered by haiku in 4.1 s, after Jev was
   rate-limited."), or why nothing could.
   The Jev line reflects the test at once — Working and "checked just now" when Jev answered,
@@ -338,12 +345,11 @@ In this order:
   "Suggested:" buttons that apply one only when clicked — only those this machine can run (the
   backend offers the model at that effort and the policy allows it); a backend that couldn't list
   its models keeps its suggestions, a failed check shows them all, and none show while it runs. Its hint says when it answers (Jev off,
-  or Jev can't) and that its provider bills it. A model pick is saved once backend, model and
-  effort are all chosen (None and a Suggested button at once); until then it stays in the row
-  only. A newly chosen model the server refuses stays in the row with the server's reason under it
-  and "Your saved fallback model is unchanged."; it isn't sent again until changed. The server's
-  notes on a saved fallback (not verified, off by policy) show in warn under the row until the next
-  save that changes the fallback. The section ends with the saved chain in words
+  or Jev can't) and that its provider bills it. A model row holds Save Changes until backend, model
+  and effort are all chosen (None and a Suggested button are complete at once). A newly chosen
+  model the server refuses stays in the row with the server's reason under it and "Your saved
+  fallback model is unchanged." The server's notes on a saved fallback (not verified, off by
+  policy) show in warn under the row until the next save that changes the fallback. The section ends with the saved chain in words
   ("Asks Jev, then Claude Code · haiku.", a paused provider with when it retries, or the
   unavailable sentence).
 - **Features.** **Flag sessions that need you** and **Tag sessions**, both off by default. With a
@@ -352,43 +358,82 @@ In this order:
   checked.", or Jev can't answer and why). The server's note that a feature on stays unavailable
   shows in warn under the switches, only when the switches aren't already saying so.
 - **Never send.** A **Never send TUI sessions** switch (sessions started in the pi terminal) and
-  a Folders textarea, one full path per line (`/…`, `~` or `~/…`). Folders are saved when you
-  leave the box, and not when nothing changed; a line that isn't a full path, or more than 100
-  lines, shows the reason under the box and isn't saved until fixed (§app.decisions/privacy).
+  a Folders textarea, one full path per line (`/…`, `~` or `~/…`). A line that isn't a full path,
+  or more than 100 lines, shows the reason under the box and holds Save Changes until fixed
+  (§app.decisions/privacy); blank and repeated lines are dropped, so they alone are no change.
 - **Tag past sessions**, only while Tag sessions is saved on or a backfill runs: **Tag Last 30
   Days** and **Tag All Sessions**, a hint that it runs 2 at a time, skips what's already tagged
   and costs more on a fallback model; **Stop Tagging** while one runs; a progress line ("Tagged 40
   of 147 · 2 failed.", then "Tagged 147 sessions · 2 failed. New sessions are tagged as they
   finish.", or "Stopped at … ." with the reason). Starting waits while a change is being saved,
-  and is held with a reason while nothing can answer (§app.decisions/backfill).
+  and is held with a reason while nothing can answer (§app.decisions/backfill). Like Test
+  Decisions, it acts on what is saved.
 - A footnote names where the settings are stored, and that the key is stored separately, readable
   only by the user.
 
-## §app.settings-dialog/decisions-autosave — Decisions saves as you go
+## §app.settings-dialog/decisions-autosave — Decisions saves with Save Changes
 
-Settings → Decisions writes each change as it is made: every switch, the fallback choice, a
-fully chosen fallback model, and Folders when you leave the box. The PUT replaces the whole file,
-so the tab sends one write at a time: a change made while one is in flight waits, a later change
-replaces it, and only the newest write's answer is shown — an older answer never puts a control
-back. Controls stay usable while a write is in flight; Test Decisions and the Tag buttons wait for
-it, since they act on what's saved. A successful write is announced to screen readers ("Decision
-settings saved.") with no visible "Saved" text.
+Settings → Decisions stages every change — Use Jev, the fallback choice and model, the Features
+and Never send switches, and Folders — and writes them only with **Save Changes** in the form's
+Save bar (§app.settings-dialog/save-bar). Nothing is written as it is made, and leaving the
+Folders box or the tab writes nothing.
 
-- **Parts that can't be written yet don't hold the rest.** A fallback not fully chosen, a refused
-  fallback, and Folders with a line that isn't a full path each stay on screen; every other change
-  is still saved, carrying the saved fallback and folders in their place.
-- **A refused write.** The server refuses a newly chosen fallback model its backend can't run
-  (400): it stays in the row with the reason; the rest of that write is sent again without it. Any
-  other failure puts back what that write tried to change and shows **Couldn't save the decision
-  settings.** {reason}. "Your saved settings are unchanged."
-- **Notes.** A write that saves with warnings shows each one under what it is about — the fallback
-  row, or the Features switches; a note that names neither shows in a "Saved, with notes." banner
-  at the end of the form. The fallback's notes stay until the next write that changes the
-  fallback; the others are the server's view at each write and are replaced by the next.
-- **The dialog never holds its close for Decisions.** A fallback not fully chosen, or Folders
-  with an invalid line, is forgotten when the dialog closes; switching tabs keeps it. Folders
-  typed but not yet left are saved when the tab changes.
-- The Jev key keeps its own buttons (§app.settings-dialog/decisions); it is never part of this.
+- **Fresh, and only what changed.** The PUT replaces the whole file, so Save first reads the file
+  again and applies only the fields you changed on top of it: a field you left alone is written
+  with what the file holds then, never with the form's older copy. A kept draft is rebased the same
+  way each time the tab mounts. A save that would change nothing on the file writes nothing.
+- **Save waits for a complete form**: a fallback model with backend, model and effort chosen, and
+  every Folders line a full path. A feature on while nothing can answer is a warning, not a hold.
+- **While a save is in flight** the form's controls are disabled; Test Decisions and the Tag
+  buttons wait for it, since they act on what's saved. A successful save is announced to screen
+  readers ("Decision settings saved.") with no visible "Saved" text.
+- **A refused save.** Nothing is written, and every unsaved change stays on screen, with
+  **Couldn't save the decision settings.** {reason}. "Your saved settings are unchanged." When the
+  server refused a newly chosen fallback model its backend can't run (400), that choice also shows
+  the reason under its row.
+- **Notes.** A save with warnings shows each one under what it is about — the fallback row, or
+  the Features switches; a note that names neither shows in a "Saved, with notes." banner at the
+  end of the form. The fallback's notes stay until the next save that changes the fallback; the
+  others are the server's view at each save and are replaced by the next.
+- **Unsaved changes are held like every Save-gated tab** (§app.settings-dialog/save-bar):
+  switching tabs keeps them, and closing the dialog over them holds and asks.
+- The Jev key keeps its own buttons (§app.settings-dialog/decisions), saved and removed at once;
+  it is never part of the draft.
+
+## §app.settings-dialog/save-bar — One Save bar, one close-hold
+
+Every Settings tab that writes a file on the server is Save-gated: **Models**, **Modes**
+(Delegate and Spec), **Teams**, **Overseer**, **Decisions**, **Summaries**, **Mesh** and
+**Experimental**. A change on them is staged, never written as it is made.
+
+- **The Save bar.** Each gated form ends in the same action row: the form's own Reset button
+  leading it where the form has one (Delegate, Teams and Summaries' **Reset to Defaults**), then
+  **Discard Changes** (ghost) and **Save Changes** (primary, pinned to the trailing edge even when
+  the row wraps; **Saving…** while it writes). Both are disabled until the form differs from what's
+  saved, and Save Changes also until the form is complete and valid. Discard Changes puts the form
+  back to what's saved. A Reset button fills the form and saves nothing.
+- **A failed save keeps the draft.** Every unsaved change stays on screen, and an error banner says
+  what failed and that what's saved is unchanged. After a save lands, the form is what the server
+  answered, and it reads clean.
+- **Drafts outlive their tab.** Each form's draft is module state, not the panel's, so switching
+  tabs keeps it. A closed dialog forgets every draft; reopening starts from what's saved.
+- **Closing holds.** Close, Esc and the scrim all ask first when any gated form has unsaved
+  changes: the dialog goes to the first tab, in rail order, that holds them — unless the one
+  showing does — and holds the close with a warn banner above the foot: **Your {forms} changes
+  aren't saved.** "Save them on this screen, or discard them and close." [Keep Editing] [Discard
+  and Close]. {forms} names every form with unsaved changes in rail order, joined with commas and
+  "and" ("Models and Decisions"). Which forms take part is one registry the drafts join when they
+  are created, so a new gated form is held without the dialog naming it.
+- **Mesh** stages this host's name, the sync switches, "Sync subscriptions to this host" and the
+  front door; the subscriptions switch shows while the mesh is on and the form's Logins switch is.
+  Save sends only the fields you changed, so a field a peer's sync wrote meanwhile stays. The name
+  can't be saved blank. A save refreshes the mesh state, so the new name shows everywhere at once.
+- **Experimental**'s Claude Code switch is staged too. Its status line reads the saved setting, so
+  "Switch on to add its models" describes what the server does now, not the unsaved switch.
+- **Not gated.** General, Themes and Typography change only this browser and still apply as you
+  pick. Actions run at once and are never part of a draft: Retry, Try Again, Check Again, Themes'
+  Refresh, the Jev key's Save Key, Replace Key and Remove Key, Test Decisions, Tag Last 30 Days,
+  Tag All Sessions and Stop Tagging.
 
 ## §app.settings-dialog/toggle-target — A left-aligned toggle's target
 

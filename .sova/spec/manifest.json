@@ -193,8 +193,16 @@
     },
     "§app.settings-dialog/models": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/SettingsDialog.tsx",
+        "src/lib/model-policy.ts",
+        "src/lib/model-policy-draft.ts",
+        "src/lib/settings-draft.ts",
+        "src/components/SaveBar.tsx",
+        "src/lib/settings-draft.test.ts"
+      ]
     },
     "§app.settings-dialog/modes": {
       "kind": "behavior",
@@ -1934,10 +1942,12 @@
       "evidence": "verified",
       "code": [
         "src/components/MeshSettings.tsx",
+        "src/lib/mesh-draft.ts",
         "src/components/SettingsDialog.tsx",
         "server/mesh/index.ts",
         "src/lib/settings-nav.ts",
-        "src/lib/settings-nav.test.ts"
+        "src/lib/settings-nav.test.ts",
+        "src/lib/settings-draft.test.ts"
       ]
     },
     "§mesh/remote-sessions": {
@@ -2715,7 +2725,7 @@
     "§app.settings-dialog/decisions": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/DecisionSettings.tsx",
         "src/lib/decision-form.ts",
@@ -2725,7 +2735,8 @@
         "src/components/SettingsDialog.tsx",
         "server/decide-settings.ts",
         "server/decide-routes.ts",
-        "src/lib/decision-form.test.ts"
+        "src/lib/decision-form.test.ts",
+        "src/components/SaveBar.tsx"
       ],
       "requires": [
         "§app.decisions/providers",
@@ -2921,15 +2932,16 @@
     "§app.settings-dialog/decisions-autosave": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/DecisionSettings.tsx",
-        "src/lib/save-queue.ts",
         "src/lib/decision-form.ts",
         "src/lib/decision-draft.ts",
-        "src/components/SettingsDialog.tsx",
-        "src/lib/save-queue.test.ts",
-        "src/lib/decision-form.test.ts"
+        "src/lib/decision-form.test.ts",
+        "src/lib/settings-draft.ts",
+        "src/lib/settings-draft.test.ts",
+        "src/components/SaveBar.tsx",
+        "src/components/SettingsDialog.tsx"
       ],
       "requires": [
         "§app.settings-dialog/decisions",
@@ -3241,6 +3253,55 @@
         "src/design/base.css",
         "src/components/SpecSettings.tsx"
       ]
+    },
+    "§app.settings-dialog/save-bar": {
+      "kind": "behavior",
+      "requires": [
+        "§app/settings-dialog",
+        "§app.settings-dialog/modes",
+        "§design.copy-deck/settings-modes-delegate"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/settings-draft.ts",
+        "src/lib/settings-draft.test.ts",
+        "src/components/SaveBar.tsx",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/delegate-draft.ts",
+        "src/lib/delegate-draft.test.ts",
+        "src/lib/spec-draft.ts",
+        "src/lib/team-draft.ts",
+        "src/lib/overseer-draft.ts",
+        "src/lib/decision-draft.ts",
+        "src/lib/model-policy-draft.ts",
+        "src/lib/summarizer-draft.ts",
+        "src/lib/summarizer-form.ts",
+        "src/lib/mesh-draft.ts",
+        "src/lib/experimental-draft.ts",
+        "src/components/DelegateSettings.tsx",
+        "src/components/SpecSettings.tsx",
+        "src/components/TeamSettings.tsx",
+        "src/components/OverseerSettings.tsx",
+        "src/components/DecisionSettings.tsx",
+        "src/components/SummarizerSettings.tsx",
+        "src/components/MeshSettings.tsx"
+      ]
+    },
+    "§design.copy-deck/settings-experimental": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/settings-mesh": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "unreviewed"
+    },
+    "§design.copy-deck/settings-models": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "unreviewed"
     }
   },
   "boundary": {

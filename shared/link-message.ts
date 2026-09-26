@@ -6,7 +6,7 @@
 // shared/wake.ts. Builtins only: the frontend bundles this file.
 //
 // The message, verbatim (formatLinkMessage writes it; the model reads it):
-//   [link_msg lk_0123456789abcdef lm_0123456789abcdef] from <session title> (<host label>/<session id>)
+//   [link_msg lk_0123456789abcdef lm_0123456789abcdef] from "<session title>" (<host label>/<session id>)
 //   <text, any number of lines>
 //
 //   Reply with link_send (to: "<session id>").
@@ -16,6 +16,8 @@ export const LINK_ID_RE = /^lk_[0-9a-f]{16}$/;
 export const LINK_MESSAGE_ID_RE = /^lm_[0-9a-f]{16}$/;
 
 const TAG_RE = /^\[link_msg (lk_[0-9a-f]{16}) (lm_[0-9a-f]{16})\] from (.*) \(([^()/]*)\/([^()/\s]+)\)$/;
+/** Titles longer than this are cut with "…" in the tag line. */
+const TITLE_MAX = 60;
 const REPLY_RE = /^Reply with link_send \(to: "[^"]*"\)\.$/;
 
 export interface LinkMessageInfo {
@@ -31,6 +33,14 @@ export interface LinkMessageInfo {
 /** A label for the tag line: one line, no parentheses or slashes that would confuse the parse. */
 const clean = (s: string): string => s.replace(/[\r\n]+/g, " ").replace(/[()]/g, "").trim() || "?";
 
+/** The sender's title, quoted and cut short. A title is often the session's first prompt, and bare
+    in the tag line a model read it as instructions to itself (seen live: "from First call
+    link_members … ask your linked partner …" made the partner ask the question back). */
+const quoted = (title: string): string => {
+  const t = clean(title).replace(/"/g, "'");
+  return `"${t.length > TITLE_MAX ? `${t.slice(0, TITLE_MAX - 1).trimEnd()}…` : t}"`;
+};
+
 export function formatLinkMessage(m: {
   linkId: string;
   messageId: string;
@@ -41,7 +51,7 @@ export function formatLinkMessage(m: {
 }): string {
   const host = clean(m.fromHost).replace(/\//g, "-");
   return (
-    `[link_msg ${m.linkId} ${m.messageId}] from ${clean(m.fromTitle)} (${host}/${m.fromSessionId})\n` +
+    `[link_msg ${m.linkId} ${m.messageId}] from ${quoted(m.fromTitle)} (${host}/${m.fromSessionId})\n` +
     `${m.text}\n\nReply with link_send (to: "${m.fromSessionId}").`
   );
 }
@@ -60,7 +70,7 @@ export function parseLinkMessage(text: string | null | undefined): LinkMessageIn
   return {
     linkId: m[1]!,
     messageId: m[2]!,
-    from: { title: m[3]!, host: m[4]!, sessionId: m[5]! },
+    from: { title: m[3]!.replace(/^"(.*)"$/, "$1"), host: m[4]!, sessionId: m[5]! },
     text: body.join("\n"),
   };
 }

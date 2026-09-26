@@ -61,7 +61,7 @@ describe("a baton session's runtime", async () => {
 
   test("the operator's composer writes only while holding the baton; no mode, no rewind", async () => {
     const chat = await acquireChat(c.path);
-    assert.throws(() => chat.specialEntry!.clientSend!(c.path), /Tony holds the baton/);
+    assert.throws(() => chat.specialEntry!.clientSend!(c.path, { images: 0 }), /Tony holds the baton/);
     await assert.rejects(() => chat.switchMode({ mode: "delegate" } as never), ModeRefusedError);
     assert.match(chat.specialEntry!.refuses!("rewind") ?? "", /can't be rewound/);
   });

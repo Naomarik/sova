@@ -5,8 +5,9 @@ import { join } from "node:path";
 import type { OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
 import { attentionChanged } from "./attention-memo";
 import { readConflicts } from "./decisions";
-import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf } from "./baton";
+import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf } from "./baton";
 import { moveBaton, offerBaton, scheduleWrapup } from "./baton-loadout";
+import { readBatonSettings, writeBatonSettings } from "./baton-settings";
 import { BusyError } from "./chat-manager";
 import {
   addPerson,
@@ -54,6 +55,12 @@ async function body(c: Context): Promise<Record<string, unknown>> {
 
 /** A link as the operator copies it: the share listener's public address when known, else the path. */
 const linkUrl = (token: string): string => `${shareInfo().publicUrl ?? ""}/h/${token}`;
+
+/** With no share address known, a link is only a path nobody outside can open: every response that
+    carries one says so, and the strip shows it (BatonInfo.share). */
+export const NO_SHARE_WARNING =
+  "No share listener is running on this host, so this link can't be opened from outside. Set SOVA_SHARE_HOST and SOVA_SHARE_PORT (and SOVA_SHARE_PUBLIC_URL behind a proxy), then restart Sova.";
+const linkWarning = (): { linkWarning?: string } => (shareInfo().publicUrl ? {} : { linkWarning: NO_SHARE_WARNING });
 
 /** The operator's strip for a baton row (GET /api/baton and every baton route that answers with it). */
 export function batonInfo(row: BatonSession): BatonInfo {
@@ -377,9 +384,28 @@ export function registerOrgRoutes(app: Hono<any>): void {
           sessionId: created.sessionId,
           ...(created.token ? { link: linkUrl(created.token) } : {}),
           ...(created.links ? { links: offerLinks(orgId, created.links) } : {}),
+          ...(created.token || created.links ? linkWarning() : {}),
         },
         201,
       );
+    }),
+  );
+  app.get("/api/baton/settings", (c) => c.json(readBatonSettings()));
+  app.put(
+    "/api/baton/settings",
+    handle(async (c) => {
+      const result = writeBatonSettings(await body(c));
+      if ("error" in result) throw new OrgError(result.error, 400);
+      return c.json(result);
+    }),
+  );
+  app.post(
+    "/api/baton/:sid/extend",
+    handle(async (c) => {
+      const sid = p(c, "sid");
+      extendBudget(sid, (await body(c)).by);
+      refreshShare(sid);
+      return c.json(infoOf(sid));
     }),
   );
   app.get(
@@ -396,7 +422,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle((c) => {
       const person = c.req.query("person");
       const { token, n } = rotateLink(p(c, "sid"), person || undefined);
-      return c.json({ link: linkUrl(token), n });
+      return c.json({ link: linkUrl(token), n, ...linkWarning() });
     }),
   );
   app.post(
@@ -439,7 +465,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const hit = batonById(sid);
       if (!hit) throw new OrgError("Unknown baton session", 404);
       const out = await offerBaton(sid, b.to, typeof b.question === "string" ? b.question : "", typeof b.briefing === "string" ? b.briefing : "");
-      return c.json({ info: infoOf(sid), links: offerLinks(hit.row.orgId, out.links) }, 201);
+      return c.json({ info: infoOf(sid), links: offerLinks(hit.row.orgId, out.links), ...linkWarning() }, 201);
     }),
   );
   app.post(
@@ -469,7 +495,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const briefing = typeof b.briefing === "string" ? b.briefing.trim().slice(0, 4000) : "";
       await moveBaton(sid, to, question, briefing);
       const { token } = rotateLink(sid);
-      return c.json({ info: infoOf(sid), link: linkUrl(token) });
+      return c.json({ info: infoOf(sid), link: linkUrl(token), ...linkWarning() });
     }),
   );
 }

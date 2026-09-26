@@ -63,12 +63,13 @@ import { MeshSettingsSection } from "./MeshSettings";
 import { SpecSettingsSection } from "./SpecSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
+import { BatonSettingsSection } from "./BatonSettings";
 import { TeamSettingsSection } from "./TeamSettings";
 import { TypographySection } from "./TypographySection";
 import { Banner, Icon, trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
-/** The tab rail. Ten screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Eleven screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 const TABS = [
@@ -79,6 +80,7 @@ const TABS = [
   { id: "overseer", label: "Overseer", icon: "eye" as const },
   { id: "decisions", label: "Decisions", icon: "shield" as const },
   { id: "summaries", label: "Summaries", icon: "chat" as const },
+  { id: "organizations", label: "Organizations", icon: "network" as const },
   { id: "themes", label: "Themes", icon: "image" as const },
   { id: "mesh", label: "Mesh", icon: "branch" as const },
   { id: "experimental", label: "Experimental", icon: "terminal" as const },
@@ -245,6 +247,11 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "summaries"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-summaries" aria-labelledby="settings-tab-summaries">
               <SummarizerSettingsSection />
+            </div>
+          </Show>
+          <Show when={tab() === "organizations"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-organizations" aria-labelledby="settings-tab-organizations">
+              <BatonSettingsSection />
             </div>
           </Show>
           {/* The panel is mounted only while its tab is: the themes poll starts when this tab

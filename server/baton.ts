@@ -6,6 +6,9 @@ import {
   BATON_HANDOFF_ENTRY,
   BATON_OFFER_ENTRY,
   LEASE_IDLE_MS,
+  MESSAGES_CAP,
+  MESSAGES_DEFAULT,
+  MESSAGES_MIN,
   OPERATOR,
   POOL,
   type BatonHandoffData,
@@ -24,6 +27,7 @@ import {
 import type { Person } from "../shared/orgs";
 import { liveLinks, mintLink, revokeLinks, type LinkRecord, linkDead, findLink } from "./baton-links";
 import { emitBatonEvent } from "./baton-events";
+import { readBatonSettings } from "./baton-settings";
 import { onOrgAttached, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, readOrg, readProjects, readRoster, setOpenBatonCounter, shortId } from "./orgs";
 import { canonicalPath } from "./paths";
 import { markSeen } from "./seen";
@@ -42,7 +46,7 @@ import { markOwned } from "./write-guard";
  * back into `open` while they keep holding it, so the Needs-you item clears.
  */
 
-export const MESSAGES_MAX = 60;
+export const MESSAGES_MAX = MESSAGES_DEFAULT;
 export const PUBLIC_TITLE_MAX = 120;
 export const GOAL_MAX = 2000;
 export const QUESTION_MAX = 1000;
@@ -218,6 +222,12 @@ export function resolveTarget(
 
 // ---- creation -------------------------------------------------------------------------------------------------
 
+/** A message limit from a request: a whole number within MESSAGES_MIN..MESSAGES_CAP, else a 400. */
+export function messageLimit(v: unknown, field = "messagesMax", min = MESSAGES_MIN, max = MESSAGES_CAP): number {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max) throw new OrgError(`${field} must be a whole number from ${min} to ${max}`);
+  return v;
+}
+
 const text = (v: unknown, field: string, max: number, required = true): string => {
   const t = typeof v === "string" ? v.trim() : "";
   if (required && !t) throw new OrgError(`${field} is required`);
@@ -316,6 +326,7 @@ export function createBaton(input: BatonStartInput & { owner?: BatonOwner; mintL
   const offer = invitees?.ok ? newOffer(invitees.refs, question, briefing, 1, now) : undefined;
   const model = typeof input.model === "string" && input.model.trim() ? input.model.trim() : undefined;
   const thinking = typeof input.thinking === "string" && input.thinking.trim() ? input.thinking.trim() : undefined;
+  const messagesMax = input.messagesMax === undefined || input.messagesMax === null ? readBatonSettings().messagesMax : messageLimit(input.messagesMax);
 
   const sessionsDir = join(dir, "sessions");
   mkdirSync(sessionsDir, { recursive: true });
@@ -350,7 +361,7 @@ export function createBaton(input: BatonStartInput & { owner?: BatonOwner; mintL
     handoffs: [handoff],
     ...(offer ? { offers: [offer], offerId: offer.id } : {}),
     ...(parent ? { parent: parent.row.sessionId } : {}),
-    budget: { messagesMax: MESSAGES_MAX, messagesUsed: 0 },
+    budget: { messagesMax, messagesUsed: 0 },
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
     createdAt: now.toISOString(),
@@ -384,6 +395,7 @@ export function handTo(
   const row = update(sessionId, (r) => {
     if (r.state === "done" || r.state === "closed") throw new OrgError(`This session is ${r.state}.`, 409);
     if (r.holder === to) throw new OrgError("They already hold the baton.", 409);
+    if (to !== OPERATOR && budgetSpent(r)) throw new OrgError(LIMIT_REACHED, 409);
     from = r.holder ?? (r.offerId ? POOL : OPERATOR);
     withdrawn = withdrawCurrent(r);
     n = r.handoffs.length + 1;
@@ -424,10 +436,20 @@ export function closeBaton(sessionId: string, now = new Date()): BatonSession {
   return row;
 }
 
+export const budgetSpent = (r: Pick<BatonSession, "budget">): boolean => r.budget.messagesUsed >= r.budget.messagesMax;
+
+/** Why a person can't be handed the baton at the limit (the model's hand_to, the operator's hand-off or offer). */
+const LIMIT_REACHED = "This conversation has reached its message limit. Only the operator can take it now: hand it to the operator.";
+
 /** The message budget is spent: the caller moves the baton to the operator (with its entry). */
 export class BudgetSpent extends OrgError {
-  constructor() {
-    super("This conversation has reached its message limit. The operator has been told.", 409);
+  constructor(by: PersonRef = POOL) {
+    super(
+      by === OPERATOR
+        ? "This conversation has reached its message limit. Extend it to write."
+        : "This conversation has reached its message limit. The operator has been told.",
+      409,
+    );
   }
 }
 
@@ -437,6 +459,8 @@ export interface Noted {
   claimed?: { n: number; offerId: string };
   /** A lapsed lease was returned to the pool on the way (someone else's, or this sender's own). */
   expired?: { n: number; offerId: string; by: PersonRef };
+  /** The row as it was before this message: undoNote puts it back when the message is not accepted. */
+  before: BatonSession;
 }
 
 /** The lease's idle time: LEASE_IDLE_MS, or SOVA_BATON_LEASE_MS when set (hermetic tests only). */
@@ -471,12 +495,14 @@ export function noteMessage(sessionId: string, by: PersonRef, now = Date.now()):
   if (!hit) throw new OrgError("Unknown baton session", 404);
   let claimed: Noted["claimed"];
   let expired: Noted["expired"];
+  let before!: BatonSession;
   const row = update(sessionId, (r) => {
+    before = structuredClone(r);
     if (r.state === "done" || r.state === "closed") throw new OrgError(`This conversation is ${r.state}.`, 409);
     expired = lapse(r, now);
     const o = currentOffer(r);
     if (o && o.state === "open" && by !== OPERATOR && o.to.includes(by)) {
-      if (r.budget.messagesUsed >= r.budget.messagesMax) throw new BudgetSpent();
+      if (budgetSpent(r)) throw new BudgetSpent(by);
       o.state = "held";
       o.holder = by;
       r.holder = by;
@@ -485,9 +511,9 @@ export function noteMessage(sessionId: string, by: PersonRef, now = Date.now()):
     }
     if (r.holder !== by) {
       if (o && o.to.includes(by) && o.holder && o.holder !== by) throw new OrgError("Someone else is answering right now.", 409);
-      throw new OrgError(by === OPERATOR ? (r.holder ? `${nameOf(r.orgId, r.holder)} holds the baton. Take it back first.` : "The baton is offered to people right now. Take it back first.") : "It's not your turn anymore.", 409);
+      throw new OrgError(by === OPERATOR ? (r.holder ? `${nameOf(r.orgId, r.holder)} holds the baton. Take it back to write.` : "The baton is offered to people right now. Take it back to write.") : "It's not your turn anymore.", 409);
     }
-    if (r.budget.messagesUsed >= r.budget.messagesMax) throw new BudgetSpent();
+    if (budgetSpent(r)) throw new BudgetSpent(by);
     r.budget.messagesUsed++;
     if (by === OPERATOR && r.state === "needs-you") r.state = "open";
     if (o && o.holder === by) {
@@ -495,7 +521,35 @@ export function noteMessage(sessionId: string, by: PersonRef, now = Date.now()):
       o.leaseUntil = new Date(now + leaseMs()).toISOString();
     }
   });
-  return { row, ...(claimed ? { claimed } : {}), ...(expired ? { expired } : {}) };
+  return { row, ...(claimed ? { claimed } : {}), ...(expired ? { expired } : {}), before };
+}
+
+/**
+ * The message noteMessage let in was not accepted after all (the runtime refused it): put the row
+ * back as it was, so a refused send neither spends the budget nor claims an offer. The caller runs
+ * this in the same synchronous stretch as noteMessage, so nothing else has changed the row since.
+ */
+export function undoNote(sessionId: string, noted: Noted): void {
+  update(sessionId, (r) => {
+    Object.assign(r, structuredClone(noted.before));
+    for (const k of Object.keys(r) as (keyof BatonSession)[]) if (!(k in noted.before)) delete r[k];
+  });
+}
+
+/**
+ * Raise a session's message limit by `by` (the operator, from the strip or the Needs-you item):
+ * the holder may write again. Bounded like any limit; refused once the session is done or closed.
+ */
+export function extendBudget(sessionId: string, by: unknown): BatonSession {
+  const hit = batonById(sessionId);
+  if (!hit) throw new OrgError("Unknown baton session", 404);
+  const n = messageLimit(by, "by", 1, MESSAGES_CAP);
+  return update(sessionId, (r) => {
+    if (r.state === "done" || r.state === "closed") throw new OrgError(`This session is ${r.state}.`, 409);
+    const next = r.budget.messagesMax + n;
+    if (next > MESSAGES_CAP) throw new OrgError(`A conversation's limit is at most ${MESSAGES_CAP} messages (it is ${r.budget.messagesMax} now).`, 409);
+    r.budget.messagesMax = next;
+  });
 }
 
 /** A reply ended: the holder's lease renews from now (the later of their message and the reply). */
@@ -556,6 +610,7 @@ export function startOffer(
   let withdrawn: Offer | undefined;
   const row = update(sessionId, (r) => {
     if (r.state === "done" || r.state === "closed") throw new OrgError(`This session is ${r.state}.`, 409);
+    if (budgetSpent(r)) throw new OrgError(LIMIT_REACHED, 409);
     from = r.holder ?? (r.offerId ? POOL : OPERATOR);
     withdrawn = withdrawCurrent(r);
     n = r.handoffs.length + 1;
@@ -598,7 +653,7 @@ export function linkAccess(token: string, now = Date.now()): LinkAccess {
     if (offer.state === "held" && offer.holder !== link.personId && !lapsed) reason = "taken";
   } else if (link.offerId && !row.participants.includes(link.personId)) reason = "withdrawn";
   else if (!current || current.n !== link.n || row.holder !== link.personId) reason = row.holder === OPERATOR ? "needs-operator" : "moved-on";
-  if (!reason && row.budget.messagesUsed >= row.budget.messagesMax) reason = "budget";
+  if (!reason && budgetSpent(row)) reason = "budget";
   return { ok: true, link, row, dir: hit.dir, canWrite: !reason, ...(reason ? { reason } : {}) };
 }
 

@@ -1,5 +1,5 @@
 import type { WebSocket } from "ws";
-import type { BatonSession, BatonView, PersonRef, ShareServerMessage } from "../../shared/baton";
+import { OPERATOR, type BatonSession, type BatonView, type BatonViewItem, type PersonRef, type ShareServerMessage } from "../../shared/baton";
 import { batonById, linkAccess, namesOf, sessionPathOf } from "../baton";
 import { batonView, conversationVocabulary, redactPhrases, secretPhrases } from "../baton-view";
 import { profileRedactTexts, publicTerms, readOrg, readRoster } from "../orgs";
@@ -61,7 +61,26 @@ export async function viewForToken(token: string): Promise<BatonView | { status:
   const outsider = !!access.link.offerId && !access.row.participants.includes(access.link.personId);
   const view = await readView(access.row, access.dir, access.link.personId, outsider ? access.link.n : undefined);
   const names = namesOf(access.row.orgId);
-  return { ...view, viewer: { name: names[access.link.personId] ?? "You", canWrite: access.canWrite, ...(access.reason ? { reason: access.reason } : {}) } };
+  return {
+    ...view,
+    items: opaqueSenders(view.items, access.link.personId),
+    viewer: { name: names[access.link.personId] ?? "You", canWrite: access.canWrite, ...(access.reason ? { reason: access.reason } : {}) },
+  };
+}
+
+/**
+ * A share page never learns a roster person's id: a message's `by` becomes "you" (the viewer),
+ * "operator", or a label numbered in order of appearance in this view ("person-1", …), which
+ * tells two senders apart and means nothing outside the view.
+ */
+export function opaqueSenders(items: BatonViewItem[], viewer: PersonRef): BatonViewItem[] {
+  const labels = new Map<string, string>();
+  return items.map((it) => {
+    if (it.kind !== "message") return it;
+    let by = it.by === viewer ? "you" : it.by === OPERATOR ? OPERATOR : it.by ? labels.get(it.by) : "";
+    if (by === undefined) labels.set(it.by, (by = `person-${labels.size + 1}`));
+    return { ...it, by };
+  });
 }
 
 interface Watcher {
@@ -92,6 +111,27 @@ export function addWatcher(sessionId: string, socket: WebSocket, token: string):
     if (!set!.size) watchers.delete(sessionId);
   });
 }
+
+/**
+ * Close every open socket whose link no longer reads (it expired, or was turned off by a path that
+ * pushes nothing): an expired link's page must not stay connected until the session next changes.
+ * Runs on a ticker; returns how many it closed.
+ */
+export function sweepWatchers(): number {
+  let closed = 0;
+  for (const set of watchers.values())
+    for (const w of [...set]) {
+      if (linkAccess(w.token).ok) continue;
+      send(w, { type: "error", code: "gone", message: "This link is no longer active." });
+      w.socket.close(4410, "gone");
+      set.delete(w);
+      closed++;
+    }
+  for (const [sid, set] of watchers) if (!set.size) watchers.delete(sid);
+  return closed;
+}
+export const SWEEP_MS = 30_000;
+setInterval(sweepWatchers, SWEEP_MS).unref();
 
 /** Push every watcher of a session its view again (debounced: a burst of entries is one push). */
 export function refreshShare(sessionId: string): void {

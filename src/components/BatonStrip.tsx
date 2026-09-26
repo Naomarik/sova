@@ -1,7 +1,7 @@
 import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
-import { OPERATOR, type BatonInfo, type OfferLink, type ProposedPerson } from "../../shared/baton";
+import { MESSAGES_CAP, OPERATOR, type BatonInfo, type OfferLink, type ProposedPerson } from "../../shared/baton";
 import type { SessionSummary } from "../../shared/protocol";
-import { ApiError, approvePerson, batonLink, closeBaton, declinePerson, getBaton, handBaton, inviteeLink, offerBaton, revokeBatonLink, takeBaton, withdrawOffer } from "../lib/api";
+import { ApiError, approvePerson, batonLink, closeBaton, declinePerson, extendBaton, getBaton, handBaton, inviteeLink, offerBaton, revokeBatonLink, takeBaton, withdrawOffer } from "../lib/api";
 import { linksStale, liveOffer, proposedAreasLine, whereLine, wrapupLine } from "../lib/baton-strip";
 import { requestListRefresh } from "../lib/list-refresh";
 import { confirmActivate } from "../lib/confirm-step";
@@ -69,6 +69,7 @@ export function BatonStrip(props: {
   const personHolds = (i: BatonInfo) => i.session.holder !== null && i.session.holder !== OPERATOR;
   const open = (i: BatonInfo) => i.session.state === "open" || i.session.state === "needs-you";
   const nameOf = (i: BatonInfo, id: string) => i.names[id] ?? "someone";
+  const spent = (i: BatonInfo) => i.session.budget.messagesUsed >= i.session.budget.messagesMax;
   return (
     <Show when={info.latest}>
       {(i) => (
@@ -145,6 +146,18 @@ export function BatonStrip(props: {
               </button>
             </Show>
           </div>
+          <Show when={open(i()) && spent(i())}>
+            <ExtendRow info={i()} act={act} />
+          </Show>
+          <Show when={open(i()) && !i().share.publicUrl && (personHolds(i()) || liveOffer(i()))}>
+            <div class="baton-strip-link">
+              <Banner
+                tone="warn"
+                title="Links from this host can't be opened from outside."
+                body="No share listener is running here. Set SOVA_SHARE_HOST and SOVA_SHARE_PORT (and SOVA_SHARE_PUBLIC_URL behind a proxy), then restart Sova."
+              />
+            </div>
+          </Show>
           <Show when={liveOffer(i())}>
             {(o) => (
               <div class="baton-strip-row baton-strip-invitees" role="group" aria-label="Invitees' links">
@@ -250,6 +263,44 @@ export function BatonStrip(props: {
         </section>
       )}
     </Show>
+  );
+}
+
+/** At the message limit: raise it by N so the conversation can go on (bounded like any limit). */
+function ExtendRow(props: { info: BatonInfo; act(fn: () => Promise<unknown>, done: string): Promise<boolean> }) {
+  const room = () => MESSAGES_CAP - props.info.session.budget.messagesMax;
+  const [by, setBy] = createSignal(20);
+  const valid = () => Number.isInteger(by()) && by() >= 1 && by() <= room();
+  return (
+    <div class="baton-strip-row baton-strip-card" role="group" aria-label="Message limit reached">
+      <span class="baton-strip-card-main">
+        All {props.info.session.budget.messagesMax} messages are used.{" "}
+        {room() > 0 ? "Extend the limit to go on, then hand it back." : `That is the most a conversation can have (${MESSAGES_CAP}).`}
+      </span>
+      <Show when={room() > 0}>
+        <label class="baton-strip-meta">
+          Extend by{" "}
+          <input
+            class="input input-sm baton-extend-input"
+            type="number"
+            min="1"
+            max={room()}
+            step="1"
+            value={by()}
+            aria-invalid={!valid()}
+            onInput={(e) => setBy(e.currentTarget.valueAsNumber)}
+          />
+        </label>
+        <button
+          type="button"
+          class="button button-sm"
+          disabled={!valid()}
+          onClick={() => void props.act(() => extendBaton(props.info.session.sessionId, by()), `Limit raised to ${props.info.session.budget.messagesMax + by()} messages.`)}
+        >
+          Extend
+        </button>
+      </Show>
+    </div>
   );
 }
 

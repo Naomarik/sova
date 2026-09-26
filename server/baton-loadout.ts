@@ -24,6 +24,7 @@ import {
   QUESTION_MAX,
   batonById,
   batonOfPath,
+  budgetSpent,
   expireLease,
   handTo,
   lapsedLeases,
@@ -35,6 +36,7 @@ import {
   sessionPathOf,
   startOffer,
   touchLease,
+  undoNote,
 } from "./baton";
 import { emitBatonEvent } from "./baton-events";
 import { handoffChosen } from "./baton-guards";
@@ -104,6 +106,26 @@ export async function moveBaton(sessionId: string, to: PersonRef, question: stri
   chat.appendSpecialEntry(BATON_HANDOFF_ENTRY, { v: 1, n, from, to, question, briefing } satisfies BatonHandoffData);
   refreshShare(sessionId);
   return n;
+}
+
+/** The Needs-you question when the limit sends the baton to the operator. */
+export const LIMIT_QUESTION = "The message limit is reached. Extend it to go on, or close the session.";
+
+/**
+ * The budget stop (§app.baton/goal-and-loadout): once a session's messages reach its limit, the
+ * baton goes to the operator and the session needs them — after the reply to the last message, or
+ * at once when a person tries to write past it. A no-op unless a person (or an offer's pool) holds
+ * an open session at its limit. Best effort: a refusal (a reply still running) is logged, and the
+ * next settle or share message tries again.
+ */
+export async function budgetStop(sessionId: string): Promise<void> {
+  const row = batonById(sessionId)?.row;
+  if (!row || row.state !== "open" || row.holder === OPERATOR || !budgetSpent(row)) return;
+  try {
+    await moveBaton(sessionId, OPERATOR, LIMIT_QUESTION);
+  } catch (err) {
+    console.warn(`[baton] budget stop on ${sessionId.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /**
@@ -480,22 +502,35 @@ registerSpecialLoadout({
           touchLease(sessionId);
           // goal_done (or a close mid-turn) ended it: the wrap-up runs once this run is over.
           scheduleWrapup(sessionId);
+          // The reply to the last message the limit allows: the baton goes to the operator.
+          setTimeout(() => void budgetStop(sessionId), 50).unref?.();
         }
       }
     });
   },
-  clientSend(path) {
+  clientSend(path, msg) {
     const hit = batonOfPath(path);
     if (!hit) throw new RefusedError("Not a registered baton session.");
+    // Text only, both ways (§app.baton/outsider-view): the operator's images never reach the model.
+    if (msg.images > 0) throw new RefusedError("A hand-off session is text only: images can't be sent.");
+    const sessionId = hit.row.sessionId;
+    let noted: ReturnType<typeof noteMessage>;
     try {
-      noteMessage(hit.row.sessionId, OPERATOR);
+      noted = noteMessage(sessionId, OPERATOR);
     } catch (err) {
       // Someone else holds the baton, it is done, the budget is spent: a refusal, said as it is.
       if (err instanceof OrgError) throw new RefusedError(err.message);
       throw err;
     }
-    refreshShare(hit.row.sessionId);
-    return { by: OPERATOR };
+    refreshShare(sessionId);
+    // The runtime refused the message after all: it neither counts nor clears Needs you.
+    return {
+      by: OPERATOR,
+      undo: () => {
+        undoNote(sessionId, noted);
+        refreshShare(sessionId);
+      },
+    };
   },
   refuses(gesture) {
     if (gesture === "mode") return "A baton session has no mode.";

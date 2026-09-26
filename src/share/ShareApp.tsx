@@ -19,14 +19,14 @@ function Reply(props: { text: string }) {
   return <div class="share-md" innerHTML={renderShareMarkdown(props.text)} />;
 }
 
-function Item(props: { item: BatonViewItem; me: string | undefined }) {
+function Item(props: { item: BatonViewItem }) {
   const it = props.item;
   return (
     <Switch>
       <Match when={it.kind === "message" && it}>
         {(m) => (
-          <article class="share-msg" classList={{ "share-msg-own": m().name === props.me }} aria-label={`${m().name === props.me ? "You" : m().name}`}>
-            <span class="share-who">{m().name === props.me ? "You" : m().name}</span>
+          <article class="share-msg" classList={{ "share-msg-own": m().by === "you" }} aria-label={`${m().by === "you" ? "You" : m().name}`}>
+            <span class="share-who">{m().by === "you" ? "You" : m().name}</span>
             <div class="share-text">{m().text}</div>
           </article>
         )}
@@ -104,7 +104,8 @@ export function ShareApp() {
   const apply = (v: BatonView) => {
     setView(v);
     setStreaming("");
-    const mine = new Set(v.items.filter((i) => i.kind === "message" && i.name === v.viewer?.name).map((i) => (i as { text: string }).text));
+    // The server labels the viewer's own messages "you" (it sends no person ids).
+    const mine = new Set(v.items.filter((i) => i.kind === "message" && i.by === "you").map((i) => (i as { text: string }).text));
     setPending((p) => p.filter((t) => !mine.has(t)));
   };
 
@@ -222,7 +223,7 @@ export function ShareApp() {
           </Show>
         </header>
         <section class="share-thread" aria-label="Conversation">
-          <For each={view()?.items ?? []}>{(it) => <Item item={it} me={view()?.viewer?.name} />}</For>
+          <For each={view()?.items ?? []}>{(it) => <Item item={it} />}</For>
           <For each={pending()}>
             {(t) => (
               <article class="share-msg share-msg-own" aria-label="You, sending">

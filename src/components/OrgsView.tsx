@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
-import { OPERATOR, type BatonStartResult, type BatonView, type BatonViewItem, type OfferLink } from "../../shared/baton";
+import { MESSAGES_CAP, MESSAGES_DEFAULT, MESSAGES_MIN, OPERATOR, type BatonStartResult, type BatonView, type BatonViewItem, type OfferLink } from "../../shared/baton";
 import type { NamedChange, OrgDetail, Person, PersonInput, ProfileChange } from "../../shared/orgs";
 import {
   addOrgProject,
@@ -19,6 +19,7 @@ import {
   setOperatorName,
   setOrgRemote,
   startBaton,
+  getBatonSettings,
 } from "../lib/api";
 import { duration, relativeTime, stampTime } from "../lib/format";
 import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
@@ -269,6 +270,7 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
   const org = createOrgSource(props.id);
   const [error, setError] = createSignal<string | null>(null);
   const [links, setLinks] = createSignal<OfferLink[] | null>(null);
+  const [linkWarning, setLinkWarning] = createSignal<string | undefined>();
   const act = async (fn: () => Promise<OrgDetail | unknown>, done?: string): Promise<boolean> => {
     try {
       const r = await fn();
@@ -304,12 +306,20 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
         {(o) => (
           <>
             <For each={o().problems}>{(p) => <Banner tone="warn" title="The workspace repo has a problem." body={p} />}</For>
-            <Show when={links()}>{(l) => <LinksBanner links={l()} onDismiss={() => setLinks(null)} />}</Show>
+            <Show when={links()}>{(l) => <LinksBanner links={l()} warning={linkWarning()} onDismiss={() => setLinks(null)} />}</Show>
             <OrgTabs org={o()} tab={tab()} />
             <div class="org-tabpanel" role="tabpanel" id="org-tabpanel" aria-labelledby={`org-tab-${tab()}`}>
               <Switch>
                 <Match when={tab() === "sessions"}>
-                  <BatonSection org={o()} start={props.start} act={act} onLinks={setLinks} />
+                  <BatonSection
+                    org={o()}
+                    start={props.start}
+                    act={act}
+                    onLinks={(l, warning) => {
+                      setLinkWarning(warning);
+                      setLinks(l);
+                    }}
+                  />
                 </Match>
                 <Match when={tab() === "people"}>
                   <PeopleSection org={o()} act={act} />
@@ -437,7 +447,7 @@ function GitCard(props: { org: OrgDetail; act: Act }) {
   );
 }
 
-function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks(l: OfferLink[] | null): void }) {
+function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks(l: OfferLink[] | null, warning?: string): void }) {
   const active = () => props.org.roster.filter((p) => p.status === "active");
   const [projectId, setProjectId] = createSignal("");
   const [to, setTo] = createSignal<string[]>([]);
@@ -446,6 +456,9 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
   const [briefing, setBriefing] = createSignal("");
   const [goal, setGoal] = createSignal("");
   const [model, setModel] = createSignal("");
+  /** This session's message limit; blank = Settings' default. */
+  const [limit, setLimit] = createSignal("");
+  const [defaults] = createResource(() => getBatonSettings().catch(() => null));
   // Closed behind its button, except when a start link ("Start a session for Bob") brought us here.
   const [starting, setStarting] = createSignal(false);
   /** The baton session a start link came from (the new one records it as its parent). */
@@ -496,17 +509,19 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
         ...(question().trim() ? { question: question().trim() } : {}),
         ...(briefing().trim() ? { briefing: briefing().trim() } : {}),
         ...(model().trim() ? { model: model().trim() } : {}),
+        ...(limit().trim() ? { messagesMax: Number(limit()) } : {}),
         ...(parent() ? { parentSessionId: parent() } : {}),
       });
     }, Array.isArray(who) ? `Offered to ${who.length} people.` : "Hand-off session started.");
     if (!ok || !started) return;
     const s = started as BatonStartResult;
-    if (s.links?.length) props.onLinks(s.links);
-    else if (s.link && typeof who === "string") props.onLinks([{ personId: who, name: nameOf(who), link: s.link }]);
+    if (s.links?.length) props.onLinks(s.links, s.linkWarning);
+    else if (s.link && typeof who === "string") props.onLinks([{ personId: who, name: nameOf(who), link: s.link }], s.linkWarning);
     setTitle("");
     setQuestion("");
     setBriefing("");
     setGoal("");
+    setLimit("");
     setTo([]);
     closeForm();
   };
@@ -605,6 +620,20 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
             <label class="field">
               <span class="field-label">Model</span>
               <input class="input input-mono" value={model()} onInput={(e) => setModel(e.currentTarget.value)} placeholder="Default: the new-session default" />
+            </label>
+            <label class="field">
+              <span class="field-label">Message limit</span>
+              <input
+                class="input"
+                type="number"
+                min={MESSAGES_MIN}
+                max={MESSAGES_CAP}
+                step="1"
+                value={limit()}
+                onInput={(e) => setLimit(e.currentTarget.value)}
+                placeholder={`Default: ${defaults()?.messagesMax ?? MESSAGES_DEFAULT}`}
+              />
+              <span class="field-hint">Messages in, from everyone. At the limit the session comes back to you, and you can extend it.</span>
             </label>
             <div class="button-row">
               <button type="submit" class="button button-primary">

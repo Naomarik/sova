@@ -439,8 +439,9 @@ export interface SpecialLoadout {
   /** Every AgentSession the runtime builds. */
   watchSession?(session: AgentSession, path: string): void;
   /** A message from this server's own composer (/ws/chat prompt or steer): who sent it, or throw a
-      refusal the client is told. Absent: sent as usual, unattributed. */
-  clientSend?(path: string): { by: string };
+      refusal the client is told. Absent: sent as usual, unattributed. `undo` puts back what the
+      kind recorded for it when the runtime then refuses the message. */
+  clientSend?(path: string, msg: { images: number }): { by: string; undo?(): void };
   /** A client gesture this kind refuses (a message for the client), or null. */
   refuses?(gesture: "rewind" | "regenerate" | "mode"): string | null;
   /** Runs the SDK call that hands this runtime a message the operator sent from the UI (origin
@@ -796,6 +797,24 @@ class ChatSession {
   }
   /** Texts sent here whose user entry still needs its sender marker. */
   private senderMarks: SenderMark[] = [];
+  /**
+   * A prompt() handed to an idle session whose run has not begun: the SDK awaits its input
+   * handlers before `isStreaming` turns true, and a second prompt() in that gap is refused
+   * ("already processing") after the first was accepted — a message lost after its send was
+   * acknowledged. While set, acceptPrompt queues instead and the queue waits (its `paused`).
+   * Cleared at the first event of the run, or when that prompt settles without one.
+   */
+  private starting: Promise<unknown> | null = null;
+
+  private noteStarting(turn: Promise<unknown>): void {
+    this.starting = turn;
+    const clear = () => {
+      if (this.starting !== turn) return;
+      this.starting = null;
+      if (!this.disposed) this.queue.onSdkEvent();
+    };
+    turn.then(clear, clear);
+  }
   /** How the last switch of THIS chat applies (ModeApplies); set at bind and by applyMode. */
   modeApplies: ModeApplies = "now";
   /**
@@ -833,7 +852,7 @@ class ChatSession {
       mirrorHas: (kind, text) => (kind === "steer" ? this.session.getSteeringMessages() : this.session.getFollowUpMessages()).includes(text),
     },
     streaming: () => this.session.isStreaming,
-    paused: () => this.isCompacting(),
+    paused: () => this.isCompacting() || this.starting !== null,
     clearSdkQueue: () => this.session.clearQueue(),
     guard: () => {
       assertNotLive(this.path);
@@ -939,7 +958,9 @@ class ChatSession {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
       // turn nobody is awaiting, and must not be reported as a hand-off failure (which would hand
       // the text back to the composer for a message that HAS been sent).
-      toSdk(() => this.session.prompt(item.text, { images })).catch((err) => {
+      const turn = toSdk(() => this.session.prompt(item.text, { images }));
+      this.noteStarting(turn);
+      turn.catch((err) => {
         if (mark) this.dropSenderMark(mark);
         if (this.heldForCompaction(err, { ...item, id: undefined })) return;
         this.reportTurnFailure(err);
@@ -1138,6 +1159,10 @@ class ChatSession {
     });
     this.unsubscribe?.();
     this.unsubscribe = session.subscribe((event) => {
+      if (this.starting && this.session.isStreaming) {
+        this.starting = null; // the run has begun: a send now queues on isStreaming
+        this.queue.onSdkEvent();
+      }
       try {
         this.broadcast({ type: "event", event: toWireEvent(event) });
       } catch (err) {
@@ -1457,7 +1482,7 @@ class ChatSession {
     // a queue that some messages could skip would not be a queue.
     // A compaction running is the same: pi refuses every prompt until it ends, so the message is
     // held, and the queue hands it over (as a fresh turn) at compaction_end.
-    if (this.session.isStreaming || this.isCompacting()) {
+    if (this.session.isStreaming || this.isCompacting() || this.starting) {
       const overseer = opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {};
       const baton = opts?.sentByBaton ? { baton: opts.sentByBaton } : {};
       this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton });
@@ -1475,6 +1500,7 @@ class ChatSession {
     const send: SenderMark | null = sender ? { text, sender } : null;
     if (send) this.senderMarks.push(send);
     const turn = this.toSdk(origin, () => this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }));
+    this.noteStarting(turn);
     if (send)
       turn.catch(() => {
         const i = this.senderMarks.indexOf(send);
@@ -1721,13 +1747,22 @@ class ChatSession {
           }
           // A special kind that attributes its composer's messages (a baton session: only while
           // the operator holds the baton) decides here, before anything is queued or written.
-          const by = this.specialEntry?.clientSend?.(this.path);
-          if (by) {
+          // The model gate runs first, so a refusal never counts against the kind (a baton's budget);
+          // a refusal from acceptPrompt itself is handed back through `undo`.
+          if (this.specialEntry?.clientSend) {
             this.assertModelAllowed();
-            const { queued, turn } = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId, {
-              sentByBaton: by,
-              ...(msg.type === "steer" ? { delivery: "steer" as const } : {}),
-            });
+            const sent = this.specialEntry.clientSend(this.path, { images: msg.images?.length ?? 0 });
+            let accepted: ReturnType<ChatSession["acceptPrompt"]>;
+            try {
+              accepted = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId, {
+                sentByBaton: { by: sent.by },
+                ...(msg.type === "steer" ? { delivery: "steer" as const } : {}),
+              });
+            } catch (err) {
+              sent.undo?.();
+              throw err;
+            }
+            const { queued, turn } = accepted;
             if (clientId) client.send({ type: "send_ack", clientId, queued });
             turn.catch(fail);
             return;

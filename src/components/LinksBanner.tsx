@@ -5,11 +5,12 @@ import { Banner, CopyButton } from "./ui";
 
 export type Links = OfferLink[];
 
-/** Links minted for a new session or offer: shown once, one row per person. */
-export function LinksBanner(props: { links: Links; onDismiss(): void }) {
+/** Links minted for a new session or offer: shown once, one row per person. `warning`: why they
+    can't be opened from outside yet (no share listener on this host). */
+export function LinksBanner(props: { links: Links; warning?: string; onDismiss(): void }) {
   return (
     <Banner
-      tone="info"
+      tone={props.warning ? "warn" : "info"}
       title={props.links.length === 1 ? `${props.links[0]!.name}'s link — shown once` : `${props.links.length} links — shown once`}
       body={
         <span class="project-links">
@@ -24,6 +25,9 @@ export function LinksBanner(props: { links: Links; onDismiss(): void }) {
               </span>
             )}
           </For>
+          <Show when={props.warning}>
+            <span class="field-hint">{props.warning}</span>
+          </Show>
         </span>
       }
       action={

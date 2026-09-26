@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { Hono } from "hono";
-import { OPERATOR, SHARE_TEXT_MAX } from "../../shared/baton";
-import { BudgetSpent, linkAccess, noteMessage, sessionPathOf } from "../baton";
+import { SHARE_TEXT_MAX } from "../../shared/baton";
+import { BudgetSpent, linkAccess, noteMessage, sessionPathOf, undoNote } from "../baton";
 import { tokenTag } from "../baton-links";
-import { moveBaton, recordNoted } from "../baton-loadout";
+import { budgetStop, recordNoted } from "../baton-loadout";
 import { acquireChat } from "../chat-manager";
 import { OrgError } from "../orgs";
 import { refreshShare, viewForToken } from "./hub";
@@ -22,8 +22,10 @@ export const SHARE_DIST = resolve(import.meta.dirname, "..", "..", "dist-share")
 export const MESSAGES_PER_MINUTE = 10;
 const perToken = new Map<string, number[]>();
 
-/** Sliding one-minute window per token; true when this message is over the limit. */
+/** Sliding one-minute window per token; true when this message is over the limit. Tokens with no
+    message inside the window are dropped on the way, so the map holds only recent writers. */
 export function tokenLimited(token: string, now = Date.now()): boolean {
+  for (const [k, v] of perToken) if (k !== token && !v.some((t) => now - t < 60_000)) perToken.delete(k);
   const recent = (perToken.get(token) ?? []).filter((t) => now - t < 60_000);
   if (recent.length >= MESSAGES_PER_MINUTE) {
     perToken.set(token, recent);
@@ -33,6 +35,9 @@ export function tokenLimited(token: string, now = Date.now()): boolean {
   perToken.set(token, recent);
   return false;
 }
+
+/** How many tokens the per-token window holds (tests). */
+export const tokenWindowSize = (): number => perToken.size;
 
 const SECURITY_HEADERS: Record<string, string> = {
   "Cache-Control": "no-store",
@@ -99,37 +104,50 @@ export function createShareApp(): Hono {
     if (!text) return c.json(refusal("bad-request", "Write something first."), 400);
     if (text.length > SHARE_TEXT_MAX) return c.json(refusal("too-long", `Messages are limited to ${SHARE_TEXT_MAX} characters.`), 413);
     if (text.startsWith("/")) return c.json(refusal("bad-request", "Messages can't start with /."), 400);
+    const sessionId = access.row.sessionId;
+    const limit = (message: string) => {
+      // At the limit the baton goes to the operator and the session needs them (§app.baton/goal-and-loadout).
+      void budgetStop(sessionId);
+      return c.json(refusal("budget", message), 409);
+    };
+    if (access.reason === "budget") return limit(new BudgetSpent().message);
     if (!access.canWrite) return c.json(refusal(access.reason ?? "not-holder", "It's not your turn in this conversation right now."), 409);
     if (tokenLimited(token)) return c.json(refusal("rate-limited", "Too many messages. Wait a minute."), 429);
-    const sessionId = access.row.sessionId;
     const by = access.link.personId;
-    // The lock (§app.baton/offers-and-leases): noteMessage decides, in one synchronous step, whether
-    // this message may enter — and on an open offer, that this sender now holds it.
+    const busy = (err: unknown) => {
+      console.warn(`[share] message on ${tokenTag(token)} refused: ${err instanceof Error ? err.message : String(err)}`);
+      return c.json(refusal("busy", "The conversation can't take a message right now. Try again in a moment."), 503);
+    };
+    // Nothing is counted or claimed until the runtime is open and would take the message.
+    let chat;
+    try {
+      chat = await acquireChat(sessionPathOf(access.dir, access.row));
+      chat.assertModelAllowed();
+    } catch (err) {
+      return busy(err);
+    }
+    // From here to the hand-over, one synchronous stretch: nothing interleaves. The lock
+    // (§app.baton/offers-and-leases): noteMessage decides whether this message may enter — and on
+    // an open offer, that this sender now holds it; a runtime refusal then undoes exactly that.
     let noted;
     try {
       noted = noteMessage(sessionId, by);
     } catch (err) {
-      if (err instanceof BudgetSpent) {
-        await moveBaton(sessionId, OPERATOR, "The message budget for this conversation is spent.").catch(() => {});
-        return c.json(refusal("budget", err.message), 409);
-      }
+      if (err instanceof BudgetSpent) return limit(err.message);
       if (err instanceof OrgError) {
         const now = linkAccess(token);
         return c.json(refusal(now.ok && now.reason ? now.reason : "not-holder", err.message), err.status === 404 ? 404 : 409);
       }
       throw err;
     }
-    let chat;
     try {
-      chat = await acquireChat(sessionPathOf(access.dir, access.row));
-      recordNoted(chat, by, noted);
-      chat.assertModelAllowed();
       const r = chat.acceptPrompt(text, undefined, "server", undefined, { sentByBaton: { by } });
-      void r.turn.catch((err) => chat!.reportTurnFailure(err));
+      void r.turn.catch((err) => chat.reportTurnFailure(err));
     } catch (err) {
-      console.warn(`[share] message on ${tokenTag(token)} refused: ${err instanceof Error ? err.message : String(err)}`);
-      return c.json(refusal("busy", "The conversation can't take a message right now. Try again in a moment."), 503);
+      undoNote(sessionId, noted);
+      return busy(err);
     }
+    recordNoted(chat, by, noted);
     refreshShare(sessionId);
     return c.json({ ok: true }, 202);
   });

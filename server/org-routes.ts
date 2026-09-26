@@ -3,6 +3,7 @@ import { OPERATOR, type BatonInfo, type BatonSession, type BatonStartInput, type
 import { statSync } from "node:fs";
 import { join } from "node:path";
 import type { OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
+import { attentionChanged } from "./attention-memo";
 import { readConflicts } from "./decisions";
 import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf } from "./baton";
 import { moveBaton, offerBaton, scheduleWrapup } from "./baton-loadout";
@@ -212,7 +213,10 @@ const handle =
   (fn: (c: Context) => Promise<Response> | Response) =>
   async (c: Context): Promise<Response> => {
     try {
-      return await fn(c);
+      const res = await fn(c);
+      // A write that landed may have moved Needs you (a hand-off, a link, an approval).
+      if (c.req.method !== "GET" && res.ok) attentionChanged();
+      return res;
     } catch (err) {
       if (err instanceof OrgError) return c.json({ error: err.message }, err.status);
       if (err instanceof BusyError) return c.json({ error: err.message }, 409);

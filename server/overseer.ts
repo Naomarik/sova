@@ -62,6 +62,7 @@ import { getSessionInsight } from "./insights";
 import { normalizeEntries, readActiveBranch } from "./transcript";
 import { markOwned } from "./write-guard";
 import { signalTextOf } from "./signals-store";
+import { onAttentionChanged } from "./attention-memo";
 
 /**
  * The Overseer: ONE special Sova session that watches every other session and acts on them
@@ -295,6 +296,7 @@ function noteFailedRise(path: string, failed: number, now: number): number {
   return at;
 }
 let digestMemo: { at: number; value: Promise<ReturnType<typeof buildDigest>> } | null = null;
+onAttentionChanged(() => (digestMemo = null));
 
 /** The digest, memoised ~3s (the badge rides a poll). */
 export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {

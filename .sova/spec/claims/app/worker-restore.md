@@ -22,7 +22,8 @@ same fold also reads the older `subagents-worker-registry` entries, which were w
 hosted workers before this change.
 
 - **What it holds**: the worker id, backend, group, name; the spawn spec (cwd, model, effort,
-  task preview and length, wake, sandbox on/off, and the spec as given, so a resume can re-apply
+  task preview and length, wake, sandbox on/off, and the spec as given — including whether it ran
+  on its worktree's own agent dir (`useWorktreeConfig`) — so a resume can re-apply
   it); team id, role and orchestrator flag when it is a team member; the **transcript
   reference** once known (a pi session file, or a Claude session id, or whatever the backend's
   adapter names); a **usage snapshot** with the time it was taken; when it last settled and was
@@ -140,9 +141,10 @@ next prompt, and not for team members.
 - **Same worker.** It keeps its id, name, team membership and role, and continues its own
   transcript: a pi worker reopens its session file; a claude-code worker resumes its Claude
   session by id (`--resume`, never a new `--session-id`). Its spawn spec is re-applied (cwd,
-  model, effort, tools, system prompt, MCP servers), and the sandbox follows the **parent's
-  current** state, exactly as at spawn (§chat.sandbox/workers), as are its permission mode and
-  settings.
+  model, effort, tools, system prompt, MCP servers, its worktree's agent dir), and the sandbox
+  follows the **parent's current** state, exactly as at spawn (§chat.sandbox/workers), as are its
+  permission mode and settings. So does where it may start: its cwd must still be the session's
+  cwd or inside an active tracked worktree of the current branch (§chat.worktrees/workers).
 - **A team member rejoins its team.** Its team, kept as history since the restart, becomes live
   again, and its mailbox is re-created with a fresh identity: a pi member gets its team tools
   back, a claude-code member its `team` MCP server, and an orchestrator keeps its roster and
@@ -155,7 +157,7 @@ next prompt, and not for team members.
 - **Usage continues** from the rebuilt total; nothing is counted twice.
 - **Refusals are said, not guessed.** Resume answers with the reason and changes nothing for:
   a worker that is live (give it work with `agent_steer`), one already being resumed, an ID this
-  session file has no record of, a backend whose adapter declares no resume or that is not
+  session file has no record of, a cwd outside the session's cwd and its active worktrees, a backend whose adapter declares no resume or that is not
   loaded, and a worker whose backend session was never recorded. When the reopen itself fails,
   or the worker isn't idle within 180 seconds, the restored entry stays as it was and the reason
   is returned.

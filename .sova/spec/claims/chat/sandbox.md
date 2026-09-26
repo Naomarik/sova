@@ -66,8 +66,10 @@ On means the policy file's `level`: `workspace-write` by default, `read-only` if
 so. It is not a choice in the UI. Under `workspace-write`:
 
 - **Filesystem.** The whole filesystem is readable and read-only, except the session's cwd, a
-  per-session tmp mounted as `/tmp`, and the policy's `writable` roots (`~/.local/state/mise` in
-  the shipped policy). `read-only` drops the cwd and the `writable` roots from that list.
+  per-session tmp mounted as `/tmp`, the policy's `writable` roots (`~/.local/state/mise` in
+  the shipped policy), and the session's active tracked worktrees, each with its `.agent`
+  read-only (§chat.worktrees/sandbox). `read-only` drops the cwd, the `writable` roots and the
+  worktrees from that list.
 - **Shadowed caches.** Build caches (`~/.cache`, `~/.npm`, `~/.m2`: the policy's `shadowed`) are
   the sandbox's own private copies, kept between sessions; nothing written there reaches the
   host's caches. Each copy lives under `<agentDir>/sova/sandbox/shadow/`, is shared by all
@@ -182,7 +184,10 @@ with the sandbox extension and `--sandbox on`, and each worker's own extension p
 enforces independently. If the parent's sandbox is unavailable, or `partial` without
 `acceptPartial`, the spawn is refused with a message naming the sandbox. If a pi worker's own
 probe fails after it starts, every tool it calls refuses; it never runs unsandboxed. A worker gets exactly its parent's writable roots; its
-own cwd is not added. Any worker, pi or Claude Code, whose cwd is outside those roots is refused
+own cwd is not added. A pi worker started inside one of the session's tracked worktrees gets
+only that worktree instead (§chat.worktrees/workers). A worker is also held to its parent's
+hidden list and its proxy and environment allowlists, whatever the policy file of its own agent
+dir says. Any worker, pi or Claude Code, whose cwd is outside those roots is refused
 at spawn with a message naming the sandbox. A worker started with `--sandbox on` cannot turn it
 off: its `/sandbox off` refuses, so the parent's agent cannot switch it off by sending the
 command as a steer.

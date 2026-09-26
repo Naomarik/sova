@@ -1600,7 +1600,8 @@
         "pi-config/extensions/sandbox/policy.ts",
         "pi-config/extensions/sandbox/proxy.ts",
         "pi-config/extensions/sandbox/env.ts",
-        "pi-config/extensions/sandbox/tools.ts"
+        "pi-config/extensions/sandbox/tools.ts",
+        "pi-config/extensions/sandbox/index.ts"
       ]
     },
     "§chat.sandbox/workers": {
@@ -1615,7 +1616,10 @@
         "pi-config/extensions/sandbox/index.ts",
         "pi-config/extensions/sandbox/state.ts",
         "pi-config/extensions/sandbox/policy.ts",
-        "pi-config/extensions/sandbox/tools.ts"
+        "pi-config/extensions/sandbox/tools.ts",
+        "pi-config/extensions/sandbox/README.md",
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/tests/policy.unit.test.ts"
       ]
     },
     "§chat/sandbox": {
@@ -1748,7 +1752,8 @@
         "src/components/SubagentPane.tsx",
         "pi-config/extensions/subagents/README.md",
         "pi-config/extensions/subagents/restored.ts",
-        "pi-config/extensions/subagents/teams.ts"
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/restore.test.ts"
       ]
     },
     "§app.worker-restore/transcript-protocol": {
@@ -4110,6 +4115,151 @@
         "server/worktrees.test.ts",
         "server/index.ts",
         "shared/protocol.ts"
+      ]
+    },
+    "§chat.worktrees/entry": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/worktrees/state.ts",
+        "pi-config/extensions/worktrees/index.ts",
+        "pi-config/extensions/worktrees/state.test.ts",
+        "server/worktrees-state.ts",
+        "server/insights.ts"
+      ]
+    },
+    "§chat.worktrees/inherit": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.worktrees/entry"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/worktrees/state.ts",
+        "server/worktrees-state.ts",
+        "src/components/SessionDetails.tsx"
+      ]
+    },
+    "§chat.worktrees/merge-card": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.worktrees/tool"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/worktrees/index.ts",
+        "pi-config/extensions/worktrees/git.ts",
+        "pi-config/extensions/worktrees/index.test.ts",
+        "server/transcript.ts",
+        "server/worktrees-state.ts",
+        "server/worktrees-state.test.ts",
+        "shared/protocol.ts",
+        "src/components/WorktreeMergeCard.tsx",
+        "src/components/Thread.tsx",
+        "src/lib/worktrees.ts",
+        "src/app.css"
+      ]
+    },
+    "§chat.worktrees/pane": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.worktrees/entry",
+        "§chat.worktrees/inherit"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/insights.ts",
+        "server/worktrees-state.ts",
+        "server/worktrees-state.test.ts",
+        "shared/protocol.ts",
+        "src/components/SessionDetails.tsx",
+        "src/lib/worktrees.ts",
+        "src/lib/worktrees.test.ts",
+        "src/app.css"
+      ]
+    },
+    "§chat.worktrees/sandbox": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.worktrees/tool",
+        "§chat.sandbox/what-on-enforces"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/worktrees/index.ts",
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/sandbox/policy.ts",
+        "pi-config/extensions/sandbox/tests/policy.unit.test.ts"
+      ]
+    },
+    "§chat.worktrees/tool": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.worktrees/entry"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/worktrees/index.ts",
+        "pi-config/extensions/worktrees/git.ts",
+        "pi-config/extensions/worktrees/git.test.ts",
+        "pi-config/extensions/worktrees/index.test.ts",
+        "pi-config/extensions/subagents/index.ts"
+      ]
+    },
+    "§chat.worktrees/workers": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.worktrees/entry",
+        "§chat.sandbox/workers"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/restore.test.ts",
+        "pi-config/extensions/worktrees/state.ts",
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/sandbox/policy.ts",
+        "pi-config/extensions/sandbox/state.ts",
+        "pi-config/extensions/sandbox/backend.ts",
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+        "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts"
+      ]
+    },
+    "§chat.worktrees/worktree-config": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.worktrees/workers"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/runner.ts",
+        "pi-config/extensions/subagents/registry.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/README.md",
+        "scripts/hermetic-agent-dir.mjs",
+        "pi-config/extensions/sandbox/env.ts"
+      ]
+    },
+    "§chat/worktrees": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/worktrees/index.ts",
+        "pi-config/extensions/worktrees/state.ts",
+        "pi-config/extensions/worktrees/README.md"
       ]
     }
   },

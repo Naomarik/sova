@@ -152,7 +152,7 @@
 
 .board-tree-set { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-width: 0; max-width: 100%; }
 .board-tree-more, .board-tree-more-wide { flex: none; display: inline-flex; }
-.board-tree-wide, .board-tree-more-wide { display: none; }
+.board-tree.board-tree-wide, .board-tree-more-wide { display: none; }
 .board-tree { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; }
 .board-tree-branch { min-width: 4ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-mono); color: var(--color-ink); }
 .board-ahead, .board-lines { flex: none; font-size: var(--fs-mono); white-space: nowrap; }
@@ -291,6 +291,6 @@
   }
   .board-cell.board-activity { flex-wrap: nowrap; }
   .board-tree-set { flex-direction: column; align-items: flex-start; }
-  .board-tree-wide, .board-tree-more-wide { display: inline-flex; }
+  .board-tree.board-tree-wide, .board-tree-more-wide { display: inline-flex; }
   .board-tree-more { display: none; }
 }

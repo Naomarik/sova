@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import type { AgentsInsight, ContextInfo, SessionSummary, TeamInfo, TeamMember, WorkerInfo, WorktreeStatus } from "../../shared/protocol";
 import { ApiError, fetchWorktrees, resumeWorker } from "../lib/api";
 import {
@@ -145,13 +145,14 @@ function Dash(props: { words: string }) {
 }
 
 /** One tree in the Worktrees cell: branch, merge reading, lines, uncommitted dot. */
-function TreeMark(props: { tree: WorktreeStatus; class?: string }) {
+function TreeMark(props: { tree: WorktreeStatus; class?: string; children?: JSX.Element }) {
   return (
     <span class={props.class ? `board-tree ${props.class}` : "board-tree"}>
       <span class="board-tree-branch text-mono">{treeName(props.tree)}</span>
       <TreeMergeMark tree={props.tree} />
       <TreeLinesMark tree={props.tree} />
       <DirtyMark tree={props.tree} />
+      {props.children}
     </span>
   );
 }
@@ -165,15 +166,21 @@ function TreesCell(props: { trees: WorktreeStatus[] | undefined; down: boolean }
           {(t) => (
             <span class="board-tree-set" title={trees().map(treeTitle).join("\n\n")}>
               <TreeMark tree={t()} />
-              <Show when={trees()[1]}>{(t2) => <TreeMark tree={t2()} class="board-tree-wide" />}</Show>
+              <Show when={trees()[1]}>
+                {(t2) => (
+                  <TreeMark tree={t2()} class="board-tree-wide">
+                    {/* Wide: the rest ride the second tree's line, so the cell stays two lines tall. */}
+                    <Show when={trees().length > 2}>
+                      <span class="board-tree-more-wide">
+                        <CountChip title={`${trees().length} worktrees`}>+{trees().length - 2}</CountChip>
+                      </span>
+                    </Show>
+                  </TreeMark>
+                )}
+              </Show>
               <Show when={trees().length > 1}>
                 <span class="board-tree-more">
                   <CountChip title={`${trees().length} worktrees`}>+{trees().length - 1}</CountChip>
-                </span>
-              </Show>
-              <Show when={trees().length > 2}>
-                <span class="board-tree-more-wide">
-                  <CountChip title={`${trees().length} worktrees`}>+{trees().length - 2}</CountChip>
                 </span>
               </Show>
             </span>

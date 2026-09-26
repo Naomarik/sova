@@ -313,8 +313,9 @@ itself.
 - **FYI:** running now; context at or above 85%; idle web sessions older than 3 days that aren't
   archived and have no draft.
 - Items are sorted by tier, then age, capped at 30, each with at most 200 characters of detail and
-  an in-app link. The `sova_attention` tool and `GET /api/overseer/attention` return it; the entry
-  button's badge counts come from it.
+  an in-app link. The `sova_attention` tool and `GET /api/overseer/attention` return it; the
+  sidebar's Needs you region (§app.session-list/needs-you) lists its act tier, and the Overseer
+  head's counts and menus come from it.
 
 ## §app.overseer/seen — The seen store and unread dots
 
@@ -323,8 +324,8 @@ itself.
   "the user had it in front of them". This is imperfect for background tabs.
 - `SessionSummary.unread` is set when the session has replied since then and is not mid-turn. The
   sidebar row shows an **unread dot**, except for the session this tab is showing.
-- The Overseer's own unread assistant messages give the entry button's **chat badge**, which is
-  separate from the attention badge.
+- The Overseer's own unread assistant messages give the entry button's **unread count**, its only
+  badge (§app.overseer/entry-button).
 
 ## §app.overseer/navigation — Navigation
 
@@ -357,14 +358,15 @@ An unknown id renders as its text, unlinked.
 
 The Overseer page's head says what it watches in one meta line: "{n} sessions · {w} working ·
 {a} need you", then "{f} finished" and "{d} drafts". Each part after the first shows only when it
-is not 0. "{n} sessions", "{w} working" and "{a} need you" stay plain text; `{a}` is the entry
-button's act count (§app.overseer/entry-button).
+is not 0. "{n} sessions", "{w} working" and "{a} need you" stay plain text; `{a}` is the digest's
+count of sessions with an act item (`OverseerInfo.badge.act`), the sessions the sidebar's Needs you
+region lists (§app.session-list/needs-you).
 
-- **Two menus, one digest.** While the page is open it reads `GET /api/overseer/attention`
-  (§app.overseer/attention-digest) when it opens and again every 10 seconds, the entry button's
-  own cadence (paused while the tab is hidden). Both counts are the number of rows their menus
-  list from that one read, so a number always matches its list. The entry button's decide badge
-  plays no part here, and the sidebar's entry button is unchanged.
+- **Two menus, one digest.** App reads `GET /api/overseer/attention`
+  (§app.overseer/attention-digest) once for the whole page, every 10 seconds, the entry button's
+  own cadence (paused while the tab is hidden), and hands that read to both this head and the
+  sidebar's Needs you region; opening the page reads it once more. Both counts are the number of
+  rows their menus list from that one read, so a number always matches its list.
 - **Which sessions.** The digest's decide items, minus every session that also has an act item.
   **Finished** lists the sessions with a reply newer than last seen (kind `finished`). **Drafts**
   lists the sessions with an unsent draft or queued input (kinds `draft` and `queued`; queued
@@ -398,16 +400,24 @@ button's act count (§app.overseer/entry-button).
   an empty query.
 - The collapsed spine carries the same button.
 - **Alt+O** opens the Overseer from anywhere.
-- **Badges:** an attention count (needs-you items) and a separate chat-unread dot for Overseer
-  messages the user hasn't seen. The button is tinted as selected while `#/overseer` is the route.
+- **Badge:** one count, top-right in the accent pill (`.overseer-entry-count`, "99+" past 99): the
+  Overseer's own assistant messages the user hasn't seen (`OverseerInfo.unread`,
+  §app.overseer/seen). It is 0, and the badge gone, while `#/overseer` is the route, and it shows
+  whatever the proactivity: these are the Overseer's messages, not an attention count. The eye
+  carries **no** attention count and no finished dot — who is blocked on you is the sidebar's
+  Needs you region (§app.session-list/needs-you). The badge is `aria-hidden`; the button's
+  `aria-label` is "Overseer", or "Overseer · {n} new message(s)" while it shows, and its `title`
+  adds " · Alt+O". The button is tinted as selected while `#/overseer` is the route.
 
 ## §app.overseer/proactivity — Proactivity
 
 Three modes, cycled with a control on the Overseer page and set in Settings: **Off**, **Badge Only**
 (default), **Brief Me**.
 
-- **Off:** no badge polling side effects; the button shows no attention count.
-- **Badge Only:** the attention badge only. It costs no tokens.
+- **Off:** no Needs you region in the sidebar (§app.session-list/needs-you), no briefs. The entry
+  button's unread count is unaffected. Hint: "No sidebar list, no briefs."
+- **Badge Only:** the sidebar's Needs you region only. It costs no tokens. Hint: "Lists the
+  sessions that need you at the top of the sidebar." (The wire value stays `badge`.)
 - **Brief Me:** when a **new** needs-you item appears and the Overseer is idle, the server starts
   one Overseer turn, at most once per 10 minutes. Its prompt (the blockers' titles and details, from
   other sessions) is redacted like any tool output (§app.overseer/tools); it is tagged `[overseer-brief]`, renders

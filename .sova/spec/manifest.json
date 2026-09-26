@@ -1262,7 +1262,8 @@
       "code": [
         "src/lib/spine.ts",
         "src/lib/storage-keys.ts",
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "src/app.css"
       ],
       "requires": [
         "§app.session-list/recent",
@@ -2249,18 +2250,19 @@
     "§app.overseer/entry-button": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/App.tsx",
         "public/icons/eye.svg",
         "src/design/base.css",
-        "src/components/ui.tsx"
+        "src/components/ui.tsx",
+        "src/lib/overseer.ts",
+        "src/lib/overseer.test.ts"
       ],
       "requires": [
         "§app.session-list/search",
         "§app.session-list/spine",
-        "§app.overseer/attention-digest",
         "§app.overseer/seen"
       ]
     },
@@ -2336,7 +2338,9 @@
       "code": [
         "server/overseer.ts",
         "src/components/OverseerView.tsx",
-        "server/overseer-redact.ts"
+        "server/overseer-redact.ts",
+        "src/lib/overseer.ts",
+        "src/components/Sidebar.tsx"
       ],
       "requires": [
         "§app.overseer/attention-digest",
@@ -2875,7 +2879,6 @@
       ],
       "requires": [
         "§app.overseer/attention-digest",
-        "§app.overseer/entry-button",
         "§app.overseer/identity-and-clear"
       ]
     },
@@ -2895,6 +2898,25 @@
       "requires": [
         "§app.settings-dialog/decisions",
         "§design.copy-deck/settings-decisions"
+      ]
+    },
+    "§app.session-list/needs-you": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/needs-you.ts",
+        "src/lib/needs-you.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/App.tsx",
+        "src/app.css"
+      ],
+      "requires": [
+        "§app.overseer/attention-digest",
+        "§app.overseer/proactivity",
+        "§app.session-list/recent",
+        "§app.session-list/groups",
+        "§app.session-list/spine"
       ]
     }
   },

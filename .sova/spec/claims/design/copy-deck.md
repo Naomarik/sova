@@ -25,6 +25,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Topic words (search; §app.decisions/session-tags) | feature · bug fix · refactor · tests · docs · infra · research · planning · review · data · config · experiment · chore · other |
 | Untitled row | Untitled (muted) |
 | Draft row (a never-sent session with a stored draft) | title Untitled (muted) · line 2: `pencil` icon, then the draft's first non-empty line, about 80 characters · image-only: `1 image` / `2 images` · accessible name and `title`: Draft: {preview} |
+| Needs you region head (§app.session-list/needs-you) | Needs you · {n} where n = its rows · `title`: "The {n} sessions waiting on you, newest first." (1: "The 1 session waiting on you.") |
+| Needs you row, line 2 | the digest's sentence for the session's newest act item, verbatim ("Asks you: …", "Waiting on a dialog.", "1 subagent ended in an error.") · `title`: every act sentence, newest first |
+| Needs you cut note | Some sessions may not be listed: this list stops at the 30 most urgent items. |
+| Needs you spine door | wordless `alert-circle` over {n} · `aria-label` and `title`: Needs you · {n} sessions (1: "1 session") |
+| Overseer entry button (eye) | wordless · badge: {unread}, "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
 | Archive date sections | Today · Yesterday · Last 7 days · Last 30 days · Older (each with its count) |

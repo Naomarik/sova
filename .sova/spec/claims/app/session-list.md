@@ -32,8 +32,9 @@
   </div>
 
   <nav class="sidebar-list pane" aria-label="Session list">
-    <!-- First region: Recent (§app.session-list/recent). Second: the user's own groups (§app.session-list/groups).
-         Both omitted here for length. -->
+    <!-- First region: Needs you (§app.session-list/needs-you), only while a session is blocked on
+         you. Then Recent (§app.session-list/recent), then the user's own groups (§app.session-list/groups).
+         All three omitted here for length. -->
     <details class="session-group" aria-labelledby="g-1" open>
       <summary class="session-group-head">
         <h3 class="list-group-label" id="g-1" title="/home/user/webapps/sova">
@@ -166,7 +167,7 @@ label a person reads says "sessions pane".
               aria-label="New Session" title="New Session">…plus…</button>
       <button class="button button-icon spine-item" type="button"
               aria-label="Search sessions" title="Search sessions · /">…search…</button>
-      <!-- the Overseer entry button (§app.overseer/entry-button), with its badges -->
+      <!-- the Overseer entry button (§app.overseer/entry-button), with its unread count -->
       <a class="button button-icon spine-item" href="#/overseer"
          aria-label="Overseer" title="Overseer · Alt+O">…eye…</a>
     </div>
@@ -179,8 +180,11 @@ label a person reads says "sessions pane".
         <span class="spine-dot spine-dot-live" aria-hidden="true"></span>
       </a>
     </nav>
-    <!-- omitted when both regions are empty -->
+    <!-- omitted when all three regions are off screen -->
     <div class="spine-regions">
+      <!-- exactly while the Needs you region is shown (§app.session-list/needs-you) -->
+      <button class="button button-icon spine-item spine-region" type="button"
+              aria-label="Needs you · 2 sessions" title="Needs you · 2 sessions">…alert-circle…<span class="spine-count">2</span></button>
       <button class="button button-icon spine-item spine-region" type="button"
               aria-label="Live &amp; web · 12 sessions" title="Live &amp; web · 12 sessions">…chat…<span class="spine-count">12</span></button>
       <button class="button button-icon spine-item spine-region" type="button"
@@ -257,19 +261,19 @@ label a person reads says "sessions pane".
   `--color-ink-muted` ring, pulsing). The row can show a TUI pill and a worker count at once; a
   tile has room for one mark, so it shows the first that holds of **TUI, Busy, working** — the
   rail's own "TUI wins" order, then the aggregate last. The tile's name still says all of them.
-- **Region counts.** Live & web and the Archive, each an icon over its count and named
+- **Region counts.** Needs you, Live & web and the Archive, each an icon over its count and named
   "{Region} · {n} sessions" in its `title` and `aria-label`. **A button is shown exactly when its
   region is on screen in the expanded pane**, and `n` is the count that region shows now: with no
   search, the plain totals ("60 sessions", "321 sessions"); with a search on, each region's hit
   count — "22 sessions" while the Live & web head reads "22 of 60", "5 sessions" while the
-  Archive's reads "5 of 321". One rule decides both the region and its button (`showTop` /
-  `showArchive` in `Sidebar.tsx`); a button derived from anything else, such as the Archive's
+  Archive's reads "5 of 321". Needs you's count is its rows, search or not. One rule decides both
+  the region and its button (`showNeedsYou` / `showTop` / `showArchive` in `Sidebar.tsx`); a button derived from anything else, such as the Archive's
   total, is a door onto a region a no-hit search has removed. When neither region is on screen
   the whole `.spine-regions` box is omitted, not only its buttons — an empty box still draws its
   divider. Pressing a button expands the pane, scrolls that region into view, and moves focus to
-  its first row: Live & web's first folder head or link, the Archive's own `<summary>`. The
-  Archive's open state is **left to the user** — it is their stored choice, and the button never
-  forces it open. If the region is gone by the time the pane has expanded, focus goes to the
+  its first row: Live & web's first folder head or link, the Archive's and Needs you's own
+  `<summary>`. The Archive's and Needs you's open state is **left to the user** — it is their stored choice, and the button never
+  forces either open. If the region is gone by the time the pane has expanded, focus goes to the
   head's collapse toggle.
 - **Live tallies.** "{n} subagents working now" — `activeAgentCounts(…).agents`: subagents
   working right now in fresh host sessions, idle and waiting workers counting 0, the same figure
@@ -288,7 +292,7 @@ label a person reads says "sessions pane".
 - **Layout.** Five groups top to bottom — head, tiles, regions, tallies, foot — each a column
   of 44px items centred with `--space-1` between and `--space-2` above and below, split by
   `--color-border` rules. The tiles are the scroll region (`.pane`) and take the height that's
-  left; the other four are pinned. They cost 529px with every item shown, so the tiles keep a
+  left; the other four are pinned. They cost 577px with every item shown (the Needs you door is one more 44px item and its 4px gap), so the tiles keep a
   floor of one tile (60px), and on a window shorter than that the whole spine scrolls instead.
   Neither scrollbar is drawn: a 10px bar in a 64px column pushes every item off the shared axis.
   **The cost:** nothing shows that the tiles scroll, beyond the tile cut at the edge. Recent is 5
@@ -586,9 +590,66 @@ label a person reads says "sessions pane".
 - **Refreshing** (polling or a WS nudge). Update rows in place and never re-show the skeleton.
   Keep scroll position and focus. If the focused row moves, it stays focused.
 
+## §app.session-list/needs-you — Needs you
+
+The very top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
+errored turn, a subagent that ended in an error, or a finished turn that asks you something, failed,
+or is stuck. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
+from `GET /api/overseer/attention`, the list the Overseer's "{a} need you" counts. The digest, not the
+session list, is the source: a hosted pending dialog, a worker error and every detail sentence
+reach only the digest.
+
+Needs you is a **shortcut, not a place a session lives**, exactly like Recent: every row is still in
+Recent (when it moved lately), Live & web or the Archive, and its group. Nothing is moved or hidden,
+and the region has **no actions of its own** beyond its twist.
+
+```html
+<!-- First in .sidebar-list, above Recent. Only while it has rows and proactivity is not Off. -->
+<details class="sidebar-region sidebar-needs-you" aria-labelledby="r-needs-you" open>
+  <!-- The Groups head's pattern: the <summary> toggles, the <h2> is what the outline reads. -->
+  <summary class="sidebar-needs-you-summary">
+    <h2 class="sidebar-region-head" id="r-needs-you" title="The 2 sessions waiting on you, newest first.">
+      <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
+      Needs you <span class="sidebar-region-count">· 2</span>
+    </h2>
+  </summary>
+  <ul class="list">…session rows, with line 2 replaced by the digest's sentence…</ul>
+  <!-- only when the digest's 30-item cap dropped act items -->
+  <p class="sidebar-region-note">Some sessions may not be listed: this list stops at the 30 most urgent items.</p>
+</details>
+```
+
+- **Which sessions.** Every session with at least one act item in the digest, **one row per
+  session** however many act items it has, joined by path to the sidebar's search-hit list. So the
+  search and the host filter narrow it like every other region, and a digest session the list
+  doesn't carry is not listed. **The count in the head is the rows**, and the region never lists a
+  row the rest of the pane hides.
+- **Order: newest first**, by each session's newest act item (`since`); ties break on path.
+- **Rows** are the same `SessionRow` as everywhere else — rail, marks, meta line, accessible name —
+  with one difference: **line 2 is the digest's sentence** for the session's newest act item
+  ("Asks you: …", "Waiting on a dialog.", "1 subagent ended in an error."), in place of the gist
+  or the draft preview, and shown even with summaries hidden in Settings › General. Its `title` is
+  every act sentence the session has, newest first. An act item with no sentence leaves line 2 as
+  the row draws it elsewhere. The rules live in `src/lib/needs-you.ts`.
+- **The open session stays listed**, drawn with the current tint like any row: the count is the
+  digest's, and a number must match its list.
+- **Open by default, collapsible.** The head is a twist (`<details>`, the Groups head's
+  summary-wrapping-`<h2>` form). A user's collapse is remembered for the browser tab in
+  `sessionStorage["sova:needs-you-open"]`, `"1"` open and `"0"` collapsed, through `writeKey`;
+  only `"0"` reads as collapsed. **Forced open while a search is on**, without changing the stored
+  choice, so every hit is visible.
+- **Omitted entirely** when it has no rows — an empty "Needs you · 0" is a standing alarm at rest —
+  and while Overseer proactivity is **Off** (§app.overseer/proactivity), or not yet read. The
+  region appearing and going is the signal; Recent's divider moves up with it.
+- **Freshness.** App reads the digest once for the page, on the Overseer entry button's 10-second
+  cadence (paused while the tab is hidden, again on window focus), and hands the same read to this
+  region and to the Overseer head's menus (§app.overseer/finished-menu).
+- **The spine** carries its door, "Needs you · {n} sessions", shown exactly when the region is
+  (§app.session-list/spine).
+
 ## §app.session-list/recent — Recent
 
-The top of the list, above Groups: the few sessions that moved last, said once more so the one you
+Near the top of the list, under Needs you (§app.session-list/needs-you) when it shows, above Groups: the few sessions that moved last, said once more so the one you
 want back is the first thing on screen. With 48 sessions across 11 folders, the session you closed
 five minutes ago is three collapsed sections down — and it is the single most likely thing you came
 for.
@@ -601,7 +662,7 @@ own** — no drag target, no remove, no count control. Every gesture a row has, 
 lives.
 
 ```html
-<!-- First in .sidebar-list, above the Groups region. -->
+<!-- First in .sidebar-list after the Needs you region, above the Groups region. -->
 <section class="sidebar-region sidebar-recent" aria-labelledby="r-recent">
   <h2 class="sidebar-region-head" id="r-recent"
       title="The 5 sessions that moved last. Change how many in Settings, under General.">

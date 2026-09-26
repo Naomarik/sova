@@ -251,10 +251,21 @@ the URL (§app.organizations/org-page).
 - In a baton session only the **current holder's** steering fields (`language`, `voice`, `skills`,
   `competence`) enter the prompt, inside a block marked private steering data never to be disclosed
   or paraphrased; every other participant enters as name, role and decision areas only.
-- `voice` and skill strings of 16 characters or more are redacted: the holder's from the
-  messages the model sees, and every roster person's from everything the share page shows, so a
-  verbatim quote of a profile reaches an outsider as `[redacted]`. A paraphrase is not caught;
-  that residual risk is the prompt's to hold.
+- `voice` and skill strings of 16 characters or more are **profile phrases**. A phrase is a
+  secret only where it is not ordinary vocabulary: never one that appears in the public title, in
+  any roster person's name, role or decision areas, in a decision's area, or in what someone wrote
+  in the conversation (a skill "Accounts payable" beside the role "Accounts payable clerk", a skill
+  "finance approvals" that is an area name, Bob's own "Microsoft 365 administration"). Secret
+  phrases are redacted, as whole words, only from what the **model** wrote: on the share page from
+  every roster person's (replies, streaming text, hand-off and offer questions and briefings,
+  decision statements, the done summary — never people's messages, the title or a decision's
+  area), and in the model's own context the holder's, from its earlier replies. People's messages
+  reach the model and the page as they wrote them. So a verbatim repeat of a profile by the model
+  reaches an outsider as `[redacted]`, and no ordinary word, job title or area is ever blanked
+  for it. A paraphrase is not caught; that residual risk is the prompt's to hold.
+- The org's name is never in the baton prompt; as a backstop the share page redacts it, as a
+  whole word, from what the model wrote (a goal may carry it), unless the title or someone in the
+  conversation used it.
 - Profiles appear only on the org page, never in a baton session pane.
 
 ## §app.organizations/referrals — People not on the roster
@@ -292,7 +303,17 @@ the URL (§app.organizations/org-page).
   wrap-up: someone's words never change someone else's profile. A `language` already set changes
   only when the quote states a preference (it names a language: "please write to me in English");
   a message merely written in another language changes nothing. A person with no language yet
-  gets the one they wrote in. What people say about themselves and how they want to be addressed
+  gets the one they wrote in: a first language the model proposes is refused when their own
+  messages clearly show another ("they wrote in en"), and after the turn everyone who wrote and
+  still has none gets the one their messages show, without the model (a function-word count over
+  English, Spanish, Portuguese, French, German, Italian and Dutch; nothing when the text is too
+  short or no language clearly wins), as a wrap-up history line quoting the start of their
+  longest message.
+- **About themselves only.** A `skills`, `competence` or `voice` update is refused when its quote
+  is about someone else: it names another roster person (full name, or first name as written on
+  the roster) or the operator, or it speaks of a he/she with no first person in it ("the quote is
+  about Bob Diaz, not Tony Reyes"). What someone says about a colleague changes nobody's profile;
+  the prompt says so too. What people say about themselves and how they want to be addressed
   is what the wrap-up records (a stated preference is data, not an instruction to it); a stated
   skill ("fluent in Portuguese") is a skill. The history line carries the
   session, the quoted message's entry id and the quote. Refusals are logged.

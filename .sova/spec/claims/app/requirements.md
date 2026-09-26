@@ -61,7 +61,8 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   send nothing and work either way.
 - **When.** Only when asked: **Reconcile** on the project page (or `POST …/reconcile`), a project
   overseer's reconcile tool, or on its own right after a decision is recorded in a routed
-  conflict's own baton session (a 2-second debounce). Nothing runs on a timer.
+  conflict's own baton session, open or already settled (a 2-second debounce). Nothing runs on a
+  timer.
 - **What is sent.** Decision text only: statements, quotes, the authors' names, dates and area
   names, through the same redacting provider as every decision (§app.decisions/privacy); never a
   transcript, a goal, a briefing, ids, paths or any profile field. A project whose root is in the
@@ -73,15 +74,29 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   so two new spellings never swap. A decision is filed once, by the first successful run that sees
   it, and never moves after.
 - **Contradictions.** Every live pair of one area not yet compared, with at least one side not yet
-  reconciled, is asked as a boolean ("could a team not follow both at once?"), up to 12 pairs per
-  request. `p ≥ 0.7` is a conflict; below, the pair is marked compared and never asked again. A
-  pair with a side already in an open conflict waits for that conflict's resolution. A promoted
-  decision is compared like any other and can be in conflict. Reconciling again asks nothing that
-  was already answered, and never opens a second conflict or session for the same pair.
+  reconciled, is asked as a three-way choice, up to 12 pairs per request: **conflict** (both
+  answer the same question, incompatibly), **same** (the same rule said again) or **different**
+  (different questions, or one only adds a detail). The question first asks which single
+  question each decision answers, so two rules merely filed under one area (a payment weekday
+  and an approval threshold) are "different", not a low "yes". P(conflict) ≥ 0.7 is a conflict;
+  P(same) ≥ 0.7 is a restatement (below); otherwise the pair is marked compared and never asked
+  again. A pair with a side already in an open conflict waits for that conflict's resolution. A
+  promoted decision is compared like any other and can be in conflict. Reconciling again asks
+  nothing that was already answered, and never opens a second conflict or session for the same
+  pair.
+- **Restatements.** A restatement or confirmation is **folded** into the earlier decision (its
+  quote and provenance join that record; it is superseded by it; no second record). Before
+  pairing, each pending decision is compared with its own author's earlier decisions of the area,
+  superseded ones included (the same words need no question): a restatement of a superseded rule
+  is superseded with it, by what replaced it, so a losing author repeating their rule never
+  reopens a settled conflict.
 - **Settling.** The first decision recorded in a conflict's baton session is its resolution: the
-  decide seam says whether it keeps A, keeps B, replaces both or says both stand. Keeping a side:
-  the other side is superseded by the kept one, and the resolution, which only says it again, is
-  **folded** into the kept decision (its quote and provenance join that record; no second record).
+  decide seam says whether it keeps A, keeps B, replaces both or says both stand, and whether the
+  resolution states A's or B's rule again. Keeping a side: the other side is superseded by the
+  kept one, and a resolution that restates it is **folded** into the kept decision; one that says
+  something else stays a decision of its own (compared like any other), never evidence for the
+  kept rule. A later decision in the same session (a second confirmation) runs the reconciler on
+  its own too, and is folded like any restatement.
   Replacing both: both are superseded by the resolution. The operator can settle by hand instead:
   keep A, keep B, keep both (not a contradiction), or state the decision (it supersedes both; its
   provenance is the operator on the project page, with an empty session).

@@ -3511,7 +3511,9 @@
         "src/lib/baton-strip.test.ts",
         "src/lib/api.ts",
         "src/orgs.css",
-        "server/baton-handoff.test.ts"
+        "server/baton-handoff.test.ts",
+        "server/baton-guards.test.ts",
+        "server/share/hub.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -3528,7 +3530,10 @@
         "server/baton.test.ts",
         "server/baton-events.ts",
         "server/baton-offers.test.ts",
-        "server/baton-handoff.test.ts"
+        "server/baton-handoff.test.ts",
+        "server/baton-guards.ts",
+        "server/baton-guards.test.ts",
+        "server/baton-prompt.md"
       ],
       "requires": [
         "§app.baton/links"
@@ -3764,7 +3769,8 @@
         "server/share/hub.ts",
         "server/baton-view.ts",
         "server/baton-view.test.ts",
-        "server/orgs.test.ts"
+        "server/orgs.test.ts",
+        "server/baton-guards.test.ts"
       ]
     },
     "§app.organizations/projects": {
@@ -3864,7 +3870,9 @@
         "server/baton-offers.test.ts",
         "src/lib/wrapup-rows.ts",
         "src/lib/wrapup-rows.test.ts",
-        "src/components/Thread.tsx"
+        "src/components/Thread.tsx",
+        "server/baton-guards.ts",
+        "server/baton-guards.test.ts"
       ],
       "requires": [
         "§app.organizations/field-authority",

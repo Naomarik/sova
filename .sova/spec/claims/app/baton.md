@@ -49,7 +49,13 @@ once), **lease** (an offer's lock on its first taker).
   rules, and — when anyone has left the organization — the names (and former roles) of the people
   who left, with the rule to say they have left and ask who covers their area now (never to hand
   to them or propose them as someone new); the user's `APPEND_SYSTEM.md` is not included, and the prompt's working-directory line
-  reads `(none)`. The model's own context has the holder's profile phrases redacted
+  reads `(none)`. The prompt **never names the org**: an outsider learns nothing of it beyond the
+  public title, so the model is not told it. Its rules say what it may say about other people:
+  their name, and, when suggesting who could answer, the decision areas the list gives them;
+  never anyone's role or job title (the holder's own included), contact or anything else, and
+  never an organization, company or project beyond the title. The summary, hand-off questions and
+  recorded decisions fall under the same rules, since everyone in the conversation sees them.
+  The model's own earlier replies have the holder's secret profile phrases redacted
   (§app.organizations/privacy).
 - It has no mode (no mode extension loads); its composer has no mode switch.
 - **Budget**: a message limit — messages in, outsiders' and operator's together (the wrap-up's
@@ -83,6 +89,16 @@ once), **lease** (an offer's lock on its first taker).
   question, briefing}`, the registry moves the baton, a hand-off to a person mints their link, and
   the turn ends (`terminate`). The model is told to say who takes over in the same reply, before
   the call.
+- **The person talking chooses who answers next.** When a roster person holds the baton, `hand_to`
+  another person is accepted only if the holder chose them: they named them in one of their own
+  messages (full name, or first name, any case), the goal names them (the operator chose), or the
+  model proposed them in a reply since the last hand-off and the holder has written since. Anyone
+  else is refused ("Not handed over: Maria Lopez has not chosen Nadia Haddad. Tell Maria Lopez who
+  could answer (name and decision area, from the list) and ask them to choose; hand over once they
+  name or confirm someone."). The operator is always reachable, and an operator holder hands
+  freely. The prompt says the same: when the holder doesn't know who can answer, suggest up to
+  three people from the list with the decision area that makes each a candidate, ask them to
+  choose, and wait.
 - `goal_done({summary})`: the goal is met. An invisible `sova-baton-done` entry `{v:1, summary}`;
   the session is **done**, no one holds the baton, and the turn ends.
 - `record_decision({area, statement, quote})`: an invisible `sova-baton-decision` entry `{v:1,

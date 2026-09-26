@@ -210,6 +210,10 @@ and again when the count changes, at most once a second. When there are none, an
   neither appears in the menu, and either one with arguments is an ordinary message.
 - **`/clear`.** In the Overseer only (§app.overseer/identity-and-clear), bare `/clear` is a local
   command: it starts a fresh Overseer conversation. Anywhere else it's an ordinary message.
+- **`/mode`.** In the Overseer only (§app.overseer/hosting), `/mode`, with or without arguments,
+  is a local command that switches nothing: it clears the draft's text and says "The Overseer is
+  always in normal mode." in a toast and to assistive technology. `mode` is not in its menu.
+  Anywhere else it's the mode extension's command, as before.
 - **`/new`.** Bare `/new` is a local command too, as in the TUI: it creates an empty session in
   the chat's folder, opens it with the composer focused, and archives the session it left (only
   once the new one exists). A session that isn't web-spawned, or whose subagents are working,

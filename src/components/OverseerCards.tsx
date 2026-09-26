@@ -137,13 +137,13 @@ export function OverseerChoiceRow(props: { title: string; answer: string }) {
 }
 
 /**
- * The Overseer's one floating button above the composer: a menu of quick actions, each with the
- * line that says what it asks. Picking one sends its prompt — while a turn runs it waits in the
+ * The Overseer's one button at the right end of its composer foot, where other chats have their
+ * mode switch: a menu of quick actions, each with the line that says what it asks. Picking one sends its prompt — while a turn runs it waits in the
  * queue like any follow-up. Edited in Settings → Overseer.
  */
 export function QuickActions(props: { actions: OverseerQuickAction[]; onPick(prompt: string): void; disabled?: string | null }) {
   return (
-    <ActionMenu label="Quick Actions" title="Quick actions · ask the Overseer" icon="command" text="Quick Actions" align="end" class="button-sm">
+    <ActionMenu label="Quick Actions" title="Quick actions · ask the Overseer" icon="command" text="Quick Actions" align="end" class="button-ghost quick-actions-trigger">
       {(menu) => (
         <Show
           when={props.actions.length > 0}

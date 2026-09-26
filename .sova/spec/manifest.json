@@ -376,10 +376,12 @@
     "§chat.composer/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/ChatView.tsx",
-        "src/components/Composer.tsx"
+        "src/components/Composer.tsx",
+        "src/design/base.css",
+        "src/app.css"
       ]
     },
     "§chat.composer/behavior": {
@@ -562,7 +564,10 @@
     "§chat.mode-menu/trigger": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ChatView.tsx"
+      ]
     },
     "§chat.model-menu/content-and-order": {
       "kind": "behavior",
@@ -642,7 +647,9 @@
       "code": [
         "src/lib/slash.ts",
         "src/components/Composer.tsx",
-        "src/lib/change-rows.ts"
+        "src/lib/change-rows.ts",
+        "src/components/ChatView.tsx",
+        "src/lib/slash.test.ts"
       ]
     },
     "§chat.slash-commands/keyboard-and-mouse": {
@@ -2278,7 +2285,9 @@
         "server/chat-manager.ts",
         "server/overseer-prompt.md",
         "server/overseer-redact.ts",
-        "server/overseer-todos.ts"
+        "server/overseer-todos.ts",
+        "server/index.ts",
+        "server/overseer-mode.test.ts"
       ],
       "requires": [
         "§app.overseer/tools"
@@ -2353,11 +2362,15 @@
     "§app.overseer/quick-actions": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/ActionMenu.tsx",
-        "server/overseer-store.ts"
+        "server/overseer-store.ts",
+        "src/components/Composer.tsx",
+        "src/components/OverseerCards.tsx",
+        "src/design/base.css",
+        "src/app.css"
       ],
       "requires": [
         "§app.settings-dialog/overseer"

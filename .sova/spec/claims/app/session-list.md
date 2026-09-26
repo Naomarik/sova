@@ -292,8 +292,8 @@ label a person reads says "sessions pane".
 - **Layout.** Five groups top to bottom — head, tiles, regions, tallies, foot — each a column
   of 44px items centred with `--space-1` between and `--space-2` above and below, split by
   `--color-border` rules. The tiles are the scroll region (`.pane`) and take the height that's
-  left; the other four are pinned. They cost 577px with every item shown (the Needs you door is one more 44px item and its 4px gap), so the tiles keep a
-  floor of one tile (60px), and on a window shorter than that the whole spine scrolls instead.
+  left; the other four are pinned. They cost 625px with every item shown (each of the three region doors and two tallies is a 44px
+  item and its 4px gap; measured, 1400×1000), so the tiles keep a floor of one tile (60px), and on a window shorter than that the whole spine scrolls instead.
   Neither scrollbar is drawn: a 10px bar in a 64px column pushes every item off the shared axis.
   **The cost:** nothing shows that the tiles scroll, beyond the tile cut at the edge. Recent is 5
   by default and 20 at most, and every tile is also a row in the expanded pane.

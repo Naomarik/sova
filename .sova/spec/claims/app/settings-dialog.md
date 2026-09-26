@@ -281,7 +281,7 @@ TUI never reads it.
 - **Extra System Prompt**: a textarea appended after the Overseer's own prompt. Its hint: "Added
   after the Overseer's own prompt. Applies from its next run." It and the Standing Notes reach the
   Overseer from its next run, with no `/clear` (§app.overseer/hosting).
-- **Proactivity**: Off / Badge Only / Brief Me, the same setting the Overseer page cycles.
+- **Proactivity**: Off / List Only / Brief Me, the same setting the Overseer page cycles.
 - **Quick Actions**: an editable list (label, description, prompt; add, remove, reorder, Reset to
   Defaults).
 - **Limits**: sessions created per user message, prompts sent per user message, archives per user

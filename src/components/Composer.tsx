@@ -107,7 +107,11 @@ export function Composer(props: {
       the runtime; absent (every other chat), it is the runtime's as before. Resolves false when
       nothing was cleared, and the draft stays. */
   onClear?: () => Promise<boolean>;
-  /** At the end of the composer's top row, above the textarea (the Overseer's quick actions). */
+  /** The Overseer's "/mode": given, any "/mode" (arguments too) is ours and never reaches the
+      runtime, which is always in normal mode; this says so. Absent, it is the runtime's as before. */
+  onMode?: () => void;
+  /** At the right end of the foot, in the mode switch's slot (the Overseer's quick actions). It
+      stays when the foot collapses: it is an action, not reference. */
   accessory?: () => JSX.Element;
   /** Opens the session pane's Timeline tab: a bare "/timeline" unfiltered; a bare "/tree" and
       the run-status row's "N inputs" trigger with `inputsOnly`, on your own messages. */
@@ -143,7 +147,7 @@ export function Composer(props: {
   restored?: { text: string } | null;
 }) {
   const [text, setText] = createSignal(drafts.get(props.path) ?? "");
-  const localOpts = () => ({ clear: !!props.onClear });
+  const localOpts = () => ({ clear: !!props.onClear, mode: !!props.onMode });
   /** One row object per stored file, so the strip keeps its rows (and focus) as the list changes. */
   const rows = new Map<string, PendingImage>();
   const images = createMemo(() =>
@@ -675,6 +679,15 @@ export function Composer(props: {
       announce("Cleared. The previous conversation is in History.");
       return;
     }
+    // "/mode" in the Overseer: it is always in normal mode, so a switch is answered here and
+    // nothing reaches the runtime. With images too: they stay in the draft.
+    if (localCommand(text(), localOpts()) === "mode" && props.onMode) {
+      props.onMode();
+      setDraft("");
+      input.value = "";
+      setSlashToken(null);
+      return;
+    }
     // Every attachment is already stored (Send waits for uploads), so this only names them. The
     // optimistic row takes each file's own name, as the transcript will once it's refetched.
     const pending = draftAttachments(props.path);
@@ -816,14 +829,7 @@ export function Composer(props: {
             onHover={setMentionActive}
           />
         </Show>
-        {/* The composer's top row: the run status, and at its end the accessory (the Overseer's
-            quick actions). In flow, inside the composer, so it never covers the transcript. */}
-        <Show when={props.accessory} fallback={runStatus()}>
-          <div class="composer-top">
-            {runStatus()}
-            <div class="composer-accessory">{props.accessory!()}</div>
-          </div>
-        </Show>
+        {runStatus()}
 
         <Show when={images().length > 0 || rejected().length > 0}>
           <ul class="attachments" aria-label="Attachments" ref={list}>
@@ -1095,6 +1101,9 @@ export function Composer(props: {
             )}
           </Show>
           <Show when={props.mode}>{(c) => <ModeMenu control={c()} />}</Show>
+          <Show when={props.accessory}>
+            {(accessory) => <div class="composer-accessory">{accessory()()}</div>}
+          </Show>
         </div>
       </form>
     </footer>

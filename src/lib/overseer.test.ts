@@ -14,6 +14,7 @@ import {
   isOverseerShortcut,
   navigateDetails,
   nextProactivity,
+  PROACTIVITY_LABEL,
   overseerButtonLabel,
   overseerHistoryHref,
   overseerHistoryId,
@@ -106,6 +107,7 @@ test("routes, shortcut, labels and the proactivity cycle", () => {
   assert.equal(overseerButtonLabel(3), "Overseer · 3 new messages");
   assert.equal(overseerButtonLabel(0), "Overseer", "no unread: the bare name, never a count of 0");
   assert.deepEqual([nextProactivity("off"), nextProactivity("badge"), nextProactivity("brief")], ["badge", "brief", "off"]);
+  assert.deepEqual(PROACTIVITY_LABEL, { off: "Off", badge: "List Only", brief: "Brief Me" }, "the wire value stays badge; the label is List Only");
 });
 
 test("a brief's body renders as markdown: its blockers are a list of in-app links, not raw brackets (E2E F6)", async () => {

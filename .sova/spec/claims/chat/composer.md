@@ -56,13 +56,36 @@
       <span class="composer-reason" id="composer-reason"><!-- reason when disabled; else empty --></span>
       <!-- chat sessions only: the mode switch, pushed to the right edge; see §chat/mode-menu -->
       <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu" …>…</button>
+      <!-- the Overseer instead: no mode switch; Quick Actions in its slot, see below -->
     </div>
   </form>
 </footer>
 ```
 
-In the Overseer only, one floating **Quick Actions** button sits just above the composer and opens
-the quick-action flyout (§app.overseer/quick-actions). No other chat has it.
+In the Overseer only, the foot ends with the **Quick Actions** button instead of the mode switch,
+which the Overseer doesn't have (§app.overseer/hosting). It opens the quick-action flyout
+(§app.overseer/quick-actions). No other chat has it.
+
+```html
+<div class="composer-foot">
+  <button class="composer-model" …>…</button>
+  <span class="composer-reason" id="composer-reason"></span>
+  <div class="composer-accessory">
+    <button class="button button-ghost quick-actions-trigger" type="button" aria-haspopup="menu"
+            aria-expanded="false" aria-label="Quick Actions" title="Quick actions · ask the Overseer">
+      <span class="icon" style="--icon: url(/icons/command.svg)" aria-hidden="true"></span>
+      <span class="action-menu-text">Quick Actions<span class="icon icon-sm" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span></span>
+    </button>
+    <div class="model-menu action-menu" popover="auto">…one row per quick action…</div>
+  </div>
+</div>
+```
+
+It takes the mode switch's treatment: pushed to the right edge, the model indicator's scale (a
+`--control-sm` row with a `--tap-min` target stretched over it by a `::after`), in the body face
+at caption size, because its label is a name rather than a machine fact. It keeps its word at
+every width; the model id is what shrinks. When the composer collapses, the foot keeps this
+button in flow and drops the rest (the disabled reason stays for assistive technology).
 
 ## §chat.composer/behavior — Behavior
 

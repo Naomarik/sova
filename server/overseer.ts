@@ -19,6 +19,7 @@ import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./a
 import {
   acquireChat,
   BusyError,
+  type ChatSession,
   disposeHeldChat,
   drainQueueThenAbort,
   getModelRuntime,
@@ -161,14 +162,24 @@ async function dropHistory(ids: string[]): Promise<void> {
   if (paths.length) await cleanupSessions({ mode: "paths", paths, dryRun: false }).catch(() => {});
 }
 
-/** The Overseer should run in the normal mode: Delegate would route its work to workers and the spec
-    minor mode would start writing claims. A brand-new file is switched once; later the user's
-    switch in its composer stands. */
-async function normalMode(path: string): Promise<void> {
+/** The Overseer always runs in the normal mode with no minor modes: Delegate would route its work to
+    workers and the spec minor mode would start writing claims. Every open of its runtime brings it
+    back (the `opened` hook below), so a stale mode entry on its branch never stands; a switch is
+    refused (ChatSession.switchMode). A chat already normal is left untouched, so opening writes
+    nothing. `strict` is Delegate's alone and is left as it is. */
+async function keepNormal(chat: ChatSession): Promise<void> {
   try {
-    const chat = await acquireChat(path);
     const s = chat.modeState;
     if (s.mode !== "normal" || s.minorModes.length) await chat.applyMode(mergeMode(s, { mode: "normal", minorModes: [] }));
+  } catch (err) {
+    console.warn("[overseer] could not set the normal mode:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** A brand-new file (creation, /clear): open it, which makes it normal. */
+async function normalMode(path: string): Promise<void> {
+  try {
+    await keepNormal(await acquireChat(path));
   } catch (err) {
     console.warn("[overseer] could not set the normal mode:", err instanceof Error ? err.message : String(err));
   }
@@ -627,6 +638,7 @@ setOverseerRuntime({
   saveChoice(patch) {
     patchOverseerSettings(patch);
   },
+  opened: keepNormal,
   // The user's message goes to the SDK through userSend; the run becomes theirs (and the caps
   // renew) when the message that call produced enters the context. Every run starts unattended, and
   // a brief, a wake-up or an extension's message never goes through it: read-only, on the same budget.

@@ -125,7 +125,10 @@
     "§app.session-list/groups": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/design/base.css"
+      ]
     },
     "§app.session-list/recent": {
       "kind": "behavior",

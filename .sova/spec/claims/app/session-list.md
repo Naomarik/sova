@@ -458,7 +458,11 @@ label a person reads says "sessions pane".
   list's 16px text inset: it is a gutter the eye skips, not a column of content, and the titles
   start a bare 2px right of where the old rows' text did. The rail is reserved on **every** row, including the ones
   with nothing to say, so 278 titles start on one left edge instead of jittering with whatever
-  chip the row happens to carry. The shell owns the divider, the hover
+  chip the row happens to carry. Every folder, in every list (Live & web, the Archive, each
+  group), wraps its head and rows in one guide rule: a 2px `--color-border` rule flush with the
+  pane edge, then 2px of padding, so the folder's content sits 4px in and reads as one block. The
+  rule sits outside the rows' 34px rail, whose hover and open-row fills start after it; a sticky
+  folder head keeps its own surface. The shell owns the divider, the hover
   (`--color-sunken`) and the open-row tint (`--color-accent-tint`, via
   `.session-row-shell-current`), so the rail is skin, not a dead zone. Rail items are
   `<button type="button" tabindex="-1">` — pointer and AT affordances, never tab stops
@@ -794,6 +798,9 @@ region keeps its head when it is empty.
 - **Order.** Groups keep their creation order, so a rename or a new group never shuffles the list.
 Within a group, rows and folder groups follow the usual rule (newest `lastActiveAt` first), and
 the folder labels are `h4`, one level under the group's own label.
+- **Indent.** A group's folders carry the same guide rule as every other folder
+(§app.session-list/content-rules). Under a group name that rule is what tells its folders apart as
+the group's contents rather than siblings of its name.
 - **The name row.** Twist, name, count, actions — and no folder icon. A group is the user's own
 name for a set of sessions, not a folder on disk, and the icon read as a claim about the file
 system directly above the `cwd` heads that really are one. Those keep their folder (or `terminal`)

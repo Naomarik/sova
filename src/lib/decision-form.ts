@@ -84,9 +84,73 @@ export function sameDecision(a: DecisionDraft, b: DecisionSettings | DecisionDra
 /** The fallback switch: on starts with the backend only (the user picks the model); off is null. */
 export const fallbackOn = (on: boolean): DraftChoice | null => (on ? { backend: "claude-code", model: "", effort: "" } : null);
 
-/** What Save waits for: a fallback that is off or fully chosen, and every exclusion a full path. */
-export const decisionDraftComplete = (d: DecisionDraft): boolean =>
-  (d.fallback === null || (!!d.fallback.model && !!d.fallback.effort)) && exclusionIssue(d.exclusions) === null;
+/** A fallback that can be written: off, or backend, model and effort all chosen. */
+export const fallbackReady = (f: DraftChoice | null): boolean => f === null || (!!f.model && !!f.effort);
+
+/**
+ * What autosave writes: the draft, except the parts that can't be written yet, which keep what is
+ * saved — a fallback not fully chosen, a fallback the server refused (`refused`, until it is
+ * changed), and exclusions with a line that isn't a full path. So a half-made edit never holds the
+ * other controls back, and is never sent half-made.
+ */
+export function commitOf(d: DecisionDraft, saved: DecisionSettings, refused: DraftChoice | null = null): DecisionSettings {
+  const keepFallback = !fallbackReady(d.fallback) || (refused !== null && sameChoice(d.fallback, refused));
+  const fallback = keepFallback ? saved.fallback : (d.fallback as WorkerChoice | null);
+  return {
+    version: 1,
+    jev: { enabled: d.jev.enabled },
+    fallback: fallback ? { ...fallback } : null,
+    features: { attention: d.features.attention, tags: d.features.tags },
+    exclusions: exclusionIssue(d.exclusions) === null ? parseExclusions(d.exclusions) : [...saved.exclusions],
+    neverSendTui: d.neverSendTui,
+  };
+}
+
+/**
+ * A write failed and the saved settings stand: every field that write tried to change goes back
+ * to what is saved, and the rest of the draft (a half-chosen fallback, a line being fixed) stays.
+ */
+export function revertFailed(d: DecisionDraft, sent: DecisionSettings, saved: DecisionSettings): DecisionDraft {
+  const out = cloneDecision(d);
+  const back = draftOf(saved);
+  if (sent.jev.enabled !== saved.jev.enabled) out.jev = back.jev;
+  if (!sameChoice(sent.fallback, saved.fallback)) out.fallback = back.fallback;
+  if (sent.features.attention !== saved.features.attention) out.features.attention = back.features.attention;
+  if (sent.features.tags !== saved.features.tags) out.features.tags = back.features.tags;
+  if (sent.neverSendTui !== saved.neverSendTui) out.neverSendTui = back.neverSendTui;
+  if (sent.exclusions.join("\n") !== saved.exclusions.join("\n")) out.exclusions = back.exclusions;
+  return out;
+}
+
+/** A save's notes, placed under the section each is about; `other` is anything that names none. */
+export interface PlacedWarnings {
+  fallback: string[];
+  features: string[];
+  other: string[];
+}
+
+export const noWarnings = (): PlacedWarnings => ({ fallback: [], features: [], other: [] });
+
+const FALLBACK_LABEL = "Fallback model: ";
+
+/**
+ * Sorts the server's notes: the fallback's own ("Fallback model: …", shown without the label under
+ * that row, and "Not verified, because …: Fallback model"), the features' ("… The features stay
+ * unavailable …"), and the rest. Then merges them with what was showing: the fallback's notes come
+ * only with a changed fallback, so they stay until the next save that changes it; the rest are
+ * the server's view at every save and are replaced by each.
+ */
+export function placeWarnings(prev: PlacedWarnings, warnings: string[], fallbackChanged: boolean): PlacedWarnings {
+  const next = noWarnings();
+  for (const w of warnings) {
+    if (w.startsWith(FALLBACK_LABEL)) next.fallback.push(w.slice(FALLBACK_LABEL.length));
+    else if (w.startsWith("Not verified") && w.endsWith("Fallback model")) next.fallback.push(w);
+    else if (w.includes("The features stay unavailable")) next.features.push(w);
+    else next.other.push(w);
+  }
+  if (!fallbackChanged && next.fallback.length === 0) next.fallback = prev.fallback;
+  return next;
+}
 
 /** Who would answer with this draft, in order — the rule the server's chain follows. */
 export function draftProviders(d: DecisionDraft, key: DecisionKeyInfo): ("jev" | "fallback")[] {
@@ -259,9 +323,8 @@ export function newerProgress(a: TagsBackfillProgress | null | undefined, b: Tag
   return a.done >= b.done ? a : b;
 }
 
-/** Why the Tag buttons are disabled, or null. Judged on what is saved, not the draft. */
-export function backfillBlocked(dirty: boolean, chain: DecisionChainStatus): string | null {
-  if (dirty) return "Save your changes first.";
+/** Why the Tag buttons are disabled, or null. Judged on what is saved. */
+export function backfillBlocked(chain: DecisionChainStatus): string | null {
   if (!chain.ready) return "Nothing can answer yet, so nothing can be tagged.";
   return null;
 }

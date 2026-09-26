@@ -1,6 +1,16 @@
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show, untrack } from "solid-js";
-import type { DecisionKeyInfo, DecisionProbeResult, DecisionSettingsInfo, DelegateOptions, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
+import type {
+  DecisionKeyInfo,
+  DecisionProbeResult,
+  DecisionSaveResult,
+  DecisionSettings,
+  DecisionSettingsInfo,
+  DelegateOptions,
+  TagsBackfillProgress,
+  TagsBackfillScope,
+} from "../../shared/protocol";
 import {
+  ApiError,
   cancelTagsBackfill,
   deleteDecisionKey,
   getDecisionOptions,
@@ -11,13 +21,13 @@ import {
   putDecisionSettings,
   startTagsBackfill,
 } from "../lib/api";
-import { decisionDirty, decisionDraft as draft, setDecisionDraft as setDraft, setDecisionSaved } from "../lib/decision-draft";
+import { decisionDraft as draft, decisionSaved, setDecisionDraft as setDraft, setDecisionSaved } from "../lib/decision-draft";
 import {
   backfillBlocked,
   backfillLine,
   chainLine,
   cloneDecision,
-  decisionDraftComplete,
+  commitOf,
   draftOf,
   exclusionIssue,
   fallbackOn,
@@ -25,15 +35,19 @@ import {
   keyAfterProbe,
   keyInputIssue,
   newerProgress,
+  noWarnings,
   offeredSuggestions,
+  placeWarnings,
   probeLine,
-  settingsOf,
+  revertFailed,
+  sameDecision,
   suggestionLabel,
   unansweredIssue,
   type DecisionDraft,
 } from "../lib/decision-form";
-import { sameChoice } from "../lib/delegate-form";
+import { sameChoice, type DraftChoice } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
+import { createSaveQueue } from "../lib/save-queue";
 import { pushedBackfill } from "../lib/session-feed";
 import { announce, home } from "../lib/ui-state";
 import { Banner, Chip } from "./ui";
@@ -48,7 +62,8 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  * Settings → Decisions: who answers the small yes/no and pick-one questions behind "needs you"
  * flags and session tags — Jev with a key, a model the user picks, or Jev then that model — and
  * which of those features are on. Both features start off, and nothing leaves the machine until
- * one is on. The Jev key is saved and removed on its own, at once, never through the draft; this
+ * one is on. Every change is saved as it is made (Folders when you leave the box), one write at a
+ * time. The Jev key is saved and removed on its own, at once, never through the draft; this
  * screen only ever sees its last 4 characters.
  */
 export function DecisionSettingsSection() {
@@ -56,7 +71,9 @@ export function DecisionSettingsSection() {
   const [options, { refetch: refetchOptions }] = createResource(getDecisionOptions);
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
-  const [warnings, setWarnings] = createSignal<string[]>([]);
+  const [notes, setNotes] = createSignal(noWarnings());
+  /** A fallback the server refused: it stays in the row with the reason, and isn't sent again until changed. */
+  const [refused, setRefused] = createSignal<{ choice: DraftChoice; reason: string } | null>(null);
   const loaded = (): DecisionSettingsInfo | undefined => (info.error ? undefined : info());
 
   // Tracks the loaded info only (as TeamSettings does): the dialog's reset of the draft must not re-seed it.
@@ -69,31 +86,61 @@ export function DecisionSettingsSection() {
   const key = (): DecisionKeyInfo => loaded()!.key;
   const setKeyInfo = (k: DecisionKeyInfo) => setInfo((i) => (i ? { ...i, key: k } : i));
 
+  // ---- autosave: each change is written as it is made, one write at a time, the newest winning ----
+  /** What the server will hold once the queue drains, while it hasn't; else null (it holds what is saved). */
+  let lastPushed: DecisionSettings | null = null;
+  const landed = (result: DecisionSaveResult) => {
+    setInfo(result);
+    setDecisionSaved(result.settings);
+  };
+  const queue = createSaveQueue<DecisionSettings, DecisionSaveResult>({
+    send: putDecisionSettings,
+    saved(result, sent) {
+      lastPushed = null;
+      if (!draft()) return; // the dialog closed meanwhile
+      const before = decisionSaved();
+      landed(result);
+      setNotes((n) => placeWarnings(n, result.warnings, !before || !sameChoice(before.fallback, sent.fallback)));
+      announce("Decision settings saved.");
+    },
+    failed(err, sent, older) {
+      lastPushed = null;
+      if (!draft()) return;
+      if (older) landed(older);
+      const stored = decisionSaved()!;
+      if (err instanceof ApiError && err.status === 400 && sent.fallback && !sameChoice(sent.fallback, stored.fallback)) {
+        // The fallback was refused: it stays in the row with the reason; the rest of that write goes again without it.
+        setRefused({ choice: { ...sent.fallback }, reason: message(err).replace(/^Fallback model: /, "") });
+        commit();
+        return;
+      }
+      setDraft(revertFailed(draft()!, sent, stored));
+      setSaveError(message(err));
+    },
+    busy: setSaving,
+  });
+
+  /** Write what can be written of the draft, unless the server holds (or is about to hold) it already. */
+  const commit = () => {
+    const d = draft();
+    const stored = decisionSaved();
+    if (!d || !stored) return;
+    if (refused() && !sameChoice(d.fallback, refused()!.choice)) setRefused(null);
+    const next = commitOf(d, stored, refused()?.choice ?? null);
+    if (sameDecision(draftOf(next), lastPushed ?? stored)) return;
+    lastPushed = next;
+    queue.push(next);
+  };
+
   const edit = (change: (copy: DecisionDraft) => void) => {
     setSaveError(null);
     const copy = cloneDecision(draft()!);
     change(copy);
     setDraft(copy);
+    commit();
   };
-
-  const canSave = () => !saving() && decisionDirty() && decisionDraftComplete(draft()!);
-  const save = async () => {
-    const d = draft();
-    if (!d || !canSave()) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const result = await putDecisionSettings(settingsOf(d));
-      setInfo(result);
-      setDecisionSaved(result.settings, { replaceDraft: true });
-      setWarnings(result.warnings);
-      announce("Decision settings saved.");
-    } catch (err) {
-      setSaveError(message(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  // Folders typed and not yet left when the tab changes: write them as leaving would.
+  onCleanup(commit);
 
   // ---- the key: its own actions, applied at once ----
   const [keyText, setKeyText] = createSignal("");
@@ -198,16 +245,20 @@ export function DecisionSettingsSection() {
   const startBackfill = (scope: TagsBackfillScope) => void backfillAct(() => startTagsBackfill(scope));
   const blocked = () => {
     const i = loaded();
-    return i ? backfillBlocked(decisionDirty(), i.chain) : null;
+    return i ? backfillBlocked(i.chain) : null;
   };
 
   const suggestions = createMemo(() => offeredSuggestions(loaded()?.suggestions ?? [], known(), !!options.error));
   const unanswered = () => (draft() && loaded() ? unansweredIssue(draft()!, key()) : null);
   const exclusionsIssue = () => (draft() ? exclusionIssue(draft()!.exclusions) : null);
+  const refusedHere = () => {
+    const r = refused();
+    return r && draft() && sameChoice(draft()!.fallback, r.choice) ? r : null;
+  };
 
-  /** Test Decisions: one canned check through the saved chain, shown in every Jev key row. */
+  /** Test Decisions: one canned check through the saved chain, shown in every Jev key row. It waits for a save in flight. */
   const testButton = (cls: string) => (
-    <button type="button" class={cls} disabled={probing() || !loaded()!.chain.ready} onClick={() => void runProbe()}>
+    <button type="button" class={cls} disabled={probing() || saving() || !loaded()!.chain.ready} onClick={() => void runProbe()}>
       {probing() ? "Asking…" : "Test Decisions"}
     </button>
   );
@@ -217,7 +268,7 @@ export function DecisionSettingsSection() {
     <div>
       <label class="toggle toggle-switch settings-team-enable">
         <span>{label}</span>
-        <input type="checkbox" checked={checked()} disabled={saving()} aria-describedby={`${id}-hint`} onChange={(e) => set(e.currentTarget.checked)} />
+        <input type="checkbox" checked={checked()} aria-describedby={`${id}-hint`} onChange={(e) => set(e.currentTarget.checked)} />
         <span class="toggle-box" />
       </label>
       <Show
@@ -272,7 +323,7 @@ export function DecisionSettingsSection() {
           </p>
           <label class="toggle toggle-switch settings-team-enable">
             <span>Use Jev</span>
-            <input type="checkbox" checked={draft()!.jev.enabled} disabled={saving()} onChange={(e) => edit((c) => (c.jev.enabled = e.currentTarget.checked))} />
+            <input type="checkbox" checked={draft()!.jev.enabled} onChange={(e) => edit((c) => (c.jev.enabled = e.currentTarget.checked))} />
             <span class="toggle-box" />
           </label>
           <ul class="decisions-providers">
@@ -374,9 +425,6 @@ export function DecisionSettingsSection() {
             )}
           </Show>
           <Show when={!probing() && probeError()}>{(m) => <p class="field-error">{sentence(m())}</p>}</Show>
-          <Show when={decisionDirty()}>
-            <p class="field-hint">Tests what's saved, not your unsaved changes.</p>
-          </Show>
         </fieldset>
 
         <fieldset class="settings-delegate-profile" aria-describedby="decisions-fallback-desc">
@@ -394,7 +442,7 @@ export function DecisionSettingsSection() {
           </Show>
           <div role="radiogroup" aria-label="Fallback model">
             <label class="toggle settings-team-enable">
-              <input type="radio" name="decisions-fallback" checked={draft()!.fallback === null} disabled={saving()} onChange={() => edit((c) => (c.fallback = null))} />
+              <input type="radio" name="decisions-fallback" checked={draft()!.fallback === null} onChange={() => edit((c) => (c.fallback = null))} />
               <span class="toggle-box" aria-hidden="true" />
               None
             </label>
@@ -403,7 +451,6 @@ export function DecisionSettingsSection() {
                 type="radio"
                 name="decisions-fallback"
                 checked={draft()!.fallback !== null}
-                disabled={saving()}
                 onChange={() => edit((c) => (c.fallback = c.fallback ?? fallbackOn(true)))}
               />
               <span class="toggle-box" aria-hidden="true" />A model
@@ -418,13 +465,21 @@ export function DecisionSettingsSection() {
                 options={known()}
                 choice={fallback()}
                 other={null}
-                disabled={saving()}
+                disabled={false}
                 owner="Decisions"
                 alone="Fallback model"
                 onChange={(next) => edit((c) => (c.fallback = next))}
               />
             )}
           </Show>
+          <Show when={refusedHere()}>
+            {(r) => (
+              <p class="settings-delegate-issue settings-delegate-issue-error" role="alert" data-testid="decisions-fallback-refused">
+                {sentence(r().reason)} Your saved fallback model is unchanged.
+              </p>
+            )}
+          </Show>
+          <For each={notes().fallback}>{(w) => <p class="settings-delegate-issue settings-delegate-issue-warn">{sentence(w)}</p>}</For>
           <Show when={suggestions().length > 0}>
             <div class="settings-delegate-actions" role="group" aria-label="Suggested models">
               <span class="field-hint">Suggested:</span>
@@ -433,7 +488,7 @@ export function DecisionSettingsSection() {
                   <button
                     type="button"
                     class="button button-sm button-ghost"
-                    disabled={saving() || sameChoice(draft()!.fallback, s)}
+                    disabled={sameChoice(draft()!.fallback, s)}
                     onClick={() => edit((c) => (c.fallback = { ...s }))}
                   >
                     {suggestionLabel(s, loaded()!.backends)}
@@ -465,6 +520,10 @@ export function DecisionSettingsSection() {
             (on) => edit((c) => (c.features.tags = on)),
             unanswered,
           )}
+          {/* The switches already say it when nobody can answer; the server's note covers the other reasons. */}
+          <Show when={!unanswered()}>
+            <For each={notes().features}>{(w) => <p class="settings-delegate-issue settings-delegate-issue-warn">{sentence(w)}</p>}</For>
+          </Show>
         </fieldset>
 
         <fieldset class="settings-delegate-profile">
@@ -487,10 +546,13 @@ export function DecisionSettingsSection() {
               spellcheck={false}
               placeholder="~/work/client"
               value={draft()!.exclusions}
-              disabled={saving()}
               aria-invalid={exclusionsIssue() ? "true" : undefined}
               aria-describedby="decisions-exclusions-hint"
-              onInput={(e) => edit((c) => (c.exclusions = e.currentTarget.value))}
+              onInput={(e) => {
+                setSaveError(null);
+                setDraft({ ...draft()!, exclusions: e.currentTarget.value });
+              }}
+              onBlur={commit}
             />
             <span class={exclusionsIssue() ? "field-error" : "field-hint"} id="decisions-exclusions-hint">
               {exclusionsIssue() ?? "One per line. Sessions in these folders, and their subfolders, are never checked."}
@@ -501,27 +563,9 @@ export function DecisionSettingsSection() {
         <Show when={saveError()}>
           {(m) => <Banner tone="error" title="Couldn't save the decision settings." body={`${sentence(m())} Your saved settings are unchanged.`} />}
         </Show>
-        <Show when={warnings().length > 0 && !decisionDirty()}>
-          <Banner tone="warn" title="Saved, with notes." body={warnings().map(sentence).join(" ")} />
+        <Show when={notes().other.length > 0}>
+          <Banner tone="warn" title="Saved, with notes." body={notes().other.map(sentence).join(" ")} />
         </Show>
-
-        <div class="settings-delegate-actions">
-          <span class="modal-spacer" />
-          <button
-            type="button"
-            class="button button-ghost"
-            disabled={saving() || !decisionDirty()}
-            onClick={() => {
-              setDraft(draftOf(loaded()!.settings));
-              setSaveError(null);
-            }}
-          >
-            Discard Changes
-          </button>
-          <button type="button" class="button button-primary" disabled={!canSave()} onClick={() => void save()}>
-            {saving() ? "Saving…" : "Save Changes"}
-          </button>
-        </div>
 
         <Show when={loaded()!.settings.features.tags || progress()?.running}>
           <fieldset class="settings-delegate-profile" aria-describedby="decisions-backfill-desc">
@@ -535,10 +579,10 @@ export function DecisionSettingsSection() {
                 when={progress()?.running}
                 fallback={
                   <>
-                    <button type="button" class="button button-sm" disabled={backfillBusy() || blocked() !== null} onClick={() => startBackfill("recent")}>
+                    <button type="button" class="button button-sm" disabled={backfillBusy() || saving() || blocked() !== null} onClick={() => startBackfill("recent")}>
                       Tag Last 30 Days
                     </button>
-                    <button type="button" class="button button-sm" disabled={backfillBusy() || blocked() !== null} onClick={() => startBackfill("all")}>
+                    <button type="button" class="button button-sm" disabled={backfillBusy() || saving() || blocked() !== null} onClick={() => startBackfill("all")}>
                       Tag All Sessions
                     </button>
                   </>

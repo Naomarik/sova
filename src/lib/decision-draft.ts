@@ -1,11 +1,14 @@
 import { createSignal } from "solid-js";
 import type { DecisionSettings } from "../../shared/protocol";
-import { draftOf, sameDecision, type DecisionDraft } from "./decision-form";
+import { draftOf, type DecisionDraft } from "./decision-form";
 
 /**
- * Settings → Decisions' unsaved edits. Module state, like Delegate's (delegate-draft.ts): the
- * section unmounts with its tab, and switching tabs must not throw the edit away. The dialog asks
- * before closing over a dirty draft, and forgets it once closed. The Jev key is never here.
+ * Settings → Decisions' form state. Every change is saved as it is made, so the draft differs from
+ * what is saved only for a moment, or where a part can't be written yet: a fallback not fully
+ * chosen or refused, a Folders line that isn't a full path, Folders text not yet left. Module
+ * state, like Delegate's (delegate-draft.ts): the section unmounts with its tab, and switching
+ * tabs must not throw a half-chosen fallback away. The dialog forgets it once closed, without
+ * asking. The Jev key is never here.
  */
 const [draft, setDraft] = createSignal<DecisionDraft | null>(null);
 const [saved, setSaved] = createSignal<DecisionSettings | null>(null);
@@ -22,13 +25,6 @@ export function setDecisionSaved(settings: DecisionSettings, { replaceDraft = fa
   setSaved(settings);
   if (replaceDraft || draft() === null) setDraft(draftOf(settings));
 }
-
-/** Edits nobody has saved yet. */
-export const decisionDirty = (): boolean => {
-  const d = draft();
-  const s = saved();
-  return !!d && !!s && !sameDecision(d, s);
-};
 
 /** The dialog closed: drop the draft, so the next open reads the saved settings afresh. */
 export function resetDecisionDraft(): void {

@@ -37,7 +37,7 @@ import type { SettingsTab } from "../lib/settings-nav";
 import { delegateDirty, resetDelegateDraft } from "../lib/delegate-draft";
 import { resetSpecDraft, specDirty } from "../lib/spec-draft";
 import { overseerDirty, resetOverseerDraft } from "../lib/overseer-draft";
-import { decisionDirty, resetDecisionDraft } from "../lib/decision-draft";
+import { resetDecisionDraft } from "../lib/decision-draft";
 import { effectiveStack } from "../lib/typography";
 import { announce, home } from "../lib/ui-state";
 import { DecisionSettingsSection } from "./DecisionSettings";
@@ -125,12 +125,12 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
     }
   };
 
-  /** Close was asked for over unsaved edits (Delegate, Spec, Overseer or Decisions): the foot asks what to do with them. */
+  /** Close was asked for over unsaved edits (Delegate, Spec or Overseer): the foot asks what to do with them. Decisions saves as it goes. */
   const [closeHeld, setCloseHeld] = createSignal(false);
-  const modesDirty = () => delegateDirty() || specDirty() || overseerDirty() || decisionDirty();
-  /** Which unsaved screens the hold names: "Delegate", "Spec", "Overseer", "Decisions", joined. */
+  const modesDirty = () => delegateDirty() || specDirty() || overseerDirty();
+  /** Which unsaved screens the hold names: "Delegate", "Spec", "Overseer", joined. */
   const unsavedNames = () => {
-    const names = [delegateDirty() && "Delegate", specDirty() && "Spec", overseerDirty() && "Overseer", decisionDirty() && "Decisions"].filter(Boolean) as string[];
+    const names = [delegateDirty() && "Delegate", specDirty() && "Spec", overseerDirty() && "Overseer"].filter(Boolean) as string[];
     return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
   };
   const resetModesDrafts = () => {
@@ -143,15 +143,8 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
   const requestClose = () => {
     if (modesDirty()) {
       // To the screen that holds the edit, unless the one showing already does.
-      const here =
-        tab() === "overseer"
-          ? overseerDirty()
-          : tab() === "modes"
-            ? delegateDirty() || specDirty()
-            : tab() === "decisions"
-              ? decisionDirty()
-              : false;
-      if (!here) setTab(delegateDirty() || specDirty() ? "modes" : overseerDirty() ? "overseer" : "decisions");
+      const here = tab() === "overseer" ? overseerDirty() : tab() === "modes" ? delegateDirty() || specDirty() : false;
+      if (!here) setTab(delegateDirty() || specDirty() ? "modes" : "overseer");
       setCloseHeld(true);
       return;
     }

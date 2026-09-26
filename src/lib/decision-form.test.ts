@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DecisionChainStatus, DecisionKeyInfo, DecisionSettings } from "../../shared/protocol";
-import { decisionDirty, decisionDraft, resetDecisionDraft, setDecisionDraft, setDecisionSaved } from "./decision-draft";
+import { decisionDraft, decisionSaved, resetDecisionDraft, setDecisionDraft, setDecisionSaved } from "./decision-draft";
 import {
   backfillBlocked,
   backfillLine,
@@ -11,15 +11,18 @@ import {
   keyAfterProbe,
   newerProgress,
   offeredSuggestions,
-  decisionDraftComplete,
+  commitOf,
   draftOf,
   draftProviders,
   exclusionIssue,
   fallbackOn,
   keyInputIssue,
   keyLine,
+  noWarnings,
   parseExclusions,
+  placeWarnings,
   probeLine,
+  revertFailed,
   sameDecision,
   settingsOf,
   unansweredIssue,
@@ -61,12 +64,55 @@ test("exclusions: blank lines, stray spaces and repeats don't make a draft dirty
   assert.equal(exclusionIssue(many(101)), "That's 101 folders. Use at most 100.");
 });
 
-test("complete: a half-chosen fallback or a bad exclusion holds Save", () => {
-  assert.ok(decisionDraftComplete(draftOf(defaults)));
-  assert.ok(!decisionDraftComplete({ ...draftOf(defaults), fallback: fallbackOn(true) }));
-  assert.ok(!decisionDraftComplete({ ...draftOf(defaults), fallback: { ...haiku, effort: "" } }));
-  assert.ok(decisionDraftComplete({ ...draftOf(defaults), fallback: haiku }));
-  assert.ok(!decisionDraftComplete({ ...draftOf(defaults), exclusions: "relative" }));
+test("what autosave writes: a half-made part keeps what is saved, and never holds the other fields back", () => {
+  const saved: DecisionSettings = { ...defaults, fallback: haiku, exclusions: ["~/work"] };
+  const on = (d: ReturnType<typeof draftOf>) => ({ ...d, features: { attention: true, tags: false } });
+  assert.deepEqual(commitOf(draftOf(saved), saved), saved, "nothing changed: the saved settings");
+  const halfPicked = commitOf(on({ ...draftOf(saved), fallback: fallbackOn(true) }), saved);
+  assert.deepEqual(halfPicked.fallback, haiku, "a fallback with no model yet is not sent");
+  assert.equal(halfPicked.features.attention, true, "but the switch next to it is");
+  assert.deepEqual(commitOf({ ...draftOf(saved), fallback: { ...haiku, model: "sonnet", effort: "" } }, saved).fallback, haiku, "nor one with no effort");
+  assert.deepEqual(commitOf({ ...draftOf(saved), fallback: null }, saved).fallback, null, "None is complete at once");
+  const sonnet = { ...haiku, model: "sonnet" };
+  assert.deepEqual(commitOf({ ...draftOf(saved), fallback: sonnet }, saved).fallback, sonnet);
+  assert.deepEqual(commitOf({ ...draftOf(saved), fallback: sonnet }, saved, sonnet).fallback, haiku, "a refused pick isn't sent again");
+  assert.deepEqual(commitOf({ ...draftOf(saved), fallback: { ...sonnet, effort: "high" } }, saved, sonnet).fallback, { ...sonnet, effort: "high" }, "changed, it is");
+  const badLine = commitOf(on({ ...draftOf(saved), exclusions: "~/work\nrelative" }), saved);
+  assert.deepEqual(badLine.exclusions, ["~/work"], "a line that isn't a full path: the saved folders are sent");
+  assert.equal(badLine.features.attention, true);
+  assert.deepEqual(commitOf({ ...draftOf(saved), exclusions: " ~/work \n/srv\n" }, saved).exclusions, ["~/work", "/srv"]);
+  assert.notEqual(commitOf(draftOf(saved), saved).fallback, saved.fallback, "a copy, never the saved object");
+});
+
+test("a failed write puts back only what it tried to change", () => {
+  const saved: DecisionSettings = { ...defaults, exclusions: ["~/work"] };
+  const draft = { ...draftOf(saved), features: { attention: true, tags: false }, fallback: fallbackOn(true), exclusions: "~/work\nrelative" };
+  const sent = commitOf(draft, saved);
+  const back = revertFailed(draft, sent, saved);
+  assert.equal(back.features.attention, false, "the switch goes back");
+  assert.deepEqual(back.fallback, fallbackOn(true), "the half-chosen fallback, never sent, stays");
+  assert.equal(back.exclusions, "~/work\nrelative", "so does the line being fixed");
+  const typed = { ...draftOf(saved), exclusions: "~/work\n/srv" };
+  assert.equal(revertFailed(typed, commitOf(typed, saved), saved).exclusions, "~/work", "sent folders go back to the saved ones");
+  assert.equal(draft.features.attention, true, "the draft passed in is untouched");
+});
+
+test("a save's notes go under what they are about, and the fallback's stay until it is saved again", () => {
+  const featuresNote = "Nothing can answer. The features stay unavailable and send nothing until one is.";
+  const placed = placeWarnings(
+    noWarnings(),
+    ["Not verified, because pi couldn't list its models (offline): Fallback model", "Fallback model: haiku is off by policy", featuresNote, "Something else"],
+    true,
+  );
+  assert.deepEqual(placed, {
+    fallback: ["Not verified, because pi couldn't list its models (offline): Fallback model", "haiku is off by policy"],
+    features: [featuresNote],
+    other: ["Something else"],
+  });
+  const toggled = placeWarnings(placed, [], false);
+  assert.deepEqual(toggled.fallback, placed.fallback, "a save that left the fallback alone keeps its notes");
+  assert.deepEqual([toggled.features, toggled.other], [[], []], "the rest are the server's view at every save");
+  assert.deepEqual(placeWarnings(placed, [], true).fallback, [], "a save of the fallback clears them");
 });
 
 test("the fallback switch picks no model", () => {
@@ -168,10 +214,9 @@ test("the chain line: in order, paused providers marked, and the unavailable sen
   assert.equal(chainLine({ ...defaults, fallback: haiku }, noKey, { ready: false, providers: [], reason: "Model policy denies haiku." }), "Model policy denies haiku.", "with a fallback set, the server's reason");
 });
 
-test("backfill: held while the edit is unsaved or nobody can answer; its line counts; the newer report wins", () => {
-  assert.match(backfillBlocked(true, ready)!, /Save your changes/);
-  assert.match(backfillBlocked(false, { ready: false, providers: [] })!, /Nothing can answer/);
-  assert.equal(backfillBlocked(false, ready), null);
+test("backfill: held while nobody can answer; its line counts; the newer report wins", () => {
+  assert.match(backfillBlocked({ ready: false, providers: [] })!, /Nothing can answer/);
+  assert.equal(backfillBlocked(ready), null);
   assert.equal(backfillLine(undefined), null);
   assert.equal(backfillLine({ running: false, done: 0, total: 0, failed: 0 }), null, "never run: no line");
   assert.equal(backfillLine({ running: true, done: 40, total: 147, failed: 2, startedAt: 1 }), "Tagged 40 of 147 · 2 failed.");
@@ -192,15 +237,15 @@ test("backfill: held while the edit is unsaved or nobody can answer; its line co
 
 test("the draft outlives a tab switch until the dialog resets it, and a reload never overwrites it", () => {
   resetDecisionDraft();
-  assert.equal(decisionDirty(), false);
+  assert.equal(decisionDraft(), null);
   setDecisionSaved(defaults);
-  assert.equal(decisionDirty(), false, "a first load seeds the draft");
-  setDecisionDraft({ ...decisionDraft()!, features: { attention: true, tags: false } });
-  assert.equal(decisionDirty(), true);
-  setDecisionSaved(defaults);
-  assert.equal(decisionDraft()!.features.attention, true, "a reload keeps the unsaved edit");
-  setDecisionSaved({ ...defaults, features: { attention: true, tags: false } }, { replaceDraft: true });
-  assert.equal(decisionDirty(), false, "a save replaces the draft with what was stored");
+  assert.ok(sameDecision(decisionDraft()!, defaults), "a first load seeds the draft");
+  setDecisionDraft({ ...decisionDraft()!, fallback: fallbackOn(true) });
+  setDecisionSaved({ ...defaults, features: { attention: true, tags: false } });
+  assert.deepEqual(decisionDraft()!.fallback, fallbackOn(true), "a save or reload keeps the half-chosen fallback");
+  assert.equal(decisionSaved()!.features.attention, true);
+  setDecisionSaved(defaults, { replaceDraft: true });
+  assert.ok(sameDecision(decisionDraft()!, defaults));
   resetDecisionDraft();
   assert.equal(decisionDraft(), null);
 });

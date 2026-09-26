@@ -21,8 +21,8 @@ const EDGE_GAP = 8;
 const TRIGGER_GAP = 4;
 
 /**
- * The session pane's host menu, under the search field: `All hosts ▾` with `2/3 connected` beside
- * it. The menu picks one host's sessions (or All) — the choice is the filter — and ends with
+ * The session pane's host row, the first row of its foot (above the usage row): `All hosts ▾` with
+ * `2/3 connected` at its right end, the whole row the menu's trigger. The menu picks one host's sessions (or All) — the choice is the filter — and ends with
  * "Mesh details…". Only rendered while the mesh is on with a peer (the caller decides), so with
  * one host the pane is unchanged.
  */
@@ -49,7 +49,8 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
     list[((i % list.length) + list.length) % list.length]!.focus();
   };
 
-  /** Below the trigger, left edges aligned, clamped inside the window (measured, not guessed). */
+  /** Below the trigger if it fits, else above (the foot's case), left edges aligned, clamped inside
+   *  the window (measured, not guessed). */
   const place = () => {
     if (!menu.isConnected || !menu.matches(":popover-open")) return;
     const r = trigger.getBoundingClientRect();
@@ -116,26 +117,30 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
   };
 
   return (
+    // The row is one button; the panel is its sibling, since a button can't hold interactive content.
     <div class="host-menu">
       <button
         ref={trigger}
         type="button"
-        class="button host-menu-trigger"
+        class="list-row list-row-interactive insights-row host-menu-trigger"
         aria-haspopup="menu"
         aria-expanded={open() ? "true" : "false"}
         aria-label={`Host filter: ${current().label}. ${count().up} of ${count().total} hosts connected`}
         title={current().value === null ? "Sessions on every host" : `Only sessions on ${current().label}`}
         onClick={() => (open() ? closeMenu() : openMenu())}
       >
-        <Show when={current().up !== undefined}>
-          <span class="chip-dot" classList={{ "host-filter-up": current().up, "host-filter-down": !current().up }} />
-        </Show>
-        <span class="host-menu-label">{current().label}</span>
-        <Icon name="chevron-down" small />
+        <Icon name="network" />
+        <span class="insights-row-text host-menu-text">
+          <Show when={current().up !== undefined}>
+            <span class="chip-dot" classList={{ "host-filter-up": current().up, "host-filter-down": !current().up }} />
+          </Show>
+          <span class="host-menu-label">{current().label}</span>
+          <Icon name="chevron-down" small />
+        </span>
+        <span class="host-menu-count" aria-hidden="true">
+          {count().up}/{count().total} connected
+        </span>
       </button>
-      <span class="host-menu-count" aria-hidden="true">
-        {count().up}/{count().total} connected
-      </span>
       <div
         ref={menu}
         class="model-menu action-menu host-menu-panel"

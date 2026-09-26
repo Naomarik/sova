@@ -328,28 +328,29 @@ html, body, #root { height: 100%; }
 .fork-marker { display: flex; align-items: center; gap: var(--space-2); }
 .workspace-align { flex: none; }
 
-/* The Groups region head: a <details> like the Archive, but
+/* The Groups and Needs you region heads: a <details> like the Archive, but
    its <summary> wraps the region's own <h2> so the heading and `aria-labelledby` survive the
    twist. base.css styles the h2; everything the summary itself needs is here. */
-.sidebar-groups > summary.sidebar-groups-summary {
+:is(.sidebar-groups, .sidebar-needs-you) > summary {
   display: block;
   cursor: pointer;
   list-style: none;
   user-select: none;
 }
-.sidebar-groups > summary.sidebar-groups-summary::-webkit-details-marker { display: none; }
-.sidebar-groups > summary > .sidebar-region-head { transition: color var(--dur-fast) var(--ease-standard); }
-.sidebar-groups > summary:hover > .sidebar-region-head { color: var(--color-ink); }
-.sidebar-groups > summary:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
-.sidebar-groups > summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
-.sidebar-groups[open] > summary .icon-twist { transform: rotate(90deg); }
+:is(.sidebar-groups, .sidebar-needs-you) > summary::-webkit-details-marker { display: none; }
+:is(.sidebar-groups, .sidebar-needs-you) > summary > .sidebar-region-head { transition: color var(--dur-fast) var(--ease-standard); }
+:is(.sidebar-groups, .sidebar-needs-you) > summary:hover > .sidebar-region-head { color: var(--color-ink); }
+:is(.sidebar-groups, .sidebar-needs-you) > summary:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
+:is(.sidebar-groups, .sidebar-needs-you) > summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+:is(.sidebar-groups, .sidebar-needs-you)[open] > summary .icon-twist { transform: rotate(90deg); }
 /* Collapsed, the head is the region's last row: the region rule below it is the only divider. */
-.sidebar-groups:not([open]) > summary > .sidebar-region-head { border-bottom: 0; }
+:is(.sidebar-groups, .sidebar-needs-you):not([open]) > summary > .sidebar-region-head { border-bottom: 0; }
 
 /* The Recent region: a flat list, so it has no folder
    <details> to close it off the way every other region does. The rule under the last row is what
    separates the shortcut from the Groups head below it. */
-.sidebar-recent > .list { padding-bottom: var(--space-1); }
+.sidebar-recent > .list,
+.sidebar-needs-you > .list { padding-bottom: var(--space-1); }
 
 /* The Settings modal's height. Without this the dialog
    is as tall as whichever tab is open — Themes ran to the viewport cap and Experimental to a few

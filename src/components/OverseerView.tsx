@@ -1,9 +1,8 @@
-import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
-import type { OverseerInfo, OverseerProactivity, SessionSummary } from "../../shared/protocol";
-import { clearOverseer, getAttention, getOverseer, getOverseerIdeas, getOverseerSettings, getOverseerTodos, putOverseerSettings } from "../lib/api";
+import { createEffect, createMemo, createResource, createSignal, For, on, onMount, Show } from "solid-js";
+import type { AttentionDigest, OverseerInfo, OverseerProactivity, SessionSummary } from "../../shared/protocol";
+import { clearOverseer, getOverseer, getOverseerIdeas, getOverseerSettings, getOverseerTodos, putOverseerSettings } from "../lib/api";
 import { relativeTime, shortModel } from "../lib/format";
-import { type HeadList, headLists, nextProactivity, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryHref, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
-import { createPoll } from "../lib/poll";
+import { type HeadList, headLists, nextProactivity, OVERSEER_HASH, overseerHistoryHref, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
 import { isMainThread } from "../lib/regions";
 import { settingsOpenAt } from "../lib/settings-nav";
 import { announce, toast } from "../lib/ui-state";
@@ -23,6 +22,16 @@ const sentenceOf = (m: string) => (/[.!?]$/.test(m) ? m : `${m}.`);
 /** Words for a count of sessions: "1 session", "3 sessions". */
 const sessions = (n: number) => `${n} ${n === 1 ? "session" : "sessions"}`;
 
+/** The attention digest as App reads it for the whole page (one poll, shared with the sidebar). */
+export interface AttentionFeed {
+  data(): AttentionDigest | undefined;
+  /** Message of the latest failed read, cleared by the next success. */
+  error(): string | null;
+  /** A read is in flight. */
+  reading(): boolean;
+  refetch(): void;
+}
+
 /**
  * The Overseer's page (`#/overseer`): the ordinary chat on its current file, plus what no other
  * chat has — its own head (proactivity, History, Clear), `/clear`, quick actions, confirm cards
@@ -36,6 +45,8 @@ export function OverseerView(props: {
   /** The info a request just returned (a clear): adopt it as the latest. */
   onInfo(info: OverseerInfo): void;
   refetch(): void;
+  /** The attention digest: the head's finished and drafts menus list from it. */
+  attention: AttentionFeed;
   /** An earlier Overseer file to read, from `#/overseer/h/<id>`. */
   historyId: string | null;
   sessions: SessionSummary[];
@@ -64,15 +75,12 @@ export function OverseerView(props: {
   };
 
   // ---- Finished and drafts: two menus read from the attention digest, so each count is its list --
-  const [reading, setReading] = createSignal(false);
-  const digest = createPoll(async () => {
-    setReading(true);
-    try {
-      return headLists(await getAttention());
-    } finally {
-      setReading(false);
-    }
-  }, OVERSEER_POLL_MS);
+  // App polls it for the whole page; opening the page reads it once more, so the menus start fresh.
+  onMount(() => props.attention.refetch());
+  const lists = createMemo(() => {
+    const d = props.attention.data();
+    return d ? headLists(d) : undefined;
+  });
 
   // ---- Ideas: the backlog the Overseer files, in a panel over the chat's right side -----------
   const [ideasOpen, setIdeasOpen] = createSignal(false);
@@ -204,8 +212,8 @@ export function OverseerView(props: {
             fallback={
               <>
                 <span title={facts()}>{facts()}</span>
-                <HeadMenu kind={FINISHED} list={digest.data()?.finished} error={digest.error()} reading={reading()} retry={digest.refetch} now={props.wiring.now} />
-                <HeadMenu kind={DRAFTS} list={digest.data()?.drafts} error={digest.error()} reading={reading()} retry={digest.refetch} now={props.wiring.now} />
+                <HeadMenu kind={FINISHED} list={lists()?.finished} error={props.attention.error()} reading={props.attention.reading()} retry={props.attention.refetch} now={props.wiring.now} />
+                <HeadMenu kind={DRAFTS} list={lists()?.drafts} error={props.attention.error()} reading={props.attention.reading()} retry={props.attention.refetch} now={props.wiring.now} />
               </>
             }
           >

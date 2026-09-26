@@ -13,6 +13,7 @@ import {
   fetchMeshHello,
   fetchMeshSessions,
   fetchUsage,
+  getAttention,
   getOverseer,
   getSessionSummaryById,
   getThemes,
@@ -52,7 +53,7 @@ import { MeshDetails } from "./components/MeshDetails";
 import { closeMeshDetails, meshDetailsOpen } from "./lib/mesh-details";
 import { FanoutDialog, type FanoutSource } from "./components/FanoutDialog";
 import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./components/GroupView";
-import { OverseerView } from "./components/OverseerView";
+import { type AttentionFeed, OverseerView } from "./components/OverseerView";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
 import { SessionView } from "./components/SessionView";
 import { sessionHref, Sidebar } from "./components/Sidebar";
@@ -274,6 +275,23 @@ export function App() {
   const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
   const overseer = createPoll(getOverseer, OVERSEER_POLL_MS);
+  /** The attention digest, read once for the page: the sidebar's Needs you region and the Overseer
+      head's menus both list from it, on the entry button's cadence. `reading` is a read in flight. */
+  const [attentionReading, setAttentionReading] = createSignal(false);
+  const attentionPoll = createPoll(async () => {
+    setAttentionReading(true);
+    try {
+      return await getAttention();
+    } finally {
+      setAttentionReading(false);
+    }
+  }, OVERSEER_POLL_MS);
+  const attention: AttentionFeed = {
+    data: attentionPoll.data,
+    error: attentionPoll.error,
+    reading: attentionReading,
+    refetch: attentionPoll.refetch,
+  };
   const extensions = createPoll(fetchExtensions, EXTENSIONS_POLL_MS);
   /** The landing page shows the Extensions section only when something is installed. */
   const installed = createMemo(() => {
@@ -328,6 +346,7 @@ export function App() {
     refresh();
     void loadPeerSessions();
     overseer.refetch();
+    attention.refetch();
   };
   /**
    * A session link from a message (`sova://s/<id>`) the list couldn't resolve points at
@@ -856,6 +875,7 @@ export function App() {
           onOpenSettings={() => openSettings()}
           overseer={overseer.data()}
           overseerOpen={!!overseerRoute()}
+          attention={attention.data()}
         />
 
         {/* The workspace takes the whole second column, so it IS the main: no session head, and
@@ -872,6 +892,7 @@ export function App() {
                       error={overseer.error()}
                       onInfo={overseer.set}
                       refetch={overseer.refetch}
+                      attention={attention}
                       historyId={r().historyId}
                       sessions={list() ?? []}
                       wiring={wiring}

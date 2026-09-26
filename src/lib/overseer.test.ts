@@ -102,8 +102,9 @@ test("routes, shortcut, labels and the proactivity cycle", () => {
   const key = { altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, code: "KeyO" };
   assert.equal(isOverseerShortcut(key), true);
   assert.equal(isOverseerShortcut({ ...key, ctrlKey: true }), false);
-  assert.equal(overseerButtonLabel({ act: 2, decide: 1 }, 1), "Overseer · 2 sessions need you · 1 finished · 1 new message");
-  assert.equal(overseerButtonLabel({ act: 0, decide: 0 }, 0), "Overseer");
+  assert.equal(overseerButtonLabel(1), "Overseer · 1 new message");
+  assert.equal(overseerButtonLabel(3), "Overseer · 3 new messages");
+  assert.equal(overseerButtonLabel(0), "Overseer", "no unread: the bare name, never a count of 0");
   assert.deepEqual([nextProactivity("off"), nextProactivity("badge"), nextProactivity("brief")], ["badge", "brief", "off"]);
 });
 

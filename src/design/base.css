@@ -5064,11 +5064,9 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 .sidebar-search-row { display: flex; align-items: center; gap: var(--space-2); }
 .sidebar-search-row > .search { flex: 1; min-width: 0; }
 
-/* The entry button. `position: relative` anchors its two marks: the count of
-   sessions that need you (top-right, the accent's one legitimate spend: "this
-   needs you"), and apart from it a dot for Overseer messages you haven't read
-   (bottom-right). Neither moves. Both are aria-hidden: the button's name says
-   them in words. */
+/* The entry button. `position: relative` anchors its one mark: the count of
+   Overseer messages you haven't read, top-right. It is aria-hidden: the button's
+   name says it in words. Who needs you is the sidebar's Needs you region, not the eye. */
 .overseer-entry { position: relative; flex: none; color: var(--color-ink-muted); }
 .overseer-entry:hover { color: var(--color-ink); }
 .overseer-entry[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-ink); border-color: transparent; }
@@ -5087,23 +5085,6 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   line-height: 16px;
   text-align: center;
   pointer-events: none;
-}
-/* Finished work alone: a neutral dot, not a number. */
-.overseer-entry-dot,
-.overseer-entry-unread {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border-radius: var(--r-full);
-  pointer-events: none;
-}
-.overseer-entry-dot { top: var(--space-1); right: var(--space-1); background: var(--color-ink-muted); }
-/* Unread messages: a hollow accent ring, so it differs from the count in shape as well as place. */
-.overseer-entry-unread {
-  bottom: var(--space-1);
-  right: var(--space-1);
-  background: var(--color-surface);
-  border: var(--stroke-icon) solid var(--color-accent);
 }
 
 /* A session row with activity since you last had it open: a small accent dot

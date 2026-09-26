@@ -125,18 +125,15 @@ export function createTurnOwner(sentHere: (id: string) => boolean) {
 
 // ---- Entry button ---------------------------------------------------------------------------
 
-/** The entry button's words, for its title and accessible name. */
-export function overseerButtonLabel(badge: { act: number; decide: number } | null, unread: number): string {
-  const parts: string[] = [];
-  if (badge?.act) parts.push(`${badge.act} ${badge.act === 1 ? "session needs" : "sessions need"} you`);
-  if (badge?.decide) parts.push(`${badge.decide} finished`);
-  if (unread) parts.push(`${unread} new ${unread === 1 ? "message" : "messages"}`);
-  return parts.length ? `Overseer · ${parts.join(" · ")}` : "Overseer";
+/** The entry button's words, for its title and accessible name: its own unread messages, nothing else.
+    Who needs you is the sidebar's Needs you region (lib/needs-you), not the eye. */
+export function overseerButtonLabel(unread: number): string {
+  return unread > 0 ? `Overseer · ${unread} new ${unread === 1 ? "message" : "messages"}` : "Overseer";
 }
 
 // ---- The head's finished and drafts lists ----------------------------------------------------
 
-/** How often the Overseer's counts are re-read: the entry button's poll, and the head's digest poll. */
+/** How often the Overseer's counts are re-read: the entry button's poll, and the attention digest's (App). */
 export const OVERSEER_POLL_MS = 10_000;
 
 /** One session in the head's "N finished" or "N drafts" menu. */
@@ -187,8 +184,8 @@ export const isOverseerShortcut = (e: { altKey: boolean; ctrlKey: boolean; metaK
 export const PROACTIVITY = ["off", "badge", "brief"] as const;
 export const PROACTIVITY_LABEL = { off: "Off", badge: "Badge", brief: "Brief Me" } as const;
 export const PROACTIVITY_HINT = {
-  off: "No badge, no briefs.",
-  badge: "Counts sessions that need you on the Overseer button.",
+  off: "No sidebar list, no briefs.",
+  badge: "Lists the sessions that need you at the top of the sidebar.",
   brief: "Also starts a short brief when a session gets blocked, at most once every 10 minutes.",
 } as const;
 export const nextProactivity = (p: (typeof PROACTIVITY)[number]) => PROACTIVITY[(PROACTIVITY.indexOf(p) + 1) % PROACTIVITY.length]!;

@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import type { AgentsInsight, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
+import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { fetchTargets, listSessions, setSessionArchived } from "../lib/api";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
@@ -12,6 +12,7 @@ import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
 import { type ArchiveDrag, archiveDragOf, archivedDropToast, blockedDropSentence, leftWindow, outsideDropEffect, outsideLabel, outsideTarget } from "../lib/drag-archive";
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
+import { NEEDS_YOU_KEY, needsYouCut, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
 import { type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
 import {
   createGroup,
@@ -190,7 +191,14 @@ const sessionBusy = (s: SessionSummary) => !s.live && !!(localRunning()[s.path] 
  * out of the tab order on purpose (a long list must not add two tab stops per row), so the link
  * keeps the same state in its accessible name that the old right-hand chips exposed.
  */
-function SessionRow(props: { session: SessionSummary; selected: string | null; now: number; targets: TargetInfo[] }) {
+function SessionRow(props: {
+  session: SessionSummary;
+  selected: string | null;
+  now: number;
+  targets: TargetInfo[];
+  /** Needs you only: the digest's sentence, which takes line 2's place (`title`: every sentence). */
+  detail?: { text: string; title: string } | null;
+}) {
   const s = () => props.session;
   /** The row's own remote mark: one row answers for itself, never its
       group's first row. */
@@ -431,7 +439,18 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
           {/* A never-sent session kept in the list by its stored draft: line 2 says so, in the place
               a summary would take, so the row is as tall as its neighbours. The pencil is
               decorative; the hidden word is what the row's accessible name says. */}
-          <Show when={s().draftPreview}>
+          {/* In Needs you, line 2 is why the session is there ("Asks you: …"), in place of the
+              draft preview or the gist: that sentence is the region's reason to exist. */}
+          <Show when={props.detail}>
+            {(d) => (
+              <div class="list-line list-summary-row">
+                <p class="list-summary" title={d().title}>
+                  {d().text}
+                </p>
+              </div>
+            )}
+          </Show>
+          <Show when={!props.detail && s().draftPreview}>
             {(preview) => (
               <div class="list-line list-summary-row">
                 <Icon name="pencil" small />
@@ -447,7 +466,7 @@ function SessionRow(props: { session: SessionSummary; selected: string | null; n
               nothing about which session this is. Older snapshots carry no gist — those still show
               the "now" line rather than nothing, and the tooltip always has both. */}
           {/* Settings → General can hide it; the topic count goes with it, the draft preview above stays. */}
-          <Show when={showSummaries() && !s().draftPreview && summaryText()}>
+          <Show when={!props.detail && showSummaries() && !s().draftPreview && summaryText()}>
             <div class="list-line list-summary-row">
               <p class="list-summary" title={summaryTitle()}>{summaryText()}</p>
               <Show when={s().outlineTopics}>
@@ -861,8 +880,10 @@ export function Sidebar(props: {
   unfolded: boolean;
   /** The Overseer's counts for its entry button; undefined until the first read. */
   overseer?: OverseerInfo;
-  /** `#/overseer` is the route: the button is the current page, and its unread dot is moot. */
+  /** `#/overseer` is the route: the button is the current page, and its unread count is moot. */
   overseerOpen?: boolean;
+  /** The attention digest (App's one poll): the Needs you region lists its act tier. */
+  attention?: AttentionDigest;
 }) {
   const [query, setQuery] = createSignal("");
   /** The host filter as remembered (lib/mesh.ts); what applies is `hostFilter()`, which reads All
@@ -1088,6 +1109,19 @@ export function Sidebar(props: {
    * place that writes it: this region has no controls of its own.
    */
   const recent = createMemo(() => recentSessions(hits(), recentCount()));
+  /**
+   * Needs you: the sessions the attention digest says are blocked on you (lib/needs-you), above
+   * Recent. A shortcut like Recent — every row is still where it lives — and built from `hits()`
+   * too, so the search narrows it and its count is always its rows. The open session stays listed.
+   */
+  const needsYou = createMemo(() => needsYouRows(props.attention, hits()));
+  /** ONE rule for the region and its spine door: rows, and proactivity known and not Off. */
+  const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYou().length);
+  const needsYouCutNote = () => needsYouCut(props.attention);
+  const needsYouDetail = (path: string) => {
+    const r = needsYou().find((row) => row.session.path === path);
+    return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
+  };
   // The Archive splits by date first (Today … Older), then by cwd inside each date section.
   const archiveSections = createMemo(() => {
     const sorted = [...archiveHits()].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
@@ -1174,6 +1208,16 @@ export function Sidebar(props: {
     setStoredOpen(open);
     writeKey(sessionStorage, ARCHIVE_KEY, open ? "1" : "0");
   };
+  // Needs you: OPEN by default, unlike the Archive; a collapse is remembered for the tab the same way.
+  const [needsYouStored, setNeedsYouStored] = createSignal(storedNeedsYouOpen(readKey(sessionStorage, NEEDS_YOU_KEY)));
+  /** Forced open while searching, so every hit is visible. */
+  const needsYouRegionOpen = () => needsYouOpenRule({ stored: needsYouStored(), searching: searching() });
+  const onNeedsYouToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
+    const open = e.currentTarget.open;
+    if (open === needsYouRegionOpen()) return; // our own `open` update, not the user's
+    setNeedsYouStored(open);
+    writeKey(sessionStorage, NEEDS_YOU_KEY, open ? "1" : "0");
+  };
   // Date sections: collapsed by default, each remembering its own choice the same way.
   const [storedDateOpen, setStoredDateOpen] = createSignal<Partial<Record<ArchiveGroupId, boolean>>>({});
   const dateStored = (id: ArchiveGroupId) => storedDateOpen()[id] ?? readKey(sessionStorage, archiveDateKey(id)) === "1";
@@ -1213,16 +1257,13 @@ export function Sidebar(props: {
   const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
 
   /**
-   * The Overseer's door: an eye beside the search, with the count of sessions that need you and,
-   * apart from it, a dot for Overseer messages you haven't read. Alt+O does the same (App).
+   * The Overseer's door: an eye beside the search, with the count of Overseer messages you haven't
+   * read. Who needs you is the Needs you region's to say, not the eye's. Alt+O does the same (App).
    */
   const OverseerButton = (p: { class: string }) => {
+    // The Overseer's own messages, so it shows whatever the proactivity; moot while it is open.
     const unread = () => (props.overseerOpen ? 0 : (props.overseer?.unread ?? 0));
-    // Proactivity Off: no attention count at all. The unread dot is the Overseer's own messages, so it stays.
-    const badge = () => (props.overseer && props.overseer.proactivity !== "off" ? props.overseer.badge : null);
-    const act = () => badge()?.act ?? 0;
-    const decide = () => badge()?.decide ?? 0;
-    const label = () => overseerButtonLabel(badge(), unread());
+    const label = () => overseerButtonLabel(unread());
     return (
       <a
         class={`button button-icon overseer-entry ${p.class}`}
@@ -1232,13 +1273,10 @@ export function Sidebar(props: {
         title={`${label()} · Alt+O`}
       >
         <Icon name="eye" />
-        <Show when={act() > 0} fallback={<Show when={decide() > 0}><span class="overseer-entry-dot" aria-hidden="true" /></Show>}>
-          <span class="overseer-entry-count text-num" aria-hidden="true">
-            {act() > 99 ? "99+" : act()}
-          </span>
-        </Show>
         <Show when={unread() > 0}>
-          <span class="overseer-entry-unread" aria-hidden="true" />
+          <span class="overseer-entry-count text-num" aria-hidden="true">
+            {unread() > 99 ? "99+" : unread()}
+          </span>
         </Show>
       </a>
     );
@@ -1306,8 +1344,25 @@ export function Sidebar(props: {
         {/* Each count is a door into its region, so a 0 is no door at all: the section it would
             scroll to is not on screen. Both at 0, the box goes with them — an empty one would
             still draw its divider. */}
-        <Show when={showTop() || showArchive()}>
+        <Show when={showNeedsYou() || showTop() || showArchive()}>
           <div class="spine-regions">
+            <Show when={showNeedsYou()}>
+              <button
+                type="button"
+                class="button button-icon spine-item spine-region"
+                title={`Needs you · ${sessionsWord(needsYou().length)}`}
+                aria-label={`Needs you · ${sessionsWord(needsYou().length)}`}
+                onClick={() =>
+                  expandToRegion(
+                    () => aside.querySelector<HTMLElement>(".sidebar-needs-you > summary"),
+                    (el) => el,
+                  )
+                }
+              >
+                <Icon name="alert-circle" />
+                <span class="spine-count text-num">{needsYou().length}</span>
+              </button>
+            </Show>
             <Show when={showTop()}>
               <button
                 type="button"
@@ -1557,7 +1612,32 @@ export function Sidebar(props: {
             </div>
           </Show>
 
-          {/* Recent, above everything: a flat list, no folder sections — with 5 rows a
+          {/* Needs you, above everything: the sessions blocked on you, from the attention digest.
+              A shortcut like Recent below it — every row is still where it lives — and flat for the
+              same reason. Open by default; a collapse holds for the tab (lib/needs-you). */}
+          <Show when={showNeedsYou()}>
+            <details class="sidebar-region sidebar-needs-you" aria-labelledby="r-needs-you" open={needsYouRegionOpen()} onToggle={onNeedsYouToggle}>
+              {/* The Groups head's pattern: the <summary> toggles, the <h2> is what the outline reads. */}
+              <summary class="sidebar-needs-you-summary">
+                <h2 class="sidebar-region-head" id="r-needs-you" title={needsYouTitle(needsYou().length)}>
+                  <Icon name="chevron-right" small class="icon-twist" />
+                  Needs you <span class="sidebar-region-count">· {needsYou().length}</span>
+                </h2>
+              </summary>
+              <ul class="list">
+                {/* Keyed on the session objects, which `hits()` keeps across polls: a row is updated
+                    in place, never remounted, when only the digest changed. */}
+                <For each={needsYou().map((r) => r.session)}>
+                  {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(s.path)} />}
+                </For>
+              </ul>
+              <Show when={needsYouCutNote()}>
+                <p class="sidebar-region-note">Some sessions may not be listed: this list stops at the 30 most urgent items.</p>
+              </Show>
+            </details>
+          </Show>
+
+          {/* Recent, above everything else: a flat list, no folder sections — with 5 rows a
               folder head per row would be the region. It is a shortcut, not a place a session lives,
               so every row appears again in Live & web or the Archive below, and the region carries
               no controls: the count is Settings › General's, and only its. */}

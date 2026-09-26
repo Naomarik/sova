@@ -14,7 +14,7 @@
 // pi-config/settings.json minus the machine-specific bits (external `packages`, changelog marker),
 // so no npm/git package is fetched into the throwaway dir.
 
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -177,6 +177,25 @@ if (existsSync(policySrc)) {
       console.log(`${dst} <- copied from ${src}`);
     }
   }
+}
+
+// Project trust for this worktree, so a runtime on this agent dir (the test server, or a worker run
+// with useWorktreeConfig) loads the tree's .pi/settings.json and skills without a trust dialog it
+// cannot show. Only this tree is added; a decision already there (true or false) is kept.
+const trustPath = join(AGENT, "trust.json");
+const trustKey = realpathSync(ROOT);
+let trust = {};
+try {
+  trust = JSON.parse(readFileSync(trustPath, "utf8"));
+} catch {}
+if (typeof trust !== "object" || trust === null || Array.isArray(trust)) trust = {};
+if (check) {
+  if (trust[trustKey] === undefined) problem(`not trusted in ${trustPath}: ${trustKey}`);
+} else if (trust[trustKey] === undefined) {
+  trust[trustKey] = true;
+  const sorted = Object.fromEntries(Object.keys(trust).sort().map((k) => [k, trust[k]]));
+  writeFileSync(trustPath, `${JSON.stringify(sorted, null, 2)}\n`);
+  console.log(`${trustPath}: trusted ${trustKey}`);
 }
 
 const settingsPath = join(AGENT, "settings.json");

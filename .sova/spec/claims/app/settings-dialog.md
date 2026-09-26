@@ -6,8 +6,8 @@ one panel, wider than the product's question-asking modals because two panes hav
 each other (§design/ground-rules and §design/deviations record the deviation). There is no route and no URL — Settings is a modal
 the session stays behind, closed by the scrim, Esc, or its Close button.
 
-The rail is the structure: each settings screen is one tab — General, Models, Modes, Overseer,
-Decisions, Themes, Experimental.
+The rail is the structure: each settings screen is one tab — General, Models, Modes, Teams,
+Overseer, Decisions, Summaries, Themes, Mesh, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
 (§chat/mode-menu) opens Modes directly, and nothing else about the chat changes. Which tab is open lives in
@@ -59,6 +59,18 @@ places is a count that disagrees in one of them.
   The value persists in `localStorage["sova:recent-count"]`, like the theme and for the same
   reason: it is this browser's, not the machine's. A stored value that is not a whole number in
   range is the default; a number out of range is clamped.
+
+- **Summary line** — a switch: whether session rows draw their summary line
+  (§app.session-list/content-rules, "Row line 2"). **On by default.** Off, every row drops line 2
+  and the topic count that rides on it, and is title over meta; a never-sent session's draft
+  preview still shows, because it is what keeps that row recognizable, and a Needs you row keeps
+  its reason. Nothing else changes: the outline is still written, still sent in the list, and still
+  in the session's own Outline — this is how **this browser** draws the list, not whether summaries
+  exist. Which model writes them is Summaries, which is the machine's.
+
+  It applies as you flip it, and persists in `localStorage["sova:show-summaries"]` for the same
+  reason as the count: it is this browser's, not the machine's. Only the stored value `false` turns
+  it off; a missing or unreadable value is on.
 
 ## §app.settings-dialog/models — Models
 
@@ -188,9 +200,55 @@ Defaults (Reset to Defaults): Planning & specs Claude Code `claude-fable-5-1[1m]
 `opus[1m]` high; Investigation `opus[1m]` low; Routine `opus[1m]` low; Complex `opus[1m]` medium;
 no fallbacks but Planning's.
 
+## §app.settings-dialog/summaries — Summaries
+
+The seventh tab: which model writes the summary line under each session's title
+(§app.session-list/content-rules, "Row line 2"), as the `topic-outline` extension's chain — a
+**Primary** and an optional **Fallback**, each a row of two native selects, Backend (`Claude Code`,
+`pi`) and Model, laid out like a Delegate row without Effort. The chain is not a list you edit
+here: a primary and a fallback are the choices that matter, and timeouts and budgets stay in the
+file.
+
+The file is `~/.pi/agent/topic-outline.json` (shown in the footnote), shared with pi in the
+terminal. The TUI and every runtime read it once per session, at session start, so **a change
+applies to sessions started afterwards, here and in the terminal**, and the panel says so. A
+missing file, or one naming no usable summarizer, reads as the extension's built-in chain —
+Claude Code `haiku`, then pi `ollama-cloud/deepseek-v4.1-flash` — and, while nothing is staged,
+the panel says those are the built-in models.
+
+- **Choices, not free text.** Model lists are Delegate's (`GET /api/settings/delegate/options`).
+  A stored pick the list omits stays in the select, "— not verified" (the backend couldn't
+  answer; a Claude Code alias, whose list varies; a pi provider whose models exist per session) or
+  "— not offered" (a pi model the registry doesn't list).
+- **The policy is shown.** A summarizer obeys only the model policy's global switch (Settings →
+  Models "Enabled"): a model turned off there is skipped at the call and the next in line
+  summarizes. Such a model reads "— turned off" in the select and warns under its row. The
+  Subagents switch does not apply — a summarizer is not a worker — so a model that is only off
+  for subagents is not marked.
+- **Picks wait for Save** (§app.settings-dialog/save-bar). Every pick is staged; nothing is
+  written until **Save Changes**. Changing a backend blanks its model; turning Fallback on adds a
+  blank row on the primary's backend; turning it off stages a one-model chain. **Reset to
+  Defaults** fills in the built-in chain and saves nothing; it is disabled while the rows already
+  show it.
+- **Save waits for a complete chain.** Save Changes stays disabled while a row has no model
+  ("Choose a model." under it) or the fallback is the primary ("Same as the primary. Choose
+  another model, or no fallback."), and the server refuses the same pair too.
+- **Save re-reads the file first.** The staged chain is rebased onto a fresh read: a slot you
+  didn't touch takes whatever the file holds now (a change made in the terminal meanwhile), and a
+  slot you did keeps your pick. If the result is what the file already holds, nothing is written.
+  A kept draft is rebased the same way whenever the tab reloads the file.
+- **A failed save keeps the draft.** The staged rows stay, and an error banner — "Couldn't save
+  the summary model." — gives the reason and says the saved choice is unchanged.
+- **Only the chain is written.** The server re-reads the file and writes it back atomically with
+  every other key as it was; a summarizer kept (same backend and model, in either slot) keeps its
+  own timeout, budget and any other field. A file listing more than two usable summarizers says
+  so in a banner — the extras still run, and a save here keeps only the two shown. A file that
+  exists but isn't a JSON object is never overwritten: an error banner quotes why, sessions run
+  the built-in chain, and the selects and Save are disabled until it is fixed.
+
 ## §app.settings-dialog/themes — Themes
 
-The fourth tab. It lists every theme the app can find — the ones shipped with it and the ones
+The eighth tab. It lists every theme the app can find — the ones shipped with it and the ones
 you dropped in yourself — as a radiogroup of **cards in a grid**, one of them checked. The grid
 follows the panel's width: 3 cards across at the unfolded panel, 2 in the folded sheet, so 18
 themes are 6 rows rather than 18 and the footer is a screen away instead of a page. Arrow keys

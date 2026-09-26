@@ -120,7 +120,7 @@
         "§chat.context-window/sidebar-ring"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -3302,6 +3302,23 @@
       "kind": "note",
       "authority": "accepted",
       "evidence": "unreviewed"
+    },
+    "§app.settings-dialog/summaries": {
+      "kind": "behavior",
+      "requires": [
+        "§app.settings-dialog/models",
+        "§app.settings-dialog/modes",
+        "§app.settings-dialog/save-bar"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/SummarizerSettings.tsx",
+        "src/lib/summarizer-draft.ts",
+        "src/lib/summarizer-form.ts",
+        "src/lib/settings-draft.ts",
+        "server/topic-outline-settings.ts"
+      ]
     }
   },
   "boundary": {

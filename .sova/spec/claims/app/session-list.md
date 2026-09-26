@@ -420,14 +420,18 @@ label a person reads says "sessions pane".
   present: `--fs-micro` in `--color-ink-2`, one line truncated with an ellipsis. `title=` carries
   the full line, and the "now" line under a `Now: ` label when it says something else — the latest
   activity is one hover away, never in the row. Sessions without any outline (older sessions, or
-  topic-outline off) omit the line entirely — the row is then title over meta, as before.
+  topic-outline off) omit the line entirely — the row is then title over meta, as before. So does
+  every row while Settings → General's **Summary line** switch is off
+  (§app.settings-dialog/general): this browser then draws no summary line on any row. A draft
+  row's preview, which is not a summary, stays, and so does a Needs you row's reason
+  (§app.session-list/needs-you).
 
   The line also carries the session's **topic count**, at its right end: a
   `.chip.chip-count.session-topics` holding a bare figure, `title` "{n} topics in this session",
   shown only when the count is ≥ 1. It comes from the **same outline snapshot** as the line it sits
   beside (`readTailOutline` returns gist, "now" and count from the accepted entry), so the sentence
   and the figure can never disagree. No count, no chip — and no chip without a summary line either,
-  since the line is what it rides on.
+  since the line is what it rides on: a hidden line hides its count.
 - **Row line 3.** Relative `lastActiveAt` ("just now", "4m ago", "2h ago", "yesterday", "Mar 4"),
   then ` · `, then the model in mono. Show only the part after the first `/` and put the full
   `provider/model` in `title`. If `model` is null, omit the separator and the model. The line is
@@ -1330,7 +1334,9 @@ Sidebar ground `--color-surface`. Row hover and `:focus-within` `--color-sunken`
 Title `--color-ink`, `--fw-medium`, `--fs-body`. Summary `--fs-micro`, `--lh-micro`,
 `--color-ink-2`. Meta (line 3) `--color-ink-muted`, `--fs-micro`, `--lh-micro`, scoped to
 `.session-row .list-meta`; the model's `.text-mono` inherits that size rather than keeping its
-own. `.list-meta` elsewhere stays caption.
+own, which would set it larger than the time beside it. Micro here is a recorded exception
+(§design/deviations): the line is two facts, never a sentence. `.list-meta` elsewhere stays
+caption.
 
 **The rail** (a session row's status column, inside the expanded pane — not the spine, which is
 the whole pane collapsed). A 30px column with `margin: 0 2px` — a 34px gutter, title 34px from the

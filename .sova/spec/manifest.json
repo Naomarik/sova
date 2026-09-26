@@ -67,7 +67,8 @@
         "src/components/Groups.tsx",
         "src/components/SelectionToolbar.tsx",
         "src/components/SessionDetails.tsx",
-        "src/App.tsx"
+        "src/App.tsx",
+        "src/components/InsightsPage.tsx"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {

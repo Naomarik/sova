@@ -409,7 +409,15 @@ Sova that aren't archived.
   `{working}/{total} working`, a count chip per team linking to its `#/agents/{teamKey}`, the
   workers' lifetime spend. Worktrees: see §app.insights/subagent-cards. Actions: Open, Subagents
   (opens the session with its subagents pane on the Agents tab), Archive or Unarchive, Move into
-  group (the session pane's group menu, icon only), and ⋯.
+  group (the session pane's group menu, icon only), and ⋯. The head's totals line (working ·
+  live · spend today · unmerged, with its `title`) leaves the page head and sits right-aligned on
+  the filter line (`.board-totals`); below 1000px it stays in the head.
+- **Wide** (the `insights` container ≥1600px). Session takes the extra width (titles and gists
+  show in full where they fit); Activity is one line (model, ring, last active, state chip) in a
+  15rem track, Workers 8rem, Worktrees 22rem, the actions their fixed width.
+- **Page.** Only this page drops the 1280px page cap: side margins `--space-4` below 1600px and
+  `--space-6` from there, the content capped at 2400px and centered; the head, the bar and the
+  board share the same left and right edges. Other insights pages keep 1280px.
 - **Condensed** (768–999px): Activity sits over Workers in one column; the actions are Open and
   ⋯. **Folded** (<768px): stacked rows — title with the state chip, the gist, a micro line
   (model · workers · last active), the worktree chips — a tap on the row's bare surface opens it,
@@ -466,7 +474,8 @@ banner, no toast.
   when it's gone), then **merged** (a success chip) when the tip is in the base, **content
   merged** when merging would change nothing, else `↑{ahead} ↓{behind}` in mono; `+{added}
   −{removed}` when the branch changes any line; a dot for uncommitted changes (its word for AT
-  and in the `title`). More trees: a `+{n}` count chip. The cell's `title` states every tree.
+  and in the `title`). More trees: a `+{n}` count chip; at ≥1600px the second tree shows too, stacked
+  under the first, before it. The cell's `title` states every tree.
   No tree: "—". A tree that's gone reads "gone"; a git failure "unreadable"; no base "no base".
 - **Open row.** One line per tree: branch, the same reading, lines, "uncommitted" in words, "a
   worker's" when a worker's cwd is the source, and the path in mono.

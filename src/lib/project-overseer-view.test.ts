@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { IdeaRecord } from "../../shared/protocol";
-import { actionLine, gapArea, itemSendInput, lastRunTail, openIdeas, tokens, toolWords } from "./project-overseer-view";
+import { IDEA_ID_RE } from "../../shared/protocol";
+import { actionLine, gapArea, itemSendInput, lastRunTail, openIdeas, operatorIdeaId, pendingLine, tokens, toolWords } from "./project-overseer-view";
 
 const idea = (id: string, status: IdeaRecord["status"], tags: string[] = []): IdeaRecord => ({
   id,
@@ -55,4 +56,29 @@ test("lastRunTail: the status line ends with one period, whatever the reason end
   assert.equal(line({ reasons: ["a new decision.", "a conflict"], outcome: "started" }), "Last looked on its own 2m ago, after a new decision, a conflict.");
   assert.equal(line({ reasons: [], outcome: "started" }), "Last looked on its own 2m ago.");
   for (const detail of ["x.", "x..", "x. ", "x"]) assert.doesNotMatch(line({ reasons: [], outcome: "skipped", detail }), /\.\.$/);
+});
+
+test("pendingLine: the waiting reasons as sentences, each with exactly one stop", () => {
+  // The two reasons the server writes (server/project-overseer.ts), as the lanes saw them doubled.
+  const real = ['A decision was recorded in "Payment approval rules".', 'The gathering session "Payment approval rules" reached its goal.'];
+  const line = `Waiting to look at: ${pendingLine(real)}`;
+  assert.equal(line, 'Waiting to look at: A decision was recorded in "Payment approval rules". The gathering session "Payment approval rules" reached its goal.');
+  assert.doesNotMatch(line, /\.\.|"\.,|\.,/);
+  assert.equal(pendingLine(["no stop", "two stops..", "  spaced.  "]), "no stop. two stops. spaced.");
+  assert.equal(pendingLine(['A decision was recorded in "Who approves?".', 'Closed "Done.".']), 'A decision was recorded in "Who approves?" Closed "Done."');
+  assert.equal(pendingLine(["Is it?"]), "Is it?");
+  for (const r of real) assert.equal(pendingLine([r]), r, "a well-formed sentence is left alone");
+});
+
+test("operatorIdeaId: a valid idea id from any title, never one already taken", () => {
+  assert.equal(operatorIdeaId("Detect duplicate invoices", new Set()), "§idea/detect-duplicate-invoices");
+  assert.equal(operatorIdeaId("Détecter les doublons", new Set()), "§idea/detecter-les-doublons");
+  assert.equal(operatorIdeaId("Detect duplicate invoices", new Set(["§idea/detect-duplicate-invoices"])), "§idea/detect-duplicate-invoices-2");
+  const taken = new Set<string>();
+  for (const title of ["Détecter les doublons", "!!!", "   ", "日本語だけ", "x".repeat(200), "a -- b --", "Same", "Same", "Same"]) {
+    const id = operatorIdeaId(title, taken);
+    assert.match(id, IDEA_ID_RE, title);
+    assert.ok(!taken.has(id), `${title} → ${id} collides`);
+    taken.add(id);
+  }
 });

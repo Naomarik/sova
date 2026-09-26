@@ -44,6 +44,42 @@ export function lastRunTail(run: { reasons: readonly string[]; outcome: "started
   return reasons.length ? `, after ${reasons.join(", ")}` : "";
 }
 
+/**
+ * The reasons waiting for its next look, as the "Waiting to look at:" line says them: each is a
+ * sentence of its own, so they are joined as sentences, each ending in exactly one stop (its own
+ * `.`, `?` or `!`, or an added period), never listed with commas and a period on top.
+ */
+export function pendingLine(reasons: readonly string[]): string {
+  return reasons
+    .map((r) =>
+      r
+        .trim()
+        .replace(/\.{2,}$/, ".")
+        // A quoted title that ends a sentence itself: `in "Rules?".` → `in "Rules?"`.
+        .replace(/([.?!]["”’)])\.$/, "$1"),
+    )
+    .filter(Boolean)
+    .map((r) => (/[.?!]["”’)]?$/.test(r) ? r : `${r}.`))
+    .join(" ");
+}
+
+/** The operator's ideas' namespace, beside the overseer's `§gap`. */
+export const OPERATOR_IDEA_NS = "idea";
+/** The server's limit on an idea's title (server/overseer-ideas.ts IDEA_TITLE_MAX). */
+export const IDEA_TITLE_MAX = 120;
+
+/**
+ * An id for an idea the operator adds by title: `§idea/<words of the title>`, a number added when
+ * the id is taken (`-2`, `-3`, …), so adding the same title twice files two ideas, never a clash.
+ */
+export function operatorIdeaId(title: string, taken: ReadonlySet<string>): string {
+  const base = title.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/, "") || "idea";
+  const id = (n: number) => `§${OPERATOR_IDEA_NS}/${n === 1 ? base : `${base}-${n}`}`;
+  let n = 1;
+  while (taken.has(id(n))) n++;
+  return id(n);
+}
+
 /** Tokens as a short figure: 950, 12.3k, 1.2M. */
 export function tokens(n: number): string {
   if (n < 1000) return String(n);

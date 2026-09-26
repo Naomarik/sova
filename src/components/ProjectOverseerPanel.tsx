@@ -3,6 +3,7 @@ import type { IdeaRecord, OverseerAction, OverseerTodosInfo } from "../../shared
 import { AUTONOMY_LEVELS, AUTONOMY_MEANING, type Autonomy, type ItemCodeInput, type ItemCodeResult, type ItemSendInput, type ItemSendResult, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { OrgDetail } from "../../shared/orgs";
 import {
+  addProjectOverseerIdea,
   addProjectOverseerTodo,
   ApiError,
   codeProjectItem,
@@ -20,7 +21,7 @@ import {
 import { relativeTime } from "../lib/format";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll } from "../lib/poll";
-import { actionLine, gapArea, isGap, itemSendInput, lastRunTail, openIdeas, STARTED_KIND, tokens } from "../lib/project-overseer-view";
+import { actionLine, gapArea, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, openIdeas, operatorIdeaId, pendingLine, STARTED_KIND, tokens } from "../lib/project-overseer-view";
 import { announce, toast } from "../lib/ui-state";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon } from "./ui";
@@ -166,6 +167,11 @@ export function ProjectOverseerPanel(props: {
         org={props.org}
         ideas={ideas.data() ? openIdeas(ideas.data()!.ideas) : undefined}
         error={ideas.error()}
+        add={async (title) => {
+          // Fresh ids: the poll may lag another tab's or the overseer's latest idea.
+          const taken = new Set((await projectOverseerIdeas(o(), p())).ideas.map((i) => i.id));
+          ideas.set(await addProjectOverseerIdea(o(), p(), { id: operatorIdeaId(title, taken), title }));
+        }}
         onLinks={setLinks}
         send={(input) => sendProjectItem(o(), p(), input)}
         code={(input) => codeProjectItem(o(), p(), input)}
@@ -210,7 +216,7 @@ function StatusLine(props: { info: ProjectOverseerInfo }) {
         {u().unattendedToday} {u().unattendedToday === 1 ? "run" : "runs"} today.
       </p>
       <Show when={u().pending.length}>
-        <p class="orgs-line project-muted">Waiting to look at: {u().pending.join(", ")}.</p>
+        <p class="orgs-line project-muted">Waiting to look at: {pendingLine(u().pending)}</p>
       </Show>
     </>
   );
@@ -393,11 +399,13 @@ interface ItemCallbacks {
   after(): void;
 }
 
-function Ideas(props: ItemCallbacks & { ideas: IdeaRecord[] | undefined; error: string | null }) {
+function Ideas(props: ItemCallbacks & { ideas: IdeaRecord[] | undefined; error: string | null; add(title: string): Promise<void> }) {
+  const [draft, setDraft] = createSignal("");
+  const [err, setErr] = createSignal<string | null>(null);
   return (
     <details class="orgs-history orgs-history-section" open>
       <summary>Gaps and ideas{props.ideas ? ` · ${props.ideas.length}` : ""}</summary>
-      <Show when={props.error}>{(e) => <p class="field-error">{e()}</p>}</Show>
+      <Show when={props.error ?? err()}>{(e) => <p class="field-error">{e()}</p>}</Show>
       <Show when={props.ideas?.length} fallback={<p class="orgs-empty">No open ideas. Gaps it finds between the decisions and who decides them land here.</p>}>
         <ul class="project-items">
           <For each={props.ideas}>
@@ -419,6 +427,29 @@ function Ideas(props: ItemCallbacks & { ideas: IdeaRecord[] | undefined; error: 
           </For>
         </ul>
       </Show>
+      <form
+        class="orgs-inline"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const title = draft().trim();
+          if (!title) return;
+          props.add(title).then(
+            () => {
+              setDraft("");
+              setErr(null);
+            },
+            (x) => setErr(unchangedError(errText(x), "Nothing was added.")),
+          );
+        }}
+      >
+        <label class="field orgs-grow">
+          <span class="field-label">New idea</span>
+          <input class="input" value={draft()} onInput={(e) => setDraft(e.currentTarget.value)} maxlength={IDEA_TITLE_MAX} />
+        </label>
+        <button type="submit" class="button">
+          Add Idea
+        </button>
+      </form>
     </details>
   );
 }

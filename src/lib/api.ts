@@ -887,6 +887,8 @@ export const runProjectOverseer = (orgId: string, projectId: string) => request<
 export const projectOverseerActions = (orgId: string, projectId: string, limit = 30) =>
   request<OverseerAction[]>(`${overseerBase(orgId, projectId)}/actions?limit=${limit}`);
 export const projectOverseerIdeas = (orgId: string, projectId: string) => request<OverseerIdeasInfo>(`${overseerBase(orgId, projectId)}/ideas`);
+export const addProjectOverseerIdea = (orgId: string, projectId: string, idea: { id: string; title: string }) =>
+  request<OverseerIdeasInfo>(`${overseerBase(orgId, projectId)}/ideas`, jsonInit("POST", idea));
 export const projectOverseerTodos = (orgId: string, projectId: string) => request<OverseerTodosInfo>(`${overseerBase(orgId, projectId)}/todos`);
 export const addProjectOverseerTodo = (orgId: string, projectId: string, text: string) =>
   request<OverseerTodosInfo>(`${overseerBase(orgId, projectId)}/todos`, jsonInit("POST", { text }));

@@ -77,6 +77,16 @@ export function tocGroups(toc: IdeasToc, opts: { showSettled: boolean; query?: s
 export const canonicalId = (id: string) => (id.startsWith("§") ? id : `§${id}`);
 
 /**
+ * Where the open idea went after the list was re-read: its own id while it is still there; the
+ * idea that was renamed from it when it isn't (a rename in the panel or by the Overseer); else
+ * null (it's gone, and the detail says so).
+ */
+export function followRename(ideas: Pick<IdeaRecord, "id" | "renamedFrom">[], id: string): string | null {
+  if (ideas.some((r) => r.id === id)) return id;
+  return ideas.find((r) => r.renamedFrom?.includes(id))?.id ?? null;
+}
+
+/**
  * What "Explore" sends: an ordinary user message, so the turn is user-started and the Overseer's
  * caps apply. It names the idea by id, the way the Overseer's own ToC does. With an explorer
  * already linked, it asks for that one's report instead of launching a second.

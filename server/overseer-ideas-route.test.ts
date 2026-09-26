@@ -77,4 +77,46 @@ describe("the ideas routes", () => {
     assert.equal(again.status, 400);
     assert.match(((await again.json()) as { error: string }).error, /dropped is final/);
   });
+
+  test("PATCH newId renames: the answer is the new detail, the old id still reads, and the todos follow", async () => {
+    const { addTodo, readTodos } = await import("./overseer-todos");
+    ideas.addIdea({ id: "rt/a", title: "A", text: "A-TEXT" });
+    ideas.addIdea({ id: "rt/b", title: "B", links: ["rt/a"] });
+    addTodo({ text: "todo on a", ideaId: "rt/a" });
+    const base = ideas.getIdea("rt/a")!.updatedAt;
+    const res = await patch("rt/a", { base, newId: "rt/renamed", title: "A renamed" });
+    assert.equal(res.status, 200);
+    const d = (await res.json()) as OverseerIdeaDetail;
+    assert.equal(d.idea.id, "§rt/renamed");
+    assert.equal(d.idea.title, "A renamed", "the other fields were applied too");
+    assert.deepEqual(d.idea.renamedFrom, ["§rt/a"]);
+    assert.match(d.text, /A-TEXT/);
+    assert.deepEqual(d.linkedBy, ["§rt/b"]);
+    const old = await app.request(`/api/overseer/idea?id=${encodeURIComponent("rt/a")}`);
+    assert.equal(old.status, 200);
+    assert.equal(((await old.json()) as OverseerIdeaDetail).idea.id, "§rt/renamed");
+    assert.equal(readTodos().todos.find((t) => t.text === "todo on a")?.ideaId, "§rt/renamed");
+    const list = (await (await app.request("/api/overseer/ideas")).json()) as OverseerIdeasInfo;
+    assert.deepEqual(list.ideas.find((r) => r.id === "§rt/renamed")?.renamedFrom, ["§rt/a"], "the list carries the former ids the panel follows");
+  });
+
+  test("PATCH newId: 400 for a malformed, live or former id (nothing saved), 409 for a stale base, 404 unknown; the same id is no rename", async () => {
+    const cur = ideas.getIdea("rt/b")!;
+    for (const newId of ["Not An Id", "rt/renamed", "rt/a"]) {
+      const res = await patch("rt/b", { base: cur.updatedAt, newId, title: "must not save" });
+      assert.equal(res.status, 400, newId);
+    }
+    assert.equal(ideas.getIdea("rt/b")!.title, "B", "a refused rename saved none of the other fields");
+    assert.equal(ideas.getIdea("rt/b")!.updatedAt, cur.updatedAt);
+    assert.equal((await patch("rt/b", { newId: 7 })).status, 400);
+    ideas.updateIdea("rt/b", { append: "meanwhile" });
+    const stale = await patch("rt/b", { base: cur.updatedAt, newId: "rt/b2" });
+    assert.equal(stale.status, 409);
+    assert.match(((await stale.json()) as { current: OverseerIdeaDetail }).current.text, /meanwhile/);
+    assert.ok(ideas.getIdea("rt/b") && !ideas.getIdea("rt/b2"));
+    assert.equal((await patch("rt/none", { newId: "rt/x" })).status, 404);
+    const same = await patch("rt/b", { newId: "§rt/b", title: "Same id" });
+    assert.equal(same.status, 200);
+    assert.equal(((await same.json()) as OverseerIdeaDetail).idea.renamedFrom, undefined);
+  });
 });

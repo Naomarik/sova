@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { IDEA_STATUSES, type IdeaStatus, type IdeasToc } from "../../shared/protocol";
-import { canonicalId, countsLine, exploreMessage, IDEA_STATUS_CHIP, parseTags, startMessage, tocGroups } from "./ideas";
+import { canonicalId, countsLine, exploreMessage, followRename, IDEA_STATUS_CHIP, parseTags, startMessage, tocGroups } from "./ideas";
 
 const counts = (c: Partial<Record<IdeaStatus, number>>): Record<IdeaStatus, number> => ({ open: 0, exploring: 0, started: 0, done: 0, dropped: 0, ...c });
 
@@ -88,4 +88,12 @@ test("ids and tags as typed", () => {
   assert.equal(canonicalId("§mesh/health"), "§mesh/health");
   assert.deepEqual(parseTags(" UX, #perf  ux\nnet,"), ["ux", "perf", "net"]);
   assert.deepEqual(parseTags(""), []);
+});
+
+test("the open idea follows a rename: its own id while live, else the idea renamed from it, else nothing", () => {
+  const ideas = [{ id: "§mesh/healthy", renamedFrom: ["§mesh/sick", "§mesh/health"] }, { id: "§mesh/retry" }];
+  assert.equal(followRename(ideas, "§mesh/retry"), "§mesh/retry");
+  assert.equal(followRename(ideas, "§mesh/health"), "§mesh/healthy");
+  assert.equal(followRename(ideas, "§mesh/sick"), "§mesh/healthy");
+  assert.equal(followRename(ideas, "§mesh/gone"), null);
 });

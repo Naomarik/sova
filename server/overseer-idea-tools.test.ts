@@ -103,9 +103,11 @@ describe("sova_idea: filing and growing ideas", () => {
       { op: "append", id: "mesh/health", text: "x" },
       { op: "explore", id: "mesh/health" },
       { op: "tell", id: "mesh/health", message: "x" },
+      { op: "rename", id: "mesh/health", new_id: "mesh/healthy" },
     ])
       assert.equal(await refusal("sova_idea", params), UNATTENDED_REFUSAL, String(params.op));
     assert.equal(calls.length, 0, "no subagent was touched");
+    assert.ok(ideas.getIdea("mesh/health")?.id === "§mesh/health", "the refused rename moved nothing");
     assert.match(await run("sova_ideas", { op: "toc" }), /§mesh/, "reads stay allowed");
   });
 });
@@ -235,5 +237,40 @@ describe("explorers: one subagent per idea, launched and addressed through the s
   test("closed ideas are not explored", async () => {
     await run("sova_idea", { op: "update", id: "mesh/fourth", status: "dropped" });
     assert.match(await refusal("sova_idea", { op: "explore", id: "mesh/fourth" }), /is dropped/);
+  });
+});
+
+describe("sova_idea rename", () => {
+  test("names both ids, the moved sub-entries, relinked ideas, retargeted todos, prose mentions and the explorer's old name", async () => {
+    const { addTodo, readTodos } = await import("./overseer-todos");
+    await run("sova_idea", { op: "add", id: "rn/client", title: "Business client" });
+    await run("sova_idea", { op: "add", id: "rn.client/auth", title: "Auth" });
+    await run("sova_idea", { op: "add", id: "rn/linker", title: "Linker", text: "Builds on §rn/client.", links: ["rn/client"] });
+    addTodo({ text: "look at it", ideaId: "rn.client/auth" });
+    await run("sova_idea", { op: "explore", id: "rn/client" });
+    const worker = ideas.getIdea("rn/client")!.explorerId!;
+    const said = await run("sova_idea", { op: "rename", id: "rn/client", new_id: "rn/hosted-workspace" });
+    assert.match(said, /Renamed §rn\/client to §rn\/hosted-workspace\. §rn\/client still resolves/);
+    assert.match(said, /Sub-entries moved: §rn\.client\/auth → §rn\.hosted-workspace\/auth/);
+    assert.match(said, /Links updated in §rn\/linker/);
+    assert.match(said, /1 todo now links to the new id/);
+    assert.match(said, /text of §rn\/linker still names the old id/);
+    assert.match(said, new RegExp(`explorer ${worker} still calls it §rn/client`));
+    assert.equal(readTodos().todos.find((t) => t.text === "look at it")?.ideaId, "§rn.hosted-workspace/auth");
+    const log = readFileSync(overseerActionsFile(), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    assert.deepEqual(log.at(-1).args, { op: "rename", id: "rn/client", new_id: "rn/hosted-workspace" }, "the audit log keeps both ids");
+    // The old id keeps working in reads and in tell (the explorer follows the record).
+    const got = await run("sova_ideas", { op: "get", id: "rn/client" });
+    assert.match(got, /^§rn\/client was renamed to §rn\/hosted-workspace\.\n- §rn\/hosted-workspace/);
+    assert.match(got, /Formerly §rn\/client\./);
+    assert.match(await run("sova_idea", { op: "tell", id: "rn/hosted-workspace", message: "go on" }), new RegExp(`explorer ${worker}`));
+    assert.match(await run("sova_idea", { op: "tell", id: "rn/client", message: "and on" }), new RegExp(`explorer ${worker}`));
+  });
+
+  test("refusals come back as the store words them; a rename needs new_id", async () => {
+    assert.match(await refusal("sova_idea", { op: "rename", id: "rn/linker" }), /rename needs new_id/);
+    assert.match(await refusal("sova_idea", { op: "rename", id: "rn/linker", new_id: "rn/client" }), /former id of §rn\/hosted-workspace/);
+    assert.match(await refusal("sova_idea", { op: "rename", id: "rn/linker", new_id: "Bad" }), /not an idea id/);
+    assert.match(await refusal("sova_idea", { op: "add", id: "rn/client", title: "x" }), /was renamed to §rn\/hosted-workspace/);
   });
 });

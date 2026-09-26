@@ -93,12 +93,13 @@ function cleanText(v: unknown): string {
   return t;
 }
 
-/** A canonical id of an idea that exists now. */
+/** The canonical id of an idea that exists now; a renamed idea's former id links the idea itself. */
 function cleanIdea(v: unknown): string {
   try {
     const id = canonicalIdeaId(v);
-    if (!getIdea(id)) throw new TodoError(`No idea ${id}. A todo can only link an idea that exists (sova_ideas toc lists them).`);
-    return id;
+    const idea = getIdea(id);
+    if (!idea) throw new TodoError(`No idea ${id}. A todo can only link an idea that exists (sova_ideas toc lists them).`);
+    return idea.id;
   } catch (err) {
     if (err instanceof IdeaError) throw new TodoError(err.message);
     throw err;
@@ -209,6 +210,24 @@ export function reorderTodos(ids: unknown, file = todosFile()): void {
   if (!list || list.length !== byId.size || new Set(list).size !== list.length || !list.every((id) => typeof id === "string" && byId.has(id)))
     throw new TodoError("ids must list every todo exactly once. The list changed meanwhile; reload it and try again.");
   writeTodos({ formatVersion: 1, todos: list.map((id) => byId.get(id as string)!) }, file);
+}
+
+/**
+ * An idea rename reached the todos: every idea link named in `moved` (old id → new id) follows it.
+ * The todos keep their `updatedAt`, so an edit open on one is not refused for it. Returns how many
+ * changed; writes only when one did.
+ */
+export function retargetIdeas(moved: Record<string, string>, file = todosFile()): number {
+  const f = readTodos(file);
+  let n = 0;
+  for (const t of f.todos) {
+    const to = t.ideaId ? moved[t.ideaId] : undefined;
+    if (!to) continue;
+    t.ideaId = to;
+    n++;
+  }
+  if (n) writeTodos(f, file);
+  return n;
 }
 
 // ---- the prompt --------------------------------------------------------------------------------

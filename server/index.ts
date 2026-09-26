@@ -62,7 +62,8 @@ import {
   startOverseerLoop,
 } from "./overseer";
 import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
-import { IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
+import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
+import { renameIdeaEverywhere } from "./overseer-idea-tools";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
 import { findExtension, listExtensions, proxyExtension, serveExtensionFile, setSovaPort } from "./extensions";
 import { decisionRuntime, decisions, decisionSettings, decisionsReady } from "./decide-runtime";
@@ -778,7 +779,9 @@ app.put("/api/overseer/notes", async (c) => {
 });
 // The ideas backlog (server/overseer-ideas.ts). The Overseer's sova_idea and this PATCH are its
 // only writers; `base` (the updatedAt the editor started from) makes a stale edit a 409 carrying
-// the current idea, so the panel never overwrites what the Overseer appended meanwhile.
+// the current idea, so the panel never overwrites what the Overseer appended meanwhile. `newId`
+// renames it (checked before anything is saved, applied after the other fields); a former id
+// still reads and patches the idea under its new one.
 app.get("/api/overseer/ideas", (c) => c.json(ideasInfo(), 200, { "Cache-Control": "no-store" }));
 app.get("/api/overseer/idea", (c) => {
   const id = parseIdeaId(c.req.query("id") ?? "")?.id;
@@ -793,7 +796,7 @@ app.patch("/api/overseer/idea", async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: "Expected JSON body { base?, title?, status?, tags?, links?, text? }" }, 400);
+    return c.json({ error: "Expected JSON body { base?, title?, status?, tags?, links?, text?, newId? }" }, 400);
   }
   if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Expected a JSON object" }, 400);
   const patch: IdeaUpdate = {};
@@ -807,9 +810,17 @@ app.patch("/api/overseer/idea", async (c) => {
     if (!Array.isArray(body[key])) return c.json({ error: `${key} must be a list` }, 400);
     (patch as Record<string, unknown>)[key] = body[key];
   }
-  if (!ideaDetail(id)) return c.json({ error: `No idea ${id}` }, 404);
+  if (body.newId !== undefined && typeof body.newId !== "string") return c.json({ error: "newId must be a string" }, 400);
+  const found = ideaDetail(id);
+  if (!found) return c.json({ error: `No idea ${id}` }, 404);
   try {
-    return c.json(updateIdea(id, patch));
+    // A newId equal to the current id is no rename. Refuse a bad one before any field is saved.
+    const newId = typeof body.newId === "string" && parseIdeaId(body.newId)?.id !== found.idea.id ? body.newId : undefined;
+    if (newId !== undefined) checkRename(found.idea.id, newId);
+    const fields = Object.keys(patch).some((k) => k !== "base");
+    let out = fields || newId === undefined ? updateIdea(found.idea.id, patch) : found;
+    if (newId !== undefined) out = renameIdeaEverywhere(found.idea.id, newId, { base: fields ? out.idea.updatedAt : patch.base }).detail;
+    return c.json(out);
   } catch (err) {
     if (err instanceof IdeaConflictError) return c.json({ error: err.message, current: err.current }, 409);
     if (err instanceof IdeaError) return c.json({ error: err.message }, 400);

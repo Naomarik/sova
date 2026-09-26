@@ -178,3 +178,25 @@ describe("the prompt's line", () => {
     assert.deepEqual({ ...todos.todosInfo(f), todos: [] }, { todos: [], open: 1, done: 1, file: f });
   });
 });
+
+describe("an idea rename reaches the todos", () => {
+  test("retargetIdeas rewrites idea links, sub-entries included, without moving updatedAt; a former id links the idea itself", async () => {
+    const { renameIdea } = await import("./overseer-ideas");
+    const f = fresh();
+    addIdea({ id: "rn/main", title: "Main" });
+    addIdea({ id: "rn.main/sub", title: "Sub" });
+    addIdea({ id: "rn/other", title: "Other" });
+    const a = todos.addTodo({ text: "a", ideaId: "rn/main" }, f);
+    const b = todos.addTodo({ text: "b", ideaId: "rn.main/sub" }, f);
+    const c = todos.addTodo({ text: "c", ideaId: "rn/other" }, f);
+    const before = readFileSync(f, "utf8");
+    assert.equal(todos.retargetIdeas({ "§rn/nothing": "§rn/x" }, f), 0);
+    assert.equal(readFileSync(f, "utf8"), before, "nothing to retarget writes nothing");
+    const { moved } = renameIdea("rn/main", "rn/renamed");
+    assert.equal(todos.retargetIdeas(moved, f), 2);
+    const list = todos.readTodos(f).todos;
+    assert.deepEqual(list.map((t) => t.ideaId), ["§rn/renamed", "§rn.renamed/sub", "§rn/other"]);
+    assert.deepEqual(list.map((t) => t.updatedAt), [a.updatedAt, b.updatedAt, c.updatedAt]);
+    assert.equal(todos.updateTodo(c.id, { ideaId: "rn/main" }, f).ideaId, "§rn/renamed", "a link through the former id stores the live one");
+  });
+});

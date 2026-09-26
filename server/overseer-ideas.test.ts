@@ -218,3 +218,141 @@ describe("the prompt's ToC", () => {
     assert.ok(!existsSync(join(dir, "manifest.json.tmp")));
   });
 });
+
+describe("renaming an idea", () => {
+  const manifestOf = (dir: string) => JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")).ideas as Record<string, Record<string, unknown>>;
+
+  test("the key and prose move; inbound links are rewritten, outbound kept; only the renamed record's updatedAt moves", () => {
+    const dir = fresh();
+    ideas.addIdea({ id: "mesh/retry", title: "Retry", text: "RETRY-PROSE" }, dir);
+    ideas.addIdea({ id: "mesh/client", title: "Client", text: "CLIENT-PROSE", tags: ["x"], links: ["mesh/retry"] }, dir);
+    ideas.addIdea({ id: "sova/panel", title: "Panel", links: ["mesh/client"] }, dir);
+    ideas.addIdea({ id: "sova/other", title: "Other" }, dir);
+    ideas.updateIdea("mesh/client", { status: "done", sessionId: "s-1", explorer: { id: "ag_03", overseerId: "ov-1" } }, dir);
+    const before = manifestOf(dir);
+    const out = ideas.renameIdea("mesh/client", "sova/hosted-workspace", {}, dir);
+    assert.equal(out.from, "§mesh/client");
+    assert.deepEqual(out.moved, { "§mesh/client": "§sova/hosted-workspace" });
+    assert.deepEqual(out.relinked, ["§sova/panel"]);
+    const after = manifestOf(dir);
+    assert.equal(after["§mesh/client"], undefined);
+    const r = after["§sova/hosted-workspace"]!;
+    for (const k of ["title", "status", "tags", "createdAt", "sessionId", "explorerId", "explorerOverseerId"]) assert.deepEqual(r[k], before["§mesh/client"]![k], k);
+    assert.deepEqual(r.links, ["§mesh/retry"], "outbound links carried");
+    assert.deepEqual(r.renamedFrom, ["§mesh/client"]);
+    assert.ok(String(r.updatedAt) > String(before["§mesh/client"]!.updatedAt), "the renamed record's updatedAt moves");
+    assert.deepEqual(after["§sova/panel"]!.links, ["§sova/hosted-workspace"], "inbound link rewritten");
+    assert.equal(after["§sova/panel"]!.updatedAt, before["§sova/panel"]!.updatedAt, "a relinked record keeps its updatedAt");
+    assert.deepEqual(after["§sova/other"], before["§sova/other"], "an untouched record is byte-identical");
+    assert.equal(ideas.readProse("§sova/hosted-workspace", dir), "CLIENT-PROSE\n");
+    assert.ok(!existsSync(join(dir, "mesh", "client.md")), "the old prose file is gone");
+    assert.equal(out.detail.idea.id, "§sova/hosted-workspace");
+    assert.deepEqual(out.detail.linkedBy, ["§sova/panel"]);
+    assert.ok(!readdirSync(dir).some((f) => f.endsWith(".tmp")));
+  });
+
+  test("the old id still resolves: get, detail, links and updates reach the renamed idea; add refuses it", () => {
+    const dir = fresh();
+    ideas.addIdea({ id: "mesh/a", title: "A" }, dir);
+    ideas.addIdea({ id: "mesh/b", title: "B" }, dir);
+    ideas.renameIdea("mesh/a", "mesh/a2", {}, dir);
+    assert.equal(ideas.getIdea("mesh/a", dir)?.id, "§mesh/a2");
+    assert.equal(ideas.ideaDetail("§mesh/a", dir)?.idea.id, "§mesh/a2");
+    assert.deepEqual(ideas.updateIdea("mesh/b", { addLinks: ["mesh/a"] }, dir).idea.links, ["§mesh/a2"], "a link through the old id stores the new one");
+    assert.equal(ideas.updateIdea("mesh/a", { title: "A two" }, dir).idea.id, "§mesh/a2");
+    assert.deepEqual(ideas.updateIdea("mesh/b", { removeLinks: ["mesh/a"] }, dir).idea.links, [], "unlinking through the old id works too");
+    assert.throws(() => ideas.addIdea({ id: "mesh/a", title: "again" }, dir), /§mesh\/a was renamed to §mesh\/a2/);
+  });
+
+  test("sub-entries move with their main entry, folder and all, each with its own former id", () => {
+    const dir = fresh();
+    ideas.addIdea({ id: "mesh/retry", title: "Retry" }, dir);
+    ideas.addIdea({ id: "mesh.retry/jitter", title: "Jitter", text: "JITTER" }, dir);
+    ideas.addIdea({ id: "mesh.retry/cap", title: "Cap", links: ["mesh.retry/jitter"] }, dir);
+    ideas.addIdea({ id: "sova/x", title: "X", links: ["mesh.retry/cap"] }, dir);
+    const out = ideas.renameIdea("mesh/retry", "net/retries", {}, dir);
+    assert.deepEqual(out.moved, { "§mesh/retry": "§net/retries", "§mesh.retry/cap": "§net.retries/cap", "§mesh.retry/jitter": "§net.retries/jitter" });
+    const m = ideas.readManifest(dir);
+    assert.deepEqual(Object.keys(m.ideas).sort(), ["§net.retries/cap", "§net.retries/jitter", "§net/retries", "§sova/x"]);
+    assert.deepEqual(m.ideas["§net.retries/cap"]!.links, ["§net.retries/jitter"], "a link between moved sub-entries follows too");
+    assert.deepEqual(m.ideas["§sova/x"]!.links, ["§net.retries/cap"]);
+    assert.deepEqual(m.ideas["§net.retries/jitter"]!.renamedFrom, ["§mesh.retry/jitter"]);
+    assert.equal(ideas.readProse("§net.retries/jitter", dir), "JITTER\n");
+    assert.ok(!existsSync(join(dir, "mesh", "retry")), "the old sub-entry folder is gone");
+    assert.equal(ideas.getIdea("mesh.retry/jitter", dir)?.id, "§net.retries/jitter");
+  });
+
+  test("refusals: bad grammar, a live id, another idea's former id, main-with-subs to sub, a sub whose main is missing or is itself", () => {
+    const dir = fresh();
+    ideas.addIdea({ id: "mesh/a", title: "A" }, dir);
+    ideas.addIdea({ id: "mesh.a/sub", title: "Sub" }, dir);
+    ideas.addIdea({ id: "mesh/b", title: "B" }, dir);
+    ideas.addIdea({ id: "mesh/c", title: "C" }, dir);
+    ideas.renameIdea("mesh/c", "mesh/c2", {}, dir);
+    const snapshot = readFileSync(join(dir, "manifest.json"), "utf8");
+    assert.throws(() => ideas.renameIdea("mesh/b", "Bad Id", {}, dir), /§<project>\/<name>/);
+    assert.throws(() => ideas.renameIdea("mesh/b", "mesh/a", {}, dir), /§mesh\/a already exists/);
+    assert.throws(() => ideas.renameIdea("mesh/b", "mesh/c", {}, dir), /§mesh\/c is a former id of §mesh\/c2/);
+    assert.throws(() => ideas.renameIdea("mesh/a", "mesh.b/a", {}, dir), /has sub-entries[\s\S]*can't become a sub-entry/);
+    assert.throws(() => ideas.renameIdea("mesh/b", "mesh.none/b", {}, dir), /§mesh\/none, which does not exist/);
+    assert.throws(() => ideas.renameIdea("mesh/b", "mesh.b/x", {}, dir), /sub-entry of §mesh\/b itself/);
+    assert.throws(() => ideas.renameIdea("mesh/none", "mesh/n2", {}, dir), /No idea §mesh\/none/);
+    assert.throws(() => ideas.renameIdea("mesh/b", "mesh/b", {}, dir), /already has that id/);
+    assert.equal(readFileSync(join(dir, "manifest.json"), "utf8"), snapshot, "no refusal wrote anything");
+    // A sub-entry may leave its parent, or move under another main entry.
+    assert.equal(ideas.renameIdea("mesh.a/sub", "mesh/sub", {}, dir).detail.idea.id, "§mesh/sub");
+    assert.equal(ideas.renameIdea("mesh/sub", "mesh.b/sub", {}, dir).detail.idea.parent, "§mesh/b");
+  });
+
+  test("a stale base is a conflict carrying the current idea, and nothing moves", () => {
+    const dir = fresh();
+    const a = ideas.addIdea({ id: "mesh/a", title: "A" }, dir);
+    ideas.updateIdea("mesh/a", { append: "later" }, dir);
+    assert.throws(
+      () => ideas.renameIdea("mesh/a", "mesh/a2", { base: a.updatedAt }, dir),
+      (e: unknown) => e instanceof ideas.IdeaConflictError && /later/.test(e.current.text),
+    );
+    assert.ok(ideas.getIdea("mesh/a", dir)?.id === "§mesh/a" && !ideas.getIdea("mesh/a2", dir));
+    const cur = ideas.getIdea("mesh/a", dir)!;
+    assert.equal(ideas.renameIdea("mesh/a", "mesh/a2", { base: cur.updatedAt }, dir).detail.idea.id, "§mesh/a2");
+  });
+
+  test("renaming back swaps the former id; the list keeps the latest 8", () => {
+    const dir = fresh();
+    ideas.addIdea({ id: "mesh/a", title: "A", text: "T" }, dir);
+    ideas.renameIdea("mesh/a", "mesh/b", {}, dir);
+    const back = ideas.renameIdea("mesh/b", "mesh/a", {}, dir);
+    assert.equal(back.detail.idea.id, "§mesh/a");
+    assert.deepEqual(back.detail.idea.renamedFrom, ["§mesh/b"]);
+    assert.equal(back.detail.text, "T\n");
+    assert.equal(ideas.getIdea("mesh/b", dir)?.id, "§mesh/a");
+    let id = "mesh/a";
+    for (let i = 1; i <= 10; i++) ideas.renameIdea(id, (id = `mesh/n${i}`), {}, dir);
+    const r = ideas.getIdea("mesh/n10", dir)!;
+    assert.equal(r.renamedFrom?.length, ideas.IDEA_RENAMED_MAX);
+    assert.deepEqual(r.renamedFrom?.slice(-2), ["§mesh/n8", "§mesh/n9"]);
+    assert.equal(ideas.getIdea("mesh/b", dir), null, "the oldest former ids dropped out");
+  });
+
+  test("prose that mentions the old id is reported, never rewritten", () => {
+    const dir = fresh();
+    ideas.addIdea({ id: "mesh/a", title: "A" }, dir);
+    ideas.addIdea({ id: "mesh/b", title: "B", text: "See §mesh/a for the rest." }, dir);
+    ideas.addIdea({ id: "mesh/c", title: "C", text: "Not §mesh/ab, a different idea." }, dir);
+    const out = ideas.renameIdea("mesh/a", "mesh/z", {}, dir);
+    assert.deepEqual(out.mentions, ["§mesh/b"]);
+    assert.equal(ideas.readProse("§mesh/b", dir), "See §mesh/a for the rest.\n");
+  });
+
+  test("a hand-edited manifest: a former id that is live, or claimed twice, is ignored on read", () => {
+    const dir = fresh();
+    mkdirSync(dir, { recursive: true });
+    const rec = (renamedFrom: string[]) => ({ title: "t", status: "open", tags: [], links: [], createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z", renamedFrom });
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify({ formatVersion: 1, ideas: { "§m/a": rec(["§m/b", "§m/old", "nope"]), "§m/b": rec([]), "§m/c": rec(["§m/old"]) } }));
+    const m = ideas.readManifest(dir);
+    assert.deepEqual(m.ideas["§m/a"]!.renamedFrom, ["§m/old"]);
+    assert.equal(m.ideas["§m/b"]!.renamedFrom, undefined);
+    assert.equal(m.ideas["§m/c"]!.renamedFrom, undefined);
+    assert.equal(ideas.getIdea("m/old", dir)?.id, "§m/a");
+  });
+});

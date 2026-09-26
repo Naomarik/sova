@@ -1992,10 +1992,13 @@ export interface SessionInsight {
 //                                   model/thinking apply at once when the Overseer is idle, else at turn end)
 // GET  /api/overseer/notes          -> { text: string }
 // GET  /api/overseer/ideas          -> OverseerIdeasInfo (ToC + every record + link edges; no prose)
-// GET  /api/overseer/idea?id=<§id>  -> OverseerIdeaDetail, 404 {error} unknown id, 400 bad id
+// GET  /api/overseer/idea?id=<§id>  -> OverseerIdeaDetail, 404 {error} unknown id, 400 bad id; a
+//                                   renamed idea's former id answers with the idea under its new id
 // PATCH /api/overseer/idea?id=<§id> body IdeaPatch -> OverseerIdeaDetail; 409 IdeaConflict when
 //                                   `base` is not the record's current updatedAt; 400 invalid (bad
-//                                   status/link/tag, a link to itself or to an unknown idea)
+//                                   status/link/tag, a link to itself or to an unknown idea; a
+//                                   `newId` that is malformed, live, another idea's former id, or a
+//                                   main entry with sub-entries made a sub-entry)
 // GET  /api/overseer/todos          -> OverseerTodosInfo (todos.json: the user's checklist, list order)
 // POST /api/overseer/todos          body { text, ideaId?, sessionId? } -> 201 OverseerTodosInfo; 400 invalid
 // PATCH /api/overseer/todo?id=<td_> body TodoPatch -> OverseerTodosInfo; 404 unknown; 409 TodoConflict
@@ -2220,6 +2223,9 @@ export interface IdeaMeta {
   /** The Overseer conversation (session id) that owns that explorer: workers die with it (/clear,
       restart), so `tell` refuses when this is not the current conversation. */
   explorerOverseerId?: string;
+  /** Its former ids, oldest first, at most 8 (a rename adds one). Reads, links and todo links
+      through one reach this record; no other idea may take one. */
+  renamedFrom?: string[];
   createdAt: string; // ISO
   updatedAt: string; // ISO; also the PATCH `base`
 }
@@ -2268,7 +2274,8 @@ export interface OverseerIdeaDetail {
 }
 
 /** PATCH body. Absent fields are unchanged. `base` = the updatedAt the editor started from; when it
-    no longer matches → 409. Setting a status on a dropped idea is 400. */
+    no longer matches → 409. Setting a status on a dropped idea is 400. `newId` renames the idea
+    (after the other fields are applied); the answer is the detail under the new id. */
 export interface IdeaPatch {
   base?: string;
   title?: string;
@@ -2276,6 +2283,7 @@ export interface IdeaPatch {
   tags?: string[];
   links?: string[];
   text?: string;
+  newId?: string;
 }
 export interface IdeaConflict {
   error: string;
@@ -2285,9 +2293,11 @@ export interface IdeaConflict {
 /** `sova_idea` details (every op): the idea it touched, so a card or the panel can link it. */
 export interface SovaIdeaDetails {
   id: string;
-  op: "add" | "update" | "append" | "link" | "explore" | "tell";
+  op: "add" | "update" | "append" | "link" | "rename" | "explore" | "tell";
   status: IdeaStatus;
   explorerId?: string;
+  /** rename: the id it had before. */
+  from?: string;
 }
 
 // ---- Overseer todos: the user's short checklist (server/overseer-todos.ts), <stateRoot>/todos.json.
@@ -2309,7 +2319,7 @@ export interface TodoRecord {
   updatedAt: string;
   /** Set on check, cleared on uncheck. */
   doneAt?: string;
-  /** A canonical idea § id that existed when it was linked. */
+  /** A canonical idea § id that existed when it was linked; an idea's rename rewrites it. */
   ideaId?: string;
   /** The id of the session the task is about (a pointer, never an act on it). */
   sessionId?: string;

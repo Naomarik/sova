@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   IDEA_ID_RE,
@@ -22,7 +22,8 @@ import { stateRoot } from "./state-root";
  *
  * Same store rules as the rest of the Overseer's files (overseer-store.ts): atomic tmp+rename,
  * re-read before every write, tolerant on read (a bad record is dropped, a dangling link ignored,
- * nothing throws). Nothing here deletes: `dropped` is the terminal status. The Overseer's
+ * nothing throws). Nothing here deletes: `dropped` is the terminal status, and a renamed idea keeps
+ * its former ids (`renamedFrom`), through which reads and links still reach it. The Overseer's
  * `sova_idea` and the panel's PATCH are the only writers. Every function takes the ideas dir as an
  * optional last argument, so tests can point it at a temp dir.
  */
@@ -35,6 +36,8 @@ export const IDEA_TITLE_MAX = 120;
 export const IDEA_TEXT_MAX = 40_000;
 export const IDEA_TAGS_MAX = 8;
 export const IDEA_LINKS_MAX = 32;
+/** Former ids kept per idea; the oldest goes first. */
+export const IDEA_RENAMED_MAX = 8;
 const TAG_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const WORKER_ID_RE = /^[\w.-]{1,64}$/;
 
@@ -111,6 +114,10 @@ function parseMeta(raw: unknown): IdeaMeta | null {
   if (typeof raw.sessionId === "string" && raw.sessionId.trim()) meta.sessionId = raw.sessionId.trim();
   if (typeof raw.explorerId === "string" && WORKER_ID_RE.test(raw.explorerId)) meta.explorerId = raw.explorerId;
   if (typeof raw.explorerOverseerId === "string" && raw.explorerOverseerId.trim()) meta.explorerOverseerId = raw.explorerOverseerId.trim();
+  if (Array.isArray(raw.renamedFrom)) {
+    const former = [...new Set(raw.renamedFrom.map((f) => parseIdeaId(f)?.id).filter((f): f is string => !!f))].slice(-IDEA_RENAMED_MAX);
+    if (former.length) meta.renamedFrom = former;
+  }
   return meta;
 }
 
@@ -137,7 +144,29 @@ export function readManifest(dir = ideasDir()): IdeasManifest {
     if (parent && !ideas[parent]) delete ideas[id];
   }
   for (const [id, meta] of Object.entries(ideas)) meta.links = meta.links.filter((l) => l !== id && !!ideas[l]);
+  // A former id names one idea at most, and never a live one.
+  const claimed = new Set<string>();
+  for (const id of Object.keys(ideas).sort()) {
+    const meta = ideas[id]!;
+    if (!meta.renamedFrom) continue;
+    const former = meta.renamedFrom.filter((f) => !ideas[f] && !claimed.has(f));
+    for (const f of former) claimed.add(f);
+    if (former.length) meta.renamedFrom = former;
+    else delete meta.renamedFrom;
+  }
   return { formatVersion: 1, ideas };
+}
+
+/** The idea that was renamed from `id`, or undefined. */
+function renamedTo(id: string, m: IdeasManifest): string | undefined {
+  return Object.keys(m.ideas).find((x) => m.ideas[x]!.renamedFrom?.includes(id));
+}
+
+/** The live id `raw` names: itself, or the idea renamed from it. Null for neither, or a bad id. */
+export function resolveIdeaId(raw: unknown, m: IdeasManifest): string | null {
+  const id = parseIdeaId(raw)?.id;
+  if (!id) return null;
+  return m.ideas[id] ? id : (renamedTo(id, m) ?? null);
 }
 
 function writeManifest(m: IdeasManifest, dir: string): void {
@@ -166,10 +195,11 @@ export function listIdeas(dir = ideasDir()): IdeaRecord[] {
   return tocOrder(Object.keys(m.ideas)).map((id) => recordOf(id, m.ideas[id]!));
 }
 
+/** One idea by its id or a former one. */
 export function getIdea(raw: unknown, dir = ideasDir()): IdeaRecord | null {
-  const id = parseIdeaId(raw)?.id;
-  const meta = id ? readManifest(dir).ideas[id] : undefined;
-  return id && meta ? recordOf(id, meta) : null;
+  const m = readManifest(dir);
+  const id = resolveIdeaId(raw, m);
+  return id ? recordOf(id, m.ideas[id]!) : null;
 }
 
 /** Main entries by id, each followed by its sub-entries (by id); namespaces by name. */
@@ -198,13 +228,20 @@ function cleanTags(v: unknown): string[] {
   return tags;
 }
 
-function cleanLinks(v: unknown, self: string, ideas: Record<string, IdeaMeta>): string[] {
+/** Links as the store keeps them: canonical, a former id resolved to the idea it names now. */
+function cleanLinks(v: unknown, self: string, m: IdeasManifest): string[] {
   if (!Array.isArray(v)) throw new IdeaError("links must be a list of idea ids.");
-  const links = [...new Set(v.map((l) => canonicalIdeaId(l)))];
-  for (const l of links) {
-    if (l === self) throw new IdeaError("An idea cannot link to itself.");
-    if (!ideas[l]) throw new IdeaError(`No idea ${l}. Links must name existing ideas (sova_ideas toc lists them).`);
-  }
+  const links = [
+    ...new Set(
+      v.map((l) => {
+        const id = canonicalIdeaId(l);
+        const live = resolveIdeaId(id, m);
+        if (!live) throw new IdeaError(`No idea ${id}. Links must name existing ideas (sova_ideas toc lists them).`);
+        return live;
+      }),
+    ),
+  ];
+  for (const l of links) if (l === self) throw new IdeaError("An idea cannot link to itself.");
   if (links.length > IDEA_LINKS_MAX) throw new IdeaError(`At most ${IDEA_LINKS_MAX} links.`);
   return links;
 }
@@ -251,6 +288,8 @@ export function addIdea(input: NewIdea, dir = ideasDir()): IdeaRecord {
   const id = canonicalIdeaId(input.id);
   const m = readManifest(dir);
   if (m.ideas[id]) throw new IdeaError(`${id} already exists. Append to it, or pick another name.`);
+  const to = renamedTo(id, m);
+  if (to) throw new IdeaError(`${id} was renamed to ${to}. Append to ${to}, or pick another name.`);
   if (Object.keys(m.ideas).length >= IDEAS_MAX) throw new IdeaError(`The backlog holds at most ${IDEAS_MAX} ideas. Ask the user which to mark done or dropped.`);
   const parent = parentOf(id);
   if (parent && !m.ideas[parent]) throw new IdeaError(`${id} is a sub-entry of ${parent}, which does not exist. File ${parent} first, or use a main entry.`);
@@ -259,7 +298,7 @@ export function addIdea(input: NewIdea, dir = ideasDir()): IdeaRecord {
     title: cleanTitle(input.title),
     status: "open",
     tags: input.tags === undefined ? [] : cleanTags(input.tags),
-    links: input.links === undefined ? [] : cleanLinks(input.links, id, m.ideas),
+    links: input.links === undefined ? [] : cleanLinks(input.links, id, m),
     createdAt: now,
     updatedAt: now,
   };
@@ -285,18 +324,19 @@ export interface IdeaUpdate extends IdeaPatch {
  * that no longer matches throws IdeaConflictError. Returns the detail after the write.
  */
 export function updateIdea(raw: unknown, patch: IdeaUpdate, dir = ideasDir(), now = new Date()): OverseerIdeaDetail {
-  const id = canonicalIdeaId(raw);
+  const asked = canonicalIdeaId(raw);
   const m = readManifest(dir);
+  const id = resolveIdeaId(asked, m) ?? asked;
   const cur = m.ideas[id];
   if (!cur) throw new IdeaError(`No idea ${id}. sova_ideas toc lists them.`);
   if (patch.base !== undefined && patch.base !== cur.updatedAt) throw new IdeaConflictError(ideaDetail(id, dir)!);
   const next: IdeaMeta = { ...cur, tags: [...cur.tags], links: [...cur.links] };
   if (patch.title !== undefined) next.title = cleanTitle(patch.title);
   if (patch.tags !== undefined) next.tags = cleanTags(patch.tags);
-  if (patch.links !== undefined) next.links = cleanLinks(patch.links, id, m.ideas);
-  if (patch.addLinks?.length) next.links = cleanLinks([...next.links, ...patch.addLinks], id, m.ideas);
+  if (patch.links !== undefined) next.links = cleanLinks(patch.links, id, m);
+  if (patch.addLinks?.length) next.links = cleanLinks([...next.links, ...patch.addLinks], id, m);
   if (patch.removeLinks?.length) {
-    const gone = new Set(patch.removeLinks.map((l) => canonicalIdeaId(l)));
+    const gone = new Set(patch.removeLinks.map((l) => resolveIdeaId(l, m) ?? canonicalIdeaId(l)));
     next.links = next.links.filter((l) => !gone.has(l));
   }
   if (patch.sessionId !== undefined) {
@@ -327,6 +367,126 @@ export function updateIdea(raw: unknown, patch: IdeaUpdate, dir = ideasDir(), no
   m.ideas[id] = next;
   writeManifest(m, dir);
   return ideaDetail(id, dir)!;
+}
+
+// ---- rename ------------------------------------------------------------------------------------
+
+export interface IdeaRename {
+  detail: OverseerIdeaDetail;
+  /** The id it had. */
+  from: string;
+  /** Every id that moved, old → new: the idea, then its sub-entries. */
+  moved: Record<string, string>;
+  /** Other ideas whose links were rewritten. */
+  relinked: string[];
+  /** Ideas whose text still names a moved idea by its old id (text is never rewritten). */
+  mentions: string[];
+}
+
+interface RenamePlan {
+  from: string;
+  moved: Record<string, string>;
+  ideas: Record<string, IdeaMeta>;
+  relinked: string[];
+}
+
+/** Everything a rename would write, or the refusal. Writes nothing. */
+function planRename(raw: unknown, newRaw: unknown, m: IdeasManifest, base: string | undefined, dir: string): RenamePlan {
+  const asked = canonicalIdeaId(raw);
+  const from = resolveIdeaId(asked, m);
+  if (!from) throw new IdeaError(`No idea ${asked}. sova_ideas toc lists them.`);
+  const to = canonicalIdeaId(newRaw);
+  const cur = m.ideas[from]!;
+  if (base !== undefined && base !== cur.updatedAt) throw new IdeaConflictError(ideaDetail(from, dir)!);
+  if (to === from) throw new IdeaError(`${from} already has that id.`);
+  const subs = Object.keys(m.ideas).filter((x) => parentOf(x) === from).sort();
+  const parent = parentOf(to);
+  if (parent && subs.length)
+    throw new IdeaError(`${from} has sub-entries (${subs.join(", ")}), so it can't become a sub-entry. Pick a main entry id: §<project>/<name>.`);
+  if (parent === from) throw new IdeaError(`${to} would be a sub-entry of ${from} itself. Pick another id.`);
+  if (parent && !m.ideas[parent]) throw new IdeaError(`${to} is a sub-entry of ${parent}, which does not exist. Pick an existing main entry, or a main entry id.`);
+  const p = parseIdeaId(to)!;
+  const moved: Record<string, string> = { [from]: to };
+  for (const s of subs) moved[s] = `§${p.ns}.${p.name}/${parseIdeaId(s)!.name}`;
+  for (const [old, next] of Object.entries(moved)) {
+    if (m.ideas[next]) throw new IdeaError(`${next} already exists. Pick another id.`);
+    const owner = renamedTo(next, m);
+    if (owner && owner !== old) throw new IdeaError(`${next} is a former id of ${owner}, so it still leads there. Pick another id.`);
+  }
+  const ideas: Record<string, IdeaMeta> = {};
+  const relinked: string[] = [];
+  for (const [id, meta] of Object.entries(m.ideas)) {
+    const links = meta.links.map((l) => moved[l] ?? l);
+    const relink = links.some((l, i) => l !== meta.links[i]);
+    const next = moved[id];
+    if (next) {
+      const renamedFrom = [...(meta.renamedFrom ?? []).filter((f) => f !== next && f !== id), id].slice(-IDEA_RENAMED_MAX);
+      ideas[next] = { ...meta, tags: [...meta.tags], links, renamedFrom, updatedAt: nextStamp(meta.updatedAt) };
+    } else {
+      ideas[id] = relink ? { ...meta, links } : meta;
+      if (relink) relinked.push(id);
+    }
+  }
+  return { from, moved, ideas, relinked: relinked.sort() };
+}
+
+/** Would this rename go through? Throws the refusal it would give (IdeaError), else nothing. */
+export function checkRename(raw: unknown, newRaw: unknown, dir = ideasDir()): void {
+  planRename(raw, newRaw, readManifest(dir), undefined, dir);
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+
+/**
+ * Give an idea a new id. Its sub-entries move with it (`§ns.old/x` → `§ns.new/x`), every other
+ * idea's links to a moved id are rewritten, and each moved record keeps its old id in
+ * `renamedFrom`, all in one manifest write. Only the moved records' `updatedAt` changes. Prose is
+ * copied first, the manifest written (the commit point), then the old files removed; a failure
+ * before the commit leaves only strays, which nothing indexes. `base` works as in updateIdea.
+ * Todos are another file: the caller retargets them with the returned `moved`.
+ */
+export function renameIdea(raw: unknown, newRaw: unknown, opts: { base?: string } = {}, dir = ideasDir()): IdeaRename {
+  const m = readManifest(dir);
+  const plan = planRename(raw, newRaw, m, opts.base, dir);
+  const copies: string[] = [];
+  try {
+    for (const [old, next] of Object.entries(plan.moved)) {
+      const src = proseFile(old, dir);
+      const dst = proseFile(next, dir);
+      if (existsSync(src)) {
+        mkdirSync(dirname(dst), { recursive: true });
+        copyFileSync(src, dst);
+        copies.push(dst);
+      } else if (existsSync(dst)) unlinkSync(dst); // a stray under an id nothing indexed
+    }
+    writeManifest({ formatVersion: 1, ideas: plan.ideas }, dir);
+  } catch (err) {
+    for (const c of copies) {
+      try {
+        unlinkSync(c);
+      } catch {}
+    }
+    throw err;
+  }
+  for (const old of Object.keys(plan.moved)) {
+    try {
+      unlinkSync(proseFile(old, dir));
+    } catch {}
+  }
+  const p = parseIdeaId(plan.from)!;
+  if (!p.parentName && Object.keys(plan.moved).length > 1) {
+    try {
+      rmdirSync(join(dir, p.ns, p.name));
+    } catch {}
+  }
+  const olds = Object.keys(plan.moved).map((o) => new RegExp(`${escapeRe(o)}(?![a-z0-9-])`));
+  const mentions = Object.keys(plan.ideas)
+    .filter((id) => {
+      const prose = readProse(id, dir);
+      return olds.some((re) => re.test(prose));
+    })
+    .sort();
+  return { detail: ideaDetail(plan.moved[plan.from]!, dir)!, from: plan.from, moved: plan.moved, relinked: plan.relinked, mentions };
 }
 
 // ---- the graph ---------------------------------------------------------------------------------
@@ -372,13 +532,12 @@ export function impactOf(id: string, m: IdeasManifest): string[] {
   return out;
 }
 
+/** One idea with its prose and graph, by its id or a former one. */
 export function ideaDetail(raw: unknown, dir = ideasDir()): OverseerIdeaDetail | null {
-  const id = parseIdeaId(raw)?.id;
-  if (!id) return null;
   const m = readManifest(dir);
-  const meta = m.ideas[id];
-  if (!meta) return null;
-  return { idea: recordOf(id, meta), text: readProse(id, dir), scope: scopeOf(id, m), linkedBy: linkedBy(id, m) };
+  const id = resolveIdeaId(raw, m);
+  if (!id) return null;
+  return { idea: recordOf(id, m.ideas[id]!), text: readProse(id, dir), scope: scopeOf(id, m), linkedBy: linkedBy(id, m) };
 }
 
 const emptyCounts = (): Record<IdeaStatus, number> => ({ open: 0, exploring: 0, started: 0, done: 0, dropped: 0 });

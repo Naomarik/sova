@@ -3,7 +3,7 @@ import { IDEA_ID_RE, IDEA_STATUSES, type IdeaConflict, type IdeaPatch, type Idea
 import { ApiError, getOverseerIdea, patchOverseerIdea } from "../lib/api";
 import { relativeTime, tildePath } from "../lib/format";
 import { LABEL_GAP, layoutGraph, neighbours } from "../lib/idea-graph";
-import { canonicalId, countsLine, exploreMessage, IDEA_STATUS_CHIP, ideasCount, parseTags, settled, startMessage, tocGroups } from "../lib/ideas";
+import { canonicalId, countsLine, exploreMessage, followRename, IDEA_STATUS_CHIP, ideasCount, parseTags, settled, startMessage, tocGroups } from "../lib/ideas";
 import { announce, home } from "../lib/ui-state";
 import type { OverseerSender } from "./ChatView";
 import { Markdown } from "./Markdown";
@@ -52,6 +52,15 @@ export function OverseerIdeas(props: {
   const records = createMemo(() => new Map((props.ideas?.ideas ?? []).map((r) => [r.id, r])));
   const groups = createMemo(() => (props.ideas ? tocGroups(props.ideas.toc, { showSettled: showSettled(), query: query() }) : []));
   const settledCount = createMemo(() => (props.ideas?.ideas ?? []).filter((r) => settled(r.status)).length);
+  // The open idea was renamed (here, or by the Overseer): follow it to its new id once the list
+  // has it. A gone id with no successor stays, so the detail says it isn't in the backlog.
+  createEffect(
+    on(records, () => {
+      const id = selected();
+      const next = id && props.ideas ? followRename(props.ideas.ideas, id) : null;
+      if (id && next && next !== id) setSelected(next);
+    }),
+  );
   const meta = () => {
     const i = props.ideas;
     if (!i) return "";
@@ -386,7 +395,7 @@ function IdeaDetailView(props: {
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const [notice, setNotice] = createSignal<string | null>(null);
-  const [draft, setDraft] = createSignal({ title: "", tags: "", links: "", text: "" });
+  const [draft, setDraft] = createSignal({ title: "", id: "", tags: "", links: "", text: "" });
   const loaded = (): OverseerIdeaDetail | undefined => (detail.error ? undefined : detail());
 
   // Focus lands on the idea's title once it has loaded (each idea opened, links included).
@@ -410,7 +419,7 @@ function IdeaDetailView(props: {
   };
 
   const startEdit = (d: OverseerIdeaDetail) => {
-    setDraft({ title: d.idea.title, tags: d.idea.tags.join(", "), links: d.idea.links.join(" "), text: d.text });
+    setDraft({ title: d.idea.title, id: d.idea.id, tags: d.idea.tags.join(", "), links: d.idea.links.join(" "), text: d.text });
     setSaveError(null);
     setNotice(null);
     setEditing(true);
@@ -428,6 +437,7 @@ function IdeaDetailView(props: {
       mutate(next);
       announce(done);
       props.onChanged();
+      if (next.idea.id !== d.idea.id) props.onOpen(next.idea.id);
       return true;
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -444,9 +454,11 @@ function IdeaDetailView(props: {
 
   const saveEdit = async () => {
     const d = draft();
+    const id = canonicalId(d.id.trim());
+    const renamed = id !== loaded()?.idea.id;
     const ok = await patch(
-      { title: d.title.trim(), tags: parseTags(d.tags), links: parseTags(d.links).map(canonicalId), text: d.text },
-      "Idea saved.",
+      { title: d.title.trim(), tags: parseTags(d.tags), links: parseTags(d.links).map(canonicalId), text: d.text, ...(renamed ? { newId: id } : {}) },
+      renamed ? `Idea saved as ${id}.` : "Idea saved.",
     );
     if (ok) setEditing(false);
   };
@@ -468,6 +480,14 @@ function IdeaDetailView(props: {
             </div>
             <p class="ideas-detail-meta">
               <span class="text-mono">{d().idea.id}</span>
+              <Show when={d().idea.renamedFrom?.at(-1)}>
+                {(was) => (
+                  <>
+                    {" · was "}
+                    <span class="text-mono">{was()}</span>
+                  </>
+                )}
+              </Show>
               {` · filed ${relativeTime(d().idea.createdAt, props.now)} · updated ${relativeTime(d().idea.updatedAt, props.now)}`}
             </p>
             <Show when={d().idea.tags.length > 0}>
@@ -571,6 +591,24 @@ function IdeaDetailView(props: {
                   />
                 </div>
                 <div class="field">
+                  <label class="field-label" for="idea-edit-id">
+                    ID
+                  </label>
+                  <input
+                    class="input text-mono"
+                    id="idea-edit-id"
+                    value={draft().id}
+                    disabled={saving()}
+                    spellcheck={false}
+                    autocomplete="off"
+                    aria-describedby="idea-edit-id-hint"
+                    onInput={(e) => setDraft({ ...draft(), id: e.currentTarget.value })}
+                  />
+                  <span class="field-hint" id="idea-edit-id-hint">
+                    Such as §sova/graph. A new id takes its sub-entries, links, and todos with it; the old id still leads here.
+                  </span>
+                </div>
+                <div class="field">
                   <label class="field-label" for="idea-edit-tags">
                     Tags
                   </label>
@@ -601,7 +639,7 @@ function IdeaDetailView(props: {
                   <button type="button" class="button button-ghost" disabled={saving()} onClick={() => setEditing(false)}>
                     Cancel
                   </button>
-                  <button type="submit" class="button button-primary" disabled={saving() || !draft().title.trim()}>
+                  <button type="submit" class="button button-primary" disabled={saving() || !draft().title.trim() || !draft().id.trim()}>
                     {saving() ? "Saving…" : "Save Idea"}
                   </button>
                 </div>

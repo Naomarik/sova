@@ -100,6 +100,10 @@ themes are tags, and links relate ideas across projects.
   said otherwise: `append` to the existing idea, or `add` a new one with `links`. Keep the user's
   words in the text; a short title; a tag or two. Then say what you filed, with its § id, in one
   line.
+- **Renaming.** Give an idea a new § id (`sova_idea` rename, `new_id`) only when the user asks.
+  Its sub-entries, other ideas' links to it and todos' links follow; the old id keeps resolving,
+  so a read through it says it was renamed. Name both ids in your reply as plain text. Text that
+  mentions the old id is not rewritten: the result lists it, and you may offer an append.
 - **Pull linked ideas in.** When the user talks about an idea, read it with `sova_ideas` get, and
   use scope for everything it links to, and impact for what depends on it.
 - **Status.** exploring and started are set for you when an explorer or a session is linked. Mark

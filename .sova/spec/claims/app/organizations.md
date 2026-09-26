@@ -210,6 +210,15 @@ the URL (§app.organizations/org-page).
 - Only active people are offered when starting or handing a baton session.
 - A person the operator declined keeps `status: left` and their referral, so the roster remembers
   who was turned down and why; `hand_to` them is refused with that reason.
+- **Someone leaves** (their status becomes `left`, by an edit or a revert): every link of theirs
+  answers 410 at once — they no longer read the organization's conversations either — and no
+  message of theirs is accepted. A baton session they hold goes to the operator (a hand-off from
+  them with the question "(left the organization)", so Needs you reads "<name> → you: (left the
+  organization)"), stopping a reply in flight — at the message limit too: a holder who leaves
+  there shows "(left the organization)", not the limit question, and the strip still offers
+  Extend (§app.baton/goal-and-loadout); an open offer whose pool includes them is withdrawn
+  to the operator ("(<name> left the organization; offer withdrawn)"). An offer someone else holds
+  carries on; if its lease lapses they can't claim it, and no new link is minted for them.
 
 ## §app.organizations/history-and-revert — Per-field history
 
@@ -256,7 +265,9 @@ the URL (§app.organizations/org-page).
   the current holder (never an argument). Until everything is there, and the contact is a real
   channel (an email address; a phone or WhatsApp number of 7+ digits; another channel naming a
   handle or number — never a placeholder like "ask Tony"), the tool refuses and says exactly what
-  is missing, so the model keeps asking. A name already active or already proposed is refused.
+  is missing, so the model keeps asking. A name already active or already proposed is refused, and
+  so is the name of someone who left ("<name> has left the organization": the model asks who covers
+  their area, or hands to the operator for a different person of the same name) or was declined.
 - Accepted: the person enters the roster as `status: proposed` with `referral: {why, referredBy,
   sessionId, quote}` (history `by.kind: "referral"`), a `sova-baton-proposal` entry `{v:1,
   personId, name, role, why, by}` records it in the transcript, and the model tells the holder the

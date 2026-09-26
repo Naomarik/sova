@@ -46,7 +46,9 @@ once), **lease** (an offer's lock on its first taker).
   prompt is Sova's (`server/baton-prompt.md`), rendered at the start of every run with the public
   title, the goal, the holder's name and private steering profile, the other participants (name,
   role, decision areas), the roster's active people it may hand to, the operator's name and the
-  rules; the user's `APPEND_SYSTEM.md` is not included, and the prompt's working-directory line
+  rules, and — when anyone has left the organization — the names (and former roles) of the people
+  who left, with the rule to say they have left and ask who covers their area now (never to hand
+  to them or propose them as someone new); the user's `APPEND_SYSTEM.md` is not included, and the prompt's working-directory line
   reads `(none)`. The model's own context has the holder's profile phrases redacted
   (§app.organizations/privacy).
 - It has no mode (no mode extension loads); its composer has no mode switch.
@@ -94,7 +96,10 @@ once), **lease** (an offer's lock on its first taker).
 - `propose_roster_edit` (§app.organizations/referrals) records a person who is not on the roster;
   the turn goes on.
 - The operator may **Take back** at any time: recorded as a hand-off from the holder to the
-  operator with the question "(taken back)".
+  operator with the question "(taken back)". While a reply is being written, it is stopped first
+  (the partial reply stays in the transcript as a stopped reply), then the baton moves. The
+  operator's other moves — hand the session to a person, make an offer, withdraw one — work the
+  same way; only the budget stop waits for the reply.
 - The operator may **hand the session to a person** (`POST /api/baton/:sid/handoff {to, question,
   briefing?}`, "Hand this session to Bob"): an active roster person only (a proposed one is
   refused: approve first); recorded like any hand-off, and answered with that hand-off's link.
@@ -149,7 +154,8 @@ once), **lease** (an offer's lock on its first taker).
   session is done."). `POST /api/sessions/prompt` (the Overseer's `sova_send`) refuses a baton
   session with a 409.
 - The operator's transcript shows the sender's name on each user row, and the hand-off, done and
-  decision entries as cards.
+  decision entries as cards. A row still streaming live gets its name as soon as its marker
+  arrives, never "You" for someone else's message until a reload.
 
 ## §app.baton/outsider-view — What the share page shows
 
@@ -173,7 +179,8 @@ once), **lease** (an offer's lock on its first taker).
   "someone else" would name the other) and the briefing for an invitee. An invitee who has never
   held the offer sees the conversation only up to that card, is not told who holds it ("Someone
   else is answering right now"), and gets none of its streaming reply text. Nothing from the
-  wrap-up's marker on is ever in the view.
+  wrap-up's marker on is ever in the view. Holding an earlier hand-off of the same session does not
+  count as having held the offer: such an invitee is treated like any other who never held it.
 
 ## §app.baton/offers-and-leases — One baton, several people, the first to answer
 
@@ -189,8 +196,11 @@ once), **lease** (an offer's lock on its first taker).
   holder rule applies as for any hand-off. Everything else is refused (409, code `taken`) — the
   route is the lock, the page's state is a courtesy.
 - **Lease**: 15 minutes idle, measured from the later of the holder's last message and the last
-  reply; each renews it. A lapsed lease returns the offer to its pool (the transcript records
-  `sova-baton-lease` `{v:1, n, offerId, event: "claimed"|"expired", by}`), and any invitee's
+  reply; each renews it. It never lapses while a reply to its holder is being written: that
+  reply's end restarts it, so nobody takes over mid-reply. A lapsed lease returns the offer to its
+  pool (the transcript records `sova-baton-lease` `{v:1, n, offerId, event: "claimed"|"expired",
+  by}` — an event that meets a reply in flight is written when the reply ends, never dropped; the
+  card reads "<name> went quiet, so the offer is open to every invitee again"), and any invitee's
   message may claim it again — at once in the route, and within 30 seconds on every waiting page
   (a ticker pushes their view). `SOVA_BATON_LEASE_MS` shortens the lease for hermetic tests only.
 - **Withdrawn** when the holder hands on (`hand_to`), the operator takes it back or withdraws it
@@ -200,8 +210,10 @@ once), **lease** (an offer's lock on its first taker).
 - Whoever claims an offer is its holder like any other: their page shows the whole filtered
   conversation, including what an earlier claimer whose lease lapsed wrote, under that person's
   name. Only invitees who have never held it see nothing past the offer card.
-- The operator's strip shows the offer (invitees, state, who holds it, the lease's end); the
-  session list shows "N invited" while it waits, then the holder's name.
+- The operator's strip shows the offer (invitees, state, who holds it, the lease's end — "less than
+  a minute" when under one is left); an offer back in its pool after a lapse reads "open again;
+  nobody is answering right now", not "nobody has answered yet". The session list shows "N
+  invited" while it waits, then the holder's name.
 
 ## §app.baton/share-listener — The public entry point
 

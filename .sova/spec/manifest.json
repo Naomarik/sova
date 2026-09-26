@@ -3478,7 +3478,9 @@
         "server/baton-runtime.test.ts",
         "server/baton-loadout.ts",
         "server/baton.ts",
-        "server/share-message.test.ts"
+        "server/share-message.test.ts",
+        "src/lib/live.ts",
+        "src/lib/live.test.ts"
       ],
       "requires": [
         "§app.overseer/sent-marker"
@@ -3508,7 +3510,8 @@
         "src/lib/baton-strip.ts",
         "src/lib/baton-strip.test.ts",
         "src/lib/api.ts",
-        "src/orgs.css"
+        "src/orgs.css",
+        "server/baton-handoff.test.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -3524,7 +3527,8 @@
         "server/org-routes.ts",
         "server/baton.test.ts",
         "server/baton-events.ts",
-        "server/baton-offers.test.ts"
+        "server/baton-offers.test.ts",
+        "server/baton-handoff.test.ts"
       ],
       "requires": [
         "§app.baton/links"
@@ -3595,7 +3599,10 @@
         "src/lib/baton-strip.ts",
         "src/lib/baton-strip.test.ts",
         "src/components/LinksBanner.tsx",
-        "server/share-message.test.ts"
+        "server/share-message.test.ts",
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "server/baton-handoff.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -3619,7 +3626,9 @@
         "server/baton-loadout.ts",
         "server/chat-manager.ts",
         "shared/baton.ts",
-        "server/share-message.test.ts"
+        "server/share-message.test.ts",
+        "server/baton.ts",
+        "server/baton-handoff.test.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -3781,7 +3790,8 @@
         "server/org-routes.ts",
         "src/components/BatonStrip.tsx",
         "src/components/OrgsView.tsx",
-        "server/baton-offers.test.ts"
+        "server/baton-offers.test.ts",
+        "server/baton-handoff.test.ts"
       ],
       "requires": [
         "§app.organizations/roster",
@@ -3808,7 +3818,9 @@
         "shared/orgs.ts",
         "src/components/OrgsView.tsx",
         "server/orgs.test.ts",
-        "server/baton.ts"
+        "server/baton.ts",
+        "server/baton-loadout.ts",
+        "server/baton-handoff.test.ts"
       ]
     },
     "§app.organizations/workspace-repo": {

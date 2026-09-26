@@ -1029,7 +1029,7 @@ test("census --related: foreign-summary is the last finding and names every fore
   const j = run(root, "--spec", ...DRAFT, "census", "--changed", "--related");
   const last = j.findings.at(-1);
   assert.deepEqual([last.severity, last.code, last.ids], ["note", "foreign-summary", ["§core/net"]]);
-  assert.match(last.message, /^1 foreign § touched \(§core\/net\): flag any where a user sees a change, even one your new claim describes, wherever you put it; plumbing never flags$/);
+  assert.equal(last.message, "flag any foreign § where a user sees a change, even one your new claim describes, wherever you put it; plumbing and gaps it already had never flag: 1 touched (§core/net)");
   assert.ok(codes(j).includes("changed-unclaimed"), "pushed after the census warnings too");
   assert.equal(j.exit, 1, "the unclaimed file sets the exit, not the notes");
 });
@@ -1069,7 +1069,7 @@ test("census --related: human output starts the related block with the summary",
   const root = draftRepo();
   const h = spawnSync(process.execPath, [CLI, "census", "--changed", "--related", "--root", root], { encoding: "utf8" });
   assert.equal(h.status, 0);
-  assert.match(h.stdout, /\nnote foreign-summary: 1 foreign § touched \(§chat\.input\/send\)[^\n]*\ntouched § \(read each/);
+  assert.match(h.stdout, /\nnote foreign-summary: flag any foreign § where [^\n]*: 1 touched \(§chat\.input\/send\)\ntouched § \(read each/);
   assert.match(h.stdout, /  §chat\.input\/send \[behavior; foreign\] /);
 });
 
@@ -1079,7 +1079,7 @@ test("census --changed without --related: foreignNote before foreign, childUnder
   const j = run(draftRepo(), "--spec", ...DRAFT, "census", "--changed");
   const keys = Object.keys(j.census);
   assert.equal(keys.indexOf("foreignNote") + 1, keys.indexOf("foreign"), "the rule sits just before the ids");
-  assert.equal(j.census.foreignNote, "flag any of these where a user sees a change, even one your new claim describes, wherever you put it; plumbing never flags");
+  assert.equal(j.census.foreignNote, "flag any of these where a user sees a change, even one your new claim describes, wherever you put it; plumbing and gaps it already had never flag");
   assert.deepEqual(j.census.foreign, ["§core/net"]);
   assert.deepEqual(j.census.childUnderForeign, [{ id: "§core.net/new", parent: "§core/net" }]);
   assert.deepEqual([j.findings.at(-1).code, j.findings.at(-1).ids], ["foreign-summary", ["§core/net"]]);
@@ -1089,7 +1089,7 @@ test("census --changed without --related: foreignNote before foreign, childUnder
 test("census --changed: one stderr line iff something foreign is touched; stdout stays pure JSON", () => {
   const sh = (root, ...a) => spawnSync(process.execPath, [CLI, ...a, "--root", root, "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const r = sh(draftRepo(), "census", "--changed");
-  assert.equal(r.stderr, "sova-spec: 1 foreign § touched (§chat.input/send): flag any where a user sees a change, even one your new claim describes, wherever you put it; plumbing never flags\n");
+  assert.equal(r.stderr, "sova-spec: flag any foreign § where a user sees a change, even one your new claim describes, wherever you put it; plumbing and gaps it already had never flag: 1 touched (§chat.input/send)\n");
   assert.deepEqual(JSON.parse(r.stdout).census.foreign, ["§chat.input/send"]);
   const root = withDraft();
   bound(root, ".sova/spec"); bound(root, ".sova/spec/drafts/feat/spec");
@@ -1127,4 +1127,17 @@ test("scope/impact: §a.b is read as §a/b with a did-you-mean note; unknown sta
   assert.match(u.findings.find((f) => f.code === "unknown-id").message, /§no\/such has no manifest record \(read from §no\.such\)/);
   assert.equal(u.exit, 2);
   hasCode(run(root, "scope", "§chat.input.x"), "usage");
+});
+
+test("census --changed: foreign lists surfaces first; the per-§ note says an old gap never flags", () => {
+  const root = draftRepo();
+  bound(root, ".sova/spec", (m) => { m.claims["§core/net"].code = ["app.txt"]; });
+  g(root, "add", "-A"); g(root, "commit", "-qm", "net claims app");
+  write(root, "app.txt", "3\n");
+  const j = run(root, "census", "--changed", "--related");
+  assert.deepEqual(j.census.touched.map((t) => t.id), ["§chat.input/send", "§core/net"], "touched stays in id order");
+  assert.deepEqual(j.census.foreign, ["§core/net", "§chat.input/send"]);
+  assert.deepEqual(j.findings.at(-1).ids, ["§core/net", "§chat.input/send"]);
+  assert.match(j.findings.at(-1).message, /never flag: 2 touched \(§core\/net, §chat\.input\/send\)$/);
+  assert.match(j.findings.find((f) => f.code === "touched-foreign").message, /; a gap it already had never flags$/);
 });

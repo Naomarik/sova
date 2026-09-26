@@ -54,14 +54,15 @@ touched §; with `--spec <draft spec dir>`, the ids the draft has and `.sova/spe
 lacks are the task's own. Every `census --changed`, with or without
 `--related`, carries `census.foreignNote` (the rule) then `census.foreign` and
 `census.childUnderForeign` right after `census.changed`, so a `head` keeps
-them; one `foreign-summary` note naming every foreign id is the last finding,
-so a `tail` keeps it; and when stdout is not a terminal the same summary is one
-`sova-spec: …` line on stderr, which a `grep` or JSON key-pick of stdout
+them (surfaces first); one `foreign-summary` note, the rule then every foreign
+id, is the last finding, so a `tail` keeps it; and when stdout is not a terminal
+the same summary is one `sova-spec: …` line on stderr, rule first so a byte cut
+keeps it, which a `grep` or JSON key-pick of stdout
 doesn't touch. With `--spec` only, each new id whose H1 parent already exists
 gets a `child-under-foreign` note. With `--related`, each `touched` entry also
 carries `created: true|false`, and each foreign touched § gets a
 `touched-foreign` note (read it with `scope`; flag it if a user sees a change
-there, even one the new claim describes). Human output prints the summary
+there, even one the new claim describes; a gap it already had never flags). Human output prints the summary
 before the touched list. Notes are reminders, not flags: the exit code is
 unchanged. Plain `census` and `check` are as before.
 

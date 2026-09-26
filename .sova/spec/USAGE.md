@@ -53,18 +53,19 @@ something relevant is unknown, stale or unread. Exit `2` means the input can't b
 `[]`), 137 edges in all. `impact` can't rule out the other behaviors, and it lists them as unknown.
 `census` finds 463 files in the boundary: 218 claimed, 245 unclaimed.
 
-**While coding**, exempt work included, run `census --changed --related` right after the first code edit, before the
-second, and again whenever the edit set reaches a new file; `--related` lists each § a changed
-file lands in, with its `requires` and consumers. It notes each touched § the task didn't create
+**While coding**, exempt work included, run `census --changed` right after the first code edit, before the
+second, and again whenever the edit set reaches a new file; it lists the foreign § a changed file
+lands in (`census.foreign`), with the rule, and on one stderr line. Adding `--related` lists every
+§ a changed file lands in, with its `requires` and consumers, and notes each touched § the task didn't create
 (`touched-foreign`), and with `--spec <draft spec dir>` each new claim nested under one
-(`child-under-foreign`). Every `census --changed` also lists them in `census.foreign`, with the rule, and on one stderr line.
-The notes are reminders to read and judge, not flags. Where you put your
+(`child-under-foreign`). The notes are reminders to read and judge, not flags. Where you put your
 claim changes nothing: the parent is foreign either way and the flag is owed either way. Any § the task didn't create is foreign, even one your draft edits, and
 even the parent your new claim nests under; editing it in the draft (a row, a sub-claim, a sketch
 line) is itself a flag. Read a foreign § with `scope` and stay silent while its text holds;
 plumbing (an added request, hook or helper, types) never flags. Otherwise flag only a contradiction of its text, or
 something a user would see there that its own text doesn't describe; that your new claim describes
-it, in the parent's document or its own, does not remove the flag. Batch the flags into the plan as one question ("this
+it, in the parent's document or its own, does not remove the flag. A gap the foreign § already had (a field its prose never named) is not
+a change your task made: mention it above the last line, never in it. Batch the flags into the plan as one question ("this
 also changes §X: <what>. OK?"). Before finishing, the reply's last line, exempt work included, is
 "Also changes: §X — <what>" (a list) or "Also changes: none", even when the user said not to ask.
 Exempt work skips the draft, not the census or the last line.

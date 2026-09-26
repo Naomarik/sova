@@ -140,9 +140,11 @@ to the project root. New fields are only ever added. Other tools read this outpu
   `.sova/spec/manifest.json` does not (a missing or unreadable current manifest counts as empty; its
   findings are dropped). A claimed changed file's ids that are not created are *foreign*. The census
   object gets, right after `changed`, `foreignNote` (a fixed instruction string), `foreign: [id]`
-  and `childUnderForeign: [{id, parent}]` (empty arrays when none). With `--spec` only, each created
+  (surface ids first, then the rest, each in id order) and `childUnderForeign: [{id, parent}]`
+  (empty arrays when none). The instruction ends "plumbing and gaps it already had never flag". With `--spec` only, each created
   H2 id whose parent H1 is not created is a `child-under-foreign` note `{id, parent}`, touched or
-  not. When `foreign` is non-empty, one `foreign-summary` note `{ids}` is the last finding, and, if
+  not. When `foreign` is non-empty, one `foreign-summary` note `{ids}` (message: the instruction, then
+  `: N touched (ids)`) is the last finding, and, if
   stdout is not a TTY, its message is also written to stderr as `sova-spec: <message>`. With
   `--related`, each `touched` entry has `created: true|false` and each touched id that is not
   created is a `touched-foreign` note `{id}`; human output marks entries `; created` or `; foreign`.

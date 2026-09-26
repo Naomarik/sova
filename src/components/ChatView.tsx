@@ -13,6 +13,7 @@ import type {
   WorkerInfo,
 } from "../../shared/protocol";
 import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
+import { batonComposerGate } from "../lib/baton-strip";
 import { OverseerThreadContext, QuickActions } from "./OverseerCards";
 import { BatonStrip } from "./BatonStrip";
 import { ProjectOverseerStrip } from "./ProjectOverseerStrip";
@@ -1016,16 +1017,15 @@ export function ChatView(props: {
 
   /** Whether the operator holds this baton session's baton, from its strip; undefined until it has read. */
   const [batonMine, setBatonMine] = createSignal<boolean | undefined>(undefined);
+  const batonGate = (): ComposerReason | null => {
+    const g = batonComposerGate(props.summary?.()?.baton, batonMine());
+    return g && { icon: g.ended ? "check" : "clock", text: g.text };
+  };
   const blocked = (): ComposerReason | null => {
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
-    const baton = props.summary?.()?.baton;
-    if (baton && (baton.state === "done" || baton.state === "closed")) return { icon: "check", text: `This hand-off session is ${baton.state}.` };
-    if (baton?.offer?.state === "held") return { icon: "clock", text: `${baton.offer.holder ?? "Someone"} took the offer and is answering. Withdraw it to write.` };
-    if (baton?.offer?.state === "open") return { icon: "clock", text: `Offered to ${baton.offer.invited} people; nobody has answered yet. Withdraw it to write.` };
-    // "open" with the operator holding (after Take Back and a reply) is the operator's turn: the
-    // list's field carries only the holder's display name, so the strip's own read says whose it is.
-    if (baton && baton.state === "open" && batonMine() !== true) return { icon: "clock", text: `${baton.holder ?? "Someone"} holds the baton. Take it back to write.` };
+    const baton = batonGate();
+    if (baton) return baton;
     switch (socket.status()) {
       case "connecting":
         return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : { icon: "clock", text: "Connecting…" };
@@ -1322,11 +1322,6 @@ export function ChatView(props: {
 
   /** A baton session's names, from its strip (§app/baton). */
   const [batonNames, setBatonNames] = createSignal<Record<string, string> | undefined>(undefined);
-  /** A done or closed baton session takes no more messages: the box goes read-only, not just Send. */
-  const batonEnded = (): ComposerReason | null => {
-    const b = props.summary?.()?.baton;
-    return b && (b.state === "done" || b.state === "closed") ? { icon: "check", text: `This hand-off session is ${b.state}.` } : null;
-  };
   return (
     <>
       <Show when={props.summary?.()?.baton}>
@@ -1527,7 +1522,7 @@ export function ChatView(props: {
         path={props.path}
         cwd={props.summary?.()?.cwd ?? null}
         blocked={blocked()}
-        readOnly={batonEnded()}
+        readOnly={batonGate()}
         commands={props.overseer ? commands().filter((c) => c.name !== "mode") : commands()}
         running={live.running}
         compacting={compacting()}

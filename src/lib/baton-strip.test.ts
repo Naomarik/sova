@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { BatonInfo } from "../../shared/baton";
-import { leaseMinutes, linksStale, liveOffer, namesList, proposedAreasLine, whereLine, wrapupLine } from "./baton-strip";
+import type { BatonInfo, BatonSummaryField } from "../../shared/baton";
+import { batonComposerGate, leaseMinutes, linksStale, liveOffer, namesList, proposedAreasLine, whereLine, wrapupLine } from "./baton-strip";
 
 const NOW = Date.parse("2026-09-26T12:00:00Z");
 const info = (session: Partial<BatonInfo["session"]>, offer: BatonInfo["offer"] = null): Pick<BatonInfo, "offer" | "session" | "names"> => ({
@@ -74,4 +74,19 @@ test("the wrap-up line: skipped and running offer no review; done and failed do"
   assert.deepEqual(wrapupLine(w("done", { applied: 1 })), { text: "Wrap-up: 1 profile field updated.", review: true });
   assert.equal(wrapupLine(w("done", { applied: 3, refused: [{ personId: "p", field: "role", reason: "x" }] })).text, "Wrap-up: 3 profile fields updated, 1 refused.");
   assert.deepEqual(wrapupLine(w("failed", { error: "Model timed out." })), { text: "Wrap-up stopped: Model timed out. Profiles it didn't reach are unchanged.", review: true });
+});
+
+test("the operator's composer is read-only whenever someone else has the baton, whatever the list lags", () => {
+  const field = (f: Partial<BatonSummaryField>): BatonSummaryField => ({ holder: "Bob", state: "open", ...f });
+  const theirs = { ended: false, text: "Bob holds the baton. Take it back to write." };
+  // A Hand On from the strip: the strip already reads Bob, the list still says it's the operator's turn.
+  assert.deepEqual(batonComposerGate(field({ state: "needs-you", holder: "Omar" }), false), { ended: false, text: "Omar holds the baton. Take it back to write." });
+  assert.deepEqual(batonComposerGate(field({}), false), theirs);
+  assert.deepEqual(batonComposerGate(field({}), undefined), theirs, "not read yet: the list's open means a person's");
+  assert.equal(batonComposerGate(field({ state: "needs-you", holder: "Omar" }), undefined), null, "not read yet: needs-you is the operator's");
+  assert.equal(batonComposerGate(field({ holder: "Omar" }), true), null, "open after Take Back and a reply: the operator's");
+  assert.deepEqual(batonComposerGate(field({ holder: null, offer: { state: "open", invited: 3 } }), true)?.text, "Offered to 3 people; nobody has answered yet. Withdraw it to write.");
+  assert.deepEqual(batonComposerGate(field({ offer: { state: "held", invited: 3, holder: "Ana" } }), false)?.text, "Ana took the offer and is answering. Withdraw it to write.");
+  assert.deepEqual(batonComposerGate(field({ state: "done", holder: null }), true), { ended: true, text: "This hand-off session is done." });
+  assert.equal(batonComposerGate(undefined, undefined), null, "not a baton session");
 });

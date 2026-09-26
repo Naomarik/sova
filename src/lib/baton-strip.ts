@@ -1,7 +1,7 @@
 // The baton strip's words (§app/baton): who has the baton, or the offer, in one phrase. Pure, so
 // every state is pinned by tsx --test.
 
-import { OPERATOR, type BatonInfo, type WrapupInfo } from "../../shared/baton";
+import { OPERATOR, type BatonInfo, type BatonSummaryField, type WrapupInfo } from "../../shared/baton";
 
 /** "Ana", "Ana and Bob", "Ana, Bob, and Carl" (serial comma). */
 export function namesList(names: readonly string[]): string {
@@ -75,4 +75,22 @@ export function wrapupLine(w: WrapupInfo): { text: string; review: boolean } {
         review: true,
       };
   }
+}
+
+/**
+ * Why the operator's composer can't write in a baton session (§app.baton/attribution), or null
+ * when it can. `mine` is the strip's own read of the holder (undefined until it has read): it wins
+ * over the list's state, which lags a hand-off made from the strip until the next list read. Either
+ * way the box is read-only, Send gone: a box that takes typing and says "Enter sends" reads as
+ * sendable whatever the button looks like.
+ */
+export function batonComposerGate(baton: BatonSummaryField | undefined, mine: boolean | undefined): { ended: boolean; text: string } | null {
+  if (!baton) return null;
+  if (baton.state === "done" || baton.state === "closed") return { ended: true, text: `This hand-off session is ${baton.state}.` };
+  if (baton.offer?.state === "held") return { ended: false, text: `${baton.offer.holder ?? "Someone"} took the offer and is answering. Withdraw it to write.` };
+  if (baton.offer?.state === "open") return { ended: false, text: `Offered to ${baton.offer.invited} people; nobody has answered yet. Withdraw it to write.` };
+  // "needs-you" is the operator's turn, and so is "open" once the operator has written after Take
+  // Back: the list carries only the holder's display name, so the strip says whose it is.
+  const others = mine === false || (mine === undefined && baton.state === "open");
+  return others ? { ended: false, text: `${baton.holder ?? "Someone"} holds the baton. Take it back to write.` } : null;
 }

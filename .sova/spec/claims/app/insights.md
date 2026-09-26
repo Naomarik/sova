@@ -167,44 +167,46 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   </div>
 </section>
 
-<!-- #/agents and #/agents/{teamId} -->
+<!-- #/agents and #/agents/{teamKey}: the Agents board (§app.insights/team-cards) -->
 <header class="session-head">
   <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">…</a>
   <div class="session-head-main">
     <h1 class="session-head-title" tabindex="-1">Agents</h1>
-    <p class="session-head-meta">3 working · 2 pi sessions running</p>   <!-- 0 live: No pi sessions running -->
+    <p class="session-head-meta">2 working · 5 live · $3.40 today · 3 unmerged</p>
   </div>
   <button class="button button-icon button-ghost" aria-label="Refresh Agents">…refresh…</button>
 </header>
 <section class="insights pane" aria-label="Agents">
   <div class="insights-inner">
-    <!-- 0 live sessions: ONE .empty here and nothing else (no section heads) -->
-    <section class="insights-section" aria-labelledby="ins-teams">
-      <h2 class="insights-section-head" id="ins-teams">…worker icon-sm… Teams <span class="insights-section-count">· 2 active</span><span class="insights-section-count">· 1 restored</span></h2>
-      <div class="insights-grid">…team cards, or .empty…</div>
-    </section>
-    <section class="insights-section" aria-labelledby="ins-agents"><!-- only with non-team workers -->
-      <h2 class="insights-section-head" id="ins-agents">…worker icon-sm… Subagents <span class="insights-section-count">· 3 working</span></h2>
-      <div class="insights-grid">…agent cards…</div>
-    </section>
+    <div class="board-bar">…search · filter chips · "{n} sessions live or open in Sova"…</div>
+    <div class="card board">…one .board-row per session…</div>   <!-- none: ONE .empty instead -->
   </div>
 </section>
 ```
 
-- **Split.** Usage and agents never share a page. The Agents page runs Teams first, then
-  Subagents, and leaves out Subagents when no session has solo workers. With 0 live sessions,
-  the whole Agents body is one `.empty` (§design/copy-deck).
-- **Head meta (Agents).** The format is `{w} working · {n} pi sessions running`. Drop
-  "{w} working · " when w is 0, and use "1 pi session running" when n is 1.
-- **Grid.** `.insights-grid` has 1 column. It becomes 2 columns when the `insights` container is
-  at least 640px wide, and 3 at 1000px or more. The container is named, per the skill.
+- **Split.** Usage and agents never share a page. The Agents page is the board
+  (§app.insights/team-cards): one row per session, with its workers, team and worktrees folded
+  inside the row. When nothing is in view, its whole body under the bar is one `.empty`
+  (§design/copy-deck): the live fact first ("{n} sessions live." or "No session is live right
+  now."), then the absence for the chip or search in force.
+- **Head meta (Agents).** `{w} working · {l} live · {$} today · {u} unmerged`: sessions in the
+  Working state, live sessions, what the workers of sessions active since local midnight have
+  spent (their lifetime `usageTotal.cost`; left out when none reports a cost), and distinct
+  unmerged branches among the worktrees read so far (left out before the first reading). The
+  line's `title` says what each figure counts.
+- **Grid (Usage).** `.insights-grid` has 1 column. It becomes 2 columns when the `insights`
+  container is at least 640px wide, and 3 at 1000px or more. The container is named, per the skill.
 - **Polling** (frontend's call on intervals). Update in place and keep scroll position and
-  focus. Don't show a skeleton again after the first load.
+  focus. Don't show a skeleton again after the first load. The board keys its rows by session
+  path, so a poll keeps an open row open and a rename field focused.
 - **Loading** (first load, after 300ms). The Usage page shows 5 `.skeleton` blocks (one per
   provider it can show) at 120px
-  tall with `--r-lg`. The Agents page shows 1. Put `aria-busy` on `.insights-inner`.
+  tall with `--r-lg`. The Agents page shows 1 skeleton list until the session list has loaded.
+  Put `aria-busy` on `.insights-inner`.
 - **Request error.** Show `.banner-error` at the top of `.insights-inner` with Retry: "Couldn't
-  load usage." or "Couldn't load agents." Any data already loaded stays visible below it.
+  load usage." or "Couldn't load agents." Any data already loaded stays visible below it. The
+  worktrees request never raises one (§app.insights/subagent-cards).
+
 ## §app.insights/usage-cards — Usage cards
 
 ```html
@@ -350,74 +352,157 @@ through the Codex CLI, a renewal time (`last_refresh`) and no expiry. API-key pr
 when Claude Code itself runs; the Usage page says so (§app.insights/usage-cards) instead of
 renewing it.
 
-## §app.insights/team-cards — Team cards
+## §app.insights/team-cards — Agents board
 
-Teams come from `AgentsInsight.sessions[].teams`, meaning teams whose parent pi is running now.
-Workers die with their parent, so a team is only active while its parent runs. Ended teams
-have no global surface. If one is rendered at all, it's in its parent session, from
-`SessionInsight.teams` with `live: false`. There it uses the same `.team-card` markup, with a
-neutral `.chip` "Ended" in the head. Every member chip then takes the reported form: no pulse,
-and "as of `{HH:MM}`" in the meta.
+`#/agents` is one board of sessions. Its rows come from the session list the sidebar loads
+(main threads only: never a worker's own session or an Overseer file), joined by path with
+`GET /api/insights/agents` (host sessions only: a headless worker pi owns no row). The default
+scope, with no chip on, is what the sidebar keeps on top: live sessions, and sessions started in
+Sova that aren't archived.
 
 ```html
-<article class="card team-card" id="team-team_02" aria-labelledby="tt-team_02">
-  <header class="card-head">
-    <h3 class="card-title" id="tt-team_02">sova-insights</h3>
-    <span class="text-mono text-caption">team_02</span>
-  </header>
-  <div class="card-body"><p class="team-objective" title="{full objective}">{objective}</p></div>
-  <ul class="list member-list">
-    <li class="list-row member-row" title="Owns: server/**">
-      <div class="list-main">
-        <p class="list-title">lead <span class="chip chip-count">Orchestrator</span></p>
-        <p class="list-meta"><span class="text-mono">ag_08</span> · <span class="text-mono">opus[1m]</span></p>
-        <p class="member-preview">{worker.preview}</p>   <!-- working only -->
+<div class="board-bar">
+  <label class="search board-search">…<input class="input" type="search" placeholder="Search title, gist, path, branch"></label>
+  <div class="board-filters" role="group" aria-label="Filter sessions">
+    <button class="board-filter" aria-pressed="true">…check… Live <span class="board-filter-count">3</span></button>
+    …Needs you · Has workers · Unmerged · Archived…
+  </div>
+  <p class="board-count-line" aria-live="polite">5 sessions live or open in Sova</p>
+</div>
+<div class="card board">
+  <div class="board-head" aria-hidden="true">Session · Activity · Workers · Worktrees</div>   <!-- desktop only -->
+  <ul class="board-list" aria-label="Sessions">
+    <li class="board-row" data-state="working">          <!-- working | needs-you | idle | archived -->
+      <div class="board-line">
+        <div class="board-cell board-session">rail · twist (aria-expanded) · title (click to rename) · gist</div>
+        <div class="board-cell board-activity">model · context ring · 5m ago · state chip</div>
+        <div class="board-cell board-workers">2/5 working · team chip → #/agents/{teamKey} · $1.20</div>
+        <div class="board-cell board-trees">feat/x · ↑3 ↓1 · +120 −4 · dirty dot · +1</div>
+        <div class="board-cell board-actions">Open · Subagents · Archive · Move into group · ⋯</div>
       </div>
-      <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
+      <div class="board-detail">…one line per worker, the team, one line per worktree…</div>   <!-- open rows only -->
     </li>
   </ul>
-  <footer class="card-foot"><p class="text-caption">Started 42m ago in <a href="#/s/…">{parent title}</a></p></footer>
-</article>
+</div>
 ```
 
-- **Rows.** Rows are not targets: they carry no link and no hover. The role is `.list-title`.
-  Ids and models are mono in the meta line. Orchestrator is a neutral count-style badge, not a
-  status. Owned paths go only in the row's `title`, because they're advisory.
-- **Ejected.** A member whose team seat was released (`member.ejectedAt` set, §app.teams/seats)
-  keeps its row, its id, model and status chip, and adds a neutral `.chip` + dot, **Ejected**,
-  in `.list-title` after the Orchestrator badge. It is not a run status: it never replaces the
-  status chip at the right and never pulses.
-- **Order.** Orchestrator first, then members in roster order.
-- **Status.** The word is always shown. The pulse appears only when `member.worker` is present
-  **and** its session is `fresh`.
+- **State.** One per row, on its rail (a colored left edge) and in a chip with a dot and the
+  word: **Needs you** when the session waits on input or has an extension dialog open; else
+  **Working** when its turn runs or any of its workers works; else **Needs you** when its last
+  turn failed or stopped on an error, or its decision marks (unseen asks-you or looping, a stuck
+  subagent) say so; else **Idle**, or **Archived** for an archived session nothing runs in. The
+  chip's `title` says why a row needs you, and the open row says it in a line.
+- **Sort.** Working first, then Needs you, then the rest; within each, last active first.
+- **Filter chips.** One at a time, a second press clears it; each shows its count, and a set one
+  carries a check as well as the tint. **Live**: a TUI or runtime reports on it. **Needs you**:
+  in that state, anywhere in the list. **Has workers**: any worker listed or counted.
+  **Unmerged**: the default scope narrowed to rows with an existing tree whose branch isn't
+  merged. **Archived**: only what you archived.
+- **Search.** Every word must appear in the title, original title, gist, path, cwd, or a tree's
+  branch or path. With no chip it searches every session, not only the default scope; a chip
+  still narrows it.
+- **Paging.** 50 rows render; "Show {n} More" adds 50.
+- **Columns** (the `insights` container ≥1000px). Session: the title as a button that starts the
+  rename, the gist (`outlineGist`, else the now line, else the cwd in mono). Activity: the compact
+  model, the context ring (the sidebar row's rule: the open view's live fill wins, never without a
+  window), last active in relative time, the state chip. Workers:
+  `{working}/{total} working`, a count chip per team linking to its `#/agents/{teamKey}`, the
+  workers' lifetime spend. Worktrees: see §app.insights/subagent-cards. Actions: Open, Subagents
+  (opens the session with its subagents pane on the Agents tab), Archive or Unarchive, Move into
+  group (the session pane's group menu, icon only), and ⋯.
+- **Condensed** (768–999px): Activity sits over Workers in one column; the actions are Open and
+  ⋯. **Folded** (<768px): stacked rows — title with the state chip, the gist, a micro line
+  (model · workers · last active), the worktree chips — a tap on the row's bare surface opens it,
+  and ⋯ is the door to every action. Every target is 44px.
+- **⋯ menu.** Open Session, Open Subagents, Rename…, Use Gist as Title (the gist on one line,
+  cut to the title limit; off, with the reason, when there's none or it already is the title),
+  Reset to Original Title (off when not renamed), Move to Group… (a screen of the groups, with
+  "No group"), Archive or Unarchive, Copy Path.
+- **Rename.** In place, the sidebar's title field: Enter saves, Escape cancels, an empty field
+  restores the derived title, and leaving the field saves what's in it (empty: cancels). Kept in
+  Sova only.
+- **Archive.** Only for sessions started in Sova, or already archived. Refused with its reason
+  (open in a TUI, mid-turn, subagents working) before the press, never after.
+- **Open row.** One line per worker outside a team (working first): name, id and model in mono,
+  the preview while working, the status chip (the table below), and **Resume** for a restored
+  worker the server can resume (`POST /api/workers/resume`). Then each team, then one line per
+  worktree.
+- **Team.** A bordered block, `.team-group`, `id="team-{teamKey}"`, `tabindex="-1"`: the name,
+  its id in mono, Paused (warn) when its newest pause/resume is a pause, "{n} working", the
+  objective on one line, then its members one line each — coordinator (or orchestrator) first,
+  then members in roster order, the monitor, retired members last — with their duty or successor
+  badge and Ejected as a neutral chip beside the name, never in place of the status. Its events
+  fold under "Events ({n})", oldest first.
+- **Status.** The word is always shown. The pulse appears only when the worker is in a fresh
+  live record (a team's: its parent live and fresh).
 
   | Source → status | Chip |
   |---|---|
   | live `running` | `.chip.chip-accent.chip-live` Working |
   | live `starting` | `.chip.chip-accent.chip-live` Starting |
-  | `waiting` | `.chip` + dot, Idle. If `outcome` isn't `success`, the meta adds "last task failed" |
+  | `waiting` | `.chip` + dot, Idle. If `outcome` isn't `success`, the line adds "last task failed" |
   | `stopping` | `.chip` + dot, Stopping |
   | `done` | `.chip.chip-success` Done |
   | `error` | `.chip.chip-error` Failed |
   | `killed` | `.chip` + dot, Stopped |
-  | `ejectedAt` set (any of the above) | also `.chip` + dot, Ejected, in `.list-title` (see Ejected) |
-  | `worker` null, `lastReport` present | that status's chip with **no pulse**, and the meta adds "as of `{HH:MM}`" |
+  | `restored` | `.chip` + dot, Restored (Interrupted, warn, when it died mid-turn) |
+  | retired | `.chip` + dot, Retired, as of the retirement |
+  | `worker` null, `lastReport` present | that status's chip with **no pulse**, and the line adds "as of `{HH:MM}`" |
   | neither | neutral `.chip` No report yet |
 
-  A live record with `fresh: false` renders its workers the reported way, with "as of" set to
-  the heartbeat time. They're never shown as working.
-- **Deep link.** `#/agents/{teamId}` is a route segment, not a fragment, because the whole
-  route lives in the hash. The view scrolls `#team-{teamId}` into view and focuses it (the card
-  has `tabindex="-1"`). `.team-card:focus` draws the focus ring; `:focus-visible` wouldn't,
-  because this focus is programmatic after a click.
+- **Deep link.** `#/agents/{teamKey}` (a bare team id from an older link: the newest team with
+  that id) keeps the team's parent session on the board whatever the filter, opens its row,
+  scrolls the team into view and focuses it, tinted, once per link: polls don't take focus back.
 
-## §app.insights/subagent-cards — Subagent cards
+## §app.insights/subagent-cards — Board worktrees
 
-There's one `.card.agent-card` per live session that has **non-team** workers. The head holds
-the session title as a link to `#/s/…` (or `cwd`, mono, when `path` is null) and a
-`.chip-count` "{n} working". Its body is a `.member-list` of `.member-row`s: the worker's `name`
-as the title, `id` and `model` in the meta, the preview while working, and the status chip from
-the table above. When no session has solo workers, the section is omitted.
+The Worktrees column reads `GET /api/insights/worktrees?paths=…` for the rendered rows only
+(under Unmerged, for the default scope, which that chip needs a reading to decide), every 15s
+and whenever that set of rows changes. Readings are kept per session across requests. A failed
+or missing route (an older server) shows "—" in every row it hasn't read, and nothing else: no
+banner, no toast.
+
+- **Cell.** The first tree: its branch in mono (`detached` on a detached HEAD, the folder name
+  when it's gone), then **merged** (a success chip) when the tip is in the base, **content
+  merged** when merging would change nothing, else `↑{ahead} ↓{behind}` in mono; `+{added}
+  −{removed}` when the branch changes any line; a dot for uncommitted changes (its word for AT
+  and in the `title`). More trees: a `+{n}` count chip. The cell's `title` states every tree.
+  No tree: "—". A tree that's gone reads "gone"; a git failure "unreadable"; no base "no base".
+- **Open row.** One line per tree: branch, the same reading, lines, "uncommitted" in words, "a
+  worker's" when a worker's cwd is the source, and the path in mono.
+- **Folded.** The cell sits under the session as chips; a row with no tree drops it.
+
+## §app.insights/worktrees-endpoint — Which worktrees a session touched
+
+`GET /api/insights/worktrees?paths=<session path>,<session path>…` answers `WorktreesInsight`
+(`shared/protocol.ts`) for the listed sessions only: the board asks for the rows it shows, and
+nothing else is read. A path that isn't a session (the same check as `/api/insights/session`) or
+whose file is gone comes back with `trees: []`, echoed as it was sent; a request without `paths`
+is a 400. It never answers 500 for a repository: a git that fails, times out or refuses names
+itself in that tree's `error`, and the tree keeps every reading that did succeed.
+
+**Which trees.** Until sessions record their trees, they are inferred: the session's own folder
+(its header cwd) when it is a *linked* git worktree, then every distinct folder a worker of the
+session ran in (its worker manifests), taken to its worktree's top level, when that is a linked
+worktree too. A main checkout is never listed, whoever ran in it: it is not a feature tree. One tree appears once per session, first
+source wins. A folder that no longer exists is listed with `exists: false` and nothing else; a
+folder that exists but is not in a git worktree, a relative path, and a remote session's
+placeholder are not listed.
+
+**What each tree says,** against its repository's base: local `master`, else `main`, else what
+`origin/HEAD` points at; with none, no base fields at all. `merged` is `ancestor` when the tree's
+HEAD is already in the base, `content` when it isn't but merging it would leave the base's tree
+exactly as it is (a squash or rebase merge landed it), otherwise `no`. `ahead`/`behind` count
+commits each side has that the other hasn't; `added`/`removed` are the lines the branch changed
+since it left the base (binary files count 0). `branch` is absent on a detached HEAD. `dirty` says
+whether anything is uncommitted, untracked files included.
+
+**Read-only and bounded.** Reading a tree never writes to it: no index refresh or lock, no
+fsmonitor, no textconv or external diff, and the trial merge behind `content` writes its objects to
+a scratch store that is deleted afterwards. Every git runs without a shell under a 5-second limit,
+at most four at a time. The comparison is kept until the tree's HEAD or its base moves, `dirty` for
+ten seconds, and what hasn't been asked for in an hour is dropped. With git older than 2.38 there
+is no trial merge, and `merged` is only ever `ancestor` or `no`.
 
 ## §app.insights/insight-strip — Insight strip (current goal and explanations)
 

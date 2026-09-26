@@ -44,17 +44,30 @@
     },
     "§app.insights/subagent-cards": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/AgentsView.tsx",
+        "src/agents-board.css",
+        "src/lib/agents-board.ts",
+        "src/lib/agents-board.test.ts",
+        "src/lib/api.ts"
+      ]
     },
     "§app.insights/team-cards": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/AgentsView.tsx",
-        "server/insights.ts",
-        "shared/protocol.ts"
+        "src/agents-board.css",
+        "src/lib/agents-board.ts",
+        "src/lib/agents-board.test.ts",
+        "src/lib/session-actions.ts",
+        "src/components/Groups.tsx",
+        "src/components/SelectionToolbar.tsx",
+        "src/components/SessionDetails.tsx",
+        "src/App.tsx"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {
@@ -75,9 +88,11 @@
     "§app.insights/usage-page-and-agents-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
-        "src/components/AgentsView.tsx"
+        "src/components/AgentsView.tsx",
+        "src/lib/agents-board.ts",
+        "src/App.tsx"
       ]
     },
     "§app.session-list/accessibility": {
@@ -4083,6 +4098,18 @@
         "src/lib/decisions-view.ts",
         "src/lib/decisions-view.test.ts",
         "src/components/ProjectPage.tsx"
+      ]
+    },
+    "§app.insights/worktrees-endpoint": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/worktrees.ts",
+        "server/worktrees.test.ts",
+        "server/index.ts",
+        "shared/protocol.ts"
       ]
     }
   },

@@ -101,11 +101,15 @@
     },
     "§app.session-list/archive-by-date": {
       "kind": "behavior",
+      "requires": [
+        "§app.session-list/regions-top-and-archive"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
-        "src/lib/storage-keys.ts"
+        "src/lib/storage-keys.ts",
+        "src/lib/archive.ts"
       ]
     },
     "§app.session-list/archive-cleanup": {
@@ -146,6 +150,9 @@
     },
     "§app.session-list/regions-top-and-archive": {
       "kind": "behavior",
+      "requires": [
+        "§app.session-list/recent"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -238,11 +245,22 @@
     },
     "§app.shell/resizing-the-sessions-pane": {
       "kind": "behavior",
+      "requires": [
+        "§app/session-list",
+        "§app.session-list/spine"
+      ],
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/components/SidebarResizer.tsx",
+        "src/lib/sidebar-width.ts"
+      ]
     },
     "§app.shell/the-open-failure-banner": {
       "kind": "behavior",
+      "requires": [
+        "§chat.transcript/anatomy"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -363,7 +381,10 @@
     "§app/new-session-dialog": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/NewSessionDialog.tsx"
+      ]
     },
     "§app/session-list": {
       "kind": "surface",
@@ -399,6 +420,12 @@
     },
     "§chat.composer/anatomy": {
       "kind": "behavior",
+      "requires": [
+        "§chat/mode-menu",
+        "§chat.composer/composer-flyout",
+        "§chat/slash-commands",
+        "§chat.images/composer-attachments"
+      ],
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
@@ -434,7 +461,12 @@
     "§chat.composer/disabled-states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/Composer.tsx",
+        "src/components/SessionView.tsx"
+      ]
     },
     "§chat.composer/tokens": {
       "kind": "note",
@@ -468,6 +500,9 @@
     },
     "§chat.context-window/sidebar-ring": {
       "kind": "behavior",
+      "requires": [
+        "§chat.context-window/last-reply"
+      ],
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
@@ -527,7 +562,8 @@
       "evidence": "verified",
       "code": [
         "src/components/ToolCard.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/components/ImageStrip.tsx"
       ]
     },
     "§chat.markdown/accessibility": {
@@ -1249,8 +1285,15 @@
     },
     "§workspace.groups/shell": {
       "kind": "behavior",
+      "requires": [
+        "§app/shell"
+      ],
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/App.tsx",
+        "src/components/GroupView.tsx"
+      ]
     },
     "§workspace.groups/the-group-composer": {
       "kind": "behavior",
@@ -1862,6 +1905,9 @@
     },
     "§mesh.remote-sessions/host-filter": {
       "kind": "behavior",
+      "requires": [
+        "§app.session-list/anatomy"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -1875,6 +1921,9 @@
     },
     "§mesh.remote-sessions/host-picker": {
       "kind": "behavior",
+      "requires": [
+        "§app/new-session-dialog"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -1884,6 +1933,9 @@
     },
     "§mesh.remote-sessions/list": {
       "kind": "behavior",
+      "requires": [
+        "§app.session-list/content-rules"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -1945,6 +1997,9 @@
     },
     "§mesh.ui/card": {
       "kind": "behavior",
+      "requires": [
+        "§chat.transcript/landing-page"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -1965,6 +2020,9 @@
     },
     "§mesh.ui/settings": {
       "kind": "behavior",
+      "requires": [
+        "§app/settings-dialog"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -2028,6 +2086,9 @@
     },
     "§mesh.front-door/stale-tab": {
       "kind": "behavior",
+      "requires": [
+        "§app/shell"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -2186,7 +2247,8 @@
       "requires": [
         "§app.extensions/list",
         "§app.extensions/serving",
-        "§app/new-session-dialog"
+        "§app/new-session-dialog",
+        "§app/shell"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -2610,6 +2672,10 @@
     },
     "§mesh.remote-sessions/host-scope": {
       "kind": "behavior",
+      "requires": [
+        "§chat/model-menu",
+        "§chat/mode-menu"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [

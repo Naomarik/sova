@@ -5,6 +5,8 @@
 
 import type { WakeInfo } from "./wake";
 import type { BatonMark, BatonSummaryField } from "./baton";
+import type { LinkMessageInfo } from "./link-message";
+import type { LinkedAgentInfo } from "./mesh-links";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -178,6 +180,10 @@ export type EntryKind =
   | "wake" // a fired wake-nudge (pi-config/extensions/wake-nudge.ts): a real role:"user" message
            // tagged "[wake_nudge n1] …"; counts as an input everywhere, but renders as a machine
            // row (WakeCard), never a "You" bubble. See `wake` and shared/wake.ts.
+  | "link" // a link message from a linked session on another host (§mesh.links/transcript): a real
+           // role:"user" message tagged "[link_msg lk_… lm_…] …" (shared/link-message.ts). Renders
+           // NOTHING in the thread and is never counted among hidden rows; a turn start, never an
+           // input (inputs count, Timeline, rewind targets). See `link`.
   | "assistant-text"
   | "thinking"
   | "tool-call"
@@ -210,6 +216,9 @@ export interface TranscriptItem {
   /** kind "wake" only: the parsed wake-nudge (shared/wake.ts `parseWakeNudge`). `text` holds the
       whole fired message exactly as sent — the card's body shows it verbatim. */
   wake?: WakeInfo;
+  /** kind "link" only: the parsed tag (shared/link-message.ts `parseLinkMessage`). `text` holds the
+      whole message exactly as delivered. */
+  link?: LinkMessageInfo;
   /** "provider/model" that produced this row: the assistant message's own provider/model,
       else the nearest prior model_change on the branch. Set on assistant-text, thinking and
       tool-call rows; absent on other kinds and entries with neither (renderers fall back to
@@ -1512,14 +1521,16 @@ export type ChatClientMessage =
     second near-identical union would be two names for one set of conditions. */
 export type RewindRefusal = "streaming" | "compacting" | "busy" | "recent" | "not_on_branch" | "cancelled" | "queued" | "internal";
 
-/** Why a regenerate was refused. Every RewindRefusal, plus one condition only a regenerate has.
+/** Why a regenerate was refused. Every RewindRefusal, plus the conditions only a regenerate has.
     A SEPARATE union rather than a member added to RewindRefusal: widening that one would silently
     widen every exhaustive switch the existing rewind client already has.
     "wake" = the message that started the turn is a WAKE NUDGE — machine-generated text the
     scheduler wrote, not something the user said. Replaying it would put Sova's own nudge back on
     the branch as if the user had typed it, complete with its "[wake_nudge …] Scheduled wakeup
-    fired" preamble and a stale elapsed time. There is no honest thing to re-send, so nothing is. */
-export type RegenerateRefusal = RewindRefusal | "wake";
+    fired" preamble and a stale elapsed time. There is no honest thing to re-send, so nothing is.
+    "link" = the message that started the turn is a LINK MESSAGE (§mesh.links/transcript): a
+    partner's words delivered by its host, not the user's; the same reasoning refuses it. */
+export type RegenerateRefusal = RewindRefusal | "wake" | "link";
 
 /** Why a compaction was refused or did not happen; nothing was written in any of these.
     streaming / compacting / queued / busy / recent are RewindRefusal's conditions, for the same
@@ -1645,6 +1656,10 @@ export type ChatServerMessage =
       (live ones plus the ones its retention cap dropped), so it is NOT the sum of `workers[].usage`.
       Absent when the live record predates it. */
   | { type: "workers"; working: number; total: number; workers: WorkerInfo[]; usageTotal?: TokenUsageTotal }
+  /** This session's linked members on other hosts (§mesh.links/agents-pane; for the Overseer, every
+      member of every link this host knows). Sent after hello when there are any, and again whenever
+      a link message lands or a link is made or ended. Links not ended only; [] = none left. */
+  | { type: "links"; links: LinkedAgentInfo[] }
   /** Stop drained the SDK's still-queued steers and follow-ups (as queued, templates/skills
       expanded) before aborting, the TUI's Esc order: left queued, the next prompt would deliver
       them AFTER itself. The client drops their pending rows and puts the text back in the draft.
@@ -2122,6 +2137,9 @@ export interface SessionInsight {
       entry on the active branch), in recorded order, dropped and merged ones included.
       Absent when the branch never tracked one, or from an older server. §chat.worktrees/pane */
   worktrees?: SessionWorktreeInfo[];
+  /** The Agents tab's "Remotely linked agents" rows (§mesh.links/agents-pane), as the `links` chat
+      frame carries them. Absent when the session is in no live link, or from an older server. */
+  links?: LinkedAgentInfo[];
 }
 
 /** One tracked worktree as the Session tab shows it. */
@@ -2184,6 +2202,14 @@ export interface SessionWorktreeInfo {
 // PUT  /api/overseer/notes          body { text: string } -> { text: string }
 // GET  /api/sessions/summary?id=<session id> -> SessionSummary (any session file with that id,
 //                                   listed or not, e.g. an empty web session), 404 {error} when none
+// GET  /api/sessions/by-id/:id      -> the same answer from the same handler, at a path-shaped URL,
+//                                   `Cache-Control: no-store` (§mesh.links/by-id; peer-reachable)
+// POST /api/sessions/configure      body SessionConfigure -> SessionConfigureResult (model, thinking,
+//                                   mode, minor modes of that session only, never a saved default;
+//                                   peer-reachable; §mesh.links/configure; types in shared/mesh-links.ts)
+// Linked sessions (§mesh/links): the local acts /api/mesh/links/* (never peer-reachable or
+// proxied), the page reads /api/links/:id/thread and /seen, and the peer routes
+// /api/peer/links/*; every route and body is in shared/mesh-links.ts, outside this file's hash.
 // POST /api/sessions/prompt         body { path, text, delivery?: "followUp" | "steer" }
 //                                   -> { ok: true, queued: boolean, kind: "prompt" | "followUp" | "steer",
 //                                   compacting?: true }

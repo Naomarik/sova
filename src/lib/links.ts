@@ -28,6 +28,26 @@ export function linkReach(
   return peer ? { ok: true, host: peer.id } : { ok: false };
 }
 
+/**
+ * Which host's inbox the thread (and its seen mark) is read from: a member host's, since only a
+ * member host keeps an inbox for the link. The pane's session's host is one, except in the
+ * Overseer's pane for a link it made between other hosts (the creating host keeps a copy of the
+ * link, but no inbox): there, the first member host the page can reach. None reachable: no thread.
+ */
+export function threadHost(
+  group: readonly Pick<LinkedAgentInfo, "nodeId" | "self">[],
+  overseer: boolean,
+  mesh: Pick<MeshInfo, "self" | "peers"> | null | undefined,
+  sessionHost: string | null,
+): LinkReach {
+  if (!overseer || group.some((r) => r.self)) return { ok: true, host: sessionHost };
+  for (const r of group) {
+    const reach = linkReach(r, mesh, sessionHost);
+    if (reach.ok) return reach;
+  }
+  return { ok: false };
+}
+
 /** The host's label for a row: the page's own name for it when it knows the host, else the
     session's host's. */
 export function linkHostLabel(

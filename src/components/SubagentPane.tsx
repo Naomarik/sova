@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from
 import type { LinkedAgentInfo } from "../../shared/mesh-links";
 import type { ContextInfo, TeamInfo, TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
 import { ApiError, claudeWatchUrl, resumeWorker, wsUrl } from "../lib/api";
-import { linkGroupId, linkGroups, linkHostLabel, linkReach, type LinkReach } from "../lib/links";
+import { linkGroupId, linkGroups, linkHostLabel, linkReach, threadHost, type LinkReach } from "../lib/links";
 import { chatLinks } from "../lib/links-live";
 import { hostOf, meshState, sessionHrefOn } from "../lib/mesh";
 import { clockTime, compactModel, shortModel } from "../lib/format";
@@ -71,6 +71,8 @@ export function SubagentPane(props: {
   onSelect(id: string): void;
   view: AgentsView | null;
   onView(view: AgentsView): void;
+  /** This is the Overseer's pane: it lists every link on its host and is no member of any. */
+  overseer?: boolean;
 }) {
   const insight = {
     data: () => props.insight.data ?? undefined,
@@ -82,7 +84,9 @@ export function SubagentPane(props: {
       while this session is an open chat here, else the polled insight. Only the Overseer's pane
       holds local members (`self`): it lists every link this host knows, each with all of them. */
   const links = createMemo<LinkedAgentInfo[]>(() => chatLinks(props.path) ?? insight.data()?.links ?? []);
-  const overseerLinks = createMemo(() => links().some((r) => r.self));
+  /** A local member's row appears only in the Overseer's pane; its summary says so even when it
+      made every listed link between other hosts. */
+  const overseerLinks = createMemo(() => !!props.overseer || links().some((r) => r.self));
   const linkSections = createMemo(() => linkGroups(links()));
   const linkByKey = createMemo(() => new Map(links().map((r) => [r.key, r])));
   /** The host the page reaches this session on; a member's URLs are mapped from its nodeId. */
@@ -543,7 +547,13 @@ export function SubagentPane(props: {
                   <LinkedAgentMeta row={r()} hostLabel={hostLabelOf(r())} liveSource={liveLinks()} />
                 </div>
               </header>
-              <LinkThreadView row={r()} rows={namedLinks()} path={props.path} host={sessionHost()} overseer={overseerLinks()} />
+              <LinkThreadView
+                row={r()}
+                rows={namedLinks()}
+                path={props.path}
+                reach={threadHost(links().filter((x) => x.linkId === r().linkId), overseerLinks(), meshState(), sessionHost())}
+                overseer={overseerLinks()}
+              />
               <LinkedTranscript row={r()} reach={reachOf(r())} hostLabel={hostLabelOf(r())} />
             </>
           )}

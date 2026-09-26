@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js"
 import type { LinkThread, LinkedAgentInfo } from "../../shared/mesh-links";
 import { ApiError, fetchLinkThread, markLinkSeen } from "../lib/api";
 import { clockTime, compactModel } from "../lib/format";
-import { linkStateChip, newestFrom, sessionIdOfPath, threadRows, threadSignature, unreadText } from "../lib/links";
+import { type LinkReach, linkStateChip, newestFrom, sessionIdOfPath, threadRows, threadSignature, unreadText } from "../lib/links";
 import { asOfClock } from "../lib/workers";
 import { Markdown } from "./Markdown";
 import { Banner, Chip, Icon } from "./ui";
@@ -139,10 +139,11 @@ export function LinkedAgentMeta(props: { row: LinkedAgentInfo; hostLabel: string
 }
 
 /**
- * The thread between the members, both directions, oldest first, read from the pane's session's
- * host (`host`): its inbox files hold every message it delivered or sent. Fetched when the row
- * opens and again whenever the row says there is new traffic (the chat socket's `links` frame, else
- * the insight poll). Opening it marks the partner's messages seen there.
+ * The thread between the members, both directions, oldest first, read from a member host's inbox
+ * (`reach`, lib/links.ts `threadHost`): it holds every message that host delivered or sent.
+ * Fetched when the row opens and again whenever the row says there is new traffic (the chat
+ * socket's `links` frame, else the insight poll). Opening it marks the partner's messages seen on
+ * that same host.
  */
 export function LinkThreadView(props: {
   row: LinkedAgentInfo;
@@ -150,7 +151,8 @@ export function LinkThreadView(props: {
   rows: readonly LinkedAgentInfo[];
   /** The pane's session: the local member. */
   path: string;
-  host: string | null;
+  /** The member host whose inbox is read; not ok: none the page can reach. */
+  reach: LinkReach;
   /** The pane is the Overseer's: no member is "you", and nothing is marked seen. */
   overseer: boolean;
 }) {
@@ -175,19 +177,30 @@ export function LinkThreadView(props: {
     return t ? threadRows(t, viewerRef(), props.rows) : [];
   });
 
+  /** By value (a string, "" for none): a new reach object on every render must not refetch. */
+  const hostKey = createMemo(() => (props.reach.ok ? `h:${props.reach.host ?? ""}` : ""));
+  const hostOf = (k: string): string | null => k.slice(2) || null;
+
   let seq = 0;
   const load = async () => {
     const mine = ++seq;
     const linkId = props.row.linkId;
+    const k = hostKey();
+    if (!k) {
+      setThread(null);
+      setLoading(false);
+      return;
+    }
+    const host = hostOf(k);
     try {
-      const t = await fetchLinkThread(props.host, linkId);
+      const t = await fetchLinkThread(host, linkId);
       if (mine !== seq) return;
       setThread(t);
       setError(null);
       const me = viewerRef();
       const from = { nodeId: props.row.nodeId, sessionId: props.row.sessionId };
       const at = newestFrom(t, from);
-      if (me && at !== null && props.row.unread > 0) void markLinkSeen(props.host, linkId, { session: me.sessionId, from, at }).catch(() => {});
+      if (me && at !== null && props.row.unread > 0) void markLinkSeen(host, linkId, { session: me.sessionId, from, at }).catch(() => {});
     } catch (err) {
       if (mine !== seq) return;
       setError(err instanceof ApiError || err instanceof Error ? err.message : String(err));
@@ -197,7 +210,7 @@ export function LinkThreadView(props: {
   };
   // By value: the row object is new on every frame and poll, and on() would fire on each
   // (CLAUDE.md, Method). The key and the traffic signature are strings, so only a change refetches.
-  const key = createMemo(() => props.row.key);
+  const key = createMemo(() => `${props.row.key}\n${hostKey()}`);
   const signature = createMemo(() => threadSignature(props.row));
   createEffect(
     on(key, () => {
@@ -233,10 +246,13 @@ export function LinkThreadView(props: {
           />
         )}
       </Show>
+      <Show when={!hostKey()}>
+        <p class="text-caption link-thread-empty">None of this link's hosts is reachable from here, so its messages can't be read.</p>
+      </Show>
       <Show
         when={rows().length > 0}
         fallback={
-          <Show when={!loading() && !error()}>
+          <Show when={!loading() && !error() && hostKey()}>
             <p class="text-caption link-thread-empty">0 messages between these sessions yet. They show up here as they're sent.</p>
           </Show>
         }

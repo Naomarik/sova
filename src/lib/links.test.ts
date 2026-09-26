@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { LinkInboxRecord, LinkedAgentInfo } from "../../shared/mesh-links";
 import type { MeshInfo, PeerStatus } from "../../shared/protocol";
-import { linkGroupId, linkGroups, linkHostLabel, linkReach, linkStateChip, newestFrom, sessionIdOfPath, threadRows, threadSignature } from "./links";
+import { linkGroupId, linkGroups, threadHost, linkHostLabel, linkReach, linkStateChip, newestFrom, sessionIdOfPath, threadRows, threadSignature } from "./links";
 
 const LK = "lk_0123456789abcdef";
 const LK2 = "lk_fedcba9876543210";
@@ -131,4 +131,16 @@ test("newestFrom and threadSignature", () => {
   assert.equal(newestFrom(t, { nodeId: "nX", sessionId: "sX" }), null);
   assert.notEqual(threadSignature(row({ unread: 1 })), threadSignature(row({ unread: 0 })));
   assert.equal(threadSignature(row({ title: "renamed" })), threadSignature(row()), "a title change fetches nothing");
+});
+
+test("threadHost reads a member host's inbox: the session's host, unless the Overseer's host isn't a member", () => {
+  const m = mesh("nA", [{ id: "laptop", nodeId: "nB", label: "Laptop" }, { id: "phone", nodeId: "nC", label: "Phone" }]);
+  // A member's pane: its own host holds the inbox.
+  assert.deepEqual(threadHost([row({ nodeId: "nB" })], false, m, "desk"), { ok: true, host: "desk" });
+  // The Overseer's pane with a local member: its own host is a member too.
+  assert.deepEqual(threadHost([row({ nodeId: "nZ", self: true }), row({ nodeId: "nB" })], true, m, null), { ok: true, host: null });
+  // The Overseer linked two other hosts: the first member host the page reaches, skipping unknown ones.
+  assert.deepEqual(threadHost([row({ nodeId: "nX" }), row({ nodeId: "nC" }), row({ nodeId: "nB" })], true, m, null), { ok: true, host: "phone" });
+  // None reachable: no host to read from, never the empty copy on the creating host.
+  assert.deepEqual(threadHost([row({ nodeId: "nX" })], true, m, null), { ok: false });
 });

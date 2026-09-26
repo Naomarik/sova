@@ -226,6 +226,7 @@ export function SessionPane(props: {
               onSelect={props.onSelect}
               view={agentsView()}
               onView={setAgentsView}
+              overseer={!!props.summary?.overseer}
             />
           </Match>
           <Match when={tab() === "skills"}>

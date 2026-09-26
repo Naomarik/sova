@@ -144,20 +144,37 @@ function Dash(props: { words: string }) {
   );
 }
 
-/** The Worktrees cell: the first tree, and "+N" for the rest. */
+/** One tree in the Worktrees cell: branch, merge reading, lines, uncommitted dot. */
+function TreeMark(props: { tree: WorktreeStatus; class?: string }) {
+  return (
+    <span class={props.class ? `board-tree ${props.class}` : "board-tree"}>
+      <span class="board-tree-branch text-mono">{treeName(props.tree)}</span>
+      <TreeMergeMark tree={props.tree} />
+      <TreeLinesMark tree={props.tree} />
+      <DirtyMark tree={props.tree} />
+    </span>
+  );
+}
+
+/** The Worktrees cell: the first tree (two when the board is wide), and "+N" for the rest. */
 function TreesCell(props: { trees: WorktreeStatus[] | undefined; down: boolean }) {
   return (
     <Show when={props.trees} fallback={<Dash words={props.down ? "Worktrees not read" : "Reading worktrees"} />}>
       {(trees) => (
         <Show when={trees()[0]} fallback={<Dash words="No worktree" />}>
           {(t) => (
-            <span class="board-tree" title={trees().map(treeTitle).join("\n\n")}>
-              <span class="board-tree-branch text-mono">{treeName(t())}</span>
-              <TreeMergeMark tree={t()} />
-              <TreeLinesMark tree={t()} />
-              <DirtyMark tree={t()} />
+            <span class="board-tree-set" title={trees().map(treeTitle).join("\n\n")}>
+              <TreeMark tree={t()} />
+              <Show when={trees()[1]}>{(t2) => <TreeMark tree={t2()} class="board-tree-wide" />}</Show>
               <Show when={trees().length > 1}>
-                <CountChip title={`${trees().length} worktrees`}>+{trees().length - 1}</CountChip>
+                <span class="board-tree-more">
+                  <CountChip title={`${trees().length} worktrees`}>+{trees().length - 1}</CountChip>
+                </span>
+              </Show>
+              <Show when={trees().length > 2}>
+                <span class="board-tree-more-wide">
+                  <CountChip title={`${trees().length} worktrees`}>+{trees().length - 2}</CountChip>
+                </span>
               </Show>
             </span>
           )}
@@ -827,6 +844,7 @@ export function AgentsView(props: {
       errorTitle="Couldn't load agents."
       busy={!props.sessions && props.agents.pending()}
       titleRef={props.titleRef}
+      class="agents-page"
     >
       <Show when={props.sessions} fallback={<ListSkeleton groups={1} rows={3} />}>
         <div class="board-bar">
@@ -846,23 +864,30 @@ export function AgentsView(props: {
               }}
             />
           </label>
-          <div class="board-filters" role="group" aria-label="Filter sessions">
-            <For each={BOARD_FILTERS}>
-              {(f) => (
-                <button
-                  type="button"
-                  class="board-filter"
-                  aria-pressed={filter() === f.id ? "true" : "false"}
-                  onClick={() => setFilter((cur) => (cur === f.id ? null : f.id))}
-                >
-                  <Show when={filter() === f.id}>
-                    <Icon name="check" small />
-                  </Show>
-                  {f.label}
-                  <span class="board-filter-count text-num">{counts()[f.id]}</span>
-                </button>
-              )}
-            </For>
+          <div class="board-bar-line">
+            <div class="board-filters" role="group" aria-label="Filter sessions">
+              <For each={BOARD_FILTERS}>
+                {(f) => (
+                  <button
+                    type="button"
+                    class="board-filter"
+                    aria-pressed={filter() === f.id ? "true" : "false"}
+                    onClick={() => setFilter((cur) => (cur === f.id ? null : f.id))}
+                  >
+                    <Show when={filter() === f.id}>
+                      <Icon name="check" small />
+                    </Show>
+                    {f.label}
+                    <span class="board-filter-count text-num">{counts()[f.id]}</span>
+                  </button>
+                )}
+              </For>
+            </div>
+            <Show when={meta()}>
+              <p class="board-totals" title={metaTitle()}>
+                {meta()}
+              </p>
+            </Show>
           </div>
           <p class="board-count-line" aria-live="polite">
             {shown().length} {shown().length === 1 ? "session" : "sessions"}

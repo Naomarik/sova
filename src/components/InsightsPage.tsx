@@ -56,11 +56,13 @@ export function InsightsPage(props: {
   /** First load in flight: marks the page body busy for assistive tech. */
   busy: boolean;
   titleRef(el: HTMLHeadingElement): void;
+  /** Page-specific class on the head and the pane, for a page that lays out its own width. */
+  class?: string;
   children: JSX.Element;
 }) {
   return (
     <>
-      <header class="session-head">
+      <header class={props.class ? `session-head ${props.class}` : "session-head"}>
         <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">
           <Icon name="chevron-left" />
         </a>
@@ -84,7 +86,7 @@ export function InsightsPage(props: {
           <Icon name="refresh" />
         </button>
       </header>
-      <section class="insights pane" aria-label={props.title}>
+      <section class={props.class ? `insights pane ${props.class}` : "insights pane"} aria-label={props.title}>
         <div class="insights-inner" aria-busy={props.busy ? "true" : undefined}>
           <Show when={props.error}>
             <Banner

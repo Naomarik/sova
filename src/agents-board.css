@@ -1,7 +1,29 @@
 /* The Agents board (#/agents): one row per session, its workers, team and worktrees folded
    inside. Token values only. It measures the `insights` pane it lives in, never the window:
-   stacked rows below 768 (folded), a condensed 4-column row to 1000, and the full 5 columns from
-   there. */
+   stacked rows below 768 (folded), a condensed 4-column row to 1000, the full 5 columns from
+   there, and at 1600 a wide page: the session takes the extra width. */
+
+/* ---- The page: no 1280 cap (other insights pages keep it). Head, bar and board share edges. ---- */
+.insights.agents-page > .insights-inner { max-width: 2400px; }
+/* The head sits beside the pane, not in it, so it measures itself: same width as the pane. */
+.session-head.agents-page { container: agents-head / inline-size; }
+@container agents-head (min-width: 1000px) {
+  /* The totals move onto the filter bar. */
+  .session-head.agents-page .session-head-meta { display: none; }
+}
+@container agents-head (min-width: 1600px) {
+  /* A container query never styles its own container, so the head's children carry the offset:
+     the head's own padding (space-4 left, space-3 right) plus this lands on the board's edges. */
+  .session-head.agents-page > .session-head-main {
+    margin-left: calc(max(0px, (100cqi - 2400px) / 2) + var(--space-6) - var(--space-4));
+  }
+  .session-head.agents-page > :last-child {
+    margin-right: calc(max(0px, (100cqi - 2400px) / 2) + var(--space-6) - var(--space-3) - var(--space-2));
+  }
+}
+@container insights (min-width: 1600px) {
+  .insights.agents-page > .insights-inner { padding-left: var(--space-6); padding-right: var(--space-6); }
+}
 
 /* ---- The bar: search, filter chips, and the count they answer to ---- */
 .board-bar { display: flex; flex-direction: column; gap: var(--space-3); }
@@ -28,6 +50,10 @@
 .board-filter:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .board-filter[aria-pressed="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); color: var(--color-ink); font-weight: var(--fw-medium); }
 .board-filter-count { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
+/* The filters, and at ≥1000 the head's totals beside them, right-aligned. */
+.board-bar-line { display: flex; align-items: center; gap: var(--space-3); }
+.board-bar-line > .board-filters { flex: 1; min-width: 0; }
+.board-totals { display: none; margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; }
 .board-count-line { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .board-more-rows { align-self: flex-start; }
 
@@ -124,6 +150,9 @@
 .board-spend { font-size: var(--fs-mono); color: var(--color-ink-muted); }
 .board-dash { color: var(--color-ink-muted); }
 
+.board-tree-set { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-width: 0; max-width: 100%; }
+.board-tree-more, .board-tree-more-wide { flex: none; display: inline-flex; }
+.board-tree-wide, .board-tree-more-wide { display: none; }
 .board-tree { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; }
 .board-tree-branch { min-width: 4ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-mono); color: var(--color-ink); }
 .board-ahead, .board-lines { flex: none; font-size: var(--fs-mono); white-space: nowrap; }
@@ -238,6 +267,7 @@
   }
   .board-cell.board-activity, .board-cell.board-workers { align-self: center; flex-wrap: wrap; }
   .board-act-wide { display: inline-flex; }
+  .board-totals { display: block; }
   .board-head {
     display: grid;
     padding: var(--space-2);
@@ -252,3 +282,15 @@
 }
 /* The head's Session label starts where the titles do, past the twist. */
 .board-head > :first-child { padding-left: calc(var(--control-md) + var(--space-1)); }
+
+/* ---- Wide: the session takes the extra width; Activity on one line; two trees before "+N" ---- */
+@container insights (min-width: 1600px) {
+  .board-line,
+  .board-head {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 15rem) minmax(0, 8rem) minmax(0, 22rem) calc(var(--control-md) * 5 + var(--space-1) * 4);
+  }
+  .board-cell.board-activity { flex-wrap: nowrap; }
+  .board-tree-set { flex-direction: column; align-items: flex-start; }
+  .board-tree-wide, .board-tree-more-wide { display: inline-flex; }
+  .board-tree-more { display: none; }
+}

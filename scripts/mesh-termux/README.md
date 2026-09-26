@@ -8,7 +8,10 @@ Another ref or tag: `…/sova/<ref>/scripts/mesh-termux/install.sh | sh -s -- --
 `--source-url <tar.gz>` takes any curl URL (a tarball served over the tailnet, `file://…`). Rerunning converges: same
 source = no rebuild and no restart. Options are listed at the top of `install.sh`.
 
-Remove everything it added (default), or keep sshd, its key and the wake lock for remote test loops:
+Remote access over ssh is opt-in: `… | sh -s -- --ssh-key "<your public key line>"` adds the key, turns password logins
+off (key-only) and runs sshd as a runit service, so it comes back whenever Termux opens or the phone reboots.
+
+Remove everything it added (default), or keep sshd, its key, the key-only config and the wake lock:
 
     sh ~/sova-mesh/uninstall.sh [--keep-ssh]
 
@@ -48,8 +51,17 @@ Remove everything it added (default), or keep sshd, its key and the wake lock fo
   IP as `name` or as the `url` host (e.g. `http://100.x.y.z:4801`); a MagicDNS name alone never matches. Other hosts
   authenticate the phone as usual (LocalAPI whois → the phone's StableID). `--node-id`/`--dns` give the phone's own
   hello its StableID and name.
-- runit service `$PREFIX/var/service/sova-mesh` (restarts on exit; log `$PREFIX/var/log/sv/sova-mesh/current`),
-  `~/.termux/boot/sova-mesh` (Termux:Boot: wake lock + start services after a reboot), `termux-wake-lock`.
+- runit service `$PREFIX/var/service/sova-mesh` (restarts on exit; log `$PREFIX/var/log/sv/sova-mesh/current`); its
+  run script takes `termux-wake-lock` at every start, so opening Termux again (termux-services starts runit from the
+  login shell) brings Sova and the wake lock back without a reboot. `~/.termux/boot/sova-mesh` (Termux:Boot: wake lock +
+  start services after a reboot).
+- With `--ssh-key`: the key in `~/.ssh/authorized_keys` first, then key-only logins (`PasswordAuthentication no`,
+  `KbdInteractiveAuthentication no`) in `$PREFIX/etc/ssh/sshd_config.d/sova-mesh.conf` when sshd_config includes that
+  dir, else in sshd_config itself with the original kept in the manifest; `sshd -t` must accept it. Then the runit
+  sshd service is enabled; an sshd started by hand is stopped so runit's takes port 8022 (uninstall starts one by hand
+  again). Termux:Boot starts it with the other runit services.
+- Android's child process restrictions: the installer reads `persist.sys.fflag.override.settings_enable_monitor_phantom_procs`
+  (what the developer option sets) and warns when it is `true`; `false` = already off. Never a failure.
 - It never touches /sdcard and never prints a secret. It writes nothing outside `$HOME` and `$PREFIX`.
 
 ## Manual steps on the phone (the installer prints them)
@@ -67,7 +79,10 @@ none); the login it held at uninstall (a newer one may have been made inside the
 
 apt's package lists and apt/dpkg logs, and any pre-existing package that was upgraded as a dependency (the manifest
 lists them; none on the test phone). Without `--keep-ssh` it releases the Termux wake lock, which Termux shares with
-anything else that took it.
+anything else that took it, and puts sshd back as it was (config restored, runit sshd disabled, a hand-started one
+started again). `--keep-ssh` keeps runit (termux-services), the runit sshd, the key-only config and the boot script,
+and lists them in `~/.sova-mesh-kept`: the next install takes that list back into its manifest (a default uninstall
+reads it too), so what `--keep-ssh` kept is still removed later.
 
 ## Testing from the laptop
 
@@ -75,7 +90,8 @@ anything else that took it.
 `local.env.example`): `deps` = every command word of install.sh/uninstall.sh (plus Sova's runtime tools and
 phone-test's own) that is an executable on the phone maps, by `dpkg -S`, to WANT's closure or Termux's bootstrap, non-essential
 bootstrap ones are in `TOOLS`, and `apt-get install -s` resolves WANT. `loop` = uninstall first if installed, snapshot, install, check (health, SPA, listeners by
-connect since the phone has no ss/netstat for apps, runit restart after `kill -9`, logger), gate (mesh on with a
+connect since the phone has no ss/netstat for apps, runit restart after `kill -9` with the wake lock taken again, logger;
+after `--ssh-key`: runit's sshd, key-only, a password login refused), gate (mesh on with a
 placeholder peer: a non-peer tailnet node, the phone itself and a Wi-Fi source get 403 and `[mesh] refused` lines;
 back to mesh off), uninstall, snapshot, diff (must be clean), install, check. `INSTALL=github` uses the real
 one-liner (`GH_REF`, default master), otherwise a tarball of HEAD (or `REV=<sha>`) goes over ssh. `UNINSTALL=full`
@@ -85,3 +101,6 @@ runs the default uninstall and takes the wake lock again for the ssh loop; the d
 record a package the user installed since an earlier run (a full uninstall would purge it). `dry-claude` (no phone)
 runs install.sh's Claude Code store block against fake `claude` wrappers and rootfs trees (native, proot, unclear ones,
 the paired switch and its rerun) and uninstall.sh's restore.
+`reopen` (after Termux was force-stopped and opened again by hand, nothing typed): Sova's health, the run script's
+wake-lock line, and the same sshd checks. Snapshots include sshd_config's checksum and
+who runs sshd, so the uninstall diff proves the restore.

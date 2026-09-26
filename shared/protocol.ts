@@ -1748,13 +1748,32 @@ export interface UsageProvider {
   /** The cache no longer carries this provider (an older pi rewrote it), so this is the reading
       the server last stored for it (at most 24h old); `error` says why. */
   lastKnown?: boolean;
+  /** What the provider's sign-in says (server/auth-status.ts). Absent when its credentials say nothing. */
+  auth?: UsageAuth;
+}
+/** A provider's sign-in, read from its credential files. Numbers, enums and booleans only: no
+    string from a credential file is ever sent. Times are ms epochs; the booleans use the server's clock. */
+export interface UsageAuth {
+  kind: "oauth" | "apiKey";
+  /** Whose credentials: Claude Code's, pi's own auth.json, or the Codex CLI's. Absent for API keys. */
+  source?: "claude-cli" | "pi" | "codex-cli";
+  /** The access token's expiry. */
+  expiresAt?: number;
+  /** The refresh token's expiry (Claude only today). */
+  refreshExpiresAt?: number;
+  /** When the sign-in was last renewed, when that is known for sure. */
+  refreshedAt?: number;
+  /** `expiresAt` has passed. */
+  expired?: boolean;
+  /** `refreshExpiresAt` has passed: only a new sign-in helps. */
+  refreshExpired?: boolean;
 }
 export interface UsageInsight {
   available: boolean;
   reason?: "missing" | "corrupt";
   fetchedAt: number | null;
   nextFetchAt: number | null;
-  stale: boolean; // now - fetchedAt > 10 min (no TUI pi refreshing the cache)
+  stale: boolean; // now - fetchedAt > 10 min (nothing refreshed the cache: neither this server's poller nor a TUI)
   providers: UsageProvider[]; // fixed order: claude, openai, ollama, zai, deepseek
 }
 

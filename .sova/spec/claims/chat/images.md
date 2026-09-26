@@ -50,22 +50,27 @@ On a **user row**, the images go under the head, right-aligned, and *above* the 
   and `--color-sunken` behind transparent pixels. On hover the border turns
   `--color-border-strong`. Focus shows the standard ring. The cursor is `zoom-in`.
 
-On a **tool-result row**, the images go in the tool card, as a section after Output. The
-collapsed summary shows a count so the images aren't hidden.
+On a **tool-result row**, the images a tool returns itself (any tool, not only `read`: every
+image block in its result) are always on show. They sit in the tool card directly under its
+summary row, whether the card is open or closed. Opening and closing the card shows and hides
+Arguments and Output only, never the images. A closed `<details>` hides everything but its
+summary, so the card is a `.toolcard` wrapper holding the `<details>` and, after it, a
+`.toolcard-media` strip: one card to the eye (the wrapper carries the border, radius and sunken
+ground; the strip is set off by a 1px `--color-border` rule and padded `--space-2`
+`--space-3`). Once the card is open, Arguments and Output come between the summary and the
+images. There is no separate count: the summary has no image badge, and the body has no
+"Images" section, because the strip is the images' one place.
 
 ```html
-<summary class="toolcard-summary">
-  …twist, icon, name, arg…
-  <span class="toolcard-images" title="2 images">
-    <span class="icon icon-sm" style="--icon: url(/icons/image.svg)" aria-hidden="true"></span>2
-    <span class="visually-hidden">images</span>
-  </span>
-  <span class="chip chip-success"><i class="chip-dot"></i>Done</span>
-</summary>
-<div class="toolcard-body">
-  …Arguments, Output…
-  <div class="toolcard-section">
-    <div class="toolcard-section-label">Images · 2</div>
+<div class="toolcard">
+  <details class="toolcard-details">
+    <summary class="toolcard-summary">
+      …twist, icon, name, arg…
+      <span class="chip chip-success"><i class="chip-dot"></i>Done</span>
+    </summary>
+    <div class="toolcard-body">…Arguments, Output, path Attachments…</div>
+  </details>
+  <div class="toolcard-media">
     <ul class="message-images" aria-label="2 images">
       <li><button class="thumb" type="button" aria-haspopup="dialog">
         <img src="data:image/png;base64,…" alt="Image 1 of 2 from tool result read" loading="lazy" decoding="async">
@@ -75,6 +80,18 @@ collapsed summary shows a count so the images aren't hidden.
   </div>
 </div>
 ```
+
+- **Same sizes** as a user row (above), and the same lightbox: a click opens it, and the arrow
+  keys step through that card's images only.
+- **Live.** A streaming card shows the strip as soon as any image arrives, from a partial
+  result too, while its chip still reads Running. The wrapper is the same element
+  before and after the first image, so a card the user opened stays open.
+- **Failed.** A result that is an error and still carries images shows them too; the Failed
+  chip carries the state.
+- **Hide tool calls** still removes the whole card, images and all.
+- **Not these.** Images a result only names by path stay in the body's Attachments section
+  (§chat.images/path-attachments). A Claude Code worker's rows carry their tool results' images
+  the same way (§app.subagents-pane/claude-code-workers).
 
 **Alt text.** It's built from context, because pi stores no captions.
 
@@ -205,8 +222,9 @@ compact chip, never as the raw long path.
   - **Replies:** chips are placed while the markdown renders, in text only, never in code.
   - **Info rows** (custom messages, subagent reports): plain text with chips.
   - **Tool cards:** the Output `<pre>` stays verbatim, since it's the record of what ran, and
-    the card is collapsed anyway. After Output (and Images), an "Attachments · {n}" section
-    lists the same units a user row gets.
+    the card is collapsed anyway. After Output, an "Attachments · {n}" section lists the same
+    units a user row gets. It stays in the card's body, collapsed with it: only images the tool
+    returned itself are always on show (§chat.images/thread-thumbnails).
 - **Streaming.** While a reply streams, its paths are plain text. Chips appear when the finished
   row arrives from the server: the refetch when the turn settles, a hello, or a watch append.
   Nothing jumps mid-stream.

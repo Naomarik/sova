@@ -377,8 +377,11 @@ like any other. CC's JSONL is normalized into the same `TranscriptItem` rows, ea
 pi-shaped synthetic `raw`, so every row renders through the existing components: prose, thinking
 (redacted signature-only blocks are dropped), tool calls paired with their results (CC's `Bash`,
 `Read`, `Edit`, `Write`, `Glob`, `Grep` map to pi's names and icons; anything else keeps CC's
-name), compaction boundaries as info rows. Sidechains (a worker's own Task agents), injected
-meta prompts and CLI bookkeeping lines produce nothing. Arguments are CC's own (`file_path`,
+name), compaction boundaries as info rows. Image blocks (`{type:"image", source:{type:"base64",
+media_type, data}}`), in a tool result or a prompt, become the row's `images` as data URLs, the
+same field a pi row fills, so a worker's image results show in its tool cards as a pi session's
+do (§chat.images/thread-thumbnails); they never become placeholder text. Sidechains (a
+worker's own Task agents), injected meta prompts and CLI bookkeeping lines produce nothing. Arguments are CC's own (`file_path`,
 `old_string`), so an edit/write card shows JSON rather than pi's diff view. Read only, always:
 nothing is ever sent to a Claude Code session.
 

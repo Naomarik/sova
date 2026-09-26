@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { clearClaudeSessionCache, normalizeClaudeEntries, resolveClaudeSession } from "./claude-transcript";
+import { normalizeEntry } from "./transcript";
 
 // --- real CC 2.1.278 lines -------------------------------------------------
 /** A typed prompt: content is a one-block array. */
@@ -23,6 +24,8 @@ const BASH_LINE = "{\"parentUuid\":\"df4e747e-32fe-4d95-ad31-2bf4b4cceae1\",\"is
 const TEXT_LINE = "{\"parentUuid\":\"8ce0a498-5f59-4d0f-b2a8-d64c77bc9c7b\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011CfCeo3mwKq5WHZxmsC7u2\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Now `state.ts`.\"}],\"container\":null,\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":1310,\"cache_read_input_tokens\":26755,\"output_tokens\":1608,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":1310,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":1608,\"cache_read_input_tokens\":26755,\"cache_creation_input_tokens\":1310,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":1310},\"type\":\"message\"}],\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":null,\"context_management\":null},\"apiBlockIndex\":0,\"requestId\":\"req_011CfCeo3FgfyLGzmrsQDuvS\",\"type\":\"assistant\",\"uuid\":\"1b2772cd-3475-4d22-9d86-1fb1863a8da4\",\"timestamp\":\"2026-09-19T10:37:35.470Z\",\"advisorModel\":\"claude-opus-5\",\"effort\":\"medium\",\"perTurnEffort\":null,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/home/user/pi-config\",\"sessionId\":\"54b5fef2-0193-4acb-9fa8-90a678fb4d9a\",\"version\":\"2.1.278\",\"gitBranch\":\"HEAD\"}";
 /** Redacted thinking: empty text, signature only. Nothing to show. */
 const THINKING_LINE = "{\"parentUuid\":\"61a4c06a-a016-4eec-86f9-65361c4f8c60\",\"isSidechain\":false,\"message\":{\"model\":\"claude-opus-5\",\"id\":\"msg_011CfCfsGnFgmz3ZuMwK9DS9\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"CAQS4AQKEAgRGAI4AUIIdGhpbmtpbmcSDDkhalL7ULhXBUPqTRoMMPO1xeTl3w567X7XIjCdH60BOruGxRTI23wvmbTJCv7vcr/y+AJR0IHDi3I289KkuxL6+P3tYdN757R+kXwq/QNJ5pZo1KjL1WTurbEoYN2/A+8CrGjkwTLA9k2kL3Z85YfTBlaUT9AL780HzfNlb8Ejx5L4bjIsvQGzNRwDQndVEsmPjibevijesZ6cdjtJwlBLPkAw2TP7pVIPFg2sc3a8PimKCRjH4TKtJckqFuYlXXwUIEkcMiqKXPZk6jmipNqa+YBvt110Pf4nUqHu4jkzEIM5wr2NIj3sh+kn2zDAA+xLL5TjinZa5I15O72R+0ls2uSc009EwKuuwEvpp2IO2ceQxGHTRbUeT5rFwlXEVt2hnRNSnvjlS6EvuuuW08smzRdJ3YYMhSfnH8tBBxeglHCNkShn6depTegY9XcDEypmyasWkSpvqjTCn054EDpDedRR0j6YTctl7bDiZaTpRotYMODvs001hGkXA5/Ba/oFC4B8nAKal1uMrVFKa7WXRZmuk+NOHLf1nfA7RQjiSBT4cXH97N3KLP+G7pSRuwcQEdcYUY2hDcqIBV/7Rx2/GuNF+5ZNewsGVv/cmdyKlRf/eLmgcaQYb/TDdGscfILS9duu+kjlIRRofp4LyeSYZwYgF19AVwtHBNbb0wb4jEDE8GxoFJ8Y31hlOR9PmJ0V4u3JnrE5kT03XmVBxw9ldMlXqc/LIi/fvTnvz3BEwDwNiMslAl4rQhNdXzJvYzsaVnuAk4P58+6rPhgB\"}],\"container\":null,\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":4016,\"cache_read_input_tokens\":6157,\"output_tokens\":137,\"output_tokens_details\":{\"thinking_tokens\":11},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":4016,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":137,\"cache_read_input_tokens\":6157,\"cache_creation_input_tokens\":4016,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":4016},\"type\":\"message\"}],\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":null,\"context_management\":null},\"apiBlockIndex\":0,\"requestId\":\"req_011CfCfsG3MYXJhUaXNCNsGC\",\"type\":\"assistant\",\"uuid\":\"5a745061-502c-4bf7-900d-f8fdc50934a8\",\"timestamp\":\"2026-09-19T10:51:40.070Z\",\"advisorModel\":\"claude-opus-5\",\"effort\":\"medium\",\"perTurnEffort\":null,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/home/user\",\"sessionId\":\"d1f6627b-15a8-4c51-8712-a7b1a869469b\",\"version\":\"2.1.278\",\"gitBranch\":\"HEAD\"}";
+/** A Read of a PNG: the tool_result's only block is a base64 image (a real 1×1 PNG, so verbatim). */
+const IMAGE_RESULT_LINE = "{\"parentUuid\":\"9300d3ae-a11b-47e5-9c6f-816dc2e48ecd\",\"isSidechain\":false,\"promptId\":\"f8fffd58-4133-43e5-b4d0-9b25055bffd0\",\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"tool_use_id\":\"toolu_01LY52i57JGAZyyeKTM9kUr4\",\"type\":\"tool_result\",\"content\":[{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\"}}]}]},\"uuid\":\"1a8aa37f-f8d3-4e01-95f6-ed47fcfc2d4d\",\"timestamp\":\"2026-09-21T21:00:43.563Z\",\"toolUseResult\":[{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\"}}],\"sourceToolAssistantUUID\":\"9300d3ae-a11b-47e5-9c6f-816dc2e48ecd\",\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/tmp/cc-spike\",\"sessionId\":\"baeb107d-9b20-4ddb-8995-3afa82105f5b\",\"version\":\"2.1.278\",\"gitBranch\":\"HEAD\"}";
 /** CLI bookkeeping, no message at all. */
 const LATCH_LINE = "{\"type\":\"atis-latch\",\"atis\":\"\",\"sessionId\":\"27050ff6-e65d-44b3-a316-814ecc72b69d\"}";
 
@@ -148,6 +151,50 @@ describe("normalizeClaudeEntries", () => {
     const [it] = normalizeClaudeEntries([line]);
     assert.equal(it?.text?.length, 2001); // 2000 + the ellipsis
     assert.equal((it?.raw as any).message.content[0].text.length, 5000);
+  });
+
+  test("an image result carries the image as a data URL, the same one a pi toolResult gets", () => {
+    const [it] = normalizeClaudeEntries(parse([IMAGE_RESULT_LINE]));
+    const block = (JSON.parse(IMAGE_RESULT_LINE) as any).message.content[0].content[0];
+    assert.equal(it?.kind, "tool-result");
+    assert.equal(it?.toolCallId, "toolu_01LY52i57JGAZyyeKTM9kUr4");
+    assert.deepEqual(it?.images, [`data:${block.source.media_type};base64,${block.source.data}`]);
+    assert.equal(it?.text, ""); // no "[image]" placeholder: the image is in `images`
+    const [pi] = normalizeEntry({
+      type: "message",
+      id: "p1",
+      message: { role: "toolResult", toolCallId: "t", content: [{ type: "image", data: block.source.data, mimeType: block.source.media_type }] },
+    });
+    assert.deepEqual(it?.images, pi?.images);
+  });
+
+  test("text and several images in one result: text keeps the text, images keep their order", () => {
+    const line = JSON.parse(IMAGE_RESULT_LINE) as any;
+    const [img] = line.message.content[0].content;
+    const jpeg = { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "AAAA" } };
+    line.message.content[0].content = [{ type: "text", text: "two shots" }, img, jpeg];
+    const [it] = normalizeClaudeEntries([line]);
+    assert.equal(it?.text, "two shots");
+    assert.deepEqual(it?.images, [`data:image/png;base64,${img.source.data}`, "data:image/jpeg;base64,AAAA"]);
+    assert.deepEqual((it?.raw as any).message.content, [{ type: "text", text: "two shots" }]);
+  });
+
+  test("a result with no base64 image has no images field", () => {
+    const [plain] = normalizeClaudeEntries(parse([TOOL_RESULT_LINE]));
+    assert.equal("images" in plain!, false);
+    const line = JSON.parse(IMAGE_RESULT_LINE) as any;
+    line.message.content[0].content = [{ type: "image", source: { type: "url", url: "https://example.com/a.png" } }];
+    const [url] = normalizeClaudeEntries([line]);
+    assert.equal("images" in url!, false);
+  });
+
+  test("a prompt that is only an image becomes an image-only user row", () => {
+    const line = JSON.parse(USER_LINE) as any;
+    line.message.content = [{ type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } }];
+    const [it] = normalizeClaudeEntries([line]);
+    assert.equal(it?.kind, "user");
+    assert.equal(it?.text, undefined);
+    assert.deepEqual(it?.images, ["data:image/png;base64,AAAA"]);
   });
 
   test("assistant prose becomes an assistant-text row", () => {

@@ -61,7 +61,12 @@
     "§app.insights/usage-cards": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/UsageView.tsx",
+        "src/lib/insights.ts",
+        "src/lib/insights.test.ts"
+      ]
     },
     "§app.insights/usage-page-and-agents-page": {
       "kind": "behavior",
@@ -245,8 +250,12 @@
     },
     "§app.subagents-pane/claude-code-workers": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-transcript.ts",
+        "server/claude-transcript.test.ts"
+      ]
     },
     "§app.subagents-pane/head": {
       "kind": "behavior",
@@ -502,8 +511,12 @@
     },
     "§chat.images/thread-thumbnails": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ToolCard.tsx",
+        "src/design/base.css"
+      ]
     },
     "§chat.markdown/accessibility": {
       "kind": "behavior",
@@ -919,7 +932,7 @@
     },
     "§design.copy-deck/images": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.copy-deck/insights": {
@@ -3162,6 +3175,45 @@
         "scripts/mesh-termux/install.sh",
         "src/lib/api.ts",
         "scripts/mesh-termux/README.md"
+      ]
+    },
+    "§mesh.phone/awake": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "scripts/mesh-termux/install.sh",
+        "scripts/mesh-termux/phone-test.sh"
+      ]
+    },
+    "§mesh.phone/ssh": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "scripts/mesh-termux/install.sh",
+        "scripts/mesh-termux/uninstall.sh",
+        "scripts/mesh-termux/phone-test.sh"
+      ]
+    },
+    "§app.insights/usage-refresh": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/usage-poll.ts",
+        "server/auth-status.ts",
+        "server/insights.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/components/UsageView.tsx",
+        "src/lib/insights.ts",
+        "server/usage-poll.test.ts",
+        "server/auth-status.test.ts",
+        "server/insights-usage.test.ts"
       ]
     }
   },

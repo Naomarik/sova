@@ -2,7 +2,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { UsageInsight, UsageProvider } from "../../shared/protocol";
+import { stampTime } from "./format";
 import {
+  authCaption,
   balanceBreakdown,
   extraUsageMeter,
   meterReset,
@@ -259,4 +261,53 @@ test("usageSummary: not-ok states each have a sentence; na and kept readings don
     provider({ id: "claude", lastKnown: true, error: "older pi", windows: [{ label: "7d", pct: 10 }] }),
   ]);
   assert.equal(usageSummary(quiet, NOW), "All providers under limits.");
+});
+
+const H = 3_600_000;
+const claudeAuth = (a: Partial<NonNullable<UsageProvider["auth"]>>): UsageProvider["auth"] => ({ kind: "oauth", source: "claude-cli", ...a });
+
+test("authCaption: a valid sign-in says when it renews by, and when it last did only when known", () => {
+  const p = provider({ id: "claude", windows: [{ label: "5h", pct: 10 }], auth: claudeAuth({ expiresAt: NOW + 5 * H, refreshExpiresAt: NOW + 20 * 24 * H, refreshedAt: NOW - 3 * H }) });
+  assert.deepEqual(authCaption(p, NOW), { rest: `Sign-in renews by ${stampTime(NOW + 5 * H, NOW)} · last renewed 3h ago` });
+  assert.deepEqual(authCaption({ ...p, auth: claudeAuth({ expiresAt: NOW + 5 * H }) }, NOW), { rest: `Sign-in renews by ${stampTime(NOW + 5 * H, NOW)}` });
+  // pi's OpenAI sign-in lasts days: the clock carries the date.
+  const openai = provider({ id: "openai", auth: { kind: "oauth", source: "pi", expiresAt: NOW + 7 * 24 * H } });
+  assert.match(authCaption(openai, NOW)!.rest, /^Sign-in renews by [A-Z][a-z]{2} \d{1,2} \d{1,2}:\d{2} [AP]M$/);
+  // Codex CLI only: a renewal time and no expiry.
+  const codex = provider({ id: "openai", auth: { kind: "oauth", source: "codex-cli", refreshedAt: Date.parse("2026-07-29T10:00:00Z") } });
+  assert.deepEqual(authCaption(codex, NOW), { rest: "Sign-in last renewed Jul 29" });
+});
+
+test("authCaption: nothing for API keys, no sign-in data, or a card whose expired note says it", () => {
+  assert.equal(authCaption(provider({ id: "ollama", auth: { kind: "apiKey" } }), NOW), null);
+  assert.equal(authCaption(provider({ id: "claude" }), NOW), null);
+  assert.equal(authCaption(provider({ id: "claude", state: "expired", auth: claudeAuth({ expiresAt: NOW - 2 * H }) }), NOW), null);
+  assert.equal(authCaption(provider({ id: "openai", auth: { kind: "oauth", source: "codex-cli" } }), NOW), null);
+});
+
+test("authCaption: a timed-out token on a card still showing a reading, and a refresh token that can't renew", () => {
+  const late = provider({ id: "claude", windows: [{ label: "5h", pct: 10 }], auth: claudeAuth({ expiresAt: NOW - 2 * H, refreshExpiresAt: NOW + 20 * 24 * H }) });
+  assert.deepEqual(authCaption(late, NOW), { rest: "Sign-in token expired 2h ago. It renews the next time Claude Code runs; usage updates after that." });
+  const dead = { ...late, auth: claudeAuth({ expiresAt: NOW + H, refreshExpiresAt: NOW - H }) };
+  assert.deepEqual(authCaption(dead, NOW), { lead: "Sign-in can't renew. Run ", code: "claude /login", rest: " to sign in again." });
+});
+
+test("providerProblem expired: soft only when the token timed out and the refresh token may still renew it", () => {
+  const expired = (auth?: UsageProvider["auth"], id: UsageProvider["id"] = "claude") => providerProblem(provider({ id, state: "expired", auth }), NOW);
+  const hard = { lead: "Sign-in expired. Run ", code: "claude /login", rest: " to renew it." };
+  assert.deepEqual(expired(claudeAuth({ expiresAt: NOW - 2 * H, refreshExpiresAt: NOW + 20 * 24 * H })), {
+    rest: "Sign-in token expired 2h ago. It renews the next time Claude Code runs; usage updates after that.",
+  });
+  assert.deepEqual(expired(claudeAuth({ expiresAt: NOW - 2 * H })), expired(claudeAuth({ expiresAt: NOW - 2 * H, refreshExpired: false })), "unknown refresh expiry: soft");
+  assert.deepEqual(
+    expired({ kind: "oauth", source: "pi", expiresAt: NOW - 2 * H }, "openai"),
+    { rest: "Sign-in token expired 2h ago. It renews the next time pi uses OpenAI; usage updates after that." },
+  );
+  // Every other case keeps the hard copy.
+  assert.deepEqual(expired(undefined), hard, "no sign-in data");
+  assert.deepEqual(expired(claudeAuth({ expiresAt: NOW - 2 * H, refreshExpiresAt: NOW - H })), hard, "refresh token expired");
+  assert.deepEqual(expired(claudeAuth({ expiresAt: NOW - 2 * H, refreshExpired: true })), hard, "refresh flag without a time");
+  assert.deepEqual(expired(claudeAuth({ expiresAt: NOW + 2 * H })), hard, "refused before its expiry: revoked");
+  assert.deepEqual(expired(claudeAuth({})), hard, "no expiry known");
+  assert.deepEqual(expired({ kind: "oauth", source: "pi", expiresAt: NOW + H }, "openai"), { ...hard, code: "pi /login" });
 });

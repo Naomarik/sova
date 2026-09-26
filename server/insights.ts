@@ -31,6 +31,7 @@ import type {
 // The usage-status extension's fetch/cache core. Part of the sanctioned pi-config import
 // surface (node builtins only, like extensions/mode/state.ts) — see CLAUDE.md.
 import { forceRefresh } from "../pi-config/extensions/usage-status/fetch.ts";
+import { readAuthStatus } from "./auth-status";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
 import { readLiveRecords, type RawLiveRecord } from "./live";
 import { modelProvider, sharedWorkerWindowResolver } from "./models";
@@ -46,8 +47,9 @@ import { handoverSuccessor, retireReason, TEAM_EVENT_TYPE, teamEventOf } from ".
 import { LEGACY_REGISTRY_ENTRY_TYPE, readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
-// docs/insights-research.md "Data sources"). The one writer is refreshUsageInsight, which
-// force-refreshes the shared usage cache through the extension's own lock protocol. Every
+// docs/insights-research.md "Data sources"). The one writer is the shared usage cache: through
+// the extension's own lock protocol, refreshUsageInsight force-refreshes it and the server's
+// poller (server/usage-poll.ts) refreshes it when due. Every
 // source is untrusted JSON: anything malformed is skipped, and a missing source yields an
 // empty payload.
 
@@ -63,7 +65,8 @@ const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is
 // Usage: ~/.pi/agent/cache/usage-status.json (written by the usage-status extension)
 
 const USAGE_FILE = join(getAgentDir(), "cache", "usage-status.json");
-/** Only TUI pis refresh the cache (every 180s); older than this means nothing is refreshing it. */
+/** This server's poller (server/usage-poll.ts) and TUI pis refresh the cache every few minutes;
+    older than this means none of them is (the poller is failing or off, and no TUI is open). */
 const USAGE_STALE_MS = 10 * 60_000;
 
 let usageCache: { mtimeMs: number; size: number; data: Omit<UsageInsight, "stale">; absent: UsageProvider["id"][] } | null = null;
@@ -256,7 +259,10 @@ export async function getUsageInsight(): Promise<UsageInsight> {
   const { data: d, absent } = usageCache;
   // A key the cache doesn't carry: serve what we last read for it, said plainly. A key that IS
   // there always wins, error and "na" included — that is the extension's own answer.
-  const providers = absent.length === 0 ? d.providers : d.providers.map((p) => (absent.includes(p.id) ? lastKnown(p) : p));
+  const read = absent.length === 0 ? d.providers : d.providers.map((p) => (absent.includes(p.id) ? lastKnown(p) : p));
+  // Sign-in facts come from the credential files, per request (memoized there), never from the cache.
+  const auth = await readAuthStatus();
+  const providers = read.map((p) => (auth[p.id] ? { ...p, auth: auth[p.id] } : p));
   return { ...d, providers, stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
 }
 
@@ -279,6 +285,16 @@ export async function refreshUsageInsight(): Promise<UsageInsight> {
     usageRefreshInFlight = null;
   });
   return usageRefreshInFlight;
+}
+
+/** True while a Refresh Usage is in flight: the server's poller skips its tick meanwhile. */
+export function usageRefreshBusy(): boolean {
+  return usageRefreshInFlight !== null;
+}
+
+/** The poller just rewrote the cache: drop the memo so the next read re-parses it. */
+export function invalidateUsageMemo(): void {
+  usageCache = null;
 }
 
 /** The stored reading for a provider the cache didn't mention, or the "no data" answer as-is. */

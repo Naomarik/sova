@@ -1,5 +1,6 @@
 // Run: npx tsx --test server/insights-usage.test.ts
-// Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
+// Uses a throwaway PI_CODING_AGENT_DIR and HOME in the OS temp dir; ~/.pi and the real
+// credential files are never read or written.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,6 +10,7 @@ import type { UsageProvider } from "../shared/protocol";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-usage-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the module below computes USAGE_FILE
+process.env.HOME = agentDir; // credential files (auth-status) resolve under the throwaway dir
 const usageFile = join(agentDir, "cache", "usage-status.json");
 mkdirSync(join(agentDir, "cache"), { recursive: true });
 
@@ -280,4 +282,21 @@ test("a malformed cache is unavailable, not an error", async () => {
   assert.equal(insight.available, false);
   assert.equal(insight.reason, "corrupt");
   assert.deepEqual(insight.providers, []);
+});
+
+test("auth: the sign-in rides on its provider, and only there", async () => {
+  const exp = Date.now() + 5 * 3_600_000;
+  mkdirSync(join(agentDir, ".claude"), { recursive: true });
+  writeFileSync(join(agentDir, ".claude", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "FIXTUREtokenNeverSent", expiresAt: exp } }));
+  try {
+    writeCache({});
+    const u = await getUsageInsight();
+    assert.deepEqual(byId(u.providers, "claude").auth, { kind: "oauth", source: "claude-cli", expiresAt: exp, expired: false });
+    for (const id of ["openai", "ollama", "zai", "deepseek"] as const) assert.equal(byId(u.providers, id).auth, undefined, id);
+    assert.ok(!JSON.stringify(u).includes("FIXTUREtoken"));
+  } finally {
+    rmSync(join(agentDir, ".claude"), { recursive: true, force: true });
+  }
+  writeCache({});
+  assert.equal(byId((await getUsageInsight()).providers, "claude").auth, undefined, "signed out: no auth");
 });

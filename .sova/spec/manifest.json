@@ -26,7 +26,11 @@
     "§app.insights/insight-strip": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/components/InsightStrip.tsx",
+        "src/design/base.css"
+      ]
     },
     "§app.insights/placement": {
       "kind": "behavior",

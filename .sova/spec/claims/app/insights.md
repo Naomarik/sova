@@ -435,25 +435,27 @@ which draws them on the session's axis; the strip keeps no history of its own.
     <span class="outline-count outline-explained">· Explained 3</span>
   </summary>
   <div class="outline-body">
-    <button class="button button-sm button-ghost outline-explained-open" type="button" aria-haspopup="dialog">
-      <span class="icon icon-sm" style="--icon: url(/icons/external.svg)" aria-hidden="true"></span>Open 3 Explanations
-    </button>
-    <button class="button button-sm button-ghost outline-explained-open" type="button" aria-controls="session-pane">
-      <span class="icon icon-sm" style="--icon: url(/icons/clock.svg)" aria-hidden="true"></span>Open Timeline
-    </button>
-    <p class="outline-state">Latest · Why the watcher restarts · 2h ago</p>
-    <p class="outline-overall">{overall}</p>
-    <p class="outline-state">Updated 3m ago · behind the latest messages</p>
-    <ol class="outline-topics">
-      <li class="outline-topic">
-        <div class="outline-topic-head">
-          <span class="outline-topic-heading"><span class="outline-hash">#</span>Model selection and limits</span>
-          <span class="outline-topic-time">2d ago</span>
-        </div>
-        <ul class="outline-bullets"><li>…</li></ul>
-        <button class="button button-sm button-ghost outline-jump" type="button">Jump to Message</button>
-      </li>
-    </ol>
+    <div class="outline-column">
+      <button class="button button-sm button-ghost outline-explained-open" type="button" aria-haspopup="dialog">
+        <span class="icon icon-sm" style="--icon: url(/icons/external.svg)" aria-hidden="true"></span>Open 3 Explanations
+      </button>
+      <button class="button button-sm button-ghost outline-explained-open" type="button" aria-controls="session-pane">
+        <span class="icon icon-sm" style="--icon: url(/icons/clock.svg)" aria-hidden="true"></span>Open Timeline
+      </button>
+      <p class="outline-state">Latest · Why the watcher restarts · 2h ago</p>
+      <p class="outline-overall">{overall}</p>
+      <p class="outline-state">Updated 3m ago · behind the latest messages</p>
+      <ol class="outline-topics">
+        <li class="outline-topic">
+          <div class="outline-topic-head">
+            <span class="outline-topic-heading"><span class="outline-hash">#</span>Model selection and limits</span>
+            <span class="outline-topic-time">2d ago</span>
+          </div>
+          <ul class="outline-bullets"><li>…</li></ul>
+          <button class="button button-sm button-ghost outline-jump" type="button">Jump to Message</button>
+        </li>
+      </ol>
+    </div>
   </div>
 </details>
 ```
@@ -465,6 +467,16 @@ which draws them on the session's axis; the strip keeps no history of its own.
   2. Open, it shows everything: the Timeline and gallery buttons, `overall`, the state line, and
      every topic **flat** — its heading, its time, its bullets and its Jump, with no per-topic
      disclosure and no collapse state. The body scrolls inside `--outline-max`; it doesn't fold.
+- **Column.** Open, everything in the body sits in one centered `.outline-column` — the same
+  `max-width: calc(var(--measure) + var(--space-9)); margin: 0 auto; padding-inline: var(--space-4)`
+  box `.transcript-inner` and `.composer-inner` center (§chat.transcript/transcript-items "Column
+  width") — so the buttons, `overall`, the state lines and the topics track the column below at
+  every width instead of pinning to the pane's left edge. `.outline-topics` and `.outline-overall`
+  keep their `--measure` cap inside it; the body's own padding is vertical only (the shell keeps the
+  full-width `--color-border` rule and the `--outline-max` scroll). Below §3's 72ch floor the box
+  fills the pane, so narrower widths read exactly as a left-pinned column — the centering only shows
+  when the column has margins to center in. The summary row above stays full-width chrome, like the
+  session head it hangs from.
 - **Explanations.** When the session has any, the summary gains
   `<span class="outline-count outline-explained">· Explained {n}</span>` after the topic count,
   counting finished, openable pages only (a run still in progress shows in the thread as its

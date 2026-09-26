@@ -178,7 +178,7 @@ export const overseerWarnings = store.warnings;
 /** The dialog closed: drop the draft, so the next open reads the saved file afresh. */
 export const resetOverseerDraft = store.reset;
 
-export const CAP_KEYS = ["createPerTurn", "promptsPerTurn", "archivesPerTurn", "concurrentSessions", "explorePerTurn"] as const satisfies readonly (keyof OverseerCaps)[];
+export const CAP_KEYS = ["createPerTurn", "promptsPerTurn", "archivesPerTurn", "concurrentSessions", "explorePerTurn", "linksPerTurn"] as const satisfies readonly (keyof OverseerCaps)[];
 
 export const CAP_LABEL: Record<keyof OverseerCaps, { label: string; hint: string }> = {
   createPerTurn: { label: "Sessions created", hint: "Per message you send." },
@@ -186,6 +186,7 @@ export const CAP_LABEL: Record<keyof OverseerCaps, { label: string; hint: string
   archivesPerTurn: { label: "Sessions archived", hint: "Per message you send." },
   concurrentSessions: { label: "Running at once", hint: "Sessions the Overseer started that are working at the same time." },
   explorePerTurn: { label: "Ideas explored", hint: "Exploratory agents launched, per message you send." },
+  linksPerTurn: { label: "Links made", hint: "Sessions linked across hosts, per message you send." },
 };
 
 /** Why the draft can't be saved, one sentence, or null. */

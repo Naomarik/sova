@@ -2265,6 +2265,7 @@ export interface OverseerCaps {
   archivesPerTurn: number;    // default 50
   concurrentSessions: number; // default 5: Overseer-started sessions running at once
   explorePerTurn: number;     // default 2: explorer subagents launched (sova_idea explore); absent on read → default
+  linksPerTurn: number;       // default 3: links made (sova_link, §app.overseer/links-tools); absent on read → default
 }
 
 /** `<stateRoot>/overseer.json`. Tolerant on read, strict on PUT. */

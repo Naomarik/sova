@@ -39,7 +39,7 @@ const CAP_MAX = 500;
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const PROACTIVITY: readonly OverseerProactivity[] = ["off", "badge", "brief"];
 
-export const DEFAULT_CAPS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5, explorePerTurn: 2 };
+export const DEFAULT_CAPS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5, explorePerTurn: 2, linksPerTurn: 3 };
 
 /** Claude Opus 5 by any spelling (a CLI id, a 1M variant, a pi ref), never Opus 5.5 (`claude-opus-5-5`). */
 const OPUS_5 = /(^|\/)claude-opus-5(\[[^\]]*\])?$/i;

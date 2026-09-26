@@ -15,7 +15,8 @@ import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
-import { decodeWorkers, getAgentsInsight, getSessionInsight, getUsageInsight, refreshUsageInsight } from "./insights";
+import { decodeWorkers, getAgentsInsight, getSessionInsight, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
+import { startUsagePoller } from "./usage-poll";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyAtOf, listCwds, listSessionFiles, listSessions } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
@@ -756,7 +757,8 @@ app.post(
 );
 
 // Insights: views of extension state (docs/insights-research.md). Missing or corrupt sources
-// come back as empty/unavailable payloads, not errors; the refresh route below is the one writer.
+// come back as empty/unavailable payloads, not errors. The usage cache is the one thing written:
+// by the refresh route below, and by the usage poller started with the server.
 app.get("/api/insights/usage", async (c) => c.json(await getUsageInsight()));
 
 app.post("/api/insights/usage/refresh", async (c) => {
@@ -1110,6 +1112,9 @@ void (async () => {
   }
 })();
 
+// Keeps the shared usage cache fresh without an open TUI (SOVA_USAGE_POLL=off switches it off).
+const usagePoller = startUsagePoller({ busy: usageRefreshBusy, onFetched: invalidateUsageMemo });
+
 let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) process.exit(1);
@@ -1118,6 +1123,7 @@ async function shutdown() {
   // subagents extension's session_shutdown detaches them instead of killing them.
   // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
   (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
+  usagePoller.stop();
   stopMesh();
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   process.exit(0);

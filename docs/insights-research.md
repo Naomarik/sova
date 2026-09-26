@@ -40,9 +40,12 @@ Lockfile `usage-status.json.lock` beside it: ignore it.
 - **Per-provider staleness:** on a failed fetch the previous provider value is kept and
   `errors.<provider>` is set (`"timeout"`, `"claude HTTP 529"`…). A provider key can be absent
   entirely if it has never succeeded (then only `errors.<provider>` explains why).
-- **Whole-file staleness:** only pi processes in **TUI mode** refresh it (on `session_start`, every
-  180s tick, and on `agent_settled`), rate-limited machine-wide via the lock. With no TUI pi running
-  the file simply ages; nothing marks it. So age = `now - fetchedAt`; treat > ~10 min as stale.
+- **Whole-file staleness:** pi processes in **TUI mode** refresh it (on `session_start`, every
+  180s tick, and on `agent_settled`), and so does Sova's server: its poller
+  (`server/usage-poll.ts`) asks for an ordinary refresh whenever the cache's `nextFetchAt` comes
+  due (`SOVA_USAGE_POLL=off` switches it off). All of them are rate-limited machine-wide via the
+  lock. With neither running the file simply ages; nothing marks it. So age = `now - fetchedAt`;
+  treat > ~10 min as stale.
 - **Absent:** no file until the first TUI pi with the extension has fetched once. **Corrupt:** the
   extension itself treats non-`{fetchedAt:number, errors:object}` as "no cache". Server does the same.
 - Extension's own colour thresholds: ≥80% error, ≥50% warning.
@@ -173,7 +176,7 @@ export interface UsageInsight {
   reason?: "missing" | "corrupt";
   fetchedAt: number | null;        // ms epoch
   nextFetchAt: number | null;
-  stale: boolean;                  // now - fetchedAt > 10 min (no TUI pi refreshing it)
+  stale: boolean;                  // now - fetchedAt > 10 min (neither the server's poller nor a TUI pi refreshing it)
   providers: UsageProvider[];      // fixed order: claude, openai, ollama, zai, deepseek
 }
 
@@ -384,7 +387,7 @@ fold-ai-dev skill v1.8.0. Nothing in the design notes / `src/design/` changes un
 
 | Surface | Source on disk | What we can claim | What we can't |
 |---|---|---|---|
-| Usage | `~/.pi/agent/cache/usage-status.json`, plus our own `~/.pi/agent/sova/usage-last-known.json` | Per-provider % used per window; Claude reset times; DeepSeek's prepaid credit balance (and whether it can fund calls); file age (`fetchedAt`); per-provider fetch failure (`errors.X`, previous value kept); a reading up to **24 h** old for a provider whose key an older pi session dropped from the cache — labelled as the previous reading, with "run /reload in it" | OpenAI/Ollama reset times (not in the cache). Any percentage, quota or reset for DeepSeek — it has no usage API, only a balance. Anything fresher than the last pi refresh (it only refreshes while some pi runs); anything at all for a provider we have never read (no key, empty store: "no data") |
+| Usage | `~/.pi/agent/cache/usage-status.json`, plus our own `~/.pi/agent/sova/usage-last-known.json` | Per-provider % used per window; Claude reset times; DeepSeek's prepaid credit balance (and whether it can fund calls); file age (`fetchedAt`); per-provider fetch failure (`errors.X`, previous value kept); a reading up to **24 h** old for a provider whose key an older pi session dropped from the cache — labelled as the previous reading, with "run /reload in it" | OpenAI/Ollama reset times (not in the cache). Any percentage, quota or reset for DeepSeek — it has no usage API, only a balance. Anything fresher than the last refresh (the server's poller or a TUI pi); anything at all for a provider we have never read (no key, empty store: "no data") |
 | Teams | `subagents-team-v1` entries in the **parent** JSONL (roster) + the parent's live record (`sessions/live/*.json`, `presence.workers[]`) while it runs + `subagent-complete` messages | Roster (role, id, model, orchestrator); **live** status per member while the parent runs; **last reported** settle state once it doesn't | Status of an ended team beyond its last report. Workers die with the parent pi, so a team is only *active* while its parent is live |
 | Working subagents | live records' `presence.workerCounts` / `workers[]` (backend `/api/insights/agents`) | Live working/idle counts per running pi, heartbeat-fresh ≤15s; solo vs team via the JSONL join | Anything for pi processes that aren't running; a record with a stale heartbeat is "unknown", not "idle" |
 | Outline | last `topic-outline` custom entry (v2) | `now`, `overall`, topics (heading, ≤3 bullets, anchor entryId, manual), state `fresh`/`stale`/`failed-keeping-last`, `generatedAt` | — |
@@ -642,8 +645,8 @@ Where this draft differs, the spec wins. Summary of what changed from the draft 
 1. **Live worker status** — backend ships a live source (the sessions live records,
    `AgentsInsight`). Member chips pulse only when `member.worker` is present and its session is
    `fresh`; otherwise they render `lastReport` with "as of `{HH:MM}`" and no pulse.
-2. **Usage stale threshold** — 10 min, the server's `UsageInsight.stale` (only TUI pi refreshes
-   the file). The UI doesn't compute its own. A window whose `resetsAt` has passed renders
+2. **Usage stale threshold** — 10 min, the server's `UsageInsight.stale` (the server's poller
+   and TUI pis refresh the file). The UI doesn't compute its own. A window whose `resetsAt` has passed renders
    `.meter-ghost` with "Reset at `{HH:MM}`. New reading at the next refresh."
 3. **Ended teams** — not listed in `#/insights` (`AgentsInsight` only carries running parents,
    and a team's workers die with its parent). Teams = active teams only.

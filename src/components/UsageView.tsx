@@ -3,6 +3,7 @@ import type { UsageBalance, UsageInsight, UsageProvider, UsageWindow } from "../
 import { refreshUsage } from "../lib/api";
 import { duration, relativeIn, relativeTime } from "../lib/format";
 import {
+  authCaption,
   balanceBreakdown,
   extraUsageMeter,
   meterReset,
@@ -14,6 +15,7 @@ import {
   providerChip,
   providerProblem,
   usageSummary,
+  type UsageLine,
   usesLine,
   windowLabel,
 } from "../lib/insights";
@@ -115,12 +117,26 @@ function Balance(props: { b: UsageBalance }) {
   );
 }
 
+/** A note or caption's words, its command (if any) in `<code>`. */
+function UsageText(props: { line: UsageLine }) {
+  return (
+    <>
+      {props.line.lead}
+      <Show when={props.line.code}>
+        <code>{props.line.code}</code>
+      </Show>
+      {props.line.rest}
+    </>
+  );
+}
+
 /**
  * One provider's card: name, plan subtitle and chip in the head; its meters (or balance) and
  * notes in the body, or the one note that replaces them when the provider isn't ok.
  */
 function UsageCard(props: { p: UsageProvider; now: number }) {
-  const problem = () => providerProblem(props.p);
+  const problem = () => providerProblem(props.p, props.now);
+  const signIn = () => authCaption(props.p, props.now);
   const headId = () => `u-${props.p.id}`;
   return (
     <article class="card usage-card" aria-labelledby={headId()}>
@@ -155,11 +171,14 @@ function UsageCard(props: { p: UsageProvider; now: number }) {
         >
           {(pr) => (
             <p class="usage-note">
-              {pr().lead}
-              <Show when={pr().code}>
-                <code>{pr().code}</code>
-              </Show>
-              {pr().rest}
+              <UsageText line={pr()} />
+            </p>
+          )}
+        </Show>
+        <Show when={signIn()}>
+          {(c) => (
+            <p class="usage-card-caption text-caption text-muted">
+              <UsageText line={c()} />
             </p>
           )}
         </Show>

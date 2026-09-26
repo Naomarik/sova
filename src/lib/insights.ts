@@ -1,9 +1,9 @@
 // Presentation rules for the insights surfaces (docs/insights-research.md "## UX"): labels,
 // status words and chips, derived from the /api/insights/* payloads. No fetching here.
 
-import type { AgentsInsight, TeamEvent, TeamInfo, TeamMember, UsageBalance, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
+import type { AgentsInsight, TeamEvent, TeamInfo, TeamMember, UsageAuth, UsageBalance, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
 import type { Tone } from "../components/ui";
-import { clockTime, duration, shortDate, thousands } from "./format";
+import { clockTime, duration, relativeTime, shortDate, stampTime, thousands } from "./format";
 import { isHostSession } from "./workers";
 
 export const PROVIDER_NAME: Record<UsageProvider["id"], string> = {
@@ -102,15 +102,38 @@ export function providerChip(p: UsageProvider): { tone?: Tone; text: string } | 
 const signIn = (id: UsageProvider["id"]) => (id === "openai" ? "pi /login" : "claude /login");
 const keyWord = (id: UsageProvider["id"]) => (id === "zai" ? "API key" : "key");
 
+/** A note or caption: `lead`, then `code` in `<code>`, then `rest`. */
+export type UsageLine = { lead?: string; code?: string; rest: string };
+
+/** Who renews a timed-out access token by running, per credential source. */
+const RENEWER: Record<NonNullable<UsageAuth["source"]>, string> = {
+  "claude-cli": "Claude Code runs",
+  pi: "pi uses OpenAI",
+  "codex-cli": "the Codex CLI runs",
+};
+
+const refreshDead = (a: UsageAuth, now: number) => (a.refreshExpiresAt !== undefined ? a.refreshExpiresAt <= now : a.refreshExpired === true);
+
+/**
+ * The access token passed its own expiry and nothing says the refresh token has: the CLI that owns
+ * it renews it the next time it runs. The expired sentence for exactly that case, else null (a
+ * token refused before its expiry was revoked, and only a new sign-in helps).
+ */
+function timedOut(p: UsageProvider, now: number): UsageLine | null {
+  const a = p.auth;
+  if (a?.kind !== "oauth" || !a.source || a.expiresAt === undefined || a.expiresAt > now || refreshDead(a, now)) return null;
+  return { rest: `Sign-in token expired ${relativeTime(a.expiresAt, now)}. It renews the next time ${RENEWER[a.source]}; usage updates after that.` };
+}
+
 /** One caption replacing the meters when a provider has nothing to show. Null = render meters. */
-export function providerProblem(p: UsageProvider): { lead?: string; code?: string; rest: string } | null {
+export function providerProblem(p: UsageProvider, now = Date.now()): UsageLine | null {
   switch (p.state) {
     case "ok":
       return null;
     case "nologin":
       return { lead: "Not signed in. Run ", code: signIn(p.id), rest: " and it'll show at the next refresh." };
     case "expired":
-      return { lead: "Sign-in expired. Run ", code: signIn(p.id), rest: " to renew it." };
+      return timedOut(p, now) ?? { lead: "Sign-in expired. Run ", code: signIn(p.id), rest: " to renew it." };
     case "nokey":
       return { lead: `No ${PROVIDER_NAME[p.id]} ${keyWord(p.id)} in `, code: "~/.pi/agent/auth.json", rest: "." };
     case "badkey":
@@ -121,6 +144,22 @@ export function providerProblem(p: UsageProvider): { lead?: string; code?: strin
       if (p.windows.length > 0) return null;
       return { rest: `Couldn't fetch usage: ${(p.error ?? "unknown error").replace(/\.$/, "")}. We'll try again at the next refresh.` };
   }
+}
+
+/**
+ * The muted sign-in line at the foot of an OAuth card: when the access token renews by and when it
+ * last did, or why it can't. Null for API keys, no sign-in data, or a card whose `expired` note
+ * already says it.
+ */
+export function authCaption(p: UsageProvider, now: number): UsageLine | null {
+  const a = p.auth;
+  if (a?.kind !== "oauth" || p.state === "expired") return null;
+  if (refreshDead(a, now)) return { lead: "Sign-in can't renew. Run ", code: signIn(p.id), rest: " to sign in again." };
+  const late = timedOut(p, now);
+  if (late) return late;
+  const renewed = a.refreshedAt !== undefined ? `last renewed ${relativeTime(a.refreshedAt, now)}` : null;
+  if (a.expiresAt !== undefined) return { rest: `Sign-in renews by ${stampTime(a.expiresAt, now)}${renewed ? ` · ${renewed}` : ""}` };
+  return renewed ? { rest: `Sign-in ${renewed}` } : null;
 }
 
 /**

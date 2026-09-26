@@ -4,6 +4,7 @@
 
 import { produce, type SetStoreFunction } from "solid-js/store";
 import { stripImageNotes } from "../../shared/image-note";
+import { isLinkMessage } from "../../shared/link-message";
 import type { TmpAttachment, UploadResult } from "../../shared/protocol";
 import { imagesFromContent } from "./images";
 import { contentText, isObj, str } from "./message";
@@ -366,6 +367,9 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
             // Without pi 0.87's image resize notes, as the transcript shows it — which also lets the
             // row this tab sent match by its typed text.
             const text = stripImageNotes(contentText(msg.content), msg.content);
+            // A link message (§mesh.links/transcript) is a partner's, handed to the agent by the
+            // server: never a row of this tab's, so it claims none and draws none.
+            if (isLinkMessage(text)) break;
             const open = s.entries.filter((e): e is Extract<LiveEntry, { kind: "user" }> => e.kind === "user" && !e.started);
             const row = open.find((e) => e.text === text) ?? open.find((e) => e.state === "delivered") ?? open[0];
             if (row) {

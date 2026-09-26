@@ -424,3 +424,11 @@ test("timelineState mirrors the outline strip: when it was made, and whether it 
   assert.equal(timelineState(outline([], { generatedAt: 0 }), now), null, "never generated: no claim about freshness");
   assert.equal(timelineState(null, now), null);
 });
+
+test("inputTurns skips a link-opened turn, and its work never counts toward the input before it", () => {
+  const link: TranscriptItem = { id: "l1", kind: "link", text: "partner", raw: { type: "message", timestamp: at(4) } };
+  const turns = inputTurns([user("u1", 0), say("a1:0", 1), link, say("a2:0", 5), tool("a2:1", 6), user("u2", 8)]);
+  assert.deepEqual(turns.map((t) => t.id), ["u1", "u2"]);
+  assert.equal(turns[0]!.replies, 1);
+  assert.equal(turns[0]!.tools, 0);
+});

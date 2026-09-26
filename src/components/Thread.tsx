@@ -455,7 +455,7 @@ export function HistoryItems(props: {
    * duplicating or dropping one.
    */
   const strips = createMemo(() => (props.actions ? stripsByRow(rows()) : new Map<number, MessageStrip>()));
-  // Only calls after the last user message (or wake nudge — isTurnStart) can still be in flight.
+  // Only calls after the last user message (or wake nudge or link message — isTurnStart) can still be in flight.
   const lastUserIndex = createMemo(() => {
     for (let i = renderable().length - 1; i >= 0; i--) if (isTurnStart(renderable()[i]!)) return i;
     return -1;
@@ -493,7 +493,12 @@ export function HistoryItems(props: {
   return (
     <>
       <For each={rows()}>
-        {(item, index) => (
+        {(item, index) =>
+          // A link message is a partner's, shown only in the Agents tab (§mesh.links/transcript):
+          // no row at all here, not even the wrapper. It still counts as a turn start (above).
+          item.kind === "link" ? (
+            <Show when={forkAfter() === index() && props.fork}>{(fork) => <ForkRow fork={fork()} time={forkTime()} />}</Show>
+          ) : (
           // A box-less wrapper so the outline strip can find an entry's row (Jump to Message).
           <div class="entry" data-entry={item.id}>
             <Switch fallback={<Unknown raw={item.raw} />}>
@@ -640,7 +645,8 @@ export function HistoryItems(props: {
                 below it is this member's own. */}
             <Show when={forkAfter() === index() && props.fork}>{(fork) => <ForkRow fork={fork()} time={forkTime()} />}</Show>
           </div>
-        )}
+          )
+        }
       </For>
       <Show when={split()?.hidden.length ? split() : null}>
         {(s) => (

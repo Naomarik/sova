@@ -6,7 +6,8 @@
 // the conversation by every tool call and every housekeeping row.
 //
 // Counted: the ENTRY behind a user row, a wake row (a fired nudge is a real `role:"user"`
-// message under the hood, src/lib/turn.ts) or any row of an assistant entry — text, thinking and
+// message under the hood, src/lib/turn.ts), a link message's (the same, though it renders nothing)
+// or any row of an assistant entry — text, thinking and
 // tool-call blocks alike, since they are one reply's blocks sharing one entry id
 // (`${entryId}:${i}`, server/transcript.ts), and a multi-block reply is still one message.
 // Excluded: every row that is not a message at all — info (model changes, compaction, the fork
@@ -16,7 +17,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import { entryIdOf } from "./jump";
 
 /** The kinds a rendered row can belong to that ARE messages (a user's, a nudge's, a reply's). */
-const MESSAGE_KINDS: ReadonlySet<TranscriptItem["kind"]> = new Set(["user", "wake", "assistant-text", "thinking", "tool-call"]);
+const MESSAGE_KINDS: ReadonlySet<TranscriptItem["kind"]> = new Set(["user", "wake", "link", "assistant-text", "thinking", "tool-call"]);
 
 /**
  * User and assistant messages on this branch — the number "up to message {n}" names. Distinct

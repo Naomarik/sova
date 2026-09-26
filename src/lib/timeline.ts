@@ -13,7 +13,7 @@ import { duration, relativeTime, thousands } from "./format";
 import { inputPreview, type RowState, type ViewRow } from "./inputs";
 import { isObj, timestampOf, toolCallArgs } from "./message";
 import { absoluteTime, firstLine, timelineEntries } from "./spend";
-import { isTurnStart } from "./turn";
+import { isInput, isTurnStart } from "./turn";
 import { wakeTitle } from "../../shared/wake";
 
 /** A row's shape on the axis; the `data-kind` the stylesheet keys off. */
@@ -111,7 +111,7 @@ export interface InputTurn {
 export function inputTurns(items: readonly TranscriptItem[]): InputTurn[] {
   const out: InputTurn[] = [];
   items.forEach((it, index) => {
-    if (!isTurnStart(it)) return;
+    if (!isInput(it)) return;
     const text = it.text ?? "";
     const at = timestampOf(it.raw);
     const preview =
@@ -133,6 +133,7 @@ export function inputTurns(items: readonly TranscriptItem[]): InputTurn[] {
     let last = NaN;
     for (let i = index + 1; i < items.length; i++) {
       const next = items[i]!;
+      // A link-opened turn ends this one too: its work is not this input's.
       if (isTurnStart(next)) break;
       if (next.kind === "assistant-text") turn.replies++;
       else if (next.kind === "tool-call") turn.tools++;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
 import { inputCount, inputsText } from "./input-count";
+import { isInput, isTurnStart } from "./turn";
 
 const item = (id: string, kind: TranscriptItem["kind"]): TranscriptItem => ({ id, kind, raw: {} });
 
@@ -32,4 +33,11 @@ test("the trigger's copy is plural-correct", () => {
 test("inputCount counts a fired wake nudge as an input too", () => {
   const items = [item("a", "user"), item("b", "assistant-text"), item("c", "wake"), item("d", "tool-call")];
   assert.equal(inputCount(items), 2);
+});
+
+test("a link message starts a turn but is never an input; a wake nudge is both", () => {
+  const items = [item("a", "user"), item("l", "link"), item("r", "assistant-text"), item("w", "wake")];
+  assert.equal(inputCount(items), 2);
+  assert.equal(isTurnStart(item("l", "link")), true);
+  assert.equal(isInput(item("l", "link")), false);
 });

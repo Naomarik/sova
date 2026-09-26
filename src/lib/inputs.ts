@@ -3,7 +3,7 @@
 // row may act, the two-step confirm — so the component just renders them.
 import type { RewindRefusal, TranscriptItem } from "../../shared/protocol";
 import { timestampOf } from "./message";
-import { isTurnStart } from "./turn";
+import { isInput } from "./turn";
 import { wakeTitle } from "../../shared/wake";
 
 export type { RewindRefusal };
@@ -37,12 +37,12 @@ export interface InputRow {
 }
 
 /** The user rows of a transcript, oldest first: ordinary inputs and fired wake nudges alike
-    (isTurnStart) — a wake nudge is a real user message. `text` stays the row's raw text (what a
-    rewind hands back) unchanged; `preview` is what the row shows, which for a wake nudge is its
+    (isInput) — a wake nudge is a real user message; a link message is never an input. `text`
+    stays the row's raw text (what a rewind hands back) unchanged; `preview` is what the row shows, which for a wake nudge is its
     reason, else "Wake nudge n1", never the tagged message's first line. */
 export function inputRows(items: readonly TranscriptItem[]): InputRow[] {
   return items
-    .filter(isTurnStart)
+    .filter(isInput)
     .map((it) => {
       const text = it.text ?? "";
       const preview =

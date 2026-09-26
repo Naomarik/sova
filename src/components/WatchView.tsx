@@ -99,7 +99,7 @@ export function WatchView(props: {
    */
   const [actionNote, setActionNote] = createSignal<{ entryId: string; text: string } | null>(null);
   const [forking, setForking] = createSignal(false);
-  const watchState = (wake = false): ActionState => ({
+  const watchState = (wake = false, link = false): ActionState => ({
     chat: false,
     live: props.streaming,
     streaming: false,
@@ -107,6 +107,7 @@ export function WatchView(props: {
     pending: forking(),
     paused: null,
     wake,
+    link,
   });
 
   const forkFrom = async (strip: MessageStrip) => {
@@ -142,7 +143,7 @@ export function WatchView(props: {
           case "fork":
             return { kind, reason: actionReason("fork", watchState()), run: () => forkFrom(strip) };
           default:
-            return { kind, reason: actionReason(kind, watchState(!!strip.fromWake)), run: () => {} };
+            return { kind, reason: actionReason(kind, watchState(!!strip.fromWake, !!strip.fromLink)), run: () => {} };
         }
       });
     },

@@ -526,3 +526,15 @@ test("a Stop pressed during a /compact (no turn) clears at compaction_end; insid
   applyEvent(set, { type: "agent_settled" });
   assert.equal(s.stopping, false);
 });
+
+test("a link message's start draws no row and claims none of this tab's pending rows", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "my own");
+  const link = "[link_msg lk_0123456789abcdef lm_0123456789abcdef] from Partner (box/abc)\nhello\n\nReply with link_send (to: \"abc\").";
+  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: link }] } });
+  assert.equal(s.entries.length, 1);
+  if (s.entries[0]?.kind === "user") {
+    assert.equal(s.entries[0].text, "my own");
+    assert.notEqual(s.entries[0].started, true, "still waiting for its own start");
+  }
+});

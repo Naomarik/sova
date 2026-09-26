@@ -95,7 +95,7 @@ import {
   type MessageStrip,
 } from "../lib/message-actions";
 import type { MessageActionItem } from "./MessageActions";
-import { isTurnStart } from "../lib/turn";
+import { isInput } from "../lib/turn";
 import { entryIdOf } from "../lib/jump";
 import { Composer, type ComposerReason } from "./Composer";
 import { openCreated } from "../lib/fork-stage";
@@ -836,10 +836,11 @@ export function ChatView(props: {
   };
   props.onRewindControl?.({ path: props.path, blocked: rewindBlocked, rewind });
   onCleanup(() => props.onRewindControl?.(null));
-  /** The flyout's "Undo last turn": a rewind to just before the newest user message on the branch. */
+  /** The flyout's "Undo last turn": a rewind to just before the newest user message on the branch
+      (never a link message: a partner's words are no rewind target). */
   const lastInput = () => {
     const list = items() ?? [];
-    for (let i = list.length - 1; i >= 0; i--) if (isTurnStart(list[i]!)) return list[i]!.id;
+    for (let i = list.length - 1; i >= 0; i--) if (isInput(list[i]!)) return list[i]!.id;
     return null;
   };
   const undoControl: UndoControl = {
@@ -874,7 +875,7 @@ export function ChatView(props: {
 
   /** What every strip in this chat is judged by. Reactive by construction: a turn starting, a
       compaction, a model switch or a reconnect re-enables the actions in place. */
-  const actionState = (kind: "rewind" | "regenerate" | "fork", wake = false): ActionState => ({
+  const actionState = (kind: "rewind" | "regenerate" | "fork", wake = false, link = false): ActionState => ({
     chat: true,
     live: false, // a ChatView only exists for a session Sova may write to
     streaming: live.running,
@@ -884,6 +885,7 @@ export function ChatView(props: {
     pending: kind === "fork" ? forking() : pending().rewind + pending().regenerate > 0,
     paused: blocked()?.text ?? null,
     wake,
+    link,
   });
 
   /** Regenerate: the server walks back to the user message that started this reply, rewinds to
@@ -957,7 +959,7 @@ export function ChatView(props: {
           case "regenerate":
             return {
               kind,
-              reason: actionReason("regenerate", actionState("regenerate", !!strip.fromWake)),
+              reason: actionReason("regenerate", actionState("regenerate", !!strip.fromWake, !!strip.fromLink)),
               run: () => regenerate(strip.entryId),
             };
         }

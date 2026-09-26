@@ -142,3 +142,8 @@ test("newest first puts the rewind's abandoned rows ABOVE the boundary row", () 
     ["a", "active"],
   ]);
 });
+
+test("inputRows never lists a link message: a partner's words are no rewind target", () => {
+  const link: TranscriptItem = { id: "l", kind: "link", text: "[link_msg …] from x (h/s)\nhi", raw: {} };
+  assert.deepEqual(inputRows([user("a", "mine"), link, other("r:0", "assistant-text")]).map((r) => r.id), ["a"]);
+});

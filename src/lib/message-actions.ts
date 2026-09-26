@@ -33,6 +33,9 @@ export interface MessageStrip {
       would re-send Sova's own nudge text as if the user had typed it, so the server refuses
       (`regenerate_refused` reason "wake") and the button says so before the round trip. */
   fromWake?: boolean;
+  /** This reply answered a LINK MESSAGE, a partner's words (§mesh.links/transcript): refused the
+      same way (`regenerate_refused` reason "link"). */
+  fromLink?: boolean;
 }
 
 /**
@@ -50,10 +53,10 @@ export function messageStrips(rows: readonly TranscriptItem[]): MessageStrip[] {
   /** Where an entry's strip already is in `strips`, so a later block of the same entry moves it. */
   const at = new Map<string, number>();
   /** What started the turn these replies belong to: a message the user sent, or a wake nudge. */
-  let startedBy: "user" | "wake" = "user";
+  let startedBy: "user" | "wake" | "link" = "user";
   rows.forEach((item, index) => {
-    if (item.kind === "wake") {
-      startedBy = "wake";
+    if (item.kind === "wake" || item.kind === "link") {
+      startedBy = item.kind;
       return;
     }
     if (item.kind === "user") {
@@ -67,7 +70,7 @@ export function messageStrips(rows: readonly TranscriptItem[]): MessageStrip[] {
     const seen = at.get(entryId);
     if (seen === undefined) {
       at.set(entryId, strips.length);
-      strips.push({ index, entryId, role: "assistant", text, ...(startedBy === "wake" ? { fromWake: true } : {}) });
+      strips.push({ index, entryId, role: "assistant", text, ...(startedBy === "wake" ? { fromWake: true } : startedBy === "link" ? { fromLink: true } : {}) });
       return;
     }
     // The same reply, one more block: the strip moves down to it and Copy takes both blocks.
@@ -129,6 +132,7 @@ export const REGENERATE_CONFIRM = {
 
 /** A reply to a scheduled wake-up has no message of the user's to send again. */
 export const REGENERATE_WAKE_REASON = "That reply answered a scheduled wake-up, not a message you sent, so there's nothing to send again.";
+export const REGENERATE_LINK_REASON = "That reply answered a linked session's message, not one you sent, so there's nothing to send again.";
 
 export const ACTION_CONFIRM: Partial<Record<MessageActionKind, { label: string; note: string }>> = {
   rewind: REWIND_CONFIRM,
@@ -154,6 +158,8 @@ export interface ActionState {
   paused: string | null;
   /** This reply answered a wake nudge: there is no message of yours to send again. */
   wake?: boolean;
+  /** This reply answered a link message: the same. */
+  link?: boolean;
 }
 
 export const TUI_LIVE_REASON = "This session is open in a terminal, so Sova won't write to it.";
@@ -189,6 +195,7 @@ export function actionReason(kind: LandedActionKind, s: ActionState): string | n
       // Permanent before anything else: waiting, stopping or reconnecting never makes a wake
       // nudge into a message you sent.
       if (kind === "regenerate" && s.wake) return REGENERATE_WAKE_REASON;
+      if (kind === "regenerate" && s.link) return REGENERATE_LINK_REASON;
       if (!s.chat) return `Only a chat open in Sova can ${verb}.`;
       if (s.live) return TUI_LIVE_REASON;
       if (s.pending) return `A ${verb} is already in progress.`;

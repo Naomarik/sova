@@ -13,6 +13,7 @@ import {
   queueRemoveReason,
   queueGoneEffect,
   REGENERATE_CONFIRM,
+  REGENERATE_LINK_REASON,
   REGENERATE_WAKE_REASON,
   SHARED_QUEUE_REASON,
   queueRemoveRefusalText,
@@ -314,4 +315,22 @@ test("a STEER inside a wake turn makes the replies after it regenerable again", 
   // And that difference is what the strip shows: refused vs offered.
   assert.equal(actionReason("regenerate", state({ wake: !!byEntry.get("a1")!.fromWake })), REGENERATE_WAKE_REASON);
   assert.equal(actionReason("regenerate", state({ wake: !!byEntry.get("a2")!.fromWake })), null);
+});
+
+test("a reply to a link message is refused Regenerate; the user's next message starts a turn of theirs again", () => {
+  const rows = [
+    user("u1", "a message I sent"),
+    row("l1", "link", "[link_msg lk_0123456789abcdef lm_0123456789abcdef] from x (h/s)\nhi"),
+    block("a1", 0, "answering the partner"),
+    user("u2", "another message"),
+    block("a2", 0, "answering the user"),
+  ];
+  const strips = messageStrips(rows);
+  const byEntry = new Map(strips.map((s) => [s.entryId, s]));
+  assert.equal(strips.some((s) => s.entryId === "l1"), false, "no strip on the link message itself");
+  assert.equal(byEntry.get("a1")!.fromLink, true);
+  assert.equal(byEntry.get("a1")!.fromWake, undefined);
+  assert.equal(byEntry.get("a2")!.fromLink, undefined);
+  assert.equal(actionReason("regenerate", state({ link: true, streaming: true })), REGENERATE_LINK_REASON);
+  assert.equal(actionReason("regenerate", state({ link: false })), null);
 });

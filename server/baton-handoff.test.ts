@@ -53,17 +53,30 @@ const STUB = {
 };
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
-/** A baton chat whose model replies "ok" once `release()` is called, or stops when aborted. */
-async function heldChat(path: string) {
+/** A baton chat whose model replies "ok" once `release()` is called, or stops when aborted.
+    `start()`: with `holdStart`, a prompt waits in the SDK's input handlers (a turn that is starting,
+    its run not yet begun) until it is called. */
+async function heldChat(path: string, opts: { holdStart?: boolean } = {}) {
   const chat = await acquireChat(path);
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
-  const s = chat.session as unknown as { _modelRuntime: { hasConfiguredAuth(p: string): boolean }; agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown } };
+  let start: () => void = () => {};
+  const s = chat.session as unknown as {
+    _modelRuntime: { hasConfiguredAuth(p: string): boolean };
+    agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown };
+    _runInputHandlers(...a: unknown[]): Promise<unknown>;
+  };
+  if (opts.holdStart) {
+    const started = new Promise<void>((r) => (start = r));
+    const run = s._runInputHandlers.bind(s);
+    s._runInputHandlers = async (...a) => (await started, run(...a));
+  }
   s._modelRuntime.hasConfiguredAuth = () => true;
   s.agent.state.model = STUB;
   s.agent.getApiKey = async () => "stub";
   s.agent.streamFunction = async (_m: unknown, _c: unknown, opts?: { signal?: AbortSignal }) => {
-    const aborted = new Promise<"aborted">((r) => opts?.signal?.addEventListener("abort", () => r("aborted"), { once: true }));
+    // Aborted already when the model is called: a stop that came at the run's first event.
+    const aborted = new Promise<"aborted">((r) => (opts?.signal?.aborted ? r("aborted") : opts?.signal?.addEventListener("abort", () => r("aborted"), { once: true })));
     const how = await Promise.race([gate.then(() => "done" as const), aborted]);
     const message = {
       role: "assistant", api: "stub", provider: "stub", model: "stub", timestamp: Date.now(), usage,
@@ -73,7 +86,7 @@ async function heldChat(path: string) {
     const end = how === "aborted" ? { type: "error", reason: "aborted", error: message } : { type: "done", reason: "stop", message };
     return { async *[Symbol.asyncIterator]() { yield end; }, result: async () => message };
   };
-  return { chat, release };
+  return { chat, release, start };
 }
 
 /** Someone's message enters as the share route does it: the lock, then the prompt. */
@@ -219,5 +232,70 @@ describe("an earlier holder invited to a new offer", () => {
     assert.deepEqual(baton.linkAccess(tonyOffer), { ok: false, status: 410 });
     assert.equal(baton.linkAccess(c.token!).ok, true);
     assert.equal(baton.linkAccess(out.links.find((l) => l.personId === maria.id)!.token).ok, true);
+  });
+});
+
+describe("moves, the starting turn and the message limit together", () => {
+  const holderOf = (sid: string) => baton.batonById(sid)!.row.holder;
+  const lastReply = (path: string) => entriesOf(path).filter((e) => e.type === "message" && e.message.role === "assistant").at(-1);
+  const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+
+  test("Take back while a message's turn is starting: its run is stopped when it begins, and the hand-off comes after it", async () => {
+    const kim = person("Kim Start");
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Starting", goal: "g" });
+    const { chat, start } = await heldChat(c.path, { holdStart: true });
+    says(chat, c.sessionId, kim.id, "first words");
+    await tick();
+    assert.equal(chat.session.isStreaming, false, "the run has not begun");
+    const took = post(`/api/baton/${c.sessionId}/take`);
+    await tick();
+    assert.equal(holderOf(c.sessionId), kim.id, "the move waits for the starting turn instead of slipping in before it");
+    start();
+    const res = await took;
+    assert.equal(res.status, 200, await res.clone().text());
+    assert.equal(holderOf(c.sessionId), OPERATOR);
+    assert.equal(chat.session.isStreaming, false);
+    const es = entriesOf(c.path);
+    const lastIndex = (pred: (e: any) => boolean) => es.map(pred).lastIndexOf(true);
+    const reply = lastIndex((e) => e.type === "message" && e.message.role === "assistant");
+    const hand = lastIndex((e) => e.customType === BATON_HANDOFF_ENTRY);
+    assert.equal(es[reply]?.message.stopReason, "aborted", "the reply that began was stopped, not written for the old holder");
+    assert.ok(hand > reply, "the hand-off is recorded after the stopped reply");
+  });
+
+  test("the budget stop waits for the reply to the last allowed message, even while its turn is starting, then moves", async () => {
+    const lee = person("Lee Limit");
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: lee.id, publicTitle: "Limit", goal: "g", messagesMax: 1 });
+    const { chat, start, release } = await heldChat(c.path, { holdStart: true });
+    says(chat, c.sessionId, lee.id, "the last one");
+    await loadout.budgetStop(c.sessionId);
+    assert.equal(holderOf(c.sessionId), lee.id, "not while the turn is starting");
+    start();
+    await until(() => chat.session.isStreaming);
+    await loadout.budgetStop(c.sessionId);
+    assert.equal(holderOf(c.sessionId), lee.id, "nor mid-reply");
+    release();
+    await until(() => holderOf(c.sessionId) === OPERATOR);
+    assert.equal(lastReply(c.path)?.message.stopReason, "stop", "the reply to the last allowed message is whole");
+    const h = entriesOf(c.path).filter((e) => e.customType === BATON_HANDOFF_ENTRY).at(-1)!;
+    assert.deepEqual([h.data.from, h.data.to, h.data.question], [lee.id, OPERATOR, loadout.LIMIT_QUESTION]);
+  });
+
+  test("a hand-off or an offer the limit refuses leaves the reply in flight alone", async () => {
+    const amy = person("Amy Cap");
+    const bo = person("Bo Cap");
+    const di = person("Di Cap");
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: amy.id, publicTitle: "Capped", goal: "g", messagesMax: 1 });
+    const { chat, release } = await heldChat(c.path);
+    says(chat, c.sessionId, amy.id, "last");
+    await until(() => chat.session.isStreaming);
+    const h = await post(`/api/baton/${c.sessionId}/handoff`, { to: bo.id, question: "q" });
+    assert.equal(h.status, 409, await h.clone().text());
+    const o = await post(`/api/baton/${c.sessionId}/offer`, { to: [bo.id, di.id] });
+    assert.equal(o.status, 409, await o.clone().text());
+    assert.equal(chat.session.isStreaming, true, "the reply still runs");
+    release();
+    await until(() => !chat.session.isStreaming);
+    assert.equal(lastReply(c.path)?.message.stopReason, "stop");
   });
 });

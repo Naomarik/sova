@@ -32,8 +32,10 @@ import {
   lapsedLeases,
   leaseMs,
   markDone,
+  moveRefusal,
   nameOf,
   noteMessage,
+  offerRefusal,
   resolveTarget,
   sessionPathOf,
   setReplyProbe,
@@ -113,7 +115,9 @@ export function renderBatonPrompt(sessionId: string, template = readFileSync(PRO
  * checks again, a few times at most.
  */
 async function interruptReply(chat: ChatSession): Promise<void> {
-  for (let i = 0; i < 3 && (chat.session.isStreaming || chat.isCompacting()); i++) {
+  for (let i = 0; i < 3 && (chat.session.isStreaming || chat.isCompacting() || chat.turnStarting); i++) {
+    // A turn that is starting (a message just handed over) can't be aborted until its run begins.
+    await chat.whenStarted();
     const { steering, followUp } = await chat.queue.drain();
     const dropped = steering.length + followUp.length;
     if (dropped) console.warn(`[baton] an interrupted reply dropped ${dropped} queued message(s)`);
@@ -128,8 +132,12 @@ export async function moveBaton(sessionId: string, to: PersonRef, question: stri
   const hit = batonById(sessionId);
   if (!hit) throw new OrgError("Unknown baton session", 404);
   const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
-  if (chat.session.isStreaming) {
+  // A turn that is starting is a reply in flight too.
+  if (chat.session.isStreaming || chat.turnStarting) {
     if (!opts.interrupt) throw new OrgError("Wait for the reply to finish first.", 409);
+    // A move that would be refused leaves the reply alone.
+    const refused = moveRefusal(batonById(sessionId)?.row ?? hit.row, to);
+    if (refused) throw refused;
     await interruptReply(chat);
   }
   const { n, from } = handTo(sessionId, to, question, briefing);
@@ -167,8 +175,10 @@ export async function offerBaton(sessionId: string, to: readonly unknown[], ques
   const hit = batonById(sessionId);
   if (!hit) throw new OrgError("Unknown baton session", 404);
   const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
-  if (chat.session.isStreaming) {
+  if (chat.session.isStreaming || chat.turnStarting) {
     if (!opts.interrupt) throw new OrgError("Wait for the reply to finish first.", 409);
+    const refused = offerRefusal(batonById(sessionId)?.row ?? hit.row, to);
+    if (refused) throw refused;
     await interruptReply(chat);
   }
   const out = startOffer(sessionId, to, question, briefing, new Date(), opts.mintLink !== false);
@@ -269,7 +279,7 @@ export async function personLeft(orgId: string, personId: string): Promise<void>
       // The reply may itself have moved the baton on before it stopped: decide on the row as it is now.
       const why = affected(row.sessionId);
       if (!why) continue;
-      await moveBaton(row.sessionId, OPERATOR, why === "holder" ? "(left the organization)" : `(${name} left the organization; offer withdrawn)`);
+      await moveBaton(row.sessionId, OPERATOR, why === "holder" ? "(left the organization)" : `(${name} left the organization; offer withdrawn)`, "", { interrupt: true });
     } catch (err) {
       console.warn(`[baton] moving ${row.sessionId.slice(0, 8)} off a person who left: ${err instanceof Error ? err.message : String(err)}`);
     }

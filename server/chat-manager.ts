@@ -805,15 +805,29 @@ class ChatSession {
    * Cleared at the first event of the run, or when that prompt settles without one.
    */
   private starting: Promise<unknown> | null = null;
+  private startWaiters: (() => void)[] = [];
 
   private noteStarting(turn: Promise<unknown>): void {
     this.starting = turn;
     const clear = () => {
       if (this.starting !== turn) return;
-      this.starting = null;
+      this.startedNow();
       if (!this.disposed) this.queue.onSdkEvent();
     };
     turn.then(clear, clear);
+  }
+  private startedNow(): void {
+    this.starting = null;
+    for (const w of this.startWaiters.splice(0)) w();
+  }
+  /** A turn was handed to the SDK and its run has not begun (see `starting`): the SDK's abort()
+      misses it, so whoever must stop it waits for `whenStarted` first. */
+  get turnStarting(): boolean {
+    return this.starting !== null;
+  }
+  /** Resolves once no turn is starting: its run has begun, or its prompt settled without one. */
+  whenStarted(): Promise<void> {
+    return this.starting ? new Promise((r) => this.startWaiters.push(r)) : Promise.resolve();
   }
   /** How the last switch of THIS chat applies (ModeApplies); set at bind and by applyMode. */
   modeApplies: ModeApplies = "now";
@@ -1160,7 +1174,7 @@ class ChatSession {
     this.unsubscribe?.();
     this.unsubscribe = session.subscribe((event) => {
       if (this.starting && this.session.isStreaming) {
-        this.starting = null; // the run has begun: a send now queues on isStreaming
+        this.startedNow(); // the run has begun: a send now queues on isStreaming
         this.queue.onSdkEvent();
       }
       try {

@@ -400,9 +400,8 @@ export function handTo(
   let from: PersonRef = OPERATOR;
   let withdrawn: Offer | undefined;
   const row = update(sessionId, (r) => {
-    if (r.state === "done" || r.state === "closed") throw new OrgError(`This session is ${r.state}.`, 409);
-    if (r.holder === to) throw new OrgError("They already hold the baton.", 409);
-    if (to !== OPERATOR && budgetSpent(r)) throw new OrgError(LIMIT_REACHED, 409);
+    const refused = moveRefusal(r, to);
+    if (refused) throw refused;
     from = r.holder ?? (r.offerId ? POOL : OPERATOR);
     withdrawn = withdrawCurrent(r);
     n = r.handoffs.length + 1;
@@ -447,6 +446,24 @@ export const budgetSpent = (r: Pick<BatonSession, "budget">): boolean => r.budge
 
 /** Why a person can't be handed the baton at the limit (the model's hand_to, the operator's hand-off or offer). */
 const LIMIT_REACHED = "This conversation has reached its message limit. Only the operator can take it now: hand it to the operator.";
+
+/**
+ * Why the baton can't go to `to` (a person, the operator, or POOL for an offer) now, or null: the
+ * refusals of handTo and startOffer. An operator's move asks first, so a move that would be refused
+ * never stops the reply in flight (server/baton-loadout.ts).
+ */
+export function moveRefusal(r: BatonSession, to: PersonRef): OrgError | null {
+  if (r.state === "done" || r.state === "closed") return new OrgError(`This session is ${r.state}.`, 409);
+  if (r.holder === to) return new OrgError("They already hold the baton.", 409);
+  if (to !== OPERATOR && budgetSpent(r)) return new OrgError(LIMIT_REACHED, 409);
+  return null;
+}
+
+/** An offer's refusals, as startOffer makes them (the invitees, then moveRefusal), or null. */
+export function offerRefusal(r: BatonSession, to: readonly unknown[]): OrgError | null {
+  const invitees = resolveInvitees(readRoster(r.orgId), to, operatorName());
+  return invitees.ok ? moveRefusal(r, POOL) : new OrgError(invitees.error);
+}
 
 /** The message budget is spent: the caller moves the baton to the operator (with its entry). */
 export class BudgetSpent extends OrgError {
@@ -630,8 +647,8 @@ export function startOffer(
   let offer: Offer | undefined;
   let withdrawn: Offer | undefined;
   const row = update(sessionId, (r) => {
-    if (r.state === "done" || r.state === "closed") throw new OrgError(`This session is ${r.state}.`, 409);
-    if (budgetSpent(r)) throw new OrgError(LIMIT_REACHED, 409);
+    const refused = moveRefusal(r, POOL);
+    if (refused) throw refused;
     from = r.holder ?? (r.offerId ? POOL : OPERATOR);
     withdrawn = withdrawCurrent(r);
     n = r.handoffs.length + 1;

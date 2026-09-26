@@ -30,6 +30,7 @@ installs with `install.sh` alone, without the web app.
 | `extensions/sessions/` | Live pi sessions on this machine find each other through a filesystem presence registry; ships the `pi-sessions` CLI (`bin/pi-sessions.ts`) and the record schema (`public/SCHEMA.md`) |
 | `extensions/remote/` | `--target <name>`: runs the session's tools on an ssh / AWS-SSM / docker / incus target from `targets.json`; inert without the flag. Its `argv.ts` is imported by Sova |
 | `extensions/sandbox/` | `/sandbox on\|off`: per-session OS sandbox for the agent's tools (bubblewrap on Linux; fail closed elsewhere), with the policy in `sandbox-policy/` |
+| `extensions/worktrees/` | The git worktrees a session works in: the parent agent's `worktree` tool (create, attach, detach, merge, list), kept in the session's `worktrees` entry; workers may start only in the session cwd or an active tracked worktree, and each merge the session makes becomes a card. Its `state.ts` is imported by Sova |
 | `extensions/stamp/` | A dim, right-aligned `1:43 PM · 5m ago` under each user and assistant message in the TUI transcript. Its `format.ts` (12-hour clock, date-prefixed stamp, relative age; no imports) is imported by Sova, so both show the same times |
 | `extensions/codefold/` | Folds long fenced code blocks in assistant messages into one band |
 | `extensions/topic-outline/` | Display-only live topic outline of the conversation, with jump-to-topic |
@@ -172,6 +173,7 @@ cd extensions/codefold && node tests/run.mjs
 cd extensions/stamp && node --test format.test.ts index.test.ts
 cd extensions/remote && node --test argv.test.ts
 cd extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.unit.test.ts && node tests/run.mjs
+cd extensions/worktrees && node --test state.test.ts git.test.ts && node tests/run.mjs
 cd extensions/explain && node tests/run.mjs && node tests/smoke.mjs
 cd extensions/topic-outline && node test.mjs
 cd extensions/btw && node --test btw.test.ts && node ../claude-code/provider/typecheck.mjs ../../btw/btw.ts

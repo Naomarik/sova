@@ -329,6 +329,8 @@ describe("a move that stops a reply drops nothing queued behind it", () => {
       says(chat, c.sessionId, kay.id, "first");
       await until(() => chat.session.isStreaming);
       says(chat, c.sessionId, kay.id, "second");
+      // As live: the first queued message is inside the SDK, the next waits in Sova's queue.
+      await until(() => chat.session.agent.hasQueuedMessages());
       says(chat, c.sessionId, kay.id, "third");
       await move(c.sessionId, kay.id);
       assert.deepEqual(after(c.path), ["stopped", [kay.id, "second"], [kay.id, "third"], "hand-off"]);

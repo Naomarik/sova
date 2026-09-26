@@ -378,9 +378,11 @@ export class WebQueue {
       // either drops someone else's message or claims to have stopped one already sent.
       if (holds === "unsure") return refuse("shared_queue");
       // "yes" already proves the real queues hold our item and nothing else (see sdkHolds), which
-      // is exactly the precondition clearQueue() needs: it empties BOTH queues wholesale.
-      this.deps.clearSdkQueue();
+      // is exactly the precondition clearQueue() needs: it empties BOTH queues wholesale. Ours
+      // first: the clear emits `queue_update`, which pumps, and a pump that still saw the item in
+      // flight would report it delivered.
       this.clearInFlight();
+      this.deps.clearSdkQueue();
       this.depart(item, "removed");
       this.deps.onChange(this.snapshot());
       void this.pump();
@@ -425,10 +427,13 @@ export class WebQueue {
     if (this.handing) await this.handOffSettled;
     const inFlight = this.inFlight;
     const inSdk = inFlight && this.deps.sdk.hasQueued() ? inFlight : null;
-    const sdk = this.deps.clearSdkQueue();
+    // Ours first, then the SDK's: clearing the SDK's queue emits `queue_update` synchronously,
+    // which pumps, and a pump that still saw our items would call the handed-off one delivered
+    // and put the next one into the SDK, past this drain and the abort after it.
     const held = this.held.splice(0);
     const gone = inFlight ? [inFlight, ...held] : held;
     this.clearInFlight();
+    const sdk = this.deps.clearSdkQueue();
     const picked = keep ? gone.filter(keep) : [];
     // A picked item the loop already took is delivered (its sender mark waits for its message), not kept.
     const kept = picked.filter((it) => it !== inFlight || it === inSdk);

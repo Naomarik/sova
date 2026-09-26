@@ -245,7 +245,10 @@ function readProbe(S) {
 // ---- comparison ------------------------------------------------------------------------------------
 const sha256 = (b) => createHash("sha256").update(b).digest("hex");
 const results = []; // { check, ok, detail, allowed? }
-const record = (check, ok, detail = "") => results.push({ check, ok, detail });
+const record = (check, ok, detail = "", pair) => results.push({ check, ok, detail, ...(pair && !ok ? { pin: pinOf(pair) } : {}) });
+// A failing check's full compared pair, hashed: the detail is capped (jsonDiff, textDiff, 160-char values), so an
+// allowed-diffs entry that pins this also fails on any change the capped detail would not show.
+const pinOf = ([a, b]) => [a, b].map((v) => sha256(typeof v === "string" ? v : canonical(v)).slice(0, 16)).join(":");
 
 function compareSides(A, B) {
   const runEnd = Date.now();
@@ -267,7 +270,7 @@ function compareSides(A, B) {
       const va = mk(A).value({ status: a.status, type: a.type, body: a.body });
       const vb = mk(B).value({ status: b.status, type: b.type, body: b.body });
       const ok = canonical(va) === canonical(vb);
-      record(name, ok, ok ? `${a.method} ${a.status}` : jsonDiff(va, vb).join("\n"));
+      record(name, ok, ok ? `${a.method} ${a.status}` : jsonDiff(va, vb).join("\n"), [va, vb]);
       if (!ok && canonical(sortDeep(va)) === canonical(sortDeep(vb))) results.at(-1).orderOnly = true;
       if (ok && JSON.stringify(va) !== JSON.stringify(vb)) record(`${name}:key-order`, false, "same content, different key order");
     }
@@ -296,7 +299,7 @@ function compareSides(A, B) {
     const seqA = maskModelOutput(na.value({ created: A.chat.created, seq: emptyAssistantStarts(sa.sequence), close: A.chat.close }));
     const seqB = maskModelOutput(nb.value({ created: B.chat.created, seq: emptyAssistantStarts(sb.sequence), close: B.chat.close }));
     const ok = canonical(seqA) === canonical(seqB);
-    record("chat:ordered-stream", ok, ok ? `${sa.sequence.length} messages` : jsonDiff(seqA, seqB).join("\n"));
+    record("chat:ordered-stream", ok, ok ? `${sa.sequence.length} messages` : jsonDiff(seqA, seqB).join("\n"), [seqA, seqB]);
     const endA = mk(A).value({ status: sa.status, workers: sa.workers }), endB = mk(B).value({ status: sb.status, workers: sb.workers });
     const okU = canonical(endA) === canonical(endB);
     record("chat:final-status", okU, okU ? Object.keys(sa.status).join(", ") : jsonDiff(endA, endB).join("\n"));
@@ -373,7 +376,7 @@ function compareSides(A, B) {
       if (!a || !b) { record(`disk:${k}`, false, a ? "only in baseline" : "only in mesh"); continue; }
       if (a.length !== b.length) { record(`disk:${k}`, false, `${a.length} file(s) in baseline, ${b.length} in mesh`); continue; }
       const i = a.findIndex((x, j) => canonical(x) !== canonical(b[j]));
-      if (i >= 0) record(`disk:${k}`, false, jsonDiff(a[i], b[i]).join("\n"));
+      if (i >= 0) record(`disk:${k}`, false, jsonDiff(a[i], b[i]).join("\n"), [a, b]);
     }
     record("disk:files-compared", true, `${ka.size} base, ${kb.size} mesh`);
   }
@@ -399,11 +402,11 @@ function compareSides(A, B) {
           for (const [side, t] of [["base", a.sidTrace], ["mesh", b.sidTrace]]) record(`screen:${name}:route-reached(${side})`, reached(t), JSON.stringify(t));
         }
         const ta = mk(A).text(a.text), tb = mk(B).text(b.text);
-        record(`screen:${name}:text`, ta === tb, ta === tb ? "" : textDiff(ta, tb));
+        record(`screen:${name}:text`, ta === tb, ta === tb ? "" : textDiff(ta, tb), [ta, tb]);
         // Link targets in the tree are URL-encoded (#/s/%2Fhome%2F…): decode the slashes so the run
         // timestamps and ids inside them are normalized like everywhere else.
         const aa = mk(A).text((a.aria ?? "").replace(/%2F/gi, "/")), ab = mk(B).text((b.aria ?? "").replace(/%2F/gi, "/"));
-        record(`screen:${name}:accessibility`, aa === ab, aa === ab ? "" : textDiff(aa, ab));
+        record(`screen:${name}:accessibility`, aa === ab, aa === ab ? "" : textDiff(aa, ab), [aa, ab]);
         const px = await comparePng(a.png, b.png, join(RUN, `diff-${name}.png`));
         record(`screen:${name}:pixels`, px.same, px.same ? "" : `${px.reason ?? `${px.diffPixels} px differ in box ${JSON.stringify(px.box)}`}; mask ${px.diffPath ?? ""}`);
       }
@@ -482,7 +485,13 @@ const allowed = existsSync(join(import.meta.dirname, "allowed-diffs.json")) ? JS
 for (const r of results) {
   if (r.ok) continue;
   // An orderOnly allowance covers a diff that disappears once every array is sorted, nothing more.
-  const a = allowed.find((x) => new RegExp(x.check).test(r.check) && (!x.orderOnly || r.orderOnly));
+  // detail / detailRe / pin narrow an allowance to one exact diff: the detail with this run's dir as <run>
+  // (equal, or a full match of detailRe), and the hashed base:mesh pair recorded as pin in report.json.
+  const detail = String(r.detail).replaceAll(RUN, "<run>");
+  const a = allowed.find((x) => new RegExp(x.check).test(r.check) && (!x.orderOnly || r.orderOnly)
+    && (x.detail === undefined || x.detail === detail)
+    && (x.detailRe === undefined || new RegExp(`^(?:${x.detailRe})$`).test(detail))
+    && (x.pin === undefined || x.pin === r.pin));
   if (a) r.allowed = a.reason;
 }
 const failed = results.filter((r) => !r.ok && !r.allowed);

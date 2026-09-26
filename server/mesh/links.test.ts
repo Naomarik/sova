@@ -375,6 +375,14 @@ describe("delivery (§mesh.links/delivery)", () => {
     assert.deepEqual(s.json.deliveries.map((d) => d.to.sessionId), ["sc"]);
     const all = await act<LinkSendResult>(A, "POST", "/api/mesh/links/send", { session: "sa", text: "x", to: "all" });
     assert.equal(all.json.deliveries.length, 2);
+    // The "<host>/<session>" form link_members and the tag line show, host part in any case.
+    const pair = await act<LinkSendResult>(A, "POST", "/api/mesh/links/send", { session: "sa", text: "x", to: "BETA/sb" });
+    assert.deepEqual(pair.json.deliveries.map((d) => d.to.sessionId), ["sb"]);
+    const byPeerId = await act<LinkSendResult>(A, "POST", "/api/mesh/links/send", { session: "sa", text: "x", to: ["c/sc"] });
+    assert.deepEqual(byPeerId.json.deliveries.map((d) => d.to.sessionId), ["sc"]);
+    // A host that doesn't hold that session is no match.
+    r = await act<LinkError>(A, "POST", "/api/mesh/links/send", { session: "sa", text: "x", to: "Beta/sc" });
+    assert.equal(r.status, 400);
     r = await act<LinkError>(A, "POST", "/api/mesh/links/send", { session: "sa", text: "x", to: "nobody" });
     assert.equal(r.status, 400);
   });

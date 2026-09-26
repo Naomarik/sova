@@ -607,7 +607,11 @@ export class MeshLinks {
     const picked = new Set<LinkMember>();
     for (const w of wanted) {
       const lw = w.toLowerCase();
-      let hit = others.filter((m) => m.sessionId === w || m.nodeId === w || this.peerOfNode(m.nodeId)?.id === w || this.hostLabel(m.nodeId).toLowerCase() === lw);
+      const isHost = (m: LinkMember, h: string) => m.nodeId === h || this.peerOfNode(m.nodeId)?.id === h || this.hostLabel(m.nodeId).toLowerCase() === h.toLowerCase();
+      // "<host label or peer id>/<session id>": how link_members and the tag line name a member.
+      const slash = w.lastIndexOf("/");
+      const pair = slash > 0 ? { host: w.slice(0, slash).trim(), session: w.slice(slash + 1).trim() } : null;
+      let hit = others.filter((m) => m.sessionId === w || isHost(m, w) || (pair !== null && m.sessionId === pair.session && isHost(m, pair.host)));
       if (!hit.length) {
         const titled = await Promise.all(others.map(async (m) => ((await this.lookupMember(m.nodeId, m.sessionId)).summary?.title ?? "").toLowerCase() === lw));
         hit = others.filter((_, i) => titled[i]);

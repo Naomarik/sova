@@ -8,7 +8,7 @@ the session stays behind, closed by the scrim, Esc, or its Close button (Cancel 
 is unsaved, §app.settings-dialog/save-bar).
 
 The rail is the structure: each settings screen is one tab — General, Models, Modes, Teams,
-Overseer, Decisions, Summaries, Themes, Mesh, Experimental.
+Overseer, Decisions, Summaries, Organizations, Themes, Mesh, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
 (§chat/mode-menu) opens Modes directly, and nothing else about the chat changes. Which tab is open lives in
@@ -464,8 +464,8 @@ Folders box or the tab writes nothing.
 ## §app.settings-dialog/save-bar — One Save in the footer, one close-hold
 
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Modes**
-(Delegate and Spec), **Teams**, **Overseer**, **Decisions**, **Summaries**, **Mesh** and
-**Experimental**. A change on them is staged, never written as it is made. No form has a Save or
+(Delegate and Spec), **Teams**, **Overseer**, **Decisions**, **Summaries**, **Organizations**,
+**Mesh** and **Experimental**. A change on them is staged, never written as it is made. No form has a Save or
 Discard button of its own: saving is the dialog's.
 
 - **The footer.** Left to right: a status line, then **Discard Changes** (ghost), **Save Changes**
@@ -518,6 +518,21 @@ Discard button of its own: saving is the dialog's.
   pick. Actions run at once and are never part of a draft: Retry, Try Again, Check Again, Themes'
   Refresh, the Jev key's Save Key, Replace Key and Remove Key, Test Decisions, Tag Last 30 Days,
   Tag All Sessions and Stop Tagging.
+
+## §app.settings-dialog/organizations — Organizations
+
+The tab after Summaries: **Hand-off sessions**, the defaults for new baton sessions
+(§app.baton/goal-and-loadout). Today one field, **Message limit** — how many messages a hand-off
+session takes in, from everyone, before it comes back to the operator; a whole number from 1 to
+1000, default 60. The hint says it applies to new sessions only ("New sessions only; sessions
+already started keep theirs."), and while the field holds anything else it says "A whole number
+from 1 to 1,000." Save-gated: the dialog's footer saves it (§app.settings-dialog/save-bar), and
+while the field is invalid Save Changes is disabled and the status line says "Organizations needs
+a message limit from 1 to 1,000." A failed save shows "Couldn't save the message limit." at the
+form's end, with the reason and "Your saved limit is unchanged."
+Host state, not the workspace repo: `<stateRoot>/baton-settings.json`, read and written through
+`GET`/`PUT /api/baton/settings {messagesMax}` (400 outside the bounds; a missing or corrupt file
+reads as 60).
 
 ## §app.settings-dialog/toggle-target — A left-aligned toggle's target
 

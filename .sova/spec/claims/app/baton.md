@@ -17,8 +17,10 @@ once), **lease** (an offer's lock on its first taker).
 - The operator starts one from an org's project on the org page: the first holder (an active
   person, or the operator), a **public title** (all an outsider sees of the goal), the **goal**
   (never shown to outsiders and never repeated verbatim by the model), a first question (default:
-  the public title), and optionally a model and thinking level (else the new-session defaults). `POST /api/baton {orgId, projectId, to,
-  publicTitle, goal, question?, briefing?, parentSessionId?, model?, thinking?}` answers 201 with the
+  the public title), optionally a model and thinking level (else the new-session defaults), and a
+  message limit (the Start form's **Message limit**, placeholder "Default: <n>"; else the default
+  from Settings). `POST /api/baton {orgId, projectId, to,
+  publicTitle, goal, question?, briefing?, parentSessionId?, model?, thinking?, messagesMax?}` answers 201 with the
   session's path and, when `to` is a person, that hand-off's link, or, when `to` is a list of two or
   more people, one link per invitee (§app.baton/offers-and-leases); links are shown once.
 - **Start a session for this person**: `parentSessionId` names the baton session it came from (a
@@ -48,8 +50,26 @@ once), **lease** (an offer's lock on its first taker).
   reads `(none)`. The model's own context has the holder's profile phrases redacted
   (§app.organizations/privacy).
 - It has no mode (no mode extension loads); its composer has no mode switch.
-- **Budget**: 60 messages in (outsiders' and operator's together; the wrap-up's prompt is not one). At the limit the share page
-  refuses more, the baton goes to the operator, and the session needs them.
+- **Budget**: a message limit — messages in, outsiders' and operator's together (the wrap-up's
+  prompt is not one). The default is 60, changed in Settings → Organizations
+  (§app.settings-dialog/organizations); a start may set its own (`messagesMax`). Every limit (the
+  default, a start's, an extended one) is a whole number from 1 to 1000; anything else is a 400. A
+  message counts only once the runtime has accepted it (§app.baton/attribution).
+- **At the limit** the share page refuses more (409, code `budget`; the page says the conversation
+  has reached its message limit, also once the baton has moved because of it), the baton goes to
+  the operator — after the reply to the last message the limit allows, or when a person writes past
+  it (at once, or after the reply being written: the limit never cuts a reply) — and the session
+  needs them (§app.baton/needs-you: "The message limit is reached.
+  Extend it to go on, or close the session."). While a session is at its limit nobody but the
+  operator can be handed it: `hand_to` a person, the operator's hand-off and an offer are refused
+  (409, "This conversation has reached its message limit. Only the operator can take it now: hand
+  it to the operator."), and the operator's composer is refused with "This conversation has reached
+  its message limit. Extend it to write."
+- **Extend**: `POST /api/baton/:sid/extend {by}` raises the limit by `by` (a whole number, the
+  result at most 1000; refused once the session is done or closed) and answers the strip's
+  `BatonInfo`. While an open session is at its limit the strip says "The message limit is reached
+  (<used> of <max>). Extend it to go on." with **Extend by** [20] and **Extend**, and its where-line
+  reads "with you — extend the limit to write" while the operator holds it.
 
 ## §app.baton/hand-off — hand_to, goal_done, record_decision
 
@@ -97,7 +117,14 @@ once), **lease** (an offer's lock on its first taker).
   constant time. Logs show at most 6 characters of a token.
 - A link **writes** only while its person holds the baton through that hand-off and the session is
   open. After the baton moves on, or once the session is **done**, the link still **reads** the
-  conversation; after **close**, revoke or expiry it answers 410. An unknown token answers 404.
+  conversation; after **close**, revoke or expiry it answers 410. An unknown token answers 404. An
+  open page on a link that stops reading is told `gone` and closed (4410) within 30 seconds, even
+  when nothing in the session changes (a sweep; expiry changes nothing in the session).
+- With no share address known (no listener bound and no `SOVA_SHARE_PUBLIC_URL`) a link is only a
+  path nobody outside can open, and Sova says so: every response carrying a link also carries
+  `linkWarning` ("No share listener is running on this host, so this link can't be opened from
+  outside. …"), the org page's links banner shows it (warn tone), and the strip shows "Links from
+  this host can't be opened from outside." while a person or an offer holds the session.
 - The operator can get the current link (`GET /api/baton/:sid/link` mints a fresh one for the
   current hand-off and turns off the older ones for it: the host cannot show a token it no longer
   has) and turn it off (`POST /api/baton/:sid/revoke`). A link is shown once, with a Copy Link
@@ -111,7 +138,12 @@ once), **lease** (an offer's lock on its first taker).
   targetId, by}` (`by` = a person id or `operator`), written once the message has entered the
   context, by the same mechanism as the Overseer's sent marker (§app.overseer/sent-marker).
 - A message from the share page is attributed to its token's person; the share routes take no
-  sender field. A message from the operator's own composer is attributed to the operator, and is
+  sender field. **Every accepted message enters**: a 202 means the message is in the conversation
+  or queued for it, in order — several sent at once before a run has started queue behind the
+  first, never race it. A send the runtime refuses (the model turned off, a foreign or TUI write)
+  answers 503 `busy` and changes nothing: it is not counted, and on an offer it claims nothing.
+  The operator's composer follows the same rule: a send the runtime refuses neither counts nor
+  clears Needs you. A message from the operator's own composer is attributed to the operator, and is
   accepted only while the operator holds the baton and the session is open (refused otherwise,
   and the composer says why: "<name> holds the baton. Take it back to write." or "This hand-off
   session is done."). `POST /api/sessions/prompt` (the Overseer's `sova_send`) refuses a baton
@@ -128,11 +160,15 @@ once), **lease** (an offer's lock on its first taker).
   appears only while the link writes, with the hint "{n} of 4,000 characters · Ctrl+Enter sends"
   (figures with a thousands comma).
 - Never: thinking, tool calls or results, the system prompt, the model, session id, path or cwd,
-  the project or org beyond the public title, the goal, any profile field, other sessions, or any
-  other Sova UI. The filter runs on the server; the page receives nothing else.
+  the project or org beyond the public title, the goal, any profile field, any roster person's id,
+  other sessions, or any other Sova UI. A message row's sender is its name plus a label, `you` (the
+  viewer's own), `operator`, or `person-<n>` numbered within that view; the page marks its own rows
+  by `you`. The filter runs on the server; the page receives nothing else.
 - Live: the page receives the filtered view again after every change and, while the model writes,
   only the reply's text so far — never raw events.
-- Text only: images are refused; a message starting with `/` is refused; ≤ 4000 characters.
+- Text only, both ways: images are refused on the share route, and the operator's composer
+  refuses a send with images in a baton session ("A hand-off session is text only: images can't be
+  sent.", code `refused`); a message starting with `/` is refused; ≤ 4000 characters.
 - An **offer** shows as a card with the question, how many people were asked (never who: with two,
   "someone else" would name the other) and the briefing for an invitee. An invitee who has never
   held the offer sees the conversation only up to that card, is not told who holds it ("Someone
@@ -148,7 +184,7 @@ once), **lease** (an offer's lock on its first taker).
   `{v:1, n, offerId, from, to[], question, briefing}` records it. Starting a new offer withdraws
   the current one.
 - **The first accepted message claims it.** Opening the page claims nothing (link previews open
-  links). The message route decides in one synchronous step: a lapsed lease returns to the pool,
+  links), and neither does a send the runtime refuses (503): no holder, no lease. The message route decides in one synchronous step: a lapsed lease returns to the pool,
   then an invitee's message on an open offer makes them the holder under a **lease**, then the
   holder rule applies as for any hand-off. Everything else is refused (409, code `taken`) — the
   route is the lock, the page's state is a courtesy.
@@ -175,9 +211,11 @@ once), **lease** (an offer's lock on its first taker).
   state), `POST /api/h/<token>/message {text}` and the WebSocket `/ws/h?token=`. Every other path
   answers 404 before any routing; the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
   `/ext/*` are unreachable on it. The main listener never serves the share page.
-- Limits: request bodies over 16 KB (or without a length) are refused (413); per token 10 messages
-  a minute (429) and one WebSocket (a new one replaces the old, which is told it opened
-  elsewhere); per client address 60 requests a minute (429). Behind a proxy on loopback or the
+- Limits: request bodies over 16 KB (or without a length) are refused (413); a request's headers
+  must arrive within 10 seconds and the whole request within 15 (408); per token 10 messages
+  a minute (429; tokens with no message in the last minute are forgotten) and one WebSocket (a new one replaces the old, which is told it opened
+  elsewhere; a frame over 1 KB closes it with 1009, and a share socket's error is logged, never
+  an uncaught exception); per client address 60 requests a minute (429). Behind a proxy on loopback or the
   tailnet, the client address is the last `X-Forwarded-For` hop; a direct client's is its own.
 - Every response is `Cache-Control: no-store` and `Referrer-Policy: no-referrer` (the token is in
   the URL); the page carries a CSP allowing only its own scripts, and reply links open with no

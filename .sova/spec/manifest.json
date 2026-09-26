@@ -423,7 +423,8 @@
       "evidence": "reviewed",
       "code": [
         "src/components/SettingsDialog.tsx",
-        "src/lib/settings-nav.ts"
+        "src/lib/settings-nav.ts",
+        "src/lib/settings-nav.test.ts"
       ]
     },
     "§app/shell": {
@@ -3424,7 +3425,9 @@
         "src/components/SummarizerSettings.tsx",
         "src/components/MeshSettings.tsx",
         "src/lib/settings-save-all.test.ts",
-        "src/app.css"
+        "src/app.css",
+        "src/lib/baton-settings-draft.ts",
+        "src/components/BatonSettings.tsx"
       ]
     },
     "§design.copy-deck/settings-experimental": {
@@ -3472,7 +3475,10 @@
         "src/components/ChatView.tsx",
         "server/overseer.ts",
         "server/share/routes.ts",
-        "server/baton-runtime.test.ts"
+        "server/baton-runtime.test.ts",
+        "server/baton-loadout.ts",
+        "server/baton.ts",
+        "server/share-message.test.ts"
       ],
       "requires": [
         "§app.overseer/sent-marker"
@@ -3494,7 +3500,15 @@
         "server/baton-runtime.test.ts",
         "server/org-routes.ts",
         "server/baton-offers.test.ts",
-        "src/lib/list-refresh.ts"
+        "src/lib/list-refresh.ts",
+        "server/baton-settings.ts",
+        "server/share/routes.ts",
+        "shared/baton.ts",
+        "server/share-message.test.ts",
+        "src/lib/baton-strip.ts",
+        "src/lib/baton-strip.test.ts",
+        "src/lib/api.ts",
+        "src/orgs.css"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -3529,7 +3543,11 @@
         "server/baton-offers.test.ts",
         "src/lib/baton-strip.ts",
         "src/lib/baton-strip.test.ts",
-        "src/components/LinksBanner.tsx"
+        "src/components/LinksBanner.tsx",
+        "server/share/hub.ts",
+        "server/share-message.test.ts",
+        "src/components/OrgsView.tsx",
+        "shared/baton.ts"
       ]
     },
     "§app.baton/needs-you": {
@@ -3576,7 +3594,8 @@
         "server/share-listener.test.ts",
         "src/lib/baton-strip.ts",
         "src/lib/baton-strip.test.ts",
-        "src/components/LinksBanner.tsx"
+        "src/components/LinksBanner.tsx",
+        "server/share-message.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -3596,7 +3615,11 @@
         "src/share/main.tsx",
         "src/share/index.html",
         "server/baton-view.test.ts",
-        "server/baton-offers.test.ts"
+        "server/baton-offers.test.ts",
+        "server/baton-loadout.ts",
+        "server/chat-manager.ts",
+        "shared/baton.ts",
+        "server/share-message.test.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -3616,7 +3639,9 @@
         "server/share/routes.ts",
         "server/index.ts",
         "vite.config.ts",
-        "server/share-listener.test.ts"
+        "server/share-listener.test.ts",
+        "server/share/hub.ts",
+        "server/share-message.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -4295,6 +4320,27 @@
         "src/App.tsx",
         "src/lib/explain.ts",
         "src/lib/explain.test.ts"
+      ]
+    },
+    "§app.settings-dialog/organizations": {
+      "kind": "behavior",
+      "requires": [
+        "§app/settings-dialog",
+        "§app.settings-dialog/save-bar"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/BatonSettings.tsx",
+        "src/lib/baton-settings-draft.ts",
+        "src/lib/baton-settings-draft.test.ts",
+        "server/baton-settings.ts",
+        "server/org-routes.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/api.ts",
+        "shared/baton.ts",
+        "server/share-message.test.ts"
       ]
     }
   },

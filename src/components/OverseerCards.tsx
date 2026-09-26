@@ -1,5 +1,6 @@
 import { createContext, For, Show, useContext } from "solid-js";
 import type { OverseerQuickAction, SovaConfirmDetails } from "../../shared/protocol";
+import type { MeshLinkView } from "../../shared/mesh-links";
 import { briefBody, confirmReply, goTo, navigateDetails, settingsTarget } from "../lib/overseer";
 import { clockTime } from "../lib/format";
 import { openSettings } from "../lib/settings-nav";
@@ -72,6 +73,45 @@ export function ConfirmCard(props: { details: SovaConfirmDetails; answered: bool
           </Show>
         </Show>
       </div>
+    </section>
+  );
+}
+
+/** A sova_link / sova_unlink result's details (the link as this host saw it then), or null. */
+export function linkDetails(v: unknown): MeshLinkView | null {
+  const d = v as MeshLinkView | null | undefined;
+  if (!d || typeof d !== "object" || typeof d.link?.id !== "string" || !Array.isArray(d.members)) return null;
+  return d.members.every((m) => m && typeof m.hostLabel === "string" && typeof m.sessionId === "string") ? d : null;
+}
+
+/**
+ * `sova_link` and `sova_unlink`, drawn as the link they made or ended: its members with their
+ * hosts (§app.overseer/links-tools). A snapshot of the call, not a live view: states live in the
+ * Agents tab. A member on this host opens its session; one on another host is named, not linked.
+ */
+export function LinkCard(props: { details: MeshLinkView; ended: boolean }) {
+  const title = () => (props.ended ? "Link ended" : `Linked ${props.details.members.length} sessions`);
+  return (
+    <section class="card overseer-link" aria-label={`${title()}: ${props.details.link.id}`}>
+      <div class="card-head">
+        <Icon name="network" small />
+        <h3 class="card-title">{title()}</h3>
+        <span class="overseer-link-id">{props.details.link.id}</span>
+      </div>
+      <ul class="card-body overseer-link-members">
+        <For each={props.details.members}>
+          {(m) => (
+            <li>
+              <span class="overseer-link-host">{m.self ? "This host" : m.hostLabel}</span>
+              <Show when={m.self} fallback={<span title={m.sessionId}>{m.title ?? m.sessionId}</span>}>
+                <a href={`#/s/${encodeURIComponent(m.path)}`} title={m.sessionId}>
+                  {m.title ?? m.sessionId}
+                </a>
+              </Show>
+            </li>
+          )}
+        </For>
+      </ul>
     </section>
   );
 }

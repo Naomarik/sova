@@ -288,13 +288,15 @@ describe("turns the user did not start are read-only", () => {
     sova_answer_dialog: { session: "some-id", dialog: "d1", answer: "yes" },
     sova_idea: { op: "add", id: "§test/readonly-probe", title: "A probe" },
     sova_todo: { op: "add", text: "A probe" },
+    sova_link: { members: [{ session: "some-id" }, { host: "peer", session: "other-id" }] },
+    sova_unlink: { link: "lk_0123456789abcdef" },
   };
   const ALLOWED: Record<string, Record<string, unknown>> = {
     sova_note: { op: "read" },
     sova_confirm: { title: "Archive these?", options: ["Yes", "No"] },
     sova_navigate: { page: "usage" },
   };
-  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_folders", "sova_ideas", "sova_todos"];
+  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links"];
 
   test("every Overseer tool is classified: acting, allowed unattended, or a read", () => {
     const names = overseer.buildOverseerTools().map((t) => t.name).sort();

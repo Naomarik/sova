@@ -13,6 +13,7 @@ import {
   type OverseerSaveResult,
   type OverseerSettings,
   type OverseerSettingsInfo,
+  type SessionSummary,
 } from "../shared/protocol";
 import { setArchived } from "./archived-sessions";
 import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./attention";
@@ -51,7 +52,7 @@ import { promptToc, readManifest } from "./overseer-ideas";
 import { promptTodos, readTodos } from "./overseer-todos";
 import type { SubagentTool } from "./overseer-idea-tools";
 import { workerDenial } from "./delegate";
-import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, TurnLimits, UserTurns } from "./overseer-tools";
+import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, renderTranscript, TurnLimits, UserTurns } from "./overseer-tools";
 import { overseerFileTools } from "./overseer-file-tools";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { type Redactor, redactExtensionMessages, serverRedactor } from "./overseer-redact";
@@ -59,6 +60,10 @@ import { canonicalPath, resolveSessionPath } from "./paths";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanupSessions, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions } from "./sessions-index";
 import { getSessionInsight } from "./insights";
+import { meshApi } from "./mesh";
+import { probePeer } from "./mesh/hello";
+import { meshLinks } from "./mesh/links";
+import type { PeerLinkRead } from "../shared/mesh-links";
 import { normalizeEntries, readActiveBranch } from "./transcript";
 import { markOwned } from "./write-guard";
 import { signalTextOf } from "./signals-store";
@@ -442,7 +447,58 @@ const started = new Set<string>();
 const promptedAt = new Map<string, number>();
 export const STARTING_GRACE_MS = 15_000;
 
-const running = (path: string) => isSessionBusy(path) || workingSubagents(path) > 0;
+/** A session the Overseer started on a mesh peer, in `started`: never a path, so never a local one. */
+const peerKey = (peerId: string, sessionId: string) => `peer:${peerId}:${sessionId}`;
+/** Whether each peer-started session was busy when its host last answered (pollPeerStarted). */
+const peerBusy = new Map<string, boolean>();
+export const PEER_POLL_MS = 5000;
+let peerPoll: ReturnType<typeof setInterval> | null = null;
+
+const running = (key: string) => (key.startsWith("peer:") ? peerBusy.get(key) === true : isSessionBusy(key) || workingSubagents(key) > 0);
+
+/** One pass over the peer-started sessions: each host is asked for its session's state; one that
+    is idle and past its starting grace can't run again unless the Overseer prompts it, so it is
+    dropped. A host that doesn't answer reads as idle: its session holds a slot only in its grace. */
+async function pollPeerStarted(): Promise<void> {
+  const keys = [...started].filter((k) => k.startsWith("peer:"));
+  await Promise.all(
+    keys.map(async (key) => {
+      const [, peerId = "", id = ""] = key.split(":");
+      const s = await peerSession(peerId, id).catch(() => null);
+      const busy = !!s && (!!s.busy || (s.workers?.working ?? 0) > 0);
+      peerBusy.set(key, busy);
+      const at = promptedAt.get(key);
+      if (!busy && (at === undefined || Date.now() - at >= STARTING_GRACE_MS)) {
+        started.delete(key);
+        peerBusy.delete(key);
+        promptedAt.delete(key);
+      }
+    }),
+  );
+  if (![...started].some((k) => k.startsWith("peer:")) && peerPoll) {
+    clearInterval(peerPoll);
+    peerPoll = null;
+  }
+}
+
+/** A peer's session by id: its by-id route, or `summary?id=` on a build that predates it. */
+async function peerSession(peerId: string, id: string): Promise<SessionSummary | null> {
+  for (const path of [`/api/sessions/by-id/${encodeURIComponent(id)}`, `/api/sessions/summary?id=${encodeURIComponent(id)}`]) {
+    const res = await meshApi.peerFetch(peerId, path);
+    if (res.status === 404 && path.includes("by-id")) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      // An unknown id answers the route's own sentence; a build without the route answers the catch-all.
+      if (body?.error === "Not found") continue;
+      return null;
+    }
+    if (!res.ok) {
+      await res.body?.cancel();
+      return null;
+    }
+    return (await res.json()) as SessionSummary;
+  }
+  return null;
+}
 
 /** The Overseer runtime's session (watchSession): its extension runner holds the subagents
     extension's tools, which the explorer routes call in-process (overseer-idea-tools.ts). */
@@ -489,6 +545,28 @@ const host: OverseerToolHost = {
     started.add(path);
     if (prompted) promptedAt.set(path, Date.now());
   },
+  peer: async (id) => {
+    const entry = meshApi.enabled() ? meshApi.peers().find((p) => p.id === id) : undefined;
+    if (!entry) return null;
+    const probe = await probePeer(entry);
+    return { id: entry.id, label: entry.label, nodeId: entry.nodeId, state: probe.state, ...(probe.error ? { error: probe.error } : {}) };
+  },
+  peerSession: (peerId, id) => peerSession(peerId, id),
+  peerIds: () => (meshApi.enabled() ? meshApi.peers().map((p) => p.id) : []),
+  // peerFetch, never `request`: the sender secret is this process's and never leaves it.
+  peerRequest: (id, path, init) => {
+    const headers = new Headers(init?.headers);
+    headers.delete(OVERSEER_SENDER_HEADER);
+    return meshApi.peerFetch(id, path, { ...init, headers });
+  },
+  startedOnPeer: (peerId, sessionId, prompted) => {
+    const key = peerKey(peerId, sessionId);
+    started.add(key);
+    if (prompted) promptedAt.set(key, Date.now());
+    peerPoll ??= setInterval(() => void pollPeerStarted(), PEER_POLL_MS);
+    peerPoll.unref?.();
+  },
+  links: meshLinks,
   runningStarted: () => countRunning(started, running, promptedAt),
   counted: (path) => countRunning(started.has(path) ? [path] : [], running, promptedAt) > 0,
   attended: () => turns.attended(),
@@ -496,6 +574,29 @@ const host: OverseerToolHost = {
   explorerCwd: () => overseerDir(),
   subagent: (name) => (overseerSession?.extensionRunner?.getToolDefinition(name) as SubagentTool | undefined) ?? null,
 };
+
+/**
+ * A peer's `sova_read_session` of one of this host's sessions (GET /api/peer/links/read, mounted by
+ * server/mesh/links-routes.ts): the same bounded, untrusted-wrapped slice a local read renders,
+ * redacted with this host's own secrets before it leaves; the asking host redacts it again.
+ */
+export async function renderPeerRead(
+  path: string,
+  opts: { from?: string; items?: number; chars?: number } = {},
+  redactor: () => Redactor = serverRedactor,
+): Promise<PeerLinkRead> {
+  const s = await getSessionSummary(path);
+  const title = s?.title ?? "Untitled";
+  const items = normalizeEntries(await readActiveBranch(path));
+  const text = renderTranscript(items, {
+    from: opts.from === "start" || opts.from === "last_user" ? opts.from : "tail",
+    items: Math.min(40, Math.max(1, Math.trunc(opts.items ?? 20) || 20)),
+    chars: Math.min(12000, Math.max(500, Math.trunc(opts.chars ?? 6000) || 6000)),
+    title,
+    id: s?.id ?? idOf(path),
+  });
+  return { text: redactor().redact(text), from: 0, total: items.length, title: redactor().redact(title) };
+}
 
 /** An in-process call exactly as the Overseer's tools make it. Exported for the tests. */
 export const requestAsOverseerForTest = (path: string, init?: RequestInit) => host.request(path, init);
@@ -541,7 +642,7 @@ export function renderOverseerPrompt(
     .replaceAll("{{HOME}}", homedir())
     .replaceAll(
       "{{CAPS}}",
-      `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions or explorers, ${c.archivesPerTurn} archive operations, ${c.explorePerTurn} explorers launched; at most ${c.concurrentSessions} sessions you started running at once`,
+      `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions or explorers, ${c.archivesPerTurn} archive operations, ${c.explorePerTurn} explorers launched, ${c.linksPerTurn} links made; at most ${c.concurrentSessions} sessions you started running at once`,
     );
 }
 

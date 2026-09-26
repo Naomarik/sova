@@ -436,3 +436,41 @@ test("restart: a paused team stays paused (its resumed monitor is sent the resum
 		fs.rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test("resume: the worktree gate applies again — refused once the worker's worktree is dropped, allowed while it is active", async () => {
+	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "subagents-resume-wt-")));
+	const live = path.join(root, "live");
+	const wt = path.join(root, "wt");
+	fs.mkdirSync(live);
+	fs.mkdirSync(wt);
+	const tree = (status: string) => ({ version: 1, trees: [{ path: wt, branch: "feat/x", base: "a", status, session: "owner", how: "created", at: 1 }] });
+	const confinable = { version: 1, on: false, extensionPath: path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "sandbox"), enforcement: "none", workerFlagsIn: (r: string) => ({ sandbox: "on", "sandbox-parent": r }) };
+	const file = sessionFile();
+	file.append("worktrees", tree("active"));
+	try {
+		const first = manager(file);
+		first.ctx.cwd = live;
+		first.start();
+		first.bus.emit("sandbox:state", confinable);
+		await first.call("agent_spawn", { prompt: "in the tree", name: "t", cwd: wt });
+		first.workers[0].identify("/nowhere/t.jsonl");
+		await new Promise((r) => setTimeout(r, 150));
+		first.workers[0].settle();
+		await new Promise((r) => setTimeout(r, 150));
+		// The restart; meanwhile the worktree is dropped from the set.
+		file.append("worktrees", tree("dropped"));
+		const m = manager(file);
+		m.ctx.cwd = live;
+		m.start();
+		m.bus.emit("sandbox:state", confinable);
+		await until(() => (m.snapshot()?.workers ?? []).length === 1, "the restored worker");
+		await assert.rejects(m.call("agent_resume", { id: "ag_01" }), /outside this session's cwd and its worktrees/);
+		file.append("worktrees", tree("active"));
+		const out = await m.call("agent_resume", { id: "ag_01" });
+		assert.match(out.content[0].text, /Resumed ag_01/);
+		assert.deepEqual(m.workers.at(-1).flags, { sandbox: "on", "sandbox-parent": wt }, "confined to its worktree again");
+		await m.shutdown();
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});

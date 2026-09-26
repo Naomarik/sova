@@ -42,11 +42,14 @@ picker lists that host's folders.
 
 ## §mesh.remote-sessions/host-filter — Filter the list by host
 
-While the mesh is on and more than one host is known, the session pane shows a host menu directly
-below the filter input: a button naming the current choice (`All hosts`, or a host with its up/down
-dot), with `N/M connected` beside it (hosts answering now, this host included, out of all hosts).
-The menu lists `All hosts` and then each host by name with its dot and, when it isn't answering, the
-word "down"; exactly one is chosen. `All hosts` is the default and shows every host's sessions; a
-host shows only that host's sessions. It narrows together with the text filter, and the choice is
-remembered across reloads; a remembered host that is no longer known reads as `All hosts`. The menu
-ends with `Mesh details…`. With the mesh off, or only one host known, nothing is shown.
+While the mesh is on and more than one host is known, the session pane's foot starts with a host
+row, directly above the usage row: it names the current choice (`All hosts`, or a host with its
+up/down dot), with `N/M connected` at its right end at every width (hosts answering now, this host
+included, out of all hosts). The whole row is one target: a click anywhere on it opens the host
+menu (upward when there is no room below; a bottom sheet on a narrow screen), and the click itself
+changes no filter. The collapsed pane has no host item. The menu lists `All hosts` and then each
+host by name with its dot and, when it isn't answering, the word "down"; exactly one is chosen.
+`All hosts` is the default and shows every host's sessions; a host shows only that host's sessions.
+It narrows together with the text filter, and the choice is remembered across reloads; a remembered
+host that is no longer known reads as `All hosts`. The menu ends with `Mesh details…`. With the
+mesh off, or only one host known, nothing is shown.

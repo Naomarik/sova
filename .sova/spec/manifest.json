@@ -1809,7 +1809,10 @@
       "code": [
         "src/components/MeshHostMenu.tsx",
         "src/components/Sidebar.tsx",
-        "src/lib/mesh.ts"
+        "src/lib/mesh.ts",
+        "src/mesh.css",
+        "src/components/ui.tsx",
+        "public/icons/network.svg"
       ]
     },
     "§mesh.remote-sessions/host-picker": {

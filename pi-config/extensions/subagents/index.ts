@@ -1357,6 +1357,11 @@ export function registerSubagents(
 		scheduleRefresh();
 		return at;
 	};
+	/** An ended member a handover leaves behind releases its seat on its own (source "system"); once only. */
+	const autoEject = (teamId: string, workerId: string) => {
+		if (shuttingDown || teams.ejectedAt(workerId) !== undefined || teams.teamOf(workerId) !== teamId) return;
+		ejectMember(teamId, workerId, "system");
+	};
 	// ── Coordinated teams (team-defaults.json) ──────────────────────────────
 	// A team created while the file is valid gets a coordinator (and a monitor). Every other
 	// member reports to the routing coordinator, never to the parent; the coordinator alone
@@ -1618,11 +1623,23 @@ export function registerSubagents(
 		const reason = why === "ready" ? `retired: successor ${h.newRole} (${h.newId}) confirmed the takeover` : `retired: handover to ${h.newRole} (${h.newId}) timed out`;
 		appendTeamEvent(h.teamId, "retire", { workerId: h.oldId, role: h.oldRole }, reason);
 		const old = agents.find((a) => a.id === h.oldId);
-		if (old && !old.isFinished()) void killWorker(old, reason, why === "ready" ? "member" : "system", "retire").catch(() => scheduleRefresh());
+		// A retired member ends for good: its seat is released too (a failed kill keeps it).
+		if (old && !old.isFinished()) void killWorker(old, reason, why === "ready" ? "member" : "system", "retire").then(() => autoEject(h.teamId, h.oldId), () => scheduleRefresh());
 		else {
 			teams.settleAction(teams.recordAction(h.oldId, "retire", why === "ready" ? "member" : "system", reason), "accepted-or-queued", "already ended");
+			autoEject(h.teamId, h.oldId);
 			scheduleRefresh();
 		}
+	};
+	/** Why a member cannot be ejected by hand while a handover involving it is unfinished, if one is. */
+	const handoverRefusal = (workerId: string): string | undefined => {
+		const pending = pendingSuccessions.get(workerId);
+		if (pending) return `its successor has not started yet (it starts once the handover note at ${pending.note} exists, or at the handover timeout); it is then retired and its seat released automatically`;
+		for (const h of handovers.values()) {
+			if (h.oldId === workerId) return `its successor ${h.newRole} (${h.newId}) has not confirmed with team_ready yet; it is retired and its seat released automatically on team_ready or at the retire timeout`;
+			if (h.newId === workerId) return `it is taking over from ${h.oldRole} (${h.oldId}) and has not confirmed with team_ready yet; wait for that handover to finish (team_ready or the retire timeout)`;
+		}
+		return undefined;
 	};
 	/** The team a monitor watches, when that team is paused (its resume check must run). */
 	const pausedMonitorTeam = (workerId: string): string | undefined => {
@@ -2714,6 +2731,8 @@ export function registerSubagents(
 			if (!told.ok) teams.settleAction(teams.recordAction(target.workerId, "handover", "orchestrator", detail), "failed", told.reason);
 		} else {
 			teams.settleAction(teams.recordAction(target.workerId, "handover", "orchestrator", detail), "accepted-or-queued", "old member already ended; nothing to retire");
+			// Nothing to retire: the ended member's seat is released now that its successor has started.
+			autoEject(team.id, target.workerId);
 		}
 		scheduleRefresh();
 		const effort = launch?.effort ?? old?.effort;
@@ -2849,7 +2868,7 @@ export function registerSubagents(
 		async execute(_id, params, signal, _update, ctx) {
 			context(ctx);
 			signal?.throwIfAborted();
-			const target = teams.checkEject(params.team, params.member, observeWorker);
+			const target = teams.checkEject(params.team, params.member, observeWorker, handoverRefusal);
 			const at = ejectMember(target.teamId, target.workerId, "parent");
 			const team = teamViews().find((t) => t.id === target.teamId)!;
 			const seatedCount = team.members.length - team.ejected;

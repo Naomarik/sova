@@ -377,11 +377,17 @@ have ended (and so can be ejected).
 `team_eject { team, member }` (`member` = exact `ag_NN` or role) is a parent
 tool only: members and orchestrators never get it. It refuses a team restored
 from history (read-only, same as `team_add`), an unknown team or member, a
-member already ejected, and a member whose worker is still working, idle or
-stopping (stop it with `agent_kill` first). It persists
+member already ejected, a member mid-handover in a coordinated team (the
+predecessor or successor of a `team_succeed` not yet confirmed or timed out;
+the refusal says the seat is released automatically), and a member whose worker
+is still working, idle or stopping (stop it with `agent_kill` first). It persists
 `{ version: 1, op: "eject", teamId, workerId, at }` in the same
 `subagents-team-v1` entry stream before marking the member, and records one
-`eject` action (source `parent`). The restore fold replays it, and counts only
+`eject` action (source `parent`). A handover ejects on its own, with source
+`system` and the same entry: the member it retires (on `team_ready` or at the
+retire timeout, once the kill succeeds), and a member that had already ended
+when its successor started (nothing to retire), right after that successor
+starts. The restore fold replays it, and counts only
 seated members against the cap, so a member added after an eject survives a
 reload or restart.
 

@@ -3201,6 +3201,59 @@ test("N7: with main-thread follow-ups queued on the old member, its successor st
 	} finally { await h.cleanup(); }
 });
 
+test("handovers eject automatically: a retired member and an ended member succeeded release their seats; team_eject refuses a member mid-handover", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "qa", prompt: "test" }] });
+		const ejects = () => h.appended.filter((e) => e.customType === "subagents-team-v1" && e.data.op === "eject").map((e) => [e.data.teamId, e.data.workerId]);
+		const dev = h.worker("ag_02");
+		// (c) The predecessor while its successor has not started.
+		await h.ask("ag_01", { type: "succeed", to: "dev" });
+		await assert.rejects(h.call("team_eject", { team: "Crew", member: "dev" }), /^Error: dev \(ag_02\) is mid-handover in team_01: its successor has not started yet \(it starts once the handover note at .*dev\.md exists, or at the handover timeout\); it is then retired and its seat released automatically\.$/);
+		h.writeNote("dev");
+		await h.tick();
+		const successor = h.worker("ag_05");
+		assert.equal(successor.name, "dev-2");
+		// (c) Both sides of an unconfirmed handover, even once the successor itself has ended.
+		await assert.rejects(h.call("team_eject", { team: "Crew", member: "dev" }), /dev \(ag_02\) is mid-handover in team_01: its successor dev-2 \(ag_05\) has not confirmed with team_ready yet; it is retired and its seat released automatically on team_ready or at the retire timeout\./);
+		successor.settle(undefined, "error");
+		await assert.rejects(h.call("team_eject", { team: "Crew", member: "dev-2" }), /dev-2 \(ag_05\) is mid-handover in team_01: it is taking over from dev \(ag_02\) and has not confirmed with team_ready yet; wait for that handover to finish/);
+		assert.deepEqual(ejects(), []);
+		// (a) The retire timeout kills dev and releases its seat, recorded as the system's.
+		h.timers.at(-1)!.fn();
+		await h.tick();
+		assert.equal(dev.status, "killed");
+		assert.deepEqual(ejects(), [["team_01", "ag_02"]]);
+		let list = (await h.call("team_list")).content[0].text;
+		assert.match(list, /system eject → ag_02 \(dev\): accepted-or-queued/);
+		assert.match(list, /1 ejected/);
+		// Once the handover is over, the ended successor is the operator's to eject again.
+		await h.call("team_eject", { team: "Crew", member: "dev-2" });
+		assert.deepEqual(ejects().at(-1), ["team_01", "ag_05"]);
+		// (a) team_ready retires and ejects too.
+		await h.ask("ag_01", { type: "succeed", to: "qa" });
+		h.writeNote("qa");
+		await h.tick();
+		const qa2 = h.worker("ag_06");
+		assert.equal(qa2.name, "qa-2");
+		assert.equal((await h.ask("ag_06", { type: "ready" })).ok, true);
+		await h.tick();
+		assert.equal(h.worker("ag_03").status, "killed");
+		assert.deepEqual(ejects().at(-1), ["team_01", "ag_03"]);
+		// (b) team_succeed on a member that has already ended: started at once, the ended one ejected.
+		qa2.settle(undefined, "killed");
+		await h.tick();
+		const late = await h.ask("ag_01", { type: "succeed", to: "qa-2" });
+		assert.match(late.text, /^Started qa-3 .* qa-2 has already ended; the successor works from the handover note\./);
+		assert.deepEqual(ejects().at(-1), ["team_01", "ag_06"]);
+		list = (await h.call("team_list")).content[0].text;
+		assert.match(list, /system eject → ag_06 \(qa-2\): accepted-or-queued/);
+		assert.match(list, /4 ejected/);
+		// Each eject, the system's and the operator's alike, was persisted as one eject op.
+		assert.equal(ejects().length, 4);
+	} finally { await h.cleanup(); }
+});
+
 test("N8: inherited main-thread steers are the successor's binding assignment, in its task and wherever the coordinator reads them", async () => {
 	const h = coordinatedHarness(DEFAULTS_FILE);
 	try {

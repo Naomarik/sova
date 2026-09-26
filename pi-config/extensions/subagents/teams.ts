@@ -179,7 +179,7 @@ export type TeamActionKind =
 	// old member's retirement, and the monitor's notices.
 	| "eject"
 	| "report" | "handover" | "retire" | "wrap-up" | "pause" | "resume";
-/** member = a sibling's team_msg/team_ask; orchestrator = a sibling orchestrator's team_steer (a coordinator is one); monitor = the monitor's notices; system = the manager itself (a handover timeout). */
+/** member = a sibling's team_msg/team_ask; orchestrator = a sibling orchestrator's team_steer (a coordinator is one); monitor = the monitor's notices; system = this extension on its own (a handover timeout, an automatic eject). */
 export type TeamActionSource = "parent" | "user" | "member" | "orchestrator" | "monitor" | "system";
 /** A coordinated team's fixed facts, set at team_create. */
 export interface TeamCoordination {
@@ -1169,10 +1169,13 @@ export class TeamStore {
 	/**
 	 * Validate a seat release on a session team. `member` is an exact worker ID or a
 	 * role. Refuses history teams, unknown or already-ejected members, and members
-	 * whose worker is still working, idle or stopping. Nothing changes here: persist
-	 * ejectEntry(), then commitEject().
+	 * whose worker is still working, idle or stopping, and those `held` names a reason
+	 * for (a member mid-handover). Nothing changes here: persist ejectEntry(), then
+	 * commitEject().
 	 */
-	checkEject(ref: string, member: string, observe: (workerId: string) => WorkerObservation | undefined): { teamId: string; workerId: string; role: string } {
+	checkEject(
+		ref: string, member: string, observe: (workerId: string) => WorkerObservation | undefined, held?: (workerId: string) => string | undefined,
+	): { teamId: string; workerId: string; role: string } {
 		const team = this.find(ref);
 		if (team.origin === "history") throw new Error(historyRefusal(team));
 		const trimmed = member.trim();
@@ -1181,6 +1184,8 @@ export class TeamStore {
 			: team.members.find((m) => labelKey(m.role) === labelKey(trimmed));
 		if (!found) throw new Error(`No member ${trimmed} in ${team.id}. Members: ${team.members.map((m) => `${m.workerId} (${m.role})`).join(", ") || "none"}.`);
 		if (found.ejectedAt !== undefined) throw new Error(`${found.role} (${found.workerId}) was already ejected from ${team.id} at ${ejectedStamp(found.ejectedAt)}.`);
+		const reason = held?.(found.workerId);
+		if (reason) throw new Error(`${found.role} (${found.workerId}) is mid-handover in ${team.id}: ${reason}.`);
 		const state = memberState(observe(found.workerId));
 		if (BUSY_STATES.has(state))
 			throw new Error(`${found.role} (${found.workerId}) is still ${state}; stop it with agent_kill first, then team_eject it.`);

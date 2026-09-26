@@ -440,13 +440,13 @@ test("eject entries decode strictly and fold on restore: eject then add past 24 
 test("views carry ejectedAt and leave ejected members out of the state counts", () => {
 	const store = new TeamStore();
 	const { prepared } = commit(store, "T", ["a", "b", "c"]);
-	store.commitEject(prepared.teamId, "ag_02", 77, "user");
+	store.commitEject(prepared.teamId, "ag_02", 77, "system");
 	const [view] = store.views((id) => (id === "ag_01" ? running : ended));
 	assert.deepEqual(view.members.map((m) => m.ejectedAt), [undefined, 77, undefined]);
 	assert.deepEqual(view.counts, { working: 1, idle: 0, failed: 0, done: 1, stopping: 0, stopped: 0, unavailable: 0 });
 	assert.equal(view.ejected, 1);
 	assert.equal(view.members[1].state, "done", "an ejected member keeps its observed state");
-	assert.deepEqual([view.actions[0].kind, view.actions[0].source], ["eject", "user"]);
+	assert.deepEqual([view.actions[0].kind, view.actions[0].source], ["eject", "system"]);
 	// Siblings: an ejected member is out of broadcasts, and addressing it says why.
 	assert.deepEqual(store.memberInfo("ag_01")!.siblings.map((m) => m.role), ["c"]);
 	assert.throws(() => store.resolveSibling("ag_01", "B"), /b \(ag_02\) was ejected from team_01 at 1970-01-01T00:00:00Z; it no longer receives team messages/);

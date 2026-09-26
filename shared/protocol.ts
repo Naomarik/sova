@@ -1887,7 +1887,7 @@ export interface WorkerInfo {
 export interface TeamMember {
   workerId: string; role: string; orchestrator: boolean; backend: string; model?: string;
   ownedPaths: string[]; addedAt: number;
-  /** When the member released its team seat (team_eject). It keeps
+  /** When the member released its team seat (team_eject, or the extension on its own). It keeps
       its role, id and transcript. Absent from older servers and never-ejected members. */
   ejectedAt?: number;
   worker: WorkerInfo | null; // null: not in the live record (history team / trimmed worker)

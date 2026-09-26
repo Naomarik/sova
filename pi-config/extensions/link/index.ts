@@ -11,9 +11,9 @@
  * Without the flag (a TUI, a worker) the extension is inert: the tools refuse, nothing is fetched.
  * Every call goes to the session's own host only (`client.ts`); the host does every peer hop.
  *
- * While linked, each run's prompt gets the `mesh-link` section, built from link membership only
- * (`promptSection`), so it changes only when a link is made or ended: a changed system prompt
- * restarts a claude-code session's CLI. When the host can't be read at a run start, the last
+ * While linked, each run's prompt gets the `mesh-link` section (`promptSection`), rebuilt only when
+ * the set of live link ids changes, so it changes only when a link is made or ended: a changed
+ * system prompt restarts a claude-code session's CLI. When the host can't be read at a run start, the last
  * section is kept rather than dropped, for the same reason.
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -29,6 +29,7 @@ import {
 	renderInbox,
 	renderMembers,
 	renderSend,
+	sectionKey,
 	UNLINKED_REASONS,
 } from "./client.ts";
 
@@ -48,8 +49,10 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 	};
 	/** The last members view, for naming recipients in results. */
 	let lastView: MeshLinkView[] = [];
-	/** The section the last run got; kept when a run start can't read the host. */
+	/** The section the last run got, and the live link ids it was built for: rebuilt only when
+	    those change, and kept when a run start can't read the host. */
 	let lastSection: string | null = null;
+	let lastKey = "";
 
 	const sessionOf = (ctx: ExtensionContext): string => ctx.sessionManager.getSessionId();
 	const text = (t: string, details: unknown = {}) => ({ content: [{ type: "text" as const, text: t }], details });
@@ -143,11 +146,18 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 		try {
 			const view = await c.members(sessionOf(ctx), { brief: true });
 			lastView = view;
-			lastSection = promptSection(view);
+			const key = sectionKey(view);
+			if (key !== lastKey) {
+				lastKey = key;
+				lastSection = promptSection(view);
+			}
 		} catch (e) {
 			// A 4xx is the host's answer (no link routes, not linked): no section. No answer at all
 			// keeps the last one: dropping it for one run would restart a claude-code CLI twice.
-			if (e instanceof LinkHostError && e.status >= 400 && e.status < 500) lastSection = null;
+			if (e instanceof LinkHostError && e.status >= 400 && e.status < 500) {
+				lastKey = "";
+				lastSection = null;
+			}
 		}
 		if (lastSection) event.systemPromptOptions.sections[SECTION] = lastSection;
 	});

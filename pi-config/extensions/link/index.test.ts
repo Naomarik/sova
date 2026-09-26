@@ -43,14 +43,14 @@ function rig(flag: string | undefined, ...answers: Answer[]) {
 	};
 }
 
-const linked = (id = "lk_a", endedAt?: number) => ({
+const linked = (id = "lk_a", endedAt?: number, title = "Fix it") => ({
 	body: {
 		links: [
 			{
 				link: { id, createdAt: 0, createdBy: "n-self", ...(endedAt ? { endedAt } : {}) },
 				members: [
 					{ nodeId: "n-self", sessionId: "s-me", path: "/m", self: true, hostLabel: "here", reach: "self", state: "working" },
-					{ nodeId: "n-b", sessionId: "s-b", path: "/b", self: false, hostLabel: "box", reach: "up", state: "idle" },
+					{ nodeId: "n-b", sessionId: "s-b", path: "/b", self: false, hostLabel: "box", reach: "up", state: "idle", title },
 				],
 			},
 		],
@@ -85,10 +85,11 @@ test("an unlinked session: no section, and every tool refuses with a sentence", 
 });
 
 test("the section follows membership, and survives a run start the host can't answer", async () => {
-	const r = rig(ORIGIN, linked(), new TypeError("fetch failed"), linked("lk_a", 9), { status: 404, body: {} });
+	const r = rig(ORIGIN, linked(), new TypeError("fetch failed"), linked("lk_a", undefined, "Renamed"), linked("lk_a", 9), { status: 404, body: {} });
 	const first = await r.start();
-	assert.ok(first && first.includes("lk_a") && first.includes("box/s-b"));
+	assert.ok(first && first.includes("lk_a") && first.includes('"Fix it" (box/s-b)'));
 	assert.equal(await r.start(), first, "no answer keeps the section: no CLI restart");
+	assert.equal(await r.start(), first, "a partner's retitle keeps it too: same live links");
 	assert.equal(await r.start(), undefined, "the link ended");
 	assert.equal(await r.start(), undefined, "a host with no link routes");
 	assert.ok(r.calls.every((c) => c.url === `${ORIGIN}/api/mesh/links?session=s-me&brief=1`));

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LinkClient, LinkHostError, type MeshLinkView, nameFrom, NOT_LINKED, promptSection, renderInbox, renderMembers, renderSend } from "./client.ts";
+import { LinkClient, LinkHostError, type MeshLinkView, nameFrom, NOT_LINKED, promptSection, renderInbox, sectionKey, renderMembers, renderSend } from "./client.ts";
 
 const ORIGIN = "http://127.0.0.1:4810";
 
@@ -26,15 +26,16 @@ function fakeFetch(...answers: Array<{ status?: number; body?: unknown; raw?: st
 	return { f, calls };
 }
 
-test("the prompt section depends on membership only", () => {
+test("the prompt section names partners and no live state", () => {
 	const a = promptSection([view("lk_b"), view("lk_a")]);
 	assert.ok(a);
 	assert.ok(a.indexOf("lk_a") < a.indexOf("lk_b"), "links sorted by id");
-	assert.match(a, /box\/s-b/);
+	assert.match(a, /- lk_a: "Fix it" \(box\/s-b\)/);
 	assert.doesNotMatch(a, /s-me/, "the session itself is not a partner");
-	// Live state, titles, models and reach change every run; the section must not.
-	const b = promptSection([view("lk_a", {}, { state: "working", title: "Other", reach: "down", model: "x/y", lastActivity: 9 }), view("lk_b")]);
+	// Live state, models and reach change every run; the section must not.
+	const b = promptSection([view("lk_a", {}, { state: "working", reach: "down", model: "x/y", lastActivity: 9 }), view("lk_b")]);
 	assert.equal(b, a);
+	assert.equal(sectionKey([view("lk_b"), view("lk_a"), view("lk_c", { endedAt: 1 })]), "lk_a lk_b");
 });
 
 test("no live link, no section", () => {
@@ -111,7 +112,7 @@ test("the host's refusals reach the model as sentences", async () => {
 	};
 	const a = await err();
 	assert.deepEqual([a.message, a.status, a.reason], ["This session is not a member of lk_a.", 409, "not-member"]);
-	assert.match((await err()).message, /no link routes/);
+	assert.match((await err()).message, /no link routes: the mesh is off/);
 	const c3 = await err();
 	assert.equal(c3.status, 0);
 	assert.match(c3.message, /did not answer \(fetch failed\)/);

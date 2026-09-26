@@ -25,11 +25,12 @@ members message each other. Sova makes and ends links (its Overseer's `sova_link
   `[link_msg <link id> <message id>] from <title> (<host>/<session id>)`. Sova hides it from the
   main transcript and shows it in the Agents tab.
 - **The prompt section** (`mesh-link`) is added to each run while the session is linked. It names
-  the link ids and each partner's host label and session id, and nothing that changes from run to
-  run (no up/down, working/idle or titles): a changed system prompt restarts a claude-code
-  session's CLI. It is read from the host at each run start without peer hops (`brief=1`). A run
-  start the host doesn't answer keeps the previous section, and any answer from the host (no
-  links, no link routes) drops it.
+  the link ids and each partner's title, host label and session id, and no live state (up/down,
+  working/idle). It is rebuilt only when the set of live link ids changes, so it changes only when
+  a link is made or ended: a changed system prompt restarts a claude-code session's CLI. The links
+  are read from the host at each run start without peer hops (`brief=1`). A run start the host
+  doesn't answer keeps the previous section. Any answer from the host (no links, no link routes)
+  drops it.
 
 Files: `index.ts` (flag, tools, section), `client.ts` (builtins only: the HTTP client, the
 structural copies of the route bodies, and the pure rendering the model reads).

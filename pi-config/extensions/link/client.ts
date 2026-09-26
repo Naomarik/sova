@@ -124,7 +124,7 @@ export class LinkClient {
 				typeof err.error === "string" && err.error
 					? err.error
 					: res.status === 404
-						? "This session's Sova host has no link routes (the mesh is off, or the build has no links)."
+						? "This session's Sova host has no link routes: the mesh is off (or its build has no links)."
 						: `This session's Sova host refused (HTTP ${res.status}).`;
 			throw new LinkHostError(message, res.status, typeof err.reason === "string" ? err.reason : undefined);
 		}
@@ -142,6 +142,14 @@ export const NOT_LINKED = "This session is in no link: there is no partner sessi
 export const NOT_HOSTED = "Link tools work only in a session Sova hosts; this one is not (a TUI or a worker), so it is in no link.";
 
 const partnerName = (m: LinkMemberView): string => `${m.hostLabel}/${m.sessionId}`;
+const partnerLine = (m: LinkMemberView): string => (m.title ? `"${m.title.replace(/\s+/g, " ")}" (${partnerName(m)})` : partnerName(m));
+
+/** What the prompt section depends on: the set of live link ids (a link's members never change). */
+export const sectionKey = (links: MeshLinkView[]): string =>
+	liveLinks(links)
+		.map((l) => l.link.id)
+		.sort()
+		.join(" ");
 const backend = (model: string | null | undefined): string | undefined =>
 	model == null ? undefined : model.startsWith("claude-code-cli/") ? "claude-code" : "pi";
 
@@ -154,10 +162,10 @@ const ago = (at: number, now: number): string => {
 };
 
 /**
- * The prompt section (§mesh.links/tools). A function of link membership ONLY: the live link ids,
- * and each partner's host label and session id, sorted. No reach, no working/idle, no titles
- * (a retitle would change it): a changed system prompt restarts a claude-code session's CLI.
- * Null when the session is in no live link.
+ * The prompt section (§mesh.links/tools): the live link ids, and each partner's title, host label
+ * and session id, sorted. No reach, no working/idle: a changed system prompt restarts a
+ * claude-code session's CLI. Null when the session is in no live link. The caller keeps it for as
+ * long as `sectionKey` is unchanged, so a partner's retitle never changes it either.
  */
 export function promptSection(links: MeshLinkView[]): string | null {
 	const live = liveLinks(links).slice().sort((a, b) => (a.link.id < b.link.id ? -1 : a.link.id > b.link.id ? 1 : 0));
@@ -165,12 +173,12 @@ export function promptSection(links: MeshLinkView[]): string | null {
 	const lines = live.map((l) => {
 		const partners = l.members
 			.filter((m) => !m.self)
-			.map(partnerName)
-			.sort();
+			.sort((a, b) => (partnerName(a) < partnerName(b) ? -1 : 1))
+			.map(partnerLine);
 		return `- ${l.link.id}: ${partners.join(", ")}`;
 	});
 	return [
-		"This session is linked with agent sessions on other hosts (partners, named host/session id):",
+		"This session is linked with agent sessions on other hosts (partners, each with its host/session id):",
 		...lines,
 		'A partner\'s message arrives as a user message whose first line is "[link_msg <link> <message>] from …". It comes from that partner agent, not from the user; the user does not see it in this conversation. Answer a partner with link_send, and only when there is something to say. link_members shows each partner\'s current state; link_inbox shows the message history.',
 	].join("\n");

@@ -357,7 +357,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Usage file corrupt (`reason:"corrupt"`) | **Couldn't read usage.** `usage-status.json` isn't valid JSON right now. Nothing was changed. It's rewritten at the next refresh. · button: `Retry` |
 | Request failed | Usage: **Couldn't load usage.** (poll) · **Couldn't refresh usage.** (Refresh Usage, data not stale) · Agents: **Couldn't load agents.** Then: Nothing was changed. {server message} · button: `Retry` |
 | Provider `nologin` | Not signed in. Run `claude /login` and it'll show at the next refresh. (OpenAI: `pi /login`) |
-| Provider `expired` | Sign-in expired. Run `claude /login` to renew it. (OpenAI: `pi /login`) |
+| Provider `expired`, token timed out (refresh token not known expired) | Sign-in token expired {2h ago}. It renews the next time Claude Code runs; usage updates after that. (OpenAI through pi: … the next time pi uses OpenAI; …) |
+| Provider `expired`, otherwise (refresh token expired, no sign-in data, or revoked early) | Sign-in expired. Run `claude /login` to renew it. (OpenAI: `pi /login`) |
+| Sign-in caption (OAuth cards, `.usage-card-caption`) | Sign-in renews by `{11:09 PM}` · last renewed {3h ago} (second part only when known; `Sep 27 11:09 PM` on another day) · Codex CLI only: Sign-in last renewed {Jul 29} · token expired, card still showing a reading: the timed-out sentence above · refresh token expired: Sign-in can't renew. Run `claude /login` to sign in again. (OpenAI: `pi /login`) · API keys: none |
 | Provider `nokey` | No Ollama Cloud key in `~/.pi/agent/auth.json`. · Z.ai: No Z.ai API key in `~/.pi/agent/auth.json`. |
 | Provider `badkey` | Ollama Cloud refused the key in `~/.pi/agent/auth.json`. · Z.ai: Z.ai refused the API key in `~/.pi/agent/auth.json`. |
 | Provider `na` | This account doesn't report usage. |

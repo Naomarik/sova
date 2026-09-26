@@ -1,7 +1,8 @@
 # §app/insights — Insights
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-What the user's pi extensions publish, read-only: subscription usage (usage-status), teams and
+What the user's pi extensions publish, read-only except for one cache: subscription usage
+(usage-status), which this server also keeps fresh itself (§app.insights/usage-refresh), teams and
 subagents (subagents + sessions live records), and per-session summaries (topic-outline,
 compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in
 `shared/protocol.ts`. **Every status says where it came from**: live-sourced states can pulse,
@@ -278,16 +279,76 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 - **Provider not ok.** The body is a single `.usage-note` (`nologin`, `expired`, `nokey`,
   `badkey`, `na`, or `error` with no windows; see §design/copy-deck), with no chip and no meters. Commands in
   the note go in `<code>`.
+  - `expired` (the provider refused the sign-in) has two notes, chosen from the card's `auth`.
+    When `auth` says the access token's own expiry has passed and does not say the refresh token
+    has expired too, the note is the soft one: the token expired `{ago}`, and it renews the next
+    time Claude Code runs (OpenAI signed in through pi: the next time pi uses OpenAI), after which
+    usage updates. Nothing needs the user. In every other case — the refresh token has expired,
+    the card has no `auth`, or the access token has not reached its expiry (so it was revoked,
+    not timed out) — the note stays "Sign-in expired. Run `claude /login` to renew it."
+- **Sign-in token.** A card whose `auth.kind` is `"oauth"` ends its body with one muted
+  `.usage-card-caption` line about the sign-in, after the meters or the note; an API-key
+  provider (`auth.kind: "apiKey"`) and a card without `auth` get none. Times follow
+  §design/copy-deck: a clock (with the date when it isn't today) for when, a relative age for
+  when it happened.
+  - Valid access token: "Sign-in renews by `{expiresAt}`", plus " · last renewed `{ago}`" when
+    `refreshedAt` is known. With `refreshedAt` and no `expiresAt` (the Codex CLI's sign-in): "Sign-in last renewed `{ago}`".
+  - Access token expired, refresh token not known to be expired, on a card whose state isn't
+    `expired`: the soft sentence from the note above, as the caption (the meters are the reading
+    from before it expired).
+  - Refresh token expired: "Sign-in can't renew. Run `claude /login` to sign in again."
+  - On a card whose note is already the `expired` one, the caption is left out: the note says it.
 - **Whole file.**
-  - The Usage page's head meta always shows "Updated {rel}" from `fetchedAt`, or "Not read yet".
+  - The Usage page's head meta always shows "Updated {rel}" from `fetchedAt`, or "Not read yet",
+    then " · next refresh {in}" while `nextFetchAt` is ahead. With the server's own poller
+    (§app.insights/usage-refresh) that next refresh really happens without anyone on the page.
   - Refresh Usage (`POST /api/insights/usage/refresh`) fetches every provider now and replaces
     the page's data with the result; the head button is `aria-disabled` + `aria-busy` meanwhile.
-  - When `stale` is true (more than 10 minutes old) and the last Refresh Usage failed, add a
+  - `stale` is true when the file is more than 10 minutes old, which now means that this
+    server's poller is failing or switched off and no TUI refreshed it either.
+  - When `stale` is true and the last Refresh Usage failed, add a
     `.banner.banner-warn` (`clock`) above the grid with the failure and a `Retry`. Old data on
     its own gets no banner: the head meta shows the age, and Refresh Usage fetches it. The
     meters still render.
   - When `available` is false, replace the grid with one `.empty`. `missing` means unavailable,
     not an error. `corrupt` gets the error copy.
+
+## §app.insights/usage-refresh — Who keeps usage fresh
+
+The usage cache (`usage-status.json` in the pi agent dir's `cache/`) is shared by every pi on the
+machine and by this server. Three things refresh it, all through the usage-status extension's own
+refresh, which holds a machine-wide lock and fetches only when the cache says its next fetch is
+due (sooner after a failed fetch, never more often than the extension itself would):
+
+- **The server's poller.** From 2–5 seconds after start, the server asks for a refresh (never a
+  forced one) and schedules its next ask at the cache's `nextFetchAt`, never sooner than 30
+  seconds and never later than 5 minutes, plus a few seconds of jitter. When another process holds
+  the lock and publishes nothing, or the refresh itself fails, it asks again later; nothing stops
+  the chain but shutdown. While a Refresh Usage is in flight it skips its turn. Each distinct
+  failure is logged once, not on every tick. `SOVA_USAGE_POLL=off` in the server's environment
+  switches it off (say, a second test server that shouldn't double the provider calls); every
+  other value leaves it on. It never keeps the process alive, and it stops on shutdown.
+- **Refresh Usage** (§app.insights/usage-cards): a forced refresh, now.
+- **A TUI pi**, unchanged: its own timer and after each turn.
+
+Two servers with different agent dirs (the live one and a hermetic test server) keep separate
+caches and locks, so each fetches on its own; servers on the same agent dir share one.
+
+**Sign-in data.** `GET /api/insights/usage` adds `auth` (`UsageAuth`) to a provider when its
+credentials say something: expiry times, when the sign-in was last renewed, and whether the access
+and refresh tokens have expired by the server's clock. It comes from the same credential files the
+usage fetch reads (Claude Code's `~/.claude/.credentials.json`, pi's `~/.pi/agent/auth.json`, the
+Codex CLI's `~/.codex/auth.json`), re-read only when a file changes. It carries numbers, enums and
+booleans only: no string from a credential file ever leaves the server. Claude's
+`refreshedAt` is the credentials file's modification time, and only while that time agrees (to
+within 10 minutes) with an 8-hour token lifetime ending at `expiresAt`; otherwise it is left out
+rather than guessed. OpenAI signed in through pi has an expiry and no renewal time; signed in only
+through the Codex CLI, a renewal time (`last_refresh`) and no expiry. API-key providers carry
+`{kind: "apiKey"}` and nothing else.
+
+**Sova never writes a credential file and never refreshes a token.** A Claude sign-in renews only
+when Claude Code itself runs; the Usage page says so (§app.insights/usage-cards) instead of
+renewing it.
 
 ## §app.insights/team-cards — Team cards
 

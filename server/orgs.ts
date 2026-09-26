@@ -27,7 +27,7 @@ import {
 import { setExtraSessionRoots } from "./paths";
 import { stateRoot } from "./state-root";
 import { commitEveryMs, type CommitTarget } from "./workspace-commits";
-import { commitAll, gitStatus, initRepo, isIgnoredBy } from "./workspace-git";
+import { commitAll, gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./workspace-git";
 
 /**
  * Organizations (§app/organizations). Two layers:
@@ -187,21 +187,32 @@ export function slugOf(name: string): string {
   return s || "org";
 }
 
+/** Canonical form of a path that may not exist yet: its nearest existing parent, canonicalized. */
+function canonicalPath(path: string): string {
+  let probe = path;
+  while (!existsSync(probe) && dirname(probe) !== probe) probe = dirname(probe);
+  return join(canonicalDir(probe), relative(probe, path));
+}
+
+const within = (path: string, dir: string) => path === dir || path.startsWith(dir + sep);
+
 /**
  * A workspace dir the operator may use: absolute, and not inside Sova's own checkout unless that
- * checkout ignores it (the hermetic `.agent/` is). Returns the reason it is refused, or null.
+ * checkout ignores it (the hermetic `.agent/` is). An install that is not a git checkout has no
+ * ignore rules to ask, so inside it only the default workspaces dir (Sova's state, never source)
+ * is allowed. Returns the reason it is refused, or null.
  */
-export async function workspaceDirProblem(dir: string, sovaRoot = SOVA_ROOT): Promise<string | null> {
+export async function workspaceDirProblem(dir: string, sovaRoot = SOVA_ROOT, workspacesBase = defaultWorkspacesDir()): Promise<string | null> {
   if (!isAbsolute(dir)) return "dir must be an absolute path";
-  const abs = resolve(dir);
   const root = canonicalDir(sovaRoot);
-  // Compare canonical forms: the dir may not exist yet, so canonicalize its nearest existing parent.
-  let probe = abs;
-  while (!existsSync(probe) && dirname(probe) !== probe) probe = dirname(probe);
-  const canonical = join(canonicalDir(probe), relative(probe, abs));
-  const inside = canonical === root || canonical.startsWith(root + sep);
-  if (inside && !(canonical !== root && (await isIgnoredBy(root, canonical)))) return "A workspace repo must not live inside Sova's own repository (it is public).";
-  return null;
+  // Compare canonical forms: the dir may not exist yet.
+  const canonical = canonicalPath(resolve(dir));
+  if (!within(canonical, root)) return null;
+  const refused = "A workspace repo must not live inside Sova's own repository (it is public).";
+  if (canonical === root) return refused;
+  if (await isInGitWorkTree(root)) return (await isIgnoredBy(root, canonical)) ? null : refused;
+  const base = canonicalPath(resolve(workspacesBase));
+  return base !== root && within(base, root) && within(canonical, base) ? null : refused;
 }
 
 // ---- org files ---------------------------------------------------------------------------------------

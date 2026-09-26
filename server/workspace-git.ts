@@ -184,5 +184,11 @@ export async function isIgnoredBy(repo: string, dir: string): Promise<boolean> {
   return (await git(repo, ["check-ignore", "-q", "--no-index", dir])).code === 0;
 }
 
+/** Whether `dir` is inside a git work tree (a Sova install may be a plain copy, not a checkout). */
+export async function isInGitWorkTree(dir: string): Promise<boolean> {
+  const r = await git(dir, ["rev-parse", "--is-inside-work-tree"]);
+  return r.code === 0 && r.stdout.trim() === "true";
+}
+
 /** Wait for every queued job of `dir` (tests). */
 export const settled = (dir: string): Promise<unknown> => queues.get(dir) ?? Promise.resolve();

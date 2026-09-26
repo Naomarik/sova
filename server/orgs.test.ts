@@ -135,4 +135,24 @@ describe("workspace dirs never inside Sova's own repo", () => {
     assert.equal(await orgs.workspaceDirProblem(join(root, "elsewhere"), sova), null);
     assert.match((await orgs.workspaceDirProblem("relative/dir", sova)) ?? "", /absolute/);
   });
+
+  // An install that is not a git checkout (a copied or unpacked tree): nothing can say what it
+  // ignores, so only Sova's own state dir (the default workspaces base) is allowed inside it.
+  test("not a git checkout: the default workspaces dir is allowed, the rest of the tree is not", async () => {
+    const plain = join(root, "plain-install");
+    const base = join(plain, ".agent", "sova", "workspaces");
+    mkdirSync(join(plain, "server"), { recursive: true });
+    writeFileSync(join(plain, ".gitignore"), ".agent/\n");
+    assert.equal(await orgs.workspaceDirProblem(join(base, "acme"), plain, base), null);
+    assert.equal(await orgs.workspaceDirProblem(join(base, "deep", "acme"), plain, base), null);
+    assert.match((await orgs.workspaceDirProblem(join(plain, "server", "x"), plain, base)) ?? "", /must not live inside Sova/);
+    assert.match((await orgs.workspaceDirProblem(join(plain, ".agent", "sova", "other"), plain, base)) ?? "", /must not live inside Sova/);
+    assert.match((await orgs.workspaceDirProblem(join(plain, ".agent", "sova", "workspaces-x"), plain, base)) ?? "", /must not live inside Sova/);
+    assert.match((await orgs.workspaceDirProblem(plain, plain, base)) ?? "", /must not live inside Sova/);
+    // The base is the root itself: that exception would cover the whole tree, so it never applies.
+    assert.match((await orgs.workspaceDirProblem(join(plain, "server", "x"), plain, plain)) ?? "", /must not live inside Sova/);
+    // In a git checkout the ignore rules decide, base or not: an unignored base is still refused.
+    const unignored = join(sova, "state", "workspaces");
+    assert.match((await orgs.workspaceDirProblem(join(unignored, "acme"), sova, unignored)) ?? "", /must not live inside Sova/);
+  });
 });

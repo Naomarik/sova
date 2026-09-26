@@ -11,7 +11,11 @@
 #   ~/$R/sova-mesh.env   the environment the unit and run-sova.sh use
 #   ~/$R/agent/sova/peers.json   seeded ONCE (only if absent) with this host's self id/label/serveUrl and no peers
 #                 (mesh stays off); the self id must never change on a running host, so it is never rewritten here
+#   Claude Code   not installed here: the claude-code extension spawns plain `claude`, so the directory of deploy's own
+#                 claude (CLAUDE_BIN, else `command -v claude` in deploy's login shell, else common install locations) is
+#                 appended to PATH in sova-mesh.env; not found = a warning, never a failed deploy
 # Env in: R NODE_VERSION NODE_SHA256 CADDY_VERSION CADDY_SHA512 SOVA_PORT SOVA_PEER_PORT VPS_TAILNET_IP VPS_ID VPS_LABEL
+#         CLAUDE_BIN (optional, the claude executable to use)
 set -euo pipefail
 : "${R:?}" "${NODE_VERSION:?}" "${NODE_SHA256:?}" "${CADDY_VERSION:?}" "${CADDY_SHA512:?}" "${SOVA_PORT:?}" "${SOVA_PEER_PORT:?}" "${VPS_TAILNET_IP:?}"
 : "${VPS_ID:?}" "${VPS_LABEL:?}"
@@ -43,6 +47,28 @@ if ! "$BASE/bin/caddy" version 2>/dev/null | grep -q "^v$CADDY_VERSION "; then
   rm -f "$BASE/dl/$f"
 fi
 log "caddy: $("$BASE/bin/caddy" version | cut -d' ' -f1) (sha512 verified at install)"
+
+# --- Claude Code ----------------------------------------------------------------------------------
+# looked up with deploy's real HOME and login PATH (before the isolated ones below); </dev/null: our stdin is this script
+is_exe() { case "$1" in /*) [ -x "$1" ] && [ ! -d "$1" ] ;; *) false ;; esac; }
+claude=
+if [ -n "${CLAUDE_BIN:-}" ]; then
+  is_exe "$CLAUDE_BIN" && claude=$CLAUDE_BIN
+else
+  for f in "$(bash -lc 'command -v claude' </dev/null 2>/dev/null | tail -1 || true)" "$HOME/.local/bin/claude" \
+           "$HOME/.claude/local/claude" "$HOME/.npm-global/bin/claude" /usr/local/bin/claude; do
+    is_exe "$f" && { claude=$f; break; }
+  done
+fi
+SERVICE_PATH="$BASE/node/bin:/usr/bin:/bin"
+if [ -n "$claude" ]; then
+  log "claude: $claude ($("$claude" --version </dev/null 2>/dev/null | head -1 || true))"
+  # appended, so this build's node still comes first
+  d=$(cd "$(dirname "$claude")" && pwd)
+  case "$d" in /usr/bin|/bin) ;; *) SERVICE_PATH="$SERVICE_PATH:$d" ;; esac
+else
+  log "WARNING: Claude Code not found${CLAUDE_BIN:+ (CLAUDE_BIN=$CLAUDE_BIN is not executable)}: claude-code models will fail (install it for deploy, or set CLAUDE_BIN in local.env)"
+fi
 
 # --- the app --------------------------------------------------------------------------------------
 [ -f "$BASE/app.new/package.json" ] || { log "no staged app in $BASE/app.new"; exit 1; }
@@ -87,7 +113,7 @@ PI_CODING_AGENT_DIR=$BASE/agent
 HOME=$BASE/home
 SOVA_SYNC_CLAUDE_DIR=$BASE/home/.claude
 TMPDIR=$BASE/tmp
-PATH=$BASE/node/bin:/usr/bin:/bin
+PATH=$SERVICE_PATH
 EOF
 mv "$BASE/sova-mesh.env.tmp" "$BASE/sova-mesh.env"
 

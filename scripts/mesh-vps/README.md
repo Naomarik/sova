@@ -14,8 +14,11 @@ Ports: Sova main 127.0.0.1:4800; peer listener <vps-tailnet-ip>:4801 (only while
 front door Caddy 127.0.0.1:4890 (admin 127.0.0.1:2089). Nothing binds the public interface.
 
 From the laptop:
-- `deploy.sh [--rev <sha>]`: stream `git archive <sha>` over ssh, install Node/Caddy, pnpm install
-  --frozen-lockfile, vite build, agent dir, env. Restarts the sova-mesh user unit if it is running.
+- `deploy.sh [--rev <sha>] [--claude-bin <path>]`: stream `git archive <sha>` over ssh, install Node/Caddy, pnpm install
+  --frozen-lockfile, vite build, agent dir, env. Restarts the sova-mesh user unit if it is running. Claude Code is not
+  installed by us: the directory of deploy's own `claude` (`--claude-bin` / CLAUDE_BIN, else `command -v claude` in
+  deploy's login shell, else ~/.local/bin and other common locations) is appended to the unit's PATH in `sova-mesh.env`;
+  if none is found the deploy warns "Claude Code not found: claude-code models will fail" and carries on.
 - `smoke.sh [--keep-peers]`: start Sova by hand, check health, mesh off = no peer port, PUT peers.json (the
   laptop's team server; self.id must be $VPS_ID, loginKinds not pinned) → the peer listener binds the tailnet IP only, exposure probe, stop, and compare the
   production state (listening sockets + `systemctl is-active` of PROD_UNITS, if set) before and after.

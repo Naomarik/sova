@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Deploy a commit of this worktree to the VPS as deploy (no sudo, never git push):
-#   scripts/mesh-vps/deploy.sh [--rev <sha>]      (default HEAD)
+#   scripts/mesh-vps/deploy.sh [--rev <sha>] [--claude-bin <path>]      (default HEAD; CLAUDE_BIN from local.env)
 # `git archive <sha>` is streamed over ssh into ~/sova-mesh/app.new, then remote-setup.sh installs Node + Caddy
 # (checksummed), swaps the app in, runs pnpm install --frozen-lockfile + vite build, prepares the agent dir and
-# writes ~/sova-mesh/sova-mesh.env. If the sova-mesh user unit is running, it is restarted onto the new build.
+# writes ~/sova-mesh/sova-mesh.env (Claude Code's directory on the unit's PATH, or a warning). If the sova-mesh user unit is running, it is restarted onto the new build.
 set -euo pipefail
 . "$(dirname "$0")/config.sh"
 need VPS_SSH VPS_TAILNET_IP
@@ -12,7 +12,8 @@ REV=HEAD
 while [ $# -gt 0 ]; do
   case "$1" in
     --rev) REV=${2:?--rev needs a commit}; shift 2 ;;
-    *) die "usage: $0 [--rev <sha>]" ;;
+    --claude-bin) CLAUDE_BIN=${2:?--claude-bin needs a path on the VPS}; shift 2 ;;
+    *) die "usage: $0 [--rev <sha>] [--claude-bin <path>]" ;;
   esac
 done
 SHA=$(git -C "$ROOT_DIR" rev-parse --verify "$REV^{commit}") || die "no such commit: $REV"
@@ -23,7 +24,7 @@ git -C "$ROOT_DIR" archive --format=tar "$SHA" | vps "tar -x -C ~/$R/app.new"
 printf '{"commit":"%s","source":"git archive","deployedAt":"%s"}\n' "$SHA" "$(date -u +%FT%TZ)" | vps "cat > ~/$R/app.new/BUILD_COMMIT"
 
 vps "R=$R NODE_VERSION=$NODE_VERSION NODE_SHA256=$NODE_SHA256 CADDY_VERSION=$CADDY_VERSION CADDY_SHA512=$CADDY_SHA512 \
-  SOVA_PORT=$SOVA_PORT SOVA_PEER_PORT=$SOVA_PEER_PORT VPS_TAILNET_IP=$VPS_TAILNET_IP VPS_ID=$VPS_ID VPS_LABEL='$VPS_LABEL' bash -s" < "$MESH_VPS_DIR/remote-setup.sh"
+  SOVA_PORT=$SOVA_PORT SOVA_PEER_PORT=$SOVA_PEER_PORT VPS_TAILNET_IP=$VPS_TAILNET_IP VPS_ID=$VPS_ID VPS_LABEL='$VPS_LABEL' CLAUDE_BIN='$CLAUDE_BIN' bash -s" < "$MESH_VPS_DIR/remote-setup.sh"
 
 # installed user units follow the deployed copies (daemon-reload only when one changed)
 vps 'd=~/.config/systemd/user; n=0; for u in sova-mesh.service sova-frontdoor.service; do

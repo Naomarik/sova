@@ -14,6 +14,10 @@ need() { local v; for v in "$@"; do [ -n "${!v:-}" ] || { printf '[mesh-vps] err
 VPS_ID=${VPS_ID:-vps}
 VPS_LABEL=${VPS_LABEL:-$VPS_ID}
 
+# Claude Code on the VPS (deploy's own install): empty = `command -v claude` in deploy's login shell, else a common install
+# location; its directory goes on the sova-mesh unit's PATH (the claude-code extension spawns plain `claude`)
+CLAUDE_BIN=${CLAUDE_BIN:-}
+
 # Everything of ours on the VPS lives under this directory (relative to deploy's home)
 R=${R:-sova-mesh}
 

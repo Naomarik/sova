@@ -159,6 +159,8 @@ export function MoveToGroupMenu(props: {
    * "No group" isn't offered — there is no workspace to open.
    */
   variant?: "move" | "beside";
+  /** A row's trigger: the folder icon alone, named by its label (a table cell has no room for words). */
+  iconOnly?: boolean;
 }) {
   const beside = () => props.variant === "beside";
   const uid = `move-to-group-${++seq}`;
@@ -309,10 +311,11 @@ export function MoveToGroupMenu(props: {
       <button
         ref={trigger}
         type="button"
-        class="button"
+        class={props.iconOnly ? "button button-icon button-ghost" : "button"}
         aria-haspopup="menu"
         aria-expanded={open() ? "true" : "false"}
         aria-controls={uid}
+        aria-label={props.iconOnly ? `Move ${quoted(props.session.title)} into a group` : undefined}
         title={
           beside()
             ? "Open this session in a group's workspace, beside the sessions already in it"
@@ -323,8 +326,10 @@ export function MoveToGroupMenu(props: {
         onClick={() => (open() ? closeMenu() : openMenu())}
       >
         <Icon name={beside() ? "external" : "folder"} />
-        {beside() ? "Open beside" : "Move into group"}
-        <Icon name="chevron-down" small />
+        <Show when={!props.iconOnly}>
+          {beside() ? "Open beside" : "Move into group"}
+          <Icon name="chevron-down" small />
+        </Show>
       </button>
 
       <div

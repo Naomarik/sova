@@ -3,7 +3,7 @@ import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSum
 import { contextSentence, contextStateFor, formatTokens } from "../lib/context";
 import { compactModel, relativeTime, thousands } from "../lib/format";
 import { absoluteTime, anyCost, firstLine, originLabel, spendRows, timelineEntries } from "../lib/spend";
-import { setSessionArchived } from "../lib/api";
+import { archiveSession } from "../lib/session-actions";
 import { cwdLabel } from "../lib/remote-session";
 import { resumeCommand } from "../lib/session-command";
 import { groupNameOf, sessionGroups } from "../lib/session-groups";
@@ -23,7 +23,7 @@ import {
   upstreamLabel,
   visiblePath,
 } from "../lib/git-summary";
-import { copyText, home, toast } from "../lib/ui-state";
+import { copyText, home } from "../lib/ui-state";
 import { asOfClock, formatCost, idList, lifetimeIncludes, sessionWorking, usageHeadline, usageTitle, usageTotal } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
 import { sessionHref } from "./Sidebar";
@@ -674,11 +674,7 @@ function ArchiveAction(props: { session: SessionSummary; archived: boolean; work
     const next = !props.archived;
     setPending(true);
     try {
-      await setSessionArchived(props.session.path, next);
-      toast(next ? "Archived. Find it under Archive." : "Moved back to Live & web.");
-      props.onDone(next);
-    } catch (err) {
-      toast(`Couldn't ${next ? "archive" : "unarchive"} this session. ${(err as Error).message}`);
+      if (await archiveSession(props.session.path, next)) props.onDone(next);
     } finally {
       setPending(false);
     }

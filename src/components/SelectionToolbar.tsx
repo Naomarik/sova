@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { SESSION_TITLE_MAX, type SessionSummary } from "../../shared/protocol";
-import { assignSessionGroup, setSessionArchived, setSessionTitle } from "../lib/api";
+import { assignSessionGroup, setSessionArchived } from "../lib/api";
+import { renameSession } from "../lib/session-actions";
 import {
   archiveSummary,
   beginSelectionAction,
@@ -27,7 +28,17 @@ const sessionsWord = (n: number) => `${n} ${n === 1 ? "session" : "sessions"}`;
  * EMPTY field clears the user's title so the session goes back to the one derived from its first
  * message — which is why this can't be `GroupNameField`, where empty means cancel.
  */
-function TitleField(props: { initial: string; label: string; onDone(title: string | null): void; onCancel(): void }) {
+export function TitleField(props: {
+  initial: string;
+  label: string;
+  onDone(title: string | null): void;
+  onCancel(): void;
+  /** The hint the field is described by (default: the toolbar's own). */
+  describedBy?: string;
+  /** Leaving the field saves what's in it, and cancels when it's empty — the in-place rename of a
+      row, where a field left open under a moving list would be lost. The toolbar's stays open. */
+  blurSaves?: boolean;
+}) {
   const [value, setValue] = createSignal(props.initial);
   let input!: HTMLInputElement;
   let settled = false;
@@ -58,7 +69,7 @@ function TitleField(props: { initial: string; label: string; onDone(title: strin
         maxlength={SESSION_TITLE_MAX}
         placeholder="Session title"
         aria-label={props.label}
-        aria-describedby="selection-rename-hint"
+        aria-describedby={props.describedBy ?? "selection-rename-hint"}
         value={value()}
         onInput={(e) => setValue(e.currentTarget.value)}
         onKeyDown={(e) => {
@@ -66,6 +77,13 @@ function TitleField(props: { initial: string; label: string; onDone(title: strin
           e.preventDefault();
           e.stopPropagation(); // Escape belongs to the field while it is open, not to the mode
           finish(() => props.onCancel());
+        }}
+        onBlur={(e) => {
+          if (!props.blurSaves) return;
+          // Onto the field's own Save button: the submit settles it.
+          if (e.relatedTarget instanceof Node && e.currentTarget.form?.contains(e.relatedTarget)) return;
+          const v = value().trim();
+          finish(() => (v ? props.onDone(v) : props.onCancel()));
         }}
       />
       <button type="submit" class="button button-sm">
@@ -124,18 +142,7 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
       const s = one();
       setRenaming(false);
       if (!s) return undefined;
-      // Nothing to say, and nothing to write: the same title back, or "clear" on a session that
-      // has no title of its own (no `originalTitle` means nothing is overriding anything).
-      if (title === s.title || (title === null && s.originalTitle === undefined)) return undefined;
-      try {
-        await setSessionTitle(s.path, title);
-        const done = title ? `Renamed to ${quoted(title)}.` : `Title cleared. Back to ${quoted(s.originalTitle ?? s.title)}.`;
-        toast(done);
-        announce(done);
-        props.onRefresh();
-      } catch (err) {
-        toast(`Couldn't rename this session. ${(err as Error).message}`);
-      }
+      if (await renameSession(s, title)) props.onRefresh();
       return undefined; // a rename never moves the selection
     });
 

@@ -41,6 +41,7 @@ import type {
   UsageInsight,
   WebSettings,
   WorkerResumeResult,
+  WorktreesInsight,
   MeshCandidate,
   MeshHello,
   MeshInfo,
@@ -670,6 +671,10 @@ export const fetchUsage =() => request<UsageInsight>("/api/insights/usage");
 export const refreshUsage = () => request<UsageInsight>("/api/insights/usage/refresh", { method: "POST" });
 
 export const fetchAgents = () => request<AgentsInsight>("/api/insights/agents");
+
+/** The git worktrees of the named sessions (the Agents board's visible rows). */
+export const fetchWorktrees = (paths: readonly string[]) =>
+  request<WorktreesInsight>(`/api/insights/worktrees?paths=${encodeURIComponent(paths.join(","))}`);
 
 /** Installed extensions (the manifest), each with its backend's cached health. */
 export const fetchExtensions = () => request<ExtensionInfo[]>("/api/extensions");

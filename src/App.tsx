@@ -783,6 +783,13 @@ export function App() {
   };
   /** The composer's subagents row and /subagents promise the workers: Agents. */
   const toggleSubagents = (path: string) => openPane(path, "agents");
+  /** The Agents board's Subagents action: open the session, then its pane on the Agents tab.
+      Route first: the pane only opens beside a session that is on screen. */
+  const openSubagentsFor = (path: string) => {
+    location.hash = sessionHref(path);
+    batch(onHash);
+    if (!paneOn(path, "agents")) openPane(path, "agents");
+  };
   /**
    * The Timeline's "Inputs Only" filter: the path whose pane has it on, else null. In memory, and
    * only while the pane is open — it goes off whenever the pane closes, however it closes — so the
@@ -945,6 +952,9 @@ export function App() {
                     now={now()}
                     focusTeam={focusTeam()}
                     titleRef={(el) => (insightsTitleEl = el)}
+                    onRefresh={refresh}
+                    onArchiveChanged={onArchived}
+                    onOpenSubagents={openSubagentsFor}
                   />
                 </Match>
               </Switch>

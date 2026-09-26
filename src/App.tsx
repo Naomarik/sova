@@ -1028,7 +1028,7 @@ export function App() {
                   </div>
                 </div>
               </Match>
-              {/* Organizations, their rosters and hand-off sessions (#/orgs[/<id>[/replay/<session>]]). */}
+              {/* Organizations, their rosters and hand-off sessions (#/orgs[/<id>[/<tab>|/projects/<project>]]). */}
               {/* Not keyed: a tab change on an org's page (#/orgs/<id>/<tab>) is a new route object,
                   and OrgsView keys each page itself, so the page stays and only the tab moves. */}
               <Match when={orgsRoute()}>

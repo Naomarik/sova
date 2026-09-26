@@ -113,8 +113,8 @@ describe("offers and leases", () => {
     assert.equal(cut.items.at(-1)!.kind, "offer");
     const card = cut.items.at(-1) as { to: string[]; invited: number };
     assert.deepEqual([card.to, card.invited], [[], 3], "an invitee learns how many were asked, never who");
-    const replay = batonView({ row, branch, names, redact: (t) => t }).items.find((i) => i.kind === "offer") as { to: string[] };
-    assert.deepEqual(replay.to, ["Tony Reyes", "Maria Lopez", "Carlos"], "the operator's replay names them");
+    const unfiltered = batonView({ row, branch, names, redact: (t) => t }).items.find((i) => i.kind === "offer") as { to: string[] };
+    assert.deepEqual(unfiltered.to, ["Tony Reyes", "Maria Lopez", "Carlos"], "the view with no viewer names them");
     const full = batonView({ row, branch, names, viewer: tony.id, redact: (t) => t });
     assert.ok(JSON.stringify(full).includes("TONY-SAYS"));
   });
@@ -145,7 +145,7 @@ describe("offers and leases", () => {
   test("handing on withdraws the offer: invitees who never held it get 410, those who did read on", () => {
     const now = Date.now() + 3 * LEASE_IDLE_MS;
     baton.noteMessage(c.sessionId, tony.id, now);
-    baton.handTo(c.sessionId, OPERATOR, "Which plan?", "", new Date(now), () => {});
+    baton.handTo(c.sessionId, OPERATOR, "Which plan?", "", new Date(now));
     const row = baton.batonById(c.sessionId)!.row;
     assert.equal(row.offerId, undefined);
     assert.equal(row.offers![0]!.state, "withdrawn");
@@ -158,7 +158,7 @@ describe("offers and leases", () => {
   });
 
   test("an offer from a live session; re-mint one invitee's link; an unclaimed offer taken back revokes every link", () => {
-    const out = baton.startOffer(c.sessionId, [maria.id, carlos.id], "Payroll day?", "brief", new Date(), () => {});
+    const out = baton.startOffer(c.sessionId, [maria.id, carlos.id], "Payroll day?", "brief", new Date());
     assert.equal(out.from, OPERATOR);
     assert.equal(out.n, baton.batonById(c.sessionId)!.row.handoffs.length);
     assert.throws(() => baton.rotateLink(c.sessionId), /invitees/);
@@ -166,7 +166,7 @@ describe("offers and leases", () => {
     const first = out.links.find((l) => l.personId === carlos.id)!.token;
     assert.deepEqual(baton.linkAccess(first), { ok: false, status: 410 }, "the older link of that person stops");
     assert.equal((baton.linkAccess(again.token) as { canWrite: boolean }).canWrite, true);
-    baton.handTo(c.sessionId, OPERATOR, "(taken back)", "", new Date(), () => {});
+    baton.handTo(c.sessionId, OPERATOR, "(taken back)", "", new Date());
     assert.equal(baton.batonById(c.sessionId)!.row.handoffs.at(-1)!.from, POOL);
     assert.deepEqual(baton.linkAccess(again.token), { ok: false, status: 410 }, "Carlos never held it");
   });
@@ -226,7 +226,7 @@ describe("referrals", () => {
 
 describe("the wrap-up's writer", () => {
   const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Wrap", goal: "g" });
-  baton.handTo(c.sessionId, maria.id, "q", "", new Date(), () => {});
+  baton.handTo(c.sessionId, maria.id, "q", "", new Date());
   const branch = [
     { type: "message", id: "u1", message: { role: "user", content: "We run everything on Xero and I write SQL daily" } },
     { type: "custom", id: "m1", customType: BATON_SENT_ENTRY, data: { v: 1, targetId: "u1", by: tony.id } },
@@ -261,8 +261,8 @@ describe("the wrap-up's writer", () => {
     const d = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Lang", goal: "g" });
     const ana = orgs.addPerson(org.id, { name: "Ana", role: "Ops", language: "es-CO" });
     const ben = orgs.addPerson(org.id, { name: "Ben", role: "Ops" });
-    baton.handTo(d.sessionId, ana.id, "q", "", new Date(), () => {});
-    baton.handTo(d.sessionId, ben.id, "q", "", new Date(), () => {});
+    baton.handTo(d.sessionId, ana.id, "q", "", new Date());
+    baton.handTo(d.sessionId, ben.id, "q", "", new Date());
     const br = [
       { type: "message", id: "a1", message: { role: "user", content: "Sure, the invoices go out on Mondays." } },
       { type: "custom", id: "a2", customType: BATON_SENT_ENTRY, data: { v: 1, targetId: "a1", by: ana.id } },
@@ -383,9 +383,9 @@ describe("routes: spawn-for-person, owner, handoff", () => {
 
   test("events: start, offer, hand-off, done, close", () => {
     const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Ev", goal: "g" });
-    baton.startOffer(c.sessionId, [tony.id, maria.id], "q", "", new Date(), () => {});
-    baton.handTo(c.sessionId, OPERATOR, "q", "", new Date(), () => {});
-    baton.markDone(c.sessionId, new Date(), () => {});
+    baton.startOffer(c.sessionId, [tony.id, maria.id], "q", "", new Date());
+    baton.handTo(c.sessionId, OPERATOR, "q", "", new Date());
+    baton.markDone(c.sessionId, new Date());
     baton.closeBaton(c.sessionId);
     assert.deepEqual(
       events.filter((e) => e.sessionId === c.sessionId).map((e) => e.type),
@@ -470,7 +470,7 @@ describe("createBaton without a link (in-process callers)", () => {
     baton.rotateLink(o.sessionId, maria.id);
     assert.equal(baton.batonSummaryField(o.path)!.sendLink, undefined, "every invitee has a link now");
     const live = baton.createBaton({ orgId: org.id, projectId: project.id, to: OPERATOR, publicTitle: "Live offer", goal: "g" });
-    const out = baton.startOffer(live.sessionId, [tony.id, carlos.id], "q?", "", new Date(), () => {}, false);
+    const out = baton.startOffer(live.sessionId, [tony.id, carlos.id], "q?", "", new Date(), false);
     assert.deepEqual(out.links, []);
     assert.equal(baton.batonSummaryField(live.path)!.sendLink?.to, "Tony Reyes, Carlos");
     // The default still mints (the HTTP route; mintLink in a request body is ignored).
@@ -563,7 +563,7 @@ describe("regressions from the slice-2 verification", async () => {
 
   test("W7: no person wrote anything → the wrap-up is skipped: no turn, no entries, recorded so it never retries", async () => {
     const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Silent", goal: "g" });
-    baton.markDone(c.sessionId, new Date(), () => {}); // Tony was a participant but never wrote
+    baton.markDone(c.sessionId, new Date()); // Tony was a participant but never wrote
     const info = await wrap.runWrapup(c.sessionId, []);
     assert.equal(info?.state, "skipped");
     assert.equal(baton.batonById(c.sessionId)!.row.wrapup?.state, "skipped");

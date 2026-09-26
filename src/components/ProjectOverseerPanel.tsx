@@ -117,6 +117,21 @@ export function ProjectOverseerPanel(props: {
         {(i) => (
           <>
             <StatusLine info={i()} />
+            {/* Attached here from a clone (a restore or a move): nothing runs on its own until the operator says so on this host. */}
+            <Show when={i().paused}>
+              {(since) => (
+                <Banner
+                  tone="warn"
+                  title="Paused at L0 on this host"
+                  body={`This organization was attached here ${relativeTime(since())}. Until you set its level, the overseer only proposes and its watch loop waits.`}
+                  action={
+                    <button type="button" class="button button-sm" aria-disabled={busy() ? "true" : undefined} onClick={() => setAutonomy(i().settings.autonomy)}>
+                      Resume at {i().settings.autonomy}
+                    </button>
+                  }
+                />
+              )}
+            </Show>
             <AutonomyPicker info={i()} busy={busy()} onPick={setAutonomy} />
             <div class="project-overseer-settings">
               <label class="toggle toggle-switch">
@@ -216,7 +231,7 @@ function AutonomyPicker(props: { info: ProjectOverseerInfo; busy: boolean; onPic
           </label>
         )}
       </For>
-      <Show when={eff().autonomy !== chosen()}>
+      <Show when={eff().autonomy !== chosen() || props.info.paused}>
         <p class="field-hint project-autonomy-note">
           In force now: {eff().autonomy}. {eff().reason ?? ""}
         </p>

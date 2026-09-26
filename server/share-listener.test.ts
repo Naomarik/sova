@@ -171,7 +171,7 @@ describe("the share server", async () => {
     const refused = await post(tok(maria.id), JSON.stringify({ text: "me too" }));
     assert.equal(refused.status, 409);
     assert.equal((await refused.json()).code, "taken");
-    baton.handTo(o.sessionId, "operator", "q", "", new Date(), () => {});
+    baton.handTo(o.sessionId, "operator", "q", "", new Date());
     assert.equal((await fetch(`${base}/api/h/${tok(carlos.id)}`)).status, 410);
     assert.equal((await post(tok(carlos.id), JSON.stringify({ text: "hi" }))).status, 410);
     assert.equal((await fetch(`${base}/api/h/${tok(tony.id)}`)).status, 200, "the one who held it reads on");

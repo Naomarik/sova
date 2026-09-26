@@ -1,4 +1,4 @@
-import { closeSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import {
   AUTONOMY_LEVELS,
@@ -19,9 +19,11 @@ import { stateRoot } from "./state-root";
 /**
  * The project overseer's files (§app.project-overseer/identity): per project, in the org's
  * workspace repo, under `projects/<projectId>/overseer/`, so they move with the org and are
- * committed with it. Only the per-turn counters and the watch loop's memo are host-local (a
- * restore starts them fresh). The stores are the Overseer's own (server/overseer-store.ts,
- * overseer-ideas.ts, overseer-todos.ts), called with these paths.
+ * committed with it — settings, state, notes, actions, ideas, to-dos, and the sessions it started
+ * with what their coding sessions spent (`started.json`, so the token budget survives a move).
+ * Only the per-turn counters and the watch loop's timing (pending reasons, last run, runs per day)
+ * are host-local: a restore starts them fresh. The stores are the Overseer's own
+ * (server/overseer-store.ts, overseer-ideas.ts, overseer-todos.ts), called with these paths.
  */
 
 export interface ProjectOverseerPaths {
@@ -35,6 +37,8 @@ export interface ProjectOverseerPaths {
   actions: string;
   ideas: string;
   todos: string;
+  /** The sessions it started, and what its coding sessions spent. */
+  started: string;
   /** Host-local: TurnLimits counters. */
   turn: string;
   /** Host-local: the watch loop's memo. */
@@ -58,6 +62,7 @@ export function projectOverseerPaths(orgId: string, projectId: string, workspace
     actions: join(dir, "actions.jsonl"),
     ideas: join(dir, "ideas"),
     todos: join(dir, "todos.json"),
+    started: join(dir, "started.json"),
     turn: join(local, "turn.json"),
     memo: join(local, "watch.json"),
   };
@@ -173,9 +178,19 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown): Project
 // ---- autonomy in force ------------------------------------------------------------------------
 
 export const EMPTY_ROSTER_REASON = "The roster has no active people yet, so the overseer only proposes (L0).";
+export const PAUSED_REASON = "Paused at L0: this organization was attached on this host. Set its level to resume.";
 
-/** The level in force: the setting, but L0 while the org has no active roster person (nobody to gather from). */
-export function effectiveAutonomy(settings: Pick<ProjectOverseerSettings, "autonomy">, roster: Pick<Person, "status">[]): { autonomy: Autonomy; reason?: string } {
+/**
+ * The level in force: the setting, but L0 while the overseer is paused by an attach on this host
+ * (`pausedSince`, until the operator sets its level here), and L0 while the org has no active
+ * roster person (nobody to gather from).
+ */
+export function effectiveAutonomy(
+  settings: Pick<ProjectOverseerSettings, "autonomy">,
+  roster: Pick<Person, "status">[],
+  pausedSince: string | null = null,
+): { autonomy: Autonomy; reason?: string } {
+  if (pausedSince) return { autonomy: "L0", reason: PAUSED_REASON };
   if (!roster.some((p) => p.status === "active")) return { autonomy: "L0", reason: EMPTY_ROSTER_REASON };
   return { autonomy: settings.autonomy };
 }
@@ -201,35 +216,109 @@ export interface WatchMemo {
   lastRun: { at: string; reasons: string[]; outcome: "started" | "skipped"; detail?: string } | null;
   /** Unattended runs per local day, `YYYY-MM-DD` → count (the last few days only). */
   perDay: Record<string, number>;
-  /** Session ids of the sessions it started (gathering, offer, coding), oldest first. */
-  started: { sessionId: string; kind: "gathering" | "offer" | "coding"; createdAt: string; path?: string }[];
 }
 
 export function readMemo(p: ProjectOverseerPaths): WatchMemo {
   const raw = readJson(p.memo);
-  const m: WatchMemo = { version: 1, pending: [], lastRunAt: null, lastRun: null, perDay: {}, started: [] };
+  const m: WatchMemo = { version: 1, pending: [], lastRunAt: null, lastRun: null, perDay: {} };
   if (!isObj(raw)) return m;
   if (Array.isArray(raw.pending)) m.pending = raw.pending.filter((x): x is string => typeof x === "string").slice(-50);
   if (typeof raw.lastRunAt === "string") m.lastRunAt = raw.lastRunAt;
   if (isObj(raw.lastRun) && typeof raw.lastRun.at === "string") m.lastRun = raw.lastRun as WatchMemo["lastRun"];
   if (isObj(raw.perDay)) for (const [k, v] of Object.entries(raw.perDay)) if (typeof v === "number") m.perDay[k] = v;
-  if (Array.isArray(raw.started))
-    m.started = raw.started.filter((s): s is WatchMemo["started"][number] => isObj(s) && typeof s.sessionId === "string" && typeof s.kind === "string").slice(-200);
   return m;
 }
 
 export function writeMemo(p: ProjectOverseerPaths, m: WatchMemo): void {
+  // The first write of the memo also moves a legacy `started` list out of it into the repo.
+  migrateStarted(p);
   const days = Object.keys(m.perDay).sort().slice(-7);
-  writeAtomic(p.memo, `${JSON.stringify({ ...m, perDay: Object.fromEntries(days.map((d) => [d, m.perDay[d]])) }, null, 2)}\n`);
+  const { version, pending, lastRunAt, lastRun } = m;
+  writeAtomic(p.memo, `${JSON.stringify({ version, pending, lastRunAt, lastRun, perDay: Object.fromEntries(days.map((d) => [d, m.perDay[d]])) }, null, 2)}\n`);
+}
+
+// ---- the sessions it started (in the repo) ----------------------------------------------------------
+
+export interface StartedRow {
+  sessionId: string;
+  kind: "gathering" | "offer" | "coding";
+  createdAt: string;
+  /** A coding session's file on the host that started it (coding sessions are not in the repo). */
+  path?: string;
+  /** A coding session's spend (input + output + cache tokens) when last counted from its file, so
+      the token budget still counts it on a host that doesn't have the file. */
+  tokens?: number;
+}
+
+const STARTED_MAX = 200;
+
+function parseStarted(v: unknown): StartedRow[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((s): s is StartedRow => isObj(s) && typeof s.sessionId === "string" && typeof s.kind === "string")
+    .map((s) => ({
+      sessionId: s.sessionId,
+      kind: s.kind,
+      createdAt: typeof s.createdAt === "string" ? s.createdAt : "",
+      ...(typeof s.path === "string" && s.path ? { path: s.path } : {}),
+      ...(typeof s.tokens === "number" && Number.isFinite(s.tokens) && s.tokens >= 0 ? { tokens: s.tokens } : {}),
+    }))
+    .slice(-STARTED_MAX);
+}
+
+/** Before the list moved into the repo it lived in the host-local memo (`watch.json` `started`). */
+const legacyStarted = (p: ProjectOverseerPaths): unknown => {
+  const raw = readJson(p.memo);
+  return isObj(raw) ? raw.started : undefined;
+};
+
+/** The sessions it started, oldest first: `started.json`, or the legacy memo's list while that file is absent. */
+export function readStarted(p: ProjectOverseerPaths): StartedRow[] {
+  const raw = readJson(p.started);
+  if (isObj(raw)) return parseStarted(raw.sessions);
+  return existsSync(p.started) ? [] : parseStarted(legacyStarted(p));
+}
+
+export function writeStarted(p: ProjectOverseerPaths, rows: StartedRow[]): void {
+  writeAtomic(p.started, `${JSON.stringify({ version: 1, sessions: rows.slice(-STARTED_MAX) }, null, 2)}\n`);
+  dropLegacyStarted(p);
+}
+
+/** Move a legacy memo list into `started.json` (once: only while that file is absent). */
+function migrateStarted(p: ProjectOverseerPaths): void {
+  if (existsSync(p.started)) return dropLegacyStarted(p);
+  const legacy = parseStarted(legacyStarted(p));
+  if (legacy.length) writeStarted(p, legacy);
+}
+
+function dropLegacyStarted(p: ProjectOverseerPaths): void {
+  const raw = readJson(p.memo);
+  if (!isObj(raw) || !("started" in raw)) return;
+  const { started: _gone, ...rest } = raw;
+  writeAtomic(p.memo, `${JSON.stringify(rest, null, 2)}\n`);
+}
+
+/** Record what the coding sessions spent, as just counted from their files; writes only on a change. */
+export function recordTokens(p: ProjectOverseerPaths, counted: Map<string, number>): void {
+  const rows = readStarted(p);
+  let changed = false;
+  for (const r of rows) {
+    const t = counted.get(r.sessionId);
+    if (t !== undefined && t !== r.tokens) {
+      r.tokens = t;
+      changed = true;
+    }
+  }
+  if (changed) writeStarted(p, rows);
 }
 
 export const dayKey = (d = new Date()): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Record a session it started (the listing, the concurrency and token caps). */
-export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: WatchMemo["started"][number]["kind"], now = new Date(), path?: string): void {
-  const m = readMemo(p);
-  if (!m.started.some((s) => s.sessionId === sessionId)) m.started.push({ sessionId, kind, createdAt: now.toISOString(), ...(path ? { path } : {}) });
-  writeMemo(p, m);
+export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: StartedRow["kind"], now = new Date(), path?: string): void {
+  const rows = readStarted(p);
+  if (rows.some((s) => s.sessionId === sessionId)) return;
+  writeStarted(p, [...rows, { sessionId, kind, createdAt: now.toISOString(), ...(path ? { path } : {}) }]);
 }
 
 // ---- which files are project overseers ------------------------------------------------------------

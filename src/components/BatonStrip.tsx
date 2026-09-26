@@ -6,7 +6,7 @@ import { linksStale, liveOffer, proposedAreasLine, whereLine, wrapupLine } from 
 import { requestListRefresh } from "../lib/list-refresh";
 import { confirmActivate } from "../lib/confirm-step";
 import { useMinuteNow } from "../lib/minute-clock";
-import { orgHref, rememberStartParent, replayHref, startForHref } from "../lib/orgs-route";
+import { orgHref, rememberStartParent, startForHref } from "../lib/orgs-route";
 import { announce, toast } from "../lib/ui-state";
 import { LinksBanner } from "./LinksBanner";
 import { Banner, Chip } from "./ui";
@@ -129,9 +129,6 @@ export function BatonStrip(props: {
                 Hand On…
               </button>
             </Show>
-            <a class="button button-sm button-ghost" href={replayHref(i().session.orgId, i().session.sessionId)}>
-              Replay
-            </a>
             <Show when={i().session.state !== "closed"}>
               <button
                 type="button"

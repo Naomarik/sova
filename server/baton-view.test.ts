@@ -61,7 +61,7 @@ test("every message carries its sender's name; the operator's messages are kept"
   );
 });
 
-test("a briefing is shown only to its addressee (and in the operator's replay)", () => {
+test("a briefing is shown only to its addressee (and in the view with no viewer)", () => {
   const brief = (viewer?: string) => view(viewer).items.find((i) => i.kind === "handoff" && i.n === 2);
   assert.equal((brief("p_t") as { briefing?: string }).briefing, undefined);
   assert.equal((brief("p_m") as { briefing?: string }).briefing, "BRIEF-FOR-MARIA");

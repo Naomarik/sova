@@ -10,7 +10,6 @@
  * POST /api/baton/:sid/revoke        -> BatonInfo (revokes every link of the current hand-off)
  * POST /api/baton/:sid/take          -> BatonInfo (Take back: a hand-off to the operator)
  * POST /api/baton/:sid/close         -> BatonInfo
- * GET  /api/baton/:sid/replay        -> BatonView (the outsider view, for the replay page; no viewer)
  *
  * Share listener (the only routes it has):
  * GET  /h/<token>                    the share page
@@ -299,9 +298,9 @@ export type BatonViewItem =
   | { kind: "handoff"; id: string; n: number; from: string; to: string; question: string; briefing?: string }
   | { kind: "decision"; id: string; by: string; area: string; statement: string }
   | { kind: "done"; id: string; summary: string }
-  /** An offer. `to` = the invitees' names in the operator's replay only; on a share page it is
-      empty (no invitee learns who else was asked) and `invited` is the count. The briefing only
-      for an invitee (or the replay). */
+  /** An offer. `to` = the invitees' names in the view with no viewer (the project overseer's) only;
+      on a share page it is empty (no invitee learns who else was asked) and `invited` is the count.
+      The briefing only for an invitee (or the view with no viewer). */
   | { kind: "offer"; id: string; n: number; from: string; to: string[]; invited: number; question: string; briefing?: string };
 
 /** Why a link can't write now. "taken": another invitee of the same offer holds its lease (the page

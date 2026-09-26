@@ -26,16 +26,19 @@ import {
 } from "../shared/orgs";
 import { setExtraSessionRoots } from "./paths";
 import { stateRoot } from "./state-root";
+import { commitEveryMs, type CommitTarget } from "./workspace-commits";
 import { commitAll, gitStatus, initRepo, isIgnoredBy } from "./workspace-git";
 
 /**
  * Organizations (§app/organizations). Two layers:
  *
  * - This host's index, `<stateRoot>/orgs.json`: which orgs are ATTACHED here (resident) and where
- *   their workspace repos are, plus the operator's display name. Host state, never committed.
+ *   their workspace repos are, which project overseers are paused since an attach, plus the
+ *   operator's display name. Host state, never committed.
  * - Each org's workspace repo: `org.json`, `roster.json`, `roster-history.jsonl`, `projects.json`,
- *   `baton.json` (server/baton.ts) and `sessions/` (the baton transcripts). Everything in it is
- *   committed at milestones; nothing secret is ever written there.
+ *   `baton.json` (server/baton.ts), `sessions/` (baton and project-overseer transcripts) and
+ *   `projects/<pid>/` (decisions, conflicts, the project overseer's files). It is the org's whole
+ *   portable state, committed hourly (server/workspace-commits.ts); nothing secret is ever written there.
  *
  * Writes are atomic (tmp + rename; `*.tmp` is in the repo's .gitignore). The roster's history is
  * appended BEFORE the roster is rewritten, so a crash between the two leaves a history that says
@@ -61,6 +64,9 @@ interface IndexEntry {
   id: string;
   dir: string;
   attachedAt: string;
+  /** Set by an attach (a restore or a move): the projects whose overseer is paused at L0 on this
+      host until the operator sets its level here again. Absent for an org created here. */
+  pausedOverseers?: string[];
 }
 interface OrgIndex {
   version: number;
@@ -95,7 +101,12 @@ function loadIndex(): OrgIndex {
   if (isObj(raw) && Array.isArray(raw.orgs))
     for (const o of raw.orgs)
       if (isObj(o) && typeof o.id === "string" && typeof o.dir === "string")
-        orgs.push({ id: o.id, dir: o.dir, attachedAt: typeof o.attachedAt === "string" ? o.attachedAt : "" });
+        orgs.push({
+          id: o.id,
+          dir: o.dir,
+          attachedAt: typeof o.attachedAt === "string" ? o.attachedAt : "",
+          ...(Array.isArray(o.pausedOverseers) ? { pausedOverseers: o.pausedOverseers.filter((x): x is string => typeof x === "string") } : {}),
+        });
   const name = isObj(raw) && isObj(raw.operator) && typeof raw.operator.name === "string" && raw.operator.name.trim() ? raw.operator.name.trim() : "Operator";
   return { version: INDEX_VERSION, operator: { name }, orgs };
 }
@@ -223,15 +234,29 @@ export function readOrg(orgId: string): Org {
   return org;
 }
 
-/** Commit the org's workspace repo now, in the background: a milestone never waits on git. */
-export function milestone(orgId: string, message: string): void {
-  let dir: string;
-  try {
-    dir = orgDir(orgId);
-  } catch {
-    return;
-  }
-  void commitAll(dir, message);
+/** Every attached org's workspace repo, for the hourly committer. */
+export const attachedWorkspaces = (): CommitTarget[] => readIndex().orgs.map((o) => ({ id: o.id, dir: o.dir }));
+
+/** When the project's overseer was paused by an attach on this host (ISO), or null: not paused. */
+export function overseerPausedSince(orgId: string, projectId: string): string | null {
+  const e = readIndex().orgs.find((o) => o.id === orgId);
+  return e?.pausedOverseers?.includes(projectId) ? e.attachedAt || new Date(0).toISOString() : null;
+}
+
+/** The operator set the project overseer's level on this host: it is no longer paused. */
+export function resumeOverseer(orgId: string, projectId: string): void {
+  const index = readIndex();
+  const e = index.orgs.find((o) => o.id === orgId);
+  if (!e?.pausedOverseers?.includes(projectId)) return;
+  writeIndex({ ...index, orgs: index.orgs.map((o) => (o.id === orgId ? { ...o, pausedOverseers: o.pausedOverseers!.filter((x) => x !== projectId) } : o)) });
+}
+
+/** Run after an attach: the modules that keep host-local state about the org's sessions (titles,
+    origin, the write guard) re-derive it from the repo. server/baton.ts and project-overseer.ts
+    register; they import this module, so the dependency stays one-way. */
+const attachHooks: ((orgId: string, dir: string) => void)[] = [];
+export function onOrgAttached(fn: (orgId: string, dir: string) => void): void {
+  attachHooks.push(fn);
 }
 
 export async function createOrg(input: { name: unknown; dir?: unknown }): Promise<Org> {
@@ -271,7 +296,15 @@ export async function attachOrg(input: { dir: unknown }): Promise<Org> {
   const index = readIndex();
   if (index.orgs.some((o) => o.id === org.id)) throw new OrgError("That organization is already attached here.", 409);
   mkdirSync(join(dir, "sessions"), { recursive: true });
-  writeIndex({ ...index, orgs: [...index.orgs, { id: org.id, dir, attachedAt: new Date().toISOString() }] });
+  // A restore or a move: every project overseer waits at L0 until the operator sets its level on this host.
+  const paused = readProjectsFile(dir).map((p) => p.id);
+  writeIndex({ ...index, orgs: [...index.orgs, { id: org.id, dir, attachedAt: new Date().toISOString(), pausedOverseers: paused }] });
+  for (const hook of attachHooks)
+    try {
+      hook(org.id, dir);
+    } catch (err) {
+      console.warn(`[orgs] after attach: ${err instanceof Error ? err.message : String(err)}`);
+    }
   return org;
 }
 
@@ -296,7 +329,6 @@ export function patchOrg(orgId: string, patch: { name?: unknown; notes?: unknown
     else delete org.notes;
   }
   writeOrgFile(dir, org);
-  milestone(orgId, `Edit organization ${org.name}`);
   return org;
 }
 
@@ -481,7 +513,7 @@ export function applyChange(
   personId: string | null,
   patch: Record<string, unknown>,
   by: ProfileChange["by"],
-  extra?: { revertOf?: string; decision?: true; commit?: (orgId: string, message: string) => void },
+  extra?: { revertOf?: string; decision?: true },
 ): Person {
   const dir = orgDir(orgId);
   const allowed = FIELD_AUTHORITY[by.kind];
@@ -545,7 +577,6 @@ export function applyChange(
   appendFileSync(historyFile(dir), `${lines.join("\n")}\n`);
   const nextPeople = creating ? [...people, next] : people.map((p) => (p.id === next.id ? next : p));
   writeJson(rosterFile(dir), { version: 1, people: nextPeople });
-  (extra?.commit ?? milestone)(orgId, `${creating ? "Add" : "Edit"} ${next.name} (${changed.map((c) => c.field).join(", ")}) by ${by.kind}`);
   return next;
 }
 
@@ -639,7 +670,6 @@ export function addProject(orgId: string, input: { name: unknown; root: unknown 
   const projects = readProjectsFile(dir);
   const project: OrgProject = { id: shortId("prj_"), orgId, name, root, origin: "manual", createdAt: new Date().toISOString() };
   writeJson(projectsFile(dir), { version: 1, projects: [...projects, project] });
-  milestone(orgId, `Add project ${name}`);
   return project;
 }
 
@@ -660,7 +690,6 @@ export function patchProject(orgId: string, projectId: string, patch: { name?: u
     p.spec = { frozen };
   }
   writeJson(projectsFile(dir), { version: 1, projects });
-  milestone(orgId, `Edit project ${p.name}`);
   return p;
 }
 
@@ -707,7 +736,7 @@ export async function orgDetail(orgId: string): Promise<OrgDetail> {
     roster: roster.people,
     projectList,
     batons: batonRows(orgId),
-    git: await gitStatus(dir),
+    git: { ...(await gitStatus(dir)), commitEveryMs: commitEveryMs() },
     recentChanges: recentChanges(orgId, 20, roster.people),
     problems,
   };

@@ -114,6 +114,9 @@ export interface ProjectOverseerInfo {
   settings: ProjectOverseerSettings;
   /** The level in force now: `settings.autonomy`, or L0 with a reason ("The roster has no active people yet."). */
   effective: { autonomy: Autonomy; reason?: string };
+  /** When an attach on this host paused it at L0 (ISO): unattended runs wait and the level in force
+      is L0 until the operator sets its level here. Null or absent: not paused. */
+  paused?: string | null;
   busy: boolean;
   /** The last watch-loop run (null: never). `outcome` "skipped" carries why (busy, daily cap). */
   lastRun: { at: string; reasons: string[]; outcome: "started" | "skipped"; detail?: string } | null;

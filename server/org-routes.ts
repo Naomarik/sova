@@ -31,7 +31,7 @@ import {
   setOperatorName,
 } from "./orgs";
 import { resolveSessionPath } from "./paths";
-import { readView, refreshShare } from "./share/hub";
+import { refreshShare } from "./share/hub";
 import { shareInfo } from "./share/listener";
 import { nudgeMarks } from "./session-feed";
 import { commitAll, setRemote } from "./workspace-git";
@@ -466,14 +466,6 @@ export function registerOrgRoutes(app: Hono<any>): void {
       await moveBaton(sid, to, question, briefing);
       const { token } = rotateLink(sid);
       return c.json({ info: infoOf(sid), link: linkUrl(token) });
-    }),
-  );
-  app.get(
-    "/api/baton/:sid/replay",
-    handle(async (c) => {
-      const hit = batonById(p(c, "sid"));
-      if (!hit) throw new OrgError("Unknown baton session", 404);
-      return c.json(await readView(hit.row, hit.dir));
     }),
   );
 }

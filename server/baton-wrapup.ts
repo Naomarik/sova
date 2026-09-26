@@ -13,7 +13,7 @@ import { batonById, sessionPathOf, setWrapup } from "./baton";
 import { emitBatonEvent } from "./baton-events";
 import { acquireChat } from "./chat-manager";
 import { readActiveBranch } from "./transcript";
-import { applyChange, milestone, readHistory, readRoster } from "./orgs";
+import { applyChange, readHistory, readRoster } from "./orgs";
 
 /**
  * The autonomous wrap-up (§app.organizations/wrap-up): once a baton session is done (goal_done) or
@@ -228,8 +228,7 @@ export function wrapupTool(sessionId: string): ToolDefinition<any, any> {
           // The field authority is applyChange's: a field outside the wrap-up's set is refused there.
           const value = (WRAPUP_FIELDS as readonly string[]).includes(field) ? mergedValue(person, field as WrapupField, u.to) : u.to;
           const before = readHistory(row.orgId, personId).length;
-          // Committed once, with the wrap-up's own milestone (runWrapup), not change by change.
-          applyChange(row.orgId, personId, { [field]: value }, { kind: "wrapup", sessionId, entryId, quote }, { commit: () => {} });
+          applyChange(row.orgId, personId, { [field]: value }, { kind: "wrapup", sessionId, entryId, quote });
           const lines = readHistory(row.orgId, personId).slice(before);
           for (const l of lines) run.applied.push({ personId, field: l.field, at: l.at });
         } catch (err) {
@@ -248,7 +247,7 @@ export const wantsWrapup = (row: BatonSession): boolean =>
 
 /**
  * Run the wrap-up of a finished session: one unattended turn, its result recorded as a
- * `sova-baton-wrapup` "end" entry, on the registry row (`wrapup`) and in one milestone commit.
+ * `sova-baton-wrapup` "end" entry and on the registry row (`wrapup`).
  * Returns the outcome; a no-op (null) when the session doesn't want one or a turn is running
  * (the caller retries when it settles).
  */
@@ -302,7 +301,6 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
     ...(error ? { error: error.slice(0, 500) } : {}),
   };
   setWrapup(sessionId, info);
-  milestone(row.orgId, `Wrap-up: ${row.publicTitle} (${info.applied} profile update${info.applied === 1 ? "" : "s"}${info.refused.length ? `, ${info.refused.length} refused` : ""})`);
   emitBatonEvent({ type: "wrapup", orgId: row.orgId, projectId: row.projectId, sessionId });
   return info;
 }

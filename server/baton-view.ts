@@ -51,7 +51,7 @@ export interface ViewInput {
   branch: Entry[];
   /** personId (and "operator") → display name. */
   names: Record<string, string>;
-  /** The viewer: a person id (the share page) or undefined (the operator's replay: every briefing). */
+  /** The viewer: a person id (the share page) or undefined (the project overseer's reads: every briefing). */
   viewer?: PersonRef;
   /** Applied to every string that reaches the view. */
   redact: (text: string) => string;

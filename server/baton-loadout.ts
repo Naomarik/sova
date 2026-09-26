@@ -39,7 +39,7 @@ import { emitBatonEvent } from "./baton-events";
 import { streamingText } from "./baton-view";
 import { runWrapup, wantsWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
 import { acquireChat, type ChatSession, RefusedError, registerSpecialLoadout } from "./chat-manager";
-import { applyChange, contactProblems, holderSteering, milestone, operatorName, OrgError, participantLine, profileRedactTexts, proposedGaps, readOrg, readRoster } from "./orgs";
+import { applyChange, contactProblems, holderSteering, operatorName, OrgError, participantLine, profileRedactTexts, proposedGaps, readOrg, readRoster } from "./orgs";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { refreshShare, streamShare } from "./share/hub";
 import { loadDefaults } from "./web-defaults";
@@ -115,7 +115,7 @@ export async function offerBaton(sessionId: string, to: readonly unknown[], ques
   if (!hit) throw new OrgError("Unknown baton session", 404);
   const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
   if (chat.session.isStreaming) throw new OrgError("Wait for the reply to finish first.", 409);
-  const out = startOffer(sessionId, to, question, briefing, new Date(), undefined, opts.mintLink !== false);
+  const out = startOffer(sessionId, to, question, briefing, new Date(), opts.mintLink !== false);
   chat.appendSpecialEntry(BATON_OFFER_ENTRY, {
     v: 1,
     n: out.n,
@@ -183,21 +183,6 @@ export function scheduleWrapup(sessionId: string, delayMs = 50): void {
 
 type AppendEntry = (customType: string, data: unknown) => void;
 
-/** Milestones reached inside a run, committed when the run settles: the tool's own result and the
-    turn's last entries land after the tool returns, and belong in the same commit. */
-const pendingCommits = new Map<string, { orgId: string; message: string }[]>();
-const deferCommit = (sessionId: string) => (orgId: string, message: string) => {
-  const list = pendingCommits.get(sessionId) ?? [];
-  list.push({ orgId, message });
-  pendingCommits.set(sessionId, list);
-};
-function flushCommits(sessionId: string): void {
-  const list = pendingCommits.get(sessionId);
-  if (!list?.length) return;
-  pendingCommits.delete(sessionId);
-  milestone(list[0]!.orgId, list.map((c) => c.message).join("; "));
-}
-
 /** The three tools, bound to one session. `append` is the extension's own appendEntry. */
 export function batonTools(sessionId: string, append: AppendEntry): ToolDefinition<any, any>[] {
   return [
@@ -225,7 +210,7 @@ export function batonTools(sessionId: string, append: AppendEntry): ToolDefiniti
         const question = clip(params.question, QUESTION_MAX);
         const briefing = clip(params.briefing, BRIEFING_MAX);
         if (!question) throw new Error("Give the question you need them to answer.");
-        const { n, from } = handTo(sessionId, target.ref, question, briefing, new Date(), deferCommit(sessionId));
+        const { n, from } = handTo(sessionId, target.ref, question, briefing);
         append(BATON_HANDOFF_ENTRY, { v: 1, n, from, to: target.ref, question, briefing } satisfies BatonHandoffData);
         refreshShare(sessionId);
         const who = nameOf(row.orgId, target.ref);
@@ -240,7 +225,7 @@ export function batonTools(sessionId: string, append: AppendEntry): ToolDefiniti
       async execute(_id, params: any) {
         const summary = clip(params.summary, BRIEFING_MAX);
         if (!summary) throw new Error("Give a summary of what was established.");
-        markDone(sessionId, new Date(), deferCommit(sessionId));
+        markDone(sessionId);
         append(BATON_DONE_ENTRY, { v: 1, summary } satisfies BatonDoneData);
         refreshShare(sessionId);
         return { ...say("Recorded as done. The conversation is over."), terminate: true };
@@ -403,6 +388,8 @@ const isBatonMarked = (sm: { getEntries(): readonly any[] }) => sm.getEntries().
 
 registerSpecialLoadout({
   kind: "baton",
+  // The org's workspace repo on THIS host: a restored clone lives elsewhere than the header's cwd.
+  cwd: (path) => batonOfPath(path)?.dir ?? null,
   // The marker AND a registry row in an attached org: a copy of the file anywhere else (a fork, a
   // detached org) opens as an ordinary session.
   matches: (sm, path) => isBatonMarked(sm) && !!batonOfPath(path),
@@ -462,7 +449,6 @@ registerSpecialLoadout({
         if (!wrapupActive(sessionId)) streamShare(sessionId, streamingText(e.message));
       } else if (e.type === "message_end" || e.type === "agent_settled" || e.type === "entry_appended") refreshShare(sessionId);
       if (e.type === "agent_settled") {
-        flushCommits(sessionId);
         if (!wrapupActive(sessionId)) {
           // The reply renews the holder's lease (the later of their message and the reply).
           touchLease(sessionId);

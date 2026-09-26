@@ -1,9 +1,9 @@
-/* Organizations (#/orgs), their replay page, and the baton strip and cards in a baton session.
+/* Organizations (#/orgs), their project pages, and the baton strip and cards in a baton session.
    Token values only. */
 
 .orgs-section { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); }
 /* A card of rows and forms stops growing at 880px, left-aligned, like the Agents page's lists: a
-   status chip or a Replay button 1,000px from the title it belongs to is hard to read. */
+   status chip 1,000px from the title it belongs to is hard to read. */
 .card.orgs-section { max-width: 880px; }
 .orgs-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .orgs-head > :first-child { flex: 1; min-width: 0; }
@@ -17,7 +17,7 @@
 .orgs-row > .icon { color: var(--color-ink-muted); flex: none; }
 .orgs-row .list-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .orgs-row a.list-title { color: var(--color-ink); }
-/* A title wraps rather than truncates: on a phone the chip and Replay leave it half the row. */
+/* A title wraps rather than truncates: on a phone the chip leaves it part of the row. */
 .orgs-row .list-title,
 .orgs-row .list-meta:not(.orgs-mono) { white-space: normal; overflow-wrap: anywhere; }
 /* A project row is one link: no underline, the chevron says where it goes. */
@@ -90,17 +90,6 @@
 .orgs-change + .orgs-change { border-top: 1px solid var(--color-border); }
 .orgs-change-main { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--color-ink-2); }
 .orgs-change-field { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); }
-
-/* Replay: one step at a time. */
-.orgs-replay-bar { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.orgs-replay-count { margin-left: auto; color: var(--color-ink-muted); }
-.orgs-replay { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
-.orgs-replay-item { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3) var(--space-4); border-radius: var(--r-lg); background: var(--color-surface); border: 1px solid var(--color-border); }
-.orgs-replay-message { background: var(--color-accent-tint); border-color: transparent; }
-.orgs-replay-card { background: var(--color-sunken); }
-.orgs-replay-who { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); }
-.orgs-replay-text { color: var(--color-ink); overflow-wrap: anywhere; white-space: pre-wrap; }
-.orgs-replay-brief { color: var(--color-ink-2); font-size: var(--fs-caption); white-space: pre-wrap; }
 
 /* The baton strip above a baton session's transcript. */
 .baton-strip {

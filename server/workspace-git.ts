@@ -4,10 +4,11 @@ import { join } from "node:path";
 import type { OrgGitStatus } from "../shared/orgs";
 
 /**
- * Git for an organization's workspace repo (§app.organizations/workspace-repo): init, commit at
- * milestones, push to the repo's own `origin` when one is set. Every call is argv (no shell), bounded,
- * non-interactive, and serialized per repo, so two milestones in the same tick never race on the index.
- * A failure is recorded as the repo's last error and never thrown at the milestone that asked.
+ * Git for an organization's workspace repo (§app.organizations/workspace-repo): init, commit (the
+ * hourly committer in server/workspace-commits.ts, Commit Now, shutdown), push to the repo's own
+ * `origin` when one is set. Every call is argv (no shell), bounded, non-interactive, and serialized
+ * per repo, so two commits never race on the index. A failure is recorded as the repo's last error
+ * and never thrown at the caller.
  */
 
 const TIMEOUT_MS = 30_000;
@@ -118,6 +119,46 @@ export function commitAll(dir: string, message: string): Promise<CommitOutcome> 
       lastErrors.set(dir, out.error);
       console.warn(`[workspace] ${out.error}`);
     }
+    return out;
+  });
+}
+
+/** The paths `git status` reports as changed (tracked or not), or [] when clean or not a repo. */
+export async function changedPaths(dir: string): Promise<string[]> {
+  const r = await git(dir, ["status", "--porcelain", "-z", "--untracked-files=all"]);
+  if (r.code !== 0) return [];
+  // -z: "XY path\0", a rename adds its source as the next field; keep the destinations.
+  const out: string[] = [];
+  const fields = r.stdout.split("\0");
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i]!;
+    if (f.length < 4) continue;
+    out.push(f.slice(3));
+    if (f[0] === "R" || f[0] === "C") i++;
+  }
+  return out;
+}
+
+/** When HEAD was committed (ms), or null when the repo has no commit yet. */
+export async function headCommitMs(dir: string): Promise<number | null> {
+  const r = await git(dir, ["log", "-1", "--format=%ct"]);
+  const s = Number(r.stdout.trim());
+  return r.code === 0 && Number.isFinite(s) && s > 0 ? s * 1000 : null;
+}
+
+/** Push HEAD to `origin` again after a failed push, when nothing new was committed since. */
+export function retryPush(dir: string): Promise<CommitOutcome> {
+  return serial(dir, async () => {
+    const out: CommitOutcome = { committed: false };
+    if (!lastErrors.get(dir)?.startsWith("git push failed") || !(await remoteOf(dir))) return out;
+    const push = await git(dir, ["push", "-q", "origin", "HEAD"]);
+    if (push.code !== 0) {
+      out.error = `git push failed: ${push.stderr.trim()}`;
+      lastErrors.set(dir, out.error);
+      return out;
+    }
+    out.pushed = true;
+    lastErrors.set(dir, null);
     return out;
   });
 }

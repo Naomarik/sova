@@ -24,10 +24,10 @@ import {
 import type { Person } from "../shared/orgs";
 import { liveLinks, mintLink, revokeLinks, type LinkRecord, linkDead, findLink } from "./baton-links";
 import { emitBatonEvent } from "./baton-events";
-import { milestone, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, readOrg, readProjects, readRoster, setOpenBatonCounter, shortId } from "./orgs";
+import { onOrgAttached, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, readOrg, readProjects, readRoster, setOpenBatonCounter, shortId } from "./orgs";
 import { canonicalPath } from "./paths";
 import { markSeen } from "./seen";
-import { cleanSessionTitle, setSessionTitle } from "./session-titles";
+import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
 import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
 
@@ -125,6 +125,24 @@ export function batonOfPath(path: string): { row: BatonSession; dir: string } | 
 }
 
 export const sessionPathOf = (dir: string, row: BatonSession): string => canonicalPath(join(dir, row.file));
+
+/**
+ * An attach (a restored clone): what this host keeps about each baton session outside the repo is
+ * derived again from baton.json — its listing title (the public title; a title the operator already
+ * gave it here stays), its web origin, and the write guard's stat, so the operator's composer isn't
+ * refused as "recently written by someone else" for the files the clone just wrote. Links are not
+ * derived: they are minted again when the operator asks.
+ */
+onOrgAttached((_orgId, dir) => {
+  const titles = readSessionTitles();
+  for (const row of readRows(dir)) {
+    const path = sessionPathOf(dir, row);
+    if (!existsSync(path)) continue;
+    addWebSession(row.sessionId);
+    markOwned(path);
+    if (!titles[row.sessionId]) setSessionTitle(row.sessionId, cleanSessionTitle(row.publicTitle) ?? null);
+  }
+});
 
 /** Change one row atomically (read, mutate, write) and return it. */
 function update(sessionId: string, fn: (row: BatonSession) => void): BatonSession {
@@ -269,7 +287,7 @@ function revokeWithdrawn(row: BatonSession, offer: Offer | undefined): void {
 /**
  * Start a baton session: a new webapp-owned session file in the org's workspace `sessions/` (cwd =
  * the workspace repo), carrying the `sova-baton` marker and the first hand-off, registered in
- * baton.json, with a link for the first holder when that is a person. Committed as a milestone.
+ * baton.json, with a link for the first holder when that is a person.
  */
 /**
  * In-process options (never from a request): `owner` (the project overseer, the reconciler), and
@@ -278,7 +296,7 @@ function revokeWithdrawn(row: BatonSession, offer: Offer | undefined): void {
  */
 export function createBaton(input: BatonStartInput & { owner?: BatonOwner; mintLink?: boolean }, now = new Date()): Created {
   const dir = orgDir(input.orgId);
-  const org = readOrg(input.orgId);
+  readOrg(input.orgId); // a readable org.json, or a 409 before anything is written
   const parent = typeof input.parentSessionId === "string" && input.parentSessionId ? batonById(input.parentSessionId) : null;
   if (input.parentSessionId && (!parent || parent.row.orgId !== input.orgId)) throw new OrgError("Unknown parent session", 404);
   const projectId = input.projectId || parent?.row.projectId;
@@ -341,8 +359,6 @@ export function createBaton(input: BatonStartInput & { owner?: BatonOwner; mintL
   const mint = input.mintLink !== false;
   const token = target.ref === OPERATOR || offer || !mint ? undefined : mintLink({ orgId: input.orgId, sessionId: header.id, n: 1, personId: target.ref });
   const links = !mint ? undefined : offer?.to.map((personId) => ({ personId, token: mintLink({ orgId: input.orgId, sessionId: header.id, n: 1, personId, offerId: offer.id }) }));
-  const toName = offer ? offer.to.map((id) => nameOf(input.orgId, id, roster)).join(", ") : nameOf(input.orgId, target.ref, roster);
-  milestone(input.orgId, `Baton session started: ${publicTitle} (${org.name}) → ${toName}`);
   emitBatonEvent({ type: offer ? "offer" : "handoff", orgId: input.orgId, projectId: project.id, sessionId: header.id });
   return { path, sessionId: header.id, ...(token ? { token } : {}), ...(links ? { links } : {}) };
 }
@@ -361,7 +377,6 @@ export function handTo(
   question: string,
   briefing: string,
   now = new Date(),
-  commit: (orgId: string, message: string) => void = milestone,
 ): { n: number; from: PersonRef } {
   let n = 0;
   let from: PersonRef = OPERATOR;
@@ -378,12 +393,11 @@ export function handTo(
     if (!r.participants.includes(to)) r.participants.push(to);
   });
   revokeWithdrawn(row, withdrawn);
-  commit(row.orgId, `Hand-off ${n} in "${row.publicTitle}": ${nameOf(row.orgId, from)} → ${nameOf(row.orgId, to)}`);
   emitBatonEvent({ type: "handoff", orgId: row.orgId, projectId: row.projectId, sessionId });
   return { n, from };
 }
 
-export function markDone(sessionId: string, now = new Date(), commit: (orgId: string, message: string) => void = milestone): BatonSession {
+export function markDone(sessionId: string, now = new Date()): BatonSession {
   let withdrawn: Offer | undefined;
   const row = update(sessionId, (r) => {
     if (r.state === "done" || r.state === "closed") throw new OrgError(`This session is already ${r.state}.`, 409);
@@ -393,7 +407,6 @@ export function markDone(sessionId: string, now = new Date(), commit: (orgId: st
     r.closedAt = now.toISOString();
   });
   revokeWithdrawn(row, withdrawn);
-  commit(row.orgId, `Done: ${row.publicTitle}`);
   emitBatonEvent({ type: "done", orgId: row.orgId, projectId: row.projectId, sessionId });
   return row;
 }
@@ -407,7 +420,6 @@ export function closeBaton(sessionId: string, now = new Date()): BatonSession {
     r.closedAt = r.closedAt ?? now.toISOString();
   });
   revokeLinks((l) => l.sessionId === sessionId);
-  milestone(row.orgId, `Closed: ${row.publicTitle}`);
   emitBatonEvent({ type: "closed", orgId: row.orgId, projectId: row.projectId, sessionId });
   return row;
 }
@@ -529,7 +541,6 @@ export function startOffer(
   question: string,
   briefing = "",
   now = new Date(),
-  commit: (orgId: string, message: string) => void = milestone,
   /** false: no links (an in-process caller that can't show them); Needs you asks the operator. */
   mint = true,
 ): { n: number; from: PersonRef; offer: Offer; links: { personId: string; token: string }[] } {
@@ -558,7 +569,6 @@ export function startOffer(
   revokeWithdrawn(row, withdrawn);
   const o = offer!;
   const links = mint ? o.to.map((personId) => ({ personId, token: mintLink({ orgId: row.orgId, sessionId, n, personId, offerId: o.id }) })) : [];
-  commit(row.orgId, `Offer ${n} in "${row.publicTitle}": ${nameOf(row.orgId, from)} → ${o.to.map((id) => nameOf(row.orgId, id)).join(", ")}`);
   emitBatonEvent({ type: "offer", orgId: row.orgId, projectId: row.projectId, sessionId });
   return { n, from, offer: o, links };
 }

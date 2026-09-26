@@ -448,10 +448,23 @@ export interface SpecialLoadout {
   userSend?<T>(path: string, send: () => T): T;
   /** The composer changed this runtime's model or thinking (`save: true`): the kind keeps it. */
   saveChoice?(path: string, patch: { model?: string; thinking?: string }): void;
+  /** The directory this kind's runtime opens in on THIS host, or null (not this kind's file): used
+      instead of the header's cwd, which records the host the file was created on — an org's
+      workspace session restored onto another host keeps the old host's path there. */
+  cwd?(path: string): string | null;
 }
 const specialLoadouts: SpecialLoadout[] = [];
 export function registerSpecialLoadout(s: SpecialLoadout): void {
   if (!specialLoadouts.some((x) => x.kind === s.kind)) specialLoadouts.push(s);
+}
+
+/** A registered kind's working directory for this file on this host, or undefined: the header's. */
+export function cwdOverride(path: string): string | undefined {
+  for (const s of specialLoadouts) {
+    const cwd = s.cwd?.(path);
+    if (cwd) return cwd;
+  }
+  return undefined;
 }
 
 /** The special kind a session file opens as: the Overseer's first, then each registered kind. */
@@ -2273,7 +2286,7 @@ async function syncOverseerModel(chat: ChatSession, modelRuntime: ModelRuntime, 
 async function openSession(path: string, onDisposed: () => void): Promise<ChatSession> {
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
   const modelRuntime = await getModelRuntime();
-  const sessionManager = SessionManager.open(path);
+  const sessionManager = SessionManager.open(path, undefined, cwdOverride(path));
   // The SDK records model/thinking-level entries while constructing a session (for sessions with
   // no messages yet, or no thinking entry on the branch). Queue them and write them just before
   // the first prompt, so merely opening (browsing) a session never modifies its file.
@@ -2415,7 +2428,7 @@ export async function acquireChat(path: string, force = false): Promise<ChatSess
   }
   assertNotLive(path);
   // The cheap pre-checks before the expensive open (model runtime, extensions, SDK session).
-  const cwd = storedCwd(path);
+  const cwd = cwdOverride(path) ?? storedCwd(path);
   // Permanent and already known: answer from the memo. Retrying would repeat the same SDK open and
   // hand the client another copy of an error it cannot act on. `force` does not apply — no flag
   // makes a deleted directory exist.

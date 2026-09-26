@@ -10,6 +10,8 @@ import { bodyLimit } from "hono/body-limit";
 import { registerOrgRoutes } from "./org-routes";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
+import { attachedWorkspaces } from "./orgs";
+import { WorkspaceCommitter } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
 import { startShareListener, stopShareListener } from "./share/listener";
 import { disposeAllChats, getModelRuntime, heldChat, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
@@ -1081,6 +1083,9 @@ attachWebSockets(server);
 setOverseerDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
 startProjectOverseerLoop();
+// Every attached org's workspace repo: committed at most hourly when anything changed, then pushed.
+const workspaceCommits = new WorkspaceCommitter(attachedWorkspaces);
+workspaceCommits.start();
 
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
 // The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);
@@ -1141,6 +1146,9 @@ async function shutdown() {
   stopMesh();
   stopShareListener();
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
+  // After the runtimes' last writes: whatever changed in a workspace repo since its last commit.
+  workspaceCommits.stop();
+  await Promise.race([workspaceCommits.flush("shutdown").catch(() => []), new Promise((r) => setTimeout(r, 10_000))]);
   process.exit(0);
 }
 process.on("SIGINT", shutdown);

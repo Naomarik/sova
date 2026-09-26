@@ -21,8 +21,8 @@ export function outsiderRedactor(orgId: string): (text: string) => string {
   return (text) => redactPhrases(secrets.redact(text), phrases);
 }
 
-/** The filtered view of a baton session for `viewer` (a person id), or for the operator's replay
-    (no viewer: every briefing). */
+/** The filtered view of a baton session for `viewer` (a person id), or with no viewer (the project
+    overseer's reads: every briefing). */
 export async function readView(row: BatonSession, dir: string, viewer?: PersonRef, untilOffer?: number): Promise<BatonView> {
   const branch = (await readActiveBranch(sessionPathOf(dir, row)).catch(() => [])) as Record<string, any>[];
   return batonView({

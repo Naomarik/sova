@@ -1,6 +1,6 @@
 import { type Dirent, statSync } from "node:fs";
 import { type FileHandle, open, readdir, stat, unlink } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { CURRENT_SESSION_FORMAT, OVERSEER_ENTRY, type SessionSummary } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
@@ -13,7 +13,7 @@ import { dropGroupAssignments, readAssignments } from "./session-groups";
 import { draftCounts, draftPreview, dropDrafts, readDrafts } from "./drafts";
 import { dropSessionTitles, readSessionTitles } from "./session-titles";
 import { removeSessionAttachments } from "./attachments";
-import { disposeHeldChat, getModelRuntime, isSessionBusy, pendingDialogCount } from "./chat-manager";
+import { cwdOverride, disposeHeldChat, getModelRuntime, isSessionBusy, pendingDialogCount } from "./chat-manager";
 import { isUnread, isViewing, readSeen, turnErrorShows } from "./seen";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
@@ -609,7 +609,10 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     const outline = scan?.found ?? null;
     const ctx = await readTailContext(path, st.size);
     const lastReply = await readTailReply(path, st.size);
-    const cwd = typeof h.cwd === "string" ? h.cwd : "";
+    // A workspace session (an org's baton or overseer file) is listed under the dir it opens in on
+    // THIS host; its header keeps the dir of the host that created it (§app.organizations/portability).
+    const hostCwd = extraSessionRoots().includes(dirname(path)) ? cwdOverride(path) : undefined;
+    const cwd = hostCwd ?? (typeof h.cwd === "string" ? h.cwd : "");
     // An older session format is fanout-source metadata (legacyFormat ⇔ version ≠ current,
     // pre-versioning headers read as 1 — the same rule fanout's own head read applies), so the
     // dialog can pre-disable a fork that the route would refuse. Absent means current (or an

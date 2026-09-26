@@ -32,7 +32,7 @@ import {
   writeDecisionStore,
   type DecisionStore,
 } from "./decisions";
-import { milestone, operatorName, OrgError, patchProject, readHistory, readRoster, shortId } from "./orgs";
+import { operatorName, OrgError, patchProject, readHistory, readRoster, shortId } from "./orgs";
 import {
   PROJECT_DRAFT,
   areaId,
@@ -655,7 +655,6 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
       writeDecisionStore(orgId, projectId, store);
       return [] as string[];
     });
-    milestone(orgId, `Reconcile decisions (${project.name}): ${run.compared} compared, ${run.found} conflicts`);
     emit({ type: "resolved", orgId, projectId, ids: resolved });
     emit({ type: "conflict", orgId, projectId, ids: newConflicts });
     emit({ type: "drafted", orgId, projectId, ids: draftedIds });
@@ -743,7 +742,6 @@ export function routeConflictNow(orgId: string, projectId: string, conflictId: s
     if (old && old.state !== "closed") await d.endBaton(old.sessionId);
     writeConflicts(orgId, projectId, conflicts);
     settleStates(store, conflicts, project.root, orgId);
-    milestone(orgId, `Route conflict ${c.id} to ${c.routedTo}`);
     return info(orgId, projectId, store, conflicts);
   });
 }
@@ -778,7 +776,6 @@ export function resolveConflict(orgId: string, projectId: string, conflictId: st
     writeDecisionStore(orgId, projectId, store);
     writeConflicts(orgId, projectId, conflicts);
     await refreshDraft(orgId, projectId, store).catch(() => []);
-    milestone(orgId, `Resolve conflict ${c.id} (${c.outcome})`);
     emit({ type: "resolved", orgId, projectId, ids: [c.id] });
     return info(orgId, projectId, store, conflicts);
   });
@@ -847,7 +844,6 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
     settleStates(store, conflicts, project.root, orgId);
     writeDecisionStore(orgId, projectId, store);
     await refreshDraft(orgId, projectId, store).catch(() => []);
-    if (promoted.length) milestone(orgId, `Promote ${promoted.length} decision(s) into ${project.name}'s spec`);
     emit({ type: "promoted", orgId, projectId, ids: promoted });
     return { info: info(orgId, projectId, store, conflicts), promoted, refused, ...(draft ? { draft } : {}) };
   });

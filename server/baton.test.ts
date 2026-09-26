@@ -15,7 +15,7 @@ mkdirSync(join(root, "agent", "sessions"), { recursive: true });
 const orgs = await import("./orgs");
 const baton = await import("./baton");
 const links = await import("./baton-links");
-const { settled } = await import("./workspace-git");
+const { commitAll } = await import("./workspace-git");
 
 after(() => rmSync(root, { recursive: true, force: true }));
 
@@ -74,7 +74,8 @@ describe("baton sessions", async () => {
     assert.deepEqual(lines[2].data, { v: 1, n: 1, from: OPERATOR, to: tony.id, question: "Hosting", briefing: "" });
     const row = baton.batonById(c.sessionId)!.row;
     assert.deepEqual([row.state, row.holder, row.handoffs.length], ["open", tony.id, 1]);
-    await settled(dir);
+    // Nothing commits on its own at creation any more: the hourly commit (or Commit Now) takes whatever changed.
+    assert.equal((await commitAll(dir, "test commit")).committed, true);
     const tracked = execFileSync("git", ["-C", dir, "ls-files"], { encoding: "utf8" });
     assert.ok(tracked.includes("baton.json") && tracked.includes(row.file));
     const history = execFileSync("git", ["-C", dir, "log", "-p", "--all"], { encoding: "utf8" });

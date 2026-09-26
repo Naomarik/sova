@@ -22,7 +22,7 @@ export function ProjectOverseerStrip(props: { orgId: string; projectId: string; 
           {(i) => (
             <span class="baton-strip-meta">
               On its own: {i().effective.autonomy}
-              {i().effective.reason ? ` — ${i().effective.reason}` : ""} · {i().settings.watch ? "watching" : "not watching"} · {i().started.length}{" "}
+              {i().effective.reason ? ` — ${i().effective.reason}` : ""} · {i().paused ? "watch paused" : i().settings.watch ? "watching" : "not watching"} · {i().started.length}{" "}
               {i().started.length === 1 ? "session" : "sessions"} started
             </span>
           )}

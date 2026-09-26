@@ -126,6 +126,8 @@ export interface OrgGitStatus {
   lastError: string | null;
   /** Uncommitted changes exist right now. */
   dirty: boolean;
+  /** How often changes are committed (ms): an hour, unless a test shortened it. Absent: an older server. */
+  commitEveryMs?: number;
 }
 
 export interface OrgSummary extends Org {

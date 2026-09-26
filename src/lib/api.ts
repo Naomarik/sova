@@ -843,7 +843,6 @@ export const batonLink = (sid: string) => request<{ link: string; n: number }>(`
 export const revokeBatonLink = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/revoke`, jsonInit("POST"));
 export const takeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/take`, jsonInit("POST"));
 export const closeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/close`, jsonInit("POST"));
-export const batonReplay = (sid: string) => request<BatonView>(`/api/baton/${encodeURIComponent(sid)}/replay`);
 export const offerBaton = (sid: string, to: string[], question?: string, briefing?: string) =>
   request<{ links: OfferLink[]; info?: BatonInfo }>(`/api/baton/${encodeURIComponent(sid)}/offer`, jsonInit("POST", { to, ...(question ? { question } : {}), ...(briefing ? { briefing } : {}) }));
 export const withdrawOffer = (sid: string) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/offer/withdraw`, jsonInit("POST"));

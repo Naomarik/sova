@@ -8,7 +8,6 @@ import {
   approvePerson,
   declinePerson,
   attachOrg,
-  batonReplay,
   commitOrg,
   createOrg,
   getOrg,
@@ -21,11 +20,11 @@ import {
   setOrgRemote,
   startBaton,
 } from "../lib/api";
-import { relativeTime, stampTime } from "../lib/format";
+import { duration, relativeTime, stampTime } from "../lib/format";
 import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
 import { proposedAreasLine } from "../lib/baton-strip";
 import { groupChanges, revertible, valueText } from "../lib/profile-changes";
-import { orgHref, orgTabHref, projectHref, replayHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
+import { orgHref, orgTabHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
 import { orgTabsOf } from "../lib/org-tabs";
 import { toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
@@ -53,16 +52,13 @@ const STATE_WORDS: Record<string, { word: string; tone: "info" | "warn" | "succe
   closed: { word: "Closed", tone: undefined },
 };
 
-/** The organizations page: `#/orgs`, `#/orgs/<id>[/start/<person>]`, `#/orgs/<id>/replay/<session>`,
+/** The organizations page: `#/orgs`, `#/orgs/<id>[/<tab>|/start/<person>]`,
     `#/orgs/<id>/projects/<project>[/overseer]`. */
 export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElement): void }) {
   return (
     <Switch>
       <Match when={props.route.kind === "list"}>
         <OrgList titleRef={props.titleRef} />
-      </Match>
-      <Match when={props.route.kind === "replay" && props.route} keyed>
-        {(r) => <ReplayPage orgId={r.id} sessionId={r.sessionId} titleRef={props.titleRef} />}
       </Match>
       <Match when={props.route.kind === "project" && props.route} keyed>
         {(r) => <ProjectPage orgId={r.id} projectId={r.projectId} titleRef={props.titleRef} />}
@@ -232,7 +228,7 @@ function OrgList(props: { titleRef(el: HTMLHeadingElement): void }) {
         <label class="field">
           <span class="field-label">Workspace repo</span>
           <input class="input input-mono" value={attachDir()} onInput={(e) => setAttachDir(e.currentTarget.value)} placeholder="/path/to/cloned/workspace" />
-          <span class="field-hint">A clone of an organization's workspace repo. Links are not in the repo: send new ones after attaching.</span>
+          <span class="field-hint">A clone of an organization's workspace repo. Links are not in the repo: send new ones after attaching. Its project overseers start paused at L0 until you set their level here.</span>
         </label>
         <div class="button-row">
           <button type="submit" class="button">
@@ -282,8 +278,6 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
       return false;
     }
   };
-  // Milestone commits run after the answer: look again shortly so the git line catches up.
-  const settle = () => setTimeout(() => void refetch(), 1200);
   /** A start link opens Sessions whatever tab was named; no tab is Sessions too. */
   const tab = (): OrgTab => (props.start ? "sessions" : (props.tab ?? "sessions"));
   return (
@@ -312,14 +306,14 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
             <div class="org-tabpanel" role="tabpanel" id="org-tabpanel" aria-labelledby={`org-tab-${tab()}`}>
               <Switch>
                 <Match when={tab() === "sessions"}>
-                  <BatonSection org={o()} start={props.start} act={act} onLinks={setLinks} settle={settle} />
+                  <BatonSection org={o()} start={props.start} act={act} onLinks={setLinks} />
                 </Match>
                 <Match when={tab() === "people"}>
-                  <PeopleSection org={o()} act={act} settle={settle} />
+                  <PeopleSection org={o()} act={act} />
                   <ChangesSection org={o()} act={act} />
                 </Match>
                 <Match when={tab() === "projects"}>
-                  <ProjectsSection org={o()} act={act} settle={settle} />
+                  <ProjectsSection org={o()} act={act} />
                 </Match>
                 <Match when={tab() === "workspace"}>
                   <GitCard org={o()} act={act} />
@@ -386,6 +380,9 @@ function OrgTabs(props: { org: OrgDetail; tab: OrgTab }) {
   );
 }
 
+/** "hourly", or the test-only interval an older or shortened server reports. */
+const commitCadence = (ms: number | undefined): string => (!ms || ms === 3_600_000 ? "hourly" : `every ${duration(ms)}`);
+
 function GitCard(props: { org: OrgDetail; act: Act }) {
   const [remote, setRemote] = createSignal(props.org.git.remote ?? "");
   const g = () => props.org.git;
@@ -400,10 +397,14 @@ function GitCard(props: { org: OrgDetail; act: Act }) {
         </button>
       </div>
       <p class="orgs-line">
+        Changes are committed {commitCadence(g().commitEveryMs)}
+        {g().remote ? " and pushed to the remote" : ""}, when there are any. Commit Now does it at once.
+      </p>
+      <p class="orgs-line">
         <Show when={g().lastCommit} fallback="No commits yet.">
           {(c) => (
             <>
-              Last commit <span class="orgs-mono">{c().sha}</span> {relativeTime(c().at)}: {c().message}
+              Last commit <time title={stampTime(c().at)}>{relativeTime(c().at)}</time> (<span class="orgs-mono">{c().sha}</span>): {c().message}
             </>
           )}
         </Show>
@@ -433,7 +434,7 @@ function GitCard(props: { org: OrgDetail; act: Act }) {
   );
 }
 
-function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks(l: OfferLink[] | null): void; settle(): void }) {
+function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks(l: OfferLink[] | null): void }) {
   const active = () => props.org.roster.filter((p) => p.status === "active");
   const [projectId, setProjectId] = createSignal("");
   const [to, setTo] = createSignal<string[]>([]);
@@ -501,7 +502,6 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
     setGoal("");
     setTo([]);
     closeForm();
-    props.settle();
   };
   return (
     <section class="card orgs-section" aria-labelledby="orgs-batons">
@@ -525,9 +525,6 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
                 <Show when={b.waiting === "link"} fallback={<Chip tone={STATE_WORDS[b.state]?.tone}>{STATE_WORDS[b.state]?.word ?? b.state}</Chip>}>
                   <Chip tone="warn">Link to send</Chip>
                 </Show>
-                <a class="button button-sm button-ghost" href={replayHref(props.org.id, b.sessionId)}>
-                  Replay
-                </a>
               </li>
             )}
           </For>
@@ -619,7 +616,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
 
 // ---- people ---------------------------------------------------------------------------------------
 
-function PeopleSection(props: { org: OrgDetail; act: Act; settle(): void }) {
+function PeopleSection(props: { org: OrgDetail; act: Act }) {
   const [adding, setAdding] = createSignal(false);
   return (
     <section class="card orgs-section" aria-labelledby="orgs-people">
@@ -637,16 +634,13 @@ function PeopleSection(props: { org: OrgDetail; act: Act; settle(): void }) {
           onCancel={() => setAdding(false)}
           onSubmit={async (input) => {
             const ok = await props.act(() => addPerson(props.org.id, input), `${input.name} added.`);
-            if (ok) {
-              setAdding(false);
-              props.settle();
-            }
+            if (ok) setAdding(false);
           }}
         />
       </Show>
       <Show when={props.org.roster.length} fallback={<p class="orgs-empty">Nobody on the roster yet.</p>}>
         <ul class="orgs-people">
-          <For each={props.org.roster}>{(p) => <PersonCard org={props.org} person={p} act={props.act} settle={props.settle} />}</For>
+          <For each={props.org.roster}>{(p) => <PersonCard org={props.org} person={p} act={props.act} />}</For>
         </ul>
       </Show>
     </section>
@@ -659,7 +653,7 @@ const STATUS_CHIP: Record<string, { word: string; tone?: "success" | "warn" }> =
   left: { word: "Left" },
 };
 
-function PersonCard(props: { org: OrgDetail; person: Person; act: Act; settle(): void }) {
+function PersonCard(props: { org: OrgDetail; person: Person; act: Act }) {
   const [editing, setEditing] = createSignal(false);
   const p = () => props.person;
   const contact = () =>
@@ -681,10 +675,10 @@ function PersonCard(props: { org: OrgDetail; person: Person; act: Act; settle():
         </div>
         <div class="orgs-person-actions">
         <Show when={p().status === "proposed"}>
-          <button type="button" class="button button-sm" aria-label={`Approve ${p().name}`} onClick={() => void props.act(() => approvePerson(props.org.id, p().id), `${p().name} is on the roster now.`).then((ok) => ok && props.settle())}>
+          <button type="button" class="button button-sm" aria-label={`Approve ${p().name}`} onClick={() => void props.act(() => approvePerson(props.org.id, p().id), `${p().name} is on the roster now.`)}>
             Approve
           </button>
-          <button type="button" class="button button-sm button-ghost" aria-label={`Decline ${p().name}`} onClick={() => void props.act(() => declinePerson(props.org.id, p().id), `Declined ${p().name}. The referral stays in their history.`).then((ok) => ok && props.settle())}>
+          <button type="button" class="button button-sm button-ghost" aria-label={`Decline ${p().name}`} onClick={() => void props.act(() => declinePerson(props.org.id, p().id), `Declined ${p().name}. The referral stays in their history.`)}>
             Decline
           </button>
         </Show>
@@ -741,10 +735,7 @@ function PersonCard(props: { org: OrgDetail; person: Person; act: Act; settle():
           onCancel={() => setEditing(false)}
           onSubmit={async (input) => {
             const ok = await props.act(() => patchPerson(props.org.id, p().id, input), "Saved.");
-            if (ok) {
-              setEditing(false);
-              props.settle();
-            }
+            if (ok) setEditing(false);
           }}
         />
       </Show>
@@ -965,7 +956,7 @@ function ChangesSection(props: { org: OrgDetail; act: Act }) {
 
 // ---- projects ---------------------------------------------------------------------------------------
 
-function ProjectsSection(props: { org: OrgDetail; act: Act; settle(): void }) {
+function ProjectsSection(props: { org: OrgDetail; act: Act }) {
   const [name, setName] = createSignal("");
   const [root, setRoot] = createSignal("");
   return (
@@ -1001,7 +992,6 @@ function ProjectsSection(props: { org: OrgDetail; act: Act; settle(): void }) {
           if (await props.act(() => addOrgProject(props.org.id, name().trim(), root().trim()), "Project added.")) {
             setName("");
             setRoot("");
-            props.settle();
           }
         }}
       >
@@ -1019,146 +1009,4 @@ function ProjectsSection(props: { org: OrgDetail; act: Act; settle(): void }) {
       </form>
     </section>
   );
-}
-
-// ---- replay -------------------------------------------------------------------------------------------
-
-const PLAY_MS = 1600;
-
-function ReplayPage(props: { orgId: string; sessionId: string; titleRef(el: HTMLHeadingElement): void }) {
-  const [view, { refetch }] = createResource(() => props.sessionId, batonReplay);
-  const [step, setStep] = createSignal(0);
-  const [playing, setPlaying] = createSignal(false);
-  const total = () => view()?.items.length ?? 0;
-  createEffect(on(total, (n) => setStep((s) => (s === 0 ? Math.min(1, n) : Math.min(s, n)))));
-  let timer: ReturnType<typeof setInterval> | undefined;
-  const stop = () => {
-    setPlaying(false);
-    clearInterval(timer);
-  };
-  const play = () => {
-    if (step() >= total()) setStep(0);
-    setPlaying(true);
-    timer = setInterval(() => {
-      if (step() >= total()) return stop();
-      setStep(step() + 1);
-    }, PLAY_MS);
-  };
-  onCleanup(() => clearInterval(timer));
-  const go = (n: number) => {
-    stop();
-    setStep(Math.max(0, Math.min(total(), n)));
-  };
-  return (
-    <InsightsPage
-      title={view()?.publicTitle ?? "Replay"}
-      meta={
-        <>
-          <a class="orgs-meta-link" href={orgHref(props.orgId)}>Back to the organization</a> <span>· Replay, read-only</span>
-        </>
-      }
-      refreshLabel="Reload Replay"
-      onRefresh={() => void refetch()}
-      error={view.error ? errText(view.error) : null}
-      errorTitle="Couldn't load this session."
-      busy={view.loading}
-      titleRef={props.titleRef}
-    >
-      <Show when={view()}>
-        {(v) => (
-          <>
-            <div class="card orgs-section orgs-replay-bar" role="group" aria-label="Playback">
-              <button type="button" class="button button-sm" onClick={() => go(0)} aria-label="First step">
-                First
-              </button>
-              <button type="button" class="button button-sm" onClick={() => go(step() - 1)} aria-label="Previous step">
-                Previous
-              </button>
-              <button type="button" class="button button-sm button-primary" onClick={() => (playing() ? stop() : play())}>
-                {playing() ? "Pause" : "Play"}
-              </button>
-              <button type="button" class="button button-sm" onClick={() => go(step() + 1)} aria-label="Next step">
-                Next
-              </button>
-              <button type="button" class="button button-sm" onClick={() => go(total())} aria-label="Last step">
-                Last
-              </button>
-              <span class="orgs-mono orgs-replay-count" aria-live="polite">
-                {step()} of {total()}
-              </span>
-            </div>
-            <ol class="orgs-replay">
-              <For each={v().items.slice(0, step())}>{(it) => <ReplayItem item={it} />}</For>
-            </ol>
-            <Show when={step() >= total()}>
-              <p class="orgs-empty">{endLine(v())}</p>
-            </Show>
-          </>
-        )}
-      </Show>
-    </InsightsPage>
-  );
-}
-
-const endLine = (v: BatonView) =>
-  v.state === "done" ? "The end: this session is done." : v.state === "closed" ? "The end: this session was closed." : v.holder ? `So far. It's with ${v.holder} now.` : "So far.";
-
-export function ReplayItem(props: { item: BatonViewItem }) {
-  const it = props.item;
-  switch (it.kind) {
-    case "message":
-      return (
-        <li class="orgs-replay-item orgs-replay-message">
-          <span class="orgs-replay-who">{it.name}</span>
-          <div class="orgs-replay-text">{it.text}</div>
-        </li>
-      );
-    case "reply":
-      return (
-        <li class="orgs-replay-item orgs-replay-reply">
-          <span class="orgs-replay-who">Facilitator</span>
-          <div class="orgs-replay-text">{it.text}</div>
-        </li>
-      );
-    case "handoff":
-      return (
-        <li class="orgs-replay-item orgs-replay-card">
-          <span class="orgs-replay-who">
-            Hand-off {it.n}: {it.from} → {it.to}
-          </span>
-          <div class="orgs-replay-text">{it.question}</div>
-          <Show when={it.briefing}>
-            <div class="orgs-replay-brief">{it.briefing}</div>
-          </Show>
-        </li>
-      );
-    case "offer":
-      return (
-        <li class="orgs-replay-item orgs-replay-card">
-          <span class="orgs-replay-who">
-            Hand-off {it.n}: {it.from} → offered to {it.to.length ? it.to.join(", ") : plural(it.invited, "person", "people")}
-          </span>
-          <div class="orgs-replay-text">{it.question}</div>
-          <Show when={it.briefing}>
-            <div class="orgs-replay-brief">{it.briefing}</div>
-          </Show>
-        </li>
-      );
-    case "decision":
-      return (
-        <li class="orgs-replay-item orgs-replay-card">
-          <span class="orgs-replay-who">
-            Decision · {it.area} · {it.by}
-          </span>
-          <div class="orgs-replay-text">{it.statement}</div>
-        </li>
-      );
-    case "done":
-      return (
-        <li class="orgs-replay-item orgs-replay-card">
-          <span class="orgs-replay-who">Done</span>
-          <div class="orgs-replay-text">{it.summary}</div>
-        </li>
-      );
-  }
 }

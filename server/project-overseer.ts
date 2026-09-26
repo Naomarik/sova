@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -21,7 +21,7 @@ import { allBatons, batonById, createBaton, nameOf, sessionPathOf, workspaceHasF
 import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, registerSpecialLoadout } from "./chat-manager";
 import { workingSubagents } from "./live";
 import { piUsageTally } from "./transcript-usage";
-import { decidePerson, milestone, orgDir, OrgError, participantLine, readIndex, readOrg, readProjects, readRoster, operatorName } from "./orgs";
+import { decidePerson, onOrgAttached, orgDir, orgOfSessionPath, overseerPausedSince, resumeOverseer, OrgError, participantLine, readIndex, readOrg, readProjects, readRoster, operatorName } from "./orgs";
 import { appRequest, pathOfId, promptSession, toolCatalogue } from "./overseer";
 import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
@@ -32,7 +32,7 @@ import { UserTurns } from "./overseer-tools";
 import { canonicalPath } from "./paths";
 import { listDecisions, onReconcileEvent, promoteDecisions, reconcileProject } from "./reconcile";
 import { isViewing, markSeen, readSeen } from "./seen";
-import { cleanSessionTitle, setSessionTitle } from "./session-titles";
+import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
 import { cleanupSessions, getSessionSummary, indexedSessionPaths, listSessions } from "./sessions-index";
 import { setArchived } from "./archived-sessions";
 import { readView } from "./share/hub";
@@ -51,6 +51,8 @@ import {
   projectOverseerPaths,
   readMemo,
   readPoSettings,
+  readStarted,
+  recordTokens,
   readPoState,
   sessionIdOfFile,
   writeMemo,
@@ -118,6 +120,28 @@ function createPoFile(orgId: string, projectId: string): { id: string; path: str
   return { id: header.id, path };
 }
 
+/**
+ * An attach (a restored clone): the overseer conversations' listing title, web origin and write-guard
+ * stat are host-local, so they are derived again from each project's state.json (a title the
+ * operator already gave one here stays). Its level is paused by the attach itself (server/orgs.ts).
+ */
+onOrgAttached((orgId, dir) => {
+  const sessionsDir = join(dir, "sessions");
+  const files = new Map<string, string>();
+  for (const f of existsSync(sessionsDir) ? readdirSync(sessionsDir) : []) if (f.endsWith(".jsonl")) files.set(sessionIdOfFile(f), canonicalPath(join(sessionsDir, f)));
+  const titles = readSessionTitles();
+  for (const pr of readProjects(orgId)) {
+    const st = readPoState(projectOverseerPaths(orgId, pr.id, dir));
+    for (const id of st ? [st.current, ...st.history] : []) {
+      const path = files.get(id);
+      if (!path) continue;
+      addWebSession(id);
+      markOwned(path);
+      if (!titles[id]) setSessionTitle(id, cleanSessionTitle(`Overseer · ${pr.name}`) ?? null);
+    }
+  }
+});
+
 /** Delete conversations that fell off the history (>20), through the cleanup "paths" mode. */
 async function dropHistory(ids: string[]): Promise<void> {
   const paths: string[] = [];
@@ -151,7 +175,6 @@ export function ensureProjectOverseer(orgId: string, projectId: string): Promise
     // The settings file exists from the first open on, so the repo shows what is in force.
     writePoSettings(p, readPoSettings(p));
     await dropHistory(dropped);
-    milestone(orgId, `Project overseer started: ${projectOf(orgId, projectId).name}`);
     return made;
   })().finally(() => ensuring.delete(k));
   ensuring.set(k, run);
@@ -175,7 +198,6 @@ export async function clearProjectOverseer(orgId: string, projectId: string): Pr
   const { state, dropped } = rotateState(readPoState(p), made.id);
   writePoState(p, state);
   await dropHistory(dropped);
-  milestone(orgId, `Project overseer cleared: ${projectOf(orgId, projectId).name}`);
   return projectOverseerInfo(orgId, projectId);
 }
 
@@ -202,13 +224,13 @@ function batonPath(b: BatonSession): string | null {
 const projectBatons = (orgId: string, projectId: string): BatonSession[] => allBatons().filter((b) => b.orgId === orgId && b.projectId === projectId);
 const ownedBy = (b: BatonSession, projectId: string) => typeof b.owner === "object" && b.owner.overseerOf === projectId;
 
-function codingOf(p: ProjectOverseerPaths): { sessionId: string; path: string | null; running: boolean; createdAt: string }[] {
+function codingOf(p: ProjectOverseerPaths): { sessionId: string; path: string | null; running: boolean; createdAt: string; tokens?: number }[] {
   const known = indexedSessionPaths();
-  return readMemo(p)
-    .started.filter((s) => s.kind === "coding")
+  return readStarted(p)
+    .filter((s) => s.kind === "coding")
     .map((s) => {
       const path = known.get(s.sessionId) ?? (s.path && existsSync(s.path) ? s.path : null);
-      return { sessionId: s.sessionId, path, running: path ? isSessionBusy(path) || workingSubagents(path) > 0 : false, createdAt: s.createdAt };
+      return { sessionId: s.sessionId, path, running: path ? isSessionBusy(path) || workingSubagents(path) > 0 : false, createdAt: s.createdAt, tokens: s.tokens };
     });
 }
 
@@ -218,14 +240,23 @@ async function codingTokens(p: ProjectOverseerPaths): Promise<number> {
   const hit = tokenMemo.get(k);
   if (hit && Date.now() - hit.at < 15_000) return hit.value;
   let total = 0;
+  const counted = new Map<string, number>();
   for (const c of codingOf(p)) {
-    if (!c.path) continue;
+    // Not on this host (the org moved): what it had spent when last counted, from started.json.
+    if (!c.path) {
+      total += c.tokens ?? 0;
+      continue;
+    }
     // From the file (every assistant message's usage, deduplicated), not a live record: a
     // session that is not running still counts what it spent.
     const text = await readFile(c.path, "utf8").catch(() => "");
     const u = piUsageTally()(text, "snapshot");
-    total += u.input + u.output + u.cacheRead + u.cacheWrite;
+    const spent = u.input + u.output + u.cacheRead + u.cacheWrite;
+    counted.set(c.sessionId, spent);
+    total += spent;
   }
+  // Kept in the repo, so the budget still counts these on a host without the files.
+  if (counted.size) recordTokens(p, counted);
   tokenMemo.set(k, { at: Date.now(), value: total });
   return total;
 }
@@ -270,7 +301,8 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
     id: exists ? st!.current : null,
     history,
     settings,
-    effective: effectiveAutonomy(settings, readRoster(orgId)),
+    effective: effectiveAutonomy(settings, readRoster(orgId), overseerPausedSince(orgId, projectId)),
+    paused: overseerPausedSince(orgId, projectId),
     busy: exists && path ? isSessionBusy(path) : false,
     lastRun: memo.lastRun,
     started,
@@ -283,9 +315,9 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
 export async function patchProjectOverseer(orgId: string, projectId: string, body: unknown): Promise<ProjectOverseerInfo> {
   projectOf(orgId, projectId);
   const p = projectOverseerPaths(orgId, projectId);
-  const before = readPoSettings(p);
   const s = patchPoSettings(p, body);
-  if (s.autonomy !== before.autonomy) milestone(orgId, `Project overseer autonomy: ${before.autonomy} → ${s.autonomy} (${projectOf(orgId, projectId).name})`);
+  // Setting the level on this host (any level, the same one too) ends the pause an attach put on it.
+  if ((body as { autonomy?: unknown }).autonomy !== undefined) resumeOverseer(orgId, projectId);
   const st = readPoState(p);
   const path = st ? await pathOfId(st.current) : null;
   const chat = path ? heldChat(path) : undefined;
@@ -308,7 +340,7 @@ export function renderProjectOverseerPrompt(orgId: string, projectId: string, to
   const project = projectOf(orgId, projectId);
   const settings = readPoSettings(p);
   const roster = readRoster(orgId);
-  const eff = effectiveAutonomy(settings, roster);
+  const eff = effectiveAutonomy(settings, roster, overseerPausedSince(orgId, projectId));
   const r = serverRedactor();
   const notes = readNotes(p.notes).trim();
   const c = settings.caps;
@@ -343,7 +375,7 @@ function toolHost(rt: Rt): PoToolHost {
     project: () => projectOf(orgId, projectId),
     settings,
     roster: () => readRoster(orgId),
-    effective: () => effectiveAutonomy(settings(), readRoster(orgId)),
+    effective: () => effectiveAutonomy(settings(), readRoster(orgId), overseerPausedSince(orgId, projectId)),
     attended: () => rt.turns.attended(),
     overseerId: () => readPoState(paths)?.current ?? "",
     batons: () => projectBatons(orgId, projectId),
@@ -461,6 +493,16 @@ function rtOfPath(path: string): Rt {
 
 registerSpecialLoadout({
   kind: "project-overseer",
+  // The project's root on THIS host, not the one the file's header recorded where it was created.
+  cwd(path) {
+    const po = orgOfSessionPath(path) ? projectOverseerOfPath(path) : null;
+    if (!po) return null;
+    try {
+      return projectOf(po.orgId, po.projectId).root;
+    } catch {
+      return null;
+    }
+  },
   // The marker, in THAT org's workspace, AND a conversation the project's state knows: a fork or a
   // copy elsewhere opens as an ordinary session.
   matches(sm, path) {
@@ -523,8 +565,6 @@ registerSpecialLoadout({
     rt.turns.watch(session.agent);
     session.subscribe((event) => {
       if (rt.turns.observe(event)) rt.limits.reset();
-      // A run's transcript, its notes, ideas and actions are committed together when it settles.
-      if (event.type === "agent_settled") milestone(rt.orgId, `Project overseer run: ${projectOf(rt.orgId, rt.projectId).name}`);
     });
   },
   userSend(path, send) {
@@ -593,7 +633,6 @@ export async function sendItem(orgId: string, projectId: string, body: ItemSendI
   });
   linkItem(p, item, made.sessionId);
   const links = made.links ?? (made.token && typeof body.to === "string" && body.to !== OPERATOR ? [{ personId: body.to, token: made.token }] : []);
-  milestone(orgId, `Sent "${clip(item.title, 60)}" to ${links.map((l) => nameOf(orgId, l.personId)).join(", ") || "the operator"}`);
   return { path: made.path, sessionId: made.sessionId, links: links.map((l) => ({ personId: l.personId, name: nameOf(orgId, l.personId), link: linkUrl(l.token) })) };
 }
 
@@ -608,7 +647,6 @@ export async function codeItem(orgId: string, projectId: string, body: ItemCodeI
     ...(body.thinking ? { thinking: body.thinking } : {}),
   });
   linkItem(p, item, made.sessionId);
-  milestone(orgId, `Coding session started from "${item.title.slice(0, 60)}"`);
   return made;
 }
 
@@ -700,7 +738,7 @@ export async function lookNow(orgId: string, projectId: string, force = false): 
     }
     return { started: false, ...(d.why ? { why: d.why } : {}) };
   }
-  const eff = effectiveAutonomy(settings, readRoster(orgId));
+  const eff = effectiveAutonomy(settings, readRoster(orgId), overseerPausedSince(orgId, projectId));
   const reasons = memo.pending;
   try {
     const po = await acquireChat(path!);
@@ -729,6 +767,8 @@ async function tick(): Promise<void> {
     for (const pr of projects) {
       try {
         const p = projectOverseerPaths(o.id, pr.id);
+        // Paused by an attach: the watch loop waits (its reasons keep) until the operator sets its level here.
+        if (overseerPausedSince(o.id, pr.id)) continue;
         if (!readPoState(p) || !readMemo(p).pending.length) continue;
         await lookNow(o.id, pr.id);
       } catch (err) {

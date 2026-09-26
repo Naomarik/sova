@@ -295,7 +295,9 @@ which it reads and never fills. It is memoised for about 3 seconds and never inc
 itself.
 
 - **Needs you (act):** a dialog open (`activity.state` needs-input, own and foreign, or a hosted
-  pending dialog); an errored turn (`activity.state` error); a worker that ended in an error. A
+  pending dialog); an errored turn (`turnError`, §app.overseer/seen, or `activity.state` error
+  while a live record is up; one item either way, dated by the reply, its detail the error message
+  — the file's first — else "The last turn stopped with an error."); a worker that ended in an error. A
   killed worker is left out: a kill is usually the user's own gesture. A worker error counts as
   seen once the session is on screen, or its seen stamp (§app.overseer/seen) is at or past the
   latest error; a new error after that raises it again. An error's time is its worker row's
@@ -307,9 +309,7 @@ itself.
   `asks-you` ("Asks you: {sentence}", the last question among the reply's last three sentences,
   else its last sentence — a sentence ends at `.`, `!` or `?` (and any closing quote or bracket)
   followed by a space or the end, so `notes.md` is not an end — code skipped, ≤160 characters, redacted; without one "The last reply asks
-  you something."); `task-failed` for the session's own turn ("The last turn looks like it failed."
-  then the reply's last sentence when there is one) and for subagents ("{n} subagent(s) finished
-  without doing the task."), one item; `looping` for stuck subagents ("A subagent looks stuck:
+  you something."); `looping` for stuck subagents ("A subagent looks stuck:
   {name}.", "Subagents look stuck: {a}, {b}.", else "{n} subagents look stuck."; adding " The last
   turn looks like it went in circles too." when it does), one item. A main session's own
   `looping`, alone, is **Finished (decide)**: "The last turn looks like it went in circles." The
@@ -329,8 +329,26 @@ itself.
 - `seen.json` maps a session id to when a Sova chat or watch socket last **attached to or
   detached from** it. A view mounts only while it's on screen, so an open socket is the proxy for
   "the user had it in front of them". This is imperfect for background tabs.
-- `SessionSummary.unread` is set when the session has replied since then and is not mid-turn. The
-  sidebar row shows an **unread dot**, except for the session this tab is showing.
+- **The last finished reply** is read from the end of the session file (at most its last 256 KB),
+  in file order, not along the active branch: after a rewind it can be a reply the head no longer
+  shows. A reply that leaves the turn open — pi's `stopReason` `toolUse`, `pending` or `deferred` —
+  is skipped for the one before it. Its time, its `stopReason` and, for `error`, the first 300
+  characters of its `errorMessage` are kept per file (size and mtime).
+- `SessionSummary.unread` is set when that reply is newer than the stamp, the session is not
+  mid-turn, and no pane of this server has it open. Any session with a stamp qualifies, whatever
+  its origin (web, TUI, external); a session never stamped is never unread, so the whole archive
+  does not light up. The sidebar row shows an **unread dot**, except for the session this tab is
+  showing.
+- `SessionSummary.turnError` (`{ message? }`) is set when that reply's `stopReason` is `error`,
+  the session is not mid-turn (not busy in this server, no live record saying working: pi may be
+  between auto-retries), no pane has it open, and it has not been seen since that reply. Unlike
+  `unread`, a session **never stamped shows it**: a blocker errs on the side of showing. It clears
+  exactly like the dot: opening the session stamps it, and the next finished reply replaces what
+  it judges. An aborted turn (`aborted`, the user's own stop) is no error; neither is a failed
+  tool call in a turn that ended `stop`. It needs no decisions feature and no model call. The row
+  shows it as a red mark in the dot's place (§app.session-list/anatomy), the digest as an act
+  `error` item (§app.overseer/attention-digest), and the session feed pushes it like the decision
+  marks (§app.decisions/push). A worker's failure stays the digest's `worker-error`.
 - The Overseer's own unread assistant messages give the entry button's **unread count**, its only
   badge (§app.overseer/entry-button).
 

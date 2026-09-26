@@ -112,39 +112,37 @@ writes a byte into a session file. All writes are atomic tmp+rename.
   first sees is checked only if it ended within the last 30 minutes: switching the feature on does
   not check old turns. A session is checked at most once per last-assistant entry on its active
   branch (the `turnId`); a rewind or a new turn changes it. A branch ending on a tool call is
-  mid-turn and not checked. A failed check stores nothing and is retried after 5 minutes,
-  at most 3 times per turn (a `bad-request` never).
+  mid-turn and not checked. A turn whose last reply stopped with an error (`stopReason` error) is
+  not checked either: whether a turn failed is a fact of the file (§app.overseer/seen), never a
+  question; the stored answers of the turn before it are dropped, since a newer turn replaces them.
+  The scan skips such a turn on the list's cached `stopReason` alone, without reading the file.
+  A failed check stores nothing and is retried after 5 minutes, at most 3 times per turn (a
+  `bad-request` never).
 - **Which sessions.** Those the privacy gate lets through (§app.decisions/privacy), except the
   Overseer's, worker sessions and archived sessions.
 - **TUI sessions are read, never written**: Sova's own parser reads at most the last 1 MB of the
   file; nothing is ever appended to any session file.
 - **The excerpt**: the title (≤200 characters), the last user message (≤2,000), the end of the
-  last reply (≤4,000), the last 8 tool calls (≤120 characters each, each marked failed or succeeded
-  when known), the turn's error (≤300), repeats counted in code, and tool failures counted in
-  code: how many calls failed, how many were never re-run successfully with the same tool and
-  input later in the turn, whether the last call failed, and the last 3 failed calls with their
-  input (≤120) and the end of their error (≤300). A call failed when pi marks its result as an
-  error; in a worker's transcript, which has no such mark, when its result says a command exited
-  with a non-zero code or without one.
+  last reply (≤4,000), the last 8 tool calls (≤120 characters each, the result else the input, no
+  success or failure mark), the turn's error message when the reply carries one (≤300), and
+  repeats counted in code. Nothing in it counts or marks failed tool calls: a failure the agent
+  worked past (an exit-1 `grep -c` that found nothing) read as a failed turn.
 - **Questions** (raw answers stored in `<stateRoot>/signals.json`, pruned when a session leaves
   the list): `asks_user` (boolean: does the reply end by asking the user something it needs before
-  continuing), `outcome` (choice: done, partial, failed, blocked on the user — was the goal behind
-  the request achieved, judged by the result, not the tone) and `work_failed` (boolean: did
-  something in the turn fail and stay failed, judged by what happened, not how calmly it is told
-  or whether the user expected it) for every turn;
-  `stuck` (score over making progress / some repetition / clearly looping) only for a turn of 5
+  continuing) for every turn; `stuck` (score over making progress / some repetition / clearly looping) only for a turn of 5
   minutes or more, or 20 tool calls or more.
-- **Thresholds, fixed in code:** `asks-you` when `asks_user ≥ 0.7`; `task-failed` when
-  `work_failed ≥ 0.7`, or the outcome is `failed` with confidence ≥ 0.5; `looping` when `stuck ≥ 1.5` with confidence ≥ 0.5. A signal can be
-  `task-failed` while its outcome reads done. The wire carries the kinds with the raw
-  `asksUser`, `workFailed`, outcome and stuck answers; the server derives the kinds and the
-  client never re-derives them.
+- **Thresholds, fixed in code:** `asks-you` when `asks_user ≥ 0.7`; `looping` when `stuck ≥ 1.5`
+  with confidence ≥ 0.5. The wire carries the kinds with the raw `asksUser` and stuck answers;
+  the server derives the kinds and the client never re-derives them. Records stored before
+  failure left the questions may still hold `outcome` and `work_failed` answers: nothing reads
+  them, and no kind comes from them.
 - **Workers**, pi and Claude Code alike: a worker running for 5 minutes or more is checked for
-  `stuck` at most every 5 minutes; a worker that ended (done or error, not killed) within the last
-  30 minutes gets one outcome check (`outcome` and `work_failed`). The parent session carries counts (`workerSignals`: stuck,
-  failed); details go to the attention digest. A subagent's check counts until the parent session
-  is seen after it (or is on screen); a stuck check also stops counting 11 minutes after it, so a
-  worker that stopped running stops counting.
+  `stuck` at most every 5 minutes. A worker that ended is never checked: one that ended in an
+  error is the digest's deterministic `worker-error` (§app.overseer/attention-digest). The parent
+  session carries a count (`workerSignals`: stuck); details go to the attention digest. A
+  subagent's check counts until the parent session is seen after it (or is on screen), and stops
+  counting 11 minutes after it, so a worker that stopped running stops counting. A stored worker
+  "outcome" check from before is dropped on read.
 - **Showing and clearing** is decided on the server: a session's `signals` are sent only while it
   has a kind, the feature is on, no pane has it open, it is not running, and it hasn't been seen
   since it was checked (the seen store, §app.overseer/seen); a newer turn replaces them. Switching
@@ -198,9 +196,9 @@ writes a byte into a session file. All writes are atomic tmp+rename.
 
 ## §app.decisions/push — Live marks
 
-- The server **pushes** signal and tag changes: the read-only watch socket has a session-less
+- The server **pushes** signal, tag and turn-error (`turnError`, §app.overseer/seen) changes: the read-only watch socket has a session-less
   feed (`/ws/watch?feed=sessions`) that sends a full snapshot of every session's marks on every connect (even an empty one),
-  then one message per change (a signal or tag written, cleared or pruned), and backfill progress
+  then one message per change (a signal, tag or turn error set, cleared or pruned), and backfill progress
   while a backfill runs.
 - Changes are sent when a store is written or a pane attaches, and the server compares every 5 s
   while a feed is connected, so a turn that starts in a TUI clears its mark.
@@ -212,7 +210,7 @@ writes a byte into a session file. All writes are atomic tmp+rename.
   the socket was down. The feed adds no polling of its own. So a session started in a TUI reaches
   the sidebar within seconds, without a reload.
 - The sidebar holds the feed open while it is mounted. Once the snapshot arrives, the feed's
-  signals and tags replace the list's on this server's rows, matched by session path (rows from mesh peers keep their list
+  signals, tags and turn error replace the list's on this server's rows, matched by session path (rows from mesh peers keep their list
   fields); each change applies at once, and a cleared field is removed. While the socket is not
   open the overlay is dropped and the list poll is the truth again; after the socket stops
   retrying, it tries again when the window regains focus.

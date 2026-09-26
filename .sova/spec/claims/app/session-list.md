@@ -60,7 +60,7 @@
 
              Line 1 is the title and no indicator — the rail exists because
              chips beside the title cost it width. Only inline marks may lead
-             it (below: the unread dot, then the needs-you mark). Lines 2 and 3 each carry
+             it (below: the turn-error mark or the unread dot, then the needs-you mark). Lines 2 and 3 each carry
              ONE indicator on a shared right edge: the topic count on the
              "now" line, the context ring on the meta line.
         -->
@@ -84,21 +84,28 @@
           <a class="list-row list-row-interactive session-row" href="#/s/…" aria-current="page">
             <div class="list-main">
               <!-- line 1 may lead with inline marks, each aria-hidden with its words in a hidden span:
-                   the unread dot (§app.overseer/seen), then at most ONE needs-you mark
-                   (§app.decisions/attention-signals), the most urgent kind first:
-                     task-failed  alert-circle, --status-error   "Task failed. "     (a subagent's: "A subagent failed. ")
+                   ONE leading state mark (§app.overseer/seen), in one slot:
+                     turn error   alert-circle, --status-error   "Turn failed. "   when `turnError` is set:
+                                  the last turn stopped with an error (pi's stopReason "error"), since
+                                  you looked — even on a session Sova never stamped. Its span's `title`:
+                                  "The last turn stopped with an error: {message}", or without a message
+                                  "The last turn stopped with an error."
+                     unread dot   7px accent dot                 "New activity. "  otherwise, when `unread` is set
+                   The error takes the dot's place, never sits beside it: an errored reply since you
+                   looked is new activity too. Both come from the server and clear on a visit alike.
+                   Then at most ONE needs-you mark (§app.decisions/attention-signals), the most urgent
+                   kind first:
                      asks-you     chat,         --color-accent   "Asks you. "
                      looping      refresh,      --status-warn    "May be looping. "  (a subagent's: "A subagent may be stuck. ")
                    The kind comes from the server (the session's `signals.kinds`, and its subagents'
                    `workerSignals` counts); kind precedence first, then the session's own signal over
                    its subagents'. The glyph sits in a span whose `title` says the fact in one sentence
-                   ("The last reply asks you something.", "The last turn looks like it failed.", "The
-                   last turn looks like it went in circles.", "A subagent finished without doing the
-                   task.", "A subagent looks stuck.").
+                   ("The last reply asks you something.", "The last turn looks like it went in
+                   circles.", "A subagent looks stuck.").
                    Kinds differ in glyph as well as tone. The session's own mark is gone once the session
                    is seen after it was classified, and no mark shows while this tab runs a turn there.
-                   Both marks are hidden on the open session,
-                   so this row (the open one) has neither; on another row line 1 reads:
+                   Every line-1 mark is hidden on the open session,
+                   so this row (the open one) has none; on another row line 1 reads:
                    <p class="list-title"><span class="session-unread" aria-hidden="true"></span><span
                      class="visually-hidden">New activity. </span><span class="session-signal-wrap"
                      title="The last reply asks you something."><span class="icon icon-sm session-signal
@@ -601,8 +608,8 @@ label a person reads says "sessions pane".
 ## §app.session-list/needs-you — Needs you
 
 The very top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
-errored turn, a subagent that ended in an error, or a finished turn that asks you something, failed,
-or is stuck. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
+errored turn, a subagent that ended in an error, or a finished turn that asks you something or is
+stuck. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
 from `GET /api/overseer/attention`, the list the Overseer's "{a} need you" counts. The digest, not the
 session list, is the source: a hosted pending dialog, a worker error and every detail sentence
 reach only the digest.
@@ -635,7 +642,7 @@ and the region has **no actions of its own** beyond its twist.
 - **Order: newest first**, by each session's newest act item (`since`); ties break on path.
 - **Rows** are the same `SessionRow` as everywhere else — rail, marks, meta line, accessible name —
   with one difference: **line 2 is the digest's sentence** for the session's newest act item
-  ("Asks you: …", "Waiting on a dialog.", "1 subagent ended in an error."), in place of the gist
+  ("Asks you: …", "Waiting on a dialog.", "429 rate limited", "1 subagent ended in an error."), in place of the gist
   or the draft preview, and shown even with summaries hidden in Settings › General. Its `title` is
   every act sentence the session has, newest first. An act item with no sentence leaves line 2 as
   the row draws it elsewhere. The rules live in `src/lib/needs-you.ts`.

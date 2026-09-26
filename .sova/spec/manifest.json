@@ -88,14 +88,15 @@
     "§app.session-list/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
         "src/lib/folder-open.ts",
         "src/lib/storage-keys.ts",
         "src/lib/signals.ts",
-        "src/lib/signals.test.ts"
+        "src/lib/signals.test.ts",
+        "src/lib/summary-diff.ts"
       ]
     },
     "§app.session-list/archive-by-date": {
@@ -2234,13 +2235,14 @@
     "§app.overseer/attention-digest": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/attention.ts",
         "server/live.ts",
         "server/overseer.ts",
         "server/signals-store.ts",
-        "server/attention.test.ts"
+        "server/attention.test.ts",
+        "shared/protocol.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -2408,12 +2410,18 @@
     "§app.overseer/seen": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/seen.ts",
         "server/ws.ts",
         "server/sessions-index.ts",
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "shared/protocol.ts",
+        "server/session-feed.ts",
+        "src/lib/signals.ts",
+        "src/lib/summary-diff.ts",
+        "server/turn-error.test.ts",
+        "src/lib/summary-diff.test.ts"
       ],
       "requires": []
     },
@@ -2612,7 +2620,8 @@
         "server/sessions-index.ts",
         "server/index.ts",
         "server/attention-signals.test.ts",
-        "server/signals-store.test.ts"
+        "server/signals-store.test.ts",
+        "shared/protocol.ts"
       ],
       "requires": [
         "§app.decisions/interface",
@@ -2701,7 +2710,10 @@
         "src/components/Sidebar.tsx",
         "server/session-feed.test.ts",
         "src/lib/summary-diff.ts",
-        "src/lib/summary-diff.test.ts"
+        "src/lib/summary-diff.test.ts",
+        "shared/protocol.ts",
+        "src/lib/signals.ts",
+        "src/lib/signals.test.ts"
       ],
       "requires": [
         "§app.decisions/attention-signals",
@@ -2759,7 +2771,7 @@
     "§design.copy-deck/settings-decisions": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§chat.model-menu/saved-default": {
       "kind": "behavior",
@@ -2951,7 +2963,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",

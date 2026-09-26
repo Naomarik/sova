@@ -120,8 +120,10 @@ export class LinkClient {
 		}
 		if (!res.ok) {
 			const err = parsed && typeof parsed === "object" ? (parsed as { error?: unknown; reason?: unknown }) : {};
+			// A 404 without a reason is the route's own absence (Sova answers `{error:"Not found"}`
+			// for any unknown /api/ path, and every link route while the mesh is off).
 			const message =
-				typeof err.error === "string" && err.error
+				typeof err.error === "string" && err.error && !(res.status === 404 && err.reason === undefined)
 					? err.error
 					: res.status === 404
 						? "This session's Sova host has no link routes: the mesh is off (or its build has no links)."

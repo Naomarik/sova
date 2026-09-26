@@ -96,7 +96,7 @@ test("requests go to the session's own host with the session named", async () =>
 test("the host's refusals reach the model as sentences", async () => {
 	const { f } = fakeFetch(
 		{ status: 409, body: { error: "This session is not a member of lk_a.", reason: "not-member" } },
-		{ status: 404, raw: "Not Found" },
+		{ status: 404, body: { error: "Not found" } },
 		new TypeError("fetch failed"),
 		{ raw: "<html>" },
 	);

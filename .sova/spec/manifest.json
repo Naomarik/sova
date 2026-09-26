@@ -3080,6 +3080,25 @@
         "pi-config/extensions/subagents/team-defaults.ts",
         "pi-config/extensions/subagents/README.md"
       ]
+    },
+    "§mesh.vps/claude-code": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "scripts/mesh-vps/remote-setup.sh",
+        "scripts/mesh-vps/deploy.sh",
+        "scripts/mesh-vps/config.sh"
+      ]
+    },
+    "§mesh/vps": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/mesh-vps/deploy.sh"
+      ]
     }
   },
   "boundary": {

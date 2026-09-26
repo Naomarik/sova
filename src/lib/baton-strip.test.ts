@@ -96,7 +96,7 @@ test("the operator's composer is read-only whenever someone else has the baton, 
   assert.deepEqual(batonComposerGate(field({}), undefined), theirs, "not read yet: the list's open means a person's");
   assert.equal(batonComposerGate(field({ state: "needs-you", holder: "Omar" }), undefined), null, "not read yet: needs-you is the operator's");
   assert.equal(batonComposerGate(field({ holder: "Omar" }), true), null, "open after Take Back and a reply: the operator's");
-  assert.deepEqual(batonComposerGate(field({ holder: null, offer: { state: "open", invited: 3 } }), true)?.text, "Offered to 3 people; nobody has answered yet. Withdraw it to write.");
+  assert.deepEqual(batonComposerGate(field({ holder: null, offer: { state: "open", invited: 3 } }), true)?.text, "Offered to 3 people; nobody is answering right now. Withdraw it to write.");
   assert.deepEqual(batonComposerGate(field({ offer: { state: "held", invited: 3, holder: "Ana" } }), false)?.text, "Ana took the offer and is answering. Withdraw it to write.");
   assert.deepEqual(batonComposerGate(field({ state: "done", holder: null }), true), { ended: true, text: "This hand-off session is done." });
   assert.equal(batonComposerGate(undefined, undefined), null, "not a baton session");

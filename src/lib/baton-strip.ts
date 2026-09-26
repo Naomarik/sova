@@ -91,7 +91,7 @@ export function batonComposerGate(baton: BatonSummaryField | undefined, mine: bo
   if (!baton) return null;
   if (baton.state === "done" || baton.state === "closed") return { ended: true, text: `This hand-off session is ${baton.state}.` };
   if (baton.offer?.state === "held") return { ended: false, text: `${baton.offer.holder ?? "Someone"} took the offer and is answering. Withdraw it to write.` };
-  if (baton.offer?.state === "open") return { ended: false, text: `Offered to ${baton.offer.invited} people; nobody has answered yet. Withdraw it to write.` };
+  if (baton.offer?.state === "open") return { ended: false, text: `Offered to ${baton.offer.invited} people; nobody is answering right now. Withdraw it to write.` };
   // "needs-you" is the operator's turn, and so is "open" once the operator has written after Take
   // Back: the list carries only the holder's display name, so the strip says whose it is.
   const others = mine === false || (mine === undefined && baton.state === "open");

@@ -27,7 +27,7 @@ import { ToolCard, type ToolStatus } from "./ToolCard";
 import { WakeCard } from "./WakeCard";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
 import { Banner, Chip, Icon } from "./ui";
-import { BriefRow, ConfirmCard, NavigateGo, OverseerChoiceRow } from "./OverseerCards";
+import { BriefRow, ConfirmCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow } from "./OverseerCards";
 import { confirmAnswer, confirmDetails, detailsOf, isBriefText } from "../lib/overseer";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
 import { type MessageStrip, stripLabel, stripsByRow } from "../lib/message-actions";
@@ -588,9 +588,16 @@ export function HistoryItems(props: {
                     item.text === "sova_confirm" && status() !== "error"
                       ? (confirmDetails(resultDetails()) ?? confirmDetails(toolCallArgs(item.raw, item.toolCallId)))
                       : null;
+                  /** A made or ended link reads as a card naming its members (§app.overseer/links-tools);
+                      running or failed, the plain tool card. */
+                  const linked = () =>
+                    (item.text === "sova_link" || item.text === "sova_unlink") && status() === "done" ? linkDetails(resultDetails()) : null;
                   return (
                     <Show
                       when={confirm()}
+                      fallback={
+                    <Show
+                      when={linked()}
                       fallback={
                     <ToolCard
                       name={item.text ?? "tool"}
@@ -601,6 +608,10 @@ export function HistoryItems(props: {
                       attachments={item.toolCallId ? results().get(item.toolCallId)?.attachments : undefined}
                       action={item.text === "sova_navigate" && status() === "done" ? <NavigateGo details={resultDetails()} /> : undefined}
                     />
+                      }
+                    >
+                      {(d) => <LinkCard details={d()} ended={item.text === "sova_unlink"} />}
+                    </Show>
                       }
                     >
                       {(details) => {
@@ -681,19 +692,27 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
             return props.live.running ? "running" : "none";
           };
           const confirm = () => (b().name === "sova_confirm" && status() !== "error" ? confirmDetails(tool()?.details) ?? confirmDetails(b().args) : null);
+          const linked = () => ((b().name === "sova_link" || b().name === "sova_unlink") && status() === "done" ? linkDetails(tool()?.details) : null);
           return (
             <Show
               when={confirm()}
               fallback={
-                <ToolCard
-                  name={b().name}
-                  args={b().args ?? tool()?.args}
-                  argsText={b().argsText}
-                  status={status()}
-                  output={tool()?.output}
-                  images={tool()?.images}
-                  action={b().name === "sova_navigate" && status() === "done" ? <NavigateGo details={tool()?.details} /> : undefined}
-                />
+                <Show
+                  when={linked()}
+                  fallback={
+                    <ToolCard
+                      name={b().name}
+                      args={b().args ?? tool()?.args}
+                      argsText={b().argsText}
+                      status={status()}
+                      output={tool()?.output}
+                      images={tool()?.images}
+                      action={b().name === "sova_navigate" && status() === "done" ? <NavigateGo details={tool()?.details} /> : undefined}
+                    />
+                  }
+                >
+                  {(d) => <LinkCard details={d()} ended={b().name === "sova_unlink"} />}
+                </Show>
               }
             >
               {(details) => <ConfirmCard details={details()} answered={false} choice={null} pending={props.live.running} />}

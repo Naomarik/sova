@@ -669,30 +669,38 @@ function PersonCard(props: { org: OrgDetail; person: Person; act: Act; settle():
       .join(" · ");
   return (
     <li class="orgs-person">
-      <div class="orgs-head">
+      {/* Name, status and role take the row; the actions wrap under them as one group when the
+          card is narrow, so a name never breaks to fit a button. */}
+      <div class="orgs-person-head">
         <div class="orgs-person-main">
-          <span class="orgs-person-name">{p().name}</span>
-          <span class="list-meta">{[p().role, p().language].filter(Boolean).join(" · ")}</span>
+          <span class="orgs-person-title">
+            <span class="orgs-person-name">{p().name}</span>
+            <Chip tone={STATUS_CHIP[p().status]?.tone}>{STATUS_CHIP[p().status]?.word ?? p().status}</Chip>
+          </span>
+          <Show when={[p().role, p().language].filter(Boolean).join(" · ")}>{(meta) => <span class="orgs-person-meta">{meta()}</span>}</Show>
         </div>
-        <Chip tone={STATUS_CHIP[p().status]?.tone}>{STATUS_CHIP[p().status]?.word ?? p().status}</Chip>
+        <div class="orgs-person-actions">
         <Show when={p().status === "proposed"}>
-          <button type="button" class="button button-sm" onClick={() => void props.act(() => approvePerson(props.org.id, p().id), `${p().name} is on the roster now.`).then((ok) => ok && props.settle())}>
+          <button type="button" class="button button-sm" aria-label={`Approve ${p().name}`} onClick={() => void props.act(() => approvePerson(props.org.id, p().id), `${p().name} is on the roster now.`).then((ok) => ok && props.settle())}>
             Approve
           </button>
-          <button type="button" class="button button-sm button-ghost" onClick={() => void props.act(() => declinePerson(props.org.id, p().id), `Declined ${p().name}. The referral stays in their history.`).then((ok) => ok && props.settle())}>
+          <button type="button" class="button button-sm button-ghost" aria-label={`Decline ${p().name}`} onClick={() => void props.act(() => declinePerson(props.org.id, p().id), `Declined ${p().name}. The referral stays in their history.`).then((ok) => ok && props.settle())}>
             Decline
           </button>
         </Show>
         <Show when={p().status === "active"}>
-          <a class="button button-sm button-ghost" href={startForHref(props.org.id, p().id)}>
+          <a class="button button-sm button-ghost" href={startForHref(props.org.id, p().id)} aria-label={`Start a session with ${p().name}`}>
             Start a Session
           </a>
         </Show>
-        <button type="button" class="button button-sm button-ghost" aria-expanded={editing()} onClick={() => setEditing(!editing())}>
+        <button type="button" class="button button-sm button-ghost" aria-expanded={editing()} aria-label={`Edit ${p().name}`} onClick={() => setEditing(!editing())}>
           <Icon name="pencil" small /> Edit
         </button>
+        </div>
       </div>
-      <Show when={p().status === "proposed" && !editing()}>
+      {/* What Approve grants, next to it. With no decision areas it grants none, and the facts
+          show no Decides row, so there is no line to add. */}
+      <Show when={p().status === "proposed" && !editing() && p().decides.length}>
         <p class="baton-strip-areas">{proposedAreasLine(p().name, p().decides)}</p>
       </Show>
       <Show when={!editing()}>
@@ -965,20 +973,21 @@ function ProjectsSection(props: { org: OrgDetail; act: Act; settle(): void }) {
       <h2 class="orgs-h2" id="orgs-projects">
         Projects
       </h2>
-      <Show when={props.org.projectList.length} fallback={<p class="orgs-empty">No projects yet.</p>}>
-        <ul class="list">
+      <Show when={props.org.projectList.length} fallback={<p class="orgs-empty">No projects yet. A project is a folder that hand-off sessions and its overseer work in.</p>}>
+        <ul class="list orgs-project-list">
           <For each={props.org.projectList}>
             {(p) => (
-              <li class="list-row orgs-row">
-                <Icon name="folder" />
-                <span class="list-main">
-                  <a class="list-title" href={projectHref(props.org.id, p.id)}>
-                    {p.name}
-                  </a>
-                  <span class="list-meta orgs-mono">{p.root}</span>
-                </span>
-                <a class="button button-sm button-ghost" href={projectHref(props.org.id, p.id)}>
-                  Decisions and Overseer
+              <li>
+                {/* The whole row opens the project page: its overseer, requirements and decisions. */}
+                <a class="list-row list-row-interactive orgs-row orgs-project-row" href={projectHref(props.org.id, p.id)}>
+                  <Icon name="folder" />
+                  <span class="list-main">
+                    <span class="list-title">{p.name}</span>
+                    <span class="list-meta orgs-mono" title={p.root}>
+                      {p.root}
+                    </span>
+                  </span>
+                  <Icon name="chevron-right" class="orgs-row-go" />
                 </a>
               </li>
             )}
@@ -986,7 +995,7 @@ function ProjectsSection(props: { org: OrgDetail; act: Act; settle(): void }) {
         </ul>
       </Show>
       <form
-        class="orgs-inline"
+        class="orgs-inline orgs-project-form"
         onSubmit={async (e) => {
           e.preventDefault();
           if (await props.act(() => addOrgProject(props.org.id, name().trim(), root().trim()), "Project added.")) {
@@ -997,7 +1006,7 @@ function ProjectsSection(props: { org: OrgDetail; act: Act; settle(): void }) {
         }}
       >
         <label class="field">
-          <span class="field-label">Name</span>
+          <span class="field-label">Project name</span>
           <input class="input" value={name()} onInput={(e) => setName(e.currentTarget.value)} maxlength={80} required />
         </label>
         <label class="field orgs-grow">

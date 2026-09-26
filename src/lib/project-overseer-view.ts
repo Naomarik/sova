@@ -29,6 +29,21 @@ export function actionLine(a: Pick<OverseerAction, "tool" | "outcome" | "error">
   return `${what}: ${a.outcome === "refused" ? "refused" : "failed"}${why ? ` (${why})` : ""}`;
 }
 
+/**
+ * What follows "Last looked on its own {time}" in the status line, up to its full stop: a skip and
+ * its reason, or what woke it. The reason arrives as a sentence of its own ("the session was
+ * closed."), so its end punctuation goes: the line ends with exactly one period.
+ */
+export function lastRunTail(run: { reasons: readonly string[]; outcome: "started" | "skipped"; detail?: string }): string {
+  const bare = (s: string) => s.trim().replace(/[.\s]+$/, "");
+  if (run.outcome === "skipped") {
+    const why = run.detail ? bare(run.detail) : "";
+    return why ? `, skipped: ${why}` : ", skipped";
+  }
+  const reasons = run.reasons.map(bare).filter(Boolean);
+  return reasons.length ? `, after ${reasons.join(", ")}` : "";
+}
+
 /** Tokens as a short figure: 950, 12.3k, 1.2M. */
 export function tokens(n: number): string {
   if (n < 1000) return String(n);

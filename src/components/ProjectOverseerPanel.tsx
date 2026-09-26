@@ -20,7 +20,7 @@ import {
 import { relativeTime } from "../lib/format";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll } from "../lib/poll";
-import { actionLine, gapArea, isGap, itemSendInput, openIdeas, STARTED_KIND, tokens } from "../lib/project-overseer-view";
+import { actionLine, gapArea, isGap, itemSendInput, lastRunTail, openIdeas, STARTED_KIND, tokens } from "../lib/project-overseer-view";
 import { announce, toast } from "../lib/ui-state";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon } from "./ui";
@@ -188,7 +188,7 @@ function StatusLine(props: { info: ProjectOverseerInfo }) {
           {(r) => (
             <>
               Last looked on its own <time title={r().at}>{relativeTime(r().at)}</time>
-              {r().outcome === "skipped" ? `, skipped${r().detail ? `: ${r().detail}` : ""}` : r().reasons.length ? `, after ${r().reasons.join(", ")}` : ""}.
+              {lastRunTail(r())}.
             </>
           )}
         </Show>{" "}
@@ -347,7 +347,7 @@ function Started(props: { info: ProjectOverseerInfo }) {
 function Activity(props: { actions: OverseerAction[] | undefined; error: string | null }) {
   const OUTCOME = { ok: { word: "Done", tone: "success" as const }, refused: { word: "Refused", tone: "warn" as const }, error: { word: "Failed", tone: "error" as const } };
   return (
-    <details class="orgs-history" open>
+    <details class="orgs-history orgs-history-section" open>
       <summary>Activity{props.actions ? ` · ${props.actions.length}` : ""}</summary>
       <Show when={props.error}>{(e) => <p class="field-error">{e()}</p>}</Show>
       <Show when={props.actions?.length} fallback={<p class="orgs-empty">Nothing yet. Every act it takes, refused or not, lists here.</p>}>
@@ -380,7 +380,7 @@ interface ItemCallbacks {
 
 function Ideas(props: ItemCallbacks & { ideas: IdeaRecord[] | undefined; error: string | null }) {
   return (
-    <details class="orgs-history" open>
+    <details class="orgs-history orgs-history-section" open>
       <summary>Gaps and ideas{props.ideas ? ` · ${props.ideas.length}` : ""}</summary>
       <Show when={props.error}>{(e) => <p class="field-error">{e()}</p>}</Show>
       <Show when={props.ideas?.length} fallback={<p class="orgs-empty">No open ideas. Gaps it finds between the decisions and who decides them land here.</p>}>
@@ -420,7 +420,7 @@ function Todos(
   const [err, setErr] = createSignal<string | null>(null);
   const open = createMemo(() => props.info?.todos.filter((t) => !t.done) ?? []);
   return (
-    <details class="orgs-history" open>
+    <details class="orgs-history orgs-history-section" open>
       <summary>To-do items{props.info ? ` · ${props.info.open} open` : ""}</summary>
       <Show when={props.error ?? err()}>{(e) => <p class="field-error">{e()}</p>}</Show>
       <Show when={open().length} fallback={<p class="orgs-empty">{props.info?.done ? `${props.info.done} done. Nothing open.` : "Nothing to do yet."}</p>}>

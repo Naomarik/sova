@@ -30,7 +30,7 @@ import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/i
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
 import { extHref, extRouteFromHash } from "./lib/ext-route";
-import { ORGS_HREF, orgsRouteFromHash } from "./lib/orgs-route";
+import { orgsRouteFromHash } from "./lib/orgs-route";
 import { LIST_REFRESH_EVENT } from "./lib/list-refresh";
 import { OrgsView } from "./components/OrgsView";
 import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
@@ -54,6 +54,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { HomeSessionsCard } from "./components/HomeSessionsCard";
+import { OverviewActions } from "./components/OverviewActions";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
 import { MeshDetails } from "./components/MeshDetails";
 import { closeMeshDetails, meshDetailsOpen } from "./lib/mesh-details";
@@ -1072,28 +1073,13 @@ export function App() {
                 </Show>
                 <div class="overview">
                   <div class="overview-head">
-                    <div class="empty">
-                      {/* A plain title at every width: the Sessions card below is where the count lives. */}
-                      <h1 class="empty-title">Overview</h1>
-                      {/* Two ways to start something: one session, or the same prompt to N models
-                          at once (the empty screen is fanout's front door,
-                          which is why it is offered here and not in the sidebar). */}
-                      <div class="cluster empty-action">
-                        <button type="button" class="button" onClick={() => setCreating(true)}>
-                          <Icon name="plus" />
-                          New Session
-                        </button>
-                        <button type="button" class="button" onClick={() => setFanout({})}>
-                          <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
-                          Fan Out…
-                        </button>
-                        <a class="button" href={ORGS_HREF}>
-                          <Icon name="network" />
-                          Organizations
-                        </a>
-                      </div>
-                    </div>
+                    {/* A plain title at every width: the Sessions card below is where the count lives. */}
+                    <h1 class="overview-title">Overview</h1>
                   </div>
+                  {/* Ways to start something: one session, the same prompt to N models at once (the
+                      overview is fanout's front door, which is why it is offered here and not in the
+                      sidebar), or an organization's page. */}
+                  <OverviewActions onNewSession={() => setCreating(true)} onFanOut={() => setFanout({})} />
                   <HomeSessionsCard glance={sessionsGlance(list() ?? [], attention.data(), overseer.data()?.proactivity)} now={now()} onOpenList={openSessionList} />
                   <MeshCard />
                   <Show when={installed()}>{(list) => <ExtensionCards extensions={list()} />}</Show>

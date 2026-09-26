@@ -2,6 +2,9 @@
    Token values only. */
 
 .orgs-section { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); }
+/* A card of rows and forms stops growing at 880px, left-aligned, like the Agents page's lists: a
+   status chip or a Replay button 1,000px from the title it belongs to is hard to read. */
+.card.orgs-section { max-width: 880px; }
 .orgs-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .orgs-head > :first-child { flex: 1; min-width: 0; }
 .orgs-h2 { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
@@ -14,6 +17,13 @@
 .orgs-row > .icon { color: var(--color-ink-muted); flex: none; }
 .orgs-row .list-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .orgs-row a.list-title { color: var(--color-ink); }
+/* A title wraps rather than truncates: on a phone the chip and Replay leave it half the row. */
+.orgs-row .list-title,
+.orgs-row .list-meta:not(.orgs-mono) { white-space: normal; overflow-wrap: anywhere; }
+/* A project row is one link: no underline, the chevron says where it goes. */
+.orgs-project-row { color: inherit; text-decoration: none; }
+.orgs-project-list > li + li { border-top: var(--stroke-thin) solid var(--color-border); }
+.orgs-project-row .orgs-row-go { color: var(--color-ink-muted); }
 
 .orgs-form { display: flex; flex-direction: column; gap: var(--space-3); }
 .orgs-subform { padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
@@ -24,17 +34,56 @@
 .orgs-inline { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
 .orgs-inline .field { min-width: 10rem; }
 .orgs-grow { flex: 1; }
+/* Add Project: both fields share the row (the folder twice the name), and each takes the whole row
+   once they no longer fit side by side, so the name never sits alone at a stub width. */
+.orgs-project-form > .field { flex: 1 1 12rem; }
+.orgs-project-form > .field.orgs-grow { flex: 2 1 16rem; }
 
 .orgs-people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .orgs-person { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) 0; }
 .orgs-person + .orgs-person { border-top: 1px solid var(--color-border); }
-.orgs-person-main { display: flex; flex-direction: column; gap: 2px; }
-.orgs-person-name { font-weight: var(--fw-semibold); color: var(--color-ink); }
+/* A person's head: name and status chip, the role line under them, and the actions as one group
+   that wraps under the lot when the card is too narrow for both (a phone). */
+.orgs-person-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.orgs-person-main { flex: 1 1 14rem; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.orgs-person-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.orgs-person-name { font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
+.orgs-person-meta { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.orgs-person-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .orgs-facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); margin: 0; }
 .orgs-facts dt { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .orgs-facts dd { margin: 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
 
-.orgs-history > summary { cursor: pointer; min-height: var(--tap-min); display: flex; align-items: center; color: var(--color-ink-2); }
+/* A disclosure, so it says so: a chevron that turns when open (the flex summary drops the native
+   marker), on a 44px target. A person's History is a quiet caption under their facts; the
+   overseer panel's Activity, ideas and to-do lists are sub-heads (`-section`). */
+.orgs-history > summary {
+  cursor: pointer;
+  min-height: var(--tap-min);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  list-style: none;
+  font-weight: var(--fw-medium);
+  color: var(--color-ink-2);
+}
+.orgs-person .orgs-history > summary { font-size: var(--fs-caption); }
+.orgs-history-section > summary { font-weight: var(--fw-semibold); color: var(--color-ink); }
+/* A sub-head's contents keep the section's rhythm: an empty line and the form under it don't touch. */
+.orgs-history-section > :not(summary) + :not(summary) { margin-top: var(--space-2); }
+.orgs-history > summary::-webkit-details-marker { display: none; }
+.orgs-history > summary::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  flex: none;
+  background-color: currentColor;
+  -webkit-mask: url(/icons/chevron-right.svg) center / contain no-repeat;
+          mask: url(/icons/chevron-right.svg) center / contain no-repeat;
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.orgs-history[open] > summary::before { transform: rotate(90deg); }
+.orgs-history > summary:hover { color: var(--color-ink); }
 .orgs-history > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
 .orgs-history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .orgs-change { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) 0; }

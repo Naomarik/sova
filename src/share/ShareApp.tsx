@@ -263,7 +263,7 @@ export function ShareApp() {
             </Show>
             <div class="share-composer-foot">
               <span class="field-hint">
-                {draft().length} of {SHARE_TEXT_MAX} characters · Ctrl+Enter sends
+                {draft().length.toLocaleString("en-US")} of {SHARE_TEXT_MAX.toLocaleString("en-US")} characters · Ctrl+Enter sends
               </span>
               <button type="submit" class="button button-primary" aria-disabled={sending() || !draft().trim() ? "true" : undefined}>
                 {sending() ? "Sending" : "Send"}

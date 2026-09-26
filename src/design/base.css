@@ -1412,34 +1412,41 @@ html.is-resizing * {
 }
 
 
-/* ---- LANDING PAGE (#/). The main pane with no session open: the opening
-   (.empty — session and folder count, New Session) and, under it, every
-   /explain page this machine has as one card grid. The grid is shown only
-   when there is at least one; its own rules are in src/explain.css.
+/* ---- LANDING PAGE (#/). The main pane with no session open: the title,
+   the Start section (one action card per way to start something), the
+   Sessions card, then Mesh, Extensions and the Explained grid. Every part
+   is an .explain-section-width column under one eyebrow style; the action
+   grid's own rules are in src/home.css.
    .app-main is a fixed-height flex column with overflow hidden, so nothing
-   here scrolls unless .overview is the scroll region itself. --------------- */
+   here scrolls unless .overview is the scroll region itself. It is also the
+   `overview` query container, so the action grid asks the pane, not the
+   window. --------------------------------------------------------------- */
 
 .overview {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  container: overview / inline-size;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  /* No top padding: .empty brings its own space-8 crown. The bottom step keeps
-     the grid's last row off the viewport edge. */
-  padding: 0 var(--space-4) var(--space-6);
+  /* The bottom step keeps the grid's last row off the viewport edge. */
+  padding: var(--space-5) var(--space-4) var(--space-6);
 }
-.overview-head { flex: none; }
-/* Nothing explained yet — the opening is the whole page, so it centres in the
-   pane instead of hanging from the top. A closed <Show> leaves a comment node,
-   not an element, so :only-child still holds. */
-.overview-head:only-child {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+/* The title lines up with the sections under it: same cap, same left edge. */
+.overview-head {
+  flex: none;
+  width: 100%;
+  max-width: var(--page-max);
+  margin-inline: auto;
+}
+.overview-title {
+  margin: 0;
+  font-size: var(--fs-heading-m);
+  line-height: var(--lh-heading-m);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
 }
 /* Cards, not prose: the section takes the page width rather than the measure. */
 .explain-section {

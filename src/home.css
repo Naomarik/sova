@@ -46,3 +46,59 @@
 /* A phone's overview keeps the list's head above it (§app.shell/overview): the same row, on the
    surface it has in the list. */
 .overview-bar { background: var(--color-surface); }
+
+/* The Start section: one card per way to start something (§chat.transcript/landing-page). One
+   column in a narrow pane; three once the overview is wide enough that each keeps its line to two
+   rows — never two columns, which would leave the third card alone on its row. */
+.overview-actions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+@container overview (min-width: 640px) {
+  .overview-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* The whole card is the control (a button or a link): hover and a focus ring round the card, like
+   the extension and Explained cards below it. */
+.action-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  height: 100%;
+  min-height: var(--tap-min);
+  padding: var(--space-4);
+  font-family: var(--font-body);
+  text-align: left;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+}
+.action-card:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-2); }
+.action-card:active { background: var(--color-sunken); }
+.action-card:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-lg); }
+.action-card-head { display: flex; align-items: center; gap: var(--space-3); }
+/* The icon sits on a small sunken tile: the one mark that says "this starts something" without
+   spending the accent, which belongs to the primary action. */
+.action-card-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  background: var(--color-sunken);
+  color: var(--color-ink);
+}
+.action-card-title {
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+}
+.action-card-body { color: var(--color-ink-2); }

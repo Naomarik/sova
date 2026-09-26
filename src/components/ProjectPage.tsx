@@ -177,8 +177,10 @@ function SpecCard(props: CardProps & { onSpec(spec: DecisionsInfo["spec"]): void
             )}
           </Show>
         </Show>
-        {" · "}
-        <span class="orgs-mono">{s().specRoot}</span>
+      </p>
+      {/* The folder on a line of its own: glued to the sentence above with a "·", it read as part of it. */}
+      <p class="orgs-line orgs-mono project-muted" title="The spec folder">
+        {s().specRoot}
       </p>
       <p class="orgs-line project-muted">
         <Show when={run()} fallback="Never reconciled.">

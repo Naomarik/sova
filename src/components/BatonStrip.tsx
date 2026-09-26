@@ -74,7 +74,14 @@ export function BatonStrip(props: {
       {(i) => (
         <section class="baton-strip" aria-label="Hand-off session">
           <div class="baton-strip-main">
-            <span class="baton-strip-title">{i().session.publicTitle}</span>
+            {/* The session head right above already shows the title; the strip repeats it only
+                when the session was renamed, so the public title (what they see) stays in view. */}
+            <Show when={props.summary()?.title !== i().session.publicTitle}>
+              <span class="baton-strip-title">
+                <span class="visually-hidden">Public title: </span>
+                {i().session.publicTitle}
+              </span>
+            </Show>
             <span class="baton-strip-meta">
               {i().orgName} · {i().projectName} · {whereLine(i(), now())} · {i().session.budget.messagesUsed} of {i().session.budget.messagesMax} messages
             </span>

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { IdeaRecord } from "../../shared/protocol";
-import { actionLine, gapArea, itemSendInput, openIdeas, tokens, toolWords } from "./project-overseer-view";
+import { actionLine, gapArea, itemSendInput, lastRunTail, openIdeas, tokens, toolWords } from "./project-overseer-view";
 
 const idea = (id: string, status: IdeaRecord["status"], tags: string[] = []): IdeaRecord => ({
   id,
@@ -45,4 +45,14 @@ test("Send to Person… never takes the public title or question from the item; 
   assert.deepEqual(one, { ideaId: "§gap/automation-policy", to: "p_1", publicTitle: "Bank payments", question: "Who approves?" });
   const offer = itemSendInput({ todoId: "td_1" }, { to: ["p_1", "p_2"], publicTitle: "A question", question: "Who approves?" })!;
   assert.deepEqual(offer, { todoId: "td_1", to: ["p_1", "p_2"], publicTitle: "A question", question: "Who approves?" });
+});
+
+test("lastRunTail: the status line ends with one period, whatever the reason ends with", () => {
+  const line = (run: Parameters<typeof lastRunTail>[0]) => `Last looked on its own 2m ago${lastRunTail(run)}.`;
+  assert.equal(line({ reasons: [], outcome: "skipped", detail: "the session was closed." }), "Last looked on its own 2m ago, skipped: the session was closed.");
+  assert.equal(line({ reasons: [], outcome: "skipped", detail: "budget spent" }), "Last looked on its own 2m ago, skipped: budget spent.");
+  assert.equal(line({ reasons: [], outcome: "skipped" }), "Last looked on its own 2m ago, skipped.");
+  assert.equal(line({ reasons: ["a new decision.", "a conflict"], outcome: "started" }), "Last looked on its own 2m ago, after a new decision, a conflict.");
+  assert.equal(line({ reasons: [], outcome: "started" }), "Last looked on its own 2m ago.");
+  for (const detail of ["x.", "x..", "x. ", "x"]) assert.doesNotMatch(line({ reasons: [], outcome: "skipped", detail }), /\.\.$/);
 });

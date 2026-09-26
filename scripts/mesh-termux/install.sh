@@ -353,8 +353,10 @@ if ! pgrep -f "runsvdir $SVDIR" >/dev/null 2>&1; then
   [ -e "$PREFIX/var/run/service-daemon.pid" ] || note "file $PREFIX/var/run/service-daemon.pid"
   # the environment termux-services' profile.d/start-services.sh gives it (svlogger needs LOGDIR)
   LOGDIR="$PREFIX/var/log" service-daemon start >/dev/null 2>&1 || true
-  i=0; while [ $i -lt 20 ] && ! [ -p "$SVC/supervise/control" ]; do sleep 0.5; i=$((i+1)); done
 fi
+# runsvdir scans its dir every 5 s: a new service (also under a daemon that was already running, e.g. one an
+# uninstall --keep-ssh left for its sshd) needs up to that long to get its supervise/
+i=0; while [ $i -lt 30 ] && ! [ -p "$SVC/supervise/control" ]; do sleep 0.5; i=$((i+1)); done
 [ -p "$SVC/supervise/control" ] || die "runit did not pick up $SVC (is service-daemon running?)"
 rm -f "$SVC/down"
 

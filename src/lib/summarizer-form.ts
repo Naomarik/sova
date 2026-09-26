@@ -9,6 +9,7 @@
 // a skip that never happens.
 
 import type { DelegateOptions, SummarizerBackend, SummarizerChoice } from "../../shared/protocol";
+import { findListedModel } from "./delegate-form";
 import type { ModelPolicy } from "./model-policy";
 
 /** A choice while it's being made: the model is "" between a backend change and a pick. */
@@ -64,8 +65,10 @@ export function summarizerModelOptions(
     value: m.id,
     label: `${m.id}${summarizerDenial(policy, { backend: choice.backend, model: m.id }) ? " — turned off" : ""}`,
   }));
+  const models = listed(options, choice.backend);
   if (choice.model && !out.some((o) => o.value === choice.model))
-    out.unshift({ value: choice.model, label: `${choice.model} — ${unverified(options, choice) ? "not verified" : "not offered"}` });
+    if (models && findListedModel(models, choice.backend, choice.model)) out.unshift({ value: choice.model, label: choice.model });
+    else out.unshift({ value: choice.model, label: `${choice.model} — ${unverified(options, choice) ? "not verified" : "not offered"}` });
   return out;
 }
 
@@ -85,7 +88,7 @@ export function summarizerIssue(
   if (denied) return { tone: "warn", text: `${denied}, so summaries skip it.` };
   if (!options) return null; // still asking
   const models = listed(options, choice.backend);
-  if (models?.some((m) => m.id === choice.model)) return null;
+  if (models && findListedModel(models, choice.backend, choice.model)) return null;
   if (models === null) return { tone: "muted", text: `Not verified: ${BACKEND_LABELS[choice.backend]} couldn't list its models.` };
   if (unverified(options, choice))
     return {

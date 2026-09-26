@@ -72,3 +72,15 @@ test("a blank pick asks for a model; a fallback equal to the primary is refused"
   const primary = { backend: "claude-code" as const, model: "haiku" };
   assert.equal(summarizerIssue(OPTIONS, null, { ...primary }, primary)?.tone, "error");
 });
+
+test("a Claude Code <alias>[1m] counts as listed when the CLI lists <alias>", () => {
+  const labels = (backend: "pi" | "claude-code", model: string) =>
+    summarizerModelOptions(OPTIONS, EMPTY_POLICY, { backend, model }).map((o) => o.label);
+  assert.deepEqual(labels("claude-code", "haiku[1m]"), ["haiku[1m]", "haiku"]);
+  assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "claude-code", model: "haiku[1m]" }, null), null);
+  // An unlisted base is unchanged: not verified.
+  assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "claude-code", model: "opus[1m]" }, null)?.tone, "muted");
+  // pi is unaffected.
+  assert.equal(labels("pi", "ollama-cloud/deepseek-v4.1-flash[1m]")[0], "ollama-cloud/deepseek-v4.1-flash[1m] — not offered");
+  assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash[1m]" }, null)?.tone, "error");
+});

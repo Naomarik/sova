@@ -82,11 +82,22 @@ export function unlistedClaudeAlias(choice: DraftChoice): boolean {
   return choice.backend === "claude-code" && model !== "" && model.trim() === model && !/[\s\0]/.test(model) && !model.startsWith("-") && !model.includes("/");
 }
 
+/**
+ * The listed entry a pick stands for: its own id, or, for a Claude Code `<alias>[1m]`, the listed
+ * `<alias>` — the CLI's list names the base alias but never its 1M-context form, which it accepts.
+ */
+export function findListedModel<M extends { id: string }>(models: readonly M[], backend: string, model: string): M | undefined {
+  const own = models.find((m) => m.id === model);
+  if (own || backend !== "claude-code" || !model.endsWith("[1m]")) return own;
+  const base = model.slice(0, -"[1m]".length);
+  return base ? models.find((m) => m.id === base) : undefined;
+}
+
 /** The efforts this model takes, or null when discovery can't say. */
 export function modelEfforts(options: DelegateOptions | undefined, backend: DelegateBackendId, model: string): string[] | null {
   const models = backendModels(options, backend);
   if (models === null) return null;
-  return models.find((m) => m.id === model)?.efforts ?? null;
+  return findListedModel(models, backend, model)?.efforts ?? null;
 }
 
 export interface SelectOption {
@@ -108,7 +119,8 @@ export function modelSelectOptions(options: DelegateOptions | undefined, choice:
     label: `${m.id}${m.denied ? " — off for subagents" : ""}`,
   }));
   if (choice.model && !listed.some((o) => o.value === choice.model))
-    listed.unshift({ value: choice.model, label: `${choice.model} — ${models === null || sessionScoped(options, choice) || unlistedClaudeAlias(choice) ? "not verified" : "not offered"}` });
+    if (models && findListedModel(models, choice.backend, choice.model)) listed.unshift({ value: choice.model, label: choice.model });
+    else listed.unshift({ value: choice.model, label: `${choice.model} — ${models === null || sessionScoped(options, choice) || unlistedClaudeAlias(choice) ? "not verified" : "not offered"}` });
   return listed;
 }
 
@@ -149,7 +161,7 @@ export function slotIssue(
   if (!backend || backend.models === null)
     // The why is the banner's (one per backend); the row only says what it means for this pick.
     return { tone: "muted", text: `Not verified: ${label} couldn't list its models.` };
-  const model = backend.models.find((m) => m.id === choice.model);
+  const model = findListedModel(backend.models, choice.backend, choice.model);
   if (!model && sessionScoped(options, choice))
     return { tone: "muted", text: `Not verified: ${choice.model.slice(0, choice.model.indexOf("/"))} models exist only in sessions started with that provider on.` };
   if (!model && unlistedClaudeAlias(choice))

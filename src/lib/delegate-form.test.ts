@@ -135,3 +135,25 @@ test("the form saves only when complete, and knows when it has changed", () => {
   assert.deepEqual(draftConflicts(draft), [], "a blank fallback is incomplete, not a conflict");
   assert.ok(!sameSettings(cloneSettings(defaults), { ...defaults, profiles: { ...defaults.profiles, planning: { ...defaults.profiles.planning, fallback: null } } }));
 });
+
+test("a Claude Code <alias>[1m] counts as listed when the CLI lists <alias>", () => {
+  const listsBase: DelegateOptions = {
+    backends: [
+      { id: "pi", label: "pi", models: [{ id: "zai/glm-5.3", name: "zai/glm-5.3", efforts: ["low", "high"] }] },
+      { id: "claude-code", label: "Claude Code", models: [{ id: "opus", name: "Opus", efforts: ["low", "high"] }] },
+    ],
+  };
+  const pick = claude("opus[1m]", "high");
+  assert.equal(slotIssue(info, listsBase, pick, null, "primary"), null);
+  assert.deepEqual(modelSelectOptions(listsBase, pick)[0], { value: "opus[1m]", label: "opus[1m]" });
+  assert.equal(withModel(claude("opus", "high"), "opus[1m]", listsBase).effort, "high");
+  // The base's efforts still apply.
+  assert.equal(slotIssue(info, listsBase, claude("opus[1m]", "max"), null, "primary")?.tone, "error");
+  // An unlisted base reads as before: not verified.
+  assert.equal(slotIssue(info, listsBase, claude("sonnet[1m]", "high"), null, "primary")?.tone, "muted");
+  assert.equal(modelSelectOptions(listsBase, claude("sonnet[1m]", "high"))[0]!.label, "sonnet[1m] — not verified");
+  // Only Claude Code: a pi ref ending in [1m] is not its base.
+  const pi = { backend: "pi" as const, model: "zai/glm-5.3[1m]", effort: "low" };
+  assert.equal(slotIssue(info, listsBase, pi, null, "primary")?.tone, "error");
+  assert.equal(modelSelectOptions(listsBase, pi)[0]!.label, "zai/glm-5.3[1m] — not offered");
+});

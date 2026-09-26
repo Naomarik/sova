@@ -107,7 +107,7 @@ export function SpecSettingsSection() {
         <fieldset class="settings-delegate-profile">
           <legend class="settings-delegate-legend">{loaded()!.writer.label}</legend>
           <p class="field-hint settings-delegate-desc">{loaded()!.writer.description}. The chat checks its work and promotes it.</p>
-          <div role="radiogroup" aria-label="Who writes the spec">
+          <div class="settings-spec-writer" role="radiogroup" aria-label="Who writes the spec">
             <label class="toggle">
               <input type="radio" name="spec-writer" checked={writer() === null} disabled={saving()} onChange={() => setWriter(writerFor(false))} />
               <span class="toggle-box" aria-hidden="true" />

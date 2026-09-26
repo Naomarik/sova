@@ -3099,6 +3099,28 @@
       "code": [
         "scripts/mesh-vps/deploy.sh"
       ]
+    },
+    "§mesh.phone/claude-store": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§mesh.sync/logins"
+      ],
+      "code": [
+        "scripts/mesh-termux/install.sh",
+        "scripts/mesh-termux/uninstall.sh",
+        "scripts/mesh-termux/phone-test.sh"
+      ]
+    },
+    "§mesh/phone": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/mesh-termux/install.sh"
+      ],
+      "requires": []
     }
   },
   "boundary": {

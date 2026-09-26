@@ -48,6 +48,7 @@ test("every place the baton can be has its phrase", () => {
     "Ana is answering (offered to Tony, Ana, and Bob) — theirs for 1 more minute of quiet",
   );
   assert.equal(whereLine(info({ holder: "operator", state: "needs-you" }), NOW), "with you — you can write now");
+  assert.equal(whereLine(info({ holder: "operator", state: "needs-you", budget: { messagesMax: 5, messagesUsed: 5 } }), NOW), "with you — extend the limit to write");
   assert.equal(whereLine(info({ holder: "p_1" }), NOW), "with Tony — you can write once you take it back");
 });
 

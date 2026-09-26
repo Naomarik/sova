@@ -653,7 +653,8 @@ export function linkAccess(token: string, now = Date.now()): LinkAccess {
     if (offer.state === "held" && offer.holder !== link.personId && !lapsed) reason = "taken";
   } else if (link.offerId && !row.participants.includes(link.personId)) reason = "withdrawn";
   else if (!current || current.n !== link.n || row.holder !== link.personId) reason = row.holder === OPERATOR ? "needs-operator" : "moved-on";
-  if (!reason && budgetSpent(row)) reason = "budget";
+  // At the limit the page says so, also once the baton has gone to the operator because of it.
+  if (budgetSpent(row) && (!reason || reason === "needs-operator" || reason === "moved-on")) reason = "budget";
   return { ok: true, link, row, dir: hit.dir, canWrite: !reason, ...(reason ? { reason } : {}) };
 }
 

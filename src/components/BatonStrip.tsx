@@ -274,8 +274,8 @@ function ExtendRow(props: { info: BatonInfo; act(fn: () => Promise<unknown>, don
   return (
     <div class="baton-strip-row baton-strip-card" role="group" aria-label="Message limit reached">
       <span class="baton-strip-card-main">
-        All {props.info.session.budget.messagesMax} messages are used.{" "}
-        {room() > 0 ? "Extend the limit to go on, then hand it back." : `That is the most a conversation can have (${MESSAGES_CAP}).`}
+        The message limit is reached ({props.info.session.budget.messagesUsed} of {props.info.session.budget.messagesMax}).{" "}
+        {room() > 0 ? "Extend it to go on." : `That is the most a conversation can have (${MESSAGES_CAP.toLocaleString("en-US")}).`}
       </span>
       <Show when={room() > 0}>
         <label class="baton-strip-meta">

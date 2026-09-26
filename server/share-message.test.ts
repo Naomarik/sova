@@ -134,6 +134,8 @@ describe("the share message route", () => {
     const row = rowOf(c.sessionId);
     assert.equal(row.state, "needs-you");
     assert.equal(row.budget.messagesUsed, 1, "the refused message is not counted");
+    const later = await post(c.token!, "three");
+    assert.equal(((await later.json()) as { code: string }).code, "budget", "the page keeps saying why");
     assert.equal(baton.batonSummaryField(c.path)!.needsYou?.question, LIMIT_QUESTION);
     const handoffs = readFileSync(c.path, "utf8")
       .trim()

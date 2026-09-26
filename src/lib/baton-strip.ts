@@ -32,7 +32,7 @@ export function whereLine(i: Pick<BatonInfo, "offer" | "session" | "names">, now
     }
     return `offered to ${invited} — nobody has answered yet`;
   }
-  if (s.holder === OPERATOR) return "with you — you can write now";
+  if (s.holder === OPERATOR) return s.budget && s.budget.messagesUsed >= s.budget.messagesMax ? "with you — extend the limit to write" : "with you — you can write now";
   if (s.holder) return `with ${i.names[s.holder] ?? "someone"} — you can write once you take it back`;
   return "with nobody";
 }

@@ -870,6 +870,7 @@ export function registerSubagents(
 		if (shuttingDown || !agents.includes(a)) return;
 		registry.finish(a, hosting.lost(a.id) ? "lost" : undefined);
 		successionCheck(a);
+		retireCheck(a);
 		if (a.isFinished()) forgetMemberTimers(a.id);
 		if (a.isFinished() && !a.processAlive && !isRestored(a)) finished.add(a);
 		pruneFinished();
@@ -945,6 +946,7 @@ export function registerSubagents(
 		// Idle again: status, outcome and a usage snapshot in the durable record.
 		registry.settled(a);
 		successionCheck(a);
+		retireCheck(a);
 		pruneFinished();
 		scheduleRefresh();
 		if (shuttingDown || !activeCtx) return;
@@ -1640,7 +1642,8 @@ export function registerSubagents(
 	};
 
 	// Handovers: a successor started by team_succeed; the old member is retired on team_ready or at the timeout.
-	interface Handover { teamId: string; oldId: string; oldRole: string; newId: string; newRole: string; timer?: ReturnType<typeof setTimeout> }
+	/** `ready`: the successor called team_ready while the old member was mid-turn; it is retired when that turn ends (N10). */
+	interface Handover { teamId: string; oldId: string; oldRole: string; newId: string; newRole: string; ready?: boolean; timer?: ReturnType<typeof setTimeout> }
 	const handovers = new Map<string, Handover>();
 	/**
 	 * A worker's successor waits for its note (N3): team_succeed tells the old member to write it, and
@@ -1664,6 +1667,11 @@ export function registerSubagents(
 			autoEject(h.teamId, h.oldId);
 			scheduleRefresh();
 		}
+	};
+	/** The old member of a confirmed handover settled or ended: retire it now (N10). */
+	const retireCheck = (a: Worker) => {
+		if (!a.isSettled()) return;
+		for (const h of [...handovers.values()]) if (h.oldId === a.id && h.ready) retire(h, "ready");
 	};
 	/** Why a member cannot be ejected by hand while a handover involving it is unfinished, if one is. */
 	const handoverRefusal = (workerId: string): string | undefined => {
@@ -2008,6 +2016,13 @@ export function registerSubagents(
 				case "ready": {
 					const h = handovers.get(me.workerId);
 					if (!h) throw new Error("No handover is pending for you; team_ready is only for a successor taking over.");
+					// N10: never cut the old member off mid-reply; a turn in progress ends first (the retire timeout still applies).
+					const old = agents.find((a) => a.id === h.oldId);
+					if (old && !old.isSettled()) {
+						h.ready = true;
+						reply({ ok: true, text: `${h.oldRole} (${h.oldId}) is still in a turn (it may be answering you): it is retired as soon as that turn ends, or at the retire timeout. You now carry its work; its answer, if any, still reaches you.` });
+						return;
+					}
 					retire(h, "ready");
 					reply({ ok: true, text: `${h.oldRole} (${h.oldId}) is being retired; you now carry its work.` });
 					return;

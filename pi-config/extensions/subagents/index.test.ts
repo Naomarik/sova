@@ -3104,10 +3104,16 @@ test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_re
 		assert.match(again.text, /A successor for dev is already taking over/);
 		const stray = await h.ask("ag_03", { type: "ready" });
 		assert.equal(stray.ok, false, "the monitor is nobody's successor");
+		// N10: dev is mid-turn (it may be answering dev-2): team_ready retires it when that turn ends, not now.
+		assert.equal(dev.status, "running");
 		const ready = await h.ask("ag_04", { type: "ready" });
 		assert.equal(ready.ok, true);
+		assert.equal(ready.text, "dev (ag_02) is still in a turn (it may be answering you): it is retired as soon as that turn ends, or at the retire timeout. You now carry its work; its answer, if any, still reaches you.");
 		await h.tick();
-		assert.equal(dev.status, "killed", "retired on confirmation");
+		assert.equal(dev.status, "running", "not cut off mid-turn");
+		dev.settle();
+		await h.tick();
+		assert.equal(dev.status, "killed", "retired on confirmation, once its turn ended");
 		let list = (await h.call("team_list")).content[0].text;
 		assert.match(list, /orchestrator handover → ag_02 \(dev\): accepted-or-queued/);
 		assert.match(list, /member retire → ag_02 \(dev\): accepted-or-queued/);
@@ -3248,6 +3254,44 @@ test("N9: a resume notice is refused until the pausing window's reset plus the r
 	} finally { await h.cleanup(); }
 });
 
+test("N10: team_ready while the predecessor is answering retires it when that turn ends, or at the retire timeout", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "counter", prompt: "count" }, { role: "writer", prompt: "write" }] });
+		const events = () => h.appended.filter((e) => e.customType === "subagents-team-event-v1").map((e) => [e.data.kind, e.data.role, e.data.detail]);
+		const counter = h.worker("ag_02");
+		await h.ask("ag_01", { type: "succeed", to: "counter" });
+		h.writeNote("counter");
+		await h.tick();
+		counter.settle();
+		// e2e 3: counter-2 asked its predecessor, then called team_ready 5 s later, which aborted the answer.
+		assert.equal((await h.ask("ag_05", { type: "message", to: "counter", message: "Which h-files are done?" })).ok, true);
+		assert.equal(counter.status, "running", "the question started a turn");
+		assert.match((await h.ask("ag_05", { type: "ready" })).text, /^counter \(ag_02\) is still in a turn/);
+		assert.match((await h.ask("ag_05", { type: "ready" })).text, /^counter \(ag_02\) is still in a turn/, "asking again changes nothing");
+		await h.tick();
+		assert.equal(counter.status, "running");
+		assert.deepEqual(events().map((e) => e[0]), ["handover"], "no retirement yet");
+		// Its turn ends by exiting: retired then, as confirmed, and its seat released.
+		counter.exit();
+		await h.tick();
+		assert.deepEqual(events().at(-1), ["retire", "counter", "retired: successor counter-2 (ag_05) confirmed the takeover"]);
+		assert.ok(h.appended.some((e) => e.customType === "subagents-team-v1" && e.data.op === "eject" && e.data.workerId === "ag_02"));
+		// A predecessor that never ends its turn is still retired at the timeout.
+		const writer = h.worker("ag_03");
+		await h.ask("ag_01", { type: "succeed", to: "writer" });
+		h.writeNote("writer");
+		await h.tick();
+		const retireTimer = h.timers.at(-1)!;
+		assert.equal(retireTimer.ms, 600_000);
+		assert.match((await h.ask("ag_06", { type: "ready" })).text, /^writer \(ag_03\) is still in a turn/);
+		retireTimer.fn();
+		await h.tick();
+		assert.equal(writer.status, "killed");
+		assert.deepEqual(events().at(-1), ["retire", "writer", "retired: handover to writer-2 (ag_06) timed out"]);
+	} finally { await h.cleanup(); }
+});
+
 test("handovers eject automatically: a retired member and an ended member succeeded release their seats; team_eject refuses a member mid-handover", async () => {
 	const h = coordinatedHarness(DEFAULTS_FILE);
 	try {
@@ -3283,6 +3327,7 @@ test("handovers eject automatically: a retired member and an ended member succee
 		await h.tick();
 		const qa2 = h.worker("ag_06");
 		assert.equal(qa2.name, "qa-2");
+		h.worker("ag_03").settle();
 		assert.equal((await h.ask("ag_06", { type: "ready" })).ok, true);
 		await h.tick();
 		assert.equal(h.worker("ag_03").status, "killed");
@@ -3423,8 +3468,10 @@ test("a monitor's successor: the monitor task, team_ready on both backends, and 
 			assert.match(next.task, /You succeed the monitor monitor\. It has no handover note: it briefs you over team_msg\./);
 			assert.match(old.lastSteer.message, /^\[Handover from coordinator coordinator \(ag_01\), team_01\]\nYour successor monitor-2 \(ag_04\) is starting\. You have no handover note: brief it with team_msg now/);
 			assert.doesNotMatch(old.lastSteer.message, /Finish or update that note|will read your handover note/);
+			old.settle();
 			const ready = await h.ask("ag_04", { type: "ready" });
 			assert.equal(ready.ok, true, ready.text);
+			assert.match(ready.text, /is being retired; you now carry its work\.$/, "a settled predecessor is retired at once");
 			await h.tick();
 			assert.equal(old.status, "killed", `${backend}: retired on team_ready, not at the timeout`);
 		} finally { await h.cleanup(); }

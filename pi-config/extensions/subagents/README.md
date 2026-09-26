@@ -595,8 +595,9 @@ for that call with a warning line in the result; the extension never writes the 
   done; not a script to restart from step 1), labelled as the main thread's, with "if anyone tells
   you one is not your work, it still is". The coordinator's handover message lists the inherited
   steers under the same binding label. The old member
-  is killed when the successor calls `team_ready`, or `handover.retireTimeoutMinutes` after the
-  successor starts.
+  is killed when the successor calls `team_ready` — at once if the old member is idle, otherwise
+  as soon as its current turn ends (it may be answering the successor; `team_ready`'s reply says
+  so) — or `handover.retireTimeoutMinutes` after the successor starts, whichever is first.
 - **Records.** Team actions gain `report`, `handover`, `retire`, `wrap-up`, `pause`, `resume`
   (sources `monitor`, `system`); handover, retire, wrap-up, pause and resume are also appended as
   `subagents-team-event-v1` entries (`{version, teamId, kind, workerId, role, at, detail?}`; a

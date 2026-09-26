@@ -434,6 +434,11 @@ html, body, #root { height: 100%; }
 /* Label and hash · age on one unbroken line; the subject below, full width, wrapped whole. */
 .git-commit-meta { flex: none; margin: 0; white-space: nowrap; }
 .git-commit-subject { margin: var(--space-1) 0 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
+/* Loading: lines at the read facts' rhythm, so the section is about as tall as it will be. */
+.git-skeleton { display: flex; flex-direction: column; padding-top: var(--space-1); }
+.git-skeleton > .skeleton-line { margin-bottom: 14px; }
+.git-skeleton > .skeleton-line:first-child { width: 60%; }
+.git-skeleton > .skeleton-line:last-child { width: 30%; margin-bottom: 0; }
 
 /* §chat.worktrees/pane: a tracked worktree's status and what runs there, wrapping as one group. */
 .worktree-row { align-items: flex-start; }

@@ -236,11 +236,11 @@ export function SessionView(props: {
   /**
    * The pane name's `title`: the full string, then the cwd, then the member's session-lifetime
    * spend when the server reports one. "Which answer won" includes cost, and the spend already
-   * lives in the member's Session-info dialog — this puts it one hover away from the comparison
-   * itself instead of a dialog deep in each pane. The cwd is the raw path (no tilde folding): a
+   * lives in the member's Usage tab — this puts it one hover away from the comparison
+   * itself instead of a tab deep in each pane. The cwd is the raw path (no tilde folding): a
    * tooltip is where the long form earns its place.
    *
-   * The cost is `SessionInsight.usage.total` — the SAME field the Session-info dialog's spend
+   * The cost is `SessionInsight.usage.total` — the SAME field the Usage tab's spend
    * table tallies, not a second computation that could drift — and `total` rather than `main`
    * on purpose: a member that spawned workers to answer spent them as part of its answer, and a
    * comparison that hid subagent cost would tilt "which answer won" toward exactly the members
@@ -479,7 +479,6 @@ export function SessionView(props: {
                       onRefused={onRefused}
                       onStarted={props.onRefresh}
                       onArchiveChanged={props.onArchiveChanged}
-                      onGroupsChanged={props.onRefresh}
                       onSettled={() => {
                         props.onRefresh();
                         reloadInsight();

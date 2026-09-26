@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mergeNumbers, worktreeChips, worktreesSummary, worktreeStatus } from "./worktrees";
+import { mergeNumbers, NO_WORKTREES, worktreeChips, worktreesSummary, worktreeStatus } from "./worktrees";
 
 const merge = { target: "master", sha: "abc1234def", how: "tool" as const, at: 1 };
 
@@ -23,7 +23,10 @@ test("chips: only what is true, in reading order", () => {
 
 test("summary and merge numbers", () => {
   assert.equal(worktreesSummary([{ status: "active" }, { status: "dropped" }, { status: "active" }]), "2 active · 1 dropped");
-  assert.equal(worktreesSummary([]), "");
+  assert.equal(worktreesSummary([]), NO_WORKTREES);
+  assert.equal(NO_WORKTREES, "This session tracks no worktrees.");
+  // Every status a row can have is counted, so no non-empty set can read as the empty sentence.
+  for (const status of ["active", "merged", "dropped"] as const) assert.notEqual(worktreesSummary([{ status }]), NO_WORKTREES);
   assert.equal(mergeNumbers({ commits: 5, added: 120, removed: 30, fastForward: true }), "5 commits · +120 −30 · fast-forward");
   assert.equal(mergeNumbers({ commits: 1, added: 0, removed: 2, fastForward: false }), "1 commit · +0 −2 · merge commit");
 });

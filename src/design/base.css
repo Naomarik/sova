@@ -4421,6 +4421,19 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   font-family: var(--font-mono);
   white-space: nowrap;
 }
+/* It opens the Usage tab: a.chip's hover, the focus ring, and a 44px-tall target around a
+   chip-sized mark. */
+button.subagents-usage {
+  position: relative;
+  cursor: pointer;
+}
+button.subagents-usage::after {
+  content: "";
+  position: absolute;
+  inset: calc((var(--tap-min) - 100%) / -2) 0;
+}
+button.subagents-usage:hover { color: var(--color-ink); border-color: var(--color-border-strong); }
+button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .subagents-close { margin-left: auto; }
 @media (max-width: 520px) {
   .subagents-head > .subagents-usage { display: none; }
@@ -4489,11 +4502,42 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-4);
-  /* The Session tab is the Session info modal's body: same ground and ink as .modal-body. */
+  /* Every tab's body reads like a sheet's: the same ground and ink as .modal-body. */
   color: var(--color-ink-2);
   background: var(--color-surface);
 }
 .session-panel-scroll:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+
+/* Usage tab: under 400px of pane the model × origin table stops scrolling sideways and stacks,
+   one block per row — Model and Where on its first line, each count under it with its column's
+   name (the cell's data-label). The header row goes; the footer's Σ stacks the same way. */
+@container subagents (max-width: 399px) {
+  .usage-table,
+  .usage-table tbody,
+  .usage-table tfoot { display: block; }
+  .usage-table thead { display: none; }
+  .usage-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: var(--stroke-thin) solid var(--color-border);
+  }
+  .usage-table tfoot tr { border-bottom: 0; background: var(--color-sunken); }
+  .md .usage-table th,
+  .md .usage-table td { display: block; padding: 0; border: 0; background: none; }
+  .usage-table tfoot th { grid-column: 1 / -1; }
+  .md .usage-table-where { color: var(--color-ink-muted); }
+  /* The label pushes left; the figure and a snapshot's `*` stay together on the right. */
+  .md .usage-table td[data-label] { display: flex; justify-content: flex-end; }
+  .usage-table td[data-label]::before {
+    content: attr(data-label);
+    margin-right: auto;
+    padding-right: var(--space-2);
+    font-family: var(--font-body);
+    color: var(--color-ink-muted);
+  }
+}
 
 /* Explain tab: text rows on one card, the whole row the link (the gallery owns thumbnails).
    The summary is a sentence, so caption type, wrapped and clamped to 3 lines — .list-summary is

@@ -103,7 +103,6 @@ import { Composer, type ComposerReason } from "./Composer";
 import { openCreated } from "../lib/fork-stage";
 import { FlyoutSession, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
-import { SessionInfoDialog } from "./SessionInfoDialog";
 import { SessionSetupCard } from "./SessionSetup";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
@@ -151,7 +150,7 @@ const UI_DIALOG_METHODS = ["select", "confirm", "input", "editor"];
  */
 export function ChatView(props: {
   path: string;
-  /** The session-list row for this chat, live from the sidebar's poll: feeds the info modal. */
+  /** The session-list row for this chat, live from the sidebar's poll. */
   summary?: () => SessionSummary | undefined;
   cwdLabel: string;
   author: string;
@@ -176,13 +175,10 @@ export function ChatView(props: {
   /** The pane's active tab while it is open for this session ("timeline", "agents", …), else null:
       each status-row trigger is aria-expanded only for its own tab. */
   paneTab?: string | null;
-  /** The session pane re-reads this after its Archive/Unarchive action succeeds; the info modal
-      needs the same, or the sidebar row stays stale until its next poll. An archived session is
-      off the list for good, so the path and the new state go with it. */
+  /** The session list re-reads this after the open-failure banner's Archive succeeds, or the
+      sidebar row stays stale until its next poll. An archived session is off the
+      list for good, so the path and the new state go with it. */
   onArchiveChanged?(path: string, archived: boolean): void;
-  /** The same, after a group change in the info modal (Move into group): the sidebar's Groups
-      region and the row's own groupId come from the session list. */
-  onGroupsChanged?(): void;
   /** A bare "/new" in the composer; resolves to the new session's folder label, or null. */
   onNewSession?(): Promise<string | null>;
   /** Opens the session pane's Timeline tab: a bare "/timeline" unfiltered; a bare "/tree" and
@@ -263,8 +259,6 @@ export function ChatView(props: {
   /** Level asked for, until the echo. A refusal ends it and leaves the level as it was. */
   const [pendingThinking, setPendingThinking] = createSignal<string | null>(null);
   const [thinkingError, setThinkingError] = createSignal<{ target: string; from: string | null; body: string } | null>(null);
-  /** The per-session info modal, opened from the composer flyout. */
-  const [showInfo, setShowInfo] = createSignal(false);
   const [showPlaybooks, setShowPlaybooks] = createSignal(false);
 
   /**
@@ -1573,7 +1567,6 @@ export function ChatView(props: {
         thinking={thinkingControl}
         mode={props.overseer || props.summary?.()?.baton || props.summary?.()?.projectOverseer ? null : modeControl}
         sandbox={sandboxControl}
-        onShowInfo={() => setShowInfo(true)}
         onPlaybooks={() => setShowPlaybooks(true)}
         onFanOut={fanOut()}
         undo={undoControl}
@@ -1582,23 +1575,6 @@ export function ChatView(props: {
         restored={restored()}
       />
       </FlyoutSession.Provider>
-      <Show when={showInfo()}>
-        <SessionInfoDialog
-          path={props.path}
-          summary={props.summary}
-          onArchiveChanged={props.onArchiveChanged}
-          onGroupsChanged={props.onGroupsChanged}
-          items={() => items() ?? []}
-          context={() => {
-            const state = sessionContext()[props.path];
-            return state && state !== "compacted" ? state : null;
-          }}
-          onClose={() => {
-            setShowInfo(false);
-            queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());
-          }}
-        />
-      </Show>
       <Show when={showPlaybooks()}>
         <PlaybooksDialog
           path={props.path}

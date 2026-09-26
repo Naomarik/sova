@@ -138,7 +138,7 @@ interface Row {
   name: string;
 }
 
-/** Popover ids must be unique: the session pane and the info modal can show this control at once. */
+/** Popover ids must be unique: the session pane shows two of this control at once (Move and Beside). */
 let seq = 0;
 
 /**

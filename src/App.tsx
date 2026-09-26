@@ -562,7 +562,7 @@ export function App() {
   const openPaths = createMemo<string[]>(() => {
     const p = route();
     if (p) return [p];
-    // The Overseer's own chat is a session on screen too: its Timeline and Session info pane work.
+    // The Overseer's own chat is a session on screen too: its Timeline and Session detail pane work.
     const o = overseerRoute();
     if (o) return !o.historyId && overseer.data() ? [overseer.data()!.path] : [];
     return groupRoute() ? groupMembers().map((s) => s.path) : [];
@@ -667,7 +667,7 @@ export function App() {
   };
 
   /**
-   * An Archive/Unarchive landed (the chat's own gesture, the pane's, the info modal's). An archived
+   * An Archive/Unarchive landed (the chat's own gesture, the pane's). An archived
    * session leaves the server's list — a message-less one is deleted outright — so the row this tab
    * froze at creation has to go with it, or the sidebar keeps a row for a session that is gone.
    * Off the dead session first: the route change unmounts its view before the refetched list can

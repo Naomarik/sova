@@ -130,8 +130,6 @@ export function Composer(props: {
   thinking?: ThinkingControl | null;
   /** Chat sessions only: this chat's mode switch, at the right end of the foot. */
   mode?: ModeControl | null;
-  /** Opens this session's info modal from the flyout. */
-  onShowInfo?: () => void;
   /** Chat sessions only: opens the Playbooks dialog (the flyout's Playbooks row). */
   onPlaybooks?: () => void;
   /** "Fan Out…" in the flyout, for a chat session that can be forked. */
@@ -888,7 +886,6 @@ export function Composer(props: {
             onCommands={toggleCommands}
             model={props.model}
             thinking={props.thinking}
-            onShowInfo={props.onShowInfo}
             onPlaybooks={props.onPlaybooks}
             onFanOut={props.onFanOut}
             undo={props.undo}

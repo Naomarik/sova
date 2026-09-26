@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ModelSpend, SessionUsage, TranscriptItem } from "../../shared/protocol";
-import { absoluteTime, anyCost, firstLine, originLabel, spendRows, timelineEntries } from "./spend";
+import { absoluteTime, anyCost, firstLine, originLabel, spendRows, spentAnything, timelineEntries } from "./spend";
 
 const spend = (model: string, origin: ModelSpend["origin"], input: number, output: number, cost?: number): ModelSpend => ({
   model,
@@ -64,6 +64,14 @@ test("spendRows keeps two equal rows in a stable order and never mutates its inp
 
 test("spendRows survives an older server with no usage at all", () => {
   assert.deepEqual(spendRows(undefined), []);
+});
+
+test("spentAnything: a counted token, a row, or an unknown worker — never an empty or absent usage", () => {
+  assert.equal(spentAnything(undefined), false);
+  assert.equal(spentAnything(usage([])), false);
+  assert.equal(spentAnything({ ...usage([]), total: { input: 0, output: 0, cacheRead: 12, cacheWrite: 0 } }), true);
+  assert.equal(spentAnything(usage([spend("a", "main", 0, 0)])), true);
+  assert.equal(spentAnything({ ...usage([]), unavailable: ["ag_04"] }), true);
 });
 
 test("anyCost asks whether a Cost column would say anything", () => {

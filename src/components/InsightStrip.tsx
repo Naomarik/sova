@@ -146,55 +146,57 @@ export function InsightStrip(props: {
           </Show>
         </summary>
         <div class="outline-body">
-          {/* Beside the gallery button and laid out by the same class: one ghost button rule for
-              the two openers this body carries. */}
-          <Show when={props.onOpenTimeline}>
-            <button type="button" class="button button-sm button-ghost outline-explained-open" onClick={() => props.onOpenTimeline?.()}>
-              <Icon name="clock" small />
-              Open Timeline
-            </button>
-          </Show>
-          <Show when={items().length > 0}>
-            <button
-              type="button"
-              class="button button-sm button-ghost outline-explained-open"
-              aria-haspopup="dialog"
-              onClick={() => setGalleryOpen(true)}
-            >
-              <Icon name="external" small />
-              Open {items().length} {items().length === 1 ? "Explanation" : "Explanations"}
-            </button>
-            <Show when={latest()}>
-              {(l) => (
-                <p class="outline-state">
-                  Latest · {l().topic}
-                  <Show when={l().createdAt}>{(c) => <> · {relativeTime(new Date(c()).toISOString(), props.now)}</>}</Show>
-                </p>
+          <div class="outline-column">
+            {/* Beside the gallery button and laid out by the same class: one ghost button rule for
+                the two openers this body carries. */}
+            <Show when={props.onOpenTimeline}>
+              <button type="button" class="button button-sm button-ghost outline-explained-open" onClick={() => props.onOpenTimeline?.()}>
+                <Icon name="clock" small />
+                Open Timeline
+              </button>
+            </Show>
+            <Show when={items().length > 0}>
+              <button
+                type="button"
+                class="button button-sm button-ghost outline-explained-open"
+                aria-haspopup="dialog"
+                onClick={() => setGalleryOpen(true)}
+              >
+                <Icon name="external" small />
+                Open {items().length} {items().length === 1 ? "Explanation" : "Explanations"}
+              </button>
+              <Show when={latest()}>
+                {(l) => (
+                  <p class="outline-state">
+                    Latest · {l().topic}
+                    <Show when={l().createdAt}>{(c) => <> · {relativeTime(new Date(c()).toISOString(), props.now)}</>}</Show>
+                  </p>
+                )}
+              </Show>
+            </Show>
+            <Show when={props.outline}>
+              {(o) => (
+                <>
+                  <Show when={o().overall}>
+                    <p class="outline-overall">{o().overall}</p>
+                  </Show>
+                  <Show when={!updating()} fallback={<p class="outline-state">Updating</p>}>
+                    <Show when={updated()}>
+                      {(u) => (
+                        <p class="outline-state">
+                          <span title={u()}>Updated {relativeTime(u(), props.now)}</span>
+                          <Show when={STATE_CLAUSE[o().state]}>{(c) => <> · {c()}</>}</Show>
+                        </p>
+                      )}
+                    </Show>
+                  </Show>
+                  <ol class="outline-topics">
+                    <For each={o().topics}>{(t) => <Topic topic={t} now={props.now} open={open()} path={props.path} />}</For>
+                  </ol>
+                </>
               )}
             </Show>
-          </Show>
-          <Show when={props.outline}>
-            {(o) => (
-              <>
-                <Show when={o().overall}>
-                  <p class="outline-overall">{o().overall}</p>
-                </Show>
-                <Show when={!updating()} fallback={<p class="outline-state">Updating</p>}>
-                  <Show when={updated()}>
-                    {(u) => (
-                      <p class="outline-state">
-                        <span title={u()}>Updated {relativeTime(u(), props.now)}</span>
-                        <Show when={STATE_CLAUSE[o().state]}>{(c) => <> · {c()}</>}</Show>
-                      </p>
-                    )}
-                  </Show>
-                </Show>
-                <ol class="outline-topics">
-                  <For each={o().topics}>{(t) => <Topic topic={t} now={props.now} open={open()} path={props.path} />}</For>
-                </ol>
-              </>
-            )}
-          </Show>
+          </div>
         </div>
       </details>
       <Show when={galleryOpen()}>

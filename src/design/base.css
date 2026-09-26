@@ -4195,7 +4195,8 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
    shows overall + topics, and — when the session has /explain artifacts — a
    ghost button at the top of the body that opens the gallery dialog. The
    dialog lives inside the row, so the row's chevron still only means
-   disclosure. ----------------------------------------------------------- */
+   disclosure. The open body holds a centered .outline-column so its content
+   tracks the transcript column at every width. ------------------------- */
 
 .outline {
   flex: none;
@@ -4235,10 +4236,19 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   max-height: var(--outline-max);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--space-1) var(--space-4) var(--space-3);
+  padding: var(--space-1) 0 var(--space-3);
   border-top: var(--stroke-thin) solid var(--color-border);
 }
 @media (max-width: 767px) { .outline-body { max-height: 50vh; } }
+/* The open body's content centers in the transcript's reading column, like .transcript-inner
+   and .composer-inner (§chat.transcript "Column width"): the same measure + space-9 box, so
+   topics line up with the messages and composer below instead of pinning to the pane's left
+   edge. Inside it, .outline-topics and .outline-overall keep their cap at --measure. */
+.outline-column {
+  max-width: calc(var(--measure) + var(--space-9));
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+}
 .outline-overall { margin: var(--space-2) 0 var(--space-1); max-width: var(--measure); color: var(--color-ink); }
 .outline-state { margin: 0 0 var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-muted); }
 /* First thing in the open body, on the body's own top rhythm. */

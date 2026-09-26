@@ -49,6 +49,15 @@ const workerContextReader = new WorkerContextReader();
     (pi-config/extensions/claude-code/provider/index.ts CLAUDE_PROVIDER_FLAG). */
 const CLAUDE_CODE_FLAG = "claude-code-provider";
 
+/** This server's own bound origin, for the `link` extension's `sova-link` flag (setLinkOrigin). */
+let linkOrigin: string | null = null;
+/** Set once the listener is bound (server/index.ts, through server/link-delivery.ts); runtimes
+    opened from then on get it. */
+export function setLinkOrigin(origin: string): void {
+  linkOrigin = origin;
+}
+export const currentLinkOrigin = (): string | null => linkOrigin;
+
 /**
  * The extension flags every webapp-hosted runtime starts with.
  *
@@ -61,21 +70,16 @@ const CLAUDE_CODE_FLAG = "claude-code-provider";
  * - `claude-code-provider`: the experimental Settings switch. When on, the claude-code extension
  *   registers the Claude Code CLI's models as first-class pi models. Read per runtime, so the
  *   switch applies to sessions created after it changed and never reaches an open one.
+ * - `sova-link`: this server's own bound origin (setLinkOrigin), switching pi-config's `link`
+ *   extension on (link_members/link_send/link_inbox call its /api/mesh/links/* routes). Absent
+ *   until the listener is bound; workers never get it, so the tools are inert there.
  */
-/** This server's own bound origin, for the `link` extension's `sova-link` flag (setLinkOrigin). */
-let linkOrigin: string | null = null;
-/** Set once the listener is bound (server/index.ts, through server/link-delivery.ts); runtimes
-    opened from then on get it. */
-export function setLinkOrigin(origin: string): void {
-  linkOrigin = origin;
-}
-export const currentLinkOrigin = (): string | null => linkOrigin;
-
 function sessionFlags(cwd: string, outline = true): Map<string, boolean | string> {
   const flags = new Map<string, boolean | string>(outline ? [["topic-outline-headless", true]] : []);
   const target = targetOfCwd(cwd);
   if (target) flags.set("target", target);
   if (claudeCodeProviderEnabled()) flags.set(CLAUDE_CODE_FLAG, true);
+  if (linkOrigin) flags.set("sova-link", linkOrigin);
   return flags;
 }
 

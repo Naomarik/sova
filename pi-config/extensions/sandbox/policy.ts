@@ -443,8 +443,10 @@ function resolveWriteOnly(input: ResolveInput, parent: ParentScope): Result<Reso
 	const pDir = canonicalize(join(input.agentDir, POLICY_DIR_NAME));
 	const tmpDir = canonicalize(input.tmpDir);
 	const d = input.defaults ?? { hidden: [], writable: [], readOnlyWithinWritable: [] };
-	const shadowCanon = canon(d.shadowed ?? []);
-	const parentRoots = [...new Set(parent.writable.map(canonicalize))].filter((w) => !shadowCanon.some((sh) => isWithin(w, sh)));
+	// A root inside a shadowed cache (a worktree under ~/.cache) stays real: its bind is deeper
+	// than the shadow's, as the session cwd's is. Only the shadows that would hold a root are dropped.
+	const parentRoots = [...new Set(parent.writable.map(canonicalize))];
+	const shadowCanon = canon(d.shadowed ?? []).filter((sh) => !parentRoots.some((r) => isWithin(r, sh)));
 	const writable = [tmpDir, ...parentRoots];
 	const outsideParent = !parentRoots.some((r) => isWithin(workspaceRoot, r));
 	const gitReadOnly: string[] = [];

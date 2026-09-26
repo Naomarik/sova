@@ -361,6 +361,15 @@ test("write-only scope: writes only in the root; reads, network and env untouche
 	assert.ok(writeDenial(r.value, join(ws, "state", "x"), { creating: true }), "the platform's extra writable roots are not added");
 	assert.ok(writeDenial(r.value, join(agentDir, "settings.json")), "its agent dir stays read-only");
 	assert.equal(r.value.outsideParent, undefined);
+	// A worktree inside a shadowed cache is still the writable root (seen live: a worktree under ~/.cache).
+	const cache = join(ws, "cache");
+	const inCache = join(cache, "wt");
+	mkdirSync(inCache, { recursive: true });
+	const cached = resolvePolicy({ agentDir, cwd: inCache, tmpDir: join(ws, "t"), platform: "linux", parent: writeOnlyScope(inCache), defaults: { hidden: [], writable: [], readOnlyWithinWritable: [], shadowed: [cache] }, shadowSource: (a, p) => join(a, "shadow", p.replaceAll("/", "_")) });
+	assert.ok(cached.ok);
+	assert.equal(cached.value.outsideParent, undefined);
+	assert.equal(writeDenial(cached.value, join(inCache, "x"), { creating: true }), undefined);
+	assert.deepEqual(cached.value.shadowed, [], "the shadow that would hold the root is dropped");
 	const out = resolvePolicy({ agentDir, cwd: ws, tmpDir: join(ws, "t"), platform: "linux", parent: scope });
 	assert.ok(out.ok);
 	assert.equal(out.value.outsideParent, true);

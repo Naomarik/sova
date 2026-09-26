@@ -256,6 +256,12 @@ export class LinuxBwrapBackend implements Backend {
 		if (network === "proxy") Object.assign(env, proxyEnv(RELAY_PORT));
 
 		const argv: string[] = [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/dev/shm", "--tmpfs", "/run", "--bind", canonical(policy.tmpDir), "/tmp"];
+		// "host": the fresh /run above would hide a resolver config that lives there (systemd-resolved's
+		// /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf), leaving the network without DNS.
+		if (network === "host") {
+			const resolv = canonical("/etc/resolv.conf");
+			if ((resolv === "/run" || resolv.startsWith("/run/")) && kindOf(resolv) === "file") argv.push("--ro-bind", resolv, resolv);
+		}
 		const { ops } = mountPlan(policy);
 		for (const o of ops) {
 			if (o.op === "bind") argv.push("--bind", o.source ?? o.path, o.path);

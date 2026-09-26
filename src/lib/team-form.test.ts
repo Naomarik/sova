@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { TeamDefaults } from "../../shared/protocol";
+import type { TeamDefaults } from "../../shared/team-defaults";
 import { cloneTeam, numberIssue, numberOf, sameTeam, teamDraftComplete, teamDraftConflict } from "./team-form";
 
 const base: TeamDefaults = {

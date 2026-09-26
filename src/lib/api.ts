@@ -63,10 +63,8 @@ import type {
   SpecSettingsInfo,
   SummarizerSettings,
   SummarizerSettingsInfo,
-  TeamDefaults,
-  TeamDefaultsInfo,
-  TeamDefaultsSaveResult,
 } from "../../shared/protocol";
+import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../../shared/team-defaults";
 import type { TargetInfo } from "./remote-session";
 import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";

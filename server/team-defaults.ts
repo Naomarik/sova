@@ -11,7 +11,8 @@ import {
   type TeamDefaultsFile,
   type WorkerTuple,
 } from "../pi-config/extensions/subagents/team-defaults.ts";
-import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult, WorkerChoice } from "../shared/protocol";
+import type { WorkerChoice } from "../shared/protocol";
+import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../shared/team-defaults";
 import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
 
 // Settings → Teams: the standing coordinator and monitor every new team gets. The file

@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createResource, createSignal, For, Show, untrack } from "solid-js";
-import type { DelegateOptions, TeamDefaults, TeamDefaultsInfo } from "../../shared/protocol";
+import type { DelegateOptions } from "../../shared/protocol";
+import type { TeamDefaults, TeamDefaultsInfo } from "../../shared/team-defaults";
 import { getTeamDefaults, getTeamOptions, putTeamDefaults } from "../lib/api";
 import { fallbackFor, type DraftChoice, type Slot } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";

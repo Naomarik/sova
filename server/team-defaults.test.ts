@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { DEFAULT_TEAM_DEFAULTS } from "../pi-config/extensions/subagents/team-defaults.ts";
-import type { ModelPolicy, TeamDefaults, WorkerChoice } from "../shared/protocol";
+import type { ModelPolicy, WorkerChoice } from "../shared/protocol";
+import type { TeamDefaults } from "../shared/team-defaults";
 import type { DelegateSources } from "./delegate";
 import { saveTeamDefaults, teamDefaultsFile, teamDefaultsInfo, teamDefaultsOff, teamOptions } from "./team-defaults";
 

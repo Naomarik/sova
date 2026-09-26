@@ -1,4 +1,4 @@
-import type { TeamDefaults } from "../../shared/protocol";
+import type { TeamDefaults } from "../../shared/team-defaults";
 import { sameChoice, type DraftChoice } from "./delegate-form";
 
 /**

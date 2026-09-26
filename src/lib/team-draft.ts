@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import type { TeamDefaults } from "../../shared/protocol";
+import type { TeamDefaults } from "../../shared/team-defaults";
 import { cloneTeam, sameTeam, type TeamDraft } from "./team-form";
 
 /**

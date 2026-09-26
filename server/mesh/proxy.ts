@@ -15,6 +15,9 @@ import { type PeerEntry, peerUrl } from "./peers";
 // no response headers in time, 403 the peer's gate refused us.
 
 const HOP_BY_HOP = ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"];
+/** The Overseer's in-process sender secret (server/overseer.ts OVERSEER_SENDER_HEADER): never
+    forwarded, so a peer can't replay it against this host (§mesh.links/delivery). */
+const OVERSEER_HEADER = "x-sova-overseer";
 
 // Failing fast. A blackholed peer (host asleep, off the tailnet, a killed container) never
 // answers a SYN, and fetch would wait its full ~10 s connect timeout before our 502 (a kept-alive
@@ -140,6 +143,7 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string): Prom
   const host = headers.get("host");
   headers.delete("host");
   for (const h of HOP_BY_HOP) headers.delete(h);
+  headers.delete(OVERSEER_HEADER);
   headers.set(PROXIED_HEADER, host || "unknown");
   const base = peerUrl(peer);
   const go = await preflight(base);

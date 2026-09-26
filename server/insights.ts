@@ -28,6 +28,7 @@ import type {
   WorkerInfo,
   WorkerStatus,
 } from "../shared/protocol";
+import type { LinkedAgentInfo } from "../shared/mesh-links";
 // The usage-status extension's fetch/cache core. Part of the sanctioned pi-config import
 // surface (node builtins only, like extensions/mode/state.ts) — see CLAUDE.md.
 import { forceRefresh } from "../pi-config/extensions/usage-status/fetch.ts";
@@ -984,6 +985,18 @@ export function setWorkerAdapters(next: WorkerTranscriptAdapters | null): void {
   adapters = next ? () => next : defaultAdapters;
 }
 
+/** The Agents tab's linked members (server/mesh/links.ts, registered by server/index.ts). */
+type LinksOf = (sessionId: string, path: string) => Promise<LinkedAgentInfo[]>;
+let linksOf: LinksOf | null = null;
+export function setInsightLinks(fn: LinksOf | null): void {
+  linksOf = fn;
+}
+async function linkRows(sessionId: string | null, path: string): Promise<Pick<SessionInsight, "links">> {
+  if (!sessionId || !linksOf) return {};
+  const links = await linksOf(sessionId, path).catch(() => []);
+  return links.length ? { links } : {};
+}
+
 /** `path` must already be validated with resolveSessionPath(). Never throws. */
 export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const facts = await sessionFacts(path);
@@ -1023,6 +1036,7 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
     ...(usage ? { usage } : {}),
     explanations: await explanations(facts),
     ...(await worktreeRows(facts, workers)),
+    ...(await linkRows(facts.sessionId, path)),
   };
 }
 

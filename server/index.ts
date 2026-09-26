@@ -23,9 +23,9 @@ import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
-import { decodeWorkers, getAgentsInsight, getSessionInsight, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
+import { decodeWorkers, getAgentsInsight, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
-import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions } from "./sessions-index";
+import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
@@ -41,6 +41,7 @@ import type { FanoutRequest, ForkRequest, WorkerResumeResult } from "../shared/p
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
+import { configureSession } from "./sessions-configure";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
 import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults";
@@ -56,6 +57,10 @@ import { WORKER_ID_RE } from "./worker-resume";
 import { attachWebSockets, upgradeSovaSocket } from "./ws";
 import { meshApi, meshRoutes, startMesh, stopMesh } from "./mesh";
 import { mountDetails } from "./mesh/details";
+import { probePeer } from "./mesh/hello";
+import { meshLinks } from "./mesh/links";
+import { mountLinks } from "./mesh/links-routes";
+import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinkOrigin, setLinksSource } from "./link-delivery";
 import { mountSync } from "./sync";
 import { markSeen } from "./seen";
 import {
@@ -66,6 +71,7 @@ import {
   pathOfId,
   promptSession,
   overseerSender,
+  renderPeerRead,
   OVERSEER_SENDER_HEADER,
   saveOverseerSettings,
   setOverseerDispatch,
@@ -970,13 +976,23 @@ app.put("/api/settings/overseer", async (c) => {
 
 // One session's summary by id, listed or not (an empty web session, an Overseer file): what a
 // sova://s/<id> link resolves through when the list doesn't have it.
-app.get("/api/sessions/summary", async (c) => {
-  const id = c.req.query("id") ?? "";
+async function summaryById(c: Context, id: string) {
   if (!/^[\w-]{1,100}$/.test(id)) return c.json({ error: "Invalid or missing ?id= (a session id)" }, 400);
   const path = await pathOfId(id);
   const summary = path ? await getSessionSummary(path) : null;
   if (!summary) return c.json({ error: "No session with that id" }, 404);
   return c.json(summary, 200, { "Cache-Control": "no-store" });
+}
+app.get("/api/sessions/summary", (c) => summaryById(c, c.req.query("id") ?? ""));
+// The same answer at a path-shaped URL (§mesh.links/by-id): links fill a member's path, resolve a
+// tool's `to` and poll a member's state through it. A peer on an older build answers only ?id=.
+app.get("/api/sessions/by-id/:id", (c) => summaryById(c, c.req.param("id")));
+
+// A session's model, thinking, mode and minor modes (§mesh.links/configure): that session only,
+// never the saved default. Peer-reachable, so the Overseer configures a session it made on a peer.
+app.post("/api/sessions/configure", async (c) => {
+  const r = await configureSession(await c.req.json().catch(() => null));
+  return r.ok ? c.json(r.result) : c.json({ error: r.error }, r.status);
 });
 
 // One message to one session, as its composer sends it (sova_send, and a server-side first
@@ -1016,6 +1032,26 @@ mountDetails(app, meshApi, {
     return { count: entries.filter((e) => e.state === "live" || e.state === "expired").length, conflicts: entries.filter((e) => e.conflictWith?.length).length };
   },
 });
+// Linked sessions across hosts (server/mesh/links-routes.ts): /api/peer/links*, the local acts
+// under /api/mesh/links*, the page reads under /api/links/*; OFF, 404 and nothing runs.
+const sessionById = async (id: string) => {
+  const path = await pathOfId(id);
+  return path ? getSessionSummary(path) : null;
+};
+mountLinks(app, meshApi, {
+  root: stateRoot,
+  summary: sessionById,
+  held: heldSessionPath,
+  deliver: deliverLinkMessage,
+  probe: async (peer) => (await probePeer(peer)).state,
+  notify: notifyLinksChanged,
+  renderPeerRead,
+});
+// The `links` chat frame: a member's partners; the Overseer's pane, every link on this host.
+const linkedAgents = async (id: string, path: string) => meshLinks.linkedAgents(id, { overseer: !!(await getSessionSummary(path))?.overseer });
+setLinksSource(linkedAgents);
+setInsightLinks(linkedAgents);
+onSessionArchived((id) => void meshLinks.endFor(id));
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
@@ -1077,6 +1113,8 @@ export { app };
 
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
+  // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
+  setLinkOrigin(`http://${HOST === "0.0.0.0" || HOST === "::" ? "127.0.0.1" : HOST.includes(":") ? `[${HOST}]` : HOST}:${info.port}`);
   console.log(`sova server on http://${HOST}:${info.port}`);
   startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket });
   // The share listener, only when SOVA_SHARE_HOST/SOVA_SHARE_PORT are set (§app.baton/share-listener).
@@ -1153,6 +1191,7 @@ async function shutdown() {
   // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
   (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
   usagePoller.stop();
+  meshLinks.stop();
   stopMesh();
   stopShareListener();
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);

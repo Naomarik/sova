@@ -3096,7 +3096,13 @@
         "src/lib/needs-you.test.ts",
         "src/components/Sidebar.tsx",
         "src/App.tsx",
-        "src/app.css"
+        "src/app.css",
+        "src/lib/list-refresh.ts",
+        "src/lib/list-refresh.test.ts",
+        "server/attention-memo.ts",
+        "server/attention-memo.test.ts",
+        "server/org-routes.ts",
+        "server/overseer.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest",
@@ -3480,7 +3486,9 @@
         "server/baton.ts",
         "server/share-message.test.ts",
         "src/lib/live.ts",
-        "src/lib/live.test.ts"
+        "src/lib/live.test.ts",
+        "src/lib/baton-strip.ts",
+        "src/lib/baton-strip.test.ts"
       ],
       "requires": [
         "§app.overseer/sent-marker"
@@ -3715,7 +3723,7 @@
     "§app.organizations/org-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/OrgsView.tsx",
         "src/lib/org-tabs.ts",
@@ -3727,7 +3735,11 @@
         "src/components/ProjectPage.tsx",
         "server/org-routes.ts",
         "shared/orgs.ts",
-        "server/org-list.test.ts"
+        "server/org-list.test.ts",
+        "src/lib/org-page-route.ts",
+        "src/lib/org-page-route.test.ts",
+        "src/lib/org-source.ts",
+        "src/lib/org-source.test.ts"
       ],
       "requires": [
         "§app.organizations/org-cards",

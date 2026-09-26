@@ -25,8 +25,12 @@ the URL (§app.organizations/org-page).
   restored clone) to this host's index (§app.organizations/portability). **Detach** removes it from
   the index and deletes nothing.
 - A workspace dir must be absolute and must not lie inside Sova's own checkout unless that
-  checkout git-ignores it (Sova's repo is public; the hermetic `.agent/` is ignored). A refused dir
-  answers 400 and nothing is written.
+  checkout git-ignores it (Sova's repo is public; the hermetic `.agent/` is ignored). An install
+  that is not a git checkout (a copied or unpacked tree) has no ignore rules to ask: inside it only
+  the default workspaces dir, `<stateRoot>/workspaces` and below, is allowed (never when that dir
+  would be the install itself), so the default the New Organization form advertises works in
+  either install and every other dir in the tree stays refused. A refused dir answers 400 and
+  nothing is written.
 - Two hosts attaching the same org is not detected; moving an org is detach here, clone and attach
   there.
 
@@ -99,7 +103,8 @@ the URL (§app.organizations/org-page).
   `#/orgs/<id>` is Sessions. `#/orgs/<id>/start/<person>` opens Sessions with the start form open
   and that person ticked — on load, and whenever the hash changes to it while the page shows.
   Closing the form (Cancel, or a session started) replaces the hash with `#/orgs/<id>/sessions`,
-  so a reload doesn't reopen it. Picking a tab replaces the hash (no history entry per tab), and the page
+  so a reload doesn't reopen it, and every link afterwards (a session row, the sidebar) still
+  opens its page. Picking a tab replaces the hash (no history entry per tab), and the page
   is not reloaded: the fetched org stays. `#/orgs/<id>/projects/<project>` stays the project page,
   and its back link opens the Projects tab; the project page and its overseer are untabbed.
 - **Keyboard.** The selected tab is the strip's one tab stop; Left/Right move focus along the
@@ -109,6 +114,11 @@ the URL (§app.organizations/org-page).
 - **Width.** Under 480px of pane width the tabs tighten (`--space-1` padding and gap), so the four
   fit a 420px window with two-digit counts; narrower, the strip scrolls sideways and the selected
   tab is scrolled into view whole.
+- **Live.** The page re-reads its org every 10 seconds while the browser tab shows (paused while
+  hidden, at once when shown again), so a session that finishes, closes or changes hands
+  elsewhere updates its row (`With <holder>`, the state chip) without a reload; each read is
+  reconciled in place, so an open form keeps what was typed. A row's "started …" age moves on
+  every 30 seconds.
 - **Where the data comes from.** Every route that answers an `OrgDetail` adds `needsYou`, each
   baton row's `waiting` (`"reply"` or `"link"`) and `projectConflicts` (`{projectId: n}`), all
   optional on the wire.

@@ -660,8 +660,11 @@ and the region has **no actions of its own** beyond its twist.
   and while Overseer proactivity is **Off** (§app.overseer/proactivity), or not yet read. The
   region appearing and going is the signal; Recent's divider moves up with it.
 - **Freshness.** App reads the digest once for the page, on the Overseer entry button's 10-second
-  cadence (paused while the tab is hidden, again on window focus), and hands the same read to this
-  region and to the Overseer head's menus (§app.overseer/finished-menu).
+  cadence (paused while the tab is hidden, again on window focus, and at once when a view's action
+  asks for the session list — a baton strip's Get Link, hand-off, Take Back or Approve), and hands
+  the same read to this region and to the Overseer head's menus (§app.overseer/finished-menu). The
+  server keeps a digest for 3 seconds; an org or baton write that lands drops it, so the read right
+  after one says what it changed.
 - **The spine** carries its door, "Needs you · {n} sessions", shown exactly when the region is
   (§app.session-list/spine).
 

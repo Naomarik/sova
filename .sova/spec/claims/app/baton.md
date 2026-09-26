@@ -167,7 +167,11 @@ once), **lease** (an offer's lock on its first taker).
   clears Needs you. A message from the operator's own composer is attributed to the operator, and is
   accepted only while the operator holds the baton and the session is open (refused otherwise,
   and the composer says why: "<name> holds the baton. Take it back to write." or "This hand-off
-  session is done."). `POST /api/sessions/prompt` (the Overseer's `sova_send`) refuses a baton
+  session is done."). While it is not the operator's to write (someone else holds it, it is
+  offered, or it is done or closed) the operator's composer is read-only, with Send gone and
+  that reason under it: a box that takes typing reads as sendable. Whose it is comes from the
+  session's strip once it has read, ahead of the session list, which lags a hand-off made from
+  the strip. `POST /api/sessions/prompt` (the Overseer's `sova_send`) refuses a baton
   session with a 409.
 - The operator's transcript shows the sender's name on each user row, and the hand-off, done and
   decision entries as cards. A row still streaming live gets its name as soon as its marker

@@ -143,8 +143,10 @@ check() {
   open=$(printf '%s\n' "$res" | sed -n 's/^open //p' | grep -vxF "$([ "$peers" = 0 ] || echo "$ip:$pport")" || true)
   [ -z "$open" ] || die "open on non-loopback addresses: $(echo $open)"
   log "phone: $port closed on all $n non-loopback addresses probed; $pport $([ "$peers" = 0 ] && echo "closed on all" || echo "open on $ip only")"
-  # runit restarts it after a kill
-  local pid1 pid2
+  # runit restarts it after a kill, and its run script takes the wake lock again
+  local pid1 pid2 wl1 wl2
+  wakes() { ph 'grep -c "\[run-sova\] termux-wake-lock taken" $PREFIX/var/log/sv/sova-mesh/current || true'; }
+  wl1=$(wakes)
   pid1=$(ph 'SVDIR=$PREFIX/var/service sv status sova-mesh' | sed -n 's/^run: [^(]*(pid \([0-9]*\)).*/\1/p')
   [ -n "$pid1" ] || die "sova-mesh is not running under runit"
   ph "kill -9 $pid1"
@@ -156,6 +158,11 @@ check() {
   done
   [ $ok = 1 ] || die "not restarted after kill -9 $pid1"
   log "runit restarted it after kill -9 (pid $pid1 -> $pid2) and health is back"
+  sleep 1; wl2=$(wakes)
+  [ "$wl2" -gt "$wl1" ] || die "the run script did not take the wake lock again after the restart ($wl1 -> $wl2 log lines)"
+  log "the run script took the wake lock again ($wl1 -> $wl2 log lines)"
+  # an --ssh-key install: runit's sshd, key-only
+  if ph 'grep -qE "^sshd-(keyonly|config)" ~/sova-mesh/.install/added 2>/dev/null'; then keyonly_sshd; fi
   ph 'SVDIR=$PREFIX/var/service sv status sova-mesh; ls -la ~/.termux/boot; cat ~/sova-mesh/app/BUILD_COMMIT; stat -c "%a %n" ~/sova-mesh ~/sova-mesh/agent ~/sova-mesh/agent/auth.json ~/sova-mesh/tmp'
   ph 'SVDIR=$PREFIX/var/service sv status sova-mesh/log' | grep -q '^run:' || die "the runit logger for sova-mesh is not running"
   ph 'test -s $PREFIX/var/log/sv/sova-mesh/current' || die "no service log"
@@ -173,6 +180,9 @@ snapshot() {
       echo "## PREFIX"; cd $PREFIX && find var/service var/log var/run etc bin lib/node_modules share/termux-services -maxdepth 3 2>/dev/null | grep -v "^var/log/apt" | sort' > "$d/files.txt"
   ph 'ps -A -o comm,args 2>/dev/null | grep -vE "^(ps|sshd-session|sh|zsh|bash|sort|grep) " | sort' > "$d/procs.txt" || true
   ph 'cat ~/.ssh/authorized_keys | awk "{print \$1, \$3}"; ls -A $PREFIX/var/service/*/ 2>/dev/null' > "$d/ssh-services.txt"
+  # sshd: its config (restored by uninstall), what it enforces, who runs it (runit or by hand)
+  ph 'md5sum $PREFIX/etc/ssh/sshd_config; ls -A $PREFIX/etc/ssh/sshd_config.d; sshd -T 2>/dev/null | grep -E "^(passwordauthentication|kbdinteractiveauthentication) ";
+      ps -A -o ppid=,comm= | awk "\$2==\"sshd\"{print (\$1==1 ? \"sshd by hand\" : \"sshd under a parent\")}" | sort -u' >> "$d/ssh-services.txt"
   log "snapshot $1: $(wc -l < "$d/packages.txt") packages, $(wc -l < "$d/files.txt") paths"
 }
 
@@ -438,6 +448,36 @@ EOS
   log "scan $name: $(grep -vcE '^(HANG|SELF)' "$d/$name.txt") open (address, port) pairs, $(grep -c '^ONCE' "$d/$name.txt") of them accepting once only, $(grep -c '^HANG' "$d/$name.txt") hung ports, $(grep -c '^SELF' "$d/$name.txt") self-connects (ephemeral range) set aside, $(echo $list | wc -w) addresses, $par parallel, $((SECONDS - t0)) s; control $PHONE:$PHONE_PORT open"
 }
 
+# ---- after Termux was force-stopped and opened again (by hand on the phone, nothing typed) ----------------------------
+# sshd (runit, key-only), Sova and the wake lock must all be back on their own.
+reopen() {
+  local out
+  out=$(ph 'export SVDIR=$PREFIX/var/service; sv status sova-mesh; echo "uptime-runsvdir $(ps -A -o etimes=,args= | awk "/runsvdir/ && !/awk/{print \$1; exit}")";
+    curl -fsS -m 5 http://127.0.0.1:4800/api/health; echo;
+    grep "\[run-sova\] termux-wake-lock taken" $PREFIX/var/log/sv/sova-mesh/current | tail -1') || die "ssh to the phone failed: sshd did not come back"
+  printf '%s\n' "$out" | sed 's/^/[phone] /' >&2
+  grep -q '^run: sova-mesh:' <<< "$out" || die "sova-mesh is not running"
+  grep -q '"ok":true' <<< "$out" || die "no health"
+  grep -q 'termux-wake-lock taken' <<< "$out" || die "the run script did not take the wake lock"
+  keyonly_sshd
+  echo "REOPEN PASS"
+}
+
+# runit runs sshd (no sshd started by hand), sshd enforces key-only, and a password login is refused before any password
+# is asked
+keyonly_sshd() {
+  local out pw
+  out=$(ph 'SVDIR=$PREFIX/var/service sv status sshd; sshd -T 2>/dev/null | grep -E "^(passwordauthentication|kbdinteractiveauthentication) ";
+    ps -A -o ppid=,comm= | awk "\$2==\"sshd\" && \$1==1{print \"sshd by hand\"}"')
+  printf '%s\n' "$out" | sed 's/^/[phone] /' >&2
+  grep -q '^run: sshd:' <<< "$out" || die "sshd is not running under runit"
+  ! grep -q 'sshd by hand' <<< "$out" || die "an sshd started by hand still runs"
+  grep -qx 'passwordauthentication no' <<< "$out" && grep -qx 'kbdinteractiveauthentication no' <<< "$out" || die "sshd allows password logins"
+  pw=$(ssh -o BatchMode=yes -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive -o ConnectTimeout=10 -p "$PHONE_PORT" "$PHONE" true 2>&1 || true)
+  grep -q 'Permission denied (publickey)' <<< "$pw" || die "password login not refused as key-only: $pw"
+  log "sshd: runit's, key-only; a password login is refused: $(grep -o 'Permission denied (publickey)' <<< "$pw")"
+}
+
 # ---- deps: every command the phone runs comes from WANT or Termux's bootstrap -----------------------------------------
 # What every Termux has from its first start: the packages (not libraries) of an older aarch64 bootstrap, all of them also
 # in the current one (termux-packages bootstrap-2026.09.20: that one adds gzip, bzip2, xz-utils, lsof, ... which an older
@@ -615,6 +655,7 @@ case "$cmd" in
   unpair) unpair ;;
   snapshot) snapshot "$@" ;;
   addrs) addrs ;;
+  reopen) reopen ;;
   deps) deps ;;
   placeholder) # on: mesh on with the gate's placeholder peer (listener on the tailnet IP); off: mesh off
     case "${1:-}" in

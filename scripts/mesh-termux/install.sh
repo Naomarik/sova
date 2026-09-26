@@ -17,8 +17,9 @@
 #   --port <n> --peer-port <n>   main listener 127.0.0.1:<port> (default 4800), peer listener <tailnet-ip>:<peer-port> (4801)
 #   --claude-dir <dir>     the .claude dir the `claude` on PATH reads, as seen from Termux (default: detected; see
 #                          "Claude Code's store" below; a native claude reads ~/sova-mesh/home/.claude)
-#   --ssh-key <public key> also keep an sshd for remote access: openssh, the key in ~/.ssh/authorized_keys, and a
-#                          runit sshd service (unless an sshd already runs). `uninstall.sh --keep-ssh` keeps these.
+#   --ssh-key <public key> also keep an sshd for remote access: openssh, the key in ~/.ssh/authorized_keys, key-only
+#                          logins (password logins off), and the runit sshd service (it replaces a hand-started sshd,
+#                          so reopening Termux or a reboot brings it back). `uninstall.sh --keep-ssh` keeps these.
 #
 # What it adds, all recorded in ~/sova-mesh/.install so uninstall.sh removes exactly that:
 #   packages nodejs-lts ripgrep fd git tmux termux-services, plus the package of any other command it or Sova runs that
@@ -82,6 +83,14 @@ BOOT="$HOME/.termux/boot/sova-mesh"
 mkdir -p "$M"
 chmod 700 "$BASE"
 note() { grep -qxF "$1" "$M/added" 2>/dev/null || printf '%s\n' "$1" >> "$M/added"; }  # one thing we added, once
+# what an `uninstall.sh --keep-ssh` left in place (sshd, runit, the key, the wake lock): back into this manifest, so the
+# next uninstall still undoes it
+KEPT="$HOME/.sova-mesh-kept"
+if [ -d "$KEPT" ] && [ ! -e "$M/added" ]; then
+  for f in added packages-added ssh-key sshd_config.orig packages-upgraded; do [ ! -f "$KEPT/$f" ] || cp -p "$KEPT/$f" "$M/"; done
+  rm -rf "$KEPT"
+  log "manifest: took back what uninstall.sh --keep-ssh kept ($(wc -l < "$M/added" | tr -d ' ') entries, $(wc -l < "$M/packages-added" | tr -d ' ') packages)"
+fi
 
 # a Tailscale IPv4 (100.64.0.0/10) or nothing
 tailnet_ipv4() {
@@ -317,6 +326,8 @@ set -a
 . "$BASE/sova-mesh.env"
 set +a
 cd "$BASE/app"
+# the wake lock again at every start: reopening Termux (or runit restarting Sova) brings it back without a reboot
+termux-wake-lock && echo "[run-sova] termux-wake-lock taken"
 ( sleep 2; exec nice -n 10 node scripts/mesh-vps/warm-extensions.mjs > "$BASE/tmp/warm.log" 2>&1 ) &
 exec node --import tsx server/index.ts
 EOF
@@ -358,16 +369,54 @@ if [ -n "$SSH_KEY" ]; then
     printf '%s\n' "$SSH_KEY" > "$M/ssh-key"
   fi
   chmod 600 "$HOME/.ssh/authorized_keys"
-  if [ -f "$SVDIR/sshd/down" ] && ! pgrep -x sshd >/dev/null; then
-    rm -f "$SVDIR/sshd/down"; sv up sshd >/dev/null 2>&1 || true; note "sshd-service"
+  # key-only logins, and only once the key is in authorized_keys (never a lockout). Through sshd_config.d when
+  # sshd_config includes it (the original stays as it is), else in sshd_config itself, the original kept in the manifest.
+  grep -qxF "$SSH_KEY" "$HOME/.ssh/authorized_keys" || die "the key is not in ~/.ssh/authorized_keys: password logins stay on"
+  CONF="$PREFIX/etc/ssh/sshd_config"
+  KEYONLY='# written by sova-mesh install.sh (--ssh-key): key-only logins
+PasswordAuthentication no
+KbdInteractiveAuthentication no'
+  if grep -qE "^[[:space:]]*Include[[:space:]]+$PREFIX/etc/ssh/sshd_config\.d/\*\.conf" "$CONF"; then
+    DROP="$PREFIX/etc/ssh/sshd_config.d/sova-mesh.conf"
+    printf '%s\n' "$KEYONLY" > "$DROP.tmp" && chmod 600 "$DROP.tmp" && mv "$DROP.tmp" "$DROP"
+    note "sshd-keyonly $DROP"
+  else
+    [ -f "$M/sshd_config.orig" ] || cp -p "$CONF" "$M/sshd_config.orig"
+    { printf '%s\n' "$KEYONLY"; grep -viE '^[[:space:]]*(PasswordAuthentication|KbdInteractiveAuthentication)[[:space:]]' "$M/sshd_config.orig"; } > "$CONF.tmp" \
+      && chmod 600 "$CONF.tmp" && mv "$CONF.tmp" "$CONF"
+    note "sshd-config"
   fi
+  if ! out=$(sshd -t 2>&1); then
+    printf '%s\n' "$out" | sed 's/^/[sova-termux] sshd -t: /' >&2
+    rm -f "${DROP:-/nonexistent}"; [ ! -f "$M/sshd_config.orig" ] || cp -p "$M/sshd_config.orig" "$CONF"
+    die "sshd rejects the key-only config: left as it was"
+  fi
+  sshd -T 2>/dev/null | grep -qx 'passwordauthentication no' || die "sshd still allows password logins"
+  # the runit sshd, always: a hand-started one is stopped (recorded, so uninstall starts one again) and runit takes 8022
+  if [ -f "$SVDIR/sshd/down" ]; then rm -f "$SVDIR/sshd/down"; note "sshd-service"; fi
+  [ -e "$PREFIX/var/log/sv/sshd" ] || note "dir $PREFIX/var/log/sv/sshd"   # its logger's
+  rpid=$(sv status sshd 2>/dev/null | sed -n 's/^run: [^(]*(pid \([0-9]*\)).*/\1/p')
+  # a listener started by hand has no parent left (ppid 1); sessions are its children, runit's has runsv as parent
+  hand=$(ps -A -o pid=,ppid=,comm= 2>/dev/null | awk '$3=="sshd" && $2==1 {print $1}')
+  if [ -n "$hand" ]; then note "sshd-hand"; kill $hand 2>/dev/null || true; log "sshd: the hand-started one ($hand) makes way for runit's"; fi
+  [ -z "$hand" ] || rpid=''
+  if [ -n "$rpid" ]; then sv hup sshd >/dev/null 2>&1 || true; else sv up sshd >/dev/null 2>&1 || true; fi
+  i=0
+  until [ $i -ge 20 ] || { sv status sshd 2>/dev/null | grep -qE '^run: sshd: \(pid [0-9]+\) ([2-9]|[1-9][0-9]+)s'; }; do sleep 0.5; i=$((i+1)); done
+  if ! sv status sshd 2>/dev/null | grep -q '^run:'; then
+    # never leave the phone without an sshd: back to one started by hand
+    sv down sshd >/dev/null 2>&1 || true; pgrep -x sshd >/dev/null || sshd || true
+    die "the runit sshd does not stay up (log: $PREFIX/var/log/sv/sshd/current); an sshd was started by hand instead"
+  fi
+  log "sshd: runit service up, key-only logins"
 fi
 
 # ---- start at boot, wake lock ----------------------------------------------------------------------
 [ -d "$HOME/.termux" ] || note "dir $HOME/.termux"
 [ -d "$HOME/.termux/boot" ] || note "dir $HOME/.termux/boot"
 mkdir -p "$HOME/.termux/boot"
-printf '#!%s/bin/sh\n# Termux:Boot: start Sova'"'"'s runit services after a reboot (written by sova-mesh install.sh)\ntermux-wake-lock\n. %s/etc/profile.d/start-services.sh\n' "$PREFIX" "$PREFIX" > "$BOOT"
+# (the runit services: sova-mesh, and sshd when --ssh-key enabled it)
+printf '#!%s/bin/sh\n# Termux:Boot: start Sova'"'"'s runit services (and sshd with --ssh-key) after a reboot (written by sova-mesh install.sh)\ntermux-wake-lock\n. %s/etc/profile.d/start-services.sh\n' "$PREFIX" "$PREFIX" > "$BOOT"
 chmod 700 "$BOOT"
 note "file $BOOT"
 termux-wake-lock
@@ -418,6 +467,16 @@ bad=$(printf '%s\n' "$peer" | sed -n 's/^open //p' | grep -vxF "$([ "$peers" = 0
 [ -z "$bad" ] || die "the peer port answers on $(echo $bad) :$PEER_PORT"
 log "exposure ok on the $n addresses probed (control: 127.0.0.1:$PORT open): main port loopback only; peer port $([ "$peers" = 0 ] && echo "closed everywhere (mesh off)" || echo "on $TAILNET_IP only")"
 
+# Android's phantom-process limit (it kills Sova's workers, and can take Termux with them): the developer option
+# "Disable child process restrictions" is this flag, which apps can read. Unset or unreadable: the reminder below.
+PHANTOM_FLAG=persist.sys.fflag.override.settings_enable_monitor_phantom_procs
+phantom=$(/system/bin/getprop "$PHANTOM_FLAG" 2>/dev/null || true)
+case "$phantom" in
+  false) step1="  1. Child process restrictions are already disabled ($PHANTOM_FLAG=false): nothing to do." ;;
+  *) [ "$phantom" != true ] || log "WARNING: Android's child process restrictions are ON ($PHANTOM_FLAG=true): Android will kill Sova's workers"
+     step1='  1. Settings > Developer options > "Disable child process restrictions" ON (Android 14+). Without it Android kills
+     Sova'"'"'s worker processes (signal 9). Android 12L/13: adb shell settings put global settings_enable_monitor_phantom_procs false' ;;
+esac
 upgraded=''
 [ ! -s "$M/packages-upgraded" ] || upgraded="Existing packages upgraded as dependencies: $(wc -l < "$M/packages-upgraded" | tr -d ' ') (see ~/sova-mesh/.install/packages-upgraded)."
 cat >&2 <<EOF
@@ -427,8 +486,7 @@ Service: sv status|restart sova-mesh   Log: $PREFIX/var/log/sv/sova-mesh/current
 $upgraded
 
 Do these on the phone by hand (Termux can't):
-  1. Settings > Developer options > "Disable child process restrictions" ON (Android 14+). Without it Android kills
-     Sova's worker processes (signal 9). Android 12L/13: adb shell settings put global settings_enable_monitor_phantom_procs false
+$step1
   2. Settings > Apps > Termux > Battery > Unrestricted. Same for Tailscale.
   3. Tailscale app > Settings > Split tunneling / Excluded apps: Termux must NOT be excluded.
   4. For start after reboot: install Termux:Boot from the same source as Termux and open it once.

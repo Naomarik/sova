@@ -1111,10 +1111,15 @@ app.get("*", (c, next) => (hasDist() ? spaIndex(c, next) : next()));
 // Exported for server/explanations.test.ts, which drives routes through app.request() (no socket).
 export { app };
 
+/** Where the link extension's tools call this server back: loopback for a wildcard bind. */
+const linkOrigin = (port: number) => `http://${HOST === "0.0.0.0" || HOST === "::" ? "127.0.0.1" : HOST.includes(":") ? `[${HOST}]` : HOST}:${port}`;
+// Known before listen when the port is fixed, so no runtime opened meanwhile misses the flag.
+if (PORT) setLinkOrigin(linkOrigin(PORT));
+
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
-  setLinkOrigin(`http://${HOST === "0.0.0.0" || HOST === "::" ? "127.0.0.1" : HOST.includes(":") ? `[${HOST}]` : HOST}:${info.port}`);
+  setLinkOrigin(linkOrigin(info.port));
   console.log(`sova server on http://${HOST}:${info.port}`);
   startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket });
   // The share listener, only when SOVA_SHARE_HOST/SOVA_SHARE_PORT are set (§app.baton/share-listener).

@@ -837,6 +837,31 @@ describe("a compaction pauses the queue", () => {
     assert.deepEqual(r.gone(r.one), [["b", "removed"], ["a", "delivered"]]);
   });
 
+  test("a drain that keeps: the picked items come back whole and 'delivered', out of the texts; the rest clear as Stop's", async () => {
+    const r = rig();
+    r.queue.enqueue({ kind: "steer", text: "hers 1", origin: "server", id: "a", baton: { by: "p_1" } });
+    r.queue.enqueue({ kind: "followUp", text: "mine", origin: "client", id: "b" });
+    r.queue.enqueue({ kind: "followUp", text: "hers 2", origin: "server", id: "c", baton: { by: "p_1" } });
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["hers 1"], "the first is inside the SDK");
+    const drained = await r.queue.drain((it) => !!it.baton);
+    assert.deepEqual(drained.kept.map((it) => [it.id, it.text, it.baton?.by]), [["a", "hers 1", "p_1"], ["c", "hers 2", "p_1"]]);
+    assert.deepEqual([drained.steering, drained.followUp], [[], ["mine"]]);
+    assert.deepEqual(r.gone(r.one), [["a", "delivered"], ["b", "cleared"], ["c", "delivered"]]);
+    assert.deepEqual(r.sdk.realSteering, [], "nothing is left in the SDK to be delivered later");
+  });
+
+  test("a drain that keeps: an item the loop already took is the run's, never kept a second time", async () => {
+    const r = rig();
+    r.queue.enqueue({ kind: "steer", text: "taken", origin: "server", id: "a", baton: { by: "p_1" } });
+    await settle();
+    r.sdk.drain("steer"); // committed to the model; the mirror still lists it
+    const drained = await r.queue.drain(() => true);
+    assert.deepEqual(drained.kept, []);
+    assert.deepEqual(drained.steering, [], "nor handed back as cleared text");
+    assert.deepEqual(r.gone(r.one), [["a", "delivered"]]);
+  });
+
   test("Stop still clears what a paused queue holds", async () => {
     const r = rig();
     r.sdk.streaming = false;

@@ -18,7 +18,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } from "../shared/protocol";
-import { BATON_SENT_ENTRY, type BatonSentData } from "../shared/baton";
+import { BATON_SENT_ENTRY, type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import { stripImageNotes } from "../shared/image-note";
@@ -1586,6 +1586,75 @@ class ChatSession {
   }
 
   /**
+   * Stop the run, keeping the queued messages `keep` picks (the rest go back as `queue_cleared`,
+   * as Stop's do). Returns the kept ones, for `enterQueued` once nothing runs any more.
+   */
+  async stopRun(keep: (item: WebQueueItem) => boolean): Promise<WebQueueItem[]> {
+    const { steering, followUp, kept } = await this.queue.drain(keep);
+    if (steering.length || followUp.length) this.broadcast({ type: "queue_cleared", steering, followUp });
+    await this.session.abort();
+    return kept;
+  }
+
+  /** The current leaf, the point `enterQueued` looks back to for messages the run took itself. */
+  leafId(): string | null {
+    return this.session.sessionManager.getLeafId();
+  }
+
+  /**
+   * Write queued messages a stopped run never took into the transcript as their senders' user
+   * messages (with the `sova-baton-sent` / `sova-overseer-sent` marker), with no turn: nothing
+   * anyone sent is lost when a reply is cut short (§app.baton/hand-off). One the run did take
+   * after `since` (a message in the transcript with its text) is not written twice. The model
+   * reads them with the next turn. Refused mid-turn, like appendSpecialEntry.
+   */
+  enterQueued(items: readonly WebQueueItem[], since: string | null): number {
+    if (!items.length) return 0;
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (this.session.isStreaming || this.isCompacting()) throw new BusyError("Wait for the reply to finish first.", "busy");
+    const sm = this.session.sessionManager;
+    const branch = sm.getBranch();
+    const from = since ? branch.findIndex((e) => e.id === since) + 1 : 0;
+    const taken = branch
+      .slice(from)
+      .filter((e) => e.type === "message" && e.message.role === "user")
+      .map((e) => (e.type === "message" ? textBlocks((e.message as { content?: unknown }).content) : ""));
+    this.flushDeferredAppends();
+    let n = 0;
+    for (const item of items) {
+      const t = taken.indexOf(item.text);
+      if (t >= 0) {
+        taken.splice(t, 1);
+        continue;
+      }
+      const marks = this.senderMarks.filter((m) => m.itemId === item.id);
+      for (const m of marks) this.dropSenderMark(m);
+      const id = sm.appendMessage({ role: "user", content: [{ type: "text", text: item.text }, ...(item.images ?? [])], timestamp: Date.now() });
+      const sender = senderOfItem(item);
+      const markerId =
+        sender?.kind === "baton"
+          ? sm.appendCustomEntry(BATON_SENT_ENTRY, { v: 1, targetId: id, by: sender.by } satisfies BatonSentData)
+          : sender?.kind === "overseer"
+            ? sm.appendCustomEntry(OVERSEER_SENT_ENTRY, { v: 1, targetId: id, ...(sender.overseerId ? { overseerId: sender.overseerId } : {}) } satisfies OverseerSentMarkerData)
+            : null;
+      const items = [id, markerId].flatMap((eid) => {
+        const entry = eid ? sm.getEntry(eid) : undefined;
+        return entry ? normalizeEntry(entry as unknown as Record<string, any>) : [];
+      });
+      if (items.length) this.broadcast({ type: "append", items });
+      n++;
+    }
+    if (n) {
+      markOwned(this.path);
+      // The agent's context is the session's projection, re-read after a write outside a run, as
+      // the SDK does for its own (agent-session.js _refreshFinalizedContext, 0.87.1).
+      (this.session as unknown as { _refreshFinalizedContext(): void })._refreshFinalizedContext();
+    }
+    return n;
+  }
+
+  /**
    * Append an invisible entry for a special kind, outside any turn (a baton hand-off the operator
    * made with Take back). The same write guards as a prompt; refused mid-turn, where the entry
    * would land inside the run. Every client gets the row the entry renders as.
@@ -1802,6 +1871,15 @@ class ChatSession {
         case "abort":
           // The queue drains Sova's held items AND the SDK's, so Stop still means "nothing
           // queued survives this", and the drained text still comes back as `queue_cleared`.
+          // In a baton session a participant's queued message is theirs, not the composer's to
+          // take back: it enters the transcript instead (§app.baton/hand-off, nothing dropped).
+          if (this.special === "baton") {
+            const since = this.leafId();
+            this.stopRun((it) => !!it.baton && it.baton.by !== OPERATOR)
+              .then((kept) => this.enterQueued(kept, since))
+              .catch(fail);
+            return;
+          }
           drainQueueThenAbort(this.session, (m) => this.broadcast(m), this.queue).catch(fail);
           return;
         case "queue_remove": {

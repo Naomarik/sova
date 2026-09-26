@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
-import { BATON_HANDOFF_ENTRY, BATON_LEASE_ENTRY, LEASE_IDLE_MS, OPERATOR } from "../shared/baton";
+import { BATON_HANDOFF_ENTRY, BATON_LEASE_ENTRY, BATON_SENT_ENTRY, LEASE_IDLE_MS, OPERATOR } from "../shared/baton";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-handoff-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -298,4 +298,45 @@ describe("moves, the starting turn and the message limit together", () => {
     await until(() => !chat.session.isStreaming);
     assert.equal(lastReply(c.path)?.message.stopReason, "stop");
   });
+});
+
+describe("a move that stops a reply drops nothing queued behind it", () => {
+  /** The transcript from the last stopped reply on: [who, text] per user message, "reply" / "hand-off" for the rest. */
+  const after = (path: string) => {
+    const es = entriesOf(path);
+    const sentBy = new Map(es.filter((e) => e.customType === BATON_SENT_ENTRY).map((e) => [e.data.targetId, e.data.by]));
+    const from = es.map((e) => e.type === "message" && e.message.stopReason === "aborted").lastIndexOf(true);
+    return es.slice(from).flatMap((e) =>
+      e.type === "message"
+        ? [e.message.role === "user" ? [sentBy.get(e.id) ?? "?", e.message.content.map((c: { text?: string }) => c.text ?? "").join("")] : e.message.stopReason === "aborted" ? "stopped" : "reply"]
+        : e.customType === BATON_HANDOFF_ENTRY
+          ? ["hand-off"]
+          : [],
+    );
+  };
+
+  for (const [how, move] of [
+    ["Take back", async (sid: string) => assert.equal((await post(`/api/baton/${sid}/take`)).status, 200)],
+    ["someone leaving", async (sid: string, by: string) => {
+      orgs.applyChange(org.id, by, { status: "left" }, { kind: "operator" });
+      await until(() => baton.batonById(sid)!.row.holder === OPERATOR);
+    }],
+  ] as const) {
+    test(`${how} mid-reply: every message queued behind the reply enters as its sender's, before the hand-off, with no reply`, async () => {
+      const kay = person(`Kay Queue ${how}`);
+      const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: kay.id, publicTitle: "Queued", goal: "g" });
+      const { chat } = await heldChat(c.path);
+      says(chat, c.sessionId, kay.id, "first");
+      await until(() => chat.session.isStreaming);
+      says(chat, c.sessionId, kay.id, "second");
+      says(chat, c.sessionId, kay.id, "third");
+      await move(c.sessionId, kay.id);
+      assert.deepEqual(after(c.path), ["stopped", [kay.id, "second"], [kay.id, "third"], "hand-off"]);
+      assert.equal(chat.queue.size, 0);
+      assert.equal(chat.session.isStreaming, false, "the kept messages start no reply");
+      assert.equal(baton.batonById(c.sessionId)!.row.budget.messagesUsed, 3, "each counted once, when it was accepted");
+      const context = chat.session.agent.state.messages.filter((m) => m.role === "user").map((m) => (m.content as { text?: string }[]).map((b) => b.text).join(""));
+      assert.deepEqual(context.slice(-2), ["second", "third"], "the model reads them with the next turn");
+    });
+  }
 });

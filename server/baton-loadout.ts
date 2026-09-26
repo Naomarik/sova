@@ -109,20 +109,21 @@ export function renderBatonPrompt(sessionId: string, template = readFileSync(PRO
 
 /**
  * Stop the reply being written, for an operator's move that can't wait (Take back, a hand-off, an
- * offer, someone leaving; §app.baton/hand-off "at any time"). Messages still queued behind the reply
- * were the outgoing holder's and are dropped with it (logged: the host keeps no copy to show), then
- * the run is aborted and awaited. A queue wake could start another run as this one settles, so it
- * checks again, a few times at most.
+ * offer, someone leaving; §app.baton/hand-off "at any time"). Nothing queued behind the reply is
+ * dropped: every message still waiting enters the transcript as its sender's, after the stopped
+ * reply and before the move's entry, with no reply of its own (counted when it was accepted), so
+ * whoever holds the baton next reads it and the model sees it with the next turn. A queue wake
+ * could start another run as this one settles, so it checks again, a few times at most.
  */
 async function interruptReply(chat: ChatSession): Promise<void> {
+  const since = chat.leafId();
+  const kept = [];
   for (let i = 0; i < 3 && (chat.session.isStreaming || chat.isCompacting() || chat.turnStarting); i++) {
     // A turn that is starting (a message just handed over) can't be aborted until its run begins.
     await chat.whenStarted();
-    const { steering, followUp } = await chat.queue.drain();
-    const dropped = steering.length + followUp.length;
-    if (dropped) console.warn(`[baton] an interrupted reply dropped ${dropped} queued message(s)`);
-    await chat.session.abort();
+    kept.push(...(await chat.stopRun(() => true)));
   }
+  chat.enterQueued(kept, since);
 }
 
 /** Move the baton from outside a turn (Take back, the budget stop): registry, then the transcript

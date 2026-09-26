@@ -193,3 +193,37 @@ describe("leaving hosts out (frontDoorExclude)", () => {
     assert.doesNotMatch(one.caddyfile, /bare502|WARNING/);
   });
 });
+
+describe("hosts with no browser address", () => {
+  test("they are never upstreams, whatever the order says, and are listed apart; the rest keep their order", () => {
+    const fd = frontDoorConfig(config({ frontDoorOrder: ["b", "c", "a"] }), "a.x.ts.net", new Set(["b"]));
+    assert.deepEqual(fd.order.map((h) => h.id), ["c", "a"]);
+    assert.deepEqual(upstreamsOf(fd.caddyfile), ["https://c.x.ts.net:8443", "https://a.x.ts.net:8443"]);
+    assert.doesNotMatch(fd.caddyfile, /b\.x\.ts\.net|@from_b|WARNING/);
+    assert.match(fd.caddyfile, /# Left out: b has no browser address \(Browser access is off\)\./);
+    assert.deepEqual(fd.noBrowser, [{ id: "b", label: "Host B" }]);
+  });
+
+  test("this host too; left out by the user as well, it is listed once, as having no browser address", () => {
+    const fd = frontDoorConfig(config({ frontDoorExclude: ["a"] }), "a.x.ts.net", new Set(["a"]));
+    assert.deepEqual(fd.order.map((h) => h.id), ["b", "c"]);
+    assert.deepEqual(fd.noBrowser, [{ id: "a", label: "Host A" }]);
+  });
+
+  test("with none, the answer is exactly what it was: no field, no line", () => {
+    const plain = frontDoorConfig(config(), "a.x.ts.net");
+    assert.deepEqual(frontDoorConfig(config(), "a.x.ts.net", new Set()), plain);
+    assert.deepEqual(frontDoorConfig(config(), "a.x.ts.net", new Set(["gone"])), plain);
+    assert.equal("noBrowser" in plain, false);
+  });
+
+  test("if no host has one, all stay, flagged, rather than an empty front door", () => {
+    const fd = frontDoorConfig(config(), "a.x.ts.net", new Set(["a", "b", "c"]));
+    assert.deepEqual(fd.order.map((h) => h.id), ["a", "b", "c"]);
+    assert.match(fd.caddyfile, /# WARNING: no host has a browser address/);
+    assert.equal(fd.noBrowser, undefined);
+    // Those the user left in, with a browser address, are the ones kept.
+    const one = frontDoorConfig(config({ frontDoorExclude: ["a"] }), "a.x.ts.net", new Set(["b"]));
+    assert.deepEqual(one.order.map((h) => h.id), ["c"]);
+  });
+});

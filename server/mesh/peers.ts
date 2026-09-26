@@ -36,13 +36,16 @@ export interface PeerEntry {
   pairedAt?: number;
   /** When the peer named itself `label` (its clock, ms epoch); absent: a name given here. */
   labelAt?: number;
+  /** false: the peer said it has no browser address (its Browser access is off); absent: it has one. */
+  browserAccess?: false;
 }
 
 export const SYNC_CATEGORIES: readonly SyncCategory[] = ["settings", "themes", "extensions", "logins"];
 
 export interface PeersConfig {
-  /** `labelAt`: when this host last renamed itself (ms epoch); absent: never, since recorded. */
-  self: { id: string; label: string; serveUrl?: string; labelAt?: number };
+  /** `labelAt`: when this host last renamed itself (ms epoch); absent: never, since recorded.
+      `browserAccess`: this host's own Browser access setting; absent: SOVA_BROWSER_ACCESS decides. */
+  self: { id: string; label: string; serveUrl?: string; labelAt?: number; browserAccess?: boolean };
   peers: PeerEntry[];
   /** Per-category sync switches the user has set; an absent category is on. */
   sync: Partial<Record<SyncCategory, boolean>>;
@@ -109,6 +112,7 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
   if (typeof selfId !== "string" || !PEER_ID_RE.test(selfId)) return { error: `self.id must match ${PEER_ID_RE}` };
   if (selfRaw.label !== undefined && !text(selfRaw.label)) return { error: "self.label must be a non-empty string (≤ 80)" };
   if (selfRaw.labelAt !== undefined && !isTime(selfRaw.labelAt)) return { error: "self.labelAt must be a time (ms epoch)" };
+  if (selfRaw.browserAccess !== undefined && typeof selfRaw.browserAccess !== "boolean") return { error: "self.browserAccess must be true or false" };
   const selfServe = selfRaw.serveUrl === undefined || selfRaw.serveUrl === null ? null : checkUrl(selfRaw.serveUrl);
   if (selfServe && "error" in selfServe) return { error: `self.serveUrl ${selfServe.error}` };
   if (r.peers !== undefined && !Array.isArray(r.peers)) return { error: "peers must be an array" };
@@ -131,6 +135,7 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     if (e.priority !== undefined && !Number.isFinite(e.priority)) return { error: `peers[${i}].priority must be a number` };
     const serve = e.serveUrl === undefined || e.serveUrl === null ? null : checkUrl(e.serveUrl);
     if (serve && "error" in serve) return { error: `peers[${i}].serveUrl ${serve.error}` };
+    if (e.browserAccess !== undefined && e.browserAccess !== false && e.browserAccess !== true) return { error: `peers[${i}].browserAccess must be true or false` };
     for (const k of ["pairedAt", "labelAt"] as const) {
       if (e[k] !== undefined && !isTime(e[k])) return { error: `peers[${i}].${k} must be a time (ms epoch)` };
     }
@@ -146,6 +151,7 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
       ...(serve ? { serveUrl: serve.url } : {}),
       ...(e.pairedAt !== undefined ? { pairedAt: e.pairedAt as number } : {}),
       ...(e.labelAt !== undefined ? { labelAt: e.labelAt as number } : {}),
+      ...(e.browserAccess === false ? { browserAccess: false as const } : {}),
     });
   }
   const syncRaw = r.sync ?? {};
@@ -176,6 +182,7 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     label: text(selfRaw.label) ?? selfId,
     ...(selfServe ? { serveUrl: selfServe.url } : {}),
     ...(selfRaw.labelAt !== undefined ? { labelAt: selfRaw.labelAt as number } : {}),
+    ...(typeof selfRaw.browserAccess === "boolean" ? { browserAccess: selfRaw.browserAccess } : {}),
   };
   return {
     config: {
@@ -189,6 +196,18 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     },
   };
 }
+
+/**
+ * Whether this host has a browser address: its own setting once made, else SOVA_BROWSER_ACCESS
+ * ("off" declares none; the phone installer writes it). A label only: nothing opens or closes.
+ */
+export function selfBrowserAccess(config: PeersConfig | null): boolean {
+  return config?.self.browserAccess ?? process.env.SOVA_BROWSER_ACCESS?.trim().toLowerCase() !== "off";
+}
+
+/** Whether this host's Browser access differs from the default, so peers must be told it. */
+export const browserAccessSet = (config: PeersConfig | null): boolean =>
+  config?.self.browserAccess !== undefined || process.env.SOVA_BROWSER_ACCESS?.trim().toLowerCase() === "off";
 
 /** A new name's stamp: now, but always past the last one, so a clock that stepped back can't
     make a rename every peer ignores (they take only a newer stamp). */

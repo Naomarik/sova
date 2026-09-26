@@ -14,7 +14,7 @@ import type {
   SyncStatus,
 } from "../../shared/protocol";
 import type { MeshLocalSettings } from "../../shared/mesh-local";
-import { frontDoorConfig } from "./front-door";
+import { frontDoorConfig, noBrowserIds } from "./front-door";
 import { ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from "./hello";
 import { type ListenerDeps, PeerListener } from "./listener";
 import { addressIdentity, identityMode } from "./address-identity";
@@ -471,6 +471,8 @@ async function putPeers(c: Context): Promise<Response> {
       // The stamp of the last name the peer gave itself, kept through a local edit: only a newer
       // rename by that host replaces what the user typed here.
       ...(known?.labelAt !== undefined ? { labelAt: known.labelAt } : {}),
+      // What the peer said about its own browser address: only the peer changes it.
+      ...(known?.browserAccess === false ? { browserAccess: false } : {}),
     });
   }
   const v = validatePeers({ ...base.config, peers });
@@ -554,7 +556,9 @@ export function meshRoutes(app: Hono): void {
   // already learnt, while on), no file written.
   app.get("/api/mesh/front-door", (c) => {
     reload();
-    return c.json(frontDoorConfig(rt.config ?? emptyConfig(), meshEnabled() ? (rt.self?.dnsName ?? null) : null));
+    const config = rt.config ?? emptyConfig();
+    // Browser access is a mesh fact: while off, the answer is exactly what it was without it.
+    return c.json(meshEnabled() ? frontDoorConfig(config, rt.self?.dnsName ?? null, noBrowserIds(config)) : frontDoorConfig(config, null));
   });
   app.get("/api/mesh/hello", (c) => c.json(ownHello(meshSelf(), rt.self?.nodeId)));
 

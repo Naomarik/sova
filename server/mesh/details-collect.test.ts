@@ -2,15 +2,20 @@
 // The per-OS readers against a fake machine: files, directories and commands are what each test says.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { activityNow, fixedFacts, openOf } from "./details";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
+import { activityNow, browserAccessOf, fixedFacts, openOf } from "./details";
 import {
   BatteryReader,
   buildCommit,
+  ClaudeFinder,
   deviceType,
   linuxBattery,
   loadAverages,
   type Machine,
   modelName,
+  onPath,
   parsePmset,
   parseTermuxBattery,
   TERMUX_BATTERY_TIMEOUT_MS,
@@ -184,5 +189,82 @@ describe("activity and open", () => {
     const phone = { identity: { device: "phone" } } as Parameters<typeof openOf>[1];
     assert.deepEqual(openOf({ dnsName: "b.example" }, phone, false), { kind: "through" });
     assert.deepEqual(openOf(null, undefined, false), { kind: "through" });
+  });
+
+  test("Browser access: what the host says wins, over its device and its own address; an older phone has none", () => {
+    const d = (device: string, browserAccess?: boolean) => ({ identity: { device }, ...(browserAccess !== undefined ? { browserAccess } : {}) }) as unknown as Parameters<typeof openOf>[1];
+    assert.equal(browserAccessOf(d("phone"), undefined), false, "an older phone");
+    assert.equal(browserAccessOf(d("laptop"), undefined), true, "an older computer");
+    assert.equal(browserAccessOf(d("phone", true), undefined), true);
+    assert.equal(browserAccessOf(d("server", false), undefined), false);
+    assert.equal(browserAccessOf(undefined, false), false, "no details: what it last said");
+    assert.equal(browserAccessOf(undefined, undefined), true);
+    assert.deepEqual(openOf({ dnsName: "b.example" }, d("phone", true), false), { kind: "direct", url: "https://b.example:8443" });
+    assert.deepEqual(openOf({ serveUrl: "https://b.example:10443", dnsName: "b.example" }, d("server", false), false, false), { kind: "through" });
+  });
+});
+
+describe("Claude Code on the PATH", () => {
+  test("onPath finds an executable file only, in absolute PATH entries, and runs nothing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sova-claude-path-"));
+    try {
+      const bin = join(dir, "bin");
+      const plain = join(dir, "plain");
+      mkdirSync(bin);
+      mkdirSync(plain);
+      mkdirSync(join(dir, "asdir", "claude"), { recursive: true });
+      // A script that would leave a mark if it ran.
+      writeFileSync(join(bin, "claude"), `#!/bin/sh\ntouch ${join(dir, "ran")}\n`);
+      chmodSync(join(bin, "claude"), 0o755);
+      writeFileSync(join(plain, "claude"), "not executable");
+      chmodSync(join(plain, "claude"), 0o644);
+      assert.equal(await onPath("claude", [plain, join(dir, "asdir"), "relative/bin", bin].join(delimiter)), true);
+      assert.equal(await onPath("claude", [plain, join(dir, "asdir")].join(delimiter)), false, "not executable, or a directory");
+      assert.equal(await onPath("claude", ""), false);
+      assert.equal(await onPath("claude", `relative${delimiter}${join(dir, "missing")}`), false);
+      assert.throws(() => rmSync(join(dir, "ran")), "the file was never run");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("ClaudeFinder never waits: nothing before the first lookup lands, then the cached answer for a minute", async () => {
+    let clock = 1_000_000;
+    let lookups = 0;
+    let answer = true;
+    let release!: () => void;
+    const gate = () => new Promise<void>((r) => (release = r));
+    let gated = gate();
+    const finder = new ClaudeFinder(
+      () => clock,
+      async () => {
+        lookups++;
+        await gated;
+        return answer;
+      },
+    );
+    assert.equal(finder.read(), undefined, "the first read doesn't wait for the lookup");
+    assert.equal(finder.read(), undefined);
+    assert.equal(lookups, 1, "one lookup at a time");
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(finder.read(), "found");
+    clock += 59_000;
+    answer = false;
+    assert.equal(finder.read(), "found");
+    assert.equal(lookups, 1, "cached");
+    clock += 2_000;
+    gated = gate();
+    assert.equal(finder.read(), "found", "a stale answer is served while the next lookup runs");
+    assert.equal(lookups, 2);
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(finder.read(), "not-found");
+    const failing = new ClaudeFinder(() => clock, async () => {
+      throw new Error("EACCES");
+    });
+    failing.read();
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(failing.read(), "not-found", "a failed lookup is not found, never a crash");
   });
 });

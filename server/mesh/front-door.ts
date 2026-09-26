@@ -1,6 +1,6 @@
 import { isIP } from "node:net";
-import type { FrontDoorConfig } from "../../shared/protocol";
-import type { PeersConfig } from "./peers";
+import type { MeshFrontDoor } from "../../shared/mesh-local";
+import { type PeersConfig, selfBrowserAccess } from "./peers";
 
 // The front door (brief: "Caddy with lb_policy first + active health checks, in an order the user
 // sets"): generated here, from peers.json and the user's order, for the user to install. Sova
@@ -27,11 +27,12 @@ const origin = (host: string, port: number) => `https://${host.includes(":") ? `
 /**
  * The hosts in failover order: the user's `frontDoorOrder` first (ids that are no longer hosts are
  * skipped), then every host it leaves out, this host first, then peers.json order; hosts in
- * `frontDoorExclude` are left out.
+ * `frontDoorExclude` are left out, and so are hosts in `noBrowser` (no browser address), unless
+ * that would leave none.
  * `selfDnsName` is this node's MagicDNS name when known (the mesh is on and tailscaled answered);
  * without it and without a self serveUrl, the self upstream is a placeholder the Caddyfile flags.
  */
-export function frontDoorOrder(config: PeersConfig, selfDnsName: string | null): Array<{ id: string; label: string; upstream: string; placeholder?: true }> {
+export function frontDoorOrder(config: PeersConfig, selfDnsName: string | null, noBrowser: ReadonlySet<string> = new Set()): Array<{ id: string; label: string; upstream: string; placeholder?: true }> {
   const hosts = [
     {
       id: config.self.id,
@@ -50,11 +51,24 @@ export function frontDoorOrder(config: PeersConfig, selfDnsName: string | null):
   // Left out by the user (a host with no browser-facing address, e.g. a phone). Leaving out every
   // host is refused when set; a hand-edited file that does it keeps them all.
   const kept = all.filter((h) => !config.frontDoorExclude?.includes(h.id));
-  return kept.length ? kept : all;
+  const base = kept.length ? kept : all;
+  // A host with no browser address can't be an upstream; if none has one, all stay (and are flagged).
+  const served = base.filter((h) => !noBrowser.has(h.id));
+  return served.length ? served : base;
 }
 
-export function frontDoorConfig(config: PeersConfig, selfDnsName: string | null): FrontDoorConfig {
-  const order = frontDoorOrder(config, selfDnsName);
+/** The hosts that said they have no browser address: this one by its own Browser access, peers by what they told this host. */
+export function noBrowserIds(config: PeersConfig): Set<string> {
+  return new Set([...(selfBrowserAccess(config) ? [] : [config.self.id]), ...config.peers.filter((p) => p.browserAccess === false).map((p) => p.id)]);
+}
+
+/** `noBrowser`: hosts with no browser address (noBrowserIds); empty while the mesh is off. */
+export function frontDoorConfig(config: PeersConfig, selfDnsName: string | null, noBrowser: ReadonlySet<string> = new Set()): MeshFrontDoor {
+  const order = frontDoorOrder(config, selfDnsName, noBrowser);
+  const inOrder = new Set(order.map((h) => h.id));
+  const hostLabels = [config.self, ...config.peers];
+  const dropped = hostLabels.filter((h) => noBrowser.has(h.id) && !inOrder.has(h.id)).map((h) => ({ id: h.id, label: h.label }));
+  const unserved = order.filter((h) => noBrowser.has(h.id)).map((h) => h.id);
   const flagged = order.filter((h) => h.placeholder).map((h) => h.id);
   const schemes = new Set(order.map((h) => new URL(h.upstream).protocol));
   // Upstream names are MagicDNS names: Caddy resolves them through tailscale itself, so the front
@@ -129,6 +143,12 @@ export function frontDoorConfig(config: PeersConfig, selfDnsName: string | null)
     ...(order.some((h) => config.frontDoorExclude?.includes(h.id))
       ? [`#`, `# WARNING: every host is left out of the front door (frontDoorExclude), so all are listed.`]
       : []),
+    ...(dropped.length
+      ? [`#`, `# Left out: ${dropped.map((h) => h.id).join(", ")} ${dropped.length === 1 ? "has" : "have"} no browser address (Browser access is off).`]
+      : []),
+    ...(unserved.length
+      ? [`#`, `# WARNING: no host has a browser address (Browser access is off on every host), so all are listed.`]
+      : []),
     ...(loops.length
       ? [`#`, `# WARNING: ${loops.join(", ")}'s upstream is this front door's own address (${door}): it would proxy`, `# to itself. Set that host's address on Sova's Mesh page (e.g. its other tailscale serve port).`]
       : []),
@@ -182,5 +202,9 @@ export function frontDoorConfig(config: PeersConfig, selfDnsName: string | null)
     `}`,
     ``,
   ];
-  return { order: order.map(({ id, label, upstream }) => ({ id, label, upstream })), caddyfile: lines.join("\n") };
+  return {
+    order: order.map(({ id, label, upstream }) => ({ id, label, upstream })),
+    caddyfile: lines.join("\n"),
+    ...(dropped.length ? { noBrowser: dropped } : {}),
+  };
 }

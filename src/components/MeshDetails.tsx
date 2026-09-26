@@ -1,10 +1,11 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
-import { fetchMesh, fetchMeshDetails, putHostLabel } from "../lib/api";
+import { fetchMesh, fetchMeshDetails, putHostBrowserAccess, putHostLabel } from "../lib/api";
 import { isMeshHash, MESH_HREF, SELF_FILTER, setMeshState } from "../lib/mesh";
 import { createPoll } from "../lib/poll";
 import {
   askHostFilter,
+  browserAccessRefusal,
   connectedCount,
   DETAILS_POLL_MS,
   detailRows,
@@ -14,8 +15,8 @@ import {
   stateWord,
   unavailableText,
 } from "../lib/mesh-details";
-import { announce, toast } from "../lib/ui-state";
-import { Banner, Icon, trapFocus } from "./ui";
+import { announce, copyText, toast } from "../lib/ui-state";
+import { Banner, CopyButton, Icon, trapFocus } from "./ui";
 
 // Styles: src/mesh.css (see MeshHostMenu.tsx for why they are not imported here).
 
@@ -94,6 +95,24 @@ export function MeshDetails(props: { onClose(): void }) {
   );
 }
 
+/** A browser address: a link that opens it in a new tab, and an icon-only copy button beside it. */
+export function AddressLink(props: { url: string; name?: string }) {
+  return (
+    <span class="mesh-address-link">
+      <a class="text-mono" href={props.url} target="_blank" rel="noopener">
+        {props.url}
+      </a>
+      <CopyButton
+        iconOnly
+        label={props.name ? `Copy Address of ${props.name}` : "Copy Address"}
+        title="Copy address"
+        text={() => props.url}
+        onCopy={(t) => copyText(t, "Address copied.")}
+      />
+    </span>
+  );
+}
+
 function HostSection(props: { host: MeshHostDetails; ownProtocol: string | undefined; now: number; onRenamed(): void; onClose(): void }) {
   const h = () => props.host;
   const d = () => props.host.details;
@@ -143,6 +162,30 @@ function HostSection(props: { host: MeshHostDetails; ownProtocol: string | undef
   };
 
   const rows = () => detailRows(h(), props.ownProtocol, props.now);
+
+  // Browser access: the host's own setting. The switch shows the saved answer until the next refresh.
+  const [browserSaving, setBrowserSaving] = createSignal(false);
+  const [browserError, setBrowserError] = createSignal<string | null>(null);
+  const browserRefusal = () => browserAccessRefusal(h());
+  const setBrowser = async (on: boolean): Promise<boolean> => {
+    if (browserSaving()) return false;
+    setBrowserSaving(true);
+    setBrowserError(null);
+    try {
+      const res = await putHostBrowserAccess(h().id, on);
+      const missed = res.told.filter((t) => !t.ok).length;
+      const done = `${on ? `${h().label} has a browser address.` : `${h().label} has no browser address. Every front door leaves it out.`}${missed ? ` ${missed} ${missed === 1 ? "host" : "hosts"} will hear it when back.` : ""}`;
+      toast(done);
+      announce(done);
+      props.onRenamed();
+      return true;
+    } catch (err) {
+      setBrowserError((err as Error).message);
+      return false;
+    } finally {
+      setBrowserSaving(false);
+    }
+  };
 
   return (
     <section class="mesh-details-host" aria-labelledby={titleId()}>
@@ -230,11 +273,32 @@ function HostSection(props: { host: MeshHostDetails; ownProtocol: string | undef
           {([k, v]) => (
             <>
               <dt>{k}</dt>
-              <dd>{v}</dd>
+              <dd>{typeof v === "string" ? v : <AddressLink url={v.link} name={h().label} />}</dd>
             </>
           )}
         </For>
       </dl>
+      <label class="toggle toggle-switch mesh-sync-row mesh-details-browser">
+        <input
+          type="checkbox"
+          checked={h().browserAccess}
+          disabled={browserSaving() || !!browserRefusal()}
+          aria-describedby={`${titleId()}-browser-hint`}
+          onChange={(e) => {
+            const el = e.currentTarget;
+            const want = el.checked;
+            void setBrowser(want).then((ok) => ok || (el.checked = !want));
+          }}
+        />
+        <span class="mesh-sync-main">
+          <span class="mesh-sync-name">Browser access</span>
+          <span class="mesh-sync-meta" id={`${titleId()}-browser-hint`}>
+            {browserRefusal() ?? "Off: it has no address a browser can open, so every front door leaves it out. Nothing opens or closes."}
+          </span>
+        </span>
+        <span class="toggle-box" />
+      </label>
+      <Show when={browserError()}>{(msg) => <span class="field-error">Not changed: {msg()}</span>}</Show>
     </section>
   );
 }

@@ -7,7 +7,7 @@ import type { HostDetails, MeshHostDetails } from "../../shared/mesh-details";
 import type { PeerStatus, SyncCategory } from "../../shared/protocol";
 import { duration, relativeTime, shortDate } from "./format";
 
-export type { HostDetails, HostRenameResult, MeshDetails, MeshHostDetails } from "../../shared/mesh-details";
+export type { HostBrowserAccessResult, HostDetails, HostRenameResult, MeshDetails, MeshHostDetails } from "../../shared/mesh-details";
 
 const [open, setOpen] = createSignal(false);
 /** The modal is open (it polls only then). */
@@ -162,6 +162,19 @@ export function renameRefusal(h: Pick<MeshHostDetails, "self" | "state" | "unava
   return null;
 }
 
+/** Whether the modal can change this host's Browser access, or why not. */
+export function browserAccessRefusal(h: Pick<MeshHostDetails, "self" | "state" | "unavailable" | "label" | "details">): string | null {
+  if (h.self) return null;
+  if (h.unavailable === "update" || (h.details && typeof h.details.browserAccess !== "boolean")) return `Update ${h.label} to change this from here.`;
+  if (h.state !== "up" && h.state !== "skewed") return `${h.label} isn't answering, so this can't change now.`;
+  return null;
+}
+
+/** "Claude Code" row: whether the `claude` Sova would start is on its PATH. */
+export function claudeCodeLine(d: HostDetails): string | null {
+  return d.claudeCode === "found" ? "Found" : d.claudeCode === "not-found" ? "Not found on Sova's PATH" : null;
+}
+
 /** A name the server will take: 1–80 characters once trimmed; else why not. */
 export function labelProblem(v: string): string | null {
   const t = v.trim();
@@ -170,16 +183,19 @@ export function labelProblem(v: string): string | null {
   return null;
 }
 
+/** A row's value: text, or an address a browser opens (shown as a link with a copy button). */
+export type DetailValue = string | { link: string };
+
 /**
  * The label/value rows of one host's section. Each row is built on its own: a host on a later
  * build that drops or reshapes a field loses that row, never the dialog.
  */
-export function detailRows(h: MeshHostDetails, ownProtocol: string | undefined, now: number): Array<[string, string]> {
-  const out: Array<[string, string]> = [];
-  const row = (label: string, value: () => string | null | undefined | false) => {
+export function detailRows(h: MeshHostDetails, ownProtocol: string | undefined, now: number): Array<[string, DetailValue]> {
+  const out: Array<[string, DetailValue]> = [];
+  const row = (label: string, value: () => DetailValue | null | undefined | false) => {
     try {
       const v = value();
-      if (typeof v === "string" && v) out.push([label, v]);
+      if ((typeof v === "string" && v) || (typeof v === "object" && v && typeof v.link === "string")) out.push([label, v]);
     } catch {
       // a field this build doesn't know the shape of: no row
     }
@@ -191,8 +207,12 @@ export function detailRows(h: MeshHostDetails, ownProtocol: string | undefined, 
   if (x) {
     row("Machine", () => (x.identity.model ? `${machineLine(x)} · ${x.identity.model}` : machineLine(x)));
     row("Address", () => [x.identity.dnsName, ...(x.identity.addresses ?? [])].filter(Boolean).join(" · "));
+  }
+  row("Browser address", () => (h.open.kind === "direct" ? { link: h.open.url } : "No browser address"));
+  if (x) {
     row("Sova", () => [x.versions.sova, shortCommit(x.versions.commit)].filter(Boolean).join(" · "));
     row("pi · Node", () => `${x.versions.pi} · ${x.versions.node}`);
+    row("Claude Code", () => claudeCodeLine(x));
     if (!h.self) row("Protocol", () => protocolLine(x, ownProtocol));
   }
   if (!h.self) {

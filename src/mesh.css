@@ -142,3 +142,22 @@
 .mesh-details-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--space-3); row-gap: var(--space-1); margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); }
 .mesh-details-list dt { color: var(--color-ink-muted); }
 .mesh-details-list dd { margin: 0; color: var(--color-ink); overflow-wrap: anywhere; }
+
+/* A browser address (details dialog, #/mesh front door): the link, then an icon-only copy button. */
+.mesh-address-link { display: inline-flex; align-items: center; gap: var(--space-1); max-width: 100%; min-width: 0; vertical-align: middle; }
+.mesh-address-link a { min-width: 0; overflow-wrap: anywhere; }
+/* On one list line the address gives way (ellipsis) and its copy button stays. */
+.list-meta .mesh-address-link a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mesh-address-link .button-icon { flex: none; width: var(--control-sm); min-height: var(--control-sm); }
+.mesh-details-browser { margin-top: var(--space-2); }
+/* In the details list the button keeps its target but not its height: the row stays one caption line. */
+.mesh-details-list .mesh-address-link .button-icon { margin-block: calc((var(--lh-caption) * 1em - var(--control-sm)) / 2); }
+/* Narrow screens: a front-door row's name and address take the first line, its actions the next
+   (beside them the actions left the address no width at all); the switch goes last, on the right. */
+@media (max-width: 767px) {
+  .mesh-order > .mesh-host { flex-wrap: wrap; column-gap: var(--space-2); row-gap: var(--space-1); }
+  .mesh-order > .mesh-host > .list-main { flex: 1 1 calc(100% - 2ch - var(--space-2)); }
+  .mesh-order > .mesh-host > .list-main + * { margin-left: auto; }
+  .mesh-order > .mesh-host > .button-icon { flex: none; }
+  .mesh-order > .mesh-host > .mesh-fd-in { margin-left: auto; }
+}

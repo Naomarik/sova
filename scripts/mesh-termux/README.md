@@ -39,6 +39,9 @@ Remove everything it added (default), or keep sshd, its key and the wake lock fo
 - Listeners: main `127.0.0.1:4800` only. Peer listener `<tailnet IP>:4801`, only while peers.json lists a peer. The
   tailnet IP is read from `tun*` (`--tailnet-ip` overrides), because Termux can't reach Tailscale's LocalAPI. Nothing
   binds 0.0.0.0 or the Wi-Fi address; the installer proves it by connecting.
+- No browser address: `SOVA_BROWSER_ACCESS=off`. The phone tells its peers it has none, so every front door leaves it
+  out and the Mesh page says "No browser address" instead of a guessed `:8443`. It only labels the phone; Browser
+  access in Mesh details changes it (the setting then wins over the variable).
 - Caller identity without LocalAPI: `SOVA_MESH_IDENTITY=addresses`. The phone knows a caller by its tailnet source IP,
   and that IP must match exactly one peers.json entry. So every entry on the phone needs its StableID (`nodeId`) AND its tailnet
   IP as `name` or as the `url` host (e.g. `http://100.x.y.z:4801`); a MagicDNS name alone never matches. Other hosts

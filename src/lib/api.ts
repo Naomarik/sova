@@ -40,7 +40,6 @@ import type {
   UsageInsight,
   WebSettings,
   WorkerResumeResult,
-  FrontDoorConfig,
   MeshCandidate,
   MeshHello,
   MeshInfo,
@@ -49,8 +48,8 @@ import type {
   MeshPeerEntry,
   MeshSessions,
 } from "../../shared/protocol";
-import type { MeshLocalSettings } from "../../shared/mesh-local";
-import type { HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
+import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
+import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -737,7 +736,7 @@ export const fetchMeshSessions = () => request<MeshSessions>("/api/mesh/sessions
 export const getMeshSettings = () => request<MeshLocalSettings>("/api/mesh/settings");
 
 /** The Caddy front door these hosts would need, in failover order. Generated only: Sova never runs Caddy. */
-export const fetchFrontDoor = () => request<FrontDoorConfig>("/api/mesh/front-door");
+export const fetchFrontDoor = () => request<MeshFrontDoor>("/api/mesh/front-door");
 
 export const putMeshSettings = (settings: Partial<MeshLocalSettings>) =>
   request<MeshLocalSettings>("/api/mesh/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
@@ -762,6 +761,14 @@ export const putHostLabel = (id: string, label: string) =>
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ id, label } satisfies HostRename),
+  });
+
+/** A host's own Browser access: this host's, or a peer asked to change its own. */
+export const putHostBrowserAccess = (id: string, browserAccess: boolean) =>
+  request<HostBrowserAccessResult>("/api/mesh/browser-access", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, browserAccess } satisfies HostBrowserAccessChange),
   });
 
 // ---- Settings → Decisions (components/DecisionSettings.tsx) --------------------------------------

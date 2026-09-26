@@ -8,7 +8,8 @@ import { createServer, request, type IncomingMessage, type Server } from "node:h
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
-import type { HostDetails, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
+import type { HostBrowserAccessResult, HostDetails, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
+import type { MeshFrontDoor } from "../../shared/mesh-local";
 import type { MeshHello } from "../../shared/protocol";
 
 const tmp = mkdtempSync(join(tmpdir(), "sova-details-test-"));
@@ -58,6 +59,8 @@ let fakePort = 0;
 let deadPort = 0;
 let fakeDetails: "ok" | "old" = "ok";
 let fakeLabel = "B";
+/** What the fake peer says about its browser address; undefined: an older build that doesn't say. */
+let fakeBrowser: boolean | undefined;
 /** The fake peer drops every connection, as a stopped host does. */
 let fakeAway = false;
 const told: Array<{ path: string; body: unknown }> = [];
@@ -73,6 +76,7 @@ const fakeHostDetails = (): HostDetails => ({
   resources: { cores: 8, memory: { total: 2, available: 1 }, batteryHint: "termux-api" },
   activity: { sessions: 3, turnsRunning: 0, workers: 0 },
   sync: { categories: [] },
+  ...(fakeBrowser !== undefined ? { browserAccess: fakeBrowser } : {}),
 });
 
 before(async () => {
@@ -94,7 +98,12 @@ before(async () => {
     }
     if (fakeDetails === "old") return json(404, { error: "Not found" });
     if (url.pathname === "/api/peer/details") return json(200, fakeHostDetails());
-    if (url.pathname === "/api/peer/rename" || url.pathname === "/api/peer/label") told.push({ path: url.pathname, body });
+    if (["/api/peer/rename", "/api/peer/label", "/api/peer/browser-access", "/api/peer/set-browser-access"].includes(url.pathname)) told.push({ path: url.pathname, body });
+    if (url.pathname === "/api/peer/set-browser-access") {
+      fakeBrowser = (body as { browserAccess: boolean }).browserAccess;
+      return json(200, { browserAccess: fakeBrowser });
+    }
+    if (url.pathname === "/api/peer/browser-access") return json(200, { ok: true });
     if (url.pathname === "/api/peer/rename") {
       fakeLabel = (body as { label: string }).label;
       return json(200, { label: fakeLabel, labelAt: 5_000 });
@@ -165,6 +174,9 @@ describe("mesh off", () => {
       ["GET", "/api/peer/details"],
       ["POST", "/api/peer/rename"],
       ["POST", "/api/peer/label"],
+      ["PUT", "/api/mesh/browser-access"],
+      ["POST", "/api/peer/browser-access"],
+      ["POST", "/api/peer/set-browser-access"],
     ] as const) {
       const [st, body] = await call(method, path, method === "GET" ? undefined : { id: "x", label: "y", labelAt: 1 });
       assert.equal(st, st0, `${method} ${path}`);
@@ -172,6 +184,21 @@ describe("mesh off", () => {
     }
     assert.equal(identityCalls, 0);
     assert.equal(fetches, 0);
+  });
+
+  test("the front door answers the same with SOVA_BROWSER_ACCESS=off: Browser access is a mesh fact", async () => {
+    const [, plain] = await call<MeshFrontDoor>("GET", "/api/mesh/front-door");
+    process.env.SOVA_BROWSER_ACCESS = "off";
+    try {
+      const [st, off] = await call<MeshFrontDoor>("GET", "/api/mesh/front-door");
+      assert.equal(st, 200);
+      assert.deepEqual(off, plain);
+      assert.equal(off.noBrowser, undefined);
+    } finally {
+      delete process.env.SOVA_BROWSER_ACCESS;
+    }
+    assert.equal(fetches, 0);
+    assert.equal(identityCalls, 0);
   });
 
   test("a rename in Settings is stamped with the mesh off too (it spreads once paired), and calls no one", async () => {
@@ -424,5 +451,165 @@ describe("mesh on", () => {
     assert.deepEqual(body, { error: "Not found" });
     writeFileSync(peersFile(), good);
     assert.equal((await call("GET", "/api/mesh"))[0], 200);
+  });
+
+  const selfId = () => peersDoc().self.id as string;
+  const peerB = () => peersDoc().peers.find((p: { id: string }) => p.id === "b");
+  const upstreams = (fd: MeshFrontDoor) => /\treverse_proxy (.*) \{/.exec(fd.caddyfile)![1]!.split(" ");
+
+  test("a phone on an older build that doesn't say has no browser address: recorded, and the front door leaves it out", async () => {
+    fakeBrowser = undefined;
+    fresh();
+    const [, d] = await call<MeshDetails>("GET", "/api/mesh/details");
+    const b = d.hosts.find((h) => h.id === "b")!;
+    assert.equal(b.browserAccess, false);
+    assert.deepEqual(b.open, { kind: "through" });
+    assert.equal(peerB().browserAccess, false, "recorded in peers.json, so it holds while b is down");
+    assert.deepEqual(b.frontDoor, { position: null, excluded: true });
+    const [, fd] = await call<MeshFrontDoor>("GET", "/api/mesh/front-door");
+    assert.deepEqual(fd.noBrowser, [{ id: "b", label: peerB().label }]);
+    assert.ok(!fd.order.some((h) => h.id === "b"));
+    assert.ok(!upstreams(fd).some((u) => u.includes("b.lab")), "not an upstream in the Caddyfile");
+    assert.match(fd.caddyfile, /# Left out: b has no browser address/);
+    // Re-sending the list from #/mesh keeps what b said about itself.
+    const doc = peersDoc();
+    await call("PUT", "/api/mesh/peers", { peers: doc.peers.map((p: { id: string; nodeId: string; dnsName: string; url?: string }) => ({ id: p.id, nodeId: p.nodeId, name: p.dnsName, url: p.url })) });
+    assert.equal(peerB().browserAccess, false);
+  });
+
+  test("a peer that says it has one is taken at its word, over its device", async () => {
+    fakeBrowser = true;
+    fresh();
+    const [, d] = await call<MeshDetails>("GET", "/api/mesh/details");
+    const b = d.hosts.find((h) => h.id === "b")!;
+    assert.equal(b.browserAccess, true);
+    assert.equal(b.open.kind, "direct");
+    assert.equal(peerB().browserAccess, undefined);
+    const [, fd] = await call<MeshFrontDoor>("GET", "/api/mesh/front-door");
+    assert.equal(fd.noBrowser, undefined);
+    assert.ok(fd.order.some((h) => h.id === "b"));
+  });
+
+  test("/api/peer/browser-access records the CALLER's own, never another host's", async () => {
+    whoisNode = "nB";
+    try {
+      const r = await peerCall("POST", "/api/peer/browser-access", { browserAccess: false, id: "c" });
+      assert.equal(r.status, 200);
+      assert.equal(peerB().browserAccess, false);
+      assert.equal(peersDoc().peers.find((p: { id: string }) => p.id === "c").browserAccess, undefined);
+      const stamp = statSync(peersFile()).mtimeMs;
+      await new Promise((r) => setTimeout(r, 5));
+      assert.equal((await peerCall("POST", "/api/peer/browser-access", { browserAccess: false })).status, 200);
+      assert.equal(statSync(peersFile()).mtimeMs, stamp, "the same answer again writes nothing");
+      assert.equal((await peerCall("POST", "/api/peer/browser-access", { browserAccess: "no" })).status, 400);
+      assert.equal((await peerCall("POST", "/api/peer/browser-access", { browserAccess: true })).status, 200);
+      assert.equal(peerB().browserAccess, undefined);
+      whoisNode = null;
+      assert.equal((await peerCall("POST", "/api/peer/browser-access", { browserAccess: false })).status, 403);
+    } finally {
+      whoisNode = null;
+    }
+    assert.equal((await call("POST", "/api/peer/browser-access", { browserAccess: false }))[0], 404, "never from the main listener");
+  });
+
+  test("this host's Browser access: set here, told to every peer; its details, its opening and the front door follow", async () => {
+    told.length = 0;
+    const [st, res] = await call<HostBrowserAccessResult>("PUT", "/api/mesh/browser-access", { id: selfId(), browserAccess: false });
+    assert.equal(st, 200);
+    assert.equal(res.browserAccess, false);
+    assert.equal(peersDoc().self.browserAccess, false);
+    assert.deepEqual(told, [{ path: "/api/peer/browser-access", body: { browserAccess: false } }]);
+    assert.deepEqual(res.told.find((t) => t.id === "b"), { id: "b", ok: true });
+    assert.equal(res.told.find((t) => t.id === "c")!.ok, false, "a down peer is reported");
+    fresh();
+    const [, d] = await call<MeshDetails>("GET", "/api/mesh/details");
+    assert.equal(d.hosts[0]!.browserAccess, false);
+    assert.equal(d.hosts[0]!.details!.browserAccess, false);
+    assert.deepEqual(d.hosts[0]!.open, { kind: "through" });
+    const [, fd] = await call<MeshFrontDoor>("GET", "/api/mesh/front-door");
+    assert.ok(fd.noBrowser!.some((h) => h.id === selfId()));
+    assert.ok(!fd.order.some((h) => h.id === selfId()));
+  });
+
+  test("the setting wins over SOVA_BROWSER_ACCESS; without it, the environment decides", async () => {
+    process.env.SOVA_BROWSER_ACCESS = "off";
+    try {
+      await call("PUT", "/api/mesh/browser-access", { id: selfId(), browserAccess: true });
+      fresh();
+      let [, d] = await call<MeshDetails>("GET", "/api/mesh/details");
+      assert.equal(d.hosts[0]!.browserAccess, true);
+      const doc = peersDoc();
+      delete doc.self.browserAccess;
+      writeFileSync(peersFile(), JSON.stringify(doc));
+      [, d] = await call<MeshDetails>("GET", "/api/mesh/details");
+      assert.equal(d.hosts[0]!.browserAccess, false);
+    } finally {
+      delete process.env.SOVA_BROWSER_ACCESS;
+    }
+    const [, d] = await call<MeshDetails>("GET", "/api/mesh/details");
+    assert.equal(d.hosts[0]!.browserAccess, true, "unset and no setting: it has one");
+  });
+
+  test("a peer that comes up hears this host's Browser access when it isn't the default, with no page open", async () => {
+    await call("PUT", "/api/mesh/browser-access", { id: selfId(), browserAccess: false });
+    fakeAway = true;
+    fresh();
+    await call("GET", "/api/mesh"); // b is down here
+    fakeAway = false;
+    told.length = 0;
+    fresh();
+    await call("GET", "/api/mesh"); // b answers again
+    await waitFor(() => told.some((t) => t.path === "/api/peer/browser-access"));
+    assert.deepEqual(told.find((t) => t.path === "/api/peer/browser-access")!.body, { browserAccess: false });
+    await call("PUT", "/api/mesh/browser-access", { id: selfId(), browserAccess: true });
+  });
+
+  test("changing a peer's asks it, and takes its answer here", async () => {
+    fakeBrowser = true;
+    told.length = 0;
+    const [st, res] = await call<HostBrowserAccessResult>("PUT", "/api/mesh/browser-access", { id: "b", browserAccess: false });
+    assert.equal(st, 200);
+    assert.deepEqual(told, [{ path: "/api/peer/set-browser-access", body: { browserAccess: false } }]);
+    assert.equal(res.browserAccess, false);
+    assert.equal(peerB().browserAccess, false);
+    assert.equal(fakeBrowser, false);
+    fakeDetails = "old";
+    const [st2, err] = await call<{ error: string }>("PUT", "/api/mesh/browser-access", { id: "b", browserAccess: true });
+    assert.equal(st2, 501);
+    assert.match(err.error, /older build/);
+    fakeDetails = "ok";
+    assert.equal((await call("PUT", "/api/mesh/browser-access", { id: "c", browserAccess: true }))[0], 502, "a down host");
+    assert.equal((await call("PUT", "/api/mesh/browser-access", { id: "zz", browserAccess: true }))[0], 404);
+    assert.equal((await call("PUT", "/api/mesh/browser-access", { id: "b", browserAccess: "yes" }))[0], 400);
+  });
+
+  test("/api/peer/set-browser-access: a peer sets this host's own, which then tells its peers", async () => {
+    told.length = 0;
+    whoisNode = "nB";
+    try {
+      const r = await peerCall("POST", "/api/peer/set-browser-access", { browserAccess: false });
+      assert.equal(r.status, 200);
+      assert.deepEqual(JSON.parse(r.body), { browserAccess: false });
+      assert.equal(peersDoc().self.browserAccess, false);
+      await waitFor(() => told.some((t) => t.path === "/api/peer/browser-access"));
+      assert.equal((await peerCall("POST", "/api/peer/set-browser-access", {})).status, 400);
+      whoisNode = null;
+      assert.equal((await peerCall("POST", "/api/peer/set-browser-access", { browserAccess: true })).status, 403);
+    } finally {
+      whoisNode = null;
+    }
+    assert.equal((await call("POST", "/api/peer/set-browser-access", { browserAccess: true }))[0], 404, "never from the main listener");
+  });
+
+  test("a host's details say whether Claude Code is found, once the first lookup has landed", async () => {
+    whoisNode = "nB";
+    try {
+      await peerCall("GET", "/api/peer/details");
+      await new Promise((r) => setTimeout(r, 100));
+      const d = JSON.parse((await peerCall("GET", "/api/peer/details")).body) as HostDetails;
+      assert.ok(d.claudeCode === "found" || d.claudeCode === "not-found");
+    } finally {
+      whoisNode = null;
+    }
   });
 });

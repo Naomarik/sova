@@ -1,4 +1,4 @@
-import type { MeshSettings } from "./protocol";
+import type { FrontDoorConfig, MeshSettings } from "./protocol";
 
 // Types of this host's own /api/mesh/* routes: main listener only, never on the peer listener and
 // never proxied host to host (the page only reads the host serving it). They stay out of
@@ -11,4 +11,11 @@ export interface MeshLocalSettings extends MeshSettings {
       serve. Absent = every host is an upstream. In a PUT, null or [] clears it; leaving out every
       host is refused. */
   frontDoorExclude?: string[] | null;
+}
+
+/** GET /api/mesh/front-door: FrontDoorConfig plus the hosts it leaves out for having no browser address. */
+export interface MeshFrontDoor extends FrontDoorConfig {
+  /** Hosts with Browser access off (shared/mesh-details.ts), never in the order or the Caddyfile; absent when none
+      (always while the mesh is off). */
+  noBrowser?: Array<{ id: string; label: string }>;
 }

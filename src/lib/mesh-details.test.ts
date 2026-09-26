@@ -4,7 +4,9 @@ import type { HostDetails, MeshHostDetails } from "../../shared/mesh-details";
 import {
   activityLine,
   batteryLine,
+  browserAccessRefusal,
   bytes,
+  claudeCodeLine,
   connectedCount,
   cpuLine,
   detailRows,
@@ -81,7 +83,7 @@ test("the Sync row names each category as #/mesh does, and keeps an unknown one 
   const d = { ...details(), sync: { categories: [{ category: "themes", state: "ok", lastAt: 1 }, { category: "later", state: "off" }] } };
   const host = { id: "vps", label: "VPS", self: false, state: "up", details: d, latencyMs: 1, lastSeen: 1, stateSince: null, pairedAt: null,
     frontDoor: { position: 1, excluded: false }, open: { kind: "through" } } as unknown as MeshHostDetails;
-  const sync = detailRows(host, "aaaa", 10_000).find(([k]) => k === "Sync")![1];
+  const sync = detailRows(host, "aaaa", 10_000).find(([k]) => k === "Sync")![1] as string;
   assert.match(sync, /^Themes /);
   assert.match(sync, /· later off$/);
 });
@@ -118,7 +120,7 @@ test("joined, front door, protocol, logins, since", () => {
 test("a later build's answer with fields missing or reshaped loses those rows, never the section", () => {
   const host = (d: unknown): MeshHostDetails => ({
     id: "vps", label: "VPS", self: false, state: "up", details: d as HostDetails, latencyMs: 12, lastSeen: 1, stateSince: null,
-    pairedAt: null, frontDoor: { position: 2, excluded: false }, open: { kind: "through" },
+    pairedAt: null, frontDoor: { position: 2, excluded: false }, open: { kind: "through" }, browserAccess: false,
   });
   const full = detailRows(host(details()), "aaaa", Date.UTC(2026, 8, 25)).map(([k]) => k);
   assert.ok(full.includes("Memory") && full.includes("Uptime") && full.includes("Activity"));
@@ -127,4 +129,32 @@ test("a later build's answer with fields missing or reshaped loses those rows, n
   const labels = rows.map(([k]) => k);
   assert.ok(!labels.includes("Memory") && !labels.includes("Uptime") && !labels.includes("Sync"));
   assert.ok(labels.includes("Machine") && labels.includes("CPU") && labels.includes("Front door") && labels.includes("Joined"));
+});
+
+test("the browser address is a link where there is one, and says so where there isn't, details or not", () => {
+  const host = (o: Partial<MeshHostDetails>): MeshHostDetails => ({
+    id: "vps", label: "VPS", self: false, state: "up", details: details({ dnsName: "vps.example" }), latencyMs: 12, lastSeen: 1, stateSince: null,
+    pairedAt: null, frontDoor: { position: 2, excluded: false }, open: { kind: "through" }, browserAccess: false, ...o,
+  });
+  const value = (h: MeshHostDetails) => detailRows(h, "aaaa", 1).find(([k]) => k === "Browser address")?.[1];
+  assert.deepEqual(value(host({ open: { kind: "direct", url: "https://vps.example:8443" }, browserAccess: true })), { link: "https://vps.example:8443" });
+  assert.equal(value(host({})), "No browser address");
+  assert.equal(value(host({ state: "down", details: undefined, unavailable: "down" })), "No browser address");
+  const labels = detailRows(host({}), "aaaa", 1).map(([k]) => k);
+  assert.equal(labels.indexOf("Browser address"), labels.indexOf("Address") + 1, "right under the tailnet address");
+});
+
+test("Claude Code: found, not found on Sova's PATH, or no row before the host has looked", () => {
+  assert.equal(claudeCodeLine({ ...details(), claudeCode: "found" }), "Found");
+  assert.equal(claudeCodeLine({ ...details(), claudeCode: "not-found" }), "Not found on Sova's PATH");
+  assert.equal(claudeCodeLine(details()), null);
+});
+
+test("Browser access: always for this host; a peer must answer on a build that reports it", () => {
+  const h = (o: Partial<MeshHostDetails>) => ({ self: false, state: "up" as const, label: "Phone", details: { ...details(), browserAccess: false }, ...o });
+  assert.equal(browserAccessRefusal(h({ self: true, state: "self" })), null);
+  assert.equal(browserAccessRefusal(h({})), null);
+  assert.match(browserAccessRefusal(h({ details: details() }))!, /Update Phone/, "an older build doesn't report it");
+  assert.match(browserAccessRefusal(h({ unavailable: "update", details: undefined }))!, /Update Phone/);
+  assert.match(browserAccessRefusal(h({ state: "down", unavailable: "down", details: undefined }))!, /isn't answering/);
 });

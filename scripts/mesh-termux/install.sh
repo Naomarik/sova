@@ -285,6 +285,9 @@ fi
   echo "SOVA_PEER_HOST=$TAILNET_IP"
   echo "SOVA_PEER_PORT=$PEER_PORT"
   echo "SOVA_MESH_IDENTITY=addresses"
+  # no browser address: the main listener stays loopback only, so every front door leaves the phone out
+  # (a label; it opens nothing). Browser access in Mesh details overrides it.
+  echo "SOVA_BROWSER_ACCESS=off"
   [ -z "$NODE_ID" ] || echo "SOVA_SELF_NODE_ID=$NODE_ID"
   [ -z "$DNS_NAME" ] || echo "SOVA_SELF_DNS=$DNS_NAME"
   echo "PI_CODING_AGENT_DIR=$BASE/agent"

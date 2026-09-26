@@ -41,6 +41,7 @@ import { announce } from "../lib/ui-state";
 import { iso, InsightsPage } from "./InsightsPage";
 import { Banner, Chip, CopyButton, Icon } from "./ui";
 import { openMeshDetails, SYNC_LABEL } from "../lib/mesh-details";
+import { AddressLink } from "./MeshDetails";
 import "../mesh.css";
 
 /** While #/mesh is open the host list is re-read this often: status is what the page is for. */
@@ -756,7 +757,9 @@ function FrontDoorSection(props: { frontDoor: string | null }) {
     const st = meshState();
     if (!st || !meshOn()) return [];
     const hosts = [{ id: st.self.id, label: st.self.label || st.self.hostname }, ...meshPeers().map((p) => ({ id: p.id, label: p.label }))];
-    return frontDoorLeftOut(hosts, settings.latest?.frontDoorExclude, (config.latest?.order ?? []).map((h) => h.id));
+    // A host with no browser address is out whatever the switches say: it is listed on its own.
+    const noBrowser = new Set((config.latest?.noBrowser ?? []).map((h) => h.id));
+    return frontDoorLeftOut(hosts, settings.latest?.frontDoorExclude, (config.latest?.order ?? []).map((h) => h.id)).filter((h) => !noBrowser.has(h.id));
   };
   const [includeError, setIncludeError] = createSignal<string | null>(null);
   /** Put a host in or leave it out; false when the server refused (the switch goes back). */
@@ -814,7 +817,7 @@ function FrontDoorSection(props: { frontDoor: string | null }) {
           {(url) => (
             <>
               {" "}
-              Yours is <span class="text-mono">{url()}</span>.
+              Yours is <AddressLink url={url()} name="the front door" />
             </>
           )}
         </Show>
@@ -860,7 +863,11 @@ function FrontDoorSection(props: { frontDoor: string | null }) {
                       </span>
                       <div class="list-main">
                         <p class="list-title">{name()}</p>
-                        <p class="list-meta text-mono">{h.upstream}</p>
+                        <Show when={!h.upstream.includes(PLACEHOLDER_HOST)} fallback={<p class="list-meta text-mono">{h.upstream}</p>}>
+                          <p class="list-meta">
+                            <AddressLink url={h.upstream} name={name()} />
+                          </p>
+                        </Show>
                         <Show when={h.upstream.includes(PLACEHOLDER_HOST)}>
                           <p class="mesh-host-warn">Placeholder: set this host's address.</p>
                         </Show>
@@ -1013,6 +1020,23 @@ function FrontDoorSection(props: { frontDoor: string | null }) {
                       </li>
                     );
                   }}
+                </For>
+              </ul>
+            </Show>
+            <Show when={c().noBrowser?.length}>
+              <ul class="list mesh-order" aria-label="No browser address">
+                <For each={c().noBrowser}>
+                  {(h) => (
+                    <li class="list-row mesh-host mesh-host-out">
+                      <span class="mesh-order-n text-num" aria-hidden="true">
+                        –
+                      </span>
+                      <div class="list-main">
+                        <p class="list-title">{h.label || h.id}</p>
+                        <p class="list-meta">No browser address. Every front door leaves it out.</p>
+                      </div>
+                    </li>
+                  )}
                 </For>
               </ul>
             </Show>

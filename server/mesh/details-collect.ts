@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
-import { readdirSync, readFileSync, statfsSync } from "node:fs";
+import { constants, readdirSync, readFileSync, statfsSync } from "node:fs";
+import { access, stat } from "node:fs/promises";
 import { availableParallelism, freemem, loadavg, totalmem, uptime } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 import type { HostDetails } from "../../shared/mesh-details";
 
 // What a host can say about its machine, per OS (Linux, macOS, Android/Termux). Everything here is
@@ -135,6 +136,56 @@ export class BatteryReader {
       return { value: battery ? { battery } : {}, failed: false };
     }
     return { value: {}, failed: false };
+  }
+}
+
+// ---- Claude Code ------------------------------------------------------------------------------
+
+const CLAUDE_CACHE_MS = 60_000;
+
+/**
+ * Whether `name` resolves on `path` (a PATH value) to an executable file, the way spawn() without a
+ * shell finds it. A lookup only: nothing is run.
+ */
+export async function onPath(name: string, path = process.env.PATH ?? ""): Promise<boolean> {
+  for (const dir of path.split(delimiter)) {
+    if (!dir || !isAbsolute(dir)) continue;
+    const file = join(dir, name);
+    try {
+      await access(file, constants.X_OK);
+      if ((await stat(file)).isFile()) return true;
+    } catch {
+      // not here
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether the `claude` the Claude Code backend would start (plain "claude", resolved on this
+ * server's PATH) is there. Cached like the battery, and never waited for: before the first lookup
+ * lands there is no answer, and the next request has one.
+ */
+export class ClaudeFinder {
+  private cached: { at: number; found: boolean } | null = null;
+  private pending: Promise<void> | null = null;
+
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly lookup: () => Promise<boolean> = () => onPath("claude"),
+  ) {}
+
+  read(): "found" | "not-found" | undefined {
+    const c = this.cached;
+    if ((!c || this.now() - c.at >= CLAUDE_CACHE_MS) && !this.pending) {
+      this.pending = this.lookup()
+        .catch(() => false)
+        .then((found) => {
+          this.cached = { at: this.now(), found };
+          this.pending = null;
+        });
+    }
+    return c ? (c.found ? "found" : "not-found") : undefined;
   }
 }
 

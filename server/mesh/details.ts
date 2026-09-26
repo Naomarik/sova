@@ -2,14 +2,23 @@ import { arch, hostname, release } from "node:os";
 import { fileURLToPath } from "node:url";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { HostDetails, HostLabel, HostRenameResult, HostTold, MeshDetails, MeshHostDetails } from "../../shared/mesh-details";
+import type {
+  HostBrowserAccess,
+  HostBrowserAccessResult,
+  HostDetails,
+  HostLabel,
+  HostRenameResult,
+  HostTold,
+  MeshDetails,
+  MeshHostDetails,
+} from "../../shared/mesh-details";
 import { activityOf, readLiveRecords, type RawLiveRecord, WORKING_FRESH_MS, workerCountsOf } from "../live";
 import { stateRoot } from "../state-root";
-import { BatteryReader, buildCommit, cores, deviceType, diskOf, loadAverages, type Machine, machineUptime, memory, modelName, realMachine } from "./details-collect";
-import { DEFAULT_SERVE_PORT, frontDoorOrder } from "./front-door";
+import { BatteryReader, buildCommit, ClaudeFinder, cores, deviceType, diskOf, loadAverages, type Machine, machineUptime, memory, modelName, realMachine } from "./details-collect";
+import { DEFAULT_SERVE_PORT, frontDoorOrder, noBrowserIds } from "./front-door";
 import { ownHello, peerLastSeen, PROBE_TIMEOUT_MS, probePeer } from "./hello";
 import type { MeshApi } from "./index";
-import { nextLabelAt, type PeerEntry, type PeersConfig } from "./peers";
+import { browserAccessSet, nextLabelAt, type PeerEntry, type PeersConfig, selfBrowserAccess } from "./peers";
 
 // Per-host details and rename (types and routes: shared/mesh-details.ts). A host answers for
 // itself on the peer listener; the page's /api/mesh/details gathers every host's answer. While the
@@ -51,11 +60,22 @@ export function activityNow(records: RawLiveRecord[], now = Date.now()): { turns
   return { turnsRunning: working.size, workers: [...workers.values()].reduce((a, b) => a + b, 0) };
 }
 
-/** Where a browser opens a host: its own https address, or through this host (a phone has none). */
-export function openOf(entry: { serveUrl?: string; dnsName?: string } | null, details: HostDetails | undefined, leftOut: boolean): MeshHostDetails["open"] {
+/**
+ * Whether a peer has a browser address: what its details say; an older build that doesn't say has
+ * none if it is a phone; with no details, what it last told this host (`recorded`).
+ */
+export function browserAccessOf(details: HostDetails | undefined, recorded: false | undefined): boolean {
+  if (details && typeof details.browserAccess === "boolean") return details.browserAccess;
+  if (details) return details.identity?.device !== "phone";
+  return recorded !== false;
+}
+
+/** Where a browser opens a host: its own https address, or through this host (a host with no browser address). */
+export function openOf(entry: { serveUrl?: string; dnsName?: string } | null, details: HostDetails | undefined, leftOut: boolean, browser = true): MeshHostDetails["open"] {
+  if (!browser) return { kind: "through" };
   const url = entry?.serveUrl ?? details?.serveUrl;
   if (url) return { kind: "direct", url };
-  const phone = details ? details.identity.device === "phone" : leftOut;
+  const phone = details ? !browserAccessOf(details, undefined) : leftOut;
   const name = entry?.dnsName ?? details?.identity.dnsName;
   if (phone || !name) return { kind: "through" };
   return { kind: "direct", url: new URL(`https://${name.includes(":") ? `[${name}]` : name}:${DEFAULT_SERVE_PORT}`).origin };
@@ -63,7 +83,7 @@ export function openOf(entry: { serveUrl?: string; dnsName?: string } | null, de
 
 /** Front-door standing of each host id in this host's config: 1-based position, or left out. */
 function frontDoorOf(config: PeersConfig, dnsName: string | null): (id: string) => MeshHostDetails["frontDoor"] {
-  const order = frontDoorOrder(config, dnsName).map((h) => h.id);
+  const order = frontDoorOrder(config, dnsName, noBrowserIds(config)).map((h) => h.id);
   return (id) => {
     const i = order.indexOf(id);
     return { position: i < 0 ? null : i + 1, excluded: i < 0 };
@@ -81,7 +101,7 @@ export async function fixedFacts(machine: Machine, battery: BatteryReader): Prom
   return { ...(commit ? { commit } : {}), ...(model ? { model } : {}), device: deviceType(machine, !!b.battery) };
 }
 
-export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, machine: Machine = realMachine): void {
+export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, machine: Machine = realMachine, claude = new ClaudeFinder()): void {
   const battery = new BatteryReader(machine);
   let fixed: ReturnType<typeof fixedFacts> | null = null;
 
@@ -93,7 +113,9 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     const load = loadAverages(machine);
     const disk = diskOf(stateRoot());
     const logins = mesh.settings().sync.logins ? sources.logins() : null;
-    const serveUrl = mesh.config()?.self.serveUrl;
+    const config = mesh.config();
+    const serveUrl = config?.self.serveUrl;
+    const claudeCode = claude.read();
     return {
       details: 1,
       id: self.id,
@@ -122,6 +144,8 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
       // State only: a sync error's text can name a local path.
       sync: { categories: mesh.syncStatus().map(({ error: _, ...s }) => s), ...(logins ? { logins } : {}) },
       ...(serveUrl ? { serveUrl } : {}),
+      browserAccess: selfBrowserAccess(config),
+      ...(claudeCode ? { claudeCode } : {}),
     };
   }
 
@@ -148,11 +172,29 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     }
   }
 
-  async function meshDetails(config: PeersConfig): Promise<MeshDetails> {
+  async function meshDetails(asked: PeersConfig): Promise<MeshDetails> {
     const node = mesh.selfNode();
+    const [own, fetched] = await Promise.all([
+      ownDetails(),
+      Promise.all(
+        asked.peers.map(async (p) => {
+          const probe = await probePeer(p);
+          mesh.sawPeer(p.id, probe.state === "up");
+          // Details are outside the protocol hash, so a skewed host is asked too.
+          const got = probe.state === "up" || probe.state === "skewed" ? await peerDetails(p) : { unavailable: probe.state as "down" | "refused" };
+          return { probe, got };
+        }),
+      ),
+    ]);
+    // What each answering peer says about its browser address is recorded, so every front door here leaves it out.
+    asked.peers.forEach((p, i) => {
+      const d = fetched[i]!.got.details;
+      if (d) learnBrowser(p.nodeId, browserAccessOf(d, undefined));
+    });
+    const config = mesh.config() ?? asked;
     const front = frontDoorOf(config, node.dnsName ?? null);
     const excluded = new Set(config.frontDoorExclude ?? []);
-    const own = await ownDetails();
+    const selfBrowser = selfBrowserAccess(config);
     const selfRow: MeshHostDetails = {
       id: config.self.id,
       label: config.self.label,
@@ -162,14 +204,13 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
       lastSeen: Date.now(),
       stateSince: Date.now() - own.uptime.process * 1000,
       frontDoor: front(config.self.id),
-      open: openOf({ ...(config.self.serveUrl ? { serveUrl: config.self.serveUrl } : {}), ...(node.dnsName ? { dnsName: node.dnsName } : {}) }, own, excluded.has(config.self.id)),
+      open: openOf({ ...(config.self.serveUrl ? { serveUrl: config.self.serveUrl } : {}), ...(node.dnsName ? { dnsName: node.dnsName } : {}) }, own, excluded.has(config.self.id), selfBrowser),
+      browserAccess: selfBrowser,
     };
-    const peers = await Promise.all(
-      config.peers.map(async (p): Promise<MeshHostDetails> => {
-        const probe = await probePeer(p);
-        mesh.sawPeer(p.id, probe.state === "up");
-        // Details are outside the protocol hash, so a skewed host is asked too.
-        const got = probe.state === "up" || probe.state === "skewed" ? await peerDetails(p) : { unavailable: probe.state as "down" | "refused" };
+    const peers = asked.peers.map((asked, i): MeshHostDetails => {
+        const p = config.peers.find((c) => c.nodeId === asked.nodeId) ?? asked;
+        const { probe, got } = fetched[i]!;
+        const browser = browserAccessOf(got.details, p.browserAccess);
         return {
           id: p.id,
           label: p.label,
@@ -182,10 +223,10 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
           stateSince: mesh.peerSince(p.id),
           pairedAt: p.pairedAt ?? null,
           frontDoor: front(p.id),
-          open: openOf(p, got.details, excluded.has(p.id)),
+          open: openOf(p, got.details, excluded.has(p.id), browser),
+          browserAccess: browser,
         };
-      }),
-    );
+      });
     return { hosts: [selfRow, ...peers] };
   }
 
@@ -196,13 +237,24 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     const self = mesh.config()?.self;
     if (!self?.labelAt) return [];
     const body: HostLabel = { label: self.label, labelAt: self.labelAt };
+    return tell("/api/peer/label", body, to);
+  }
+
+  /** Tell every peer (or just `to`) whether this host has a browser address. */
+  function announceBrowser(to?: string): Promise<HostTold[]> {
+    const body: HostBrowserAccess = { browserAccess: selfBrowserAccess(mesh.config()) };
+    return tell("/api/peer/browser-access", body, to);
+  }
+
+  /** POST `body` to `path` on every peer (or just `to`); how each took it. */
+  function tell(path: string, body: object, to?: string): Promise<HostTold[]> {
     return Promise.all(
       mesh
         .peers()
         .filter((p) => to === undefined || p.id === to)
         .map(async (p): Promise<HostTold> => {
           try {
-            const res = await mesh.peerFetch(p.id, "/api/peer/label", {
+            const res = await mesh.peerFetch(p.id, path, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(body),
@@ -245,9 +297,29 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     return "error" in r ? r : null;
   }
 
-  // A peer that comes up hears this host's name, in case it missed a rename while it was away.
+  /** This host's own Browser access from now (the setting wins over SOVA_BROWSER_ACCESS). */
+  function setSelfBrowser(browserAccess: boolean): { error: string; status: 400 | 409 } | null {
+    const r = mesh.updatePeers((c) => (c.self.browserAccess === browserAccess ? c : { ...c, self: { ...c.self, browserAccess } }));
+    return "error" in r ? r : null;
+  }
+
+  /** What a peer (by node) says about its browser address; no write when it is what is recorded. */
+  function learnBrowser(nodeId: string, browserAccess: boolean): { error: string; status: 400 | 409 } | null {
+    const r = mesh.updatePeers((c) => {
+      const hit = c.peers.find((p) => p.nodeId === nodeId);
+      if (!hit || (hit.browserAccess !== false) === browserAccess) return c;
+      const { browserAccess: _, ...rest } = hit;
+      return { ...c, peers: c.peers.map((p) => (p === hit ? (browserAccess ? rest : { ...rest, browserAccess: false as const }) : p)) };
+    });
+    return "error" in r ? r : null;
+  }
+
+  // A peer that comes up hears this host's name, in case it missed a rename while it was away,
+  // and whether it has a browser address, when that isn't the default.
   mesh.onPeerUp((id) => {
-    if (mesh.config()?.self.labelAt) void announce(id);
+    const config = mesh.config();
+    if (config?.self.labelAt) void announce(id);
+    if (browserAccessSet(config)) void announceBrowser(id);
   });
   // A rename on Settings → Mesh goes out like one made from the details.
   // Seeded when the mesh comes on, so a later settings PUT doesn't re-send a name peers already have.
@@ -287,6 +359,66 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     if (!label || typeof labelAt !== "number" || !Number.isFinite(labelAt) || labelAt <= 0) return c.json({ error: "Expected {label, labelAt}" }, 400);
     const err = takeLabel(caller.nodeId, label, labelAt);
     return err ? c.json({ error: err.error }, err.status) : c.json({ ok: true as const });
+  });
+
+  app.post("/api/peer/set-browser-access", small, async (c) => {
+    if (!mesh.requestPeer(c)) return notFound(c);
+    const want = ((await c.req.json().catch(() => null)) as Partial<HostBrowserAccess> | null)?.browserAccess;
+    if (typeof want !== "boolean") return c.json({ error: "Expected {browserAccess}" }, 400);
+    const err = setSelfBrowser(want);
+    if (err) return c.json({ error: err.error }, err.status);
+    void announceBrowser();
+    return c.json({ browserAccess: want } satisfies HostBrowserAccess);
+  });
+
+  app.post("/api/peer/browser-access", small, async (c) => {
+    const caller = mesh.requestPeer(c);
+    if (!caller) return notFound(c);
+    const said = ((await c.req.json().catch(() => null)) as Partial<HostBrowserAccess> | null)?.browserAccess;
+    if (typeof said !== "boolean") return c.json({ error: "Expected {browserAccess}" }, 400);
+    const err = learnBrowser(caller.nodeId, said);
+    return err ? c.json({ error: err.error }, err.status) : c.json({ ok: true as const });
+  });
+
+  app.put("/api/mesh/browser-access", small, async (c) => {
+    if (!mesh.enabled()) return notFound(c);
+    const body = (await c.req.json().catch(() => null)) as { id?: unknown; browserAccess?: unknown } | null;
+    const want = body?.browserAccess;
+    if (typeof want !== "boolean") return c.json({ error: "Expected {id, browserAccess}" }, 400);
+    const config = mesh.config();
+    if (!config) return notFound(c);
+    if (body?.id === config.self.id) {
+      const err = setSelfBrowser(want);
+      if (err) return c.json({ error: err.error }, err.status);
+      return c.json({ browserAccess: want, told: await announceBrowser() } satisfies HostBrowserAccessResult);
+    }
+    const peer = config.peers.find((p) => p.id === body?.id);
+    if (!peer) return c.json({ error: "Unknown host" }, 404);
+    let res: Response;
+    try {
+      res = await mesh.peerFetch(peer.id, "/api/peer/set-browser-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ browserAccess: want } satisfies HostBrowserAccess),
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS * 2),
+      });
+    } catch (err) {
+      const e = err as Error & { cause?: { code?: string } };
+      return c.json({ error: `${peer.label} didn't answer: ${e.name === "TimeoutError" ? "no answer in time" : (e.cause?.code ?? e.message)}` }, 502);
+    }
+    if (res.status === 404) {
+      await res.body?.cancel();
+      return c.json({ error: `${peer.label} runs an older build: update it to change this from here` }, 501);
+    }
+    const got = (await res.json().catch(() => null)) as Partial<HostBrowserAccess> | { error?: string } | null;
+    if (!res.ok || !got || !("browserAccess" in got) || typeof got.browserAccess !== "boolean") {
+      const why = got && "error" in got && typeof got.error === "string" ? got.error : `answered ${res.status}`;
+      return c.json({ error: `${peer.label} didn't take it: ${why}` }, 502);
+    }
+    // It tells every peer itself (this host included); taking its answer here makes the page right at once.
+    const err = learnBrowser(peer.nodeId, got.browserAccess);
+    if (err) return c.json({ error: err.error }, err.status);
+    return c.json({ browserAccess: got.browserAccess, told: [{ id: peer.id, ok: true }] } satisfies HostBrowserAccessResult);
   });
 
   app.get("/api/mesh/details", async (c) => {

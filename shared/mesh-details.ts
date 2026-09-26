@@ -13,12 +13,18 @@ import type { PeerState, SyncStatus } from "./protocol";
 //                                    `labelAt` by its own clock: its entry here takes it unless the
 //                                    entry already holds a newer one; the caller is the gate's peer,
 //                                    never a body field)
+// POST /api/peer/set-browser-access  HostBrowserAccess -> HostBrowserAccess   (the caller asks this
+//                                    host to set its own Browser access; it then tells its peers)
+// POST /api/peer/browser-access      HostBrowserAccess -> {ok:true}   (the caller now has, or has no,
+//                                    browser address: its entry here records it; the gate's peer)
 //
 // Main listener (the page's; 404 while the mesh is off, like any unknown /api route):
 // GET  /api/mesh/details          -> MeshDetails
 // PUT  /api/mesh/label   HostRename -> HostRenameResult   (400 bad label, 404 unknown host,
 //                                    409 malformed peers.json, 502 the host didn't take it, 501 it
 //                                    runs an older build without rename)
+// PUT  /api/mesh/browser-access  HostBrowserAccessChange -> HostBrowserAccessResult   (this host's
+//                                    own, or asks a peer to change its own; statuses as for a rename)
 
 /** What a host reports about itself. Counts and figures only: no paths, no secrets, no login names. */
 export interface HostDetails {
@@ -86,6 +92,12 @@ export interface HostDetails {
   };
   /** Its browser-facing address, when set (MeshSettings.serveUrl). */
   serveUrl?: string;
+  /** Whether a browser can open it at an address of its own (its Browser access); absent: an older
+      build, taken to have none if it is a phone. */
+  browserAccess?: boolean;
+  /** Whether the `claude` executable Sova would start is on its PATH (a file lookup, cached); absent
+      before the first lookup lands, or on an older build. */
+  claudeCode?: "found" | "not-found";
 }
 
 /** Why a host has no details: down, refused, another protocol, or an older build without the route. */
@@ -110,8 +122,10 @@ export interface MeshHostDetails {
   pairedAt?: number | null;
   /** In this host's front door: 1-based position, null when left out. */
   frontDoor: { position: number | null; excluded: boolean };
-  /** Its own https address, or none (a phone): open it through this host instead. */
+  /** Its own https address, or none (Browser access off, or no known name): open it through this host instead. */
   open: { kind: "direct"; url: string } | { kind: "through" };
+  /** Whether it has a browser address, as it said (or, for an older build, as guessed from its device). */
+  browserAccess: boolean;
 }
 
 export interface MeshDetails {
@@ -141,5 +155,20 @@ export interface HostLabel {
 
 export interface HostRenameResult {
   label: string;
+  told: HostTold[];
+}
+
+/** A host's Browser access, as it says it or is asked to set it. */
+export interface HostBrowserAccess {
+  browserAccess: boolean;
+}
+
+/** PUT /api/mesh/browser-access. */
+export interface HostBrowserAccessChange extends HostBrowserAccess {
+  /** A host id: this host's own, or a peer's. */
+  id: string;
+}
+
+export interface HostBrowserAccessResult extends HostBrowserAccess {
   told: HostTold[];
 }

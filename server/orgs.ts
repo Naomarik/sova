@@ -659,6 +659,14 @@ function cleanRoot(v: unknown): string {
     throw new OrgError(`No such directory: ${root}`);
   }
   if (!st.isDirectory()) throw new OrgError(`Not a directory: ${root}`);
+  // The project overseer reads its root: never an org's workspace (every project's transcripts, the
+  // roster's contacts), whichever holds the other, nor a folder of Sova's own state. (A root that
+  // holds Sova's state, a hermetic worktree's `.agent`, is allowed: the tools exclude it.)
+  const real = canonicalDir(root);
+  const under = (a: string, b: string) => a === b || a.startsWith(b.endsWith(sep) ? b : b + sep);
+  const state = canonicalDir(stateRoot());
+  if (under(real, state) || readIndex().orgs.map((o) => canonicalDir(o.dir)).some((w) => under(real, w) || under(w, real)))
+    throw new OrgError("A project root must not be, hold or sit inside an organization's workspace, nor sit inside Sova's own state folder.");
   return resolve(root);
 }
 

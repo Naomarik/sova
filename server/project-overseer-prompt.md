@@ -52,7 +52,8 @@ Roster (active):
 Ideas:
 {{IDEAS}}
 
-The operator's to-do items:
+The operator's to-do items (work they queued for you: act on the open ones within your level; in
+their own turn you may tick one done with sova_todo):
 {{TODOS}}
 
 Your standing notes:

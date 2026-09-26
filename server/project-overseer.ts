@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { type AgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { OPERATOR, type BatonSession } from "../shared/baton";
 import {
   AUTONOMY_MEANING,
@@ -23,11 +24,12 @@ import { workingSubagents } from "./live";
 import { piUsageTally } from "./transcript-usage";
 import { decidePerson, onOrgAttached, orgDir, orgOfSessionPath, overseerPausedSince, resumeOverseer, OrgError, participantLine, readIndex, readOrg, readProjects, readRoster, operatorName } from "./orgs";
 import { appRequest, pathOfId, promptSession, toolCatalogue } from "./overseer";
+import { RootConfinement } from "./overseer-deny";
 import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { readNotes, rotateState } from "./overseer-store";
-import { promptTodos, readTodos, updateTodo } from "./overseer-todos";
+import { promptOpenTodos, readTodos, updateTodo } from "./overseer-todos";
 import { UserTurns } from "./overseer-tools";
 import { canonicalPath } from "./paths";
 import { listDecisions, onReconcileEvent, promoteDecisions, reconcileProject } from "./reconcile";
@@ -355,7 +357,7 @@ export function renderProjectOverseerPrompt(orgId: string, projectId: string, to
     ROOT: project.root,
     ROSTER: active.length ? active.map(participantLine).join("\n") : "(nobody yet: ask the operator to add people)",
     IDEAS: r.redact(promptToc(readManifest(p.ideas), readPoState(p)?.current ?? "")),
-    TODOS: promptTodos(readTodos(p.todos)),
+    TODOS: r.redact(promptOpenTodos(readTodos(p.todos))),
     NOTES: notes ? r.redact(notes.slice(0, 4000)) : "(none yet)",
     TOOLS: toolCatalogue(tools),
     NOW: now.toString(),
@@ -491,6 +493,18 @@ function rtOfPath(path: string): Rt {
   return rtOf(po.orgId, po.projectId);
 }
 
+/** The context files pi found that belong to the project: those inside its root (and outside what
+    the file tools never read). */
+export function projectContextFiles<T extends { path: string }>(files: T[], root: string, out: string[] = confinedOut()): T[] {
+  const c = new RootConfinement(root, out);
+  return files.filter((f) => c.problem(f.path) === null);
+}
+
+/** What the project overseer's file tools never read, even inside its root: every attached org's
+    workspace (the roster's contacts, every project's transcripts) and pi's and Sova's state (the
+    host's link store, every session). */
+const confinedOut = () => [...readIndex().orgs.map((o) => o.dir), getAgentDir(), join(homedir(), ".pi")];
+
 registerSpecialLoadout({
   kind: "project-overseer",
   // The project's root on THIS host, not the one the file's header recorded where it was created.
@@ -530,7 +544,9 @@ registerSpecialLoadout({
     return {
       resourceLoaderOptions: {
         // None of the operator's pi-config extensions, skills or templates: no mode, no subagents,
-        // no input rewriting. The project's own context files (AGENTS.md) stay.
+        // no input rewriting. The project's own context files (AGENTS.md) stay; the host's (the
+        // agent dir's, and those of folders above the root, like the home folder's) don't.
+        agentsFilesOverride: ({ agentsFiles }) => ({ agentsFiles: projectContextFiles(agentsFiles, project.root) }),
         noExtensions: true,
         noSkills: true,
         noPromptTemplates: true,
@@ -553,8 +569,9 @@ registerSpecialLoadout({
         ],
       },
       tools: [...tools.map((t) => t.name), ...PO_BUILTINS],
-      // read/grep/find/ls in the project, never a secret file (overseer-deny.ts).
-      customTools: overseerFileTools(project.root),
+      // read/grep/find/ls in the project root only, never a secret file, an org's workspace or
+      // Sova's own state (overseer-deny.ts), whatever the root holds.
+      customTools: overseerFileTools(project.root, undefined, undefined, () => new RootConfinement(projectOf(rt.orgId, rt.projectId).root, confinedOut())),
       model: settings.model ?? defaults.model ?? null,
       thinking: settings.thinking ?? defaults.thinking ?? null,
     };
@@ -679,11 +696,14 @@ export function watchDecision(input: {
   return { run: true };
 }
 
-export function watchText(reasons: string[], autonomy: string): string {
+/** `openTodos`: how many of the operator's to-dos are open (their text is in the prompt). */
+export function watchText(reasons: string[], autonomy: string, openTodos = 0): string {
   const list = reasons.length ? reasons.slice(-20).map((r) => `- ${r}`).join("\n") : "- (the operator asked for a look)";
+  const todos = openTodos ? `The operator has ${openTodos} open to-do item${openTodos === 1 ? "" : "s"} for you, listed in full in your prompt: work on them too. ` : "";
   return (
     `${WATCH_PREFIX} Since your last look:\n${list}\n\n` +
     `Re-read the project (sova_project, and sova_decisions where it matters). Infer gaps against the roster's decision areas and file new ones as ideas (§gap/…). ` +
+    todos +
     `Then act within your autonomy (${autonomy}): the tools tell you when something needs a higher level. Keep your reply to a few lines for the operator.`
   );
 }
@@ -743,7 +763,8 @@ export async function lookNow(orgId: string, projectId: string, force = false): 
   try {
     const po = await acquireChat(path!);
     po.assertModelAllowed();
-    const { turn } = po.acceptPrompt(watchText(reasons, eff.autonomy), undefined, "server");
+    const openTodos = readTodos(p.todos).todos.filter((t) => !t.done).length;
+    const { turn } = po.acceptPrompt(watchText(reasons, eff.autonomy, openTodos), undefined, "server");
     void turn.catch((err) => po.reportTurnFailure(err));
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

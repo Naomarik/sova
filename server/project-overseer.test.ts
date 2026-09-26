@@ -2,7 +2,7 @@
 // this tree's pi-config extensions linked in, so "no pi-config extension loads" is a real claim), an
 // org workspace and a project root in the OS temp dir; ~/.pi is never touched. No model is called.
 import assert from "node:assert/strict";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
@@ -30,6 +30,8 @@ after(async () => {
   await settled(join(root, "ws"));
   await settled(join(root, "ws2"));
   await settled(join(root, "ws3"));
+  await settled(join(root, "ws4"));
+  await settled(join(root, "ws5"));
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -121,6 +123,92 @@ describe("a project overseer", async () => {
     const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
     assert.match(prompt, /Level in force now: \*\*L2/);
     assert.match(prompt, /Tony \(id p_[a-z0-9]+\) — IT; decides: invoicing/);
+  });
+});
+
+describe("its reach: the project root only", async () => {
+  // A context file in the agent dir and one above the root (the host's), one in the root (the project's).
+  const box = join(root, "p4");
+  const projRoot = join(box, "proj");
+  mkdirSync(projRoot, { recursive: true });
+  writeFileSync(join(agentDir, "AGENTS.md"), "HOST-AGENT-DIR context\n");
+  writeFileSync(join(box, "AGENTS.md"), "HOST-ABOVE-ROOT context\n");
+  writeFileSync(join(projRoot, "AGENTS.md"), "PROJECT context\n");
+  writeFileSync(join(projRoot, "README.md"), "inside\n");
+  writeFileSync(join(box, "outside.txt"), "outside\n");
+  const org = await orgs.createOrg({ name: "Reach", dir: join(root, "ws4") });
+  const project = orgs.addProject(org.id, { name: "Reach", root: projRoot });
+  const text = (r: { content: { type: string; text?: string }[] }) => r.content.map((c) => c.text ?? "").join("");
+  const run = async (name: string, params: Record<string, unknown>) => {
+    const chat = await acquireChat((await po.ensureProjectOverseer(org.id, project.id)).path);
+    try {
+      return text((await chat.session.getToolDefinition(name)!.execute("tc", params as never, undefined, undefined, undefined as never)) as never);
+    } catch (err) {
+      return `ERROR: ${(err as Error).message}`;
+    }
+  };
+
+  test("its file tools read the root and refuse the org's workspace, the folder above and the agent dir", async () => {
+    assert.match(await run("read", { path: "README.md" }), /inside/);
+    for (const p of ["../outside.txt", join(root, "ws4", "org.json"), join(agentDir, "AGENTS.md")]) assert.match(await run("read", { path: p }), /^ERROR: .*outside the project root/, p);
+    assert.match(await run("ls", { path: join(root, "ws4") }), /^ERROR: .*outside the project root/);
+    assert.match(await run("grep", { pattern: "context", path: box }), /^ERROR: .*outside the project root/);
+    assert.match(await run("find", { pattern: "*", path: root }), /^ERROR: .*outside the project root/);
+  });
+
+  test("only the project's own context files load, never the host's", async () => {
+    const chat = await acquireChat((await po.ensureProjectOverseer(org.id, project.id)).path);
+    const files = chat.runtime.services.resourceLoader.getAgentsFiles().agentsFiles;
+    assert.deepEqual(files.map((f) => f.path), [join(projRoot, "AGENTS.md")]);
+    assert.doesNotMatch(chat.session.systemPrompt, /HOST-/);
+    assert.match(chat.session.systemPrompt, /PROJECT context/);
+  });
+
+  test("a project root may not be, hold or sit inside an org's workspace, nor sit inside Sova's state", () => {
+    mkdirSync(join(root, "ws4", "inner"), { recursive: true });
+    mkdirSync(join(agentDir, "sova", "x"), { recursive: true });
+    for (const bad of [join(root, "ws4"), join(root, "ws4", "inner"), root, join(agentDir, "sova", "x")])
+      assert.throws(() => orgs.addProject(org.id, { name: "Bad", root: bad }), /must not be, hold or sit inside/, bad);
+    assert.throws(() => orgs.patchProject(org.id, project.id, { root: join(root, "ws4") }), /must not be/);
+    assert.equal(orgs.addProject(org.id, { name: "Beside", root: box }).root, box, "beside the workspace is fine");
+  });
+});
+
+describe("the operator's queued items reach its next run", async () => {
+  const org = await orgs.createOrg({ name: "Queue", dir: join(root, "ws5") });
+  mkdirSync(join(root, "proj5"));
+  const project = orgs.addProject(org.id, { name: "Queue", root: join(root, "proj5") });
+  await po.ensureProjectOverseer(org.id, project.id);
+  const p = store.projectOverseerPaths(org.id, project.id);
+  const { Hono } = await import("hono");
+  const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
+  const { updateTodo, readTodos } = await import("./overseer-todos");
+  const app = new Hono();
+  registerProjectOverseerRoutes(app);
+  const post = (what: string, b: unknown) =>
+    app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/${what}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+
+  test("a to-do or idea the operator adds is a reason to look; the to-do's own words are in the prompt", async () => {
+    assert.equal((await post("todos", { text: "Name in a note who owns the approval threshold" })).status, 201);
+    assert.ok(store.readMemo(p).pending.some((r) => /queued a to-do/.test(r)), "a reason to look");
+    assert.equal((await post("ideas", { id: "§ops/duplicates", title: "Detect duplicate invoices" })).status, 201);
+    assert.ok(store.readMemo(p).pending.some((r) => /added an idea/.test(r)));
+    const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
+    assert.match(prompt, /- \[td_[^\]]+\] Name in a note who owns the approval threshold$/m);
+    assert.match(po.watchText([], "L1", 1), /1 open to-do item for you, listed in full in your prompt/);
+    assert.doesNotMatch(po.watchText([], "L1", 0), /to-do/);
+  });
+
+  test("bounded: the first 20 open ones in full, done ones left out, the rest counted", async () => {
+    for (let i = 1; i <= 24; i++) await post("todos", { text: `Queued item number ${i}` });
+    const first = readTodos(p.todos).todos[0]!;
+    updateTodo(first.id, { done: true }, p.todos);
+    const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
+    assert.doesNotMatch(prompt, /approval threshold/, "a done to-do is not carried");
+    assert.match(prompt, /24 open, 1 done\./);
+    assert.match(prompt, /Queued item number 20$/m);
+    assert.doesNotMatch(prompt, /Queued item number 21$/m);
+    assert.match(prompt, /… and 4 more \(sova_todos lists them all\)/);
   });
 });
 

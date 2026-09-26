@@ -11,6 +11,9 @@
 @media (min-width: 768px) {
   .ext-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+/* One card that takes the section's whole width at every size, like the Sessions card (the Mesh
+   card, §mesh.ui/card). */
+.ext-grid.ext-grid-full { grid-template-columns: minmax(0, 1fr); }
 
 /* The whole card is the link; hover and a focus ring, like the Explained tiles. */
 .ext-card {

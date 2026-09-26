@@ -1,5 +1,4 @@
 import { For, type JSX } from "solid-js";
-import { ORGS_HREF } from "../lib/orgs-route";
 import { Icon, type IconName } from "./ui";
 import "../home.css";
 
@@ -8,20 +7,19 @@ interface Action {
   icon: IconName;
   title: string;
   body: string;
-  /** A dialog to open, or a route to go to. */
-  run: (() => void) | { href: string };
+  /** Opens its dialog. */
+  run: () => void;
 }
 
 /**
  * The overview's Start section (§chat.transcript/landing-page): one card per way to start
- * something. The whole card is the control — a button when it opens a dialog, a link when it goes
- * to a page — named by its title and described by its line.
+ * something. The whole card is the control, a button that opens its dialog, named by its title and
+ * described by its line.
  */
 export function OverviewActions(props: { onNewSession(): void; onFanOut(): void }) {
   const actions: Action[] = [
     { id: "new", icon: "plus", title: "New Session", body: "Start a chat with pi in any folder or on any host.", run: () => props.onNewSession() },
     { id: "fanout", icon: "branch", title: "Fan Out", body: "Send one prompt to several models and compare the replies side by side.", run: () => props.onFanOut() },
-    { id: "orgs", icon: "network", title: "Organizations", body: "Keep each client's people, projects, and hand-off sessions together.", run: { href: ORGS_HREF } },
   ];
   return (
     <section class="explain-section" aria-labelledby="overview-start-title">
@@ -47,18 +45,11 @@ export function OverviewActions(props: { onNewSession(): void; onFanOut(): void 
               </>
             );
             const aria = { "aria-labelledby": `overview-action-${a.id}`, "aria-describedby": `overview-action-${a.id}-body` };
-            const run = a.run;
             return (
               <li>
-                {typeof run === "function" ? (
-                  <button type="button" class="card action-card" {...aria} onClick={run}>
-                    {inner()}
-                  </button>
-                ) : (
-                  <a class="card action-card" href={run.href} {...aria}>
-                    {inner()}
-                  </a>
-                )}
+                <button type="button" class="card action-card" {...aria} onClick={() => a.run()}>
+                  {inner()}
+                </button>
               </li>
             );
           }}

@@ -48,8 +48,8 @@
 .overview-bar { background: var(--color-surface); }
 
 /* The Start section: one card per way to start something (§chat.transcript/landing-page). One
-   column in a narrow pane; three once the overview is wide enough that each keeps its line to two
-   rows — never two columns, which would leave the third card alone on its row. */
+   column in a narrow pane, two once the overview is wide enough that each keeps its line to two
+   rows. */
 .overview-actions {
   list-style: none;
   margin: 0;
@@ -59,7 +59,7 @@
   gap: var(--space-4);
 }
 @container overview (min-width: 640px) {
-  .overview-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .overview-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 /* The whole card is the control (a button or a link): hover and a focus ring round the card, like
    the extension and Explained cards below it. */
@@ -102,3 +102,138 @@
   color: var(--color-ink);
 }
 .action-card-body { color: var(--color-ink-2); }
+
+/* The Organizations section, the overview's last (§chat.transcript/landing-page): one full-width
+   card. The title and each row are links side by side, never nested; the card itself is not a
+   target. */
+.overview-orgs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+.overview-orgs-needs { border-color: var(--status-warn); }
+.overview-orgs-head { display: flex; align-items: flex-start; gap: var(--space-3); }
+.overview-orgs-intro { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.overview-orgs-title {
+  margin: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+}
+/* 44px tall as a target, without moving the line under it. */
+.overview-orgs-title-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  margin-block: calc((var(--tap-min) - 1lh) / -2);
+  color: var(--color-ink);
+  text-decoration: none;
+}
+.overview-orgs-title-link:hover { text-decoration: underline; }
+.overview-orgs-title-link:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.overview-orgs-body { margin: 0; color: var(--color-ink-2); }
+.overview-orgs-error { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--status-error); overflow-wrap: anywhere; }
+.overview-orgs-empty { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+/* Totals: a figure over its label, five to a row when there is room. The Needs-you tile takes the
+   warn colour, dot and border only while something waits. */
+.overview-orgs-totals {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--space-2);
+}
+.overview-orgs-stat {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: var(--stroke-thin) solid transparent;
+  border-radius: var(--r-md);
+  background: var(--color-sunken);
+}
+.overview-orgs-stat dt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
+.overview-orgs-stat dd {
+  margin: 0;
+  font-size: var(--fs-heading-m);
+  line-height: var(--lh-heading-m);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+}
+.overview-orgs-stat-needs { border-color: var(--status-warn); background: var(--status-warn-bg); }
+.overview-orgs-stat-needs dt,
+.overview-orgs-stat-needs dd { color: var(--status-warn); }
+
+/* One row per org. Narrow: the name and chip, then the counts and the time as one wrapping line.
+   Wide: one line, in columns that line up from row to row (the meta wrapper steps aside). */
+.overview-orgs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.overview-orgs-list > li { border-bottom: var(--stroke-thin) solid var(--color-border); }
+.overview-orgs-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name chip" "meta meta";
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: 2px;
+  min-height: var(--row-height);
+  padding: var(--space-2) var(--space-3);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.overview-orgs-row:hover { background: var(--color-sunken); }
+.overview-orgs-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: var(--r-xs); }
+.overview-orgs-name {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--fw-medium);
+  color: var(--color-ink);
+}
+.overview-orgs-meta {
+  grid-area: meta;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-3);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
+.overview-orgs-counts { min-width: 0; }
+.overview-orgs-when { white-space: nowrap; }
+.overview-orgs-chip { grid-area: chip; justify-self: end; }
+@container overview (min-width: 640px) {
+  .overview-orgs-row {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) 136px 96px;
+    grid-template-areas: "name counts chip when";
+  }
+  .overview-orgs-meta { display: contents; }
+  .overview-orgs-counts { grid-area: counts; }
+  .overview-orgs-when { grid-area: when; justify-self: end; }
+}
+.overview-orgs-all {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  margin-block: calc(var(--space-2) * -1);
+  font-weight: var(--fw-medium);
+}
+.overview-orgs-all:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }

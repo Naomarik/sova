@@ -55,6 +55,7 @@ import { ExplainGrid } from "./components/ExplainGallery";
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { HomeSessionsCard } from "./components/HomeSessionsCard";
 import { OverviewActions } from "./components/OverviewActions";
+import { OverviewOrgsCard } from "./components/OverviewOrgsCard";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
 import { MeshDetails } from "./components/MeshDetails";
 import { closeMeshDetails, meshDetailsOpen } from "./lib/mesh-details";
@@ -1076,9 +1077,9 @@ export function App() {
                     {/* A plain title at every width: the Sessions card below is where the count lives. */}
                     <h1 class="overview-title">Overview</h1>
                   </div>
-                  {/* Ways to start something: one session, the same prompt to N models at once (the
+                  {/* Ways to start something: one session, or the same prompt to N models at once (the
                       overview is fanout's front door, which is why it is offered here and not in the
-                      sidebar), or an organization's page. */}
+                      sidebar). */}
                   <OverviewActions onNewSession={() => setCreating(true)} onFanOut={() => setFanout({})} />
                   <HomeSessionsCard glance={sessionsGlance(list() ?? [], attention.data(), overseer.data()?.proactivity)} now={now()} onOpenList={openSessionList} />
                   <MeshCard />
@@ -1093,6 +1094,8 @@ export function App() {
                       </section>
                     )}
                   </Show>
+                  {/* Last: every organization at a glance, and the way into #/orgs. */}
+                  <OverviewOrgsCard now={now()} />
                 </div>
               </Match>
             </Switch>

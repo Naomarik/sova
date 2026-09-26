@@ -89,7 +89,7 @@ export function MeshCard() {
       <h2 class="explain-section-head" id="mesh-section-title">
         Mesh
       </h2>
-      <ul class="ext-grid">
+      <ul class="ext-grid ext-grid-full">
         <li>
           <a class="card ext-card" href={MESH_HREF}>
             <div class="ext-card-head">

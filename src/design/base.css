@@ -1414,9 +1414,10 @@ html.is-resizing * {
 
 /* ---- LANDING PAGE (#/). The main pane with no session open: the title,
    the Start section (one action card per way to start something), the
-   Sessions card, then Mesh, Extensions and the Explained grid. Every part
-   is an .explain-section-width column under one eyebrow style; the action
-   grid's own rules are in src/home.css.
+   Sessions card, then Mesh, Extensions, the Explained grid and, last, the
+   Organizations card. Every part is an .explain-section-width column under
+   one eyebrow style; the action grid's and the Organizations card's own
+   rules are in src/home.css.
    .app-main is a fixed-height flex column with overflow hidden, so nothing
    here scrolls unless .overview is the scroll region itself. It is also the
    `overview` query container, so the action grid asks the pane, not the

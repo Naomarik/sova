@@ -8,6 +8,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -957,6 +958,8 @@ function harness(bus = eventBus()) {
 			workers.push(worker);
 			return worker;
 		},
+		// No team-defaults.json: these teams behave as without the file.
+		{ agentDir: path.join(os.tmpdir(), "subagents-tests-absent-agent-dir") },
 	);
 	return {
 		bus,

@@ -15,6 +15,7 @@ import { parseWakeNudge } from "../../shared/wake";
 import { ImageStrip } from "./ImageStrip";
 import { PathAttachment, PathText } from "./PathAttachment";
 import { ReportRow } from "./ReportRow";
+import { TeamMessageCard } from "./TeamMessageCard";
 import { AlignCard } from "./AlignCard";
 import { ExplainCard } from "./ExplainCard";
 import { alignOf, latestAlignId } from "../lib/align";
@@ -411,6 +412,9 @@ export function HistoryItems(props: {
               </Match>
               <Match when={item.kind === "report" && item.report && explainOf(item.report)}>
                 {(explain) => <ExplainCard explain={explain()} />}
+              </Match>
+              <Match when={item.kind === "report" && item.report?.team}>
+                {(team) => <TeamMessageCard report={item.report!} team={team()} time={timestampOf(item.raw)} attachments={item.attachments} />}
               </Match>
               <Match when={item.kind === "report" && item.report}>
                 {(report) => <ReportRow report={report()} attachments={item.attachments} />}

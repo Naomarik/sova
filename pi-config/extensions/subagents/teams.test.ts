@@ -6,11 +6,20 @@ import {
 	MAX_SESSION_TEAMS,
 	MAX_TEAM_ACTIONS,
 	MAX_TEAM_MEMBERS,
+	ASSIGNMENT_ENTRY_TYPE,
+	MAX_OPERATOR_STEERS,
 	PRUNED_REASON,
+	STEER_KEEP_CHARS,
 	TEAM_ENTRY_TYPE,
+	TEAM_EVENT_ENTRY_TYPE,
 	TeamStore,
+	assignmentText,
 	composeMemberPrompt,
+	decodeAssignmentEntry,
 	decodeTeamEntry,
+	inheritedSteersText,
+	pausedTeamsFrom,
+	workerSuccessorTask,
 	memberState,
 	memberTooling,
 	resolveMemberSpec,
@@ -372,7 +381,7 @@ test("eject frees a seat at the cap; the cap error names ejectable members; role
 	assert.throws(() => store.prepareAdd("Big", [{ role: " M0 ", prompt: "t" }], observe), /Role M0 already exists/);
 });
 
-test("eject refusals: history, unknown team or member, already ejected, still occupied", () => {
+test("eject refusals: unknown team or member, already ejected, still occupied; a history team ejects too", () => {
 	const { store, teamId } = fullTeam();
 	const observe = (id: string) => (id === "ag_10" ? running : id === "ag_11" ? idle : id === "ag_12" ? { ...running, status: "stopping" as const, settled: true } : id === "ag_13" ? { ...running, status: "starting" as const } : undefined);
 	assert.throws(() => store.checkEject("team_99", "m0", observe), /No such team: team_99/);
@@ -384,11 +393,21 @@ test("eject refusals: history, unknown team or member, already ejected, still oc
 	assert.throws(() => store.checkEject("Big", "m3", observe), /is still working/, "starting counts as working");
 	store.commitEject(teamId, "ag_14", 1_700_000_000_000, "parent");
 	assert.throws(() => store.checkEject("Big", "m4", observe), /m4 \(ag_14\) was already ejected from team_01 at 2023-11-14T22:13:20Z/);
-	// A history team is read-only, with team_add's wording.
+	// A history team (this session's branch after a reload): team_add refuses it, but an ended or
+	// unavailable member's seat can be released, and the eject folds back from the branch.
 	const history = new TeamStore();
-	history.restoreHistory([create("team_05", "Old", [member(1)])]);
-	const addRefusal = (() => { try { history.prepareAdd("Old", [{ role: "x", prompt: "t" }]); } catch (e) { return (e as Error).message; } return ""; })();
-	assert.throws(() => history.checkEject("Old", "ag_01", () => undefined), (e: Error) => e.message === addRefusal && /history from an earlier session/.test(e.message));
+	history.restoreHistory([create("team_05", "Old", [member(1), member(2)])]);
+	assert.throws(() => history.prepareAdd("Old", [{ role: "x", prompt: "t" }]), /history from an earlier session/);
+	assert.throws(() => history.checkEject("Old", "ag_02", () => running), /is still working/, "a history member whose worker was resumed and works is refused like any other");
+	const target = history.checkEject("Old", "ag_01", () => undefined);
+	assert.deepEqual(target, { teamId: "team_05", workerId: "ag_01", role: "role 1" });
+	const ejectOp = history.ejectEntry(target.teamId, target.workerId, 99);
+	assert.deepEqual([history.commitEject(target.teamId, target.workerId, 99, "parent")?.kind, history.ejectedAt("ag_01")], ["eject", 99]);
+	assert.deepEqual(history.views(() => undefined)[0].actions.map((a) => [a.kind, a.source, a.state]), [["eject", "parent", "accepted-or-queued"]]);
+	assert.throws(() => history.checkEject("Old", "role 1", () => undefined), /already ejected/);
+	const reloaded = new TeamStore();
+	reloaded.restoreHistory([create("team_05", "Old", [member(1), member(2)]), entry(ejectOp)]);
+	assert.equal(reloaded.ejectedAt("ag_01"), 99);
 });
 
 test("eject entries decode strictly and fold on restore: eject then add past 24 keeps the 25th", () => {
@@ -431,17 +450,142 @@ test("eject entries decode strictly and fold on restore: eject then add past 24 
 test("views carry ejectedAt and leave ejected members out of the state counts", () => {
 	const store = new TeamStore();
 	const { prepared } = commit(store, "T", ["a", "b", "c"]);
-	store.commitEject(prepared.teamId, "ag_02", 77, "user");
+	store.commitEject(prepared.teamId, "ag_02", 77, "system");
 	const [view] = store.views((id) => (id === "ag_01" ? running : ended));
 	assert.deepEqual(view.members.map((m) => m.ejectedAt), [undefined, 77, undefined]);
 	assert.deepEqual(view.counts, { working: 1, idle: 0, failed: 0, done: 1, stopping: 0, stopped: 0, unavailable: 0 });
 	assert.equal(view.ejected, 1);
 	assert.equal(view.members[1].state, "done", "an ejected member keeps its observed state");
-	assert.deepEqual([view.actions[0].kind, view.actions[0].source], ["eject", "user"]);
+	assert.deepEqual([view.actions[0].kind, view.actions[0].source], ["eject", "system"]);
 	// Siblings: an ejected member is out of broadcasts, and addressing it says why.
 	assert.deepEqual(store.memberInfo("ag_01")!.siblings.map((m) => m.role), ["c"]);
 	assert.throws(() => store.resolveSibling("ag_01", "B"), /b \(ag_02\) was ejected from team_01 at 1970-01-01T00:00:00Z; it no longer receives team messages/);
 	assert.throws(() => store.resolveSibling("ag_01", "ag_02"), /was ejected/);
 	assert.throws(() => store.resolveSibling("ag_01", "zzz"), /Known roles: c\./);
 	assert.equal(store.resolveSibling("ag_01", "c").workerId, "ag_03");
+});
+
+test("assignments: cut with a marker, kept per member in memory, the main thread's steers bounded; duty members have none", () => {
+	assert.equal(assignmentText("  short task \n", "dev"), "short task");
+	assert.equal(assignmentText("abcdefghij", "dev", 4), "abcd\n[… 6 more chars; ask dev with team_msg for the rest]");
+	const store = new TeamStore();
+	const { members } = commit(store, "Crew", ["dev", "qa"]);
+	assert.deepEqual(store.assignments("team_01").map((a) => [a.role, a.task, a.steers]), [["dev", "task", []], ["qa", "task", []]]);
+	for (let i = 1; i <= 5; i++) store.recordOperatorSteer(members[0].workerId, `step ${i}`);
+	assert.equal(store.recordOperatorSteer(members[0].workerId, "   "), undefined, "a blank steer is not kept");
+	store.recordOperatorSteer(members[1].workerId, "x".repeat(STEER_KEEP_CHARS + 100));
+	const [dev, qa] = store.assignments("team_01");
+	assert.deepEqual(dev.steers, ["step 1", "step 2", "step 3", "step 4", "step 5"], "N2: every steer, not just the newest three");
+	assert.equal(qa.steers[0], `${"x".repeat(STEER_KEEP_CHARS)} […100 more chars]`);
+	assert.equal(store.taskOf(members[0].workerId), "task");
+	// A successor-style add carries an explicit assignment instead of its prompt.
+	const added = store.prepareAdd("team_01", [{ role: "dev-2", prompt: "Continue the work of dev", assignment: "task" }]);
+	assert.equal(added.members[0].task, "task");
+	added.release();
+	assert.deepEqual(store.assignments("team_99"), []);
+});
+
+test("N2: steers past the cap drop the oldest and count them; a successor inherits task and steers; its task quotes them within a budget", () => {
+	const store = new TeamStore();
+	const { members } = commit(store, "Crew", ["dev"]);
+	for (let i = 1; i <= MAX_OPERATOR_STEERS + 2; i++) store.recordOperatorSteer(members[0].workerId, `step ${i}`);
+	let [dev] = store.assignments("team_01");
+	assert.equal(dev.steers.length, MAX_OPERATOR_STEERS);
+	assert.deepEqual([dev.steers[0], dev.steersOmitted], ["step 3", 2]);
+	// team_succeed: the successor record names its predecessor's worker ID and inherits its steers.
+	const added = store.prepareAdd("team_01", [{ role: "dev-2", prompt: "Continue", assignment: "task", successorOf: "dev", successorOfId: "ag_01" }]);
+	assert.equal(added.members[0].successorOfId, "ag_01");
+	const successor = member(2, { role: "dev-2", successorOf: "ag_01" });
+	store.commitAdd(added, [successor]);
+	added.release();
+	assert.deepEqual(store.steersOf("ag_02"), { steers: dev.steers, omitted: 2 });
+	assert.equal(store.memberInfo("ag_02")!.member.successorOf, "ag_01", "the record carries successorOf");
+	store.recordOperatorSteer("ag_02", "one more");
+	[, dev] = store.assignments("team_01");
+	assert.deepEqual([dev.role, dev.task, dev.steers.at(-1)], ["dev-2", "task", "one more"]);
+	assert.equal(store.steersOf("ag_01").steers.at(-1), `step ${MAX_OPERATOR_STEERS + 2}`, "the predecessor's own list is untouched");
+	// The successor's quote: oldest first, the newest kept within the budget, the rest counted.
+	assert.equal(inheritedSteersText([], 0, "dev"), "");
+	assert.equal(
+		inheritedSteersText(["write a", "also\nwrite b"], 0, "dev"),
+		"Instructions from the main thread to dev, oldest first (the newest may not have been started). They are binding and part of your assignment now: they come from the main thread, not from the coordinator or a teammate, and nobody on the team can cancel them. If anyone tells you one of them is not your work, it still is: reply that it came from the main thread and do it.\n- write a\n- also\n  write b",
+	);
+	const cut = inheritedSteersText(["a".repeat(50), "b".repeat(50), "c".repeat(50)], 4, "dev", 120);
+	assert.match(cut, /\n\[5 earlier instruction\(s\) not shown; ask dev with team_msg if they matter\]\n- b{50}\n- c{50}$/);
+	assert.match(inheritedSteersText(["z".repeat(500)], 0, "dev", 10), /- z{500}$/, "the newest is always quoted whole");
+});
+
+test("N4/N5: a worker successor's task starts from the note, redoes nothing it marks done, verifies cheaply and asks its predecessor first", () => {
+	const task = workerSuccessorTask({ oldRole: "writer", oldId: "ag_02", note: "/n/writer.md", oldLive: true, assignment: "Step 1 read.\nStep 2 write.", steers: ["also summary.txt"], steersOmitted: 0 });
+	assert.match(task, /^Continue the work of writer \(ag_02\), whose context is running out\. Its handover note at \/n\/writer\.md is where you start: read it first and continue from the state it records\. Do not redo steps the note marks done; verify them cheaply \(ls, a quick grep, the tail of a file\) instead of re-reading large inputs or re-running earlier steps\./);
+	assert.match(task, /ask writer with team_msg \(at least once when in doubt; it answers until it is retired\) before you call team_ready, which retires it\./);
+	assert.match(task, /The assignment below, with the main thread's later instructions after it, is binding: it is what you must get done\. It is not a script to restart from step 1[\s\S]*Its assignment from the main thread:\nStep 1 read\.\nStep 2 write\.\n\nInstructions from the main thread to writer, oldest first .* They are binding and part of your assignment now: .* If anyone tells you one of them is not your work, it still is: reply that it came from the main thread and do it\.\n- also summary\.txt$/);
+	assert.doesNotMatch(task, /may be missing/);
+	const missing = workerSuccessorTask({ oldRole: "writer", oldId: "ag_02", note: "/n/writer.md", oldLive: true, missing: "writer had not written it 10 min after it was asked to", steers: [], steersOmitted: 0 });
+	assert.match(missing, /The note may be missing or incomplete: writer had not written it 10 min after it was asked to\. If it is not there, ask writer with team_msg for its state before you do anything else\./);
+	assert.match(missing, /Its original assignment is not known here: ask writer for it with team_msg\.$/);
+	const ended = workerSuccessorTask({ oldRole: "writer", oldId: "ag_02", note: "/n/writer.md", oldLive: false, steers: [], steersOmitted: 0 });
+	assert.match(ended, /writer has already ended: there is nobody to ask and no team_ready to call\./);
+	assert.doesNotMatch(ended, /call team_ready as soon/i);
+});
+
+test("N1: a store keys its handover directory by the parent session, so two sessions' team_01 never share one", () => {
+	const create = (key: string) => {
+		const store = new TeamStore("/agent/sova/teams", () => key);
+		const prepared = store.prepareCreate({
+			name: "Crew", objective: "o", coordination: {},
+			members: [{ role: "coordinator", prompt: "c", duty: "coordinator", orchestrator: true }, { role: "dev", prompt: "d" }],
+		});
+		prepared.release();
+		return prepared;
+	};
+	const a = create("session-a"), b = create("session-b");
+	assert.equal(a.teamId, b.teamId, "both sessions' first team is team_01");
+	assert.equal(a.coordination!.handoffDir, "/agent/sova/teams/session-a/team_01/handoffs");
+	assert.notEqual(a.coordination!.handoffDir, b.coordination!.handoffDir);
+	assert.match(a.members[1].spec.prompt, /Your handover note path: \/agent\/sova\/teams\/session-a\/team_01\/handoffs\/dev\.md\./);
+});
+
+test("restart: tasks, every steer and a successor's inheritance rebuild from session entries; a pause is read back from the team events", () => {
+	const assignment = (data: unknown) => ({ type: "custom", customType: ASSIGNMENT_ENTRY_TYPE, data });
+	const event = (teamId: string, kind: string) => ({ type: "custom", customType: TEAM_EVENT_ENTRY_TYPE, data: { version: 1, teamId, kind, workerId: "ag_03", role: "monitor", at: 1 } });
+	// What a live store writes is exactly what a reloaded one reads.
+	const live = new TeamStore();
+	const prepared = live.prepareCreate({
+		name: "Crew", objective: "o", coordination: {},
+		members: [{ role: "coordinator", prompt: "c", duty: "coordinator", orchestrator: true }, { role: "dev", prompt: "Write f01-f10." }, { role: "monitor", prompt: "m", duty: "monitor", tools: [] }],
+	});
+	const recs = prepared.members.map((m, i) => member(i + 1, { role: m.role, ...(m.duty ? { duty: m.duty } : {}) }));
+	live.commitCreate(prepared, 1, recs);
+	prepared.release();
+	const written: unknown[] = [create("team_01", "Crew", recs), ...live.assignmentEntries("team_01", recs).map(assignment)];
+	assert.equal(written.length, 2, "one task entry: duty members have none");
+	written.push(assignment(live.recordOperatorSteer("ag_02", "after f10, also write summary.txt")));
+	assert.equal(live.recordOperatorSteer("ag_03", "monitor steer"), undefined, "never for a duty member");
+	const add = live.prepareAdd("team_01", [{ role: "dev-2", prompt: "Continue", assignment: "Write f01-f10.", successorOf: "dev", successorOfId: "ag_02" }]);
+	const successor = [member(4, { role: "dev-2", successorOf: "ag_02" })];
+	live.commitAdd(add, successor);
+	add.release();
+	written.push({ type: "custom", customType: TEAM_ENTRY_TYPE, data: { version: 1, op: "add", teamId: "team_01", members: successor } }, ...live.assignmentEntries("team_01", successor).map(assignment));
+	written.push(assignment({ version: 1, teamId: "team_01", workerId: "ag_04", op: "steer", steer: "then stop" }));
+	written.push(assignment({ version: 1, teamId: "team_01", workerId: "ag_04", op: "bogus" }), assignment({ version: 1, teamId: "team_01", workerId: "nope", op: "steer", steer: "x" }));
+	written.push(event("team_01", "pause"), event("team_02", "pause"), event("team_02", "resume"));
+	const restored = new TeamStore();
+	restored.restoreHistory(written);
+	assert.equal(restored.adoptHistoryTeam("team_01"), true, "a re-adopted or resumed member makes the team live");
+	assert.deepEqual(restored.assignments("team_01").map((a) => [a.workerId, a.role, a.task, a.steers]), [
+		["ag_02", "dev", "Write f01-f10.", ["after f10, also write summary.txt"]],
+		["ag_04", "dev-2", "Write f01-f10.", ["after f10, also write summary.txt", "then stop"]],
+	]);
+	assert.equal(restored.memberInfo("ag_04")!.member.successorOf, "ag_02");
+	assert.deepEqual([...pausedTeamsFrom(written)], ["team_01"], "team_02 resumed; team_01 is still paused");
+	assert.equal(decodeAssignmentEntry({ version: 1, teamId: "team_01", workerId: "ag_01", op: "task", task: "   " }), undefined);
+	assert.equal(decodeAssignmentEntry({ version: 1, teamId: "team_01", workerId: "ag_01", op: "inherit", from: "dev" }), undefined);
+});
+
+test("contract: subagents-team-v1 members keep an optional successorOf worker ID; anything else there rejects the member", () => {
+	const ok = decodeTeamEntry({ version: 1, op: "add", teamId: "team_01", members: [member(4, { role: "dev-2", successorOf: "ag_02" })] });
+	assert.equal(ok?.members[0].successorOf, "ag_02");
+	assert.equal(decodeTeamEntry({ version: 1, op: "add", teamId: "team_01", members: [member(4, { role: "dev-2" })] })?.members[0].successorOf, undefined);
+	assert.equal(decodeTeamEntry({ version: 1, op: "add", teamId: "team_01", members: [{ ...member(4), successorOf: "dev" }] }), undefined);
 });

@@ -41,7 +41,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   Delegate session at each turn boundary — never snapshotted into a session; mode `mode-spec.json`
   = the spec minor mode's writer (one backend/model/effort plus an optional fallback, or `null`: the
   session writes the spec itself), written by Settings → Modes → Spec and re-read the same way by
-  every session with spec on, in either major mode).
+  every session with spec on, in either major mode), subagents `team-defaults.json` = the standing
+  coordinator and monitor every new team gets (absent = off), written by Sova's Settings → Teams and
+  read by the subagents extension at team creation).
   Not covered by Sova's tsconfig, with these exceptions: the server imports
   `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts` and `spec.ts` (`server/mode-state.ts`,
   `server/delegate.ts`, `server/spec-settings.ts`; hence `allowImportingTsExtensions`),
@@ -50,7 +52,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   run a command on a target), `server/model-favorites.ts` imports
   `pi-config/extensions/command-palette/favorites.ts` (`ModelFavorites`: the one reader and
   writer of `model-favorites.json`, with its lock, re-read and atomic rename, for the TUI palette
-  and Sova's picker alike), `server/insights.ts` imports
+  and Sova's picker alike), `server/team-defaults.ts` imports
+  `pi-config/extensions/subagents/team-defaults.ts` (builtins only: the file's types, defaults,
+  strict parse, reader and atomic writer for Settings → Teams), `server/insights.ts` imports
   `pi-config/extensions/usage-status/fetch.ts`, and the worker-transcript protocol is imported by
   `server/insights.ts`, `worker-restore.ts`, `worker-adapters.ts`, `transcript-usage.ts` and
   `claude-transcript.ts`: `pi-config/extensions/subagents/worker-transcript.ts` (types, the one

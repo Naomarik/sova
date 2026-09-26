@@ -210,6 +210,8 @@ export interface TranscriptItem {
   overseerMark?:
     | { kind: "sent"; targetId: string }
     | { kind: "dialog-answer"; title: string; answer: string };
+  /** kind "info" only: a subagents-team-event-v1 entry; `text` is `Team: ` + its sentence. */
+  teamEvent?: TeamEvent;
   raw: unknown;
 }
 
@@ -251,6 +253,27 @@ export interface ReportInfo {
   /** source "explain-doc" only: a forked /explain subagent finished and wrote its HTML page +
       meta to the explanations store. `preview` is the topic; `agent` is absent. */
   explain?: ExplanationInfo;
+  /** customType "team-report" / "team-question" only, when the subagents extension's header parsed
+      (server/reports.ts parseTeamMessage). `body` is then the message without its header and
+      trailer lines; `agent` is absent, so the row is never a finished-worker marker. */
+  team?: TeamMessageInfo;
+}
+
+/** A coordinated team's message to the operator, parsed from its header:
+    `[Team report from coordinator <role> (<ag_NN>), <team_NN> — <team name>[ · milestone|concern]]` or
+    `[Team question from <role>[, orchestrator] (<ag_NN>), <team_NN> — <team name>]`.
+    Informational (report) or answered by the main thread (question); never an input of its own. */
+export interface TeamMessageInfo {
+  kind: "report" | "question";
+  role: string; // "coordinator"
+  workerId: string; // "ag_01"
+  teamId: string; // "team_01"
+  teamName: string;
+  /** Question only: the asker is its team's orchestrator (a coordinator always is). */
+  orchestrator?: boolean;
+  /** Report only: the header's ` · <kind>` suffix, else a leading "Milestone:" / "Concern:" line
+      (removed from `body`); absent when neither says. */
+  label?: "milestone" | "concern";
 }
 
 /** One /explain artifact: a self-contained HTML page in the explanations store
@@ -496,6 +519,7 @@ export interface ContextInfo { tokens: number; window: number | null }
 //                                          answered it can't run; unverifiable or policy-denied tuples save with a
 //                                          warning. Sessions with spec on, in either major mode, pick it up at
 //                                          their next turn)
+// GET/PUT /api/settings/team(/options): Settings → Teams, in shared/team-defaults.ts
 // ---------------------------------------------------------------------------
 
 // GET /api/settings/summarizer  -> SummarizerSettingsInfo (~/.pi/agent/topic-outline.json's `summarizers`; missing
@@ -1803,11 +1827,35 @@ export interface WorkerInfo {
 export interface TeamMember {
   workerId: string; role: string; orchestrator: boolean; backend: string; model?: string;
   ownedPaths: string[]; addedAt: number;
-  /** When the member released its team seat (team_eject). It keeps
+  /** When the member released its team seat (team_eject, or the extension on its own). It keeps
       its role, id and transcript. Absent from older servers and never-ejected members. */
   ejectedAt?: number;
   worker: WorkerInfo | null; // null: not in the live record (history team / trimmed worker)
   lastReport?: { status: string; outcome?: string; at: string };
+  /** The member's standing duty in a coordinated team (subagents-team-v1 `duty`). */
+  duty?: TeamDuty;
+  /** The worker id this member took over from: the record's `successorOf`, else (older files) the
+      handover event that named this member as the successor. */
+  successorOf?: string;
+  /** The newest `retire` event for this member. `reason`: the successor confirmed, or the handover
+      timed out; absent when the event's detail says neither. */
+  retired?: { at: string; reason?: "confirmed" | "timeout" };
+}
+export type TeamDuty = "coordinator" | "monitor";
+export type TeamEventKind = "handover" | "retire" | "pause" | "resume" | "wrap-up";
+/** One subagents-team-event-v1 entry on the parent's active branch. `workerId`/`role`: the member
+    the event is about (handover/retire: the old member; pause/resume: the monitor; wrap-up: the
+    member told to wrap up). `text`: the one-sentence form the UI shows (server/reports.ts
+    teamEventText), without the team; `detail` verbatim (≤ 500 chars) for a title. */
+export interface TeamEvent {
+  id: string;
+  teamId: string;
+  kind: TeamEventKind;
+  workerId: string;
+  role: string;
+  at: string; // ISO 8601
+  detail?: string;
+  text: string;
 }
 export interface TeamInfo {
   id: string; name: string; objective: string; createdAt: number;
@@ -1815,6 +1863,10 @@ export interface TeamInfo {
   live: boolean; // parent session currently running
   members: TeamMember[];
   working: number;
+  /** A member has the coordinator duty. */
+  coordinated?: true;
+  /** Oldest first; absent when the team has none. */
+  events?: TeamEvent[];
 }
 export interface LiveAgentSession {
   path: string | null; sessionId: string | null; name: string | null; cwd: string; pid: number; mode: string | null;

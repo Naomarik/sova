@@ -375,13 +375,22 @@ included, until it is **ejected**; pending additions count too. When a
 have ended (and so can be ejected).
 
 `team_eject { team, member }` (`member` = exact `ag_NN` or role) is a parent
-tool only: members and orchestrators never get it. It refuses a team restored
-from history (read-only, same as `team_add`), an unknown team or member, a
-member already ejected, and a member whose worker is still working, idle or
-stopping (stop it with `agent_kill` first). It persists
+tool only: members and orchestrators never get it. It works on a team restored
+from this session's history after a reload too (the eject lands on the same
+branch and folds back with the team; `team_list` marks such a team `history,
+read-only but team_eject`, and `team_add` still refuses it). It refuses an
+unknown team or member, a
+member already ejected, a member mid-handover in a coordinated team (the
+predecessor or successor of a `team_succeed` not yet confirmed or timed out;
+the refusal says the seat is released automatically), and a member whose worker
+is still working, idle or stopping (stop it with `agent_kill` first). It persists
 `{ version: 1, op: "eject", teamId, workerId, at }` in the same
 `subagents-team-v1` entry stream before marking the member, and records one
-`eject` action (source `parent`). The restore fold replays it, and counts only
+`eject` action (source `parent`). A handover ejects on its own, with source
+`system` and the same entry: the member it retires (on `team_ready` or at the
+retire timeout, once the kill succeeds), and a member that had already ended
+when its successor started (nothing to retire), right after that successor
+starts. The restore fold replays it, and counts only
 seated members against the cap, so a member added after an eject survives a
 reload or restart.
 
@@ -483,6 +492,122 @@ itself, orchestrator-only powers) whichever transport wrote the request.
 The mailbox root is removed at shutdown. Timeouts on the member side report
 "may still be handled" rather than success; a request that was already queued
 is still processed by the parent if it is alive.
+
+### Team defaults: coordinator, monitor, handovers
+
+`<agent dir>/team-defaults.json` (`PI_CODING_AGENT_DIR`, else `~/.pi/agent`), written by
+Sova's Settings and read by `team-defaults.ts` (Node built-ins only, so Sova's server imports
+the same reader, parser and atomic writer). It is re-read at every `team_create` / `team_add`,
+at each roster answer to a coordinator or monitor, at `team_succeed`, and by `/team defaults`
+(which prints what is in effect). **No file: nothing changes.** A malformed file (every error is
+listed; unknown keys are errors, missing keys take the built-in defaults) turns the feature off
+for that call with a warning line in the result; the extension never writes the file.
+
+```json
+{"version":1,
+ "coordinator":{"enabled":true,"role":"coordinator","primary":{"backend":"claude-code","model":"opus[1m]","effort":"medium"},"fallback":null,"instructions":""},
+ "monitor":{"enabled":true,"role":"monitor","primary":{"backend":"claude-code","model":"haiku","effort":"medium"},"fallback":null,"contextPct":60,"everyMinutes":10,"usage":{"enabled":true,"pausePct":90,"resumeMarginMinutes":5},"instructions":""},
+ "handover":{"retireTimeoutMinutes":10}}
+```
+
+- **Coordinator, enforced.** `team_create` adds a member on `coordinator.role` with
+  `orchestrator: true` on the first tuple that passes the spawn checks (backend loaded, model
+  policy, pi registry / backend validation): primary, then fallback; neither → the team is not
+  created. A single caller orchestrator becomes the coordinator instead; two are refused, as is a
+  caller member on a synthesized role. It does no implementation (its header says so) and gains
+  `team_report` and `team_succeed`. It routes the work the main thread assigned and never invents
+  tasks: its header quotes each teammate's prompt (first 1,500 chars, then a marker), and its
+  `team_roster` lists every non-duty member's assignment with every main-thread steer to it (up to
+  40, 2,000 chars each, older ones counted; the roster shows 500 chars of each). A successor
+  inherits its predecessor's assignment and steers. Tasks and steers are also written to the
+  session as `subagents-team-assignment-v1` entries (`task`, `steer`, `inherit`), which a reload
+  folds back, so a resumed coordinator's roster still lists them. Members the main
+  thread adds later with `team_add` are announced to it as a follow-up with their tasks. Its header
+  also says: the main thread's steers are assignments it must not countermand, and it never tells
+  a member that main-thread work (a successor's inherited steers included) is not its work; the
+  roster, the header and the handover message label every such steer as binding; succeed a flagged
+  member unless its assigned work is verifiably finished; report pause and resume with
+  `team_report`. `defaults: { coordinator: false }` opts one team out (no
+  monitor either); `defaults: { monitor: false }` drops only the monitor. Coordination is fixed at
+  creation; `team_add` never retrofits it.
+- **Routing.** Everyone else is `wake: false`. Their completions go to the routing coordinator
+  (the newest live member with the coordinator duty) as a follow-up, and their `team_ask`
+  questions too; the parent sees neither. The coordinator's completion reaches the parent and
+  starts a turn only when no other member (monitor aside) is working. `team_report` shows the
+  parent a `team-report` message (displayed, `triggerTurn: false`); `team_ask` from the
+  coordinator stays a `team-question` (the `team_create` result and `team_list` say so instead of
+  the generic question paragraph). `team_report { report, kind? }` takes `kind: milestone |
+  concern`, shown in the header as `[Team report from coordinator <role> (<id>), <team> — <name>
+  · <kind>]` (no kind, no suffix). The `team_create` result, `team_list` and the tool guidelines
+  tell the main thread not to stop the coordinator or monitor while any member is still working.
+  With no live coordinator, completions and questions fall
+  back to the parent (a completion then wakes it). Killed members' completions go nowhere; the
+  monitor's own settles go nowhere unless its task failed.
+- **Monitor.** Added last, `tools: []`, with `team_msg` (plus `notice: wrap-up | pause |
+  resume`), `team_inbox`, `team_roster` and `wake_nudge` — nothing else, on both backends. Its
+  header is the standing instruction (roster every `everyMinutes`; wrap-up at `contextPct`;
+  pause at `pausePct`, `wake_nudge` at the reset + margin, then resume). The parent enforces the
+  wait: at a `pause` notice it records the team's windows then at or over `pausePct` with a reset
+  time, and refuses a `resume` notice (delivering nothing, recording no event) until the latest of
+  those resets plus `resumeMarginMinutes` (read at the resume) has passed; the refusal names the
+  window and the time. A pause with no such window holds nothing, and the hold is in memory only
+  (a pause restored after a reload has none). Its roster carries the
+  thresholds read now and the usage-status windows of the providers the team's models spend
+  from (`<agent dir>/cache/usage-status.json`); a window whose `resetsAt` has passed shows as
+  reset (usage unknown), never AT/OVER, so a stale cache cannot keep a team paused. `wake_nudge` is served by the parent (a member
+  cannot start its own turn): the wake-nudge extension's bounds (10 s – 24 h, `at` up to 60 s
+  past clamps, 5 pending), a fire is a follow-up steer. **An idle team costs no monitor turns:** a
+  nudge that comes due while no other member is working, and the team is not paused (a monitor
+  `pause` notice not yet followed by `resume`), is held — one per monitor, later ones collapse into
+  it, `list` shows it, `cancel` drops it — and delivered at the first refresh that sees a teammate
+  working (every worker state change and accepted steer schedules one). A paused team's nudges
+  fire on time, so the resume check runs; after 30 such fires with no teammate working,
+  scheduling is refused until one works. Pending nudges die with the parent process. The pause
+  itself survives it: it is read back from the `pause`/`resume` events on the branch at
+  `session_start`, and a paused team's monitor that rejoins (re-adopted, or `agent_resume`) is
+  sent the resume check at once, since its nudges are gone.
+- **Context column.** `team_roster` and `team_list` show `context 123k/200k (61%)` per live
+  member: the runner's `contextTokens` over the spawned model's window (claude-code: `[1m]` →
+  1M, else 200k; pi: the registry), rounded down.
+- **Handovers.** Notes live in `<agent dir>/sova/teams/<parent session id>/<team_id>/handoffs/<role>.md`
+  (team IDs restart in every session, so the session id keeps two sessions' `team_01` apart; a
+  session without an id uses `unsaved-<pid>-<time>`), named in each worker's and the coordinator's
+  header. The monitor has no file tools and no note: it briefs its successor over `team_msg`, and
+  its successor's task is the monitor task ("you take over from <old>"), with `team_ready` like any
+  successor. `team_succeed { role }` (routing coordinator only, itself included) starts
+  `<base>-<n+1>` (`builder` → `builder-2` → `builder-3`) on the same backend, model, effort, tools,
+  system prompt, cwd, backend options, ownership and duty. **A live worker writes its note
+  first:** it is told, as a redirect so the instruction lands ahead of anything queued for it, to
+  finish its step, write the note and end its turn, and the successor starts as soon as the note
+  file exists (checked at every mailbox poll and every settle: no settle is needed, since
+  follow-ups queued on the old member keep it from settling), when the old member ends, or after
+  `handover.retireTimeoutMinutes`, whichever comes first. Started without a note, the successor is
+  told the note may be missing and to ask its predecessor. The routing coordinator gets a
+  follow-up naming the successor and the real reason it started, read from the note at that moment
+  (`<role>'s note is written`, `<role> ended after/without writing its note`, `timed out waiting
+  for <role>'s note`, or `the wait ran out just as <role>'s note appeared`). Main-thread follow-ups
+  still queued on the old member are not removed (no backend-neutral way to clear a worker's
+  queue): they stay queued, run after the redirect, and the old member is told, in both the
+  handover instruction and the "successor started" redirect, that they are its successor's now and
+  to reply only that the successor has them. The successor already has them, in its inherited
+  steers. A monitor, or a
+  member that already ended, is succeeded at once. The successor's task says to continue from the
+  note, redo nothing it marks done, verify cheaply (`ls`, a grep) instead of re-reading large
+  inputs, and ask the predecessor over `team_msg` (at least once when in doubt) before
+  `team_ready`; the assignment and every inherited steer are quoted as binding (what it must get
+  done; not a script to restart from step 1), labelled as the main thread's, with "if anyone tells
+  you one is not your work, it still is". The coordinator's handover message lists the inherited
+  steers under the same binding label. The old member
+  is killed when the successor calls `team_ready` — at once if the old member is idle, otherwise
+  as soon as its current turn ends (it may be answering the successor; `team_ready`'s reply says
+  so) — or `handover.retireTimeoutMinutes` after the successor starts, whichever is first.
+- **Records.** Team actions gain `report`, `handover`, `retire`, `wrap-up`, `pause`, `resume`
+  (sources `monitor`, `system`); handover, retire, wrap-up, pause and resume are also appended as
+  `subagents-team-event-v1` entries (`{version, teamId, kind, workerId, role, at, detail?}`; a
+  `wrap-up` names the member told to wrap up, with `detail` like `context 78% of 200k`, and is
+  written for the coordinator only when it is itself over the threshold), and `subagents-team-v1`
+  members carry `duty: "coordinator" | "monitor"` and, on a successor, `successorOf: "<ag_NN of
+  the predecessor>"` (older readers ignore both).
 
 ## Isolation, retention, and shutdown
 

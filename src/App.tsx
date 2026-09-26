@@ -3,6 +3,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { SessionSummary, WorkerInfo } from "../shared/protocol";
 import { reuseUnchanged } from "./lib/summary-diff";
+import { setAgentsFeedSource } from "./lib/agents-feed";
 import {
   ApiError,
   createSession,
@@ -259,7 +260,7 @@ export function App() {
   const extId = createMemo(() => extRoute()?.id ?? null);
   /** The extension asked to fill the window (ext-contract §3.7); ExtensionView owns it. */
   const [extMaximized, setExtMaximized] = createSignal(false);
-  /** Team card to scroll to on `#/agents/<teamId>`. */
+  /** Team card to scroll to on `#/agents/<teamKey>` (or a bare team id from an older link). */
   const focusTeam = () => {
     const r = insightsRoute();
     return r?.page === "agents" ? r.team : null;
@@ -273,6 +274,7 @@ export function App() {
     .catch(() => {});
   const usage = createPoll(fetchUsage, USAGE_POLL_MS);
   const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
+  setAgentsFeedSource(agents.data);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
   const overseer = createPoll(getOverseer, OVERSEER_POLL_MS);
   /** The attention digest, read once for the page: the sidebar's Needs you region and the Overseer

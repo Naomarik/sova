@@ -1,7 +1,7 @@
 import { createEffect, createUniqueId, For, Index, Match, Show, Switch } from "solid-js";
-import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
+import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamEvent, TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { clockTime, relativeTime, shortModel, tildePath } from "../lib/format";
-import { activeTeams, memberStatus, type MemberStatus, teamAnchor, teamFresh } from "../lib/insights";
+import { activeTeams, findTeamGroup, memberBadges, memberStatus, type MemberStatus, orderedMembers, splitTeamEvents, teamAnchor, teamFresh, teamHeadingId, teamKey, teamPause } from "../lib/insights";
 import type { Poll } from "../lib/poll";
 import { home } from "../lib/ui-state";
 import { capTitle, isHostSession } from "../lib/workers";
@@ -12,7 +12,8 @@ import { Chip, CountChip, Icon } from "./ui";
 /** One worker: role or name, ids in mono, status chip on the right. Not a target. */
 function MemberRow(props: {
   title: string;
-  orchestrator?: boolean;
+  /** Beside the name: the duty (or Orchestrator), then a successor's tie. */
+  badges?: { label: string; title?: string }[];
   /** Released its team seat: a neutral chip beside the role, never the run status. */
   ejected?: boolean;
   id: string;
@@ -27,9 +28,7 @@ function MemberRow(props: {
       <div class="list-main">
         <p class="list-title">
           {props.title}
-          <Show when={props.orchestrator}>
-            <CountChip>Orchestrator</CountChip>
-          </Show>
+          <For each={props.badges ?? []}>{(b) => <CountChip title={b.title}>{b.label}</CountChip>}</For>
           <Show when={props.ejected}>
             <Chip>Ejected</Chip>
           </Show>
@@ -72,12 +71,21 @@ function MemberRow(props: {
 /** One team: a group head (name, id) over its objective, its members, and where it started. */
 function TeamGroup(props: { team: TeamInfo; fresh: boolean; now: number; parentTitle: string | null }) {
   const liveSource = () => props.team.live && props.fresh;
-  // Orchestrator first, then roster order.
-  const members = () => [...props.team.members].sort((a, b) => Number(b.orchestrator) - Number(a.orchestrator));
+  // Coordinator (or orchestrator) first, then the members, the monitor, and retired members last.
+  const members = () => orderedMembers(props.team);
+  const paused = () => teamPause(props.team);
+  const events = () => splitTeamEvents(props.team);
   return (
-    <section class="insights-group team-group" id={teamAnchor(props.team.id)} aria-labelledby={`tt-${props.team.id}`} tabindex="-1">
-      <h3 class="list-group-label insights-group-head" id={`tt-${props.team.id}`}>
+    <section class="insights-group team-group" id={teamAnchor(teamKey(props.team))} aria-labelledby={teamHeadingId(teamKey(props.team))} tabindex="-1">
+      <h3 class="list-group-label insights-group-head" id={teamHeadingId(teamKey(props.team))}>
         <span class="insights-group-name team-group-name">{props.team.name}</span>
+        <Show when={paused()}>
+          {(p) => (
+            <Chip tone="warn" title={p().detail ?? p().text}>
+              Paused
+            </Chip>
+          )}
+        </Show>
         <span class="text-mono">{props.team.id}</span>
       </h3>
       <Show when={props.team.objective}>
@@ -90,7 +98,7 @@ function TeamGroup(props: { team: TeamInfo; fresh: boolean; now: number; parentT
           {(m) => (
             <MemberRow
               title={m.role}
-              orchestrator={m.orchestrator}
+              badges={memberBadges(m, props.team)}
               ejected={m.ejectedAt !== undefined}
               id={m.workerId}
               model={m.worker?.model ?? m.model}
@@ -101,6 +109,21 @@ function TeamGroup(props: { team: TeamInfo; fresh: boolean; now: number; parentT
           )}
         </For>
       </ul>
+      <Show when={props.team.events?.length}>
+        <div class="team-events">
+          <h4 class="visually-hidden">Team events</h4>
+          <Show when={events().earlier.length}>
+            <details class="team-events-earlier">
+              <summary>
+                <Icon name="chevron-right" small class="icon-twist" />
+                Earlier events ({events().earlier.length})
+              </summary>
+              <TeamEventList events={events().earlier} />
+            </details>
+          </Show>
+          <TeamEventList events={events().recent} />
+        </div>
+      </Show>
       <p class="team-started">
         Started {relativeTime(iso(props.team.createdAt), props.now)} in{" "}
         <a href={sessionHref(props.team.parentPath)} title={props.parentTitle ?? undefined}>
@@ -108,6 +131,22 @@ function TeamGroup(props: { team: TeamInfo; fresh: boolean; now: number; parentT
         </a>
       </p>
     </section>
+  );
+}
+
+/** A team's events, oldest first: the time in mono, then one sentence; the full detail on hover. */
+function TeamEventList(props: { events: TeamEvent[] }) {
+  return (
+    <ul class="team-event-list">
+      <For each={props.events}>
+        {(e) => (
+          <li class="team-event" title={e.detail}>
+            <span class="text-mono team-event-time">{clockTime(e.at)}</span>
+            <span class="team-event-text">{e.text}</span>
+          </li>
+        )}
+      </For>
+    </ul>
   );
 }
 
@@ -262,7 +301,7 @@ export function AgentsView(props: {
     const id = props.focusTeam;
     props.agents.data(); // the group appears with the first agents payload
     if (!id || id === focused) return;
-    const el = document.getElementById(teamAnchor(id));
+    const el = findTeamGroup(document, id);
     if (!el) return;
     focused = id;
     el.scrollIntoView({ block: "start" });

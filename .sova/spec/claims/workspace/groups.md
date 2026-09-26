@@ -291,7 +291,7 @@ apply verbatim. What changes is scoping and chrome:
   suffix while the tabs kept it, which is where this was caught — makes `#2` mean two things at
   once. The model is never said twice: a name that already is the model takes no `· {model}`
   half. The name's `title` is the full string, then the cwd, then the session's whole spend
-  (`SessionUsage.total`, the same field the Session-info dialog tallies) — "which answer won"
+  (`SessionUsage.total`, the same field the session pane's Usage tab headlines) — "which answer won"
   includes cost, and this puts it one hover from the comparison instead of a dialog deep in each
   pane. A `Working` chip (live dot) sits in the head while the member is mid-turn: in split mode
   there is no single place that says who is still running, and the tab strip's dot only covers

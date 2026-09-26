@@ -109,8 +109,8 @@ or why it can't be resumed).
   none) with the snapshot's time. `agent_list` says "restored" beside the status, and names
   the resume tool on each resumable worker or gives the reason it can't be resumed.
 - **Usage that can't be read is unavailable, never 0.** A worker whose transcript can't be read
-  and that has no snapshot shows "usage unavailable" where its tokens would be. The session tab's
-  usage names the workers its totals leave out ("Usage unavailable for ag_04: we couldn't read its
+  and that has no snapshot shows "usage unavailable" where its tokens would be. The session
+  pane's Usage tab names the workers its totals leave out ("Usage unavailable for ag_04: we couldn't read its
   transcript, so the totals above leave it out."). A cost with any snapshot part carries the time of
   its **oldest** snapshot, the stalest part. In the usage table, such a cost reads `$0.41*`: a
   muted `*` whose `title` is "As of {HH:MM}", and one note under the table, "* Cost as of {HH:MM},
@@ -118,7 +118,7 @@ or why it can't be resumed).
   and the Model, Where and Cost cells never wrap. The Subagent lifetime line keeps the time
   inline: "$0.41 as of {HH:MM}".
 - **One row, one label, hosted or not.** A restored team member's spend is a Team row in the
-  session tab's usage. A restored or resumed worker is named by the model it **ran under**: its
+  session pane's Usage tab. A restored or resumed worker is named by the model it **ran under**: its
   transcript's model, else its last snapshot's, else the model it was spawned with, and a Claude
   worker's name keeps the context variant it was spawned with (`[1m]`, read "1M"). So a Claude
   worker reads `haiku-4.5` running, restored and resumed alike, whether the session is hosted by

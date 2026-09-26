@@ -909,7 +909,7 @@ dropping it on another group moves it; a drop on the group it is already in does
 to drop it out. The source row dims for the length of the drag. A drop says what happened through
 `.toast` and the polite region: "Added to “Work”." · "Moved to “Home”." · "Removed from “Home”."
 - **Without a pointer**, and on touch, drag is not available: the session pane's `Move into group`
-control (§chat/transcript, the Session tab and the info modal) is the same change, as a popover radio list
+control (the session pane's Session tab, §app.subagents-pane/tabs) is the same change, as a popover radio list
 (`role="menuitemradio"`, one row per group plus `No group`) with `New group…` at the end, which
 creates the group and moves the session in one step. The Identity list shows the current group.
 - **Search.** Groups are filtered by the same query as everything else, over the whole list rather

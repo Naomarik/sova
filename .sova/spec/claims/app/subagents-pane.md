@@ -74,7 +74,8 @@ is one click rather than a wait for the turn to settle.
     <header class="subagents-head">
       <h2 class="subagents-title">Subagents</h2>
       <span class="chip chip-count">2 working</span>            <!-- omitted at 0 -->
-      <span class="chip chip-count subagents-usage" title="41.9k in · 11.3k out · 402k cache read · 61.8k cache write · $0.72">53.2k tokens</span>
+      <button type="button" class="chip chip-count subagents-usage" aria-label="53.2k tokens — show usage"
+              title="41.9k in · 11.3k out · 402k cache read · 61.8k cache write · $0.72">53.2k tokens</button>
       <button class="button button-icon button-ghost subagents-close" aria-label="Close subagents">
         <span class="icon" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
       </button>
@@ -116,17 +117,59 @@ pushed right, `aria-label="Close subagents"`. Its chevron points right: it sends
 the way it came.
 
 **The token Σ** sits beside the working count as a second neutral chip, `{n} tokens` in mono
-(`.subagents-usage`), left out when nothing has been spent. It is a **session-lifetime** total:
-every worker this session ever started, on any branch, including the ones the manager's
-retention cap and the live record's 40-row cap dropped, so it is normally larger than the rows add
-up to. While the runtime runs it never goes down. After a server restart it is **rebuilt from the
-workers' transcripts** (§app.worker-restore/usage-from-transcripts), which may give a different
-total than the one shown before: the rebuild counts what the live count left out (cache-warm
-calls), and a Claude Code worker's cost is its last snapshot's. The headline is input + output, the §chat/context-window token format. Everything the headline hides
+(`.subagents-usage`), left out when nothing has been spent. It is the **session's** spend, the
+same figure the Usage tab headlines (§app.subagents-pane/tabs): the main thread on the active
+branch plus this session's listed workers (`SessionUsage.total`). Before the insight carries one,
+it falls back to the workers' **session-lifetime** total: every worker this session ever started,
+on any branch, including the ones the manager's retention cap and the live record's 40-row cap
+dropped, so it is normally larger than the rows add up to. While the runtime runs that lifetime
+total never goes down. After a server restart it is **rebuilt from the workers' transcripts**
+(§app.worker-restore/usage-from-transcripts), which may give a different total than the one shown
+before: the rebuild counts what the live count left out (cache-warm calls), and a Claude Code
+worker's cost is its last snapshot's. The Usage tab's Subagent lifetime line keeps saying that
+figure. The headline is input + output, the §chat/context-window token format. Everything the headline hides
 is in the `title`: `{in} in · {out} out · {cacheRead} cache read · {cacheWrite} cache write`,
-the cost (`$0.72`, `<$0.01`) when a backend reports one, and the head count it covers
-("57 subagents so far"). Under 520px of pane the chip goes and the working count stays: one
-answers whether anything is happening, the other only how much it cost.
+the cost (`$0.72`, `<$0.01`) when a backend reports one, and, on the lifetime fallback, the head
+count it covers ("57 subagents so far"). **The chip is a button**: it opens the Usage tab, and its
+accessible name says so ("53.2k tokens — show usage"). Under 520px of pane the chip goes and the
+working count stays: one answers whether anything is happening, the other only how much it cost;
+the Usage tab stays one tap away in the strip.
+
+## §app.subagents-pane/tabs — Tabs, and what the Session and Usage tabs hold
+
+The pane is Session detail: a head, the remote controls row (§app.shell/remote-session-chips), a
+tab strip, and one tab's panel, which scrolls on its own. The tabs, in this order: **Session ·
+Timeline · Agents · Usage · Skills · Explain** (`.tabs.session-tabs`, `role="tablist"`, one
+`role="tabpanel"`; roving `tabindex`, Left/Right wrapping, Home/End). Every tab is always in the
+strip, empty or not: a tab that came and went would move the strip under the reader.
+
+- **Which tab opens.** Every door names its own tab (the head's Session details button and the
+  remote chip: Session; the composer's subagents row: Agents; the Timeline doors,
+  §chat.timeline/opening-it; the head's token chip: Usage). The pane keeps the chosen tab per
+  session path, in memory only. With none kept, it opens on Agents when a worker is working at
+  open, else on Session, settled once at open so the tab never moves when the last worker
+  finishes. Usage is never the default.
+- **The strip never wraps.** In a narrow pane the tabs tighten, then the strip scrolls sideways,
+  and the selected tab is scrolled into view (to the nearest edge) when the pane opens and whenever
+  the tab changes, so a tab a door opened is never off-screen at 375px.
+- **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
+  Command), Context, Repository, Worktrees (§chat.worktrees/pane), Identity (with Move into group,
+  Group with parent and, for web sessions, Archive), Compactions, Changes. Repository and Worktrees
+  load after Identity, which sits below them, so both hold a placeholder of about their settled
+  height while they load: Identity's buttons don't move under a reader about to press one.
+- **Usage** is what the session has spent, off the same insight the pane polls. First the
+  headline, `{n} tokens in and out · $x` (input + output; cache in its `title`). Then a table with
+  one row per model × origin, the main thread first and then the biggest spender: Model · Where
+  (Main thread, Subagents, Team) · In · Out · Cache read · Cache write, and Cost only when a
+  backend reports USD, with a **Main thread Σ** footer. Then the notes: "Main thread counts the
+  active branch only.", the snapshot-cost note and "Usage unavailable for …"
+  (§app.worker-restore/restore). Then this session's workers: `{n} subagents · {w} working` and
+  the Subagent lifetime line. Under 400px of pane the table stacks, one block per row: Model and
+  Where on its first line, each count labelled under it. Before anything is spent the tab says
+  "Nothing spent in this session yet." (the worker count still shows when there are workers);
+  while the first load is out it shows a placeholder, never that line.
+- **Timeline** is §chat/timeline, **Agents** the list and transcript below; **Skills** says which
+  skills loaded and when, and **Explain** lists the session's /explain pages.
 
 ## §app.subagents-pane/body-list-transcript — Body: list | transcript
 

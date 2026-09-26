@@ -22,7 +22,7 @@ the fork-point marker (below) is the only thing that tells them apart afterwards
 
 ## §workspace.fanout/entry-points — Entry points
 
-- **The composer flyout** (§chat/composer, the `plus` menu panel), a row after Session info: `Fan Out…`. It
+- **The composer flyout** (§chat/composer, the `plus` menu panel), a row after Hide thinking and Sandbox: `Fan Out…`. It
   opens the dialog with **Fork at the current leaf** selected and this session as the source.
   Absent when the session has no assistant reply yet — there is nothing to fork — and absent for
   a watch view, where Sova holds no runtime.

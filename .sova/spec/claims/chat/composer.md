@@ -174,7 +174,7 @@ Commands) and took the model trigger and the session's own facts out of the head
 composer is where the session is acted on, and the head is for reading.
 
 **One popover, two triggers, three panels.** The `plus` button opens the **menu** panel — Attach
-images, Commands, Playbooks, Hide tool calls, Hide thinking, Sandbox, Session info, Fan Out… and Undo
+images, Commands, Playbooks, Hide tool calls, Hide thinking, Sandbox, Fan Out… and Undo
 last turn, each present only where it applies (below). The model indicator in `.composer-foot` (§chat/composer) opens the **model**
 panel — the Model row and this model's Thinking ladder, the two things the indicator is the label
 for. The Model row opens the §chat/model-menu **picker** as the third panel, which comes back to the model
@@ -203,7 +203,6 @@ it.
 
     <div class="composer-flyout-sep" role="separator"></div>
     …Hide tool calls, Hide thinking, Sandbox (menuitemcheckbox)…
-    <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-info" tabindex="-1">…Session info…</div>
     …Fan Out… (§workspace/fanout), then Undo last turn after its own separator (§chat/timeline)…
   </div>
 </div>
@@ -251,7 +250,7 @@ it.
   closes it if the picker is already in front), with `preventDefault()` so print never fires. It's
   bound in chat sessions only; watch sessions print as usual.
 - **Rows.** The menu panel's, in order: Attach images, Commands, Playbooks, Hide tool calls, Hide
-  thinking, Sandbox, Session info, Fan Out… (§workspace/fanout) and, after its own separator, Undo last turn (§chat/timeline).
+  thinking, Sandbox, Fan Out… (§workspace/fanout) and, after its own separator, Undo last turn (§chat/timeline).
   §design.copy-deck/composer-flyout is the inventory. Model and Thinking are the model panel's.
   - **Attach images** opens the composer's hidden file picker (§chat/images). `aria-disabled` and
     `aria-describedby="composer-reason"` while the composer is disabled.
@@ -290,8 +289,9 @@ it.
     Otherwise its `title` says what a click does (§design.copy-deck/sandbox). The extension's
     own status line comes back as a toast and is announced. A refusal leaves the state as it was
     and toasts why.
-  - **Session info** closes the flyout and opens the session info modal. Chat sessions only: a watch view doesn't pass
-    `onShowInfo`, so the row is absent there.
+  - **No Session info row.** The session's facts and spend live in the session pane
+    (§app.subagents-pane/tabs), which the head's Session details button opens on Session and the
+    pane head's token chip switches to Usage; the flyout has no modal of its own for them.
 - **Changing the model re-reads the ladder.** The server re-clamps on a model switch and sends
   `{type:"thinking"}` again, so the group re-renders for the new model: switching from a model at
   `low` to one whose ladder is `off · high · max` shows those three, checked wherever the server

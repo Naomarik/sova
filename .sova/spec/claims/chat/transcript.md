@@ -49,7 +49,7 @@
   (§app.overseer/sent-marker); its actions are unchanged, Rewind included. An Overseer dialog
   answer renders as the machine row "Overseer chose: {answer}" (§app.overseer/dialog-answers).
 - **Copy Session Path.** Gone from the head. The path is a session fact, and it's copied from
-  Session info instead, which is where the rest of them live.
+  the session pane's Session tab instead, which is where the rest of them live.
 - **Archive Session / Unarchive Session.** Web sessions only, last in the head. Moves the
   session between the sidebar regions (§app/session-list "Archiving"). `aria-disabled` while live and not
   archived. It stays at every width: at a 320px head (292px inside its 16px/12px padding) the

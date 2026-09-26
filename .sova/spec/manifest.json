@@ -318,13 +318,15 @@
     "§app.subagents-pane/head": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.worker-restore/usage-from-transcripts"
       ],
       "code": [
         "src/components/SubagentPane.tsx",
-        "server/insights.ts"
+        "server/insights.ts",
+        "src/components/SessionPane.tsx",
+        "src/design/base.css"
       ]
     },
     "§app.subagents-pane/motion": {
@@ -345,7 +347,10 @@
     "§app.subagents-pane/shell-a-third-column": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/SessionPane.tsx"
+      ]
     },
     "§app.subagents-pane/tokens": {
       "kind": "note",
@@ -853,7 +858,8 @@
       "evidence": "unreviewed",
       "code": [
         "src/components/Thread.tsx",
-        "server/transcript.ts"
+        "server/transcript.ts",
+        "src/components/SessionDetails.tsx"
       ]
     },
     "§chat.transcript/landing-page": {
@@ -1099,7 +1105,11 @@
     "§design.copy-deck/subagents-pane": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/SessionUsage.tsx",
+        "src/components/SessionPane.tsx"
+      ]
     },
     "§design.copy-deck/timeline-tab": {
       "kind": "note",
@@ -1194,7 +1204,10 @@
     "§workspace.fanout/entry-points": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ComposerMenu.tsx"
+      ]
     },
     "§workspace.fanout/states": {
       "kind": "behavior",
@@ -1249,7 +1262,10 @@
         "§chat/transcript"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/SessionView.tsx"
+      ]
     },
     "§workspace.groups/accessibility": {
       "kind": "behavior",
@@ -1740,7 +1756,8 @@
         "pi-config/extensions/subagents/restored.ts",
         "pi-config/extensions/subagents/teams.ts",
         "src/components/AgentsView.tsx",
-        "pi-config/extensions/subagents/worker-transcript.ts"
+        "pi-config/extensions/subagents/worker-transcript.ts",
+        "src/components/SessionUsage.tsx"
       ]
     },
     "§app.worker-restore/resume": {
@@ -4279,7 +4296,8 @@
         "src/components/SessionDetails.tsx",
         "src/lib/worktrees.ts",
         "src/lib/worktrees.test.ts",
-        "src/app.css"
+        "src/app.css",
+        "src/components/SessionPane.tsx"
       ]
     },
     "§chat.worktrees/sandbox": {
@@ -4421,6 +4439,24 @@
         "server/stream-guard.test.ts",
         "server/stream-guard-runtime.test.ts",
         "server/stream-stub.ts"
+      ]
+    },
+    "§app.subagents-pane/tabs": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§chat.worktrees/pane",
+        "§app.worker-restore/restore",
+        "§app.subagents-pane/head"
+      ],
+      "code": [
+        "src/components/SessionPane.tsx",
+        "src/components/SessionUsage.tsx",
+        "src/components/SessionDetails.tsx",
+        "src/design/base.css",
+        "src/lib/spend.ts",
+        "src/lib/spend.test.ts"
       ]
     }
   },

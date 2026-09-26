@@ -89,6 +89,15 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 - `pnpm run dev:server` (port **4800**) and `pnpm run dev:web` (Vite, proxies /api + /ws to 4800)
 - Isolated testing: `pnpm run dev:hermetic` builds `<worktree>/.agent` (`scripts/hermetic-agent-dir.mjs`: this tree's
   pi-config, own sessions/state, nothing in `~/.pi`) and serves it on 4810; it copies no auth — copy `auth.json` in by hand.
+- Feature work never edits `~/webapps/sova`: that is the live tree. Each feature session works in its own
+  worktree and branch (`git worktree add ~/webapps/.worktrees/sova-<name> -b feat/<name>`), and only a release
+  merges it into master. Uncommitted edits in the live tree block a release.
+- Test from that worktree with `pnpm run dev:hermetic` by default: create, archive, restart and mutate sessions,
+  workers and settings freely, and never restart `sova-runtime.service` to test. A feature that mutates nothing and
+  needs real sessions to compare against (UI, read-only views) may read real state, but never through a second
+  server: a Sova server on the real `~/.pi` still writes (seen marks, summaries, titles, signals, worker restores),
+  and there is no read-only mode yet. Copy the sessions you need into the hermetic `.agent`, or view them through the live server.
+- Hermetic gaps: the port is fixed (4810, one at a time), and a symlinked `node_modules` can break `pnpm run` in a worktree.
 - `pnpm run typecheck` — must pass. `pnpm run build` — must pass.
 - `pnpm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`). They're ESM TypeScript with
   extensionless imports, so they run under `tsx --test`; plain `node --test <file>` fails with

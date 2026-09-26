@@ -1,15 +1,13 @@
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js";
 import type {
   DecisionKeyInfo,
   DecisionProbeResult,
-  DecisionSaveResult,
   DecisionSettingsInfo,
   DelegateOptions,
   TagsBackfillProgress,
   TagsBackfillScope,
 } from "../../shared/protocol";
 import {
-  ApiError,
   cancelTagsBackfill,
   deleteDecisionKey,
   getDecisionOptions,
@@ -17,15 +15,16 @@ import {
   getTagsBackfill,
   probeDecisions,
   putDecisionKey,
-  putDecisionSettings,
   startTagsBackfill,
 } from "../lib/api";
 import {
-  acceptDecisionSave,
   decisionDirty,
   decisionDraft as draft,
-  decisionSaved,
-  discardDecisionDraft,
+  decisionNotes as notes,
+  decisionRefused as refused,
+  decisionSaveError,
+  decisionSaveResult,
+  decisionSaving as saving,
   setDecisionDraft as setDraft,
   setDecisionSaved,
 } from "../lib/decision-draft";
@@ -55,10 +54,8 @@ import {
 } from "../lib/decision-form";
 import { sameChoice, type DraftChoice } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
-import { saveRebased } from "../lib/settings-draft";
 import { pushedBackfill } from "../lib/session-feed";
 import { announce, home } from "../lib/ui-state";
-import { SaveBar } from "./SaveBar";
 import { Banner, Chip } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
@@ -71,18 +68,14 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  * Settings → Decisions: who answers the small yes/no and pick-one questions behind "needs you"
  * flags and session tags — Jev with a key, a model the user picks, or Jev then that model — and
  * which of those features are on. Both features start off, and nothing leaves the machine until
- * one is on. Changes are staged and written by Save Changes, rebased onto a fresh read first. The
+ * one is on. Changes are staged and written by the dialog's Save Changes (decision-draft.ts),
+ * rebased onto a fresh read first. The
  * Jev key is saved and removed on its own, at once, never through the draft; this screen only ever
  * sees its last 4 characters.
  */
 export function DecisionSettingsSection() {
   const [info, { mutate: setInfo, refetch: refetchInfo }] = createResource(getDecisionSettings);
   const [options, { refetch: refetchOptions }] = createResource(getDecisionOptions);
-  const [saving, setSaving] = createSignal(false);
-  const [saveError, setSaveError] = createSignal<string | null>(null);
-  const [notes, setNotes] = createSignal(noWarnings());
-  /** A fallback the server refused at the last save: it stays in the row with the reason until changed. */
-  const [refused, setRefused] = createSignal<{ choice: DraftChoice; reason: string } | null>(null);
   const loaded = (): DecisionSettingsInfo | undefined => (info.error ? undefined : info());
 
   // setDecisionSaved is untracked (settings-draft.ts), so this tracks the loaded info only.
@@ -95,42 +88,11 @@ export function DecisionSettingsSection() {
   const key = (): DecisionKeyInfo => loaded()!.key;
   const setKeyInfo = (k: DecisionKeyInfo) => setInfo((i) => (i ? { ...i, key: k } : i));
 
-  // ---- Save Changes: the draft, rebased onto a fresh read, in one write ----
+  // A save from the dialog's footer: what the server says now (the chain line, the backfill).
+  createEffect(on(decisionSaveResult, (r) => r && setInfo(r), { defer: true }));
   const dirty = decisionDirty;
-  const save = async () => {
-    const d = draft();
-    const base = decisionSaved();
-    if (!d || !base || saving() || !dirty() || !decisionDraftReady(d)) return;
-    setSaving(true);
-    setSaveError(null);
-    let sent: DecisionSaveResult["settings"] | null = null;
-    try {
-      const { result } = await saveRebased(d, base, {
-        read: getDecisionSettings,
-        settingsOf: (i) => i.settings,
-        rebase: rebaseDecision,
-        same: sameDecision,
-        write: (next) => putDecisionSettings((sent = settingsOf(next))),
-      });
-      const warnings = "warnings" in result ? (result as DecisionSaveResult).warnings : [];
-      setInfo(result);
-      acceptDecisionSave(result.settings);
-      setRefused(null);
-      setNotes((n) => placeWarnings(n, warnings, !sameChoice(base.fallback, result.settings.fallback)));
-      announce("Decision settings saved.");
-    } catch (err) {
-      // A newly chosen fallback the server refused: its row says so too, until it is changed.
-      const f = (sent as DecisionSaveResult["settings"] | null)?.fallback;
-      if (err instanceof ApiError && err.status === 400 && f && !sameChoice(f, base.fallback))
-        setRefused({ choice: { ...f }, reason: message(err).replace(/^Fallback model: /, "") });
-      setSaveError(message(err));
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const edit = (change: (copy: DecisionDraft) => void) => {
-    setSaveError(null);
     const copy = cloneDecision(draft()!);
     change(copy);
     setDraft(copy);
@@ -552,10 +514,7 @@ export function DecisionSettingsSection() {
               disabled={saving()}
               aria-invalid={exclusionsIssue() ? "true" : undefined}
               aria-describedby="decisions-exclusions-hint"
-              onInput={(e) => {
-                setSaveError(null);
-                setDraft({ ...draft()!, exclusions: e.currentTarget.value });
-              }}
+              onInput={(e) => setDraft({ ...draft()!, exclusions: e.currentTarget.value })}
             />
             <span class={exclusionsIssue() ? "field-error" : "field-hint"} id="decisions-exclusions-hint">
               {exclusionsIssue() ?? "One per line. Sessions in these folders, and their subfolders, are never checked."}
@@ -563,22 +522,12 @@ export function DecisionSettingsSection() {
           </div>
         </fieldset>
 
-        <Show when={saveError()}>
-          {(m) => <Banner tone="error" title="Couldn't save the decision settings." body={`${sentence(m())} Your saved settings are unchanged.`} />}
+        <Show when={decisionSaveError()}>
+          {(e) => <Banner tone="error" title="Couldn't save the decision settings." body={`${sentence(e().message)} Your saved settings are unchanged.`} />}
         </Show>
         <Show when={notes().other.length > 0 && !dirty()}>
           <Banner tone="warn" title="Saved, with notes." body={notes().other.map(sentence).join(" ")} />
         </Show>
-        <SaveBar
-          dirty={dirty()}
-          saving={saving()}
-          canSave={decisionDraftReady(draft()!)}
-          onSave={() => void save()}
-          onDiscard={() => {
-            discardDecisionDraft();
-            setSaveError(null);
-          }}
-        />
 
         <Show when={loaded()!.settings.features.tags || progress()?.running}>
           <fieldset class="settings-delegate-profile" aria-describedby="decisions-backfill-desc">

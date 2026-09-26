@@ -1,13 +1,20 @@
-import { createEffect, createResource, createSignal, Show } from "solid-js";
+import { createEffect, createResource, Show } from "solid-js";
 import type { DelegateOptions, SpecSettingsInfo } from "../../shared/protocol";
-import { getSpecOptions, getSpecSettings, putSpecSettings } from "../lib/api";
+import { getSpecOptions, getSpecSettings } from "../lib/api";
 import { fallbackFor, type DraftChoice, type Slot } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
 import { clearSettingsSection, settingsSection } from "../lib/settings-nav";
-import { acceptSpecSave, discardSpecDraft, setSpecDraft as setDraft, setSpecSaved, specDirty, specDraft as draft } from "../lib/spec-draft";
-import { cloneSpec, specDraftComplete, specDraftConflict, writerFor } from "../lib/spec-form";
-import { announce, home } from "../lib/ui-state";
-import { SaveBar } from "./SaveBar";
+import {
+  setSpecDraft as setDraft,
+  setSpecSaved,
+  specDirty,
+  specDraft as draft,
+  specSaveError,
+  specSaving as saving,
+  specWarnings as warnings,
+} from "../lib/spec-draft";
+import { writerFor } from "../lib/spec-form";
+import { home } from "../lib/ui-state";
 import { Banner } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
@@ -16,13 +23,11 @@ import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
  * is on, in either major mode — or none, and the session writes them itself. One worker row and an
  * optional fallback, the same row Delegate uses, from what each backend actually offers. The file
  * is global and shared with the terminal: chats with spec on use a save from their next message.
+ * Saved by the dialog's footer (spec-draft.ts holds the save, its error and its notes).
  */
 export function SpecSettingsSection() {
-  const [info, { mutate: setInfo, refetch: refetchInfo }] = createResource(getSpecSettings);
+  const [info, { refetch: refetchInfo }] = createResource(getSpecSettings);
   const [options, { refetch: refetchOptions }] = createResource(getSpecOptions);
-  const [saving, setSaving] = createSignal(false);
-  const [saveError, setSaveError] = createSignal<string | null>(null);
-  const [warnings, setWarnings] = createSignal<string[]>([]);
   let section!: HTMLElement;
   /** The settings once loaded. A resource in its error state throws when read, so this never reads it then. */
   const loaded = (): SpecSettingsInfo | undefined => (info.error ? undefined : info());
@@ -43,35 +48,12 @@ export function SpecSettingsSection() {
   const writer = () => draft()?.writer ?? null;
 
   const setWriter = (next: ReturnType<typeof writerFor>) => {
-    setSaveError(null);
     setDraft({ version: 1, writer: next });
   };
   const update = (slot: Slot, next: DraftChoice | null) => {
     const w = writer();
     if (!w) return;
     setWriter(slot === "primary" ? { ...w, primary: next! } : { ...w, fallback: next });
-  };
-
-  const save = async () => {
-    const d = draft();
-    if (!d || !specDraftComplete(d) || specDraftConflict(d) || saving()) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const result = await putSpecSettings(cloneSpec(d) as SpecSettingsInfo["settings"]);
-      setInfo(result);
-      acceptSpecSave(result.settings);
-      setWarnings(result.warnings);
-      announce(
-        result.settings.writer
-          ? "Spec writer saved. Chats with spec on use it from their next message."
-          : "Spec writer cleared. Chats with spec on write the spec themselves from their next message.",
-      );
-    } catch (err) {
-      setSaveError((err instanceof Error ? err.message : String(err)).replace(/\.$/, ""));
-    } finally {
-      setSaving(false);
-    }
   };
 
   return (
@@ -163,23 +145,12 @@ export function SpecSettingsSection() {
           </Show>
         </fieldset>
 
-        <Show when={saveError()}>
-          {(message) => <Banner tone="error" title="Couldn't save the spec writer." body={`${sentence(message())} Your saved choice is unchanged.`} />}
+        <Show when={specSaveError()}>
+          {(e) => <Banner tone="error" title="Couldn't save the spec writer." body={`${sentence(e().message)} Your saved choice is unchanged.`} />}
         </Show>
         <Show when={warnings().length > 0 && !specDirty()}>
           <Banner tone="warn" title="Saved, with notes." body={warnings().map(sentence).join(" ")} />
         </Show>
-
-        <SaveBar
-          dirty={specDirty()}
-          saving={saving()}
-          canSave={specDraftComplete(draft()!) && !specDraftConflict(draft()!)}
-          onSave={() => void save()}
-          onDiscard={() => {
-            discardSpecDraft();
-            setSaveError(null);
-          }}
-        />
         <p class="settings-delegate-file">
           Stored in <code>{tildePath(loaded()!.file, home())}</code>, shared with pi in the terminal.
         </p>

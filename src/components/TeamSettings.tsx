@@ -1,24 +1,31 @@
-import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createResource, For, on, Show } from "solid-js";
 import type { DelegateOptions } from "../../shared/protocol";
 import type { TeamDefaults, TeamDefaultsInfo } from "../../shared/team-defaults";
-import { getTeamDefaults, getTeamOptions, putTeamDefaults } from "../lib/api";
+import { getTeamDefaults, getTeamOptions } from "../lib/api";
 import { fallbackFor, type DraftChoice, type Slot } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
-import { acceptTeamSave, discardTeamDraft, setTeamDraft as setDraft, setTeamSaved, teamDirty, teamDraft as draft } from "../lib/team-draft";
+import {
+  setTeamDraft as setDraft,
+  setTeamSaved,
+  teamDirty,
+  teamDraft as draft,
+  teamSaveError,
+  teamSaveResult,
+  teamSaving as saving,
+  teamWarnings as warnings,
+} from "../lib/team-draft";
 import {
   cloneTeam,
   numberIssue,
   numberOf,
   sameTeam,
   TEAM_NUMBER_BOUNDS,
-  teamDraftComplete,
   teamDraftConflict,
   teamNumbers,
   type TeamDraft,
   type TeamNumberField,
 } from "../lib/team-form";
-import { announce, home } from "../lib/ui-state";
-import { SaveBar } from "./SaveBar";
+import { home } from "../lib/ui-state";
 import { Banner } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
@@ -29,13 +36,13 @@ type RoleKey = "coordinator" | "monitor";
  * to the main session, and a monitor that watches context and usage and runs handovers — and how
  * long a replaced member has to hand over. The file is global and shared with the terminal; the
  * subagents extension reads it when a team is created, so a save applies to teams created after it.
+ * Saved by the dialog's footer (team-draft.ts holds the save, its error and its notes).
  */
 export function TeamSettingsSection() {
   const [info, { mutate: setInfo, refetch: refetchInfo }] = createResource(getTeamDefaults);
   const [options, { refetch: refetchOptions }] = createResource(getTeamOptions);
-  const [saving, setSaving] = createSignal(false);
-  const [saveError, setSaveError] = createSignal<string | null>(null);
-  const [warnings, setWarnings] = createSignal<string[]>([]);
+  // A save from the dialog's footer: what the server says now (the file is stored, say).
+  createEffect(on(teamSaveResult, (r) => r && setInfo(r), { defer: true }));
   /** The settings once loaded. A resource in its error state throws when read, so this never reads it then. */
   const loaded = (): TeamDefaultsInfo | undefined => (info.error ? undefined : info());
   /** Loaded and editable: a file that can't be read is reported, never edited over. */
@@ -59,7 +66,6 @@ export function TeamSettingsSection() {
   });
 
   const edit = (change: (copy: TeamDraft) => void) => {
-    setSaveError(null);
     const copy = cloneTeam(draft()!);
     change(copy);
     setDraft(copy);
@@ -77,29 +83,6 @@ export function TeamSettingsSection() {
     });
 
   const conflict = () => (draft() ? teamDraftConflict(draft()!) : null);
-  const canSave = () => !saving() && teamDirty() && teamDraftComplete(draft()!) && conflict() === null;
-
-  const save = async () => {
-    const d = draft();
-    if (!d || !canSave()) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const body = cloneTeam(d) as TeamDefaults;
-      body.coordinator.role = body.coordinator.role.trim();
-      body.monitor.role = body.monitor.role.trim();
-      const result = await putTeamDefaults(body);
-      setInfo(result);
-      acceptTeamSave(result.settings);
-      setWarnings(result.warnings);
-      announce("Team defaults saved. Teams created from now on use them.");
-    } catch (err) {
-      setSaveError((err instanceof Error ? err.message : String(err)).replace(/\.$/, ""));
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const numberField = (field: TeamNumberField, label: string, hint: string) => {
     const id = `team-${field}`;
     const value = () => teamNumbers(draft()!)[field];
@@ -222,6 +205,16 @@ export function TeamSettingsSection() {
         <h3 class="settings-type-title" id="settings-team-title">
           Teams
         </h3>
+        <Show when={editable() && draft()}>
+          <button
+            type="button"
+            class="button button-sm button-ghost"
+            disabled={saving() || atDefaults()}
+            onClick={() => edit((c) => Object.assign(c, withSwitches(editable()!.defaults, c)))}
+          >
+            Reset to Defaults
+          </button>
+        </Show>
       </div>
       <p class="settings-intro">
         Standing members every new team gets, here and in the terminal. A change applies to teams created after it. One
@@ -321,33 +314,12 @@ export function TeamSettingsSection() {
         </fieldset>
 
         <Show when={conflict()}>{(c) => <p class="field-error">{c()}</p>}</Show>
-        <Show when={saveError()}>
-          {(message) => <Banner tone="error" title="Couldn't save the team defaults." body={`${sentence(message())} Your saved defaults are unchanged.`} />}
+        <Show when={teamSaveError()}>
+          {(e) => <Banner tone="error" title="Couldn't save the team defaults." body={`${sentence(e().message)} Your saved defaults are unchanged.`} />}
         </Show>
         <Show when={warnings().length > 0 && !teamDirty()}>
           <Banner tone="warn" title="Saved, with notes." body={warnings().map(sentence).join(" ")} />
         </Show>
-
-        <SaveBar
-          dirty={teamDirty()}
-          saving={saving()}
-          canSave={canSave()}
-          onSave={() => void save()}
-          onDiscard={() => {
-            discardTeamDraft();
-            setSaveError(null);
-          }}
-          leading={
-            <button
-              type="button"
-              class="button button-ghost"
-              disabled={saving() || atDefaults()}
-              onClick={() => edit((c) => Object.assign(c, withSwitches(editable()!.defaults, c)))}
-            >
-              Reset to Defaults
-            </button>
-          }
-        />
         <p class="settings-delegate-file">
           Stored in <code>{tildePath(editable()!.file, home())}</code>, shared with pi in the terminal.
         </p>

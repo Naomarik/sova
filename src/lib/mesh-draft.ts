@@ -1,4 +1,6 @@
 import type { MeshSettings, SyncCategory } from "../../shared/protocol";
+import { fetchMesh, putMeshSettings } from "./api";
+import { setMeshState } from "./mesh";
 import { createDraftStore } from "./settings-draft";
 
 /**
@@ -46,7 +48,22 @@ export const sameMesh = (d: MeshDraft, s: MeshSettings): boolean => Object.keys(
 /** Why the draft can't be saved, one sentence, or null. */
 export const meshDraftIssue = (d: MeshDraft): string | null => (d.hostLabel.trim() ? null : "This host needs a name.");
 
-const store = createDraftStore<MeshDraft, MeshSettings>({ tab: "mesh", label: "Mesh", toDraft: meshDraftOf, same: sameMesh });
+const store = createDraftStore<MeshDraft, MeshSettings>({
+  tab: "mesh",
+  label: "Mesh",
+  toDraft: meshDraftOf,
+  same: sameMesh,
+  problem: (d) => {
+    const issue = meshDraftIssue(d);
+    return issue ? `Mesh: ${issue}` : null;
+  },
+  write: async (d, s) => {
+    const next = await putMeshSettings(meshChanges(d, s));
+    // The name shows on the card, in New Session and on the Mesh page: they read the mesh state.
+    void fetchMesh().then(setMeshState, () => {});
+    return { saved: next, result: next };
+  },
+});
 
 export const meshDraft = store.draft;
 export const meshSaved = store.saved;
@@ -54,5 +71,6 @@ export const setMeshDraft = store.setDraft;
 export const setMeshSaved = store.setSaved;
 export const acceptMeshSave = store.acceptSave;
 export const meshDirty = store.dirty;
-export const discardMeshDraft = store.discard;
+export const meshSaving = store.saving;
+export const meshSaveError = store.error;
 export const resetMeshDraft = store.reset;

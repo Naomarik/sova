@@ -382,6 +382,28 @@ html, body, #root { height: 100%; }
 .settings-modal .settings-body { min-height: 0; }
 .settings-modal .modal-head,
 .settings-modal .modal-foot { flex: none; }
+/* The footer: what is unsaved (or why Save waits) on the left, then Discard Changes · Save Changes ·
+   Close. One Save for every form on every tab, so it lives here and not in any one form. The status
+   takes the free width and wraps. Folded, three 44px buttons don't fit one row of a 360–390px sheet:
+   the status keeps Cancel beside it, and Discard · Save take the next line at the trailing edge. */
+.settings-foot { flex-wrap: wrap; }
+.settings-foot-status {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
+.settings-foot-status-problem { color: var(--status-error); }
+@media (max-width: 767px) {
+  .settings-foot-status { flex-basis: 0; }
+  .settings-foot-dirty::after { content: ""; flex-basis: 100%; order: 1; }
+  .settings-foot-edit { order: 2; }
+  .settings-foot-edit:first-of-type { margin-left: auto; }
+}
+/* A section heading's own action (Reset to Defaults), and the hint that goes with it. */
+.settings-head-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
 .settings-modal .settings-tabs { overflow-y: auto; }
 @media (max-width: 767px) {
   /* Folded, the modal is a sheet pinned to the bottom edge and base.css caps it at 85dvh. Same

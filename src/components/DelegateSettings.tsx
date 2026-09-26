@@ -1,11 +1,18 @@
-import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
-import { acceptDelegateSave, delegateDirty, delegateDraft as draft, discardDelegateDraft, setDelegateDraft as setDraft, setDelegateSaved } from "../lib/delegate-draft";
+import { createEffect, createMemo, createResource, For, Show } from "solid-js";
+import {
+  delegateDirty,
+  delegateDraft as draft,
+  delegateSaveError,
+  delegateSaving as saving,
+  delegateWarnings as warnings,
+  setDelegateDraft as setDraft,
+  setDelegateSaved,
+} from "../lib/delegate-draft";
 import type { DelegateOptions, DelegateProfileId, DelegateSettingsInfo } from "../../shared/protocol";
-import { getDelegateOptions, getDelegateSettings, putDelegateSettings } from "../lib/api";
-import { cloneSettings, draftComplete, draftConflicts, fallbackFor, sameSettings, type DraftChoice, type Slot } from "../lib/delegate-form";
+import { getDelegateOptions, getDelegateSettings } from "../lib/api";
+import { cloneSettings, fallbackFor, sameSettings, type DraftChoice, type Slot } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
-import { announce, home } from "../lib/ui-state";
-import { SaveBar } from "./SaveBar";
+import { home } from "../lib/ui-state";
 import { Banner } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
@@ -14,14 +21,12 @@ import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
  * effort — each kind of Delegate work goes to, with an optional fallback. The choices come from
  * what each backend actually offers (GET …/delegate/options); nothing here is free text. The file
  * is global and shared with the terminal: chats already in Delegate use a save from their next
- * message, and chats in normal mode never read it.
+ * message, and chats in normal mode never read it. Saved by the dialog's footer (delegate-draft.ts
+ * holds the save, its error and its notes, so they outlive this tab).
  */
 export function DelegateSettingsSection() {
-  const [info, { mutate: setInfo, refetch: refetchInfo }] = createResource(getDelegateSettings);
+  const [info, { refetch: refetchInfo }] = createResource(getDelegateSettings);
   const [options, { refetch: refetchOptions }] = createResource(getDelegateOptions);
-  const [saving, setSaving] = createSignal(false);
-  const [saveError, setSaveError] = createSignal<string | null>(null);
-  const [warnings, setWarnings] = createSignal<string[]>([]);
   /** The settings once loaded. A resource in its error state throws when read, so this never reads it then. */
   const loaded = (): DelegateSettingsInfo | undefined => (info.error ? undefined : info());
 
@@ -42,29 +47,10 @@ export function DelegateSettingsSection() {
   const unlisted = createMemo(() => known()?.backends.filter((b) => b.models === null) ?? []);
 
   const update = (profile: DelegateProfileId, slot: Slot, next: DraftChoice | null) => {
-    setSaveError(null);
     const copy = cloneSettings(draft()!);
     if (slot === "primary") copy.profiles[profile].primary = next!;
     else copy.profiles[profile].fallback = next;
     setDraft(copy);
-  };
-
-  const save = async () => {
-    const d = draft();
-    if (!d || !draftComplete(d) || draftConflicts(d).length > 0 || saving()) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const result = await putDelegateSettings(d);
-      setInfo(result);
-      acceptDelegateSave(result.settings);
-      setWarnings(result.warnings);
-      announce("Delegate routing saved. Chats in Delegate use it from their next message.");
-    } catch (err) {
-      setSaveError((err instanceof Error ? err.message : String(err)).replace(/\.$/, ""));
-    } finally {
-      setSaving(false);
-    }
   };
 
   return (
@@ -73,6 +59,11 @@ export function DelegateSettingsSection() {
         <h3 class="settings-type-title" id="settings-delegate-title">
           Delegate
         </h3>
+        <Show when={loaded() && draft()}>
+          <button type="button" class="button button-sm button-ghost" disabled={saving() || atDefaults()} onClick={() => setDraft(cloneSettings(loaded()!.defaults))}>
+            Reset to Defaults
+          </button>
+        </Show>
       </div>
       <p class="settings-intro">
         In Delegate the agent hands work to background workers and checks what they bring back. Pick the worker for
@@ -158,36 +149,12 @@ export function DelegateSettingsSection() {
           )}
         </For>
 
-        <Show when={saveError()}>
-          {(message) => <Banner tone="error" title="Couldn't save the routing." body={`${sentence(message())} Your saved routing is unchanged.`} />}
+        <Show when={delegateSaveError()}>
+          {(e) => <Banner tone="error" title="Couldn't save the routing." body={`${sentence(e().message)} Your saved routing is unchanged.`} />}
         </Show>
         <Show when={warnings().length > 0 && !dirty()}>
           <Banner tone="warn" title="Saved, with notes." body={warnings().map(sentence).join(" ")} />
         </Show>
-
-        <SaveBar
-          dirty={dirty()}
-          saving={saving()}
-          canSave={draftComplete(draft()!) && draftConflicts(draft()!).length === 0}
-          onSave={() => void save()}
-          onDiscard={() => {
-            discardDelegateDraft();
-            setSaveError(null);
-          }}
-          leading={
-            <button
-              type="button"
-              class="button button-ghost"
-              disabled={saving() || atDefaults()}
-              onClick={() => {
-                setDraft(cloneSettings(loaded()!.defaults));
-                setSaveError(null);
-              }}
-            >
-              Reset to Defaults
-            </button>
-          }
-        />
         <p class="settings-delegate-file">
           Stored in <code>{tildePath(loaded()!.file, home())}</code>, shared with pi in the terminal.
         </p>

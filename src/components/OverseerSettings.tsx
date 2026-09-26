@@ -1,6 +1,6 @@
-import { createEffect, createMemo, createResource, createSignal, For, Index, Show } from "solid-js";
+import { createEffect, createMemo, createResource, For, Index, Show } from "solid-js";
 import type { OverseerCaps, OverseerProactivity, OverseerQuickAction, OverseerSettings } from "../../shared/protocol";
-import { ApiError, getDelegateOptions, getDelegateSettings, getOverseerNotes, getOverseerSettings, putOverseerNotes, putOverseerSettings } from "../lib/api";
+import { getDelegateOptions, getDelegateSettings, getOverseerNotes, getOverseerSettings } from "../lib/api";
 import { tildePath } from "../lib/format";
 import { loadModelPolicy, usableModels } from "../lib/model-policy";
 import { loadModels, modelList, thinkingLevelsFor } from "../lib/models";
@@ -11,33 +11,28 @@ import {
   explorerOptions,
   moveQuickAction,
   newQuickAction,
-  acceptOverseerSave,
-  discardOverseerDraft,
   overseerDirty,
   overseerDraft as draft,
   overseerDraftProblem,
-  overseerSaved,
-  NotesConflict,
-  saveOverseerDraft,
+  overseerSaveError,
+  overseerSaving as saving,
+  overseerWarnings as warnings,
   setOverseerDraft,
   setOverseerSaved,
 } from "../lib/overseer-draft";
-import { announce, home } from "../lib/ui-state";
-import { SaveBar } from "./SaveBar";
+import { home } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
 /**
  * Settings → Overseer: the model it runs on, what it is told beyond its own prompt, how forward it
  * is, the exploratory agent it launches per idea, its quick actions, the limits on what one message
- * can make it do, and the standing notes it keeps across /clear. One Save for all of it, with the Delegate hold on unsaved edits.
+ * can make it do, and the standing notes it keeps across /clear. Saved by the dialog's footer, with
+ * the other forms (overseer-draft.ts holds the save, its error and its notes).
  */
 export function OverseerSettingsSection() {
-  const [info, { mutate: setInfo, refetch }] = createResource(getOverseerSettings);
-  const [notes, { mutate: setNotes, refetch: refetchNotes }] = createResource(() => getOverseerNotes().then((n) => n.text));
-  const [saving, setSaving] = createSignal(false);
-  const [saveError, setSaveError] = createSignal<{ message: string; partial: boolean } | null>(null);
-  const [warnings, setWarnings] = createSignal<string[]>([]);
+  const [info, { refetch }] = createResource(getOverseerSettings);
+  const [notes, { refetch: refetchNotes }] = createResource(() => getOverseerNotes().then((n) => n.text));
   // The exploratory agent's row: Delegate's backends and discovered models (it is a subagent, so
   // the same "off for subagents" policy marks apply).
   const [backends] = createResource(getDelegateSettings);
@@ -62,7 +57,6 @@ export function OverseerSettingsSection() {
   const edit = (patch: Partial<OverseerSettings>) => {
     const cur = d();
     if (!cur) return;
-    setSaveError(null);
     setOverseerDraft({ ...cur, settings: { ...cur.settings, ...patch } });
   };
   const editAction = (i: number, patch: Partial<OverseerQuickAction>) => {
@@ -89,46 +83,6 @@ export function OverseerSettingsSection() {
   const problem = () => {
     const cur = d();
     return cur ? overseerDraftProblem(cur) : null;
-  };
-
-  const save = async () => {
-    const cur = d();
-    const base = overseerSaved();
-    if (!cur || !base || saving() || problem()) return;
-    setSaving(true);
-    setSaveError(null);
-    let wrote = false;
-    try {
-      const { result, notes: savedNotes } = await saveOverseerDraft(cur, base, {
-        getSettings: getOverseerSettings,
-        getNotes: () => getOverseerNotes().then((n) => n.text),
-        putSettings: async (settings) => {
-          const r = await putOverseerSettings(settings);
-          wrote = true;
-          return r;
-        },
-        putNotes: (text, was) => putOverseerNotes(text, was).then((n) => n.text),
-      });
-      setNotes(savedNotes);
-      setInfo(result);
-      acceptOverseerSave({ settings: result.settings, notes: savedNotes });
-      setWarnings(result.warnings);
-      announce("Overseer settings saved. Model and thinking apply when it is idle.");
-    } catch (err) {
-      const message = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
-      const conflict = err instanceof NotesConflict || (err instanceof ApiError && err.status === 409);
-      setSaveError({
-        message: conflict
-          ? "The Overseer rewrote its standing notes while you were editing them, so your notes weren't saved. Your edit is still in the box: Save Changes again replaces the Overseer's version, and Discard Changes shows it"
-          : message,
-        partial: wrote,
-      });
-      // Whatever did land, and whatever the Overseer wrote meanwhile, becomes the base again.
-      void refetch();
-      void refetchNotes();
-    } finally {
-      setSaving(false);
-    }
   };
 
   const numberOf = (v: string) => (v.trim() === "" ? Number.NaN : Number(v));
@@ -486,17 +440,14 @@ export function OverseerSettingsSection() {
                     rows={4}
                     value={cur().notes}
                     disabled={saving()}
-                    onInput={(e) => {
-                      setSaveError(null);
-                      setOverseerDraft({ ...cur(), notes: e.currentTarget.value });
-                    }}
+                    onInput={(e) => setOverseerDraft({ ...cur(), notes: e.currentTarget.value })}
                   />
                   <span class="field-hint">The Overseer reads these every turn and can add to them. They survive /clear.</span>
                 </div>
               </fieldset>
 
               <Show when={problem()}>{(p) => <p class="field-error">{p()}</p>}</Show>
-              <Show when={saveError()}>
+              <Show when={overseerSaveError()}>
                 {(e) => (
                   <Banner
                     tone="error"
@@ -508,17 +459,6 @@ export function OverseerSettingsSection() {
               <Show when={warnings().length > 0 && !overseerDirty()}>
                 <Banner tone="warn" title="Saved, with notes." body={warnings().map(sentence).join(" ")} />
               </Show>
-
-              <SaveBar
-                dirty={overseerDirty()}
-                saving={saving()}
-                canSave={!problem()}
-                onSave={() => void save()}
-                onDiscard={() => {
-                  discardOverseerDraft();
-                  setSaveError(null);
-                }}
-              />
               <p class="settings-delegate-file">
                 Stored in <code>{tildePath(loaded()!.file, home())}</code>.
               </p>

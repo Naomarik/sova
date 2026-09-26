@@ -1,6 +1,7 @@
 import type { DelegateOptions, OverseerCaps, OverseerQuickAction, OverseerSaveResult, OverseerSettings, OverseerSettingsInfo, WorkerChoice } from "../../shared/protocol";
+import { ApiError, getOverseerNotes, getOverseerSettings, putOverseerNotes, putOverseerSettings } from "./api";
 import type { BackendsInfo } from "./delegate-form";
-import { createDraftStore } from "./settings-draft";
+import { createDraftStore, failureOf, SaveFailed } from "./settings-draft";
 
 /**
  * Settings → Overseer's unsaved edits: the settings file and the standing notes, edited together
@@ -114,12 +115,49 @@ export async function saveOverseerDraft(draft: OverseerDraft, base: OverseerDraf
   return { result, notes: savedNotes };
 }
 
-const store = createDraftStore<OverseerDraft, OverseerDraft>({
+/** What the app's save reads and writes: the server, through src/lib/api.ts. */
+const serverIO: OverseerSaveIO = {
+  getSettings: getOverseerSettings,
+  getNotes: () => getOverseerNotes().then((n) => n.text),
+  putSettings: putOverseerSettings,
+  putNotes: (text, was) => putOverseerNotes(text, was).then((n) => n.text),
+};
+
+export const NOTES_CONFLICT_MESSAGE =
+  "The Overseer rewrote its standing notes while you were editing them, so your notes weren't saved. Your edit is still in the box: Save Changes again replaces the Overseer's version, and Discard Changes shows it";
+
+const store = createDraftStore<OverseerDraft, OverseerDraft, OverseerSaveResult>({
   tab: "overseer",
   label: "Overseer",
   toDraft: cloneOverseer,
   same: sameOverseer,
   rebase: rebaseOverseer,
+  problem: (d) => {
+    const p = overseerDraftProblem(d);
+    return p ? `Overseer: ${p}` : null;
+  },
+  write: async (cur, base) => {
+    let wrote = false;
+    try {
+      const { result, notes } = await saveOverseerDraft(cur, base, {
+        ...serverIO,
+        putSettings: async (settings) => {
+          const r = await serverIO.putSettings(settings);
+          wrote = true;
+          return r;
+        },
+      });
+      return { saved: cloneOverseer({ settings: result.settings, notes }), warnings: result.warnings, result };
+    } catch (err) {
+      const conflict = err instanceof NotesConflict || (err instanceof ApiError && err.status === 409);
+      // Whatever did land, and whatever the Overseer wrote meanwhile, becomes the base again.
+      void Promise.all([serverIO.getSettings(), serverIO.getNotes()]).then(
+        ([info, notes]) => store.refreshSaved(cloneOverseer({ settings: info.settings, notes })),
+        () => {},
+      );
+      throw new SaveFailed(conflict ? NOTES_CONFLICT_MESSAGE : failureOf(err).message, wrote);
+    }
+  },
 });
 
 export const overseerDraft = store.draft;
@@ -134,7 +172,9 @@ export const setOverseerDraft = store.setDraft;
 export const setOverseerSaved = (next: OverseerDraft, opts?: { replaceDraft?: boolean }): void => store.setSaved(cloneOverseer(next), opts);
 export const acceptOverseerSave = (next: OverseerDraft): void => store.acceptSave(cloneOverseer(next));
 export const overseerDirty = store.dirty;
-export const discardOverseerDraft = store.discard;
+export const overseerSaving = store.saving;
+export const overseerSaveError = store.error;
+export const overseerWarnings = store.warnings;
 /** The dialog closed: drop the draft, so the next open reads the saved file afresh. */
 export const resetOverseerDraft = store.reset;
 

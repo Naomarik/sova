@@ -1,9 +1,8 @@
-import { createEffect, createMemo, createResource, createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, on, onMount, Show } from "solid-js";
 import type { ThemeInfo } from "../../shared/protocol";
-import { getClaudeCliStatus, getModelPolicy, getThemes, getWebSettings, putModelPolicy, putWebSettings } from "../lib/api";
+import { getClaudeCliStatus, getThemes, getWebSettings } from "../lib/api";
 import { tildePath } from "../lib/format";
 import {
-  cacheModelPolicy,
   CLAUDE_CODE_PROVIDER,
   enabledCount,
   loadModelPolicy,
@@ -13,8 +12,6 @@ import {
   providerEnabled,
   providerSubagentEnabled,
   providerSubagentPreference,
-  rebasePolicy,
-  samePolicy,
   setModelEnabled,
   setModelSubagents,
   setProviderEnabled,
@@ -37,24 +34,27 @@ import { setShowSummaries, showSummaries } from "../lib/summary-line";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
 import type { SettingsTab } from "../lib/settings-nav";
 import {
-  acceptClaudeCodeSave,
-  claudeCodeDirty,
   claudeCodeDraft,
   claudeCodeSaved,
-  discardClaudeCodeDraft,
+  claudeCodeSaveError,
+  claudeCodeSaveResult,
+  claudeCodeSaving,
   setClaudeCodeDraft,
   setClaudeCodeSaved,
 } from "../lib/experimental-draft";
+import { policyDraft, policySaveError, policySaving, setPolicyDraft, setPolicySaved } from "../lib/model-policy-draft";
 import {
-  acceptPolicySave,
-  discardPolicyDraft,
-  policyDirty,
-  policyDraft,
-  policySaved,
-  setPolicyDraft,
-  setPolicySaved,
-} from "../lib/model-policy-draft";
-import { dirtyForms, formNames, resetAllDrafts, saveRebased } from "../lib/settings-draft";
+  dirtyForms,
+  discardAllDrafts,
+  failedForms,
+  footerStatus,
+  formNames,
+  invalidForms,
+  resetAllDrafts,
+  saveAllDrafts,
+  savingAny,
+  type GatedForm,
+} from "../lib/settings-draft";
 import { effectiveStack } from "../lib/typography";
 import { announce, home } from "../lib/ui-state";
 import { DecisionSettingsSection } from "./DecisionSettings";
@@ -64,7 +64,6 @@ import { SpecSettingsSection } from "./SpecSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { TeamSettingsSection } from "./TeamSettings";
-import { SaveBar } from "./SaveBar";
 import { TypographySection } from "./TypographySection";
 import { Banner, Icon, trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
@@ -116,6 +115,40 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
   const discardAndClose = () => {
     resetAllDrafts();
     props.onClose();
+  };
+
+  // ---- The footer: one Save and one Discard for every form on every tab (settings-draft.ts) ----
+  /** The forms the last Save Changes wrote, for the status line ("Saved Models; Delegate failed."). */
+  const [lastSaved, setLastSaved] = createSignal<GatedForm[]>([]);
+  const invalid = createMemo(() => invalidForms());
+  const status = () =>
+    footerStatus({ saving: savingAny(), dirty: dirty(), problem: invalid()[0]?.problem() ?? null, failed: failedForms(), lastSaved: lastSaved() });
+  let closeButton!: HTMLButtonElement;
+  /** Focus sits on a footer button that just went away (nothing is dirty now): hand it to Close. */
+  const keepFocus = () => {
+    if (dirty().length === 0 && !closeButton.contains(document.activeElement)) closeButton.focus();
+  };
+  const saveAll = async () => {
+    setLastSaved([]);
+    const { saved, failed } = await saveAllDrafts();
+    setLastSaved(saved);
+    announce(status());
+    if (failed.length > 0) {
+      // To the first form that failed, unless the one showing already did; its banner says why.
+      if (!failed.some((f) => f.tab === tab())) setTab(failed[0]!.tab as TabId);
+      requestAnimationFrame(() => {
+        const banners = document.querySelectorAll<HTMLElement>(`#settings-panel-${tab()} .banner-error`);
+        [...banners].find((b) => b.textContent?.startsWith("Couldn't save"))?.scrollIntoView({ block: "nearest" });
+      });
+    }
+    keepFocus();
+  };
+  const discardAll = () => {
+    const names = formNames(dirty());
+    discardAllDrafts();
+    setLastSaved([]);
+    announce(`Discarded your ${names} changes.`);
+    keepFocus();
   };
 
   const tabButtons = new Map<TabId, HTMLButtonElement>();
@@ -240,7 +273,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
             <Banner
               tone="warn"
               title={`Your ${formNames(dirty())} changes aren't saved.`}
-              body="Save them on this screen, or discard them and close."
+              body="Save them, or discard them and close."
               action={
                 <span class="settings-close-held-actions">
                   <button type="button" class="button button-sm button-ghost" onClick={() => setCloseHeld(false)}>
@@ -254,10 +287,26 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
             />
           </div>
         </Show>
-        <div class="modal-foot">
-          <span class="modal-spacer" />
-          <button type="button" class="button button-ghost" onClick={requestClose}>
-            Close
+        <div class="modal-foot settings-foot" classList={{ "settings-foot-dirty": dirty().length > 0 }}>
+          <p class="settings-foot-status" id="settings-foot-status" classList={{ "settings-foot-status-problem": invalid().length > 0 && !savingAny() }}>
+            {status()}
+          </p>
+          <Show when={dirty().length > 0}>
+            <button type="button" class="button button-ghost settings-foot-edit" disabled={savingAny()} onClick={discardAll}>
+              Discard Changes
+            </button>
+            <button
+              type="button"
+              class="button button-primary settings-foot-edit"
+              disabled={savingAny() || invalid().length > 0}
+              aria-describedby="settings-foot-status"
+              onClick={() => void saveAll()}
+            >
+              {savingAny() ? "Saving…" : "Save Changes"}
+            </button>
+          </Show>
+          <button type="button" class="button button-ghost" ref={closeButton} onClick={requestClose}>
+            {dirty().length > 0 ? "Cancel" : "Close"}
           </button>
         </div>
       </div>
@@ -273,13 +322,26 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
 function ExperimentalPanel() {
   const [webSettings, { mutate: setWebSettings }] = createResource(() => getWebSettings());
   const [cliStatus, { refetch: refetchCliStatus }] = createResource(() => getClaudeCliStatus());
-  const [saveError, setSaveError] = createSignal<string | null>(null);
-  const [saving, setSaving] = createSignal(false);
   // setClaudeCodeSaved is untracked (settings-draft.ts), so this tracks the loaded settings only.
   createEffect(() => {
     const s = webSettings.error ? undefined : webSettings();
     if (s) setClaudeCodeSaved(s.experimental.claudeCodeProvider);
   });
+  // A save from the dialog's footer. Turning it on registers the provider server-side, so the count
+  // in the status line is already out of date by the time the PUT returns. Without the re-read the
+  // line keeps saying "no models are registered yet — start a session, or restart the server" while
+  // the picker has them, which is worse than no status line at all.
+  createEffect(
+    on(
+      claudeCodeSaveResult,
+      (r) => {
+        if (!r) return;
+        setWebSettings(r);
+        void refetchCliStatus();
+      },
+      { defer: true },
+    ),
+  );
 
   /** One line of truth about the CLI, so the switch is never the only thing the user has to go on.
       It reads the SAVED setting: an unsaved switch changes nothing on the server yet. */
@@ -295,28 +357,6 @@ function ExperimentalPanel() {
       : `Claude Code CLI ${status.version} found, but no models are registered yet — start a session, or restart the server.`;
   };
 
-  const save = async () => {
-    const on = claudeCodeDraft();
-    if (on === null || saving() || !claudeCodeDirty()) return;
-    setSaveError(null);
-    setSaving(true);
-    try {
-      const next = await putWebSettings({ experimental: { claudeCodeProvider: on } });
-      setWebSettings(next);
-      acceptClaudeCodeSave(next.experimental.claudeCodeProvider);
-      announce(`Claude Code models ${on ? "on" : "off"} for new sessions.`);
-      // Turning it on registers the provider server-side, so the count in the status line is
-      // already out of date by the time the PUT returns. Without this the line keeps saying
-      // "no models are registered yet — start a session, or restart the server" while the
-      // picker has them, which is worse than no status line at all.
-      void refetchCliStatus();
-    } catch (err) {
-      setSaveError((err instanceof Error ? err.message : String(err)).replace(/\.$/, ""));
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <>
       <p class="settings-intro">
@@ -329,11 +369,8 @@ function ExperimentalPanel() {
             <input
               type="checkbox"
               checked={claudeCodeDraft() ?? false}
-              disabled={saving() || claudeCodeDraft() === null}
-              onChange={(e) => {
-                setSaveError(null);
-                setClaudeCodeDraft(e.currentTarget.checked);
-              }}
+              disabled={claudeCodeSaving() || claudeCodeDraft() === null}
+              onChange={(e) => setClaudeCodeDraft(e.currentTarget.checked)}
             />
             <span class="settings-provider-main">
               <span class="settings-provider-name">Claude Code as first-class models</span>
@@ -350,19 +387,8 @@ function ExperimentalPanel() {
       <Show when={webSettings.error}>
         <Banner tone="error" title="Couldn't read the experimental settings." body="Nothing was changed." />
       </Show>
-      <Show when={claudeCodeDraft() !== null}>
-        <Show when={saveError()}>
-          {(message) => <Banner tone="error" title="Couldn't save the change." body={`${sentence(message())} Your saved setting is unchanged.`} />}
-        </Show>
-        <SaveBar
-          dirty={claudeCodeDirty()}
-          saving={saving()}
-          onSave={() => void save()}
-          onDiscard={() => {
-            discardClaudeCodeDraft();
-            setSaveError(null);
-          }}
-        />
+      <Show when={claudeCodeSaveError()}>
+        {(err) => <Banner tone="error" title="Couldn't save the change." body={`${sentence(err().message)} Your saved setting is unchanged.`} />}
       </Show>
     </>
   );
@@ -480,9 +506,8 @@ function GeneralPanel() {
  * all, and Subagents, which decides whether a worker may be given it. Providers are group heads:
  * their switches cover every model under them.
  *
- * Every switch saves the whole policy immediately — the file is read per model change, per turn
- * and per spawn, so "immediately" is the truth — and a failed save puts the switch back and says
- * so. A globally disabled model's Subagents switch is greyed rather than cleared: it remembers
+ * Every switch is staged; the dialog's Save Changes writes the whole policy (model-policy-draft.ts),
+ * rebased onto a fresh read, and a failed save keeps the switches and says so. A globally disabled model's Subagents switch is greyed rather than cleared: it remembers
  * what you chose, and turning the model back on returns it.
  */
 function ModelsPanel() {
@@ -490,8 +515,6 @@ function ModelsPanel() {
   const [source, { refetch }] = createResource(() => loadModelPolicy());
   /** The policy as the user has set it: the saved policy, then every staged switch move. */
   const policy = policyDraft;
-  const [saveError, setSaveError] = createSignal<string | null>(null);
-  const [saving, setSaving] = createSignal(false);
   const [query, setQuery] = createSignal("");
   const [opened, setOpened] = createSignal<string[]>([]);
   // setPolicySaved is untracked (settings-draft.ts), so this tracks the loaded policy only. A kept
@@ -501,40 +524,13 @@ function ModelsPanel() {
     if (p) setPolicySaved(p);
   });
 
-  const busy = () => saving() || source.loading;
+  const busy = () => policySaving() || source.loading;
 
   /** A switch moved: staged, written by Save Changes. */
   const edit = (change: (p: ModelPolicy) => ModelPolicy) => {
     const current = policy();
     if (!current || busy()) return;
-    setSaveError(null);
     setPolicyDraft(change(current));
-  };
-
-  /** One write for every staged switch: rebased onto a fresh read, so an entry the TUI or a peer
-      wrote meanwhile stays. The picker follows the saved policy at once. */
-  const save = async () => {
-    const d = policy();
-    const base = policySaved();
-    if (!d || !base || busy() || !policyDirty()) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const { result } = await saveRebased(d, base, {
-        read: () => getModelPolicy(),
-        settingsOf: (p) => p,
-        rebase: rebasePolicy,
-        same: samePolicy,
-        write: putModelPolicy,
-      });
-      cacheModelPolicy(result);
-      acceptPolicySave(result);
-      announce("Model policy saved. It applies from the next message and spawn, here and in the terminal.");
-    } catch (err) {
-      setSaveError((err instanceof Error ? err.message : String(err)).replace(/\.$/, ""));
-    } finally {
-      setSaving(false);
-    }
   };
 
   /** Model rows grouped by provider, name-sorted — the same order the model picker lists — plus
@@ -741,18 +737,9 @@ function ModelsPanel() {
                     {shown()} of {total()} {total() === 1 ? "model" : "models"} match.
                   </Show>
                 </p>
-                <Show when={saveError()}>
-                  {(message) => <Banner tone="error" title="Couldn't save the model policy." body={`${sentence(message())} Your saved policy is unchanged.`} />}
+                <Show when={policySaveError()}>
+                  {(e) => <Banner tone="error" title="Couldn't save the model policy." body={`${sentence(e().message)} Your saved policy is unchanged.`} />}
                 </Show>
-                <SaveBar
-                  dirty={policyDirty()}
-                  saving={saving()}
-                  onSave={() => void save()}
-                  onDiscard={() => {
-                    discardPolicyDraft();
-                    setSaveError(null);
-                  }}
-                />
               </>
             );
           }}

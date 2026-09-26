@@ -56,7 +56,7 @@ const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0
 /** A baton chat whose model replies "ok" once `release()` is called, or stops when aborted.
     `start()`: with `holdStart`, a prompt waits in the SDK's input handlers (a turn that is starting,
     its run not yet begun) until it is called. */
-async function heldChat(path: string, opts: { holdStart?: boolean } = {}) {
+async function heldChat(path: string, opts: { holdStart?: boolean; seen?: unknown[][] } = {}) {
   const chat = await acquireChat(path);
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
@@ -71,10 +71,13 @@ async function heldChat(path: string, opts: { holdStart?: boolean } = {}) {
     const run = s._runInputHandlers.bind(s);
     s._runInputHandlers = async (...a) => (await started, run(...a));
   }
+  const seen = opts.seen;
   s._modelRuntime.hasConfiguredAuth = () => true;
   s.agent.state.model = STUB;
   s.agent.getApiKey = async () => "stub";
-  s.agent.streamFunction = async (_m: unknown, _c: unknown, opts?: { signal?: AbortSignal }) => {
+  s.agent.streamFunction = async (_m: unknown, context: { messages?: unknown[] }, opts?: { signal?: AbortSignal }) => {
+    // What the model reads, each time it is called.
+    opts?.signal && seen?.push(structuredClone(context?.messages ?? []));
     // Aborted already when the model is called: a stop that came at the run's first event.
     const aborted = new Promise<"aborted">((r) => (opts?.signal?.aborted ? r("aborted") : opts?.signal?.addEventListener("abort", () => r("aborted"), { once: true })));
     const how = await Promise.race([gate.then(() => "done" as const), aborted]);
@@ -341,4 +344,43 @@ describe("a move that stops a reply drops nothing queued behind it", () => {
       assert.deepEqual(context.slice(-2), ["second", "third"], "the model reads them with the next turn");
     });
   }
+});
+
+describe("the model reads who wrote each message", () => {
+  test("after Take back with queued messages, each message in the model's context carries its own author, and the move is a line of its own", async () => {
+    const kim = person("Kim Author");
+    const lee = person("Lee Author");
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Authors", goal: "g" });
+    const seen: unknown[][] = [];
+    const { chat, release } = await heldChat(c.path, { seen });
+    says(chat, c.sessionId, kim.id, "KIM-FIRST");
+    await until(() => chat.session.isStreaming);
+    says(chat, c.sessionId, kim.id, "KIM-QUEUED");
+    await until(() => chat.session.agent.hasQueuedMessages());
+    assert.equal((await post(`/api/baton/${c.sessionId}/take`)).status, 200);
+    const op = orgs.operatorName();
+    says(chat, c.sessionId, OPERATOR, "OP-ASKS who wrote those?");
+    await until(() => seen.length === 2);
+    release();
+    await until(() => !chat.session.isStreaming);
+    assert.equal((await post(`/api/baton/${c.sessionId}/handoff`, { to: lee.id, question: "q" })).status, 200);
+    says(chat, c.sessionId, lee.id, "LEE-ANSWERS");
+    await until(() => seen.length === 3 && !chat.session.isStreaming);
+    const users = (seen.at(-1) as { role: string; content: { type: string; text?: string }[] }[])
+      .filter((m) => m.role === "user")
+      .map((m) => m.content.map((b) => b.text ?? "").join(""));
+    const of = (word: string) => users.find((u) => u.includes(word)) ?? "";
+    assert.match(of("KIM-FIRST"), /^\[The conversation passed from .+ \(the operator\) to Kim Author\]\n\[From Kim Author\]\nKIM-FIRST$/);
+    assert.equal(of("KIM-QUEUED"), "[From Kim Author]\nKIM-QUEUED", "a kept message is still Kim's");
+    assert.equal(of("OP-ASKS"), `[The conversation passed from Kim Author to ${op} (the operator)]\n[From ${op} (the operator)]\nOP-ASKS who wrote those?`);
+    assert.equal(of("LEE-ANSWERS"), `[The conversation passed from ${op} (the operator) to Lee Author]\n[From Lee Author]\nLEE-ANSWERS`);
+    for (const [word, not] of [["KIM-QUEUED", /Lee|operator/], ["LEE-ANSWERS", /From Kim|From .*operator/], ["OP-ASKS", /From Kim|From Lee/]] as const)
+      assert.doesNotMatch(of(word), not, `${word} carries nobody else's name as its author`);
+    // Context only: what was written stays as the people wrote it, and earlier turns read the same.
+    const file = entriesOf(c.path).filter((e) => e.type === "message" && e.message.role === "user").map((e) => e.message.content.map((b: { text?: string }) => b.text ?? "").join(""));
+    assert.deepEqual(file, ["KIM-FIRST", "KIM-QUEUED", "OP-ASKS who wrote those?", "LEE-ANSWERS"]);
+    const earlier = (seen[1] as { role: string; content: { text?: string }[] }[]).filter((m) => m.role === "user").map((m) => m.content.map((b) => b.text ?? "").join(""));
+    assert.deepEqual(users.slice(0, earlier.length), earlier, "a later turn doesn't change an earlier message's label");
+    assert.doesNotMatch(users.join("\n"), new RegExp(`${kim.id}|${lee.id}|operator"|Staff`), "no id, no role in the labels");
+  });
 });

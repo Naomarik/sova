@@ -34,6 +34,7 @@ import {
   markDone,
   moveRefusal,
   nameOf,
+  namesOf,
   noteMessage,
   offerRefusal,
   resolveTarget,
@@ -46,7 +47,7 @@ import {
 import { revokeLinks } from "./baton-links";
 import { emitBatonEvent } from "./baton-events";
 import { handoffChosen } from "./baton-guards";
-import { streamingText } from "./baton-view";
+import { authorNotes, labelAuthors, streamingText } from "./baton-view";
 import { runWrapup, wantsWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
 import { acquireChat, BusyError, type ChatSession, isSessionBusy, RefusedError, registerSpecialLoadout } from "./chat-manager";
 import { applyChange, contactProblems, holderSteering, onPersonLeft, operatorName, OrgError, participantLine, profileRedactTexts, proposedGaps, publicTerms, readRoster } from "./orgs";
@@ -580,9 +581,12 @@ registerSpecialLoadout({
                 o.skills = [];
                 o.cwd = "(none)";
               });
-              pi.on("context", (event) => {
+              pi.on("context", (event, ctx) => {
                 const row = batonById(sessionId)?.row;
-                const messages = redactContext(event.messages, row ? holderPhrases(row, event.messages) : []);
+                const redacted = redactContext(event.messages, row ? holderPhrases(row, event.messages) : []);
+                // Who wrote each message, added after the redaction (names are no secret).
+                const branch = (ctx?.sessionManager?.getBranch() ?? []) as Record<string, any>[];
+                const messages = row ? labelAuthors(redacted, authorNotes(branch, namesOf(row.orgId), row.holder), event.messages) : redacted;
                 return messages === event.messages ? undefined : { messages };
               });
             },

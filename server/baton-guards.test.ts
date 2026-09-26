@@ -86,6 +86,24 @@ describe("the wrap-up records what people say about themselves", () => {
     assert.equal(guards.aboutSomeoneElse("We run everything on Xero", t, [...roster, { ...t, id: "p_eve", name: "Eve" }], "Omar"), null, "\"everything\" does not name Eve");
   });
 
+  test("a quote that copied the author note from the model's context still counts as their own words, and only as theirs", async () => {
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: nadia.id, publicTitle: "Notes wrap", goal: "g" });
+    const branch = [...user(nadia.id, "I negotiate every vendor contract in Portuguese.")];
+    const tool = wrap.wrapupTool(c.sessionId);
+    const r = wrap.beginWrapupRun(c.sessionId);
+    try {
+      await tool.execute("id", { updates: [
+        { personId: nadia.id, field: "skills", to: ["Portuguese"], quote: "[The conversation passed from Omar (the operator) to Nadia Haddad]\n[From Nadia Haddad]\nI negotiate every vendor contract in Portuguese." },
+        { personId: bob.id, field: "skills", to: ["contracts"], quote: "[From Bob Chen] I negotiate every vendor contract" },
+      ] } as never, undefined, undefined, { sessionManager: { getBranch: () => branch } } as never);
+    } finally {
+      wrap.endWrapupRun(c.sessionId);
+    }
+    assert.ok(orgs.readRoster(org.id).find((p) => p.id === nadia.id)!.skills.includes("Portuguese"));
+    assert.deepEqual(r.refused.map((x) => x.personId), [bob.id], "a label naming Bob never makes Nadia's words his");
+    assert.equal(orgs.readHistory(org.id, nadia.id).at(-1)!.by.quote, "I negotiate every vendor contract in Portuguese.", "the note is not kept in the evidence");
+  });
+
   test("Tony's words about Bob change nobody's profile; his words about himself do", async () => {
     const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Wrap", goal: "g" });
     baton.handTo(c.sessionId, bob.id, "q", "", new Date());

@@ -141,7 +141,7 @@ to the project root. New fields are only ever added. Other tools read this outpu
   findings are dropped). A claimed changed file's ids that are not created are *foreign*. The census
   object gets, right after `changed`, `foreignNote` (a fixed instruction string), `foreign: [id]`
   (surface ids first, then the rest, each in id order) and `childUnderForeign: [{id, parent}]`
-  (empty arrays when none). The instruction ends "plumbing and gaps it already had never flag". With `--spec` only, each created
+  (empty arrays when none). The instruction ends "plumbing never flags, nor a gap it already had, even one you now rely on". With `--spec` only, each created
   H2 id whose parent H1 is not created is a `child-under-foreign` note `{id, parent}`, touched or
   not. When `foreign` is non-empty, one `foreign-summary` note `{ids}` (message: the instruction, then
   `: N touched (ids)`) is the last finding, and, if

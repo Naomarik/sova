@@ -62,7 +62,7 @@ doesn't touch. With `--spec` only, each new id whose H1 parent already exists
 gets a `child-under-foreign` note. With `--related`, each `touched` entry also
 carries `created: true|false`, and each foreign touched § gets a
 `touched-foreign` note (read it with `scope`; flag it if a user sees a change
-there, even one the new claim describes; a gap it already had never flags). Human output prints the summary
+there, even one the new claim describes; a gap it already had never flags, even one you now rely on). Human output prints the summary
 before the touched list. Notes are reminders, not flags: the exit code is
 unchanged. Plain `census` and `check` are as before.
 

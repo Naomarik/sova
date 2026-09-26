@@ -65,7 +65,7 @@ line) is itself a flag. Read a foreign § with `scope` and stay silent while its
 plumbing (an added request, hook or helper, types) never flags. Otherwise flag only a contradiction of its text, or
 something a user would see there that its own text doesn't describe; that your new claim describes
 it, in the parent's document or its own, does not remove the flag. A gap the foreign § already had (a field its prose never named) is not
-a change your task made: mention it above the last line, never in it. Batch the flags into the plan as one question ("this
+a change your task made, even when your feature now depends on that field: mention it above the last line, never in it, or open a baseline draft. Batch the flags into the plan as one question ("this
 also changes §X: <what>. OK?"). Before finishing, the reply's last line, exempt work included, is
 "Also changes: §X — <what>" (a list) or "Also changes: none", even when the user said not to ask.
 Exempt work skips the draft, not the census or the last line.

@@ -285,12 +285,16 @@ export function turnQuestions(f: TurnFacts): Record<string, Question> {
  * (its turns were written by a TUI or a headless pi, even if that process has since exited).
  */
 export function exclusionReason(
-  s: Pick<SessionSummary, "cwd" | "overseer" | "workerSession" | "archived" | "live" | "origin">,
+  s: Pick<SessionSummary, "cwd" | "overseer" | "workerSession" | "archived" | "live" | "origin" | "baton" | "projectOverseer">,
   settings: DecisionSettings,
   held: boolean,
   home?: string,
 ): string | null {
   if (s.overseer) return "overseer";
+  if (s.projectOverseer) return "project overseer";
+  // Its Needs-you item comes from the baton itself (§app.baton/needs-you), and outsiders' words
+  // are not sent to a decision model.
+  if (s.baton) return "baton session";
   if (s.workerSession) return "worker session";
   if (s.archived) return "archived";
   const gate = maySend(settings, "attention", { cwd: s.cwd, terminal: terminalSession(s, held) }, home);

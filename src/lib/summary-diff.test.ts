@@ -33,6 +33,8 @@ const full = (): Required<SessionSummary> => ({
   hasDraft: true,
   legacyFormat: true,
   overseer: true,
+  baton: { holder: "Tony", state: "open" },
+  projectOverseer: { orgId: "org_a", projectId: "prj_a" },
   activity: { state: "idle", since: 5 },
   pendingDialogs: 1,
   seenAt: 10,

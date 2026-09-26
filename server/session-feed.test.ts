@@ -89,6 +89,11 @@ describe("D3: list_changed, for what the marks can't carry", () => {
     assert.equal(listChanged(map(base), map([row("a", { busy: true }), row("b")])), true);
     assert.equal(listChanged(map(base), map([row("a", { activity: { state: "working" } }), row("b")])), true);
     assert.equal(listChanged(map(base), map([row("a", { lastActiveAt: "later" }), row("b")])), true);
+    // A baton row changes in the org's registry/roster, not its file: an approved referral, a new holder.
+    const held = { holder: "Tony", state: "open" as const };
+    const waiting = { ...held, proposals: [{ personId: "p_b", name: "Bob", role: "IT", by: "Tony", since: 1 }] };
+    assert.equal(listChanged(map([row("a", { baton: waiting }), row("b")]), map([row("a", { baton: held }), row("b")])), true);
+    assert.equal(listChanged(map([row("a", { baton: held }), row("b")]), map([row("a", { baton: { ...held } }), row("b")])), false);
     assert.equal(listChanged(map(base), map([row("a", { signals: signals(1), tags: { topic: "docs" } }), row("b")])), false);
   });
 

@@ -1,0 +1,79 @@
+/* The share page (§app.baton/outsider-view). Token values only. The two faces it uses are bundled
+   into its own build (the operator app serves its fonts from /fonts/, which the share listener
+   does not), declared after tokens.css so these win. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../../public/fonts/Inter-Variable.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("../../public/fonts/JetBrainsMono-Variable.woff2") format("woff2");
+}
+
+body { margin: 0; background: var(--color-bg); color: var(--color-ink); }
+
+.share {
+  box-sizing: border-box;
+  max-width: calc(var(--measure) + 2 * var(--space-4));
+  margin: 0 auto;
+  min-height: 100dvh;
+  padding: var(--space-5) var(--space-4) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.share-empty { margin: auto; }
+.share-head { display: flex; flex-direction: column; gap: var(--space-1); }
+.share-title { margin: 0; font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); }
+.share-status { margin: 0; color: var(--color-ink-2); }
+.share-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+.share-thread { flex: 1; display: flex; flex-direction: column; gap: var(--space-3); }
+.share-msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 90%;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  align-self: flex-start;
+}
+.share-msg-own { align-self: flex-end; background: var(--color-accent-tint); border-color: transparent; }
+.share-who { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.share-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.share-md { overflow-wrap: anywhere; }
+.share-md > :first-child { margin-top: 0; }
+.share-md > :last-child { margin-bottom: 0; }
+.share-md a { color: var(--color-accent); }
+
+.share-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-lg);
+  background: var(--color-sunken);
+}
+.share-card-quiet { background: transparent; border: 1px solid var(--color-border); }
+.share-card-head { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.share-brief { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--color-border); }
+
+.share-composer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 0 var(--space-2);
+  background: var(--color-bg);
+}
+.share-input { width: 100%; box-sizing: border-box; resize: vertical; }
+.share-composer-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }

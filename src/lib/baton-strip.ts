@@ -1,0 +1,78 @@
+// The baton strip's words (§app/baton): who has the baton, or the offer, in one phrase. Pure, so
+// every state is pinned by tsx --test.
+
+import { OPERATOR, type BatonInfo, type WrapupInfo } from "../../shared/baton";
+
+/** "Ana", "Ana and Bob", "Ana, Bob, and Carl" (serial comma). */
+export function namesList(names: readonly string[]): string {
+  if (names.length <= 2) return names.join(" and ");
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+/** Whole minutes left on a lease, never below 0. */
+export const leaseMinutes = (leaseUntil: string, now: number): number => Math.max(0, Math.ceil((Date.parse(leaseUntil) - now) / 60_000));
+
+/** The current offer, when the session's baton is out as one right now. */
+export function liveOffer(i: Pick<BatonInfo, "offer" | "session">): NonNullable<BatonInfo["offer"]> | null {
+  const o = i.offer;
+  return o && i.session.offerId === o.id && o.state !== "withdrawn" ? o : null;
+}
+
+/** The strip's phrase for where the baton is. */
+export function whereLine(i: Pick<BatonInfo, "offer" | "session" | "names">, now: number): string {
+  const s = i.session;
+  if (s.state === "done") return "done";
+  if (s.state === "closed") return "closed";
+  const offer = liveOffer(i);
+  if (offer) {
+    const invited = namesList(offer.to.map((p) => p.name));
+    if (offer.state === "held" && offer.holder) {
+      const left = offer.leaseUntil ? leaseMinutes(offer.leaseUntil, now) : null;
+      return `${offer.holder.name} is answering (offered to ${invited})${left === null ? "" : ` — theirs for ${left} more ${left === 1 ? "minute" : "minutes"} of quiet`}`;
+    }
+    return `offered to ${invited} — nobody has answered yet`;
+  }
+  if (s.holder === OPERATOR) return "with you — you can write now";
+  if (s.holder) return `with ${i.names[s.holder] ?? "someone"} — you can write once you take it back`;
+  return "with nobody";
+}
+
+/**
+ * Links on screen belong to one hand-off (`at`, its number). They go only once a LATER hand-off
+ * exists: never on a refetch, an unchanged count, or an info not read yet (undefined) — a reset on
+ * any change of the count wiped a link the moment the refetch after minting it landed.
+ */
+export const linksStale = (at: number | null, count: number | undefined): boolean => at !== null && count !== undefined && count > at;
+
+/**
+ * The decision areas a referral asks the operator to grant, said on the approval card: a referred
+ * person's `decides` is the referrer's say-so until the operator approves, and approving makes it
+ * the operator's (it then routes conflicts to them, §app/requirements).
+ */
+export function proposedAreasLine(name: string, decides: readonly string[] | undefined): string | null {
+  // Not sent at all: unknown, which is not the same as none — say nothing rather than "none".
+  if (decides === undefined) return null;
+  const areas = (decides ?? []).map((a) => a.trim()).filter(Boolean);
+  if (!areas.length) return "No decision areas.";
+  return `Decides: ${areas.join(", ")} — approving ${name} approves ${areas.length === 1 ? "this area" : "these areas"}.`;
+}
+
+/**
+ * The strip's wrap-up line, and whether it offers Review or Revert: only when a wrap-up ran to an
+ * end that can have changed a profile. "skipped" means no turn ran at all (only the operator wrote).
+ */
+export function wrapupLine(w: WrapupInfo): { text: string; review: boolean } {
+  switch (w.state) {
+    case "running":
+      return { text: "Wrap-up running: reading this session for profile updates.", review: false };
+    case "skipped":
+      return { text: "Wrap-up skipped: nobody but you wrote in this session.", review: false };
+    case "failed":
+      return { text: `Wrap-up stopped${w.error ? `: ${w.error.replace(/\.$/, "")}.` : "."} Profiles it didn't reach are unchanged.`, review: true };
+    case "done":
+      return {
+        text: `Wrap-up: ${w.applied} profile ${w.applied === 1 ? "field" : "fields"} updated${w.refused.length ? `, ${w.refused.length} refused` : ""}.`,
+        review: true,
+      };
+  }
+}

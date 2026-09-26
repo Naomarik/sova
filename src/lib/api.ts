@@ -19,6 +19,7 @@ import type {
   OverseerSaveResult,
   OverseerSettings,
   OverseerSettingsInfo,
+  OverseerAction,
   OverseerTodosInfo,
   TodoPatch,
   PlaybookCatalog,
@@ -49,6 +50,10 @@ import type {
   MeshSessions,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
+import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, ProfileChange } from "../../shared/orgs";
+import type { BatonInfo, BatonStartInput, BatonStartResult, BatonView, OfferLink } from "../../shared/baton";
+import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
+import type { ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
@@ -806,3 +811,84 @@ export const startTagsBackfill = (scope: TagsBackfillScope) =>
 
 /** Stop the running backfill; what it tagged stays. */
 export const cancelTagsBackfill = () => request<TagsBackfillProgress>("/api/sessions/tags/backfill/cancel", { method: "POST" });
+
+// ---- organizations and baton sessions (§app/organizations, §app/baton) -------------------------------
+
+const jsonInit = (method: string, body?: unknown): RequestInit => ({
+  method,
+  headers: { "Content-Type": "application/json" },
+  ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+});
+
+export const getOrgs = () => request<OrgsInfo>("/api/orgs");
+export const createOrg = (name: string, dir?: string) => request<OrgDetail>("/api/orgs", jsonInit("POST", { name, ...(dir ? { dir } : {}) }));
+export const attachOrg = (dir: string) => request<OrgDetail>("/api/orgs/attach", jsonInit("POST", { dir }));
+export const setOperatorName = (name: string) => request<OrgsInfo>("/api/orgs/operator", jsonInit("PUT", { name }));
+export const getOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`);
+export const patchOrg = (id: string, patch: { name?: string; notes?: string }) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("PATCH", patch));
+export const detachOrg = (id: string) => request<{ ok: true }>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("DELETE"));
+export const commitOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/commit`, jsonInit("POST"));
+export const setOrgRemote = (id: string, url: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/remote`, jsonInit("PUT", { url }));
+export const addPerson = (id: string, person: PersonInput) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people`, jsonInit("POST", person));
+export const patchPerson = (id: string, pid: string, patch: Partial<PersonInput>) =>
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}`, jsonInit("PATCH", patch));
+export const personHistory = (id: string, pid: string) => request<ProfileChange[]>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/history`);
+export const revertPersonChange = (id: string, pid: string, at: string) =>
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/revert`, jsonInit("POST", { at }));
+export const addOrgProject = (id: string, name: string, root: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects`, jsonInit("POST", { name, root }));
+
+export const startBaton = (input: BatonStartInput) => request<BatonStartResult>("/api/baton", jsonInit("POST", input));
+export const getBaton = (path: string) => request<BatonInfo>(`/api/baton?path=${encodeURIComponent(path)}`);
+export const batonLink = (sid: string) => request<{ link: string; n: number }>(`/api/baton/${encodeURIComponent(sid)}/link`);
+export const revokeBatonLink = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/revoke`, jsonInit("POST"));
+export const takeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/take`, jsonInit("POST"));
+export const closeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/close`, jsonInit("POST"));
+export const batonReplay = (sid: string) => request<BatonView>(`/api/baton/${encodeURIComponent(sid)}/replay`);
+export const offerBaton = (sid: string, to: string[], question?: string, briefing?: string) =>
+  request<{ links: OfferLink[]; info?: BatonInfo }>(`/api/baton/${encodeURIComponent(sid)}/offer`, jsonInit("POST", { to, ...(question ? { question } : {}), ...(briefing ? { briefing } : {}) }));
+export const withdrawOffer = (sid: string) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/offer/withdraw`, jsonInit("POST"));
+/** A fresh link for one invitee of the open offer (their older one stops working). */
+export const inviteeLink = (sid: string, personId: string) => request<{ link: string; n: number }>(`/api/baton/${encodeURIComponent(sid)}/link?person=${encodeURIComponent(personId)}`);
+/** The operator hands the session to a person ("Hand this session to Bob"). */
+export const handBaton = (sid: string, to: string, question: string, briefing?: string) =>
+  request<{ info?: BatonInfo; link?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
+export const approvePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/approve`, jsonInit("POST"));
+export const declinePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/decline`, jsonInit("POST"));
+export const orgChanges = (id: string, limit = 50) => request<NamedChange[]>(`/api/orgs/${encodeURIComponent(id)}/changes?limit=${limit}`);
+
+// ---- a project's decisions, their reconciliation and promotion (§app/requirements) ------------------
+
+const projectBase = (orgId: string, projectId: string) => `/api/orgs/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(projectId)}`;
+export const getDecisions = (orgId: string, projectId: string) => request<DecisionsInfo>(`${projectBase(orgId, projectId)}/decisions`);
+export const reconcileProject = (orgId: string, projectId: string) => request<DecisionsInfo>(`${projectBase(orgId, projectId)}/reconcile`, jsonInit("POST"));
+export const redraftProject = (orgId: string, projectId: string) => request<DecisionsInfo>(`${projectBase(orgId, projectId)}/draft`, jsonInit("POST"));
+/** `bulk`: the ids are exactly what Select All Ready chose (the server holds bulk to the stricter rule). */
+export const promoteDecisions = (orgId: string, projectId: string, ids: string[], bulk: boolean) =>
+  request<PromoteResult>(`${projectBase(orgId, projectId)}/promote`, jsonInit("POST", { ids, bulk }));
+export const routeConflict = (orgId: string, projectId: string, cid: string, to?: string) =>
+  request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/route`, jsonInit("POST", to ? { to } : {}));
+export const resolveConflict = (orgId: string, projectId: string, cid: string, input: ConflictResolveInput) =>
+  request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/resolve`, jsonInit("POST", input));
+export const setSpecFrozen = (orgId: string, projectId: string, frozen: boolean) =>
+  request<SpecStatus>(`${projectBase(orgId, projectId)}/spec`, jsonInit("PATCH", { frozen }));
+
+// ---- a project's overseer (§app/project-overseer) ---------------------------------------------------
+
+const overseerBase = (orgId: string, projectId: string) => `${projectBase(orgId, projectId)}/overseer`;
+export const getProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(overseerBase(orgId, projectId));
+export const openProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(overseerBase(orgId, projectId), jsonInit("POST"));
+export const patchProjectOverseer = (orgId: string, projectId: string, patch: ProjectOverseerPatch) =>
+  request<ProjectOverseerInfo>(overseerBase(orgId, projectId), jsonInit("PATCH", patch));
+export const runProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/run`, jsonInit("POST"));
+export const projectOverseerActions = (orgId: string, projectId: string, limit = 30) =>
+  request<OverseerAction[]>(`${overseerBase(orgId, projectId)}/actions?limit=${limit}`);
+export const projectOverseerIdeas = (orgId: string, projectId: string) => request<OverseerIdeasInfo>(`${overseerBase(orgId, projectId)}/ideas`);
+export const projectOverseerTodos = (orgId: string, projectId: string) => request<OverseerTodosInfo>(`${overseerBase(orgId, projectId)}/todos`);
+export const addProjectOverseerTodo = (orgId: string, projectId: string, text: string) =>
+  request<OverseerTodosInfo>(`${overseerBase(orgId, projectId)}/todos`, jsonInit("POST", { text }));
+export const patchProjectOverseerTodo = (orgId: string, projectId: string, id: string, patch: TodoPatch) =>
+  request<OverseerTodosInfo>(`${overseerBase(orgId, projectId)}/todo?id=${encodeURIComponent(id)}`, jsonInit("PATCH", patch));
+export const sendProjectItem = (orgId: string, projectId: string, input: ItemSendInput) =>
+  request<ItemSendResult>(`${overseerBase(orgId, projectId)}/items/send`, jsonInit("POST", input));
+export const codeProjectItem = (orgId: string, projectId: string, input: ItemCodeInput) =>
+  request<ItemCodeResult>(`${overseerBase(orgId, projectId)}/items/code`, jsonInit("POST", input));

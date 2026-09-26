@@ -109,7 +109,8 @@ test("a typed /mode reaching the Overseer's runtime is refused and never runs", 
   for (const type of ["prompt", "steer"] as const) {
     const sent: ChatServerMessage[] = [];
     chat.handle({ send: (m) => sent.push(m) }, { type, text: "/mode delegate", clientId: `c-${type}` });
-    assert.deepEqual(sent, [{ type: "error", code: "internal", message: "The Overseer is always in normal mode.", clientId: `c-${type}` }]);
+    // "refused" (a deliberate refusal, not a failure): the client restores the draft and counts no error.
+    assert.deepEqual(sent, [{ type: "error", code: "refused", message: "The Overseer is always in normal mode.", clientId: `c-${type}` }]);
   }
   await new Promise((r) => setTimeout(r, 50));
   assert.deepEqual(held(chat), NORMAL);

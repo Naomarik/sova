@@ -68,11 +68,12 @@ export function diffMarks(prev: ReadonlyMap<string, SessionMarks>, list: readonl
 
 /**
  * What of a row the marks can't carry but the sidebar shows: that it is listed at all, its live
- * record, whether it runs, and its last activity. A change to any of these is `list_changed` (the
+ * record, whether it runs, its last activity, and a baton session's state (holder, Needs you,
+ * waiting referrals: those change in the org's registry and roster, not the session file). A change to any of these is `list_changed` (the
  * client re-reads the list); a session a TUI just created is a new path here.
  */
 export function rowSignature(s: SessionSummary): string {
-  return JSON.stringify([s.live?.pid ?? null, s.live?.status ?? null, s.busy, s.activity?.state ?? null, s.lastActiveAt, s.archived]);
+  return JSON.stringify([s.live?.pid ?? null, s.live?.status ?? null, s.busy, s.activity?.state ?? null, s.lastActiveAt, s.archived, s.baton ?? null]);
 }
 
 /** Did the listed rows change beyond the marks: a path added or removed, or a signature changed. */

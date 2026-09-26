@@ -10,6 +10,7 @@ import type {
   TagsBackfillProgress,
   WorkerChoice,
 } from "../../shared/protocol";
+import { RECONCILE_DEFAULT } from "../../shared/decisions";
 import { sameChoice, type DraftChoice } from "./delegate-form";
 
 /**
@@ -20,6 +21,9 @@ import { sameChoice, type DraftChoice } from "./delegate-form";
  * status ever reach this screen.
  */
 
+/** Whether reconcile is on: the stored switch, or the default while the file has none. */
+export const reconcileOn = (f: DecisionSettings["features"]): boolean => f.reconcile ?? RECONCILE_DEFAULT;
+
 /** The draft keeps the exclusion list as typed (one prefix per line), so a half-typed line stays. */
 export type DecisionDraft = Omit<DecisionSettings, "fallback" | "exclusions"> & { fallback: DraftChoice | null; exclusions: string };
 
@@ -27,7 +31,7 @@ export const draftOf = (s: DecisionSettings): DecisionDraft => ({
   version: 1,
   jev: { enabled: s.jev.enabled },
   fallback: s.fallback ? { ...s.fallback } : null,
-  features: { attention: s.features.attention, tags: s.features.tags },
+  features: { attention: s.features.attention, tags: s.features.tags, reconcile: reconcileOn(s.features) },
   exclusions: s.exclusions.join("\n"),
   neverSendTui: s.neverSendTui,
 });
@@ -61,7 +65,7 @@ export function settingsOf(d: DecisionDraft): DecisionSettings {
     version: 1,
     jev: { enabled: d.jev.enabled },
     fallback: d.fallback ? ({ ...d.fallback } as WorkerChoice) : null,
-    features: { attention: d.features.attention, tags: d.features.tags },
+    features: { attention: d.features.attention, tags: d.features.tags, reconcile: reconcileOn(d.features) },
     exclusions: parseExclusions(d.exclusions),
     neverSendTui: d.neverSendTui,
   };
@@ -75,6 +79,7 @@ export function sameDecision(a: DecisionDraft, b: DecisionSettings | DecisionDra
     sameChoice(a.fallback, b.fallback) &&
     a.features.attention === b.features.attention &&
     a.features.tags === b.features.tags &&
+    reconcileOn(a.features) === reconcileOn(b.features) &&
     a.neverSendTui === b.neverSendTui &&
     ax.length === bx.length &&
     ax.every((p, i) => p === bx[i])
@@ -104,6 +109,7 @@ export function rebaseDecision(d: DecisionDraft, base: DecisionSettings, fresh: 
   if (sameChoice(d.fallback, base.fallback)) out.fallback = now.fallback;
   if (d.features.attention === base.features.attention) out.features.attention = now.features.attention;
   if (d.features.tags === base.features.tags) out.features.tags = now.features.tags;
+  if (reconcileOn(d.features) === reconcileOn(base.features)) out.features.reconcile = now.features.reconcile;
   if (d.neverSendTui === base.neverSendTui) out.neverSendTui = now.neverSendTui;
   if (sameList(parseExclusions(d.exclusions), base.exclusions) && !sameList(fresh.exclusions, base.exclusions)) out.exclusions = now.exclusions;
   return out;
@@ -159,7 +165,7 @@ export function unavailableLine(jevEnabled: boolean, key: DecisionKeyInfo): stri
  * send nothing and mark nothing. Null when both features are off or someone can answer.
  */
 export function unansweredIssue(d: DecisionDraft, key: DecisionKeyInfo): string | null {
-  if (!d.features.attention && !d.features.tags) return null;
+  if (!d.features.attention && !d.features.tags && !reconcileOn(d.features)) return null;
   if (draftProviders(d, key).length > 0) return null;
   return unavailableLine(d.jev.enabled, key);
 }

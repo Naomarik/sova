@@ -1,0 +1,492 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import {
+  BATON_DECISION_ENTRY,
+  BATON_DONE_ENTRY,
+  BATON_ENTRY,
+  BATON_HANDOFF_ENTRY,
+  BATON_LEASE_ENTRY,
+  BATON_OFFER_ENTRY,
+  BATON_PROPOSAL_ENTRY,
+  OPERATOR,
+  type BatonDecisionData,
+  type BatonDoneData,
+  type BatonHandoffData,
+  type BatonLeaseData,
+  type BatonOfferData,
+  type BatonProposalData,
+  type PersonRef,
+} from "../shared/baton";
+import {
+  BRIEFING_MAX,
+  QUESTION_MAX,
+  batonById,
+  batonOfPath,
+  expireLease,
+  handTo,
+  lapsedLeases,
+  leaseMs,
+  markDone,
+  nameOf,
+  noteMessage,
+  resolveTarget,
+  sessionPathOf,
+  startOffer,
+  touchLease,
+} from "./baton";
+import { emitBatonEvent } from "./baton-events";
+import { streamingText } from "./baton-view";
+import { runWrapup, wantsWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
+import { acquireChat, type ChatSession, RefusedError, registerSpecialLoadout } from "./chat-manager";
+import { applyChange, contactProblems, holderSteering, milestone, operatorName, OrgError, participantLine, profileRedactTexts, proposedGaps, readOrg, readRoster } from "./orgs";
+import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
+import { refreshShare, streamShare } from "./share/hub";
+import { loadDefaults } from "./web-defaults";
+import { redactPhrases } from "./baton-view";
+
+/**
+ * The baton runtime (§app.baton/goal-and-loadout, /hand-off): what a baton session file opens with.
+ *
+ * - NO pi-config extension, skill, prompt template, theme or context file: `noExtensions` and
+ *   friends, verified (the §3.0 spike) to leave `extensionFactories` loading, so the inline
+ *   `sova-baton` extension is the only one. Nothing of the operator's setup (vision-delegate's
+ *   input handler, the mode extension, APPEND_SYSTEM.md) touches an outsider's conversation.
+ * - The SDK tool list is exactly the three tools below: `tools` IS the allowlist, and naming no
+ *   built-in leaves the model no file, shell or subagent access.
+ * - The system prompt is Sova's, rendered at the start of every run from the registry and the
+ *   roster as they are then; the prompt's cwd line is blanked.
+ */
+
+/** The tools a baton conversation has. */
+export const BATON_TOOLS = ["hand_to", "goal_done", "record_decision", "propose_roster_edit"] as const;
+/** The runtime's allowlist: the conversation's tools plus the wrap-up's, which is active only
+    during the wrap-up turn (and refuses outside it). */
+export const LOADOUT_TOOLS = [...BATON_TOOLS, WRAPUP_TOOL] as const;
+const PROMPT_FILE = join(import.meta.dirname, "baton-prompt.md");
+
+const obj = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false });
+const str = (description: string) => ({ type: "string", description });
+const clip = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+const say = (text: string) => ({ content: [{ type: "text" as const, text }], details: {} });
+
+/** The system prompt for the session's next run. */
+export function renderBatonPrompt(sessionId: string, template = readFileSync(PROMPT_FILE, "utf8")): string {
+  const hit = batonById(sessionId);
+  if (!hit) throw new Error("Unknown baton session");
+  const row = hit.row;
+  const org = readOrg(row.orgId);
+  const roster = readRoster(row.orgId);
+  const holder = row.holder && row.holder !== OPERATOR ? roster.find((p) => p.id === row.holder) : undefined;
+  const others = roster.filter((p) => p.status === "active" && p.id !== holder?.id);
+  const values: Record<string, string> = {
+    OPERATOR: operatorName(),
+    ORG: org.name,
+    TITLE: row.publicTitle,
+    GOAL: row.goal,
+    HOLDER: row.holder === OPERATOR ? `${operatorName()} (the operator)` : (holder?.name ?? "nobody (the conversation is over)"),
+    HOLDER_ROLE: holder?.role ? `, ${holder.role}` : "",
+    STEERING: holder ? holderSteering(holder) : "",
+    PEOPLE: others.length ? others.map(participantLine).join("\n") : "(nobody else on the roster yet)",
+  };
+  return template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => values[k] ?? "");
+}
+
+/** Move the baton from outside a turn (Take back, the budget stop): registry, then the transcript
+    entry through the session's runtime, then every share page. */
+export async function moveBaton(sessionId: string, to: PersonRef, question: string, briefing = ""): Promise<number> {
+  const hit = batonById(sessionId);
+  if (!hit) throw new OrgError("Unknown baton session", 404);
+  const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
+  if (chat.session.isStreaming) throw new OrgError("Wait for the reply to finish first.", 409);
+  const { n, from } = handTo(sessionId, to, question, briefing);
+  chat.appendSpecialEntry(BATON_HANDOFF_ENTRY, { v: 1, n, from, to, question, briefing } satisfies BatonHandoffData);
+  refreshShare(sessionId);
+  return n;
+}
+
+/**
+ * Offer the baton to several people at once (§app.baton/offers-and-leases), from outside a turn:
+ * registry (withdrawing any current offer), then the `sova-baton-offer` entry through the
+ * session's runtime, then every share page. Returns one token per invitee.
+ */
+export async function offerBaton(sessionId: string, to: readonly unknown[], question: string, briefing = "", opts: { mintLink?: boolean } = {}) {
+  const hit = batonById(sessionId);
+  if (!hit) throw new OrgError("Unknown baton session", 404);
+  const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
+  if (chat.session.isStreaming) throw new OrgError("Wait for the reply to finish first.", 409);
+  const out = startOffer(sessionId, to, question, briefing, new Date(), undefined, opts.mintLink !== false);
+  chat.appendSpecialEntry(BATON_OFFER_ENTRY, {
+    v: 1,
+    n: out.n,
+    offerId: out.offer.id,
+    from: out.from,
+    to: out.offer.to,
+    question: out.offer.question,
+    briefing: out.offer.briefing,
+  } satisfies BatonOfferData);
+  refreshShare(sessionId);
+  return out;
+}
+
+/** Record a lease event in the transcript (best effort: the registry already has it). */
+export function recordLease(chat: ChatSession, data: Omit<BatonLeaseData, "v">): void {
+  try {
+    chat.appendSpecialEntry(BATON_LEASE_ENTRY, { v: 1, ...data } satisfies BatonLeaseData);
+  } catch (err) {
+    console.warn(`[baton] lease entry not written: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** A share message was accepted (server/share/routes.ts): write what the lease did on the way. */
+export function recordNoted(chat: ChatSession, by: PersonRef, noted: ReturnType<typeof noteMessage>): void {
+  const renewedOwn = !!noted.claimed && noted.expired?.by === by;
+  if (noted.expired && !renewedOwn) recordLease(chat, { n: noted.expired.n, offerId: noted.expired.offerId, event: "expired", by: noted.expired.by });
+  if (noted.claimed && !renewedOwn) recordLease(chat, { n: noted.claimed.n, offerId: noted.claimed.offerId, event: "claimed", by });
+}
+
+/**
+ * The lease ticker: a lapsed lease goes back to the pool and every waiting page is told (they may
+ * write again). The message route enforces the lease on its own (a lapsed lease is claimable there
+ * even between ticks); this only makes the change visible. Skips a session mid-reply: the reply's
+ * end renews the lease.
+ */
+export async function tickLeases(now = Date.now()): Promise<void> {
+  for (const sessionId of lapsedLeases(now)) {
+    const hit = batonById(sessionId);
+    if (!hit) continue;
+    try {
+      const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
+      if (chat.session.isStreaming) continue;
+      const expired = expireLease(sessionId, now);
+      if (!expired) continue;
+      recordLease(chat, { n: expired.n, offerId: expired.offerId, event: "expired", by: expired.by });
+      refreshShare(sessionId);
+    } catch (err) {
+      console.warn(`[baton] lease tick on ${sessionId.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+/** Every 30 s, or a quarter of a shortened lease (hermetic tests). */
+const LEASE_TICK_MS = Math.max(1000, Math.min(30_000, Math.floor(leaseMs() / 4)));
+setInterval(() => void tickLeases(), LEASE_TICK_MS).unref();
+
+/** Start the wrap-up of a session that wants one (after its run settles, or on close). */
+export function scheduleWrapup(sessionId: string, delayMs = 50): void {
+  const t = setTimeout(() => {
+    const row = batonById(sessionId)?.row;
+    if (!row || !wantsWrapup(row)) return;
+    void runWrapup(sessionId, BATON_TOOLS).catch((err) => console.warn(`[baton] wrap-up of ${sessionId.slice(0, 8)} failed: ${err instanceof Error ? err.message : String(err)}`));
+  }, delayMs);
+  t.unref?.();
+}
+
+type AppendEntry = (customType: string, data: unknown) => void;
+
+/** Milestones reached inside a run, committed when the run settles: the tool's own result and the
+    turn's last entries land after the tool returns, and belong in the same commit. */
+const pendingCommits = new Map<string, { orgId: string; message: string }[]>();
+const deferCommit = (sessionId: string) => (orgId: string, message: string) => {
+  const list = pendingCommits.get(sessionId) ?? [];
+  list.push({ orgId, message });
+  pendingCommits.set(sessionId, list);
+};
+function flushCommits(sessionId: string): void {
+  const list = pendingCommits.get(sessionId);
+  if (!list?.length) return;
+  pendingCommits.delete(sessionId);
+  milestone(list[0]!.orgId, list.map((c) => c.message).join("; "));
+}
+
+/** The three tools, bound to one session. `append` is the extension's own appendEntry. */
+export function batonTools(sessionId: string, append: AppendEntry): ToolDefinition<any, any>[] {
+  return [
+    {
+      name: "hand_to",
+      label: "Hand to",
+      description:
+        "Hand the conversation to another person on the roster (by name or id), or to the operator (\"operator\"). " +
+        "Give the question you need them to answer and a briefing written for them. Ends your turn.",
+      parameters: obj(
+        {
+          person: str('The person\'s name or id from the roster, or "operator".'),
+          question: str("What you need them to answer, in one or two sentences."),
+          briefing: str("For them only, in their language: who asked, what is known so far, what exactly you need."),
+        },
+        ["person", "question", "briefing"],
+      ) as any,
+      async execute(_id, params: any) {
+        const hit = batonById(sessionId);
+        if (!hit) throw new Error("This conversation is no longer registered.");
+        const row = hit.row;
+        if (row.state === "done" || row.state === "closed") throw new Error(`This conversation is ${row.state}.`);
+        const target = resolveTarget(readRoster(row.orgId), String(params.person ?? ""), operatorName());
+        if (!target.ok) throw new Error(target.error);
+        const question = clip(params.question, QUESTION_MAX);
+        const briefing = clip(params.briefing, BRIEFING_MAX);
+        if (!question) throw new Error("Give the question you need them to answer.");
+        const { n, from } = handTo(sessionId, target.ref, question, briefing, new Date(), deferCommit(sessionId));
+        append(BATON_HANDOFF_ENTRY, { v: 1, n, from, to: target.ref, question, briefing } satisfies BatonHandoffData);
+        refreshShare(sessionId);
+        const who = nameOf(row.orgId, target.ref);
+        return { ...say(`Handed to ${who}. Your turn has ended.`), terminate: true };
+      },
+    },
+    {
+      name: "goal_done",
+      label: "Goal done",
+      description: "The goal is met and the answers are checked. Give a short summary of what was established. Ends the conversation.",
+      parameters: obj({ summary: str("What was established, in a few sentences.") }, ["summary"]) as any,
+      async execute(_id, params: any) {
+        const summary = clip(params.summary, BRIEFING_MAX);
+        if (!summary) throw new Error("Give a summary of what was established.");
+        markDone(sessionId, new Date(), deferCommit(sessionId));
+        append(BATON_DONE_ENTRY, { v: 1, summary } satisfies BatonDoneData);
+        refreshShare(sessionId);
+        return { ...say("Recorded as done. The conversation is over."), terminate: true };
+      },
+    },
+    {
+      name: "record_decision",
+      label: "Record decision",
+      description: "Record a decision the person you are talking to just stated, with their exact words. The conversation carries on.",
+      parameters: obj(
+        {
+          area: str('The decision area, a few words ("invoicing", "bank access").'),
+          statement: str("The decision in one sentence."),
+          quote: str("Their exact words."),
+        },
+        ["area", "statement", "quote"],
+      ) as any,
+      async execute(_id, params: any, _signal, _update, ctx) {
+        const hit = batonById(sessionId);
+        if (!hit) throw new Error("This conversation is no longer registered.");
+        const area = clip(params.area, 60);
+        const statement = clip(params.statement, 500);
+        const quote = clip(params.quote, 1000);
+        if (!area || !statement || !quote) throw new Error("Give the area, the statement and their exact words.");
+        append(BATON_DECISION_ENTRY, { v: 1, area, statement, quote, by: hit.row.holder ?? OPERATOR } satisfies BatonDecisionData);
+        const leaf = ctx?.sessionManager?.getLeafId?.();
+        const entry = leaf ? (ctx.sessionManager.getEntry(leaf) as { type?: string; customType?: string } | undefined) : undefined;
+        emitBatonEvent({
+          type: "decision",
+          orgId: hit.row.orgId,
+          projectId: hit.row.projectId,
+          sessionId,
+          ...(leaf && entry?.type === "custom" && entry.customType === BATON_DECISION_ENTRY ? { entryId: leaf } : {}),
+        });
+        refreshShare(sessionId);
+        // pi ends the run only when EVERY tool of the batch terminates: when this call rides with a
+        // hand_to or goal_done, it must agree, or the model writes one more reply after the turn ended.
+        return { ...say("Recorded."), ...(batchEndsTurn(ctx?.sessionManager) ? { terminate: true } : {}) };
+      },
+    },
+    {
+      name: "propose_roster_edit",
+      label: "Propose a person",
+      description:
+        "Propose adding someone who is not on the roster, as the person you are talking to referred them. Needs their full name, " +
+        "at least one contact channel, their role, why they are the right person, and the referrer's exact words. " +
+        "The operator approves them before anyone can hand to them. The conversation carries on.",
+      parameters: obj(
+        {
+          name: str("Their full name."),
+          role: str('Their role ("IT lead").'),
+          contact: {
+            type: "object",
+            additionalProperties: false,
+            properties: { email: str("Email"), phone: str("Phone"), whatsapp: str("WhatsApp"), other: str('Any other channel ("Slack: @bob")') },
+            description: "At least one way to reach them.",
+          },
+          why: str("Why they are the right person, in one sentence."),
+          quote: str("The exact words of the person who referred them."),
+          decides: { type: "array", items: { type: "string" }, description: "Decision areas they own, if said." },
+        },
+        ["name", "role", "contact", "why", "quote"],
+      ) as any,
+      async execute(_id, params: any) {
+        const hit = batonById(sessionId);
+        if (!hit) throw new Error("This conversation is no longer registered.");
+        const row = hit.row;
+        if (row.state === "done" || row.state === "closed") throw new Error(`This conversation is ${row.state}.`);
+        const referrer = row.holder ?? OPERATOR;
+        const referrerName = nameOf(row.orgId, referrer);
+        const name = clip(params.name, 80);
+        const role = clip(params.role, 300);
+        const why = clip(params.why, 300);
+        const quote = clip(params.quote, 300);
+        const contact = typeof params.contact === "object" && params.contact !== null ? params.contact : {};
+        const roster = readRoster(row.orgId);
+        const same = roster.find((p) => name && p.name.toLowerCase() === name.toLowerCase() && p.status !== "left");
+        if (same?.status === "active") throw new Error(`${same.name} is already on the roster: hand_to them if they should answer.`);
+        if (same?.status === "proposed") throw new Error(`${same.name} was already proposed and waits for the operator's approval. Hand to the operator if you need them now.`);
+        const gaps = proposedGaps({ name, role, contact, referral: { why, referredBy: referrer } });
+        const bad = contactProblems(contact);
+        if (bad.length) gaps.push(`a real contact channel (${bad.join("; ")}; never write a placeholder)`);
+        if (!quote) gaps.push(`${referrerName}'s exact words referring them`);
+        if (gaps.length)
+          throw new Error(`Not recorded yet: still missing ${gaps.join(", ")}. Ask ${referrerName} for it, then call propose_roster_edit again with everything.`);
+        let person;
+        try {
+          person = applyChange(
+            row.orgId,
+            null,
+            {
+              name,
+              status: "proposed",
+              role,
+              contact,
+              ...(Array.isArray(params.decides) ? { decides: params.decides } : {}),
+              referral: { why, referredBy: referrer, sessionId, quote },
+            },
+            { kind: "referral", sessionId, quote },
+          );
+        } catch (err) {
+          throw new Error(`Not recorded: ${err instanceof Error ? err.message : String(err)} Ask ${referrerName} and try again.`);
+        }
+        append(BATON_PROPOSAL_ENTRY, { v: 1, personId: person.id, name: person.name, role: person.role, why, by: referrer } satisfies BatonProposalData);
+        emitBatonEvent({ type: "proposal", orgId: row.orgId, projectId: row.projectId, sessionId });
+        return say(
+          `Proposed ${person.name}. The operator must approve them before anyone can hand the conversation to them. ` +
+            `Tell ${referrerName} so; if you need ${person.name}'s answer to go on, hand_to the operator.`,
+        );
+      },
+    },
+    wrapupTool(sessionId),
+  ];
+}
+
+/** Whether the assistant message that made the current tool calls also calls a turn-ending tool. */
+function batchEndsTurn(sm: { getBranch(): readonly any[] } | undefined): boolean {
+  const branch = sm?.getBranch() ?? [];
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const e = branch[i];
+    if (e?.type !== "message" || e.message?.role !== "assistant") continue;
+    const content = Array.isArray(e.message.content) ? e.message.content : [];
+    return content.some((b: any) => b?.type === "toolCall" && (b.name === "hand_to" || b.name === "goal_done"));
+  }
+  return false;
+}
+
+/** Redact message text for the model's own context: secrets and the holder's profile phrases. */
+function redactContext<M>(messages: M[], phrases: readonly string[]): M[] {
+  const secrets = serverRedactor();
+  const redactMsgs = redactExtensionMessages(messages, secrets);
+  if (!phrases.length) return redactMsgs;
+  let changed = redactMsgs !== messages;
+  const out = redactMsgs.map((m) => {
+    const msg = m as { role?: string; content?: unknown };
+    if (msg.role !== "user" && msg.role !== "assistant") return m;
+    if (typeof msg.content === "string") {
+      const t = redactPhrases(msg.content, phrases);
+      if (t === msg.content) return m;
+      changed = true;
+      return { ...msg, content: t } as M;
+    }
+    if (!Array.isArray(msg.content)) return m;
+    let hit = false;
+    const content = msg.content.map((b: any) => {
+      if (b?.type !== "text" || typeof b.text !== "string") return b;
+      const t = redactPhrases(b.text, phrases);
+      if (t === b.text) return b;
+      hit = true;
+      return { ...b, text: t };
+    });
+    if (!hit) return m;
+    changed = true;
+    return { ...msg, content } as M;
+  });
+  return changed ? out : messages;
+}
+
+const isBatonMarked = (sm: { getEntries(): readonly any[] }) => sm.getEntries().some((e) => e.type === "custom" && e.customType === BATON_ENTRY);
+
+registerSpecialLoadout({
+  kind: "baton",
+  // The marker AND a registry row in an attached org: a copy of the file anywhere else (a fork, a
+  // detached org) opens as an ordinary session.
+  matches: (sm, path) => isBatonMarked(sm) && !!batonOfPath(path),
+  async loadout(path) {
+    const hit = batonOfPath(path);
+    if (!hit) throw new Error("Not a registered baton session.");
+    const sessionId = hit.row.sessionId;
+    const defaults = loadDefaults();
+    return {
+      resourceLoaderOptions: {
+        noExtensions: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+        noContextFiles: true,
+        // Not the operator's APPEND_SYSTEM.md: nothing of their own setup reaches an outsider's model.
+        appendSystemPromptOverride: () => [],
+        extensionFactories: [
+          {
+            name: "sova-baton",
+            factory: (pi) => {
+              for (const t of batonTools(sessionId, (type, data) => pi.appendEntry(type, data))) pi.registerTool(t);
+              pi.on("before_agent_start", (event) => {
+                const o = event.systemPromptOptions;
+                o.customPrompt = wrapupActive(sessionId) ? WRAPUP_SYSTEM : renderBatonPrompt(sessionId);
+                o.appendSystemPrompt = "";
+                o.contextFiles = [];
+                o.skills = [];
+                o.cwd = "(none)";
+              });
+              pi.on("context", (event) => {
+                const row = batonById(sessionId)?.row;
+                const holder = row?.holder && row.holder !== OPERATOR ? readRoster(row.orgId).find((p) => p.id === row.holder) : undefined;
+                const messages = redactContext(event.messages, holder ? profileRedactTexts(holder) : []);
+                return messages === event.messages ? undefined : { messages };
+              });
+            },
+          },
+        ],
+      },
+      tools: [...LOADOUT_TOOLS],
+      model: hit.row.model ?? defaults.model ?? null,
+      thinking: hit.row.thinking ?? defaults.thinking ?? null,
+    };
+  },
+  async opened(chat) {
+    // The wrap-up's tool is in the allowlist, and active only during the wrap-up turn.
+    chat.session.setActiveToolsByName([...BATON_TOOLS]);
+  },
+  watchSession(session, path) {
+    const sessionId = batonOfPath(path)?.row.sessionId;
+    if (!sessionId) return;
+    session.subscribe((event) => {
+      const e = event as { type: string; message?: { role?: string } };
+      // The wrap-up's words are nobody's business on a share page.
+      if (e.type === "message_update" && e.message?.role === "assistant") {
+        if (!wrapupActive(sessionId)) streamShare(sessionId, streamingText(e.message));
+      } else if (e.type === "message_end" || e.type === "agent_settled" || e.type === "entry_appended") refreshShare(sessionId);
+      if (e.type === "agent_settled") {
+        flushCommits(sessionId);
+        if (!wrapupActive(sessionId)) {
+          // The reply renews the holder's lease (the later of their message and the reply).
+          touchLease(sessionId);
+          // goal_done (or a close mid-turn) ended it: the wrap-up runs once this run is over.
+          scheduleWrapup(sessionId);
+        }
+      }
+    });
+  },
+  clientSend(path) {
+    const hit = batonOfPath(path);
+    if (!hit) throw new RefusedError("Not a registered baton session.");
+    try {
+      noteMessage(hit.row.sessionId, OPERATOR);
+    } catch (err) {
+      // Someone else holds the baton, it is done, the budget is spent: a refusal, said as it is.
+      if (err instanceof OrgError) throw new RefusedError(err.message);
+      throw err;
+    }
+    refreshShare(hit.row.sessionId);
+    return { by: OPERATOR };
+  },
+  refuses(gesture) {
+    if (gesture === "mode") return "A baton session has no mode.";
+    return "Every message in a baton session is someone's: it can't be rewound or regenerated.";
+  },
+});

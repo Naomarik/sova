@@ -16,7 +16,7 @@
     "hermetic:agent-dir": "node scripts/hermetic-agent-dir.mjs",
     "dev:hermetic": "node scripts/hermetic-agent-dir.mjs && PORT=4810 PI_CODING_AGENT_DIR=\"$PWD/.agent\" tsx server/index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && vite build --mode share",
     "start": "tsx server/index.ts",
     "test": "tsx --test \"server/*.test.ts\" \"server/mesh/*.test.ts\" \"server/sync/*.test.ts\" \"src/lib/*.test.ts\""
   },

@@ -7,6 +7,11 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { registerOrgRoutes } from "./org-routes";
+import { registerProjectOverseerRoutes } from "./project-overseer-routes";
+import { startProjectOverseerLoop } from "./project-overseer";
+import { registerDecisionRoutes } from "./decisions-routes";
+import { startShareListener, stopShareListener } from "./share/listener";
 import { disposeAllChats, getModelRuntime, heldChat, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { stateRoot } from "./state-root";
@@ -165,6 +170,12 @@ app.post("/api/sessions/connect", async (c) => {
   renameSync(tmp, join(dir, "AGENTS.md"));
   return createWebSession(c, dir);
 });
+
+// Organizations, rosters and baton sessions (server/org-routes.ts; §app/organizations, §app/baton).
+registerOrgRoutes(app);
+registerProjectOverseerRoutes(app);
+// A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
+registerDecisionRoutes(app);
 
 // The sidebar's user-made groups: Sova's own grouping of
 // sessions, stored in ~/.pi/agent/sova/session-groups.json. Keyed by
@@ -1056,6 +1067,8 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   setSovaPort(info.port);
   console.log(`sova server on http://${HOST}:${info.port}`);
   startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket });
+  // The share listener, only when SOVA_SHARE_HOST/SOVA_SHARE_PORT are set (§app.baton/share-listener).
+  void startShareListener();
 }) as Server;
 server.on("error", (err) => {
   // e.g. EADDRINUSE: don't linger half-alive behind the uncaughtException handler
@@ -1067,6 +1080,7 @@ attachWebSockets(server);
 // The Overseer's tools call these same routes in-process (no socket, every guard applies).
 setOverseerDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
+startProjectOverseerLoop();
 
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
 // The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);
@@ -1125,6 +1139,7 @@ async function shutdown() {
   (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
   usagePoller.stop();
   stopMesh();
+  stopShareListener();
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   process.exit(0);
 }

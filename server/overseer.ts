@@ -53,6 +53,7 @@ import type { SubagentTool } from "./overseer-idea-tools";
 import { workerDenial } from "./delegate";
 import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, TurnLimits, UserTurns } from "./overseer-tools";
 import { overseerFileTools } from "./overseer-file-tools";
+import { projectOverseerOfPath } from "./project-overseer-store";
 import { type Redactor, redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { isViewing, markSeen, readSeen } from "./seen";
@@ -89,6 +90,13 @@ export function overseerSender(header: string | undefined): string | undefined {
   const want = Buffer.from(SENDER_SECRET);
   if (got.length !== want.length || !timingSafeEqual(got, want)) return undefined;
   return readOverseerState()?.current || undefined;
+}
+
+/** An in-process request to the app, as the browser makes it (no Overseer sender mark): the
+    project overseer's session creation goes through the same route and guards. */
+export function appRequest(path: string, init?: RequestInit): Promise<Response> {
+  if (!dispatch) throw new Error("The server's routes are not wired yet.");
+  return dispatch(path, init);
 }
 
 /** index.ts hands over Hono's in-process dispatch at startup, so the tools call the same routes
@@ -679,6 +687,9 @@ export async function promptSession(path: string, text: string, sentBy?: string,
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
   const overseerId = sentBy && sentBy === readOverseerState()?.current ? sentBy : undefined;
   if (s.overseer) return { ok: false, status: 409, error: "That is the Overseer's own conversation." };
+  if (projectOverseerOfPath(path)) return { ok: false, status: 409, error: "That is a project overseer's own conversation." };
+  // Only a baton session's participants write in it, each through their own channel (§app.baton/attribution).
+  if (s.baton) return { ok: false, status: 409, error: "That is a baton session: only its participants write in it." };
   if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
   let chat;
   try {

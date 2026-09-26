@@ -331,10 +331,12 @@ export function tagSkipReason(
   row: SessionSummary,
   settings: DecisionSettings,
   opts: { home?: string; held?: (path: string) => boolean } = {},
-): "feature-off" | "excluded" | "tui" | "overseer" | "worker" | "empty" | "defer" | null {
+): "feature-off" | "excluded" | "tui" | "overseer" | "worker" | "baton" | "empty" | "defer" | null {
   const gate = maySend(settings, "tags", { cwd: row.cwd, terminal: terminalSession(row, opts.held?.(row.path) ?? false) }, opts.home);
   if (!gate.ok) return gate.reason;
-  if (row.overseer) return "overseer";
+  if (row.overseer || row.projectOverseer) return "overseer";
+  // Outsiders' words are never sent to a decision model for tagging.
+  if (row.baton) return "baton";
   if (row.workerSession) return "worker";
   if (row.draftPreview !== undefined) return "empty";
   if (row.busy || row.activity?.state === "working") return "defer";

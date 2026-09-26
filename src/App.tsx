@@ -31,6 +31,9 @@ import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/i
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
 import { extHref, extRouteFromHash } from "./lib/ext-route";
+import { orgsRouteFromHash } from "./lib/orgs-route";
+import { LIST_REFRESH_EVENT } from "./lib/list-refresh";
+import { OrgsView } from "./components/OrgsView";
 import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
 import { createThenArchive, dropArchived, newSessionCwd } from "./lib/new-session";
 import { cwdLabel } from "./lib/remote-session";
@@ -255,6 +258,7 @@ export function App() {
   const [overseerRoute, setOverseerRoute] = createSignal(overseerRouteFromHash(location.hash));
   const [extRoute, setExtRoute] = createSignal(extRouteFromHash(location.hash));
   const [meshRoute, setMeshRoute] = createSignal(isMeshHash(location.hash));
+  const [orgsRoute, setOrgsRoute] = createSignal(orgsRouteFromHash(location.hash));
   /** The extension on screen: the view is keyed by this, so a sub-route change never remounts it
       (which would reload the extension's iframe). */
   const extId = createMemo(() => extRoute()?.id ?? null);
@@ -396,6 +400,7 @@ export function App() {
     setOverseerRoute(overseerRouteFromHash(location.hash));
     setExtRoute(extRouteFromHash(location.hash));
     setMeshRoute(isMeshHash(location.hash));
+    setOrgsRoute(orgsRouteFromHash(location.hash));
   };
   // A `#/sid/` route opened before the first list load resolves when the lists land.
   createEffect(on([list, peerLists, meshSettled, peersSettled], () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
@@ -408,11 +413,15 @@ export function App() {
   window.addEventListener("focus", onFocus);
   window.addEventListener("hashchange", onHash);
   window.addEventListener("keydown", onKeyDown);
+  // A view that changed a session's list fields (a baton strip's hand-off, take back, approve) asks
+  // for the list now rather than at the next poll (lib/list-refresh.ts).
+  window.addEventListener(LIST_REFRESH_EVENT, refresh);
   const tick = setInterval(() => setNow(Date.now()), 30_000);
   onCleanup(() => {
     window.removeEventListener("focus", onFocus);
     window.removeEventListener("hashchange", onHash);
     window.removeEventListener("keydown", onKeyDown);
+    window.removeEventListener(LIST_REFRESH_EVENT, refresh);
     clearInterval(tick);
   });
 
@@ -616,6 +625,8 @@ export function App() {
   let extTitleEl: HTMLHeadingElement | undefined;
   let meshTitleEl: HTMLHeadingElement | undefined;
   createEffect(on(meshRoute, (open) => open && folded() && queueMicrotask(() => meshTitleEl?.focus()), { defer: true }));
+  let orgsTitleEl: HTMLHeadingElement | undefined;
+  createEffect(on(() => !!orgsRoute(), (open) => open && folded() && queueMicrotask(() => orgsTitleEl?.focus()), { defer: true }));
   createEffect(on(extId, (id) => id && folded() && queueMicrotask(() => extTitleEl?.focus()), { defer: true }));
   // A team deep link focuses its card instead (AgentsView), at every width.
   createEffect(
@@ -858,7 +869,7 @@ export function App() {
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}
-        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() ? "session" : "list"}
+        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || orgsRoute() ? "session" : "list"}
         data-ext-maximized={extMaximized() ? "1" : undefined}
       >
         <Sidebar
@@ -995,6 +1006,10 @@ export function App() {
                   </div>
                 </div>
               </Match>
+              {/* Organizations, their rosters and hand-off sessions (#/orgs[/<id>[/replay/<session>]]). */}
+              <Match when={orgsRoute()} keyed>
+                {(r) => <OrgsView route={r} titleRef={(el) => (orgsTitleEl = el)} />}
+              </Match>
               {/* The peer mesh (#/mesh): hosts, peers.json, sync, first-peer setup. */}
               <Match when={meshRoute()}>
                 <MeshView now={now()} titleRef={(el) => (meshTitleEl = el)} />
@@ -1020,7 +1035,7 @@ export function App() {
                   />
                 )}
               </Match>
-              <Match when={!route() && !groupRoute() && !meshRoute()}>
+              <Match when={!route() && !groupRoute() && !meshRoute() && !orgsRoute()}>
                 <div class="welcome">
                   <div class="welcome-head">
                     <div class="empty">

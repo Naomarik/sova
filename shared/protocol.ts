@@ -4,6 +4,7 @@
  */
 
 import type { WakeInfo } from "./wake";
+import type { BatonMark, BatonSummaryField } from "./baton";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -125,6 +126,13 @@ export interface SessionSummary {
       an ordinary session. Hidden from every sidebar region, search, Recent and cleanup count
       (src/lib/regions.ts `isMainThread`), like `workerSession`. Safe by absence. */
   overseer?: true;
+  /** A baton session (§app/baton): its file lives in an attached organization's workspace repo and is
+      registered there. Who holds the baton now, the state, and what the operator must do (Needs you:
+      answer, or send a link). Safe by absence. */
+  baton?: BatonSummaryField;
+  /** Present on a project overseer's own session (§app/project-overseer): which org's project it
+      oversees. Like `overseer`, it is never classified, tagged or listed for attention. */
+  projectOverseer?: { orgId: string; projectId: string };
   /** Activity from this session's live record (a TUI's, or this server's own runtime): the
       sessions extension's `presence.activity`. Absent when no live record reports one (closed
       sessions, older writers). `error` is set only for state "error", ≤200 chars. */
@@ -217,6 +225,14 @@ export interface TranscriptItem {
   overseerMark?:
     | { kind: "sent"; targetId: string }
     | { kind: "dialog-answer"; title: string; answer: string };
+  /** Baton markers (§app.baton/attribution), invisible `custom` entries, present only on such rows
+      (kind "info"). Person refs are ids ("operator" or a roster person's id); the client names them
+      from GET /api/baton's `names`.
+      - `sent` (`sova-baton-sent`): renders NOTHING itself; the client tags the user row `targetId`
+        with its sender's name, resolving by id in either arrival order, like the Overseer's.
+      - `handoff`, `decision`, `done`, `offer`, `lease`, `proposal`, `wrapup`: rendered as cards
+        (`BatonMark` in shared/baton.ts is the full union). */
+  batonMark?: BatonMark;
   /** kind "info" only: a subagents-team-event-v1 entry; `text` is `Team: ` + its sentence. */
   teamEvent?: TeamEvent;
   raw: unknown;
@@ -1690,7 +1706,7 @@ export type ChatServerMessage =
   // "internal" = server error, transient, safe to retry.
   /** `clientId` is set when the failure belongs to ONE identified send (its `clientId`), so the
       client restores that draft and no other. Absent on chat-wide errors, as before. */
-  | { type: "error"; message: string; code?: "busy" | "recent" | "reloaded" | "config" | "internal"; clientId?: string };
+  | { type: "error"; message: string; code?: "busy" | "recent" | "reloaded" | "config" | "refused" | "internal"; clientId?: string };
 
 /** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes.
     Also accepts `?claude=<uuid>` instead of `?path=`: a claude-code worker's own Claude Code
@@ -2210,7 +2226,9 @@ export type AttentionKind =
   | "working"         // running now
   | "stale"           // idle web session >3 days, not archived, no draft
   | "asks-you"        // decisions: the last reply asks the user something (SessionSignals.kinds)
-  | "looping";        // decisions: the session or a worker is repeating itself
+  | "looping"         // decisions: the session or a worker is repeating itself
+  | "baton-needs-you" // a baton session: the baton is with the operator, or a person needs their link
+  | "roster-proposal"; // a baton session proposed a new roster person (referral): approve or decline
 
 export interface AttentionItem {
   /** Session id. */
@@ -2741,7 +2759,9 @@ export interface DecisionSettings {
   /** The model used when Jev is off, has no working key, or fails. null = none (the default):
       nothing is ever picked for the user. */
   fallback: WorkerChoice | null;
-  features: { attention: boolean; tags: boolean };
+  /** `reconcile`: compare a project's recorded decisions (§app.requirements/reconciler); absent =
+      RECONCILE_DEFAULT (shared/decisions.ts). */
+  features: { attention: boolean; tags: boolean; reconcile?: boolean };
   /** Absolute cwd prefixes (a leading `~/` is allowed) whose sessions are never sent. */
   exclusions: string[];
   /** Never send terminal sessions: open in a TUI now, or started outside Sova (origin "external")

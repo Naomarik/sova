@@ -94,10 +94,10 @@ function cleanText(v: unknown): string {
 }
 
 /** The canonical id of an idea that exists now; a renamed idea's former id links the idea itself. */
-function cleanIdea(v: unknown): string {
+function cleanIdea(v: unknown, dir?: string): string {
   try {
     const id = canonicalIdeaId(v);
-    const idea = getIdea(id);
+    const idea = getIdea(id, dir);
     if (!idea) throw new TodoError(`No idea ${id}. A todo can only link an idea that exists (sova_ideas toc lists them).`);
     return idea.id;
   } catch (err) {
@@ -142,12 +142,13 @@ export interface NewTodo {
 }
 
 /** Add a todo at the end of the list. */
-export function addTodo(input: NewTodo, file = todosFile()): TodoRecord {
+/** `ideas`: the ideas dir a linked idea must exist in (a project overseer's; default the Overseer's). */
+export function addTodo(input: NewTodo, file = todosFile(), ideas?: string): TodoRecord {
   const f = readTodos(file);
   if (f.todos.length >= TODOS_MAX) throw new TodoError(`The list holds at most ${TODOS_MAX} todos. Ask the user which done ones to clear.`);
   const now = nextStamp();
   const r: TodoRecord = { id: newId(new Set(f.todos.map((t) => t.id))), text: cleanText(input.text), done: false, createdAt: now, updatedAt: now };
-  if (input.ideaId !== undefined && input.ideaId !== null && input.ideaId !== "") r.ideaId = cleanIdea(input.ideaId);
+  if (input.ideaId !== undefined && input.ideaId !== null && input.ideaId !== "") r.ideaId = cleanIdea(input.ideaId, ideas);
   if (input.sessionId !== undefined && input.sessionId !== null && input.sessionId !== "") r.sessionId = cleanSession(input.sessionId);
   f.todos.push(r);
   writeTodos(f, file);
@@ -158,7 +159,7 @@ export function addTodo(input: NewTodo, file = todosFile()): TodoRecord {
  * Change one todo. Re-reads the file first; a `base` (the updatedAt the editor started from) that
  * no longer matches throws TodoConflictError. `null` or "" unlinks an idea or a session.
  */
-export function updateTodo(id: unknown, patch: TodoPatch, file = todosFile(), now = new Date()): TodoRecord {
+export function updateTodo(id: unknown, patch: TodoPatch, file = todosFile(), now = new Date(), ideas?: string): TodoRecord {
   const f = readTodos(file);
   const i = find(f, id);
   const cur = f.todos[i]!;
@@ -173,7 +174,7 @@ export function updateTodo(id: unknown, patch: TodoPatch, file = todosFile(), no
   }
   if (patch.ideaId !== undefined) {
     if (patch.ideaId === null || patch.ideaId === "") delete next.ideaId;
-    else next.ideaId = cleanIdea(patch.ideaId);
+    else next.ideaId = cleanIdea(patch.ideaId, ideas);
   }
   if (patch.sessionId !== undefined) {
     if (patch.sessionId === null || patch.sessionId === "") delete next.sessionId;

@@ -14,6 +14,8 @@ import type {
 } from "../../shared/protocol";
 import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
 import { OverseerThreadContext, QuickActions } from "./OverseerCards";
+import { BatonStrip } from "./BatonStrip";
+import { ProjectOverseerStrip } from "./ProjectOverseerStrip";
 import { createFork, fetchTranscriptWithContext, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
 import {
@@ -695,6 +697,15 @@ export function ChatView(props: {
               socket.close();
               props.onRefused(msg.code, msg.message);
               return;
+            // A send the server turned down for a reason it states (a baton session held by
+            // someone else): the words as they are, the draft back in the box, the socket kept, no
+            // turn failure. The composer's own blocked reason says the same once the list catches up.
+            case "refused":
+              restoreUnsent();
+              if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
+              toast(msg.message);
+              announce(msg.message);
+              return;
             case "reloaded":
               // The Overseer's runtime can be replaced by a clear in another tab: its route may now
               // name a new file, and reconnecting here would reopen the old one.
@@ -1000,8 +1011,18 @@ export function ChatView(props: {
    */
   const archivedPane = () => !!scope.id && !!props.summary?.()?.archived;
 
+  /** Whether the operator holds this baton session's baton, from its strip; undefined until it has read. */
+  const [batonMine, setBatonMine] = createSignal<boolean | undefined>(undefined);
   const blocked = (): ComposerReason | null => {
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
+    // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
+    const baton = props.summary?.()?.baton;
+    if (baton && (baton.state === "done" || baton.state === "closed")) return { icon: "check", text: `This hand-off session is ${baton.state}.` };
+    if (baton?.offer?.state === "held") return { icon: "clock", text: `${baton.offer.holder ?? "Someone"} took the offer and is answering. Withdraw it to write.` };
+    if (baton?.offer?.state === "open") return { icon: "clock", text: `Offered to ${baton.offer.invited} people; nobody has answered yet. Withdraw it to write.` };
+    // "open" with the operator holding (after Take Back and a reply) is the operator's turn: the
+    // list's field carries only the holder's display name, so the strip's own read says whose it is.
+    if (baton && baton.state === "open" && batonMine() !== true) return { icon: "clock", text: `${baton.holder ?? "Someone"} holds the baton. Take it back to write.` };
     switch (socket.status()) {
       case "connecting":
         return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : { icon: "clock", text: "Connecting…" };
@@ -1296,8 +1317,21 @@ export function ChatView(props: {
     }
   };
 
+  /** A baton session's names, from its strip (§app/baton). */
+  const [batonNames, setBatonNames] = createSignal<Record<string, string> | undefined>(undefined);
+  /** A done or closed baton session takes no more messages: the box goes read-only, not just Send. */
+  const batonEnded = (): ComposerReason | null => {
+    const b = props.summary?.()?.baton;
+    return b && (b.state === "done" || b.state === "closed") ? { icon: "check", text: `This hand-off session is ${b.state}.` } : null;
+  };
   return (
     <>
+      <Show when={props.summary?.()?.baton}>
+        <BatonStrip path={props.path} summary={() => props.summary?.()} onNames={setBatonNames} onOperatorHolds={setBatonMine} />
+      </Show>
+      <Show when={props.summary?.()?.projectOverseer} keyed>
+        {(po) => <ProjectOverseerStrip orgId={po.orgId} projectId={po.projectId} busy={!!props.summary?.()?.busy} />}
+      </Show>
       <ThreadScroller
         path={props.path}
         count={visibleCount(items() ?? [], { tools: hideTools(props.path), thinking: hideThinking(props.path) }) + live.entries.length}
@@ -1411,6 +1445,7 @@ export function ChatView(props: {
               <HistoryItems
                 items={list()}
                 author={props.author}
+                names={batonNames()}
                 streaming={live.running}
                 hideTools={hideTools(props.path)}
                 hideThinking={hideThinking(props.path)}
@@ -1489,6 +1524,7 @@ export function ChatView(props: {
         path={props.path}
         cwd={props.summary?.()?.cwd ?? null}
         blocked={blocked()}
+        readOnly={batonEnded()}
         commands={props.overseer ? commands().filter((c) => c.name !== "mode") : commands()}
         running={live.running}
         compacting={compacting()}
@@ -1529,7 +1565,7 @@ export function ChatView(props: {
         autofocus={props.autofocus}
         model={modelControl}
         thinking={thinkingControl}
-        mode={props.overseer ? null : modeControl}
+        mode={props.overseer || props.summary?.()?.baton || props.summary?.()?.projectOverseer ? null : modeControl}
         sandbox={sandboxControl}
         onShowInfo={() => setShowInfo(true)}
         onPlaybooks={() => setShowPlaybooks(true)}

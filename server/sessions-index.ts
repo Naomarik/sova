@@ -1,9 +1,9 @@
-import { statSync } from "node:fs";
+import { type Dirent, statSync } from "node:fs";
 import { type FileHandle, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { CURRENT_SESSION_FORMAT, OVERSEER_ENTRY, type SessionSummary } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
-import { LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
+import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import { stripImageNotes } from "../shared/image-note";
 import { parseWakeNudge } from "../shared/wake";
@@ -23,6 +23,17 @@ import { isOverseerId, overseerDir } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
 import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-store";
 import { dropSessionTags, tagsFor } from "./session-tags";
+import { batonSummaryField } from "./baton";
+import { projectOverseerOfPath } from "./project-overseer-store";
+
+/** `baton` for a baton session's file (§app/baton), `projectOverseer` for a project overseer's
+    (§app/project-overseer), else nothing. */
+function batonFields(path: string): Pick<SessionSummary, "baton" | "projectOverseer"> {
+  const baton = batonSummaryField(path);
+  if (baton) return { baton };
+  const po = projectOverseerOfPath(path);
+  return po ? { projectOverseer: po } : {};
+}
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
 
@@ -522,11 +533,11 @@ async function existingParent(raw: unknown): Promise<{ parent: string; parentId:
 
 export async function listSessionFiles(): Promise<string[]> {
   const files: string[] = [];
-  let top;
+  let top: Dirent[] = [];
   try {
     top = await readdir(SESSIONS_DIR, { withFileTypes: true });
   } catch {
-    return files;
+    // no sessions dir yet: the extra roots below still count
   }
   await Promise.all(
     top.map(async (d) => {
@@ -540,6 +551,17 @@ export async function listSessionFiles(): Promise<string[]> {
         } catch {
           // unreadable dir: skip
         }
+      }
+    }),
+  );
+  // Each attached organization's workspace sessions dir (server/paths.ts extraSessionRoots): the
+  // baton sessions, listed like any other. Flat, real files only, like the sessions dir.
+  await Promise.all(
+    extraSessionRoots().map(async (root) => {
+      try {
+        for (const f of await readdir(root, { withFileTypes: true })) if (f.isFile() && f.name.endsWith(".jsonl")) files.push(join(root, f.name));
+      } catch {
+        // missing or unreadable: skip
       }
     }),
   );
@@ -769,11 +791,14 @@ export async function listSessions(): Promise<SessionSummary[]> {
     const draft = drafts[s.id];
     const hasDraft = draftCounts(draft);
     let preview: string | undefined;
+    // A baton or project overseer file is never a husk: a fresh baton held by the operator (or
+    // waiting for its first link) needs them before anyone has written in it.
+    const special = batonFields(s.path);
     if (s.title === "Untitled") {
       const st2 = await stat(s.path).catch(() => null);
       if (st2 && (await isZeroInput(s.path, st2.size))) {
         // A husk waiting on a dialog (a command run in a new session) is waiting on the user: listed.
-        if (!hasDraft && pendingDialogCount(s.path) === 0) continue;
+        if (!hasDraft && pendingDialogCount(s.path) === 0 && !special.baton && !special.projectOverseer) continue;
         if (hasDraft) preview = draftPreview(draft.text, draft.attachments);
       }
     }
@@ -795,6 +820,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
       ...decisionFields(s, l, ownRec, seen, attention),
       ...(preview !== undefined ? { draftPreview: preview } : {}),
       ...(hasDraft ? { hasDraft: true as const } : {}),
+      ...special,
     });
   }
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
@@ -836,6 +862,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     busy: isSessionBusy(s.path),
     ...attentionFields(s, l, ownRec, readSeen()),
     ...decisionFields(s, l, ownRec, readSeen(), readDecisionSettings().features.attention),
+    ...batonFields(s.path),
   };
 }
 

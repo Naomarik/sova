@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DecisionChainStatus, DecisionKeyInfo, DecisionSettings } from "../../shared/protocol";
+import { RECONCILE_DEFAULT } from "../../shared/decisions";
 import { decisionDraft, decisionSaved, resetDecisionDraft, setDecisionDraft, setDecisionSaved } from "./decision-draft";
 import {
   backfillBlocked,
@@ -33,7 +34,7 @@ const defaults: DecisionSettings = {
   version: 1,
   jev: { enabled: true },
   fallback: null,
-  features: { attention: false, tags: false },
+  features: { attention: false, tags: false, reconcile: false },
   exclusions: [],
   neverSendTui: false,
 };
@@ -278,4 +279,22 @@ test("a Test Decisions result updates what the screen says about the key (e2e D4
   assert.equal(keyAfterProbe(unchecked, { ...fellBack, fellBackFrom: { provider: "jev", failure: "rate-limit", message: "429" } }, now), unchecked, "rate-limited says nothing about the key");
   assert.equal(keyAfterProbe(unchecked, fellBack, now), unchecked, "Jev not asked (off): the key is untouched");
   assert.equal(keyAfterProbe(noKey, { ok: true, provider: "jev", chain: ready }, now), noKey, "no key: nothing to mark working");
+});
+
+test("reconcile rides through the form: absent reads as the default, a change is a change and survives a rebase", () => {
+  const legacy: DecisionSettings = { ...defaults, features: { attention: false, tags: false } };
+  assert.equal(draftOf(legacy).features.reconcile, RECONCILE_DEFAULT, "a file without the switch shows the default");
+  assert.equal(sameDecision(draftOf(legacy), legacy), true, "loading a file without it changes nothing");
+  const on = { ...draftOf(defaults), features: { attention: false, tags: false, reconcile: true } };
+  assert.equal(sameDecision(on, defaults), false);
+  // Absent and the default are one value: whichever way the default points, a file without the
+  // switch equals one that states it, and differs from one that states the opposite.
+  assert.equal(sameDecision(draftOf(legacy), { ...legacy, features: { ...legacy.features, reconcile: RECONCILE_DEFAULT } }), true);
+  assert.equal(sameDecision(draftOf(legacy), { ...legacy, features: { ...legacy.features, reconcile: !RECONCILE_DEFAULT } }), false);
+  assert.equal(settingsOf(on).features.reconcile, true, "saved as set");
+  const freshOn = settingsOf(on);
+  assert.equal(rebaseDecision(draftOf(defaults), defaults, freshOn).features.reconcile, true, "left alone: takes the file's new value");
+  assert.equal(rebaseDecision(on, defaults, defaults).features.reconcile, true, "changed by the user: keeps theirs");
+  assert.equal(unansweredIssue(draftOf(defaults), noKey), null, "all three off: no warning");
+  assert.notEqual(unansweredIssue(on, noKey), null, "reconcile on with nobody to answer warns like the other features");
 });

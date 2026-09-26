@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 
@@ -12,7 +13,18 @@ const apiPort = process.env.SOVA_PORT ?? "4800";
 // ECONNREFUSED before it reaches the server.
 const apiHost = process.env.SOVA_HOST ?? "127.0.0.1";
 
-export default defineConfig({
+// `vite build --mode share`: the share page (§app.baton/share-listener), its own build from
+// src/share/ into dist-share/, served ONLY by the share listener at /h/ (server/share/). It never
+// sees the operator app's bundle, and the operator app's build never contains it.
+const share = defineConfig({
+  plugins: [solid()],
+  root: resolve(import.meta.dirname, "src/share"),
+  base: "/h/",
+  publicDir: false,
+  build: { outDir: resolve(import.meta.dirname, "dist-share"), emptyOutDir: true, assetsDir: "assets" },
+});
+
+const app = defineConfig({
   plugins: [solid()],
   server: {
     proxy: {
@@ -28,3 +40,5 @@ export default defineConfig({
     },
   },
 });
+
+export default defineConfig(({ mode }) => (mode === "share" ? share : app));

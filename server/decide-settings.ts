@@ -47,6 +47,7 @@ export function parseDecisionSettings(value: unknown): DecisionSettings | { erro
   }
   if (!isRecord(value.features) || typeof value.features.attention !== "boolean" || typeof value.features.tags !== "boolean")
     return { error: "features.attention and features.tags must be booleans" };
+  if (value.features.reconcile !== undefined && typeof value.features.reconcile !== "boolean") return { error: "features.reconcile must be a boolean" };
   if (!Array.isArray(value.exclusions)) return { error: "exclusions must be a list of folders" };
   if (value.exclusions.length > MAX_EXCLUSIONS) return { error: `at most ${MAX_EXCLUSIONS} excluded folders` };
   const exclusions: string[] = [];
@@ -56,7 +57,18 @@ export function parseDecisionSettings(value: unknown): DecisionSettings | { erro
     if (!exclusions.includes(p)) exclusions.push(p);
   }
   if (typeof value.neverSendTui !== "boolean") return { error: "neverSendTui must be a boolean" };
-  return { version: 1, jev: { enabled: value.jev.enabled }, fallback, features: { attention: value.features.attention, tags: value.features.tags }, exclusions, neverSendTui: value.neverSendTui };
+  return {
+    version: 1,
+    jev: { enabled: value.jev.enabled },
+    fallback,
+    features: {
+      attention: value.features.attention,
+      tags: value.features.tags,
+      ...(typeof value.features.reconcile === "boolean" ? { reconcile: value.features.reconcile } : {}),
+    },
+    exclusions,
+    neverSendTui: value.neverSendTui,
+  };
 }
 
 /** Tolerant: each field that doesn't parse takes its default; a missing/corrupt file is the defaults. */
@@ -71,6 +83,7 @@ export function normalizeDecisionSettings(value: unknown): DecisionSettings {
     features: {
       attention: isRecord(value.features) && value.features.attention === true,
       tags: isRecord(value.features) && value.features.tags === true,
+      ...(isRecord(value.features) && typeof value.features.reconcile === "boolean" ? { reconcile: value.features.reconcile } : {}),
     },
     exclusions: Array.isArray(value.exclusions) ? [...new Set(value.exclusions.map(cleanPrefix).filter((p): p is string => !!p))].slice(0, MAX_EXCLUSIONS) : [],
     neverSendTui: value.neverSendTui === true,

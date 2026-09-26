@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 function canonical(p: string): string {
@@ -14,7 +14,20 @@ function canonical(p: string): string {
 export const SESSIONS_DIR = canonical(join(getAgentDir(), "sessions"));
 export const LIVE_DIR = join(SESSIONS_DIR, "live");
 
-const isInsideSessions = (p: string) => p.startsWith(SESSIONS_DIR + sep) && !p.startsWith(LIVE_DIR + sep);
+/**
+ * Session roots besides SESSIONS_DIR: each attached organization's `<workspace repo>/sessions/`
+ * (server/orgs.ts registers the provider), where baton sessions are written directly
+ * (§app.organizations/workspace-repo). Canonical dirs; a file counts only DIRECTLY inside one, so
+ * nothing else in a workspace repo (its roster history is a .jsonl too) is ever a session.
+ */
+let extraRoots: () => readonly string[] = () => [];
+export function setExtraSessionRoots(provider: () => readonly string[]): void {
+  extraRoots = provider;
+}
+export const extraSessionRoots = (): readonly string[] => extraRoots();
+
+const isInsideSessions = (p: string) =>
+  (p.startsWith(SESSIONS_DIR + sep) && !p.startsWith(LIVE_DIR + sep)) || extraRoots().includes(dirname(p));
 
 /**
  * The fs-FREE half of resolveSessionPath: a .jsonl inside SESSIONS_DIR (not live/), with the
@@ -41,7 +54,7 @@ export function sessionPathShape(raw: string | undefined | null): string | null 
 
 /**
  * Validate a client-supplied session path: must be a .jsonl file inside SESSIONS_DIR
- * (not in live/). Existing files are canonicalized with realpath, so a symlink can neither
+ * (not in live/), or directly inside an extra session root. Existing files are canonicalized with realpath, so a symlink can neither
  * point outside the sessions dir nor alias another session (the canonical path is THE key
  * for the chat map, live-registry lookup and ownership records). Returns null if rejected;
  * a missing file is returned as-is (callers check existence).

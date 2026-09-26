@@ -1,0 +1,305 @@
+// Run: pnpm exec tsx --test server/project-overseer.test.ts. A throwaway PI_CODING_AGENT_DIR (with
+// this tree's pi-config extensions linked in, so "no pi-config extension loads" is a real claim), an
+// org workspace and a project root in the OS temp dir; ~/.pi is never touched. No model is called.
+import assert from "node:assert/strict";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
+import { after, describe, test } from "node:test";
+import { PROJECT_OVERSEER_ENTRY } from "../shared/project-overseer";
+
+const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-")));
+const agentDir = join(root, "agent");
+process.env.PI_CODING_AGENT_DIR = agentDir;
+mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
+symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
+
+const orgs = await import("./orgs");
+const po = await import("./project-overseer");
+const store = await import("./project-overseer-store");
+const { PO_BUILTINS, TOOL_NEEDS } = await import("./project-overseer-tools");
+const { acquireChat, disposeAllChats, ModeRefusedError, BusyError } = await import("./chat-manager");
+const { promptSession } = await import("./overseer");
+const { canonicalPath } = await import("./paths");
+const { settled } = await import("./workspace-git");
+const baton = await import("./baton");
+const { readView } = await import("./share/hub");
+
+after(async () => {
+  await disposeAllChats();
+  await settled(join(root, "ws"));
+  await settled(join(root, "ws2"));
+  await settled(join(root, "ws3"));
+  rmSync(root, { recursive: true, force: true });
+});
+
+describe("a project overseer", async () => {
+  const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
+  mkdirSync(join(root, "proj"));
+  const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+
+  test("GET before the first open: no conversation, L0 while the roster is empty", async () => {
+    const info = await po.projectOverseerInfo(org.id, project.id);
+    assert.equal(info.exists, false);
+    assert.equal(info.path, null);
+    assert.equal(info.settings.autonomy, "L1");
+    assert.equal(info.effective.autonomy, "L0");
+    assert.match(info.effective.reason ?? "", /roster has no active people/);
+  });
+
+  test("created in the org's workspace sessions dir, cwd = the project root, marker + state in the repo", async () => {
+    const made = await po.ensureProjectOverseer(org.id, project.id);
+    assert.equal(dirname(made.path), canonicalPath(join(root, "ws", "sessions")));
+    const lines = readFileSync(made.path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    assert.equal(lines[0].cwd, join(root, "proj"));
+    assert.deepEqual(lines[1].data, { v: 1, orgId: org.id, projectId: project.id });
+    assert.equal(lines[1].customType, PROJECT_OVERSEER_ENTRY);
+    const p = store.projectOverseerPaths(org.id, project.id);
+    assert.equal(store.readPoState(p)?.current, made.id);
+    assert.ok(p.dir.startsWith(join(root, "ws", "projects", project.id)), "state lives in the workspace repo");
+    assert.ok(existsSync(p.settings));
+    assert.deepEqual(store.projectOverseerOfPath(made.path), { orgId: org.id, projectId: project.id });
+    assert.equal((await po.ensureProjectOverseer(org.id, project.id)).id, made.id, "single conversation per project");
+  });
+
+  test("opens as a project overseer: its tools + read-only file tools, no pi-config extension, no modes", async () => {
+    const { path } = await po.ensureProjectOverseer(org.id, project.id);
+    const chat = await acquireChat(path);
+    assert.equal(chat.special, "project-overseer");
+    assert.equal(chat.overseer, false, "not the Overseer");
+    const want = [...Object.keys(TOOL_NEEDS), ...PO_BUILTINS].sort();
+    assert.deepEqual([...chat.session.getActiveToolNames()].sort(), want);
+    assert.deepEqual(chat.session.getAllTools().map((t) => t.name).sort(), want, "no bash, edit, write or extension tool");
+    const loaded = chat.runtime.services.resourceLoader.getExtensions().extensions.map((e) => e.path);
+    assert.deepEqual(loaded, ["<inline:sova-project-overseer>"]);
+    await assert.rejects(() => chat.switchMode({ mode: "delegate" } as never), ModeRefusedError);
+  });
+
+  test("operator sends go through the kind's own userSend; a fresh runtime is unattended (fail closed)", async () => {
+    const { path } = await po.ensureProjectOverseer(org.id, project.id);
+    const chat = await acquireChat(path);
+    assert.ok(chat.specialEntry?.userSend, "the kind hands operator sends through its own userSend");
+    assert.equal(po.attendedForTest(org.id, project.id), false, "starts unattended (fail closed)");
+  });
+
+  test("the Overseer's prompt route refuses to write into it", async () => {
+    const { path } = await po.ensureProjectOverseer(org.id, project.id);
+    const r = await promptSession(path, "hello");
+    assert.deepEqual(r, { ok: false, status: 409, error: "That is a project overseer's own conversation." });
+  });
+
+  test("a copy of the file with another id is an ordinary session", async () => {
+    const { path, id } = await po.ensureProjectOverseer(org.id, project.id);
+    const other = "01b0dd00-0000-7000-8000-00000000abcd";
+    const copy = join(dirname(path), basename(path).replace(id, other));
+    copyFileSync(path, copy);
+    assert.equal(store.projectOverseerOfPath(canonicalPath(copy)), null);
+    rmSync(copy);
+  });
+
+  test("clear: a new conversation; the old one is read-only history; settings stay", async () => {
+    const before = await po.ensureProjectOverseer(org.id, project.id);
+    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L2" });
+    const info = await po.clearProjectOverseer(org.id, project.id);
+    assert.notEqual(info.id, before.id);
+    assert.equal(info.settings.autonomy, "L2");
+    assert.deepEqual(info.history.map((h) => h.id), [before.id]);
+    assert.ok(store.projectOverseerOfPath(before.path), "still recognised as its conversation");
+    await assert.rejects(() => acquireChat(before.path), BusyError);
+  });
+
+  test("PATCH is strict", async () => {
+    await assert.rejects(() => po.patchProjectOverseer(org.id, project.id, { autonomy: "L9" }), /autonomy must be one of/);
+    await assert.rejects(() => po.patchProjectOverseer(org.id, project.id, { caps: { nope: 1 } }), /Unknown cap/);
+    await assert.rejects(() => po.patchProjectOverseer(org.id, project.id, { tokenBudget: -1 }), /tokenBudget/);
+  });
+
+  test("with an active person on the roster the setting is in force", async () => {
+    orgs.addPerson(org.id, { name: "Tony", role: "IT", decides: ["invoicing"] });
+    const info = await po.projectOverseerInfo(org.id, project.id);
+    assert.equal(info.effective.autonomy, "L2");
+    const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
+    assert.match(prompt, /Level in force now: \*\*L2/);
+    assert.match(prompt, /Tony \(id p_[a-z0-9]+\) — IT; decides: invoicing/);
+  });
+});
+
+describe("its gathering sessions, as the person sees them", async () => {
+  const org = await orgs.createOrg({ name: "Acme Team", dir: join(root, "ws2") });
+  mkdirSync(join(root, "proj2"));
+  const project = orgs.addProject(org.id, { name: "Books", root: join(root, "proj2") });
+  const tony = orgs.addPerson(org.id, { name: "Tony", role: "Finance", decides: ["invoicing"] });
+  await po.ensureProjectOverseer(org.id, project.id);
+  await po.patchProjectOverseer(org.id, project.id, { model: "ollama-cloud/own-model", thinking: "low" });
+
+  test("sova_start_gathering (unattended at L1): owned by the overseer, no link minted, the goal never in the outsider view", async () => {
+    const tool = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_start_gathering")!;
+    const goal = "SECRET-GOAL-TEXT: find out whether Tony will accept net-60 terms without the board";
+    const out = await tool.execute("t1", { person: "Tony", public_title: "Payment terms", goal, question: "What payment terms do we offer?" }, undefined, undefined, undefined as never);
+    const id = (out.details as { id: string }).id;
+    const hit = baton.batonById(id)!;
+    assert.deepEqual(hit.row.owner, { overseerOf: project.id });
+    assert.equal(hit.row.model, "ollama-cloud/own-model", "the person talks to the overseer's model, not the new-session default");
+    assert.equal(hit.row.thinking, "low");
+    assert.equal(hit.row.holder, tony.id);
+    assert.equal(baton.liveLinkCount(hit.row), 0, "no link: the operator sends one");
+    assert.doesNotMatch(JSON.stringify(out), /\/h\/|token|link:/i, "no link or token in the tool result");
+    const view = await readView(hit.row, hit.dir, tony.id);
+    const seen = JSON.stringify(view);
+    assert.equal(view.publicTitle, "Payment terms");
+    assert.doesNotMatch(seen, /SECRET-GOAL-TEXT/, "the goal is not in the outsider view");
+    assert.doesNotMatch(seen, new RegExp(join(root, "proj2").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "nor the project root");
+    const info = await po.projectOverseerInfo(org.id, project.id);
+    assert.deepEqual(info.started.map((s) => [s.kind, s.title, s.path !== null]), [["gathering", "Payment terms", true]]);
+  });
+
+  test("people's events are kept even while it is busy; its own reconcile events only when idle; repeats fold", async () => {
+    const p = store.projectOverseerPaths(org.id, project.id);
+    po.noteReason(org.id, project.id, "A decision was recorded in \"Payment terms\".");
+    po.noteReason(org.id, project.id, "A decision was recorded in \"Payment terms\".");
+    po.noteReason(org.id, project.id, "2 decisions are drafted and promotable.", true);
+    assert.deepEqual(store.readMemo(p).pending, ["A decision was recorded in \"Payment terms\".", "2 decisions are drafted and promotable."]);
+  });
+
+  test("Send to person… requires the public title and question: never taken from the item", async () => {
+    const p = store.projectOverseerPaths(org.id, project.id);
+    const { addTodo, readTodos } = await import("./overseer-todos");
+    const t = addTodo({ text: "Ask Tony (gap: he stalls on approvals) about net-60" }, p.todos, p.ideas);
+    const url = (tok: string) => `/h/${tok}`;
+    for (const body of [{ todoId: t.id, to: tony.id }, { todoId: t.id, to: tony.id, publicTitle: "Payment terms" }, { todoId: t.id, to: tony.id, question: "Which terms?" }, { todoId: t.id, to: tony.id, publicTitle: " ", question: "q" }]) {
+      await assert.rejects(() => po.sendItem(org.id, project.id, body as never, url), (err: unknown) => err instanceof orgs.OrgError && err.status === 400 && /publicTitle and question are required/.test(err.message), JSON.stringify(body));
+    }
+    assert.equal(readTodos(p.todos).todos.find((x) => x.id === t.id)?.sessionId, undefined, "nothing started, nothing linked");
+    const made = await po.sendItem(org.id, project.id, { todoId: t.id, to: tony.id, publicTitle: "Payment terms", question: "Which payment terms do we offer?" }, url);
+    assert.equal(made.links.length, 1);
+    const row = baton.batonById(made.sessionId)!.row;
+    assert.equal(row.publicTitle, "Payment terms");
+    assert.equal(row.model, "ollama-cloud/own-model", "Send to person… too");
+    await po.patchProjectOverseer(org.id, project.id, { gatheringModel: "ollama-cloud/talk-model", gatheringThinking: "minimal" });
+    const t2 = addTodo({ text: "Second" }, p.todos, p.ideas);
+    const made2 = await po.sendItem(org.id, project.id, { todoId: t2.id, to: tony.id, publicTitle: "Bank", question: "Which bank?" }, url);
+    assert.deepEqual([baton.batonById(made2.sessionId)!.row.model, baton.batonById(made2.sessionId)!.row.thinking], ["ollama-cloud/talk-model", "minimal"]);
+    const view = JSON.stringify(await readView(row, baton.batonById(made.sessionId)!.dir, tony.id));
+    assert.doesNotMatch(view, /stalls|gap/, "the item's own text never reaches the person");
+    assert.equal(readTodos(p.todos).todos.find((x) => x.id === t.id)?.sessionId, made.sessionId);
+  });
+
+  test("a look that may not start leaves the news waiting", async () => {
+    const p = store.projectOverseerPaths(org.id, project.id);
+    await po.patchProjectOverseer(org.id, project.id, { watch: false });
+    const before = store.readMemo(p).pending;
+    const r = await po.lookNow(org.id, project.id);
+    assert.equal(r.started, false);
+    assert.match(r.why ?? "", /watching is off/);
+    assert.deepEqual(store.readMemo(p).pending, before);
+  });
+});
+
+describe("promotion: an out-of-area decision is never the overseer's", async () => {
+  const reconcile = await import("./reconcile");
+  const decisions = await import("./decisions");
+  const { BATON_DECISION_ENTRY } = await import("../shared/baton");
+  const org = await orgs.createOrg({ name: "Acme", dir: join(root, "ws3") });
+  mkdirSync(join(root, "proj3"));
+  const project = orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj3") });
+  orgs.addPerson(org.id, { name: "Tony", role: "Finance", decides: ["invoicing"] });
+  const ana = orgs.addPerson(org.id, { name: "Ana", role: "IT", decides: ["hosting"] });
+  await po.ensureProjectOverseer(org.id, project.id);
+  // A person with no say over invoicing states an invoicing rule in her own gathering session.
+  const b = baton.createBaton({ orgId: org.id, projectId: project.id, to: ana.id, publicTitle: "Hosting", goal: "g", question: "q" });
+  const ts = new Date().toISOString();
+  const last = JSON.parse(readFileSync(b.path, "utf8").trim().split("\n").at(-1)!).id;
+  const lines = [
+    { type: "message", id: "u0000001", parentId: last, timestamp: ts, message: { role: "user", content: [{ type: "text", text: "Invoices are due in 90 days." }] } },
+    { type: "custom", customType: "sova-baton-sent", data: { v: 1, targetId: "u0000001", by: ana.id }, id: "s0000001", parentId: "u0000001", timestamp: ts },
+    { type: "custom", customType: BATON_DECISION_ENTRY, data: { v: 1, area: "invoicing", statement: "Invoices are due in 90 days.", quote: "Invoices are due in 90 days.", by: ana.id }, id: "d0000001", parentId: "s0000001", timestamp: ts },
+  ];
+  appendFileSync(b.path, lines.map((l) => `${JSON.stringify(l)}\n`).join(""));
+  reconcile.setReconcileDeps({
+    provider: () => ({
+      id: "chain",
+      label: "fake",
+      async decide(req: any) {
+        const answers: Record<string, any> = {};
+        for (const [qid, q] of Object.entries<any>(req.questions)) {
+          if (q.type === "boolean") answers[qid] = { type: "boolean", p: 0.05 };
+          else {
+            const choice = decisions.areaKeyOf(req.state?.new?.[qid]?.name ?? "invoicing");
+            answers[qid] = { type: "choice", choice, probabilities: { [choice]: 1 }, confidence: 1 };
+          }
+        }
+        return { answers, provider: "jev", model: "fake", latencyMs: 1 };
+      },
+    }) as never,
+    excluded: () => false,
+  });
+  after(() => reconcile.setReconcileDeps(null));
+
+  test("sova_promote passes by: overseer (real reconciler): an out-of-area drafted decision is refused and its reason reaches the model", async () => {
+    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L2" });
+    const tools = po.toolsForTest(org.id, project.id);
+    const run = (name: string, params: object) => tools.find((t) => t.name === name)!.execute("t", params, undefined, undefined, undefined as never);
+    await run("sova_reconcile", {});
+    const row = reconcile.listDecisions(org.id, project.id).decisions.find((d) => d.markerId === "d0000001")!;
+    assert.equal(row.state, "drafted");
+    assert.equal(row.authorOwnsArea, false);
+    await assert.rejects(() => run("sova_promote", { ids: [row.id] }), new RegExp(`Promoted 0, refused 1: ${row.id} \\(outside Ana's decision area`));
+    assert.equal(reconcile.listDecisions(org.id, project.id).decisions.find((d) => d.id === row.id)!.state, "drafted", "not promoted");
+  });
+});
+
+describe("the coding sessions' model", () => {
+  const none = { model: null, thinking: null, codingModel: null, codingThinking: null, gatheringModel: null, gatheringThinking: null };
+  test("the call's choice, else codingModel, else the overseer's setting, else what its runtime runs", () => {
+    assert.deepEqual(po.codingChoice({ model: "a/x", thinking: "high" }, { ...none, codingModel: "b/y", model: "c/z" }, { model: "d/w", thinking: "low" }), { model: "a/x", thinking: "high" });
+    assert.deepEqual(po.codingChoice({}, { ...none, codingModel: "b/y", codingThinking: "minimal", model: "c/z", thinking: "low" }, { model: "d/w", thinking: "off" }), { model: "b/y", thinking: "minimal" });
+    assert.deepEqual(po.codingChoice({}, { ...none, model: "c/z", thinking: "low" }, { model: "d/w", thinking: "off" }), { model: "c/z", thinking: "low" });
+    assert.deepEqual(po.codingChoice({}, none, { model: "d/w", thinking: "off" }), { model: "d/w", thinking: "off" });
+  });
+  test("gathering sessions: the call, else gatheringModel, else the overseer's own; the coding choice never leaks in", () => {
+    const s = { ...none, codingModel: "code/m", codingThinking: "high", model: "own/m", thinking: "low" };
+    assert.deepEqual(po.sessionChoice("gathering", { model: "call/m" }, s, { model: null, thinking: null }), { model: "call/m", thinking: "low" });
+    assert.deepEqual(po.sessionChoice("gathering", {}, { ...s, gatheringModel: "g/m", gatheringThinking: "minimal" }, { model: null, thinking: null }), { model: "g/m", thinking: "minimal" });
+    assert.deepEqual(po.sessionChoice("gathering", {}, s, { model: "run/m", thinking: "off" }), { model: "own/m", thinking: "low" });
+    assert.deepEqual(po.sessionChoice("gathering", {}, none, { model: "run/m", thinking: "off" }), { model: "run/m", thinking: "off" });
+  });
+});
+
+describe("the store", () => {
+  test("ids are path segments only in their own shape", () => {
+    assert.throws(() => store.projectOverseerPaths("org_x", "../../etc", "/ws"), /Unknown project/);
+    assert.throws(() => store.projectOverseerPaths("../o", "prj_x", "/ws"), /Unknown project/);
+  });
+  test("a hand-edited settings file never breaks it: bad fields fall back", () => {
+    const s = store.parsePoSettings({ autonomy: "L7", caps: { gatherPerTurn: -3, createPerTurn: 4 }, tokenBudget: "lots", watch: "yes" });
+    assert.equal(s.autonomy, "L1");
+    assert.equal(s.caps.gatherPerTurn, store.DEFAULT_PO_CAPS.gatherPerTurn);
+    assert.equal(s.caps.createPerTurn, 4);
+    assert.equal(s.tokenBudget, store.DEFAULT_TOKEN_BUDGET);
+    assert.equal(s.watch, true);
+  });
+});
+
+describe("the watch loop's decision", () => {
+  const base = { pending: ["A decision was recorded"], watch: true, exists: true, idle: true, now: 100 * 60_000, lastRunAt: 0, today: 0, perDay: 12 };
+  test("runs on news, when idle, ≥10 min after the last look, under the daily cap", () => {
+    assert.deepEqual(po.watchDecision(base), { run: true });
+    assert.equal(po.watchDecision({ ...base, pending: [] }).run, false);
+    assert.equal(po.watchDecision({ ...base, idle: false }).run, false);
+    assert.equal(po.watchDecision({ ...base, watch: false }).run, false);
+    assert.equal(po.watchDecision({ ...base, exists: false }).run, false);
+    assert.equal(po.watchDecision({ ...base, lastRunAt: base.now - po.WATCH_MIN_GAP_MS + 1 }).run, false);
+    assert.equal(po.watchDecision({ ...base, lastRunAt: base.now - po.WATCH_MIN_GAP_MS }).run, true);
+    assert.match(po.watchDecision({ ...base, today: 12 }).why ?? "", /daily limit of 12/);
+  });
+  test("Run Now skips the gap and the news check, never the daily cap or a busy overseer", () => {
+    assert.equal(po.watchDecision({ ...base, pending: [], lastRunAt: base.now, force: true }).run, true);
+    assert.equal(po.watchDecision({ ...base, force: true, today: 12 }).run, false);
+    assert.equal(po.watchDecision({ ...base, force: true, idle: false }).run, false);
+  });
+  test("the watch message says it is automatic and names the level", () => {
+    const t = po.watchText(["A decision was recorded in \"Invoicing\"."], "L1");
+    assert.ok(t.startsWith(po.WATCH_PREFIX));
+    assert.match(t, /within your autonomy \(L1\)/);
+  });
+});

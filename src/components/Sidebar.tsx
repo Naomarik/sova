@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { ORGS_HREF } from "../lib/orgs-route";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { fetchTargets, listSessions, setSessionArchived } from "../lib/api";
@@ -450,6 +451,8 @@ function SessionRow(props: {
               <span class="visually-hidden">Draft. </span>
             </Show>
             {s().title}
+            {/* A baton session (§app/baton): who holds the baton now. */}
+            <Show when={s().baton?.holder}>{(h) => <span class="session-baton-holder"> · {h()}</span>}</Show>
           </p>
           {/* A never-sent session kept in the list by its stored draft: line 2 says so, in the place
               a summary would take, so the row is as tall as its neighbours. The pencil is
@@ -1815,6 +1818,10 @@ export function Sidebar(props: {
           <Show when={hostFilterShown()}>
             <MeshHostMenu value={hostFilter()} onChange={chooseHostFilter} />
           </Show>
+          <a class="list-row list-row-interactive insights-row" href={ORGS_HREF} title="Organizations">
+            <Icon name="network" />
+            <span class="insights-row-text">Organizations</span>
+          </a>
           <a
             class="list-row list-row-interactive insights-row"
             href={usageHref()}

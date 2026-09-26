@@ -1,5 +1,26 @@
 import { readFile } from "node:fs/promises";
 import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_SENT_ENTRY, type AlignReportInfo, type EntryKind, type ExplanationInfo, type TranscriptItem } from "../shared/protocol";
+import {
+  BATON_DECISION_ENTRY,
+  BATON_DONE_ENTRY,
+  BATON_HANDOFF_ENTRY,
+  BATON_LEASE_ENTRY,
+  BATON_OFFER_ENTRY,
+  BATON_PROPOSAL_ENTRY,
+  BATON_SENT_ENTRY,
+  BATON_WRAPUP_ENTRY,
+} from "../shared/baton";
+
+const BATON_ROWS = new Set([
+  BATON_SENT_ENTRY,
+  BATON_HANDOFF_ENTRY,
+  BATON_DECISION_ENTRY,
+  BATON_DONE_ENTRY,
+  BATON_OFFER_ENTRY,
+  BATON_LEASE_ENTRY,
+  BATON_PROPOSAL_ENTRY,
+  BATON_WRAPUP_ENTRY,
+]);
 import { stripImageNotes } from "../shared/image-note";
 import { parseWakeNudge } from "../shared/wake";
 import { inlineTmpImages } from "./attachments";
@@ -334,6 +355,68 @@ function overseerAnswerRow(id: string, entry: Entry): TranscriptItem[] {
   return [it];
 }
 
+/** A baton marker (§app.baton/attribution): the sender of a user row (renders nothing itself), or a
+    hand-off, decision or done card. Undecodable: nothing. */
+function batonRow(id: string, entry: Entry): TranscriptItem[] {
+  const d: any = entry.data;
+  if (!d || typeof d !== "object") return [];
+  const s = (v: unknown) => (typeof v === "string" ? v : "");
+  const it = item(id, "info", entry);
+  switch (entry.customType) {
+    case BATON_SENT_ENTRY:
+      if (!s(d.targetId) || !s(d.by)) return [];
+      it.batonMark = { kind: "sent", targetId: d.targetId, by: d.by };
+      return [it];
+    case BATON_HANDOFF_ENTRY:
+      if (typeof d.n !== "number") return [];
+      it.batonMark = { kind: "handoff", n: d.n, from: s(d.from), to: s(d.to), question: s(d.question), briefing: s(d.briefing) };
+      it.text = `Hand-off ${d.n}: ${s(d.question)}`;
+      return [it];
+    case BATON_DECISION_ENTRY:
+      it.batonMark = { kind: "decision", by: s(d.by), area: s(d.area), statement: s(d.statement), quote: s(d.quote) };
+      it.text = `Decision (${s(d.area)}): ${s(d.statement)}`;
+      return [it];
+    case BATON_DONE_ENTRY:
+      it.batonMark = { kind: "done", summary: s(d.summary) };
+      it.text = `Done: ${s(d.summary)}`;
+      return [it];
+    case BATON_OFFER_ENTRY: {
+      if (typeof d.n !== "number" || !Array.isArray(d.to)) return [];
+      const to = d.to.filter((x: unknown): x is string => typeof x === "string");
+      it.batonMark = { kind: "offer", n: d.n, offerId: s(d.offerId), from: s(d.from), to, question: s(d.question), briefing: s(d.briefing) };
+      it.text = `Offer ${d.n} to ${to.length} people: ${s(d.question)}`;
+      return [it];
+    }
+    case BATON_LEASE_ENTRY:
+      if (typeof d.n !== "number" || (d.event !== "claimed" && d.event !== "expired")) return [];
+      it.batonMark = { kind: "lease", n: d.n, offerId: s(d.offerId), event: d.event, by: s(d.by) };
+      it.text = d.event === "claimed" ? "Offer taken" : "Offer back in the pool";
+      return [it];
+    case BATON_PROPOSAL_ENTRY:
+      if (!s(d.personId)) return [];
+      it.batonMark = { kind: "proposal", personId: d.personId, name: s(d.name), role: s(d.role), why: s(d.why), by: s(d.by) };
+      it.text = `Proposed for the roster: ${s(d.name)}`;
+      return [it];
+    case BATON_WRAPUP_ENTRY:
+      if (d.phase === "start") {
+        it.batonMark = { kind: "wrapup", phase: "start" };
+        it.text = "Wrap-up started";
+        return [it];
+      }
+      if (d.phase !== "end") return [];
+      it.batonMark = {
+        kind: "wrapup",
+        phase: "end",
+        applied: Array.isArray(d.applied) ? d.applied : [],
+        refused: Array.isArray(d.refused) ? d.refused : [],
+        ...(s(d.error) ? { error: s(d.error) } : {}),
+      };
+      it.text = `Wrap-up: ${Array.isArray(d.applied) ? d.applied.length : 0} profile updates`;
+      return [it];
+  }
+  return [];
+}
+
 /** A subagents team event (handover, retire, pause, resume, wrap-up): one machine row, like a
     model change, in both webapp-owned and watched sessions. Undecodable: nothing. */
 function teamEventRow(id: string, entry: Entry): TranscriptItem[] {
@@ -390,6 +473,7 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
       if (entry.customType === OVERSEER_SENT_ENTRY) return overseerSentRow(id, entry);
       if (entry.customType === OVERSEER_DIALOG_ANSWER_ENTRY) return overseerAnswerRow(id, entry);
       if (entry.customType === TEAM_EVENT_TYPE) return teamEventRow(id, entry);
+      if (BATON_ROWS.has(entry.customType)) return batonRow(id, entry);
       return [];
     case "custom_message":
       return entry.display === false ? [] : [customRow(id, entry, entry.customType, entry.content)];

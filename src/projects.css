@@ -1,0 +1,76 @@
+/* An org project's page (#/orgs/<id>/projects/<pid>): its overseer panel, requirements,
+   conflicts and decisions. Token values only; builds on orgs.css. */
+
+.project-muted { color: var(--color-ink-muted); }
+.project-spec-line { font-size: var(--fs-caption); }
+.project-frozen { max-width: 24rem; }
+
+/* Decisions, grouped by area. */
+.project-area { display: flex; flex-direction: column; gap: var(--space-2); }
+.project-area + .project-area { padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+.project-decisions, .project-conflicts, .project-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.project-decision { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-2) 0; }
+.project-decision + .project-decision { border-top: 1px solid var(--color-border); }
+.project-decision-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.project-decision-old .project-statement { color: var(--color-ink-muted); text-decoration: line-through; }
+.project-check { flex: none; min-width: var(--tap-min); justify-content: center; }
+.project-check-space { flex: none; width: var(--tap-min); }
+.project-statement { margin: 0; color: var(--color-ink); overflow-wrap: anywhere; }
+.project-quote {
+  margin: 0;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--color-border-strong);
+  color: var(--color-ink-2);
+  font-size: var(--fs-caption);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.project-by { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.project-promote { padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+.project-superseded { font-size: var(--fs-caption); gap: var(--space-2); justify-content: flex-start; }
+
+/* Conflicts: the two sides next to each other when there is room. */
+.project-conflict { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) 0; }
+.project-conflict + .project-conflict { border-top: 1px solid var(--color-border); }
+.project-conflict-area { font-weight: var(--fw-semibold); }
+.project-sides { display: grid; grid-template-columns: 1fr; gap: var(--space-2); }
+@container insights (min-width: 768px) {
+  .project-sides { grid-template-columns: 1fr 1fr; }
+}
+.project-side { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); border: 1px solid var(--color-border); }
+.project-side-kept { border-color: var(--color-border-strong); }
+.project-side-label { font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
+.project-actions { flex-wrap: wrap; }
+
+/* The overseer panel. */
+.project-autonomy { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.project-autonomy-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.project-autonomy-row:hover { background: var(--color-sunken); }
+.project-autonomy-on { background: var(--color-accent-tint); }
+.project-autonomy-on:hover { background: var(--color-accent-tint); }
+.project-autonomy-row input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--color-accent); }
+.project-autonomy-row input:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.project-autonomy-level { flex: none; color: var(--color-ink); }
+.project-autonomy-meaning { color: var(--color-ink-2); }
+.project-overseer-settings { display: flex; flex-direction: column; gap: var(--space-2); }
+.project-item { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) 0; }
+.project-item + .project-item { border-top: 1px solid var(--color-border); }
+.project-item-title { color: var(--color-ink); overflow-wrap: anywhere; }
+.project-item-actions { flex-wrap: wrap; }
+.project-todo { justify-content: flex-start; }
+.project-people { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; }
+.project-people .toggle { justify-content: flex-start; }
+
+/* Links shown once: one row per person. */
+.project-links { display: flex; flex-direction: column; gap: var(--space-1); }
+.project-link-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.project-link-name { font-weight: var(--fw-semibold); }
+.project-chips { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); }

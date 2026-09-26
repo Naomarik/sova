@@ -1,0 +1,116 @@
+/* Organizations (#/orgs), their replay page, and the baton strip and cards in a baton session.
+   Token values only. */
+
+.orgs-section { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); }
+.orgs-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.orgs-head > :first-child { flex: 1; min-width: 0; }
+.orgs-h2 { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.orgs-h3 { margin: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.orgs-empty { margin: 0; color: var(--color-ink-muted); }
+.orgs-line { margin: 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
+.orgs-mono { font-family: var(--font-mono); font-size: var(--fs-mono); overflow-wrap: anywhere; }
+.orgs-link { user-select: all; }
+.orgs-row { gap: var(--space-3); align-items: center; min-height: var(--row-height); }
+.orgs-row > .icon { color: var(--color-ink-muted); flex: none; }
+.orgs-row .list-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.orgs-row a.list-title { color: var(--color-ink); }
+
+.orgs-form { display: flex; flex-direction: column; gap: var(--space-3); }
+.orgs-subform { padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+.orgs-fields { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
+@container insights (min-width: 768px) {
+  .orgs-fields { grid-template-columns: 1fr 1fr; }
+}
+.orgs-inline { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+.orgs-inline .field { min-width: 10rem; }
+.orgs-grow { flex: 1; }
+
+.orgs-people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.orgs-person { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) 0; }
+.orgs-person + .orgs-person { border-top: 1px solid var(--color-border); }
+.orgs-person-main { display: flex; flex-direction: column; gap: 2px; }
+.orgs-person-name { font-weight: var(--fw-semibold); color: var(--color-ink); }
+.orgs-facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); margin: 0; }
+.orgs-facts dt { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.orgs-facts dd { margin: 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
+
+.orgs-history > summary { cursor: pointer; min-height: var(--tap-min); display: flex; align-items: center; color: var(--color-ink-2); }
+.orgs-history > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.orgs-history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.orgs-change { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) 0; }
+.orgs-change + .orgs-change { border-top: 1px solid var(--color-border); }
+.orgs-change-main { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--color-ink-2); }
+.orgs-change-field { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); }
+
+/* Replay: one step at a time. */
+.orgs-replay-bar { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.orgs-replay-count { margin-left: auto; color: var(--color-ink-muted); }
+.orgs-replay { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.orgs-replay-item { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3) var(--space-4); border-radius: var(--r-lg); background: var(--color-surface); border: 1px solid var(--color-border); }
+.orgs-replay-message { background: var(--color-accent-tint); border-color: transparent; }
+.orgs-replay-card { background: var(--color-sunken); }
+.orgs-replay-who { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.orgs-replay-text { color: var(--color-ink); overflow-wrap: anywhere; white-space: pre-wrap; }
+.orgs-replay-brief { color: var(--color-ink-2); font-size: var(--fs-caption); white-space: pre-wrap; }
+
+/* The baton strip above a baton session's transcript. */
+.baton-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-sunken);
+}
+.baton-strip-main { flex: 1; min-width: 12rem; display: flex; flex-direction: column; gap: 2px; }
+.baton-strip-title { font-weight: var(--fw-semibold); color: var(--color-ink); }
+.baton-strip-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.baton-strip-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.baton-strip-link { flex-basis: 100%; }
+
+/* Baton cards in the operator's transcript, and the sender's name on a user row. */
+.baton-card {
+  align-self: stretch;
+  max-width: var(--measure);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-lg);
+  background: var(--color-sunken);
+  border: 1px solid var(--color-border);
+}
+.baton-card-head { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.baton-card-body { color: var(--color-ink); overflow-wrap: anywhere; white-space: pre-wrap; }
+.baton-card-brief { color: var(--color-ink-2); font-size: var(--fs-caption); white-space: pre-wrap; }
+.baton-card-quote { color: var(--color-ink-2); font-size: var(--fs-caption); }
+
+/* A baton session's sidebar row: who holds the baton, after the title. */
+.session-baton-holder { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
+/* A baton event that needs no card: a lease taken or returned, the wrap-up starting. */
+.baton-card-line { margin: 0; align-self: center; font-size: var(--fs-caption); color: var(--color-ink-muted); text-align: center; }
+
+/* The strip's second rows: invitees' links, a proposed person, a wrap-up line, the Hand On form. */
+.baton-strip-row { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.baton-strip-card { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-surface); border: 1px solid var(--color-border); }
+.baton-strip-card-main { flex: 1; min-width: 12rem; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.baton-strip-form { flex-basis: 100%; padding: var(--space-3); border-radius: var(--r-md); background: var(--color-surface); border: 1px solid var(--color-border); }
+.baton-strip-people { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; }
+.baton-strip-people .toggle { justify-content: flex-start; }
+
+/* Recent profile changes: one act per row, its fields listed under it. */
+.orgs-change-group { align-items: flex-start; padding: var(--space-2) 0; }
+.orgs-change-group > .orgs-change-main { display: flex; flex-direction: column; gap: var(--space-1); }
+.orgs-change-fields { list-style: none; margin: 0; padding: 0 0 0 var(--space-3); display: flex; flex-direction: column; }
+.orgs-change-fields .orgs-change + .orgs-change { border-top: 0; }
+.orgs-changes-filter { flex: none; min-width: 10rem; }
+
+/* The head's meta line (org and project pages): the way back stays whole, the long path takes the "…". */
+.session-head-meta > .orgs-meta-link { flex: none; }
+.session-head-meta > .orgs-meta-path { flex: 1 1 auto; overflow-wrap: normal; }
+/* A hint under an inline row (field + button): its own line, tight under the row. */
+.orgs-inline-hint { margin: var(--space-1) 0 0; }
+.orgs-section > .orgs-inline-hint { margin-top: calc(-1 * var(--space-2)); }
+/* What approving a referral grants: its decision areas, said in full on the approval card. */
+.baton-strip-areas { margin: 0; font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-ink); overflow-wrap: anywhere; }

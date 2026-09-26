@@ -1,5 +1,7 @@
 import { children, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
+import type { BatonMark } from "../../shared/baton";
+import { wrapupRowIds } from "../lib/wrapup-rows";
 import type { LiveBlock, LiveEntry, LiveState, LiveUserState } from "../lib/live";
 import { agoTime, clockTime, prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
@@ -74,10 +76,12 @@ function UserTurn(props: {
   origin?: "client" | "server";
   /** The Overseer sent this message (its `sova-overseer-sent` marker names this row). */
   overseer?: boolean;
+  /** A baton participant's name (its `sova-baton-sent` marker names this row, §app.baton/attribution). */
+  sender?: string;
   images?: string[];
   attachments?: TmpAttachment[];
 }) {
-  const author = () => (props.overseer ? "Overseer" : AUTHOR[props.origin ?? "client"]);
+  const author = () => (props.overseer ? "Overseer" : (props.sender ?? AUTHOR[props.origin ?? "client"]));
   return (
     <article class="message message-user" aria-label={props.time ? `${author()}, ${stampTime(props.time)}` : author()}>
       <div class="message-head">
@@ -150,6 +154,118 @@ function Thinking(props: { text: string; streaming?: boolean }) {
       </summary>
       <div class="disclosure-body">{props.text}</div>
     </details>
+  );
+}
+
+/** A baton entry in the operator's transcript (§app.baton/attribution): a hand-off, an offer and its
+    lease, a decision, a proposed person, the wrap-up, done. Typed as the full mark so kinds the
+    protocol field gains later render here once. */
+function BatonCard(props: { mark: Exclude<BatonMark, { kind: "sent" }>; name(ref: string): string; wrapupShown: boolean; onWrapupToggle(): void }) {
+  const m = props.mark;
+  const names = (refs: string[]) => refs.map(props.name).join(", ");
+  return (
+    <Switch>
+      <Match when={m.kind === "handoff" && m}>
+        {(h) => (
+          <aside class="baton-card" aria-label={`Hand-off ${h().n}`}>
+            <span class="baton-card-head">
+              Hand-off {h().n}: {props.name(h().from)} → {props.name(h().to)}
+            </span>
+            <div class="baton-card-body">{h().question}</div>
+            <Show when={h().briefing}>
+              <div class="baton-card-brief">Briefing: {h().briefing}</div>
+            </Show>
+          </aside>
+        )}
+      </Match>
+      <Match when={m.kind === "offer" && m}>
+        {(o) => (
+          <aside class="baton-card" aria-label={`Offer, hand-off ${o().n}`}>
+            <span class="baton-card-head">
+              Hand-off {o().n}: {props.name(o().from)} → offered to {names(o().to)}
+            </span>
+            <div class="baton-card-body">{o().question}</div>
+            <Show when={o().briefing}>
+              <div class="baton-card-brief">Briefing: {o().briefing}</div>
+            </Show>
+          </aside>
+        )}
+      </Match>
+      <Match when={m.kind === "lease" && m}>
+        {(l) => (
+          <p class="baton-card-line">
+            {l().event === "claimed" ? `${props.name(l().by)} took the offer.` : `${props.name(l().by)} went quiet for 15 minutes; the offer is open to everyone again.`}
+          </p>
+        )}
+      </Match>
+      <Match when={m.kind === "decision" && m}>
+        {(d) => (
+          <aside class="baton-card" aria-label="Decision">
+            <span class="baton-card-head">
+              Decision · {d().area} · {props.name(d().by)}
+            </span>
+            <div class="baton-card-body">{d().statement}</div>
+            <div class="baton-card-quote">“{d().quote}”</div>
+          </aside>
+        )}
+      </Match>
+      <Match when={m.kind === "proposal" && m}>
+        {(r) => (
+          <aside class="baton-card" aria-label={`Proposed: ${r().name}`}>
+            <span class="baton-card-head">
+              Proposed for the roster · {r().name}
+              {r().role ? ` (${r().role})` : ""} · by {props.name(r().by)}
+            </span>
+            <div class="baton-card-body">{r().why}</div>
+          </aside>
+        )}
+      </Match>
+      <Match when={m.kind === "wrapup" && m}>
+        {(w) => {
+          const end = () => (w().phase === "end" ? (w() as Extract<BatonMark, { kind: "wrapup"; phase: "end" }>) : null);
+          return (
+            <Show
+              when={end()}
+              fallback={
+                <p class="baton-card-line">
+                  Wrap-up turn: it reads this session for profile updates and quotes profiles, so it's folded here.{" "}
+                  <button type="button" class="button button-sm button-ghost" aria-expanded={props.wrapupShown} onClick={() => props.onWrapupToggle()}>
+                    {props.wrapupShown ? "Fold Wrap-up Turn" : "Show Wrap-up Turn"}
+                  </button>
+                </p>
+              }
+            >
+              {(e) => (
+                <aside class="baton-card" aria-label="Wrap-up">
+                  <span class="baton-card-head">Wrap-up</span>
+                  <div class="baton-card-body">
+                    {e().error
+                      ? `Stopped: ${e().error} No profile changed after that.`
+                      : `${e().applied.length} profile ${e().applied.length === 1 ? "field" : "fields"} updated${e().refused.length ? `, ${e().refused.length} refused` : ""}.`}
+                  </div>
+                  <For each={e().applied}>{(a) => <div class="baton-card-brief">{props.name(a.personId)} · {a.field}</div>}</For>
+                  <For each={e().refused}>
+                    {(r) => (
+                      <div class="baton-card-brief">
+                        Refused: {props.name(r.personId)} · {r.field} — {r.reason}
+                      </div>
+                    )}
+                  </For>
+                </aside>
+              )}
+            </Show>
+          );
+        }}
+      </Match>
+      <Match when={m.kind === "done" && m}>
+        {(d) => (
+          <aside class="baton-card" aria-label="Done">
+            <span class="baton-card-head">Done</span>
+            <div class="baton-card-body">{d().summary}</div>
+          </aside>
+        )}
+      </Match>
+    </Switch>
   );
 }
 
@@ -278,6 +394,8 @@ function HiddenRows(props: { calls: number; failed: number; running?: number; th
 export function HistoryItems(props: {
   items: TranscriptItem[];
   author: string;
+  /** A baton session's person names by ref ("operator" included): the sender tags and cards. */
+  names?: Record<string, string>;
   streaming: boolean;
   hideTools?: boolean;
   hideThinking?: boolean;
@@ -296,7 +414,10 @@ export function HistoryItems(props: {
    * so they can't appear even inside the hidden-rows disclosure. Every scan that speaks the
    * rendered rows' coordinates (the last-user/openFrom scan) runs on this same array.
    */
-  const renderable = createMemo(() => props.items.filter((it) => !isChangeRow(it)));
+  // A baton wrap-up's turn reads profiles: folded behind its card unless asked for (lib/wrapup-rows).
+  const [showWrapup, setShowWrapup] = createSignal(false);
+  const wrapupRows = createMemo(() => (showWrapup() ? new Set<string>() : wrapupRowIds(props.items)));
+  const renderable = createMemo(() => props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id)));
   const split = createMemo(() =>
     props.hideTools || props.hideThinking ? splitHidden(renderable(), { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
   );
@@ -313,6 +434,13 @@ export function HistoryItems(props: {
     return ids;
   });
   const latestAlign = createMemo(() => latestAlignId(props.items));
+  /** User rows a baton participant sent: target id → their ref, in any order (§app.baton/attribution). */
+  const batonSent = createMemo(() => {
+    const by = new Map<string, string>();
+    for (const it of props.items) if (it.batonMark?.kind === "sent") by.set(it.batonMark.targetId, it.batonMark.by);
+    return by;
+  });
+  const nameOf = (ref: string) => props.names?.[ref] ?? (ref === "operator" ? "You" : "Someone");
   /** User rows the Overseer sent: its markers name them by id, in any order. */
   const overseerSent = createMemo(() => {
     const ids = new Set<string>();
@@ -376,12 +504,17 @@ export function HistoryItems(props: {
                   text={item.text ?? ""}
                   time={timestampOf(item.raw)}
                   overseer={overseerSent().has(entryIdOf(item.id))}
+                  sender={batonSent().has(entryIdOf(item.id)) ? nameOf(batonSent().get(entryIdOf(item.id))!) : undefined}
                   images={item.images}
                   attachments={item.attachments}
                 />
               </Match>
               {/* The sent marker draws nothing itself: it tags the row it names (above). */}
               <Match when={item.overseerMark?.kind === "sent"}>{null}</Match>
+              <Match when={item.batonMark?.kind === "sent"}>{null}</Match>
+              <Match when={item.batonMark && item.batonMark.kind !== "sent" && item.batonMark}>
+                {(mark) => <BatonCard mark={mark() as Exclude<BatonMark, { kind: "sent" }>} name={nameOf} wrapupShown={showWrapup()} onWrapupToggle={() => setShowWrapup(!showWrapup())} />}
+              </Match>
               <Match when={item.overseerMark?.kind === "dialog-answer" && item.overseerMark}>
                 {(mark) => <OverseerChoiceRow title={mark().title} answer={mark().answer} />}
               </Match>
@@ -508,7 +641,7 @@ export function HistoryItems(props: {
       <Show when={split()?.hidden.length ? split() : null}>
         {(s) => (
           <HiddenRows calls={s().calls} failed={s().failed} thinking={s().thinking}>
-            {() => <HistoryItems items={s().hidden} author={props.author} streaming={props.streaming} openFrom={s().openFrom} />}
+            {() => <HistoryItems items={s().hidden} author={props.author} names={props.names} streaming={props.streaming} openFrom={s().openFrom} />}
           </HiddenRows>
         )}
       </Show>

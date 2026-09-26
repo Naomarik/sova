@@ -1,0 +1,1011 @@
+import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
+import { OPERATOR, type BatonStartResult, type BatonView, type BatonViewItem, type OfferLink } from "../../shared/baton";
+import type { NamedChange, OrgDetail, Person, PersonInput, ProfileChange } from "../../shared/orgs";
+import {
+  addOrgProject,
+  addPerson,
+  ApiError,
+  approvePerson,
+  declinePerson,
+  attachOrg,
+  batonReplay,
+  commitOrg,
+  createOrg,
+  getOrg,
+  getOrgs,
+  openProjectOverseer,
+  patchPerson,
+  personHistory,
+  revertPersonChange,
+  setOperatorName,
+  setOrgRemote,
+  startBaton,
+} from "../lib/api";
+import { relativeTime } from "../lib/format";
+import { proposedAreasLine } from "../lib/baton-strip";
+import { groupChanges, revertible, valueText } from "../lib/profile-changes";
+import { orgHref, projectHref, replayHref, startForHref, takeStartParent, type OrgsRoute } from "../lib/orgs-route";
+import { toast } from "../lib/ui-state";
+import { InsightsPage } from "./InsightsPage";
+import { LinksBanner } from "./LinksBanner";
+import { ProjectPage } from "./ProjectPage";
+import { Banner, Chip, Icon } from "./ui";
+import "../orgs.css";
+import "../projects.css";
+
+const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
+const list = (s: string) =>
+  s
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
+/** Who wrote a profile change, in words. */
+const WRITER: Record<ProfileChange["by"]["kind"], string> = { operator: "you", wrapup: "wrap-up", referral: "referral", overseer: "overseer" };
+
+const STATE_WORDS: Record<string, { word: string; tone: "info" | "warn" | "success" | undefined }> = {
+  open: { word: "Open", tone: "info" },
+  "needs-you": { word: "Needs you", tone: "warn" },
+  done: { word: "Done", tone: "success" },
+  closed: { word: "Closed", tone: undefined },
+};
+
+/** The organizations page: `#/orgs`, `#/orgs/<id>[/start/<person>]`, `#/orgs/<id>/replay/<session>`,
+    `#/orgs/<id>/projects/<project>[/overseer]`. */
+export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElement): void }) {
+  return (
+    <Switch>
+      <Match when={props.route.kind === "list"}>
+        <OrgList titleRef={props.titleRef} />
+      </Match>
+      <Match when={props.route.kind === "replay" && props.route} keyed>
+        {(r) => <ReplayPage orgId={r.id} sessionId={r.sessionId} titleRef={props.titleRef} />}
+      </Match>
+      <Match when={props.route.kind === "project" && props.route} keyed>
+        {(r) => <ProjectPage orgId={r.id} projectId={r.projectId} titleRef={props.titleRef} />}
+      </Match>
+      <Match when={props.route.kind === "overseer" && props.route} keyed>
+        {(r) => <OverseerDoor orgId={r.id} projectId={r.projectId} titleRef={props.titleRef} />}
+      </Match>
+      <Match when={props.route.kind === "org" && props.route} keyed>
+        {(r) => <OrgPage id={r.id} start={r.start} titleRef={props.titleRef} />}
+      </Match>
+    </Switch>
+  );
+}
+
+/** `…/projects/<pid>/overseer`: open (or start) the project's overseer and go to its conversation;
+    on failure, the project page with the reason. */
+function OverseerDoor(props: { orgId: string; projectId: string; titleRef(el: HTMLHeadingElement): void }) {
+  const [failed, setFailed] = createSignal<string | null>(null);
+  openProjectOverseer(props.orgId, props.projectId).then(
+    (info) => (info.path ? location.replace(`#/s/${encodeURIComponent(info.path)}`) : setFailed("It has no conversation yet.")),
+    (err) => setFailed(errText(err)),
+  );
+  return (
+    <Show when={failed()} fallback={<p class="orgs-empty">Opening the overseer.</p>}>
+      {(e) => (
+        <>
+          <Banner tone="error" title="Couldn't open the overseer." body={e()} />
+          <ProjectPage orgId={props.orgId} projectId={props.projectId} titleRef={props.titleRef} />
+        </>
+      )}
+    </Show>
+  );
+}
+
+// ---- the list --------------------------------------------------------------------------------------
+
+function OrgList(props: { titleRef(el: HTMLHeadingElement): void }) {
+  const [info, { refetch }] = createResource(getOrgs);
+  const [error, setError] = createSignal<string | null>(null);
+  const [name, setName] = createSignal("");
+  const [dir, setDir] = createSignal("");
+  const [attachDir, setAttachDir] = createSignal("");
+  const [operator, setOperator] = createSignal("");
+  createEffect(on(() => info()?.operator.name, (n) => n && setOperator(n)));
+  const act = async (fn: () => Promise<unknown>, done?: string) => {
+    try {
+      await fn();
+      setError(null);
+      if (done) toast(done);
+      await refetch();
+    } catch (err) {
+      setError(errText(err));
+    }
+  };
+  return (
+    <InsightsPage
+      title="Organizations"
+      meta={info() ? `${info()!.orgs.length} on this host` : undefined}
+      refreshLabel="Refresh Organizations"
+      onRefresh={() => void refetch()}
+      error={error() ?? (info.error ? errText(info.error) : null)}
+      errorTitle="Couldn't update the organizations."
+      busy={info.loading}
+      titleRef={props.titleRef}
+    >
+      <div class="card orgs-section">
+        <Show
+          when={info()?.orgs.length}
+          fallback={<p class="orgs-empty">Each organization keeps its roster, projects and hand-off sessions in its own git repo. Start one below.</p>}
+        >
+          <ul class="list">
+            <For each={info()!.orgs}>
+              {(o) => (
+                <li>
+                  <a class="list-row list-row-interactive orgs-row" href={orgHref(o.id)}>
+                    <Icon name="folder" />
+                    <span class="list-main">
+                      <span class="list-title">{o.name}</span>
+                      <span class="list-meta">
+                        {plural(o.people, "person", "people")} · {plural(o.projects, "project")} · {plural(o.openBatons, "open hand-off session")}
+                      </span>
+                    </span>
+                    <Icon name="chevron-right" />
+                  </a>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
+      </div>
+
+      <form
+        class="card orgs-section orgs-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!name().trim()) return;
+          void act(async () => {
+            const org = await createOrg(name().trim(), dir().trim() || undefined);
+            location.hash = orgHref(org.id);
+          }, "Organization created.");
+        }}
+      >
+        <h2 class="orgs-h2">New Organization</h2>
+        <div class="orgs-fields">
+          <label class="field">
+            <span class="field-label">Name</span>
+            <input class="input" value={name()} onInput={(e) => setName(e.currentTarget.value)} maxlength={80} required />
+          </label>
+          <label class="field">
+            <span class="field-label">Workspace repo</span>
+            <input class="input input-mono" value={dir()} onInput={(e) => setDir(e.currentTarget.value)} placeholder={info()?.defaultDir ?? ""} />
+            <span class="field-hint">An absolute folder outside Sova's own repo. Empty: under the default folder shown.</span>
+          </label>
+        </div>
+        <div class="button-row">
+          <button type="submit" class="button button-primary">
+            Create Organization
+          </button>
+        </div>
+      </form>
+
+      <form
+        class="card orgs-section orgs-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (attachDir().trim()) void act(async () => {
+            const org = await attachOrg(attachDir().trim());
+            location.hash = orgHref(org.id);
+          }, "Organization attached.");
+        }}
+      >
+        <h2 class="orgs-h2">Attach a Restored Repo</h2>
+        <label class="field">
+          <span class="field-label">Workspace repo</span>
+          <input class="input input-mono" value={attachDir()} onInput={(e) => setAttachDir(e.currentTarget.value)} placeholder="/path/to/cloned/workspace" />
+          <span class="field-hint">A clone of an organization's workspace repo. Links are not in the repo: send new ones after attaching.</span>
+        </label>
+        <div class="button-row">
+          <button type="submit" class="button">
+            Attach Repo
+          </button>
+        </div>
+      </form>
+
+      <form
+        class="card orgs-section orgs-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (operator().trim()) void act(() => setOperatorName(operator().trim()), "Name saved.");
+        }}
+      >
+        <h2 class="orgs-h2">Your Name</h2>
+        <label class="field">
+          <span class="field-label">Shown to the people you hand sessions to</span>
+          <input class="input" value={operator()} onInput={(e) => setOperator(e.currentTarget.value)} maxlength={80} />
+        </label>
+        <div class="button-row">
+          <button type="submit" class="button">
+            Save Name
+          </button>
+        </div>
+      </form>
+    </InsightsPage>
+  );
+}
+
+// ---- one org -------------------------------------------------------------------------------------
+
+function OrgPage(props: { id: string; start?: string; titleRef(el: HTMLHeadingElement): void }) {
+  const [org, { refetch, mutate }] = createResource(() => props.id, getOrg);
+  const [error, setError] = createSignal<string | null>(null);
+  const [links, setLinks] = createSignal<OfferLink[] | null>(null);
+  const act = async (fn: () => Promise<OrgDetail | unknown>, done?: string): Promise<boolean> => {
+    try {
+      const r = await fn();
+      if (r && typeof r === "object" && "roster" in r) mutate(r as OrgDetail);
+      else await refetch();
+      setError(null);
+      if (done) toast(done);
+      return true;
+    } catch (err) {
+      setError(errText(err));
+      return false;
+    }
+  };
+  // Milestone commits run after the answer: look again shortly so the git line catches up.
+  const settle = () => setTimeout(() => void refetch(), 1200);
+  return (
+    <InsightsPage
+      title={org()?.name ?? "Organization"}
+      meta={
+        org() ? (
+          <>
+            <a class="orgs-meta-link" href="#/orgs">Organizations</a> · <span class="orgs-mono orgs-meta-path" title={org()!.dir}>{org()!.dir}</span>
+          </>
+        ) : undefined
+      }
+      refreshLabel="Refresh Organization"
+      onRefresh={() => void refetch()}
+      error={error() ?? (org.error ? errText(org.error) : null)}
+      errorTitle="Couldn't update this organization."
+      busy={org.loading}
+      titleRef={props.titleRef}
+    >
+      <Show when={org()}>
+        {(o) => (
+          <>
+            <For each={o().problems}>{(p) => <Banner tone="warn" title="The workspace repo has a problem." body={p} />}</For>
+            <Show when={links()}>{(l) => <LinksBanner links={l()} onDismiss={() => setLinks(null)} />}</Show>
+            <GitCard org={o()} act={act} />
+            <BatonSection org={o()} start={props.start} act={act} onLinks={setLinks} settle={settle} />
+            <PeopleSection org={o()} act={act} settle={settle} />
+            <ChangesSection org={o()} act={act} />
+            <ProjectsSection org={o()} act={act} settle={settle} />
+          </>
+        )}
+      </Show>
+    </InsightsPage>
+  );
+}
+
+type Act = (fn: () => Promise<OrgDetail | unknown>, done?: string) => Promise<boolean>;
+
+function GitCard(props: { org: OrgDetail; act: Act }) {
+  const [remote, setRemote] = createSignal(props.org.git.remote ?? "");
+  const g = () => props.org.git;
+  return (
+    <section class="card orgs-section" aria-labelledby="orgs-git">
+      <div class="orgs-head">
+        <h2 class="orgs-h2" id="orgs-git">
+          Workspace Repo
+        </h2>
+        <button type="button" class="button button-sm" onClick={() => void props.act(() => commitOrg(props.org.id), "Committed.")}>
+          Commit Now
+        </button>
+      </div>
+      <p class="orgs-line">
+        <Show when={g().lastCommit} fallback="No commits yet.">
+          {(c) => (
+            <>
+              Last commit <span class="orgs-mono">{c().sha}</span> {relativeTime(c().at)}: {c().message}
+            </>
+          )}
+        </Show>
+        {g().dirty ? " · uncommitted changes" : ""}
+      </p>
+      <Show when={g().lastError}>{(e) => <Banner tone="error" title="The last commit or push failed." body={e()} />}</Show>
+      <form
+        class="orgs-inline"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void props.act(() => setOrgRemote(props.org.id, remote().trim()), remote().trim() ? "Remote saved. Commits push there from now on." : "Remote removed. Commits stay local.");
+        }}
+      >
+        <label class="field orgs-grow">
+          <span class="field-label">Push to remote</span>
+          <input class="input input-mono" value={remote()} onInput={(e) => setRemote(e.currentTarget.value)} placeholder="git@host:you/private-repo.git" aria-describedby="orgs-remote-hint" />
+        </label>
+        <button type="submit" class="button">
+          Save Remote
+        </button>
+      </form>
+      {/* Under the row, not in the field: inside it, the button would line up with the hint. */}
+      <p class="field-hint orgs-inline-hint" id="orgs-remote-hint">
+        Profiles are personal data: only a private repo. Empty: local commits only.
+      </p>
+    </section>
+  );
+}
+
+function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks(l: OfferLink[] | null): void; settle(): void }) {
+  const active = () => props.org.roster.filter((p) => p.status === "active");
+  const [projectId, setProjectId] = createSignal("");
+  // "Start a session for Bob" arrives with Bob chosen (and, from a baton session, that session as parent).
+  const startWith = props.start && props.org.roster.some((p) => p.id === props.start && p.status === "active") ? props.start : undefined;
+  const parent = startWith ? takeStartParent(props.org.id, startWith) : undefined;
+  const [to, setTo] = createSignal<string[]>(startWith ? [startWith] : []);
+  const [title, setTitle] = createSignal("");
+  const [question, setQuestion] = createSignal("");
+  const [briefing, setBriefing] = createSignal("");
+  const [goal, setGoal] = createSignal("");
+  const [model, setModel] = createSignal("");
+  let formEl: HTMLFormElement | undefined;
+  onMount(() => {
+    if (startWith) queueMicrotask(() => formEl?.scrollIntoView({ block: "start" }));
+  });
+  // A select with no matching option shows blank: the first option is the default, as it looks.
+  const pid = () => projectId() || props.org.projectList[0]?.id || "";
+  /** Nobody ticked = you start; 1 = a hand-off; 2 or more = an offer. */
+  const target = (): string | string[] => (to().length === 0 ? OPERATOR : to().length === 1 ? to()[0]! : to());
+  const nameOf = (id: string) => props.org.roster.find((p) => p.id === id)?.name ?? "Their";
+  const submit = async (e: Event) => {
+    e.preventDefault();
+    const who = target();
+    let started: BatonStartResult | null = null;
+    const ok = await props.act(async () => {
+      started = await startBaton({
+        orgId: props.org.id,
+        projectId: pid(),
+        to: who,
+        publicTitle: title().trim(),
+        goal: goal().trim(),
+        ...(question().trim() ? { question: question().trim() } : {}),
+        ...(briefing().trim() ? { briefing: briefing().trim() } : {}),
+        ...(model().trim() ? { model: model().trim() } : {}),
+        ...(parent ? { parentSessionId: parent } : {}),
+      });
+    }, Array.isArray(who) ? `Offered to ${who.length} people.` : "Hand-off session started.");
+    if (!ok || !started) return;
+    const s = started as BatonStartResult;
+    if (s.links?.length) props.onLinks(s.links);
+    else if (s.link && typeof who === "string") props.onLinks([{ personId: who, name: nameOf(who), link: s.link }]);
+    setTitle("");
+    setQuestion("");
+    setBriefing("");
+    setGoal("");
+    setTo([]);
+    props.settle();
+  };
+  return (
+    <section class="card orgs-section" aria-labelledby="orgs-batons">
+      <h2 class="orgs-h2" id="orgs-batons">
+        Hand-off Sessions
+      </h2>
+      <Show when={props.org.batons.length} fallback={<p class="orgs-empty">{plural(props.org.people, "person", "people")} on the roster. No hand-off session yet.</p>}>
+        <ul class="list">
+          <For each={props.org.batons}>
+            {(b) => (
+              <li class="list-row orgs-row">
+                <span class="list-main">
+                  <a class="list-title" href={sessionHref(b.path)}>
+                    {b.publicTitle}
+                  </a>
+                  <span class="list-meta">
+                    {b.holder ? `With ${b.holder} · ` : ""}started {relativeTime(b.createdAt)}
+                  </span>
+                </span>
+                <Chip tone={STATE_WORDS[b.state]?.tone}>{STATE_WORDS[b.state]?.word ?? b.state}</Chip>
+                <a class="button button-sm button-ghost" href={replayHref(props.org.id, b.sessionId)}>
+                  Replay
+                </a>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+      <Show
+        when={props.org.projectList.length}
+        fallback={<p class="orgs-empty">Add a project below to start a hand-off session in it.</p>}
+      >
+        <form class="orgs-form orgs-subform" onSubmit={submit} ref={formEl}>
+          <h3 class="orgs-h3">Start a Hand-off Session</h3>
+          <label class="field">
+            <span class="field-label">Project</span>
+            <select class="select" value={pid()} onChange={(e) => setProjectId(e.currentTarget.value)}>
+              <For each={props.org.projectList}>{(p) => <option value={p.id} selected={p.id === pid()}>{p.name}</option>}</For>
+            </select>
+          </label>
+          <fieldset class="baton-strip-people">
+            <legend class="field-label">Starts with</legend>
+            <For each={active()} fallback={<p class="orgs-empty">Nobody active on the roster: it starts with you.</p>}>
+              {(p) => (
+                <label class="toggle">
+                  <input type="checkbox" checked={to().includes(p.id)} onChange={(e) => setTo((cur) => (e.currentTarget.checked ? [...cur, p.id] : cur.filter((x) => x !== p.id)))} />
+                  <span class="toggle-box" />
+                  <span>{`${p.name}${p.role ? ` — ${p.role}` : ""}`}</span>
+                </label>
+              )}
+            </For>
+            <p class="field-hint">
+              {to().length === 0
+                ? "Nobody ticked: it starts with you."
+                : to().length === 1
+                  ? `Starts with ${nameOf(to()[0]!)}.`
+                  : `Offered to ${to().length} people: the first to answer takes it, for as long as they keep answering.`}
+              {parent ? " Started from the session you came from." : ""}
+            </p>
+          </fieldset>
+          <label class="field">
+            <span class="field-label">Public title</span>
+            <input class="input" value={title()} onInput={(e) => setTitle(e.currentTarget.value)} maxlength={120} required />
+            <span class="field-hint">All they see of the goal.</span>
+          </label>
+          <label class="field">
+            <span class="field-label">First question</span>
+            <input class="input" value={question()} onInput={(e) => setQuestion(e.currentTarget.value)} maxlength={1000} placeholder="Default: the public title" />
+          </label>
+          <label class="field">
+            <span class="field-label">Briefing</span>
+            <textarea class="input textarea" rows={2} maxlength={2000} value={briefing()} onInput={(e) => setBriefing(e.currentTarget.value)} />
+            <span class="field-hint">What the first person needs to know. Only they see it.</span>
+          </label>
+          <label class="field">
+            <span class="field-label">Goal</span>
+            <textarea class="input textarea" rows={4} value={goal()} onInput={(e) => setGoal(e.currentTarget.value)} maxlength={2000} required />
+            <span class="field-hint">Private to the model. It works toward it and never shows it.</span>
+          </label>
+          <label class="field">
+            <span class="field-label">Model</span>
+            <input class="input input-mono" value={model()} onInput={(e) => setModel(e.currentTarget.value)} placeholder="Default: the new-session default" />
+          </label>
+          <div class="button-row">
+            <button type="submit" class="button button-primary">
+              {to().length > 1 ? `Offer to ${to().length}` : "Start Session"}
+            </button>
+          </div>
+        </form>
+      </Show>
+    </section>
+  );
+}
+
+// ---- people ---------------------------------------------------------------------------------------
+
+function PeopleSection(props: { org: OrgDetail; act: Act; settle(): void }) {
+  const [adding, setAdding] = createSignal(false);
+  return (
+    <section class="card orgs-section" aria-labelledby="orgs-people">
+      <div class="orgs-head">
+        <h2 class="orgs-h2" id="orgs-people">
+          People
+        </h2>
+        <button type="button" class="button button-sm" aria-expanded={adding()} onClick={() => setAdding(!adding())}>
+          <Icon name="plus" small /> Add Person
+        </button>
+      </div>
+      <Show when={adding()}>
+        <PersonForm
+          submitLabel="Add Person"
+          onCancel={() => setAdding(false)}
+          onSubmit={async (input) => {
+            const ok = await props.act(() => addPerson(props.org.id, input), `${input.name} added.`);
+            if (ok) {
+              setAdding(false);
+              props.settle();
+            }
+          }}
+        />
+      </Show>
+      <Show when={props.org.roster.length} fallback={<p class="orgs-empty">Nobody on the roster yet.</p>}>
+        <ul class="orgs-people">
+          <For each={props.org.roster}>{(p) => <PersonCard org={props.org} person={p} act={props.act} settle={props.settle} />}</For>
+        </ul>
+      </Show>
+    </section>
+  );
+}
+
+const STATUS_CHIP: Record<string, { word: string; tone?: "success" | "warn" }> = {
+  active: { word: "Active", tone: "success" },
+  proposed: { word: "Proposed", tone: "warn" },
+  left: { word: "Left" },
+};
+
+function PersonCard(props: { org: OrgDetail; person: Person; act: Act; settle(): void }) {
+  const [editing, setEditing] = createSignal(false);
+  const p = () => props.person;
+  const contact = () =>
+    Object.entries(p().contact)
+      .filter(([, v]) => v)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(" · ");
+  return (
+    <li class="orgs-person">
+      <div class="orgs-head">
+        <div class="orgs-person-main">
+          <span class="orgs-person-name">{p().name}</span>
+          <span class="list-meta">{[p().role, p().language].filter(Boolean).join(" · ")}</span>
+        </div>
+        <Chip tone={STATUS_CHIP[p().status]?.tone}>{STATUS_CHIP[p().status]?.word ?? p().status}</Chip>
+        <Show when={p().status === "proposed"}>
+          <button type="button" class="button button-sm" onClick={() => void props.act(() => approvePerson(props.org.id, p().id), `${p().name} is on the roster now.`).then((ok) => ok && props.settle())}>
+            Approve
+          </button>
+          <button type="button" class="button button-sm button-ghost" onClick={() => void props.act(() => declinePerson(props.org.id, p().id), `Declined ${p().name}. The referral stays in their history.`).then((ok) => ok && props.settle())}>
+            Decline
+          </button>
+        </Show>
+        <Show when={p().status === "active"}>
+          <a class="button button-sm button-ghost" href={startForHref(props.org.id, p().id)}>
+            Start a Session
+          </a>
+        </Show>
+        <button type="button" class="button button-sm button-ghost" aria-expanded={editing()} onClick={() => setEditing(!editing())}>
+          <Icon name="pencil" small /> Edit
+        </button>
+      </div>
+      <Show when={p().status === "proposed" && !editing()}>
+        <p class="baton-strip-areas">{proposedAreasLine(p().name, p().decides)}</p>
+      </Show>
+      <Show when={!editing()}>
+        <dl class="orgs-facts">
+          <Show when={p().decides.length}>
+            <dt>Decides</dt>
+            <dd>{p().decides.join(", ")}</dd>
+          </Show>
+          <Show when={p().skills.length}>
+            <dt>Skills</dt>
+            <dd>{p().skills.join(", ")}</dd>
+          </Show>
+          <Show when={p().voice}>
+            <dt>Voice</dt>
+            <dd>{p().voice}</dd>
+          </Show>
+          <Show when={contact()}>
+            <dt>Contact</dt>
+            <dd>{contact()}</dd>
+          </Show>
+          <Show when={p().referral}>
+            {(r) => (
+              <>
+                <dt>Referred</dt>
+                <dd>
+                  by {props.org.roster.find((x) => x.id === r().referredBy)?.name ?? (r().referredBy === OPERATOR ? "you" : r().referredBy)}: {r().why}
+                  {r().quote ? ` · “${r().quote}”` : ""}
+                </dd>
+              </>
+            )}
+          </Show>
+        </dl>
+      </Show>
+      <Show when={editing()}>
+        <PersonForm
+          person={p()}
+          submitLabel="Save Changes"
+          onCancel={() => setEditing(false)}
+          onSubmit={async (input) => {
+            const ok = await props.act(() => patchPerson(props.org.id, p().id, input), "Saved.");
+            if (ok) {
+              setEditing(false);
+              props.settle();
+            }
+          }}
+        />
+      </Show>
+      <History orgId={props.org.id} person={p()} act={props.act} />
+    </li>
+  );
+}
+
+function History(props: { orgId: string; person: Person; act: Act }) {
+  const [open, setOpen] = createSignal(false);
+  const [lines, { refetch }] = createResource(
+    () => (open() ? { org: props.orgId, pid: props.person.id, v: JSON.stringify(props.person) } : null),
+    (k) => personHistory(k.org, k.pid),
+  );
+  return (
+    <details class="orgs-history" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>History</summary>
+      <Show when={lines()} fallback={<p class="orgs-empty">Loading history.</p>}>
+        <ul class="orgs-history-list">
+          <For each={lines()}>
+            {(c: ProfileChange) => (
+              <li class="orgs-change">
+                <span class="orgs-change-main">
+                  <span class="orgs-change-field">{c.field}</span> {valueText(c.field, c.from)} → {valueText(c.field, c.to)}
+                  <span class="list-meta">
+                    {" "}
+                    · {WRITER[c.by.kind] ?? c.by.kind}
+                    {c.by.quote ? ` · “${c.by.quote}”` : ""}
+                    {c.revertOf ? " · a revert" : ""} · <time title={c.at}>{relativeTime(c.at)}</time>
+                  </span>
+                </span>
+                <Show when={c.field !== "name" || c.from !== null}>
+                  <button
+                    type="button"
+                    class="button button-sm button-ghost"
+                    onClick={async () => {
+                      if (await props.act(() => revertPersonChange(props.orgId, props.person.id, c.at), `Reverted ${c.field}.`)) void refetch();
+                    }}
+                  >
+                    <Icon name="undo" small /> Revert
+                  </button>
+                </Show>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+    </details>
+  );
+}
+
+function PersonForm(props: { person?: Person; submitLabel: string; onSubmit(input: PersonInput): void; onCancel(): void }) {
+  const p = props.person;
+  const [name, setName] = createSignal(p?.name ?? "");
+  const [status, setStatus] = createSignal<Person["status"]>(p?.status ?? "active");
+  const [role, setRole] = createSignal(p?.role ?? "");
+  const [decides, setDecides] = createSignal(p?.decides.join(", ") ?? "");
+  const [skills, setSkills] = createSignal(p?.skills.join(", ") ?? "");
+  const [language, setLanguage] = createSignal(p?.language ?? "");
+  const [voice, setVoice] = createSignal(p?.voice ?? "");
+  const [email, setEmail] = createSignal(p?.contact.email ?? "");
+  const [phone, setPhone] = createSignal(p?.contact.phone ?? "");
+  const [whatsapp, setWhatsapp] = createSignal(p?.contact.whatsapp ?? "");
+  const [why, setWhy] = createSignal(p?.referral?.why ?? "");
+  const [by, setBy] = createSignal(p?.referral?.referredBy ?? "");
+  const text = (label: string, get: () => string, set: (v: string) => void, extra: JSX.InputHTMLAttributes<HTMLInputElement> = {}) => (
+    <label class="field">
+      <span class="field-label">{label}</span>
+      <input class="input" value={get()} onInput={(e) => set(e.currentTarget.value)} {...extra} />
+    </label>
+  );
+  return (
+    <form
+      class="orgs-form orgs-subform"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const contact = { ...(email().trim() ? { email: email().trim() } : {}), ...(phone().trim() ? { phone: phone().trim() } : {}), ...(whatsapp().trim() ? { whatsapp: whatsapp().trim() } : {}) };
+        props.onSubmit({
+          name: name().trim(),
+          status: status(),
+          role: role().trim(),
+          decides: list(decides()),
+          skills: list(skills()),
+          language: language().trim(),
+          voice: voice().trim(),
+          contact,
+          ...(status() === "proposed" || why().trim() || by().trim() ? { referral: { why: why().trim(), referredBy: by().trim() } } : {}),
+        });
+      }}
+    >
+      <div class="orgs-fields">
+        {text("Name", name, setName, { maxlength: 80, required: true })}
+        <label class="field">
+          <span class="field-label">Status</span>
+          <select class="select" value={status()} onChange={(e) => setStatus(e.currentTarget.value as Person["status"])}>
+            <option value="active">Active</option>
+            <option value="proposed">Proposed</option>
+            <option value="left">Left</option>
+          </select>
+        </label>
+        {text("Role", role, setRole, { maxlength: 300 })}
+        {text("Language", language, setLanguage, { placeholder: "es-CO", maxlength: 35 })}
+        {text("Decides", decides, setDecides, { placeholder: "invoicing, bank access" })}
+        {text("Skills", skills, setSkills, { placeholder: "Excel, SQL" })}
+        {text("Email", email, setEmail, { type: "email" })}
+        {text("Phone", phone, setPhone)}
+        {text("WhatsApp", whatsapp, setWhatsapp)}
+      </div>
+      <label class="field">
+        <span class="field-label">Voice</span>
+        <textarea class="input textarea" rows={2} maxlength={300} value={voice()} onInput={(e) => setVoice(e.currentTarget.value)} />
+        <span class="field-hint">How to talk to them. Never shown to them or anyone else outside this page.</span>
+      </label>
+      <Show when={status() === "proposed"}>
+        <div class="orgs-fields">
+          {text("Why referred", why, setWhy, { maxlength: 300, required: true })}
+          {text("Referred by", by, setBy, { maxlength: 80, required: true })}
+        </div>
+        <p class="field-hint">A proposed person needs a name, a contact, a role, and who referred them and why.</p>
+      </Show>
+      <div class="button-row">
+        <button type="submit" class="button button-primary">
+          {props.submitLabel}
+        </button>
+        <button type="button" class="button button-ghost" onClick={() => props.onCancel()}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ---- recent profile changes: what the wrap-ups, referrals and you changed, each revertible -----------
+
+type WriterFilter = "all" | ProfileChange["by"]["kind"];
+const WRITER_FILTERS: { value: WriterFilter; label: string }[] = [
+  { value: "all", label: "Every writer" },
+  { value: "wrapup", label: "Wrap-ups" },
+  { value: "referral", label: "Referrals" },
+  { value: "overseer", label: "Overseer" },
+  { value: "operator", label: "You" },
+];
+
+function ChangesSection(props: { org: OrgDetail; act: Act }) {
+  const [writer, setWriter] = createSignal<WriterFilter>("all");
+  const changes = () => (props.org.recentChanges ?? []).filter((c) => writer() === "all" || c.by.kind === writer());
+  const groups = createMemo(() => groupChanges(changes()));
+  const pathOf = (sid?: string) => (sid ? props.org.batons.find((b) => b.sessionId === sid)?.path : undefined);
+  const undone = createMemo(() => new Set((props.org.recentChanges ?? []).flatMap((c) => (c.revertOf ? [c.revertOf] : []))));
+  const revert = (c: NamedChange) => void props.act(() => revertPersonChange(props.org.id, c.personId, c.at), `Reverted ${c.name}'s ${c.field}.`);
+  return (
+    <section class="card orgs-section" aria-labelledby="orgs-changes">
+      <div class="orgs-head">
+        <h2 class="orgs-h2" id="orgs-changes">
+          Recent Profile Changes
+        </h2>
+        <label class="field orgs-changes-filter">
+          <span class="visually-hidden">Show changes by</span>
+          <select class="select" value={writer()} onChange={(e) => setWriter(e.currentTarget.value as WriterFilter)}>
+            <For each={WRITER_FILTERS}>{(f) => <option value={f.value}>{f.label}</option>}</For>
+          </select>
+        </label>
+      </div>
+      <p class="orgs-line project-muted">Wrap-ups write skills, competence, language and voice on their own. Each change keeps the words it came from.</p>
+      <Show
+        when={groups().length}
+        fallback={<p class="orgs-empty">{`${plural(props.org.people, "person", "people")} on the roster. ${writer() === "all" ? "No profile change yet." : "No change by this writer in the recent ones."}`}</p>}
+      >
+        <ul class="orgs-history-list">
+          <For each={groups()}>
+            {(g) => (
+              <li class="orgs-change orgs-change-group">
+                <div class="orgs-change-main">
+                  <span>
+                    <span class="orgs-person-name">{g.name}</span>
+                    {g.added ? " added" : ""}
+                    <span class="list-meta">
+                    {" "}
+                    · by {WRITER[g.by.kind] ?? g.by.kind} · <time title={g.key}>{relativeTime(g.key)}</time>
+                    <Show when={pathOf(g.by.sessionId)}>
+                      {(path) => (
+                        <>
+                          {" · "}
+                          <a href={sessionHref(path())}>Session</a>
+                        </>
+                      )}
+                    </Show>
+                    </span>
+                  </span>
+                  <Show when={g.by.quote}>{(q) => <blockquote class="project-quote">{q()}</blockquote>}</Show>
+                  <ul class="orgs-change-fields">
+                    <For each={g.changes}>
+                      {(c) => (
+                        <li class="orgs-change">
+                          <span class="orgs-change-main">
+                            <span class="orgs-change-field">{c.field}</span> {g.added ? "" : `${valueText(c.field, c.from)} → `}
+                            {valueText(c.field, c.to)}
+                            {c.revertOf ? <span class="list-meta"> · a revert</span> : ""}
+                          </span>
+                          <Show when={revertible(c, undone())}>
+                            <button type="button" class="button button-sm button-ghost" aria-label={`Revert ${c.name}'s ${c.field}`} onClick={() => revert(c)}>
+                              <Icon name="undo" small /> Revert
+                            </button>
+                          </Show>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </div>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+    </section>
+  );
+}
+
+// ---- projects ---------------------------------------------------------------------------------------
+
+function ProjectsSection(props: { org: OrgDetail; act: Act; settle(): void }) {
+  const [name, setName] = createSignal("");
+  const [root, setRoot] = createSignal("");
+  return (
+    <section class="card orgs-section" aria-labelledby="orgs-projects">
+      <h2 class="orgs-h2" id="orgs-projects">
+        Projects
+      </h2>
+      <Show when={props.org.projectList.length} fallback={<p class="orgs-empty">No projects yet.</p>}>
+        <ul class="list">
+          <For each={props.org.projectList}>
+            {(p) => (
+              <li class="list-row orgs-row">
+                <Icon name="folder" />
+                <span class="list-main">
+                  <a class="list-title" href={projectHref(props.org.id, p.id)}>
+                    {p.name}
+                  </a>
+                  <span class="list-meta orgs-mono">{p.root}</span>
+                </span>
+                <a class="button button-sm button-ghost" href={projectHref(props.org.id, p.id)}>
+                  Decisions and Overseer
+                </a>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+      <form
+        class="orgs-inline"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (await props.act(() => addOrgProject(props.org.id, name().trim(), root().trim()), "Project added.")) {
+            setName("");
+            setRoot("");
+            props.settle();
+          }
+        }}
+      >
+        <label class="field">
+          <span class="field-label">Name</span>
+          <input class="input" value={name()} onInput={(e) => setName(e.currentTarget.value)} maxlength={80} required />
+        </label>
+        <label class="field orgs-grow">
+          <span class="field-label">Folder</span>
+          <input class="input input-mono" value={root()} onInput={(e) => setRoot(e.currentTarget.value)} placeholder="/path/to/project" required />
+        </label>
+        <button type="submit" class="button">
+          Add Project
+        </button>
+      </form>
+    </section>
+  );
+}
+
+// ---- replay -------------------------------------------------------------------------------------------
+
+const PLAY_MS = 1600;
+
+function ReplayPage(props: { orgId: string; sessionId: string; titleRef(el: HTMLHeadingElement): void }) {
+  const [view, { refetch }] = createResource(() => props.sessionId, batonReplay);
+  const [step, setStep] = createSignal(0);
+  const [playing, setPlaying] = createSignal(false);
+  const total = () => view()?.items.length ?? 0;
+  createEffect(on(total, (n) => setStep((s) => (s === 0 ? Math.min(1, n) : Math.min(s, n)))));
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const stop = () => {
+    setPlaying(false);
+    clearInterval(timer);
+  };
+  const play = () => {
+    if (step() >= total()) setStep(0);
+    setPlaying(true);
+    timer = setInterval(() => {
+      if (step() >= total()) return stop();
+      setStep(step() + 1);
+    }, PLAY_MS);
+  };
+  onCleanup(() => clearInterval(timer));
+  const go = (n: number) => {
+    stop();
+    setStep(Math.max(0, Math.min(total(), n)));
+  };
+  return (
+    <InsightsPage
+      title={view()?.publicTitle ?? "Replay"}
+      meta={
+        <>
+          <a class="orgs-meta-link" href={orgHref(props.orgId)}>Back to the organization</a> <span>· Replay, read-only</span>
+        </>
+      }
+      refreshLabel="Reload Replay"
+      onRefresh={() => void refetch()}
+      error={view.error ? errText(view.error) : null}
+      errorTitle="Couldn't load this session."
+      busy={view.loading}
+      titleRef={props.titleRef}
+    >
+      <Show when={view()}>
+        {(v) => (
+          <>
+            <div class="card orgs-section orgs-replay-bar" role="group" aria-label="Playback">
+              <button type="button" class="button button-sm" onClick={() => go(0)} aria-label="First step">
+                First
+              </button>
+              <button type="button" class="button button-sm" onClick={() => go(step() - 1)} aria-label="Previous step">
+                Previous
+              </button>
+              <button type="button" class="button button-sm button-primary" onClick={() => (playing() ? stop() : play())}>
+                {playing() ? "Pause" : "Play"}
+              </button>
+              <button type="button" class="button button-sm" onClick={() => go(step() + 1)} aria-label="Next step">
+                Next
+              </button>
+              <button type="button" class="button button-sm" onClick={() => go(total())} aria-label="Last step">
+                Last
+              </button>
+              <span class="orgs-mono orgs-replay-count" aria-live="polite">
+                {step()} of {total()}
+              </span>
+            </div>
+            <ol class="orgs-replay">
+              <For each={v().items.slice(0, step())}>{(it) => <ReplayItem item={it} />}</For>
+            </ol>
+            <Show when={step() >= total()}>
+              <p class="orgs-empty">{endLine(v())}</p>
+            </Show>
+          </>
+        )}
+      </Show>
+    </InsightsPage>
+  );
+}
+
+const endLine = (v: BatonView) =>
+  v.state === "done" ? "The end: this session is done." : v.state === "closed" ? "The end: this session was closed." : v.holder ? `So far. It's with ${v.holder} now.` : "So far.";
+
+export function ReplayItem(props: { item: BatonViewItem }) {
+  const it = props.item;
+  switch (it.kind) {
+    case "message":
+      return (
+        <li class="orgs-replay-item orgs-replay-message">
+          <span class="orgs-replay-who">{it.name}</span>
+          <div class="orgs-replay-text">{it.text}</div>
+        </li>
+      );
+    case "reply":
+      return (
+        <li class="orgs-replay-item orgs-replay-reply">
+          <span class="orgs-replay-who">Facilitator</span>
+          <div class="orgs-replay-text">{it.text}</div>
+        </li>
+      );
+    case "handoff":
+      return (
+        <li class="orgs-replay-item orgs-replay-card">
+          <span class="orgs-replay-who">
+            Hand-off {it.n}: {it.from} → {it.to}
+          </span>
+          <div class="orgs-replay-text">{it.question}</div>
+          <Show when={it.briefing}>
+            <div class="orgs-replay-brief">{it.briefing}</div>
+          </Show>
+        </li>
+      );
+    case "offer":
+      return (
+        <li class="orgs-replay-item orgs-replay-card">
+          <span class="orgs-replay-who">
+            Hand-off {it.n}: {it.from} → offered to {it.to.length ? it.to.join(", ") : plural(it.invited, "person", "people")}
+          </span>
+          <div class="orgs-replay-text">{it.question}</div>
+          <Show when={it.briefing}>
+            <div class="orgs-replay-brief">{it.briefing}</div>
+          </Show>
+        </li>
+      );
+    case "decision":
+      return (
+        <li class="orgs-replay-item orgs-replay-card">
+          <span class="orgs-replay-who">
+            Decision · {it.area} · {it.by}
+          </span>
+          <div class="orgs-replay-text">{it.statement}</div>
+        </li>
+      );
+    case "done":
+      return (
+        <li class="orgs-replay-item orgs-replay-card">
+          <span class="orgs-replay-who">Done</span>
+          <div class="orgs-replay-text">{it.summary}</div>
+        </li>
+      );
+  }
+}

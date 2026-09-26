@@ -99,3 +99,10 @@ test("open by default; only a stored collapse closes it, and a search forces it 
   assert.equal(needsYouOpen({ stored: false, searching: false }), false);
   assert.equal(needsYouOpen({ stored: true, searching: false }), true);
 });
+
+test("a roster proposal lists although its tier is decide; other decide kinds still don't", () => {
+  const d = digest([item("a", "decide", "roster-proposal", 500, "Approve Bob (IT) proposed by Tony?"), item("b", "decide", "finished", 900, "done")]);
+  const rows = needsYouRows(d, ["a", "b"].map(session));
+  assert.deepEqual(rows.map((r) => r.session.id), ["a"]);
+  assert.equal(rows[0]!.detail, "Approve Bob (IT) proposed by Tony?");
+});

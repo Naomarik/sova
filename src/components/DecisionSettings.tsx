@@ -51,6 +51,7 @@ import {
   suggestionLabel,
   unansweredIssue,
   type DecisionDraft,
+  reconcileOn,
 } from "../lib/decision-form";
 import { sameChoice, type DraftChoice } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
@@ -512,6 +513,14 @@ export function DecisionSettingsSection() {
             "Gives each session a topic and a status word you can search.",
             () => draft()!.features.tags,
             (on) => edit((c) => (c.features.tags = on)),
+            unanswered,
+          )}
+          {switchRow(
+            "decisions-reconcile",
+            "Reconcile decisions",
+            "Compares decisions recorded in hand-off sessions and sends contradictions to whoever decides. Only the decision text is sent.",
+            () => reconcileOn(draft()!.features),
+            (on) => edit((c) => (c.features.reconcile = on)),
             unanswered,
           )}
           {/* The switches already say it when nobody can answer; the server's note covers the other reasons. */}

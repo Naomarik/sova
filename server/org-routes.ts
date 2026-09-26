@@ -1,0 +1,380 @@
+import type { Context, Hono } from "hono";
+import { OPERATOR, type BatonInfo, type BatonSession, type BatonStartInput, type OfferInfo, type OfferLink } from "../shared/baton";
+import type { PersonInput } from "../shared/orgs";
+import { batonById, batonOfPath, closeBaton, createBaton, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink } from "./baton";
+import { moveBaton, offerBaton, scheduleWrapup } from "./baton-loadout";
+import { BusyError } from "./chat-manager";
+import {
+  addPerson,
+  addProject,
+  applyChange,
+  approvePerson,
+  attachOrg,
+  createOrg,
+  declinePerson,
+  detachOrg,
+  orgDetail,
+  orgDir,
+  orgsInfo,
+  OrgError,
+  patchOrg,
+  patchProject,
+  readHistory,
+  readOrg,
+  readProjects,
+  readRoster,
+  recentChanges,
+  revertChange,
+  setOperatorName,
+} from "./orgs";
+import { resolveSessionPath } from "./paths";
+import { readView, refreshShare } from "./share/hub";
+import { shareInfo } from "./share/listener";
+import { nudgeMarks } from "./session-feed";
+import { commitAll, setRemote } from "./workspace-git";
+
+/**
+ * The operator's routes for organizations and baton sessions (§app/organizations, §app/baton). On
+ * the main listener only (loopback + tailnet, peer-reachable like every /api route); the share
+ * listener never registers them.
+ */
+
+async function body(c: Context): Promise<Record<string, unknown>> {
+  try {
+    const b = await c.req.json();
+    return typeof b === "object" && b !== null && !Array.isArray(b) ? b : {};
+  } catch {
+    throw new OrgError("Expected a JSON object body");
+  }
+}
+
+/** A link as the operator copies it: the share listener's public address when known, else the path. */
+const linkUrl = (token: string): string => `${shareInfo().publicUrl ?? ""}/h/${token}`;
+
+/** The operator's strip for a baton row (GET /api/baton and every baton route that answers with it). */
+export function batonInfo(row: BatonSession): BatonInfo {
+  const roster = readRoster(row.orgId);
+  const nm = (id: string) => nameOf(row.orgId, id, roster);
+  const last = row.offers?.find((o) => o.id === row.offerId) ?? row.offers?.[row.offers.length - 1];
+  const offer: OfferInfo | null = last
+    ? {
+        id: last.id,
+        n: last.n,
+        to: last.to.map((id) => ({ id, name: nm(id) })),
+        state: last.state,
+        ...(last.holder ? { holder: { id: last.holder, name: nm(last.holder) } } : {}),
+        ...(last.leaseUntil ? { leaseUntil: last.leaseUntil } : {}),
+        ...(last.lastActivityAt ? { lastActivityAt: last.lastActivityAt } : {}),
+        createdAt: last.createdAt,
+      }
+    : null;
+  return {
+    session: row,
+    orgName: readOrg(row.orgId).name,
+    projectName: readProjects(row.orgId).find((p) => p.id === row.projectId)?.name ?? "",
+    names: namesOf(row.orgId),
+    active: roster.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, role: p.role })),
+    liveLinks: liveLinkCount(row),
+    share: shareInfo(),
+    offer,
+    proposed: roster
+      .filter((p) => p.status === "proposed" && p.referral?.sessionId === row.sessionId)
+      .map((p) => {
+        const by = p.referral?.referredBy ?? "";
+        return {
+          id: p.id,
+          name: p.name,
+          role: p.role,
+          why: p.referral?.why ?? "",
+          decides: p.decides,
+          referredBy: by === OPERATOR || roster.some((x) => x.id === by) ? nm(by) : by,
+          ...(p.referral?.quote ? { quote: p.referral.quote } : {}),
+        };
+      }),
+    wrapup: row.wrapup ?? null,
+  };
+}
+
+const infoOf = (sid: string): BatonInfo => {
+  const hit = batonById(sid);
+  if (!hit) throw new OrgError("Unknown baton session", 404);
+  return batonInfo(hit.row);
+};
+
+const offerLinks = (orgId: string, links: { personId: string; token: string }[]): OfferLink[] =>
+  links.map((l) => ({ personId: l.personId, name: nameOf(orgId, l.personId), link: linkUrl(l.token) }));
+
+/** A route param ("" when absent: every lookup then answers 404). */
+const p = (c: Context, name: string): string => c.req.param(name) ?? "";
+
+/** Run a handler, turning OrgError (and BusyError) into their statuses. */
+const handle =
+  (fn: (c: Context) => Promise<Response> | Response) =>
+  async (c: Context): Promise<Response> => {
+    try {
+      return await fn(c);
+    } catch (err) {
+      if (err instanceof OrgError) return c.json({ error: err.message }, err.status);
+      if (err instanceof BusyError) return c.json({ error: err.message }, 409);
+      throw err;
+    }
+  };
+
+export function registerOrgRoutes(app: Hono<any>): void {
+  app.get("/api/orgs", (c) => c.json(orgsInfo()));
+  app.post(
+    "/api/orgs",
+    handle(async (c) => {
+      const b = await body(c);
+      const org = await createOrg({ name: b.name, dir: b.dir });
+      return c.json(await orgDetail(org.id), 201);
+    }),
+  );
+  app.post(
+    "/api/orgs/attach",
+    handle(async (c) => {
+      const org = await attachOrg({ dir: (await body(c)).dir });
+      return c.json(await orgDetail(org.id), 201);
+    }),
+  );
+  app.put(
+    "/api/orgs/operator",
+    handle(async (c) => {
+      setOperatorName((await body(c)).name);
+      return c.json(orgsInfo());
+    }),
+  );
+  app.get(
+    "/api/orgs/:id",
+    handle(async (c) => c.json(await orgDetail(p(c, "id")))),
+  );
+  app.patch(
+    "/api/orgs/:id",
+    handle(async (c) => {
+      const b = await body(c);
+      patchOrg(p(c, "id"), { name: b.name, notes: b.notes });
+      return c.json(await orgDetail(p(c, "id")));
+    }),
+  );
+  app.delete(
+    "/api/orgs/:id",
+    handle((c) => {
+      detachOrg(p(c, "id"));
+      return c.json({ ok: true });
+    }),
+  );
+  app.post(
+    "/api/orgs/:id/commit",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const out = await commitAll(orgDir(id), `Commit now (${readOrg(id).name})`);
+      if (out.error) return c.json({ error: out.error }, 502);
+      return c.json(await orgDetail(id));
+    }),
+  );
+  app.put(
+    "/api/orgs/:id/remote",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const url = (await body(c)).url;
+      if (typeof url !== "string" || url.length > 500 || /\s/.test(url.trim())) throw new OrgError("url must be a git remote URL, or empty to remove it");
+      await setRemote(orgDir(id), url.trim());
+      return c.json(await orgDetail(id));
+    }),
+  );
+  app.post(
+    "/api/orgs/:id/people",
+    handle(async (c) => {
+      const id = p(c, "id");
+      addPerson(id, (await body(c)) as unknown as PersonInput);
+      return c.json(await orgDetail(id), 201);
+    }),
+  );
+  app.patch(
+    "/api/orgs/:id/people/:pid",
+    handle(async (c) => {
+      const id = p(c, "id");
+      applyChange(id, p(c, "pid"), await body(c), { kind: "operator" });
+      nudgeMarks(); // a renamed or re-statused person may be a baton holder or a waiting referral
+      return c.json(await orgDetail(id));
+    }),
+  );
+  app.post(
+    "/api/orgs/:id/people/:pid/approve",
+    handle(async (c) => {
+      const id = p(c, "id");
+      approvePerson(id, p(c, "pid"));
+      nudgeMarks(); // the session that proposed them loses its Approve item: re-diff the list now
+      return c.json(await orgDetail(id));
+    }),
+  );
+  app.post(
+    "/api/orgs/:id/people/:pid/decline",
+    handle(async (c) => {
+      const id = p(c, "id");
+      declinePerson(id, p(c, "pid"));
+      nudgeMarks();
+      return c.json(await orgDetail(id));
+    }),
+  );
+  app.get(
+    "/api/orgs/:id/changes",
+    handle((c) => {
+      const limit = Number(c.req.query("limit") ?? 50);
+      return c.json(recentChanges(p(c, "id"), Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 50));
+    }),
+  );
+  app.get(
+    "/api/orgs/:id/people/:pid/history",
+    handle((c) => c.json(readHistory(p(c, "id"), p(c, "pid")).reverse())),
+  );
+  app.post(
+    "/api/orgs/:id/people/:pid/revert",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const at = (await body(c)).at;
+      if (typeof at !== "string") throw new OrgError("at is required");
+      revertChange(id, p(c, "pid"), at);
+      return c.json(await orgDetail(id));
+    }),
+  );
+  app.post(
+    "/api/orgs/:id/projects",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const b = await body(c);
+      addProject(id, { name: b.name, root: b.root });
+      return c.json(await orgDetail(id), 201);
+    }),
+  );
+  app.patch(
+    "/api/orgs/:id/projects/:pid",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const b = await body(c);
+      patchProject(id, p(c, "pid"), { name: b.name, root: b.root, ...(b.spec !== undefined ? { spec: b.spec } : {}) });
+      return c.json(await orgDetail(id));
+    }),
+  );
+
+  // ---- baton sessions --------------------------------------------------------------------------------
+
+  app.post(
+    "/api/baton",
+    handle(async (c) => {
+      const b = await body(c);
+      // `owner` is for in-process callers (the project overseer, the reconciler), never a request.
+      const { owner: _owner, mintLink: _mint, ...input } = b;
+      const created = createBaton(input as unknown as BatonStartInput);
+      const orgId = String(b.orgId);
+      return c.json(
+        {
+          path: created.path,
+          sessionId: created.sessionId,
+          ...(created.token ? { link: linkUrl(created.token) } : {}),
+          ...(created.links ? { links: offerLinks(orgId, created.links) } : {}),
+        },
+        201,
+      );
+    }),
+  );
+  app.get(
+    "/api/baton",
+    handle((c) => {
+      const path = resolveSessionPath(c.req.query("path"));
+      const hit = path ? batonOfPath(path) : null;
+      if (!hit) return c.json({ error: "Not a baton session" }, 404);
+      return c.json(batonInfo(hit.row));
+    }),
+  );
+  app.get(
+    "/api/baton/:sid/link",
+    handle((c) => {
+      const person = c.req.query("person");
+      const { token, n } = rotateLink(p(c, "sid"), person || undefined);
+      return c.json({ link: linkUrl(token), n });
+    }),
+  );
+  app.post(
+    "/api/baton/:sid/revoke",
+    handle((c) => {
+      const sid = p(c, "sid");
+      revokeCurrent(sid);
+      refreshShare(sid);
+      return c.json({ ok: true });
+    }),
+  );
+  app.post(
+    "/api/baton/:sid/take",
+    handle(async (c) => {
+      const sid = p(c, "sid");
+      const hit = batonById(sid);
+      if (!hit) throw new OrgError("Unknown baton session", 404);
+      if (hit.row.holder === OPERATOR) throw new OrgError("You already hold the baton.", 409);
+      await moveBaton(sid, OPERATOR, "(taken back)");
+      return c.json({ ok: true });
+    }),
+  );
+  app.post(
+    "/api/baton/:sid/close",
+    handle((c) => {
+      const sid = p(c, "sid");
+      closeBaton(sid);
+      refreshShare(sid);
+      // Closing ends it as goal_done does: the wrap-up runs (now, or when a running reply settles).
+      scheduleWrapup(sid);
+      return c.json({ ok: true });
+    }),
+  );
+  app.post(
+    "/api/baton/:sid/offer",
+    handle(async (c) => {
+      const sid = p(c, "sid");
+      const b = await body(c);
+      if (!Array.isArray(b.to)) throw new OrgError("to must be a list of people");
+      const hit = batonById(sid);
+      if (!hit) throw new OrgError("Unknown baton session", 404);
+      const out = await offerBaton(sid, b.to, typeof b.question === "string" ? b.question : "", typeof b.briefing === "string" ? b.briefing : "");
+      return c.json({ info: infoOf(sid), links: offerLinks(hit.row.orgId, out.links) }, 201);
+    }),
+  );
+  app.post(
+    "/api/baton/:sid/offer/withdraw",
+    handle(async (c) => {
+      const sid = p(c, "sid");
+      const hit = batonById(sid);
+      if (!hit) throw new OrgError("Unknown baton session", 404);
+      if (!hit.row.offerId) throw new OrgError("There is no open offer.", 409);
+      await moveBaton(sid, OPERATOR, "(offer withdrawn)");
+      return c.json(infoOf(sid));
+    }),
+  );
+  app.post(
+    "/api/baton/:sid/handoff",
+    handle(async (c) => {
+      const sid = p(c, "sid");
+      const b = await body(c);
+      const hit = batonById(sid);
+      if (!hit) throw new OrgError("Unknown baton session", 404);
+      const to = typeof b.to === "string" ? b.to : "";
+      const target = readRoster(hit.row.orgId).find((x) => x.id === to);
+      if (!target) throw new OrgError("to must be a roster person's id", 400);
+      if (target.status !== "active") throw new OrgError(target.status === "proposed" ? `Approve ${target.name} first.` : `${target.name} is not active.`, 409);
+      const question = typeof b.question === "string" ? b.question.trim().slice(0, 1000) : "";
+      if (!question) throw new OrgError("question is required");
+      const briefing = typeof b.briefing === "string" ? b.briefing.trim().slice(0, 4000) : "";
+      await moveBaton(sid, to, question, briefing);
+      const { token } = rotateLink(sid);
+      return c.json({ info: infoOf(sid), link: linkUrl(token) });
+    }),
+  );
+  app.get(
+    "/api/baton/:sid/replay",
+    handle(async (c) => {
+      const hit = batonById(p(c, "sid"));
+      if (!hit) throw new OrgError("Unknown baton session", 404);
+      return c.json(await readView(hit.row, hit.dir));
+    }),
+  );
+}
+

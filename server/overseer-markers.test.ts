@@ -305,7 +305,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     chat.session.steer = (text, images) => (steered.push(text), steer(text, images));
     void chat.acceptPrompt("a long task").turn;
     await until(() => chat.session.isStreaming);
-    return { path, chat, release, snaps, gone, steered, pending: () => (chat as unknown as { overseerSends: unknown[] }).overseerSends };
+    return { path, chat, release, snaps, gone, steered, pending: () => (chat as unknown as { senderMarks: unknown[] }).senderMarks };
   }
   const ov = async () => (await overseer.ensureOverseer()).id;
 
@@ -402,7 +402,7 @@ describe("a pending Overseer mark never outlives its prompt", () => {
     const header = { type: "session", version: 3, id: "leak1", timestamp: "2026-09-20T00:00:00.000Z", cwd };
     writeFileSync(path, [header, user("u1", null, "hi"), assistant("a1", "u1", "hello")].map((e) => JSON.stringify(e)).join("\n") + "\n");
     const chat = await acquireChat(path, true);
-    const pending = () => (chat as unknown as { overseerSends: unknown[] }).overseerSends;
+    const pending = () => (chat as unknown as { senderMarks: unknown[] }).senderMarks;
     // This throwaway agent dir has no credentials: the turn fails before any user message is saved.
     const { turn } = chat.acceptPrompt("same text", undefined, "server", undefined, { sentByOverseer: { overseerId: "ov" } });
     await turn.catch(() => {});

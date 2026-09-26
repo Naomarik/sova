@@ -2,6 +2,9 @@
 // (server/attention.ts — a dialog open, an errored turn, a subagent error, or a decision signal
 // that asks you something or is stuck), said once more above Recent.
 //
+// One decide-tier kind lists too: a roster proposal (§app.organizations/referrals) waits on the
+// operator's Approve or Decline and on nothing else, so it is a thing to act on here.
+//
 // Like Recent it is a SHORTCUT: every session it lists keeps its row wherever it lives. The digest,
 // not the session list, is the source, because two act kinds (a hosted pending dialog, a worker
 // error) and every detail sentence reach only the digest.
@@ -9,7 +12,7 @@
 // Pure on purpose, like `recent` and `group-open`: the rules run under tsx --test, and the sidebar
 // keeps the (sessionStorage) state.
 
-import type { AttentionDigest, OverseerProactivity, SessionSummary } from "../../shared/protocol";
+import type { AttentionDigest, AttentionItem, OverseerProactivity, SessionSummary } from "../../shared/protocol";
 
 /** Open by default; a collapse is remembered for the tab, like the Archive's `sova:archive-open`. */
 export const NEEDS_YOU_KEY = "sova:needs-you-open";
@@ -25,8 +28,11 @@ export interface NeedsYouRow {
   since: number;
 }
 
+/** Whether a digest item lists in the region: every act item, and a roster proposal. */
+export const listsInNeedsYou = (it: Pick<AttentionItem, "tier" | "kind">): boolean => it.tier === "act" || it.kind === "roster-proposal";
+
 /**
- * The region's rows: one per session with at least one act item, newest first by that session's
+ * The region's rows: one per session with at least one act item (or roster proposal), newest first by that session's
  * newest act item, joined by path to `sessions` — the sidebar's hit list, so a search or the host
  * filter narrows this region like every other and it never lists a row the rest of the pane hides.
  * A digest session the list doesn't carry is dropped: the count is the rows.
@@ -36,7 +42,7 @@ export function needsYouRows(digest: Pick<AttentionDigest, "items"> | undefined,
   const byPath = new Map(sessions.map((s) => [s.path, s]));
   const acc = new Map<string, { session: SessionSummary; since: number; details: { at: number; text: string }[] }>();
   for (const it of digest.items) {
-    if (it.tier !== "act") continue;
+    if (!listsInNeedsYou(it)) continue;
     const session = byPath.get(it.path);
     if (!session) continue;
     let a = acc.get(it.path);

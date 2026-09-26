@@ -18,6 +18,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } from "../shared/protocol";
+import { BATON_SENT_ENTRY, type BatonSentData } from "../shared/baton";
 import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import { stripImageNotes } from "../shared/image-note";
@@ -161,10 +162,19 @@ export class BusyError extends Error {
 }
 
 /** A mode switch refused because this chat has one fixed mode: the Overseer is always in normal mode
- *  (server/overseer.ts keepNormal). POST /api/mode answers it with a 409. */
-export class ModeRefusedError extends Error {
-  constructor() {
-    super("The Overseer is always in normal mode.");
+ *  (server/overseer.ts keepNormal), and a baton session has no mode at all (§app.baton/goal-and-loadout).
+ *  POST /api/mode answers it with a 409. */
+/** A gesture this session refuses by its rules (a baton session's composer while someone else
+ *  holds the baton, a mode switch where there is no mode): reported with code "refused" and its
+ *  own message, never as an internal failure. */
+export class RefusedError extends Error {}
+
+/** The /ws/chat error code of a failure. */
+const errorCode = (err: unknown) => (err instanceof BusyError ? err.code : err instanceof RefusedError ? ("refused" as const) : ("internal" as const));
+
+export class ModeRefusedError extends RefusedError {
+  constructor(message = "The Overseer is always in normal mode.") {
+    super(message);
   }
 }
 
@@ -408,6 +418,47 @@ export interface OverseerRuntime {
 let overseerRuntime: OverseerRuntime | null = null;
 export function setOverseerRuntime(r: OverseerRuntime): void {
   overseerRuntime = r;
+}
+
+/** What a special session's runtime gets instead of the ordinary loadout. */
+export type SpecialLoadoutResult = Awaited<ReturnType<OverseerRuntime["loadout"]>>;
+export type SpecialKind = "overseer" | "baton" | "project-overseer";
+
+/**
+ * A kind of special session other than the Overseer (§app/baton): recognised by its file, given its
+ * own loadout. The Overseer is always matched first (`specialFor`), so a file carrying both markers
+ * opens as the Overseer's, exactly as before this registry existed. Registered by the module that
+ * owns the kind (server/baton-loadout.ts), so this module never imports it.
+ */
+export interface SpecialLoadout {
+  kind: Exclude<SpecialKind, "overseer">;
+  matches(sm: Pick<SessionManager, "getEntries" | "getSessionId">, path: string): boolean;
+  loadout(path: string): Promise<SpecialLoadoutResult>;
+  /** Every open, once bound. */
+  opened?(chat: ChatSession): Promise<void>;
+  /** Every AgentSession the runtime builds. */
+  watchSession?(session: AgentSession, path: string): void;
+  /** A message from this server's own composer (/ws/chat prompt or steer): who sent it, or throw a
+      refusal the client is told. Absent: sent as usual, unattributed. */
+  clientSend?(path: string): { by: string };
+  /** A client gesture this kind refuses (a message for the client), or null. */
+  refuses?(gesture: "rewind" | "regenerate" | "mode"): string | null;
+  /** Runs the SDK call that hands this runtime a message the operator sent from the UI (origin
+      "client"), like the Overseer's `userSend`: the kind can tell the operator's turns by identity. */
+  userSend?<T>(path: string, send: () => T): T;
+  /** The composer changed this runtime's model or thinking (`save: true`): the kind keeps it. */
+  saveChoice?(path: string, patch: { model?: string; thinking?: string }): void;
+}
+const specialLoadouts: SpecialLoadout[] = [];
+export function registerSpecialLoadout(s: SpecialLoadout): void {
+  if (!specialLoadouts.some((x) => x.kind === s.kind)) specialLoadouts.push(s);
+}
+
+/** The special kind a session file opens as: the Overseer's first, then each registered kind. */
+function specialFor(sm: Pick<SessionManager, "getEntries" | "getSessionId">, path: string): { kind: SpecialKind; entry: SpecialLoadout | null } | null {
+  if (isOverseerFile(sm)) return { kind: "overseer", entry: null };
+  const entry = specialLoadouts.find((s) => s.matches(sm, path));
+  return entry ? { kind: entry.kind, entry } : null;
 }
 
 export type RewindOutcome = { ok: true; editorText: string } | { ok: false; reason: RewindRefusal; message: string };
@@ -685,10 +736,18 @@ export function isCompactionInProgress(err: unknown): boolean {
     releases what the queue held while a compaction ran (its `paused`). */
 const QUEUE_WAKE_EVENTS = new Set(["queue_update", "message_start", "turn_end", "agent_settled", "agent_end", "compaction_end"]);
 
-/** A message the Overseer sent whose user entry still needs its `sova-overseer-sent` marker.
-    `itemId`: it rode in on a queue item; `held` while that item has not departed, so the settle
-    sweep leaves the mark alone (its message may still be in the SDK's queue). */
-type OverseerMark = { text: string; overseerId?: string; itemId?: string; held?: boolean };
+/** Who a marked message is from: the Overseer (`sova-overseer-sent`, §app.overseer/sent-marker) or a
+    baton session's participant (`sova-baton-sent`, §app.baton/attribution). */
+type Sender = { kind: "overseer"; overseerId?: string } | { kind: "baton"; by: string };
+
+/** A message whose user entry still needs its sender marker. `itemId`: it rode in on a queue
+    item; `held` while that item has not departed, so the settle sweep leaves the mark alone (its
+    message may still be in the SDK's queue). */
+type SenderMark = { text: string; sender: Sender; itemId?: string; held?: boolean };
+
+/** The sender a queue item carries, if any. */
+const senderOfItem = (item: Pick<WebQueueItem, "overseer" | "baton">): Sender | null =>
+  item.overseer ? { kind: "overseer", ...(item.overseer.overseerId ? { overseerId: item.overseer.overseerId } : {}) } : item.baton ? { kind: "baton", by: item.baton.by } : null;
 
 /** One embedded pi runtime for one session file, shared by all connected chat clients. */
 class ChatSession {
@@ -714,10 +773,16 @@ class ChatSession {
       turn's agent_settled (onCompactionEvent). */
   private refreshAtSettle = false;
   disposed = false;
-  /** This runtime is the Overseer's (set by openSession from the file's marker). */
-  overseer = false;
-  /** Texts the Overseer sent here whose user entry still needs its `sova-overseer-sent` marker. */
-  private overseerSends: OverseerMark[] = [];
+  /** The special kind this runtime is (set by openSession from the file's marker), else null. */
+  special: SpecialKind | null = null;
+  /** The registered loadout of a non-Overseer special kind. */
+  specialEntry: SpecialLoadout | null = null;
+  /** This runtime is the Overseer's. */
+  get overseer(): boolean {
+    return this.special === "overseer";
+  }
+  /** Texts sent here whose user entry still needs its sender marker. */
+  private senderMarks: SenderMark[] = [];
   /** How the last switch of THIS chat applies (ModeApplies); set at bind and by applyMode. */
   modeApplies: ModeApplies = "now";
   /**
@@ -767,12 +832,12 @@ class ChatSession {
     // learn why one left, including a removal it did not make. The text rides along for every
     // reason but "delivered", so whichever client wants to offer it back to a composer can.
     onGone: (item, reason) => {
-      this.settleOverseerMark(item.id, reason === "delivered");
+      this.settleSenderMark(item.id, reason === "delivered");
       this.broadcast({ type: "queue_item_gone", itemId: item.id, reason, ...(reason === "delivered" ? {} : { text: item.text }) });
     },
     onChange: (items) => this.broadcast({ type: "queue", items }),
     onHandOffError: (item, err) => {
-      const code = err instanceof BusyError ? err.code : "internal";
+      const code = errorCode(err);
       const message = err instanceof Error ? err.message : String(err);
       // Named to its sender when it had one, so the right composer gets its draft back.
       //
@@ -851,17 +916,18 @@ class ChatSession {
     this.flushDeferredAppends();
     const images = item.images as Parameters<AgentSession["steer"]>[1];
     const toSdk = <T>(send: () => T) => this.toSdk(item.origin, send);
-    // The Overseer's mark goes in with the message, never earlier: a held item is not in the SDK,
+    // The sender's mark goes in with the message, never earlier: a held item is not in the SDK,
     // so a message the user types meanwhile with the same text must not take its mark. It stays
-    // until the message ends (markOverseerSend) or the item departs undelivered (onGone).
-    const mark = item.overseer ? { text: item.text, overseerId: item.overseer.overseerId, itemId: item.id, held: true } : null;
-    if (mark) this.overseerSends.push(mark);
+    // until the message ends (markSend) or the item departs undelivered (onGone).
+    const sender = senderOfItem(item);
+    const mark: SenderMark | null = sender ? { text: item.text, sender, itemId: item.id, held: true } : null;
+    if (mark) this.senderMarks.push(mark);
     if (!streaming) {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
       // turn nobody is awaiting, and must not be reported as a hand-off failure (which would hand
       // the text back to the composer for a message that HAS been sent).
       toSdk(() => this.session.prompt(item.text, { images })).catch((err) => {
-        if (mark) this.dropOverseerMark(mark);
+        if (mark) this.dropSenderMark(mark);
         if (this.heldForCompaction(err, { ...item, id: undefined })) return;
         this.reportTurnFailure(err);
         // A turn that never started emits no event, so nothing would wake the queue and every
@@ -884,6 +950,7 @@ class ChatSession {
   /** Hand a message to the SDK. In the Overseer, one the user sent from the UI (`origin` "client")
       goes through its `userSend`, so the turn it opens is known as theirs by identity, not text. */
   private toSdk<T>(origin: QueueItem["origin"], send: () => T): T {
+    if (origin === "client" && this.specialEntry?.userSend) return this.specialEntry.userSend(this.path, send);
     return this.overseer && origin === "client" && overseerRuntime ? overseerRuntime.userSend(send) : send();
   }
 
@@ -898,26 +965,26 @@ class ChatSession {
    */
   private heldForCompaction(
     err: unknown,
-    item: { kind: WebQueueItem["kind"]; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string; overseer?: WebQueueItem["overseer"] },
+    item: { kind: WebQueueItem["kind"]; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string; overseer?: WebQueueItem["overseer"]; baton?: WebQueueItem["baton"] },
   ): boolean {
     if (!isCompactionInProgress(err) || this.disposed) return false;
-    this.queue.enqueue({ kind: item.kind, text: item.text, images: item.images, origin: item.origin, ...(item.id ? { id: item.id } : {}), ...(item.overseer ? { overseer: item.overseer } : {}) });
+    this.queue.enqueue({ kind: item.kind, text: item.text, images: item.images, origin: item.origin, ...(item.id ? { id: item.id } : {}), ...(item.overseer ? { overseer: item.overseer } : {}), ...(item.baton ? { baton: item.baton } : {}) });
     return true;
   }
 
   /** A queue item left: delivered, its mark waits for its message like any other (the settle
       sweep may take it from now on); gone any other way, its message never enters, so neither
       does the mark. */
-  private settleOverseerMark(itemId: string, delivered: boolean): void {
-    const mark = this.overseerSends.find((s) => s.itemId === itemId);
+  private settleSenderMark(itemId: string, delivered: boolean): void {
+    const mark = this.senderMarks.find((s) => s.itemId === itemId);
     if (!mark) return;
     if (delivered) mark.held = false;
-    else this.dropOverseerMark(mark);
+    else this.dropSenderMark(mark);
   }
 
-  private dropOverseerMark(mark: OverseerMark): void {
-    const i = this.overseerSends.indexOf(mark);
-    if (i >= 0) this.overseerSends.splice(i, 1);
+  private dropSenderMark(mark: SenderMark): void {
+    const i = this.senderMarks.indexOf(mark);
+    if (i >= 0) this.senderMarks.splice(i, 1);
   }
 
   /**
@@ -1090,17 +1157,17 @@ class ChatSession {
         if (items.length) this.broadcast({ type: "append", items });
         onSandboxAppend(this.sandboxHost, (event as { entry: unknown }).entry);
       }
-      if (event.type === "message_end" && this.overseerSends.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
-        this.markOverseerSend((event as { message: { content?: unknown } }).message);
+      if (event.type === "message_end" && this.senderMarks.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
+        this.markSend((event as { message: { content?: unknown } }).message);
       }
-      if (event.type === "agent_settled" && this.overseerSends.length) {
+      if (event.type === "agent_settled" && this.senderMarks.length) {
         // A mark that never found its message this run (the prompt was swallowed or failed early)
         // is stale. Deferred, so a mark for a prompt made while this event is being emitted (it
         // runs in this same settle window) is not dropped before its message ends. A mark whose
         // queue item has not departed yet is not stale: its message is still on its way.
-        const stale = this.overseerSends.filter((s) => !s.held);
+        const stale = this.senderMarks.filter((s) => !s.held);
         setTimeout(() => {
-          if (!this.session.isStreaming) this.overseerSends = this.overseerSends.filter((s) => !stale.includes(s));
+          if (!this.session.isStreaming) this.senderMarks = this.senderMarks.filter((s) => !stale.includes(s));
         }, 0);
       }
       if (event.type === "agent_settled") settledTurn(this.path);
@@ -1152,6 +1219,8 @@ class ChatSession {
    */
   async switchMode(patch: ModePatch): Promise<ChatModeResult> {
     if (this.overseer) throw new ModeRefusedError();
+    const refused = this.specialEntry?.refuses?.("mode");
+    if (refused) throw new ModeRefusedError(refused);
     await this.applyMode(mergeMode(this.modeState, patch));
     return { ...modeInfo(this.modeState), applies: this.modeApplies };
   }
@@ -1170,6 +1239,8 @@ class ChatSession {
    */
   async saveModeDefault(): Promise<ModeInfo> {
     if (this.overseer) throw new ModeRefusedError();
+    const refused = this.specialEntry?.refuses?.("mode");
+    if (refused) throw new ModeRefusedError(refused);
     return modeInfo(writeMode(defaultPatchOf(this.modeState)));
   }
 
@@ -1358,9 +1429,10 @@ class ChatSession {
         stored message that merely begins with "/" would be DISPATCHED as an extension command
         instead of replayed — a regenerate that runs a command rather than redoing the turn. */
     /** `sentByOverseer`: mark the user entry as the Overseer's (§app.overseer/sent-marker), now
-        or, when it is queued, at its hand-off. `delivery`: the kind it is queued as mid-turn, as
+        or, when it is queued, at its hand-off; `sentByBaton` likewise marks it as a baton
+        participant's (§app.baton/attribution). `delivery`: the kind it is queued as mid-turn, as
         the composer's Steer or a Playbook's follow-up; idle, either is a plain prompt. */
-    opts?: { replay?: boolean; sentByOverseer?: { overseerId?: string }; delivery?: WebQueueItem["kind"] },
+    opts?: { replay?: boolean; sentByOverseer?: { overseerId?: string }; sentByBaton?: { by: string }; delivery?: WebQueueItem["kind"] },
   ): { queued: boolean; turn: Promise<void> } {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
     assertNotLive(this.path);
@@ -1374,26 +1446,40 @@ class ChatSession {
     // held, and the queue hands it over (as a fresh turn) at compaction_end.
     if (this.session.isStreaming || this.isCompacting()) {
       const overseer = opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {};
-      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer });
+      const baton = opts?.sentByBaton ? { baton: opts.sentByBaton } : {};
+      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton });
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
     // Marked here when it starts a turn now; a queued one is marked at its hand-off. A pending
     // mark is dropped if the turn fails, and any left when the run settles are dropped too
     // (bind's agent_settled), so a later identical message the user types is never tagged.
-    const send = opts?.sentByOverseer ? { text, overseerId: opts.sentByOverseer.overseerId } : null;
-    if (send) this.overseerSends.push(send);
+    const sender: Sender | null = opts?.sentByOverseer
+      ? { kind: "overseer", ...(opts.sentByOverseer.overseerId ? { overseerId: opts.sentByOverseer.overseerId } : {}) }
+      : opts?.sentByBaton
+        ? { kind: "baton", by: opts.sentByBaton.by }
+        : null;
+    const send: SenderMark | null = sender ? { text, sender } : null;
+    if (send) this.senderMarks.push(send);
     const turn = this.toSdk(origin, () => this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }));
     if (send)
       turn.catch(() => {
-        const i = this.overseerSends.indexOf(send);
-        if (i >= 0) this.overseerSends.splice(i, 1);
+        const i = this.senderMarks.indexOf(send);
+        if (i >= 0) this.senderMarks.splice(i, 1);
       });
     // A replay is not re-queued: the queue would expand it a second time (see `replay` above).
     if (opts?.replay) return { queued: false, turn };
     // Held under the sender's own id: this send was never a queue item, so the id is still free.
     const held = (err: unknown) => {
-      const item = { kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}) };
+      const item = {
+        kind: opts?.delivery ?? "followUp",
+        text,
+        images: images as QueueImage[] | undefined,
+        origin,
+        id: clientId,
+        ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}),
+        ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}),
+      };
       if (!this.heldForCompaction(err, item)) throw err;
     };
     return { queued: false, turn: turn.catch(held) };
@@ -1409,27 +1495,34 @@ class ChatSession {
   }
 
   /**
-   * The user message the Overseer sent has just ended: write its invisible `sova-overseer-sent`
-   * marker pointing at that entry (the `sova-rewind` pattern — never LLM context, the TUI ignores
+   * A marked user message has just ended: write its sender's invisible marker — `sova-overseer-sent`
+   * for the Overseer, `sova-baton-sent` for a baton participant — pointing at that entry (the `sova-rewind` pattern — never LLM context, the TUI ignores
    * it). Listeners run BEFORE the SDK persists the message (agent-session.js `_handleAgentEvent`:
    * `_emit`, then `appendMessage`, in the same synchronous stretch), so the write waits one
    * microtask, by which time the entry exists and is the leaf. The marker is parented on it, and
    * the reply is then parented on the marker: rewind (to the user entry's parent) and regenerate
    * (walking back past custom entries to the user entry) behave exactly as on any user turn.
    */
-  private markOverseerSend(message: { content?: unknown }): void {
+  private markSend(message: { content?: unknown }): void {
     const text = typeof message.content === "string" ? message.content : textBlocks(message.content);
-    const i = this.overseerSends.findIndex((s) => s.text === text);
+    const i = this.senderMarks.findIndex((s) => s.text === text);
     if (i < 0) return;
-    const [send] = this.overseerSends.splice(i, 1);
+    const [send] = this.senderMarks.splice(i, 1);
     queueMicrotask(() => {
       if (this.disposed || this.foreignWrite) return;
       const sm = this.session.sessionManager;
       const leaf = sm.getLeafId();
       const entry = leaf ? sm.getEntry(leaf) : undefined;
       if (entry?.type !== "message" || entry.message.role !== "user") return;
-      const data: OverseerSentMarkerData = { v: 1, targetId: entry.id, ...(send?.overseerId ? { overseerId: send.overseerId } : {}) };
-      const markerId = sm.appendCustomEntry(OVERSEER_SENT_ENTRY, data);
+      const sender = send?.sender;
+      const markerId =
+        sender?.kind === "baton"
+          ? sm.appendCustomEntry(BATON_SENT_ENTRY, { v: 1, targetId: entry.id, by: sender.by } satisfies BatonSentData)
+          : sm.appendCustomEntry(OVERSEER_SENT_ENTRY, {
+              v: 1,
+              targetId: entry.id,
+              ...(sender?.kind === "overseer" && sender.overseerId ? { overseerId: sender.overseerId } : {}),
+            } satisfies OverseerSentMarkerData);
       markOwned(this.path);
       const marker = sm.getEntry(markerId);
       if (marker) {
@@ -1437,6 +1530,26 @@ class ChatSession {
         if (items.length) this.broadcast({ type: "append", items });
       }
     });
+  }
+
+  /**
+   * Append an invisible entry for a special kind, outside any turn (a baton hand-off the operator
+   * made with Take back). The same write guards as a prompt; refused mid-turn, where the entry
+   * would land inside the run. Every client gets the row the entry renders as.
+   */
+  appendSpecialEntry(customType: string, data: unknown): string {
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (this.session.isStreaming || this.isCompacting()) throw new BusyError("Wait for the reply to finish first.", "busy");
+    const sm = this.session.sessionManager;
+    const id = sm.appendCustomEntry(customType, data);
+    markOwned(this.path);
+    const entry = sm.getEntry(id);
+    if (entry) {
+      const items = normalizeEntry(entry as unknown as Record<string, any>);
+      if (items.length) this.broadcast({ type: "append", items });
+    }
+    return id;
   }
 
   /** The extension dialogs waiting on an answer right now (live-pending: a browser is attached). */
@@ -1519,6 +1632,7 @@ class ChatSession {
     if (opts.save !== true) return;
     // The level too: setModel re-clamped it, and the next conversation is seeded from the file.
     if (this.overseer) overseerRuntime?.saveChoice({ model: ref, thinking: this.session.thinkingLevel });
+    else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { model: ref, thinking: this.session.thinkingLevel });
     else if (this.isPristine()) saveDefaults({ model: ref });
   }
 
@@ -1546,6 +1660,7 @@ class ChatSession {
       });
     if (opts.save !== true) return after;
     if (this.overseer) overseerRuntime?.saveChoice({ thinking: after });
+    else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { thinking: after });
     // A session with no messages yet: this level is also the next new session's default.
     else if (this.isPristine()) saveDefaults({ thinking: after });
     return after;
@@ -1554,7 +1669,7 @@ class ChatSession {
   /** Report a failure into this session's own pane(s) — where every other turn failure already
       reports. Used for a turn nobody is awaiting (the group batch dispatches and returns). */
   reportTurnFailure(err: unknown): void {
-    const code = err instanceof BusyError ? err.code : "internal";
+    const code = errorCode(err);
     this.broadcast({ type: "error", code, message: err instanceof Error ? err.message : String(err) });
   }
 
@@ -1563,7 +1678,7 @@ class ChatSession {
     // no other; a chat-wide failure still reports without one, exactly as before.
     const clientId = "clientId" in msg && typeof msg.clientId === "string" && msg.clientId ? msg.clientId : undefined;
     const fail = (err: unknown) => {
-      const code = err instanceof BusyError ? err.code : "internal";
+      const code = errorCode(err);
       client.send({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(clientId ? { clientId } : {}) });
     };
     if (this.disposed) {
@@ -1589,6 +1704,19 @@ class ChatSession {
           // itself; this is the server's own refusal, so no client can switch it by prompt text.
           if (this.overseer && /^\/mode(\s|$)/.test(String(msg.text ?? "").trim())) {
             fail(new ModeRefusedError());
+            return;
+          }
+          // A special kind that attributes its composer's messages (a baton session: only while
+          // the operator holds the baton) decides here, before anything is queued or written.
+          const by = this.specialEntry?.clientSend?.(this.path);
+          if (by) {
+            this.assertModelAllowed();
+            const { queued, turn } = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId, {
+              sentByBaton: by,
+              ...(msg.type === "steer" ? { delivery: "steer" as const } : {}),
+            });
+            if (clientId) client.send({ type: "send_ack", clientId, queued });
+            turn.catch(fail);
             return;
           }
           if (msg.type === "steer") {
@@ -1629,18 +1757,24 @@ class ChatSession {
             .catch(fail);
           return;
         }
-        case "regenerate":
+        case "regenerate": {
+          const refused = this.specialEntry?.refuses?.("regenerate");
+          if (refused) throw new Error(refused);
           this.regenerate(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
           return;
+        }
         case "set_thinking":
           this.setThinking(String(msg.level ?? ""), { save: true });
           return;
         case "set_model":
           this.setModelRef(String(msg.ref ?? ""), { save: true }).catch(fail);
           return;
-        case "rewind":
+        case "rewind": {
+          const refused = this.specialEntry?.refuses?.("rewind");
+          if (refused) throw new Error(refused);
           this.rewind(client, String(msg.id ?? ""), String(msg.entryId ?? "")).catch(fail);
           return;
+        }
         case "compact": {
           const instructions = typeof msg.instructions === "string" ? msg.instructions.trim() : "";
           this.compact(client, String(msg.id ?? ""), instructions || undefined).catch(fail);
@@ -2172,7 +2306,8 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     // The Overseer (server/overseer.ts) is recognised the same way, by its marker, and gets its own
     // loadout: its prompt appended after the user's APPEND_SYSTEM.md, its sova_* tools, a tool
     // allowlist, no topic outline (nobody lists it), and its model from overseer.json.
-    const special = isOverseerFile(sessionManager) ? await overseerLoadout(path) : null;
+    const kind = specialFor(sessionManager, path);
+    const special = kind ? (kind.entry ? await kind.entry.loadout(path) : await overseerLoadout(path)) : null;
     const services = special
       ? await servicesForCwd(cwd, modelRuntime, false, special.resourceLoaderOptions)
       : await servicesForCwd(cwd, modelRuntime, !isFanoutMember(sessionManager));
@@ -2204,7 +2339,8 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       ...(special ? { tools: special.tools, ...(special.customTools ? { customTools: special.customTools } : {}) } : {}),
     });
     // The Overseer tells a message the user sent from every other by the object it reaches the Agent as.
-    if (special) overseerRuntime?.watchSession(created.session);
+    if (kind?.kind === "overseer") overseerRuntime?.watchSession(created.session);
+    else kind?.entry?.watchSession?.(created.session, path);
     return {
       ...created,
       services,
@@ -2229,8 +2365,14 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       throw err;
     }
     chat.deferredAppends = deferred;
-    if (isOverseerFile(sessionManager)) {
-      chat.overseer = true;
+    const kind = specialFor(sessionManager, path);
+    if (kind && kind.kind !== "overseer") {
+      chat.special = kind.kind;
+      chat.specialEntry = kind.entry;
+      await kind.entry?.opened?.(chat);
+    }
+    if (kind?.kind === "overseer") {
+      chat.special = "overseer";
       // A conversation that already has messages keeps the model its file records (the SDK restores
       // it); overseer.json is the Overseer's setting, so bring the runtime to it now. The appends
       // this makes are still deferred (the patch above is live until `restore`), so opening writes

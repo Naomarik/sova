@@ -23,7 +23,7 @@ import { type ExtensionAPI, type ExtensionContext, getAgentDir, SettingsManager 
 import { Text } from "@earendil-works/pi-tui";
 import { backendFor, gitProtectedPaths, type Policy, shadowSource } from "./backend.ts";
 import { scrubEnv } from "./env.ts";
-import { loadPolicyFile, type ParentScope, parentScopeOf, parseParentScope, policyFilePath, resolvePolicy, type ResolvedPolicy, workerCwdRefusal } from "./policy.ts";
+import { canonicalize, loadPolicyFile, narrowScope, type ParentScope, parentScopeOf, parseParentScope, policyFilePath, resolvePolicy, type ResolvedPolicy, workerCwdRefusal, writeOnlyScope } from "./policy.ts";
 import { type ProxyHandle, proxySocketPath, startProxy } from "./proxy.ts";
 import {
 	describeActive,
@@ -48,6 +48,16 @@ const STATUS_KEY = "sandbox";
 const REMOTE_SESSION_EVENT = "remote:session";
 const REMOTE_DISCOVER_EVENT = "remote:discover";
 const NOT_ON_REMOTE = "not enforced on remote";
+/** worktrees/state.ts WORKTREES_STATE_EVENT / WORKTREES_DISCOVER_EVENT: the session's active tracked worktrees. */
+const WORKTREES_STATE_EVENT = "worktrees:state";
+const WORKTREES_DISCOVER_EVENT = "worktrees:discover";
+
+/** A write-only worker's environment: the host's as it is, minus what the backend sets itself. */
+function hostEnv(source: NodeJS.ProcessEnv): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const [k, v] of Object.entries(source)) if (v !== undefined && k !== "TMPDIR") out[k] = v;
+	return out;
+}
 
 function realpathOr(p: string): string {
 	try {
@@ -100,6 +110,8 @@ export default function sandbox(pi: ExtensionAPI) {
 	let lastPolicy: ResolvedPolicy | undefined;
 	let lastNotices = "";
 	let ui: ExtensionContext["ui"] | undefined;
+	/** The session's active tracked worktrees (worktrees extension): writable roots while on. */
+	let worktreeRoots: string[] = [];
 
 	const agentDir = () => getAgentDir();
 
@@ -153,7 +165,11 @@ export default function sandbox(pi: ExtensionAPI) {
 		// The platform lists apply; which caches are shadowed is the policy file's `shadowed`.
 		const defaults = backend.platformDefaults({ home: homedir(), agentDir: dir });
 		if (typeof parentScope === "string") return { ok: false, reason: parentScope };
-		const resolved = resolvePolicy({ agentDir: dir, cwd, tmpDir, defaults, shadowSource, git: gitProtectedPaths, parent: parentScope });
+		const resolved = resolvePolicy({
+			agentDir: dir, cwd, tmpDir, defaults, shadowSource, git: gitProtectedPaths, parent: parentScope,
+			extraWritable: worktreeRoots,
+			extraReadOnly: worktreeRoots.map((r) => join(r, ".agent")),
+		});
 		if (!resolved.ok) return { ok: false, reason: resolved.error };
 		const policy = resolved.value;
 		if (policy.outsideParent) {
@@ -164,8 +180,8 @@ export default function sandbox(pi: ExtensionAPI) {
 		const notices = policy.notices.join("\n");
 		if (notices && notices !== lastNotices) notify(notices, "warning");
 		lastNotices = notices;
-		let network: Policy["network"] = { mode: "none" };
-		if (policy.level === "workspace-write") {
+		let network: Policy["network"] = { mode: policy.writeOnly ? "host" : "none" };
+		if (policy.level === "workspace-write" && !policy.writeOnly) {
 			const h = await ensureProxy(policy.proxyAllow);
 			if (h) network = { mode: "proxy", proxy: { socket: h.socket, allow: policy.proxyAllow } };
 		}
@@ -178,7 +194,7 @@ export default function sandbox(pi: ExtensionAPI) {
 			tmpDir: policy.tmpDir,
 			shadowed: policy.shadowed,
 			network,
-			env: scrubEnv(process.env, policy.envAllow),
+			env: policy.writeOnly ? hostEnv(process.env) : scrubEnv(process.env, policy.envAllow),
 			sessionId,
 		};
 		const probe = await backend.probe(backendPolicy);
@@ -203,6 +219,16 @@ export default function sandbox(pi: ExtensionAPI) {
 	function emitState(): void {
 		const on = active.on && !remote;
 		const event: SandboxStateEvent = { version: 1, on, extensionPath: SELF_DIR, enforcement: on ? active.enforcement : "none" };
+		// A worker of this session started inside a tracked worktree writes only there
+		// (§chat.worktrees/workers): on, the parent's scope narrowed to it; off, write-only confinement.
+		if (!remote) {
+			event.workerFlagsIn = (root: string) => {
+				const r = canonicalize(root);
+				if (!on) return { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(writeOnlyScope(r)) };
+				const scope = lastPolicy && active.enforcement !== "unavailable" ? parentScopeOf(lastPolicy) : undefined;
+				return scope ? { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(narrowScope(scope, r)) } : undefined;
+			};
+		}
 		if (on) {
 			const scope = lastPolicy && active.enforcement !== "unavailable" ? parentScopeOf(lastPolicy) : undefined;
 			if (scope) event.workerFlags = { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(scope) };
@@ -330,6 +356,16 @@ export default function sandbox(pi: ExtensionAPI) {
 		}
 	});
 	pi.events?.on(SANDBOX_DISCOVER_EVENT, () => emitState());
+	pi.events?.on(WORKTREES_STATE_EVENT, (data: unknown) => {
+		const e = data as { version?: unknown; active?: unknown } | undefined;
+		if (!e || e.version !== 1 || !Array.isArray(e.active)) return;
+		const next = e.active.filter((p): p is string => typeof p === "string" && p.startsWith("/"));
+		if (JSON.stringify(next) === JSON.stringify(worktreeRoots)) return;
+		worktreeRoots = next;
+		// On: the writable roots changed, so the scope handed to workers is taken again.
+		if (active.on && !remote) void snapshot().then(() => emitState(), () => emitState());
+	});
+	pi.events?.emit(WORKTREES_DISCOVER_EVENT, { version: 1 });
 
 	pi.on("session_start", async (_event, ctx) => {
 		ui = ctx.hasUI ? ctx.ui : undefined;

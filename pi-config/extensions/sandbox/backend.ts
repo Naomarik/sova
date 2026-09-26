@@ -16,7 +16,8 @@ import { UnsupportedBackend } from "./backends/unsupported.ts";
 
 /** "full" is OFF: it never reaches a backend. */
 export type Level = "read-only" | "workspace-write" | "full";
-/** "host" only exists with level "full", so a backend never sees it either. */
+/** "host": the network as it is (no namespace, no proxy). Only a write-only worker (a
+ * `--sandbox-parent` scope with `writeOnly`) runs with it; a sandbox that is on never does. */
 export type NetworkMode = "none" | "proxy" | "host";
 export type Enforcement = "full" | "partial";
 export type BackendId = "linux-bwrap" | "darwin-seatbelt" | "windows-restricted-token" | "unsupported";
@@ -37,7 +38,7 @@ export interface Policy {
 	/** Per-session host directory that the sandbox sees as its temp dir (Linux: mounted at /tmp; macOS: TMPDIR). */
 	tmpDir: string;
 	network: {
-		mode: Exclude<NetworkMode, "host">;
+		mode: NetworkMode;
 		/** Mode "proxy": the host-side proxy's Unix socket (proxy.ts). Allowlisting happens there. */
 		proxy?: { socket: string; allow: string[] };
 		/** Loopback ports the sandbox may connect to: allowed by darwin-seatbelt; not implemented by
@@ -83,7 +84,7 @@ export interface Confined {
 	enforcement: Enforcement;
 	partialReasons?: string[];
 	/** The network mode actually applied: "proxy" degrades to "none", never to "host". */
-	network: Exclude<NetworkMode, "host">;
+	network: NetworkMode;
 	/** Tightening degradations and unimplemented options, for the tool result and session entry. */
 	notes?: string[];
 	/** Output substrings meaning "the sandbox refused something the command tried". */
@@ -97,7 +98,7 @@ export type ConfineResult =
 	| { ok: false; code: "SANDBOX_UNAVAILABLE"; reason: string };
 
 export type ProbeResult =
-	| { ok: true; enforcement: Enforcement; reasons?: string[]; network: Exclude<NetworkMode, "host">; notes?: string[] }
+	| { ok: true; enforcement: Enforcement; reasons?: string[]; network: NetworkMode; notes?: string[] }
 	| { ok: false; reason: string };
 
 /** Platform lists the policy resolver starts from (plan v2 §2.4: the one leak of platform into policy). */

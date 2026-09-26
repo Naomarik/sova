@@ -12,6 +12,9 @@ export const DEFAULT_ENV_ALLOW: readonly string[] = [
 	"XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME",
 	// pi's own per-call variables (bash.js) — the caller passes them per request too.
 	"PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL",
+	// Not a secret: where pi's agent dir is, so bash finds the same one (the spec tools' `core=` line).
+	// `$AGENT_DIR/auth.json` stays hidden.
+	"PI_CODING_AGENT_DIR",
 	"MISE_*", "CARGO_HOME", "RUSTUP_HOME", "GOPATH", "GOROOT", "JAVA_HOME", "NVM_DIR",
 	"EDITOR", "VISUAL", "PAGER", "NO_COLOR", "FORCE_COLOR", "CI",
 ];

@@ -501,3 +501,21 @@ test("mountPlan: pins and read-only paths inside a shadow are bound from the sha
 		rmSync(base, { recursive: true, force: true });
 	}
 });
+
+test("host network (a write-only worker): the host's interfaces, the probe passes, writes stay confined", { skip }, async (t) => {
+	const ws = scratch(t, "sbx-ws-");
+	const tmp = scratch(t, "sbx-tmp-");
+	const outside = scratch(t, "sbx-out-");
+	const policy = makePolicy(ws, tmp, { network: { mode: "host" } });
+	const b = new LinuxBwrapBackend();
+	assert.deepEqual(await b.probe(policy), { ok: true, enforcement: "full", network: "host" });
+	const r = await run(b, policy, `grep -c : /proc/net/dev; touch ${JSON.stringify(join(outside, "x"))} 2>/dev/null && echo WROTE; touch in-ws && echo OK`);
+	assert.ok(!r.confined.argv.includes("--unshare-net"));
+	assert.ok(Number(r.output.trim().split("\n")[0]) > 1, "more than loopback: the host's namespace");
+	assert.doesNotMatch(r.output, /WROTE/);
+	assert.match(r.output, /OK/);
+	assert.ok(!existsSync(join(outside, "x")));
+	// Every other mode still unshares.
+	const none = await b.confine({ argv: ["/bin/true"], cwd: ws, policy: makePolicy(ws, tmp) });
+	assert.ok(none.ok && none.confined.argv.includes("--unshare-net"));
+});

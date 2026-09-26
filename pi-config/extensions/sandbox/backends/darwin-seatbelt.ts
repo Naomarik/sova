@@ -146,6 +146,8 @@ export interface ProfilePlan {
 	socketRoots: string[];
 	ports: number[];
 	shadowed: Shadow[];
+	/** Network mode "host" (a write-only worker): no network rules at all. */
+	hostNetwork?: boolean;
 }
 
 /** Keychain files: hidden in every profile, whatever the policy file lists (the service is denied too). */
@@ -183,7 +185,7 @@ export function profilePlan({ policy, relayPort }: ProfileInput): ProfilePlan {
 	// is a mount point under bwrap: here too its entry may not be renamed or removed.
 	for (const w of writable) if (readOnly.some((r) => r !== w && isWithin(w, r))) pins.push(w);
 	const ports = uniq([...(relayPort ? [relayPort] : []), ...(policy.network.localPorts ?? [])]).filter((n) => Number.isInteger(n) && n > 0 && n < 65536);
-	return { writable, readOnly, pins: uniq(pins), hidden, socketRoots: writable.filter((w) => !shadows.some((s) => s.source === w)), ports, shadowed: shadows };
+	return { writable, readOnly, pins: uniq(pins), hidden, socketRoots: writable.filter((w) => !shadows.some((s) => s.source === w)), ports, shadowed: shadows, hostNetwork: policy.network.mode === "host" };
 }
 
 /**
@@ -241,6 +243,10 @@ export function renderProfile(plan: ProfilePlan): string {
 	rule("deny file-read* file-write*", subpaths(plan.hidden));
 	L.push(";; Keychain and the security daemons, whatever the allowlist above says");
 	rule("deny mach-lookup", MACH_DENY_PREFIXES.map((n) => `(global-name-prefix ${sbplString(n)})`));
+	if (plan.hostNetwork) {
+		L.push(";; network: the host's, as unconfined (a write-only worker)", "(allow network*)");
+		return L.join("\n") + "\n";
+	}
 	L.push(";; network: none, except Unix sockets under the writable roots and the listed loopback ports", "(deny network*)");
 	rule("allow network-bind network-outbound", plan.socketRoots.flatMap(spellings).map((p) => `(local unix-socket (subpath ${sbplString(p)}))`));
 	rule("allow network-outbound", plan.socketRoots.flatMap(spellings).map((p) => `(remote unix-socket (subpath ${sbplString(p)}))`));
@@ -458,7 +464,8 @@ export class DarwinSeatbeltBackend implements Backend {
 				`( : > "$TMPDIR/.probe" ) 2>/dev/null || { echo "probe: the session tmp is not writable" >&2; exit 77; }`,
 				`exit 0`,
 			].join("\n");
-			const res = await this.confine({ argv: ["/bin/sh", "-c", script, "sova-sandbox-probe", target, keychains, String(bait)], cwd: policy.workspaceRoot, policy });
+			// "host" network: loopback is reachable by design, so the bait check is skipped (an empty port never connects).
+			const res = await this.confine({ argv: ["/bin/sh", "-c", script, "sova-sandbox-probe", target, keychains, policy.network.mode === "host" ? "" : String(bait)], cwd: policy.workspaceRoot, policy });
 			if (!res.ok) return { ok: false, reason: res.reason };
 			const c = res.confined;
 			c.argv.push(c.network === "proxy" ? c.env.HTTP_PROXY!.replace(/^.*:/, "") : "");

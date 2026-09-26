@@ -265,9 +265,11 @@ export class LinuxBwrapBackend implements Backend {
 		}
 		if (network === "proxy") argv.push("--bind", policy.network.proxy!.socket, SANDBOX_PROXY_SOCKET);
 		argv.push(
-			"--unshare-user", "--unshare-pid", "--unshare-ipc", "--unshare-uts", "--unshare-cgroup-try", "--unshare-net",
+			"--unshare-user", "--unshare-pid", "--unshare-ipc", "--unshare-uts", "--unshare-cgroup-try",
 			"--die-with-parent", "--new-session", "--clearenv",
 		);
+		// "host" (a write-only worker): the host's network namespace, as unconfined.
+		if (network !== "host") argv.push("--unshare-net");
 		for (const [k, v] of Object.entries(env)) argv.push("--setenv", k, v);
 		if (network === "proxy") argv.push("--setenv", "SOVA_SOCAT", socat!);
 		argv.push("--chdir", canonical(req.cwd), "--");
@@ -300,7 +302,7 @@ export class LinuxBwrapBackend implements Backend {
 		const target = outside ? join(outside, `.sova-sandbox-probe-${randomBytes(6).toString("hex")}`) : "";
 		const script = [
 			`[ -e /run/user ] && { echo "probe: /run/user is visible" >&2; exit 71; }`,
-			`[ "$(grep -c : /proc/net/dev)" = 1 ] || { echo "probe: the network is not isolated" >&2; exit 72; }`,
+			`if [ "$2" != host ]; then [ "$(grep -c : /proc/net/dev)" = 1 ] || { echo "probe: the network is not isolated" >&2; exit 72; }; fi`,
 			`if [ -n "$1" ]; then ( : > "$1" ) 2>/dev/null && { echo "probe: wrote outside the policy" >&2; exit 73; }; fi`,
 			`if [ "$2" = proxy ]; then grep -q ':${RELAY_PORT.toString(16).toUpperCase().padStart(4, "0")} 00000000:0000 0A' /proc/net/tcp || { echo "probe: the proxy relay is not listening" >&2; exit 74; }; fi`,
 			`exit 0`,

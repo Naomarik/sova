@@ -62,6 +62,8 @@ export interface ResolvedPolicy {
 	notices: string[];
 	/** A worker whose cwd is outside its parent's writable roots: every tool refuses. */
 	outsideParent?: boolean;
+	/** A write-only worker (`ParentScope.writeOnly`): host network, unscrubbed environment, nothing hidden. */
+	writeOnly?: boolean;
 }
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -312,22 +314,45 @@ export function isWithin(child: string, parent: string): boolean {
 /**
  * What a sandboxed parent hands its workers (`--sandbox-parent <json>`): its level and the writable
  * roots of its resolved policy, without its own session tmp. A worker writes there and nowhere
- * else, whatever its cwd.
+ * else, whatever its cwd. The parent's hidden list, proxy allowlist and environment allowlist ride
+ * along, so a worker whose own agent dir holds a looser policy file (a worktree's `.agent`) is held
+ * to the parent's: hidden paths add, the two allowlists replace the worker's own.
+ *
+ * `writeOnly` (§chat.worktrees/workers): the worker's parent is NOT sandboxed and confines it to
+ * writing inside `writable` only. No policy file is read; nothing is hidden, the network and the
+ * environment stay as they are.
  */
 export interface ParentScope {
 	version: 1;
 	level: SandboxLevel;
 	workspaceRoot: string;
 	writable: string[];
+	hidden?: string[];
+	proxyAllow?: string[];
+	envAllow?: string[];
+	writeOnly?: true;
 }
 
-export function parentScopeOf(policy: Pick<ResolvedPolicy, "level" | "workspaceRoot" | "writable" | "tmpDir">): ParentScope {
+export function parentScopeOf(policy: Pick<ResolvedPolicy, "level" | "workspaceRoot" | "writable" | "tmpDir"> & Partial<Pick<ResolvedPolicy, "hidden" | "proxyAllow" | "envAllow">>): ParentScope {
 	return {
 		version: 1,
 		level: policy.level,
 		workspaceRoot: policy.workspaceRoot,
 		writable: policy.level === "read-only" ? [] : policy.writable.filter((w) => w !== policy.tmpDir),
+		...(policy.hidden ? { hidden: [...policy.hidden] } : {}),
+		...(policy.proxyAllow ? { proxyAllow: [...policy.proxyAllow] } : {}),
+		...(policy.envAllow ? { envAllow: [...policy.envAllow] } : {}),
 	};
+}
+
+/** A parent scope narrowed to one root (a worker started inside a tracked worktree): it writes there only. */
+export function narrowScope(scope: ParentScope, root: string): ParentScope {
+	return { ...scope, writable: scope.level === "read-only" ? [] : [root] };
+}
+
+/** The scope an unsandboxed parent gives a worker it confines to `root`: writes there only, nothing else changed. */
+export function writeOnlyScope(root: string): ParentScope {
+	return { version: 1, level: "workspace-write", workspaceRoot: root, writable: [root], writeOnly: true };
 }
 
 /** Parse the `--sandbox-parent` flag. Anything malformed is an error: the worker then refuses every tool. */
@@ -345,7 +370,23 @@ export function parseParentScope(value: unknown): Result<ParentScope> {
 	}
 	const writable = stringList(raw.writable, "--sandbox-parent writable", (p) => isAbsolute(p));
 	if (!writable.ok) return writable;
-	return { ok: true, value: { version: 1, level: raw.level, workspaceRoot: raw.workspaceRoot, writable: writable.value } };
+	const scope: ParentScope = { version: 1, level: raw.level, workspaceRoot: raw.workspaceRoot, writable: writable.value };
+	if (raw.hidden !== undefined) {
+		const hidden = stringList(raw.hidden, "--sandbox-parent hidden", (p) => isAbsolute(p));
+		if (!hidden.ok) return hidden;
+		scope.hidden = hidden.value;
+	}
+	for (const key of ["proxyAllow", "envAllow"] as const) {
+		if (raw[key] === undefined) continue;
+		// An empty allowlist is a real answer (nothing allowed), so empty arrays are kept.
+		if (!Array.isArray(raw[key]) || (raw[key] as unknown[]).some((x) => typeof x !== "string" || !x.trim())) return { ok: false, error: `--sandbox-parent ${key} must hold non-empty strings` };
+		scope[key] = (raw[key] as string[]).map((x) => x.trim());
+	}
+	if (raw.writeOnly !== undefined) {
+		if (raw.writeOnly !== true || raw.level !== "workspace-write") return { ok: false, error: "--sandbox-parent writeOnly is malformed" };
+		scope.writeOnly = true;
+	}
+	return { ok: true, value: scope };
 }
 
 /**
@@ -366,8 +407,15 @@ export interface ResolveInput {
 	tmpDir: string;
 	platform?: string;
 	home?: string;
-	/** The backend's platform lists (absolute paths), merged under the file's own. */
-	defaults?: { hidden: string[]; writable: string[]; readOnlyWithinWritable: string[] };
+	/** The backend's platform lists (absolute paths), merged under the file's own. `shadowed` is used only by a write-only worker, which reads no file. */
+	defaults?: { hidden: string[]; writable: string[]; readOnlyWithinWritable: string[]; shadowed?: string[] };
+	/**
+	 * More writable roots for this session (not a worker's): the session's active tracked worktrees
+	 * (§chat.worktrees/sandbox). Dropped under read-only.
+	 */
+	extraWritable?: string[];
+	/** Read-only paths inside those roots (each worktree's `.agent`), as the session's own agent dir. */
+	extraReadOnly?: string[];
 	/**
 	 * The git paths of a writable root (backend `gitProtectedPaths`): read-only ones (hooks, config,
 	 * gitfile, commondir, a missing `.git`) and extra writable ones (a linked worktree's git dirs),
@@ -380,8 +428,59 @@ export interface ResolveInput {
 	shadowSource?: (agentDir: string, path: string) => string;
 }
 
+/**
+ * A write-only worker's policy (`ParentScope.writeOnly`): it writes only in the parent's roots
+ * (and their git dirs, the session tmp and the platform's private cache copies), and reads,
+ * network and environment are left alone. No policy file is read, so a missing or looser one in
+ * the worker's own agent dir changes nothing.
+ */
+function resolveWriteOnly(input: ResolveInput, parent: ParentScope): Result<ResolvedPolicy> {
+	const home = input.home ?? homedir();
+	const workspaceRoot = canonicalize(input.cwd);
+	const ctx: ExpandContext = { home, agentDir: input.agentDir, cwd: workspaceRoot };
+	const canon = (list: string[]) => [...new Set(list.map((p) => canonicalize(expandPath(p, ctx))))];
+	const agentDir = canonicalize(input.agentDir);
+	const pDir = canonicalize(join(input.agentDir, POLICY_DIR_NAME));
+	const tmpDir = canonicalize(input.tmpDir);
+	const d = input.defaults ?? { hidden: [], writable: [], readOnlyWithinWritable: [] };
+	const shadowCanon = canon(d.shadowed ?? []);
+	const parentRoots = [...new Set(parent.writable.map(canonicalize))].filter((w) => !shadowCanon.some((sh) => isWithin(w, sh)));
+	const writable = [tmpDir, ...parentRoots];
+	const outsideParent = !parentRoots.some((r) => isWithin(workspaceRoot, r));
+	const gitReadOnly: string[] = [];
+	if (input.git) {
+		for (const root of parentRoots) {
+			const g = input.git(root);
+			for (const w of g.writable.map(canonicalize)) if (!writable.includes(w)) writable.push(w);
+			gitReadOnly.push(...g.readOnly.map(canonicalize));
+		}
+	}
+	return {
+		ok: true,
+		value: {
+			level: "workspace-write",
+			defaultOn: false,
+			workspaceRoot,
+			writable: [...new Set(writable)],
+			readOnlyWithinWritable: [...new Set([...canon(d.readOnlyWithinWritable), ...gitReadOnly, agentDir, pDir])],
+			hidden: [],
+			proxyAllow: [],
+			envAllow: [],
+			acceptPartial: false,
+			policyDir: pDir,
+			agentDir,
+			tmpDir,
+			shadowed: input.shadowSource ? shadowCanon.map((p) => ({ path: p, source: canonicalize(input.shadowSource!(input.agentDir, p)) })) : [],
+			notices: [],
+			writeOnly: true,
+			...(outsideParent ? { outsideParent: true } : {}),
+		},
+	};
+}
+
 /** The global file, tightened by the project file, with every path canonical. Fail closed. */
 export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
+	if (input.parent?.writeOnly) return resolveWriteOnly(input, input.parent);
 	const platform = input.platform ?? process.platform;
 	const home = input.home ?? homedir();
 	const loaded = loadPolicyFile(policyFilePath(input.agentDir, platform));
@@ -414,7 +513,9 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 			? [tmpDir]
 			: parentRoots
 				? [tmpDir, ...parentRoots]
-				: [workspaceRoot, tmpDir, ...canon([...d.writable, ...policy.writable]).filter((w) => !inShadow(w))];
+				: [workspaceRoot, tmpDir, ...canon([...d.writable, ...policy.writable, ...(input.extraWritable ?? [])]).filter((w) => !inShadow(w))];
+	// The tracked worktrees' own agent dirs: read-only whenever their worktree is writable.
+	const extraReadOnly = level === "read-only" || parentRoots ? [] : canon(input.extraReadOnly ?? []);
 	const outsideParent = level !== "read-only" && parentRoots !== undefined && !parentRoots.some((r) => isWithin(workspaceRoot, r));
 	const gitReadOnly: string[] = [];
 	if (level !== "read-only" && input.git) {
@@ -426,7 +527,7 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 	}
 	// The policy files themselves are hidden; the directory (and each CLAUDE.md, written for an agent
 	// to read) stays readable and read-only.
-	const hiddenFinal = [...new Set([...canon([...d.hidden, ...policy.hidden]), ...policyFiles(pDir, platform)])];
+	const hiddenFinal = [...new Set([...canon([...d.hidden, ...policy.hidden]), ...policyFiles(pDir, platform), ...(input.parent?.hidden ?? []).map(canonicalize)])];
 	return {
 		ok: true,
 		value: {
@@ -435,10 +536,11 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 			workspaceRoot,
 			writable: [...new Set(writable)],
 			// The agent dir and the policy dir are never writable, even inside the cwd.
-			readOnlyWithinWritable: [...new Set([...canon([...d.readOnlyWithinWritable, ...policy.readOnlyWithinWritable]), ...gitReadOnly, agentDir, pDir])],
+			readOnlyWithinWritable: [...new Set([...canon([...d.readOnlyWithinWritable, ...policy.readOnlyWithinWritable]), ...gitReadOnly, ...extraReadOnly, agentDir, pDir])],
 			hidden: hiddenFinal,
-			proxyAllow: [...policy.proxy.allow],
-			envAllow: [...policy.env.allow],
+			// A worker of a sandboxed parent is held to the parent's allowlists, never its own file's.
+			proxyAllow: [...(input.parent?.proxyAllow ?? policy.proxy.allow)],
+			envAllow: [...(input.parent?.envAllow ?? policy.env.allow)],
 			acceptPartial: policy.acceptPartial,
 			policyDir: pDir,
 			agentDir,

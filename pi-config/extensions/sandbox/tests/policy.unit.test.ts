@@ -8,6 +8,7 @@ import {
 	applyProjectTightening,
 	canonicalize,
 	loadPolicyFile,
+	narrowScope,
 	parentScopeOf,
 	parseParentScope,
 	type PolicyFile,
@@ -17,6 +18,7 @@ import {
 	validatePolicyFile,
 	workerCwdRefusal,
 	writeDenial,
+	writeOnlyScope,
 } from "../policy.ts";
 
 const TEMPLATE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "sandbox-policy");
@@ -280,5 +282,87 @@ test("worker scope: parse, hand down without the session tmp, refuse a cwd outsi
 	assert.ok(ro.ok);
 	assert.equal(ro.value.level, "read-only", "a read-only parent lowers the worker");
 	assert.equal(ro.value.outsideParent, undefined);
+	rmSync(ws, { recursive: true, force: true });
+});
+
+test("tracked worktrees: writable roots of the session, their .agent read-only; never a worker's own", () => {
+	const ws = tmp();
+	const agentDir = join(ws, "agent");
+	mkdirSync(join(agentDir, "sandbox-policy", "linux"), { recursive: true });
+	writeFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), JSON.stringify(template()));
+	const live = join(ws, "live");
+	const wt = join(ws, "wt");
+	mkdirSync(live);
+	mkdirSync(join(wt, ".agent"), { recursive: true });
+	const r = resolvePolicy({ agentDir, cwd: live, tmpDir: join(ws, "t"), platform: "linux", extraWritable: [wt], extraReadOnly: [join(wt, ".agent")] });
+	assert.ok(r.ok);
+	assert.equal(writeDenial(r.value, join(wt, "src", "a.ts"), { creating: true }), undefined);
+	assert.match(writeDenial(r.value, join(wt, ".agent", "sandbox-policy", "linux", "policy.json"), { creating: true }) ?? "", /read-only/);
+	assert.match(writeDenial(r.value, join(wt, ".agent", "settings.json")) ?? "", /read-only/);
+	// A worker's roots are its parent's scope, whatever extras it is handed.
+	const parent = { version: 1 as const, level: "workspace-write" as const, workspaceRoot: live, writable: [live] };
+	const w = resolvePolicy({ agentDir, cwd: live, tmpDir: join(ws, "t"), platform: "linux", parent, extraWritable: [wt] });
+	assert.ok(w.ok);
+	assert.ok(writeDenial(w.value, join(wt, "x")));
+	// Under read-only nothing extra is writable.
+	writeFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), JSON.stringify({ ...template(), level: "read-only" }));
+	const ro = resolvePolicy({ agentDir, cwd: live, tmpDir: join(ws, "t"), platform: "linux", extraWritable: [wt] });
+	assert.ok(ro.ok);
+	assert.ok(writeDenial(ro.value, join(wt, "x")));
+	rmSync(ws, { recursive: true, force: true });
+});
+
+test("a worker is held to its parent's hidden list and allowlists, not a looser file in its own agent dir", () => {
+	const ws = tmp();
+	const agentDir = join(ws, "tree-agent");
+	mkdirSync(join(agentDir, "sandbox-policy", "linux"), { recursive: true });
+	// The worker's own (worktree) policy: nothing hidden, every host allowed, every variable passed.
+	writeFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), JSON.stringify({ ...template(), hidden: [], proxy: { allow: ["*.evil.example"] }, env: { allow: ["SECRET_TOKEN"] } }));
+	mkdirSync(join(ws, "a"));
+	const secret = join(ws, "home", ".ssh");
+	const scope = parentScopeOf({ level: "workspace-write", workspaceRoot: join(ws, "a"), writable: [join(ws, "a"), "/t"], tmpDir: "/t", hidden: [secret], proxyAllow: ["registry.npmjs.org"], envAllow: [] });
+	assert.deepEqual(scope.hidden, [secret]);
+	const parsed = parseParentScope(JSON.stringify(scope));
+	assert.ok(parsed.ok);
+	assert.deepEqual(parsed.value, scope);
+	const r = resolvePolicy({ agentDir, cwd: join(ws, "a"), tmpDir: join(ws, "t"), platform: "linux", parent: parsed.value });
+	assert.ok(r.ok);
+	assert.ok(readDenial(r.value, join(secret, "id_ed25519")));
+	assert.deepEqual(r.value.proxyAllow, ["registry.npmjs.org"]);
+	assert.deepEqual(r.value.envAllow, []);
+	// Narrowed to one root, the rest rides along.
+	const n = narrowScope(scope, join(ws, "a", "wt"));
+	assert.deepEqual(n.writable, [join(ws, "a", "wt")]);
+	assert.deepEqual(n.hidden, [secret]);
+	assert.equal(parseParentScope(JSON.stringify({ ...scope, proxyAllow: [3] })).ok, false);
+	rmSync(ws, { recursive: true, force: true });
+});
+
+test("write-only scope: writes only in the root; reads, network and env untouched; no policy file needed", () => {
+	const ws = tmp();
+	const agentDir = join(ws, "no-policy-agent");
+	mkdirSync(agentDir);
+	const wt = join(ws, "wt");
+	mkdirSync(join(wt, "src"), { recursive: true });
+	const secret = join(ws, "home", ".ssh", "id");
+	mkdirSync(dirname(secret), { recursive: true });
+	writeFileSync(secret, "k");
+	const scope = writeOnlyScope(wt);
+	assert.deepEqual(parseParentScope(JSON.stringify(scope)), { ok: true, value: scope });
+	assert.equal(parseParentScope(JSON.stringify({ ...scope, level: "read-only" })).ok, false);
+	assert.equal(parseParentScope(JSON.stringify({ ...scope, writeOnly: "yes" })).ok, false);
+	const r = resolvePolicy({ agentDir, cwd: join(wt, "src"), tmpDir: join(ws, "t"), platform: "linux", parent: scope, defaults: { hidden: [dirname(secret)], writable: [join(ws, "state")], readOnlyWithinWritable: [], shadowed: [] } });
+	assert.ok(r.ok, r.ok ? "" : r.error);
+	assert.equal(r.value.writeOnly, true);
+	assert.deepEqual(r.value.hidden, [], "nothing hidden, not even the platform list");
+	assert.equal(readDenial(r.value, secret), undefined);
+	assert.equal(writeDenial(r.value, join(wt, "src", "a.ts"), { creating: true }), undefined);
+	assert.ok(writeDenial(r.value, join(ws, "elsewhere.txt"), { creating: true }));
+	assert.ok(writeDenial(r.value, join(ws, "state", "x"), { creating: true }), "the platform's extra writable roots are not added");
+	assert.ok(writeDenial(r.value, join(agentDir, "settings.json")), "its agent dir stays read-only");
+	assert.equal(r.value.outsideParent, undefined);
+	const out = resolvePolicy({ agentDir, cwd: ws, tmpDir: join(ws, "t"), platform: "linux", parent: scope });
+	assert.ok(out.ok);
+	assert.equal(out.value.outsideParent, true);
 	rmSync(ws, { recursive: true, force: true });
 });

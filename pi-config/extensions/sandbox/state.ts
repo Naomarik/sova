@@ -63,6 +63,13 @@ export interface SandboxStateEvent {
 	 * unavailable. Undefined means it may start. Present while on.
 	 */
 	checkWorker?: (req: { cwd: string; backend: string }) => string | undefined;
+	/**
+	 * The flags for a pi worker started inside one of the session's tracked worktrees, `root` (its
+	 * top level), so it writes only there: on, the parent's scope narrowed to `root`; off, a
+	 * write-only scope (reads, network and environment untouched). Undefined when on but no scope is
+	 * available (the spawner refuses). Absent in a remote session.
+	 */
+	workerFlagsIn?: (root: string) => Record<string, string> | undefined;
 }
 
 export function isLevel(value: unknown): value is SandboxLevel {

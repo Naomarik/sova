@@ -77,7 +77,7 @@ export const workerTransport = (env: NodeJS.ProcessEnv = process.env): WorkerTra
 export const hostingRequested = (env: NodeJS.ProcessEnv = process.env): boolean => workerTransport(env) === "host";
 
 export interface HostingOptions {
-	/** Registry root. Default DEFAULT_WORKERS_ROOT (~/.pi/agent/sova/workers). Created lazily. */
+	/** Registry root. Default DEFAULT_WORKERS_ROOT (<agent dir>/sova/workers). Created lazily. */
 	root?: string;
 	/** Force hosting on/off (tests); default: PI_WORKER_TRANSPORT === "host", read at each call. */
 	enabled?: boolean;

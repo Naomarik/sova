@@ -586,3 +586,12 @@ test("adoption skips entries locked by another living manager and finished entri
 	assert.deepEqual(h.candidates(), []);
 	assert.equal(await h.adopt(dirA, readJson<WorkerMeta>(files(dirA).meta)!), undefined);
 });
+
+test("the hosted-worker registry follows the agent dir (PI_CODING_AGENT_DIR), never a hard-coded ~/.pi", async () => {
+	const { agentDirFromEnv } = await import("./workers-dir.ts");
+	const os = await import("node:os");
+	const path = await import("node:path");
+	assert.equal(agentDirFromEnv({ PI_CODING_AGENT_DIR: "/w/tree/.agent" }), "/w/tree/.agent");
+	assert.equal(agentDirFromEnv({ PI_CODING_AGENT_DIR: "~/alt" }), path.join(os.homedir(), "alt"));
+	assert.equal(agentDirFromEnv({}), path.join(os.homedir(), ".pi", "agent"));
+});

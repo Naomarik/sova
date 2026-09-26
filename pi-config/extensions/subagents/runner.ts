@@ -195,6 +195,10 @@ export interface SpawnOptions {
 	forkSession?: string;
 	/** Extra environment for the child, merged over the parent's (team member identity for member.ts). */
 	env?: Record<string, string>;
+	/** Pi only: `--session-dir <dir>`, where the child's session file goes (a worker on another agent dir keeps it in the parent's). */
+	sessionDir?: string;
+	/** Pi only: `--approve`, trust the project's local files for this run (a child has no trust dialog). */
+	approve?: boolean;
 	/**
 	 * Stdio MCP servers the child should launch, keyed by server name. Backends
 	 * that run an MCP-capable CLI (claude-code) honor it; the pi runner ignores it
@@ -603,6 +607,8 @@ export class SubagentRunner implements Worker {
 			args.push(`--${name}`);
 			if (value !== true) args.push(value);
 		}
+		if (options.sessionDir) args.push("--session-dir", options.sessionDir);
+		if (options.approve) args.push("--approve");
 		// A fork copies the parent's session file into a new one; the parent's file is never written by the child.
 		if (this.resumed) {
 			// Verified in pi's CLI (dist/main.js resolveSessionPath): an argument containing "/" is

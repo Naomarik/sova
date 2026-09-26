@@ -95,6 +95,7 @@ import {
 	type RemoteSessionEvent,
 } from "../remote/workers.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
+import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
 
 const MAX_LIVE = 12;
 const MAX_BATCH = 8;
@@ -153,6 +154,12 @@ const AgentSpec = Type.Object(
 			Type.Boolean({
 				description:
 					"Start the child from a copy of this conversation's full history instead of a fresh context. Requires a persisted parent session.",
+			}),
+		),
+		useWorktreeConfig: Type.Optional(
+			Type.Boolean({
+				description:
+					"Pi only: run the worker on its worktree's own agent dir (<worktree>/.agent: its settings, auth and mode extension, normal mode + spec). Valid only when cwd is inside an active worktree this session tracks that has a .agent.",
 			}),
 		),
 	},
@@ -342,7 +349,33 @@ function resolveExtensionSource(source: string, cwd: string): string {
 	const real = realpathOr(resolved);
 	if (real === SELF_DIR || real.startsWith(SELF_DIR + path.sep))
 		throw new Error(`Refusing to load the subagents extension into a child (${source}); children do not nest.`);
+	// Any copy of this extension or of worktrees (a worktree's own pi-config, say): a child never
+	// spawns workers, and never manages the parent's worktrees.
+	const dir = fs.statSync(real).isDirectory() ? real : path.dirname(real);
+	if (NEVER_IN_CHILD.has(path.basename(dir)) && fs.existsSync(path.join(dir, "index.ts")))
+		throw new Error(`Refusing to load the ${path.basename(dir)} extension into a child (${source}); only the parent session has it.`);
 	return resolved;
+}
+/** Extension directories a child never loads, whichever copy: subagents (no nesting) and worktrees (the parent's tool). */
+const NEVER_IN_CHILD = new Set(["subagents", "worktrees"]);
+/**
+ * What a pi worker on its worktree's own agent dir needs (§chat.worktrees/worktree-config): the
+ * tree's `.agent` as PI_CODING_AGENT_DIR, that tree's mode extension by path, and its session
+ * file kept in the PARENT's sessions directory (where it would be without the override), so Sova
+ * lists, watches and measures it like any worker. Throws when the tree has no usable `.agent`.
+ */
+function worktreeConfig(treePath: string, cwd: string): { env: Record<string, string>; modeExtension: string; sessionDir: string } {
+	const agentDir = path.join(treePath, ".agent");
+	if (!fs.existsSync(agentDir) || !fs.statSync(agentDir).isDirectory()) throw new Error(`useWorktreeConfig: ${treePath} has no .agent directory (build one with scripts/hermetic-agent-dir.mjs).`);
+	const mode = realpathOr(path.join(agentDir, "extensions", "mode"));
+	if (!fs.existsSync(path.join(mode, "index.ts")) || path.basename(mode) !== "mode") throw new Error(`useWorktreeConfig: ${agentDir}/extensions/mode is not a mode extension.`);
+	const sessionDir = path.join(getAgentDir(), "sessions", sessionDirName(cwd));
+	fs.mkdirSync(sessionDir, { recursive: true });
+	return { env: { PI_CODING_AGENT_DIR: agentDir }, modeExtension: mode, sessionDir };
+}
+/** pi's own session directory name for a cwd (session-manager.js getDefaultSessionDirPath). */
+function sessionDirName(cwd: string): string {
+	return `--${path.resolve(cwd).replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 }
 type Spec = Static<typeof AgentSpec>;
 type RunnerFactory = WorkerFactory;
@@ -607,6 +640,9 @@ export function registerSubagents(
 	const registry = new WorkerRegistryRecorder((customType, data) => pi.appendEntry(customType, data), lifetimeUsage);
 	// Each published worker's launch spec, written once with its first record (resume needs it).
 	const launches = new WeakMap<Worker, WorkerLaunchSpec>();
+	// Hosted workers re-adopted with a cwd this session no longer allows (§chat.worktrees/workers):
+	// kept running, flagged in agent_list.
+	const outsideWorktrees = new Set<string>();
 	// Workers of earlier processes, from the manifest fold at session_start: every branch's,
 	// with their transcript view. Those on the active branch are listed as RestoredWorkers;
 	// the rest only count toward the lifetime Σ. A resumed worker leaves this map.
@@ -1039,6 +1075,11 @@ export function registerSubagents(
 		if (remote && !remote.farCwd) throw new Error(`This session runs on remote target "${remote.target}" but its far working directory is not known yet (the target's preflight has not answered); retry in a few seconds, or /remote check.`);
 		// Local sessions only: a remote session's tools run on the target (the extension reports it off there).
 		const sandbox = !remote && sandboxState?.on ? sandboxState : undefined;
+		// The session's tracked worktrees (worktrees extension), read from the branch itself so the
+		// gate holds whether or not that extension is loaded (§chat.worktrees/workers).
+		let worktreeSet: WorktreesActive | undefined;
+		try { worktreeSet = remote ? undefined : restoreWorktrees(ctx.sessionManager.getBranch()); }
+		catch { worktreeSet = undefined; }
 		const prepared = specs.map((spec) => {
 			if (!spec.prompt.trim()) throw new Error("Task must not be blank.");
 			const backendId = spec.backend ?? "pi";
@@ -1052,10 +1093,18 @@ export function registerSubagents(
 			try { cwdStat = fs.statSync(cwd); }
 			catch (error) { throw new Error(`Cannot access working directory ${cwd}: ${(error as Error).message}`); }
 			if (!cwdStat.isDirectory()) throw new Error(`Not a directory: ${cwd}`);
+			const tree = remote ? undefined : treeOf(worktreeSet, cwd);
+			if (spec.useWorktreeConfig && (backendId !== "pi" || !tree))
+				throw new Error(backendId !== "pi" ? "useWorktreeConfig is for pi workers only." : `useWorktreeConfig needs a cwd inside an active worktree this session tracks; ${cwd} is not.`);
 			if (sandbox) {
 				// Fail closed: an on state that cannot vouch for this worker refuses it.
 				const refusal = sandbox.checkWorker ? sandbox.checkWorker({ cwd, backend: backendId }) : "This session's sandbox is on but gave no worker check; a worker cannot start sandboxed.";
 				if (refusal) throw new Error(refusal);
+			}
+			// Where a worker may start: the session's cwd or an active tracked worktree. Remote cwds are far paths, not checked.
+			if (!remote) {
+				const outside = worktreeCwdRefusal({ sessionCwd: ctx.cwd, cwd, set: worktreeSet });
+				if (outside) throw new Error(outside);
 			}
 			// What a remote session's worker carries: pi loads the remote extension with the flag;
 			// claude launches the `remote` MCP server, loses every built-in tool (`--tools ""`) and is
@@ -1128,11 +1177,22 @@ export function registerSubagents(
 			// A parent whose sandbox is on starts the worker under it, with the extension's own flags
 			// (`--sandbox on`, which a worker cannot turn off, and the parent's scope); a spec that
 			// names the extension itself does not load it twice.
-			const sources = [MARKER_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(own ?? [])];
-			if (sandbox && !sandbox.workerFlags) throw new Error("This session's sandbox is on but gave no worker flags; a worker cannot start sandboxed.");
-			const { extensions, flags: piFlags } = sandbox
-				? claudeCodeProviderLoad(model, [...sources.filter((source) => !sameExtension(source, sandbox.extensionPath)), sandbox.extensionPath], { ...flags, ...sandbox.workerFlags })
-				: claudeCodeProviderLoad(model, sources, flags);
+			// Its worktree's own agent dir (§chat.worktrees/worktree-config): that tree's mode extension,
+			// loaded by path (discovery stays off), in normal mode with the spec minor mode.
+			const treeConfig = spec.useWorktreeConfig && tree ? worktreeConfig(tree.path, cwd) : undefined;
+			const sources = [MARKER_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(own ?? [])];
+			const modeFlags = treeConfig ? { major: "normal", minor: "spec" } : undefined;
+			// A pi worker inside a tracked worktree writes only there: the sandbox extension's scope for
+			// that root, whether the parent's sandbox is on (narrowed) or off (write-only).
+			const confine = tree ? sandboxState?.workerFlagsIn?.(tree.path) : undefined;
+			if (tree && (!sandboxState?.extensionPath || !confine))
+				throw new Error(`Cannot confine a worker to the worktree ${tree.path}: ${sandboxState?.extensionPath ? "this session's sandbox gave no scope for it" : "the sandbox extension is not loaded"}.`);
+			if (sandbox && !tree && !sandbox.workerFlags) throw new Error("This session's sandbox is on but gave no worker flags; a worker cannot start sandboxed.");
+			const sandboxFlags = confine ?? sandbox?.workerFlags;
+			const sandboxPath = sandboxFlags ? sandboxState!.extensionPath : undefined;
+			const { extensions, flags: piFlags } = sandboxPath
+				? claudeCodeProviderLoad(model, [...sources.filter((source) => !sameExtension(source, sandboxPath)), sandboxPath], { ...flags, ...modeFlags, ...sandboxFlags })
+				: claudeCodeProviderLoad(model, sources, modeFlags ? { ...flags, ...modeFlags } : flags);
 			let forkSession: string | undefined;
 			if (spec.fork) {
 				forkSession = ctx.sessionManager.getSessionFile();
@@ -1151,6 +1211,7 @@ export function registerSubagents(
 				systemPrompt: [definition?.systemPrompt, spec.systemPrompt].filter(Boolean).join("\n\n") || undefined,
 				flags: piFlags,
 				remoteMcp: undefined,
+				treeConfig,
 			};
 		});
 		const resuming = request.resume;
@@ -1166,7 +1227,7 @@ export function registerSubagents(
 		const launched: string[] = [];
 		const earlySettled = new Set<Worker>();
 		try {
-			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp }] of prepared.entries()) {
+			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig }] of prepared.entries()) {
 				for (let i = 0; i < (spec.count ?? 1); i++) {
 					const base = spec.name ?? spec.agentType ?? "agent";
 					const id = resuming ? resuming.id : `ag_${String(++counter).padStart(2, "0")}`;
@@ -1175,7 +1236,9 @@ export function registerSubagents(
 					// does. Pi children read the identity from their environment
 					// (member.ts); claude-code children get it through the member MCP
 					// server's own environment, never the CLI's.
-					const env = teamMember ? memberEnv(request.team!, teamMember, id) : undefined;
+					const memberVars = teamMember ? memberEnv(request.team!, teamMember, id) : undefined;
+					// A worker on its worktree's agent dir: pi resolves everything there (never written to disk).
+					const env = treeConfig ? { ...memberVars, ...treeConfig.env } : memberVars;
 					const tooling = teamMember ? memberTooling(spec.backend ?? "pi") : "none";
 					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
 					// Hosted: the runner's spawnImpl starts a detached host instead of the worker itself.
@@ -1199,7 +1262,7 @@ export function registerSubagents(
 					// member's `team` server (team members) — a member of a remote session gets both.
 					const mcpServers = {
 						...(remoteMcp ? { [REMOTE_MCP_SERVER_NAME]: remoteMcp } : {}),
-						...(env && tooling === "mcp" ? { [MCP_SERVER_NAME]: { command: process.execPath, args: [MEMBER_MCP], env } } : {}),
+						...(memberVars && tooling === "mcp" ? { [MCP_SERVER_NAME]: { command: process.execPath, args: [MEMBER_MCP], env: memberVars } } : {}),
 					};
 					const runner = (backend?.create ?? createRunner)(
 						{
@@ -1213,7 +1276,8 @@ export function registerSubagents(
 							...(flags ? { flags } : {}),
 							...backendPrepared,
 							backend: spec.backend ?? "pi",
-							...(env && tooling === "pi" ? { env } : {}),
+							...(env && (tooling === "pi" || treeConfig) ? { env } : {}),
+							...(treeConfig ? { sessionDir: treeConfig.sessionDir, approve: true } : {}),
 							...(Object.keys(mcpServers).length ? { mcpServers } : {}),
 							...hosted,
 							...(resuming ? { resume: { ...(resuming.sessionId ? { sessionId: resuming.sessionId } : {}), ...(resuming.sessionFile ? { sessionFile: resuming.sessionFile } : {}) } } : {}),
@@ -1245,6 +1309,7 @@ export function registerSubagents(
 						...(spec.extensions === undefined ? {} : { extensions: [...spec.extensions] }),
 						...(spec.backendOptions === undefined ? {} : { backendOptions: spec.backendOptions }),
 						...(teamMember?.orchestrator ? { orchestrator: true } : {}),
+						...(treeConfig ? { useWorktreeConfig: true } : {}),
 					});
 				}
 			}
@@ -2155,6 +2220,7 @@ export function registerSubagents(
 			wake: manifest.spec?.wake ?? true,
 			...pick(launch.extensions, "extensions"),
 			...pick(launch.backendOptions, "backendOptions"),
+			...(launch.useWorktreeConfig === true ? { useWorktreeConfig: true } : {}),
 		} as Spec;
 		const ref = manifest.ref!;
 		const identity = ref.kind === "pi-session-file"
@@ -2288,6 +2354,7 @@ export function registerSubagents(
 			"Use agent_wait only when you genuinely need a subagent's result before continuing; by default a finished subagent wakes you with its result when you are idle.",
 			"Tell a worker whose report may run past about 3,500 characters to write it to a file and end with that file's path plus a short summary; the completion message quotes only the first 4,000 characters.",
 			"For Pi workers, pass extensions: [\"npm:pi-web-access\"] for web tools or fork: true for conversation history; these options are not supported by Claude workers.",
+			"A worker starts only in this session's cwd or inside an active worktree the session tracks (the worktree tool); a pi worker started inside a worktree can write only there. useWorktreeConfig: true runs a pi worker on that worktree's own .agent.",
 			"Use agent_spawn with backend: \"claude-code\" to delegate to Claude Code when its extension is installed. Claude uses its own model IDs (e.g. sonnet, opus), native tools, and backendOptions permission/settings policy; it does not inherit Pi's model, effort, tools, or history.",
 			"Claude workers default to bypassPermissions (no permission prompts); set backendOptions.permissionMode to acceptEdits, manual, dontAsk, or plan for a restrictive policy. Do not assume a queued follow-up has executed; inspect agent_list or agent_transcript.",
 		],
@@ -2321,6 +2388,7 @@ export function registerSubagents(
 					params.wake,
 					params.extensions,
 					params.fork,
+					params.useWorktreeConfig,
 				].some((x) => x !== undefined)
 			) {
 				throw new Error("Shorthand options cannot be combined with agents; put them inside each agent spec.");
@@ -2373,7 +2441,7 @@ export function registerSubagents(
 									`${g.id} — ${g.label}`,
 									...g.agents.map(
 										(a) =>
-											`  ${a.id} ${a.name} [${a.backend ?? "pi"}] ${a.status}${a.taskOutcome ? `/${a.taskOutcome}` : ""} ${a.model ?? "child default"} · ${listUsage(a)}${a.error ? ` · error: ${a.error}` : ""}${restoredNote(a)}`,
+											`  ${a.id} ${a.name} [${a.backend ?? "pi"}] ${a.status}${a.taskOutcome ? `/${a.taskOutcome}` : ""} ${a.model ?? "child default"} · ${listUsage(a)}${a.error ? ` · error: ${a.error}` : ""}${restoredNote(a)}${outsideWorktrees.has(a.id) ? " · outside this session's worktrees (adopted after a restart; kept running)" : ""}`,
 									),
 								].join("\n"),
 							)
@@ -2397,6 +2465,7 @@ export function registerSubagents(
 						// Lifetime: a resumed worker's earlier processes included.
 						usage: { ...a.usage, ...lifetimeUsage(a) },
 						...(isRestored(a) ? { restored: true, usageSource: a.usageSource, resumable: resumeRefusal(a.manifest) === undefined, ...(a.interruptedAt ? { interruptedAt: a.interruptedAt } : {}) } : {}),
+						...(outsideWorktrees.has(a.id) ? { outsideWorktrees: true } : {}),
 					})),
 				},
 			);
@@ -3266,6 +3335,13 @@ export function registerSubagents(
 						continue;
 					}
 					hosting.bind(meta.id, worker);
+					try {
+						const outside = remoteSessionFor(ctx) ? undefined : worktreeCwdRefusal({ sessionCwd: ctx.cwd, cwd: meta.spec.cwd, set: restoreWorktrees(ctx.sessionManager.getBranch()) });
+						if (outside) outsideWorktrees.add(meta.id);
+						else outsideWorktrees.delete(meta.id);
+					} catch {
+						// Unknowable: not flagged.
+					}
 					// Its host kept it running: the live worker replaces its restored entry (its
 					// replayed log carries all its usage, so the restored view leaves the Σ).
 					for (const ghost of agents.filter((a) => a.id === meta.id && isRestored(a))) removeWorker(ghost);

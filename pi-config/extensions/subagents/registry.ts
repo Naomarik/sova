@@ -47,6 +47,8 @@ export interface WorkerLaunchSpec {
 	backendOptions?: Record<string, unknown>;
 	/** Team membership, for re-attaching the member tools and mailbox. */
 	orchestrator?: boolean;
+	/** Ran on its worktree's own agent dir (agent_spawn useWorktreeConfig); a resume applies it again. */
+	useWorktreeConfig?: boolean;
 }
 
 type Append = (customType: string, data: WorkerManifestRecord) => void;

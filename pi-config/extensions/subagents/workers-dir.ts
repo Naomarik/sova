@@ -20,8 +20,20 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-/** The registry root: Sova's state dir. */
-export const DEFAULT_WORKERS_ROOT = path.join(os.homedir(), ".pi", "agent", "sova", "workers");
+/**
+ * pi's agent dir as its getAgentDir() resolves it (PI_CODING_AGENT_DIR, `~` expanded, else
+ * ~/.pi/agent), spelled here because host.ts runs under plain Node without pi.
+ */
+export function agentDirFromEnv(env: NodeJS.ProcessEnv = process.env): string {
+	const dir = env.PI_CODING_AGENT_DIR;
+	if (!dir) return path.join(os.homedir(), ".pi", "agent");
+	if (dir === "~") return os.homedir();
+	if (dir.startsWith("~/")) return path.join(os.homedir(), dir.slice(2));
+	return path.resolve(dir);
+}
+
+/** The registry root: Sova's state dir under the agent dir (a hermetic server's own, never ~/.pi's). */
+export const DEFAULT_WORKERS_ROOT = path.join(agentDirFromEnv(), "sova", "workers");
 /** Entries without a living host are archived after this long. */
 export const REAP_AFTER_MS = 24 * 60 * 60 * 1000;
 /** Archived entries are deleted after this long. */

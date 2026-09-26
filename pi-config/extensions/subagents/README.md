@@ -240,6 +240,29 @@ of `id`, `group`, or `all: true` to stop them. `all: true` targets published
 workers; unpublished workers from a failed spawn (whose IDs were never returned)
 are already being stopped and are only reported as a count.
 
+## Worktrees
+
+A worker starts only in the session's cwd (or below it) or inside one of the session's active
+tracked worktrees (the `worktrees` extension's `worktrees` entry, folded from the branch at every
+spawn with `worktrees/state.ts`, so the gate holds whether or not that extension is loaded). Every
+start goes through it: `agent_spawn`, `team_create`, `team_add`, a team successor and
+`agent_resume`, pi and Claude Code alike. A remote session is not checked. A hosted worker
+re-adopted after a restart with a cwd no longer allowed keeps running; `agent_list` flags it
+"outside this session's worktrees".
+
+A **pi** worker started inside a tracked worktree is confined to writing there: the sandbox
+extension's `workerFlagsIn(<worktree>)` flags (the parent's scope narrowed to the worktree while
+the parent's sandbox is on; a write-only scope while it is off). If the sandbox extension is not
+loaded, or gives no scope, the spawn is refused. Claude Code workers get only the spawn check.
+
+`useWorktreeConfig: true` (agent_spawn, pi only, cwd inside an active tracked worktree with a
+`.agent`) runs the worker on `<worktree>/.agent`: `PI_CODING_AGENT_DIR` set to it, `--session-dir`
+the parent's sessions directory for that cwd (so Sova lists and watches it like any worker), the
+tree's `extensions/mode` loaded by path with `--major normal --minor spec`, and `--approve`.
+Discovery stays off and the model policy is the parent's. It is recorded in the launch spec, so
+`agent_resume` applies it again. A worker never loads any copy of `subagents` or `worktrees`
+through `extensions`.
+
 ## Remote sessions
 
 When the parent runs on a remote target (pi-config's `remote` extension, `--target`; Sova opens

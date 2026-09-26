@@ -2618,10 +2618,11 @@ test("sandbox on: every worker is checked by the extension first, and its refusa
 		await assert.rejects(h.call("agent_spawn", { prompt: "p" }), /gave no worker flags/);
 		assert.equal(h.workers.length + created.length, 2);
 
-		// Off: no check at all.
+		// Off: the sandbox checks nothing (the worktrees gate still refuses a cwd outside the session's).
 		asked.length = 0;
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, checkWorker });
-		await h.call("agent_spawn", { prompt: "p", cwd: outside });
+		await h.call("agent_spawn", { prompt: "p", cwd: "extensions" });
+		await assert.rejects(h.call("agent_spawn", { prompt: "p", cwd: outside }), /outside this session's cwd and its worktrees/);
 		assert.equal(asked.length, 0);
 	} finally {
 		await h.close();
@@ -3552,4 +3553,103 @@ test("/team defaults prints the effective defaults, off, or the malformed reason
 		await h.commands.get("team").handler("ship the parser", h.ctx);
 		assert.match(h.messages[0][0].content, /- Team defaults are on: team_create adds a coordinator "coordinator" \(claude-code\/opus\[1m\]\)[\s\S]*a monitor "monitor"/);
 	} finally { await h.cleanup(); }
+});
+
+/** A session branch holding one `worktrees` snapshot (worktrees/state.ts). */
+const worktreesBranch = (trees: { path: string; status?: string; merge?: unknown }[]) => [{
+	type: "custom", customType: "worktrees",
+	data: { version: 1, trees: trees.map((t) => ({ branch: "feat/x", base: "abc", session: "s1", how: "created", at: 1, status: "active", ...t })) },
+}];
+
+test("worktrees: a worker starts only in the session cwd or an active tracked worktree; every spawn path is gated, and a pi worker there is confined to it", async () => {
+	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-worktrees-")));
+	const wt = path.join(root, "wt-a");
+	const dropped = path.join(root, "wt-b");
+	fs.mkdirSync(path.join(wt, "src"), { recursive: true });
+	fs.mkdirSync(dropped);
+	const h = teamHarness();
+	const created: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	let branch: unknown[] = [];
+	h.ctx.sessionManager.getBranch = () => branch;
+	const flagsFor: string[] = [];
+	const workerFlagsIn = (r: string) => (flagsFor.push(r), { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [r] }) });
+	try {
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerFlagsIn });
+		// Nothing tracked: only the session cwd (and below it).
+		await h.call("agent_spawn", { prompt: "here", cwd: "extensions" });
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION], "no confinement in the session cwd");
+		for (const backend of [undefined, "claude-code"])
+			await assert.rejects(h.call("agent_spawn", { prompt: "there", cwd: wt, backend }), /outside this session's cwd and its worktrees \(none tracked\)/);
+		await assert.rejects(h.call("team_create", { name: "T", objective: "o", members: [{ role: "dev", prompt: "p", cwd: wt }] }), /outside this session's cwd/);
+
+		branch = worktreesBranch([{ path: wt }, { path: dropped, status: "dropped" }]);
+		await h.call("agent_spawn", { prompt: "in tree", cwd: path.join(wt, "src") });
+		const pi = h.workers.at(-1);
+		assert.deepEqual(flagsFor, [wt], "confined to the worktree's top level, not its subdir");
+		assert.deepEqual(pi.extensions, [MARKER_EXTENSION, SANDBOX_DIR]);
+		assert.deepEqual(pi.flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }) });
+		// Claude Code: the spawn check only.
+		await h.call("agent_spawn", { prompt: "claude in tree", cwd: wt, backend: "claude-code" });
+		assert.equal(created.length, 1);
+		assert.equal(flagsFor.length, 1);
+		// A dropped worktree admits nothing; the refusal names the active set.
+		await assert.rejects(h.call("agent_spawn", { prompt: "d", cwd: dropped }), new RegExp(`outside this session's cwd and its worktrees \\(${wt}\\)`));
+		await assert.rejects(h.call("team_add", { team: "team_01", members: [{ role: "x", prompt: "p", cwd: dropped }] }), /outside this session's cwd|No such team/);
+		// On: the sandbox's narrowed scope replaces its session-wide worker flags.
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerFlagsIn });
+		await h.call("agent_spawn", { prompt: "on", cwd: wt });
+		assert.deepEqual(h.workers.at(-1).flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }) });
+		await h.call("agent_spawn", { prompt: "on, session cwd" });
+		assert.deepEqual(h.workers.at(-1).flags, WORKER_FLAGS);
+		// Fail closed: a worktree worker the sandbox cannot scope does not start.
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerFlagsIn: () => undefined });
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", cwd: wt }), /Cannot confine a worker to the worktree/);
+		// A worker cannot load the worktrees extension (any copy), so it never has the tool.
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", extensions: [path.resolve(fileURLToPath(new URL("../worktrees", import.meta.url)))] }), /Refusing to load the worktrees extension/);
+		const copy = path.join(root, "copy", "subagents");
+		fs.mkdirSync(copy, { recursive: true });
+		fs.writeFileSync(path.join(copy, "index.ts"), "export default () => {};\n");
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", extensions: [copy] }), /Refusing to load the subagents extension/);
+	} finally {
+		await h.close();
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with its mode, the parent's session dir and trust; recorded for resume", async () => {
+	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-wtconfig-")));
+	const parentAgent = path.join(root, "parent-agent");
+	const wt = path.join(root, "wt");
+	const mode = path.join(wt, "pi-config", "extensions", "mode");
+	fs.mkdirSync(mode, { recursive: true });
+	fs.writeFileSync(path.join(mode, "index.ts"), "export default () => {};\n");
+	fs.mkdirSync(path.join(wt, ".agent", "extensions"), { recursive: true });
+	fs.symlinkSync(mode, path.join(wt, ".agent", "extensions", "mode"));
+	fs.mkdirSync(path.join(root, "plain"));
+	const prev = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = parentAgent;
+	const h = harness();
+	h.ctx.sessionManager.getBranch = () => worktreesBranch([{ path: wt }, { path: path.join(root, "plain") }]);
+	try {
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerFlagsIn: (r: string) => ({ sandbox: "on", "sandbox-parent": r }) });
+		await h.call("agent_spawn", { prompt: "trial", cwd: wt, useWorktreeConfig: true });
+		const w = h.workers[0];
+		assert.deepEqual(w.env, { PI_CODING_AGENT_DIR: path.join(wt, ".agent") });
+		assert.equal(w.sessionDir, path.join(parentAgent, "sessions", `--${wt.slice(1).replace(/\//g, "-")}--`));
+		assert.ok(fs.existsSync(w.sessionDir));
+		assert.equal(w.approve, true);
+		assert.deepEqual(w.extensions, [MARKER_EXTENSION, mode, SANDBOX_DIR], "the tree's mode by its real path; never its subagents");
+		assert.deepEqual(w.flags, { major: "normal", minor: "spec", sandbox: "on", "sandbox-parent": wt });
+		const record = h.appended.find((e) => e.customType === "subagents-worker-manifest" && e.data.launch);
+		assert.equal(record.data.launch.useWorktreeConfig, true);
+		// Refused: not a pi worker, no tracked worktree, no .agent.
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", useWorktreeConfig: true }), /needs a cwd inside an active worktree/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", cwd: path.join(root, "plain"), useWorktreeConfig: true }), /has no \.agent directory/);
+		await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "x" }], useWorktreeConfig: true }), /Shorthand options cannot be combined/);
+	} finally {
+		await h.close();
+		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
+		fs.rmSync(root, { recursive: true, force: true });
+	}
 });

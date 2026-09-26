@@ -18,10 +18,10 @@
   },
   {
     "check": "^rest:design-base$",
-    "commit": "f59fe97 8246e08 ad36de7 8258d85",
-    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); 8246e08 (overseer head menus); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go); 8258d85 (team defaults: Settings → Teams, team_create defaults.coordinator/monitor, /team text, rules lines). Allowed only for this exact diff.",
+    "commit": "f59fe97 8246e08 ad36de7 8258d85 aa2c3d7",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); 8246e08 (overseer head menus); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go); 8258d85 (team defaults: Settings → Teams, team_create defaults.coordinator/monitor, /team text, rules lines); aa2c3d7 (Overseer Quick Actions in the composer foot's mode slot: base.css +32/-7). Allowed only for this exact diff.",
     "detail": "$.body: \"/* =============================================================================\\n   Sova — base.css\\n   Loads AFTER tokens.css. Consumes tokens only — no r... !== \"/* =============================================================================\\n   Sova — base.css\\n   Loads AFTER tokens.css. Consumes tokens only — no r...",
-    "pin": "ecf66a83ac41b723:5ac062cd57d78673"
+    "pin": "ecf66a83ac41b723:038c58f79d272702"
   },
   {
     "check": "^chat:ordered-stream$",

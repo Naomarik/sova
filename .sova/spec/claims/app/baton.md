@@ -126,7 +126,15 @@ once), **lease** (an offer's lock on its first taker).
   of their own; each was counted when it was accepted and is not counted again. Whoever holds the
   baton next reads them, and the model reads them with the next turn. The operator's **Stop** in a
   baton session keeps a participant's queued messages the same way; only the operator's own come
-  back to the composer.
+  back to the composer. A **clean close** of the session's runtime (archive, a graceful server
+  shutdown, a reload) keeps every message still waiting, the operator's included, the same way
+  and before the runtime goes; a turn that is starting is waited for first.
+- **What can still lose a waiting message**, stated plainly: a crash or a kill mid-reply (nothing
+  runs to keep it); a shutdown that takes longer than the server's 3-second close allowance; a
+  close the write guards refuse (another writer on the file, the TUI), which keeps nothing and says
+  so in the log; and a guard that trips while a message waits in the queue (a foreign write, the
+  model turned off meanwhile): the operator gets an error, and that message is counted but not in
+  the transcript.
 - The operator may **hand the session to a person** (`POST /api/baton/:sid/handoff {to, question,
   briefing?}`, "Hand this session to Bob"): an active roster person only (a proposed one is
   refused: approve first); recorded like any hand-off, and answered with that hand-off's link.

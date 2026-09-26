@@ -1,4 +1,5 @@
 import { createSignal, For, onCleanup, Show, type JSX } from "solid-js";
+import { FoldedNav } from "./FoldedNav";
 import { Banner, Icon } from "./ui";
 
 /** ms epoch → ISO, for `relativeTime`/`clockTime` and `title` attributes. */
@@ -61,9 +62,7 @@ export function InsightsPage(props: {
   return (
     <>
       <header class="session-head">
-        <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">
-          <Icon name="chevron-left" />
-        </a>
+        <FoldedNav />
         <div class="session-head-main">
           <h1 class="session-head-title" tabindex="-1" ref={props.titleRef}>
             {props.title}

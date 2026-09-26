@@ -1,4 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
+import { SESSIONS_HREF } from "../lib/sessions-route";
+import { FoldedNav } from "./FoldedNav";
 import type { GroupSeed, SessionGroup, SessionSummary, WorkerInfo } from "../../shared/protocol";
 import { GROUP_LABEL_MAX } from "../../shared/protocol";
 import { setSessionArchived, unassignSessionById } from "../lib/api";
@@ -593,7 +595,7 @@ export function GroupView(props: {
     props.wiring.onRefresh();
     if (result?.dissolved) {
       forgetPromoted(id());
-      location.hash = "#/";
+      location.hash = SESSIONS_HREF;
       return;
     }
     if (next && !next.startsWith("gone:")) focusPane(next, true);
@@ -633,7 +635,7 @@ export function GroupView(props: {
     props.wiring.onRefresh();
     if (result.dissolved) {
       forgetPromoted(id());
-      location.hash = "#/";
+      location.hash = SESSIONS_HREF;
       return;
     }
     if (next) focusPane(next, true);
@@ -786,7 +788,7 @@ export function GroupView(props: {
         ? `Dissolved ${quoted(name)}. It had no sessions.`
         : `Dissolved ${quoted(name)}. Its ${n} ${n === 1 ? "session is" : "sessions are"} ungrouped.`,
     );
-    location.hash = "#/"; // the route no longer names anything
+    location.hash = SESSIONS_HREF; // the route no longer names anything
   };
 
   /** Sessions this group could take in: everything that isn't already in it. */
@@ -804,9 +806,7 @@ export function GroupView(props: {
   return (
     <>
       <header class="workspace-head">
-        <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">
-          <Icon name="chevron-left" />
-        </a>
+        <FoldedNav />
         <div class="workspace-head-main">
           <h1 class="workspace-title" tabindex="-1" title={props.group.name}>
             <bdi>{props.group.name}</bdi>

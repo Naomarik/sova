@@ -4,7 +4,7 @@ import type { OrgDetail } from "../../shared/orgs";
 import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, redraftProject, resolveConflict, routeConflict, setSpecFrozen } from "../lib/api";
 import { areaGroups, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
 import { relativeTime } from "../lib/format";
-import { orgHref } from "../lib/orgs-route";
+import { orgTabHref } from "../lib/orgs-route";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { ProjectOverseerPanel } from "./ProjectOverseerPanel";
@@ -76,7 +76,7 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
         <Show when={org()}>
           {(o) => (
             <>
-              <a class="orgs-meta-link" href={orgHref(o().id)}>{o().name}</a>
+              <a class="orgs-meta-link" href={orgTabHref(o().id, "projects")}>{o().name}</a>
               <Show when={project()}>
                 {(p) => (
                   <>

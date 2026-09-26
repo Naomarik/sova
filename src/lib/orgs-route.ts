@@ -1,6 +1,7 @@
 // The organizations page (§app/organizations): `#/orgs` lists the orgs attached to this host,
-// `#/orgs/<id>` shows one, `#/orgs/<id>/start/<person id>` shows it with the start form aimed at
-// that person (spawn-for-person, §app.organizations/referrals), `#/orgs/<id>/replay/<session id>`
+// `#/orgs/<id>` shows one on its Sessions tab, `#/orgs/<id>/<tab>` on a tab (sessions, people,
+// projects, workspace; §app.organizations/org-page), `#/orgs/<id>/start/<person id>` on Sessions
+// with the start form open and aimed at that person (spawn-for-person, §app.organizations/referrals), `#/orgs/<id>/replay/<session id>`
 // plays one of its baton sessions back (§app.baton/replay), `#/orgs/<id>/projects/<project id>`
 // is one project (its decisions, §app/requirements) and `…/overseer` is that project's overseer
 // (§app/project-overseer). Ids are the server's (`org_…`, `p_…`, uuid session ids): plain
@@ -8,9 +9,13 @@
 
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
+export const ORG_TABS = ["sessions", "people", "projects", "workspace"] as const;
+export type OrgTab = (typeof ORG_TABS)[number];
+
 export type OrgsRoute =
   | { kind: "list" }
-  | { kind: "org"; id: string; start?: string }
+  /** No tab = Sessions; `start` implies Sessions. */
+  | { kind: "org"; id: string; start?: string; tab?: OrgTab }
   | { kind: "replay"; id: string; sessionId: string }
   | { kind: "project"; id: string; projectId: string }
   | { kind: "overseer"; id: string; projectId: string };
@@ -19,6 +24,8 @@ export const ORGS_HREF = "#/orgs";
 
 export function orgsRouteFromHash(hash: string): OrgsRoute | null {
   if (hash === ORGS_HREF || hash === `${ORGS_HREF}/`) return { kind: "list" };
+  const t = /^#\/orgs\/([^/]+)\/(sessions|people|projects|workspace)\/?$/.exec(hash);
+  if (t) return ID_RE.test(t[1]!) ? { kind: "org", id: t[1]!, tab: t[2] as OrgTab } : null;
   const m = /^#\/orgs\/([^/]+)(?:\/(replay|start|projects)\/([^/]+)(\/overseer)?)?\/?$/.exec(hash);
   if (!m || !ID_RE.test(m[1]!)) return null;
   const id = m[1]!;
@@ -36,6 +43,8 @@ export function orgsRouteFromHash(hash: string): OrgsRoute | null {
 }
 
 export const orgHref = (id: string): string => `${ORGS_HREF}/${id}`;
+/** One tab of an org's page. */
+export const orgTabHref = (id: string, tab: OrgTab): string => `${orgHref(id)}/${tab}`;
 export const replayHref = (orgId: string, sessionId: string): string => `${ORGS_HREF}/${orgId}/replay/${sessionId}`;
 /** The org page with its start form aimed at one person. */
 export const startForHref = (orgId: string, personId: string): string => `${ORGS_HREF}/${orgId}/start/${personId}`;

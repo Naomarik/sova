@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { orgHref, orgsRouteFromHash, projectHref, projectOverseerHref, replayHref, startForHref } from "./orgs-route";
+import { ORG_TABS, orgHref, orgsRouteFromHash, orgTabHref, projectHref, projectOverseerHref, replayHref, startForHref } from "./orgs-route";
 
 test("the list, one org, a replay, a start, a project and its overseer", () => {
   assert.deepEqual(orgsRouteFromHash("#/orgs"), { kind: "list" });
@@ -10,6 +10,13 @@ test("the list, one org, a replay, a start, a project and its overseer", () => {
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/start/p_x1"), { kind: "org", id: "org_ab12", start: "p_x1" });
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/projects/prj_1"), { kind: "project", id: "org_ab12", projectId: "prj_1" });
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/projects/prj_1/overseer"), { kind: "overseer", id: "org_ab12", projectId: "prj_1" });
+});
+
+test("a tab: sessions, people, projects, workspace; the bare org is Sessions by default (no tab key)", () => {
+  assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/people"), { kind: "org", id: "org_ab12", tab: "people" });
+  assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/projects"), { kind: "org", id: "org_ab12", tab: "projects" }, "no project id: the tab");
+  assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/workspace/"), { kind: "org", id: "org_ab12", tab: "workspace" });
+  for (const tab of ORG_TABS) assert.deepEqual(orgsRouteFromHash(orgTabHref("org_x", tab)), { kind: "org", id: "org_x", tab });
 });
 
 test("anything else is not this route", () => {
@@ -24,7 +31,9 @@ test("anything else is not this route", () => {
     "#/orgs/org_1/other/x",
     "#/orgs/org_1/replay/s1/overseer",
     "#/orgs/org_1/start/p_1/overseer",
-    "#/orgs/org_1/projects",
+    "#/orgs/org_1/sessions/x",
+    "#/orgs/a b/people",
+    "#/orgs/org_1/Workspace",
     "#/orgs/org_1/projects/a b",
     "#/orgs/org_1/projects/p/overseer/x",
     "#/s/orgs",

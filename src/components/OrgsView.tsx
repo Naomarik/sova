@@ -21,10 +21,12 @@ import {
   setOrgRemote,
   startBaton,
 } from "../lib/api";
-import { relativeTime } from "../lib/format";
+import { relativeTime, stampTime } from "../lib/format";
+import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
 import { proposedAreasLine } from "../lib/baton-strip";
 import { groupChanges, revertible, valueText } from "../lib/profile-changes";
-import { orgHref, projectHref, replayHref, startForHref, takeStartParent, type OrgsRoute } from "../lib/orgs-route";
+import { orgHref, orgTabHref, projectHref, replayHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
+import { orgTabsOf } from "../lib/org-tabs";
 import { toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { LinksBanner } from "./LinksBanner";
@@ -68,8 +70,16 @@ export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElem
       <Match when={props.route.kind === "overseer" && props.route} keyed>
         {(r) => <OverseerDoor orgId={r.id} projectId={r.projectId} titleRef={props.titleRef} />}
       </Match>
-      <Match when={props.route.kind === "org" && props.route} keyed>
-        {(r) => <OrgPage id={r.id} start={r.start} titleRef={props.titleRef} />}
+      {/* Keyed on the id alone: a tab change keeps the page (and its fetched org). */}
+      <Match when={props.route.kind === "org" && props.route.id} keyed>
+        {(id) => (
+          <OrgPage
+            id={id}
+            start={props.route.kind === "org" ? props.route.start : undefined}
+            tab={props.route.kind === "org" ? props.route.tab : undefined}
+            titleRef={props.titleRef}
+          />
+        )}
       </Match>
     </Switch>
   );
@@ -104,6 +114,7 @@ function OrgList(props: { titleRef(el: HTMLHeadingElement): void }) {
   const [dir, setDir] = createSignal("");
   const [attachDir, setAttachDir] = createSignal("");
   const [operator, setOperator] = createSignal("");
+  let nameInput: HTMLInputElement | undefined;
   createEffect(on(() => info()?.operator.name, (n) => n && setOperator(n)));
   const act = async (fn: () => Promise<unknown>, done?: string) => {
     try {
@@ -126,31 +137,56 @@ function OrgList(props: { titleRef(el: HTMLHeadingElement): void }) {
       busy={info.loading}
       titleRef={props.titleRef}
     >
-      <div class="card orgs-section">
-        <Show
-          when={info()?.orgs.length}
-          fallback={<p class="orgs-empty">Each organization keeps its roster, projects and hand-off sessions in its own git repo. Start one below.</p>}
-        >
-          <ul class="list">
-            <For each={info()!.orgs}>
-              {(o) => (
+      <Show
+        when={info()?.orgs.length}
+        fallback={
+          <Show when={info()}>
+            <div class="card orgs-section org-empty">
+              <h2 class="orgs-h2">Create your first organization</h2>
+              <p class="orgs-empty">Each organization keeps its roster, projects and hand-off sessions in its own git repo.</p>
+              <div class="button-row">
+                <button type="button" class="button" onClick={() => nameInput?.focus()}>
+                  <Icon name="plus" />
+                  New Organization
+                </button>
+              </div>
+            </div>
+          </Show>
+        }
+      >
+        <ul class="org-grid">
+          <For each={info()!.orgs}>
+            {(o) => {
+              const waiting = () => needsYouCount(o.needsYou);
+              return (
                 <li>
-                  <a class="list-row list-row-interactive orgs-row" href={orgHref(o.id)}>
-                    <Icon name="folder" />
-                    <span class="list-main">
-                      <span class="list-title">{o.name}</span>
-                      <span class="list-meta">
-                        {plural(o.people, "person", "people")} · {plural(o.projects, "project")} · {plural(o.openBatons, "open hand-off session")}
-                      </span>
-                    </span>
-                    <Icon name="chevron-right" />
+                  <a class="card org-card" classList={{ "org-card-needs": waiting() > 0 }} href={orgHref(o.id)}>
+                    <div class="org-card-head">
+                      <h3 class="org-card-name">{o.name}</h3>
+                      <Show when={waiting()}>
+                        <Chip tone="warn" title={needsYouLabel(o.needsYou)}>
+                          Needs you · <span class="text-num">{waiting()}</span>
+                        </Chip>
+                      </Show>
+                    </div>
+                    <p class="org-card-line">{orgCountsLine(o)}</p>
+                    <Show when={waiting()}>
+                      <p class="org-card-waiting">{needsYouLabel(o.needsYou)}</p>
+                    </Show>
+                    <Show when={o.lastActivityAt}>
+                      {(at) => (
+                        <p class="org-card-meta" title={stampTime(at())}>
+                          Active {relativeTime(at())}
+                        </p>
+                      )}
+                    </Show>
                   </a>
                 </li>
-              )}
-            </For>
-          </ul>
-        </Show>
-      </div>
+              );
+            }}
+          </For>
+        </ul>
+      </Show>
 
       <form
         class="card orgs-section orgs-form"
@@ -167,7 +203,7 @@ function OrgList(props: { titleRef(el: HTMLHeadingElement): void }) {
         <div class="orgs-fields">
           <label class="field">
             <span class="field-label">Name</span>
-            <input class="input" value={name()} onInput={(e) => setName(e.currentTarget.value)} maxlength={80} required />
+            <input ref={nameInput} class="input" value={name()} onInput={(e) => setName(e.currentTarget.value)} maxlength={80} required />
           </label>
           <label class="field">
             <span class="field-label">Workspace repo</span>
@@ -229,7 +265,7 @@ function OrgList(props: { titleRef(el: HTMLHeadingElement): void }) {
 
 // ---- one org -------------------------------------------------------------------------------------
 
-function OrgPage(props: { id: string; start?: string; titleRef(el: HTMLHeadingElement): void }) {
+function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el: HTMLHeadingElement): void }) {
   const [org, { refetch, mutate }] = createResource(() => props.id, getOrg);
   const [error, setError] = createSignal<string | null>(null);
   const [links, setLinks] = createSignal<OfferLink[] | null>(null);
@@ -248,6 +284,8 @@ function OrgPage(props: { id: string; start?: string; titleRef(el: HTMLHeadingEl
   };
   // Milestone commits run after the answer: look again shortly so the git line catches up.
   const settle = () => setTimeout(() => void refetch(), 1200);
+  /** A start link opens Sessions whatever tab was named; no tab is Sessions too. */
+  const tab = (): OrgTab => (props.start ? "sessions" : (props.tab ?? "sessions"));
   return (
     <InsightsPage
       title={org()?.name ?? "Organization"}
@@ -270,11 +308,24 @@ function OrgPage(props: { id: string; start?: string; titleRef(el: HTMLHeadingEl
           <>
             <For each={o().problems}>{(p) => <Banner tone="warn" title="The workspace repo has a problem." body={p} />}</For>
             <Show when={links()}>{(l) => <LinksBanner links={l()} onDismiss={() => setLinks(null)} />}</Show>
-            <GitCard org={o()} act={act} />
-            <BatonSection org={o()} start={props.start} act={act} onLinks={setLinks} settle={settle} />
-            <PeopleSection org={o()} act={act} settle={settle} />
-            <ChangesSection org={o()} act={act} />
-            <ProjectsSection org={o()} act={act} settle={settle} />
+            <OrgTabs org={o()} tab={tab()} />
+            <div class="org-tabpanel" role="tabpanel" id="org-tabpanel" aria-labelledby={`org-tab-${tab()}`}>
+              <Switch>
+                <Match when={tab() === "sessions"}>
+                  <BatonSection org={o()} start={props.start} act={act} onLinks={setLinks} settle={settle} />
+                </Match>
+                <Match when={tab() === "people"}>
+                  <PeopleSection org={o()} act={act} settle={settle} />
+                  <ChangesSection org={o()} act={act} />
+                </Match>
+                <Match when={tab() === "projects"}>
+                  <ProjectsSection org={o()} act={act} settle={settle} />
+                </Match>
+                <Match when={tab() === "workspace"}>
+                  <GitCard org={o()} act={act} />
+                </Match>
+              </Switch>
+            </div>
           </>
         )}
       </Show>
@@ -283,6 +334,57 @@ function OrgPage(props: { id: string; start?: string; titleRef(el: HTMLHeadingEl
 }
 
 type Act = (fn: () => Promise<OrgDetail | unknown>, done?: string) => Promise<boolean>;
+
+/** The org page's tab strip: a link per tab (the tab is in the URL), a count, a dot for what waits.
+    Left/Right move focus along the strip (wrapping), Home/End jump; Enter or Space selects. */
+function OrgTabs(props: { org: OrgDetail; tab: OrgTab }) {
+  const tabs = createMemo(() => orgTabsOf(props.org));
+  const els: HTMLButtonElement[] = [];
+  // Past the strip's width it scrolls: keep the selected tab whole in view.
+  createEffect(
+    on(
+      () => props.tab,
+      (tab) => queueMicrotask(() => els[tabs().findIndex((t) => t.id === tab)]?.scrollIntoView({ block: "nearest", inline: "nearest" })),
+    ),
+  );
+  const onKey = (e: KeyboardEvent, i: number) => {
+    const last = tabs().length - 1;
+    const next = e.key === "ArrowRight" ? (i === last ? 0 : i + 1) : e.key === "ArrowLeft" ? (i === 0 ? last : i - 1) : e.key === "Home" ? 0 : e.key === "End" ? last : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    els[next]?.focus();
+  };
+  return (
+    <div class="tabs org-tabs" role="tablist" aria-label="Organization">
+      <For each={tabs()}>
+        {(t, i) => (
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            id={`org-tab-${t.id}`}
+            aria-selected={props.tab === t.id ? "true" : "false"}
+            aria-controls={props.tab === t.id ? "org-tabpanel" : undefined}
+            tabindex={props.tab === t.id ? 0 : -1}
+            title={t.waitingText || undefined}
+            ref={(el) => (els[i()] = el)}
+            onClick={() => location.replace(orgTabHref(props.org.id, t.id))}
+            onKeyDown={(e) => onKey(e, i())}
+          >
+            {t.label}
+            <Show when={t.count !== null}>
+              <span class="text-num org-tab-count">{t.count}</span>
+            </Show>
+            <Show when={t.waiting}>
+              <span class="org-tab-dot" aria-hidden="true" />
+              <span class="visually-hidden">, needs you: {t.waitingText}</span>
+            </Show>
+          </button>
+        )}
+      </For>
+    </div>
+  );
+}
 
 function GitCard(props: { org: OrgDetail; act: Act }) {
   const [remote, setRemote] = createSignal(props.org.git.remote ?? "");
@@ -334,19 +436,39 @@ function GitCard(props: { org: OrgDetail; act: Act }) {
 function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks(l: OfferLink[] | null): void; settle(): void }) {
   const active = () => props.org.roster.filter((p) => p.status === "active");
   const [projectId, setProjectId] = createSignal("");
-  // "Start a session for Bob" arrives with Bob chosen (and, from a baton session, that session as parent).
-  const startWith = props.start && props.org.roster.some((p) => p.id === props.start && p.status === "active") ? props.start : undefined;
-  const parent = startWith ? takeStartParent(props.org.id, startWith) : undefined;
-  const [to, setTo] = createSignal<string[]>(startWith ? [startWith] : []);
+  const [to, setTo] = createSignal<string[]>([]);
   const [title, setTitle] = createSignal("");
   const [question, setQuestion] = createSignal("");
   const [briefing, setBriefing] = createSignal("");
   const [goal, setGoal] = createSignal("");
   const [model, setModel] = createSignal("");
+  // Closed behind its button, except when a start link ("Start a session for Bob") brought us here.
+  const [starting, setStarting] = createSignal(false);
+  /** The baton session a start link came from (the new one records it as its parent). */
+  const [parent, setParent] = createSignal<string | undefined>();
   let formEl: HTMLFormElement | undefined;
-  onMount(() => {
-    if (startWith) queueMicrotask(() => formEl?.scrollIntoView({ block: "start" }));
-  });
+  // "Start a session for Bob" (`…/start/<person>`, on first load or any later hash change) opens the
+  // form with Bob ticked (and, from a baton session, that session as parent). Not an active person:
+  // the form opens with nobody ticked.
+  createEffect(
+    on(
+      () => props.start,
+      (start) => {
+        if (!start) return;
+        const who = props.org.roster.some((p) => p.id === start && p.status === "active") ? start : undefined;
+        setTo(who ? [who] : []);
+        setParent(who ? takeStartParent(props.org.id, who) : undefined);
+        setStarting(true);
+        queueMicrotask(() => formEl?.scrollIntoView({ block: "start" }));
+      },
+    ),
+  );
+  /** Leave `…/start/<person>` once the form closes, so a reload doesn't reopen it. */
+  const closeForm = () => {
+    setStarting(false);
+    setParent(undefined);
+    if (props.start) location.replace(orgTabHref(props.org.id, "sessions"));
+  };
   // A select with no matching option shows blank: the first option is the default, as it looks.
   const pid = () => projectId() || props.org.projectList[0]?.id || "";
   /** Nobody ticked = you start; 1 = a hand-off; 2 or more = an offer. */
@@ -366,7 +488,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
         ...(question().trim() ? { question: question().trim() } : {}),
         ...(briefing().trim() ? { briefing: briefing().trim() } : {}),
         ...(model().trim() ? { model: model().trim() } : {}),
-        ...(parent ? { parentSessionId: parent } : {}),
+        ...(parent() ? { parentSessionId: parent() } : {}),
       });
     }, Array.isArray(who) ? `Offered to ${who.length} people.` : "Hand-off session started.");
     if (!ok || !started) return;
@@ -378,6 +500,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
     setBriefing("");
     setGoal("");
     setTo([]);
+    closeForm();
     props.settle();
   };
   return (
@@ -398,7 +521,10 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
                     {b.holder ? `With ${b.holder} · ` : ""}started {relativeTime(b.createdAt)}
                   </span>
                 </span>
-                <Chip tone={STATE_WORDS[b.state]?.tone}>{STATE_WORDS[b.state]?.word ?? b.state}</Chip>
+                {/* Open, but nobody has a link to it yet: that is the operator's to do. */}
+                <Show when={b.waiting === "link"} fallback={<Chip tone={STATE_WORDS[b.state]?.tone}>{STATE_WORDS[b.state]?.word ?? b.state}</Chip>}>
+                  <Chip tone="warn">Link to send</Chip>
+                </Show>
                 <a class="button button-sm button-ghost" href={replayHref(props.org.id, b.sessionId)}>
                   Replay
                 </a>
@@ -409,65 +535,83 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
       </Show>
       <Show
         when={props.org.projectList.length}
-        fallback={<p class="orgs-empty">Add a project below to start a hand-off session in it.</p>}
+        fallback={
+          <p class="orgs-empty">
+            Add a project on the <a href={orgTabHref(props.org.id, "projects")}>Projects</a> tab to start a hand-off session in it.
+          </p>
+        }
       >
-        <form class="orgs-form orgs-subform" onSubmit={submit} ref={formEl}>
-          <h3 class="orgs-h3">Start a Hand-off Session</h3>
-          <label class="field">
-            <span class="field-label">Project</span>
-            <select class="select" value={pid()} onChange={(e) => setProjectId(e.currentTarget.value)}>
-              <For each={props.org.projectList}>{(p) => <option value={p.id} selected={p.id === pid()}>{p.name}</option>}</For>
-            </select>
-          </label>
-          <fieldset class="baton-strip-people">
-            <legend class="field-label">Starts with</legend>
-            <For each={active()} fallback={<p class="orgs-empty">Nobody active on the roster: it starts with you.</p>}>
-              {(p) => (
-                <label class="toggle">
-                  <input type="checkbox" checked={to().includes(p.id)} onChange={(e) => setTo((cur) => (e.currentTarget.checked ? [...cur, p.id] : cur.filter((x) => x !== p.id)))} />
-                  <span class="toggle-box" />
-                  <span>{`${p.name}${p.role ? ` — ${p.role}` : ""}`}</span>
-                </label>
-              )}
-            </For>
-            <p class="field-hint">
-              {to().length === 0
-                ? "Nobody ticked: it starts with you."
-                : to().length === 1
-                  ? `Starts with ${nameOf(to()[0]!)}.`
-                  : `Offered to ${to().length} people: the first to answer takes it, for as long as they keep answering.`}
-              {parent ? " Started from the session you came from." : ""}
-            </p>
-          </fieldset>
-          <label class="field">
-            <span class="field-label">Public title</span>
-            <input class="input" value={title()} onInput={(e) => setTitle(e.currentTarget.value)} maxlength={120} required />
-            <span class="field-hint">All they see of the goal.</span>
-          </label>
-          <label class="field">
-            <span class="field-label">First question</span>
-            <input class="input" value={question()} onInput={(e) => setQuestion(e.currentTarget.value)} maxlength={1000} placeholder="Default: the public title" />
-          </label>
-          <label class="field">
-            <span class="field-label">Briefing</span>
-            <textarea class="input textarea" rows={2} maxlength={2000} value={briefing()} onInput={(e) => setBriefing(e.currentTarget.value)} />
-            <span class="field-hint">What the first person needs to know. Only they see it.</span>
-          </label>
-          <label class="field">
-            <span class="field-label">Goal</span>
-            <textarea class="input textarea" rows={4} value={goal()} onInput={(e) => setGoal(e.currentTarget.value)} maxlength={2000} required />
-            <span class="field-hint">Private to the model. It works toward it and never shows it.</span>
-          </label>
-          <label class="field">
-            <span class="field-label">Model</span>
-            <input class="input input-mono" value={model()} onInput={(e) => setModel(e.currentTarget.value)} placeholder="Default: the new-session default" />
-          </label>
-          <div class="button-row">
-            <button type="submit" class="button button-primary">
-              {to().length > 1 ? `Offer to ${to().length}` : "Start Session"}
-            </button>
-          </div>
-        </form>
+        <Show
+          when={starting()}
+          fallback={
+            <div class="button-row">
+              <button type="button" class="button" aria-expanded="false" onClick={() => setStarting(true)}>
+                <Icon name="plus" small /> Start a Hand-off Session
+              </button>
+            </div>
+          }
+        >
+          <form class="orgs-form orgs-subform" onSubmit={submit} ref={formEl}>
+            <h3 class="orgs-h3">Start a Hand-off Session</h3>
+            <label class="field">
+              <span class="field-label">Project</span>
+              <select class="select" value={pid()} onChange={(e) => setProjectId(e.currentTarget.value)}>
+                <For each={props.org.projectList}>{(p) => <option value={p.id} selected={p.id === pid()}>{p.name}</option>}</For>
+              </select>
+            </label>
+            <fieldset class="baton-strip-people">
+              <legend class="field-label">Starts with</legend>
+              <For each={active()} fallback={<p class="orgs-empty">Nobody active on the roster: it starts with you.</p>}>
+                {(p) => (
+                  <label class="toggle">
+                    <input type="checkbox" checked={to().includes(p.id)} onChange={(e) => setTo((cur) => (e.currentTarget.checked ? [...cur, p.id] : cur.filter((x) => x !== p.id)))} />
+                    <span class="toggle-box" />
+                    <span>{`${p.name}${p.role ? ` — ${p.role}` : ""}`}</span>
+                  </label>
+                )}
+              </For>
+              <p class="field-hint">
+                {to().length === 0
+                  ? "Nobody ticked: it starts with you."
+                  : to().length === 1
+                    ? `Starts with ${nameOf(to()[0]!)}.`
+                    : `Offered to ${to().length} people: the first to answer takes it, for as long as they keep answering.`}
+                {parent() ? " Started from the session you came from." : ""}
+              </p>
+            </fieldset>
+            <label class="field">
+              <span class="field-label">Public title</span>
+              <input class="input" value={title()} onInput={(e) => setTitle(e.currentTarget.value)} maxlength={120} required />
+              <span class="field-hint">All they see of the goal.</span>
+            </label>
+            <label class="field">
+              <span class="field-label">First question</span>
+              <input class="input" value={question()} onInput={(e) => setQuestion(e.currentTarget.value)} maxlength={1000} placeholder="Default: the public title" />
+            </label>
+            <label class="field">
+              <span class="field-label">Briefing</span>
+              <textarea class="input textarea" rows={2} maxlength={2000} value={briefing()} onInput={(e) => setBriefing(e.currentTarget.value)} />
+              <span class="field-hint">What the first person needs to know. Only they see it.</span>
+            </label>
+            <label class="field">
+              <span class="field-label">Goal</span>
+              <textarea class="input textarea" rows={4} value={goal()} onInput={(e) => setGoal(e.currentTarget.value)} maxlength={2000} required />
+              <span class="field-hint">Private to the model. It works toward it and never shows it.</span>
+            </label>
+            <label class="field">
+              <span class="field-label">Model</span>
+              <input class="input input-mono" value={model()} onInput={(e) => setModel(e.currentTarget.value)} placeholder="Default: the new-session default" />
+            </label>
+            <div class="button-row">
+              <button type="submit" class="button button-primary">
+                {to().length > 1 ? `Offer to ${to().length}` : "Start Session"}
+              </button>
+              <button type="button" class="button button-ghost" onClick={closeForm}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Show>
       </Show>
     </section>
   );

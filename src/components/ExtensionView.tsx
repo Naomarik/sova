@@ -1,4 +1,6 @@
 import { createSignal, For, onCleanup, Show, untrack } from "solid-js";
+import { SESSIONS_HREF } from "../lib/sessions-route";
+import { FoldedNav } from "./FoldedNav";
 import type { ExtensionInfo, SessionSummary } from "../../shared/protocol";
 import { extFrameSrc, extHref, extRouteFromHash, MAXIMIZED, parseExtMessage, subFromExtHash } from "../lib/ext-route";
 import { Chip, Icon } from "./ui";
@@ -168,7 +170,7 @@ export function ExtensionView(props: {
           <div class="empty">
             <p class="empty-title">No extension named “{props.id}” is installed.</p>
             <p class="empty-body">Extensions come from Sova's extensions manifest, and this one isn't in it.</p>
-            <a class="button empty-action" href="#/">
+            <a class="button empty-action" href={SESSIONS_HREF}>
               Back to Sessions
             </a>
           </div>
@@ -176,9 +178,7 @@ export function ExtensionView(props: {
       }
     >
       <header class="session-head ext-head">
-        <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">
-          <Icon name="chevron-left" />
-        </a>
+        <FoldedNav />
         <div class="session-head-main">
           <h1 class="session-head-title" tabindex="-1" ref={props.titleRef}>
             {props.info?.title ?? props.id}

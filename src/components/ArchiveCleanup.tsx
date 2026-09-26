@@ -1,4 +1,5 @@
 import { createSignal, For, onMount, Show } from "solid-js";
+import { SESSIONS_HREF } from "../lib/sessions-route";
 import { Portal } from "solid-js/web";
 import type { SessionSummary } from "../../shared/protocol";
 import { type CleanupResponse, type PathsCleanupRequest, cleanupSessions } from "../lib/api";
@@ -71,7 +72,7 @@ export function ArchiveCleanup(props: { sessions: SessionSummary[]; selected: st
     announce(text);
     // The open session's file is gone: leave it rather than show a transcript that can't load.
     const open = props.sessions.find((s) => s.path === props.selected);
-    if (open && result.deletedIds?.includes(open.id)) location.hash = "#/";
+    if (open && result.deletedIds?.includes(open.id)) location.hash = SESSIONS_HREF;
     props.onDeleted();
   };
 

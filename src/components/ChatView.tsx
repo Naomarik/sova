@@ -1,4 +1,5 @@
 import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { SESSIONS_HREF } from "../lib/sessions-route";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
@@ -1309,7 +1310,7 @@ export function ChatView(props: {
       await setSessionArchived(props.path, true);
       toast("Archived. Find it under Archive.");
       props.onArchiveChanged?.(props.path, true);
-      if (!scope.id) location.hash = "#/";
+      if (!scope.id) location.hash = SESSIONS_HREF;
     } catch (err) {
       toast(`Couldn't archive this session. ${(err as Error).message}`);
     } finally {

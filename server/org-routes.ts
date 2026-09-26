@@ -1,7 +1,10 @@
 import type { Context, Hono } from "hono";
 import { OPERATOR, type BatonInfo, type BatonSession, type BatonStartInput, type OfferInfo, type OfferLink } from "../shared/baton";
-import type { PersonInput } from "../shared/orgs";
-import { batonById, batonOfPath, closeBaton, createBaton, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink } from "./baton";
+import { statSync } from "node:fs";
+import { join } from "node:path";
+import type { OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
+import { readConflicts } from "./decisions";
+import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf } from "./baton";
 import { moveBaton, offerBaton, scheduleWrapup } from "./baton-loadout";
 import { BusyError } from "./chat-manager";
 import {
@@ -104,6 +107,103 @@ const infoOf = (sid: string): BatonInfo => {
 const offerLinks = (orgId: string, links: { personId: string; token: string }[]): OfferLink[] =>
   links.map((l) => ({ personId: l.personId, name: nameOf(orgId, l.personId), link: linkUrl(l.token) }));
 
+/** The newest of some ISO times and epoch ms ("" when none parses). */
+export function latestTime(times: readonly (string | number | undefined)[]): string {
+  let best = -Infinity;
+  for (const t of times) {
+    const ms = typeof t === "number" ? t : t ? Date.parse(t) : NaN;
+    if (Number.isFinite(ms) && ms > best) best = ms;
+  }
+  return Number.isFinite(best) ? new Date(best).toISOString() : "";
+}
+
+/** What in one org waits on the operator: the counts, each baton session's reason, each project's conflicts. */
+interface Waiting {
+  needsYou: OrgNeedsYou;
+  batons: Map<string, "reply" | "link">;
+  projectConflicts: Record<string, number>;
+}
+
+/**
+ * What waits on the operator in one org (§app.organizations/org-cards): the items the attention list
+ * raises for a baton session (its Needs-you reply, a link to send), the roster's proposed people,
+ * and open conflicts routed to the operator that no baton session asks about yet (one that has a
+ * session is already that session's reply). `rows` are the org's baton rows.
+ */
+function waitingIn(orgId: string, dir: string, rows: readonly BatonSession[]): Waiting {
+  const w: Waiting = { needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0 }, batons: new Map(), projectConflicts: {} };
+  try {
+    w.needsYou.proposals = readRoster(orgId).filter((p) => p.status === "proposed").length;
+    for (const project of readProjects(orgId)) {
+      const n = readConflicts(orgId, project.id).filter((c) => c.state === "open" && c.routedTo === OPERATOR && !c.batonSessionId).length;
+      if (n) w.projectConflicts[project.id] = n;
+      w.needsYou.conflicts += n;
+    }
+  } catch {
+    // an unreadable roster counts nothing; its page names the problem
+  }
+  for (const r of rows) {
+    if (r.state !== "open" && r.state !== "needs-you") continue;
+    const field = batonSummaryField(sessionPathOf(dir, r));
+    if (field?.needsYou) {
+      w.needsYou.replies++;
+      w.batons.set(r.sessionId, "reply");
+    } else if (field?.sendLink) {
+      w.needsYou.links++;
+      w.batons.set(r.sessionId, "link");
+    }
+  }
+  return w;
+}
+
+/**
+ * The list's per-org extras (§app.organizations/org-cards): what waits on the operator, and the
+ * newest activity: the org's creation, a roster change, a baton row's events, an open baton
+ * session file's last write. Files the org already reads for its summary, and one stat per open
+ * baton session.
+ */
+export function withOrgActivity(info: OrgsInfo): OrgsInfo {
+  const rows = allBatons();
+  return {
+    ...info,
+    orgs: info.orgs.map((o) => {
+      const mine = rows.filter((r) => r.orgId === o.id);
+      const times: (string | number | undefined)[] = [o.createdAt];
+      try {
+        times.push(readHistory(o.id).at(-1)?.at);
+      } catch {
+        // as above
+      }
+      for (const r of mine) {
+        times.push(r.createdAt, r.closedAt, r.handoffs.at(-1)?.at, ...(r.offers ?? []).map((x) => x.lastActivityAt));
+        if (r.state !== "open" && r.state !== "needs-you") continue;
+        try {
+          times.push(statSync(join(o.dir, r.file)).mtimeMs);
+        } catch {
+          // not written yet
+        }
+      }
+      const lastActivityAt = latestTime(times);
+      return { ...o, needsYou: waitingIn(o.id, o.dir, mine).needsYou, ...(lastActivityAt ? { lastActivityAt } : {}) };
+    }),
+  };
+}
+
+/** An org's page (§app.organizations/org-page): its detail, with what waits on the operator for the tabs' dots. */
+export async function orgPage(orgId: string): Promise<OrgDetail> {
+  const d = await orgDetail(orgId);
+  const w = waitingIn(orgId, d.dir, allBatons().filter((r) => r.orgId === orgId));
+  return {
+    ...d,
+    needsYou: w.needsYou,
+    batons: d.batons.map((b) => {
+      const why = w.batons.get(b.sessionId);
+      return why ? { ...b, waiting: why } : b;
+    }),
+    projectConflicts: w.projectConflicts,
+  };
+}
+
 /** A route param ("" when absent: every lookup then answers 404). */
 const p = (c: Context, name: string): string => c.req.param(name) ?? "";
 
@@ -121,20 +221,20 @@ const handle =
   };
 
 export function registerOrgRoutes(app: Hono<any>): void {
-  app.get("/api/orgs", (c) => c.json(orgsInfo()));
+  app.get("/api/orgs", (c) => c.json(withOrgActivity(orgsInfo())));
   app.post(
     "/api/orgs",
     handle(async (c) => {
       const b = await body(c);
       const org = await createOrg({ name: b.name, dir: b.dir });
-      return c.json(await orgDetail(org.id), 201);
+      return c.json(await orgPage(org.id), 201);
     }),
   );
   app.post(
     "/api/orgs/attach",
     handle(async (c) => {
       const org = await attachOrg({ dir: (await body(c)).dir });
-      return c.json(await orgDetail(org.id), 201);
+      return c.json(await orgPage(org.id), 201);
     }),
   );
   app.put(
@@ -146,14 +246,14 @@ export function registerOrgRoutes(app: Hono<any>): void {
   );
   app.get(
     "/api/orgs/:id",
-    handle(async (c) => c.json(await orgDetail(p(c, "id")))),
+    handle(async (c) => c.json(await orgPage(p(c, "id")))),
   );
   app.patch(
     "/api/orgs/:id",
     handle(async (c) => {
       const b = await body(c);
       patchOrg(p(c, "id"), { name: b.name, notes: b.notes });
-      return c.json(await orgDetail(p(c, "id")));
+      return c.json(await orgPage(p(c, "id")));
     }),
   );
   app.delete(
@@ -169,7 +269,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const out = await commitAll(orgDir(id), `Commit now (${readOrg(id).name})`);
       if (out.error) return c.json({ error: out.error }, 502);
-      return c.json(await orgDetail(id));
+      return c.json(await orgPage(id));
     }),
   );
   app.put(
@@ -179,7 +279,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const url = (await body(c)).url;
       if (typeof url !== "string" || url.length > 500 || /\s/.test(url.trim())) throw new OrgError("url must be a git remote URL, or empty to remove it");
       await setRemote(orgDir(id), url.trim());
-      return c.json(await orgDetail(id));
+      return c.json(await orgPage(id));
     }),
   );
   app.post(
@@ -187,7 +287,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       addPerson(id, (await body(c)) as unknown as PersonInput);
-      return c.json(await orgDetail(id), 201);
+      return c.json(await orgPage(id), 201);
     }),
   );
   app.patch(
@@ -196,7 +296,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       applyChange(id, p(c, "pid"), await body(c), { kind: "operator" });
       nudgeMarks(); // a renamed or re-statused person may be a baton holder or a waiting referral
-      return c.json(await orgDetail(id));
+      return c.json(await orgPage(id));
     }),
   );
   app.post(
@@ -205,7 +305,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       approvePerson(id, p(c, "pid"));
       nudgeMarks(); // the session that proposed them loses its Approve item: re-diff the list now
-      return c.json(await orgDetail(id));
+      return c.json(await orgPage(id));
     }),
   );
   app.post(
@@ -214,7 +314,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       declinePerson(id, p(c, "pid"));
       nudgeMarks();
-      return c.json(await orgDetail(id));
+      return c.json(await orgPage(id));
     }),
   );
   app.get(
@@ -235,7 +335,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const at = (await body(c)).at;
       if (typeof at !== "string") throw new OrgError("at is required");
       revertChange(id, p(c, "pid"), at);
-      return c.json(await orgDetail(id));
+      return c.json(await orgPage(id));
     }),
   );
   app.post(
@@ -244,7 +344,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const b = await body(c);
       addProject(id, { name: b.name, root: b.root });
-      return c.json(await orgDetail(id), 201);
+      return c.json(await orgPage(id), 201);
     }),
   );
   app.patch(
@@ -253,7 +353,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const b = await body(c);
       patchProject(id, p(c, "pid"), { name: b.name, root: b.root, ...(b.spec !== undefined ? { spec: b.spec } : {}) });
-      return c.json(await orgDetail(id));
+      return c.json(await orgPage(id));
     }),
   );
 

@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { ORGS_HREF } from "../lib/orgs-route";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
+import { HOME_HREF } from "../lib/sessions-route";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { fetchTargets, listSessions, setSessionArchived } from "../lib/api";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
@@ -1474,7 +1474,8 @@ export function Sidebar(props: {
       {/* Collapsed, the pane's own body is not in the DOM at all — nothing hidden-but-readable. */}
       <Show when={!collapsed()} fallback={<Spine />}>
         <div class="sidebar-head">
-          <a class="brand" href="#/">
+          {/* Home (§app.shell/home), at every width: on a phone the way back from the list. */}
+          <a class="brand" href={HOME_HREF}>
             <span class="icon" style={{ "--icon": "url(/icons/sova-mark.svg)" }} aria-hidden="true" />
             sova
           </a>
@@ -1818,10 +1819,6 @@ export function Sidebar(props: {
           <Show when={hostFilterShown()}>
             <MeshHostMenu value={hostFilter()} onChange={chooseHostFilter} />
           </Show>
-          <a class="list-row list-row-interactive insights-row" href={ORGS_HREF} title="Organizations">
-            <Icon name="network" />
-            <span class="insights-row-text">Organizations</span>
-          </a>
           <a
             class="list-row list-row-interactive insights-row"
             href={usageHref()}

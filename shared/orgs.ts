@@ -4,11 +4,12 @@
  * the digest carry (see shared/baton.ts for the baton half).
  *
  * Routes (operator app only; never on the share listener):
- * GET    /api/orgs                          -> OrgsInfo
+ * GET    /api/orgs                          -> OrgsInfo (each summary with needsYou and lastActivityAt)
  * POST   /api/orgs                          body { name, dir? } -> 201 OrgDetail
  * POST   /api/orgs/attach                   body { dir } -> 201 OrgDetail (a restored clone)
  * PUT    /api/orgs/operator                 body { name } -> OrgsInfo
- * GET    /api/orgs/:id                      -> OrgDetail
+ * GET    /api/orgs/:id                      -> OrgDetail (with needsYou, each baton's waiting, projectConflicts;
+ *                                               so is every route below that answers OrgDetail)
  * PATCH  /api/orgs/:id                      body { name?, notes? } -> OrgDetail
  * DELETE /api/orgs/:id                      -> { ok: true } (detach: removes it from this host's index only)
  * POST   /api/orgs/:id/commit               -> OrgDetail (Commit now; pushes when a remote is set)
@@ -134,6 +135,24 @@ export interface OrgSummary extends Org {
   projects: number;
   /** Baton sessions not done or closed. */
   openBatons: number;
+  /** GET /api/orgs only: what in this org waits on the operator, the same items the attention list
+      raises (absent = unknown, e.g. an older server). */
+  needsYou?: OrgNeedsYou;
+  /** GET /api/orgs only: ISO time of the org's newest activity (absent = unknown). */
+  lastActivityAt?: string;
+}
+
+/** What waits on the operator in one org, by kind (§app.organizations/org-cards). */
+export interface OrgNeedsYou {
+  /** Baton sessions the operator holds and hasn't answered (state "needs-you"). */
+  replies: number;
+  /** Baton sessions a person holds, or offers them, with no live link: the operator must send one. */
+  links: number;
+  /** Roster people proposed by referral, waiting for Approve or Decline. */
+  proposals: number;
+  /** Open decision conflicts routed to the operator with no baton session asking about them yet
+      (one that has a session counts once, as that session's reply). */
+  conflicts: number;
 }
 
 /** One baton session of the org, for its page. */
@@ -147,6 +166,9 @@ export interface OrgBatonRow {
   /** Display name, null when done/closed. */
   holder: string | null;
   createdAt: string;
+  /** From the org routes: what this session waits on the operator for, when anything
+      ("reply": the operator holds it; "link": someone has no live link yet). */
+  waiting?: "reply" | "link";
 }
 
 export interface OrgDetail extends OrgSummary {
@@ -159,6 +181,9 @@ export interface OrgDetail extends OrgSummary {
   recentChanges: NamedChange[];
   /** Any file problem reading the repo (a hand-edited roster that doesn't parse). */
   problems: string[];
+  /** From the org routes: open conflicts routed to the operator with no session yet, per project id
+      (projects with none are absent). */
+  projectConflicts?: Record<string, number>;
 }
 
 export interface OrgsInfo {

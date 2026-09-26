@@ -114,3 +114,56 @@
 .orgs-section > .orgs-inline-hint { margin-top: calc(-1 * var(--space-2)); }
 /* What approving a referral grants: its decision areas, said in full on the approval card. */
 .baton-strip-areas { margin: 0; font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-ink); overflow-wrap: anywhere; }
+
+/* #/orgs: one card per organization, the whole card a link to its page. */
+.org-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr; gap: var(--space-4); }
+@container insights (min-width: 640px) {
+  .org-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container insights (min-width: 1024px) {
+  .org-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.org-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  height: 100%;
+  padding: var(--space-4);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+}
+.org-card:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-2); }
+.org-card:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* Something here waits on the operator: the warn edge, besides the chip's dot and word. */
+.org-card-needs { border-color: var(--status-warn); }
+.org-card-needs:hover { border-color: var(--status-warn); }
+.org-card-head { display: flex; align-items: flex-start; gap: var(--space-2); flex-wrap: wrap; }
+.org-card-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.org-card-line { margin: 0; color: var(--color-ink-2); }
+.org-card-waiting { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); font-weight: var(--fw-medium); color: var(--color-ink); }
+.org-card-meta { margin: auto 0 0; padding-top: var(--space-1); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.org-empty { align-items: flex-start; }
+
+/* An org's page: four tabs under the title (the problems and links banners stay above them). */
+.org-tabs { flex: none; flex-wrap: nowrap; scrollbar-width: thin; }
+.org-tabs > .tab { flex: none; }
+.org-tab-count { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
+/* Something in the tab waits on the operator; the words are in the tab's hidden text and title. */
+.org-tab-dot { width: 8px; height: 8px; border-radius: var(--r-full); background: var(--status-warn); flex: none; }
+.org-tabpanel { display: flex; flex-direction: column; gap: var(--space-5); }
+/* A phone: the four tabs fit a 420px window with two-digit counts; narrower, the strip scrolls and
+   the selected tab is kept in view. */
+@container insights (max-width: 479px) {
+  .org-tabs { gap: 0; }
+  .org-tabs > .tab { padding: 0 var(--space-1); gap: var(--space-1); }
+}

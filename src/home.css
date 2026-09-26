@@ -1,0 +1,72 @@
+/* The home screen's Sessions card (#/home and the empty main pane). Token values only. */
+
+.home-sessions {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+}
+.home-sessions:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-2); }
+.home-sessions-needs,
+.home-sessions-needs:hover { border-color: var(--status-warn); }
+.home-sessions-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.home-sessions-icon { color: var(--color-ink-muted); flex: none; }
+/* The whole card opens the list: the button's ::after covers it, and the ring goes round the card. */
+.home-sessions-open {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+}
+.home-sessions-open::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.home-sessions-open:focus-visible { outline: none; }
+.home-sessions-open:focus-visible::after { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.home-sessions-line { margin: 0; color: var(--color-ink-2); }
+.home-sessions-waiting { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); font-weight: var(--fw-medium); color: var(--color-ink); overflow-wrap: anywhere; }
+/* Links and Resume sit above the card's own target. */
+.home-sessions-link,
+.home-sessions-resume { position: relative; z-index: 1; }
+.home-sessions-link { color: var(--color-ink); }
+.home-sessions-last { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-1); }
+.home-sessions-last > .home-sessions-meta { flex: 1; min-width: 0; }
+.home-sessions-meta { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.home-sessions-title { color: var(--color-ink-2); font-weight: var(--fw-medium); }
+.home-sessions-resume { flex: none; }
+
+/* A page head's leading links on a phone (FoldedNav): the brand mark home, then back. Hidden at
+   768px and up, where the list and its brand are beside every page. */
+.folded-nav { display: inline-flex; align-items: center; flex: none; }
+.folded-home { color: var(--color-accent); }
+@media (min-width: 768px) {
+  .folded-nav { display: none; }
+}
+/* The Overseer's head is the fullest: with FoldedNav's home mark and every button present
+   (proactivity, Ideas, Todos, History, Clear), a narrow head shows the proactivity cycle as its
+   bell and Clear as its plus (their aria-labels still say them). The icons are wide-hidden. */
+.overseer-clear .icon { display: none; }
+@container session-head (max-width: 479px) {
+  .overseer-head .overseer-proactivity .icon,
+  .overseer-head .overseer-clear .icon { display: inline-block; }
+  .overseer-head .overseer-proactivity-word,
+  .overseer-head .overseer-clear-word { display: none; }
+}
+/* The head is its own container, so its own gaps go by the window: folded, it is the window's width. */
+@media (max-width: 479px) {
+  .session-head.overseer-head { gap: var(--space-1); padding-left: var(--space-2); padding-right: var(--space-2); }
+}
+/* Under 400px the buttons can't share a row with the title (they need 390px with it), so they take
+   a second row, at its right end. */
+@media (max-width: 399px) {
+  .session-head.overseer-head { flex-wrap: wrap; justify-content: flex-end; row-gap: var(--space-1); }
+  .session-head.overseer-head > .session-head-main { flex: 1 1 calc(100% - 100px); }
+}

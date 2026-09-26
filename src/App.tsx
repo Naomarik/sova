@@ -31,7 +31,7 @@ import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/i
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
 import { extHref, extRouteFromHash } from "./lib/ext-route";
-import { orgsRouteFromHash } from "./lib/orgs-route";
+import { ORGS_HREF, orgsRouteFromHash } from "./lib/orgs-route";
 import { LIST_REFRESH_EVENT } from "./lib/list-refresh";
 import { OrgsView } from "./components/OrgsView";
 import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
@@ -40,7 +40,9 @@ import { cwdLabel } from "./lib/remote-session";
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath } from "./lib/format";
 import { reconcileTheme } from "./lib/theme";
-import { rememberedWidth, spine, spineWidth } from "./lib/spine";
+import { rememberedWidth, setSpine, spine, spineWidth } from "./lib/spine";
+import { isSessionsHash, SESSIONS_HREF } from "./lib/sessions-route";
+import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
 import { closeSettings, openSettings, settingsOpenAt } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
@@ -52,6 +54,8 @@ import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
+import { FoldedNav } from "./components/FoldedNav";
+import { HomeSessionsCard } from "./components/HomeSessionsCard";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
 import { MeshDetails } from "./components/MeshDetails";
 import { closeMeshDetails, meshDetailsOpen } from "./lib/mesh-details";
@@ -244,6 +248,8 @@ export function App() {
   });
 
   redirectLegacyInsights();
+  /** `#/sessions`: a phone's session list (§app.shell/home); `#/` is the home screen. */
+  const [sessionsRoute, setSessionsRoute] = createSignal(isSessionsHash(location.hash));
   const [route, setRoute] = createSignal<string | null>(pathFromHash());
   createEffect(
     on(route, (p) => {
@@ -383,7 +389,7 @@ export function App() {
         (err) => {
           if (sessionIdFromHash(location.hash) !== id) return;
           toast(err instanceof ApiError && err.status === 404 ? "That session is gone." : `Couldn't open that session. ${(err as Error).message}`);
-          history.replaceState(history.state, "", "#/");
+          history.replaceState(history.state, "", SESSIONS_HREF);
         },
       )
       .finally(() => {
@@ -401,6 +407,7 @@ export function App() {
     setExtRoute(extRouteFromHash(location.hash));
     setMeshRoute(isMeshHash(location.hash));
     setOrgsRoute(orgsRouteFromHash(location.hash));
+    setSessionsRoute(isSessionsHash(location.hash));
   };
   // A `#/sid/` route opened before the first list load resolves when the lists land.
   createEffect(on([list, peerLists, meshSettled, peersSettled], () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
@@ -592,7 +599,7 @@ export function App() {
       return;
     }
     toast("That group is gone.");
-    location.hash = "#/";
+    location.hash = SESSIONS_HREF;
   });
 
   /** A session this tab just created opens for chat with its composer focused. */
@@ -626,7 +633,14 @@ export function App() {
   let meshTitleEl: HTMLHeadingElement | undefined;
   createEffect(on(meshRoute, (open) => open && folded() && queueMicrotask(() => meshTitleEl?.focus()), { defer: true }));
   let orgsTitleEl: HTMLHeadingElement | undefined;
-  createEffect(on(() => !!orgsRoute(), (open) => open && folded() && queueMicrotask(() => orgsTitleEl?.focus()), { defer: true }));
+  /** Which organizations page is showing: an org's tabs and its `/start/<person>` are the same page,
+      so switching tabs keeps focus on the tab (the memo only changes when the page does). */
+  const orgsPage = createMemo(() => {
+    const r = orgsRoute();
+    if (!r) return null;
+    return r.kind === "list" ? "list" : r.kind === "org" ? `org:${r.id}` : `${r.kind}:${r.id}:${"sessionId" in r ? r.sessionId : r.projectId}`;
+  });
+  createEffect(on(orgsPage, (page) => page && folded() && queueMicrotask(() => orgsTitleEl?.focus()), { defer: true }));
   createEffect(on(extId, (id) => id && folded() && queueMicrotask(() => extTitleEl?.focus()), { defer: true }));
   // A team deep link focuses its card instead (AgentsView), at every width.
   createEffect(
@@ -659,7 +673,7 @@ export function App() {
    */
   const onArchived = (path: string, archived: boolean) => {
     if (archived && route() === path) {
-      location.hash = "#/";
+      location.hash = SESSIONS_HREF;
       batch(onHash);
     }
     if (dropArchived(created, path, archived)) setCreatedVersion((v) => v + 1);
@@ -708,6 +722,16 @@ export function App() {
 
   /** The sessions the landing page counts: main threads, as the sidebar lists them. */
   const mainList = () => (list() ?? []).filter(isMainThread);
+  /** The home screen's Sessions card opens the list: its own view on a phone, the pane (expanded
+      from the spine) on a wide window, with the search focused. */
+  const openSessionList = () => {
+    if (!unfolded()) {
+      location.hash = SESSIONS_HREF;
+      return;
+    }
+    if (spine()) setSpine(false);
+    queueMicrotask(() => document.getElementById("session-search")?.focus());
+  };
   const folderCount = () => new Set(mainList().map((s) => s.cwd)).size;
 
   // ---- Subagents pane: open for one session path, closed whenever the route changes ----------
@@ -869,7 +893,7 @@ export function App() {
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}
-        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || orgsRoute() ? "session" : "list"}
+        data-view={groupRoute() ? "workspace" : sessionsRoute() ? "list" : "session"}
         data-ext-maximized={extMaximized() ? "1" : undefined}
       >
         <Sidebar
@@ -968,9 +992,7 @@ export function App() {
                       autofocus={autofocusPath() === path}
                       titleRef={(el) => (titleEl = el)}
                       lead={
-                        <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">
-                          <Icon name="chevron-left" />
-                        </a>
+                        <FoldedNav />
                       }
                       listVersion={wiring.listVersion}
                       now={wiring.now}
@@ -1000,15 +1022,17 @@ export function App() {
                   <div class="empty">
                     <p class="empty-title">Couldn't find this session.</p>
                     <p class="empty-body">It isn't in the list of sessions on disk anymore.</p>
-                    <a class="button empty-action" href="#/">
+                    <a class="button empty-action" href={SESSIONS_HREF}>
                       Back to Sessions
                     </a>
                   </div>
                 </div>
               </Match>
               {/* Organizations, their rosters and hand-off sessions (#/orgs[/<id>[/replay/<session>]]). */}
-              <Match when={orgsRoute()} keyed>
-                {(r) => <OrgsView route={r} titleRef={(el) => (orgsTitleEl = el)} />}
+              {/* Not keyed: a tab change on an org's page (#/orgs/<id>/<tab>) is a new route object,
+                  and OrgsView keys each page itself, so the page stays and only the tab moves. */}
+              <Match when={orgsRoute()}>
+                {(r) => <OrgsView route={r()} titleRef={(el) => (orgsTitleEl = el)} />}
               </Match>
               {/* The peer mesh (#/mesh): hosts, peers.json, sync, first-peer setup. */}
               <Match when={meshRoute()}>
@@ -1058,9 +1082,14 @@ export function App() {
                           <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
                           Fan Out…
                         </button>
+                        <a class="button" href={ORGS_HREF}>
+                          <Icon name="network" />
+                          Organizations
+                        </a>
                       </div>
                     </div>
                   </div>
+                  <HomeSessionsCard glance={sessionsGlance(list() ?? [], attention.data(), overseer.data()?.proactivity)} now={now()} onOpenList={openSessionList} />
                   <MeshCard />
                   <Show when={installed()}>{(list) => <ExtensionCards extensions={list()} />}</Show>
                   <Show when={explained()}>

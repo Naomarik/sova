@@ -28,6 +28,7 @@ installs with `install.sh` alone, without the web app.
 | `extensions/mode/` | Per-session normal ↔ delegate mode switcher plus minor modes (`alt+m`, `ctrl+p` → Mode, `/mode`). Delegate orchestrates workers by four profiles — planning, investigation, routine and complex implementation — each a configurable backend/model/effort with an optional fallback (`mode-delegate.json`); the `spec` minor mode can hand its spec writing to one such worker (`mode-spec.json`) |
 | `extensions/spec/` | Not a pi extension (no `index.ts`; pi skips it): standalone `.sova/spec` tools that the `spec` minor mode in `extensions/mode/` tells the agent to run. `core/sova-spec.mjs` is read-only; `core/sova-spec-draft.mjs` keeps proposed documentation in full-copy drafts and promotes the implemented, verified part, writing only with `--write`; `core/sova-spec-review.mjs` records review evidence, and writes only under `.sova/spec/reviews/` and only with `--write` or `record` |
 | `extensions/sessions/` | Live pi sessions on this machine find each other through a filesystem presence registry; ships the `pi-sessions` CLI (`bin/pi-sessions.ts`) and the record schema (`public/SCHEMA.md`) |
+| `extensions/link/` | The tools of a session Sova has linked with sessions on other mesh hosts (`link_members`, `link_send`, `link_inbox`): always registered, inert without Sova's `sova-link` flag, and every call goes to the session's own Sova host |
 | `extensions/remote/` | `--target <name>`: runs the session's tools on an ssh / AWS-SSM / docker / incus target from `targets.json`; inert without the flag. Its `argv.ts` is imported by Sova |
 | `extensions/sandbox/` | `/sandbox on\|off`: per-session OS sandbox for the agent's tools (bubblewrap on Linux; fail closed elsewhere), with the policy in `sandbox-policy/` |
 | `extensions/worktrees/` | The git worktrees a session works in: the parent agent's `worktree` tool (create, attach, detach, merge, list), kept in the session's `worktrees` entry; workers may start only in the session cwd or an active tracked worktree, and each merge the session makes becomes a card. Its `state.ts` is imported by Sova |
@@ -182,6 +183,7 @@ cd extensions/spec && node --test tests/*.test.mjs
 cd extensions/codefold && node tests/run.mjs
 cd extensions/stamp && node --test format.test.ts index.test.ts
 cd extensions/remote && node --test argv.test.ts
+cd extensions/link && node --test client.test.ts && node tests/run.mjs
 cd extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.unit.test.ts && node tests/run.mjs
 cd extensions/worktrees && node --test state.test.ts git.test.ts && node tests/run.mjs
 cd extensions/explain && node tests/run.mjs && node tests/smoke.mjs

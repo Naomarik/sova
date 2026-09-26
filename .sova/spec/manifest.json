@@ -2494,7 +2494,11 @@
         "server/overseer-tools.ts",
         "server/overseer.ts",
         "server/overseer-prompt.md",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "server/overseer-todos.ts",
+        "server/overseer-ideas.test.ts",
+        "server/overseer-idea-tools.test.ts",
+        "server/overseer-ideas-route.test.ts"
       ],
       "requires": [
         "§app.overseer/tools"
@@ -2503,12 +2507,14 @@
     "§app.overseer/ideas-panel": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/OverseerIdeas.tsx",
         "src/components/OverseerView.tsx",
         "src/components/ChatView.tsx",
         "src/lib/ideas.ts",
+        "src/lib/ideas.test.ts",
+        "server/overseer-ideas-route.test.ts",
         "src/lib/idea-graph.ts",
         "src/overseer-ideas.css",
         "src/lib/api.ts",

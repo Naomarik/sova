@@ -92,8 +92,8 @@ error. Sessions are addressed by id. No tool passes `force`.
   and mode; send a message to a session (below); archive and unarchive
   (never permanent delete); rename; groups (create, move a session in, remove it); set a session's
   model or mode; answer a hosted session's pending extension dialog; standing notes; navigate;
-  confirm; the ideas backlog (`sova_idea`: file, grow, update and link ideas, launch and message
-  an idea's explorer); the user's todos (`sova_todo`: add, tick, untick, edit, remove, clear the
+  confirm; the ideas backlog (`sova_idea`: file, grow, update, link and rename ideas, launch and
+  message an idea's explorer); the user's todos (`sova_todo`: add, tick, untick, edit, remove, clear the
   done ones).
 - **Sending (`sova_send`) is typing in that session's composer.** Idle, with subagents working or
   not, the message starts a turn. Mid-turn it is **queued as a follow-up** behind the running turn
@@ -188,7 +188,7 @@ error. Sessions are addressed by id. No tool passes `force`.
   In an
   unattended turn every acting tool refuses without doing anything: create, send, archive and
   unarchive, rename and set model/thinking/mode (`sova_set_session`), group operations,
-  answering a dialog, every `sova_idea` operation (filing, changing or linking an idea,
+  answering a dialog, every `sova_idea` operation (filing, changing, linking or renaming an idea,
   launching or messaging an explorer), and every `sova_todo` operation, ticking included. Still allowed: every read, `sova_note`, `sova_confirm`, `sova_navigate`
   (which never moves a tab in such a turn), and `read`/`grep`/`find`/`ls`. The refusal tells the
   model to stop and raise a `sova_confirm` card instead; the user's click starts a turn in which it
@@ -455,6 +455,19 @@ them and keeps them organised. The backlog is laid out like this spec, with its 
 - **Status:** `open` when filed; `exploring` once an explorer is linked; `started` once a session is
   linked; `done` and `dropped` only when the user says so. `dropped` is terminal. Nothing is ever
   deleted.
+- **Rename** (`sova_idea rename`, `id` and `new_id`; or the id field of the panel's Edit form)
+  gives an idea a new § id, under the same grammar as filing, in any namespace and whatever its
+  status. The record keeps everything else: title, status, tags, text, links, session, explorer
+  and its created time; its updated time moves. The prose file moves with it. A main entry's
+  sub-entries move with it (each `§<ns>.<old>/<x>` becomes `§<ns>.<new>/<x>`, their folder
+  included). Every other idea's link to a moved id, and every todo's idea link to one, is
+  rewritten in the same operation; those ideas' updated times do not move. The old id stays on
+  the record as a former id (`renamedFrom`, the latest 8): reading, linking or pointing a todo at
+  it reaches the renamed idea, and a read through a former id says it was renamed. Filing a new
+  idea under a former id is refused, and so is a rename to an id that is live or another idea's
+  former id; renaming back to the idea's own former id is allowed. A main entry with sub-entries
+  cannot become a sub-entry, and a sub-entry's new main entry must exist. The text of other ideas
+  is never rewritten: the rename's result names the ideas whose text still mentions the old id.
 - **Writes** are atomic tmp+rename, and the manifest is re-read before every write. Reads are
   tolerant: a missing or corrupt manifest reads as empty, a bad record is skipped, and a link to an
   idea that doesn't exist is ignored. A write refuses a link to itself or to an unknown idea.
@@ -462,7 +475,7 @@ them and keeps them organised. The backlog is laid out like this spec, with its 
   its sub-entries and everything it reaches through links, transitively, cycles included once) and
   `impact` (the ideas that link to it), so the Overseer pulls linked ideas in mechanically.
 - **Two tools.** `sova_ideas` reads and is allowed in every run. `sova_idea` changes the store (`add`,
-  `append`, `update`, `link`, `explore`, `tell`). It is an act: audited, and refused in runs the user
+  `append`, `update`, `link`, `rename`, `explore`, `tell`). It is an act: audited, and refused in runs the user
   did not start (§app.overseer/tools), so a brief or a worker's report never files an idea in the
   user's name. The Overseer is the only writer apart from the user's own edits in the Ideas panel
   (§app.overseer/ideas-panel). An idea becomes a session only in a user turn, through
@@ -504,6 +517,9 @@ for that idea that plans with the user and edits nothing.
   `sova_confirm` card to write it into the idea. The user's click starts a user turn, and the plan
   is appended to the idea's `.md` (`sova_idea append`). `sova_ideas explorer` reads an explorer's
   latest reply at any time.
+- **Renamed ideas.** An explorer launched before its idea was renamed keeps the old id in its name
+  and instructions; `tell` and `sova_ideas explorer` follow the idea's record, so they still reach
+  it, and the rename's result says so.
 
 ## §app.overseer/ideas-panel — The Ideas panel
 
@@ -514,7 +530,8 @@ the count as a corner badge, so the head still fits.
 - **Table of contents** grouped by namespace, with counts, one row per idea (sub-entries under their
   main entry) and a status chip each.
 - **Detail** of the chosen idea: its text as markdown, tags, links, what links to it and its scope,
-  each linked id opening that idea. Title, status, tags, links and text are editable. A save sends
+  each linked id opening that idea. Title, id, status, tags, links and text are editable; a new id
+  is a rename (§app.overseer/ideas), refused with the reason when it is taken or malformed. A save sends
   the updated time it started from, and when the idea changed meanwhile it keeps the edit and says
   so rather than overwriting (`PATCH /api/overseer/idea` answers 409 with the current idea).
 - **Graph**: the ideas as nodes grouped by namespace, links as arrows; choosing a node opens it.
@@ -522,7 +539,8 @@ the count as a corner badge, so the head still fits.
   normal user message to the Overseer ("Explore idea §x: launch an exploratory agent for it.",
   "What has the explorer for idea §x found so far?", "Start a session to work on idea §x."). The
   turn is the user's, so the rules and caps apply.
-- It re-reads the backlog after every Overseer turn and when opened.
+- It re-reads the backlog after every Overseer turn and when opened. The open idea follows a
+  rename, its own or the Overseer's, to the idea's new id.
 
 
 ## §app.overseer/todos — The user's todos
@@ -542,7 +560,8 @@ from chat, and the user edits it in the Todos panel (§app.overseer/todos-panel)
   whitespace collapsed, at most 200 characters), done or not, created and updated times, the time
   it was ticked while it is done, and optionally the § id of an idea and the id of a session it is
   about. The list holds at most 200 todos.
-- **Links.** An idea link must name an idea that exists when it is written. A session link is a
+- **Links.** An idea link must name an idea that exists when it is written; a renamed idea's former
+  id links the idea itself. A todo's idea link follows the idea when it is renamed. A session link is a
   pointer, never an act on that session, so any session may be named, a TUI-live or archived one
   included.
 - **Writes** are atomic tmp+rename, and the file is re-read before every write. Reads are tolerant:

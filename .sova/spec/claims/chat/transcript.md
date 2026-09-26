@@ -131,25 +131,28 @@ at the tool-call's position. A result with no matching call gets its own card wi
 "result".
 
 ```html
-<details class="toolcard">
-  <summary class="toolcard-summary">
-    <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
-    <svg class="icon icon-sm" aria-hidden="true">…terminal|file|search|more…</svg>
-    <span class="toolcard-name">bash</span>
-    <span class="toolcard-arg">npm run typecheck</span>
-    <span class="chip chip-success"><i class="chip-dot"></i>Done</span>
-  </summary>
-  <div class="toolcard-body">
-    <div class="toolcard-section">
-      <div class="toolcard-section-label">Arguments</div>
-      <pre>{JSON.stringify(args, null, 2)}</pre>
+<div class="toolcard">
+  <details class="toolcard-details">
+    <summary class="toolcard-summary">
+      <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
+      <svg class="icon icon-sm" aria-hidden="true">…terminal|file|search|more…</svg>
+      <span class="toolcard-name">bash</span>
+      <span class="toolcard-arg">npm run typecheck</span>
+      <span class="chip chip-success"><i class="chip-dot"></i>Done</span>
+    </summary>
+    <div class="toolcard-body">
+      <div class="toolcard-section">
+        <div class="toolcard-section-label">Arguments</div>
+        <pre>{JSON.stringify(args, null, 2)}</pre>
+      </div>
+      <div class="toolcard-section">
+        <div class="toolcard-section-label">Output <button class="button button-sm button-ghost">Copy Output</button></div>
+        <pre class="toolcard-output">{result text}</pre>
+      </div>
     </div>
-    <div class="toolcard-section">
-      <div class="toolcard-section-label">Output <button class="button button-sm button-ghost">Copy Output</button></div>
-      <pre class="toolcard-output">{result text}</pre>
-    </div>
-  </div>
-</details>
+  </details>
+  <!-- only when the result carries images: the .toolcard-media strip (§chat.images/thread-thumbnails) -->
+</div>
 ```
 
 - **Arg summary**, one line: `bash` → `command`; `read`/`write`/`edit` → `path` (or `file_path`);
@@ -169,7 +172,9 @@ at the tool-call's position. A result with no matching call gets its own card wi
 - **Long output.** Caps at `--tool-output-max` (320px) with its own scroll. Past 400 lines,
   render the first 200 and a `button-sm` "Show All 1,240 Lines".
 - **Visibility.** Cards stay collapsed, but the summary row is always visible. The skill says tool
-  turns are never hidden, since the record of what ran is the trust mechanism.
+  turns are never hidden, since the record of what ran is the trust mechanism. Images the tool
+  returned are always visible too, under the summary row, open or closed
+  (§chat.images/thread-thumbnails); collapsing hides only Arguments and Output.
 
 **wake.** A fired wake-nudge (pi-config's `wake_nudge` tool): under the hood a real `role:"user"`
 message tagged `[wake_nudge n1] …` (shared/wake.ts `parseWakeNudge`), but it never reads as "You" —

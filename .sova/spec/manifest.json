@@ -242,8 +242,12 @@
     },
     "§app.subagents-pane/claude-code-workers": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-transcript.ts",
+        "server/claude-transcript.test.ts"
+      ]
     },
     "§app.subagents-pane/head": {
       "kind": "behavior",
@@ -499,8 +503,12 @@
     },
     "§chat.images/thread-thumbnails": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ToolCard.tsx",
+        "src/design/base.css"
+      ]
     },
     "§chat.markdown/accessibility": {
       "kind": "behavior",
@@ -916,7 +924,7 @@
     },
     "§design.copy-deck/images": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.copy-deck/insights": {

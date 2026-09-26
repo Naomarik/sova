@@ -223,8 +223,6 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Path chip `aria-label` | Open image {name} · gone: Copy path {path}, no longer on disk |
 | Path chip, gone | · No longer on disk (`title`: "{path} · No longer on disk. Select to copy the path.") · on copy: Copied path. |
 | Tool card section label (paths) | Attachments · {n} |
-| Tool card section label | Images · {n} |
-| Tool card summary count | {n} (`title`: "{n} images") |
 | Lightbox counter | {i} / {n} |
 | Lightbox buttons | Close Image · Previous Image · Next Image |
 

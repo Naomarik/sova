@@ -146,6 +146,8 @@ export class MeshLinks {
   private timer: ReturnType<typeof setInterval> | null = null;
   private flushing: Promise<void> | null = null;
   private readonly memberCache = new Map<string, { at: number; value: Promise<MemberLookup> }>();
+  /** The last answer about each member, however old: what a brief view shows. */
+  private readonly lastKnown = new Map<string, { at: number; value: MemberLookup }>();
 
   /** Wire the module to the server (server/index.ts via mountLinks) or to a test's fakes. */
   configure(deps: LinksDeps): void {
@@ -209,6 +211,7 @@ export class MeshLinks {
   forgetForTest(): void {
     this.file = null;
     this.memberCache.clear();
+    this.lastKnown.clear();
   }
 
   // ---- identity -------------------------------------------------------------------------------
@@ -289,27 +292,45 @@ export class MeshLinks {
     return m ? [m.sessionId] : [];
   }
 
-  /** link_members (with a session) and sova_links (without): each link with how its members are now. */
-  async list(opts: { sessionId?: string } = {}): Promise<MeshLinkView[]> {
+  /**
+   * link_members (with a session) and sova_links (without): each link with how its members are
+   * now. `brief` (the per-run prompt section, read before every turn) makes no peer hop: a peer
+   * member is what was last learnt of it, its state "unknown" unless that is fresh.
+   */
+  async list(opts: { sessionId?: string; brief?: boolean } = {}): Promise<MeshLinkView[]> {
     this.assertOn();
     const links = opts.sessionId === undefined ? this.all() : this.linksOf(opts.sessionId);
-    return Promise.all(links.map((l) => this.view(l)));
+    return Promise.all(links.map((l) => this.view(l, opts.brief)));
   }
 
-  async view(link: MeshLink): Promise<MeshLinkView> {
-    return { link, members: await Promise.all(link.members.map((m) => this.memberView(m))) };
+  async view(link: MeshLink, brief = false): Promise<MeshLinkView> {
+    return { link, members: await Promise.all(link.members.map((m) => this.memberView(m, brief))) };
   }
 
-  private async memberView(m: LinkMember): Promise<LinkMemberView> {
+  private async memberView(m: LinkMember, brief = false): Promise<LinkMemberView> {
     const self = m.nodeId === this.selfNodeId();
-    const got = await this.lookupMember(m.nodeId, m.sessionId);
+    const key = `${m.nodeId}/${m.sessionId}`;
+    const known = this.lastKnown.get(key);
+    const fresh = !!known && this.now() - known.at < MEMBER_CACHE_MS;
+    const got: MemberLookup =
+      brief && !self ? (known?.value ?? { reach: this.peerOfNode(m.nodeId) ? "down" : "unknown-host" }) : await this.lookupMember(m.nodeId, m.sessionId);
     const s = got.summary ?? undefined;
-    const state: LinkMemberView["state"] = got.reach === "down" || got.reach === "unknown-host" ? "offline" : !s ? "unknown" : s.busy || s.activity?.state === "working" ? "working" : "idle";
+    const peer = got.peer ?? this.peerOfNode(m.nodeId) ?? undefined;
+    const state: LinkMemberView["state"] =
+      brief && !self && !fresh
+        ? "unknown"
+        : got.reach === "down" || got.reach === "unknown-host"
+          ? "offline"
+          : !s
+            ? "unknown"
+            : s.busy || s.activity?.state === "working"
+              ? "working"
+              : "idle";
     const last = s ? Date.parse(s.lastActiveAt) : NaN;
     return {
       ...m,
       self,
-      ...(got.peer ? { hostId: got.peer.id } : {}),
+      ...(peer && !self ? { hostId: peer.id } : {}),
       hostLabel: this.hostLabel(m.nodeId),
       reach: got.reach,
       ...(s ? { title: s.title, cwd: s.cwd, model: s.model, archived: s.archived } : {}),
@@ -323,7 +344,10 @@ export class MeshLinks {
     const key = `${nodeId}/${sessionId}`;
     const hit = this.memberCache.get(key);
     if (hit && this.now() - hit.at < MEMBER_CACHE_MS) return hit.value;
-    const value = this.fetchMember(nodeId, sessionId);
+    const value = this.fetchMember(nodeId, sessionId).then((v) => {
+      this.lastKnown.set(key, { at: this.now(), value: v });
+      return v;
+    });
     this.memberCache.set(key, { at: this.now(), value });
     return value;
   }

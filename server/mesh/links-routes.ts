@@ -83,7 +83,8 @@ export function mountLinks(app: Hono, mesh: LinksDeps["mesh"] & Pick<MeshApi, "r
     // A session's own view (link_members) is for a session this host runs; without one, every link.
     if (session && !deps.held(session)) return c.json({ error: "That session isn't running on this host.", reason: "not-member" } satisfies LinkError, 403);
     try {
-      return c.json({ links: await meshLinks.list(session ? { sessionId: session } : {}) } satisfies LinksList, 200, { "Cache-Control": "no-store" });
+      const brief = c.req.query("brief") === "1";
+      return c.json({ links: await meshLinks.list({ ...(session ? { sessionId: session } : {}), brief }) } satisfies LinksList, 200, { "Cache-Control": "no-store" });
     } catch (err) {
       return failed(c, err);
     }

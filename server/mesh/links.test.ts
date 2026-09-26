@@ -403,6 +403,23 @@ describe("routes and the pane", () => {
     assert.equal(every.json.links.length, 1);
   });
 
+  test("brief=1 (the prompt section) makes no peer hop", async () => {
+    await link();
+    B.up = false;
+    A.clock += MEMBER_CACHE_MS + 1;
+    const r = await act<LinksList>(A, "GET", "/api/mesh/links?session=sa&brief=1");
+    assert.equal(r.status, 200);
+    const b = r.json.links[0]!.members.find((m) => m.nodeId === B.nodeId)!;
+    assert.equal(b.state, "unknown");
+    assert.equal(b.title, "title sb"); // what was last learnt
+    assert.equal(b.hostLabel, "Beta");
+    // Not linked: an empty list, not a refusal.
+    A.sessions.set("lone", summary("lone"));
+    A.held.add("lone");
+    const none = await act<LinksList>(A, "GET", "/api/mesh/links?session=lone&brief=1");
+    assert.deepEqual(none.json, { links: [] });
+  });
+
   test("linked agents: partner rows with unread counts; the Overseer sees every member", async () => {
     const v = await link();
     await act(B, "POST", "/api/mesh/links/send", { session: "sb", text: "ping" });

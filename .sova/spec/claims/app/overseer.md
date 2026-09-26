@@ -411,14 +411,17 @@ region lists (§app.session-list/needs-you).
 
 ## §app.overseer/proactivity — Proactivity
 
-Three modes, cycled with a control on the Overseer page and set in Settings: **Off**, **Badge Only**
+Three modes, cycled with a control on the Overseer page and set in Settings: **Off**, **List Only**
 (default), **Brief Me**.
 
 - **Off:** no Needs you region in the sidebar (§app.session-list/needs-you), no briefs. The entry
-  button's unread count is unaffected. Hint: "No sidebar list, no briefs."
-- **Badge Only:** the sidebar's Needs you region only. It costs no tokens. Hint: "Lists the
-  sessions that need you at the top of the sidebar." (The wire value stays `badge`.)
-- **Brief Me:** when a **new** needs-you item appears and the Overseer is idle, the server starts
+  button's unread count is unaffected; the Overseer chat still works. Hint: "No Needs you list. The
+  Overseer chat still works."
+- **List Only:** the sidebar's Needs you region only; the Overseer sends no message. It costs no
+  tokens. Hint: "Lists the sessions that need you in the sidebar. No messages from the Overseer."
+  (The wire value stays `badge`.)
+- **Brief Me:** the Needs you region, plus a brief. Hint: "The list, plus an Overseer message when
+  something new needs you, at most once every 10 minutes." When a **new** needs-you item appears and the Overseer is idle, the server starts
   one Overseer turn, at most once per 10 minutes. Its prompt (the blockers' titles and details, from
   other sessions) is redacted like any tool output (§app.overseer/tools); it is tagged `[overseer-brief]`, renders
   as a machine row ("Brief · <time>") with its body under it as markdown (the blockers as a list, each

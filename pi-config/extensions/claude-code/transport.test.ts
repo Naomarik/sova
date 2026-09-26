@@ -8,7 +8,7 @@ import { PassThrough, Writable } from "node:stream";
 import type { ChildProcess } from "node:child_process";
 import {
 	applyResultUsage, buildClaudeArgv, buildDiscoveryArgv, ClaudePrivateFiles, ClaudeTransport, claudeEnv,
-	contextTokensFrom, DEFAULT_CLAUDE_TOOLS, isMessageStart, isUncorrelatedResult, mcpServerFailure,
+	contextTokensFrom, DEFAULT_CLAUDE_TOOLS, isMessageStart, isUncorrelatedResult, mcpServerFailure, NO_ATTRIBUTION,
 	parseCanUseTool, permissionDenialsFrom, resultError, resultMatches, textBlocksText, textDelta,
 	validEnv, validMcpServers, type ClaudeStreamEvent, type ClaudeTransportHooks, type ClaudeUsage,
 } from "./transport.ts";
@@ -186,15 +186,22 @@ test("an operator allow rule keeps its place, and MCP tools are allowed only out
 	assert.ok(!argvFor().args!.includes("--allowedTools"));
 });
 
-test("settings JSON is passed through opaque as --settings, and absent by default", () => {
-	const json = '{"sandbox":{"enabled":true},"permissions":{"allow":["Read"]}}';
-	const args = argvFor({ permissionMode: "dontAsk", settingsJson: json }).args!;
-	assert.deepEqual(args.slice(args.indexOf("--settings"), args.indexOf("--settings") + 2), ["--settings", json]);
+test("settings JSON is merged with no-attribution into one --settings; no-attribution is sent by default too", () => {
+	const sandbox = { sandbox: { enabled: true }, permissions: { allow: ["Read"] } };
+	const args = argvFor({ permissionMode: "dontAsk", settingsJson: JSON.stringify(sandbox) }).args!;
+	assert.equal(args.filter((a) => a === "--settings").length, 1, "the CLI keeps only the last --settings");
+	assert.deepEqual(JSON.parse(args[args.indexOf("--settings") + 1]), { ...sandbox, attribution: { commit: "", pr: "" } });
 	assert.equal(args[args.indexOf("--setting-sources") + 1], "", "the user's own settings stay excluded");
 	assert.equal(args[args.indexOf("--permission-mode") + 1], "dontAsk");
-	// Absent by default, so an argv without a sandbox is byte-identical to before.
-	assert.deepEqual(argvFor({ settingsJson: undefined }).args, argvFor().args);
-	assert.ok(!argvFor().args!.includes("--settings"));
+	// Without a sandbox: attribution is still off.
+	const plain = argvFor().args!;
+	assert.deepEqual(JSON.parse(plain[plain.indexOf("--settings") + 1]), NO_ATTRIBUTION);
+	// A caller cannot turn it back on.
+	const override = argvFor({ settingsJson: '{"attribution":{"commit":"Co-Authored-By: x"}}' }).args!;
+	assert.deepEqual(JSON.parse(override[override.indexOf("--settings") + 1]), NO_ATTRIBUTION);
+	for (const bad of ["", "not json", "[]", "null", "1", '"s"']) {
+		assert.deepEqual(argvFor({ settingsJson: bad }), { error: "Invalid settingsJson: must be a JSON object" }, bad);
+	}
 });
 
 test("a stable session id is passed only when asked for, and must be a UUID", () => {

@@ -3201,6 +3201,53 @@ test("N7: with main-thread follow-ups queued on the old member, its successor st
 	} finally { await h.cleanup(); }
 });
 
+test("N9: a resume notice is refused until the pausing window's reset plus the resume margin", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		fs.mkdirSync(path.join(h.agentDir, "cache"));
+		const cache = (pct: number, resetsAt: string) => fs.writeFileSync(path.join(h.agentDir, "cache", "usage-status.json"), JSON.stringify({
+			fetchedAt: Date.now(), nextFetchAt: Date.now(), errors: {}, claude: { state: "ok", limits: [{ label: "5h", pct, resetsAt }] },
+		}));
+		const reset = new Date(Math.ceil((Date.now() + 3 * 3600_000) / 1000) * 1000).toISOString();
+		cache(92, reset);
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const coordinator = h.worker("ag_01");
+		assert.match(h.worker("ag_03").task, /When woken after a pause: once that window's reset time plus 5 min has passed, team_msg coordinator with notice "resume"; otherwise schedule again\. The parent refuses a resume before then, and its refusal says when to try\./);
+		assert.equal((await h.ask("ag_03", { type: "message", to: "coordinator", message: "claude 5h at 92%", notice: "pause" })).ok, true);
+		const steers = coordinator.steerCount;
+		// e2e 3: the monitor judged the time itself and resumed early, while the roster still said AT/OVER.
+		const early = await h.ask("ag_03", { type: "message", to: "coordinator", message: "resume", notice: "resume" });
+		assert.equal(early.ok, false);
+		const from = new Date(Date.parse(reset) + 5 * 60_000).toISOString();
+		assert.match(early.text, new RegExp(`^Resume refused: claude 5h paused this team and resets at ${esc(reset)}; resume is allowed from ${esc(from)} \\(the reset plus 5 min\\), in 3h\\d*m?\\. Schedule wake_nudge at that time and end your turn\\.$`));
+		assert.equal(coordinator.steerCount, steers, "nothing was delivered");
+		const kinds = () => h.appended.filter((e) => e.customType === "subagents-team-event-v1").map((e) => e.data.kind);
+		assert.deepEqual(kinds(), ["pause"], "no resume event");
+		// A fresh cache after the reset does not lift the hold early: the time does (margin 0 here, a reset 300ms away).
+		fs.writeFileSync(path.join(h.agentDir, "team-defaults.json"), JSON.stringify({ ...DEFAULTS_FILE, monitor: { ...DEFAULTS_FILE.monitor, usage: { ...DEFAULTS_FILE.monitor.usage, resumeMarginMinutes: 0 } } }));
+		assert.equal((await h.ask("ag_03", { type: "message", to: "coordinator", message: "still paused", notice: "resume" })).ok, false, "the hold is the pause-time window's, read with the margin now");
+		const h2 = coordinatedHarness({ ...DEFAULTS_FILE, monitor: { ...DEFAULTS_FILE.monitor, usage: { ...DEFAULTS_FILE.monitor.usage, resumeMarginMinutes: 0 } } });
+		try {
+			fs.mkdirSync(path.join(h2.agentDir, "cache"));
+			const soon = new Date(Date.now() + 300).toISOString();
+			fs.writeFileSync(path.join(h2.agentDir, "cache", "usage-status.json"), JSON.stringify({
+				fetchedAt: Date.now(), nextFetchAt: Date.now(), errors: {}, claude: { state: "ok", limits: [{ label: "5h", pct: 95, resetsAt: soon }] },
+			}));
+			await h2.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+			await h2.ask("ag_03", { type: "message", to: "coordinator", message: "pause", notice: "pause" });
+			assert.match((await h2.ask("ag_03", { type: "message", to: "coordinator", message: "resume", notice: "resume" })).text, /^Resume refused: claude 5h/);
+			await h2.tick(Math.max(0, Date.parse(soon) - Date.now()) + 50);
+			const resumed = await h2.ask("ag_03", { type: "message", to: "coordinator", message: "resume", notice: "resume" });
+			assert.equal(resumed.ok, true, resumed.text);
+			assert.match(h2.worker("ag_01").lastSteer.message, /^\[Monitor notice: RESUME — from monitor \(ag_03\), team_01\]/);
+			// A pause with no window at or over the threshold holds nothing: resume is not delayed.
+			fs.rmSync(path.join(h2.agentDir, "cache"), { recursive: true });
+			await h2.ask("ag_03", { type: "message", to: "coordinator", message: "pause", notice: "pause" });
+			assert.equal((await h2.ask("ag_03", { type: "message", to: "coordinator", message: "resume", notice: "resume" })).ok, true);
+		} finally { await h2.cleanup(); }
+	} finally { await h.cleanup(); }
+});
+
 test("handovers eject automatically: a retired member and an ended member succeeded release their seats; team_eject refuses a member mid-handover", async () => {
 	const h = coordinatedHarness(DEFAULTS_FILE);
 	try {

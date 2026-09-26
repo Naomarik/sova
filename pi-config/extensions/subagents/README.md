@@ -543,7 +543,12 @@ for that call with a warning line in the result; the extension never writes the 
 - **Monitor.** Added last, `tools: []`, with `team_msg` (plus `notice: wrap-up | pause |
   resume`), `team_inbox`, `team_roster` and `wake_nudge` — nothing else, on both backends. Its
   header is the standing instruction (roster every `everyMinutes`; wrap-up at `contextPct`;
-  pause at `pausePct`, `wake_nudge` at the reset + margin, then resume). Its roster carries the
+  pause at `pausePct`, `wake_nudge` at the reset + margin, then resume). The parent enforces the
+  wait: at a `pause` notice it records the team's windows then at or over `pausePct` with a reset
+  time, and refuses a `resume` notice (delivering nothing, recording no event) until the latest of
+  those resets plus `resumeMarginMinutes` (read at the resume) has passed; the refusal names the
+  window and the time. A pause with no such window holds nothing, and the hold is in memory only
+  (a pause restored after a reload has none). Its roster carries the
   thresholds read now and the usage-status windows of the providers the team's models spend
   from (`<agent dir>/cache/usage-status.json`); a window whose `resetsAt` has passed shows as
   reset (usage unknown), never AT/OVER, so a stale cache cannot keep a team paused. `wake_nudge` is served by the parent (a member

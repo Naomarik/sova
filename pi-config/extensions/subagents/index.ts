@@ -73,8 +73,10 @@ import {
 	successorRole,
 	usageLines,
 	usageProviderOf,
+	usageWindows,
 	type UsageCacheLike,
 	type UsageProvider,
+	type UsageWindow,
 } from "./coordination.ts";
 import { MCP_SERVER_NAME } from "./member-mcp.ts";
 import { WorkerRegistryRecorder, type WorkerLaunchSpec } from "./registry.ts";
@@ -1460,6 +1462,32 @@ export function registerSubagents(
 		const a = agents.find((w) => w.id === m.workerId);
 		return contextText(amount(a?.usage?.contextTokens), contextWindowOf(a, m));
 	};
+	/** The usage providers a team's members spend from (by the model each was launched with). */
+	const teamProviders = (t: TeamView): UsageProvider[] => t.members.flatMap((x) => {
+		const w = agents.find((a) => a.id === x.workerId);
+		const provider = usageProviderOf(x.backend, (w && launches.get(w)?.model) ?? x.model);
+		return provider ? [provider] : [];
+	});
+	/** The windows of a team's providers at or over the pause threshold now, with a known reset time. */
+	const pausingWindows = (teamId: string): UsageWindow[] => {
+		const state = readTeamDefaults(agentDir());
+		const usage = state.state === "ok" && state.value.monitor.usage.enabled ? state.value.monitor.usage : undefined;
+		const t = teamViews().find((v) => v.id === teamId);
+		if (!usage || !t) return [];
+		const cache = readUsageCache();
+		return [...new Set(teamProviders(t))].flatMap((p) => usageWindows(cache, p)).filter((w) => !w.reset && w.resetsAt && w.pct >= usage.pausePct);
+	};
+	/** Why a monitor's resume notice is refused now (N9), if it is: the pausing window's reset plus the margin has not passed. */
+	const resumeNoticeRefusal = (teamId: string, now = Date.now()): string | undefined => {
+		const held = pauseHolds.get(teamId);
+		if (!held?.length) return undefined;
+		const state = readTeamDefaults(agentDir());
+		const margin = state.state === "ok" ? state.value.monitor.usage.resumeMarginMinutes : 0;
+		const last = held.reduce((a, w) => (Date.parse(w.resetsAt!) > Date.parse(a.resetsAt!) ? w : a));
+		const from = Date.parse(last.resetsAt!) + margin * 60_000;
+		if (now >= from) return undefined;
+		return `Resume refused: ${last.provider} ${last.label} paused this team and resets at ${last.resetsAt}; resume is allowed from ${new Date(from).toISOString()} (the reset plus ${margin} min), in ${fmtDur(from - now)}. Schedule wake_nudge at that time and end your turn.`;
+	};
 	const readUsageCache = (): UsageCacheLike | undefined => {
 		try {
 			const value = JSON.parse(fs.readFileSync(path.join(agentDir(), "cache", "usage-status.json"), "utf8"));
@@ -1515,6 +1543,12 @@ export function registerSubagents(
 	const nudges = new Map<string, NudgeState>();
 	/** Teams whose monitor sent "pause" and not yet "resume". */
 	const pausedTeams = new Set<string>();
+	/**
+	 * N9: the usage windows that were AT/OVER the pause threshold when a team's monitor paused it,
+	 * by team. A resume notice is refused until the latest of their resets plus the resume margin
+	 * (read at the resume) has passed. In memory only: a pause restored after a reload has no hold.
+	 */
+	const pauseHolds = new Map<string, UsageWindow[]>();
 	const nudgeState = (workerId: string) => {
 		let state = nudges.get(workerId);
 		if (!state) nudges.set(workerId, (state = { seq: 0, idleFires: 0, active: new Map() }));
@@ -1680,6 +1714,7 @@ export function registerSubagents(
 		for (const state of nudges.values()) for (const n of state.active.values()) clearTimeout(n.timer);
 		nudges.clear();
 		pausedTeams.clear();
+		pauseHolds.clear();
 		for (const h of handovers.values()) if (h.timer) clearTimeout(h.timer);
 		handovers.clear();
 		for (const p of pendingSuccessions.values()) if (p.timer) clearTimeout(p.timer);
@@ -1772,11 +1807,7 @@ export function registerSubagents(
 			standing.push(m
 				? `  Thresholds (team defaults, read now): wrap-up at ${m.contextPct}% context · check every ${m.everyMinutes} min · usage ${m.usage.enabled ? `pause at ${m.usage.pausePct}%, resume ${m.usage.resumeMarginMinutes} min after the reset` : "not watched"}`
 				: `  Thresholds: team defaults are ${state.state === "absent" ? "absent" : "malformed"} now; keep the thresholds in your assignment.`);
-			const providers = t.members.flatMap((x) => {
-				const provider = usageProviderOf(x.backend, (agents.find((a) => a.id === x.workerId) && launches.get(agents.find((a) => a.id === x.workerId)!)?.model) ?? x.model);
-				return provider ? [provider] : [];
-			}) as UsageProvider[];
-			standing.push(...usageLines(readUsageCache(), providers, m?.usage.enabled ? m.usage.pausePct : undefined));
+			standing.push(...usageLines(readUsageCache(), teamProviders(t), m?.usage.enabled ? m.usage.pausePct : undefined));
 		}
 		if (viewer?.duty === "coordinator") standing.push(...assignmentSection(teamId));
 		return [
@@ -1845,8 +1876,18 @@ export function registerSubagents(
 					const broadcast = /^(all|\*)$/i.test(request.to);
 					const targets = broadcast ? info.siblings : [teams.resolveSibling(workerId, request.to)];
 					if (!targets.length) throw new Error("You have no teammates to message.");
-					if (notice === "pause") pausedTeams.add(info.team.id);
-					if (notice === "resume") pausedTeams.delete(info.team.id);
+					if (notice === "resume") {
+						const refused = resumeNoticeRefusal(info.team.id);
+						if (refused) throw new Error(refused);
+					}
+					if (notice === "pause") {
+						pausedTeams.add(info.team.id);
+						pauseHolds.set(info.team.id, pausingWindows(info.team.id));
+					}
+					if (notice === "resume") {
+						pausedTeams.delete(info.team.id);
+						pauseHolds.delete(info.team.id);
+					}
 					if (notice === "pause" || notice === "resume") appendTeamEvent(info.team.id, notice, me, `${notice} → ${targets.map((t) => t.role).join(", ")}: ${request.message.slice(0, 300)}`);
 					const outcomes = await Promise.all(targets.map(async (target) => {
 						const text = [

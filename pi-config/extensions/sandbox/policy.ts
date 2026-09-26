@@ -509,13 +509,21 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 	}
 	// A worker of a sandboxed parent writes exactly where the parent may (never its own cwd by
 	// right: a worker started in /b by a parent in /a must not widen the sandbox to /b).
-	const parentRoots = input.parent ? [...new Set(input.parent.writable.map(canonicalize))].filter((w) => !inShadow(w)) : undefined;
+	// Its roots are the parent's resolved ones, so a root inside a shadow (the parent's cwd or a
+	// worktree under ~/.cache) stays real here too: its bind is deeper than the shadow's.
+	const parentRoots = input.parent ? [...new Set(input.parent.writable.map(canonicalize))] : undefined;
 	const writable =
 		level === "read-only"
 			? [tmpDir]
 			: parentRoots
 				? [tmpDir, ...parentRoots]
-				: [workspaceRoot, tmpDir, ...canon([...d.writable, ...policy.writable, ...(input.extraWritable ?? [])]).filter((w) => !inShadow(w))];
+				: [
+						workspaceRoot,
+						tmpDir,
+						...canon([...d.writable, ...policy.writable]).filter((w) => !inShadow(w)),
+						// Tracked worktrees are roots like the cwd: one inside a shadow stays real.
+						...canon(input.extraWritable ?? []),
+					];
 	// The tracked worktrees' own agent dirs: read-only whenever their worktree is writable.
 	const extraReadOnly = level === "read-only" || parentRoots ? [] : canon(input.extraReadOnly ?? []);
 	const outsideParent = level !== "read-only" && parentRoots !== undefined && !parentRoots.some((r) => isWithin(workspaceRoot, r));

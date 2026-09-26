@@ -299,6 +299,21 @@ test("tracked worktrees: writable roots of the session, their .agent read-only; 
 	assert.equal(writeDenial(r.value, join(wt, "src", "a.ts"), { creating: true }), undefined);
 	assert.match(writeDenial(r.value, join(wt, ".agent", "sandbox-policy", "linux", "policy.json"), { creating: true }) ?? "", /read-only/);
 	assert.match(writeDenial(r.value, join(wt, ".agent", "settings.json")) ?? "", /read-only/);
+	// A worktree under a shadowed cache is a real writable root, like the cwd (seen live under ~/.cache).
+	const cache = join(ws, "cache");
+	const cachedWt = join(cache, "wt");
+	mkdirSync(cachedWt, { recursive: true });
+	writeFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), JSON.stringify({ ...template(), shadowed: [cache], writable: [] }));
+	const shadowSource = (a: string, p: string) => join(a, "shadow", p.replaceAll("/", "_"));
+	const sh = resolvePolicy({ agentDir, cwd: live, tmpDir: join(ws, "t"), platform: "linux", extraWritable: [cachedWt], shadowSource });
+	assert.ok(sh.ok, sh.ok ? "" : sh.error);
+	assert.ok(sh.value.writable.includes(cachedWt));
+	assert.equal(writeDenial(sh.value, join(cachedWt, "x"), { creating: true }), undefined);
+	// And a worker narrowed to it (the parent's scope) is inside its parent, not refused.
+	const narrowed = resolvePolicy({ agentDir, cwd: cachedWt, tmpDir: join(ws, "t2"), platform: "linux", shadowSource, parent: narrowScope(parentScopeOf(sh.value), cachedWt) });
+	assert.ok(narrowed.ok);
+	assert.equal(narrowed.value.outsideParent, undefined);
+	writeFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), JSON.stringify(template()));
 	// A worker's roots are its parent's scope, whatever extras it is handed.
 	const parent = { version: 1 as const, level: "workspace-write" as const, workspaceRoot: live, writable: [live] };
 	const w = resolvePolicy({ agentDir, cwd: live, tmpDir: join(ws, "t"), platform: "linux", parent, extraWritable: [wt] });

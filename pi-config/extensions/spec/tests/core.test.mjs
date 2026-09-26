@@ -938,3 +938,82 @@ test("census --changed --related --spec: the draft's graph supplies requires and
   assert.deepEqual(j.census.touched.map((t) => [t.id, t.file, t.requires, t.consumers]),
     [["§core.net/new", ".sova/spec/drafts/feat/spec/claims/core/net.md", [], [{ id: "§core/net", depth: 1 }]]]);
 });
+
+// --- census --changed --related --spec: foreign notes ---
+
+// Both graphs get a boundary over app.txt, so census judges it and exits 0 when nothing is unclaimed.
+function bound(root, dir, edit = () => {}) {
+  const f = join(root, dir, "manifest.json"), m = JSON.parse(readFileSync(f, "utf8"));
+  m.boundary = { include: ["app.txt"], exclude: [] };
+  edit(m);
+  writeFileSync(f, JSON.stringify(m));
+}
+// withDraft, committed, with the draft's pre-existing §core/net also claiming app.txt; app.txt then changes.
+function draftRepo() {
+  const root = withDraft(), dir = ".sova/spec/drafts/feat/spec";
+  bound(root, ".sova/spec");
+  bound(root, dir, (m) => { m.claims["§core/net"].code = ["app.txt"]; });
+  g(root, "init", "-q"); g(root, "add", "-A"); g(root, "commit", "-qm", "base");
+  write(root, "app.txt", "2\n");
+  return root;
+}
+const DRAFT = [".sova/spec/drafts/feat/spec"];
+const notes = (j, code) => j.findings.filter((f) => f.code === code);
+
+test("census --related --spec: a touched § the draft didn't create is created:false with a touched-foreign note", () => {
+  const j = run(draftRepo(), "--spec", ...DRAFT, "census", "--changed", "--related");
+  assert.deepEqual(j.census.touched.map((t) => [t.id, t.created]), [["§core.net/new", true], ["§core/net", false]]);
+  const [n, ...rest] = notes(j, "touched-foreign");
+  assert.equal(rest.length, 0, "the created § gets no note");
+  assert.equal(n.severity, "note");
+  assert.equal(n.id, "§core/net");
+  assert.match(n.message, /§core\/net is foreign .*app\.txt changed: read it with scope; flag it if a user sees a change there, even one your new claim describes/);
+  assert.equal(j.exit, 0, "notes never change the exit");
+});
+
+test("census --related --spec: a created id under a pre-existing § gets child-under-foreign", () => {
+  const j = run(draftRepo(), "--spec", ...DRAFT, "census", "--changed", "--related");
+  assert.deepEqual(notes(j, "child-under-foreign").map((f) => [f.severity, f.id, f.parent]), [["note", "§core.net/new", "§core/net"]]);
+  assert.match(notes(j, "child-under-foreign")[0].message, /§core\.net\/new is new under foreign §core\/net: a user-visible addition there flags §core\/net/);
+});
+
+test("census --related --spec: a new document's children are not under a foreign §", () => {
+  const root = withDraft(), dir = ".sova/spec/drafts/feat/spec";
+  write(root, `${dir}/manifest.json`, JSON.stringify(M({ "§app/banner": { kind: "surface" }, "§app.banner/show": { kind: "behavior", requires: [], code: ["app.txt"] } })));
+  write(root, `${dir}/claims/app/banner.md`, "# §app/banner\n\nBanner.\n\n## §app.banner/show\n\nShows.\n");
+  rmSync(join(root, dir, "claims/core"), { recursive: true });
+  bound(root, dir);
+  g(root, "init", "-q"); g(root, "add", "-A"); g(root, "commit", "-qm", "base");
+  write(root, "app.txt", "2\n");
+  const j = run(root, "--spec", ...DRAFT, "census", "--changed", "--related");
+  assert.deepEqual(j.census.touched.map((t) => [t.id, t.created]), [["§app.banner/show", true]]);
+  assert.deepEqual(codes(j), [], JSON.stringify(j.findings));
+});
+
+test("census --related without --spec: no created field, no foreign notes", () => {
+  const j = run(draftRepo(), "census", "--changed", "--related");
+  assert.deepEqual(j.census.touched.map((t) => Object.keys(t)), [["id", "kind", "file", "lines", "files", "requires", "consumers"]]);
+  assert.deepEqual(codes(j), []);
+  const k = run(draftRepo(), "--spec", ...DRAFT, "census", "--changed");
+  assert.equal(k.census.touched, undefined);
+  assert.deepEqual(codes(k), [], "--spec without --related adds nothing");
+});
+
+test("census --related --spec: a missing or broken current manifest leaks no findings; every draft id is created", () => {
+  const root = draftRepo();
+  writeFileSync(join(root, ".sova/spec/manifest.json"), "{not json");
+  const j = run(root, "--spec", ...DRAFT, "census", "--changed", "--related");
+  assert.deepEqual(j.census.touched.map((t) => [t.id, t.created]), [["§core.net/new", true], ["§core/net", true]]);
+  assert.deepEqual(codes(j), []);
+  assert.equal(j.exit, 0);
+});
+
+test("census --related --spec: human output marks each touched § created or foreign", () => {
+  const root = draftRepo();
+  const h = spawnSync(process.execPath, [CLI, "--spec", ...DRAFT, "census", "--changed", "--related", "--root", root], { encoding: "utf8" });
+  assert.equal(h.status, 0);
+  assert.match(h.stdout, /  §core\.net\/new \[behavior; created\] /);
+  assert.match(h.stdout, /  §core\/net \[surface; candidate\/-; foreign\] /);
+  assert.match(h.stdout, /note touched-foreign: §core\/net is foreign/);
+  assert.match(h.stdout, /note child-under-foreign: §core\.net\/new is new under foreign §core\/net/);
+});

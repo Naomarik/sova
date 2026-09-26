@@ -55,13 +55,16 @@ something relevant is unknown, stale or unread. Exit `2` means the input can't b
 
 **While coding**, run `census --changed --related` right after the first code edit, before the
 second, and again whenever the edit set reaches a new file; `--related` lists each § a changed
-file lands in, with its `requires` and consumers. Any § the task didn't create is foreign, even
-one your draft edits; editing it in the draft (a row, a sub-claim, a sketch line) is itself a
-flag. Read a foreign § with `scope` and stay silent while its text holds; plumbing (helpers,
-types) never flags. Otherwise flag only a contradiction of its text, or something a user would
-see there that it doesn't describe. Batch the flags into the plan as one question ("this also
-changes §X: <what>. OK?"). The handoff always carries an "Also changes: §X — <what>" list, even
-when the user said not to ask, so every flag is either agreed or listed there.
+file lands in, with its `requires` and consumers. With `--spec <draft spec dir>` it also notes
+each touched § the draft didn't create (`touched-foreign`) and each new claim nested under one
+(`child-under-foreign`). Any § the task didn't create is foreign, even one your draft edits, and
+even the parent your new claim nests under; editing it in the draft (a row, a sub-claim, a sketch
+line) is itself a flag. Read a foreign § with `scope` and stay silent while its text holds;
+plumbing (helpers, types) never flags. Otherwise flag only a contradiction of its text, or
+something a user would see there that its own text doesn't describe — a new claim of yours
+describing it, child or not, doesn't count. Batch the flags into the plan as one question ("this
+also changes §X: <what>. OK?"). The handoff always ends with an "Also changes: §X — <what>" list,
+or "Also changes: none", even when the user said not to ask.
 
 ## Changing the docs
 

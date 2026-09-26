@@ -536,17 +536,31 @@ function changedFiles(root, base) {
   return { commit, paths: [...new Set([...nulList(diff.out), ...nulList(others.out)])].sort() };
 }
 
+// Ids the current spec already records, read only to tell a draft's new ids from foreign ones; its own findings are dropped.
+function currentIds(root) {
+  const n = findings.length, cur = loadManifest(root, DEFAULT_SPEC);
+  findings.length = n;
+  return new Set(cur ? Object.keys(cur.m.claims) : []);
+}
+
 // Each § a changed file lands in, with its declared requires and transitive consumers. No flags are judged here.
+// Reading a draft (--spec), each touched § also says whether the draft created it; foreign ones get a note.
 function relatedOf(ctx, hits) {
   const files = new Map(), rev = reverseOf(ctx);
+  const cur = ctx.specRel !== DEFAULT_SPEC ? currentIds(ctx.root) : null;
   for (const e of hits) for (const id of e.claims) files.set(id, [...(files.get(id) ?? []), e.path]);
-  return [...files.keys()].sort().map((id) => {
+  const touched = [...files.keys()].sort().map((id) => {
     const rec = ctx.claims.get(id), d = ctx.decls.get(id);
     if (rec.kind === "behavior" && rec.requires === undefined)
       add("note", "touched-uninvestigated", `${id} is touched and has no requires key: dependencies not investigated`, { id });
-    return { id, kind: rec.kind, ...labelsOf(rec), file: d?.file, lines: d?.lines, files: files.get(id), requires: rec.requires ?? null,
-      consumers: consumersOf(ctx, rev, id).map((c) => ({ id: c.id, depth: c.depth })) };
+    if (cur?.has(id))
+      add("note", "touched-foreign", `${id} is foreign (this draft didn't create it) and ${files.get(id).join(", ")} changed: read it with scope; flag it if a user sees a change there, even one your new claim describes`, { id });
+    return { id, kind: rec.kind, ...labelsOf(rec), ...(cur ? { created: !cur.has(id) } : {}), file: d?.file, lines: d?.lines, files: files.get(id),
+      requires: rec.requires ?? null, consumers: consumersOf(ctx, rev, id).map((c) => ({ id: c.id, depth: c.depth })) };
   });
+  if (cur) for (const [p, kids] of ctx.children) if (cur.has(p)) for (const id of kids) if (!cur.has(id))
+    add("note", "child-under-foreign", `${id} is new under foreign ${p}: a user-visible addition there flags ${p}, even though ${id} describes it`, { id, parent: p });
+  return touched;
 }
 
 function censusChanged(ctx, { base, related }, claimed) {
@@ -615,7 +629,8 @@ function human(out) {
       const lb = t.labels ? `; ${[t.labels.authority, t.labels.evidence].map((v) => v ?? "-").join("/")}` : "";
       const rq = t.requires === null ? "uninvestigated" : t.requires.join(", ") || "none declared";
       const cs = t.consumers.map((k) => `${k.id} (${k.depth})`).join(", ") || "none declared";
-      return `  ${t.id} [${t.kind}${lb}] ${t.file}:${t.lines.join("-")} ← ${t.files.join(", ")}; requires: ${rq}; consumers: ${cs}`;
+      const cr = t.created === undefined ? "" : t.created ? "; created" : "; foreign";
+      return `  ${t.id} [${t.kind}${lb}${cr}] ${t.file}:${t.lines.join("-")} ← ${t.files.join(", ")}; requires: ${rq}; consumers: ${cs}`;
     }));
   } else if (out.census) {
     const c = out.census;

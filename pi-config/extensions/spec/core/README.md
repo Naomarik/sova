@@ -135,6 +135,13 @@ to the project root. New fields are only ever added. Other tools read this outpu
   behavior without `requires` is a `touched-uninvestigated` note, never a warning, so the exit
   code is unchanged. Without `--related` the output is exactly as above. `--related` without
   `--changed` is a usage error.
+- **census --changed --related --spec DIR** (DIR other than `.sova/spec`): an id is *created* when
+  DIR's manifest has it and `.sova/spec/manifest.json` does not (a missing or unreadable current
+  manifest counts as empty; its findings are dropped). Each `touched` entry adds `created: true|false`;
+  each touched id that is not created is a `touched-foreign` note `{id}`; each created H2 id whose
+  parent H1 is not created is a `child-under-foreign` note `{id, parent}`, touched or not. Human
+  output marks entries `; created` or `; foreign`. Notes never change the exit code; without `--spec`
+  nothing here appears.
 
 ## Evidence
 

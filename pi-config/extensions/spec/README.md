@@ -49,6 +49,14 @@ behavior without a `requires` key is a `touched-uninvestigated` note, so the
 exit code stays what the files make it. It lists what to read; it never judges
 a flag. `--related` without `--changed` is a usage error.
 
+With `--spec <draft spec dir>`, the ids the draft has and `.sova/spec` lacks are
+the task's own; every other § is foreign. Each `touched` entry then carries
+`created: true|false`, each foreign touched § gets a `touched-foreign` note
+(read it with `scope`; flag it if a user sees a change there, even one the new
+claim describes), and each new id whose H1 parent already exists gets a
+`child-under-foreign` note. Notes only: the exit code is unchanged, and without
+`--spec` the output is as before.
+
 Quote IDs, because `§` is not a shell word character. `--budget` is accepted by
 `scope` only; with any other command it's a usage error. `--spec` reads another
 spec directory, given relative to the project root (default `.sova/spec`), such

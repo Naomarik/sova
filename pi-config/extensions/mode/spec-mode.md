@@ -18,7 +18,7 @@ Before coding:
 3. Reconcile what the task relies on against source. Labels are declared, never proof: `migrated` text is the requirement with its implementation unreviewed; `candidate` is a proposal. A test found by name is candidate evidence until you read its assertions.
 4. Behavior no claim covers gets a new claim in a feature draft before coding.
 
-While coding, run `census --changed --related` after your first code edit, before the second, and per new file. Any § the task didn't create is foreign; editing one in your draft flags. Read it with `scope`, silent while it holds; plumbing never flags. Else flag only contradictions or undescribed user-visible additions. Batch flags in the plan: "this also changes §X: <what>. OK?" Handoffs list "Also changes: §X — <what>", asked or not.
+While coding, run `census --changed --related` (`--spec` your draft, if any) right after your first edit, before the next file, and per new file. Any § the task didn't create is foreign, your new claim's parent included; editing one in your draft flags. Read it with `scope`, silent while its own text holds; plumbing never flags. Else flag only a contradiction, or a user-visible addition its own text lacks, even one your new claim describes. Batch flags in the plan: "this also changes §X: <what>. OK?" Every handoff ends with "Also changes: §X — <what>" or "Also changes: none".
 
 Documentation changes only through drafts, never by editing current `claims/` or `manifest.json`: `node "$core/sova-spec-draft.mjs" <command> --root <project root> --json`.
 - `new <name> --write` copies the whole current spec (or starts one); edit only `.sova/spec/drafts/<name>/spec/`. `status`, `diff`, `check` never write.
@@ -28,7 +28,6 @@ Documentation changes only through drafts, never by editing current `claims/` or
 
 Before finishing:
 - `node "$core/sova-spec.mjs" census --changed --root <project root> --json` must report no in-boundary changed file unclaimed (`--spec` the draft's `spec/` until promoted; `--base <rev>` once committed). Pre-existing unclaimed files aren't the task's job.
-- Flags are agreed or listed.
 - Read `$core/../PROMOTE.md`; promote what you verified, or say in your reply why not.
 
 The task's go-ahead authorizes its drafts, evidence and promotions as one bounded batch; no dialog per claim, and nothing at session start. It is not permission to commit: without that, leave evidence pending, and never commit unrelated changes. Review packets: `sova-spec-review.mjs`, see `$core/../README.md`. No check, record, evidence or promotion proves correctness; no tool checks meaning.

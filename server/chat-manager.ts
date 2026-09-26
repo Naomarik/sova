@@ -1596,6 +1596,13 @@ class ChatSession {
     return kept;
   }
 
+  /** Stop the run and write the queued messages `keep` picks into the transcript as their senders'
+      (stopRun, then enterQueued): a baton session's Stop, and its clean close. */
+  async keepQueued(keep: (item: WebQueueItem) => boolean): Promise<number> {
+    const since = this.leafId();
+    return this.enterQueued(await this.stopRun(keep), since);
+  }
+
   /** The current leaf, the point `enterQueued` looks back to for messages the run took itself. */
   leafId(): string | null {
     return this.session.sessionManager.getLeafId();
@@ -1874,10 +1881,7 @@ class ChatSession {
           // In a baton session a participant's queued message is theirs, not the composer's to
           // take back: it enters the transcript instead (§app.baton/hand-off, nothing dropped).
           if (this.special === "baton") {
-            const since = this.leafId();
-            this.stopRun((it) => !!it.baton && it.baton.by !== OPERATOR)
-              .then((kept) => this.enterQueued(kept, since))
-              .catch(fail);
+            this.keepQueued((it) => !!it.baton && it.baton.by !== OPERATOR).catch(fail);
             return;
           }
           drainQueueThenAbort(this.session, (m) => this.broadcast(m), this.queue).catch(fail);
@@ -2191,6 +2195,13 @@ class ChatSession {
 
   async dispose(): Promise<void> {
     if (this.disposed) return;
+    // A baton session closing cleanly (archive, shutdown, reload) keeps every message still
+    // waiting in its queue, as its sender's: nothing sent is dropped (§app.baton/hand-off). A
+    // refused write (a foreign one, the TUI) keeps nothing, said in the log.
+    if (this.special === "baton" && (this.queue.size || this.turnStarting))
+      await this.whenStarted()
+        .then(() => this.keepQueued((it) => !!it.baton))
+        .catch((err) => console.warn(`[chat] queued messages not kept at close: ${err instanceof Error ? err.message : String(err)}`));
     this.disposed = true;
     this.queue.close(); // nothing more is handed to a runtime that is going away
     if (this.guardTimer) clearInterval(this.guardTimer);

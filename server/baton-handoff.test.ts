@@ -16,7 +16,7 @@ mkdirSync(join(root, "agent", "sessions"), { recursive: true });
 const orgs = await import("./orgs");
 const baton = await import("./baton");
 const loadout = await import("./baton-loadout");
-const { acquireChat, disposeAllChats } = await import("./chat-manager");
+const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-manager");
 const { offerOutsider, viewForToken } = await import("./share/hub");
 const { registerOrgRoutes } = await import("./org-routes");
 
@@ -344,6 +344,33 @@ describe("a move that stops a reply drops nothing queued behind it", () => {
       assert.deepEqual(context.slice(-2), ["second", "third"], "the model reads them with the next turn");
     });
   }
+});
+
+describe("a clean close keeps what is queued", () => {
+  test("archiving a baton session mid-reply writes each queued message into the transcript as its sender's", async () => {
+    const may = person("May Close");
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: may.id, publicTitle: "Closing", goal: "g" });
+    const { chat } = await heldChat(c.path);
+    says(chat, c.sessionId, may.id, "CLOSE-FIRST");
+    await until(() => chat.session.isStreaming);
+    says(chat, c.sessionId, may.id, "CLOSE-SECOND");
+    await until(() => chat.session.agent.hasQueuedMessages());
+    says(chat, c.sessionId, may.id, "CLOSE-THIRD");
+    assert.equal(await disposeHeldChat(c.path, "Archived"), true);
+    const es = entriesOf(c.path);
+    const sentBy = new Map(es.filter((e) => e.customType === BATON_SENT_ENTRY).map((e) => [e.data.targetId, e.data.by]));
+    const users = es.filter((e) => e.type === "message" && e.message.role === "user");
+    assert.deepEqual(
+      users.map((e) => [sentBy.get(e.id), e.message.content.map((b: { text?: string }) => b.text ?? "").join("")]),
+      [[may.id, "CLOSE-FIRST"], [may.id, "CLOSE-SECOND"], [may.id, "CLOSE-THIRD"]],
+      "every message she sent is in the file, each as hers",
+    );
+    assert.equal(baton.batonById(c.sessionId)!.row.budget.messagesUsed, 3, "counted once, when accepted");
+    // Reopened, the model reads them with the next turn.
+    const again = await acquireChat(c.path);
+    const context = again.session.agent.state.messages.filter((m) => m.role === "user").map((m) => (m.content as { text?: string }[]).map((b) => b.text).join(""));
+    assert.deepEqual(context, ["CLOSE-FIRST", "CLOSE-SECOND", "CLOSE-THIRD"]);
+  });
 });
 
 describe("the model reads who wrote each message", () => {

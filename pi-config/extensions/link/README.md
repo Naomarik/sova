@@ -7,7 +7,7 @@ members message each other. Sova makes and ends links (its Overseer's `sova_link
 | Tool | Params | Does |
 | --- | --- | --- |
 | `link_members` | `{}` | The links this session is in; per partner its host, session id, title, cwd, model and backend, whether its host is up, and whether it is working or idle |
-| `link_send` | `{text, to?, link?}` | Deliver a message. `to`: a partner by host label, session id or title, a list, or `"all"`; optional with one partner. `link`: only when the session is in more than one link. Per partner: `started`, `delivered`, held for an offline host, or `refused` with the reason |
+| `link_send` | `{text, to?, link?}` | Deliver a message. `to`: a partner as `link_members` names it (`host/session id`), or by host label, session id or title; a list, or `"all"`; optional with one partner. `link`: only when the session is in more than one link. Per partner: `started`, `delivered`, held for an offline host, or `refused` with the reason |
 | `link_inbox` | `{limit?}` | This session's link messages, both directions, newest last |
 
 ## How it works

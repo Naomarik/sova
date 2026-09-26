@@ -84,14 +84,14 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 		name: "link_send",
 		label: "Link send",
 		description:
-			"Send a message to partner sessions of this session's link; your host delivers it. `to`: a partner by host label, session id or title, a list of them, or \"all\"; leave it out when the link has one partner. `link`: the link id, needed only when this session is in more than one link. The result says per partner: started (it was idle and began a turn), delivered (it is busy and sees it at its next step), held for an offline host, or refused with the reason. Acceptance is not proof the partner acted on it.",
+			"Send a message to partner sessions of this session's link; your host delivers it. `to`: a partner as link_members names it (host/session id), or by host label, session id or title; a list of them, or \"all\"; leave it out when the link has one partner. `link`: the link id, needed only when this session is in more than one link. The result says per partner: started (it was idle and began a turn), delivered (it is busy and sees it at its next step), held for an offline host, or refused with the reason. Acceptance is not proof the partner acted on it.",
 		promptSnippet: "Message the partner sessions this session is linked with on other hosts",
 		parameters: Type.Object(
 			{
 				text: Type.String({ description: "The message." }),
 				to: Type.Optional(
 					Type.Union([Type.String(), Type.Array(Type.String())], {
-						description: 'A partner (host label, session id or title), several, or "all". Optional with one partner.',
+						description: 'A partner as link_members names it (host/session id), or by host label, session id or title; several; or "all". Optional with one partner.',
 					}),
 				),
 				link: Type.Optional(Type.String({ description: "The link id (lk_…); only when this session is in more than one link." })),

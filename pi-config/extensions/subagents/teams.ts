@@ -1139,7 +1139,10 @@ export class TeamStore {
 	/** Record a control request against a session team member; undefined for non-members. */
 	recordAction(workerId: string, kind: TeamActionKind, source: TeamActionSource, message?: string): TeamAction | undefined {
 		const found = this.sessionMember(workerId);
-		if (!found) return undefined;
+		return found && this.pushAction(found, workerId, kind, source, message);
+	}
+
+	private pushAction(found: { team: TeamRecord; member: MemberRecord }, workerId: string, kind: TeamActionKind, source: TeamActionSource, message?: string): TeamAction {
 		const action: TeamAction = {
 			seq: ++this.actionSeq, at: Date.now(), workerId, role: found.member.role, kind, source, state: "requested",
 			...(message === undefined ? {} : { preview: message.length > ACTION_PREVIEW_CHARS ? `${message.slice(0, ACTION_PREVIEW_CHARS)}…` : message }),
@@ -1167,8 +1170,9 @@ export class TeamStore {
 	}
 
 	/**
-	 * Validate a seat release on a session team. `member` is an exact worker ID or a
-	 * role. Refuses history teams, unknown or already-ejected members, and members
+	 * Validate a seat release on a session or history team (history is this session's
+	 * branch, restored after a reload). `member` is an exact worker ID or a role.
+	 * Refuses unknown or already-ejected members, and members
 	 * whose worker is still working, idle or stopping, and those `held` names a reason
 	 * for (a member mid-handover). Nothing changes here: persist ejectEntry(), then
 	 * commitEject().
@@ -1176,8 +1180,9 @@ export class TeamStore {
 	checkEject(
 		ref: string, member: string, observe: (workerId: string) => WorkerObservation | undefined, held?: (workerId: string) => string | undefined,
 	): { teamId: string; workerId: string; role: string } {
+		// A history team is this session's own branch, restored after a reload: the eject entry lands
+		// on that same branch and folds back like any other, so its seats can be released too.
 		const team = this.find(ref);
-		if (team.origin === "history") throw new Error(historyRefusal(team));
 		const trimmed = member.trim();
 		const found = WORKER_ID.test(trimmed)
 			? team.members.find((m) => m.workerId === trimmed)
@@ -1198,10 +1203,12 @@ export class TeamStore {
 
 	/** Mark the member ejected and record one action row; call only after the entry was persisted. */
 	commitEject(teamId: string, workerId: string, at: number, source: TeamActionSource): TeamAction | undefined {
-		const member = this.session.find((t) => t.id === teamId)?.members.find((m) => m.workerId === workerId);
-		if (!member || member.ejectedAt !== undefined) return undefined;
+		const team = this.all().find((t) => t.id === teamId);
+		const member = team?.members.find((m) => m.workerId === workerId);
+		if (!team || !member || member.ejectedAt !== undefined) return undefined;
 		member.ejectedAt = at;
-		const action = this.recordAction(workerId, "eject", source);
+		// Also on a history team: its action list is this reload's, in memory like any other.
+		const action = this.pushAction({ team, member }, workerId, "eject", source);
 		this.settleAction(action, "accepted-or-queued");
 		return action;
 	}

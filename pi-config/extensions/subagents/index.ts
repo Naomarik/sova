@@ -2913,7 +2913,7 @@ export function registerSubagents(
 		name: "team_eject",
 		label: "Eject Team Member",
 		description:
-			`Release an ended member's seat in a team created in this session (a team seats ${MAX_TEAM_MEMBERS} members; ejected members do not count). member is an exact worker ID (ag_NN) or a role. The member must have ended: stop a working or idle one with agent_kill first. Its role stays reserved, its transcript and history stay, it stops receiving team messages and cannot be resumed. Teams restored from history are read-only. Persisted, so it survives reload and restart.`,
+			`Release an ended member's seat in a team created in this session (a team seats ${MAX_TEAM_MEMBERS} members; ejected members do not count). member is an exact worker ID (ag_NN) or a role. The member must have ended: stop a working or idle one with agent_kill first. Its role stays reserved, its transcript and history stay, it stops receiving team messages and cannot be resumed. A team restored from this session's history (after a reload) can be ejected from too, though team_add still refuses it. Persisted, so it survives reload and restart.`,
 		parameters: Type.Object(
 			{
 				team: Type.String({ minLength: 1, description: "Team ID (team_NN) or unique team name." }),
@@ -2945,7 +2945,7 @@ export function registerSubagents(
 			const views = teamViews();
 			const selected = params.team === undefined ? views : [views.find((t) => t.id === teams.find(params.team!).id)!];
 			const text = selected.map((t) => [
-				`${t.id} — ${t.name} [${t.origin === "history" ? "history, read-only" : "this session"}] · ${countsText(t)}`,
+				`${t.id} — ${t.name} [${t.origin === "history" ? "history, read-only but team_eject" : "this session"}] · ${countsText(t)}`,
 				`Objective: ${t.objective}`,
 				...(t.coordinated ? [`Coordinated (team defaults): members report to the coordinator; only it reaches you. ${KEEP_DUTIES_NOTE}`] : []),
 				...t.members.map((m) =>

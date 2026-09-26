@@ -381,7 +381,7 @@ test("eject frees a seat at the cap; the cap error names ejectable members; role
 	assert.throws(() => store.prepareAdd("Big", [{ role: " M0 ", prompt: "t" }], observe), /Role M0 already exists/);
 });
 
-test("eject refusals: history, unknown team or member, already ejected, still occupied", () => {
+test("eject refusals: unknown team or member, already ejected, still occupied; a history team ejects too", () => {
 	const { store, teamId } = fullTeam();
 	const observe = (id: string) => (id === "ag_10" ? running : id === "ag_11" ? idle : id === "ag_12" ? { ...running, status: "stopping" as const, settled: true } : id === "ag_13" ? { ...running, status: "starting" as const } : undefined);
 	assert.throws(() => store.checkEject("team_99", "m0", observe), /No such team: team_99/);
@@ -393,11 +393,21 @@ test("eject refusals: history, unknown team or member, already ejected, still oc
 	assert.throws(() => store.checkEject("Big", "m3", observe), /is still working/, "starting counts as working");
 	store.commitEject(teamId, "ag_14", 1_700_000_000_000, "parent");
 	assert.throws(() => store.checkEject("Big", "m4", observe), /m4 \(ag_14\) was already ejected from team_01 at 2023-11-14T22:13:20Z/);
-	// A history team is read-only, with team_add's wording.
+	// A history team (this session's branch after a reload): team_add refuses it, but an ended or
+	// unavailable member's seat can be released, and the eject folds back from the branch.
 	const history = new TeamStore();
-	history.restoreHistory([create("team_05", "Old", [member(1)])]);
-	const addRefusal = (() => { try { history.prepareAdd("Old", [{ role: "x", prompt: "t" }]); } catch (e) { return (e as Error).message; } return ""; })();
-	assert.throws(() => history.checkEject("Old", "ag_01", () => undefined), (e: Error) => e.message === addRefusal && /history from an earlier session/.test(e.message));
+	history.restoreHistory([create("team_05", "Old", [member(1), member(2)])]);
+	assert.throws(() => history.prepareAdd("Old", [{ role: "x", prompt: "t" }]), /history from an earlier session/);
+	assert.throws(() => history.checkEject("Old", "ag_02", () => running), /is still working/, "a history member whose worker was resumed and works is refused like any other");
+	const target = history.checkEject("Old", "ag_01", () => undefined);
+	assert.deepEqual(target, { teamId: "team_05", workerId: "ag_01", role: "role 1" });
+	const ejectOp = history.ejectEntry(target.teamId, target.workerId, 99);
+	assert.deepEqual([history.commitEject(target.teamId, target.workerId, 99, "parent")?.kind, history.ejectedAt("ag_01")], ["eject", 99]);
+	assert.deepEqual(history.views(() => undefined)[0].actions.map((a) => [a.kind, a.source, a.state]), [["eject", "parent", "accepted-or-queued"]]);
+	assert.throws(() => history.checkEject("Old", "role 1", () => undefined), /already ejected/);
+	const reloaded = new TeamStore();
+	reloaded.restoreHistory([create("team_05", "Old", [member(1), member(2)]), entry(ejectOp)]);
+	assert.equal(reloaded.ejectedAt("ag_01"), 99);
 });
 
 test("eject entries decode strictly and fold on restore: eject then add past 24 keeps the 25th", () => {

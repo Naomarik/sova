@@ -1707,7 +1707,7 @@ test("team history restores read-only from the active branch; counters reserve a
 		h.ctx.sessionManager.getBranch = () => [old];
 		await h.start();
 		let list = await h.call("team_list");
-		assert.match(list.content[0].text, /team_04 — Old \[history, read-only\] · 1 unavailable/);
+		assert.match(list.content[0].text, /team_04 — Old \[history, read-only but team_eject\] · 1 unavailable/);
 		assert.match(list.content[0].text, /ag_03 lead \[claude-code\] unavailable · owns: src · unavailable: Recorded in an earlier session or before reload/);
 		assert.doesNotMatch(list.content[0].text, /Elsewhere/, "teams on other branches are never displayed");
 		await assert.rejects(h.call("team_add", { team: "team_04", members: [{ role: "x", prompt: "p" }] }), /history from an earlier session/);
@@ -1719,8 +1719,15 @@ test("team history restores read-only from the active branch; counters reserve a
 		assert.equal(created.details.groupId, "run_03");
 		assert.equal(created.details.members[0].workerId, "ag_04");
 		list = await h.call("team_list");
-		assert.match(list.content[0].text, /team_04 — Old \[history, read-only\]/);
+		assert.match(list.content[0].text, /team_04 — Old \[history, read-only but team_eject\]/);
 		assert.match(list.content[0].text, /team_07 — Fresh \[this session\]/);
+		// After a reload the team is history, yet its unavailable member's seat can be released: the
+		// entry goes on this branch, so it folds back with the team.
+		const ejected = await h.call("team_eject", { team: "old", member: "lead" });
+		assert.match(ejected.content[0].text, /^Ejected ag_03 \(lead\) from team_04 at /);
+		assert.deepEqual(h.appended.filter((e) => e.customType === "subagents-team-v1" && e.data.op === "eject").map((e) => [e.data.teamId, e.data.workerId]), [["team_04", "ag_03"]]);
+		assert.match((await h.call("team_list", { team: "team_04" })).content[0].text, /team_04 — Old \[history, read-only but team_eject\] · 1 ejected/);
+		await assert.rejects(h.call("team_add", { team: "team_04", members: [{ role: "x", prompt: "p" }] }), /history from an earlier session/, "team_add still refuses it");
 		// A tree jump re-reads history; session teams and their members stay put.
 		h.ctx.sessionManager.getBranch = () => [teamEntry({
 			version: 1, op: "create",

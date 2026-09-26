@@ -375,8 +375,11 @@ included, until it is **ejected**; pending additions count too. When a
 have ended (and so can be ejected).
 
 `team_eject { team, member }` (`member` = exact `ag_NN` or role) is a parent
-tool only: members and orchestrators never get it. It refuses a team restored
-from history (read-only, same as `team_add`), an unknown team or member, a
+tool only: members and orchestrators never get it. It works on a team restored
+from this session's history after a reload too (the eject lands on the same
+branch and folds back with the team; `team_list` marks such a team `history,
+read-only but team_eject`, and `team_add` still refuses it). It refuses an
+unknown team or member, a
 member already ejected, a member mid-handover in a coordinated team (the
 predecessor or successor of a `team_succeed` not yet confirmed or timed out;
 the refusal says the seat is released automatically), and a member whose worker

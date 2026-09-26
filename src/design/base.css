@@ -1809,6 +1809,14 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 /* The name takes the room and ellipsizes; the count closes the head
    (.list-group-label > .text-num). */
 .group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Every folder, in every list, sits one step in behind a guide rule flush with the pane edge, so a
+   folder's head and rows read as one block, and inside a group as the group's contents rather than
+   as siblings of its name. The rule sits outside the rows' state rail, so their hover and selected
+   fills start after it; sticky folder heads keep their own surface. */
+.session-group {
+  padding-left: calc(var(--space-1) / 2);
+  border-left: calc(var(--stroke-thin) * 2) solid var(--color-border);
+}
 
 /* The group's actions, on the group's own name row. ALWAYS drawn — hover-only made the group's
    whole menu invisible until the pointer happened to be in the right row, and on touch there is

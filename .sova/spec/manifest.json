@@ -195,13 +195,12 @@
     "§app.settings-dialog/models": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/SettingsDialog.tsx",
         "src/lib/model-policy.ts",
         "src/lib/model-policy-draft.ts",
         "src/lib/settings-draft.ts",
-        "src/components/SaveBar.tsx",
         "src/lib/settings-draft.test.ts"
       ]
     },
@@ -215,8 +214,12 @@
     },
     "§app.settings-dialog/one-height": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/SettingsDialog.tsx",
+        "src/app.css"
+      ]
     },
     "§app.settings-dialog/themes": {
       "kind": "behavior",
@@ -1009,7 +1012,7 @@
     "§design.copy-deck/settings-modes-delegate": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§design.copy-deck/settings-themes": {
       "kind": "note",
@@ -2773,8 +2776,7 @@
         "src/components/SettingsDialog.tsx",
         "server/decide-settings.ts",
         "server/decide-routes.ts",
-        "src/lib/decision-form.test.ts",
-        "src/components/SaveBar.tsx"
+        "src/lib/decision-form.test.ts"
       ],
       "requires": [
         "§app.decisions/providers",
@@ -2978,7 +2980,6 @@
         "src/lib/decision-form.test.ts",
         "src/lib/settings-draft.ts",
         "src/lib/settings-draft.test.ts",
-        "src/components/SaveBar.tsx",
         "src/components/SettingsDialog.tsx"
       ],
       "requires": [
@@ -3304,7 +3305,6 @@
       "code": [
         "src/lib/settings-draft.ts",
         "src/lib/settings-draft.test.ts",
-        "src/components/SaveBar.tsx",
         "src/components/SettingsDialog.tsx",
         "src/lib/delegate-draft.ts",
         "src/lib/delegate-draft.test.ts",
@@ -3323,23 +3323,25 @@
         "src/components/OverseerSettings.tsx",
         "src/components/DecisionSettings.tsx",
         "src/components/SummarizerSettings.tsx",
-        "src/components/MeshSettings.tsx"
+        "src/components/MeshSettings.tsx",
+        "src/lib/settings-save-all.test.ts",
+        "src/app.css"
       ]
     },
     "§design.copy-deck/settings-experimental": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§design.copy-deck/settings-mesh": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§design.copy-deck/settings-models": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§app.settings-dialog/summaries": {
       "kind": "behavior",
@@ -3349,7 +3351,7 @@
         "§app.settings-dialog/save-bar"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/SummarizerSettings.tsx",
         "src/lib/summarizer-draft.ts",

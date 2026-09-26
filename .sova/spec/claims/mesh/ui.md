@@ -24,5 +24,5 @@ Settings has a Mesh section: this host's name, a toggle per sync category (setti
 extensions, logins), under Logins a "Sync subscriptions to this host" switch that turns API-keys-only
 mode on or off (§mesh.sync/api-keys-only), and the front-door address. The switch shows only while
 the mesh and login sync are on — login sync as set on the form. The section is Save-gated: every
-field and switch is staged and written by Save Changes, which sends only what changed
+field and switch is staged and written by the dialog's Save Changes, which sends only what changed
 (§app.settings-dialog/save-bar).

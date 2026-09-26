@@ -4,7 +4,8 @@
 The sidebar foot's Agents row ends in a gear. It opens the Settings modal: a left tab rail and
 one panel, wider than the product's question-asking modals because two panes have to fit beside
 each other (§design/ground-rules and §design/deviations record the deviation). There is no route and no URL — Settings is a modal
-the session stays behind, closed by the scrim, Esc, or its Close button.
+the session stays behind, closed by the scrim, Esc, or its Close button (Cancel while anything
+is unsaved, §app.settings-dialog/save-bar).
 
 The rail is the structure: each settings screen is one tab — General, Models, Modes, Teams,
 Overseer, Decisions, Summaries, Themes, Mesh, Experimental.
@@ -29,7 +30,8 @@ filled the viewport and Experimental came in at a few hundred pixels, so switchi
 resized the window under the pointer and moved the rail's own tab buttons out from under the
 finger that was aiming at them. A rail you have to re-find after every press is not a rail.
 
-The head, the rail and the foot never scroll or shrink — Close is reachable at every viewport —
+The head, the rail and the foot never scroll or shrink — Close and Save Changes are reachable at
+every viewport —
 and on a short window the floor under the body gives way rather than the foot: the panel is the
 part that already knows how to scroll. Adding a tab is then a content question only; no screen
 can change the dialog's size by being long or short.
@@ -115,9 +117,9 @@ its models are the CLI's rather than pi's. A provider named in the policy that t
 credentials for is listed too, with `No models on this machine` where the count goes — a rule you
 can't see is a rule you can't undo.
 
-A switch doesn't write on its own. Every move is staged, and one **Save Changes** under the list
-writes the whole policy — one save for every provider and model you moved, never one per switch —
-while **Discard Changes** puts every switch back where the saved policy has it
+A switch doesn't write on its own. Every move is staged, and the dialog's **Save Changes** writes
+the whole policy — one save for every provider and model you moved, never one per switch — while
+its **Discard Changes** puts every switch back where the saved policy has it
 (§app.settings-dialog/save-bar). The file is read per spawn and per turn, so a staged switch
 refuses nothing until it's saved, and this browser's model picker follows the saved policy the
 moment the save lands. Save reads the policy again first and applies only the entries you changed
@@ -176,16 +178,17 @@ side by side when the panel has room and stacked under 640px.
 - **Fallback** is a toggle. Off: "No fallback: if the primary can't run, the agent asks you which
   model to use." On: a second row starting blank on the primary's backend. A fallback identical to
   its primary is refused.
-- **Saving** is explicit — Save Changes (primary, pinned to the trailing edge even when the row
-  wraps), Discard Changes, Reset to Defaults (fills the built-in routing in; it's saved only by
-  Save Changes) — because the routing is one coherent choice across eight rows, not eight
-  switches. Save waits for every row to have a model and an effort, and for no fallback to be its
-  own primary.
+- **Saving** is explicit — the dialog's Save Changes and Discard Changes
+  (§app.settings-dialog/save-bar), and **Reset to Defaults**, a small button in the Delegate
+  heading that fills the built-in routing in and saves nothing — because the routing is one
+  coherent choice across eight rows, not eight switches. Save waits for every row to have a model
+  and an effort, and for no fallback to be its own primary; until then the footer names what's
+  missing ("Delegate needs a fallback model.").
 - **Unsaved edits are kept, and never dropped silently.** The draft lives outside the tab
   (`src/lib/delegate-draft.ts`), so switching to Models and back keeps it. Closing the dialog —
-  Close, Esc, or the scrim — over unsaved Delegate edits brings you back to Modes and holds the
-  close with a warn banner above the foot: **Your Delegate changes aren't saved.** "Save them on
-  this screen, or discard them and close." [Keep Editing] [Discard and Close]. A closed dialog
+  Cancel, Esc, or the scrim — over unsaved Delegate edits brings you back to Modes and holds the
+  close with a warn banner above the foot: **Your Delegate changes aren't saved.** "Save them, or
+  discard them and close." [Keep Editing] [Discard and Close]. A closed dialog
   forgets the draft; reopening starts from what's saved. The save replaces the whole file. The server
   refuses a **changed** row its backend answered it can't run (model not offered — for Claude Code,
   only a shape-invalid id — or effort not taken) and names it; a row that can't be checked, or that
@@ -214,7 +217,7 @@ terminal. The TUI and every runtime read it once per session, at session start, 
 applies to sessions started afterwards, here and in the terminal**, and the panel says so. A
 missing file, or one naming no usable summarizer, reads as the extension's built-in chain —
 Claude Code `haiku`, then pi `ollama-cloud/deepseek-v4.1-flash` — and, while nothing is staged,
-the panel says those are the built-in models.
+the section heading says those are the built-in models, beside its Reset to Defaults.
 
 - **Choices, not free text.** Model lists are Delegate's (`GET /api/settings/delegate/options`).
   A stored pick the list omits stays in the select, "— not verified" (the backend couldn't
@@ -226,10 +229,10 @@ the panel says those are the built-in models.
   Subagents switch does not apply — a summarizer is not a worker — so a model that is only off
   for subagents is not marked.
 - **Picks wait for Save** (§app.settings-dialog/save-bar). Every pick is staged; nothing is
-  written until **Save Changes**. Changing a backend blanks its model; turning Fallback on adds a
-  blank row on the primary's backend; turning it off stages a one-model chain. **Reset to
-  Defaults** fills in the built-in chain and saves nothing; it is disabled while the rows already
-  show it.
+  written until the dialog's **Save Changes**. Changing a backend blanks its model; turning
+  Fallback on adds a blank row on the primary's backend; turning it off stages a one-model chain.
+  **Reset to Defaults**, a small button in the section heading, fills in the built-in chain and
+  saves nothing; it is disabled while the rows already show it.
 - **Save waits for a complete chain.** Save Changes stays disabled while a row has no model
   ("Choose a model." under it) or the fallback is the primary ("Same as the primary. Choose
   another model, or no fallback."), and the server refuses the same pair too.
@@ -371,7 +374,7 @@ and, for the key, `<stateRoot>/secrets/jev-key`. Sova-owned; the TUI never reads
 is named **Decisions**: it names what the features do, not a provider.
 
 Saving is explicit, like every server-backed tab: the switches, the fallback and Folders are
-staged, and **Save Changes** at the end of the form writes them; the Jev key and the actions are
+staged, and the dialog's **Save Changes** writes them; the Jev key and the actions are
 never part of it (§app.settings-dialog/decisions-autosave, §app.settings-dialog/save-bar).
 
 In this order:
@@ -432,8 +435,8 @@ In this order:
 ## §app.settings-dialog/decisions-autosave — Decisions saves with Save Changes
 
 Settings → Decisions stages every change — Use Jev, the fallback choice and model, the Features
-and Never send switches, and Folders — and writes them only with **Save Changes** in the form's
-Save bar (§app.settings-dialog/save-bar). Nothing is written as it is made, and leaving the
+and Never send switches, and Folders — and writes them only with the dialog's **Save Changes**
+(§app.settings-dialog/save-bar). Nothing is written as it is made, and leaving the
 Folders box or the tab writes nothing.
 
 - **Fresh, and only what changed.** The PUT replaces the whole file, so Save first reads the file
@@ -443,8 +446,8 @@ Folders box or the tab writes nothing.
 - **Save waits for a complete form**: a fallback model with backend, model and effort chosen, and
   every Folders line a full path. A feature on while nothing can answer is a warning, not a hold.
 - **While a save is in flight** the form's controls are disabled; Test Decisions and the Tag
-  buttons wait for it, since they act on what's saved. A successful save is announced to screen
-  readers ("Decision settings saved.") with no visible "Saved" text.
+  buttons wait for it, since they act on what's saved. The footer's status line says what the save
+  wrote ("Saved Decisions."), and says it to screen readers too.
 - **A refused save.** Nothing is written, and every unsaved change stays on screen, with
   **Couldn't save the decision settings.** {reason}. "Your saved settings are unchanged." When the
   server refused a newly chosen fallback model its backend can't run (400), that choice also shows
@@ -458,34 +461,57 @@ Folders box or the tab writes nothing.
 - The Jev key keeps its own buttons (§app.settings-dialog/decisions), saved and removed at once;
   it is never part of the draft.
 
-## §app.settings-dialog/save-bar — One Save bar, one close-hold
+## §app.settings-dialog/save-bar — One Save in the footer, one close-hold
 
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Modes**
 (Delegate and Spec), **Teams**, **Overseer**, **Decisions**, **Summaries**, **Mesh** and
-**Experimental**. A change on them is staged, never written as it is made.
+**Experimental**. A change on them is staged, never written as it is made. No form has a Save or
+Discard button of its own: saving is the dialog's.
 
-- **The Save bar.** Each gated form ends in the same action row: the form's own Reset button
-  leading it where the form has one (Delegate, Teams and Summaries' **Reset to Defaults**), then
-  **Discard Changes** (ghost) and **Save Changes** (primary, pinned to the trailing edge even when
-  the row wraps; **Saving…** while it writes). Both are disabled until the form differs from what's
-  saved, and Save Changes also until the form is complete and valid. Discard Changes puts the form
-  back to what's saved. A Reset button fills the form and saves nothing.
-- **A failed save keeps the draft.** Every unsaved change stays on screen, and an error banner says
-  what failed and that what's saved is unchanged. After a save lands, the form is what the server
-  answered, and it reads clean.
-- **Drafts outlive their tab.** Each form's draft is module state, not the panel's, so switching
-  tabs keeps it. A closed dialog forgets every draft; reopening starts from what's saved.
-- **Closing holds.** Close, Esc and the scrim all ask first when any gated form has unsaved
+- **The footer.** Left to right: a status line, then **Discard Changes** (ghost), **Save Changes**
+  (primary; **Saving…** while it writes) and **Cancel**, while any gated form on any tab holds
+  unsaved changes; with none, only the status line and **Close**. Every tab shows the same footer,
+  General, Themes and Typography included. Folded, the status line keeps Cancel beside it and
+  Discard Changes · Save Changes take the next line at the trailing edge, every button 44px tall.
+- **Save Changes writes every dirty form on every tab** — the one showing, and every other, mounted
+  or not. Each form writes its own file, at the same time as the others, and keeps its own rules:
+  a form that rebases (Models, Overseer, Decisions, Summaries) reads its file afresh first; Mesh
+  sends only what changed. A form never has two saves in flight, even across a close and reopen
+  of the dialog. **Discard Changes** puts every form on every tab back to what's saved.
+- **Save waits for every dirty form to be valid.** While any is incomplete or invalid, Save
+  Changes is disabled and the status line, in error, names the first such form and what it needs
+  ("Delegate needs a fallback model.", "Mesh: This host needs a name."). The form's own fields
+  still say it inline. A form with no unsaved changes never holds Save.
+- **The status line** says, first match wins: **Saving…**; why Save waits; a failed save ("Saved
+  Models; Delegate failed.", or "Delegate failed." when nothing else was written); what is unsaved
+  ("Unsaved: Models, Decisions", form names in rail order); what the last save wrote ("Saved
+  Models and Decisions."); or nothing. The outcome of a save is announced to screen readers in the
+  same words.
+- **A failed save keeps its draft, and only its own.** Forms that saved stay saved. The dialog goes
+  to the first tab, in rail order, whose save failed — unless the one showing did — and that form
+  shows its error banner at its end: what failed and that what's saved is unchanged (Overseer:
+  "Your other changes were saved." when part of it landed). The failure stays until the form is
+  edited, discarded or saved. After a save lands, the form is what the server answered, and it
+  reads clean. A form's "Saved, with notes." banner and its "Stored in …" line stay at the form's
+  end.
+- **Reset to Defaults** (Delegate, Teams, Summaries) is a small button in that section's heading.
+  It fills the form's draft with the built-in values and saves nothing.
+- **Drafts outlive their tab.** Each form's draft, its save and what its last save said are module
+  state, not the panel's, so switching tabs keeps them. A closed dialog forgets every draft;
+  reopening starts from what's saved.
+- **Closing holds.** Cancel, Close, Esc and the scrim all ask first when any gated form has unsaved
   changes: the dialog goes to the first tab, in rail order, that holds them — unless the one
   showing does — and holds the close with a warn banner above the foot: **Your {forms} changes
-  aren't saved.** "Save them on this screen, or discard them and close." [Keep Editing] [Discard
-  and Close]. {forms} names every form with unsaved changes in rail order, joined with commas and
-  "and" ("Models and Decisions"). Which forms take part is one registry the drafts join when they
-  are created, so a new gated form is held without the dialog naming it.
+  aren't saved.** "Save them, or discard them and close." [Keep Editing] [Discard and Close].
+  {forms} names every form with unsaved changes in rail order, joined with commas and "and"
+  ("Models and Decisions"). Which forms take part is one registry the drafts join when they are
+  created, so a new gated form is saved, discarded and held without the dialog naming it.
 - **Mesh** stages this host's name, the sync switches, "Sync subscriptions to this host" and the
   front door; the subscriptions switch shows while the mesh is on and the form's Logins switch is.
   Save sends only the fields you changed, so a field a peer's sync wrote meanwhile stays. The name
   can't be saved blank. A save refreshes the mesh state, so the new name shows everywhere at once.
+  Enter in a Mesh field does nothing: Save writes every tab's edits, and a key press in one field
+  doesn't.
 - **Experimental**'s Claude Code switch is staged too. Its status line reads the saved setting, so
   "Switch on to add its models" describes what the server does now, not the unsaved switch.
 - **Not gated.** General, Themes and Typography change only this browser and still apply as you

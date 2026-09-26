@@ -421,9 +421,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Load failed (banner-error) | **Couldn't load the Delegate settings.** Nothing was changed. [Try Again] |
 | Save failed (banner-error) | **Couldn't save the routing.** {server reason}. Your saved routing is unchanged. |
 | Saved with notes (banner-warn) | **Saved, with notes.** {warnings as sentences}: "Not verified, because {backend} couldn't list its models ({reason}): {slot}, {slot}…" once per backend, then one per other slot |
-| Close held (banner-warn, above the dialog foot) | **Your Delegate changes aren't saved.** Save them on this screen, or discard them and close. [Keep Editing] [Discard and Close] — every Save-gated tab shares it, naming each form with unsaved changes ("Your Models and Decisions changes aren't saved.", §app.settings-dialog/save-bar) |
-| Buttons | Reset to Defaults · Discard Changes · Save Changes (Saving…) — the one Save bar every Save-gated tab ends in |
-| Announcement | Delegate routing saved. Chats in Delegate use it from their next message. |
+| Close held (banner-warn, above the dialog foot) | **Your Delegate changes aren't saved.** Save them, or discard them and close. [Keep Editing] [Discard and Close] — every Save-gated tab shares it, naming each form with unsaved changes ("Your Models and Decisions changes aren't saved.", §app.settings-dialog/save-bar) |
+| Section heading button (small, ghost) | Reset to Defaults — Delegate, Teams and Summaries each have one; it fills the draft and saves nothing |
+| Dialog footer (every tab) | {status line} · Discard Changes · Save Changes (Saving…) · Cancel — with nothing unsaved: {status line} · Close. The one Save and Discard for every Save-gated form on every tab (§app.settings-dialog/save-bar) |
+| Footer status line (first match; the outcome of a save is also announced in the same words) | Saving… · {why Save waits} · Saved {forms}; {forms} failed. · {forms} failed. · Unsaved: {Form}, {Form} · Saved {forms}. · (nothing) — {forms} joined with commas and "and", "Unsaved:" with commas only |
+| Why Save waits (footer status, error; Save Changes disabled) | Delegate needs a primary model. · Delegate needs an effort for a primary model. · Delegate needs a fallback model. · Delegate needs an effort for a fallback model. · Delegate has a fallback that's the same worker as its primary. · Spec needs a model for its writer. · Spec needs an effort for its writer's model. · Spec needs a fallback model. · Spec needs an effort for its fallback model. · Spec has a fallback that's the same worker as its writer. · Teams needs a role name for the {coordinator/monitor}. · Teams needs a model and an effort for the {role}. · Teams needs a model and an effort for the {role}'s fallback. · Teams needs a number for the {field}. · Teams needs a whole number from {min} to {max} for the {field}. · Teams: {conflict}. · Overseer: {issue}. · Decisions needs a fallback model. · Decisions needs an effort for its fallback model. · Decisions: {Folders issue}. · Summaries needs a primary model. · Summaries needs a fallback model. · Summaries has a fallback that's the same model as its primary. · Summaries can't be saved: its file can't be read. · Mesh: This host needs a name. |
+| Discarded (announced only) | Discarded your {forms} changes. |
 | Footnote | Stored in `~/.pi/agent/mode-delegate.json`, shared with pi in the terminal. |
 
 ## §design.copy-deck/settings-decisions — Settings · Decisions (§app.settings-dialog/decisions)
@@ -457,9 +460,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Backfill buttons | `Tag Last 30 Days` · `Tag All Sessions` · running: `Stop Tagging` · held: Nothing can answer yet, so nothing can be tagged. |
 | Backfill progress | counting: Finding sessions to tag… · Tagged {done} of {total}{ · n failed}. · Tagged {total} sessions{ · n failed}. New sessions are tagged as they finish. · Stopped at {done} of {total}{ · n failed}. {reason} (cancelled: no reason). · Every session from the last 30 days is tagged. · Every session is tagged. |
 | Saved with notes (banner-warn, notes that name neither the fallback nor the features; replaced at the next save) | **Saved, with notes.** {server warnings as sentences} |
-| Buttons (end of the form) | Discard Changes · Save Changes (Saving…) — the shared Save bar (§design.copy-deck/settings-modes-delegate) |
-| Save failed (banner-error; the unsaved changes stay) | **Couldn't save the decision settings.** {reason}. Your saved settings are unchanged. |
-| Saved (announced only, no visible text, on Save Changes) | Decision settings saved. |
+| Buttons | none in the form — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate) |
+| Save failed (banner-error at the end of the form; the unsaved changes stay) | **Couldn't save the decision settings.** {reason}. Your saved settings are unchanged. |
 | Footnote | Stored in `~/.pi/agent/sova/decisions.json`. The key is stored separately, readable by you only. |
 
 ## §design.copy-deck/settings-models — Settings · Models (§app.settings-dialog/models)
@@ -467,28 +469,25 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Load failed (banner-error) | **Couldn't read the model policy** The list below may not match the server. Nothing was changed. [Retry] |
-| Buttons (end of the tab) | Discard Changes · Save Changes (Saving…) — the shared Save bar (§design.copy-deck/settings-modes-delegate) |
-| Save failed (banner-error; the unsaved switches stay) | **Couldn't save the model policy.** {reason}. Your saved policy is unchanged. |
-| Saved (announced only, no visible text, on Save Changes) | Model policy saved. It applies from the next message and spawn, here and in the terminal. |
+| Buttons | none in the tab — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate) |
+| Save failed (banner-error at the end of the tab; the unsaved switches stay) | **Couldn't save the model policy.** {reason}. Your saved policy is unchanged. |
 
 ## §design.copy-deck/settings-mesh — Settings · Mesh (§mesh.ui/settings)
 
 | Where | Copy |
 |---|---|
 | Load failed (banner-error) | **Couldn't read the mesh settings.** Nothing was changed. {message} |
-| Host name hint · issue (replaces the hint, blocks Save) | Shown beside its sessions on every host, and in New Session's Host field. · This host needs a name. |
-| Buttons (end of the tab) | Discard Changes · Save Changes (Saving…) — the shared Save bar (§design.copy-deck/settings-modes-delegate); Enter in a field saves |
-| Save failed (banner-error; the unsaved changes stay) | **Couldn't save the mesh settings.** {reason}. Your saved settings are unchanged. |
-| Saved (announced only, no visible text, on Save Changes) | Mesh settings saved. |
+| Host name hint · issue (replaces the hint, blocks Save; the footer: "Mesh: This host needs a name.") | Shown beside its sessions on every host, and in New Session's Host field. · This host needs a name. |
+| Buttons | none in the tab — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate); Enter in a field does nothing |
+| Save failed (banner-error at the end of the tab; the unsaved changes stay) | **Couldn't save the mesh settings.** {reason}. Your saved settings are unchanged. |
 
 ## §design.copy-deck/settings-experimental — Settings · Experimental (§app.settings-dialog/save-bar)
 
 | Where | Copy |
 |---|---|
 | Load failed (banner-error) | **Couldn't read the experimental settings.** Nothing was changed. |
-| Buttons (under the switch) | Discard Changes · Save Changes (Saving…) — the shared Save bar (§design.copy-deck/settings-modes-delegate) |
-| Save failed (banner-error; the unsaved switch stays) | **Couldn't save the change.** {reason}. Your saved setting is unchanged. |
-| Saved (announced only, no visible text, on Save Changes) | Claude Code models on for new sessions. · Claude Code models off for new sessions. |
+| Buttons | none in the tab — the dialog footer's Discard Changes · Save Changes (§design.copy-deck/settings-modes-delegate) |
+| Save failed (banner-error under the switch; the unsaved switch stays) | **Couldn't save the change.** {reason}. Your saved setting is unchanged. |
 
 ## §design.copy-deck/settings-themes — Settings · Themes (§app/settings-dialog)
 

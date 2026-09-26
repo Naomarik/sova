@@ -1,7 +1,8 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
-import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, ModelSpend, SessionInsight, SessionSummary, TokenUsage, TranscriptItem } from "../../shared/protocol";
+import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, ModelSpend, SessionInsight, SessionSummary, SessionWorktreeInfo, TokenUsage, TranscriptItem } from "../../shared/protocol";
 import { contextSentence, contextStateFor, formatTokens } from "../lib/context";
-import { compactModel, relativeTime, thousands } from "../lib/format";
+import { compactModel, relativeTime, thousands, tildePath } from "../lib/format";
+import { type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
 import { absoluteTime, anyCost, firstLine, originLabel, spendRows, timelineEntries } from "../lib/spend";
 import { archiveSession } from "../lib/session-actions";
 import { cwdLabel } from "../lib/remote-session";
@@ -327,6 +328,12 @@ export function SessionDetails(props: {
           schedule: never part of the insight poll. */}
       <RepositorySection path={props.path} now={now()} changed={props.gitChanged} refresh={props.gitRefresh} labelId={id("repository")} />
 
+      {/* 5b · Worktrees. The ones this session tracks (the worktrees extension's entry on the
+          branch), read with the insight; the pane only shows them, the agent's tool changes them. */}
+      <Show when={props.insight?.worktrees?.length ? props.insight.worktrees : undefined}>
+        {(rows) => <WorktreesSection rows={rows()} labelId={id("worktrees")} />}
+      </Show>
+
       <Show when={props.skeleton && !props.insight}>
         <div class="stack-2" aria-hidden="true">
           <span class="skeleton skeleton-title" />
@@ -551,6 +558,68 @@ function RepositorySection(props: { path: string; now: number; changed?: number;
         </p>
       </Show>
     </section>
+  );
+}
+
+/** The session's tracked worktrees, dropped and merged ones included. Read-only. */
+function WorktreesSection(props: { rows: SessionWorktreeInfo[]; labelId: string }) {
+  return (
+    <section class="stack-2" aria-labelledby={props.labelId}>
+      <h3 class="text-eyebrow" id={props.labelId}>
+        Worktrees
+      </h3>
+      <p class="usage-note">{worktreesSummary(props.rows)}</p>
+      <ul class="list worktree-list">
+        <For each={props.rows}>{(w) => <WorktreeRow worktree={w} />}</For>
+      </ul>
+    </section>
+  );
+}
+
+const chipTone = (c: Pick<WorktreeChip, "tone">) => (c.tone === "neutral" ? "chip" : `chip chip-${c.tone}`);
+
+/** One worktree: its branch, where it is, its status and what runs there. */
+function WorktreeRow(props: { worktree: SessionWorktreeInfo }) {
+  const w = () => props.worktree;
+  const status = () => worktreeStatus(w());
+  return (
+    <li class="list-row worktree-row">
+      <div class="list-main">
+        <p class="list-title text-mono" style={wrapMono} title={w().path}>
+          {w().branch}
+        </p>
+        <p class="list-meta text-mono" style={wrapMono}>
+          {tildePath(w().path, home())}
+        </p>
+        <div class="worktree-facts">
+          <span class={chipTone(status())} title={status().title}>
+            <span class="chip-dot" aria-hidden="true" />
+            {status().label}
+          </span>
+          <Show when={status().detail}>
+            {(detail) => (
+              <span class="text-caption text-mono" title={status().title}>
+                {detail()}
+              </span>
+            )}
+          </Show>
+          <For each={worktreeChips(w())}>
+            {(c) => (
+              <span class={`${chipTone(c)} chip-count`} title={c.title}>
+                {c.label}
+              </span>
+            )}
+          </For>
+          <Show when={w().sharedWith}>
+            {(sid) => (
+              <span class="text-caption text-muted">
+                Shared with <a href={`#/sid/${encodeURIComponent(sid())}`}>session {sid().slice(0, 8)}</a>
+              </span>
+            )}
+          </Show>
+        </div>
+      </div>
+    </li>
   );
 }
 

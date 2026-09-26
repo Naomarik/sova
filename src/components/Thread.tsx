@@ -25,6 +25,7 @@ import { explainOf } from "../lib/explain";
 import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { WakeCard } from "./WakeCard";
+import { WorktreeMergeCard } from "./WorktreeMergeCard";
 import { Banner, Chip, Icon } from "./ui";
 import { BriefRow, ConfirmCard, NavigateGo, OverseerChoiceRow } from "./OverseerCards";
 import { confirmAnswer, confirmDetails, detailsOf, isBriefText } from "../lib/overseer";
@@ -517,6 +518,9 @@ export function HistoryItems(props: {
               </Match>
               <Match when={item.overseerMark?.kind === "dialog-answer" && item.overseerMark}>
                 {(mark) => <OverseerChoiceRow title={mark().title} answer={mark().answer} />}
+              </Match>
+              <Match when={item.kind === "worktree-merge" && item.worktreeMerge}>
+                {(merge) => <WorktreeMergeCard merge={merge()} time={timestampOf(item.raw)} />}
               </Match>
               <Match when={item.kind === "wake" && item.wake}>
                 {(wake) => <WakeCard nudge={wake()} text={item.text ?? ""} time={timestampOf(item.raw)} />}

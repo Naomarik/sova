@@ -15,6 +15,8 @@
 #   --id <slug> --label <text>   this host's mesh id and label (default: phone / "Phone"); the id is only set once
 #   --node-id <StableID> --dns <MagicDNS name>   this phone's Tailscale StableID and name, for its own hello
 #   --port <n> --peer-port <n>   main listener 127.0.0.1:<port> (default 4800), peer listener <tailnet-ip>:<peer-port> (4801)
+#   --claude-dir <dir>     the .claude dir the `claude` on PATH reads, as seen from Termux (default: detected; see
+#                          "Claude Code's store" below; a native claude reads ~/sova-mesh/home/.claude)
 #   --ssh-key <public key> also keep an sshd for remote access: openssh, the key in ~/.ssh/authorized_keys, and a
 #                          runit sshd service (unless an sshd already runs). `uninstall.sh --keep-ssh` keeps these.
 #
@@ -39,7 +41,7 @@ main() {
 REF=${SOVA_REF:-$DEFAULT_REF}
 SOURCE_URL=${SOVA_SOURCE_URL:-}
 TAILNET_IP=${SOVA_TAILNET_IP:-}
-HOST_ID='' HOST_LABEL='' NODE_ID='' DNS_NAME='' SSH_KEY=''
+HOST_ID='' HOST_LABEL='' NODE_ID='' DNS_NAME='' SSH_KEY='' CLAUDE_DIR=''
 PORT=${SOVA_PORT:-4800}
 PEER_PORT=${SOVA_PEER_PORT:-4801}
 while [ $# -gt 0 ]; do
@@ -54,6 +56,7 @@ while [ $# -gt 0 ]; do
     --port) PORT=${2:?}; shift 2 ;;
     --peer-port) PEER_PORT=${2:?}; shift 2 ;;
     --ssh-key) SSH_KEY=${2:?}; shift 2 ;;
+    --claude-dir) CLAUDE_DIR=${2:?}; shift 2 ;;
     *) die "unknown option: $1 (see the header of install.sh)" ;;
   esac
 done
@@ -200,6 +203,79 @@ if [ ! -e "$BASE/agent/sova/peers.json" ]; then
   log "agent: peers.json seeded (self ${HOST_ID:-phone}, no peers: mesh off)"
 fi
 
+# ---- Claude Code's store ---------------------------------------------------------------------------
+# Sova syncs the Claude Code login in the .claude dir that the `claude` on PATH reads. A native claude reads Sova's HOME:
+# $BASE/home/.claude. A proot-distro wrapper ($PREFIX/bin/claude, a short script that execs `proot-distro login <distro>
+# [--user <user>] ... -- env HOME=<home> ...`) runs Claude inside the container, which reads <rootfs><home>/.claude.
+# Anything the wrapper leaves unclear keeps $BASE/home/.claude and prints a note naming --claude-dir.
+claude_note() { log "note: $PREFIX/bin/claude looks like a proot-distro wrapper, but $1: Sova syncs the Claude Code login in $BASE/home/.claude, which that claude may not read. Rerun with --claude-dir <the .claude dir it reads, as seen from Termux>"; }
+claude_proot_dir() { # the container's .claude as seen from Termux, or nothing
+  w="$PREFIX/bin/claude"
+  [ -f "$w" ] && [ "$(wc -c < "$w")" -le 8192 ] && grep -q 'proot-distro' "$w" || return 0
+  # logical lines (backslash continuations joined), comments dropped; exactly one must run `proot-distro login`
+  lines=$(sed -e ':a' -e '/\\$/{N;s/\\\n/ /;ta' -e '}' "$w" | grep -v '^[[:space:]]*#' | grep -E '(^|[[:space:];&|])proot-distro[[:space:]]+login[[:space:]]' || true)
+  [ "$(printf '%s\n' "$lines" | grep -c .)" = 1 ] || { claude_note "it has no single 'proot-distro login' line"; return 0; }
+  ! grep -q CLAUDE_CONFIG_DIR "$w" || { claude_note "it sets CLAUDE_CONFIG_DIR"; return 0; }
+  # distro, --user and HOME= only as plain words (no variables, quotes or globs)
+  set -f
+  distro='' user=root home='' prev='' seen=''
+  for t in $lines; do
+    case "$prev" in
+      login) [ -n "$seen" ] && [ -z "$distro" ] && distro=$t ;;
+      --user) user=$t ;;
+    esac
+    case "$t" in proot-distro) seen=1 ;; HOME=*) home=${t#HOME=} ;; --user=*) user=${t#--user=} ;; esac
+    prev=$t
+  done
+  set +f
+  printf '%s' "$distro" | grep -qE '^[A-Za-z0-9._-]+$' || { claude_note "its distro is not a plain name"; return 0; }
+  printf '%s' "$user" | grep -qE '^[a-z_][a-z0-9_-]*$' || { claude_note "its --user is not a plain name"; return 0; }
+  rootfs=''
+  for r in "$PREFIX/var/lib/proot-distro/containers/$distro/rootfs" "$PREFIX/var/lib/proot-distro/installed-rootfs/$distro"; do
+    [ -d "$r/etc" ] && { rootfs=$r; break; }
+  done
+  [ -n "$rootfs" ] || { claude_note "its distro $distro has no rootfs"; return 0; }
+  # no HOME= in the wrapper: the user's home from the container's passwd
+  [ -n "$home" ] || home=$(awk -F: -v u="$user" '$1==u{print $6; exit}' "$rootfs/etc/passwd" 2>/dev/null)
+  printf '%s' "$home" | grep -qE '^/[A-Za-z0-9._/-]*$' && ! printf '%s' "$home" | grep -q '\.\.' || { claude_note "its HOME is not a plain path"; return 0; }
+  [ -d "$rootfs$home" ] || { claude_note "its HOME $home does not exist in the container"; return 0; }
+  printf '%s\n' "${rootfs}${home%/}/.claude"
+}
+CLAUDE_DEFAULT="$BASE/home/.claude"
+if [ -n "$CLAUDE_DIR" ]; then
+  case "$CLAUDE_DIR" in /*) ;; *) die "--claude-dir must be an absolute path" ;; esac
+  CLAUDE_DIR=${CLAUDE_DIR%/}
+  [ -d "${CLAUDE_DIR%/*}" ] || die "--claude-dir: ${CLAUDE_DIR%/*} does not exist"
+else
+  CLAUDE_DIR=$(claude_proot_dir)
+  [ -n "$CLAUDE_DIR" ] || CLAUDE_DIR=$CLAUDE_DEFAULT
+fi
+if [ "$CLAUDE_DIR" != "$CLAUDE_DEFAULT" ]; then
+  # a store outside ~/sova-mesh belongs to the user: its original login is kept in the manifest, restored by uninstall.sh
+  if [ -f "$M/claude-dir" ]; then
+    [ "$(cat "$M/claude-dir")" = "$CLAUDE_DIR" ] || die "the Claude Code store was $(cat "$M/claude-dir") and is now $CLAUDE_DIR: rerun with --claude-dir $(cat "$M/claude-dir"), or uninstall first"
+  else
+    [ -d "$CLAUDE_DIR" ] || { mkdir -p "$CLAUDE_DIR"; note "dir $CLAUDE_DIR"; }
+    if [ -f "$CLAUDE_DIR/.credentials.json" ]; then
+      ( umask 077 && cp "$CLAUDE_DIR/.credentials.json" "$M/claude-credentials.orig" ) || die "could not keep $CLAUDE_DIR/.credentials.json"
+    else
+      : > "$M/claude-credentials.none"
+    fi
+    printf '%s\n' "$CLAUDE_DIR" > "$M/claude-dir"
+  fi
+  # switching stores on a paired host: the mesh's current login goes in first, byte for byte, so Sova never meets the
+  # container's own (older) login as a new one. Unpaired, the container's login stays and joins sync once paired.
+  PREV_CLAUDE_DIR=$(sed -n 's/^SOVA_SYNC_CLAUDE_DIR=//p' "$BASE/sova-mesh.env" 2>/dev/null || true)
+  npeers=$(node -e 'try{console.log((JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).peers??[]).length)}catch{console.log(0)}' "$BASE/agent/sova/peers.json")
+  if [ -n "$PREV_CLAUDE_DIR" ] && [ "$PREV_CLAUDE_DIR" != "$CLAUDE_DIR" ] && [ "$npeers" != 0 ] && [ -f "$PREV_CLAUDE_DIR/.credentials.json" ]; then
+    ( umask 077 && cp "$PREV_CLAUDE_DIR/.credentials.json" "$CLAUDE_DIR/.credentials.json.sova-tmp" ) \
+      && chmod 600 "$CLAUDE_DIR/.credentials.json.sova-tmp" && mv "$CLAUDE_DIR/.credentials.json.sova-tmp" "$CLAUDE_DIR/.credentials.json" \
+      || die "could not copy the synced Claude Code login into $CLAUDE_DIR"
+    log "Claude Code: the mesh's current login copied into $CLAUDE_DIR (the container's own is kept in the manifest)"
+  fi
+  log "Claude Code: $PREFIX/bin/claude runs in a proot container; its login syncs in $CLAUDE_DIR"
+fi
+
 # ---- the environment -------------------------------------------------------------------------------
 # Tailscale's LocalAPI is out of Termux's reach: the peer listener identifies a caller by its tailnet source IP
 # (SOVA_MESH_IDENTITY=addresses; every peers.json entry must carry its StableID and its tailnet IP).
@@ -213,8 +289,8 @@ fi
   [ -z "$DNS_NAME" ] || echo "SOVA_SELF_DNS=$DNS_NAME"
   echo "PI_CODING_AGENT_DIR=$BASE/agent"
   # Claude Code's store for login sync (the Claude Code login syncs like every other): Sova syncs it only when told
-  # where, since its agent dir is not the default one; Claude Code's own place under this HOME
-  echo "SOVA_SYNC_CLAUDE_DIR=$BASE/home/.claude"
+  # where, since its agent dir is not the default one; Claude Code's own place under this HOME, or the container's
+  echo "SOVA_SYNC_CLAUDE_DIR=$CLAUDE_DIR"
   echo "HOME=$BASE/home"
   echo "TMPDIR=$BASE/tmp"
   echo "PATH=$PREFIX/bin"

@@ -7,7 +7,9 @@
 # Removed: the runit service sova-mesh and its log, the supervise/ dirs runit created in services that were already
 # there, ~/.termux/boot/sova-mesh (and the dirs install.sh created for it), the wake lock, the packages install.sh
 # installed that weren't there before (never one that was, never one a remaining package still needs), and ~/sova-mesh
-# (app, agent dir with its sessions and logins, HOME with the synced Claude Code login in home/.claude, TMPDIR). With
+# (app, agent dir with its sessions and logins, HOME with the synced Claude Code login in home/.claude, TMPDIR). When
+# install.sh synced Claude Code's login inside a proot-distro container, the container's .credentials.json is restored
+# to what it was before (or removed if there was none); nothing else in the container is touched. With
 # --ssh-key installs it also removes the key line it added, the runit sshd it enabled, and openssh if it installed it.
 #   --keep-ssh   keep sshd (package, runit service, the key line) and the wake lock, for remote test loops.
 # Left as they were changed: apt's package lists, apt/dpkg logs, and packages that were upgraded as dependencies
@@ -43,6 +45,7 @@ ADDED=$(cat "$M/added" 2>/dev/null || true)
 PKGS=$(cat "$M/packages-added" 2>/dev/null || true)
 UPGRADED=$(cat "$M/packages-upgraded" 2>/dev/null || true)
 SSH_KEY=$(cat "$M/ssh-key" 2>/dev/null || true)
+CLAUDE_DIR=$(cat "$M/claude-dir" 2>/dev/null || true)
 has() { printf '%s\n' "$ADDED" | grep -qxF "$1"; }
 
 # ---- the service -----------------------------------------------------------------------------------
@@ -68,6 +71,19 @@ if [ -n "$pids" ]; then
   pids=$(base_nodes); [ -z "$pids" ] || kill -9 $pids 2>/dev/null || true
 fi
 rm -rf "$PREFIX/var/log/sv/sova-mesh"
+
+# ---- Claude Code's store in a proot container (Sova is stopped: nothing writes it now) -------------------------
+if [ -n "$CLAUDE_DIR" ]; then
+  if [ -f "$M/claude-credentials.orig" ]; then
+    ( umask 077 && cp "$M/claude-credentials.orig" "$CLAUDE_DIR/.credentials.json.sova-tmp" ) \
+      && chmod 600 "$CLAUDE_DIR/.credentials.json.sova-tmp" && mv "$CLAUDE_DIR/.credentials.json.sova-tmp" "$CLAUDE_DIR/.credentials.json" \
+      || die "could not restore $CLAUDE_DIR/.credentials.json (the original stays in $M/claude-credentials.orig)"
+    log "restored the container's own Claude Code login in $CLAUDE_DIR"
+  elif [ -f "$M/claude-credentials.none" ]; then
+    rm -f "$CLAUDE_DIR/.credentials.json"
+    log "removed the Claude Code login Sova synced into $CLAUDE_DIR (there was none before)"
+  fi
+fi
 
 # ---- ssh -------------------------------------------------------------------------------------------
 if [ $KEEP_SSH = 0 ]; then

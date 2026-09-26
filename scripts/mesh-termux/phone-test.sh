@@ -15,6 +15,8 @@
 #   scripts/mesh-termux/phone-test.sh diff <a> <b>         what changed between two snapshots
 #   scripts/mesh-termux/phone-test.sh dry-packages         no phone: install.sh's package block against a fake dpkg/apt;
 #                                                          a rerun must never record a package the user installed
+#   scripts/mesh-termux/phone-test.sh dry-claude           no phone: install.sh's Claude Code store block against fake
+#                                                          `claude` wrappers and proot rootfs trees, and uninstall.sh's restore
 #   scripts/mesh-termux/phone-test.sh loop [args…]         snapshot pre, install, check, uninstall --keep-ssh, snapshot post,
 #                                                          diff pre post (must be empty), install again, check
 # Env: PHONE (ssh target, required), PHONE_PORT (8022), OUT (~/.cache/sova-mesh/termux-engineer/phone),
@@ -233,6 +235,105 @@ EOS
   cmp -s "$d/added2" "$d/base/.install/packages-added" || { log "a rerun with nothing to install changed packages-added"; rc=1; }
   rm -rf "$d"
   [ $rc = 0 ] && echo "DRY PACKAGES PASS" || { echo "DRY PACKAGES FAIL"; return 1; }
+}
+
+# ---- dry: which .claude dir Sova syncs (no phone) --------------------------------------------------------------------
+# install.sh's "Claude Code's store" block (from $REV when set) against fake $PREFIX/bin/claude files and proot-distro rootfs
+# trees: native and missing claude keep ~/sova-mesh/home/.claude; a proot-distro wrapper maps to <rootfs><home>/.claude;
+# anything unclear keeps the default with a note. On a paired host the switch copies the synced login in byte for byte and
+# keeps the container's own in the manifest; a rerun changes nothing; uninstall.sh's block restores the original.
+dry_claude() {
+  local d; d=$(mktemp -d "$OUT/dryc.XXXXXX")
+  script "$HERE/install.sh" | sed -n "/^# ---- Claude Code's store/,/^# ---- the environment/p" > "$d/block.sh"
+  script "$HERE/uninstall.sh" | sed -n "/^# ---- Claude Code's store in a proot container/,/^# ---- ssh/p" > "$d/unblock.sh"
+  grep -q claude_proot_dir "$d/block.sh" && grep -q claude-credentials.orig "$d/unblock.sh" || { rm -rf "$d"; die "no Claude store block in install.sh/uninstall.sh"; }
+  cat > "$d/run.sh" <<'EOS'
+set -eu
+export LC_ALL=C
+T=$1; shift; PREFIX=$T/prefix; HOME=$T/home; BASE=$HOME/sova-mesh; M=$BASE/.install; CLAUDE_DIR=${1:-}
+mkdir -p "$M"
+log() { printf '[dry] %s\n' "$*" >&2; }
+die() { log "error: $*"; exit 1; }
+note() { grep -qxF "$1" "$M/added" 2>/dev/null || printf '%s\n' "$1" >> "$M/added"; }
+. "$(dirname "$0")/block.sh"
+echo "$CLAUDE_DIR" > "$T/chosen"
+echo "SOVA_SYNC_CLAUDE_DIR=$CLAUDE_DIR" > "$BASE/sova-mesh.env"
+EOS
+  cat > "$d/unrun.sh" <<'EOS'
+set -eu
+T=$1; PREFIX=$T/prefix; HOME=$T/home; BASE=$HOME/sova-mesh; M=$BASE/.install
+log() { printf '[dry] %s\n' "$*" >&2; }
+die() { log "error: $*"; exit 1; }
+CLAUDE_DIR=$(cat "$M/claude-dir" 2>/dev/null || true)
+. "$(dirname "$0")/unblock.sh"
+EOS
+  local rc=0 t
+  # a fresh tree: Termux prefix, a debian rootfs with users claude and root, the phone's wrapper shape
+  mk() {
+    t="$d/t$1"; rm -rf "$t"; mkdir -p "$t/prefix/bin" "$t/home/sova-mesh/home" "$t/home/sova-mesh/agent/sova"
+    local r="$t/prefix/var/lib/proot-distro/${3:-containers/debian/rootfs}"
+    [ "${3:-}" = none ] || { mkdir -p "$r/etc" "$r/home/claude/.claude" "$r/root"
+      printf 'root:x:0:0:root:/root:/bin/bash\nclaude:x:1000:1000::/home/claude:/bin/bash\n' > "$r/etc/passwd"
+      printf '{"claudeAiOauth":{"accessToken":"container-old"}}\n' > "$r/home/claude/.claude/.credentials.json"; }
+    echo '{"version":1,"self":{"id":"t"},"peers":[]}' > "$t/home/sova-mesh/agent/sova/peers.json"
+    case "$2" in
+      none) ;;
+      native) printf '#!/usr/bin/env node\n// the npm claude\n' > "$t/prefix/cli.js"; ln -s ../cli.js "$t/prefix/bin/claude" ;;
+      *) printf '%s\n' "$2" > "$t/prefix/bin/claude" ;;
+    esac
+  }
+  W='#!/bin/bash
+set -e
+rootfs="$PREFIX/var/lib/proot-distro/containers/debian/rootfs"
+exec proot-distro login debian --user claude --shared-tmp --work-dir "$PWD" -- \
+  env HOME=/home/claude TERM="${TERM:-xterm-256color}" \
+  /usr/local/bin/claude "$@"'
+  C=/prefix/var/lib/proot-distro/containers/debian/rootfs/home/claude/.claude
+  expect() { # case, wanted dir (relative to the tree, "default" = ~/sova-mesh/home/.claude), want a note (1/0)
+    local want=$2 got; [ "$want" != default ] || want=/home/sova-mesh/home/.claude
+    got=$(cat "$t/chosen" 2>/dev/null); got=${got#"$t"}
+    [ "$got" = "$want" ] || { log "$1: synced dir ${got:-none}, want $want"; rc=1; }
+    if [ "$3" = 1 ]; then grep -q 'note:' "$t/log" || { log "$1: no note"; rc=1; }
+    else ! grep -q 'note:' "$t/log" || { log "$1: unexpected note: $(cat "$t/log")"; rc=1; }; fi
+  }
+  go() { bash "$d/run.sh" "$t" "$@" 2>"$t/log"; }
+  mk 1 none;   go; expect "no claude" default 0
+  mk 2 native; go; expect "native claude (symlink)" default 0
+  mk 3 "$W";   go; expect "proot wrapper" "$C" 0
+  cmp -s "$t$C/.credentials.json" "$t/home/sova-mesh/.install/claude-credentials.orig" || { log "wrapper: the container's login not kept in the manifest"; rc=1; }
+  grep -q 'copied' "$t/log" && { log "wrapper, unpaired: copied a login"; rc=1; }
+  mk 13 "$(printf '%s\n' "$W" | sed 's|HOME=/home/claude|HOME=/opt/c|')"; mkdir -p "$t/prefix/var/lib/proot-distro/containers/debian/rootfs/opt/c"
+  go; expect "wrapper HOME= over passwd" /prefix/var/lib/proot-distro/containers/debian/rootfs/opt/c/.claude 0
+  mk 4 "$(printf '%s\n' "$W" | sed 's| HOME=/home/claude||')"; go; expect "wrapper without HOME= (passwd)" "$C" 0
+  mk 5 "$(printf '%s\n' "$W" | sed 's|login debian|login "$DISTRO"|')"; go; expect "distro not plain" default 1
+  mk 6 "$W" none; go; expect "no rootfs" default 1
+  mk 7 "$W" installed-rootfs/debian; go; expect "legacy installed-rootfs" /prefix/var/lib/proot-distro/installed-rootfs/debian/home/claude/.claude 0
+  mk 8 "$(printf '%s\nexport CLAUDE_CONFIG_DIR=/x\n' "$W")"; go; expect "CLAUDE_CONFIG_DIR" default 1
+  mk 9 "$(printf '%s\n' "$W" | sed 's|--user claude|--user root|; s| HOME=/home/claude||')"; go; expect "root, no HOME=" /prefix/var/lib/proot-distro/containers/debian/rootfs/root/.claude 0
+  mk 10 "$(printf '%s\n%s\n' "$W" 'proot-distro login ubuntu -- true')"; go; expect "two login lines" default 1
+  # the switch on a paired host: prev env = the default store holding the mesh's login
+  mk 11 "$W"; local B="$t/home/sova-mesh"
+  echo '{"version":1,"self":{"id":"t"},"peers":[{"id":"p"}]}' > "$B/agent/sova/peers.json"
+  mkdir -p "$B/home/.claude"; printf '{"claudeAiOauth":{"accessToken":"mesh-current"}}\n' > "$B/home/.claude/.credentials.json"
+  echo "SOVA_SYNC_CLAUDE_DIR=$B/home/.claude" > "$B/sova-mesh.env"
+  cp "$t$C/.credentials.json" "$d/orig"
+  go; expect "paired switch" "$C" 0
+  cmp -s "$B/home/.claude/.credentials.json" "$t$C/.credentials.json" || { log "paired switch: container login is not the mesh's, byte for byte"; rc=1; }
+  [ "$(stat -c %a "$t$C/.credentials.json")" = 600 ] || { log "paired switch: container login not 0600"; rc=1; }
+  cmp -s "$d/orig" "$B/.install/claude-credentials.orig" || { log "paired switch: manifest does not hold the container's original"; rc=1; }
+  cp -r "$B/.install" "$d/m1"; go; expect "paired rerun" "$C" 0
+  grep -q copied "$t/log" && { log "paired rerun copied again"; rc=1; }
+  diff -r "$d/m1" "$B/.install" >/dev/null || { log "paired rerun changed the manifest"; rc=1; }
+  go "$t/other/.claude" 2>/dev/null && { log "a --claude-dir unlike the manifest's was accepted"; rc=1; }
+  bash "$d/unrun.sh" "$t" 2>"$t/unlog" || { cat "$t/unlog" >&2; rc=1; }
+  cmp -s "$d/orig" "$t$C/.credentials.json" || { log "uninstall did not restore the container's original"; rc=1; }
+  # no login in the container before: uninstall removes the one Sova put there, the dir stays
+  mk 12 "$W"; rm "$t$C/.credentials.json"; go; expect "wrapper, no login yet" "$C" 0
+  [ -f "$t/home/sova-mesh/.install/claude-credentials.none" ] || { log "no-login: not recorded"; rc=1; }
+  echo '{}' > "$t$C/.credentials.json"; bash "$d/unrun.sh" "$t" 2>"$t/unlog" || rc=1
+  [ ! -e "$t$C/.credentials.json" ] && [ -d "$t$C" ] || { log "no-login: uninstall left the synced login or removed the dir"; rc=1; }
+  rm -rf "$d"
+  [ $rc = 0 ] && echo "DRY CLAUDE PASS" || { echo "DRY CLAUDE FAIL"; return 1; }
 }
 
 # ---- full port scans (L2) --------------------------------------------------------------------------------------------
@@ -477,7 +578,7 @@ unpair() {
 }
 
 cmd=${1:-}; shift || true
-case "$cmd" in tarball|diff|dry-packages|"") ;; *) need PHONE ;; esac
+case "$cmd" in tarball|diff|dry-packages|dry-claude|"") ;; *) need PHONE ;; esac
 case "$cmd" in install-http) need LAPTOP_IP ;; pair|unpair) pairing_vars ;; esac
 case "$cmd" in
   tarball) tarball ;;
@@ -502,6 +603,7 @@ case "$cmd" in
   scandiff) d="$OUT/scan"; diff <(grep -v '^SELF' "$d/${1:?}.txt") <(grep -v '^SELF' "$d/${2:?}.txt") && echo "SCAN SAME: $1 == $2 (open + hung, self-connects in the ephemeral range excluded; they stay listed in the scan files)" || { echo "SCAN DIFFERS: $1 != $2"; exit 1; } ;;
   diff) diffsnap "$@" ;;
   dry-packages) dry_packages ;;
+  dry-claude) dry_claude ;;
   loop)
     # INSTALL=ssh (tarball of HEAD/REV over ssh, default) | github (the real one-liner); UNINSTALL=keep-ssh (default) | full.
     # A full uninstall releases the Termux wake lock, which this ssh loop needs: it is taken again right after, in the same

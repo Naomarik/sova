@@ -29,6 +29,13 @@ Remove everything it added (default), or keep sshd, its key and the wake lock fo
   included, arrive by mesh sync; `sova/peers.json` is seeded once with the self id and no peers, so the mesh is off),
   `home/` (isolated HOME; `home/.claude` (0700) is Claude Code's store, synced by the mesh via `SOVA_SYNC_CLAUDE_DIR`), `tmp/` (TMPDIR; jiti's extension cache, warmed at every service start), `sova-mesh.env`,
   `bin/run-sova`, `uninstall.sh`, `.install/` (the manifest).
+- Claude Code in a proot-distro container: when `$PREFIX/bin/claude` is a short wrapper script that runs
+  `proot-distro login <distro> [--user <user>] … -- env HOME=<home> … claude`, that claude reads the container's
+  `<rootfs><home>/.claude`, so the mesh syncs the login there instead (`SOVA_SYNC_CLAUDE_DIR`; `--claude-dir` overrides,
+  as seen from Termux). The distro, user and HOME must be plain words (HOME from the container's passwd when the wrapper
+  sets none); anything else keeps `home/.claude` and prints a note. The container's own `.credentials.json` is kept in the
+  manifest. On a host that is already paired, switching copies the mesh's current login in first, byte for byte, so the
+  container's older login never reaches the mesh. Nothing else in the container is touched.
 - Listeners: main `127.0.0.1:4800` only. Peer listener `<tailnet IP>:4801`, only while peers.json lists a peer. The
   tailnet IP is read from `tun*` (`--tailnet-ip` overrides), because Termux can't reach Tailscale's LocalAPI. Nothing
   binds 0.0.0.0 or the Wi-Fi address; the installer proves it by connecting.
@@ -50,6 +57,9 @@ Remove everything it added (default), or keep sshd, its key and the wake lock fo
 
 ## What uninstall.sh leaves
 
+The Claude Code login inside a proot-distro container goes back to what it was before the install (removed if there was
+none); the rest of the container is untouched.
+
 apt's package lists and apt/dpkg logs, and any pre-existing package that was upgraded as a dependency (the manifest
 lists them; none on the test phone). Without `--keep-ssh` it releases the Termux wake lock, which Termux shares with
 anything else that took it.
@@ -67,4 +77,6 @@ one-liner (`GH_REF`, default master), otherwise a tarball of HEAD (or `REV=<sha>
 runs the default uninstall and takes the wake lock again for the ssh loop; the default keeps ssh. `install-http` runs
 `curl | sh` with both files served from the laptop's tailnet IP for the run only. `pair`/`unpair` need `PAIR_GO=1`.
 `dry-packages` (no phone) runs install.sh's package section against a fake dpkg/apt: a rerun that needs apt must never
-record a package the user installed since an earlier run (a full uninstall would purge it).
+record a package the user installed since an earlier run (a full uninstall would purge it). `dry-claude` (no phone)
+runs install.sh's Claude Code store block against fake `claude` wrappers and rootfs trees (native, proot, unclear ones,
+the paired switch and its rerun) and uninstall.sh's restore.

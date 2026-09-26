@@ -11,7 +11,8 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { after, before, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 
@@ -59,12 +60,18 @@ writeFileSync(
 }
 `,
 );
-// Automatic retries without the 2 s back-off.
-writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ retry: { baseDelayMs: 1 } }));
+// Automatic retries without the 2 s back-off. And this repo's mode extension (by its real path, so
+// its imports of sibling extensions resolve), so a mode sova_create_session sets is really applied.
+// No mode.json: the default is normal with no minor modes.
+writeFileSync(
+  join(agentDir, "settings.json"),
+  JSON.stringify({ retry: { baseDelayMs: 1 }, extensions: [resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode")] }),
+);
 mkdirSync(join(agentDir, "prompts"), { recursive: true });
 writeFileSync(join(agentDir, "prompts", "mk.md"), "---\ndescription: make a session\n---\nCreate one empty session titled $1.\n");
 
-const { acquireChat, disposeAllChats } = await import("./chat-manager");
+const { acquireChat, disposeAllChats, heldChat } = await import("./chat-manager");
+const { parseModeRequest } = await import("./mode-state");
 const { SessionManager } = await import("@earendil-works/pi-coding-agent");
 const { canonicalPath } = await import("./paths");
 const { markOwned } = await import("./write-guard");
@@ -756,7 +763,7 @@ describe("worker reports reach the Overseer's model redacted", () => {
   });
 });
 
-describe("a model or thinking the Overseer sets applies to that session only", () => {
+describe("a model, thinking level or mode the Overseer sets applies to that session only", () => {
   const defaultsFile = join(agentDir, "sova", "defaults.json");
   const bytes = () => (existsSync(defaultsFile) ? readFileSync(defaultsFile) : null);
   /** No credentials here: every model resolves, and the SDK's own switch is a no-op. */
@@ -765,6 +772,11 @@ describe("a model or thinking the Overseer sets applies to that session only", (
     inner.runtime.services.modelRuntime.getAvailable = async () => [{ provider: "ollama-cloud", id: "glm-5.3" }];
     (chat.session as unknown as { setModel(m: unknown): Promise<void> }).setModel = async () => {};
   }
+  /** Whether the stub POST /api/sessions leaves the new chat held. The real route never opens it;
+      the model tests need it held so its model switch can be stubbed. */
+  let heldOnCreate = true;
+  /** When set, the stub mode route refuses with this sentence. */
+  let modeRefuses: string | null = null;
   /** What POST /api/sessions does: a header-only session file, ours, with its summary. */
   async function newSession(): Promise<{ id: string; path: string }> {
     const sm = SessionManager.create(agentDir);
@@ -772,18 +784,36 @@ describe("a model or thinking the Overseer sets applies to that session only", (
     writeFileSync(sm.getSessionFile()!, `${JSON.stringify(header)}\n`, { flag: "wx" });
     const path = canonicalPath(sm.getSessionFile()!);
     markOwned(path);
-    switchable(await acquireChat(path));
+    if (heldOnCreate) switchable(await acquireChat(path));
     return { id: header.id, path };
   }
-  /** Only the one route sova_create_session needs; everything else is a 404 the tool notes. */
+  /** Only the routes sova_create_session needs, as server/index.ts serves them; everything else is
+      a 404 the tool notes. A session's first prompt runs on the stub model. */
   const json = (body: unknown, status: number) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   const created: string[] = [];
   before(() =>
     overseer.setOverseerDispatch(async (path, init) => {
-      if (path !== "/api/sessions" || init?.method !== "POST") return json({ error: `not in this test: ${path}` }, 404);
-      const s = await newSession();
-      created.push(s.path);
-      return json(await getSessionSummary(s.path), 201);
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      if (path === "/api/sessions" && init?.method === "POST") {
+        const s = await newSession();
+        created.push(s.path);
+        return json(await getSessionSummary(s.path), 201);
+      }
+      if (path.startsWith("/api/mode?path=") && init?.method === "POST") {
+        if (modeRefuses) return json({ error: modeRefuses }, 409);
+        const request = parseModeRequest(body);
+        if ("error" in request) return json({ error: request.error }, 400);
+        if (request.kind !== "patch") return json({ error: "not in this test: saveDefault" }, 404);
+        const chat = heldChat(decodeURIComponent(path.slice("/api/mode?path=".length)));
+        if (!chat) return json({ error: "That session isn't open on this server; open the chat first" }, 404);
+        return json(await chat.switchMode(request.patch), 200);
+      }
+      if (path === "/api/sessions/prompt" && init?.method === "POST") {
+        fakeRuns(await acquireChat(body.path));
+        const r = await overseer.promptSession(body.path, body.text);
+        return r.ok ? json({ ok: true, queued: r.queued, kind: r.kind }, 200) : json({ error: r.error }, r.status);
+      }
+      return json({ error: `not in this test: ${path}` }, 404);
     }),
   );
   after(() =>
@@ -806,6 +836,88 @@ describe("a model or thinking the Overseer sets applies to that session only", (
     assert.equal(created.length, 1);
     assert.equal(pristine(created[0]!), true, "a session no one has written to: the case that used to save");
     assert.equal(bytes(), null, "defaults.json was never written");
+  });
+
+  /** The session file's entries, in order. */
+  const entriesOf = (path: string) =>
+    readFileSync(path, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as { type: string; customType?: string; data?: Record<string, unknown>; message?: { role: string } });
+
+  test("sova_create_session with minor_modes turns them on before its first prompt, so the first turn runs in them", async () => {
+    writeOverseerSettings({ ...defaultSettings(), caps: { ...DEFAULT_CAPS, createPerTurn: 10, concurrentSessions: 10 } });
+    await userSends(await overseerChat(), "start a spec session");
+    const n = created.length;
+    const c = contexts.length;
+    heldOnCreate = false;
+    let said: string;
+    try {
+      said = await result("sova_create_session", { cwd: agentDir, minor_modes: ["spec"], prompt: "FIRST SPEC PROMPT" });
+    } finally {
+      heldOnCreate = true;
+    }
+    assert.match(said, /sent the first prompt/);
+    const path = created[n]!;
+    const chat = heldChat(path)!;
+    await until(() => contexts.slice(c).some((x) => JSON.stringify(x).includes("FIRST SPEC PROMPT")));
+    await settled(chat);
+    const first = contexts.slice(c).find((x) => JSON.stringify(x).includes("FIRST SPEC PROMPT"))!;
+    assert.match(systemOf(first), /# Minor mode: spec/, "the first turn's system prompt has the spec block");
+    const entries = entriesOf(path);
+    const marker = entries.findIndex((e) => e.type === "custom" && e.customType === "mode" && e.data?.minor === "spec" && e.data?.on === true);
+    const firstUser = entries.findIndex((e) => e.type === "message" && e.message?.role === "user");
+    assert.ok(marker > 0, "the mode extension wrote its spec-on marker");
+    assert.ok(firstUser > marker, "and it comes before the first user message");
+    assert.deepEqual(chat.modeState.minorModes, ["spec"]);
+  });
+
+  test("sova_create_session refuses an unknown minor mode before creating anything", async () => {
+    writeOverseerSettings({ ...defaultSettings(), caps: { ...DEFAULT_CAPS, createPerTurn: 10, concurrentSessions: 10 } });
+    await userSends(await overseerChat(), "start a session in a made-up mode");
+    const n = created.length;
+    await assert.rejects(result("sova_create_session", { cwd: agentDir, minor_modes: ["spec", "nonsense"], prompt: "hi" }), /Unknown minor mode: nonsense.*No session was created/);
+    await assert.rejects(result("sova_create_session", { cwd: agentDir, mode: "turbo" }), /mode must be one of.*No session was created/);
+    assert.equal(created.length, n, "POST /api/sessions was never called");
+  });
+
+  test("sova_create_session with a mode alone (no model or thinking) sets it", async () => {
+    writeOverseerSettings({ ...defaultSettings(), caps: { ...DEFAULT_CAPS, createPerTurn: 10, concurrentSessions: 10 } });
+    await userSends(await overseerChat(), "start a delegate session");
+    const n = created.length;
+    // As the real route leaves it: nothing holds the new chat, so the mode route would 404 unless
+    // the tool opens it first.
+    heldOnCreate = false;
+    let said: string;
+    try {
+      said = await result("sova_create_session", { cwd: agentDir, mode: "delegate" });
+    } finally {
+      heldOnCreate = true;
+    }
+    assert.doesNotMatch(said, /not set/);
+    const path = created[n]!;
+    assert.equal(heldChat(path)?.modeState.mode, "delegate");
+    assert.ok(
+      entriesOf(path).some((e) => e.type === "custom" && e.customType === "mode" && e.data?.mode === "delegate"),
+      "the switch is on the session's own branch",
+    );
+  });
+
+  test("sova_create_session whose mode switch fails sends no prompt, and says so", async () => {
+    writeOverseerSettings({ ...defaultSettings(), caps: { ...DEFAULT_CAPS, createPerTurn: 10, concurrentSessions: 10 } });
+    await userSends(await overseerChat(), "start a spec session");
+    const n = created.length;
+    modeRefuses = "Mode refused in this test.";
+    try {
+      await assert.rejects(
+        result("sova_create_session", { cwd: agentDir, minor_modes: ["spec"], prompt: "NEVER SENT" }),
+        /Created .*but its mode was not set \(Mode refused in this test\.\), so its first prompt was not sent/,
+      );
+    } finally {
+      modeRefuses = null;
+    }
+    assert.equal(created.length, n + 1, "the session itself was created");
+    assert.equal(pristine(created[n]!), true, "and no prompt reached it");
   });
 
   test("sova_set_session on an empty session leaves the defaults file byte-identical", async () => {

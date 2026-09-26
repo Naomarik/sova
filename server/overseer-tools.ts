@@ -20,6 +20,7 @@ import { parseWakeNudge } from "../shared/wake";
 import { whereOf } from "./attention";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
 import { logAction, readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { parseModePatch } from "./mode-state";
 import { ideaTools, type IdeaToolHost, type ToolCall } from "./overseer-idea-tools";
 import { todoTools } from "./overseer-todo-tools";
 
@@ -561,7 +562,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     return { queued: r.json?.queued === true, kind: String(r.json?.kind ?? "prompt"), ...(r.json?.compacting ? { compacting: true } : {}) };
   }
 
-  /** sova_create_session after its caps: create, title, group, model, thinking, mode, first prompt. */
+  /** sova_create_session after its caps: create, title, group, model, thinking, mode and minor
+      modes, first prompt. */
   async function createSession(p: any, hasPrompt: boolean): Promise<{ content: ReturnType<typeof text>; details: unknown }> {
     const notes: string[] = [];
     let body: Record<string, unknown>;
@@ -586,9 +588,20 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     }
     if (p.model) await host.setModel(s.path, p.model).catch((err) => notes.push(`Model not set: ${err instanceof Error ? err.message : err}`));
     if (p.thinking) await host.setThinking(s.path, p.thinking).catch((err) => notes.push(`Thinking not set: ${err instanceof Error ? err.message : err}`));
-    if (p.mode) {
-      const r = await call("POST", `/api/mode?path=${encodeURIComponent(s.path)}`, { mode: p.mode });
-      if (r.status !== 200) notes.push(`Mode not set: ${r.json?.error ?? r.status}`);
+    if (p.mode || p.minor_modes !== undefined) {
+      const body: Record<string, unknown> = {};
+      if (p.mode) body.mode = p.mode;
+      if (p.minor_modes !== undefined) body.minorModes = p.minor_modes;
+      // The mode route needs the chat open here, as in sova_set_session. A failed switch stops the
+      // create short of its prompt, so the first turn never runs in a mode it wasn't given.
+      const r = await host.open(s.path).then(
+        () => call("POST", `/api/mode?path=${encodeURIComponent(s.path)}`, body),
+        (err) => ({ status: 0, json: { error: err instanceof Error ? err.message : String(err) } }),
+      );
+      if (r.status !== 200)
+        throw new Refusal(
+          `Created ${link(s)} in ${whereOf(s)}, but its mode was not set (${r.json?.error ?? `HTTP ${r.status}`}), so ${hasPrompt ? "its first prompt was not sent" : "it is in its default mode"}. Set the mode with sova_set_session${hasPrompt ? ", then send the prompt with sova_send" : ""}.`,
+        );
     }
     if (hasPrompt) await sendPrompt(s, p.prompt);
     // Before its first reply a new session's derived title is "Untitled"; its first prompt is
@@ -781,8 +794,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       name: "sova_create_session",
       label: "Create session",
       description:
-        "Start a new session in a local folder (cwd) or on a remote target (target + remote_cwd), optionally with a model, thinking level, mode, title, group and a first prompt. Counts against the per-turn cap on new sessions (and on prompts, when it has one). The first prompt runs with no browser attached: any extension dialog it raises falls back to its default.",
-      promptSnippet: "start a session (folder or target, model, mode, title, group, first prompt)",
+        "Start a new session in a local folder (cwd) or on a remote target (target + remote_cwd), optionally with a model, thinking level, mode, minor modes, title, group and a first prompt. The mode and minor modes are set before the first prompt is sent, so its first turn already runs in them; they apply to that session only. Counts against the per-turn cap on new sessions (and on prompts, when it has one). The first prompt runs with no browser attached: any extension dialog it raises falls back to its default.",
+      promptSnippet: "start a session (folder or target, model, mode, minor modes, title, group, first prompt)",
       parameters: obj({
         cwd: str("Absolute local folder."),
         target: str("Remote target name (instead of cwd)."),
@@ -791,12 +804,19 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         model: str('Model ref "provider/model" (see sova_list_models).'),
         thinking: str("off | minimal | low | medium | high | xhigh | max"),
         mode: str("normal | delegate (see the mode extension)."),
+        minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on from the first turn, e.g. ["spec"]; [] turns them all off. Omitted: the default.' },
         title: str("A title for the list, up to 80 characters."),
         group: str("Group id to add it to."),
       }),
       execute: act("sova_create_session", async (p) => {
         const caps = host.caps();
         const hasPrompt = typeof p.prompt === "string" && p.prompt.trim().length > 0;
+        // Mode names are checked by the mode route's own parser before anything is created, so an
+        // unknown one creates no session and takes no cap.
+        if (p.mode || p.minor_modes !== undefined) {
+          const bad = parseModePatch({ ...(p.mode ? { mode: p.mode } : {}), ...(p.minor_modes !== undefined ? { minorModes: p.minor_modes } : {}) });
+          if ("error" in bad) throw new Refusal(`${bad.error.replace("minorModes", "minor_modes")}. No session was created.`);
+        }
         // Every check and reservation happens before the first await: parallel creates in one
         // message each see the others' reservations.
         if (hasPrompt) {

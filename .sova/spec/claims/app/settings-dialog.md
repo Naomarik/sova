@@ -307,6 +307,9 @@ The settings of the opt-in classifier (§app/decisions), stored in `<stateRoot>/
 and, for the key, `<stateRoot>/secrets/jev-key`. Sova-owned; the TUI never reads them. The tab
 is named **Decisions**: it names what the features do, not a provider.
 
+Every change is saved as it is made, one write at a time, the way Mesh and Summaries save — no
+Save or Discard, and closing the dialog never asks (§app.settings-dialog/decisions-autosave).
+
 In this order:
 
 - **An intro and what is sent.** The intro says Sova can ask a small classifier about sessions
@@ -323,9 +326,9 @@ In this order:
   Jev rejects is not stored; the field keeps what was typed, with the reason. **Test Decisions**
   always sits in the key row — beside Replace Key and Remove Key, beside Save Key with none stored,
   on its own with a key from `SOVA_JEV_KEY`, and with Jev off — except while Remove Key asks; it is
-  disabled while nothing can answer. It runs one canned check with no session data and says, under
+  disabled while nothing can answer and while a change is being saved. It runs one canned check with no session data and says, under
   the row, who answered and how long it took ("Answered by haiku in 4.1 s, after Jev was
-  rate-limited."), or why nothing could; with unsaved changes a hint says it tests what's saved.
+  rate-limited."), or why nothing could.
   The Jev line reflects the test at once — Working and "checked just now" when Jev answered,
   Rejected when it refused the key — and the tab then re-reads the settings so the server's key
   status stands.
@@ -335,28 +338,54 @@ In this order:
   "Suggested:" buttons that apply one only when clicked — only those this machine can run (the
   backend offers the model at that effort and the policy allows it); a backend that couldn't list
   its models keeps its suggestions, a failed check shows them all, and none show while it runs. Its hint says when it answers (Jev off,
-  or Jev can't) and that its provider bills it. The section ends with the saved chain in words
+  or Jev can't) and that its provider bills it. A model pick is saved once backend, model and
+  effort are all chosen (None and a Suggested button at once); until then it stays in the row
+  only. A newly chosen model the server refuses stays in the row with the server's reason under it
+  and "Your saved fallback model is unchanged."; it isn't sent again until changed. The server's
+  notes on a saved fallback (not verified, off by policy) show in warn under the row until the next
+  save that changes the fallback. The section ends with the saved chain in words
   ("Asks Jev, then Claude Code · haiku.", a paused provider with when it retries, or the
   unavailable sentence).
 - **Features.** **Flag sessions that need you** and **Tag sessions**, both off by default. With a
   feature on while nothing can answer, the switch stays on and its hint is replaced, in warn, by
   the unavailable sentence ("Unavailable: Jev is off and no fallback model is set. Nothing is
-  checked.", or Jev can't answer and why).
+  checked.", or Jev can't answer and why). The server's note that a feature on stays unavailable
+  shows in warn under the switches, only when the switches aren't already saying so.
 - **Never send.** A **Never send TUI sessions** switch (sessions started in the pi terminal) and
-  a Folders textarea, one full path per line (`/…`, `~` or `~/…`); a line that isn't one, or more
-  than 100 lines, holds Save with the reason (§app.decisions/privacy).
-- **Save.** Discard Changes and Save Changes. Unsaved edits are kept and never dropped silently,
-  as Delegate's are (§app.settings-dialog/modes); the key is saved on its own button, not with the
-  form. The PUT is strict: an invalid body is refused with its reason; a newly chosen fallback model
-  its backend can't run is refused; one that can't be verified or that the model policy refuses is
-  saved with a warning sentence, and so is a feature switched on while the chain has no provider
-  (it stays unavailable and sends nothing). Warnings show in a "Saved, with notes." banner
-  that clears at the next edit.
+  a Folders textarea, one full path per line (`/…`, `~` or `~/…`). Folders are saved when you
+  leave the box, and not when nothing changed; a line that isn't a full path, or more than 100
+  lines, shows the reason under the box and isn't saved until fixed (§app.decisions/privacy).
 - **Tag past sessions**, only while Tag sessions is saved on or a backfill runs: **Tag Last 30
   Days** and **Tag All Sessions**, a hint that it runs 2 at a time, skips what's already tagged
   and costs more on a fallback model; **Stop Tagging** while one runs; a progress line ("Tagged 40
   of 147 · 2 failed.", then "Tagged 147 sessions · 2 failed. New sessions are tagged as they
-  finish.", or "Stopped at … ." with the reason). Starting is held with a reason while there are
-  unsaved changes or nothing can answer (§app.decisions/backfill).
+  finish.", or "Stopped at … ." with the reason). Starting waits while a change is being saved,
+  and is held with a reason while nothing can answer (§app.decisions/backfill).
 - A footnote names where the settings are stored, and that the key is stored separately, readable
   only by the user.
+
+## §app.settings-dialog/decisions-autosave — Decisions saves as you go
+
+Settings → Decisions writes each change as it is made: every switch, the fallback choice, a
+fully chosen fallback model, and Folders when you leave the box. The PUT replaces the whole file,
+so the tab sends one write at a time: a change made while one is in flight waits, a later change
+replaces it, and only the newest write's answer is shown — an older answer never puts a control
+back. Controls stay usable while a write is in flight; Test Decisions and the Tag buttons wait for
+it, since they act on what's saved. A successful write is announced to screen readers ("Decision
+settings saved.") with no visible "Saved" text.
+
+- **Parts that can't be written yet don't hold the rest.** A fallback not fully chosen, a refused
+  fallback, and Folders with a line that isn't a full path each stay on screen; every other change
+  is still saved, carrying the saved fallback and folders in their place.
+- **A refused write.** The server refuses a newly chosen fallback model its backend can't run
+  (400): it stays in the row with the reason; the rest of that write is sent again without it. Any
+  other failure puts back what that write tried to change and shows **Couldn't save the decision
+  settings.** {reason}. "Your saved settings are unchanged."
+- **Notes.** A write that saves with warnings shows each one under what it is about — the fallback
+  row, or the Features switches; a note that names neither shows in a "Saved, with notes." banner
+  at the end of the form. The fallback's notes stay until the next write that changes the
+  fallback; the others are the server's view at each write and are replaced by the next.
+- **The dialog never holds its close for Decisions.** A fallback not fully chosen, or Folders
+  with an invalid line, is forgotten when the dialog closes; switching tabs keeps it. Folders
+  typed but not yet left are saved when the tab changes.
+- The Jev key keeps its own buttons (§app.settings-dialog/decisions); it is never part of this.

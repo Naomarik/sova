@@ -2676,7 +2676,7 @@
     "§app.settings-dialog/decisions": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "unreviewed",
       "code": [
         "src/components/DecisionSettings.tsx",
         "src/lib/decision-form.ts",
@@ -2709,7 +2709,7 @@
     "§design.copy-deck/settings-decisions": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "unreviewed"
     },
     "§chat.model-menu/saved-default": {
       "kind": "behavior",
@@ -2877,6 +2877,24 @@
         "§app.overseer/attention-digest",
         "§app.overseer/entry-button",
         "§app.overseer/identity-and-clear"
+      ]
+    },
+    "§app.settings-dialog/decisions-autosave": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/DecisionSettings.tsx",
+        "src/lib/save-queue.ts",
+        "src/lib/decision-form.ts",
+        "src/lib/decision-draft.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/save-queue.test.ts",
+        "src/lib/decision-form.test.ts"
+      ],
+      "requires": [
+        "§app.settings-dialog/decisions",
+        "§design.copy-deck/settings-decisions"
       ]
     }
   },

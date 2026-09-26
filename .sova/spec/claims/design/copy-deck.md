@@ -438,16 +438,21 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Rejected key | Jev didn't accept that key, so it wasn't saved. {server reason} |
 | Fallback model (legend · hint) | Fallback model · Answers when Jev is off or can't. Its provider bills it — a local model keeps every check on this machine. |
 | Fallback choice | None · A model · then the row labelled Fallback model · Suggested: `{model} ({backend})` buttons |
+| Refused fallback (under the row, error) | {server reason}. Your saved fallback model is unchanged. |
+| Fallback notes (under the row, warn) | {server note, without its "Fallback model:" label}. · Not verified, because {backend} couldn't list its models ({why}): Fallback model. |
 | Options failed (banner-warn) | **Couldn't check which models are offered.** Your saved choice stays, marked not verified. [Check Again] |
 | Features (legend) | Features · Flag sessions that need you — After each finished turn, checks whether it asks you something, failed, or is going in circles, and marks the row. The Overseer lists them too. · Tag sessions — Gives each session a topic and a status word you can search. |
 | Unavailable (replaces a switched-on feature's hint, warn) | Unavailable: Jev is off and no fallback model is set. Nothing is checked. · Unavailable: Jev can't answer ({reason}) and no fallback model is set. Nothing is checked until one of them can. |
+| Features note (under the switches, warn, when they don't already say it) | {server reason} The features stay unavailable and send nothing until one is. |
 | Never send (legend) | Never send · switch Never send TUI sessions — Sessions started in the pi terminal stay on this machine. · Folders — One per line. Sessions in these folders, and their subfolders, are never checked. · issue: "{line}" isn't a full path. Start it with / or ~/. · That's {n} folders. Use at most 100. |
-| Chain sentence (ends Fallback model) · Test (Jev key row) | Asks Jev, then {model}. · a paused provider: Jev (paused, retrying in {n} s) · `Test Decisions` (Asking…) · unsaved changes: Tests what's saved, not your unsaved changes. |
+| Chain sentence (ends Fallback model) · Test (Jev key row) | Asks Jev, then {model}. · a paused provider: Jev (paused, retrying in {n} s) · `Test Decisions` (Asking…) |
 | Test result | Answered by Jev in 0.4 s. · Answered by {model} in 4.1 s, after Jev {was rate-limited / rejected the key / was out of credit / was overloaded / timed out / was unreachable / was sent too much to read / gave an unusable answer / had a server error / couldn't be used}. · a model without auth: {model} had no auth · No answer. {why} |
 | Tag past sessions (legend · hint) | Tag past sessions · New sessions are tagged as they finish. This tags the ones from before, 2 at a time, and skips any already tagged. On a fallback model it costs more and takes longer. |
-| Backfill buttons | `Tag Last 30 Days` · `Tag All Sessions` · running: `Stop Tagging` · held: Save your changes first. · Nothing can answer yet, so nothing can be tagged. |
+| Backfill buttons | `Tag Last 30 Days` · `Tag All Sessions` · running: `Stop Tagging` · held: Nothing can answer yet, so nothing can be tagged. |
 | Backfill progress | counting: Finding sessions to tag… · Tagged {done} of {total}{ · n failed}. · Tagged {total} sessions{ · n failed}. New sessions are tagged as they finish. · Stopped at {done} of {total}{ · n failed}. {reason} (cancelled: no reason). · Every session from the last 30 days is tagged. · Every session is tagged. |
-| Saved with notes (banner-warn, clears at the next edit) | **Saved, with notes.** {server warnings as sentences} |
+| Saved with notes (banner-warn, notes that name neither the fallback nor the features; replaced at the next save) | **Saved, with notes.** {server warnings as sentences} |
+| Save failed (banner-error) | **Couldn't save the decision settings.** {reason}. Your saved settings are unchanged. |
+| Saved (announced only, no visible text) | Decision settings saved. |
 | Footnote | Stored in `~/.pi/agent/sova/decisions.json`. The key is stored separately, readable by you only. |
 
 ## §design.copy-deck/settings-themes — Settings · Themes (§app/settings-dialog)

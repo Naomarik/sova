@@ -25,7 +25,12 @@ once it is confirmed, never on one request answered by another host during a net
 The Mesh page shows the front door's host order, which the user can change, and the reverse-proxy
 configuration generated from it. The user can leave a host out of the front door (a host that can't
 serve it, such as a phone); a left-out host stays listed as off, every host is in until the user
-says otherwise, and the last host can't be left out. That configuration sends to the first healthy host in order,
+says otherwise, and the last host can't be left out. A host with no browser address
+(§mesh.details/browser-access) is never in the front door: it is left out of the order and the
+configuration automatically, whatever the order or the switches say, and the page lists it as "No
+browser address" with no switch to put it in (if no host has one, all are kept and the configuration
+warns). Each host in the order shows the address the front door reaches it at as a link that opens
+it in a new tab, with a copy button beside it. That configuration sends to the first healthy host in order,
 checks each host's health, gives up quickly on a host that stops answering new connections, reuses
 idle connections to a host for a short while, and waits at most 35 seconds for a host's response
 headers. When a host is addressed by a tailnet name, the configuration resolves it through the

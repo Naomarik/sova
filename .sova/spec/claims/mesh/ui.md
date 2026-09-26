@@ -12,7 +12,9 @@ card, whether or not the mesh is on. It opens `#/mesh`.
 
 `#/mesh` is a full page: this host and each peer with its status, adding and removing peers
 (editing `peers.json`), discovery hints, sync status per category, and setup instructions for a
-host with no peers.
+host with no peers. Every browser address on the page (the front door's own and each host's in the
+front door) is a link that opens it in a new tab, with a copy button beside it that confirms
+"Address copied".
 
 ## §mesh.ui/settings — Settings → Mesh
 

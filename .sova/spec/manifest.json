@@ -1901,7 +1901,8 @@
       "evidence": "verified",
       "code": [
         "src/components/MeshView.tsx",
-        "src/lib/mesh.ts"
+        "src/lib/mesh.ts",
+        "src/mesh.css"
       ]
     },
     "§mesh.ui/settings": {
@@ -1952,7 +1953,9 @@
         "server/mesh/index.ts",
         "src/components/MeshView.tsx",
         "server/mesh/front-door.test.ts",
-        "shared/mesh-local.ts"
+        "shared/mesh-local.ts",
+        "src/lib/api.ts",
+        "src/mesh.css"
       ]
     },
     "§mesh.front-door/failover": {
@@ -2827,7 +2830,8 @@
         "src/components/MeshHostMenu.tsx",
         "src/App.tsx",
         "src/components/MeshView.tsx",
-        "src/lib/mesh-details.test.ts"
+        "src/lib/mesh-details.test.ts",
+        "src/mesh.css"
       ]
     },
     "§mesh/details": {
@@ -3121,6 +3125,28 @@
         "scripts/mesh-termux/install.sh"
       ],
       "requires": []
+    },
+    "§mesh.details/browser-access": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§mesh.peers/allowlist",
+        "§mesh.peers/health",
+        "§mesh.peers/listener"
+      ],
+      "code": [
+        "server/mesh/details.ts",
+        "server/mesh/index.ts",
+        "server/mesh/peers.ts",
+        "server/mesh/front-door.ts",
+        "shared/mesh-details.ts",
+        "src/components/MeshDetails.tsx",
+        "server/mesh/details.test.ts",
+        "scripts/mesh-termux/install.sh",
+        "src/lib/api.ts",
+        "scripts/mesh-termux/README.md"
+      ]
     }
   },
   "boundary": {

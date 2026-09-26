@@ -13,8 +13,12 @@ closed; a failed refresh keeps the last answer on screen under an error. A host 
 keeps what this host knows of it (connection, front door, joined) and says it isn't answering; a
 host whose details came too late says it didn't answer in time; a host on an older build says
 "Update this host to see its details." Each other host offers Open Directly (its own https address:
-the one it serves on, else its MagicDNS name on the default serve port) or, for a phone or a host
-with no address, Open Through This Host, which narrows the session list to that host. Pairing, sync,
+the one it serves on, else its MagicDNS name on the default serve port) or, for a host with no
+browser address, Open Through This Host, which narrows the session list to that host. Each host's
+section shows its browser address as a link that opens it in a new tab, with a copy button beside
+it that confirms "Address copied", or says "No browser address"; and a Browser access switch
+(§mesh.details/browser-access), offered for this host always and for another host while it answers
+on a build that has it (otherwise the dialog says why, as for a rename). Pairing, sync,
 logins and the front door stay on `#/mesh`, which the dialog links to. The dialog closes when the
 mesh goes off.
 
@@ -27,11 +31,31 @@ versions, and whether its protocol matches this host's; Sova and machine uptime;
 (where the OS shows it), memory used and total, free disk where Sova keeps its data, battery and
 charging (on a phone only with Termux:API; without it the dialog says how to get it); session count,
 turns running and workers working; each sync category's state and last sync, and how many logins it
-holds and how many are held back by a conflict (counts only). This host adds what only it knows:
+holds and how many are held back by a conflict (counts only); whether it has a browser address
+(§mesh.details/browser-access); and whether Claude Code is found: whether the `claude` executable
+the Claude Code backend would start resolves on Sova's own PATH (a Claude Code line: "Found", or
+"Not found on Sova's PATH"). That is a lookup of the file only, never a run and never a model; it
+is cached for a minute and never makes an answer wait (before the first lookup lands the line is
+absent). This host adds what only it knows:
 round-trip time, how long the host has been up or not answering, last seen, its place in this
 host's front door or that it is left out, and when it was paired ("Paired before dates were
 recorded" for peers paired before this). Never a path, secret, login name or token. While the mesh
 is off none of this is read and the routes answer as any unknown route does.
+
+## §mesh.details/browser-access — Whether a host has a browser address
+
+A host's Browser access says whether a browser can open it at an address of its own. Off, the host
+declares it has none: that only labels it (no port opens or closes, no listener changes, and no
+address is probed). It is on unless the host's environment says `SOVA_BROWSER_ACCESS=off` (the phone
+installer writes that) or the host's own setting says otherwise; the setting, once made, wins over
+the environment. The setting is the host's own: changing it for this host (in the dialog) stores it
+here and tells every peer; changing it for another host asks that host to change its own, and it
+tells its peers. Each host records what a peer said about itself, which only that peer can change
+(the gate's identity, never a request field). A host that missed the change learns it when the two
+reach each other again, whichever side calls first, and from the peer's details whenever it reads
+them. A peer on an older build that doesn't say is taken to have no browser address if it is a
+phone. A host with none shows "No browser address" wherever its address would show, and every front
+door leaves it out (§mesh.front-door/config).
 
 ## §mesh.details/rename — A host's own name
 

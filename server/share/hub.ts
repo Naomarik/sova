@@ -1,8 +1,16 @@
 import type { WebSocket } from "ws";
 import type { BatonSession, BatonView, PersonRef, ShareServerMessage } from "../../shared/baton";
 import { batonById, linkAccess, namesOf, sessionPathOf } from "../baton";
-import { batonView, redactPhrases } from "../baton-view";
-import { profileRedactTexts, readRoster } from "../orgs";
+import { batonView, conversationVocabulary, redactPhrases, secretPhrases } from "../baton-view";
+import { profileRedactTexts, publicTerms, readOrg, readRoster } from "../orgs";
+
+const orgName = (orgId: string): string => {
+  try {
+    return readOrg(orgId).name.trim();
+  } catch {
+    return "";
+  }
+};
 import { serverRedactor } from "../overseer-redact";
 import { readActiveBranch } from "../transcript";
 
@@ -13,25 +21,35 @@ import { readActiveBranch } from "../transcript";
  * reaches it. One socket per token: a new one replaces the old (a reload must not lock anyone out).
  */
 
-/** Every string an outsider may see goes through this: the server's secret redactor, then every
-    roster person's profile phrases (no one sees anyone's profile, their own included). */
-export function outsiderRedactor(orgId: string): (text: string) => string {
-  const phrases = readRoster(orgId).flatMap(profileRedactTexts);
+/** Every string an outsider may see goes through the server's secret redactor (`redact`). What
+    the model wrote also loses the roster's profile phrases (`said`), except those that are ordinary
+    words of this org or conversation (`vocabulary`): no one sees anyone's profile or the org's
+    name, and no one's job title or decision area is blanked for it (§app.organizations/privacy). */
+export function outsiderRedactor(orgId: string, vocabulary: readonly string[] = []) {
+  const roster = readRoster(orgId);
+  // The org's name too: the model is never told it, but a goal may carry it.
+  const phrases = secretPhrases([...roster.flatMap(profileRedactTexts), orgName(orgId)], [...publicTerms(roster), ...vocabulary]).filter(Boolean);
   const secrets = serverRedactor();
-  return (text) => redactPhrases(secrets.redact(text), phrases);
+  return { redact: (text: string) => secrets.redact(text), said: (text: string) => redactPhrases(text, phrases), phrases };
 }
+
+/** The phrases each session's last view hid, for its streaming text between views. */
+const streamPhrases = new Map<string, string[]>();
 
 /** The filtered view of a baton session for `viewer` (a person id), or with no viewer (the project
     overseer's reads: every briefing). */
 export async function readView(row: BatonSession, dir: string, viewer?: PersonRef, untilOffer?: number): Promise<BatonView> {
   const branch = (await readActiveBranch(sessionPathOf(dir, row)).catch(() => [])) as Record<string, any>[];
+  const r = outsiderRedactor(row.orgId, [row.publicTitle, ...conversationVocabulary(branch)]);
+  streamPhrases.set(row.sessionId, r.phrases);
   return batonView({
     row,
     branch,
     names: namesOf(row.orgId),
     ...(viewer ? { viewer } : {}),
     ...(untilOffer !== undefined ? { untilOffer } : {}),
-    redact: outsiderRedactor(row.orgId),
+    redact: r.redact,
+    said: r.said,
   });
 }
 
@@ -109,7 +127,9 @@ export function streamShare(sessionId: string, text: string): void {
   lastStream.set(sessionId, now);
   const hit = batonById(sessionId);
   if (!hit) return;
-  const redacted = outsiderRedactor(hit.row.orgId)(text);
+  const r = outsiderRedactor(hit.row.orgId, [hit.row.publicTitle]);
+  const cached = streamPhrases.get(sessionId);
+  const redacted = cached ? redactPhrases(r.redact(text), cached) : r.said(r.redact(text));
   // An invitee who never held the offer sees the conversation only up to it: not its replies either.
   for (const w of set) if (!offerOutsider(w.token)) send(w, { type: "streaming", text: redacted });
 }

@@ -648,6 +648,12 @@ export function profileRedactTexts(p: Person): string[] {
   return [p.voice, ...p.skills].map((s) => s.trim()).filter((s) => s.length >= 16);
 }
 
+/** The roster's ordinary words: every name, role and decision area. A profile phrase that is one
+    of them (a skill "Accounts payable" beside the role "Accounts payable clerk") is no secret. */
+export function publicTerms(roster: readonly Person[]): string[] {
+  return roster.flatMap((p) => [p.name, p.role, ...p.decides]).filter(Boolean);
+}
+
 // ---- projects (the minimal registry a baton session needs; §app.organizations/projects) ------------------
 
 function readProjectsFile(dir: string): OrgProject[] {

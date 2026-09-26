@@ -31,6 +31,7 @@ after(async () => {
 const days = (s: string) => /(\d+) days/.exec(s)?.[1];
 const requests: DecisionRequest[] = [];
 let outcome = "a";
+let restates = 1;
 let failNext = false;
 const fake: DecisionProvider = {
   id: "chain",
@@ -46,7 +47,22 @@ const fake: DecisionProvider = {
     const state = req.state as any;
     const answers: Record<string, any> = {};
     for (const [qid, q] of Object.entries(req.questions)) {
-      if (q.type === "boolean") {
+      if (q.type === "choice" && qid.startsWith("pair")) {
+        // Contradiction as above; "[same]" in a statement marks a restatement; anything else is another subject.
+        const [x, y] = [...JSON.stringify(q.instructions).matchAll(/D\d+/g)].map((m) => m[0]);
+        const sx = state.decisions[x!].statement;
+        const sy = state.decisions[y!].statement;
+        const ps = [...(sx + sy).matchAll(/\[p=([\d.]+)\]/g)].map((m) => Number(m[1]));
+        const dx = days(sx);
+        const dy = days(sy);
+        const conflict = ps.length ? Math.max(...ps) : dx && dy && dx !== dy ? 0.93 : 0.08;
+        const same = /\[same\]/.test(sx + sy) ? 0.9 : 0;
+        const probabilities = { conflict, same, different: Math.max(0, 1 - conflict - same) };
+        const choice = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0]![0];
+        answers[qid] = { type: "choice", choice, probabilities, confidence: 1 };
+      } else if (qid === "restates") {
+        answers[qid] = { type: "boolean", p: restates };
+      } else if (q.type === "boolean") {
         const [x, y] = [...String(q.instructions).matchAll(/D\d+/g)].map((m) => m[0]);
         const ps = [...(state.decisions[x!].statement + state.decisions[y!].statement).matchAll(/\[p=([\d.]+)\]/g)].map((m) => Number(m[1]));
         const forced = ps.length ? Math.max(...ps) : undefined;
@@ -550,6 +566,95 @@ describe("decisions → conflicts → draft → promotion", async () => {
     const dir = join(orgs.orgDir(org.id), "projects", project.id);
     const text = readFileSync(join(dir, "decisions.json"), "utf8") + readFileSync(join(dir, "conflicts.json"), "utf8");
     assert.ok(!/token|hash/i.test(text));
+  });
+});
+
+// Restatements and confirmations: one rule said again is one record, and never a second conflict.
+describe("restatements, confirmations and resolutions that say something else", async () => {
+  const org = await orgs.createOrg({ name: "Gate", dir: join(tmp, "ws-restate") });
+  const client = join(tmp, "client-restate");
+  mkdirSync(client);
+  const project = orgs.addProject(org.id, { name: "Invoices", root: client });
+  const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "CFO" });
+  const bob = orgs.addPerson(org.id, { name: "Bob Chen", role: "IT" });
+  const owner = orgs.addPerson(org.id, { name: "Carla Diaz", role: "CEO", decides: ["terms"] });
+  const st = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Terms", goal: "g" });
+  const sb = baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Terms", goal: "g" });
+  const byId = () => new Map(reconcile.listDecisions(org.id, project.id).decisions.map((d) => [d.id, d]));
+  const settleFile = (c: { batonSessionId?: string }) => baton.sessionPathOf(orgs.orgDir(org.id), baton.batonById(c.batonSessionId!)!.row);
+  let t30 = "";
+  let b60 = "";
+  let cid = "";
+
+  test("the pair question offers 'a different subject' as an answer of its own, not a low yes", async () => {
+    t30 = `${st.sessionId}:${say(st.path, tony.id, "30 days.", { area: "terms", statement: "Suppliers are paid within 30 days.", quote: "30 days." }).markerId}`;
+    b60 = `${sb.sessionId}:${say(sb.path, bob.id, "60 days.", { area: "terms", statement: "Suppliers are paid within 60 days.", quote: "60 days." }).markerId}`;
+    const asked = requests.length;
+    const info = await reconcile.reconcileProject(org.id, project.id);
+    const c = info.conflicts.find((k) => k.state === "open")!;
+    cid = c.id;
+    assert.equal(c.routedTo, owner.id);
+    const q = Object.values(requests[asked]!.questions)[0]!;
+    assert.equal(q.type, "choice");
+    assert.deepEqual(Object.keys((q as any).options).sort(), ["conflict", "different", "same"]);
+  });
+
+  test("a resolution that says something other than the side it keeps is not folded into it", async () => {
+    const c = reconcile.listDecisions(org.id, project.id).conflicts.find((k) => k.id === cid)!;
+    outcome = c.a === t30 ? "a" : "b";
+    restates = 0;
+    try {
+      const r = `${c.batonSessionId}:${say(settleFile(c), owner.id, "Pay on Fridays.", { area: "terms", statement: "Supplier payments run on Fridays.", quote: "Pay on Fridays." }).markerId}`;
+      await reconcile.reconcileProject(org.id, project.id);
+      const d = byId();
+      assert.equal(d.get(b60)!.supersededBy, t30, "the losing side is superseded by the kept one");
+      assert.deepEqual(d.get(t30)!.folded ?? [], [], "the Friday quote is not evidence for the 30-day rule");
+      assert.equal(d.get(r)!.supersededBy, undefined, "it stays a decision of its own");
+      assert.equal(d.get(r)!.resolves, cid);
+    } finally {
+      restates = 1;
+    }
+  });
+
+  test("the losing author restating their rule opens no second conflict: the restatement is superseded with the first", async () => {
+    const conflicts = reconcile.listDecisions(org.id, project.id).conflicts.length;
+    const batons = baton.allBatons().length;
+    const again = `${sb.sessionId}:${say(sb.path, bob.id, "Like I said, 60 days.", { area: "terms", statement: "Suppliers get paid in 60 days. [same]", quote: "Like I said, 60 days." }).markerId}`;
+    const verbatim = `${sb.sessionId}:${say(sb.path, bob.id, "60 days!", { area: "terms", statement: "Suppliers are paid within 60 days.", quote: "60 days!" }).markerId}`;
+    const info = await reconcile.reconcileProject(org.id, project.id);
+    assert.equal(info.conflicts.length, conflicts, JSON.stringify(info.conflicts.map((k) => [k.a, k.b, k.state])));
+    assert.equal(baton.allBatons().length, batons, "nobody is asked again");
+    const d = byId();
+    assert.equal(d.get(again)!.supersededBy, t30);
+    assert.equal(d.get(verbatim)!.supersededBy, t30, "the same words need no model to tell");
+    assert.deepEqual(new Set(d.get(b60)!.folded), new Set([again, verbatim]));
+  });
+
+  test("a second confirmation in a settled conflict's session joins the kept record, on its own", async () => {
+    const stop = reconcile.watchResolutions(10);
+    try {
+      const { emitBatonEvent } = await import("./baton-events");
+      const c = reconcile.listDecisions(org.id, project.id).conflicts.find((k) => k.id === cid)!;
+      assert.equal(c.state, "resolved");
+      const m = say(settleFile(c), owner.id, "Confirmed, 30 days.", { area: "terms", statement: "Suppliers are paid within 30 days, confirmed. [same]", quote: "Confirmed, 30 days." }).markerId!;
+      emitBatonEvent({ type: "decision", orgId: org.id, projectId: project.id, sessionId: c.batonSessionId!, entryId: m });
+      const id = `${c.batonSessionId}:${m}`;
+      let row;
+      for (let i = 0; i < 100 && !row?.supersededBy; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+        const now = reconcile.listDecisions(org.id, project.id);
+        row = now.running ? undefined : now.decisions.find((x) => x.id === id);
+      }
+      assert.equal(row?.supersededBy, t30, "folded by the watcher, no Reconcile click");
+      const d = byId();
+      assert.ok(d.get(t30)!.folded?.includes(id));
+      assert.equal(d.get(t30)!.state, "drafted", "the kept rule stays promotable");
+      const dm = JSON.parse(readFileSync(join(client, ".sova", "spec", "drafts", "sova-decisions", "spec", "manifest.json"), "utf8"));
+      const records = Object.entries(dm.claims).filter(([k, v]: [string, any]) => k.startsWith("§requirements.terms/") && !v.supersededBy);
+      assert.equal(records.length, 2, `the 30-day rule and the Friday rule, no duplicate: ${records.map(([k]) => k)}`);
+    } finally {
+      stop();
+    }
   });
 });
 

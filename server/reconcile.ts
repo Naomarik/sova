@@ -316,19 +316,31 @@ export function setFrozen(orgId: string, projectId: string, frozen: boolean): Sp
 const clipText = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const brief = (d: DecisionRow) => ({ statement: clipText(d.statement, 500), quote: clipText(d.quote, 600), by: d.name, at: d.at.slice(0, 10) });
 
-const CONTRADICT: (x: string, y: string) => Question = (x, y) => ({
-  type: "boolean",
-  instructions: `Do decisions ${x} and ${y} contradict each other, so that a team could not follow both at once?`,
-  criteria: {
-    true: "They give incompatible answers to the same question (different values, owners, tools, rules or dates for the same thing).",
-    false: "They are about different things, one refines or adds to the other, or they agree.",
+/** One pair, classified: a contradiction needs the SAME question answered differently; the same
+    rule said twice is a restatement; anything else (another subject in the same area, a detail
+    added) is neither. Three options, so "different subject" is a real answer, not a low "yes". */
+const CLASSIFY: (x: string, y: string) => Question = (x, y) => ({
+  type: "choice",
+  instructions:
+    `Compare decisions ${x} and ${y}. First name the single question each one answers (for example "who approves invoices over what amount?" or "which weekday are payments made?"). ` +
+    `Only if both answer the SAME question can they conflict or be the same.`,
+  options: {
+    conflict: "Both answer the same question, with incompatible answers (a team could not follow both).",
+    same: "Both state the same rule (a restatement or confirmation, possibly worded differently).",
+    different: "They answer different questions, or one only adds a detail the other does not settle.",
   },
 });
 
 const PAIRS_PER_REQUEST = 12;
 
-async function askPairs(provider: DecisionProvider, areaKey: string, area: string, pairs: [DecisionRow, DecisionRow][], dedupe: string): Promise<number[]> {
-  const out: number[] = [];
+/** A pair's answer: P(contradiction) and P(same rule restated). */
+export interface PairVerdict {
+  conflict: number;
+  same: number;
+}
+
+async function askPairs(provider: DecisionProvider, areaKey: string, area: string, pairs: [DecisionRow, DecisionRow][], dedupe: string): Promise<PairVerdict[]> {
+  const out: PairVerdict[] = [];
   for (let i = 0; i < pairs.length; i += PAIRS_PER_REQUEST) {
     const chunk = pairs.slice(i, i + PAIRS_PER_REQUEST);
     const label = new Map<string, string>();
@@ -341,14 +353,36 @@ async function askPairs(provider: DecisionProvider, areaKey: string, area: strin
           decisions[l] = brief(d);
         }
     const questions: Record<string, Question> = {};
-    chunk.forEach(([x, y], j) => (questions[`pair${j + 1}`] = CONTRADICT(label.get(x.id)!, label.get(y.id)!)));
+    chunk.forEach(([x, y], j) => (questions[`pair${j + 1}`] = CLASSIFY(label.get(x.id)!, label.get(y.id)!)));
     const r = await provider.decide({ purpose: "reconcile", state: { area: area || areaKey, decisions }, questions, dedupeKey: `${dedupe}:${areaKey}:${i}` });
     chunk.forEach((_, j) => {
       const a = r.answers[`pair${j + 1}`];
-      out.push(a?.type === "boolean" ? a.p : 0);
+      out.push(a?.type === "choice" ? { conflict: a.probabilities.conflict ?? 0, same: a.probabilities.same ?? 0 } : { conflict: 0, same: 0 });
     });
   }
   return out;
+}
+
+/** The same words: one author saying one rule twice needs no model to tell. */
+const sameWords = (x: DecisionRow, y: DecisionRow) => {
+  const n = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return n(x.statement) === n(y.statement);
+};
+
+/** Where a superseded decision's line ends now (the live decision that replaced it, transitively). */
+function finalWinner(d: DecisionRow, byId: Map<string, DecisionRow>): DecisionRow | undefined {
+  let cur: DecisionRow | undefined = d;
+  for (let n = 0; n < 50 && cur?.supersededBy; n++) cur = byId.get(cur.supersededBy);
+  return cur && !cur.supersededBy ? cur : undefined;
+}
+
+/** `later` says `first` again: it joins `first`'s record (no second one) and shares its fate. */
+function fold(first: DecisionRow, later: DecisionRow, byId: Map<string, DecisionRow>): void {
+  if (first.supersededBy && finalWinner(first, byId) === later) return markChecked(first, later);
+  first.folded = [...new Set([...(first.folded ?? []), later.id])];
+  // A restatement of a superseded rule is superseded with it, by what replaced it.
+  later.supersededBy = first.supersededBy ? (finalWinner(first, byId)?.id ?? first.supersededBy) : first.id;
+  markChecked(first, later);
 }
 
 /** Same subject by wording alone: every word of one key is in the other ("payroll-export" ⊂ "payroll-export-format"). */
@@ -487,7 +521,11 @@ export interface ReconcileOptions {
   auto?: boolean;
 }
 
-function decisionOutcome(provider: DecisionProvider, c: Conflict, a: DecisionRow, b: DecisionRow, r: DecisionRow): Promise<"a" | "b" | "both" | "neither"> {
+type Outcome = "a" | "b" | "both" | "neither";
+
+/** What a resolution does, and whether it only says the kept side again (then it is folded into
+    that record; otherwise it is a decision of its own, and never evidence for the other rule). */
+function decisionOutcome(provider: DecisionProvider, c: Conflict, a: DecisionRow, b: DecisionRow, r: DecisionRow): Promise<{ outcome: Outcome; restates: boolean }> {
   return provider
     .decide({
       purpose: "reconcile",
@@ -498,22 +536,30 @@ function decisionOutcome(provider: DecisionProvider, c: Conflict, a: DecisionRow
           instructions: "A and B contradicted each other; the resolution was then decided by the person who owns the area. What does the resolution do?",
           options: { a: "It keeps A (B no longer holds).", b: "It keeps B (A no longer holds).", neither: "It replaces both with something else.", both: "It says both hold; they do not really contradict." },
         },
+        restates: {
+          type: "boolean",
+          instructions: "Does the resolution state the same rule as A or as B (the same question with the same answer), rather than something else?",
+          criteria: { true: "Its rule is A's or B's, said again.", false: "It is about something else, or adds a rule neither A nor B states." },
+        },
       },
       dedupeKey: `reconcile:${c.id}:outcome`,
     })
     .then((res) => {
       const ans = res.answers.outcome;
-      return ans?.type === "choice" && (ans.choice === "a" || ans.choice === "b" || ans.choice === "both" || ans.choice === "neither") ? ans.choice : "neither";
+      const outcome = ans?.type === "choice" && (ans.choice === "a" || ans.choice === "b" || ans.choice === "both" || ans.choice === "neither") ? ans.choice : "neither";
+      const re = res.answers.restates;
+      return { outcome, restates: re?.type === "boolean" && re.p >= 0.5 };
     });
 }
 
-function applyOutcome(c: Conflict, a: DecisionRow, b: DecisionRow, resolver: DecisionRow | null, outcome: "a" | "b" | "both" | "neither", now: Date): void {
+function applyOutcome(c: Conflict, a: DecisionRow, b: DecisionRow, resolver: DecisionRow | null, outcome: Outcome, now: Date, restates = true): void {
   const kept = outcome === "a" ? a : outcome === "b" ? b : null;
   const lost = outcome === "a" ? b : outcome === "b" ? a : null;
   if (kept && lost) {
     lost.supersededBy = kept.id;
     // A resolution that keeps a side says it again: its words join that record, not a second one.
-    if (resolver) {
+    // One that says something else stays a decision of its own.
+    if (resolver && restates) {
       resolver.supersededBy = kept.id;
       kept.folded = [...new Set([...(kept.folded ?? []), resolver.id])];
     }
@@ -568,7 +614,8 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
           .filter((x) => x.sessionId === c.batonSessionId && !x.resolves && x.state === "pending")
           .sort((x, y) => x.at.localeCompare(y.at))[0];
         if (!a || !b || !r) continue;
-        applyOutcome(c, a, b, r, await decisionOutcome(provider, c, a, b, r), now);
+        const { outcome, restates } = await decisionOutcome(provider, c, a, b, r);
+        applyOutcome(c, a, b, r, outcome, now, restates);
         resolved.push(c.id);
       }
       settleStates(store, conflicts, project.root, orgId);
@@ -582,7 +629,31 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
       const live = store.decisions.filter((x) => !x.supersededBy);
       const areas = [...new Set(live.map((x) => x.areaKey))];
       for (const areaKey of areas) {
-        const group = live.filter((x) => x.areaKey === areaKey).sort((x, y) => x.at.localeCompare(y.at));
+        // Restatements first: a pending decision that says again what its author said before
+        // shares that statement's fate (superseded with it), so a losing author repeating their
+        // rule never reopens the settled conflict.
+        const again: [DecisionRow, DecisionRow][] = [];
+        const before = store.decisions.filter((x) => x.areaKey === areaKey).sort((x, y) => x.at.localeCompare(y.at));
+        for (const y of before) {
+          if (y.supersededBy || y.state !== "pending" || y.promotedAt || y.resolves) continue;
+          for (const x of before) {
+            if (x === y || x.by !== y.by || x.at > y.at || checked(x, y) || y.supersededBy) continue;
+            if (!x.supersededBy && !sameWords(x, y)) continue; // a live pair is asked below
+            if (sameWords(x, y)) fold(x, y, byId);
+            else again.push([x, y]);
+          }
+        }
+        if (again.length) {
+          const vs = await askPairs(provider, areaKey, again[0]![0].area, again, `${dedupe}:again`);
+          run.compared += again.length;
+          again.forEach(([x, y], k) => {
+            if (y.supersededBy) return;
+            if ((vs[k]?.same ?? 0) >= CONFLICT_P) fold(x, y, byId);
+            else markChecked(x, y);
+          });
+          settleStates(store, conflicts, project.root, orgId);
+        }
+        const group = store.decisions.filter((x) => !x.supersededBy && x.areaKey === areaKey).sort((x, y) => x.at.localeCompare(y.at));
         const pairs: [DecisionRow, DecisionRow][] = [];
         for (let i = 0; i < group.length; i++)
           for (let j = i + 1; j < group.length; j++) {
@@ -601,7 +672,14 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
         const roster = readRoster(orgId);
         for (let k = 0; k < pairs.length; k++) {
           const [x, y] = pairs[k]!;
-          const p = ps[k] ?? 0;
+          if (x.supersededBy || y.supersededBy) continue;
+          const v = ps[k] ?? { conflict: 0, same: 0 };
+          const p = v.conflict;
+          // The same rule said twice (a confirmation, a second person agreeing): one record, both quotes.
+          if (v.same >= CONFLICT_P && p < CONFLICT_P && !y.promotedAt && !y.resolves) {
+            fold(x, y, byId);
+            continue;
+          }
           if (p < CONFLICT_P || openConflictOf(conflicts, x.id) || openConflictOf(conflicts, y.id)) {
             if (p < CONFLICT_P) markChecked(x, y);
             continue;
@@ -855,8 +933,9 @@ let watching: (() => void) | null = null;
 const pendingRuns = new Map<string, ReturnType<typeof setTimeout>>();
 
 /**
- * A decision recorded in an open conflict's baton session settles it without waiting for the next
- * Reconcile: run the project's reconciler shortly after (debounced; one run per project). Other
+ * A decision recorded in a conflict's baton session settles it (or, once settled, is compared and
+ * folded) without waiting for the next Reconcile: run the project's reconciler shortly after
+ * (debounced; one run per project). Other
  * decisions wait for the operator or the project overseer. Idempotent; returns the stop.
  */
 export function watchResolutions(delayMs = 2000): () => void {
@@ -865,7 +944,8 @@ export function watchResolutions(delayMs = 2000): () => void {
     if (e.type !== "decision") return;
     let open: Conflict[];
     try {
-      open = readConflicts(e.orgId, e.projectId).filter((c) => c.state === "open" && c.batonSessionId === e.sessionId);
+      // Resolved too: a second confirmation in the same session is folded without a Reconcile click.
+      open = readConflicts(e.orgId, e.projectId).filter((c) => c.batonSessionId === e.sessionId);
     } catch {
       return;
     }

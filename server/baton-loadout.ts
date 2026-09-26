@@ -16,6 +16,7 @@ import {
   type BatonLeaseData,
   type BatonOfferData,
   type BatonProposalData,
+  type BatonSession,
   type PersonRef,
 } from "../shared/baton";
 import {
@@ -36,14 +37,15 @@ import {
   touchLease,
 } from "./baton";
 import { emitBatonEvent } from "./baton-events";
+import { handoffChosen } from "./baton-guards";
 import { streamingText } from "./baton-view";
 import { runWrapup, wantsWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
 import { acquireChat, type ChatSession, RefusedError, registerSpecialLoadout } from "./chat-manager";
-import { applyChange, contactProblems, holderSteering, operatorName, OrgError, participantLine, profileRedactTexts, proposedGaps, readOrg, readRoster } from "./orgs";
+import { applyChange, contactProblems, holderSteering, operatorName, OrgError, participantLine, profileRedactTexts, proposedGaps, publicTerms, readRoster } from "./orgs";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { refreshShare, streamShare } from "./share/hub";
 import { loadDefaults } from "./web-defaults";
-import { redactPhrases } from "./baton-view";
+import { redactPhrases, secretPhrases } from "./baton-view";
 
 /**
  * The baton runtime (§app.baton/goal-and-loadout, /hand-off): what a baton session file opens with.
@@ -55,7 +57,8 @@ import { redactPhrases } from "./baton-view";
  * - The SDK tool list is exactly the three tools below: `tools` IS the allowlist, and naming no
  *   built-in leaves the model no file, shell or subagent access.
  * - The system prompt is Sova's, rendered at the start of every run from the registry and the
- *   roster as they are then; the prompt's cwd line is blanked.
+ *   roster as they are then; the prompt's cwd line is blanked, and it never names the org (an
+ *   outsider learns nothing of it beyond the public title).
  */
 
 /** The tools a baton conversation has. */
@@ -75,13 +78,11 @@ export function renderBatonPrompt(sessionId: string, template = readFileSync(PRO
   const hit = batonById(sessionId);
   if (!hit) throw new Error("Unknown baton session");
   const row = hit.row;
-  const org = readOrg(row.orgId);
   const roster = readRoster(row.orgId);
   const holder = row.holder && row.holder !== OPERATOR ? roster.find((p) => p.id === row.holder) : undefined;
   const others = roster.filter((p) => p.status === "active" && p.id !== holder?.id);
   const values: Record<string, string> = {
     OPERATOR: operatorName(),
-    ORG: org.name,
     TITLE: row.publicTitle,
     GOAL: row.goal,
     HOLDER: row.holder === OPERATOR ? `${operatorName()} (the operator)` : (holder?.name ?? "nobody (the conversation is over)"),
@@ -200,13 +201,21 @@ export function batonTools(sessionId: string, append: AppendEntry): ToolDefiniti
         },
         ["person", "question", "briefing"],
       ) as any,
-      async execute(_id, params: any) {
+      async execute(_id, params: any, _signal, _update, ctx) {
         const hit = batonById(sessionId);
         if (!hit) throw new Error("This conversation is no longer registered.");
         const row = hit.row;
         if (row.state === "done" || row.state === "closed") throw new Error(`This conversation is ${row.state}.`);
         const target = resolveTarget(readRoster(row.orgId), String(params.person ?? ""), operatorName());
         if (!target.ok) throw new Error(target.error);
+        // The person talking chooses who answers next, unless the operator's goal already did.
+        if (row.holder && row.holder !== OPERATOR && target.ref !== OPERATOR) {
+          const [holderName, targetName] = [nameOf(row.orgId, row.holder), nameOf(row.orgId, target.ref)];
+          if (!handoffChosen(ctx?.sessionManager?.getBranch() ?? [], row.holder, targetName, row.goal))
+            throw new Error(
+              `Not handed over: ${holderName} has not chosen ${targetName}. Tell ${holderName} who could answer (name and decision area, from the list) and ask them to choose; hand over once they name or confirm someone.`,
+            );
+        }
         const question = clip(params.question, QUESTION_MAX);
         const briefing = clip(params.briefing, BRIEFING_MAX);
         if (!question) throw new Error("Give the question you need them to answer.");
@@ -353,15 +362,33 @@ function batchEndsTurn(sm: { getBranch(): readonly any[] } | undefined): boolean
   return false;
 }
 
-/** Redact message text for the model's own context: secrets and the holder's profile phrases. */
-function redactContext<M>(messages: M[], phrases: readonly string[]): M[] {
+/** The text of the people's messages in a model context (the conversation's own words). */
+const userTexts = (messages: readonly unknown[]): string[] =>
+  messages.flatMap((m) => {
+    const msg = m as { role?: string; content?: unknown };
+    if (msg.role !== "user") return [];
+    return [typeof msg.content === "string" ? msg.content : Array.isArray(msg.content) ? msg.content.map((b: any) => (b?.type === "text" ? String(b.text ?? "") : "")).join("") : ""];
+  });
+
+/** The holder's profile phrases that are secrets in this model context: none that is ordinary
+    vocabulary (a name, role, decision area, the title, or what someone wrote here). */
+export function holderPhrases(row: Pick<BatonSession, "orgId" | "holder" | "publicTitle">, messages: readonly unknown[]): string[] {
+  if (!row.holder || row.holder === OPERATOR) return [];
+  const roster = readRoster(row.orgId);
+  const holder = roster.find((p) => p.id === row.holder);
+  return holder ? secretPhrases(profileRedactTexts(holder), [...publicTerms(roster), row.publicTitle, ...userTexts(messages)]) : [];
+}
+
+/** Redact message text for the model's own context: secrets everywhere, and the holder's profile
+    phrases from the model's own earlier replies. What people wrote reaches it as they wrote it. */
+export function redactContext<M>(messages: M[], phrases: readonly string[]): M[] {
   const secrets = serverRedactor();
   const redactMsgs = redactExtensionMessages(messages, secrets);
   if (!phrases.length) return redactMsgs;
   let changed = redactMsgs !== messages;
   const out = redactMsgs.map((m) => {
     const msg = m as { role?: string; content?: unknown };
-    if (msg.role !== "user" && msg.role !== "assistant") return m;
+    if (msg.role !== "assistant") return m;
     if (typeof msg.content === "string") {
       const t = redactPhrases(msg.content, phrases);
       if (t === msg.content) return m;
@@ -422,8 +449,7 @@ registerSpecialLoadout({
               });
               pi.on("context", (event) => {
                 const row = batonById(sessionId)?.row;
-                const holder = row?.holder && row.holder !== OPERATOR ? readRoster(row.orgId).find((p) => p.id === row.holder) : undefined;
-                const messages = redactContext(event.messages, holder ? profileRedactTexts(holder) : []);
+                const messages = redactContext(event.messages, row ? holderPhrases(row, event.messages) : []);
                 return messages === event.messages ? undefined : { messages };
               });
             },

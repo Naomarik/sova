@@ -1,12 +1,10 @@
-import { createSignal, untrack } from "solid-js";
 import type { DelegateOptions, OverseerCaps, OverseerQuickAction, OverseerSaveResult, OverseerSettings, OverseerSettingsInfo, WorkerChoice } from "../../shared/protocol";
 import type { BackendsInfo } from "./delegate-form";
+import { createDraftStore } from "./settings-draft";
 
 /**
  * Settings → Overseer's unsaved edits: the settings file and the standing notes, edited together
- * and saved by one button. Module state, like Delegate's and Spec's drafts: the section unmounts
- * with its tab, and switching tabs must not throw the edit away. The dialog asks before closing
- * over a dirty draft, and forgets it once closed.
+ * and saved by one button (settings-draft.ts: module state, held on close, forgotten once closed).
  *
  * The files change under an open form: the Overseer's composer writes its model and thinking, and
  * its `sova_note` appends notes. So the draft is always an edit OF a base (`saved`): a fresh read
@@ -17,12 +15,6 @@ export interface OverseerDraft {
   settings: OverseerSettings;
   notes: string;
 }
-
-const [draft, setDraft] = createSignal<OverseerDraft | null>(null);
-const [saved, setSaved] = createSignal<OverseerDraft | null>(null);
-
-export const overseerDraft = draft;
-export const overseerSaved = saved;
 
 export const cloneOverseer = (d: OverseerDraft): OverseerDraft => ({
   settings: {
@@ -122,37 +114,29 @@ export async function saveOverseerDraft(draft: OverseerDraft, base: OverseerDraf
   return { result, notes: savedNotes };
 }
 
-export function setOverseerDraft(next: OverseerDraft | null): void {
-  setDraft(next);
-}
+const store = createDraftStore<OverseerDraft, OverseerDraft>({
+  tab: "overseer",
+  label: "Overseer",
+  toDraft: cloneOverseer,
+  same: sameOverseer,
+  rebase: rebaseOverseer,
+});
+
+export const overseerDraft = store.draft;
+export const overseerSaved = store.saved;
+export const setOverseerDraft = store.setDraft;
 
 /**
  * What the server has now. The first load seeds the draft; a kept draft is rebased onto it, so
  * the user's edits stay and everything else follows the file. `replaceDraft` (after a save) makes
- * the draft the saved copy. Untracked: it runs inside the section's load effect, and a draft read
- * there would re-run that effect when the dialog closes and re-seed a stale draft from the old load.
+ * the draft the saved copy.
  */
-export function setOverseerSaved(next: OverseerDraft, { replaceDraft = false } = {}): void {
-  untrack(() => {
-    const cur = draft();
-    const base = saved();
-    if (replaceDraft || cur === null || base === null) setDraft(cloneOverseer(next));
-    else setDraft(rebaseOverseer(cur, base, next));
-    setSaved(cloneOverseer(next));
-  });
-}
-
-export const overseerDirty = (): boolean => {
-  const d = draft();
-  const s = saved();
-  return !!d && !!s && !sameOverseer(d, s);
-};
-
+export const setOverseerSaved = (next: OverseerDraft, opts?: { replaceDraft?: boolean }): void => store.setSaved(cloneOverseer(next), opts);
+export const acceptOverseerSave = (next: OverseerDraft): void => store.acceptSave(cloneOverseer(next));
+export const overseerDirty = store.dirty;
+export const discardOverseerDraft = store.discard;
 /** The dialog closed: drop the draft, so the next open reads the saved file afresh. */
-export function resetOverseerDraft(): void {
-  setDraft(null);
-  setSaved(null);
-}
+export const resetOverseerDraft = store.reset;
 
 export const CAP_KEYS = ["createPerTurn", "promptsPerTurn", "archivesPerTurn", "concurrentSessions", "explorePerTurn"] as const satisfies readonly (keyof OverseerCaps)[];
 

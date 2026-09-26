@@ -1,10 +1,11 @@
 import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
-import { delegateDirty, delegateDraft as draft, setDelegateDraft as setDraft, setDelegateSaved } from "../lib/delegate-draft";
+import { acceptDelegateSave, delegateDirty, delegateDraft as draft, discardDelegateDraft, setDelegateDraft as setDraft, setDelegateSaved } from "../lib/delegate-draft";
 import type { DelegateOptions, DelegateProfileId, DelegateSettingsInfo } from "../../shared/protocol";
 import { getDelegateOptions, getDelegateSettings, putDelegateSettings } from "../lib/api";
 import { cloneSettings, draftComplete, draftConflicts, fallbackFor, sameSettings, type DraftChoice, type Slot } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
 import { announce, home } from "../lib/ui-state";
+import { SaveBar } from "./SaveBar";
 import { Banner } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
@@ -56,7 +57,7 @@ export function DelegateSettingsSection() {
     try {
       const result = await putDelegateSettings(d);
       setInfo(result);
-      setDelegateSaved(result.settings, { replaceDraft: true });
+      acceptDelegateSave(result.settings);
       setWarnings(result.warnings);
       announce("Delegate routing saved. Chats in Delegate use it from their next message.");
     } catch (err) {
@@ -164,39 +165,29 @@ export function DelegateSettingsSection() {
           <Banner tone="warn" title="Saved, with notes." body={warnings().map(sentence).join(" ")} />
         </Show>
 
-        <div class="settings-delegate-actions">
-          <button
-            type="button"
-            class="button button-ghost"
-            disabled={saving() || atDefaults()}
-            onClick={() => {
-              setDraft(cloneSettings(loaded()!.defaults));
-              setSaveError(null);
-            }}
-          >
-            Reset to Defaults
-          </button>
-          <span class="modal-spacer" />
-          <button
-            type="button"
-            class="button button-ghost"
-            disabled={saving() || !dirty()}
-            onClick={() => {
-              setDraft(cloneSettings(loaded()!.settings));
-              setSaveError(null);
-            }}
-          >
-            Discard Changes
-          </button>
-          <button
-            type="button"
-            class="button button-primary"
-            disabled={saving() || !dirty() || !draftComplete(draft()!) || draftConflicts(draft()!).length > 0}
-            onClick={() => void save()}
-          >
-            {saving() ? "Saving…" : "Save Changes"}
-          </button>
-        </div>
+        <SaveBar
+          dirty={dirty()}
+          saving={saving()}
+          canSave={draftComplete(draft()!) && draftConflicts(draft()!).length === 0}
+          onSave={() => void save()}
+          onDiscard={() => {
+            discardDelegateDraft();
+            setSaveError(null);
+          }}
+          leading={
+            <button
+              type="button"
+              class="button button-ghost"
+              disabled={saving() || atDefaults()}
+              onClick={() => {
+                setDraft(cloneSettings(loaded()!.defaults));
+                setSaveError(null);
+              }}
+            >
+              Reset to Defaults
+            </button>
+          }
+        />
         <p class="settings-delegate-file">
           Stored in <code>{tildePath(loaded()!.file, home())}</code>, shared with pi in the terminal.
         </p>

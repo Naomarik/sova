@@ -8,10 +8,11 @@ import { PROACTIVITY, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/oversee
 import {
   CAP_KEYS,
   CAP_LABEL,
-  cloneOverseer,
   explorerOptions,
   moveQuickAction,
   newQuickAction,
+  acceptOverseerSave,
+  discardOverseerDraft,
   overseerDirty,
   overseerDraft as draft,
   overseerDraftProblem,
@@ -22,6 +23,7 @@ import {
   setOverseerSaved,
 } from "../lib/overseer-draft";
 import { announce, home } from "../lib/ui-state";
+import { SaveBar } from "./SaveBar";
 import { Banner, Icon } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
@@ -109,7 +111,7 @@ export function OverseerSettingsSection() {
       });
       setNotes(savedNotes);
       setInfo(result);
-      setOverseerSaved({ settings: result.settings, notes: savedNotes }, { replaceDraft: true });
+      acceptOverseerSave({ settings: result.settings, notes: savedNotes });
       setWarnings(result.warnings);
       announce("Overseer settings saved. Model and thinking apply when it is idle.");
     } catch (err) {
@@ -507,29 +509,16 @@ export function OverseerSettingsSection() {
                 <Banner tone="warn" title="Saved, with notes." body={warnings().map(sentence).join(" ")} />
               </Show>
 
-              <div class="settings-delegate-actions">
-                <span class="modal-spacer" />
-                <button
-                  type="button"
-                  class="button button-ghost"
-                  disabled={saving() || !overseerDirty()}
-                  onClick={() => {
-                    const was = overseerSaved();
-                    if (was) setOverseerDraft(cloneOverseer(was));
-                    setSaveError(null);
-                  }}
-                >
-                  Discard Changes
-                </button>
-                <button
-                  type="button"
-                  class="button button-primary"
-                  disabled={saving() || !overseerDirty() || !!problem()}
-                  onClick={() => void save()}
-                >
-                  {saving() ? "Saving…" : "Save Changes"}
-                </button>
-              </div>
+              <SaveBar
+                dirty={overseerDirty()}
+                saving={saving()}
+                canSave={!problem()}
+                onSave={() => void save()}
+                onDiscard={() => {
+                  discardOverseerDraft();
+                  setSaveError(null);
+                }}
+              />
               <p class="settings-delegate-file">
                 Stored in <code>{tildePath(loaded()!.file, home())}</code>.
               </p>

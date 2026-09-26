@@ -11,7 +11,7 @@ import {
   keyAfterProbe,
   newerProgress,
   offeredSuggestions,
-  commitOf,
+  decisionDraftReady,
   draftOf,
   draftProviders,
   exclusionIssue,
@@ -22,7 +22,7 @@ import {
   parseExclusions,
   placeWarnings,
   probeLine,
-  revertFailed,
+  rebaseDecision,
   sameDecision,
   settingsOf,
   unansweredIssue,
@@ -64,37 +64,32 @@ test("exclusions: blank lines, stray spaces and repeats don't make a draft dirty
   assert.equal(exclusionIssue(many(101)), "That's 101 folders. Use at most 100.");
 });
 
-test("what autosave writes: a half-made part keeps what is saved, and never holds the other fields back", () => {
+test("Save waits for a whole fallback and full-path folders; a feature nobody answers doesn't hold it", () => {
   const saved: DecisionSettings = { ...defaults, fallback: haiku, exclusions: ["~/work"] };
-  const on = (d: ReturnType<typeof draftOf>) => ({ ...d, features: { attention: true, tags: false } });
-  assert.deepEqual(commitOf(draftOf(saved), saved), saved, "nothing changed: the saved settings");
-  const halfPicked = commitOf(on({ ...draftOf(saved), fallback: fallbackOn(true) }), saved);
-  assert.deepEqual(halfPicked.fallback, haiku, "a fallback with no model yet is not sent");
-  assert.equal(halfPicked.features.attention, true, "but the switch next to it is");
-  assert.deepEqual(commitOf({ ...draftOf(saved), fallback: { ...haiku, model: "sonnet", effort: "" } }, saved).fallback, haiku, "nor one with no effort");
-  assert.deepEqual(commitOf({ ...draftOf(saved), fallback: null }, saved).fallback, null, "None is complete at once");
-  const sonnet = { ...haiku, model: "sonnet" };
-  assert.deepEqual(commitOf({ ...draftOf(saved), fallback: sonnet }, saved).fallback, sonnet);
-  assert.deepEqual(commitOf({ ...draftOf(saved), fallback: sonnet }, saved, sonnet).fallback, haiku, "a refused pick isn't sent again");
-  assert.deepEqual(commitOf({ ...draftOf(saved), fallback: { ...sonnet, effort: "high" } }, saved, sonnet).fallback, { ...sonnet, effort: "high" }, "changed, it is");
-  const badLine = commitOf(on({ ...draftOf(saved), exclusions: "~/work\nrelative" }), saved);
-  assert.deepEqual(badLine.exclusions, ["~/work"], "a line that isn't a full path: the saved folders are sent");
-  assert.equal(badLine.features.attention, true);
-  assert.deepEqual(commitOf({ ...draftOf(saved), exclusions: " ~/work \n/srv\n" }, saved).exclusions, ["~/work", "/srv"]);
-  assert.notEqual(commitOf(draftOf(saved), saved).fallback, saved.fallback, "a copy, never the saved object");
+  assert.ok(decisionDraftReady(draftOf(saved)));
+  assert.ok(!decisionDraftReady({ ...draftOf(saved), fallback: fallbackOn(true) }), "a fallback with no model yet");
+  assert.ok(!decisionDraftReady({ ...draftOf(saved), fallback: { ...haiku, model: "sonnet", effort: "" } }), "nor one with no effort");
+  assert.ok(decisionDraftReady({ ...draftOf(saved), fallback: null }), "None is complete at once");
+  assert.ok(!decisionDraftReady({ ...draftOf(saved), exclusions: "~/work\nrelative" }), "a line that isn't a full path");
+  assert.ok(decisionDraftReady({ ...draftOf(defaults), features: { attention: true, tags: true }, jev: { enabled: false } }), "unanswered is a warning, not a hold");
 });
 
-test("a failed write puts back only what it tried to change", () => {
-  const saved: DecisionSettings = { ...defaults, exclusions: ["~/work"] };
-  const draft = { ...draftOf(saved), features: { attention: true, tags: false }, fallback: fallbackOn(true), exclusions: "~/work\nrelative" };
-  const sent = commitOf(draft, saved);
-  const back = revertFailed(draft, sent, saved);
-  assert.equal(back.features.attention, false, "the switch goes back");
-  assert.deepEqual(back.fallback, fallbackOn(true), "the half-chosen fallback, never sent, stays");
-  assert.equal(back.exclusions, "~/work\nrelative", "so does the line being fixed");
-  const typed = { ...draftOf(saved), exclusions: "~/work\n/srv" };
-  assert.equal(revertFailed(typed, commitOf(typed, saved), saved).exclusions, "~/work", "sent folders go back to the saved ones");
-  assert.equal(draft.features.attention, true, "the draft passed in is untouched");
+test("rebase: a field the user left alone follows the file; a field they changed keeps theirs", () => {
+  const base: DecisionSettings = { ...defaults, exclusions: ["~/work"] };
+  const fresh: DecisionSettings = { ...defaults, jev: { enabled: false }, fallback: haiku, neverSendTui: true, exclusions: ["~/work", "/srv"] };
+  const mine = { ...draftOf(base), features: { attention: true, tags: false } };
+  const next = rebaseDecision(mine, base, fresh);
+  assert.equal(next.features.attention, true, "the user's switch stays");
+  assert.equal(next.jev.enabled, false, "untouched fields take the file's");
+  assert.deepEqual(next.fallback, haiku);
+  assert.equal(next.neverSendTui, true);
+  assert.equal(next.exclusions, "~/work\n/srv", "untouched folders take the file's");
+  const typed = rebaseDecision({ ...draftOf(base), exclusions: "~/work\n/opt", fallback: null, jev: { enabled: true } }, base, fresh);
+  assert.equal(typed.exclusions, "~/work\n/opt", "edited folders stay as typed");
+  const same = rebaseDecision({ ...draftOf(base), exclusions: "~/work\n" }, base, base);
+  assert.equal(same.exclusions, "~/work\n", "unchanged file: the text as typed stays, trailing newline and all");
+  assert.equal(mine.features.attention, true, "the draft passed in is untouched");
+  assert.ok(sameDecision(rebaseDecision(draftOf(base), base, fresh), fresh), "no edits: the rebased draft is the file");
 });
 
 test("a save's notes go under what they are about, and the fallback's stay until it is saved again", () => {

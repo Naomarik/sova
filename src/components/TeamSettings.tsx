@@ -1,10 +1,10 @@
-import { createEffect, createMemo, createResource, createSignal, For, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
 import type { DelegateOptions } from "../../shared/protocol";
 import type { TeamDefaults, TeamDefaultsInfo } from "../../shared/team-defaults";
 import { getTeamDefaults, getTeamOptions, putTeamDefaults } from "../lib/api";
 import { fallbackFor, type DraftChoice, type Slot } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
-import { setTeamDraft as setDraft, setTeamSaved, teamDirty, teamDraft as draft } from "../lib/team-draft";
+import { acceptTeamSave, discardTeamDraft, setTeamDraft as setDraft, setTeamSaved, teamDirty, teamDraft as draft } from "../lib/team-draft";
 import {
   cloneTeam,
   numberIssue,
@@ -18,6 +18,7 @@ import {
   type TeamNumberField,
 } from "../lib/team-form";
 import { announce, home } from "../lib/ui-state";
+import { SaveBar } from "./SaveBar";
 import { Banner } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
@@ -43,12 +44,10 @@ export function TeamSettingsSection() {
     return i && !i.error ? i : undefined;
   };
 
-  // Tracks the loaded info only. setTeamSaved reads the draft; tracked, the dialog's reset of the
-  // draft on close would re-run this and re-seed the draft from the file as it was, and the next
-  // open would show that stale draft over whatever the file says then.
+  // setTeamSaved is untracked (settings-draft.ts), so this tracks the loaded info only.
   createEffect(() => {
     const i = editable();
-    if (i) untrack(() => setTeamSaved(i.settings));
+    if (i) setTeamSaved(i.settings);
   });
 
   const known = (): DelegateOptions | undefined => (options.state === "ready" ? options() : undefined);
@@ -91,7 +90,7 @@ export function TeamSettingsSection() {
       body.monitor.role = body.monitor.role.trim();
       const result = await putTeamDefaults(body);
       setInfo(result);
-      setTeamSaved(result.settings, { replaceDraft: true });
+      acceptTeamSave(result.settings);
       setWarnings(result.warnings);
       announce("Team defaults saved. Teams created from now on use them.");
     } catch (err) {
@@ -329,31 +328,26 @@ export function TeamSettingsSection() {
           <Banner tone="warn" title="Saved, with notes." body={warnings().map(sentence).join(" ")} />
         </Show>
 
-        <div class="settings-delegate-actions">
-          <button
-            type="button"
-            class="button button-ghost"
-            disabled={saving() || atDefaults()}
-            onClick={() => edit((c) => Object.assign(c, withSwitches(editable()!.defaults, c)))}
-          >
-            Reset to Defaults
-          </button>
-          <span class="modal-spacer" />
-          <button
-            type="button"
-            class="button button-ghost"
-            disabled={saving() || !teamDirty()}
-            onClick={() => {
-              setDraft(cloneTeam(editable()!.settings));
-              setSaveError(null);
-            }}
-          >
-            Discard Changes
-          </button>
-          <button type="button" class="button button-primary" disabled={!canSave()} onClick={() => void save()}>
-            {saving() ? "Saving…" : "Save Changes"}
-          </button>
-        </div>
+        <SaveBar
+          dirty={teamDirty()}
+          saving={saving()}
+          canSave={canSave()}
+          onSave={() => void save()}
+          onDiscard={() => {
+            discardTeamDraft();
+            setSaveError(null);
+          }}
+          leading={
+            <button
+              type="button"
+              class="button button-ghost"
+              disabled={saving() || atDefaults()}
+              onClick={() => edit((c) => Object.assign(c, withSwitches(editable()!.defaults, c)))}
+            >
+              Reset to Defaults
+            </button>
+          }
+        />
         <p class="settings-delegate-file">
           Stored in <code>{tildePath(editable()!.file, home())}</code>, shared with pi in the terminal.
         </p>

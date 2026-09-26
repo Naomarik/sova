@@ -87,38 +87,25 @@ export const fallbackOn = (on: boolean): DraftChoice | null => (on ? { backend: 
 /** A fallback that can be written: off, or backend, model and effort all chosen. */
 export const fallbackReady = (f: DraftChoice | null): boolean => f === null || (!!f.model && !!f.effort);
 
-/**
- * What autosave writes: the draft, except the parts that can't be written yet, which keep what is
- * saved — a fallback not fully chosen, a fallback the server refused (`refused`, until it is
- * changed), and exclusions with a line that isn't a full path. So a half-made edit never holds the
- * other controls back, and is never sent half-made.
- */
-export function commitOf(d: DecisionDraft, saved: DecisionSettings, refused: DraftChoice | null = null): DecisionSettings {
-  const keepFallback = !fallbackReady(d.fallback) || (refused !== null && sameChoice(d.fallback, refused));
-  const fallback = keepFallback ? saved.fallback : (d.fallback as WorkerChoice | null);
-  return {
-    version: 1,
-    jev: { enabled: d.jev.enabled },
-    fallback: fallback ? { ...fallback } : null,
-    features: { attention: d.features.attention, tags: d.features.tags },
-    exclusions: exclusionIssue(d.exclusions) === null ? parseExclusions(d.exclusions) : [...saved.exclusions],
-    neverSendTui: d.neverSendTui,
-  };
-}
+/** A draft Save Changes can write: the fallback off or fully chosen, and every Folders line a full path. */
+export const decisionDraftReady = (d: DecisionDraft): boolean => fallbackReady(d.fallback) && exclusionIssue(d.exclusions) === null;
+
+const sameList = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 /**
- * A write failed and the saved settings stand: every field that write tried to change goes back
- * to what is saved, and the rest of the draft (a half-chosen fallback, a line being fixed) stays.
+ * `d` was an edit of `base`; the file now holds `fresh`. Every field the user left alone takes
+ * `fresh`'s value; every field they changed keeps theirs. Folders as typed stay unless the file's
+ * folders changed and the user's lines still say what `base` said. Pure.
  */
-export function revertFailed(d: DecisionDraft, sent: DecisionSettings, saved: DecisionSettings): DecisionDraft {
+export function rebaseDecision(d: DecisionDraft, base: DecisionSettings, fresh: DecisionSettings): DecisionDraft {
   const out = cloneDecision(d);
-  const back = draftOf(saved);
-  if (sent.jev.enabled !== saved.jev.enabled) out.jev = back.jev;
-  if (!sameChoice(sent.fallback, saved.fallback)) out.fallback = back.fallback;
-  if (sent.features.attention !== saved.features.attention) out.features.attention = back.features.attention;
-  if (sent.features.tags !== saved.features.tags) out.features.tags = back.features.tags;
-  if (sent.neverSendTui !== saved.neverSendTui) out.neverSendTui = back.neverSendTui;
-  if (sent.exclusions.join("\n") !== saved.exclusions.join("\n")) out.exclusions = back.exclusions;
+  const now = draftOf(fresh);
+  if (d.jev.enabled === base.jev.enabled) out.jev = now.jev;
+  if (sameChoice(d.fallback, base.fallback)) out.fallback = now.fallback;
+  if (d.features.attention === base.features.attention) out.features.attention = now.features.attention;
+  if (d.features.tags === base.features.tags) out.features.tags = now.features.tags;
+  if (d.neverSendTui === base.neverSendTui) out.neverSendTui = now.neverSendTui;
+  if (sameList(parseExclusions(d.exclusions), base.exclusions) && !sameList(fresh.exclusions, base.exclusions)) out.exclusions = now.exclusions;
   return out;
 }
 

@@ -1,17 +1,33 @@
 import { createEffect, createResource, createSignal, For, Show } from "solid-js";
-import type { DelegateOptions, SummarizerBackend, SummarizerSettings, SummarizerSettingsInfo } from "../../shared/protocol";
+import type { DelegateOptions, SummarizerBackend, SummarizerSettingsInfo } from "../../shared/protocol";
 import { getDelegateOptions, getSummarizerSettings, putSummarizerSettings } from "../lib/api";
 import { tildePath } from "../lib/format";
 import { ensureModelPolicy, type ModelPolicy } from "../lib/model-policy";
-import { BACKEND_LABELS, summarizerIssue, summarizerModelOptions, type SummarizerDraft } from "../lib/summarizer-form";
+import { saveRebased } from "../lib/settings-draft";
+import {
+  acceptSummarizerSave,
+  discardSummarizerDraft,
+  setSummarizerDraft as setDraft,
+  setSummarizerSaved,
+  summarizerDirty,
+  summarizerDraft as draft,
+  summarizerSaved,
+} from "../lib/summarizer-draft";
+import {
+  BACKEND_LABELS,
+  cloneSummarizer,
+  rebaseSummarizer,
+  sameSummarizer,
+  summarizerComplete,
+  summarizerIssue,
+  summarizerModelOptions,
+  type SummarizerDraft,
+} from "../lib/summarizer-form";
 import { announce, home } from "../lib/ui-state";
+import { SaveBar } from "./SaveBar";
 import { Banner } from "./ui";
 
 const BACKENDS: SummarizerBackend[] = ["claude-code", "pi"];
-
-const same = (a: SummarizerDraft | null, b: SummarizerDraft | null) =>
-  a === b || (!!a && !!b && a.backend === b.backend && a.model === b.model);
-const sameSettings = (a: SummarizerSettings, b: SummarizerSettings) => same(a.primary, b.primary) && same(a.fallback, b.fallback);
 
 /**
  * Settings → Summaries: which model writes the summary line under each session's title — a
@@ -19,9 +35,9 @@ const sameSettings = (a: SummarizerSettings, b: SummarizerSettings) => same(a.pr
  * with the terminal and read once per session, at its start, so a save reaches sessions started
  * afterwards, here and in the TUI. Only the chain is written; the file's other settings stay.
  *
- * Each complete pick saves at once, like the Models switches: two selects are not a routing to
- * review as a whole, the way Delegate's eight rows are. A backend change blanks its model, and a
- * blank row saves nothing until a model is picked.
+ * Picks are staged and written by Save Changes, rebased onto a fresh read of the file first, so a
+ * slot the TUI changed meanwhile and the user didn't touch keeps the TUI's pick. A backend change
+ * blanks its model, and Save waits for a model.
  */
 export function SummarizerSettingsSection() {
   const [info, { mutate: setInfo, refetch: refetchInfo }] = createResource(getSummarizerSettings);
@@ -29,7 +45,6 @@ export function SummarizerSettingsSection() {
   // The global half of the policy is what the extension obeys (lib/summarizer-form.ts). A policy
   // that can't be read warns about nothing rather than blocking the screen.
   const [policy] = createResource(() => ensureModelPolicy().catch(() => null));
-  const [draft, setDraft] = createSignal<SummarizerSettings | null>(null);
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
 
@@ -39,36 +54,41 @@ export function SummarizerSettingsSection() {
   const currentPolicy = (): ModelPolicy | null => (policy.state === "ready" ? (policy() ?? null) : null);
   const locked = () => saving() || !!loaded()?.unreadable;
 
+  // setSummarizerSaved is untracked (settings-draft.ts), so this tracks the loaded info only.
   createEffect(() => {
     const i = loaded();
-    if (i) setDraft(structuredClone(i.settings));
+    if (i) setSummarizerSaved(i.settings);
   });
 
-  const complete = (d: SummarizerSettings) =>
-    !!d.primary.model && (d.fallback === null || (!!d.fallback.model && !same(d.fallback, d.primary)));
-
-  /** Take the pick; write it when it's a whole chain that differs from what's stored. */
-  const apply = async (next: SummarizerSettings) => {
-    setDraft(next);
+  const setSlot = (slot: "primary" | "fallback", choice: SummarizerDraft | null) => {
+    const d = draft();
+    if (!d) return;
     setSaveError(null);
-    const i = loaded();
-    if (!i || !complete(next) || sameSettings(next, i.settings)) return;
+    setDraft(slot === "primary" ? { ...d, primary: choice! } : { ...d, fallback: choice });
+  };
+
+  const save = async () => {
+    const d = draft();
+    const base = summarizerSaved();
+    if (!d || !base || locked() || !summarizerDirty() || !summarizerComplete(d)) return;
     setSaving(true);
+    setSaveError(null);
     try {
-      const result = await putSummarizerSettings(next);
+      const { result } = await saveRebased(d, base, {
+        read: getSummarizerSettings,
+        settingsOf: (i) => i.settings,
+        rebase: rebaseSummarizer,
+        same: sameSummarizer,
+        write: putSummarizerSettings,
+      });
       setInfo(result);
+      acceptSummarizerSave(result.settings);
       announce("Summary model saved. Sessions you start from now on use it.");
     } catch (err) {
-      setDraft(structuredClone(i.settings));
       setSaveError((err instanceof Error ? err.message : String(err)).replace(/\.$/, ""));
     } finally {
       setSaving(false);
     }
-  };
-
-  const setSlot = (slot: "primary" | "fallback", choice: SummarizerDraft | null) => {
-    const d = draft();
-    if (d) void apply(slot === "primary" ? { ...d, primary: choice! } : { ...d, fallback: choice });
   };
 
   return (
@@ -167,19 +187,34 @@ export function SummarizerSettingsSection() {
           )}
         </Show>
 
-        <div class="settings-delegate-actions">
-          <button
-            type="button"
-            class="button button-ghost"
-            disabled={locked() || sameSettings(draft()!, loaded()!.defaults)}
-            onClick={() => void apply(structuredClone(loaded()!.defaults))}
-          >
-            Reset to Defaults
-          </button>
-          <span class="field-hint" role="status">
-            {saving() ? "Saving…" : loaded()!.usingDefaults ? "These are the built-in models." : ""}
-          </span>
-        </div>
+        <SaveBar
+          dirty={summarizerDirty()}
+          saving={saving()}
+          canSave={!loaded()!.unreadable && summarizerComplete(draft()!)}
+          onSave={() => void save()}
+          onDiscard={() => {
+            discardSummarizerDraft();
+            setSaveError(null);
+          }}
+          leading={
+            <>
+              <button
+                type="button"
+                class="button button-ghost"
+                disabled={locked() || sameSummarizer(draft()!, loaded()!.defaults)}
+                onClick={() => {
+                  setDraft(cloneSummarizer(loaded()!.defaults));
+                  setSaveError(null);
+                }}
+              >
+                Reset to Defaults
+              </button>
+              <Show when={loaded()!.usingDefaults && !summarizerDirty()}>
+                <span class="field-hint">These are the built-in models.</span>
+              </Show>
+            </>
+          }
+        />
         <p class="settings-delegate-file">
           Stored in <code>{tildePath(loaded()!.file, home())}</code>, shared with pi in the terminal. Its other settings
           stay as they are.

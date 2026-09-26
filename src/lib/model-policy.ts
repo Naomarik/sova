@@ -161,3 +161,36 @@ export const usableModels = (models: ModelInfo[], host?: string | null): ModelIn
   const p = modelPolicy(host);
   return p ? models.filter((m) => modelEnabled(p, m.ref)) : models;
 };
+
+const POLICY_LISTS = ["disabledProviders", "disabledModels", "subagentDisabledProviders", "subagentDisabledModels"] as const satisfies readonly (keyof ModelPolicy)[];
+
+export const clonePolicy = (p: ModelPolicy): ModelPolicy => ({
+  disabledProviders: [...p.disabledProviders],
+  disabledModels: [...p.disabledModels],
+  subagentDisabledProviders: [...p.subagentDisabledProviders],
+  subagentDisabledModels: [...p.subagentDisabledModels],
+});
+
+/** The same rules: each list holds the same names, whatever their order or case. */
+export function samePolicy(a: ModelPolicy, b: ModelPolicy): boolean {
+  return POLICY_LISTS.every((k) => {
+    const x = new Set(a[k].map((v) => v.toLowerCase()));
+    const y = new Set(b[k].map((v) => v.toLowerCase()));
+    return x.size === y.size && [...x].every((v) => y.has(v));
+  });
+}
+
+/**
+ * `draft` was an edit of `base`; the file now holds `fresh`. Each list takes `fresh`, minus the
+ * entries the user removed from `base` and plus the ones they added, so an entry the TUI or a
+ * peer's sync wrote meanwhile stays, and every switch the user moved keeps their position. Pure.
+ */
+export function rebasePolicy(draft: ModelPolicy, base: ModelPolicy, fresh: ModelPolicy): ModelPolicy {
+  const out = clonePolicy(fresh);
+  for (const k of POLICY_LISTS) {
+    const added = draft[k].filter((v) => !has(base[k], v));
+    const removed = base[k].filter((v) => !has(draft[k], v));
+    out[k] = [...fresh[k].filter((v) => !has(removed, v)), ...added.filter((v) => !has(fresh[k], v))];
+  }
+  return out;
+}

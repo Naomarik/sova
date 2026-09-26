@@ -8,12 +8,32 @@
 // so a model that is merely off for subagents still summarizes. Reading `denied` would warn about
 // a skip that never happens.
 
-import type { DelegateOptions, SummarizerBackend, SummarizerChoice } from "../../shared/protocol";
+import type { DelegateOptions, SummarizerBackend, SummarizerChoice, SummarizerSettings } from "../../shared/protocol";
 import { findListedModel } from "./delegate-form";
 import type { ModelPolicy } from "./model-policy";
 
 /** A choice while it's being made: the model is "" between a backend change and a pick. */
 export type SummarizerDraft = SummarizerChoice;
+
+const sameChoice = (a: SummarizerDraft | null, b: SummarizerDraft | null) =>
+  a === b || (!!a && !!b && a.backend === b.backend && a.model === b.model);
+
+export const sameSummarizer = (a: SummarizerSettings, b: SummarizerSettings): boolean =>
+  sameChoice(a.primary, b.primary) && sameChoice(a.fallback, b.fallback);
+
+export const cloneSummarizer = (s: SummarizerSettings): SummarizerSettings => structuredClone(s);
+
+/** A chain Save Changes can write: the primary picked, and a fallback off, or picked and not the primary. */
+export const summarizerComplete = (d: SummarizerSettings): boolean =>
+  !!d.primary.model && (d.fallback === null || (!!d.fallback.model && !sameChoice(d.fallback, d.primary)));
+
+/** `d` was an edit of `base`; the file now holds `fresh`. A slot the user left alone takes `fresh`'s. Pure. */
+export function rebaseSummarizer(d: SummarizerSettings, base: SummarizerSettings, fresh: SummarizerSettings): SummarizerSettings {
+  return cloneSummarizer({
+    primary: sameChoice(d.primary, base.primary) ? fresh.primary : d.primary,
+    fallback: sameChoice(d.fallback, base.fallback) ? fresh.fallback : d.fallback,
+  });
+}
 
 export const BACKEND_LABELS: Record<SummarizerBackend, string> = { "claude-code": "Claude Code", pi: "pi" };
 

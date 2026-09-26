@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createResource, createSignal, For, onMount, Show } from "solid-js";
 import type { ThemeInfo } from "../../shared/protocol";
-import { getClaudeCliStatus, getThemes, getWebSettings, putModelPolicy, putWebSettings } from "../lib/api";
+import { getClaudeCliStatus, getModelPolicy, getThemes, getWebSettings, putModelPolicy, putWebSettings } from "../lib/api";
 import { tildePath } from "../lib/format";
 import {
   cacheModelPolicy,
@@ -13,6 +13,8 @@ import {
   providerEnabled,
   providerSubagentEnabled,
   providerSubagentPreference,
+  rebasePolicy,
+  samePolicy,
   setModelEnabled,
   setModelSubagents,
   setProviderEnabled,
@@ -34,11 +36,25 @@ import {
 import { setShowSummaries, showSummaries } from "../lib/summary-line";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
 import type { SettingsTab } from "../lib/settings-nav";
-import { delegateDirty, resetDelegateDraft } from "../lib/delegate-draft";
-import { resetSpecDraft, specDirty } from "../lib/spec-draft";
-import { resetTeamDraft, teamDirty } from "../lib/team-draft";
-import { overseerDirty, resetOverseerDraft } from "../lib/overseer-draft";
-import { resetDecisionDraft } from "../lib/decision-draft";
+import {
+  acceptClaudeCodeSave,
+  claudeCodeDirty,
+  claudeCodeDraft,
+  claudeCodeSaved,
+  discardClaudeCodeDraft,
+  setClaudeCodeDraft,
+  setClaudeCodeSaved,
+} from "../lib/experimental-draft";
+import {
+  acceptPolicySave,
+  discardPolicyDraft,
+  policyDirty,
+  policyDraft,
+  policySaved,
+  setPolicyDraft,
+  setPolicySaved,
+} from "../lib/model-policy-draft";
+import { dirtyForms, formNames, resetAllDrafts, saveRebased } from "../lib/settings-draft";
 import { effectiveStack } from "../lib/typography";
 import { announce, home } from "../lib/ui-state";
 import { DecisionSettingsSection } from "./DecisionSettings";
@@ -48,8 +64,10 @@ import { SpecSettingsSection } from "./SpecSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { TeamSettingsSection } from "./TeamSettings";
+import { SaveBar } from "./SaveBar";
 import { TypographySection } from "./TypographySection";
 import { Banner, Icon, trapFocus } from "./ui";
+import { sentence } from "./WorkerSlotRow";
 
 /** The tab rail. Ten screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
@@ -78,85 +96,25 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
   // another) is also the one `onMount` focuses: the two have to agree, or the dialog opens with
   // focus on a tab that isn't the selected one.
   const [tab, setTab] = createSignal<TabId>(props.initialTab ?? "general");
-  const [webSettings, { refetch: refetchSettings }] = createResource(() => getWebSettings());
-  /** The switch as the user has set it: the stored value, then optimistic toggles. */
-  const [claudeCodeOn, setClaudeCodeOn] = createSignal(false);
-  const [settingsError, setSettingsError] = createSignal<string | null>(null);
-  const [savingSettings, setSavingSettings] = createSignal(false);
-  createEffect(() => {
-    const s = webSettings();
-    if (s) setClaudeCodeOn(s.experimental.claudeCodeProvider);
-  });
-  // Only probed when the tab is open: it spawns `claude --version` on the server.
-  const [cliStatus, { refetch: refetchCliStatus }] = createResource(
-    () => tab() === "experimental",
-    (open) => (open ? getClaudeCliStatus() : undefined),
-  );
 
-  /** One line of truth about the CLI, so the switch is never the only thing the user has to go on. */
-  const statusLine = () => {
-    if (cliStatus.loading) return "Checking for the Claude Code CLI…";
-    const status = cliStatus();
-    if (!status) return "";
-    if (status.error) return `Claude Code CLI: ${status.error}`;
-    const count = status.models ?? 0;
-    if (!claudeCodeOn()) return `Claude Code CLI ${status.version} found. Switch on to add its models.`;
-    return count > 0
-      ? `Claude Code CLI ${status.version} · ${count} ${count === 1 ? "model" : "models"} in the picker.`
-      : `Claude Code CLI ${status.version} found, but no models are registered yet — start a session, or restart the server.`;
-  };
-
-  /** Save the switch; put it back and say so if the write fails. */
-  const toggleClaudeCode = async () => {
-    const before = claudeCodeOn();
-    setClaudeCodeOn(!before);
-    setSettingsError(null);
-    setSavingSettings(true);
-    try {
-      await putWebSettings({ experimental: { claudeCodeProvider: !before } });
-      void refetchSettings();
-      // Turning it on registers the provider server-side, so the count in the status line is
-      // already out of date by the time the PUT returns. Without this the line keeps saying
-      // "no models are registered yet — start a session, or restart the server" while the
-      // picker has them, which is worse than no status line at all.
-      void refetchCliStatus();
-    } catch (err) {
-      setClaudeCodeOn(before);
-      setSettingsError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSavingSettings(false);
-    }
-  };
-
-  /** Close was asked for over unsaved edits (Delegate, Spec, Teams or Overseer): the foot asks what to do with them. Decisions saves as it goes. */
+  /** Close was asked for over unsaved edits on a Save-gated form: the foot asks what to do with them. */
   const [closeHeld, setCloseHeld] = createSignal(false);
-  const modesDirty = () => delegateDirty() || specDirty() || teamDirty() || overseerDirty();
-  /** Which unsaved screens the hold names: "Delegate", "Spec", "Teams", "Overseer", joined. */
-  const unsavedNames = () => {
-    const names = [delegateDirty() && "Delegate", specDirty() && "Spec", teamDirty() && "Teams", overseerDirty() && "Overseer"].filter(Boolean) as string[];
-    return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
-  };
-  const resetModesDrafts = () => {
-    resetDelegateDraft();
-    resetSpecDraft();
-    resetTeamDraft();
-    resetOverseerDraft();
-    resetDecisionDraft();
-  };
+  /** Every gated form holding unsaved edits, in rail order — the registry the drafts join (settings-draft.ts). */
+  const dirty = createMemo(() => dirtyForms());
   /** Every way out (Close, Esc, the scrim) comes through here, so none of them drops a draft silently. */
   const requestClose = () => {
-    if (modesDirty()) {
-      // To the screen that holds the edit, unless the one showing already does.
-      const here = tab() === "overseer" ? overseerDirty() : tab() === "modes" ? delegateDirty() || specDirty() : tab() === "teams" ? teamDirty() : false;
-      if (!here) setTab(delegateDirty() || specDirty() ? "modes" : teamDirty() ? "teams" : "overseer");
+    const held = dirty();
+    if (held.length > 0) {
+      // To the first screen that holds an edit, unless the one showing already does.
+      if (!held.some((f) => f.tab === tab())) setTab(held[0]!.tab as TabId);
       setCloseHeld(true);
       return;
     }
-    resetModesDrafts();
+    resetAllDrafts();
     props.onClose();
   };
   const discardAndClose = () => {
-    resetModesDrafts();
+    resetAllDrafts();
     props.onClose();
   };
 
@@ -273,48 +231,15 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
               and CLI-status resources are read when the tab opens. */}
           <Show when={tab() === "experimental"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-experimental" aria-labelledby="settings-tab-experimental">
-              <p class="settings-intro">
-                Unfinished features. They can change or disappear, and they apply to sessions you start
-                after switching them on — chats already open keep the setup they began with.
-              </p>
-              <Show when={settingsError()}>
-                {(message) => (
-                  <Banner
-                    tone="error"
-                    title="Couldn't save the change"
-                    body={`The setting on the server didn't update, so the previous choice stands. ${message()}`}
-                  />
-                )}
-              </Show>
-              <ul class="settings-list">
-                <li>
-                  <label class="toggle toggle-switch settings-provider">
-                    <input
-                      type="checkbox"
-                      checked={claudeCodeOn()}
-                      disabled={savingSettings() || webSettings.loading}
-                      onChange={() => void toggleClaudeCode()}
-                    />
-                    <span class="settings-provider-main">
-                      <span class="settings-provider-name">Claude Code as first-class models</span>
-                      <span class="settings-provider-meta">
-                        Runs on your Claude subscription through the Claude Code CLI. pi executes every
-                        tool, so its permissions and your mode still apply. Applies to new sessions.
-                      </span>
-                    </span>
-                    <span class="toggle-box" />
-                  </label>
-                  <p class="settings-intro">{statusLine()}</p>
-                </li>
-              </ul>
+              <ExperimentalPanel />
             </div>
           </Show>
         </div>
-        <Show when={closeHeld() && modesDirty()}>
+        <Show when={closeHeld() && dirty().length > 0}>
           <div class="settings-close-held">
             <Banner
               tone="warn"
-              title={`Your ${unsavedNames()} changes aren't saved.`}
+              title={`Your ${formNames(dirty())} changes aren't saved.`}
               body="Save them on this screen, or discard them and close."
               action={
                 <span class="settings-close-held-actions">
@@ -336,6 +261,109 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           </button>
         </div>
       </div>
+    </>
+  );
+}
+
+/**
+ * Experimental: unfinished features, one switch today. Staged like every server-backed form and
+ * written by Save Changes. The settings and CLI-status resources are read when the tab opens (the
+ * panel is mounted only while its tab is): the status probe spawns `claude --version` on the server.
+ */
+function ExperimentalPanel() {
+  const [webSettings, { mutate: setWebSettings }] = createResource(() => getWebSettings());
+  const [cliStatus, { refetch: refetchCliStatus }] = createResource(() => getClaudeCliStatus());
+  const [saveError, setSaveError] = createSignal<string | null>(null);
+  const [saving, setSaving] = createSignal(false);
+  // setClaudeCodeSaved is untracked (settings-draft.ts), so this tracks the loaded settings only.
+  createEffect(() => {
+    const s = webSettings.error ? undefined : webSettings();
+    if (s) setClaudeCodeSaved(s.experimental.claudeCodeProvider);
+  });
+
+  /** One line of truth about the CLI, so the switch is never the only thing the user has to go on.
+      It reads the SAVED setting: an unsaved switch changes nothing on the server yet. */
+  const statusLine = () => {
+    if (cliStatus.loading) return "Checking for the Claude Code CLI…";
+    const status = cliStatus.error ? undefined : cliStatus();
+    if (!status) return "";
+    if (status.error) return `Claude Code CLI: ${status.error}`;
+    const count = status.models ?? 0;
+    if (!claudeCodeSaved()) return `Claude Code CLI ${status.version} found. Switch on to add its models.`;
+    return count > 0
+      ? `Claude Code CLI ${status.version} · ${count} ${count === 1 ? "model" : "models"} in the picker.`
+      : `Claude Code CLI ${status.version} found, but no models are registered yet — start a session, or restart the server.`;
+  };
+
+  const save = async () => {
+    const on = claudeCodeDraft();
+    if (on === null || saving() || !claudeCodeDirty()) return;
+    setSaveError(null);
+    setSaving(true);
+    try {
+      const next = await putWebSettings({ experimental: { claudeCodeProvider: on } });
+      setWebSettings(next);
+      acceptClaudeCodeSave(next.experimental.claudeCodeProvider);
+      announce(`Claude Code models ${on ? "on" : "off"} for new sessions.`);
+      // Turning it on registers the provider server-side, so the count in the status line is
+      // already out of date by the time the PUT returns. Without this the line keeps saying
+      // "no models are registered yet — start a session, or restart the server" while the
+      // picker has them, which is worse than no status line at all.
+      void refetchCliStatus();
+    } catch (err) {
+      setSaveError((err instanceof Error ? err.message : String(err)).replace(/\.$/, ""));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <p class="settings-intro">
+        Unfinished features. They can change or disappear, and they apply to sessions you start
+        after switching them on — chats already open keep the setup they began with.
+      </p>
+      <ul class="settings-list">
+        <li>
+          <label class="toggle toggle-switch settings-provider">
+            <input
+              type="checkbox"
+              checked={claudeCodeDraft() ?? false}
+              disabled={saving() || claudeCodeDraft() === null}
+              onChange={(e) => {
+                setSaveError(null);
+                setClaudeCodeDraft(e.currentTarget.checked);
+              }}
+            />
+            <span class="settings-provider-main">
+              <span class="settings-provider-name">Claude Code as first-class models</span>
+              <span class="settings-provider-meta">
+                Runs on your Claude subscription through the Claude Code CLI. pi executes every
+                tool, so its permissions and your mode still apply. Applies to new sessions.
+              </span>
+            </span>
+            <span class="toggle-box" />
+          </label>
+          <p class="settings-intro">{statusLine()}</p>
+        </li>
+      </ul>
+      <Show when={webSettings.error}>
+        <Banner tone="error" title="Couldn't read the experimental settings." body="Nothing was changed." />
+      </Show>
+      <Show when={claudeCodeDraft() !== null}>
+        <Show when={saveError()}>
+          {(message) => <Banner tone="error" title="Couldn't save the change." body={`${sentence(message())} Your saved setting is unchanged.`} />}
+        </Show>
+        <SaveBar
+          dirty={claudeCodeDirty()}
+          saving={saving()}
+          onSave={() => void save()}
+          onDiscard={() => {
+            discardClaudeCodeDraft();
+            setSaveError(null);
+          }}
+        />
+      </Show>
     </>
   );
 }
@@ -460,37 +488,53 @@ function GeneralPanel() {
 function ModelsPanel() {
   const [models] = createResource(() => ensureModels());
   const [source, { refetch }] = createResource(() => loadModelPolicy());
-  /** The policy as the user has set it: `source` on load, then optimistic switch moves. */
-  const [policy, setPolicy] = createSignal<ModelPolicy | null>(null);
+  /** The policy as the user has set it: the saved policy, then every staged switch move. */
+  const policy = policyDraft;
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const [saving, setSaving] = createSignal(false);
   const [query, setQuery] = createSignal("");
   const [opened, setOpened] = createSignal<string[]>([]);
+  // setPolicySaved is untracked (settings-draft.ts), so this tracks the loaded policy only. A kept
+  // draft is rebased onto each read: the switches the user moved stay, the rest follow the file.
   createEffect(() => {
-    const p = source();
-    if (p) setPolicy(p);
+    const p = source.error ? undefined : source();
+    if (p) setPolicySaved(p);
   });
 
   const busy = () => saving() || source.loading;
 
-  /** One switch moved: write the whole policy, revert and say so if the write fails. */
-  const apply = async (next: ModelPolicy) => {
-    const before = policy();
-    setPolicy(next);
+  /** A switch moved: staged, written by Save Changes. */
+  const edit = (change: (p: ModelPolicy) => ModelPolicy) => {
+    const current = policy();
+    if (!current || busy()) return;
     setSaveError(null);
+    setPolicyDraft(change(current));
+  };
+
+  /** One write for every staged switch: rebased onto a fresh read, so an entry the TUI or a peer
+      wrote meanwhile stays. The picker follows the saved policy at once. */
+  const save = async () => {
+    const d = policy();
+    const base = policySaved();
+    if (!d || !base || busy() || !policyDirty()) return;
     setSaving(true);
+    setSaveError(null);
     try {
-      cacheModelPolicy(await putModelPolicy(next)); // the picker follows the same rule, at once
+      const { result } = await saveRebased(d, base, {
+        read: () => getModelPolicy(),
+        settingsOf: (p) => p,
+        rebase: rebasePolicy,
+        same: samePolicy,
+        write: putModelPolicy,
+      });
+      cacheModelPolicy(result);
+      acceptPolicySave(result);
+      announce("Model policy saved. It applies from the next message and spawn, here and in the terminal.");
     } catch (err) {
-      if (before) setPolicy(before);
-      setSaveError(err instanceof Error ? err.message : String(err));
+      setSaveError((err instanceof Error ? err.message : String(err)).replace(/\.$/, ""));
     } finally {
       setSaving(false);
     }
-  };
-  const edit = (change: (p: ModelPolicy) => ModelPolicy) => {
-    const current = policy();
-    if (current && !busy()) void apply(change(current));
   };
 
   /** Model rows grouped by provider, name-sorted — the same order the model picker lists — plus
@@ -538,11 +582,6 @@ function ModelsPanel() {
         What may be used, here and in the terminal, and what subagents may be given. A model that is off
         is refused everywhere — a session already on it asks you to switch before its next message.
       </p>
-      <Show when={saveError()}>
-        {(message) => (
-          <Banner tone="error" title="Couldn't save the change" body={`The policy on the server didn't change, so the previous choice stands. ${message()}`} />
-        )}
-      </Show>
       <Show
         when={!source.error}
         fallback={
@@ -702,6 +741,18 @@ function ModelsPanel() {
                     {shown()} of {total()} {total() === 1 ? "model" : "models"} match.
                   </Show>
                 </p>
+                <Show when={saveError()}>
+                  {(message) => <Banner tone="error" title="Couldn't save the model policy." body={`${sentence(message())} Your saved policy is unchanged.`} />}
+                </Show>
+                <SaveBar
+                  dirty={policyDirty()}
+                  saving={saving()}
+                  onSave={() => void save()}
+                  onDiscard={() => {
+                    discardPolicyDraft();
+                    setSaveError(null);
+                  }}
+                />
               </>
             );
           }}

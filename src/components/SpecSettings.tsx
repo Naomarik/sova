@@ -4,9 +4,10 @@ import { getSpecOptions, getSpecSettings, putSpecSettings } from "../lib/api";
 import { fallbackFor, type DraftChoice, type Slot } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
 import { clearSettingsSection, settingsSection } from "../lib/settings-nav";
-import { setSpecDraft as setDraft, setSpecSaved, specDirty, specDraft as draft } from "../lib/spec-draft";
+import { acceptSpecSave, discardSpecDraft, setSpecDraft as setDraft, setSpecSaved, specDirty, specDraft as draft } from "../lib/spec-draft";
 import { cloneSpec, specDraftComplete, specDraftConflict, writerFor } from "../lib/spec-form";
 import { announce, home } from "../lib/ui-state";
+import { SaveBar } from "./SaveBar";
 import { Banner } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
@@ -59,7 +60,7 @@ export function SpecSettingsSection() {
     try {
       const result = await putSpecSettings(cloneSpec(d) as SpecSettingsInfo["settings"]);
       setInfo(result);
-      setSpecSaved(result.settings, { replaceDraft: true });
+      acceptSpecSave(result.settings);
       setWarnings(result.warnings);
       announce(
         result.settings.writer
@@ -169,28 +170,16 @@ export function SpecSettingsSection() {
           <Banner tone="warn" title="Saved, with notes." body={warnings().map(sentence).join(" ")} />
         </Show>
 
-        <div class="settings-delegate-actions">
-          <span class="modal-spacer" />
-          <button
-            type="button"
-            class="button button-ghost"
-            disabled={saving() || !specDirty()}
-            onClick={() => {
-              setDraft(cloneSpec(loaded()!.settings));
-              setSaveError(null);
-            }}
-          >
-            Discard Changes
-          </button>
-          <button
-            type="button"
-            class="button button-primary"
-            disabled={saving() || !specDirty() || !specDraftComplete(draft()!) || specDraftConflict(draft()!)}
-            onClick={() => void save()}
-          >
-            {saving() ? "Saving…" : "Save Changes"}
-          </button>
-        </div>
+        <SaveBar
+          dirty={specDirty()}
+          saving={saving()}
+          canSave={specDraftComplete(draft()!) && !specDraftConflict(draft()!)}
+          onSave={() => void save()}
+          onDiscard={() => {
+            discardSpecDraft();
+            setSaveError(null);
+          }}
+        />
         <p class="settings-delegate-file">
           Stored in <code>{tildePath(loaded()!.file, home())}</code>, shared with pi in the terminal.
         </p>

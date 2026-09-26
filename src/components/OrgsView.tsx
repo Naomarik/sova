@@ -24,6 +24,7 @@ import { duration, relativeTime, stampTime } from "../lib/format";
 import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
 import { proposedAreasLine } from "../lib/baton-strip";
 import { groupChanges, revertible, valueText } from "../lib/profile-changes";
+import { orgPageRoute } from "../lib/org-page-route";
 import { orgHref, orgTabHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
 import { orgTabsOf } from "../lib/org-tabs";
 import { toast } from "../lib/ui-state";
@@ -55,6 +56,8 @@ const STATE_WORDS: Record<string, { word: string; tone: "info" | "warn" | "succe
 /** The organizations page: `#/orgs`, `#/orgs/<id>[/<tab>|/start/<person>]`,
     `#/orgs/<id>/projects/<project>[/overseer]`. */
 export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElement): void }) {
+  // Memos, not ternaries in the props below: the start form reads `start` from its Cancel handler.
+  const page = orgPageRoute(() => props.route);
   return (
     <Switch>
       <Match when={props.route.kind === "list"}>
@@ -71,8 +74,8 @@ export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElem
         {(id) => (
           <OrgPage
             id={id}
-            start={props.route.kind === "org" ? props.route.start : undefined}
-            tab={props.route.kind === "org" ? props.route.tab : undefined}
+            start={page.start()}
+            tab={page.tab()}
             titleRef={props.titleRef}
           />
         )}

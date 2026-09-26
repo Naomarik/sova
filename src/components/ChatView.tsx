@@ -110,9 +110,12 @@ import { UiDialog } from "./UiDialog";
 
 export type ChatRefusal = "busy" | "recent";
 
+/** What a typed "/mode" in the Overseer's composer is answered with: it has no mode switch. */
+const OVERSEER_MODE_FIXED = "The Overseer is always in normal mode.";
+
 /** What makes a chat the Overseer's: its extras, all absent from every other chat. */
 export interface OverseerChat {
-  /** The quick actions the floating button offers (Settings → Overseer). */
+  /** The quick actions its button offers, in the composer foot's mode slot (Settings → Overseer). */
   quickActions(): OverseerQuickAction[];
   /** "/clear": a new conversation; resolves false when nothing was cleared. */
   onClear(): Promise<boolean>;
@@ -1486,7 +1489,7 @@ export function ChatView(props: {
         path={props.path}
         cwd={props.summary?.()?.cwd ?? null}
         blocked={blocked()}
-        commands={commands()}
+        commands={props.overseer ? commands().filter((c) => c.name !== "mode") : commands()}
         running={live.running}
         compacting={compacting()}
         stopping={live.stopping}
@@ -1500,6 +1503,14 @@ export function ChatView(props: {
         paneTab={props.paneTab}
         onNewSession={props.overseer ? undefined : props.onNewSession}
         onClear={props.overseer?.onClear}
+        onMode={
+          props.overseer
+            ? () => {
+                toast(OVERSEER_MODE_FIXED);
+                announce(OVERSEER_MODE_FIXED);
+              }
+            : undefined
+        }
         accessory={
           props.overseer
             ? () => (
@@ -1518,7 +1529,7 @@ export function ChatView(props: {
         autofocus={props.autofocus}
         model={modelControl}
         thinking={thinkingControl}
-        mode={modeControl}
+        mode={props.overseer ? null : modeControl}
         sandbox={sandboxControl}
         onShowInfo={() => setShowInfo(true)}
         onPlaybooks={() => setShowPlaybooks(true)}

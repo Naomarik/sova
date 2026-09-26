@@ -160,6 +160,14 @@ export class BusyError extends Error {
   }
 }
 
+/** A mode switch refused because this chat has one fixed mode: the Overseer is always in normal mode
+ *  (server/overseer.ts keepNormal). POST /api/mode answers it with a 409. */
+export class ModeRefusedError extends Error {
+  constructor() {
+    super("The Overseer is always in normal mode.");
+  }
+}
+
 /**
  * A session that cannot be opened until something outside this server changes — today, a stored
  * `cwd` that no longer exists (the SDK refuses to build a runtime for it). Unlike BusyError this
@@ -383,6 +391,9 @@ export interface OverseerRuntime {
   }>;
   /** The composer changed the Overseer's model or thinking: write it back to overseer.json. */
   saveChoice(patch: { model?: string; thinking?: string }): void;
+  /** Every open of an Overseer runtime, once bound: brings its mode back to normal with no minor
+      modes, whatever its branch restored. */
+  opened(chat: ChatSession): Promise<void>;
   /** Called with every AgentSession the Overseer's runtime builds, so `userSend` can recognise the
       message it produced when that message reaches the Agent, and every run is decided from the
       session's own event stream. */
@@ -1140,6 +1151,7 @@ class ChatSession {
    * of being new.
    */
   async switchMode(patch: ModePatch): Promise<ChatModeResult> {
+    if (this.overseer) throw new ModeRefusedError();
     await this.applyMode(mergeMode(this.modeState, patch));
     return { ...modeInfo(this.modeState), applies: this.modeApplies };
   }
@@ -1157,6 +1169,7 @@ class ChatSession {
    * it too from its next start or reopen. "Unchanged" is true now, not forever.
    */
   async saveModeDefault(): Promise<ModeInfo> {
+    if (this.overseer) throw new ModeRefusedError();
     return modeInfo(writeMode(defaultPatchOf(this.modeState)));
   }
 
@@ -1570,6 +1583,12 @@ class ChatSession {
             if (clientId) client.send({ type: "send_ack", clientId, queued: false });
             if (msg.images?.length) client.send({ type: "compact_refused", id: clientId ?? "", reason: "internal", message: COMPACT_IMAGES_REFUSAL });
             else this.compact(client, clientId ?? "", compact.instructions).catch(fail);
+            return;
+          }
+          // `/mode …` in the Overseer: it is always in normal mode. Its composer answers this
+          // itself; this is the server's own refusal, so no client can switch it by prompt text.
+          if (this.overseer && /^\/mode(\s|$)/.test(String(msg.text ?? "").trim())) {
+            fail(new ModeRefusedError());
             return;
           }
           if (msg.type === "steer") {
@@ -2219,6 +2238,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       await syncOverseerModel(chat, modelRuntime, path).catch((err) =>
         console.warn(`[overseer] model sync skipped: ${err instanceof Error ? err.message : String(err)}`),
       );
+      await overseerRuntime?.opened(chat);
     }
     held.set(path, chat);
     return chat;

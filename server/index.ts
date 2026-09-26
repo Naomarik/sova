@@ -7,7 +7,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { disposeAllChats, getModelRuntime, heldChat, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
+import { disposeAllChats, getModelRuntime, heldChat, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { stateRoot } from "./state-root";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
@@ -624,6 +624,16 @@ app.get("/api/mode", (c) => c.json(modeInfo(readMode())));
 // With ?path=<session .jsonl>: switch that one held chat, from its next message (server/chat-manager
 // applyMode), or with { saveDefault: true } make that chat's own mode the default, switching nothing
 // (chat-manager saveModeDefault). Without it: write the default directly (server/mode.ts).
+/** A chat with a fixed mode (the Overseer) refuses a switch or a save: a 409 with its reason. */
+async function modeRefusal(c: Context, act: () => Promise<unknown>) {
+  try {
+    return c.json(await act());
+  } catch (err) {
+    if (err instanceof ModeRefusedError) return c.json({ error: err.message }, 409);
+    throw err;
+  }
+}
+
 app.post("/api/mode", async (c) => {
   const rawPath = c.req.query("path");
   const path = rawPath === undefined ? null : resolveSessionPath(rawPath);
@@ -643,12 +653,12 @@ app.post("/api/mode", async (c) => {
     if (path === null) return c.json({ error: "saveDefault needs ?path=: it saves that chat's own mode" }, 400);
     const chat = heldChat(path);
     if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-    return c.json(await chat.saveModeDefault());
+    return modeRefusal(c, () => chat.saveModeDefault());
   }
   if (path === null) return c.json(await switchMode(request.patch));
   const chat = heldChat(path);
   if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-  return c.json(await chat.switchMode(request.patch));
+  return modeRefusal(c, () => chat.switchMode(request.patch));
 });
 
 // The sandbox extension's on/off for one held chat (§chat/sandbox): its /sandbox handler runs

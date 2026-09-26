@@ -544,25 +544,84 @@ entry by entry as its own. Any later append by anyone breaks the match, and a TU
 refused before this check. A missing or corrupt file means nothing is known to be the server's,
 and the 120-second rule applies.
 
-## §chat.transcript/landing-page — Landing page (`#/`)
+## §chat.transcript/landing-page — The overview (`#/`)
 
-With no session selected the main pane is not an empty state with a grid bolted on — it is one
-page with up to three parts, in this order:
+With no session selected the main pane is the overview: not an empty state with a grid bolted on — it is one
+page with up to six parts, in this order (the Mesh card, §mesh.ui/card, sits after the Sessions
+card). On a phone it is `#/overview`, under the list's head row (§app.shell/overview):
 
-1. **The opening**, unchanged except for its actions: `.welcome-head` wrapping the `.empty` block
-   that has always been here — the `chat` mark, "{n} sessions across {m} folders.", "Pick one to
-   read it, or start a new one.", and two buttons in one `.empty-action` cluster: `New Session`
-   and `Fan Out…` (§workspace.fanout/entry-points — the empty screen is fanout's front door, which is a
-   creation gesture offered beside the other creation gesture, not in the sidebar). It is the
-   first thing read at every width.
-2. **The Extensions section**, shown **only when at least one extension is installed**: one card
+1. **The title**: `.overview-head` holding a plain `h1.overview-title`, "Overview" (`--fs-heading-m`,
+   semibold, left-aligned on the sections' own left edge and cap), at every width — no mark and no
+   body line; the session count lives only in the Sessions card.
+2. **The Start section**, under a `Start` section eyebrow: one action card per way to start
+   something, in a `ul.overview-actions` grid — `New Session` ("Start a chat with pi in any folder
+   or on any host."), `Fan Out` ("Send one prompt to several models and compare the replies side by
+   side."; §workspace.fanout/entry-points — the overview is fanout's front door, a creation gesture
+   offered beside the other creation gesture, not in the sidebar). Organizations is not a Start
+   card: it has its own section, the page's last (part 6). Each card is one
+   `.card.action-card`: its icon (`plus`, `branch`) on a 36px `--color-sunken` tile, the
+   title (`--fs-heading-s`, semibold) and the line (`--color-ink-2`). The whole card is the control,
+   a `<button>` that opens its dialog (New Session's, and Fan Out's on **A fresh prompt**), named by
+   its title (`aria-labelledby`) and described by its line (`aria-describedby`). Hover lifts the
+   border to `--color-border-strong` and the shadow to `--shadow-2`, like the extension cards; focus
+   is the ring round the whole card. The grid is one column, and two once `.overview` (the
+   `overview` query container) is at least 640px wide. It is the first thing read at every width
+   after the title.
+3. **The Sessions card**, always (at every width, with no sessions too), under a `Sessions`
+   section eyebrow: one `.card.home-sessions`. It reads: `{n} session(s) across {m} folder(s)` as
+   its title — main threads, archived included, and their distinct folders;
+   `{live} live · {working} working now` — live = the Live & web region's sessions (open in a
+   terminal, or a web session not archived), working = a live record says `working`, or the
+   server reports a web session busy; when the Needs-you region would list anything, a warn chip
+   `Needs you · {n}`, a warn border and `Waiting on you: {title}, {title}[ and {k} more]` — the
+   region's rows (§app.session-list/needs-you, from the attention digest the page already polls,
+   the same rows and the same proactivity rule; the first two, newest first, each a link to its
+   session); and `Last active {title} · {relative time}` with a `Resume` button to it — Recent's
+   first row (§app.session-list/recent). With no session at all: "Nothing yet: start one above."
+   and no Resume. No server call of its own: the list and the digest the page already has.
+   The card itself is one button (its `::after` covers it; the links and Resume sit above it).
+   Pressing it opens the session list: on a phone it goes back to the list (§app.shell/overview);
+   at 768px and up it expands the pane if it is collapsed into the spine, and focuses the list's
+   search.
+4. **The Extensions section**, shown **only when at least one extension is installed**: one card
    per extension, under the same section eyebrow (§app.extensions/cards).
-3. **The Explained grid**, shown **only when at least one explanation exists** (0 renders
-   nothing — no empty state, no head, no reserved space):
+5. **The Explained grid**, shown **only when at least one explanation exists** (0 renders
+   nothing — no empty state, no head, no reserved space).
+6. **The Organizations section**, always and always last (below Mesh, Extensions and Explained),
+   under an `Organizations` section eyebrow: one full-width `.card.overview-orgs`, the entry point
+   to `#/orgs` (§app/organizations). Its head is the `network` icon on the same 36px sunken tile as
+   the Start cards, the title `Organizations` (`--fs-heading-s`, semibold) — a link to `#/orgs`,
+   44px tall as a target — and the line "Keep each client's people, projects, and hand-off
+   sessions together." Its data is `GET /api/orgs`, polled every 30s while the page is shown (the
+   same `OrgSummary` rows the org cards read, §app.organizations/org-cards); nothing else is fetched.
+   - **With at least one org**, a `dl` of five totals across every org, each a figure
+     (`--fs-heading-m`, semibold, tabular) over its label on a `--color-sunken` tile, as many to a
+     row as fit at 96px or more: `Organization(s)`, `People` (roster size; `Person` for 1),
+     `Project(s)`, `Open hand-off(s)` (baton sessions not done or closed) and `Needs you` — the sum
+     of every org's Needs-you items (the org cards' count). Only while that sum is above 0 does its
+     tile take the warn colour, a warn border and background and a dot, and the card a warn
+     border; at 0 it reads like the others.
+   - Then a `ul` of at most 5 rows, most recently active first (`lastActivityAt`, newest first;
+     an org with none sorts last; ties keep the server's order). Each row is one `<a>` to
+     `#/orgs/<id>`, 44px tall at least, reading: the org's name (medium weight, one line, ellipsis),
+     `{n} people · {n} projects · {n} open hand-offs` (the org cards' counts line), a warn chip
+     `Needs you · {n}` when that org has anything waiting (its title names the kinds, as on the org
+     card), and `Active {relative time}` (`src/lib/format.ts`; the exact stamp in its title; left
+     out when the server gives no activity). At 640px of `overview` width and up a row is one line
+     in columns that line up from row to row; narrower, the name and chip lead and the counts and
+     time share a wrapping line under them.
+   - When there are more than 5 orgs, a `View all {N}` link to `#/orgs` follows the rows.
+   - **With no org**: the head and its line, then a `Create Your First Organization` button-styled
+     link to `#/orgs`. Before the first answer the card shows only its head; a failed first fetch
+     says so under it and the poll retries.
+   - The title, each row and `View all` are separate links, none inside another, in reading order,
+     each with the focus ring; the card itself is not a target.
 
 ```html
-<div class="welcome">
-  <div class="welcome-head">…the .empty opening…</div>
+<div class="overview">
+  <div class="overview-head"><h1 class="overview-title">Overview</h1></div>
+  <section class="explain-section" aria-labelledby="overview-start-title">…Start, one .card.action-card per action…</section>
+  <section class="explain-section" aria-labelledby="home-sessions-title">…Sessions, the .card.home-sessions…</section>
   <!-- only when at least one extension is installed (§app.extensions/cards) -->
   <section class="explain-section" aria-labelledby="ext-section-title">…Extensions {n}, one .card.ext-card each…</section>
   <!-- only when there is at least one explanation -->
@@ -570,25 +629,25 @@ page with up to three parts, in this order:
     <h2 class="explain-section-head" id="explain-section-title">Explained <span class="text-num">6</span></h2>
     <ul class="explain-grid">…one .card.explain-tile per page…</ul>
   </section>
+  <section class="explain-section" aria-labelledby="overview-orgs-title">…Organizations, the .card.overview-orgs…</section>
 </div>
 ```
 
-- **Scrolling.** `.app-main` is a fixed-height flex column with `overflow: hidden`, so `.welcome`
+- **Scrolling.** `.app-main` is a fixed-height flex column with `overflow: hidden`, so `.overview`
   is the scroll region itself (`flex: 1`, `min-height: 0`, `overflow-y: auto`). It carries no
   `.pane`: the tiles ask the window, not this box.
-- **Width and padding.** `--space-4` of page padding on both sides at every width, `--space-6`
-  under the last row so the grid never runs into the viewport edge, and no top padding —
-  `.empty` brings its own `--space-8` crown. The section caps at `--page-max` (1280px) and
-  centres: these are cards, not prose, so the reading measure is the wrong cap for them.
-- **The opening centres when it is alone.** With no extensions and no explanations,
-  `.welcome-head:only-child` takes the leftover height and centres its `.empty` in the pane. With
-  a section under it, it keeps its own height at the top and the sections follow.
+- **Width and padding.** `--space-4` of page padding on both sides at every width, `--space-5`
+  above the title, and `--space-6` under the last row so the grid never runs into the viewport
+  edge. The title and every section cap at `--page-max` (1280px) and centre, so they share one left
+  edge: these are cards, not prose, so the reading measure is the wrong cap for them. The parts are
+  `--space-5` apart.
 - **The head is the section eyebrow**, the same rule as the Usage and Agents pages'
   `.insights-section-head` (§app/insights) — mono, `--fs-micro`, uppercase, `--ls-eyebrow`, `--color-ink-2`
   — with the count as the `.text-num` span inside it, in `--color-ink-muted` and no casing. A
   `display-l` page opener was rejected: this is the second thing on the page, not its title.
-- **Where the CSS lives.** `.welcome`, `.welcome-head`, `.explain-section` and
-  `.explain-section-head` are in `src/design/base.css`; `.explain-grid` and every `.explain-tile`
+- **Where the CSS lives.** `.overview`, `.overview-head`, `.overview-title`, `.explain-section` and
+  `.explain-section-head` are in `src/design/base.css`; the Start grid, `.action-card` and the
+  Organizations card are in `src/home.css`, beside the Sessions card; `.explain-grid` and every `.explain-tile`
   rule are in `src/explain.css`, which owns the tile in both places it appears.
 - **The session-scoped gallery is unchanged.** The same `ExplainGrid` still renders inside the
   gallery modal that the insight strip's `Open {n} Explanations` button opens (§app/insights), scoped to
@@ -605,7 +664,7 @@ page with up to three parts, in this order:
 
 | State | What renders |
 |---|---|
-| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.welcome` fills `.app-main`, its `.welcome-head` holds the `.empty` opening (`chat` icon in `.empty-mark`, title "48 sessions across 7 folders.", body "Pick one to read it, or start a new one.", an `.empty-action` cluster with `New Session` and `Fan Out…`), and the Extensions section and the Explained grid follow when there are any. No composer |
+| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Start section's action cards (`New Session`, `Fan Out`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
 | Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread has no **rendered row**: model, thinking and mode change rows draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |

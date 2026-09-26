@@ -1,7 +1,10 @@
 # §app/overseer — The Overseer
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-The Overseer is **one special Sova session** that watches every session and acts on them. The
+The Overseer is **a special Sova session** that watches every session and acts on them. (Baton
+sessions, §app/baton, and project overseers, §app/project-overseer, are the other kinds of special
+session: the server picks a session's special loadout by its marker, the Overseer's first. A project
+overseer watches one organization project only; this Overseer watches everything.) The
 user lives in it, and it steers their attention. It's an ordinary webapp-owned pi session hosted by
 this server, and it opens as a full page like any chat. Four things make it special: a marker entry
 in its file, a fixed cwd under Sova's state dir, a runtime loadout (its own prompt, an inline
@@ -79,7 +82,8 @@ are atomic tmp+rename.
   entry its branch restored, and an Overseer already there opens without a write. Its composer
   has no mode switch. A switch (`POST /api/mode?path=`) or a save of its mode as the default
   is refused with a 409, and a `/mode` sent to it, with or without arguments, is refused and never
-  runs: its composer answers a typed `/mode` itself with a toast, "The Overseer is always in
+  runs (the chat socket answers with an error whose code is `refused`, a deliberate refusal rather
+  than a failure): its composer answers a typed `/mode` itself with a toast, "The Overseer is always in
   normal mode.", and leaves `mode` out of its `/` menu.
 
 ## §app.overseer/tools — The `sova_*` tools
@@ -271,6 +275,9 @@ dangerous enough to ask.
 - While it waits in the queue, its row reads **Overseer** rather than "Sent by Sova" (the queue
   snapshot's `overseer` flag, set only for a message carrying the sender secret).
 - The transcript renders an **Overseer** tag on that user row, on reload and live.
+- **One mechanism, two senders.** Baton sessions attribute every user message the same way, with
+  their own `sova-baton-sent` marker (§app.baton/attribution); the pending-mark list, the queue
+  hand-off rule and the settle sweep are shared, and each marker is written only for its own sender.
 - **Only the Overseer can tag.** `POST /api/sessions/prompt` marks a prompt as the Overseer's only
   when the request carries the server's sender secret: random, made at server start, held in memory
   only, never written to disk or sent to a client, and carried only by the Overseer's own in-process
@@ -315,6 +322,9 @@ itself.
   `looping`, alone, is **Finished (decide)**: "The last turn looks like it went in circles." The
   sentence and the names are stored with the signal and reach only the digest, never the session
   list or the feed. With the feature off, none of these appear.
+- **Needs you, from a baton session** (§app.baton/needs-you): `baton-needs-you` while the baton is
+  with the operator, "<from> → you: <question>", or while a person holds it through a hand-off no
+  live link exists for, "Send <name> their link: <question>".
 - **Finished (decide):** replied since last seen and now idle; idle with an unsent draft or queued
   input.
 - **FYI:** running now; context at or above 85%; idle web sessions older than 3 days that aren't

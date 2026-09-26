@@ -7,6 +7,9 @@
 <aside class="app-sidebar" aria-label="Sessions">
   <div class="sidebar-head">
     <a class="brand" href="#/"><svg class="icon" aria-hidden="true">…sova-mark…</svg>sova</a>
+    <!-- folded (<768) only: the overview (§app.shell/overview) -->
+    <button class="button button-icon button-ghost sidebar-overview" type="button" aria-label="Overview"
+            title="Overview"><svg class="icon" aria-hidden="true">…grid…</svg></button>
     <span class="sidebar-spacer"></span>
     <button class="button" type="button"><svg class="icon" aria-hidden="true">…plus…</svg>New Session</button>
     <!-- unfolded (≥768) only: collapses the pane into the spine (§app.session-list/spine) -->
@@ -739,7 +742,7 @@ appear in a group and below it at once. A session belongs to **at most one** gro
       <!-- The region's one action, at the head's right end: there with the region shut, and
            hidden while searching. Click and keydown stop here, as a group's `⋯` does, or they
            would toggle the region. Fanout is NOT here — it creates sessions rather than curating
-           them, and its front door is the welcome screen beside New Session (§workspace.fanout/entry-points). -->
+           them, and its front door is the overview beside New Session (§workspace.fanout/entry-points). -->
       <button type="button" class="button button-icon button-ghost group-new-toggle"
               aria-label="New group" title="New group">
         <svg class="icon icon-sm" aria-hidden="true">…plus…</svg>
@@ -882,7 +885,7 @@ While that workspace is open, the group's `<summary>` takes `aria-current="true"
 takes the selected row's tint, so the sidebar says which group you are inside.
 - **Fanning out is not entered from here.** The Groups region's one action is making an empty
 group to curate; a fanout — which makes the group AND its members in one gesture — is a
-creation action and lives beside `New Session` on the welcome screen (§workspace.fanout/entry-points).
+creation action and lives beside `New Session` on the overview (§workspace.fanout/entry-points).
 A group made that way is an ordinary group here all the same: it holds ordinary sessions, and
 the only difference is that it dissolves itself when its last member leaves (§workspace/groups "Emptying a
 group"), because its name and its fork point mean nothing without them.

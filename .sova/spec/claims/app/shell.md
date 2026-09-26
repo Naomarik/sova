@@ -32,7 +32,8 @@ unfolded (≥768)                                  folded (<768)
 - **Columns.** `.app` is `height: 100dvh`. At 768px and up the grid is `--sidebar-width` (320px
   by default, 64px while the sessions pane is collapsed into the spine — §app.shell/spine-column)
   plus `1fr`, with a border between the columns. Below 768px it's one column, and `data-view`
-  decides which one shows: `list` when no session is selected, `session` when one is. The shell
+  decides which one shows: `list` when no session is selected, `session` when one is (or a page,
+  or the overview at `#/overview`, §app.shell/overview). The shell
   is window chrome, so it uses `@media` rather than a container query, the same reasoning the
   skill gives for `.toast-stack`.
 - **Scrolling.** The session list and the transcript each carry `.pane`, so each is an
@@ -41,7 +42,7 @@ unfolded (≥768)                                  folded (<768)
   text included) can extend the document past the window.
 - **Routing.** Keep the selected session in the URL, e.g. `#/s/<encodeURIComponent(path)>`. That
   way reload and back work, and the folded back button is `history.back()` or a link to `#/`.
-  The other routes follow the same rule: `#/usage` and `#/agents` (§app/insights), and a group opened as a
+  The other routes follow the same rule: `#/overview` (§app.shell/overview), `#/usage` and `#/agents` (§app/insights), and a group opened as a
   workspace at `#/g/<id>` (split) or `#/g/<id>/<encodeURIComponent(path)>` (one member focused,
   §workspace/groups). `#/s/` never changes meaning: it is one session, alone, grouped or not. An unknown group
   id routes to `#/` with a toast rather than rendering an empty frame. `#/overseer` is the
@@ -59,6 +60,29 @@ unfolded (≥768)                                  folded (<768)
   A toast is never the only record of a fact, so errors go in banners. One exception is the
   remote extension's connection notices (below): the chips hold the fact, so the toast is just the
   event.
+
+## §app.shell/overview — The overview on a phone (`#/overview`)
+
+- **At 768px and up nothing changes.** The overview (§chat.transcript/landing-page) is the
+  main column while no session is open, beside the list. `#/overview` shows the same page, and there
+  is no Overview button.
+- **Below 768px `#/` is still the list**, and a phone's first screen. The list's head row (the
+  `sova` brand, `New Session`) gets one more control, right after the brand: an icon-only
+  `button-icon button-ghost` button (`grid`: four squares; `aria-label` and
+  `title` "Overview") that opens `#/overview`, one history entry above the list.
+- **`#/overview` on a phone keeps the head.** The main column shows the same head row the list has
+  (`.sidebar-head.overview-bar`: the brand, then `New Session`; no Overview button) above the
+  overview. The brand is a link to `#/`, the list, as it is in the list. Back returns to the list.
+- **Leaving by the Sessions card.** On a phone the card goes back to the list: `history.back()`
+  when the list's Overview button opened the overview in this tab (so the list isn't stacked twice and
+  Forward returns here), otherwise a new `#/` entry (a reload or a typed `#/overview`).
+- **Everything else is as on master.** Every page's back link and "Back to Sessions" still goes to
+  `#/`, the list. Organizations is reached only from the overview's Organizations card, its last
+  section (§app/organizations). Fan Out keeps
+  its two entries, the overview and the New Session dialog (§workspace.fanout/entry-points).
+  On a phone the overview holds the Start cards (New Session, Fan Out), the Sessions card,
+  Mesh, Extensions, Explained and the Organizations card; the list holds New Session in its head
+  and Usage, Agents and Settings in its foot.
 
 ## §app.shell/remote-session-chips — Remote session chips
 

@@ -26,8 +26,9 @@ the fork-point marker (below) is the only thing that tells them apart afterwards
   opens the dialog with **Fork at the current leaf** selected and this session as the source.
   Absent when the session has no assistant reply yet — there is nothing to fork — and absent for
   a watch view, where Sova holds no runtime.
-- **The welcome screen's opening** (§chat.transcript/landing-page), beside `New Session`: `Fan Out…`. It
-  opens the same dialog with **A fresh prompt** selected and no source. This is the fresh-mode
+- **The overview's Start section** (§chat.transcript/landing-page), beside `New Session`: the
+  `Fan Out` action card ("Send one prompt to several models and compare the replies side by
+  side."). It opens the same dialog with **A fresh prompt** selected and no source. This is the fresh-mode
   front door, and it is deliberately NOT the sidebar: fanout is a creation gesture — it makes
   sessions the way `New Session` makes one, N of them from one prompt — so it is offered where
   creating is offered. (A Groups-region row named `New fanout` was removed with this move: the
@@ -35,10 +36,10 @@ the fork-point marker (below) is the only thing that tells them apart afterwards
   enough. §app/session-list says the same.)
 - **The New Session dialog's type field** (§app/new-session-dialog "Type"): radios `One session` — the default, that
   dialog's own behaviour — and `Fan out…`, chosen before the folder. This is the entry reachable
-  at **every window width and on every route**, and it exists because the welcome CTA alone was
+  at **every window width and on every route**, and it exists because the overview's CTA alone was
   not: the folded shell hides `.app-main` outright (`display:none` below 768px, §app/shell), and the
-  welcome screen lives inside it, so a folded user — or anyone sitting in a session, watch or
-  chat, where there is no welcome screen at all — had no fresh-fanout entry. The sidebar's
+  overview lives inside it, so a folded user — or anyone sitting in a session, watch or
+  chat, where there is no overview at all — had no fresh-fanout entry. The sidebar's
   `New Session` is the one control every width and every route keeps, so fanout is a choice
   inside it. Pressing `Fan Out…` opens this dialog on **A fresh prompt** with the folder that
   dialog had chosen as its cwd; nothing else carries (§app/new-session-dialog asks no first message). The

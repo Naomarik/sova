@@ -58,7 +58,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| No session selected | **{n} sessions across {m} folders.** Pick one to read it, or start a new one. · buttons: `New Session` · `Fan Out…` (§workspace/fanout's fresh-prompt entry, beside it) |
+| No session selected (the overview) | Title: **Overview** (no count and no body line; the Sessions card has the count) · eyebrow `Start`, then action cards, title and line: `New Session` "Start a chat with pi in any folder or on any host." · `Fan Out` "Send one prompt to several models and compare the replies side by side." (§workspace/fanout's fresh-prompt entry, beside it) · last, eyebrow `Organizations`, a card titled `Organizations` "Keep each client's people, projects, and hand-off sessions together.", totals `Organizations` · `People` · `Projects` · `Open hand-offs` · `Needs you`, rows `{n} people · {n} projects · {n} open hand-offs` · `Needs you · {n}` · `Active {relative time}`, `View all {N}`; with no org, `Create Your First Organization` · a phone's list-head button to it: icon-only, `aria-label` and `title` "Overview" (§app.shell/overview) |
 | No session selected, Explained grid | section head: Explained `{n}` (shown only when {n} ≥ 1; the tiles' own copy is §app/insights) |
 | Transcript load error (a watched TUI session) | **Couldn't load this transcript.** The file at `{path}` wasn't changed. {server message} · button: `Retry` · a chat that can't open says §app.shell's open-failure words instead |
 | New empty session | **New session in `{cwd}`.** · the setup card (the rows below) · then the footnote: Your first message becomes its title. |
@@ -618,7 +618,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Flyout row (§chat/composer) | `Fan Out…` · `title`: Fork this session N ways and compare the answers |
-| Welcome screen button (§chat/transcript) | `Fan Out…` beside `New Session` — the fresh-prompt entry, opening the dialog with "A fresh prompt" and no source |
+| Overview action card (§chat/transcript) | `Fan Out` beside `New Session` — the fresh-prompt entry, opening the dialog with "A fresh prompt" and no source |
 | Dialog title | Fan out |
 | Start from | field label `Start from` · radios: "Fork “{title}” at its latest message" · "A fresh prompt" |
 | Fork note | Each member gets the whole conversation up to message {n}, then goes its own way. |

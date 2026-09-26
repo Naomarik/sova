@@ -794,7 +794,29 @@
       "evidence": "unreviewed",
       "code": [
         "src/App.tsx",
-        "src/components/ExtensionView.tsx"
+        "src/components/ExtensionView.tsx",
+        "src/components/HomeSessionsCard.tsx",
+        "src/components/OverviewActions.tsx",
+        "src/lib/home-sessions.ts",
+        "src/lib/home-sessions.test.ts",
+        "src/home.css",
+        "src/design/base.css",
+        "src/components/OverviewOrgsCard.tsx",
+        "src/lib/overview-orgs.ts",
+        "src/lib/overview-orgs.test.ts",
+        "src/lib/org-cards.ts",
+        "src/lib/api.ts",
+        "src/components/MeshView.tsx",
+        "src/extensions.css"
+      ],
+      "requires": [
+        "§app.organizations/org-cards",
+        "§app/organizations",
+        "§app.session-list/needs-you",
+        "§app.session-list/recent",
+        "§mesh.ui/card",
+        "§app.extensions/cards",
+        "§workspace.fanout/entry-points"
       ]
     },
     "§chat.transcript/live-watch": {
@@ -1924,7 +1946,8 @@
       "evidence": "verified",
       "code": [
         "src/App.tsx",
-        "src/components/MeshView.tsx"
+        "src/components/MeshView.tsx",
+        "src/extensions.css"
       ]
     },
     "§mesh.ui/page": {
@@ -2428,7 +2451,7 @@
     "§app.overseer/sent-marker": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/chat-manager.ts",
         "server/transcript.ts",
@@ -2508,7 +2531,8 @@
       "code": [
         "shared/protocol.ts",
         "server/overseer.ts",
-        "server/overseer-store.ts"
+        "server/overseer-store.ts",
+        "server/chat-manager.ts"
       ]
     },
     "§chat.mode-menu/prompt-holds-across-turn-starters": {
@@ -2675,7 +2699,9 @@
         "server/session-tags.ts",
         "server/overseer-redact.ts",
         "server/decide-settings.test.ts",
-        "server/overseer-redact.test.ts"
+        "server/overseer-redact.test.ts",
+        "server/reconcile.ts",
+        "shared/decisions.ts"
       ],
       "requires": [
         "§app.decisions/providers"
@@ -3330,6 +3356,661 @@
         "src/lib/summarizer-form.ts",
         "src/lib/settings-draft.ts",
         "server/topic-outline-settings.ts"
+      ]
+    },
+    "§app.baton/attribution": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "server/queue.ts",
+        "server/transcript.ts",
+        "shared/protocol.ts",
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "server/overseer.ts",
+        "server/share/routes.ts",
+        "server/baton-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/sent-marker"
+      ]
+    },
+    "§app.baton/goal-and-loadout": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/baton.ts",
+        "server/baton-loadout.ts",
+        "server/baton-prompt.md",
+        "server/chat-manager.ts",
+        "src/components/OrgsView.tsx",
+        "src/components/BatonStrip.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/Sidebar.tsx",
+        "server/baton-runtime.test.ts",
+        "server/org-routes.ts",
+        "server/baton-offers.test.ts",
+        "src/lib/list-refresh.ts"
+      ],
+      "requires": [
+        "§app.organizations/privacy"
+      ]
+    },
+    "§app.baton/hand-off": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/baton-loadout.ts",
+        "server/baton.ts",
+        "server/org-routes.ts",
+        "server/baton.test.ts",
+        "server/baton-events.ts",
+        "server/baton-offers.test.ts"
+      ],
+      "requires": [
+        "§app.baton/links"
+      ]
+    },
+    "§app.baton/links": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/baton-links.ts",
+        "server/baton.ts",
+        "server/org-routes.ts",
+        "src/components/BatonStrip.tsx",
+        "server/baton.test.ts",
+        "server/baton-offers.test.ts",
+        "src/lib/baton-strip.ts",
+        "src/lib/baton-strip.test.ts",
+        "src/components/LinksBanner.tsx"
+      ]
+    },
+    "§app.baton/needs-you": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/attention.ts",
+        "server/baton.ts",
+        "server/sessions-index.ts",
+        "shared/protocol.ts",
+        "src/lib/summary-diff.ts",
+        "src/lib/summary-diff.test.ts",
+        "server/attention-signals.ts",
+        "server/session-tags.ts",
+        "server/baton-runtime.test.ts",
+        "server/session-feed.ts",
+        "server/session-feed.test.ts",
+        "server/chat-manager.ts",
+        "src/lib/needs-you.ts",
+        "server/baton-offers.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/attention-digest"
+      ]
+    },
+    "§app.baton/offers-and-leases": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/baton.ts",
+        "server/baton-links.ts",
+        "server/baton-loadout.ts",
+        "server/share/routes.ts",
+        "server/share/hub.ts",
+        "server/baton-view.ts",
+        "server/org-routes.ts",
+        "shared/baton.ts",
+        "src/components/BatonStrip.tsx",
+        "src/share/ShareApp.tsx",
+        "src/components/OrgsView.tsx",
+        "server/baton-offers.test.ts",
+        "server/share-listener.test.ts",
+        "src/lib/baton-strip.ts",
+        "src/lib/baton-strip.test.ts",
+        "src/components/LinksBanner.tsx"
+      ],
+      "requires": [
+        "§app.baton/links",
+        "§app.baton/outsider-view"
+      ]
+    },
+    "§app.baton/outsider-view": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/baton-view.ts",
+        "server/share/hub.ts",
+        "src/share/ShareApp.tsx",
+        "src/share/markdown.ts",
+        "src/share/share.css",
+        "src/share/main.tsx",
+        "src/share/index.html",
+        "server/baton-view.test.ts",
+        "server/baton-offers.test.ts"
+      ],
+      "requires": [
+        "§app.organizations/privacy"
+      ]
+    },
+    "§app.baton/rejected": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§app.baton/share-listener": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/listener.ts",
+        "server/share/routes.ts",
+        "server/index.ts",
+        "vite.config.ts",
+        "server/share-listener.test.ts"
+      ],
+      "requires": [
+        "§app.baton/links",
+        "§app.baton/outsider-view"
+      ]
+    },
+    "§app.organizations/decisions": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§app.organizations/field-authority": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/orgs.ts",
+        "server/orgs.test.ts",
+        "server/baton-offers.test.ts"
+      ],
+      "requires": [
+        "§app.organizations/roster"
+      ]
+    },
+    "§app.organizations/history-and-revert": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/orgs.ts",
+        "src/components/OrgsView.tsx",
+        "server/orgs.test.ts",
+        "server/org-routes.ts",
+        "server/baton-offers.test.ts",
+        "src/lib/profile-changes.ts",
+        "src/lib/profile-changes.test.ts"
+      ]
+    },
+    "§app.organizations/org-cards": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "shared/orgs.ts",
+        "server/org-routes.ts",
+        "server/org-list.test.ts",
+        "src/components/OrgsView.tsx",
+        "src/lib/org-cards.ts",
+        "src/lib/org-cards.test.ts",
+        "src/orgs.css"
+      ],
+      "requires": [
+        "§app.organizations/registry",
+        "§app.organizations/referrals"
+      ]
+    },
+    "§app.organizations/org-page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/OrgsView.tsx",
+        "src/lib/org-tabs.ts",
+        "src/lib/org-tabs.test.ts",
+        "src/lib/orgs-route.ts",
+        "src/lib/orgs-route.test.ts",
+        "src/orgs.css",
+        "src/App.tsx",
+        "src/components/ProjectPage.tsx",
+        "server/org-routes.ts",
+        "shared/orgs.ts",
+        "server/org-list.test.ts"
+      ],
+      "requires": [
+        "§app.organizations/org-cards",
+        "§app/baton"
+      ]
+    },
+    "§app.organizations/portability": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/orgs.ts",
+        "server/baton.ts",
+        "server/baton-loadout.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-store.ts",
+        "server/chat-manager.ts",
+        "server/sessions-index.ts",
+        "shared/project-overseer.ts",
+        "src/components/OrgsView.tsx",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/components/ProjectOverseerStrip.tsx",
+        "server/org-portable.test.ts"
+      ],
+      "requires": [
+        "§app.organizations/workspace-repo",
+        "§app.organizations/registry",
+        "§app.project-overseer/autonomy-levels",
+        "§app.baton/links"
+      ]
+    },
+    "§app.organizations/privacy": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/orgs.ts",
+        "server/baton-loadout.ts",
+        "server/share/hub.ts",
+        "server/baton-view.ts",
+        "server/baton-view.test.ts",
+        "server/orgs.test.ts"
+      ]
+    },
+    "§app.organizations/projects": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/orgs.ts",
+        "shared/orgs.ts",
+        "src/components/OrgsView.tsx"
+      ]
+    },
+    "§app.organizations/referrals": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/baton-loadout.ts",
+        "server/baton-prompt.md",
+        "server/orgs.ts",
+        "server/baton.ts",
+        "server/attention.ts",
+        "server/org-routes.ts",
+        "src/components/BatonStrip.tsx",
+        "src/components/OrgsView.tsx",
+        "server/baton-offers.test.ts"
+      ],
+      "requires": [
+        "§app.organizations/roster",
+        "§app.organizations/field-authority"
+      ]
+    },
+    "§app.organizations/registry": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/orgs.ts",
+        "server/org-routes.ts",
+        "server/workspace-git.ts",
+        "server/orgs.test.ts"
+      ]
+    },
+    "§app.organizations/roster": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/orgs.ts",
+        "shared/orgs.ts",
+        "src/components/OrgsView.tsx",
+        "server/orgs.test.ts",
+        "server/baton.ts"
+      ]
+    },
+    "§app.organizations/workspace-repo": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/workspace-git.ts",
+        "server/orgs.ts",
+        "server/paths.ts",
+        "server/sessions-index.ts",
+        "server/baton.ts",
+        "server/baton-loadout.ts",
+        "server/orgs.test.ts",
+        "server/baton.test.ts",
+        "server/sessions-index-roots.test.ts",
+        "server/workspace-commits.ts",
+        "server/workspace-commits.test.ts",
+        "server/index.ts",
+        "shared/orgs.ts",
+        "src/components/OrgsView.tsx",
+        "server/reconcile.ts",
+        "server/baton-wrapup.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-store.ts",
+        "server/org-portable.test.ts"
+      ]
+    },
+    "§app.organizations/wrap-up": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/baton-wrapup.ts",
+        "server/baton-loadout.ts",
+        "server/orgs.ts",
+        "server/baton-view.ts",
+        "server/share/hub.ts",
+        "server/transcript.ts",
+        "src/components/OrgsView.tsx",
+        "server/baton-offers.test.ts",
+        "src/lib/wrapup-rows.ts",
+        "src/lib/wrapup-rows.test.ts",
+        "src/components/Thread.tsx"
+      ],
+      "requires": [
+        "§app.organizations/field-authority",
+        "§app.organizations/history-and-revert"
+      ]
+    },
+    "§app.project-overseer/autonomy-levels": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-overseer-tools.ts",
+        "server/project-overseer-store.ts",
+        "shared/project-overseer.ts",
+        "server/overseer-tools.ts",
+        "server/project-overseer-tools.test.ts",
+        "server/project-overseer.test.ts",
+        "server/orgs.ts",
+        "server/project-overseer.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/components/ProjectOverseerStrip.tsx",
+        "server/org-portable.test.ts"
+      ],
+      "requires": [
+        "§app.project-overseer/tools"
+      ]
+    },
+    "§app.project-overseer/gaps": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-overseer-tools.ts",
+        "server/project-overseer-prompt.md",
+        "shared/project-overseer.ts",
+        "server/project-overseer-tools.test.ts"
+      ]
+    },
+    "§app.project-overseer/ideas-and-todos": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-overseer-routes.ts",
+        "server/project-overseer.ts",
+        "server/overseer-todos.ts",
+        "server/overseer-ideas.ts",
+        "src/components/ProjectOverseerPanel.tsx"
+      ],
+      "requires": [
+        "§app.overseer/ideas",
+        "§app.overseer/todos"
+      ]
+    },
+    "§app.project-overseer/identity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-overseer.ts",
+        "server/project-overseer-store.ts",
+        "server/project-overseer-prompt.md",
+        "server/chat-manager.ts",
+        "server/overseer.ts",
+        "server/overseer-file-tools.ts",
+        "server/project-overseer.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/hosting",
+        "§app.organizations/workspace-repo"
+      ]
+    },
+    "§app.project-overseer/tools": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-overseer-tools.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-tools.test.ts"
+      ],
+      "requires": [
+        "§app.baton/goal-and-loadout",
+        "§app.organizations/field-authority"
+      ]
+    },
+    "§app.project-overseer/watch-loop": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-overseer.ts",
+        "server/project-overseer-routes.ts",
+        "server/baton-events.ts",
+        "server/reconcile.ts",
+        "server/project-overseer.test.ts",
+        "server/orgs.ts"
+      ],
+      "requires": [
+        "§app.project-overseer/autonomy-levels"
+      ]
+    },
+    "§app.requirements/decisions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/decisions.ts",
+        "server/reconcile.ts",
+        "server/reconcile.test.ts"
+      ],
+      "requires": [
+        "§app.baton/hand-off"
+      ]
+    },
+    "§app.requirements/drafts-with-provenance": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/spec-draft-writer.ts",
+        "server/reconcile.test.ts"
+      ],
+      "requires": [
+        "§app.requirements/decisions"
+      ]
+    },
+    "§app.requirements/frozen-spec": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/reconcile.ts",
+        "server/decisions-routes.ts",
+        "server/decisions-routes.test.ts",
+        "server/reconcile.test.ts"
+      ],
+      "requires": [
+        "§app.organizations/projects",
+        "§app.requirements/promotion"
+      ]
+    },
+    "§app.requirements/promotion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/reconcile.ts",
+        "server/spec-draft-writer.ts",
+        "server/reconcile.test.ts"
+      ],
+      "requires": [
+        "§app.requirements/drafts-with-provenance",
+        "§app.requirements/decisions"
+      ]
+    },
+    "§app.requirements/reconciler": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/reconcile.ts",
+        "server/decide.ts",
+        "server/decide-settings.ts",
+        "shared/protocol.ts",
+        "server/reconcile.test.ts"
+      ],
+      "requires": [
+        "§app.decisions/interface",
+        "§app.decisions/privacy",
+        "§app.requirements/decisions",
+        "§app.requirements/drafts-with-provenance"
+      ]
+    },
+    "§app.requirements/rejected": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§app.requirements/routing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/reconcile.ts",
+        "server/sessions-index.ts",
+        "server/reconcile.test.ts"
+      ],
+      "requires": [
+        "§app/baton",
+        "§app.baton/needs-you",
+        "§app.organizations/roster",
+        "§app.requirements/reconciler"
+      ]
+    },
+    "§app.shell/overview": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/App.tsx",
+        "src/lib/overview-route.ts",
+        "src/lib/overview-route.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/home.css",
+        "src/components/ArchiveCleanup.tsx",
+        "src/components/GroupView.tsx",
+        "src/components/InsightsPage.tsx",
+        "src/components/ui.tsx",
+        "src/design/base.css",
+        "src/components/NewSessionDialog.tsx",
+        "server/extensions.ts"
+      ],
+      "requires": [
+        "§chat.transcript/landing-page",
+        "§app.session-list/anatomy"
+      ]
+    },
+    "§app/baton": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/baton.ts",
+        "server/baton.ts",
+        "server/org-routes.ts",
+        "src/components/BatonStrip.tsx",
+        "src/orgs.css"
+      ]
+    },
+    "§app/organizations": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/orgs.ts",
+        "server/orgs.ts",
+        "server/org-routes.ts",
+        "src/components/OrgsView.tsx",
+        "src/lib/orgs-route.ts",
+        "src/lib/orgs-route.test.ts",
+        "src/orgs.css",
+        "src/lib/api.ts",
+        "src/App.tsx",
+        "src/lib/org-cards.ts"
+      ]
+    },
+    "§app/project-overseer": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/project-overseer.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-store.ts",
+        "server/project-overseer-tools.ts",
+        "server/project-overseer-routes.ts",
+        "server/project-overseer-prompt.md",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/components/ProjectOverseerStrip.tsx",
+        "src/lib/project-overseer-view.ts",
+        "src/components/ProjectPage.tsx",
+        "src/projects.css",
+        "src/lib/project-overseer-view.test.ts",
+        "src/lib/unchanged-error.ts",
+        "src/lib/unchanged-error.test.ts"
+      ],
+      "requires": [
+        "§app/overseer",
+        "§app/baton",
+        "§app/requirements"
+      ]
+    },
+    "§app/requirements": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/decisions.ts",
+        "server/decisions-routes.ts",
+        "server/decisions-routes.test.ts",
+        "src/lib/decisions-view.ts",
+        "src/lib/decisions-view.test.ts",
+        "src/components/ProjectPage.tsx"
       ]
     }
   },

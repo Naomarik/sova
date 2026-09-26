@@ -154,7 +154,7 @@ and `fill="none" stroke="currentColor"`.
 | `sliders.svg` | Mode: the mode trigger at the right end of the composer foot (§chat/mode-menu). Three tracks with an offset handle each. New, drawn on the system grid |
 | `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads (from the skill's set) |
 | `settings.svg` | Settings: the gear at the right end of the sidebar foot's Agents row, and the Settings dialog's tab rail. A cog on the system grid (the skill ships a sun-burst under this name)
-| `branch.svg` | The fork-point row in a forked member's transcript, the `Align to Fork` button, and the welcome screen's `Fan Out…` button (§workspace/groups, §workspace/fanout) |
+| `branch.svg` | The fork-point row in a forked member's transcript, the `Align to Fork` button, and the overview's `Fan Out` action card (§workspace/groups, §workspace/fanout) |
 | `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg` | Reserved. Shipped but unused in the MVP |
 
 `/favicon.svg` is the mark in white (`#FFFFFF`) on the Indigo dusk gradient, a rounded square: a

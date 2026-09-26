@@ -6,7 +6,9 @@ The mesh is part of Sova, not an installable extension, but it looks and navigat
 ## §mesh.ui/card — The Mesh card
 
 The home page shows a Mesh card in its own section above Extensions, styled like an extension
-card, whether or not the mesh is on. It opens `#/mesh`.
+card, whether or not the mesh is on. It opens `#/mesh`. It is the section's one card and spans the
+content width at every size, like the Sessions card (`ul.ext-grid.ext-grid-full`: one column even
+where the extension grid has two).
 
 ## §mesh.ui/page — The Mesh page
 

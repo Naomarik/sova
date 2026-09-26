@@ -81,7 +81,9 @@ writes a byte into a session file. All writes are atomic tmp+rename.
 
 ## §app.decisions/privacy — What leaves the machine
 
-- Nothing is sent unless a feature is on, and each feature is its own switch.
+- Nothing is sent unless a feature is on, and each feature is its own switch. Attention signals
+  and session tags are off until turned on; **Reconcile decisions** (§app.requirements/reconciler)
+  is on by default and can be turned off here.
 - A check sends a **short, capped excerpt of one session** — for signals: the title, the last user
   message, the tail of the last reply, the recent tool calls' names with short results and
   whether each failed, the input and the end of the error of the last few failed calls, plus
@@ -101,7 +103,12 @@ writes a byte into a session file. All writes are atomic tmp+rename.
   TUI sessions** (a switch) leaves out every terminal session: one open in a TUI now, or one
   started outside Sova that this server doesn't host — so a turn isn't sent right after its TUI
   exits, and the backfill never sends closed terminal sessions. The Overseer's own
-  sessions and worker sessions' files are never classified as sessions.
+  sessions and worker sessions' files are never classified as sessions, and a baton session
+  (§app/baton) — outsiders' words — is never sent for signals or tags.
+- **Reconcile** sends only the decisions recorded in a project's baton sessions: each one's
+  statement, quote, author's name, date and area — never a transcript, goal, briefing, profile
+  field, id or path — through the same redacting provider, and never for a project whose folder is
+  excluded.
 - The Settings tab states, in one sentence above the switches, what is sent and to whom.
 
 ## §app.decisions/attention-signals — Attention signals
@@ -119,7 +126,8 @@ writes a byte into a session file. All writes are atomic tmp+rename.
   A failed check stores nothing and is retried after 5 minutes, at most 3 times per turn (a
   `bad-request` never).
 - **Which sessions.** Those the privacy gate lets through (§app.decisions/privacy), except the
-  Overseer's, worker sessions and archived sessions.
+  Overseer's, worker sessions, baton sessions (§app/baton: their Needs-you item comes from the
+  baton itself) and archived sessions.
 - **TUI sessions are read, never written**: Sova's own parser reads at most the last 1 MB of the
   file; nothing is ever appended to any session file.
 - **The excerpt**: the title (≤200 characters), the last user message (≤2,000), the end of the
@@ -162,7 +170,8 @@ writes a byte into a session file. All writes are atomic tmp+rename.
 - **Shown** only when confident: topic and status at confidence ≥ 0.5 and inside the taxonomy;
   throwaway at P(yes) ≥ 0.75. Anything below is absent on the wire; the raw answers are stored.
 - **Which sessions**, for live tagging and the backfill alike: those the privacy gate lets through
-  (§app.decisions/privacy), except the Overseer's, workers' and never-sent drafts; a session
+  (§app.decisions/privacy), except the Overseer's, workers', baton sessions (§app/baton) and
+  never-sent drafts; a session
   mid-turn waits until it settles.
 - **When.** A live pass runs every minute and about 3 s after a hosted turn settles. It tags only
   sessions with a reply since tags were switched on; switching tags off forgets that moment, so

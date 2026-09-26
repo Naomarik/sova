@@ -162,8 +162,9 @@ the URL (§app.organizations/org-page).
   another host all count; `SOVA_WORKSPACE_COMMIT_MS` shortens the hour for tests only). Nothing
   changed: no commit. The message names what changed by top-level entry ("Workspace changes:
   baton.json, sessions/ (2 files)"), never contents. **Commit Now** (`POST /api/orgs/:id/commit`)
-  commits at once. A graceful shutdown (SIGINT or SIGTERM) commits every repo with changes, due or
-  not, after the runtimes are disposed. Commits of one repo run one at a time; a failed commit or
+  commits at once. A graceful shutdown (SIGINT or SIGTERM) stops every running turn first, then
+  commits every repo with changes, due or not, after the runtimes are disposed; the process exits
+  within 20 s whatever a step is waiting on. Commits of one repo run one at a time; a failed commit or
   push is logged and shown as the org's last git error, and never undoes the write that caused it.
 - **Push**: after each commit, to the repo's configured remote (`PUT /api/orgs/:id/remote {url}`,
   stored as the repo's own `origin`; an empty url removes it); a push that failed is tried again at
@@ -301,7 +302,8 @@ the URL (§app.organizations/org-page).
 ## §app.organizations/wrap-up — Profiles learn from each session, on their own
 
 - When a baton session is done (`goal_done`) or closed, and a roster person wrote in it, Sova runs
-  **one unattended turn** in that session's own runtime — its own model and thinking level — once. When
+  **one unattended turn** in that session's own runtime — its own model and thinking level — once
+  (again only when the operator retries one that stopped, below). When
   no roster person wrote anything, no turn runs: the row records `wrapup: {state: "skipped"}`, and
   it is never tried again.
   Its prompt lists the participants' current language, voice, skills and competence; its only
@@ -333,6 +335,21 @@ the URL (§app.organizations/org-page).
   `wrapup: {state, at, applied, refused, error?}` for the operator's strip; its changes are
   committed with the org's next workspace commit. No approval: history, the Recent profile changes feed
   and Revert are the control (§app.organizations/decisions).
+- **A turn that stops is a failed wrap-up.** A wrap-up turn that errors, or is stopped (by the
+  stream guard, §chat.transcript/runaway-stream, or an abort), records `state: "failed"` with its
+  reason — "A tool call's arguments passed 65,536 characters, so the stream guard ended the turn."
+  for a guard stop — and the strip says "Wrap-up stopped: {reason} Profiles it didn't reach are
+  unchanged." Updates it applied before stopping stay applied.
+- **A row can't stay running.** A row whose wrap-up says `running` while no process runs it — left
+  by a server that stopped mid-run, or older than any run can be (the guard's 10-minute limit plus a
+  minute) — is recorded `failed` ("The server shut down during the wrap-up." / "It ran past 10 minutes
+  without finishing."), at startup and at most a minute later while the server runs.
+- **Retry Wrap-Up.** A failed wrap-up never runs again on its own (a model that degenerated once may
+  do it again). The strip shows **Retry Wrap-Up** beside it; it clears the failure and runs the
+  wrap-up again (`POST /api/baton/:sid/wrapup/retry`, answered with the strip's info once the new run
+  shows), only while no wrap-up and no reply runs in the session — otherwise it is refused (409) and
+  says why, and a wrap-up in any other state is never retried. While a wrap-up runs, the strip
+  re-reads itself until it ends.
 
 ## §app.organizations/projects — The org's projects
 

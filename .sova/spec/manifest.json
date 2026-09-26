@@ -3894,11 +3894,20 @@
         "src/lib/wrapup-rows.test.ts",
         "src/components/Thread.tsx",
         "server/baton-guards.ts",
-        "server/baton-guards.test.ts"
+        "server/baton-guards.test.ts",
+        "server/wrapup-recovery.ts",
+        "server/wrapup-recovery.test.ts",
+        "server/wrapup-routes.ts",
+        "server/stream-guard-runtime.test.ts",
+        "server/baton.ts",
+        "server/index.ts",
+        "src/components/BatonStrip.tsx",
+        "src/lib/api.ts"
       ],
       "requires": [
         "§app.organizations/field-authority",
-        "§app.organizations/history-and-revert"
+        "§app.organizations/history-and-revert",
+        "§chat.transcript/runaway-stream"
       ]
     },
     "§app.project-overseer/autonomy-levels": {
@@ -4394,6 +4403,21 @@
         "src/lib/api.ts",
         "shared/baton.ts",
         "server/share-message.test.ts"
+      ]
+    },
+    "§chat.transcript/runaway-stream": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/streaming"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/stream-guard.ts",
+        "server/chat-manager.ts",
+        "server/stream-guard.test.ts",
+        "server/stream-guard-runtime.test.ts",
+        "server/stream-stub.ts"
       ]
     }
   },

@@ -487,6 +487,30 @@ Driven by `ChatServerMessage.event`.
 - **Performance.** Batch deltas per animation frame. Never re-render the whole thread on each
   delta.
 
+## §chat.transcript/runaway-stream — A runaway stream is stopped
+
+Every runtime Sova hosts (ordinary chats, baton sessions and their wrap-up, the Overseer, a
+project's overseer) has its turn stopped once the model's stream passes a limit for its kind. A
+model that degenerates — endless whitespace inside a tool call is the case seen — otherwise costs
+the server more CPU with every piece it streams, until nothing else on it answers.
+
+| Limit | Baton | Overseer, project overseer | Ordinary chat |
+|---|---|---|---|
+| Raw whitespace in a row inside one tool call's arguments | 8,192 | 8,192 | 8,192 |
+| One tool call's arguments | 65,536 characters | 65,536 | 1,048,576 |
+| One reply (text, thinking and tool arguments) | 262,144 characters | none | none |
+| One run, start to end | 10 minutes | 10 minutes | none |
+| The server stalled over 750 ms while one tool call is at least 131,072 characters | stop | stop | stop |
+
+- Characters are counted as they stream; the clock is checked as each piece arrives as well as by a
+  timer, since a busy server runs timers late.
+- A stop aborts the turn once (no automatic retry). Everyone connected gets the ordinary turn error
+  (§chat.transcript/streaming), "Stopped the turn: {reason}." — e.g. "Stopped the turn: the model
+  streamed 8,192 whitespace characters in a row into a tool call." The reply stays in the
+  transcript as far as it got, ended as aborted. The server logs the stop.
+- Past a stop, the server keeps answering: in the stub reproduction a stopped runaway stalls it for
+  a fraction of a second, where the same stream unstopped stalls it for seconds at a time.
+
 ## §chat.transcript/live-watch — Live-watch (TUI-owned sessions, `/ws/watch`)
 
 - **No persistent banner.** Watch mode has no "Live from TUI — read only" card; it was removed

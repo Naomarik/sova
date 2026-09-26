@@ -38,14 +38,17 @@ export interface PeerEntry {
   labelAt?: number;
   /** false: the peer said it has no browser address (its Browser access is off); absent: it has one. */
   browserAccess?: false;
+  /** When the peer set that (its clock, ms epoch, clamped); absent: it never sent a stamp. */
+  browserAccessAt?: number;
 }
 
 export const SYNC_CATEGORIES: readonly SyncCategory[] = ["settings", "themes", "extensions", "logins"];
 
 export interface PeersConfig {
   /** `labelAt`: when this host last renamed itself (ms epoch); absent: never, since recorded.
-      `browserAccess`: this host's own Browser access setting; absent: SOVA_BROWSER_ACCESS decides. */
-  self: { id: string; label: string; serveUrl?: string; labelAt?: number; browserAccess?: boolean };
+      `browserAccess`: this host's own Browser access setting; absent: SOVA_BROWSER_ACCESS decides.
+      `browserAccessAt`: when it was last set (ms epoch). */
+  self: { id: string; label: string; serveUrl?: string; labelAt?: number; browserAccess?: boolean; browserAccessAt?: number };
   peers: PeerEntry[];
   /** Per-category sync switches the user has set; an absent category is on. */
   sync: Partial<Record<SyncCategory, boolean>>;
@@ -113,6 +116,7 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
   if (selfRaw.label !== undefined && !text(selfRaw.label)) return { error: "self.label must be a non-empty string (≤ 80)" };
   if (selfRaw.labelAt !== undefined && !isTime(selfRaw.labelAt)) return { error: "self.labelAt must be a time (ms epoch)" };
   if (selfRaw.browserAccess !== undefined && typeof selfRaw.browserAccess !== "boolean") return { error: "self.browserAccess must be true or false" };
+  if (selfRaw.browserAccessAt !== undefined && !isTime(selfRaw.browserAccessAt)) return { error: "self.browserAccessAt must be a time (ms epoch)" };
   const selfServe = selfRaw.serveUrl === undefined || selfRaw.serveUrl === null ? null : checkUrl(selfRaw.serveUrl);
   if (selfServe && "error" in selfServe) return { error: `self.serveUrl ${selfServe.error}` };
   if (r.peers !== undefined && !Array.isArray(r.peers)) return { error: "peers must be an array" };
@@ -136,7 +140,7 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     const serve = e.serveUrl === undefined || e.serveUrl === null ? null : checkUrl(e.serveUrl);
     if (serve && "error" in serve) return { error: `peers[${i}].serveUrl ${serve.error}` };
     if (e.browserAccess !== undefined && e.browserAccess !== false && e.browserAccess !== true) return { error: `peers[${i}].browserAccess must be true or false` };
-    for (const k of ["pairedAt", "labelAt"] as const) {
+    for (const k of ["pairedAt", "labelAt", "browserAccessAt"] as const) {
       if (e[k] !== undefined && !isTime(e[k])) return { error: `peers[${i}].${k} must be a time (ms epoch)` };
     }
     ids.add(e.id);
@@ -152,6 +156,7 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
       ...(e.pairedAt !== undefined ? { pairedAt: e.pairedAt as number } : {}),
       ...(e.labelAt !== undefined ? { labelAt: e.labelAt as number } : {}),
       ...(e.browserAccess === false ? { browserAccess: false as const } : {}),
+      ...(e.browserAccessAt !== undefined ? { browserAccessAt: e.browserAccessAt as number } : {}),
     });
   }
   const syncRaw = r.sync ?? {};
@@ -183,6 +188,7 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     ...(selfServe ? { serveUrl: selfServe.url } : {}),
     ...(selfRaw.labelAt !== undefined ? { labelAt: selfRaw.labelAt as number } : {}),
     ...(typeof selfRaw.browserAccess === "boolean" ? { browserAccess: selfRaw.browserAccess } : {}),
+    ...(selfRaw.browserAccessAt !== undefined ? { browserAccessAt: selfRaw.browserAccessAt as number } : {}),
   };
   return {
     config: {

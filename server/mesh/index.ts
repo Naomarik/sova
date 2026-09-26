@@ -473,6 +473,7 @@ async function putPeers(c: Context): Promise<Response> {
       ...(known?.labelAt !== undefined ? { labelAt: known.labelAt } : {}),
       // What the peer said about its own browser address: only the peer changes it.
       ...(known?.browserAccess === false ? { browserAccess: false } : {}),
+      ...(known?.browserAccessAt !== undefined ? { browserAccessAt: known.browserAccessAt } : {}),
     });
   }
   const v = validatePeers({ ...base.config, peers });
@@ -502,6 +503,11 @@ async function putSettings(c: Context): Promise<Response> {
     const unknown = body.frontDoorExclude.filter((id) => !hosts.includes(id));
     if (unknown.length) return c.json({ error: `frontDoorExclude: not a host here: ${unknown.join(", ")}` }, 400);
     if (hosts.every((id) => body.frontDoorExclude!.includes(id))) return c.json({ error: "frontDoorExclude: the front door needs at least one host" }, 400);
+    // Hosts with no browser address are never upstreams, so one with an address must stay in.
+    const noBrowser = meshEnabled() ? noBrowserIds(base.config) : new Set<string>();
+    const served = hosts.filter((id) => !noBrowser.has(id));
+    if (served.length && served.length < hosts.length && served.every((id) => body.frontDoorExclude!.includes(id)))
+      return c.json({ error: "frontDoorExclude: the front door needs at least one host with a browser address" }, 400);
   }
   const pinned = pinnedLoginKinds();
   if (body.loginKinds !== undefined && pinned && (body.loginKinds ?? "all") !== pinned) {

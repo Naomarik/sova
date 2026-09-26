@@ -52,9 +52,14 @@ export function frontDoorOrder(config: PeersConfig, selfDnsName: string | null, 
   // host is refused when set; a hand-edited file that does it keeps them all.
   const kept = all.filter((h) => !config.frontDoorExclude?.includes(h.id));
   const base = kept.length ? kept : all;
-  // A host with no browser address can't be an upstream; if none has one, all stay (and are flagged).
-  const served = base.filter((h) => !noBrowser.has(h.id));
-  return served.length ? served : base;
+  // A host with no browser address is never an upstream. If the user's exclusions leave only such
+  // hosts (a hand edit: the settings route refuses it), the hosts that have one are kept instead;
+  // only if none has one do they all stay (flagged).
+  const browser = (h: { id: string }) => !noBrowser.has(h.id);
+  const served = base.filter(browser);
+  if (served.length) return served;
+  const any = all.filter(browser);
+  return any.length ? any : base;
 }
 
 /** The hosts that said they have no browser address: this one by its own Browser access, peers by what they told this host. */
@@ -139,9 +144,11 @@ export function frontDoorConfig(config: PeersConfig, selfDnsName: string | null,
     ...(schemes.size > 1
       ? [`#`, `# WARNING: Caddy needs every upstream on one scheme, and these mix http and https: give them`, `# all https (tailscale serve) or all http serve URLs, or Caddy refuses this file.`]
       : []),
-    // An excluded host is only in the order when every host was excluded (then all are kept).
+    // An excluded host is only in the order when every host (with a browser address) was excluded.
     ...(order.some((h) => config.frontDoorExclude?.includes(h.id))
-      ? [`#`, `# WARNING: every host is left out of the front door (frontDoorExclude), so all are listed.`]
+      ? order.some((h) => !noBrowser.has(h.id)) && hostLabels.some((h) => noBrowser.has(h.id))
+        ? [`#`, `# WARNING: every host with a browser address is left out of the front door (frontDoorExclude), so those are listed.`]
+        : [`#`, `# WARNING: every host is left out of the front door (frontDoorExclude), so all are listed.`]
       : []),
     ...(dropped.length
       ? [`#`, `# Left out: ${dropped.map((h) => h.id).join(", ")} ${dropped.length === 1 ? "has" : "have"} no browser address (Browser access is off).`]

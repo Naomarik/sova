@@ -217,6 +217,15 @@ describe("hosts with no browser address", () => {
     assert.equal("noBrowser" in plain, false);
   });
 
+  test("exclusions that leave only hosts with no browser address (a hand edit) keep the ones that have one, flagged", () => {
+    const fd = frontDoorConfig(config({ frontDoorExclude: ["a", "c"] }), "a.x.ts.net", new Set(["b"]));
+    assert.deepEqual(fd.order.map((h) => h.id), ["a", "c"]);
+    assert.ok(!upstreamsOf(fd.caddyfile).some((u) => u.includes("b.x.ts.net")), "never the no-browser host");
+    assert.match(fd.caddyfile, /# WARNING: every host with a browser address is left out of the front door \(frontDoorExclude\), so those are listed\./);
+    assert.doesNotMatch(fd.caddyfile, /no host has a browser address|every host is left out/);
+    assert.deepEqual(fd.noBrowser, [{ id: "b", label: "Host B" }]);
+  });
+
   test("if no host has one, all stay, flagged, rather than an empty front door", () => {
     const fd = frontDoorConfig(config(), "a.x.ts.net", new Set(["a", "b", "c"]));
     assert.deepEqual(fd.order.map((h) => h.id), ["a", "b", "c"]);

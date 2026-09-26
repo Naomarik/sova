@@ -95,6 +95,9 @@ export interface HostDetails {
   /** Whether a browser can open it at an address of its own (its Browser access); absent: an older
       build, taken to have none if it is a phone. */
   browserAccess?: boolean;
+  /** When the host last set its Browser access (its clock, ms epoch); absent: never set, only the
+      environment's default (or an older build). */
+  browserAccessAt?: number;
   /** Whether the `claude` executable Sova would start is on its PATH (a file lookup, cached); absent
       before the first lookup lands, or on an older build. */
   claudeCode?: "found" | "not-found";
@@ -161,6 +164,9 @@ export interface HostRenameResult {
 /** A host's Browser access, as it says it or is asked to set it. */
 export interface HostBrowserAccess {
   browserAccess: boolean;
+  /** POST /api/peer/browser-access: when the caller set it (its clock); a peer takes it only over an
+      older stamp. Absent: never set, or an older build (taken only where no stamp is recorded). */
+  browserAccessAt?: number;
 }
 
 /** PUT /api/mesh/browser-access. */

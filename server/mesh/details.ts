@@ -145,6 +145,7 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
       sync: { categories: mesh.syncStatus().map(({ error: _, ...s }) => s), ...(logins ? { logins } : {}) },
       ...(serveUrl ? { serveUrl } : {}),
       browserAccess: selfBrowserAccess(config),
+      ...(config?.self.browserAccessAt ? { browserAccessAt: config.self.browserAccessAt } : {}),
       ...(claudeCode ? { claudeCode } : {}),
     };
   }
@@ -189,7 +190,7 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     // What each answering peer says about its browser address is recorded, so every front door here leaves it out.
     asked.peers.forEach((p, i) => {
       const d = fetched[i]!.got.details;
-      if (d) learnBrowser(p.nodeId, browserAccessOf(d, undefined));
+      if (d) learnBrowser(p.nodeId, browserAccessOf(d, undefined), typeof d.browserAccessAt === "number" ? d.browserAccessAt : undefined);
     });
     const config = mesh.config() ?? asked;
     const front = frontDoorOf(config, node.dnsName ?? null);
@@ -242,7 +243,9 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
 
   /** Tell every peer (or just `to`) whether this host has a browser address. */
   function announceBrowser(to?: string): Promise<HostTold[]> {
-    const body: HostBrowserAccess = { browserAccess: selfBrowserAccess(mesh.config()) };
+    const config = mesh.config();
+    const at = config?.self.browserAccessAt;
+    const body: HostBrowserAccess = { browserAccess: selfBrowserAccess(config), ...(at ? { browserAccessAt: at } : {}) };
     return tell("/api/peer/browser-access", body, to);
   }
 
@@ -297,19 +300,34 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     return "error" in r ? r : null;
   }
 
-  /** This host's own Browser access from now (the setting wins over SOVA_BROWSER_ACCESS). */
+  /**
+   * This host's own Browser access from now (the setting wins over SOVA_BROWSER_ACCESS), stamped
+   * like a rename so peers take it only over an older answer; the same value again changes nothing.
+   */
   function setSelfBrowser(browserAccess: boolean): { error: string; status: 400 | 409 } | null {
-    const r = mesh.updatePeers((c) => (c.self.browserAccess === browserAccess ? c : { ...c, self: { ...c.self, browserAccess } }));
+    const r = mesh.updatePeers((c) =>
+      c.self.browserAccess === browserAccess && c.self.browserAccessAt
+        ? c
+        : { ...c, self: { ...c.self, browserAccess, browserAccessAt: nextLabelAt(c.self.browserAccessAt) } },
+    );
     return "error" in r ? r : null;
   }
 
-  /** What a peer (by node) says about its browser address; no write when it is what is recorded. */
-  function learnBrowser(nodeId: string, browserAccess: boolean): { error: string; status: 400 | 409 } | null {
+  /**
+   * What a peer (by node) says about its browser address, taken only over an older stamp (one more
+   * than a day ahead of this clock counts as a day ahead, as for a name). An answer without a stamp
+   * (never set there, or an older build) is taken only while none is recorded. No write when nothing changes.
+   */
+  function learnBrowser(nodeId: string, browserAccess: boolean, stamp?: number): { error: string; status: 400 | 409 } | null {
+    const at = stamp === undefined ? undefined : Math.min(stamp, Date.now() + LABEL_AHEAD_MS);
     const r = mesh.updatePeers((c) => {
       const hit = c.peers.find((p) => p.nodeId === nodeId);
-      if (!hit || (hit.browserAccess !== false) === browserAccess) return c;
-      const { browserAccess: _, ...rest } = hit;
-      return { ...c, peers: c.peers.map((p) => (p === hit ? (browserAccess ? rest : { ...rest, browserAccess: false as const }) : p)) };
+      if (!hit) return c;
+      if (at === undefined ? hit.browserAccessAt !== undefined : (hit.browserAccessAt ?? 0) >= at) return c;
+      if ((hit.browserAccess !== false) === browserAccess && hit.browserAccessAt === at) return c;
+      const { browserAccess: _, browserAccessAt: __, ...rest } = hit;
+      const next = { ...rest, ...(browserAccess ? {} : { browserAccess: false as const }), ...(at !== undefined ? { browserAccessAt: at } : {}) };
+      return { ...c, peers: c.peers.map((p) => (p === hit ? next : p)) };
     });
     return "error" in r ? r : null;
   }
@@ -368,15 +386,19 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     const err = setSelfBrowser(want);
     if (err) return c.json({ error: err.error }, err.status);
     void announceBrowser();
-    return c.json({ browserAccess: want } satisfies HostBrowserAccess);
+    const at = mesh.config()?.self.browserAccessAt;
+    return c.json({ browserAccess: want, ...(at ? { browserAccessAt: at } : {}) } satisfies HostBrowserAccess);
   });
 
   app.post("/api/peer/browser-access", small, async (c) => {
     const caller = mesh.requestPeer(c);
     if (!caller) return notFound(c);
-    const said = ((await c.req.json().catch(() => null)) as Partial<HostBrowserAccess> | null)?.browserAccess;
+    const body = (await c.req.json().catch(() => null)) as Partial<HostBrowserAccess> | null;
+    const said = body?.browserAccess;
+    const stamp = body?.browserAccessAt;
     if (typeof said !== "boolean") return c.json({ error: "Expected {browserAccess}" }, 400);
-    const err = learnBrowser(caller.nodeId, said);
+    if (stamp !== undefined && (typeof stamp !== "number" || !Number.isFinite(stamp) || stamp <= 0)) return c.json({ error: "browserAccessAt must be a time (ms epoch)" }, 400);
+    const err = learnBrowser(caller.nodeId, said, stamp);
     return err ? c.json({ error: err.error }, err.status) : c.json({ ok: true as const });
   });
 
@@ -416,7 +438,7 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
       return c.json({ error: `${peer.label} didn't take it: ${why}` }, 502);
     }
     // It tells every peer itself (this host included); taking its answer here makes the page right at once.
-    const err = learnBrowser(peer.nodeId, got.browserAccess);
+    const err = learnBrowser(peer.nodeId, got.browserAccess, typeof got.browserAccessAt === "number" && got.browserAccessAt > 0 ? got.browserAccessAt : undefined);
     if (err) return c.json({ error: err.error }, err.status);
     return c.json({ browserAccess: got.browserAccess, told: [{ id: peer.id, ok: true }] } satisfies HostBrowserAccessResult);
   });

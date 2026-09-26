@@ -61,6 +61,8 @@ let fakeDetails: "ok" | "old" = "ok";
 let fakeLabel = "B";
 /** What the fake peer says about its browser address; undefined: an older build that doesn't say. */
 let fakeBrowser: boolean | undefined;
+/** The stamp the fake peer's details carry with it; undefined: none. */
+let fakeBrowserAt: number | undefined;
 /** The fake peer drops every connection, as a stopped host does. */
 let fakeAway = false;
 const told: Array<{ path: string; body: unknown }> = [];
@@ -77,6 +79,7 @@ const fakeHostDetails = (): HostDetails => ({
   activity: { sessions: 3, turnsRunning: 0, workers: 0 },
   sync: { categories: [] },
   ...(fakeBrowser !== undefined ? { browserAccess: fakeBrowser } : {}),
+  ...(fakeBrowserAt !== undefined ? { browserAccessAt: fakeBrowserAt } : {}),
 });
 
 before(async () => {
@@ -518,7 +521,8 @@ describe("mesh on", () => {
     assert.equal(st, 200);
     assert.equal(res.browserAccess, false);
     assert.equal(peersDoc().self.browserAccess, false);
-    assert.deepEqual(told, [{ path: "/api/peer/browser-access", body: { browserAccess: false } }]);
+    assert.equal(typeof peersDoc().self.browserAccessAt, "number", "stamped like a rename");
+    assert.deepEqual(told, [{ path: "/api/peer/browser-access", body: { browserAccess: false, browserAccessAt: peersDoc().self.browserAccessAt } }]);
     assert.deepEqual(res.told.find((t) => t.id === "b"), { id: "b", ok: true });
     assert.equal(res.told.find((t) => t.id === "c")!.ok, false, "a down peer is reported");
     fresh();
@@ -560,7 +564,7 @@ describe("mesh on", () => {
     fresh();
     await call("GET", "/api/mesh"); // b answers again
     await waitFor(() => told.some((t) => t.path === "/api/peer/browser-access"));
-    assert.deepEqual(told.find((t) => t.path === "/api/peer/browser-access")!.body, { browserAccess: false });
+    assert.deepEqual(told.find((t) => t.path === "/api/peer/browser-access")!.body, { browserAccess: false, browserAccessAt: peersDoc().self.browserAccessAt });
     await call("PUT", "/api/mesh/browser-access", { id: selfId(), browserAccess: true });
   });
 
@@ -589,7 +593,7 @@ describe("mesh on", () => {
     try {
       const r = await peerCall("POST", "/api/peer/set-browser-access", { browserAccess: false });
       assert.equal(r.status, 200);
-      assert.deepEqual(JSON.parse(r.body), { browserAccess: false });
+      assert.deepEqual(JSON.parse(r.body), { browserAccess: false, browserAccessAt: peersDoc().self.browserAccessAt });
       assert.equal(peersDoc().self.browserAccess, false);
       await waitFor(() => told.some((t) => t.path === "/api/peer/browser-access"));
       assert.equal((await peerCall("POST", "/api/peer/set-browser-access", {})).status, 400);
@@ -599,6 +603,61 @@ describe("mesh on", () => {
       whoisNode = null;
     }
     assert.equal((await call("POST", "/api/peer/set-browser-access", { browserAccess: true }))[0], 404, "never from the main listener");
+  });
+
+  test("Browser access is stamped: an older answer arriving late never replaces a newer one", async () => {
+    whoisNode = "nB";
+    try {
+      const say = (body: object) => peerCall("POST", "/api/peer/browser-access", body);
+      assert.equal((await say({ browserAccess: true, browserAccessAt: 2_000 })).status, 200);
+      assert.equal(peerB().browserAccess, undefined);
+      assert.equal(peerB().browserAccessAt, 2_000);
+      // Two quick toggles on b: "off" (stamp 1000) was sent first but lands after "on" (2000).
+      assert.equal((await say({ browserAccess: false, browserAccessAt: 1_000 })).status, 200);
+      assert.equal(peerB().browserAccess, undefined, "the older answer is ignored");
+      assert.equal((await say({ browserAccess: false })).status, 200);
+      assert.equal(peerB().browserAccess, undefined, "an unstamped answer never replaces a stamped one");
+      assert.equal((await say({ browserAccess: false, browserAccessAt: -1 })).status, 400);
+      const far = Date.now() + 10 * 365 * 86_400_000;
+      assert.equal((await say({ browserAccess: false, browserAccessAt: far })).status, 200);
+      assert.equal(peerB().browserAccess, false);
+      assert.ok(peerB().browserAccessAt <= Date.now() + 86_400_000, "a stamp from a clock far ahead is kept as a day ahead");
+    } finally {
+      whoisNode = null;
+    }
+  });
+
+  test("details read before a change, answered after it, don't undo it", async () => {
+    // b's entry holds "off" at about now + a day; details that carry an older stamp lose to it.
+    fakeBrowser = true;
+    fakeBrowserAt = 3_000;
+    fresh();
+    const [, d] = await call<MeshDetails>("GET", "/api/mesh/details");
+    assert.equal(peerB().browserAccess, false, "the recorded, newer answer stands");
+    assert.ok(d.hosts.find((h) => h.id === "b"));
+    fakeBrowserAt = Date.now() + 2 * 86_400_000;
+    fresh();
+    await call("GET", "/api/mesh/details");
+    assert.equal(peerB().browserAccess, undefined, "a newer stamp in the details is taken");
+    fakeBrowserAt = undefined;
+  });
+
+  test("leaving out every host that has a browser address is refused, like leaving out every host", async () => {
+    whoisNode = "nB";
+    try {
+      await peerCall("POST", "/api/peer/browser-access", { browserAccess: false, browserAccessAt: Date.now() + 3 * 86_400_000 });
+    } finally {
+      whoisNode = null;
+    }
+    assert.equal(peerB().browserAccess, false);
+    const [st, err] = await call<{ error: string }>("PUT", "/api/mesh/settings", { frontDoorExclude: [selfId(), "c"] });
+    assert.equal(st, 400);
+    assert.match(err.error, /at least one host with a browser address/);
+    assert.equal(peersDoc().frontDoorExclude, undefined, "nothing written");
+    assert.equal((await call("PUT", "/api/mesh/settings", { frontDoorExclude: [selfId()] }))[0], 200);
+    const [, fd] = await call<MeshFrontDoor>("GET", "/api/mesh/front-door");
+    assert.deepEqual(fd.order.map((h) => h.id), ["c"]);
+    assert.equal((await call("PUT", "/api/mesh/settings", { frontDoorExclude: null }))[0], 200);
   });
 
   test("a host's details say whether Claude Code is found, once the first lookup has landed", async () => {

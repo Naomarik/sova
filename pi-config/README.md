@@ -92,6 +92,16 @@ directory is moved to `<name>.bak`. Nothing else under `~/.pi/agent` is
 touched. The agent directory is `$PI_AGENT_DIR`, else `$PI_CODING_AGENT_DIR`,
 else `~/.pi/agent`.
 
+A new extension is not loaded until it is linked, and an extension that imports
+a sibling (`../worktrees/state.ts`) fails to load while the sibling is unlinked:
+pi resolves the import from the link's path, not the repository's.
+`install.sh --links` refreshes only the extension links: it links what is
+missing, repoints a symlink that points elsewhere, removes a dangling symlink
+into this directory, leaves any non-symlink alone with a warning, and touches
+no settings, config file or sandbox policy. It is safe unattended, e.g. as a
+systemd `ExecStartPre=-…/pi-config/install.sh --links` of a service that
+embeds pi, so each restart picks up a newly merged extension.
+
 Edits in the checkout take effect in pi on the next `/reload`.
 
 `settings.json` is not linked, because pi writes runtime state into its

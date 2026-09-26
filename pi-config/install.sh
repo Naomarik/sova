@@ -25,6 +25,14 @@
 # install.sh --save copies the live values of the keys the seed declares back
 # into the seed, so a deliberate change made in the TUI or by `pi install`
 # reaches this repository. Keys the seed does not declare stay out of it.
+#
+# install.sh --links refreshes only the extension links, safe to run unattended
+# (e.g. before every start of a service that embeds pi): it links every
+# extension not yet linked, repoints a symlink that points elsewhere, removes a
+# dangling symlink into this directory (a removed or renamed extension), and
+# leaves anything that is not a symlink alone with a warning. It touches no
+# settings, config file or sandbox policy, prints only what it changed, and
+# exits 0 unless its arguments are wrong.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd -P)
 agent=${PI_AGENT_DIR:-${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}}
@@ -33,7 +41,8 @@ case "${1:-}" in
 	"") ;;
 	--check) mode=check ;;
 	--save) mode=save ;;
-	*) echo "usage: $0 [--check|--save]" >&2; exit 2 ;;
+	--links) mode=links ;;
+	*) echo "usage: $0 [--check|--save|--links]" >&2; exit 2 ;;
 esac
 check=false
 [ "$mode" = check ] && check=true
@@ -158,6 +167,40 @@ settings() {
 if [ "$mode" = save ]; then
 	settings save
 	exit
+fi
+
+if [ "$mode" = links ]; then
+	ext="$agent/extensions"
+	mkdir -p "$ext"
+	relink() {
+		local src=$1 dst=$2
+		[ "$(readlink "$dst" 2>/dev/null)" = "$src" ] && return
+		if [ -L "$dst" ]; then
+			rm "$dst"
+		elif [ -e "$dst" ]; then
+			echo "left alone, not a symlink: $dst (install.sh would move it aside)" >&2
+			return
+		fi
+		ln -s "$src" "$dst"
+		echo "$dst -> $src"
+	}
+	for d in "$here"/extensions/*/; do
+		d=${d%/}
+		relink "$d" "$ext/$(basename "$d")"
+	done
+	for f in "$here"/extensions/*.ts; do
+		[ -e "$f" ] || continue
+		relink "$f" "$ext/$(basename "$f")"
+	done
+	for e in "$ext"/* "$ext"/.[!.]*; do
+		[ -L "$e" ] && [ ! -e "$e" ] || continue
+		target=$(readlink "$e")
+		case $target in "$here"/*)
+			rm "$e"
+			echo "removed dangling $e (-> $target)"
+		esac
+	done
+	exit 0
 fi
 
 link() {

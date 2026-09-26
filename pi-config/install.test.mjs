@@ -221,3 +221,51 @@ test("the sandbox policy is copied, never linked, never overwritten; --check rep
 	assert.match(r.out, /missing: .*darwin\/CLAUDE\.md/);
 	fs.rmSync(s.root, { recursive: true, force: true });
 });
+
+test("--links links new extensions, prunes dangling ones into this dir, and touches nothing else", () => {
+	const s = sandbox();
+	const copy = path.join(s.root, "pi-config");
+	fs.cpSync(path.join(here, "sandbox-policy"), path.join(copy, "sandbox-policy"), { recursive: true });
+	fs.mkdirSync(path.join(copy, "extensions/alpha"));
+	assert.equal(s.run().code, 0);
+	s.writeLive({ ...s.readLive(), theme: "light", defaultModel: "m" });
+	const ext = path.join(s.agent, "extensions");
+
+	// Nothing to do: silent, and the whole agent dir is byte-identical.
+	let before = snapshot(s.agent);
+	let r = s.run("--links");
+	assert.equal(r.code, 0, r.out);
+	assert.equal(r.out, "");
+	assert.deepEqual(snapshot(s.agent), before);
+
+	// A new extension dir and a new single-file extension are linked; a removed one's
+	// dangling link is pruned; a foreign dangling link and a foreign real dir are kept.
+	fs.mkdirSync(path.join(copy, "extensions/beta"));
+	fs.writeFileSync(path.join(copy, "extensions/gamma.ts"), "");
+	fs.rmSync(path.join(copy, "extensions/alpha"), { recursive: true });
+	fs.symlinkSync(path.join(s.root, "elsewhere"), path.join(ext, "foreign"));
+	fs.mkdirSync(path.join(ext, "mine"));
+	before = snapshot(s.agent);
+	r = s.run("--links");
+	assert.equal(r.code, 0, r.out);
+	assert.equal(fs.readlinkSync(path.join(ext, "beta")), path.join(copy, "extensions/beta"));
+	assert.equal(fs.readlinkSync(path.join(ext, "gamma.ts")), path.join(copy, "extensions/gamma.ts"));
+	assert.equal(fs.lstatSync(path.join(ext, "alpha"), { throwIfNoEntry: false }), undefined);
+	assert.equal(fs.readlinkSync(path.join(ext, "foreign")), path.join(s.root, "elsewhere"));
+	assert.ok(fs.statSync(path.join(ext, "mine")).isDirectory());
+	assert.match(r.out, /removed dangling .*alpha/);
+	// Outside extensions/ nothing moved: runtime settings, config links, policy.
+	const outside = (snap) => Object.fromEntries(Object.entries(snap).filter(([p]) => !p.startsWith(ext + path.sep)));
+	assert.deepEqual(outside(snapshot(s.agent)), outside(before));
+	assert.equal(s.readLive().theme, "light");
+
+	// A real file where an extension wants its link is left alone and warned about, exit 0.
+	fs.mkdirSync(path.join(copy, "extensions/delta"));
+	fs.writeFileSync(path.join(ext, "delta"), "user file");
+	r = s.run("--links");
+	assert.equal(r.code, 0, r.out);
+	assert.match(r.out, /left alone, not a symlink: .*delta/);
+	assert.equal(fs.readFileSync(path.join(ext, "delta"), "utf8"), "user file");
+	assert.equal(fs.existsSync(path.join(ext, "delta.bak")), false);
+	fs.rmSync(s.root, { recursive: true, force: true });
+});

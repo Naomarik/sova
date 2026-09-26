@@ -15,7 +15,7 @@
     "dev:web": "vite",
     "hermetic:agent-dir": "node scripts/hermetic-agent-dir.mjs",
     "e2e:settings-footer-save": "node scripts/e2e/settings-footer-save.mjs",
-    "dev:hermetic": "node scripts/hermetic-agent-dir.mjs && PORT=4810 PI_CODING_AGENT_DIR=\"$PWD/.agent\" tsx server/index.ts",
+    "dev:hermetic": "node scripts/hermetic-agent-dir.mjs && PORT=${SOVA_PORT:-4810} PI_CODING_AGENT_DIR=\"$PWD/.agent\" tsx server/index.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build && vite build --mode share",
     "start": "tsx server/index.ts",

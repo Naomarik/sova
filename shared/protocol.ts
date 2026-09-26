@@ -1741,6 +1741,39 @@ export type WatchServerMessage =
 //                                  400 bad path/id, 404 session not hosted here, 409 not resumable
 //                                  (with the reason), 500 the backend failed to start it.)
 
+// GET /api/insights/worktrees?paths=<session path>,<session path>… -> WorktreesInsight
+//                                  (only the listed sessions: the board asks for its visible rows.
+//                                  Unknown paths come back with trees: []. 400 when paths is missing.)
+
+/** One git worktree a session touches, compared with its repository's base branch. */
+export interface WorktreeStatus {
+  /** Absolute path of the worktree's top level. */
+  path: string;
+  /** Where the tree came from: the session's own cwd, or a worker's cwd (stopgap source). */
+  source: "session" | "worker";
+  /** The directory still exists and is a git worktree. When false every other field is absent. */
+  exists: boolean;
+  /** Checked-out branch short name; absent on a detached HEAD. */
+  branch?: string;
+  /** The base the counts are against (`master`, else `main`, else origin/HEAD). Absent: no base found. */
+  base?: string;
+  /** "ancestor": the tip is in the base. "content": not an ancestor, but merging would change
+      nothing (squash or rebase merge). "no": unmerged. Absent when there is no base. */
+  merged?: "ancestor" | "content" | "no";
+  /** Commits on the branch not in the base, and in the base not on the branch. */
+  ahead?: number;
+  behind?: number;
+  /** Lines added/removed by the branch since its merge-base with the base (`base...HEAD`). */
+  added?: number;
+  removed?: number;
+  /** Uncommitted changes (tracked or untracked) in the worktree. */
+  dirty?: boolean;
+  /** Why a reading is missing, when git failed. */
+  error?: string;
+}
+export interface SessionWorktrees { sessionPath: string; trees: WorktreeStatus[] }
+export interface WorktreesInsight { sessions: SessionWorktrees[]; generatedAt: number }
+
 /** POST /api/workers/resume's answer: the worker as the runtime now lists it. */
 export interface WorkerResumeResult { worker: WorkerInfo | null }
 

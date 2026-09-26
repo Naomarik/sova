@@ -22,6 +22,7 @@ import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
+import { worktreeInsights } from "./worktrees";
 import { decodeWorkers, getAgentsInsight, getSessionInsight, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions } from "./sessions-index";
@@ -789,6 +790,15 @@ app.get("/api/insights/session", async (c) => {
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   return c.json(await getSessionInsight(path));
+});
+
+// The git worktrees each listed session touches (server/worktrees.ts). Paths that aren't sessions
+// come back with trees: []; git failures are a tree's `error`, never a 500.
+app.get("/api/insights/worktrees", async (c) => {
+  const raw = c.req.query("paths");
+  if (raw === undefined) return c.json({ error: "Missing ?paths= (comma-separated session paths)" }, 400);
+  const paths = raw.split(",").map((p) => p.trim()).filter(Boolean);
+  return c.json(await worktreeInsights.get(paths), 200, { "Cache-Control": "no-store" });
 });
 
 // /explain artifacts (server/explanations.ts). The store is read-only here: listing never fails,

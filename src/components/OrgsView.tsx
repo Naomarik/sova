@@ -25,6 +25,7 @@ import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
 import { proposedAreasLine } from "../lib/baton-strip";
 import { groupChanges, revertible, valueText } from "../lib/profile-changes";
 import { orgPageRoute } from "../lib/org-page-route";
+import { createOrgSource } from "../lib/org-source";
 import { orgHref, orgTabHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
 import { orgTabsOf } from "../lib/org-tabs";
 import { toast } from "../lib/ui-state";
@@ -265,14 +266,13 @@ function OrgList(props: { titleRef(el: HTMLHeadingElement): void }) {
 // ---- one org -------------------------------------------------------------------------------------
 
 function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el: HTMLHeadingElement): void }) {
-  const [org, { refetch, mutate }] = createResource(() => props.id, getOrg);
+  const org = createOrgSource(props.id);
   const [error, setError] = createSignal<string | null>(null);
   const [links, setLinks] = createSignal<OfferLink[] | null>(null);
   const act = async (fn: () => Promise<OrgDetail | unknown>, done?: string): Promise<boolean> => {
     try {
       const r = await fn();
-      if (r && typeof r === "object" && "roster" in r) mutate(r as OrgDetail);
-      else await refetch();
+      org.set(r && typeof r === "object" && "roster" in r ? (r as OrgDetail) : await getOrg(props.id));
       setError(null);
       if (done) toast(done);
       return true;
@@ -285,22 +285,22 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
   const tab = (): OrgTab => (props.start ? "sessions" : (props.tab ?? "sessions"));
   return (
     <InsightsPage
-      title={org()?.name ?? "Organization"}
+      title={org.data()?.name ?? "Organization"}
       meta={
-        org() ? (
+        org.data() ? (
           <>
-            <a class="orgs-meta-link" href="#/orgs">Organizations</a> · <span class="orgs-mono orgs-meta-path" title={org()!.dir}>{org()!.dir}</span>
+            <a class="orgs-meta-link" href="#/orgs">Organizations</a> · <span class="orgs-mono orgs-meta-path" title={org.data()!.dir}>{org.data()!.dir}</span>
           </>
         ) : undefined
       }
       refreshLabel="Refresh Organization"
-      onRefresh={() => void refetch()}
-      error={error() ?? (org.error ? errText(org.error) : null)}
+      onRefresh={() => org.refetch()}
+      error={error() ?? org.error()}
       errorTitle="Couldn't update this organization."
-      busy={org.loading}
+      busy={org.pending()}
       titleRef={props.titleRef}
     >
-      <Show when={org()}>
+      <Show when={org.data()}>
         {(o) => (
           <>
             <For each={o().problems}>{(p) => <Banner tone="warn" title="The workspace repo has a problem." body={p} />}</For>
@@ -451,6 +451,10 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
   /** The baton session a start link came from (the new one records it as its parent). */
   const [parent, setParent] = createSignal<string | undefined>();
   let formEl: HTMLFormElement | undefined;
+  // "started 5m ago" moves on while the page stays open.
+  const [now, setNow] = createSignal(Date.now());
+  const tick = setInterval(() => setNow(Date.now()), 30_000);
+  onCleanup(() => clearInterval(tick));
   // "Start a session for Bob" (`…/start/<person>`, on first load or any later hash change) opens the
   // form with Bob ticked (and, from a baton session, that session as parent). Not an active person:
   // the form opens with nobody ticked.
@@ -521,7 +525,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
                     {b.publicTitle}
                   </a>
                   <span class="list-meta">
-                    {b.holder ? `With ${b.holder} · ` : ""}started {relativeTime(b.createdAt)}
+                    {b.holder ? `With ${b.holder} · ` : ""}started {relativeTime(b.createdAt, now())}
                   </span>
                 </span>
                 {/* Open, but nobody has a link to it yet: that is the operator's to do. */}

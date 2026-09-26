@@ -320,14 +320,24 @@ In this order:
   field and **Save Key**; with one stored, **Replace Key** (the field again, with Save Key and
   Cancel) and **Remove Key** (which asks first, with Cancel). The field never shows a stored key — only
   its last 4 characters. A key from `SOVA_JEV_KEY` is shown as such, with no key controls. A key
-  Jev rejects is not stored; the field keeps what was typed, with the reason.
+  Jev rejects is not stored; the field keeps what was typed, with the reason. **Test Decisions**
+  always sits in the key row — beside Replace Key and Remove Key, beside Save Key with none stored,
+  on its own with a key from `SOVA_JEV_KEY`, and with Jev off — except while Remove Key asks; it is
+  disabled while nothing can answer. It runs one canned check with no session data and says, under
+  the row, who answered and how long it took ("Answered by haiku in 4.1 s, after Jev was
+  rate-limited."), or why nothing could; with unsaved changes a hint says it tests what's saved.
+  The Jev line reflects the test at once — Working and "checked just now" when Jev answered,
+  Rejected when it refused the key — and the tab then re-reads the settings so the server's key
+  status stands.
 - **Fallback model.** A choice of **None** (the default) or **A model**; A model shows one
   backend/model/effort row (§app.settings-dialog/modes's picker rules: choices, not free text;
   nothing picked for you; a stored pick is always shown). The server's suggestions appear as
   "Suggested:" buttons that apply one only when clicked — only those this machine can run (the
   backend offers the model at that effort and the policy allows it); a backend that couldn't list
   its models keeps its suggestions, a failed check shows them all, and none show while it runs. Its hint says when it answers (Jev off,
-  or Jev can't) and that its provider bills it.
+  or Jev can't) and that its provider bills it. The section ends with the saved chain in words
+  ("Asks Jev, then Claude Code · haiku.", a paused provider with when it retries, or the
+  unavailable sentence).
 - **Features.** **Flag sessions that need you** and **Tag sessions**, both off by default. With a
   feature on while nothing can answer, the switch stays on and its hint is replaced, in warn, by
   the unavailable sentence ("Unavailable: Jev is off and no fallback model is set. Nothing is
@@ -342,12 +352,6 @@ In this order:
   saved with a warning sentence, and so is a feature switched on while the chain has no provider
   (it stays unavailable and sends nothing). Warnings show in a "Saved, with notes." banner
   that clears at the next edit.
-- **Check.** The saved chain in words ("Asks Jev, then Claude Code · haiku.", a paused provider
-  with when it retries, or the unavailable sentence) and **Test Decisions**, which runs one canned
-  check with no session data and says who answered and how long it took ("Answered by haiku in
-  4.1 s, after Jev was rate-limited."), or why nothing could. The Jev line reflects the test at once — Working and
-  "checked just now" when Jev answered, Rejected when it refused the key — and the tab then
-  re-reads the settings so the server's key status stands.
 - **Tag past sessions**, only while Tag sessions is saved on or a backfill runs: **Tag Last 30
   Days** and **Tag All Sessions**, a hint that it runs 2 at a time, skips what's already tagged
   and costs more on a fallback model; **Stop Tagging** while one runs; a progress line ("Tagged 40

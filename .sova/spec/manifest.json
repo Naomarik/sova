@@ -3541,7 +3541,10 @@
         "server/baton-handoff.test.ts",
         "server/baton-guards.ts",
         "server/baton-guards.test.ts",
-        "server/baton-prompt.md"
+        "server/baton-prompt.md",
+        "server/chat-manager.ts",
+        "server/queue.ts",
+        "server/queue.test.ts"
       ],
       "requires": [
         "§app.baton/links"

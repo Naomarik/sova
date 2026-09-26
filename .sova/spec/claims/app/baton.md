@@ -113,9 +113,20 @@ once), **lease** (an offer's lock on its first taker).
   the turn goes on.
 - The operator may **Take back** at any time: recorded as a hand-off from the holder to the
   operator with the question "(taken back)". While a reply is being written, it is stopped first
-  (the partial reply stays in the transcript as a stopped reply), then the baton moves. The
-  operator's other moves — hand the session to a person, make an offer, withdraw one — work the
-  same way; only the budget stop waits for the reply.
+  (the partial reply stays in the transcript as a stopped reply), then the baton moves. A turn
+  that is starting (a message accepted, its run not yet begun) is a reply being written: it is
+  stopped as its run begins, and the move comes after it. The operator's other moves — hand the
+  session to a person, make an offer, withdraw one — and someone leaving the organization work the
+  same way; only the budget stop waits for the reply (a starting one too). A move that would be
+  refused (the limit, a done session, bad invitees) is refused before anything is stopped: the
+  reply goes on.
+- **Nothing sent is dropped.** Messages still queued behind a reply that a move stops each enter
+  the transcript after the stopped reply and before the move's entry, as their sender's (with
+  their sender marker, so the operator's transcript and the share pages name them), with no reply
+  of their own; each was counted when it was accepted and is not counted again. Whoever holds the
+  baton next reads them, and the model reads them with the next turn. The operator's **Stop** in a
+  baton session keeps a participant's queued messages the same way; only the operator's own come
+  back to the composer.
 - The operator may **hand the session to a person** (`POST /api/baton/:sid/handoff {to, question,
   briefing?}`, "Hand this session to Bob"): an active roster person only (a proposed one is
   refused: approve first); recorded like any hand-off, and answered with that hand-off's link.

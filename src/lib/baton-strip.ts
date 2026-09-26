@@ -27,10 +27,13 @@ export function whereLine(i: Pick<BatonInfo, "offer" | "session" | "names">, now
   if (offer) {
     const invited = namesList(offer.to.map((p) => p.name));
     if (offer.state === "held" && offer.holder) {
+      const ms = offer.leaseUntil ? Date.parse(offer.leaseUntil) - now : null;
       const left = offer.leaseUntil ? leaseMinutes(offer.leaseUntil, now) : null;
-      return `${offer.holder.name} is answering (offered to ${invited})${left === null ? "" : ` — theirs for ${left} more ${left === 1 ? "minute" : "minutes"} of quiet`}`;
+      const quiet = ms === null ? "" : ms < 60_000 ? " — theirs for less than a minute more of quiet" : ` — theirs for ${left} more ${left === 1 ? "minute" : "minutes"} of quiet`;
+      return `${offer.holder.name} is answering (offered to ${invited})${quiet}`;
     }
-    return `offered to ${invited} — nobody has answered yet`;
+    // Someone answered before and went quiet: the offer is open again, not untouched.
+    return offer.lastActivityAt ? `offered to ${invited} — open again; nobody is answering right now` : `offered to ${invited} — nobody has answered yet`;
   }
   if (s.holder === OPERATOR) return s.budget && s.budget.messagesUsed >= s.budget.messagesMax ? "with you — extend the limit to write" : "with you — you can write now";
   if (s.holder) return `with ${i.names[s.holder] ?? "someone"} — you can write once you take it back`;

@@ -47,6 +47,16 @@ test("every place the baton can be has its phrase", () => {
     whereLine(info({ offerId: "off_1", holder: "p_2" }, offer("held", { holder: { id: "p_2", name: "Ana" }, leaseUntil: "2026-09-26T12:01:00Z" })), NOW),
     "Ana is answering (offered to Tony, Ana, and Bob) — theirs for 1 more minute of quiet",
   );
+  // A lapsed lease: someone answered and went quiet, so the offer is open again, not untouched.
+  assert.equal(
+    whereLine(info({ offerId: "off_1" }, offer("open", { lastActivityAt: "2026-09-26T11:30:00Z" })), NOW),
+    "offered to Tony, Ana, and Bob — open again; nobody is answering right now",
+  );
+  // A lease with seconds left (a short test lease, or the last minute of a real one) is not "1 more minute".
+  assert.equal(
+    whereLine(info({ offerId: "off_1", holder: "p_2" }, offer("held", { holder: { id: "p_2", name: "Ana" }, leaseUntil: "2026-09-26T12:00:05Z" })), NOW),
+    "Ana is answering (offered to Tony, Ana, and Bob) — theirs for less than a minute more of quiet",
+  );
   assert.equal(whereLine(info({ holder: "operator", state: "needs-you" }), NOW), "with you — you can write now");
   assert.equal(whereLine(info({ holder: "operator", state: "needs-you", budget: { messagesMax: 5, messagesUsed: 5 } }), NOW), "with you — extend the limit to write");
   assert.equal(whereLine(info({ holder: "p_1" }), NOW), "with Tony — you can write once you take it back");

@@ -153,6 +153,8 @@ export interface Offer {
   /** open: in the pool (nobody holds it); held: `holder` holds the lease; withdrawn: over. */
   state: "open" | "held" | "withdrawn";
   holder?: string;
+  /** Everyone who has held this offer's lease, the current holder included (claim order). */
+  heldBy?: string[];
   leaseUntil?: string;
   lastActivityAt?: string;
   createdAt: string;

@@ -441,7 +441,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const hit = batonById(sid);
       if (!hit) throw new OrgError("Unknown baton session", 404);
       if (hit.row.holder === OPERATOR) throw new OrgError("You already hold the baton.", 409);
-      await moveBaton(sid, OPERATOR, "(taken back)");
+      await moveBaton(sid, OPERATOR, "(taken back)", "", { interrupt: true });
       return c.json({ ok: true });
     }),
   );
@@ -464,7 +464,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       if (!Array.isArray(b.to)) throw new OrgError("to must be a list of people");
       const hit = batonById(sid);
       if (!hit) throw new OrgError("Unknown baton session", 404);
-      const out = await offerBaton(sid, b.to, typeof b.question === "string" ? b.question : "", typeof b.briefing === "string" ? b.briefing : "");
+      const out = await offerBaton(sid, b.to, typeof b.question === "string" ? b.question : "", typeof b.briefing === "string" ? b.briefing : "", { interrupt: true });
       return c.json({ info: infoOf(sid), links: offerLinks(hit.row.orgId, out.links), ...linkWarning() }, 201);
     }),
   );
@@ -475,7 +475,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const hit = batonById(sid);
       if (!hit) throw new OrgError("Unknown baton session", 404);
       if (!hit.row.offerId) throw new OrgError("There is no open offer.", 409);
-      await moveBaton(sid, OPERATOR, "(offer withdrawn)");
+      await moveBaton(sid, OPERATOR, "(offer withdrawn)", "", { interrupt: true });
       return c.json(infoOf(sid));
     }),
   );
@@ -493,7 +493,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const question = typeof b.question === "string" ? b.question.trim().slice(0, 1000) : "";
       if (!question) throw new OrgError("question is required");
       const briefing = typeof b.briefing === "string" ? b.briefing.trim().slice(0, 4000) : "";
-      await moveBaton(sid, to, question, briefing);
+      await moveBaton(sid, to, question, briefing, { interrupt: true });
       const { token } = rotateLink(sid);
       return c.json({ info: infoOf(sid), link: linkUrl(token), ...linkWarning() });
     }),

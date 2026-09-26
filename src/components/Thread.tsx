@@ -195,7 +195,7 @@ function BatonCard(props: { mark: Exclude<BatonMark, { kind: "sent" }>; name(ref
       <Match when={m.kind === "lease" && m}>
         {(l) => (
           <p class="baton-card-line">
-            {l().event === "claimed" ? `${props.name(l().by)} took the offer.` : `${props.name(l().by)} went quiet for 15 minutes; the offer is open to everyone again.`}
+            {l().event === "claimed" ? `${props.name(l().by)} took the offer.` : `${props.name(l().by)} went quiet, so the offer is open to every invitee again.`}
           </p>
         )}
       </Match>
@@ -704,6 +704,8 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
 export function LiveEntries(props: {
   live: LiveState;
   author: string;
+  /** A baton session's names by ref: a live row's sender, once its marker arrived. */
+  names?: Record<string, string>;
   hideTools?: boolean;
   hideThinking?: boolean;
   /** What a message of ours that hasn't been delivered offers — one Remove, from the chat. A row
@@ -743,6 +745,7 @@ export function LiveEntries(props: {
                         state={e().state}
                         origin={e().origin}
                         overseer={e().overseer}
+                        sender={e().by ? (props.names?.[e().by!] ?? (e().by === "operator" ? "You" : "Someone")) : undefined}
                         images={e().images}
                         attachments={e().attachments}
                       />

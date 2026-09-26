@@ -270,6 +270,13 @@ export function onOrgAttached(fn: (orgId: string, dir: string) => void): void {
   attachHooks.push(fn);
 }
 
+/** Someone's status became `left` (an edit, a revert, a declined referral): server/baton-loadout.ts
+    registers what that does to the sessions they take part in. Called after the roster is written. */
+const leftHooks: ((orgId: string, personId: string) => void)[] = [];
+export function onPersonLeft(fn: (orgId: string, personId: string) => void): void {
+  leftHooks.push(fn);
+}
+
 export async function createOrg(input: { name: unknown; dir?: unknown }): Promise<Org> {
   const name = typeof input.name === "string" ? input.name.trim() : "";
   if (!name || name.length > PERSON_NAME_MAX) throw new OrgError(`name must be 1–${PERSON_NAME_MAX} characters`);
@@ -588,6 +595,14 @@ export function applyChange(
   appendFileSync(historyFile(dir), `${lines.join("\n")}\n`);
   const nextPeople = creating ? [...people, next] : people.map((p) => (p.id === next.id ? next : p));
   writeJson(rosterFile(dir), { version: 1, people: nextPeople });
+  if (!creating && current.status !== "left" && next.status === "left")
+    for (const fn of leftHooks) {
+      try {
+        fn(orgId, next.id);
+      } catch (err) {
+        console.warn(`[orgs] left hook failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   return next;
 }
 

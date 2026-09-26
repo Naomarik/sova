@@ -1,6 +1,6 @@
 import type { WebSocket } from "ws";
 import { OPERATOR, type BatonSession, type BatonView, type BatonViewItem, type PersonRef, type ShareServerMessage } from "../../shared/baton";
-import { batonById, linkAccess, namesOf, sessionPathOf } from "../baton";
+import { batonById, heldOffer, linkAccess, namesOf, sessionPathOf } from "../baton";
 import { batonView, conversationVocabulary, redactPhrases, secretPhrases } from "../baton-view";
 import { profileRedactTexts, publicTerms, readOrg, readRoster } from "../orgs";
 
@@ -54,11 +54,12 @@ export async function readView(row: BatonSession, dir: string, viewer?: PersonRe
 }
 
 /** The view a token's holder gets, with what their link may do now. An offer's invitee who has not
-    held it sees the conversation only up to the offer: never what another invitee said since. */
+    held THAT offer sees the conversation only up to it: never what another invitee said since, even
+    when they held an earlier hand-off of the session. */
 export async function viewForToken(token: string): Promise<BatonView | { status: 404 | 410 }> {
   const access = linkAccess(token);
   if (!access.ok) return { status: access.status };
-  const outsider = !!access.link.offerId && !access.row.participants.includes(access.link.personId);
+  const outsider = !!access.link.offerId && !heldOffer(access.row, access.link.offerId, access.link.personId);
   const view = await readView(access.row, access.dir, access.link.personId, outsider ? access.link.n : undefined);
   const names = namesOf(access.row.orgId);
   return {
@@ -174,10 +175,10 @@ export function streamShare(sessionId: string, text: string): void {
   for (const w of set) if (!offerOutsider(w.token)) send(w, { type: "streaming", text: redacted });
 }
 
-/** Whether a token is an offer link of someone who has never held the baton in this session. */
+/** Whether a token is an offer link of someone who has never held that offer. */
 export function offerOutsider(token: string): boolean {
   const access = linkAccess(token);
-  return !access.ok || (!!access.link.offerId && !access.row.participants.includes(access.link.personId));
+  return !access.ok || (!!access.link.offerId && !heldOffer(access.row, access.link.offerId, access.link.personId));
 }
 
 export const watcherCount = (sessionId: string): number => watchers.get(sessionId)?.size ?? 0;

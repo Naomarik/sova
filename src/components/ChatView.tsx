@@ -22,6 +22,7 @@ import { contextStateFor, messageContextTokens, windowOf } from "../lib/context"
 import {
   addPendingPrompt,
   applyEvent,
+  BATON_SENT_EVENT,
   applyQueue,
   emptyLive,
   markDelivered,
@@ -663,6 +664,12 @@ export function ChatView(props: {
         // to: hello's own items carry them.
         case "append":
           setItems((list) => (list ? appendItems(list, msg.items) : list));
+          // A baton sender marker also names the live row it follows, in event order (applyEvent).
+          for (const it of msg.items)
+            if (it.batonMark?.kind === "sent") {
+              queue.push({ type: BATON_SENT_EVENT, by: it.batonMark.by });
+              if (!frame) frame = requestAnimationFrame(flush);
+            }
           break;
         case "mode":
           setModeState({ mode: msg.mode, minorModes: msg.minorModes, strict: msg.strict, applies: msg.applies });
@@ -1453,6 +1460,7 @@ export function ChatView(props: {
               <LiveEntries
                 live={live}
                 author={props.author}
+                names={batonNames()}
                 hideTools={hideTools(props.path)}
                 hideThinking={hideThinking(props.path)}
                 queueActions={queueActions}

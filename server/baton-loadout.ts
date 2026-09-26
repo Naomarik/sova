@@ -22,9 +22,11 @@ import {
 import {
   BRIEFING_MAX,
   QUESTION_MAX,
+  allBatons,
   batonById,
   batonOfPath,
   budgetSpent,
+  currentOffer,
   expireLease,
   handTo,
   lapsedLeases,
@@ -34,16 +36,18 @@ import {
   noteMessage,
   resolveTarget,
   sessionPathOf,
+  setReplyProbe,
   startOffer,
   touchLease,
   undoNote,
 } from "./baton";
+import { revokeLinks } from "./baton-links";
 import { emitBatonEvent } from "./baton-events";
 import { handoffChosen } from "./baton-guards";
 import { streamingText } from "./baton-view";
 import { runWrapup, wantsWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
-import { acquireChat, type ChatSession, RefusedError, registerSpecialLoadout } from "./chat-manager";
-import { applyChange, contactProblems, holderSteering, operatorName, OrgError, participantLine, profileRedactTexts, proposedGaps, publicTerms, readRoster } from "./orgs";
+import { acquireChat, BusyError, type ChatSession, isSessionBusy, RefusedError, registerSpecialLoadout } from "./chat-manager";
+import { applyChange, contactProblems, holderSteering, onPersonLeft, operatorName, OrgError, participantLine, profileRedactTexts, proposedGaps, publicTerms, readRoster } from "./orgs";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { refreshShare, streamShare } from "./share/hub";
 import { loadDefaults } from "./web-defaults";
@@ -83,6 +87,9 @@ export function renderBatonPrompt(sessionId: string, template = readFileSync(PRO
   const roster = readRoster(row.orgId);
   const holder = row.holder && row.holder !== OPERATOR ? roster.find((p) => p.id === row.holder) : undefined;
   const others = roster.filter((p) => p.status === "active" && p.id !== holder?.id);
+  // People who left (not declined referrals: those were never with the org), so a name the holder
+  // mentions is known to be gone rather than new (§app.organizations/roster).
+  const former = roster.filter((p) => p.status === "left" && !p.referral);
   const values: Record<string, string> = {
     OPERATOR: operatorName(),
     TITLE: row.publicTitle,
@@ -91,17 +98,40 @@ export function renderBatonPrompt(sessionId: string, template = readFileSync(PRO
     HOLDER_ROLE: holder?.role ? `, ${holder.role}` : "",
     STEERING: holder ? holderSteering(holder) : "",
     PEOPLE: others.length ? others.map(participantLine).join("\n") : "(nobody else on the roster yet)",
+    FORMER: former.length
+      ? `\n# People who have left the organization\n\nNever hand to them or propose them as new people. If someone names one of them, say they have left and ask who covers their area now.\n\n${former.map((p) => `- ${p.name}${p.role ? ` — was ${p.role}` : ""}`).join("\n")}\n`
+      : "",
   };
   return template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => values[k] ?? "");
 }
 
+/**
+ * Stop the reply being written, for an operator's move that can't wait (Take back, a hand-off, an
+ * offer, someone leaving; §app.baton/hand-off "at any time"). Messages still queued behind the reply
+ * were the outgoing holder's and are dropped with it (logged: the host keeps no copy to show), then
+ * the run is aborted and awaited. A queue wake could start another run as this one settles, so it
+ * checks again, a few times at most.
+ */
+async function interruptReply(chat: ChatSession): Promise<void> {
+  for (let i = 0; i < 3 && (chat.session.isStreaming || chat.isCompacting()); i++) {
+    const { steering, followUp } = await chat.queue.drain();
+    const dropped = steering.length + followUp.length;
+    if (dropped) console.warn(`[baton] an interrupted reply dropped ${dropped} queued message(s)`);
+    await chat.session.abort();
+  }
+}
+
 /** Move the baton from outside a turn (Take back, the budget stop): registry, then the transcript
-    entry through the session's runtime, then every share page. */
-export async function moveBaton(sessionId: string, to: PersonRef, question: string, briefing = ""): Promise<number> {
+    entry through the session's runtime, then every share page. `interrupt`: an operator's move,
+    which stops a reply in flight instead of waiting for it. */
+export async function moveBaton(sessionId: string, to: PersonRef, question: string, briefing = "", opts: { interrupt?: boolean } = {}): Promise<number> {
   const hit = batonById(sessionId);
   if (!hit) throw new OrgError("Unknown baton session", 404);
   const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
-  if (chat.session.isStreaming) throw new OrgError("Wait for the reply to finish first.", 409);
+  if (chat.session.isStreaming) {
+    if (!opts.interrupt) throw new OrgError("Wait for the reply to finish first.", 409);
+    await interruptReply(chat);
+  }
   const { n, from } = handTo(sessionId, to, question, briefing);
   chat.appendSpecialEntry(BATON_HANDOFF_ENTRY, { v: 1, n, from, to, question, briefing } satisfies BatonHandoffData);
   refreshShare(sessionId);
@@ -133,11 +163,14 @@ export async function budgetStop(sessionId: string): Promise<void> {
  * registry (withdrawing any current offer), then the `sova-baton-offer` entry through the
  * session's runtime, then every share page. Returns one token per invitee.
  */
-export async function offerBaton(sessionId: string, to: readonly unknown[], question: string, briefing = "", opts: { mintLink?: boolean } = {}) {
+export async function offerBaton(sessionId: string, to: readonly unknown[], question: string, briefing = "", opts: { mintLink?: boolean; interrupt?: boolean } = {}) {
   const hit = batonById(sessionId);
   if (!hit) throw new OrgError("Unknown baton session", 404);
   const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
-  if (chat.session.isStreaming) throw new OrgError("Wait for the reply to finish first.", 409);
+  if (chat.session.isStreaming) {
+    if (!opts.interrupt) throw new OrgError("Wait for the reply to finish first.", 409);
+    await interruptReply(chat);
+  }
   const out = startOffer(sessionId, to, question, briefing, new Date(), opts.mintLink !== false);
   chat.appendSpecialEntry(BATON_OFFER_ENTRY, {
     v: 1,
@@ -152,13 +185,33 @@ export async function offerBaton(sessionId: string, to: readonly unknown[], ques
   return out;
 }
 
-/** Record a lease event in the transcript (best effort: the registry already has it). */
+/** Lease entries that met a reply in flight, per session file: written when the run settles. */
+const pendingLease = new Map<string, Omit<BatonLeaseData, "v">[]>();
+
+/** Record a lease event in the transcript. Mid-reply the transcript takes no entry, so it waits
+    for the reply's end (flushLeases) rather than being lost: the registry already has it. */
 export function recordLease(chat: ChatSession, data: Omit<BatonLeaseData, "v">): void {
+  const waiting = pendingLease.get(chat.path);
+  if (waiting) {
+    waiting.push(data);
+    return;
+  }
   try {
     chat.appendSpecialEntry(BATON_LEASE_ENTRY, { v: 1, ...data } satisfies BatonLeaseData);
   } catch (err) {
-    console.warn(`[baton] lease entry not written: ${err instanceof Error ? err.message : String(err)}`);
+    if (err instanceof BusyError) pendingLease.set(chat.path, [data]);
+    else console.warn(`[baton] lease entry not written: ${err instanceof Error ? err.message : String(err)}`);
   }
+}
+
+/** Write the lease entries a reply held back, in order (after the run settled). */
+export async function flushLeases(path: string): Promise<void> {
+  const waiting = pendingLease.get(path);
+  if (!waiting) return;
+  const chat = await acquireChat(path);
+  if (chat.session.isStreaming || chat.isCompacting()) return; // the next settle writes them
+  pendingLease.delete(path);
+  for (const data of waiting) recordLease(chat, data);
 }
 
 /** A share message was accepted (server/share/routes.ts): write what the lease did on the way. */
@@ -190,6 +243,46 @@ export async function tickLeases(now = Date.now()): Promise<void> {
     }
   }
 }
+/**
+ * Someone was marked left (§app.organizations/roster: only active people take part). Their links
+ * stop at once, every one (410): they are no longer with the organization, so they don't read its
+ * conversations either. A session they hold, or an offer waiting on a pool they are in, goes to
+ * the operator (Needs you says so), stopping a reply in flight. An offer someone else holds carries
+ * on; the message route refuses them if it lapses back to the pool.
+ */
+export async function personLeft(orgId: string, personId: string): Promise<void> {
+  revokeLinks((l) => l.orgId === orgId && l.personId === personId);
+  const name = nameOf(orgId, personId);
+  const affected = (sessionId: string): "holder" | "invitee" | null => {
+    const row = batonById(sessionId)?.row;
+    if (!row || (row.state !== "open" && row.state !== "needs-you")) return null;
+    if (row.holder === personId) return "holder";
+    const o = currentOffer(row);
+    return o && o.state === "open" && o.to.includes(personId) ? "invitee" : null;
+  };
+  for (const row of allBatons().filter((r) => r.orgId === orgId)) {
+    refreshShare(row.sessionId);
+    if (!affected(row.sessionId)) continue;
+    try {
+      const hit = batonById(row.sessionId)!;
+      await interruptReply(await acquireChat(sessionPathOf(hit.dir, hit.row)));
+      // The reply may itself have moved the baton on before it stopped: decide on the row as it is now.
+      const why = affected(row.sessionId);
+      if (!why) continue;
+      await moveBaton(row.sessionId, OPERATOR, why === "holder" ? "(left the organization)" : `(${name} left the organization; offer withdrawn)`);
+    } catch (err) {
+      console.warn(`[baton] moving ${row.sessionId.slice(0, 8)} off a person who left: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+onPersonLeft((orgId, personId) => void personLeft(orgId, personId));
+
+// A lease never lapses while a reply to its holder is being written (the reply's end renews it).
+setReplyProbe((sessionId) => {
+  const hit = batonById(sessionId);
+  return !!hit && isSessionBusy(sessionPathOf(hit.dir, hit.row));
+});
+
 /** Every 30 s, or a quarter of a shortened lease (hermetic tests). */
 const LEASE_TICK_MS = Math.max(1000, Math.min(30_000, Math.floor(leaseMs() / 4)));
 setInterval(() => void tickLeases(), LEASE_TICK_MS).unref();
@@ -334,6 +427,13 @@ export function batonTools(sessionId: string, append: AppendEntry): ToolDefiniti
         const contact = typeof params.contact === "object" && params.contact !== null ? params.contact : {};
         const roster = readRoster(row.orgId);
         const same = roster.find((p) => name && p.name.toLowerCase() === name.toLowerCase() && p.status !== "left");
+        const former = same ? undefined : roster.find((p) => name && p.name.toLowerCase() === name.toLowerCase() && p.status === "left");
+        if (former)
+          throw new Error(
+            former.referral
+              ? `${former.name} was proposed before and the operator declined. Ask ${referrerName} who else could answer.`
+              : `${former.name} has left the organization. Tell ${referrerName} so and ask who covers their area now; if this is a different person with the same name, hand to the operator.`,
+          );
         if (same?.status === "active") throw new Error(`${same.name} is already on the roster: hand_to them if they should answer.`);
         if (same?.status === "proposed") throw new Error(`${same.name} was already proposed and waits for the operator's approval. Hand to the operator if you need them now.`);
         const gaps = proposedGaps({ name, role, contact, referral: { why, referredBy: referrer } });
@@ -497,6 +597,8 @@ registerSpecialLoadout({
         if (!wrapupActive(sessionId)) streamShare(sessionId, streamingText(e.message));
       } else if (e.type === "message_end" || e.type === "agent_settled" || e.type === "entry_appended") refreshShare(sessionId);
       if (e.type === "agent_settled") {
+        // Lease entries that arrived mid-reply (the transcript takes none then).
+        setTimeout(() => void flushLeases(path).catch(() => {}), 0);
         if (!wrapupActive(sessionId)) {
           // The reply renews the holder's lease (the later of their message and the reply).
           touchLease(sessionId);

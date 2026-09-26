@@ -45,6 +45,9 @@ export type LiveEntry =
       origin?: "client" | "server";
       /** The Overseer queued it (`QueueItem.overseer`): the row reads "Overseer", not "Sent by Sova". */
       overseer?: boolean;
+      /** A baton session's sender (person id or "operator"), from its `sova-baton-sent` marker while
+          the row is still live (§app.baton/attribution). */
+      by?: string;
       /** As sent, uploaded image paths included (restored verbatim into the draft if refused). */
       text: string;
       state: LiveUserState;
@@ -330,6 +333,9 @@ export function takeBackQueued(set: SetStoreFunction<LiveState>, drained: string
   return drained.filter((t) => t.trim()).join("\n\n");
 }
 
+/** The live-only event a baton sender marker becomes (see applyEvent). */
+export const BATON_SENT_EVENT = "sova_baton_sent";
+
 export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
   if (!isObj(event)) return;
   const type = str(event.type);
@@ -373,6 +379,15 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
               row.started = true;
             } else s.entries.push({ kind: "user", text, state: "delivered", started: true, images: imagesFromContent(msg.content) });
           }
+          break;
+        }
+        // Not an SDK event: ChatView queues it when a baton sender marker arrives, so it applies in
+        // order after the message_start it follows. The marker names an entry id a live row doesn't
+        // have yet; it belongs to the newest started row no marker has named.
+        case BATON_SENT_EVENT: {
+          const by = str(event.by);
+          const row = [...s.entries].reverse().find((e): e is Extract<LiveEntry, { kind: "user" }> => e.kind === "user" && !!e.started && !e.by);
+          if (row && by) row.by = by;
           break;
         }
         case "message_update": {

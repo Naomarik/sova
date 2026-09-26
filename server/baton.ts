@@ -287,11 +287,18 @@ function withdrawCurrent(r: BatonSession): Offer | undefined {
   return o;
 }
 
+/** Whether `personId` has held offer `offerId` of this row (its lease, now or before). Holding an
+    earlier hand-off of the session does not count: this offer's content is new to them. */
+export function heldOffer(row: Pick<BatonSession, "offers">, offerId: string, personId: string): boolean {
+  const o = row.offers?.find((x) => x.id === offerId);
+  return !!o && (o.holder === personId || !!o.heldBy?.includes(personId));
+}
+
 /** A withdrawn offer's links stop working (410) for every invitee who never held it; anyone who
-    did is a participant and keeps reading, like any earlier holder. */
+    did keeps reading, like any earlier holder. */
 function revokeWithdrawn(row: BatonSession, offer: Offer | undefined): void {
   if (!offer) return;
-  revokeLinks((l) => l.sessionId === row.sessionId && l.offerId === offer.id && !row.participants.includes(l.personId));
+  revokeLinks((l) => l.sessionId === row.sessionId && l.offerId === offer.id && !heldOffer(row, offer.id, l.personId));
 }
 
 /**
@@ -469,10 +476,21 @@ export function leaseMs(env: NodeJS.ProcessEnv = process.env): number {
   return Number.isFinite(v) && v >= 1000 ? Math.floor(v) : LEASE_IDLE_MS;
 }
 
-/** Return a held offer whose lease has lapsed to its pool, in place. */
+/**
+ * Whether a reply is being written in a session right now: the runtime registers it
+ * (server/baton-loadout.ts). A lease never lapses while the model is answering its holder; the
+ * reply's end renews it (touchLease).
+ */
+let replyInFlight: (sessionId: string) => boolean = () => false;
+export function setReplyProbe(fn: (sessionId: string) => boolean): void {
+  replyInFlight = fn;
+}
+
+/** Return a held offer whose lease has lapsed to its pool, in place. Never mid-reply. */
 function lapse(r: BatonSession, now: number): Noted["expired"] {
   const o = currentOffer(r);
   if (!o || o.state !== "held" || !o.holder || !o.leaseUntil || Date.parse(o.leaseUntil) > now) return undefined;
+  if (replyInFlight(r.sessionId)) return undefined;
   const by = o.holder;
   o.state = "open";
   delete o.holder;
@@ -499,12 +517,15 @@ export function noteMessage(sessionId: string, by: PersonRef, now = Date.now()):
   const row = update(sessionId, (r) => {
     before = structuredClone(r);
     if (r.state === "done" || r.state === "closed") throw new OrgError(`This conversation is ${r.state}.`, 409);
+    // Only active people take part (§app.organizations/roster): someone marked left writes nothing.
+    if (by !== OPERATOR && readRoster(r.orgId).find((p) => p.id === by)?.status !== "active") throw new OrgError("You are no longer taking part in this conversation.", 409);
     expired = lapse(r, now);
     const o = currentOffer(r);
     if (o && o.state === "open" && by !== OPERATOR && o.to.includes(by)) {
       if (budgetSpent(r)) throw new BudgetSpent(by);
       o.state = "held";
       o.holder = by;
+      if (!o.heldBy?.includes(by)) o.heldBy = [...(o.heldBy ?? []), by];
       r.holder = by;
       if (!r.participants.includes(by)) r.participants.push(by);
       claimed = { n: o.n, offerId: o.id };
@@ -570,7 +591,7 @@ export function lapsedLeases(now = Date.now()): string[] {
   return allBatons()
     .filter((r) => {
       const o = currentOffer(r);
-      return !!o && o.state === "held" && !!o.leaseUntil && Date.parse(o.leaseUntil) <= now && r.state === "open";
+      return !!o && o.state === "held" && !!o.leaseUntil && Date.parse(o.leaseUntil) <= now && r.state === "open" && !replyInFlight(r.sessionId);
     })
     .map((r) => r.sessionId);
 }
@@ -649,9 +670,9 @@ export function linkAccess(token: string, now = Date.now()): LinkAccess {
   else if (link.offerId && offer && row.offerId === offer.id && current?.n === link.n) {
     // The current offer: the pool may write (the first accepted message claims it), the lease
     // holder may write, and a lapsed lease is as good as the pool (the message route returns it).
-    const lapsed = offer.state === "held" && !!offer.leaseUntil && Date.parse(offer.leaseUntil) <= now;
+    const lapsed = offer.state === "held" && !!offer.leaseUntil && Date.parse(offer.leaseUntil) <= now && !replyInFlight(row.sessionId);
     if (offer.state === "held" && offer.holder !== link.personId && !lapsed) reason = "taken";
-  } else if (link.offerId && !row.participants.includes(link.personId)) reason = "withdrawn";
+  } else if (link.offerId && !heldOffer(row, link.offerId, link.personId)) reason = "withdrawn";
   else if (!current || current.n !== link.n || row.holder !== link.personId) reason = row.holder === OPERATOR ? "needs-operator" : "moved-on";
   // At the limit the page says so, also once the baton has gone to the operator because of it.
   if (budgetSpent(row) && (!reason || reason === "needs-operator" || reason === "moved-on")) reason = "budget";
@@ -668,6 +689,8 @@ export function rotateLink(sessionId: string, personId?: string): { token: strin
   if (offer) {
     // An offer: one invitee's link, re-minted; their older links of this offer stop working.
     if (!personId || !offer.to.includes(personId)) throw new OrgError("Name one of the invitees (?person=).", 400);
+    const p = readRoster(row.orgId).find((x) => x.id === personId);
+    if (p?.status !== "active") throw new OrgError(`${p?.name ?? "That person"} is not active, so they get no link.`, 409);
     revokeLinks((l) => l.sessionId === sessionId && l.offerId === offer.id && l.personId === personId);
     return { token: mintLink({ orgId: row.orgId, sessionId, n: offer.n, personId, offerId: offer.id }), n: offer.n };
   }

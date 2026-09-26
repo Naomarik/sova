@@ -1,0 +1,263 @@
+import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
+import type { LinkThread, LinkedAgentInfo } from "../../shared/mesh-links";
+import { ApiError, fetchLinkThread, markLinkSeen } from "../lib/api";
+import { clockTime, compactModel } from "../lib/format";
+import { linkStateChip, newestFrom, sessionIdOfPath, threadRows, threadSignature, unreadText } from "../lib/links";
+import { asOfClock } from "../lib/workers";
+import { Markdown } from "./Markdown";
+import { Banner, Chip, Icon } from "./ui";
+
+// The Agents tab's "Remotely linked agents" (§mesh.links/agents-pane): a linked member's row, the
+// head of its view, and the message thread above its transcript. The pane never sends: the thread
+// is read-only here. SubagentPane composes them with its read-only transcript.
+
+const MetaSep = () => (
+  <span class="meta-line-sep" aria-hidden="true">
+    ·
+  </span>
+);
+
+const iso = (t: number) => new Date(t).toISOString();
+
+/** The row's state chip: working pulses, idle and offline say as of when. */
+export function LinkStateChip(props: { row: LinkedAgentInfo; liveSource: boolean }) {
+  const chip = () => linkStateChip(props.row, props.liveSource);
+  return (
+    <Chip tone={chip().tone} live={chip().live}>
+      {chip().text}
+    </Chip>
+  );
+}
+
+/** One linked member: title and state, then host · model · as of, and its unread count. A local
+    member (the Overseer's pane) opens its own session instead of a view here. */
+export function LinkedAgentRow(props: {
+  row: LinkedAgentInfo;
+  hostLabel: string;
+  liveSource: boolean;
+  current: boolean;
+  /** Set for a local member: the row is a link to that session. */
+  href?: string;
+  onOpen(): void;
+}) {
+  const r = () => props.row;
+  const at = () => linkStateChip(r(), props.liveSource).asOf;
+  const unread = () => unreadText(r().unread);
+  const body = () => (
+    <>
+      <span class="subagent-row-name" title={r().title}>
+        <span class="subagent-row-label">{r().title}</span>
+      </span>
+      <span class="subagent-row-status">
+        <Show when={unread()}>
+          {(u) => (
+            <span class="chip chip-count" title={`${u()} message${r().unread === 1 ? "" : "s"} from ${r().title}`}>
+              {r().unread}
+              <span class="visually-hidden"> unread</span>
+            </span>
+          )}
+        </Show>
+        <LinkStateChip row={r()} liveSource={props.liveSource} />
+      </span>
+      <span class="subagent-row-meta meta-line">
+        <span>{props.hostLabel}</span>
+        <Show when={compactModel(r().model)}>
+          {(m) => (
+            <>
+              <MetaSep />
+              <span class="text-mono meta-line-shrink" title={r().model ?? undefined}>
+                {m()}
+              </span>
+            </>
+          )}
+        </Show>
+        <Show when={at()}>
+          {(t) => (
+            <>
+              <MetaSep />
+              <span>as of</span>
+              <span class="text-mono" title={iso(t())}>
+                {asOfClock(t())}
+              </span>
+            </>
+          )}
+        </Show>
+      </span>
+      <Icon name={props.href ? "arrow-right" : "chevron-right"} small class="subagent-row-go" />
+    </>
+  );
+  return (
+    <Show
+      when={props.href}
+      fallback={
+        <button type="button" class="subagent-row" aria-current={props.current ? "true" : undefined} onClick={() => props.onOpen()}>
+          {body()}
+        </button>
+      }
+    >
+      {(href) => (
+        <a class="subagent-row" href={href()} title={`Open ${r().title}`}>
+          {body()}
+        </a>
+      )}
+    </Show>
+  );
+}
+
+/** The open member's head facts under its title: host · model · session id · as of. */
+export function LinkedAgentMeta(props: { row: LinkedAgentInfo; hostLabel: string; liveSource: boolean }) {
+  const r = () => props.row;
+  const at = () => linkStateChip(r(), props.liveSource).asOf;
+  return (
+    <p class="subagents-view-meta meta-line">
+      <span>{props.hostLabel}</span>
+      <Show when={compactModel(r().model)}>
+        {(m) => (
+          <span class="text-mono meta-line-shrink" title={r().model ?? undefined}>
+            <MetaSep />
+            {m()}
+          </span>
+        )}
+      </Show>
+      <span class="text-mono" title={r().sessionId}>
+        <MetaSep />
+        {r().sessionId.slice(0, 8)}
+      </span>
+      <Show when={at()}>
+        {(t) => (
+          <span>
+            <MetaSep />
+            as of{" "}
+            <span class="text-mono" title={iso(t())}>
+              {asOfClock(t())}
+            </span>
+          </span>
+        )}
+      </Show>
+    </p>
+  );
+}
+
+/**
+ * The thread between the members, both directions, oldest first, read from the pane's session's
+ * host (`host`): its inbox files hold every message it delivered or sent. Fetched when the row
+ * opens and again whenever the row says there is new traffic (the chat socket's `links` frame, else
+ * the insight poll). Opening it marks the partner's messages seen there.
+ */
+export function LinkThreadView(props: {
+  row: LinkedAgentInfo;
+  /** Every row of the pane, for naming the thread's senders. */
+  rows: readonly LinkedAgentInfo[];
+  /** The pane's session: the local member. */
+  path: string;
+  host: string | null;
+  /** The pane is the Overseer's: no member is "you", and nothing is marked seen. */
+  overseer: boolean;
+}) {
+  const [thread, setThread] = createSignal<LinkThread | null>(null);
+  const [error, setError] = createSignal<string | null>(null);
+  const [loading, setLoading] = createSignal(true);
+  const viewer = createMemo(() => {
+    if (props.overseer) return null;
+    const id = sessionIdOfPath(props.path);
+    return id ? { nodeId: "", sessionId: id } : null;
+  });
+  /** The viewer by session id alone: this host's nodeId may be unknown to the page. */
+  const viewerRef = () => {
+    const v = viewer();
+    const t = thread();
+    if (!v || !t) return null;
+    const m = t.link.members.find((x) => x.sessionId === v.sessionId);
+    return m ? { nodeId: m.nodeId, sessionId: m.sessionId } : null;
+  };
+  const rows = createMemo(() => {
+    const t = thread();
+    return t ? threadRows(t, viewerRef(), props.rows) : [];
+  });
+
+  let seq = 0;
+  const load = async () => {
+    const mine = ++seq;
+    const linkId = props.row.linkId;
+    try {
+      const t = await fetchLinkThread(props.host, linkId);
+      if (mine !== seq) return;
+      setThread(t);
+      setError(null);
+      const me = viewerRef();
+      const from = { nodeId: props.row.nodeId, sessionId: props.row.sessionId };
+      const at = newestFrom(t, from);
+      if (me && at !== null && props.row.unread > 0) void markLinkSeen(props.host, linkId, { session: me.sessionId, from, at }).catch(() => {});
+    } catch (err) {
+      if (mine !== seq) return;
+      setError(err instanceof ApiError || err instanceof Error ? err.message : String(err));
+    } finally {
+      if (mine === seq) setLoading(false);
+    }
+  };
+  // By value: the row object is new on every frame and poll, and on() would fire on each
+  // (CLAUDE.md, Method). The key and the traffic signature are strings, so only a change refetches.
+  const key = createMemo(() => props.row.key);
+  const signature = createMemo(() => threadSignature(props.row));
+  createEffect(
+    on(key, () => {
+      setThread(null);
+      setLoading(true);
+      void load();
+    }),
+  );
+  createEffect(on(signature, () => void load(), { defer: true }));
+
+  let list: HTMLOListElement | undefined;
+  createEffect(
+    on(rows, () =>
+      queueMicrotask(() => {
+        if (list) list.scrollTop = list.scrollHeight;
+      }),
+    ),
+  );
+
+  return (
+    <section class="link-thread" aria-label={`Messages with ${props.row.title}`}>
+      <Show when={error()}>
+        {(e) => (
+          <Banner
+            tone="warn"
+            title="Couldn't load the messages."
+            body={<>{e()} What's shown is the last we read.</>}
+            action={
+              <button type="button" class="button button-sm" onClick={() => void load()}>
+                Retry
+              </button>
+            }
+          />
+        )}
+      </Show>
+      <Show
+        when={rows().length > 0}
+        fallback={
+          <Show when={!loading() && !error()}>
+            <p class="text-caption link-thread-empty">0 messages between these sessions yet. They show up here as they're sent.</p>
+          </Show>
+        }
+      >
+        <ol class="link-thread-list" ref={list} tabindex="0">
+          <For each={rows()}>
+            {(m) => (
+              <li class="link-message" data-own={m.own ? "true" : undefined}>
+                <p class="link-message-head text-caption">
+                  <span class="link-message-from">{m.from}</span>
+                  <span class="text-mono" title={iso(m.at)}>
+                    {clockTime(iso(m.at))}
+                  </span>
+                </p>
+                <Markdown text={m.text} />
+                <For each={m.notes}>{(n) => <p class="text-caption link-message-note">{n}</p>}</For>
+              </li>
+            )}
+          </For>
+        </ol>
+      </Show>
+    </section>
+  );
+}

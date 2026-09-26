@@ -1,7 +1,10 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
+import type { LinkedAgentInfo } from "../../shared/mesh-links";
 import type { ContextInfo, TeamInfo, TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
 import { ApiError, claudeWatchUrl, resumeWorker, wsUrl } from "../lib/api";
-import { hostOf } from "../lib/mesh";
+import { linkGroupId, linkGroups, linkHostLabel, linkReach, type LinkReach } from "../lib/links";
+import { chatLinks } from "../lib/links-live";
+import { hostOf, meshState, sessionHrefOn } from "../lib/mesh";
 import { clockTime, compactModel, shortModel } from "../lib/format";
 import { memberBadges, memberStatus, newestEventLine } from "../lib/insights";
 import { createReconnectingSocket } from "../lib/socket";
@@ -13,6 +16,7 @@ import { ConnectionBanner } from "./ConnectionBanner";
 import { ContextReadout } from "./ContextGauge";
 import { ContextRing } from "./ContextRing";
 import type { PaneInsight } from "./SessionPane";
+import { LinkedAgentMeta, LinkedAgentRow, LinkStateChip, LinkThreadView } from "./LinkedAgents";
 import { HistoryItems, TranscriptSkeleton } from "./Thread";
 import { Banner, Chip, Icon } from "./ui";
 
@@ -74,6 +78,21 @@ export function SubagentPane(props: {
     pending: () => props.insight.pending,
   };
   const workers = createMemo(() => sortWorkers(props.chatWorkers ?? insight.data()?.workers ?? []));
+  /** Linked members on other hosts (§mesh.links/agents-pane): the chat socket's `links` frames
+      while this session is an open chat here, else the polled insight. Only the Overseer's pane
+      holds local members (`self`): it lists every link this host knows, each with all of them. */
+  const links = createMemo<LinkedAgentInfo[]>(() => chatLinks(props.path) ?? insight.data()?.links ?? []);
+  const overseerLinks = createMemo(() => links().some((r) => r.self));
+  const linkSections = createMemo(() => linkGroups(links()));
+  const linkByKey = createMemo(() => new Map(links().map((r) => [r.key, r])));
+  /** The host the page reaches this session on; a member's URLs are mapped from its nodeId. */
+  const sessionHost = () => hostOf(props.path);
+  const reachOf = (r: LinkedAgentInfo) => linkReach(r, meshState(), sessionHost());
+  const hostLabelOf = (r: LinkedAgentInfo) => linkHostLabel(r, meshState());
+  /** The rows with the page's own names for their hosts, for naming the thread's senders. */
+  const namedLinks = createMemo(() => links().map((r) => ({ ...r, hostLabel: hostLabelOf(r) })));
+  /** A local member's row opens that session (the Overseer's pane). */
+  const hrefOf = (r: LinkedAgentInfo) => (r.self ? sessionHrefOn(sessionHost(), r.path) : undefined);
   const working = () => workers().filter((w) => w.working).length;
   const label = (w: WorkerInfo) => workerLabel(w, insight.data()?.teams);
   const teamOf = (w: WorkerInfo) => workerTeam(w, insight.data()?.teams);
@@ -102,8 +121,9 @@ export function SubagentPane(props: {
     }
     return out;
   });
-  /** Section heads only once a team actually owns a listed worker. */
-  const grouped = () => groups().some((g) => g.team);
+  /** Section heads once a team owns a listed worker, or once the linked-agents section shows:
+      beside a headed section, the plain subagents need their head too. */
+  const grouped = () => groups().some((g) => g.team) || links().length > 0;
   /** A session with a team holds more than subagents, listed or not: the pane says so. */
   const noun = () => workersNoun((insight.data()?.teams.length ?? 0) > 0);
   /** What the open transcript itself reports, which ticks between worker snapshots. Another
@@ -120,7 +140,15 @@ export function SubagentPane(props: {
   const loading = () => !props.chatWorkers && insight.pending();
   /** While the list's source is down nothing pulses. */
   const liveSource = () => !!props.chatWorkers || !insight.error();
+  const liveLinks = () => !!chatLinks(props.path) || !insight.error();
 
+  /** The selected linked member (its `link:` key never collides with a worker id). Sticky like a
+      worker: one whose link ended keeps its last known row. */
+  const selectedLink = createMemo<LinkedAgentInfo | null>((prev) => {
+    const id = props.selected;
+    if (!id?.startsWith("link:")) return null;
+    return linkByKey().get(id) ?? (prev?.key === id ? prev : null);
+  }, null);
   /** The selected worker. Sticky: one that left the list keeps its last known record. */
   const selected = createMemo<WorkerInfo | null>((prev) => {
     const id = props.selected;
@@ -139,22 +167,24 @@ export function SubagentPane(props: {
     ),
   );
 
-  // Nothing selected yet: the first row (working ones sort first).
+  // Nothing selected yet: the first row (working ones sort first), else the first linked member
+  // this pane can open (a local one is a link to its session, not a view here).
   createEffect(() => {
-    const first = workers()[0];
-    if (!props.selected && first) props.onSelect(first.id);
+    if (props.selected) return;
+    const first = workers()[0]?.id ?? links().find((r) => !r.self)?.key;
+    if (first) props.onSelect(first);
   });
 
   // Settled once, on the first workers: a view that followed the count would swap halves under
   // the reader when a second worker started.
   createEffect(() => {
     if (props.view) return;
-    const n = workers().length;
+    const n = workers().length + links().length;
     if (n > 0) props.onView(n === 1 ? "detail" : "list");
   });
   /** With nothing selected the list has nothing to open, and the view half holds the empty and
       error states, so that is the half to show. */
-  const view = (): AgentsView => (selected() ? props.view ?? "list" : "detail");
+  const view = (): AgentsView => (selected() || selectedLink() ? props.view ?? "list" : "detail");
 
   let body!: HTMLDivElement;
   /** Focus follows a narrow pane's swap, to the half now shown; a wide pane moves nothing. */
@@ -266,8 +296,50 @@ export function SubagentPane(props: {
             </Show>
           )}
         </For>
+        {/* After the teams and subagents: members of this session's links on other hosts. The
+            Overseer's pane has one section per link on this host, local members included. */}
+        <For each={linkSections().map((g) => g.linkId)}>
+          {(linkId) => (
+            <li class="subagents-group">
+              <h3 class="list-group-label subagents-group-label" id={`subagents-link-${linkId}`}>
+                <Icon name="network" small />
+                <span>Remotely linked agents</span>
+                <span class="text-num">{linkSections().find((g) => g.linkId === linkId)?.keys.length ?? 0}</span>
+              </h3>
+              {/* Several links (the Overseer's pane): each section says which, under its head. */}
+              <Show when={linkGroupId(linkId, linkSections().length)}>
+                {(id) => (
+                  <p class="text-caption subagents-group-event" title={linkId}>
+                    Link <span class="text-mono">{id()}</span>
+                  </p>
+                )}
+              </Show>
+              <ul class="subagents-group-list" aria-labelledby={`subagents-link-${linkId}`}>
+                <For each={linkSections().find((g) => g.linkId === linkId)?.keys ?? []}>
+                  {(key) => (
+                    <Show when={linkByKey().get(key)}>
+                      {(r) => (
+                        <li>
+                          <LinkedAgentRow
+                            row={r()}
+                            hostLabel={hostLabelOf(r())}
+                            liveSource={liveLinks()}
+                            current={props.selected === key}
+                            href={hrefOf(r())}
+                            onOpen={() => open(key)}
+                          />
+                        </li>
+                      )}
+                    </Show>
+                  )}
+                </For>
+              </ul>
+            </li>
+          )}
+        </For>
       </ul>
       <div class="subagents-view">
+        <Show when={selectedLink()} fallback={
         <Show
           when={selected()}
           fallback={
@@ -278,10 +350,22 @@ export function SubagentPane(props: {
               <Show
                 when={workers().length > 0}
                 fallback={
-                  <div class="empty subagents-empty">
-                    <p class="empty-title">0 {noun().toLowerCase()} in this session.</p>
-                    <p class="empty-body">Workers it starts show up here while they run.</p>
-                  </div>
+                  <Show
+                    when={links().length > 0}
+                    fallback={
+                      <div class="empty subagents-empty">
+                        <p class="empty-title">0 {noun().toLowerCase()} in this session.</p>
+                        <p class="empty-body">Workers it starts show up here while they run.</p>
+                      </div>
+                    }
+                  >
+                    <div class="empty subagents-empty">
+                      <p class="empty-title">
+                        {links().length} linked {links().length === 1 ? "agent" : "agents"}, {links().filter((r) => r.state === "working").length} working.
+                      </p>
+                      <p class="empty-body">Pick one to read your messages with it and its transcript.</p>
+                    </div>
+                  </Show>
                 }
               >
                 <div class="empty subagents-empty">
@@ -435,8 +519,79 @@ export function SubagentPane(props: {
             </>
           )}
         </Show>
+        }>
+          {(r) => (
+            <>
+              <header class="subagents-view-head">
+                <button
+                  type="button"
+                  class="button button-icon button-ghost subagents-back"
+                  aria-label={`All ${noun().toLowerCase()}`}
+                  title={`All ${noun().toLowerCase()}`}
+                  onClick={back}
+                >
+                  <Icon name="chevron-left" />
+                </button>
+                <div class="subagents-view-id">
+                  <h3 class="subagents-view-title" title={r().title}>
+                    {r().title}
+                  </h3>
+                  <LinkStateChip row={r()} liveSource={liveLinks()} />
+                  <Show when={r().unread > 0}>
+                    <span class="chip chip-count">{r().unread} unread</span>
+                  </Show>
+                  <LinkedAgentMeta row={r()} hostLabel={hostLabelOf(r())} liveSource={liveLinks()} />
+                </div>
+              </header>
+              <LinkThreadView row={r()} rows={namedLinks()} path={props.path} host={sessionHost()} overseer={overseerLinks()} />
+              <LinkedTranscript row={r()} reach={reachOf(r())} hostLabel={hostLabelOf(r())} />
+            </>
+          )}
+        </Show>
       </div>
     </div>
+  );
+}
+
+/** A linked member's own transcript, read-only, from its own host as the page reaches it. A host
+    the page's host doesn't know, or one that is down, says so instead; the thread above stays. */
+function LinkedTranscript(props: { row: LinkedAgentInfo; reach: LinkReach; hostLabel: string }) {
+  const target = createMemo(() => (props.reach.ok ? `${props.reach.host ?? ""}\n${props.row.path}` : null));
+  const offline = createMemo(() => props.row.state === "offline");
+  return (
+    <Show
+      when={!offline() && target()}
+      keyed
+      fallback={
+        <div class="empty subagents-empty">
+          <Show
+            when={offline()}
+            fallback={
+              <>
+                <p class="empty-title">{props.hostLabel} isn't reachable from here.</p>
+                <p class="empty-body">This page's host doesn't know that host, so its transcript can't be read here. The messages above are this session's host's copy.</p>
+              </>
+            }
+          >
+            <p class="empty-title">Host offline.</p>
+            <p class="empty-body">{props.hostLabel} is down, so its transcript can't be read now. The messages above are the last we know.</p>
+          </Show>
+        </div>
+      }
+    >
+      {(key) => (
+        <WorkerTranscript
+          source={{ kind: "pi", path: key.slice(key.indexOf("\n") + 1) }}
+          host={key.slice(0, key.indexOf("\n")) || null}
+          name={props.row.title}
+          author={shortModel(props.row.model) ?? props.row.title}
+          streaming={props.row.state === "working"}
+          what="session"
+          onUsage={() => {}}
+          onContext={() => {}}
+        />
+      )}
+    </Show>
   );
 }
 
@@ -592,6 +747,8 @@ const watchUrl = (s: TranscriptSource, host: string | null): string =>
  */
 function WorkerTranscript(props: {
   source: TranscriptSource; host: string | null; name: string; author: string; streaming: boolean;
+  /** What the transcript is, for its not-found copy: a worker's (default) or a linked session's. */
+  what?: "worker" | "session";
   /** The transcript's own running token total, for the view head; null when it reports none. */
   onUsage(usage: UsageView | null): void;
   /** Each snapshot/append that carries a context fill (the whole message; the caller reads it). */
@@ -674,7 +831,7 @@ function WorkerTranscript(props: {
       when={!gone() || items()}
       fallback={
         <div class="empty subagents-empty">
-          <p class="empty-title">Couldn't find this worker's transcript.</p>
+          <p class="empty-title">Couldn't find this {props.what ?? "worker"}'s transcript.</p>
           <p class="empty-body">
             <code>{sourceName(props.source)}</code> is gone. Nothing else changed.
           </p>

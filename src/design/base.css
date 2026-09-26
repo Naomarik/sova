@@ -4808,6 +4808,42 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 /* Empty, no-file and no-selection states: one idea in the view, centred. */
 .subagents-empty { flex: 1; justify-content: center; padding: var(--space-6) var(--space-4); }
 
+/* ---- LINKED AGENT (§mesh.links/agents-pane). A linked member's view: the message thread
+   between the sessions above its transcript, in the head's strip grammar (surface, bottom rule),
+   capped so the transcript keeps most of the height. Read-only: no composer, ever. Each message
+   is who and when on a caption line, then its text in the house message body; your session's
+   own wear the user-bubble tint, and their caption says "This session", so it's never hue alone. */
+.link-thread {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 40%;
+  min-height: 0;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+}
+.link-thread-empty { margin: 0; color: var(--color-ink-muted); }
+.link-thread-list {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.link-message { min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.link-message[data-own="true"] .message-body { background: var(--color-accent-tint); }
+.link-message-head { display: flex; gap: var(--space-2); margin: 0; color: var(--color-ink-muted); }
+.link-message-from { font-weight: var(--fw-medium); color: var(--color-ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-message-note { margin: 0; color: var(--color-ink-muted); }
+/* A local member's row (the Overseer's pane) is a link to that session: a row, not underlined text. */
+a.subagent-row { text-decoration: none; }
+
 /* --- Input rows (the Timeline's "Inputs Only" view) -------------
    This session's messages on one card, like the skill rows, but denser: caption
    title over a micro meta, so a long chat shows more of itself. The body is the

@@ -96,6 +96,7 @@ import {
 } from "../lib/message-actions";
 import type { MessageActionItem } from "./MessageActions";
 import { isInput } from "../lib/turn";
+import { noteLinks } from "../lib/links-live";
 import { entryIdOf } from "../lib/jump";
 import { Composer, type ComposerReason } from "./Composer";
 import { openCreated } from "../lib/fork-stage";
@@ -504,12 +505,18 @@ export function ChatView(props: {
           setWorkersWorking(0); // a runtime without workers sends no "workers" after hello
           setWorkerList([]);
           props.onWorkers?.([], null);
+          // "links" comes after hello only when there are any: until one does, the pane reads the
+          // polled insight, never a list from before the reconnect.
+          noteLinks(props.path, null);
           props.onModel(msg.model);
           break;
         case "workers":
           setWorkersWorking(msg.working);
           setWorkerList(msg.workers);
           props.onWorkers?.(msg.workers, usageTotal(msg));
+          break;
+        case "links":
+          noteLinks(props.path, msg.links);
           break;
         // Stop drained what was still queued; it goes back to the draft, not behind the next prompt.
         case "queue_cleared": {
@@ -834,6 +841,7 @@ export function ChatView(props: {
     const result = await ask("rewind", { type: "rewind", entryId });
     return result.ok ? { ok: true, text: result.text ?? "" } : { ok: false, reason: asRewindRefusal(result.reason), message: result.message };
   };
+  onCleanup(() => noteLinks(props.path, null));
   props.onRewindControl?.({ path: props.path, blocked: rewindBlocked, rewind });
   onCleanup(() => props.onRewindControl?.(null));
   /** The flyout's "Undo last turn": a rewind to just before the newest user message on the branch

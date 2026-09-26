@@ -56,6 +56,7 @@ import type { BatonInfo, BatonStartInput, BatonStartResult, BatonView, OfferLink
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
+import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -130,6 +131,18 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
+
+/** A link's message thread as `host` (the pane's session's host) holds it (§mesh.links/agents-pane). */
+export const fetchLinkThread = (host: string | null, linkId: string) =>
+  request<LinkThread>(hostUrl(host, `/api/links/${encodeURIComponent(linkId)}/thread`), { cache: "no-store" });
+
+/** The pane read a partner's messages up to `at`: they stop counting as unread there. */
+export const markLinkSeen = (host: string | null, linkId: string, seen: LinkSeen) =>
+  request<{ ok: true }>(hostUrl(host, `/api/links/${encodeURIComponent(linkId)}/seen`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(seen),
+  });
 
 /** `host`: a peer's, for New Session's Host field; left out, this host's. */
 export const listCwds = (host?: string | null) => request<string[]>(hostUrl(host, "/api/cwds"));

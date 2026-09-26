@@ -561,11 +561,20 @@ for that call with a warning line in the result; the extension never writes the 
   successor. `team_succeed { role }` (routing coordinator only, itself included) starts
   `<base>-<n+1>` (`builder` → `builder-2` → `builder-3`) on the same backend, model, effort, tools,
   system prompt, cwd, backend options, ownership and duty. **A live worker writes its note
-  first:** it is told to finish its step, write the note and end its turn, and the successor starts
-  at the first settle of the old member once the note file exists, when the old member ends, or
-  after `handover.retireTimeoutMinutes`, whichever comes first (no polling: its settles and the one
-  timer). Started without a note, the successor is told the note may be missing and to ask its
-  predecessor. The routing coordinator gets a follow-up naming the successor. A monitor, or a
+  first:** it is told, as a redirect so the instruction lands ahead of anything queued for it, to
+  finish its step, write the note and end its turn, and the successor starts as soon as the note
+  file exists (checked at every mailbox poll and every settle: no settle is needed, since
+  follow-ups queued on the old member keep it from settling), when the old member ends, or after
+  `handover.retireTimeoutMinutes`, whichever comes first. Started without a note, the successor is
+  told the note may be missing and to ask its predecessor. The routing coordinator gets a
+  follow-up naming the successor and the real reason it started, read from the note at that moment
+  (`<role>'s note is written`, `<role> ended after/without writing its note`, `timed out waiting
+  for <role>'s note`, or `the wait ran out just as <role>'s note appeared`). Main-thread follow-ups
+  still queued on the old member are not removed (no backend-neutral way to clear a worker's
+  queue): they stay queued, run after the redirect, and the old member is told, in both the
+  handover instruction and the "successor started" redirect, that they are its successor's now and
+  to reply only that the successor has them. The successor already has them, in its inherited
+  steers. A monitor, or a
   member that already ended, is succeeded at once. The successor's task says to continue from the
   note, redo nothing it marks done, verify cheaply (`ls`, a grep) instead of re-reading large
   inputs, and ask the predecessor over `team_msg` (at least once when in doubt) before

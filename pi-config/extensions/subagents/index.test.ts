@@ -3076,8 +3076,9 @@ test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_re
 		const r = await h.ask("ag_01", { type: "succeed", to: "dev" });
 		assert.equal(r.ok, true, r.text);
 		// N3: the old member writes its note first; nothing starts yet.
-		assert.equal(r.text, `Handover started: dev (ag_02) was told to write its handover note at ${note} and end its turn. Its successor starts once the note exists and that turn has ended, or after 10 min at the latest; a message here names it then.`);
-		assert.match(dev.lastSteer.message, new RegExp(`^\\[Handover from coordinator coordinator \\(ag_01\\), team_01\\]\\nYour context is running out and a successor will take over your work\\. Finish the step you are in, then write or update your handover note at ${esc(note)} .*do no new work, and end your turn\\. Your successor starts once the note exists and your turn has ended \\(at the latest in 10 min\\)`));
+		assert.equal(r.text, `Handover started: dev (ag_02) was told to write its handover note at ${note} and end its turn. Its successor starts as soon as the note exists, or after 10 min at the latest; a message here names it then.`);
+		assert.match(dev.lastSteer.message, new RegExp(`^\\[Handover from coordinator coordinator \\(ag_01\\), team_01\\]\\nYour context is running out and a successor will take over your work\\. Finish the step you are in, then write or update your handover note at ${esc(note)} .*do no new work, and end your turn\\. Your successor starts as soon as the note exists \\(at the latest in 10 min\\)\\. It inherits your assignment and every instruction the main thread gave you, including any still queued for you: do not start those`));
+		assert.equal(dev.lastSteer.mode, "redirect", "N7: a redirect, ahead of anything queued");
 		assert.equal(h.worker("ag_04"), undefined, "no successor before the note");
 		assert.match((await h.ask("ag_01", { type: "succeed", to: "dev" })).text, /A successor for dev is already taking over/);
 		dev.settle();
@@ -3087,7 +3088,7 @@ test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_re
 		dev.status = "running";
 		dev.settle();
 		await h.tick();
-		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: the note is written\]\nStarted dev-2 \(ag_04\) to succeed dev \(ag_02\) on pi\/test\/model\/low\. dev was told to brief it; it is retired when dev-2 calls team_ready, or after 10 min\.$/);
+		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: dev's note is written\]\nStarted dev-2 \(ag_04\) to succeed dev \(ag_02\) on pi\/test\/model\/low\. dev was told to brief it; it is retired when dev-2 calls team_ready, or after 10 min\.$/);
 		const successor = h.worker("ag_04");
 		assert.deepEqual([successor.name, successor.backend, successor.model, successor.effort, successor.tools, successor.wake], ["dev-2", "pi", "test/model", "low", ["read"], false]);
 		assert.deepEqual([h.memberOf("ag_04")!.successorOf, h.memberOf("ag_04")!.coordinated, h.memberOf("ag_04")!.duty], ["dev", true, undefined]);
@@ -3095,7 +3096,7 @@ test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_re
 		assert.match(successor.task, /Your declared ownership: src/);
 		assert.match(successor.task, /\[Your task\]\nContinue the work of dev \(ag_02\)[\s\S]*Call team_ready as soon as you have taken over/);
 		assert.doesNotMatch(successor.task, /may be missing/, "the note was written first");
-		assert.match(dev.lastSteer.message, new RegExp(`^\\[Handover from coordinator coordinator \\(ag_01\\), team_01\\]\\nYour successor dev-2 \\(ag_04\\) has started and is reading your handover note at ${esc(note)}\\. Answer its team_msg questions`));
+		assert.match(dev.lastSteer.message, new RegExp(`^\\[Handover from coordinator coordinator \\(ag_01\\), team_01\\]\\nYour successor dev-2 \\(ag_04\\) has started and is reading your handover note at ${esc(note)}\\. Stop any work in progress now\\. Your assignment and every instruction the main thread gave you, including any still queued for you, are dev-2's now: do not act on them; if one reaches you, reply only that dev-2 has it\\. Answer its team_msg questions`));
 		assert.equal(h.timers.at(-1)!.ms, 600_000);
 		const persisted = h.appended.filter((e) => e.customType === "subagents-team-v1").at(-1);
 		assert.deepEqual([persisted.data.op, persisted.data.members[0].role, persisted.data.members[0].successorOf], ["add", "dev-2", "ag_02"], "contract: successorOf is the predecessor's worker ID");
@@ -3117,7 +3118,7 @@ test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_re
 		h.timers.at(-1)!.fn();
 		await h.tick();
 		assert.match(h.worker("ag_05").task, /The note may be missing or incomplete: dev-2 had not written it 10 min after it was asked to\. If it is not there, ask dev-2 with team_msg for its state before you do anything else\./);
-		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: timed out waiting for the note\]\nStarted dev-3 \(ag_05\) .* The note may be missing \(dev-2 had not written it 10 min after it was asked to\); the successor was told so\.$/);
+		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: timed out waiting for dev-2's note\]\nStarted dev-3 \(ag_05\) .* The note may be missing \(dev-2 had not written it 10 min after it was asked to\); the successor was told so\.$/);
 		h.timers.at(-1)!.fn();
 		await h.tick();
 		assert.equal(h.worker("ag_04").status, "killed");
@@ -3160,6 +3161,43 @@ test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_re
 		await h.tick();
 		const r3 = await h.ask("ag_06", { type: "succeed", to: "qa-3" });
 		assert.match(r3.text, /^Started qa-4 .* qa-3 has already ended; the successor works from the handover note\. The note may be missing \(qa-3 had already ended without writing it\); the successor was told so\.$/);
+	} finally { await h.cleanup(); }
+});
+
+test("N7: with main-thread follow-ups queued on the old member, its successor starts once the note exists, without a settle, and inherits them", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "Write f01..f06." }, { role: "qa", prompt: "Test it." }] });
+		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02");
+		// e2e 3: a follow-up queued before team_succeed runs straight after the wrap-up turn, so dev never settles.
+		await h.call("agent_steer", { id: "ag_02", message: "After f06, also write summary.txt.", mode: "followUp" });
+		await h.ask("ag_01", { type: "succeed", to: "dev" });
+		assert.equal(dev.lastSteer.mode, "redirect", "the handover instruction is a redirect: it lands ahead of the queued follow-up");
+		assert.match(dev.lastSteer.message, /including any still queued for you: do not start those; if one reaches you, reply only that your successor has it\./);
+		h.writeNote("dev");
+		await h.tick();
+		assert.equal(dev.status, "running", "dev never settled");
+		const successor = h.worker("ag_05");
+		assert.equal(successor?.name, "dev-2", "the gate opened on the note alone");
+		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: dev's note is written\]\nStarted dev-2 \(ag_05\)/);
+		assert.doesNotMatch(coordinator.lastSteer.message, /timed out/);
+		// N2: the queued follow-up is the successor's now; dev is told to leave it.
+		assert.match(successor.task, /Later instructions from the main thread to dev [^\n]*:\n- After f06, also write summary\.txt\.$/);
+		assert.equal(dev.lastSteer.mode, "redirect", "the started notice is a redirect too");
+		assert.match(dev.lastSteer.message, /Stop any work in progress now\. Your assignment and every instruction the main thread gave you, including any still queued for you, are dev-2's now: do not act on them/);
+		// The coordinator is told the real reason in the other orders too, read from the note at that moment.
+		await h.ask("ag_01", { type: "succeed", to: "qa" });
+		h.writeNote("qa");
+		h.worker("ag_03").settle(undefined, "killed"); // Ends before the next poll sees the note.
+		await h.tick();
+		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: qa ended after writing its note\]\nStarted qa-2 /);
+		await h.ask("ag_01", { type: "succeed", to: "qa-2" });
+		const timer = h.timers.at(-1)!;
+		h.writeNote("qa-2");
+		timer.fn(); // The timeout fires before the next poll sees the note.
+		await h.tick();
+		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: the wait ran out just as qa-2's note appeared\]\nStarted qa-3 /);
+		assert.doesNotMatch(coordinator.lastSteer.message, /may be missing/);
 	} finally { await h.cleanup(); }
 });
 

@@ -1603,9 +1603,10 @@ export function registerSubagents(
 	interface Handover { teamId: string; oldId: string; oldRole: string; newId: string; newRole: string; timer?: ReturnType<typeof setTimeout> }
 	const handovers = new Map<string, Handover>();
 	/**
-	 * A worker's successor waits for its note (N3): team_succeed tells the old member to write it and
-	 * end its turn, and the successor starts at the first settle of the old member once the note file
-	 * exists, when the old member ends, or at the retire timeout, whichever comes first. By old worker ID.
+	 * A worker's successor waits for its note (N3): team_succeed tells the old member to write it, and
+	 * the successor starts as soon as the note file exists (checked at every mailbox poll and every
+	 * settle; no settle is required, since follow-ups queued on the old member keep it from settling),
+	 * when the old member ends, or at the retire timeout, whichever comes first. By old worker ID.
 	 */
 	interface PendingSuccession { team: { id: string; name: string }; coordinatorId: string; target: PersistedMember; note: string; retireMinutes: number; timer?: ReturnType<typeof setTimeout> }
 	const pendingSuccessions = new Map<string, PendingSuccession>();
@@ -1705,6 +1706,7 @@ export function registerSubagents(
 	};
 	const pollMailbox = () => {
 		if (shuttingDown || !mailboxRoot) return;
+		for (const p of pendingSuccessions.values()) if (fs.existsSync(p.note)) void finishSuccession(p, "note");
 		for (const item of scanMailboxRoot(mailboxRoot)) {
 			if (!item.request) continue; // Malformed: removed, nothing to answer.
 			void handleMemberRequest(item.teamId, item.workerId, item.dir, item.request);
@@ -2570,10 +2572,13 @@ export function registerSubagents(
 	 * team_succeed: the successor of one member (the coordinator itself included) on the same
 	 * backend, model, effort, tools, system prompt, cwd, backend options, ownership and duty,
 	 * named <base>-<n+1>. A monitor (no note) or an ended member is succeeded at once. A live
-	 * worker is first told to write its handover note and end its turn; its successor starts only
-	 * once the note exists and that turn has ended, or at the retire timeout (successionCheck,
-	 * finishSuccession). The old member is retired on team_ready or at the timeout, both read from
-	 * team-defaults.json now.
+	 * worker is first told, as a redirect so it lands ahead of anything queued for it, to write its
+	 * handover note and do no new work; its successor starts as soon as the note exists, when the
+	 * old member ends, or at the retire timeout (pollMailbox, successionCheck, finishSuccession).
+	 * The successor inherits the old member's assignment and every main-thread steer, those still
+	 * queued on the old member included; the old member is told not to start them (there is no
+	 * backend-neutral way to clear a worker's queue). The old member is retired on team_ready or at
+	 * the timeout, both read from team-defaults.json now.
 	 */
 	const startSuccessor = async (me: PersistedMember, team: { id: string; name: string }, ref: string): Promise<string> => {
 		const trimmed = ref.trim();
@@ -2590,10 +2595,11 @@ export function registerSubagents(
 		const p: PendingSuccession = { team: { id: team.id, name: team.name }, coordinatorId: me.workerId, target, note, retireMinutes };
 		pendingSuccessions.set(target.workerId, p);
 		const self = target.workerId === me.workerId;
-		const instruction = `Finish the step you are in, then write or update your handover note at ${note} (state, decisions, what is done, open work, files touched), do no new work, and end your turn. Your successor starts once the note exists and your turn has ended (at the latest in ${retireMinutes} min); then answer its team_msg questions. You are retired when it confirms with team_ready, or ${retireMinutes} min after it starts.`;
+		const instruction = `Finish the step you are in, then write or update your handover note at ${note} (state, decisions, what is done, open work, files touched), do no new work, and end your turn. Your successor starts as soon as the note exists (at the latest in ${retireMinutes} min). It inherits your assignment and every instruction the main thread gave you, including any still queued for you: do not start those; if one reaches you, reply only that your successor has it. Then answer its team_msg questions. You are retired when it confirms with team_ready, or ${retireMinutes} min after it starts.`;
 		if (!self) {
 			const text = [`[Handover from coordinator ${me.role} (${me.workerId}), ${team.id}]`, `Your context is running out and a successor will take over your work. ${instruction}`].join("\n");
-			const told = await deliverToMember(target, text, "followUp", "orchestrator", "handover", { kind: "instruction", from: me.role, fromId: me.workerId, text });
+			// A redirect, not a follow-up: it must land ahead of main-thread follow-ups queued on the member (N7).
+			const told = await deliverToMember(target, text, "redirect", "orchestrator", "handover", { kind: "instruction", from: me.role, fromId: me.workerId, text });
 			if (!told.ok) {
 				// Nobody to write a note: start the successor now, told the note may be missing.
 				pendingSuccessions.delete(target.workerId);
@@ -2606,9 +2612,9 @@ export function registerSubagents(
 		scheduleRefresh();
 		return self
 			? `Handover started for you, ${target.role} (${target.workerId}): ${instruction}`
-			: `Handover started: ${target.role} (${target.workerId}) was told to write its handover note at ${note} and end its turn. Its successor starts once the note exists and that turn has ended, or after ${retireMinutes} min at the latest; a message here names it then.`;
+			: `Handover started: ${target.role} (${target.workerId}) was told to write its handover note at ${note} and end its turn. Its successor starts as soon as the note exists, or after ${retireMinutes} min at the latest; a message here names it then.`;
 	};
-	/** The old member settled or ended: start its successor if the note is there (or it can write no more). */
+	/** The old member settled or ended: start its successor if the note is there (or it can write no more). pollMailbox checks the note between settles. */
 	const successionCheck = (a: Worker) => {
 		const p = pendingSuccessions.get(a.id);
 		if (!p) return;
@@ -2621,7 +2627,8 @@ export function registerSubagents(
 		pendingSuccessions.delete(p.target.workerId);
 		if (p.timer) clearTimeout(p.timer);
 		if (shuttingDown) return;
-		const missing = fs.existsSync(p.note)
+		const noted = fs.existsSync(p.note);
+		const missing = noted
 			? undefined
 			: why === "timeout"
 				? `${p.target.role} had not written it ${p.retireMinutes} min after it was asked to`
@@ -2641,9 +2648,14 @@ export function registerSubagents(
 		}
 		const routing = teams.routingCoordinator(p.team.id, isLiveWorker);
 		if (!routing || routing.workerId === successorId) return;
-		const body = [`[Handover in ${p.team.id}: ${why === "note" ? "the note is written" : why === "ended" ? `${p.target.role} ended` : "timed out waiting for the note"}]`, text].join("\n");
+		const body = [`[Handover in ${p.team.id}: ${successionHeadline(p.target.role, why, noted)}]`, text].join("\n");
 		await deliverToMember(routing, body, "followUp", "system", "message", { kind: "instruction", from: "parent", fromId: "parent", text: body }).catch(() => undefined);
 	};
+	/** Why a pending successor started, as its coordinator is told: from the note's presence at that moment, never from the trigger alone. */
+	const successionHeadline = (role: string, why: "note" | "ended" | "timeout", noted: boolean): string =>
+		why === "note" ? `${role}'s note is written`
+		: why === "ended" ? `${role} ended ${noted ? "after writing its note" : "without writing its note"}`
+		: noted ? `the wait ran out just as ${role}'s note appeared` : `timed out waiting for ${role}'s note`;
 	/** Spawn the successor itself; `missing` says why its predecessor's note may not be there. */
 	const spawnSuccessor = async (
 		team: { id: string; name: string }, target: PersistedMember, me: PersistedMember, note: string, retireMinutes: number, missing?: string,
@@ -2697,9 +2709,10 @@ export function registerSubagents(
 				`[Handover from coordinator ${me.role} (${me.workerId}), ${team.id}]`,
 				monitor
 					? `Your successor ${role} (${successor.id}) is starting. You have no handover note: brief it with team_msg now (your pending wake_nudges and when they fire, notices you sent, whether a usage pause is in force and when its window resets), answer its questions, and run no further checks. You are retired when it confirms with team_ready, or after ${retireMinutes} min.`
-					: `Your successor ${role} (${successor.id}) has started and is reading your handover note at ${note}${missing ? " (it may be missing: write it now if you can)" : ""}. Answer its team_msg questions and do no new work. You are retired when it confirms with team_ready, or after ${retireMinutes} min.`,
+					: `Your successor ${role} (${successor.id}) has started and is reading your handover note at ${note}${missing ? " (it may be missing: write it now if you can)" : ""}. Stop any work in progress now. Your assignment and every instruction the main thread gave you, including any still queued for you, are ${role}'s now: do not act on them; if one reaches you, reply only that ${role} has it. Answer its team_msg questions and do no new work. You are retired when it confirms with team_ready, or after ${retireMinutes} min.`,
 			].join("\n");
-			const told = await deliverToMember(target, text, "followUp", monitor ? "orchestrator" : "system", "handover", { kind: "instruction", from: me.role, fromId: me.workerId, text });
+			// A redirect for a worker: it stops the old member's current work instead of queueing behind it (N7).
+			const told = await deliverToMember(target, text, monitor ? "followUp" : "redirect", monitor ? "orchestrator" : "system", "handover", { kind: "instruction", from: me.role, fromId: me.workerId, text });
 			if (!told.ok) teams.settleAction(teams.recordAction(target.workerId, "handover", "orchestrator", detail), "failed", told.reason);
 		} else {
 			teams.settleAction(teams.recordAction(target.workerId, "handover", "orchestrator", detail), "accepted-or-queued", "old member already ended; nothing to retire");

@@ -48,10 +48,10 @@ node pi-config/extensions/spec/core/sova-spec.mjs check --spec .sova/spec/drafts
 Exit `0` means the declared closure was delivered, never that it is complete. Exit `1` means
 something relevant is unknown, stale or unread. Exit `2` means the input can't be trusted.
 
-**Current state, 2026-09-26:** 297 records (211 behaviors). `check` exits 1 with 144
-`requires-uninvestigated` warnings and nothing else. 67 records declare `requires` (25 of them
-`[]`), 78 edges in all. `impact` can't rule out the other behaviors, and it lists them as unknown.
-`census` finds 413 files in the boundary: 151 claimed, 262 unclaimed.
+**Current state, 2026-09-26:** 318 records (228 behaviors). `check` exits 1 with 130
+`requires-uninvestigated` warnings and nothing else. 98 records declare `requires` (27 of them
+`[]`), 137 edges in all. `impact` can't rule out the other behaviors, and it lists them as unknown.
+`census` finds 463 files in the boundary: 218 claimed, 245 unclaimed.
 
 **While coding**, run `census --changed --related` after the first edit and whenever the edit set
 reaches a new file; `--related` lists each § a changed file lands in, with its `requires` and

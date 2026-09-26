@@ -53,12 +53,15 @@ something relevant is unknown, stale or unread. Exit `2` means the input can't b
 `[]`), 137 edges in all. `impact` can't rule out the other behaviors, and it lists them as unknown.
 `census` finds 463 files in the boundary: 218 claimed, 245 unclaimed.
 
-**While coding**, run `census --changed --related` after the first edit and whenever the edit set
-reaches a new file; `--related` lists each § a changed file lands in, with its `requires` and
-consumers. One your draft doesn't change is foreign: read it with
-`scope`, and flag it only if the edit contradicts its text or adds something a user would see
-there that it doesn't describe. Batch the flags into one question ("this also changes §X: <what>.
-OK?"); an agreed flag becomes that §'s change in your draft.
+**While coding**, run `census --changed --related` right after the first code edit, before the
+second, and again whenever the edit set reaches a new file; `--related` lists each § a changed
+file lands in, with its `requires` and consumers. Any § the task didn't create is foreign, even
+one your draft edits; editing it in the draft (a row, a sub-claim, a sketch line) is itself a
+flag. Read a foreign § with `scope` and stay silent while its text holds; plumbing (helpers,
+types) never flags. Otherwise flag only a contradiction of its text, or something a user would
+see there that it doesn't describe. Batch the flags into the plan as one question ("this also
+changes §X: <what>. OK?"). The handoff always carries an "Also changes: §X — <what>" list, even
+when the user said not to ask, so every flag is either agreed or listed there.
 
 ## Changing the docs
 

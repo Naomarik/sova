@@ -120,6 +120,16 @@ for (const entry of readdirSync(extRoot, { withFileTypes: true }).sort((a, b) =>
   link(path, join(AGENT, "extensions", entry.name));
 }
 
+// Tool directories pi never loads but a prompt runs from the agent dir: spec-mode.md resolves its
+// trusted tools to <agent dir>/extensions/spec/core. Unlinked, a hermetic session falls back to
+// ~/.pi's copy of the tools, which may be another branch's. install.sh links them like any directory.
+for (const name of ["spec"]) {
+  const path = join(extRoot, name);
+  if (!existsSync(path)) continue;
+  wanted.add(name);
+  link(path, join(AGENT, "extensions", name));
+}
+
 // Prune anything a previous run linked that is no longer an extension here, so re-running after
 // a rename or a removal leaves no dangling or stale entry behind.
 for (const name of readdirSync(join(AGENT, "extensions"))) {

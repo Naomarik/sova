@@ -96,7 +96,7 @@ import {
 } from "../lib/message-actions";
 import type { MessageActionItem } from "./MessageActions";
 import { isTurnStart } from "../lib/turn";
-import { entryIdOf } from "../lib/jump";
+import { entryIdOf, landExplainJump } from "../lib/jump";
 import { Composer, type ComposerReason } from "./Composer";
 import { openCreated } from "../lib/fork-stage";
 import { FlyoutSession, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
@@ -227,6 +227,9 @@ export function ChatView(props: {
   const turnWord = (member: string, alone: string) => (scope.id ? member : alone);
 
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
+  // "Open in Session" from an Explanations card: once the transcript is here (hello), land on that
+  // explanation's row. Only a jump waiting for this session is claimed, and only once.
+  createEffect(on(items, (list) => list && landExplainJump({ path: props.path, sessionId: props.summary?.()?.id }, list, toast)));
   /** Whether the running turn is this tab's: only then does a navigate result move this tab. */
   const owner = createTurnOwner((id) => sentHere(props.path, id));
   const [live, setLive] = createStore<LiveState>(emptyLive());

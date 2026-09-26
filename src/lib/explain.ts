@@ -1,5 +1,5 @@
-// /explain artifacts: what the report row, the per-session strip and the gallery need to know
-// about them. No fetching here — the transcript carries `explain`, the sidebar polls the store.
+// /explain artifacts: what the report row, the per-session strip and the Explanations page's cards
+// need to know about them. No fetching here — the transcript carries `explain`, the app polls the store.
 
 import type { ExplanationInfo, ReportInfo, TranscriptItem } from "../../shared/protocol";
 import { relativeTime, shortModel } from "./format";
@@ -70,10 +70,6 @@ export function appendItems(list: readonly TranscriptItem[], incoming: readonly 
  */
 export const explainModel = (info: { model?: string }): string | null => shortModel(info.model);
 
-/** A gallery tile's caption: "2h ago · glm-5.3", the model dropped when the entry doesn't name one. */
+/** A card's caption: "2h ago · glm-5.3", the model dropped when the entry doesn't name one. */
 export const explainCaption = (info: { createdAt: string; model?: string }, now: number): string =>
   [relativeTime(info.createdAt, now), explainModel(info)].filter(Boolean).join(" · ");
-
-/** "3 explanations from this session" / "1 explanation across all sessions". */
-export const galleryTitle = (n: number, scope: "session" | "all") =>
-  `${n} ${n === 1 ? "explanation" : "explanations"} ${scope === "session" ? "from this session" : "across all sessions"}`;

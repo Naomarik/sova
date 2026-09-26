@@ -1,12 +1,11 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { Portal } from "solid-js/web";
 import type { ExplanationInfo } from "../../shared/protocol";
 import { stampTime } from "../lib/format";
-import { appTheme, explainCaption, explainHref, explainModel, galleryTitle, newestFirst, THUMB_WIDTH } from "../lib/explain";
-import { Chip, Icon, trapFocus } from "./ui";
+import { appTheme, explainCaption, explainHref, explainModel, THUMB_WIDTH } from "../lib/explain";
+import type { ExplainSessionRef } from "../lib/explanations";
+import { requestExplainJump } from "../lib/jump";
+import { Chip } from "./ui";
 import "../explain.css";
-
-let seq = 0;
 
 /** Live `matchMedia`: thumbnails are a desktop affordance, so the iframes are never created below 768px. */
 function createMediaQuery(query: string) {
@@ -25,7 +24,7 @@ function createMediaQuery(query: string) {
  *
  * The empty sandbox also drops the page's one inline script, the `?theme=` handler, so the page
  * would otherwise fall back to the viewer's OS scheme and a light-OS user would get light
- * thumbnails in a dark modal. `color-scheme` on the embedder propagates to the embedded document
+ * thumbnails in a dark app. `color-scheme` on the embedder propagates to the embedded document
  * (CSS Color Adjust; the page ships `<meta name="color-scheme" content="dark light">` to accept
  * it), which matches the app's theme without relaxing the sandbox. Needs confirming in the
  * browser QA pass; if it doesn't hold, thumbnails follow the OS and only their colour is off.
@@ -62,7 +61,47 @@ function Thumb(props: { id: string }) {
   );
 }
 
-function Tile(props: { item: ExplanationInfo; now: number; thumbs: boolean }) {
+/**
+ * Where the page came from, under the card: the session's title and a separate "Open in Session"
+ * link (never inside the page link), or a plain line when the session is gone. The link queues a
+ * jump to the explanation's own row, which the session's transcript claims once it has loaded.
+ */
+function SessionFoot(props: { item: ExplanationInfo; session: ExplainSessionRef }) {
+  return (
+    <Show when={props.session.kind !== "gone" && props.session} fallback={<p class="explain-tile-foot">Session no longer on disk</p>}>
+      {(s) => {
+        const ref = () => s() as Exclude<ExplainSessionRef, { kind: "gone" }>;
+        return (
+          <p class="explain-tile-foot">
+            <span class="explain-tile-from">
+              From <span class="explain-tile-session" title={ref().title}>{ref().title}</span>
+            </span>
+            <Show when={ref().kind === "known" && (ref() as { archived: boolean }).archived}>
+              <Chip>Archived</Chip>
+            </Show>
+            <span aria-hidden="true">·</span>
+            <a
+              class="explain-tile-open"
+              href={ref().href}
+              onClick={() => {
+                const r = ref();
+                requestExplainJump({ explainId: props.item.id, sessionId: r.id, path: r.kind === "known" ? r.path : null });
+              }}
+            >
+              Open in Session
+            </a>
+          </p>
+        );
+      }}
+    </Show>
+  );
+}
+
+/**
+ * One explanation as a card: the page (thumbnail on desktop, topic, caption, summary, note) is one
+ * plain same-tab link to /explain/<id>; the session foot, when given, is a sibling below it.
+ */
+export function ExplainTile(props: { item: ExplanationInfo; now: number; thumbs: boolean; session?: ExplainSessionRef }) {
   const at = () => props.item.createdAt;
   /** A guard: the lists carry openable pages only, so `error` should never reach a tile. If one
       ever does, there is no page at /explain/<id> — no link, no thumbnail, the reason instead. */
@@ -88,83 +127,26 @@ function Tile(props: { item: ExplanationInfo; now: number; thumbs: boolean }) {
     </div>
   );
   return (
-    <li>
-      <Show
-        when={!failed()}
-        fallback={<div class="card explain-tile explain-tile-failed">{body()}</div>}
-      >
-        <a class="card explain-tile" href={explainHref(props.item.id)}>
+    <li class="card explain-tile" classList={{ "explain-tile-failed": !!failed() }}>
+      <Show when={!failed()} fallback={body()}>
+        <a class="explain-tile-link" href={explainHref(props.item.id)}>
           <Show when={props.thumbs}>
             <Thumb id={props.item.id} />
           </Show>
           {body()}
         </a>
       </Show>
+      <Show when={props.session}>{(s) => <SessionFoot item={props.item} session={s()} />}</Show>
     </li>
   );
 }
 
-/** Every explanation in the list as one card grid, newest first. Used inline on the landing page
-    and inside the gallery modal. */
-export function ExplainGrid(props: { explanations: ExplanationInfo[]; now: number }) {
-  const items = () => newestFirst(props.explanations);
+/** Explanations as one card grid, in the order given. `session` resolves each card's foot. */
+export function ExplainGrid(props: { explanations: ExplanationInfo[]; now: number; session?(item: ExplanationInfo): ExplainSessionRef; class?: string }) {
   const thumbs = createMediaQuery("(min-width: 768px)");
   return (
-    <ul class="explain-grid">
-      <For each={items()}>{(item) => <Tile item={item} now={props.now} thumbs={thumbs()} />}</For>
+    <ul class={`explain-grid${props.class ? ` ${props.class}` : ""}`}>
+      <For each={props.explanations}>{(item) => <ExplainTile item={item} now={props.now} thumbs={thumbs()} session={props.session?.(item)} />}</For>
     </ul>
-  );
-}
-
-/**
- * Every explanation in one scope as a card grid, newest first, over whatever opened it (the
- * AlignView pattern: portal, scrim, trapFocus, Esc). Each card that has a page is one link to it,
- * opened in place so the back button returns here; the rest say why not.
- */
-export function ExplainGallery(props: { explanations: ExplanationInfo[]; scope: "session" | "all"; now: number; onClose(): void }) {
-  const titleId = `explain-title-${++seq}`;
-  let close!: HTMLButtonElement;
-  onMount(() => close.focus());
-
-  return (
-    <Portal>
-      <div class="scrim" onClick={() => props.onClose()} />
-      <div
-        class="modal explain-gallery"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        ref={(el) => trapFocus(el)}
-        onKeyDown={(e) => {
-          if (e.key !== "Escape" || e.defaultPrevented) return;
-          e.preventDefault();
-          props.onClose();
-        }}
-      >
-        <div class="modal-head explain-gallery-head">
-          <h2 class="modal-title" id={titleId}>
-            {galleryTitle(props.explanations.length, props.scope)}
-          </h2>
-          <button type="button" class="button button-icon button-ghost" aria-label="Close" title="Close" ref={close} onClick={() => props.onClose()}>
-            <Icon name="close" />
-          </button>
-        </div>
-        <div class="modal-body explain-gallery-body">
-          <Show
-            when={props.explanations.length > 0}
-            fallback={
-              <div class="empty">
-                <p class="empty-title">0 explanations yet.</p>
-                <p class="empty-body">
-                  Run <code>/explain</code> in a session and its page shows up here.
-                </p>
-              </div>
-            }
-          >
-            <ExplainGrid explanations={props.explanations} now={props.now} />
-          </Show>
-        </div>
-      </div>
-    </Portal>
   );
 }

@@ -7,6 +7,9 @@
 export const JUMP_HIGHLIGHT_MS = 1500;
 /** The tint's class, on the landed-on row. */
 export const JUMP_CLASS = "entry-jumped";
+/** Dispatched on the transcript before a jump scrolls it: the transcript stops following the
+    bottom, so a row still rendering below can't pull the view back down mid-scroll. */
+export const JUMP_EVENT = "sova-jump";
 
 const escape = (id: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id.replace(/["\\]/g, "\\$&"));
 
@@ -86,10 +89,88 @@ export function findEntryRow(entryId: string, root: ParentNode | null = transcri
  * than scrolling nowhere. `path` picks the pane in a workspace; without it, the page's transcript.
  */
 export function jumpToEntry(entryId: string, path?: string | null): boolean {
-  const row = findEntryRow(entryId, transcriptRoot(path));
+  const root = transcriptRoot(path);
+  const row = findEntryRow(entryId, root);
   if (!row) return false;
+  root?.dispatchEvent(new Event(JUMP_EVENT));
   row.scrollIntoView({ block: "center", behavior: "smooth" });
   row.classList.add(JUMP_CLASS);
   setTimeout(() => row.classList.remove(JUMP_CLASS), JUMP_HIGHLIGHT_MS);
   return true;
+}
+
+// ---- A jump asked for before the session is on screen ------------------------------------------
+
+/** How long an unclaimed request waits for its session's transcript before it is dropped. */
+export const PENDING_JUMP_TTL_MS = 60_000;
+
+/**
+ * "Open in Session" on an Explanations card: the session opens by route, and its transcript lands
+ * later (a chat's `hello`, a watch view's snapshot), so the jump waits here until that transcript
+ * claims it. One at a time; a newer request replaces an older one. `path` is null when the card
+ * linked by id (`#/sid/<id>`): the view then matches on its session id.
+ */
+export interface PendingExplainJump {
+  explainId: string;
+  sessionId: string;
+  path: string | null;
+  at: number;
+}
+
+let pending: PendingExplainJump | null = null;
+
+export function requestExplainJump(req: Omit<PendingExplainJump, "at">, now = Date.now()): void {
+  pending = { ...req, at: now };
+}
+
+/** The request waiting, if any (tests, and a view deciding whether to look). */
+export const pendingExplainJump = (): PendingExplainJump | null => pending;
+
+export function clearExplainJump(): void {
+  pending = null;
+}
+
+/** What a loaded transcript does with the request: jump to this row, or say it isn't there. */
+export type ExplainJumpClaim = { kind: "jump"; rowId: string } | { kind: "missing" };
+
+/**
+ * Called by a session view each time its transcript (re)loads. Null when nothing waits for THIS
+ * session (another session's request stays). Otherwise the request is consumed, found or not, so it
+ * fires exactly once; one past its TTL is dropped unclaimed. The row is the explanation's own
+ * report row, found by explanation id: the transcript renders one per id.
+ */
+export function claimExplainJump(
+  view: { path: string; sessionId?: string | null },
+  items: readonly { id: string; report?: { explain?: { id: string } } }[],
+  now = Date.now(),
+): ExplainJumpClaim | null {
+  const p = pending;
+  if (!p) return null;
+  if (now - p.at > PENDING_JUMP_TTL_MS) {
+    pending = null;
+    return null;
+  }
+  if (p.path !== view.path && !(view.sessionId && p.sessionId === view.sessionId)) return null;
+  pending = null;
+  const row = items.find((it) => it.report?.explain?.id === p.explainId);
+  return row ? { kind: "jump", rowId: row.id } : { kind: "missing" };
+}
+
+/** The toast when the explanation's row isn't in the transcript that loaded. */
+export const EXPLAIN_OFF_BRANCH = "That explanation isn't on this branch of the session.";
+
+/**
+ * A session view's side of "Open in Session": each time its transcript (re)loads, claim a jump
+ * waiting for this session and land on the row once it has rendered (two frames: the rows, then
+ * the transcript's own first scroll to the bottom). `say` reports a row that isn't there.
+ */
+export function landExplainJump(
+  view: { path: string; sessionId?: string | null },
+  items: readonly { id: string; report?: { explain?: { id: string } } }[],
+  say: (text: string) => void,
+): void {
+  const claim = claimExplainJump(view, items);
+  if (!claim) return;
+  if (claim.kind === "missing") return say(EXPLAIN_OFF_BRANCH);
+  requestAnimationFrame(() => requestAnimationFrame(() => !jumpToEntry(claim.rowId, view.path) && say(EXPLAIN_OFF_BRANCH)));
 }

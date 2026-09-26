@@ -296,8 +296,8 @@ function SessionTab(props: {
 // ---- Explain ----------------------------------------------------------------------------------
 
 /**
- * This session's /explain pages, newest first, as text rows: the gallery (from the insight strip)
- * owns thumbnails, and both open the same page through `explainHref`. Read off the shared insight.
+ * This session's /explain pages, newest first, as text rows: the Explanations page (from the
+ * insight strip) owns thumbnails, and both open the same page through `explainHref`. Read off the shared insight.
  */
 function ExplainTab(props: { insight: PaneInsight; now: number }) {
   const items = () => newestFirst(props.insight.data?.explanations ?? []);

@@ -1,9 +1,9 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { ExplanationInfo, OutlineTopic, SessionOutline } from "../../shared/protocol";
 import { newestFirst } from "../lib/explain";
+import { explanationsHref } from "../lib/insights";
 import { findEntryRow, jumpToEntry, transcriptRoot } from "../lib/jump";
 import { relativeTime, stampTime } from "../lib/format";
-import { ExplainGallery } from "./ExplainGallery";
 import { Icon } from "./ui";
 
 const STATE_CLAUSE: Partial<Record<SessionOutline["state"], string>> = {
@@ -62,22 +62,23 @@ function Topic(props: { topic: OutlineTopic; now: number; open: boolean; path: s
  * instead of two. Collapsed it shows the "now" line and whichever counts exist; open — one click,
  * nothing nested — the overall gist, every topic flat with its bullets, a ghost button that opens
  * the session pane's Timeline tab, where the past summaries live, and, when this session has
- * explanations, one that opens the gallery dialog. The open state is never persisted: a click
- * away, Esc from inside, or leaving the session all leave it closed again.
+ * explanations, a link to the Explanations page filtered to this session. The open state is never
+ * persisted: a click away, Esc from inside, or leaving the session all leave it closed again.
  *
- * With explanations but no outline the row still discloses, labelled "Explained": the gallery
- * button is what's inside. With neither, nothing renders.
+ * With explanations but no outline the row still discloses, labelled "Explained": the
+ * Explanations link is what's inside. With neither, nothing renders.
  */
 export function InsightStrip(props: {
   /** The session this strip summarises: which transcript a topic's jump lands in. */
   path: string;
+  /** The session's id: the Explanations page's filter for it (`#/explanations/<id>`). */
+  sessionId: string;
   outline: SessionOutline | null;
   explanations: ExplanationInfo[] | undefined;
   now: number;
   /** Opens the session pane's Timeline tab, where these topics are chapters on the session's axis. */
   onOpenTimeline?(): void;
 }) {
-  const [galleryOpen, setGalleryOpen] = createSignal(false);
   // Not persisted: the session view is keyed, so navigating anywhere remounts this closed, while
   // an insight reload keeps a deliberate open.
   const [open, setOpen] = createSignal(false);
@@ -85,9 +86,8 @@ export function InsightStrip(props: {
     const away = (e: PointerEvent) => {
       const target = e.target;
       if (!open() || !(target instanceof Element)) return;
-      // On press, not click: the strip goes the moment you reach elsewhere. The gallery dialog is
-      // portalled out of the strip, so its shell and scrim count as inside.
-      if (target.closest(".outline, .modal, .scrim")) return;
+      // On press, not click: the strip goes the moment you reach elsewhere.
+      if (target.closest(".outline")) return;
       setOpen(false);
     };
     const esc = (e: KeyboardEvent) => {
@@ -147,8 +147,8 @@ export function InsightStrip(props: {
         </summary>
         <div class="outline-body">
           <div class="outline-column">
-            {/* Beside the gallery button and laid out by the same class: one ghost button rule for
-                the two openers this body carries. */}
+            {/* Beside the Explanations link and laid out by the same class: one ghost button rule
+                for the two openers this body carries. */}
             <Show when={props.onOpenTimeline}>
               <button type="button" class="button button-sm button-ghost outline-explained-open" onClick={() => props.onOpenTimeline?.()}>
                 <Icon name="clock" small />
@@ -156,15 +156,10 @@ export function InsightStrip(props: {
               </button>
             </Show>
             <Show when={items().length > 0}>
-              <button
-                type="button"
-                class="button button-sm button-ghost outline-explained-open"
-                aria-haspopup="dialog"
-                onClick={() => setGalleryOpen(true)}
-              >
+              <a class="button button-sm button-ghost outline-explained-open" href={explanationsHref(props.sessionId)}>
                 <Icon name="external" small />
                 Open {items().length} {items().length === 1 ? "Explanation" : "Explanations"}
-              </button>
+              </a>
               <Show when={latest()}>
                 {(l) => (
                   <p class="outline-state">
@@ -199,9 +194,6 @@ export function InsightStrip(props: {
           </div>
         </div>
       </details>
-      <Show when={galleryOpen()}>
-        <ExplainGallery explanations={items()} scope="session" now={props.now} onClose={() => setGalleryOpen(false)} />
-      </Show>
     </Show>
   );
 }

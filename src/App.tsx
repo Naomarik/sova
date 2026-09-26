@@ -51,7 +51,7 @@ import { sourceBlocked } from "./lib/fanout";
 import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
-import { ExplainGrid } from "./components/ExplainGallery";
+import { ExplanationsCard, ExplanationsView } from "./components/ExplanationsView";
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { HomeSessionsCard } from "./components/HomeSessionsCard";
 import { OverviewActions } from "./components/OverviewActions";
@@ -96,7 +96,8 @@ const BUSY_POLL_MS = 5_000;
 /** Insights polling (paused while the tab is hidden). The usage file itself changes ≤ every 3 min. */
 const USAGE_POLL_MS = 60_000;
 const AGENTS_POLL_MS = 5_000;
-/** The explanations store only changes when a /explain subagent finishes; the sidebar row can wait. */
+/** The explanations store only changes when a /explain subagent finishes; the overview card and
+    the Explanations page can wait a minute for a new one. */
 const EXPLAIN_POLL_MS = 60_000;
 
 /** `#/overseer` (null: another route), with the earlier file `#/overseer/h/<id>` names. */
@@ -107,7 +108,7 @@ const EXTENSIONS_POLL_MS = 15_000;
 const MESH_POLL_MS = 15_000;
 const folded = () => window.matchMedia("(max-width: 767px)").matches;
 
-/** Live `matchMedia` (the ExplainGallery pattern): the spine is a desktop affordance, so it only
+/** Live `matchMedia` (the ExplainTiles pattern): the spine is a desktop affordance, so it only
     shows while the viewport is unfolded, and a resize across 768px swaps it in or out. */
 function createMediaQuery(query: string) {
   const mql = window.matchMedia(query);
@@ -309,11 +310,6 @@ export function App() {
   /** The landing page shows the Extensions section only when something is installed. */
   const installed = createMemo(() => {
     const items = extensions.data();
-    return items && items.length > 0 ? items : null;
-  });
-  /** The landing page renders the grid only when it has rows; the empty state stays in the modal. */
-  const explained = createMemo(() => {
-    const items = explanations.data();
     return items && items.length > 0 ? items : null;
   });
   const [creating, setCreating] = createSignal(false);
@@ -643,10 +639,15 @@ export function App() {
   });
   createEffect(on(orgsPage, (page) => page && folded() && queueMicrotask(() => orgsTitleEl?.focus()), { defer: true }));
   createEffect(on(extId, (id) => id && folded() && queueMicrotask(() => extTitleEl?.focus()), { defer: true }));
-  // A team deep link focuses its card instead (AgentsView), at every width.
-  createEffect(
-    on(() => insightsRoute()?.page, (page) => page && !focusTeam() && folded() && queueMicrotask(() => insightsTitleEl?.focus()), { defer: true }),
-  );
+  // A team deep link focuses its card instead (AgentsView), at every width. A memo, so a change
+  // within a page (a team link, the Explanations session filter) doesn't take focus back.
+  const insightsPage = createMemo(() => insightsRoute()?.page ?? null);
+  /** The foot's two rows mark Usage and Agents; the Explanations page has no row there. */
+  const footPage = () => {
+    const page = insightsPage();
+    return page === "explanations" ? null : page;
+  };
+  createEffect(on(insightsPage, (page) => page && !focusTeam() && folded() && queueMicrotask(() => insightsTitleEl?.focus()), { defer: true }));
 
   /** Opens a session we just created: chat right away, composer focused. */
   const adoptCreated = (s: SessionSummary) => {
@@ -910,7 +911,7 @@ export function App() {
           now={now()}
           usage={usage.data()}
           agents={agents.data()}
-          insightsPage={insightsRoute()?.page ?? null}
+          insightsPage={footPage()}
           onRefresh={refresh}
           onArchiveChanged={onArchived}
           onNew={() => setCreating(true)}
@@ -956,6 +957,19 @@ export function App() {
                     onArchiveChanged={onArchived}
                     onOpenSubagents={openSubagentsFor}
                   />
+                </Match>
+                {/* Every /explain page as a card (#/explanations[/<sessionId>]). */}
+                <Match when={insightsRoute()?.page === "explanations" && insightsRoute()}>
+                  {(r) => (
+                    <ExplanationsView
+                      explanations={explanations}
+                      sessions={list()}
+                      session={(r() as { session: string | null }).session}
+                      now={now()}
+                      titleRef={(el) => (insightsTitleEl = el)}
+                      onRefresh={refresh}
+                    />
+                  )}
                 </Match>
               </Switch>
             }
@@ -1094,16 +1108,7 @@ export function App() {
                   <HomeSessionsCard glance={sessionsGlance(list() ?? [], attention.data(), overseer.data()?.proactivity)} now={now()} onOpenList={openSessionList} />
                   <MeshCard />
                   <Show when={installed()}>{(list) => <ExtensionCards extensions={list()} />}</Show>
-                  <Show when={explained()}>
-                    {(list) => (
-                      <section class="explain-section" aria-labelledby="explain-section-title">
-                        <h2 class="explain-section-head" id="explain-section-title">
-                          Explained <span class="text-num">{list().length}</span>
-                        </h2>
-                        <ExplainGrid explanations={list()} now={now()} />
-                      </section>
-                    )}
-                  </Show>
+                  <ExplanationsCard explanations={explanations.data()} now={now()} />
                   {/* Last: every organization at a glance, and the way into #/orgs. */}
                   <OverviewOrgsCard now={now()} />
                 </div>

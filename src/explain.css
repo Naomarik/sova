@@ -1,5 +1,5 @@
-/* /explain artifacts: the transcript row, the per-session strip, the sidebar row and the gallery
-   of standalone pages. Builds on base.css's disclosure/report row, .outline strip, .card and
+/* /explain artifacts: the transcript row, the per-session strip, the sidebar row and the
+   Explanations page's cards. Builds on base.css's disclosure/report row, .outline strip, .card and
    .modal; only the deltas live here. Token values only. */
 
 /* ---- Transcript row. A link, not a disclosure: the page opens in a new tab. ---- */
@@ -40,15 +40,18 @@
   color: var(--color-ink-muted);
 }
 
-/* ---- Gallery. Pages, not a question: wider than the 520px dialog, still a sheet when
-   folded (base.css folds .modal below 768px). ---- */
+/* ---- The Explanations page (#/explanations): the filter bar, then the grid. The grid asks the
+   `insights` pane, like the Usage grid: 1 column, 2 from 640px, 3 from 1000px. ---- */
 
-@media (min-width: 768px) {
-  .modal.explain-gallery { width: min(960px, calc(100vw - var(--space-8))); }
+.explain-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3) var(--space-4);
 }
-.explain-gallery-head { display: flex; align-items: flex-start; gap: var(--space-3); }
-.explain-gallery-head .modal-title { flex: 1; min-width: 0; }
-.explain-gallery-body { flex: 1 1 auto; min-height: 0; }
+.explain-bar-session { flex: 1 1 240px; min-width: 0; max-width: 420px; }
+.explain-bar-sort { flex: 0 0 auto; }
+.explain-bar .select { width: 100%; }
 
 .explain-grid {
   list-style: none;
@@ -58,20 +61,49 @@
   grid-template-columns: 1fr;
   gap: var(--space-4);
 }
-@media (min-width: 768px) {
-  .explain-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@container insights (min-width: 640px) {
+  .explain-page-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container insights (min-width: 1000px) {
+  .explain-page-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
+/* The card is not a target: the page link fills it, and the session foot is a sibling link under
+   it (never nested). Hover and focus on the page link lift and ring the whole card. */
 .explain-tile {
   display: flex;
   flex-direction: column;
   height: 100%;
-  color: inherit;
-  text-decoration: none;
   transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
 }
-.explain-tile:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-2); }
-.explain-tile:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.explain-tile-link { flex: 1; display: flex; flex-direction: column; color: inherit; text-decoration: none; }
+.explain-tile-link:focus-visible { outline: none; }
+.explain-tile:has(.explain-tile-link:hover) { border-color: var(--color-border-strong); box-shadow: var(--shadow-2); }
+.explain-tile:has(.explain-tile-link:focus-visible) { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.explain-tile-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
+.explain-tile-from { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.explain-tile-session { color: var(--color-ink-2); }
+.explain-tile-foot > .chip { flex: none; }
+.explain-tile-open {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  color: var(--color-accent);
+  font-weight: var(--fw-medium);
+}
+.explain-tile-open:focus-visible { outline: var(--focus-ring); outline-offset: calc(-1 * var(--focus-offset)); }
 .explain-tile-body { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-4); }
 .explain-tile-head { display: flex; align-items: flex-start; gap: var(--space-2); }
 .explain-tile-topic {
@@ -86,6 +118,7 @@
 /* No page to open: the card states the reason and stays put. */
 .explain-tile-failed { cursor: default; }
 .explain-tile-failed:hover { border-color: var(--color-border); box-shadow: var(--shadow-1); }
+.explain-tile-failed > .explain-tile-body { flex: 1; }
 .explain-tile-error {
   margin: var(--space-1) 0 0;
   font-size: var(--fs-caption);

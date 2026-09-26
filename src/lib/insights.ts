@@ -441,12 +441,24 @@ export function findTeamGroup(doc: Pick<Document, "getElementById" | "querySelec
 }
 export const usageHref = () => "#/usage";
 export const agentsHref = (teamId?: string) => (teamId ? `#/agents/${encodeURIComponent(teamId)}` : "#/agents");
+/** The Explanations page, or that page with one session's filter set. */
+export const explanationsHref = (sessionId?: string | null) =>
+  sessionId ? `#/explanations/${encodeURIComponent(sessionId)}` : "#/explanations";
 
-/** The insights page in the hash, if any: `#/usage`, `#/agents`, `#/agents/<teamKey>` (a bare team id from older links too). */
-export type InsightsRoute = { page: "usage" } | { page: "agents"; team: string | null };
+/** The insights page in the hash, if any: `#/usage`, `#/agents`, `#/agents/<teamKey>` (a bare team
+    id from older links too), `#/explanations`, `#/explanations/<sessionId>`. */
+export type InsightsRoute = { page: "usage" } | { page: "agents"; team: string | null } | { page: "explanations"; session: string | null };
 
 export function insightsRouteFromHash(hash: string): InsightsRoute | null {
   if (hash === "#/usage") return { page: "usage" };
+  const x = /^#\/explanations(?:\/(.*))?$/.exec(hash);
+  if (x) {
+    try {
+      return { page: "explanations", session: x[1] ? decodeURIComponent(x[1]) : null };
+    } catch {
+      return { page: "explanations", session: null };
+    }
+  }
   const m = /^#\/agents(?:\/(.+))?$/.exec(hash);
   if (!m) return null;
   try {

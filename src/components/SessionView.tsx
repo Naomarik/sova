@@ -389,6 +389,7 @@ export function SessionView(props: {
       </Show>
       <InsightStrip
         path={path}
+        sessionId={s().id}
         outline={insight.data?.outline ?? null}
         explanations={insight.data?.explanations}
         now={props.now}
@@ -404,6 +405,7 @@ export function SessionView(props: {
                 {(w) => (
                   <WatchView
                     path={path}
+                    sessionId={s().id}
                     author={author()}
                     streaming={!!s().live}
                     onCreated={props.onCreated}

@@ -1,8 +1,9 @@
-import { createEffect, createSignal, onCleanup, Show, type JSX } from "solid-js";
+import { createEffect, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
 import type { SessionSummary, TranscriptItem, WatchServerMessage } from "../../shared/protocol";
 import { createFork, fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
+import { landExplainJump } from "../lib/jump";
 import { copyText, hideThinking, hideTools, setSessionContext, toast } from "../lib/ui-state";
 import { openCreated, stageFork } from "../lib/fork-stage";
 import { usePaneAnnounce } from "../lib/pane-scope";
@@ -35,6 +36,8 @@ const ANNOUNCE_MS = 5000;
  */
 export function WatchView(props: {
   path: string;
+  /** The session's id: what an "Open in Session" jump names when it linked by id. */
+  sessionId?: string;
   author: string;
   /** A TUI is running this session, so tools without results may still be running. */
   streaming: boolean;
@@ -58,6 +61,9 @@ export function WatchView(props: {
 }) {
   const announce = usePaneAnnounce();
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
+  // "Open in Session" from an Explanations card: land on that explanation's row once the snapshot
+  // is here. Only a jump waiting for this session is claimed, and only once.
+  createEffect(on(items, (list) => list && landExplainJump({ path: props.path, sessionId: props.sessionId }, list, toast)));
   const [error, setError] = createSignal<string | null>(null);
   const [lastUpdate, setLastUpdate] = createSignal<string | null>(null);
 

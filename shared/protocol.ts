@@ -184,6 +184,7 @@ export type EntryKind =
   | "tool-result"
   | "info" // session_info, model_change, compaction, labels, branch summaries etc.
   | "report" // subagent reports and other long extension messages (custom_message); see `report`
+  | "worktree-merge" // a merge the session recorded (pi-config worktrees extension); see `worktreeMerge`
   | "unknown";
 
 /** A normalized transcript row. `raw` carries the full parsed JSONL entry for advanced rendering. */
@@ -235,7 +236,25 @@ export interface TranscriptItem {
   batonMark?: BatonMark;
   /** kind "info" only: a subagents-team-event-v1 entry; `text` is `Team: ` + its sentence. */
   teamEvent?: TeamEvent;
+  /** kind "worktree-merge" only: the `worktree-merge` extension message's details (§chat.worktrees/merge-card).
+      `text` is the one line the model read ("Merged feat/x into master at abc1234, 5 commits, +120 −30"). */
+  worktreeMerge?: WorktreeMergeInfo;
   raw: unknown;
+}
+
+/** A merge the session recorded: by its `worktree merge` tool, or detected after one of its turns. */
+export interface WorktreeMergeInfo {
+  path: string;
+  branch: string;
+  target: string;
+  /** The target's commit after the merge (full). */
+  sha: string;
+  /** Commits the merge brought into the target. */
+  commits: number;
+  added: number;
+  removed: number;
+  fastForward: boolean;
+  how: "tool" | "detected";
 }
 
 /**
@@ -2099,6 +2118,35 @@ export interface SessionInsight {
   /** /explain artifacts parented to this session (store ∪ JSONL explain-doc entries, deduped by
       id, newest first). Absent from older servers. */
   explanations?: ExplanationInfo[];
+  /** The session's tracked git worktrees (pi-config worktrees extension: the newest `worktrees`
+      entry on the active branch), in recorded order, dropped and merged ones included.
+      Absent when the branch never tracked one, or from an older server. §chat.worktrees/pane */
+  worktrees?: SessionWorktreeInfo[];
+}
+
+/** One tracked worktree as the Session tab shows it. */
+export interface SessionWorktreeInfo {
+  /** Canonical top level. */
+  path: string;
+  branch: string;
+  status: "active" | "dropped" | "merged";
+  /** status "merged": the merge this session recorded. */
+  merge?: { target: string; sha: string; how: "tool" | "detected"; at: number };
+  /** status "active" only: the server found its branch already merged into `target` (a merge this
+      session did not record: another session's, or one outside its turns). Checked with git,
+      cached briefly; absent when not merged or not checkable. */
+  mergedInto?: { target: string; sha: string };
+  how: "created" | "attached";
+  /** The session it was inherited from (a fork or fanout copied the entry); absent when it is this
+      session's own. */
+  sharedWith?: string;
+  /** The directory still exists. */
+  exists: boolean;
+  /** It holds a `.agent` directory (workers may run on it with useWorktreeConfig). */
+  hasAgentDir: boolean;
+  /** This session's workers with a live process (starting, running, waiting, stopping) whose cwd is
+      inside it. */
+  runningWorkers: number;
 }
 
 // ---------------------------------------------------------------------------

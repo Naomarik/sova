@@ -25,6 +25,7 @@ import { stripImageNotes } from "../shared/image-note";
 import { parseWakeNudge } from "../shared/wake";
 import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, parseTeamMessage, previewLine, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
+import { mergeInfoOf, WORKTREE_MERGE_MESSAGE } from "./worktrees-state";
 
 // We parse JSONL ourselves instead of using SessionManager.open(): open() is not
 // read-only (it appends "\n" to a trailing partial line and rewrites the file when
@@ -476,7 +477,17 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
       if (BATON_ROWS.has(entry.customType)) return batonRow(id, entry);
       return [];
     case "custom_message":
-      return entry.display === false ? [] : [customRow(id, entry, entry.customType, entry.content)];
+      if (entry.display === false) return [];
+      // The worktrees extension's merge card; details it can't read fall back to the plain row.
+      if (entry.customType === WORKTREE_MERGE_MESSAGE) {
+        const merge = mergeInfoOf(entry.details);
+        if (merge) {
+          const it = item(id, "worktree-merge", entry, contentText(entry.content));
+          it.worktreeMerge = merge;
+          return [it];
+        }
+      }
+      return [customRow(id, entry, entry.customType, entry.content)];
     default:
       return [item(id, "unknown", entry)];
   }

@@ -43,7 +43,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   session writes the spec itself), written by Settings → Modes → Spec and re-read the same way by
   every session with spec on, in either major mode), subagents `team-defaults.json` = the standing
   coordinator and monitor every new team gets (absent = off), written by Sova's Settings → Teams and
-  read by the subagents extension at team creation).
+  read by the subagents extension at team creation), worktrees: the session's `worktrees` custom
+  entry (the tracked set, whole snapshot, newest on the branch wins) and its `worktree-merge`
+  extension message (the merge card), read by Sova and by the subagents spawn gate.
   Not covered by Sova's tsconfig, with these exceptions: the server imports
   `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts` and `spec.ts` (`server/mode-state.ts`,
   `server/delegate.ts`, `server/spec-settings.ts`; hence `allowImportingTsExtensions`),
@@ -54,7 +56,10 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   writer of `model-favorites.json`, with its lock, re-read and atomic rename, for the TUI palette
   and Sova's picker alike), `server/team-defaults.ts` imports
   `pi-config/extensions/subagents/team-defaults.ts` (builtins only: the file's types, defaults,
-  strict parse, reader and atomic writer for Settings → Teams), `server/insights.ts` imports
+  strict parse, reader and atomic writer for Settings → Teams), `server/worktrees-state.ts` imports
+  `pi-config/extensions/worktrees/state.ts` (builtins only: the `worktrees` entry, its fold, the
+  merge card's details) and `git.ts` (builtins only: the extension's own "is this branch merged"
+  probe, git by argv), `server/insights.ts` imports
   `pi-config/extensions/usage-status/fetch.ts`, and the worker-transcript protocol is imported by
   `server/insights.ts`, `worker-restore.ts`, `worker-adapters.ts`, `transcript-usage.ts` and
   `claude-transcript.ts`: `pi-config/extensions/subagents/worker-transcript.ts` (types, the one
@@ -90,8 +95,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 - Isolated testing: `pnpm run dev:hermetic` builds `<worktree>/.agent` (`scripts/hermetic-agent-dir.mjs`: this tree's
   pi-config, own sessions/state, nothing in `~/.pi`) and serves it on 4810 (`SOVA_PORT=<n>` picks another); it copies no auth — copy `auth.json` in by hand.
 - Feature work never edits `~/webapps/sova`: that is the live tree. Each feature session works in its own
-  worktree and branch (`git worktree add ~/webapps/.worktrees/sova-<name> -b feat/<name>`), and only a release
-  merges it into master. Uncommitted edits in the live tree block a release.
+  worktree and branch (`git worktree add ~/webapps/.worktrees/sova-<name> -b feat/<name>`; an agent uses the
+  `worktree` tool, whose `create <name>` does exactly that and tracks it in the session, so its workers may start
+  there), and only a release merges it into master. Uncommitted edits in the live tree block a release.
 - Test from that worktree with `pnpm run dev:hermetic` by default: create, archive, restart and mutate sessions,
   workers and settings freely, and never restart `sova-runtime.service` to test. A feature that mutates nothing and
   needs real sessions to compare against (UI, read-only views) may read real state, but never through a second

@@ -38,6 +38,7 @@ import { modelProvider, sharedWorkerWindowResolver } from "./models";
 import { resolveSessionPath } from "./paths";
 import { collectSkills, hasSkills } from "./skills";
 import { activeBranch, parseLines } from "./transcript";
+import { describeWorktrees, worktreesOf } from "./worktrees-state";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
 import { workerSkills } from "./worker-skills";
 import { defaultAdapters } from "./worker-adapters";
@@ -346,6 +347,8 @@ interface SessionFacts {
   workerRecords: { all: Rec[]; active: Rec[] };
   /** subagents-team-event-v1 entries on the active branch, oldest first. */
   teamEvents: TeamEvent[];
+  /** The branch's tracked worktrees: its newest usable `worktrees` entry (worktrees extension). */
+  worktrees?: ReturnType<typeof worktreesOf>;
   /** The settled state each worker's manifest records on the active branch say it reached: the
       only trace of a member whose report went to its coordinator instead of this session. */
   settled: Map<string, NonNullable<TeamMember["lastReport"]>>;
@@ -642,7 +645,19 @@ function extractFacts(text: string): SessionFacts {
     workerRecords: { all: allRecords, active: activeRecords },
     teamEvents,
     settled: settledStates(activeRecords),
+    worktrees: worktreesOf(branch),
   };
+}
+
+/** Each worker's resolved cwd, from its durable records (the live record deliberately carries none). */
+function workerCwds(records: Rec[]): Map<string, string> {
+  const out = new Map<string, string>();
+  try {
+    for (const m of readWorkerManifests(records).manifests.values()) if (m.spec?.cwd) out.set(m.workerId, m.spec.cwd);
+  } catch {
+    // Unreadable records: no cwds, so no worker counts toward a worktree.
+  }
+  return out;
 }
 
 const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, outlines: [], compactions: [], rewinds: [], explanations: [], sessionId: null, usage: { main: zeroSpend(""), models: [] }, skills: { offered: [], used: [] }, workerRecords: { all: [], active: [] }, teamEvents: [], settled: new Map() };
@@ -1007,7 +1022,15 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
     ...(usageTotal ? { usageTotal } : {}),
     ...(usage ? { usage } : {}),
     explanations: await explanations(facts),
+    ...(await worktreeRows(facts, workers)),
   };
+}
+
+async function worktreeRows(facts: SessionFacts, workers: WorkerInfo[] | null): Promise<Pick<SessionInsight, "worktrees">> {
+  if (!facts.worktrees?.trees.length) return {};
+  const cwds = workerCwds(facts.workerRecords.all);
+  const rows = await describeWorktrees(facts.worktrees, facts.sessionId, (workers ?? []).map((w) => ({ status: w.status, cwd: cwds.get(w.id) })));
+  return rows ? { worktrees: rows } : {};
 }
 
 /** SessionUsage = main rows from the branch tally + worker rows from the live record (team

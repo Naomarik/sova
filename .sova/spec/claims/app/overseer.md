@@ -74,6 +74,13 @@ are atomic tmp+rename.
   **effective** thinking level with it (the level re-clamped to the new model's ladder), so the next
   conversation starts on what the composer showed.
 - **No topic outline** runs for it: no list shows it.
+- **Mode.** It is always in the normal mode with no minor modes (align and spec off); Delegate's
+  strict flag is left as it is. Every open of its runtime brings it back to that, whatever mode
+  entry its branch restored, and an Overseer already there opens without a write. Its composer
+  has no mode switch. A switch (`POST /api/mode?path=`) or a save of its mode as the default
+  is refused with a 409, and a `/mode` sent to it, with or without arguments, is refused and never
+  runs: its composer answers a typed `/mode` itself with a toast, "The Overseer is always in
+  normal mode.", and leaves `mode` out of its `/` menu.
 
 ## §app.overseer/tools — The `sova_*` tools
 
@@ -347,9 +354,13 @@ An unknown id renders as its text, unlinked.
 
 ## §app.overseer/quick-actions — Quick actions
 
-- **One floating button** sits just above the Overseer's composer. It opens a flyout listing the
-  quick actions, each with its label and a short description. Picking one sends its prompt (queued
-  as a follow-up while a turn runs).
+- **One button, Quick Actions,** sits at the right end of the Overseer's composer foot, in the
+  slot the mode switch holds in every other chat (the Overseer has none, §app.overseer/hosting).
+  It opens a flyout listing the quick actions, each with its label and a short description.
+  Picking one sends its prompt (queued as a follow-up while a turn runs).
+- **It stays when the foot collapses.** A collapsed composer's foot drops everything but this
+  button, which is an action, not reference. While the composer is disabled the button still
+  opens, and each quick action carries the disabled reason instead of running.
 - Defaults: **What Needs Me**, **What Finished**, **What's Running**, **Tidy Up**, **Where Was I**.
 - They are editable in Settings → Overseer (label, description, prompt; add, remove, reorder,
   reset to defaults).

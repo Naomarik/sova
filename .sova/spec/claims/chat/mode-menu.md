@@ -2,7 +2,7 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
-`delegate`, and any set of **minor modes** (today `align`). What Delegate routes where is
+`delegate`, and any set of **minor modes** (today `align` and `spec`). What Delegate routes where is
 Settings → Modes (§app/settings-dialog), not this menu.
 
 Both are **per session**: each chat keeps its own, persisted in that session's own `mode`
@@ -30,6 +30,10 @@ model and thinking level that also shape the next turn. A watched (TUI) session 
 foot to show it in, and nothing to show anyway: the TUI keeps its mode in memory, so we can't say
 what it's using. The session head's right side keeps the context gauge, the subagents or team
 chip and the info button (§chat/context-window); it carries no mode.
+
+The Overseer is the one chat without it: it is always in the normal mode with no minor modes
+(§app.overseer/hosting), so there is nothing to switch, and its **Quick Actions** button takes
+this slot (§app.overseer/quick-actions).
 
 ```html
 <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu"

@@ -53,7 +53,11 @@ here and tells every peer; changing it for another host asks that host to change
 tells its peers. Each host records what a peer said about itself, which only that peer can change
 (the gate's identity, never a request field). A host that missed the change learns it when the two
 reach each other again, whichever side calls first, and from the peer's details whenever it reads
-them. A peer on an older build that doesn't say is taken to have no browser address if it is a
+them. A setting carries the time it was made, by that host's clock and always later than the one
+before, and a host takes a peer's answer only over an older one (a time more than a day ahead of
+its own clock counts as a day ahead), so answers that arrive out of order, or details read before a
+change, never undo it; an answer with no time (never set there, or an older build) is taken only
+while no time is recorded. A peer on an older build that doesn't say is taken to have no browser address if it is a
 phone. A host with none shows "No browser address" wherever its address would show, and every front
 door leaves it out (§mesh.front-door/config).
 

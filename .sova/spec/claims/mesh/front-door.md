@@ -28,8 +28,10 @@ serve it, such as a phone); a left-out host stays listed as off, every host is i
 says otherwise, and the last host can't be left out. A host with no browser address
 (§mesh.details/browser-access) is never in the front door: it is left out of the order and the
 configuration automatically, whatever the order or the switches say, and the page lists it as "No
-browser address" with no switch to put it in (if no host has one, all are kept and the configuration
-warns). Each host in the order shows the address the front door reaches it at as a link that opens
+browser address" with no switch to put it in. Leaving out every host that has a browser address is
+refused, as leaving out every host is; if a hand edit does it, the hosts with one are kept and the
+configuration warns, so it never points only at hosts with none (if no host has one, all are kept
+and the configuration warns). Each host in the order shows the address the front door reaches it at as a link that opens
 it in a new tab, with a copy button beside it. That configuration sends to the first healthy host in order,
 checks each host's health, gives up quickly on a host that stops answering new connections, reuses
 idle connections to a host for a short while, and waits at most 35 seconds for a host's response

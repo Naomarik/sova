@@ -31,7 +31,7 @@ import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
 import { extHref, extRouteFromHash } from "./lib/ext-route";
 import { orgsRouteFromHash } from "./lib/orgs-route";
-import { LIST_REFRESH_EVENT } from "./lib/list-refresh";
+import { onListRefresh } from "./lib/list-refresh";
 import { OrgsView } from "./components/OrgsView";
 import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
 import { createThenArchive, dropArchived, newSessionCwd } from "./lib/new-session";
@@ -418,14 +418,14 @@ export function App() {
   window.addEventListener("hashchange", onHash);
   window.addEventListener("keydown", onKeyDown);
   // A view that changed a session's list fields (a baton strip's hand-off, take back, approve) asks
-  // for the list now rather than at the next poll (lib/list-refresh.ts).
-  window.addEventListener(LIST_REFRESH_EVENT, refresh);
+  // for the list and the Needs you digest now rather than at the next poll (lib/list-refresh.ts).
+  const offListRefresh = onListRefresh(window, { list: refresh, attention: () => attention.refetch() });
   const tick = setInterval(() => setNow(Date.now()), 30_000);
   onCleanup(() => {
     window.removeEventListener("focus", onFocus);
     window.removeEventListener("hashchange", onHash);
     window.removeEventListener("keydown", onKeyDown);
-    window.removeEventListener(LIST_REFRESH_EVENT, refresh);
+    offListRefresh();
     clearInterval(tick);
   });
 

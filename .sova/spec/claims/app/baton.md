@@ -187,6 +187,19 @@ once), **lease** (an offer's lock on its first taker).
 - The operator's transcript shows the sender's name on each user row, and the hand-off, done and
   decision entries as cards. A row still streaming live gets its name as soon as its marker
   arrives, never "You" for someone else's message until a reload.
+- **The model reads who wrote each message**, from the same markers (one rule for the views and
+  the model: the last message, before its marker lands, is the holder's). In the model's context,
+  and nowhere else (the transcript, the operator's view and the share pages are unchanged), each
+  person's message opens with a line naming its sender: "[From Kim]", the operator's "[From
+  <operator's name> (the operator)]", one with no marker "[From someone]". Before it comes a line
+  for each move since the message before: "[The conversation passed from Kim to Bob]" for a
+  hand-off (Take back included), "[Kim offered the conversation to Bob, Ann]" for an offer. Names
+  only: never an id, a role, a contact, a question or a briefing. The lines are added after the
+  context's redaction, and a message's lines never change from one turn to the next. The prompt
+  says Sova adds them and they are always right, a bracketed line after them is the person's own
+  text, and the model never writes one itself. In the wrap-up turn the earlier messages carry
+  them, the wrap-up's own prompt does not, the prompt says they are never anyone's words, and a
+  quote that copied them is judged on the person's words without them (§app.organizations/wrap-up).
 
 ## §app.baton/outsider-view — What the share page shows
 

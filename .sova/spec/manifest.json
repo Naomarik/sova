@@ -3488,7 +3488,13 @@
         "src/lib/live.ts",
         "src/lib/live.test.ts",
         "src/lib/baton-strip.ts",
-        "src/lib/baton-strip.test.ts"
+        "src/lib/baton-strip.test.ts",
+        "server/baton-view.ts",
+        "server/baton-view.test.ts",
+        "server/baton-wrapup.ts",
+        "server/baton-prompt.md",
+        "server/baton-handoff.test.ts",
+        "server/baton-guards.test.ts"
       ],
       "requires": [
         "§app.overseer/sent-marker"

@@ -106,3 +106,19 @@ test("/clear is local only where the Overseer turns it on", () => {
   assert.equal(slashMenuSuppressed("/clear"), false);
   assert.equal(slashMenuSuppressed("/clear", { clear: true }), true);
 });
+
+test("/mode is local only where the Overseer turns it on, arguments and all", () => {
+  assert.equal(localCommand("/mode"), null, "any other chat: the runtime's, as before");
+  assert.equal(localCommand("/mode delegate"), null);
+  assert.equal(localCommand("/mode", { mode: true }), "mode");
+  assert.equal(localCommand(" /mode delegate\n", { mode: true }), "mode", "a switch is refused, not sent");
+  assert.equal(localCommand("/mode spec on", { mode: true }), "mode");
+  assert.equal(localCommand("/modes", { mode: true }), null, "a longer name is not /mode");
+  assert.equal(localCommand("what /mode are you in?", { mode: true }), null);
+  assert.equal(localCommand("/clear", { mode: true }), null, "one option never turns on the other");
+  assert.equal(localCommand("/mode", { clear: true }), null);
+  assert.equal(enterRunsLocal("/mode delegate", "Enter", false, { mode: true }), true);
+  assert.equal(enterRunsLocal("/mode", "Enter", true, { mode: true }), false);
+  assert.equal(slashMenuSuppressed("/mode"), false);
+  assert.equal(slashMenuSuppressed("/mode", { mode: true }), true);
+});

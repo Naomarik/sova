@@ -3,5 +3,208 @@
     "check": "^rest:cleanup-age-dry$",
     "reason": "Only when the SAME ids come back in another order: cleanupSessions lists them in readdir order of the sessions subdirectories, which the filesystem decides (seen differing in an A/A-equivalent run). Guarded by the sorted comparison in parity.mjs: a different SET of ids still fails.",
     "orderOnly": true
+  },
+  {
+    "check": "^static:tests\\(no new tmp leftovers, mesh\\)$",
+    "commit": "8482d1e",
+    "reason": "NON-MESH master work since base 679bd98: 8482d1e (overseer todos: server/overseer-todos-route.test.ts leaves sova-todos-route-*). Allowed only for this exact diff.",
+    "detailRe": "baseline leaves 8: jiti node-compile-cache pi-sandbox-1000 sova-branch-fresh-[A-Za-z0-9]{6} sova-branch-marker-[A-Za-z0-9]{6} sova-ideas-route-[A-Za-z0-9]{6} sova-topic-outline-settings-[A-Za-z0-9]{6} sova-web-settings-[A-Za-z0-9]{6}\nmesh leaves 9: jiti node-compile-cache pi-sandbox-1000 sova-branch-fresh-[A-Za-z0-9]{6} sova-branch-marker-[A-Za-z0-9]{6} sova-ideas-route-[A-Za-z0-9]{6} sova-todos-route-[A-Za-z0-9]{6} sova-topic-outline-settings-[A-Za-z0-9]{6} sova-web-settings-[A-Za-z0-9]{6}"
+  },
+  {
+    "check": "^proc:creation-sites\\(new in mesh\\)$",
+    "commit": "f59fe97",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions, needs-you signals, session tags): attention-signals 10 s ticker, session-feed, tags-backfill timers. Allowed only for this exact diff.",
+    "detail": "setInterval server/attention-signals.ts ×1\nsetInterval server/session-feed.ts ×27\nsetInterval server/tags-backfill.ts ×1\nsetTimeout server/session-feed.ts ×12\nsetTimeout server/tags-backfill.ts ×2"
+  },
+  {
+    "check": "^rest:design-base$",
+    "commit": "f59fe97 8246e08 ad36de7 8258d85",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); 8246e08 (overseer head menus); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go); 8258d85 (team defaults: Settings → Teams, team_create defaults.coordinator/monitor, /team text, rules lines). Allowed only for this exact diff.",
+    "detail": "$.body: \"/* =============================================================================\\n   Sova — base.css\\n   Loads AFTER tokens.css. Consumes tokens only — no r... !== \"/* =============================================================================\\n   Sova — base.css\\n   Loads AFTER tokens.css. Consumes tokens only — no r...",
+    "pin": "ecf66a83ac41b723:5ac062cd57d78673"
+  },
+  {
+    "check": "^chat:ordered-stream$",
+    "commit": "7e387d7 8258d85 e4fadac e7457b0 71c202d ac79895 14baa25 3c82482",
+    "reason": "NON-MESH master work since base 679bd98: 7e387d7 (subagents: team_eject tool, 17→18 tools, and its rules line); 8258d85 (team defaults: Settings → Teams, team_create defaults.coordinator/monitor, /team text, rules lines); and the other subagents extension commits since the base (e4fadac e7457b0 71c202d ac79895 14baa25 3c82482: seats, handovers, successors, monitor). Allowed only for this exact diff.",
+    "detail": "$.seq[1].commands[14].description: \"Open the team workspace, or /team <objective> to ask the parent agent to plan and create the team with team_create/team_add\" !== \"Open the team workspace, /team <objective> to ask the parent agent to plan and create the team with team_create/team_add, or /team defaults to show the team...\n$.seq[11].event.message.sections.rules: \"<rules>\\n- Use bash for file operations like ls, rg, find\\n- Use read to examine files instead of cat or sed.\\n- You can inspect PI_* environment variables ... !== \"<rules>\\n- Use bash for file operations like ls, rg, find\\n- Use read to examine files instead of cat or sed.\\n- You can inspect PI_* environment variables ...\n$.seq[11].event.message.toolsAdded.length: 17 !== 18\n$.seq[11].event.message.toolsAdded[12].parameters.properties.defaults.properties.coordinator: <absent> !== {\"type\":\"boolean\",\"description\":\"false: no coordinator (and no monitor) from team-defaults.json for this team.\"}\n$.seq[11].event.message.toolsAdded[12].parameters.properties.defaults.properties.monitor: <absent> !== {\"type\":\"boolean\",\"description\":\"false: no monitor from team-defaults.json for this team.\"}\n$.seq[11].event.message.toolsAdded[12].parameters.properties.defaults.description: \"Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them.\" !== \"Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them. coor...\n$.seq[11].event.message.toolsAdded[14].name: \"team_list\" !== \"team_eject\"\n$.seq[11].event.message.toolsAdded[14].description: \"List teams with each member's role (orchestrators marked), declared ownership, exact worker ID and actual status, plus recent control actions including memb... !== \"Release an ended member's seat in a team created in this session (a team seats 24 members; ejected members do not count). member is an exact worker ID (ag_N...\n$.seq[11].event.message.toolsAdded[14].parameters.properties.team.description: \"Team ID or unique name.\" !== \"Team ID (team_NN) or unique team name.\"\n$.seq[11].event.message.toolsAdded[14].parameters.properties.member: <absent> !== {\"type\":\"string\",\"minLength\":1,\"description\":\"Exact worker ID (ag_NN) or role.\"}\n$.seq[11].event.message.toolsAdded[14].parameters.required: <absent> !== [\"team\",\"member\"]\n$.seq[11].event.message.toolsAdded[15].name: \"look_at_image\" !== \"team_list\"\n$.seq[11].event.message.toolsAdded[15].description: \"Ask a vision model about an image file on disk (png, jpg, webp, gif, bmp) and get its answer as text. Only for models that cannot see images — if the curren... !== \"List teams with each member's role (orchestrators marked), declared ownership, exact worker ID and actual status, plus recent control actions including memb...\n$.seq[11].event.message.toolsAdded[15].parameters.required: [\"path\",\"question\"] !== <absent>\n$.seq[11].event.message.toolsAdded[15].parameters.properties.path: {\"type\":\"string\",\"description\":\"Path to the image file, absolute or relative to the working directory\"} !== <absent>\n$.seq[11].event.message.toolsAdded[15].parameters.properties.question: {\"type\":\"string\",\"description\":\"What to find out about the image\"} !== <absent>\n$.seq[11].event.message.toolsAdded[15].parameters.properties.team: <absent> !== {\"type\":\"string\",\"minLength\":1,\"description\":\"Team ID or unique name.\"}\n$.seq[11].event.message.toolsAdded[15].parameters.additionalProperties: <absent> !== false\n$.seq[11].event.message.toolsAdded[16].name: \"wake_nudge\" !== \"look_at_image\"\n$.seq[11].event.message.toolsAdded[16].description: \"Schedule a wakeup: at the fire time a user message tagged [wake_nudge <id>] starts a new turn, even while idle.\" !== \"Ask a vision model about an image file on disk (png, jpg, webp, gif, bmp) and get its answer as text. Only for models that cannot see images — if the curren...\n$.seq[11].event.message.toolsAdded[16].parameters.required.length: 1 !== 2\n$.seq[11].event.message.toolsAdded[16].parameters.required[0]: \"action\" !== \"path\"\n$.seq[11].event.message.toolsAdded[16].parameters.properties.action: {\"type\":\"string\",\"enum\":[\"schedule\",\"list\",\"cancel\"],\"description\":\"What to do\"} !== <absent>\n$.seq[11].event.message.toolsAdded[16].parameters.properties.delay: {\"type\":\"string\",\"description\":\"Relative delay, e.g. 5m\"} !== <absent>\n$.seq[11].event.message.toolsAdded[16].parameters.properties.at: {\"type\":\"string\",\"description\":\"Absolute ISO-8601 fire time\"} !== <absent>\n$.seq[11].event.message.toolsAdded[16].parameters.properties.reason: {\"type\":\"string\",\"description\":\"What to do on wake\"} !== <absent>\n$.seq[11].event.message.toolsAdded[16].parameters.properties.id: {\"type\":\"string\",\"description\":\"Nudge id to cancel\"} !== <absent>\n$.seq[11].event.message.toolsAdded[16].parameters.properties.path: <absent> !== {\"type\":\"string\",\"description\":\"Path to the image file, absolute or relative to the working directory\"}\n$.seq[11].event.message.toolsAdded[16].parameters.properties.question: <absent> !== {\"type\":\"string\",\"description\":\"What to find out about the image\"}\n$.seq[12].event.message.sections.rules: \"<rules>\\n- Use bash for file operations like ls, rg, find\\n- Use read to examine files instead of cat or sed.\\n- You can inspect PI_* environment variables ... !== \"<rules>\\n- Use bash for file operations like ls, rg, find\\n- Use read to examine files instead of cat or sed.\\n- You can inspect PI_* environment variables ...\n$.seq[12].event.message.toolsAdded.length: 17 !== 18\n$.seq[12].event.message.toolsAdded[12].parameters.properties.defaults.properties.coordinator: <absent> !== {\"type\":\"boolean\",\"description\":\"false: no coordinator (and no monitor) from team-defaults.json for this team.\"}\n$.seq[12].event.message.toolsAdded[12].parameters.properties.defaults.properties.monitor: <absent> !== {\"type\":\"boolean\",\"description\":\"false: no monitor from team-defaults.json for this team.\"}\n$.seq[12].event.message.toolsAdded[12].parameters.properties.defaults.description: \"Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them.\" !== \"Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them. coor...\n$.seq[12].event.message.toolsAdded[14].name: \"team_list\" !== \"team_eject\"\n$.seq[12].event.message.toolsAdded[14].description: \"List teams with each member's role (orchestrators marked), declared ownership, exact worker ID and actual status, plus recent control actions including memb... !== \"Release an ended member's seat in a team created in this session (a team seats 24 members; ejected members do not count). member is an exact worker ID (ag_N...\n$.seq[12].event.message.toolsAdded[14].parameters.properties.team.description: \"Team ID or unique name.\" !== \"Team ID (team_NN) or unique team name.\"\n$.seq[12].event.message.toolsAdded[14].parameters.properties.member: <absent> !== {\"type\":\"string\",\"minLength\":1,\"description\":\"Exact worker ID (ag_NN) or role.\"}\n$.seq[12].event.message.toolsAdded[14].parameters.required: <absent> !== [\"team\",\"member\"]\n$.seq[12].event.message.toolsAdded[15].name: \"look_at_image\" !== \"team_list\"",
+    "pin": "7296ba45ca5049c1:05083b7cf8e7ad07"
+  },
+  {
+    "check": "^disk:root/\\.agent/sessions/--var-tmp-sova-mesh-parity-1000-live-cwd--/<now-iso>_<uuid>\\.jsonl$",
+    "commit": "7e387d7 8258d85 e4fadac e7457b0 71c202d ac79895 14baa25 3c82482",
+    "reason": "NON-MESH master work since base 679bd98: 7e387d7 (subagents: team_eject tool, 17→18 tools, and its rules line); 8258d85 (team defaults: Settings → Teams, team_create defaults.coordinator/monitor, /team text, rules lines); and the other subagents extension commits since the base (e4fadac e7457b0 71c202d ac79895 14baa25 3c82482: seats, handovers, successors, monitor). Allowed only for this exact diff.",
+    "detail": "$.content[5].message.sections.rules: \"<rules>\\n- Use bash for file operations like ls, rg, find\\n- Use read to examine files instead of cat or sed.\\n- You can inspect PI_* environment variables ... !== \"<rules>\\n- Use bash for file operations like ls, rg, find\\n- Use read to examine files instead of cat or sed.\\n- You can inspect PI_* environment variables ...\n$.content[5].message.toolsAdded.length: 17 !== 18\n$.content[5].message.toolsAdded[12].parameters.properties.defaults.properties.coordinator: <absent> !== {\"type\":\"boolean\",\"description\":\"false: no coordinator (and no monitor) from team-defaults.json for this team.\"}\n$.content[5].message.toolsAdded[12].parameters.properties.defaults.properties.monitor: <absent> !== {\"type\":\"boolean\",\"description\":\"false: no monitor from team-defaults.json for this team.\"}\n$.content[5].message.toolsAdded[12].parameters.properties.defaults.description: \"Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them.\" !== \"Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them. coor...\n$.content[5].message.toolsAdded[14].name: \"team_list\" !== \"team_eject\"\n$.content[5].message.toolsAdded[14].description: \"List teams with each member's role (orchestrators marked), declared ownership, exact worker ID and actual status, plus recent control actions including memb... !== \"Release an ended member's seat in a team created in this session (a team seats 24 members; ejected members do not count). member is an exact worker ID (ag_N...\n$.content[5].message.toolsAdded[14].parameters.properties.team.description: \"Team ID or unique name.\" !== \"Team ID (team_NN) or unique team name.\"\n$.content[5].message.toolsAdded[14].parameters.properties.member: <absent> !== {\"type\":\"string\",\"minLength\":1,\"description\":\"Exact worker ID (ag_NN) or role.\"}\n$.content[5].message.toolsAdded[14].parameters.required: <absent> !== [\"team\",\"member\"]\n$.content[5].message.toolsAdded[15].name: \"look_at_image\" !== \"team_list\"\n$.content[5].message.toolsAdded[15].description: \"Ask a vision model about an image file on disk (png, jpg, webp, gif, bmp) and get its answer as text. Only for models that cannot see images — if the curren... !== \"List teams with each member's role (orchestrators marked), declared ownership, exact worker ID and actual status, plus recent control actions including memb...\n$.content[5].message.toolsAdded[15].parameters.required: [\"path\",\"question\"] !== <absent>\n$.content[5].message.toolsAdded[15].parameters.properties.path: {\"type\":\"string\",\"description\":\"Path to the image file, absolute or relative to the working directory\"} !== <absent>\n$.content[5].message.toolsAdded[15].parameters.properties.question: {\"type\":\"string\",\"description\":\"What to find out about the image\"} !== <absent>\n$.content[5].message.toolsAdded[15].parameters.properties.team: <absent> !== {\"type\":\"string\",\"minLength\":1,\"description\":\"Team ID or unique name.\"}\n$.content[5].message.toolsAdded[15].parameters.additionalProperties: <absent> !== false\n$.content[5].message.toolsAdded[16].name: \"wake_nudge\" !== \"look_at_image\"\n$.content[5].message.toolsAdded[16].description: \"Schedule a wakeup: at the fire time a user message tagged [wake_nudge <id>] starts a new turn, even while idle.\" !== \"Ask a vision model about an image file on disk (png, jpg, webp, gif, bmp) and get its answer as text. Only for models that cannot see images — if the curren...\n$.content[5].message.toolsAdded[16].parameters.required.length: 1 !== 2\n$.content[5].message.toolsAdded[16].parameters.required[0]: \"action\" !== \"path\"\n$.content[5].message.toolsAdded[16].parameters.properties.action: {\"type\":\"string\",\"enum\":[\"schedule\",\"list\",\"cancel\"],\"description\":\"What to do\"} !== <absent>\n$.content[5].message.toolsAdded[16].parameters.properties.delay: {\"type\":\"string\",\"description\":\"Relative delay, e.g. 5m\"} !== <absent>\n$.content[5].message.toolsAdded[16].parameters.properties.at: {\"type\":\"string\",\"description\":\"Absolute ISO-8601 fire time\"} !== <absent>\n$.content[5].message.toolsAdded[16].parameters.properties.reason: {\"type\":\"string\",\"description\":\"What to do on wake\"} !== <absent>\n$.content[5].message.toolsAdded[16].parameters.properties.id: {\"type\":\"string\",\"description\":\"Nudge id to cancel\"} !== <absent>\n$.content[5].message.toolsAdded[16].parameters.properties.path: <absent> !== {\"type\":\"string\",\"description\":\"Path to the image file, absolute or relative to the working directory\"}\n$.content[5].message.toolsAdded[16].parameters.properties.question: <absent> !== {\"type\":\"string\",\"description\":\"What to find out about the image\"}",
+    "pin": "50e2780f94b40798:e5d36e499cbcefa5"
+  },
+  {
+    "check": "^screen:settings:text$",
+    "commit": "f59fe97 8258d85",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); 8258d85 (team defaults: Settings → Teams, team_create defaults.coordinator/monitor, /team text, rules lines). Allowed only for this exact diff.",
+    "detail": "line 65: \"Overseer\" !== \"Teams\"\nline 66: \"Summaries\" !== \"Overseer\"\nline 67: \"Themes\" !== \"Decisions\"\nline 68: \"Experimental\" !== \"Summaries\"\nline 69: \"\" !== \"Themes\"\nline 70: \"How this browser draws Sova. These stay in this browser — nothing here changes your pi config, and another machine keeps its own.\" !== \"Experimental\"\nline 72: \"Sessions in Recent\" !== \"How this browser draws Sova. These stay in this browser — nothing here changes your pi config, and another machine keeps its own.\"\nline 73: \"The top of the sidebar lists this many sessions, the ones that moved last. They stay in Live & web and the Archive too. 3–20, 5 by default.\" !== \"\"\nline 74: \"Summary line\" !== \"Sessions in Recent\"\nline 75: \"Under each title in the sidebar, what the session is for. Off, a row is its title and when it was last active. A draft's first line still shows.\" !== \"The top of the sidebar lists this many sessions, the ones that moved last. They stay in Live & web and the Archive too. 3–20, 5 by default.\"\nline 76: \"Close\" !== \"Summary line\"\nline 77: undefined !== \"Under each title in the sidebar, what the session is for. Off, a row is its title and when it was last active. A draft's first line still shows.\"",
+    "pin": "ae004c79e91e7e6f:223529c131f906cf"
+  },
+  {
+    "check": "^screen:settings:accessibility$",
+    "commit": "f59fe97 8258d85",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); 8258d85 (team defaults: Settings → Teams, team_create defaults.coordinator/monitor, /team text, rules lines). Allowed only for this exact diff.",
+    "detail": "line 10: \"    - link \\\"Overseer · 1 finished\\\":\" !== \"    - link \\\"Overseer\\\":\"\nline 86: \"    - tab \\\"Overseer\\\"\" !== \"    - tab \\\"Teams\\\"\"\nline 87: \"    - tab \\\"Summaries\\\"\" !== \"    - tab \\\"Overseer\\\"\"\nline 88: \"    - tab \\\"Themes\\\"\" !== \"    - tab \\\"Decisions\\\"\"\nline 89: \"    - tab \\\"Experimental\\\"\" !== \"    - tab \\\"Summaries\\\"\"\nline 90: \"  - tabpanel \\\"General\\\":\" !== \"    - tab \\\"Themes\\\"\"\nline 91: \"    - paragraph: How this browser draws Sova. These stay in this browser — nothing here changes your pi config, and another machine keeps its own.\" !== \"    - tab \\\"Experimental\\\"\"\nline 92: \"    - text: Sessions in Recent\" !== \"  - tabpanel \\\"General\\\":\"\nline 93: \"    - spinbutton \\\"Sessions in Recent\\\": \\\"5\\\"\" !== \"    - paragraph: How this browser draws Sova. These stay in this browser — nothing here changes your pi config, and another machine keeps its own.\"\nline 94: \"    - text: The top of the sidebar lists this many sessions, the ones that moved last. They stay in Live & web and the Archive too. 3–20, 5 by default. Summary line\" !== \"    - text: Sessions in Recent\"\nline 95: \"    - checkbox \\\"Summary line\\\" [checked]\" !== \"    - spinbutton \\\"Sessions in Recent\\\": \\\"5\\\"\"\nline 96: \"    - text: Under each title in the sidebar, what the session is for. Off, a row is its title and when it was last active. A draft's first line still shows.\" !== \"    - text: The top of the sidebar lists this many sessions, the ones that moved last. They stay in Live & web and the Archive too. 3–20, 5 by default. Summary line\"",
+    "pin": "c71665b3f800af5a:d3581ef471167bcc"
+  },
+  {
+    "check": "^screen:settings:pixels$",
+    "commit": "f59fe97 ad36de7 8258d85",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go); 8258d85 (team defaults: Settings → Teams, team_create defaults.coordinator/monitor, /team text, rules lines). Allowed only for this exact diff.",
+    "detail": "2735 px differ in box {\"x0\":47,\"y0\":73,\"x1\":476,\"y1\":614}; mask <run>/diff-settings.png"
+  },
+  {
+    "check": "^screen:home-desktop:pixels$",
+    "commit": "f59fe97 ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "218 px differ in box {\"x0\":47,\"y0\":73,\"x1\":253,\"y1\":97}; mask <run>/diff-home-desktop.png"
+  },
+  {
+    "check": "^screen:home-mobile:pixels$",
+    "commit": "f59fe97 ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "218 px differ in box {\"x0\":47,\"y0\":73,\"x1\":253,\"y1\":97}; mask <run>/diff-home-mobile.png"
+  },
+  {
+    "check": "^screen:session-real-chat:pixels$",
+    "commit": "f59fe97 ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "218 px differ in box {\"x0\":47,\"y0\":73,\"x1\":253,\"y1\":97}; mask <run>/diff-session-real-chat.png"
+  },
+  {
+    "check": "^screen:session-compacted:pixels$",
+    "commit": "f59fe97 ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "218 px differ in box {\"x0\":47,\"y0\":73,\"x1\":253,\"y1\":97}; mask <run>/diff-session-compacted.png"
+  },
+  {
+    "check": "^screen:session-branched:pixels$",
+    "commit": "f59fe97 ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "218 px differ in box {\"x0\":47,\"y0\":73,\"x1\":253,\"y1\":97}; mask <run>/diff-session-branched.png"
+  },
+  {
+    "check": "^screen:usage:pixels$",
+    "commit": "f59fe97 ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "218 px differ in box {\"x0\":47,\"y0\":73,\"x1\":253,\"y1\":97}; mask <run>/diff-usage.png"
+  },
+  {
+    "check": "^screen:agents:pixels$",
+    "commit": "f59fe97 ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "218 px differ in box {\"x0\":47,\"y0\":73,\"x1\":253,\"y1\":97}; mask <run>/diff-agents.png"
+  },
+  {
+    "check": "^screen:new-session:pixels$",
+    "commit": "f59fe97 ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "125 px differ in box {\"x0\":47,\"y0\":73,\"x1\":252,\"y1\":97}; mask <run>/diff-new-session.png"
+  },
+  {
+    "check": "^screen:sid-listed:pixels$",
+    "commit": "f59fe97 ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "218 px differ in box {\"x0\":47,\"y0\":73,\"x1\":253,\"y1\":97}; mask <run>/diff-sid-listed.png"
+  },
+  {
+    "check": "^screen:sid-husk:pixels$",
+    "commit": "f59fe97 ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "218 px differ in box {\"x0\":47,\"y0\":73,\"x1\":253,\"y1\":97}; mask <run>/diff-sid-husk.png"
+  },
+  {
+    "check": "^screen:sid-gone:pixels$",
+    "commit": "f59fe97 ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: f59fe97 (decisions: Settings → Decisions; sidebar filter placeholder \"Title, folder, or model\" → \"…or tag\"); ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "218 px differ in box {\"x0\":47,\"y0\":73,\"x1\":253,\"y1\":97}; mask <run>/diff-sid-gone.png"
+  },
+  {
+    "check": "^screen:home-desktop:accessibility$",
+    "commit": "ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "line 10: \"    - link \\\"Overseer · 1 finished\\\":\" !== \"    - link \\\"Overseer\\\":\"\nline 82: \"a title=Overseer · 1 finished · Alt+O label=Overseer · 1 finished\" !== \"a title=Overseer · Alt+O label=Overseer\"",
+    "pin": "8607466b37a41575:d1c150dd9ec59dc5"
+  },
+  {
+    "check": "^screen:home-mobile:accessibility$",
+    "commit": "ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "line 9: \"    - link \\\"Overseer · 1 finished\\\":\" !== \"    - link \\\"Overseer\\\":\"\nline 59: \"a title=Overseer · 1 finished · Alt+O label=Overseer · 1 finished\" !== \"a title=Overseer · Alt+O label=Overseer\"",
+    "pin": "6df8ef47f1191019:e92f4a044e815ab3"
+  },
+  {
+    "check": "^screen:session-real-chat:accessibility$",
+    "commit": "ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "line 10: \"    - link \\\"Overseer · 1 finished\\\":\" !== \"    - link \\\"Overseer\\\":\"\nline 112: \"a title=Overseer · 1 finished · Alt+O label=Overseer · 1 finished\" !== \"a title=Overseer · Alt+O label=Overseer\"",
+    "pin": "89da7082c82ba1c8:af90a289b84a20c8"
+  },
+  {
+    "check": "^screen:session-compacted:accessibility$",
+    "commit": "ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "line 10: \"    - link \\\"Overseer · 1 finished\\\":\" !== \"    - link \\\"Overseer\\\":\"\nline 130: \"a title=Overseer · 1 finished · Alt+O label=Overseer · 1 finished\" !== \"a title=Overseer · Alt+O label=Overseer\"",
+    "pin": "134c2e370663ba54:18faf4b0d3600c16"
+  },
+  {
+    "check": "^screen:session-branched:accessibility$",
+    "commit": "ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "line 10: \"    - link \\\"Overseer · 1 finished\\\":\" !== \"    - link \\\"Overseer\\\":\"\nline 98: \"a title=Overseer · 1 finished · Alt+O label=Overseer · 1 finished\" !== \"a title=Overseer · Alt+O label=Overseer\"",
+    "pin": "25a829e0483d35bf:63e0edebd8e0ea5d"
+  },
+  {
+    "check": "^screen:session-mobile:accessibility$",
+    "commit": "ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "line 49: \"a title=Overseer · 1 finished · Alt+O label=Overseer · 1 finished\" !== \"a title=Overseer · Alt+O label=Overseer\"",
+    "pin": "be947ba338e71a68:d007029fe97f0b00"
+  },
+  {
+    "check": "^screen:usage:accessibility$",
+    "commit": "ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "line 10: \"    - link \\\"Overseer · 1 finished\\\":\" !== \"    - link \\\"Overseer\\\":\"\nline 98: \"a title=Overseer · 1 finished · Alt+O label=Overseer · 1 finished\" !== \"a title=Overseer · Alt+O label=Overseer\"",
+    "pin": "3015fdc1be0521e5:0bd4c229d0e19f3b"
+  },
+  {
+    "check": "^screen:agents:accessibility$",
+    "commit": "ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "line 10: \"    - link \\\"Overseer · 1 finished\\\":\" !== \"    - link \\\"Overseer\\\":\"\nline 71: \"a title=Overseer · 1 finished · Alt+O label=Overseer · 1 finished\" !== \"a title=Overseer · Alt+O label=Overseer\"",
+    "pin": "e419d4766304d5e7:dcde5084f9d935fe"
+  },
+  {
+    "check": "^screen:new-session:accessibility$",
+    "commit": "ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "line 10: \"    - link \\\"Overseer · 1 finished\\\":\" !== \"    - link \\\"Overseer\\\":\"\nline 101: \"a title=Overseer · 1 finished · Alt+O label=Overseer · 1 finished\" !== \"a title=Overseer · Alt+O label=Overseer\"",
+    "pin": "31c4c5b1ccb2ac77:002194fcd3dd5bc1"
+  },
+  {
+    "check": "^screen:sid-listed:accessibility$",
+    "commit": "ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "line 10: \"    - link \\\"Overseer · 1 finished\\\":\" !== \"    - link \\\"Overseer\\\":\"\nline 112: \"a title=Overseer · 1 finished · Alt+O label=Overseer · 1 finished\" !== \"a title=Overseer · Alt+O label=Overseer\"",
+    "pin": "89da7082c82ba1c8:af90a289b84a20c8"
+  },
+  {
+    "check": "^screen:sid-husk:accessibility$",
+    "commit": "ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "line 10: \"    - link \\\"Overseer · 1 finished\\\":\" !== \"    - link \\\"Overseer\\\":\"\nline 89: \"a title=Overseer · 1 finished · Alt+O label=Overseer · 1 finished\" !== \"a title=Overseer · Alt+O label=Overseer\"",
+    "pin": "9188be6e484f84d7:d214589fa9f35da0"
+  },
+  {
+    "check": "^screen:sid-gone:accessibility$",
+    "commit": "ad36de7",
+    "reason": "NON-MESH master work since base 679bd98: ad36de7 (Overseer eye shows only its unread message count: the base's \"Overseer · 1 finished\" label and dot go). Allowed only for this exact diff.",
+    "detail": "line 10: \"    - link \\\"Overseer · 1 finished\\\":\" !== \"    - link \\\"Overseer\\\":\"\nline 82: \"a title=Overseer · 1 finished · Alt+O label=Overseer · 1 finished\" !== \"a title=Overseer · Alt+O label=Overseer\"",
+    "pin": "8607466b37a41575:d1c150dd9ec59dc5"
   }
 ]

@@ -45,12 +45,15 @@ export function rankCommands(commands: SlashCommand[], query: string): SlashComm
 }
 
 /** A command Sova answers itself rather than sending to the runtime. */
-export type LocalCommand = "subagents" | "new" | "tree" | "timeline" | "clear";
+export type LocalCommand = "subagents" | "new" | "tree" | "timeline" | "clear" | "mode";
 
-/** Which optional local commands this composer answers. "/clear" is the Overseer's alone: anywhere
-    else it is the runtime's (or plain text), exactly as before. */
+/** Which optional local commands this composer answers. "/clear" and "/mode" are the Overseer's
+    alone: anywhere else they are the runtime's (or plain text), exactly as before. */
 export interface LocalCommandOptions {
   clear?: boolean;
+  /** "/mode", with or without arguments: the Overseer is always in normal mode, so it never
+      reaches its runtime. */
+  mode?: boolean;
 }
 
 /**
@@ -67,6 +70,7 @@ export interface LocalCommandOptions {
 export function localCommand(text: string, opts: LocalCommandOptions = {}): LocalCommand | null {
   const t = text.trim();
   if (opts.clear && t === "/clear") return "clear";
+  if (opts.mode && /^\/mode(\s|$)/.test(t)) return "mode";
   if (/^\/(agents|subagents)$/.test(t)) return "subagents";
   if (t === "/new") return "new";
   if (t === "/tree") return "tree";

@@ -135,7 +135,7 @@ export function OverseerView(props: {
     }
   };
 
-  // ---- Proactivity: Off → Badge → Brief me, one button that says where it is ----------------
+  // ---- Proactivity: Off → List Only → Brief Me, one button that says where it is ----------------
   const [proactivity, setProactivity] = createSignal<OverseerProactivity | null>(null);
   createEffect(() => {
     const p = settings.error ? undefined : settings()?.settings.proactivity;

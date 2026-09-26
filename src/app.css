@@ -270,14 +270,27 @@ html, body, #root { height: 100%; }
    accessibility tree, because an invisible control that still takes focus is worse than a hidden
    one. The foot itself is only taken out of the flow (so it contributes no height and no flex
    gap), which keeps the reason inside it readable to AT: `aria-describedby` still resolves. */
-.composer[data-collapsed="true"] .composer-foot > *:not(.composer-reason) { display: none; }
-.composer[data-collapsed="true"] .composer-foot {
+.composer[data-collapsed="true"] .composer-foot > *:not(.composer-reason, .composer-accessory) { display: none; }
+.composer[data-collapsed="true"] .composer-foot:not(:has(> .composer-accessory)) {
   position: absolute;
   width: 1px; height: 1px;
   padding: 0; margin: 0;
   overflow: hidden;
   white-space: nowrap;
 }
+/* The one exception: the Overseer's Quick Actions is an action, not reference,
+   so its foot stays in flow holding only that button (its rows carry the
+   disabled reason). The reason itself goes visually hidden, still read by AT. */
+.composer[data-collapsed="true"] .composer-foot > .composer-reason:has(~ .composer-accessory) {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* A hidden shield must not keep the button off the right edge. */
+.composer[data-collapsed="true"] .composer-foot > .composer-accessory { margin-left: auto; }
 .composer[data-collapsed="true"] .attachments { display: none; }
 /* The textarea is pinned to one line while collapsed, and released the moment it
    takes focus — which expands the composer in the same frame. Typing is never

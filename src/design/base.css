@@ -5112,7 +5112,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 /* =============================================================================
    OVERSEER — the one session that watches the rest (#/overseer): its entry
    button beside the session search (and on the spine), the unread dots on
-   session rows, its page head, the quick-actions button above its composer,
+   session rows, its page head, the quick-actions button in its composer foot,
    and the machine rows and confirm card in its thread.
    ============================================================================= */
 
@@ -5181,12 +5181,37 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 /* The Overseer's empty thread: a live fact, then the absence. */
 .overseer-empty .empty-mark { color: var(--color-ink-muted); }
 
-/* Quick actions: one button just above the textarea, at the end of the
-   composer's top row (beside the run status when there is one). Inside the
-   composer, in flow, so it never covers transcript content. */
-.composer-top { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.composer-top > .run-status { flex: 1; min-width: 0; }
-.composer-accessory { flex: none; margin-left: auto; }
+/* Quick actions: one button at the right end of the composer foot, in the
+   slot the mode switch holds in every other chat (the Overseer has none). It
+   takes that trigger's treatment — the model indicator's scale, a --tap-min
+   target stretched over it, mirrored to the right edge — in the body face,
+   because its label is a name, not a machine fact. It keeps its word at every
+   width: the model id is what shrinks. */
+.composer-foot > .composer-accessory {
+  display: flex;
+  flex: none;
+  margin: 0 calc(var(--space-2) * -1) 0 auto;
+}
+.composer-foot .composer-sandbox ~ .composer-accessory { margin-left: 0; }
+.composer-foot .quick-actions-trigger {
+  position: relative;
+  min-height: var(--control-sm);
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-regular);
+  color: var(--color-ink-2);
+  white-space: nowrap;
+}
+/* The 44px target the caption row is too short to hold on its own. */
+.composer-foot .quick-actions-trigger::after {
+  content: "";
+  position: absolute;
+  inset: calc((var(--tap-min) - var(--control-sm)) / -2) 0;
+}
+.composer-foot .quick-actions-trigger .icon { width: 16px; height: 16px; color: var(--color-ink-muted); }
+.composer-foot .quick-actions-trigger .action-menu-text { gap: var(--space-1); }
+.composer-foot .quick-actions-trigger[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
 
 /* A row the Overseer (or its brief) wrote: a machine row, never "You". */
 .overseer-author { display: inline-flex; align-items: center; gap: var(--space-1); }

@@ -34,8 +34,9 @@ Remove everything it added (default), or keep sshd, its key and the wake lock fo
   `<rootfs><home>/.claude`, so the mesh syncs the login there instead (`SOVA_SYNC_CLAUDE_DIR`; `--claude-dir` overrides,
   as seen from Termux). The distro, user and HOME must be plain words (HOME from the container's passwd when the wrapper
   sets none); anything else keeps `home/.claude` and prints a note. The container's own `.credentials.json` is kept in the
-  manifest. On a host that is already paired, switching copies the mesh's current login in first, byte for byte, so the
-  container's older login never reaches the mesh. Nothing else in the container is touched.
+  manifest. On a host that is already paired, switching stops Sova, copies the mesh's current login in first, byte for
+  byte, and starts Sova again (also when the install fails after the stop), so the container's older login never reaches
+  the mesh. Nothing else in the container is touched.
 - Listeners: main `127.0.0.1:4800` only. Peer listener `<tailnet IP>:4801`, only while peers.json lists a peer. The
   tailnet IP is read from `tun*` (`--tailnet-ip` overrides), because Termux can't reach Tailscale's LocalAPI. Nothing
   binds 0.0.0.0 or the Wi-Fi address; the installer proves it by connecting.
@@ -61,7 +62,8 @@ Remove everything it added (default), or keep sshd, its key and the wake lock fo
 ## What uninstall.sh leaves
 
 The Claude Code login inside a proot-distro container goes back to what it was before the install (removed if there was
-none); the rest of the container is untouched.
+none); the login it held at uninstall (a newer one may have been made inside the container) is kept beside it as
+`.credentials.json.sova-uninstall` (0600). The rest of the container is untouched.
 
 apt's package lists and apt/dpkg logs, and any pre-existing package that was upgraded as a dependency (the manifest
 lists them; none on the test phone). Without `--keep-ssh` it releases the Termux wake lock, which Termux shares with

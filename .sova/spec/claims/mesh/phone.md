@@ -19,10 +19,12 @@ be read with certainty (the distro, user or home is not a plain word, the contai
 and prints a note naming `--claude-dir`.
 
 The container's own `.credentials.json` is kept in the installer's manifest the first time. When an
-already paired phone switches to the container's directory, the mesh's current login is copied in
-first, byte for byte at mode 0600, before Sova starts using it, so the container's older login is never
-taken for a new one or sent to other hosts. On a phone that is not paired yet, the container's login
+already paired phone switches to the container's directory, Sova is stopped, the mesh's current login
+is copied in first, byte for byte at mode 0600, and Sova starts again using it (also when the install
+fails after the stop), so the container's older login is never taken for a new one or sent to other
+hosts and no refresh lands in between. On a phone that is not paired yet, the container's login
 stays and takes part in sync once the phone is paired. A later run with a different directory stops
 with a message instead of switching again. Uninstalling puts the container's original
-`.credentials.json` back (or removes the synced one if there was none) and leaves the rest of the
-container untouched.
+`.credentials.json` back (or removes the synced one if there was none), first keeping the login the
+container holds at that moment, which may be a newer one made inside it, as
+`.credentials.json.sova-uninstall` at mode 0600; the rest of the container is untouched.

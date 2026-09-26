@@ -29,13 +29,19 @@
       "evidence": "verified",
       "code": [
         "src/components/InsightStrip.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/components/SessionView.tsx",
+        "src/lib/insights.ts"
       ]
     },
     "§app.insights/placement": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/insights.ts",
+        "src/App.tsx"
+      ]
     },
     "§app.insights/sidebar-foot": {
       "kind": "behavior",
@@ -866,7 +872,9 @@
         "src/lib/org-cards.ts",
         "src/lib/api.ts",
         "src/components/MeshView.tsx",
-        "src/extensions.css"
+        "src/extensions.css",
+        "src/components/ExplanationsView.tsx",
+        "src/lib/explanations.ts"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -4261,6 +4269,32 @@
         "pi-config/extensions/worktrees/index.ts",
         "pi-config/extensions/worktrees/state.ts",
         "pi-config/extensions/worktrees/README.md"
+      ]
+    },
+    "§app.insights/explanations-page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.insights/usage-page-and-agents-page",
+        "§app.insights/insight-strip",
+        "§chat.transcript/landing-page"
+      ],
+      "code": [
+        "src/components/ExplanationsView.tsx",
+        "src/components/ExplainTiles.tsx",
+        "src/lib/explanations.ts",
+        "src/lib/explanations.test.ts",
+        "src/lib/insights.ts",
+        "src/lib/jump.ts",
+        "src/lib/jump.test.ts",
+        "src/components/ChatView.tsx",
+        "src/components/WatchView.tsx",
+        "src/components/Thread.tsx",
+        "src/explain.css",
+        "src/App.tsx",
+        "src/lib/explain.ts",
+        "src/lib/explain.test.ts"
       ]
     }
   },

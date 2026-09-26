@@ -153,15 +153,15 @@ is a main-pane page like a session (`data-view="session"`), with the back link.
 ## §app.extensions/cards — Landing-page cards
 
 When at least one extension is installed, the landing page (§chat.transcript/landing-page) shows
-an **Extensions** section between the opening and the Explained grid: the same section eyebrow
+an **Extensions** section between the opening and the Explanations card: the same section eyebrow
 (`Extensions {n}`), then a grid of cards (1 column folded, 2 unfolded), one per extension in
 manifest order. With none installed it renders nothing: no head, no empty state.
 
 Each card is one link to `#/ext/<id>`: the icon (the manifest's, else `sliders`), the title, the
 status chip (`Running` or `Down`, dot and word), the description, and for a `down` one the reason
 in the error colour: "Its backend isn't answering: {error}.". **A down card is still a link**: the
-extension's own UI may say more than the host can. Hover and a focus ring, like the Explained
-tiles.
+extension's own UI may say more than the host can. Hover and a focus ring, like the Mesh and
+Explanations cards.
 
 ## §app.extensions/trust — What an extension can do
 

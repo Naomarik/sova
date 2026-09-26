@@ -585,9 +585,14 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
    search.
 4. **The Extensions section**, shown **only when at least one extension is installed**: one card
    per extension, under the same section eyebrow (§app.extensions/cards).
-5. **The Explained grid**, shown **only when at least one explanation exists** (0 renders
-   nothing — no empty state, no head, no reserved space).
-6. **The Organizations section**, always and always last (below Mesh, Extensions and Explained),
+5. **The Explanations card**, always (with no explanations too), under an `Explanations`
+   section eyebrow: the Mesh card's shape (§mesh.ui/card) — one full-width `a.card.ext-card` to
+   `#/explanations` (§app.insights/explanations-page) with the `file` icon, the title
+   `Explanations`, a count chip (`{n}`), and one line: `Latest · {topic} · {relative time}`, or,
+   with none, "No explanations yet. Run `/explain` in a session to write one." Before the first
+   list has loaded the line reads "Reading explanations…". It is the way to the page at every
+   width, and on a phone the only one outside a session (list → Overview → the card).
+6. **The Organizations section**, always and always last (below Mesh, Extensions and Explanations),
    under an `Organizations` section eyebrow: one full-width `.card.overview-orgs`, the entry point
    to `#/orgs` (§app/organizations). Its head is the `network` icon on the same 36px sunken tile as
    the Start cards, the title `Organizations` (`--fs-heading-s`, semibold) — a link to `#/orgs`,
@@ -624,10 +629,9 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
   <section class="explain-section" aria-labelledby="home-sessions-title">…Sessions, the .card.home-sessions…</section>
   <!-- only when at least one extension is installed (§app.extensions/cards) -->
   <section class="explain-section" aria-labelledby="ext-section-title">…Extensions {n}, one .card.ext-card each…</section>
-  <!-- only when there is at least one explanation -->
   <section class="explain-section" aria-labelledby="explain-section-title">
-    <h2 class="explain-section-head" id="explain-section-title">Explained <span class="text-num">6</span></h2>
-    <ul class="explain-grid">…one .card.explain-tile per page…</ul>
+    <h2 class="explain-section-head" id="explain-section-title">Explanations</h2>
+    <ul class="ext-grid ext-grid-full"><li><a class="card ext-card" href="#/explanations">…icon · Explanations · chip {n} · Latest line…</a></li></ul>
   </section>
   <section class="explain-section" aria-labelledby="overview-orgs-title">…Organizations, the .card.overview-orgs…</section>
 </div>
@@ -647,18 +651,14 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
   `display-l` page opener was rejected: this is the second thing on the page, not its title.
 - **Where the CSS lives.** `.overview`, `.overview-head`, `.overview-title`, `.explain-section` and
   `.explain-section-head` are in `src/design/base.css`; the Start grid, `.action-card` and the
-  Organizations card are in `src/home.css`, beside the Sessions card; `.explain-grid` and every `.explain-tile`
-  rule are in `src/explain.css`, which owns the tile in both places it appears.
-- **The session-scoped gallery is unchanged.** The same `ExplainGrid` still renders inside the
-  gallery modal that the insight strip's `Open {n} Explanations` button opens (§app/insights), scoped to
-  one session and keeping the 0-explanations empty state. The landing page is the *all*-scope
-  view of the same rows, and it is a page, not a dialog: the sidebar foot no longer has an
-  Explained row.
-- **Tiles open in the same tab.** Each tile is a plain link to `/explain/:id` with no `target`,
-  here and in the gallery alike. In an installed app (standalone display mode) a new tab is a new
-  window with one history entry, so its back button couldn't return to Sova; navigating in place
-  keeps Back working. `/explain/:id` is still a standalone document, so a direct link opens it
-  on its own. There is no external-arrow icon and no "opens in a new tab" suffix on a tile.
+  Organizations card are in `src/home.css`, beside the Sessions card; the Explanations card is an
+  extension card (`src/extensions.css`); `.explain-grid` and every `.explain-tile` rule are in
+  `src/explain.css`, which owns the tile on the Explanations page.
+- **No grid here.** The overview no longer lists the pages themselves: the card leads to the
+  Explanations page, where every one is a card with its filters (§app.insights/explanations-page).
+  There is no gallery dialog any more, and the sidebar foot has no Explained row. The page's
+  tiles open in the same tab (§app.insights/insight-strip, "Every explain link opens in the same
+  tab").
 
 ## §chat.transcript/states — States
 

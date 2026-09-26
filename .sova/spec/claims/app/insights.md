@@ -26,8 +26,10 @@ while reported states (read from a session file after the fact) never pulse and 
   above the live banner.
   Compactions stay in the transcript, at the point where they happened (§chat/transcript items).
 - **Aggregates:** neutral count chips on session rows and in the session head.
-- **All explanations:** the landing page at `#/`, under the opening (§chat/transcript). The sidebar foot has no
-  Explained row — a grid of pages is not a doorway that fits a 44px row.
+- **All explanations:** their own page, `#/explanations` (§app.insights/explanations-page), entered
+  from the overview's Explanations card (§chat/transcript) and from a session's insight strip, not
+  from the foot. The sidebar foot has no Explained row — a grid of pages is not a doorway that
+  fits a 44px row.
 - No toasts, and nothing is announced on a poll.
 
 ## §app.insights/sidebar-foot — Sidebar foot
@@ -513,6 +515,99 @@ at most four at a time. The comparison is kept until the tree's HEAD or its base
 ten seconds, and what hasn't been asked for in an hour is dropped. With git older than 2.38 there
 is no trial merge, and `merged` is only ever `ancestor` or `no`.
 
+## §app.insights/explanations-page — Explanations page (`#/explanations`)
+
+Every /explain page on this machine, as cards, on a page of its own in the insights family: the
+same shell as Usage and Agents (§app.insights/usage-page-and-agents-page: `.session-head` with
+`.app-back` to `#/`, a focusable `h1` "Explanations", a meta line and `Refresh Explanations`,
+then `.insights.pane` > `.insights-inner`). It reads the explanations list the app already polls
+(`GET /api/explanations`, every 60s) and the session list the sidebar loads; nothing else is
+fetched except the lookups below.
+
+```html
+<header class="session-head">
+  <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">…</a>
+  <div class="session-head-main">
+    <h1 class="session-head-title" tabindex="-1">Explanations</h1>
+    <p class="session-head-meta">12 explanations · newest first</p>
+  </div>
+  <button class="button button-icon button-ghost" aria-label="Refresh Explanations">…refresh…</button>
+</header>
+<section class="insights pane" aria-label="Explanations">
+  <div class="insights-inner">
+    <div class="explain-bar">
+      <label class="field explain-bar-session">Session <span class="select-wrap"><select class="select">All sessions · one option per session with explanations</select></span></label>
+      <div class="board-filters" role="group" aria-label="Date">…Today · 7 Days · 30 Days · All (aria-pressed)…</div>
+      <label class="field explain-bar-sort">Sort <span class="select-wrap"><select class="select">Newest First · Oldest First</select></span></label>
+    </div>
+    <ul class="explain-grid explain-page-grid">
+      <li class="card explain-tile">
+        <a class="explain-tile-link" href="/explain/{id}?theme=dark">thumbnail (≥768px) · topic · "2h ago · glm-5.3" · summary · note</a>
+        <p class="explain-tile-foot">From <span class="explain-tile-session">{session title}</span> <span class="chip">Archived</span> · <a href="#/s/{path}">Open in Session</a></p>
+      </li>
+    </ul>
+  </div>
+</section>
+```
+
+- **Routes.** `#/explanations` lists every explanation; `#/explanations/{sessionId}` is the same
+  page with the session filter set to that session. Like the Agents page, the route is the
+  filter's state: changing the session select replaces the hash (`#/explanations` for All
+  sessions, no new history entry), and a hash change sets the select. The date filter and the
+  sort are the page's own and reset when the page is left. At folded width the page uses
+  `data-view="session"`, its title takes focus when the page opens, and Back (`.app-back`) goes
+  to `#/`, the list, as every page's does.
+- **Entry points.** The overview's Explanations card (§chat.transcript/landing-page), which is
+  also a phone's way in (list → Overview → the card), and the insight strip's
+  `Open {n} Explanations`, which opens `#/explanations/{sessionId}` (§app.insights/insight-strip).
+- **Head meta.** `{n} explanation(s) · newest first` (or `· oldest first`, following the sort),
+  where {n} counts the cards the filters leave. Left out until the first list has loaded.
+- **Filters.** A bar above the grid:
+  - **Session**: a select of `All sessions`, then one option per session that has at least one
+    explanation, most recent explanation first, each named by the session's title (a session
+    this tab can't resolve is named `session {first 8 characters of the id}`, and one this host
+    says is gone `Session no longer on disk ({first 8 characters})`). A route naming a session
+    with no explanations still selects it, and shows the empty state below.
+  - **Date**: four toggle buttons, exactly one pressed, with a check beside the pressed one:
+    `Today` (since local midnight), `7 Days`, `30 Days`, `All` (the default), counted back
+    from now on each explanation's `createdAt`.
+  - **Sort**: a select, `Newest First` (the default) or `Oldest First`, on `createdAt`.
+- **Grid.** `ul.explain-grid` of cards, 1 column; 2 columns once the `insights` container is at
+  least 640px wide, 3 at 1000px or more — the Usage grid's steps.
+- **Card.** The explain tile (§chat.transcript/landing-page's former grid tile, `src/explain.css`):
+  the thumbnail at 768px and up, the topic, `{relative time} · {model}`, the summary clamped to 3
+  lines, and the advisory note when there is one. The thumbnail, topic, caption, summary and note
+  are one plain link to `/explain/{id}` with no `target` (the same-tab rule of
+  §app.insights/insight-strip). Under it, a foot line says where the page came from:
+  - The session in the session list: `From {title}`, an `Archived` chip when it is archived,
+    then `· Open in Session`, a separate link to `#/s/{path}`.
+  - A session the list doesn't carry (it has no user message, for one): the page asks this host
+    once (`GET /api/sessions/summary?id=`). Found, it reads as above, but links to `#/sid/{id}`,
+    since `#/s/{path}` opens only rows the list has and `#/sid/` adds the found one. While it is
+    asking, or when the ask failed for any reason but "not found", it reads
+    `From session {first 8 characters of the id} · Open in Session`, also to `#/sid/{id}`.
+  - Not found: the plain text "Session no longer on disk", and no link.
+  - The two links are siblings, never one inside the other; the card itself is not a target.
+    Each link has the focus ring; the card's border lifts on hover over its page link.
+- **Open in Session lands on the explanation.** The link opens the session, and once its
+  transcript has loaded (the chat's `hello`, or the watch view's snapshot) the transcript scrolls
+  the explanation's own row (the report row whose explanation id matches) into the middle and
+  tints it, the transcript's usual jump (§app.insights/insight-strip, Jump to Message), and, like
+  every jump, stops the transcript following the bottom, so Jump to Latest appears and rows still
+  rendering can't pull the view back down. It works whether or not the session's runtime was
+  already open, and it happens once: the request is dropped after
+  it lands, after it fails, or after 60s unclaimed. When the loaded transcript has no such row (the
+  explanation's entry is not on the branch on screen, e.g. after a rewind), the session stays open
+  and a toast says "That explanation isn't on this branch of the session."
+- **Empty.** With no explanation at all, the grid's place holds one `.empty`: "0 explanations
+  yet." and "Run `/explain` in a session and its page shows up here." When the filters leave
+  nothing: "{n} explanation(s) in all. None match these filters." and "Choose All sessions or
+  All to see more." Neither shows before the first list has loaded; until then, after 300ms, a
+  skeleton, with `aria-busy` on `.insights-inner`.
+- **Request error.** `.banner-error` "Couldn't load explanations." with Retry, above whatever was
+  already loaded.
+- **Refresh.** The head's refresh re-reads the explanations and the session list.
+
 ## §app.insights/insight-strip — Insight strip (current goal and explanations)
 
 The strip holds **only the newest topic-outline summary** — the goal the agent is on now — and
@@ -530,9 +625,9 @@ which draws them on the session's axis; the strip keeps no history of its own.
   </summary>
   <div class="outline-body">
     <div class="outline-column">
-      <button class="button button-sm button-ghost outline-explained-open" type="button" aria-haspopup="dialog">
+      <a class="button button-sm button-ghost outline-explained-open" href="#/explanations/{sessionId}">
         <span class="icon icon-sm" style="--icon: url(/icons/external.svg)" aria-hidden="true"></span>Open 3 Explanations
-      </button>
+      </a>
       <button class="button button-sm button-ghost outline-explained-open" type="button" aria-controls="session-pane">
         <span class="icon icon-sm" style="--icon: url(/icons/clock.svg)" aria-hidden="true"></span>Open Timeline
       </button>
@@ -558,7 +653,7 @@ which draws them on the session's axis; the strip keeps no history of its own.
   single disclosure, so the session head costs one row, not two.
 - **One click, nothing nested.**
   1. Closed, the strip shows the `now` line and the counts it has.
-  2. Open, it shows everything: the Timeline and gallery buttons, `overall`, the state line, and
+  2. Open, it shows everything: the Timeline button and the Explanations link, `overall`, the state line, and
      every topic **flat** — its heading, its time, its bullets and its Jump, with no per-topic
      disclosure and no collapse state. The body scrolls inside `--outline-max`; it doesn't fold.
 - **Column.** Open, everything in the body sits in one centered `.outline-column` — the same
@@ -575,19 +670,19 @@ which draws them on the session's axis; the strip keeps no history of its own.
   `<span class="outline-count outline-explained">· Explained {n}</span>` after the topic count,
   counting finished, openable pages only (a run still in progress shows in the thread as its
   running row, and is counted and listed nowhere until its final entry lands),
-  and the body opens with a ghost `Open {n} Explanations` button — the existing gallery dialog
-  (`aria-haspopup="dialog"`) — followed by `Latest · {topic} · {relative time}`. This dialog is
-  **unchanged** and stays session-scoped; every explanation on the machine is the landing page's
-  grid instead (§chat/transcript), which is a page and not a dialog.
-- **Every explain link opens in the same tab.** The gallery's cards, the landing page's grid
-  (§chat/transcript), the transcript's report row and the session pane's explain row are all plain links to
+  and the body opens with `Open {n} Explanations`, a link styled as a ghost button to
+  `#/explanations/{sessionId}` — the Explanations page with this session's filter set
+  (§app.insights/explanations-page) — followed by `Latest · {topic} · {relative time}`. There is
+  no gallery dialog: the page is where explanations are browsed, one session's or all of them.
+- **Every explain link opens in the same tab.** The Explanations page's cards
+  (§app.insights/explanations-page), the transcript's report row and the session pane's explain row are all plain links to
   `/explain/:id` with no `target`. In an installed app a new tab is a new window whose history
   has one entry, so Back couldn't return to Sova; in place, it can. `/explain/:id` stays a
   standalone document for direct links. None of them carries the `external` icon or a "new tab"
   suffix any more, so each link's accessible name is just what it is — the report row and the
   pane row start with a visually hidden `Explanation: ` ahead of the topic, read as
-  "Explanation: {topic}". The `external` glyph on `Open {n} Explanations` is unrelated: that is
-  the button that opens the gallery dialog.
+  "Explanation: {topic}". The `external` glyph on `Open {n} Explanations` is unrelated: that link
+  leaves the session for the Explanations page.
 - **Open state.** The strip is closed by default and **nothing is persisted** — the open state
   lives in the component alone. The session view is a keyed `<Show>` on `viewKey()` (`src/App.tsx`,
   `chat:{force}:{path}` / `watch:{why}:{path}`), so a refetch doesn't remount the strip and a
@@ -597,8 +692,8 @@ which draws them on the session's axis; the strip keeps no history of its own.
 - **Dismissal.** A `pointerdown` anywhere outside the strip closes it — the transcript, the
   sidebar, the composer, the pane — on the press, not the release. Inside is everything within
   the disclosure (the summary row, a topic's heading and bullets, Jump, `Open Timeline`,
-  `Open {n} Explanations`) **and the gallery dialog it opens**, which is portalled, so a click in
-  that dialog or on its scrim leaves the strip open underneath. **Esc** dismisses it only when the
+  `Open {n} Explanations`). Following the Explanations link leaves the session, which remounts
+  the strip closed. **Esc** dismisses it only when the
   press starts inside the strip, and never calls `preventDefault` — every other Esc in the product
   (the pane's close, Inputs' armed-rewind cancel, a dialog's own) keeps its behavior. Each of the
   three close paths — the summary toggle, the click-away, Esc — hands the transcript back the
@@ -606,12 +701,12 @@ which draws them on the session's axis; the strip keeps no history of its own.
 - **Missing data.**
   - When `outline` is null but the session has explanations, the row still discloses: the label
     reads "Explained", the summary is `Explained · {n} · {latest topic}`, and the body holds the
-    gallery button and the Latest line.
+    Explanations link and the Latest line.
   - When `outline` is null and there are no explanations, render no strip at all. Most sessions
     have neither, and an empty strip on each of them is noise.
   - Leave out an empty `now` (the summary then shows only the label and count), and likewise an
     empty `overall`.
-- **Open Timeline.** A second ghost button beside the gallery one, opening the session pane on
+- **Open Timeline.** A ghost button beside the Explanations link, opening the session pane on
   its Timeline tab (§chat/timeline): this goal's topics and every past summary's as chapter markers, with
   this session's inputs, tool density and idle gaps drawn in between them. It is always there,
   explanations or not — the summaries are what the axis is built from, and the Timeline is where

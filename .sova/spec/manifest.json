@@ -2921,6 +2921,165 @@
         "§app.session-list/groups",
         "§app.session-list/spine"
       ]
+    },
+    "§teams.defaults/command": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/member-mcp.ts",
+        "pi-config/extensions/subagents/coordination.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/subagents/README.md"
+      ]
+    },
+    "§teams.defaults/coordinator": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/member-mcp.ts",
+        "pi-config/extensions/subagents/coordination.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/subagents/README.md"
+      ]
+    },
+    "§teams.defaults/file": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/member-mcp.ts",
+        "pi-config/extensions/subagents/coordination.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/subagents/README.md"
+      ]
+    },
+    "§teams.defaults/handover": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/member-mcp.ts",
+        "pi-config/extensions/subagents/coordination.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/subagents/README.md"
+      ]
+    },
+    "§teams.defaults/monitor": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/member-mcp.ts",
+        "pi-config/extensions/subagents/coordination.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/subagents/README.md"
+      ]
+    },
+    "§teams.defaults/roster-context": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/member-mcp.ts",
+        "pi-config/extensions/subagents/coordination.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/subagents/README.md"
+      ]
+    },
+    "§teams.defaults/routing": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/member-mcp.ts",
+        "pi-config/extensions/subagents/coordination.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/subagents/README.md"
+      ]
+    },
+    "§teams.defaults/team-report": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/member-mcp.ts",
+        "pi-config/extensions/subagents/coordination.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/subagents/README.md"
+      ]
+    },
+    "§teams.defaults/wake-nudge": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/member-mcp.ts",
+        "pi-config/extensions/subagents/coordination.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/subagents/README.md"
+      ]
+    },
+    "§teams/defaults": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "pi-config/extensions/subagents/mailbox.ts",
+        "pi-config/extensions/subagents/member.ts",
+        "pi-config/extensions/subagents/member-mcp.ts",
+        "pi-config/extensions/subagents/coordination.ts",
+        "pi-config/extensions/subagents/team-defaults.ts",
+        "pi-config/extensions/subagents/README.md"
+      ]
     }
   },
   "boundary": {

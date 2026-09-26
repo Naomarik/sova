@@ -59,16 +59,31 @@ function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
-/** Text blocks of a string-or-array `content`, joined. */
+/** Text blocks of a string-or-array `content`, joined. Image blocks go to contentImages instead. */
 function contentText(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   const parts: string[] = [];
   for (const b of content) {
     if (b?.type === "text" && typeof b.text === "string") parts.push(b.text);
-    else if (b?.type === "image") parts.push("[image]");
   }
   return parts.join("\n");
+}
+
+/**
+ * Base64 image blocks (the API's `{type:"image", source:{type:"base64", media_type, data}}`) as
+ * data URLs, or undefined if none: the same `images` field server/transcript.ts fills for pi.
+ */
+function contentImages(content: unknown): string[] | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const out: string[] = [];
+  for (const b of content) {
+    const src = b?.type === "image" ? b.source : undefined;
+    if (src?.type === "base64" && typeof src.data === "string" && typeof src.media_type === "string") {
+      out.push(`data:${src.media_type};base64,${src.data}`);
+    }
+  }
+  return out.length ? out : undefined;
 }
 
 /**
@@ -81,10 +96,11 @@ function raw(timestamp: string | undefined, message: Record<string, unknown>): u
   return { type: "message", timestamp, message };
 }
 
-function item(id: string, kind: EntryKind, rawEntry: unknown, text?: string, toolCallId?: string): TranscriptItem {
+function item(id: string, kind: EntryKind, rawEntry: unknown, text?: string, toolCallId?: string, images?: string[]): TranscriptItem {
   const it: TranscriptItem = { id, kind, raw: rawEntry };
   if (text !== undefined) it.text = text;
   if (toolCallId !== undefined) it.toolCallId = toolCallId;
+  if (images) it.images = images;
   return it;
 }
 
@@ -142,12 +158,14 @@ function userItems(entry: Entry, id: string, time: string | undefined): Transcri
         raw(time, { role: "toolResult", toolCallId: callId, isError, content: [{ type: "text", text }] }),
         truncate(text, RESULT_TEXT_MAX),
         callId,
+        contentImages(b.content),
       );
     });
   }
   const text = contentText(content);
-  if (!text.trim()) return [];
-  return [item(id, "user", raw(time, { role: "user", content: [{ type: "text", text }] }), text)];
+  const images = contentImages(content);
+  if (!text.trim() && !images) return [];
+  return [item(id, "user", raw(time, { role: "user", content: [{ type: "text", text }] }), text.trim() ? text : undefined, undefined, images)];
 }
 
 /** Normalize one CC JSONL line into 0..n TranscriptItems. */

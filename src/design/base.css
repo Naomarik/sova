@@ -2501,7 +2501,8 @@ a.group-option { color: inherit; text-decoration: none; }
 
 /* ---- TOOL CARD. One card per tool call, its result paired inside.
    Quieter than speech: sunken ground, mono. Head always visible; args and
-   output behind a native <details>. -------------------------------------- */
+   output behind a native <details> (the wake card is the <details> itself;
+   a tool card wraps one, so its returned images sit outside it). -------- */
 
 .toolcard {
   max-width: var(--measure);
@@ -2528,7 +2529,8 @@ a.group-option { color: inherit; text-decoration: none; }
 .toolcard-summary:focus-visible { outline-offset: calc(var(--focus-offset) * -1); }
 .toolcard-summary .icon { color: var(--color-ink-muted); }
 .toolcard-summary .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
-.toolcard[open] > .toolcard-summary .icon-twist { transform: rotate(90deg); }
+.toolcard[open] > .toolcard-summary .icon-twist,
+.toolcard-details[open] > .toolcard-summary .icon-twist { transform: rotate(90deg); }
 .toolcard-name { font-weight: var(--fw-semibold); color: var(--color-ink); flex: none; }
 .toolcard-arg {
   flex: 1;
@@ -2550,6 +2552,12 @@ a.group-option { color: inherit; text-decoration: none; }
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-3);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+/* Images the tool returned: under the summary (and the body, once open),
+   outside the <details> so closing the card never hides them. */
+.toolcard-media {
+  padding: var(--space-2) var(--space-3);
   border-top: var(--stroke-thin) solid var(--color-border);
 }
 .toolcard-section { display: flex; flex-direction: column; gap: var(--space-1); }
@@ -2925,14 +2933,6 @@ a.group-option { color: inherit; text-decoration: none; }
   max-width: 100%;
   max-height: 240px;
   object-fit: contain;
-}
-.toolcard-images {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  flex: none;
-  color: var(--color-ink-muted);
-  font-variant-numeric: tabular-nums;
 }
 
 /* Path attachments: an image a user message names by /tmp path. A

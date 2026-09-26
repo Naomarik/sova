@@ -3212,6 +3212,32 @@
         "server/auth-status.test.ts",
         "server/insights-usage.test.ts"
       ]
+    },
+    "§app.settings-dialog/claude-long-context-listed": {
+      "kind": "behavior",
+      "requires": [
+        "§app.settings-dialog/modes"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/delegate-form.ts",
+        "src/lib/summarizer-form.ts",
+        "src/lib/delegate-form.test.ts",
+        "src/lib/summarizer-form.test.ts"
+      ]
+    },
+    "§app.settings-dialog/toggle-target": {
+      "kind": "behavior",
+      "requires": [
+        "§app/settings-dialog"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/design/base.css",
+        "src/components/SpecSettings.tsx"
+      ]
     }
   },
   "boundary": {

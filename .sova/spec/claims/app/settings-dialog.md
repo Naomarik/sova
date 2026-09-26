@@ -389,3 +389,24 @@ settings saved.") with no visible "Saved" text.
   with an invalid line, is forgotten when the dialog closes; switching tabs keeps it. Folders
   typed but not yet left are saved when the tab changes.
 - The Jev key keeps its own buttons (§app.settings-dialog/decisions); it is never part of this.
+
+## §app.settings-dialog/toggle-target — A left-aligned toggle's target
+
+Every switch, checkbox and radio in Settings is a label row: the native input hidden inside it, so
+the label's text and its control are one target, at least 44px tall. A row that leads with its
+control and reads left to right (Teams' **Add a coordinator/monitor to new teams**, **Pause the
+team** and every **Fallback** switch — Teams, Delegate, Spec, Summaries — the Decisions switches and
+radios, the Spec writer and Overseer proactivity radios, and the Typography text sizes) is only as
+wide as its text and control: a click on the empty row beside it does nothing. A row that spreads
+its text and switch across the panel (General's **Summary line**, the Claude Code provider, Mesh's
+sync rows, the Models policy switches) keeps the whole row as its target.
+
+## §app.settings-dialog/claude-long-context-listed — A Claude Code `[1m]` alias counts as listed
+
+The Claude Code CLI's model list names an alias such as `opus` but not always its 1M-context form
+`opus[1m]`, which the CLI accepts. So wherever a worker or summarizer row checks a Claude Code
+pick against that list (Settings → Modes → Delegate and Spec, Teams, Overseer, Summaries), a model
+`<alias>[1m]` counts as listed when `<alias>` is: no "not verified" note under the row, no
+"— not verified" in the select, and it takes `<alias>`'s efforts and policy marks. When `<alias>`
+is not listed either, the pick reads as before (§app.settings-dialog/modes). Only Claude Code: a pi
+model ending in `[1m]` is never read as its base.

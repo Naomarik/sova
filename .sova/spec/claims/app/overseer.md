@@ -99,8 +99,12 @@ error. Sessions are addressed by id. No tool passes `force`.
   opened for writing); list groups, targets, models and folders; the ideas backlog (`sova_ideas`: its table of contents,
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the
   user's todos (`sova_todos`: open, done or all; §app.overseer/todos).
-- **Act:** create a session in any folder or remote target, with an optional first prompt, model
-  and mode; send a message to a session (below); archive and unarchive
+- **Act:** create a session in any folder or remote target, with an optional first prompt, model,
+  mode and minor modes (`minor_modes`, e.g. `["spec"]`); the mode and minor modes are set before the
+  first prompt is sent, so its first turn already runs in them. An unknown mode or minor mode refuses
+  the whole call before any session is created, and a mode switch that fails sends no prompt: the
+  result says the session was created but its first prompt was not sent. Send a message to a
+  session (below); archive and unarchive
   (never permanent delete); rename; groups (create, move a session in, remove it); set a session's
   model or mode; answer a hosted session's pending extension dialog; standing notes; navigate;
   confirm; the ideas backlog (`sova_idea`: file, grow, update, link and rename ideas, launch and
@@ -206,10 +210,11 @@ error. Sessions are addressed by id. No tool passes `force`.
   may act, within the caps. The Overseer's prompt states the rule. Sessions the Overseer creates
   keep their full tools.
 - **Itself:** tools refuse to act on the Overseer's own session.
-- **A model or thinking level the Overseer sets applies to that session only.** Whether it sets
-  them on a session it creates (`sova_create_session`) or on one it acts on (`sova_set_session`),
-  even one with no messages yet, the saved default new sessions start from is never changed:
-  only the user's own pick saves one (§chat.model-menu/saved-default).
+- **A model, thinking level, mode or minor mode the Overseer sets applies to that session only.**
+  Whether it sets them on a session it creates (`sova_create_session`) or on one it acts on
+  (`sova_set_session`), even one with no messages yet, the saved default new sessions start from is
+  never changed: only the user's own pick saves one (§chat.model-menu/saved-default), and the
+  default mode (`mode.json`) moves only as §chat/mode-menu says.
 - **Archived sessions** take no prompt from the Overseer: `sova_send` refuses one and says that
   unarchiving it (`sova_archive`, itself an act, on the caps) comes first, as the UI's "Unarchive it
   to send" does for the user. The route itself is unchanged.

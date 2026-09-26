@@ -49,13 +49,18 @@ behavior without a `requires` key is a `touched-uninvestigated` note, so the
 exit code stays what the files make it. It lists what to read; it never judges
 a flag. `--related` without `--changed` is a usage error.
 
-With `--spec <draft spec dir>`, the ids the draft has and `.sova/spec` lacks are
-the task's own; every other § is foreign. Each `touched` entry then carries
-`created: true|false`, each foreign touched § gets a `touched-foreign` note
-(read it with `scope`; flag it if a user sees a change there, even one the new
-claim describes), and each new id whose H1 parent already exists gets a
-`child-under-foreign` note. Notes only: the exit code is unchanged, and without
-`--spec` the output is as before.
+Every § the task didn't create is foreign. Without `--spec` that is every
+touched §; with `--spec <draft spec dir>`, the ids the draft has and `.sova/spec`
+lacks are the task's own. Each `touched` entry carries `created: true|false`,
+each foreign touched § gets a `touched-foreign` note (read it with `scope`; flag
+it if a user sees a change there, even one the new claim describes), and, with
+`--spec` only, each new id whose H1 parent already exists gets a
+`child-under-foreign` note. One `foreign-summary` note naming every foreign id
+is the last finding, so a `tail` keeps it, and `census.foreign` /
+`census.childUnderForeign` sit right after `census.changed`, so a `head` keeps
+them; human output prints the summary before the touched list. Notes are
+reminders, not flags: the exit code is unchanged. Without `--related` the
+output is as before.
 
 Quote IDs, because `§` is not a shell word character. `--budget` is accepted by
 `scope` only; with any other command it's a usage error. `--spec` reads another

@@ -128,20 +128,23 @@ to the project root. New fields are only ever added. Other tools read this outpu
   `claimed: [{path, claims}]`, `unclaimed`, `outside` (changed files beyond the boundary, which
   aren't failures) and `symlinks`. Each unclaimed file is a `changed-unclaimed` warning. With no
   boundary it still lists the claimed files, but `unclaimed` and `outside` are null.
-- **census --changed --related**: adds `touched: [{id, kind, labels?, file, lines, files, requires,
+- **census --changed --related**: adds `touched: [{id, kind, labels?, created, file, lines, files, requires,
   consumers: [{id, depth}]}]`, one entry per id that claims a changed file, sorted by id. `files`
   are the changed files that put it there; `requires` is the record's list, or `null` when the key
   is absent; `consumers` are transitive reverse `requires`, as `impact` computes them. A touched
   behavior without `requires` is a `touched-uninvestigated` note, never a warning, so the exit
   code is unchanged. Without `--related` the output is exactly as above. `--related` without
   `--changed` is a usage error.
-- **census --changed --related --spec DIR** (DIR other than `.sova/spec`): an id is *created* when
-  DIR's manifest has it and `.sova/spec/manifest.json` does not (a missing or unreadable current
-  manifest counts as empty; its findings are dropped). Each `touched` entry adds `created: true|false`;
-  each touched id that is not created is a `touched-foreign` note `{id}`; each created H2 id whose
-  parent H1 is not created is a `child-under-foreign` note `{id, parent}`, touched or not. Human
-  output marks entries `; created` or `; foreign`. Notes never change the exit code; without `--spec`
-  nothing here appears.
+- **Foreign §s (with --related).** Reading `.sova/spec`, nothing is *created*. With `--spec DIR`
+  (other than `.sova/spec`), an id is created when DIR's manifest has it and
+  `.sova/spec/manifest.json` does not (a missing or unreadable current manifest counts as empty; its
+  findings are dropped). Each `touched` entry has `created: true|false`; each touched id that is not
+  created is a `touched-foreign` note `{id}`. With `--spec` only, each created H2 id whose parent H1
+  is not created is a `child-under-foreign` note `{id, parent}`, touched or not. The census object
+  gets `foreign: [id]` and `childUnderForeign: [{id, parent}]` right after `changed` (empty arrays
+  when none), and, when `foreign` is non-empty, one `foreign-summary` note `{ids}` is the last
+  finding. Human output prints the summary before the touched list and marks entries `; created` or
+  `; foreign`. Notes never change the exit code; without `--related` none of this appears.
 
 ## Evidence
 

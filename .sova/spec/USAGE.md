@@ -55,14 +55,15 @@ something relevant is unknown, stale or unread. Exit `2` means the input can't b
 
 **While coding**, exempt work included, run `census --changed --related` right after the first code edit, before the
 second, and again whenever the edit set reaches a new file; `--related` lists each § a changed
-file lands in, with its `requires` and consumers. With `--spec <draft spec dir>` it also notes
-each touched § the draft didn't create (`touched-foreign`) and each new claim nested under one
-(`child-under-foreign`). Any § the task didn't create is foreign, even one your draft edits, and
+file lands in, with its `requires` and consumers. It notes each touched § the task didn't create
+(`touched-foreign`), and with `--spec <draft spec dir>` each new claim nested under one
+(`child-under-foreign`). The notes are reminders to read and judge, not flags; putting your claim
+in its own document silences the second note and changes nothing else. Any § the task didn't create is foreign, even one your draft edits, and
 even the parent your new claim nests under; editing it in the draft (a row, a sub-claim, a sketch
 line) is itself a flag. Read a foreign § with `scope` and stay silent while its text holds;
 plumbing (an added request, hook or helper, types) never flags. Otherwise flag only a contradiction of its text, or
-something a user would see there that its own text doesn't describe — a new claim of yours
-describing it, child or not, doesn't count. Batch the flags into the plan as one question ("this
+something a user would see there that its own text doesn't describe; that your new claim describes
+it, in the parent's document or its own, does not remove the flag. Batch the flags into the plan as one question ("this
 also changes §X: <what>. OK?"). Before finishing, the reply's last line, exempt work included, is
 "Also changes: §X — <what>" (a list) or "Also changes: none", even when the user said not to ask.
 

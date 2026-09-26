@@ -544,24 +544,30 @@ function currentIds(root) {
 }
 
 // Each § a changed file lands in, with its declared requires and transitive consumers. No flags are judged here.
-// Reading a draft (--spec), each touched § also says whether the draft created it; foreign ones get a note.
+// Each touched § says whether the task created it (only a draft read with --spec can); foreign ones get a note.
 function relatedOf(ctx, hits) {
-  const files = new Map(), rev = reverseOf(ctx);
-  const cur = ctx.specRel !== DEFAULT_SPEC ? currentIds(ctx.root) : null;
+  const files = new Map(), rev = reverseOf(ctx), childUnderForeign = [];
+  const cur = ctx.specRel !== DEFAULT_SPEC ? currentIds(ctx.root) : new Set(ctx.claims.keys());
   for (const e of hits) for (const id of e.claims) files.set(id, [...(files.get(id) ?? []), e.path]);
   const touched = [...files.keys()].sort().map((id) => {
     const rec = ctx.claims.get(id), d = ctx.decls.get(id);
     if (rec.kind === "behavior" && rec.requires === undefined)
       add("note", "touched-uninvestigated", `${id} is touched and has no requires key: dependencies not investigated`, { id });
-    if (cur?.has(id))
-      add("note", "touched-foreign", `${id} is foreign (this draft didn't create it) and ${files.get(id).join(", ")} changed: read it with scope; flag it if a user sees a change there, even one your new claim describes`, { id });
-    return { id, kind: rec.kind, ...labelsOf(rec), ...(cur ? { created: !cur.has(id) } : {}), file: d?.file, lines: d?.lines, files: files.get(id),
+    if (cur.has(id))
+      add("note", "touched-foreign", `${id} is foreign (the task didn't create it) and ${files.get(id).join(", ")} changed: read it with scope; flag it if a user sees a change there, even one your new claim describes`, { id });
+    return { id, kind: rec.kind, ...labelsOf(rec), created: !cur.has(id), file: d?.file, lines: d?.lines, files: files.get(id),
       requires: rec.requires ?? null, consumers: consumersOf(ctx, rev, id).map((c) => ({ id: c.id, depth: c.depth })) };
   });
-  if (cur) for (const [p, kids] of ctx.children) if (cur.has(p)) for (const id of kids) if (!cur.has(id))
+  if (ctx.specRel !== DEFAULT_SPEC) for (const [p, kids] of ctx.children) if (cur.has(p)) for (const id of kids) if (!cur.has(id)) {
     add("note", "child-under-foreign", `${id} is new under foreign ${p}: a user-visible addition there flags ${p}, even though ${id} describes it`, { id, parent: p });
-  return touched;
+    childUnderForeign.push({ id, parent: p });
+  }
+  return { touched, foreign: touched.filter((t) => !t.created).map((t) => t.id), childUnderForeign };
 }
+// Pushed last, so a truncated tail of the findings still carries it.
+const foreignSummary = (foreign) => foreign.length && add("note", "foreign-summary",
+  `${foreign.length} foreign § touched (${foreign.join(", ")}): flag any where a user sees a change, even one your new claim describes, wherever you put it; plumbing never flags`,
+  { ids: foreign });
 
 function censusChanged(ctx, { base, related }, claimed) {
   const ch = changedFiles(ctx.root, base);
@@ -581,11 +587,15 @@ function censusChanged(ctx, { base, related }, claimed) {
   const head = { mode: "changed", base: { rev: base, commit: ch.commit }, changed: ch.paths.length };
   // Without a boundary no population is named: claims are still shown, nothing is judged unclaimed.
   const hits = files.filter((p) => claimed.has(p)).map(entry);
-  const touched = related ? { touched: relatedOf(ctx, hits) } : {};
-  if (!bd) return { census: { ...head, boundary: null, claimed: hits, unclaimed: null, outside: null, ...touched } };
+  const rel = related && relatedOf(ctx, hits);
+  // foreign ids sit near the top, so a truncated head still carries them.
+  if (rel) Object.assign(head, { foreign: rel.foreign, childUnderForeign: rel.childUnderForeign });
+  const touched = rel ? { touched: rel.touched } : {};
+  if (!bd) { if (rel) foreignSummary(rel.foreign); return { census: { ...head, boundary: null, claimed: hits, unclaimed: null, outside: null, ...touched } }; }
   const unclaimed = files.filter((p) => !claimed.has(p));
   for (const p of unclaimed) add("warn", "changed-unclaimed", `${p} changed and no record's code claims it`, { file: p });
   if (symlinks.length) add("note", "census-symlinks", `${symlinks.length} changed symlink(s) inside the boundary were not followed`);
+  if (rel) foreignSummary(rel.foreign);
   return {
     census: {
       ...head,
@@ -625,11 +635,13 @@ function human(out) {
       `in boundary ${c.files}, claimed ${c.claimed.length}, unclaimed ${c.unclaimed.length}, outside ${c.outside.length}`);
     L.push(...c.claimed.map((e) => `  claimed ${e.path} (${e.claims.join(", ")})`), ...(c.unclaimed ?? []).map((f) => `  unclaimed ${f}`),
       ...(c.outside ?? []).map((f) => `  outside boundary ${f}`), ...(c.symlinks ?? []).map((f) => `  symlink not followed ${f}`));
+    const sum = out.findings.find((f) => f.code === "foreign-summary");
+    if (sum) L.push(`${sum.severity} ${sum.code}: ${sum.message}`);
     if (c.touched) L.push("touched § (read each; flag only a visible change in its area):", ...c.touched.map((t) => {
       const lb = t.labels ? `; ${[t.labels.authority, t.labels.evidence].map((v) => v ?? "-").join("/")}` : "";
       const rq = t.requires === null ? "uninvestigated" : t.requires.join(", ") || "none declared";
       const cs = t.consumers.map((k) => `${k.id} (${k.depth})`).join(", ") || "none declared";
-      const cr = t.created === undefined ? "" : t.created ? "; created" : "; foreign";
+      const cr = t.created ? "; created" : "; foreign";
       return `  ${t.id} [${t.kind}${lb}${cr}] ${t.file}:${t.lines.join("-")} ← ${t.files.join(", ")}; requires: ${rq}; consumers: ${cs}`;
     }));
   } else if (out.census) {

@@ -403,6 +403,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.doesNotMatch(spec, /\{[A-Z_]+\}/);
 	assert.match(spec, /your new claim's parent included/);
 	assert.match(spec, /even one your new claim describes/);
+	assert.match(spec, /wherever you put the claim/);
 	assert.match(spec, /"Also changes: none"/);
 	assert.match(spec, /Before finishing:\n(- .*\n)*- Your reply's last line, exempt work included: "Also changes: §X — <what>" or "Also changes: none"\./, "the handoff line is a finishing step, exempt work included");
 	assert.match(spec, /While coding, exempt work included, run `census --changed --related`/);

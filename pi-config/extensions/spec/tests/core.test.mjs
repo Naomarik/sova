@@ -865,7 +865,7 @@ test("census --changed --related: touched ids carry requires, consumers, files",
   write(root, "lib/claimed.js", "2\n");
   const j = run(root, "census", "--changed", "--related");
   assert.deepEqual(j.census.touched, [{
-    id: "§chat.input/draft", kind: "behavior", file: ".sova/spec/claims/chat/input.md", lines: [9, 11],
+    id: "§chat.input/draft", kind: "behavior", created: false, file: ".sova/spec/claims/chat/input.md", lines: [9, 11],
     files: ["lib/claimed.js"], requires: [], consumers: [{ id: "§chat.input/note", depth: 1 }],
   }]);
   assert.equal(j.exit, 0, JSON.stringify(j.findings));
@@ -880,7 +880,8 @@ test("census --changed --related: a touched behavior without requires is a note,
   const t = j.census.touched.find((x) => x.id === "§chat.input/draft");
   assert.equal(t.requires, null);
   assert.deepEqual(t.labels, { authority: "accepted" });
-  assert.deepEqual(j.findings.map((x) => [x.severity, x.code, x.id]), [["note", "touched-uninvestigated", "§chat.input/draft"]]);
+  assert.deepEqual(j.findings.map((x) => [x.severity, x.code, x.id]),
+    [["note", "touched-uninvestigated", "§chat.input/draft"], ["note", "touched-foreign", "§chat.input/draft"], ["note", "foreign-summary", undefined]]);
   assert.equal(j.exit, 0);
 });
 
@@ -922,7 +923,7 @@ test("census --changed --related: human output lists touched § with the files t
   const h = spawnSync(process.execPath, [CLI, "census", "--changed", "--related", "--root", root], { encoding: "utf8" });
   assert.equal(h.status, 0);
   assert.match(h.stdout, /touched §/);
-  assert.match(h.stdout, /§chat\.input\/draft \[behavior\] \.sova\/spec\/claims\/chat\/input\.md:9-11 ← lib\/claimed\.js; requires: none declared; consumers: none declared/);
+  assert.match(h.stdout, /§chat\.input\/draft \[behavior; foreign\] \.sova\/spec\/claims\/chat\/input\.md:9-11 ← lib\/claimed\.js; requires: none declared; consumers: none declared/);
 });
 
 test("census --changed --related --spec: the draft's graph supplies requires and consumers", () => {
@@ -990,10 +991,13 @@ test("census --related --spec: a new document's children are not under a foreign
   assert.deepEqual(codes(j), [], JSON.stringify(j.findings));
 });
 
-test("census --related without --spec: no created field, no foreign notes", () => {
+test("census --related without --spec: every touched § is foreign; no child-under-foreign", () => {
   const j = run(draftRepo(), "census", "--changed", "--related");
-  assert.deepEqual(j.census.touched.map((t) => Object.keys(t)), [["id", "kind", "file", "lines", "files", "requires", "consumers"]]);
-  assert.deepEqual(codes(j), []);
+  assert.deepEqual(j.census.touched.map((t) => [t.id, t.created]), [["§chat.input/send", false]]);
+  assert.deepEqual(j.census.foreign, ["§chat.input/send"]);
+  assert.deepEqual(j.census.childUnderForeign, []);
+  assert.deepEqual(codes(j), ["touched-foreign", "foreign-summary"]);
+  assert.equal(j.exit, 0);
   const k = run(draftRepo(), "--spec", ...DRAFT, "census", "--changed");
   assert.equal(k.census.touched, undefined);
   assert.deepEqual(codes(k), [], "--spec without --related adds nothing");
@@ -1016,4 +1020,55 @@ test("census --related --spec: human output marks each touched § created or for
   assert.match(h.stdout, /  §core\/net \[surface; candidate\/-; foreign\] /);
   assert.match(h.stdout, /note touched-foreign: §core\/net is foreign/);
   assert.match(h.stdout, /note child-under-foreign: §core\.net\/new is new under foreign §core\/net/);
+});
+
+test("census --related: foreign-summary is the last finding and names every foreign id", () => {
+  const root = draftRepo();
+  write(root, "stray.txt", "x\n");
+  bound(root, ".sova/spec/drafts/feat/spec", (m) => { m.boundary.include.push("stray.txt"); });
+  const j = run(root, "--spec", ...DRAFT, "census", "--changed", "--related");
+  const last = j.findings.at(-1);
+  assert.deepEqual([last.severity, last.code, last.ids], ["note", "foreign-summary", ["§core/net"]]);
+  assert.match(last.message, /^1 foreign § touched \(§core\/net\): flag any where a user sees a change, even one your new claim describes, wherever you put it; plumbing never flags$/);
+  assert.ok(codes(j).includes("changed-unclaimed"), "pushed after the census warnings too");
+  assert.equal(j.exit, 1, "the unclaimed file sets the exit, not the notes");
+});
+
+test("census --related: foreign and childUnderForeign sit right after changed, with and without --spec", () => {
+  const d = run(draftRepo(), "--spec", ...DRAFT, "census", "--changed", "--related");
+  assert.deepEqual(Object.keys(d.census).slice(0, 5), ["mode", "base", "changed", "foreign", "childUnderForeign"]);
+  assert.deepEqual(d.census.foreign, ["§core/net"]);
+  assert.deepEqual(d.census.childUnderForeign, [{ id: "§core.net/new", parent: "§core/net" }]);
+  const c = run(draftRepo(), "census", "--changed", "--related");
+  assert.deepEqual(Object.keys(c.census).slice(0, 5), ["mode", "base", "changed", "foreign", "childUnderForeign"]);
+});
+
+test("census --related: nothing foreign touched → empty lists, no summary", () => {
+  const root = withDraft(), dir = ".sova/spec/drafts/feat/spec";
+  bound(root, ".sova/spec");
+  bound(root, dir);
+  g(root, "init", "-q"); g(root, "add", "-A"); g(root, "commit", "-qm", "base");
+  write(root, "app.txt", "2\n");
+  const j = run(root, "--spec", ...DRAFT, "census", "--changed", "--related");
+  assert.deepEqual(j.census.foreign, []);
+  assert.ok(!codes(j).includes("foreign-summary"));
+  assert.ok(!codes(j).includes("touched-foreign"));
+});
+
+test("census --related: without a boundary the summary is still last", () => {
+  const root = base();
+  g(root, "init", "-q"); g(root, "add", "-A"); g(root, "commit", "-qm", "base");
+  write(root, "app.txt", "2\n");
+  const j = run(root, "census", "--changed", "--related");
+  assert.deepEqual(codes(j), ["boundary-missing", "touched-foreign", "foreign-summary"]);
+  assert.deepEqual(j.census.foreign, ["§chat.input/send"]);
+  assert.equal(j.exit, 1);
+});
+
+test("census --related: human output starts the related block with the summary", () => {
+  const root = draftRepo();
+  const h = spawnSync(process.execPath, [CLI, "census", "--changed", "--related", "--root", root], { encoding: "utf8" });
+  assert.equal(h.status, 0);
+  assert.match(h.stdout, /\nnote foreign-summary: 1 foreign § touched \(§chat\.input\/send\)[^\n]*\ntouched § \(read each/);
+  assert.match(h.stdout, /  §chat\.input\/send \[behavior; foreign\] /);
 });

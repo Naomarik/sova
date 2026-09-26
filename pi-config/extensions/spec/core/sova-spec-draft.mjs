@@ -560,7 +560,7 @@ async function cmdEvidence(root, o) {
       return c;
     });
     if (o["doc-only"]) { const bad = targets.filter((c) => !DOC_ONLY_KINDS.has(c.kind)); if (bad.length) throw new Fail(1, "doc-only-refused", `--doc-only covers only ${[...DOC_ONLY_KINDS].join("/")} kinds, not ${bad.map((c) => `${c.id} (${c.kind})`).join(", ")}`); }
-    if (o.snapshot && g.git) throw new Fail(1, "git-requires-commit", "this is a Git project: name the implementation commit with --commit REV");
+    if (o.snapshot && g.git) throw new Fail(1, "git-requires-commit", "this is a Git project: name the implementation commit with --commit REV; without permission to commit, leave evidence pending and say so");
     if (o.commit !== undefined && !g.git) throw new Fail(1, "not-git", "this is not a Git project: use --snapshot to retain the implementation bytes");
     const paths = o["doc-only"] ? [] : uniqSorted([...targets.flatMap((c) => c.code), ...o.path]);
     const inputs = [];

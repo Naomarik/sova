@@ -1139,7 +1139,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .settings-type-size { margin: 0; padding: 0; border: 0; min-width: 0; }
 .settings-type-size > legend { padding: 0; }
 .settings-type-size-options { display: flex; flex-wrap: wrap; column-gap: var(--space-5); }
-.settings-type-size .toggle { justify-content: flex-start; }
+.settings-type-size .toggle { justify-content: flex-start; align-self: flex-start; width: fit-content; }
 /* A radio's look, scoped here: the round box, and a ring of surface inside the accent fill so the
    checked one reads as a radio's dot in shape, not only in hue. (The skill's .toggle-radio is not
    ported; this is the one radio row that needs it.) */
@@ -1217,7 +1217,8 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .settings-delegate-issue-error { color: var(--status-error); }
 .settings-delegate-issue-warn { color: var(--status-warn); }
 .settings-delegate-issue-muted { color: var(--color-ink-muted); }
-.settings-delegate-fallback-toggle { justify-content: flex-start; font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+/* Left-aligned rows shrink to their text and control, so the empty row beside them is not a target. */
+.settings-delegate-fallback-toggle { justify-content: flex-start; align-self: flex-start; width: fit-content; font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
 .settings-delegate-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 /* When the row wraps (phone widths), Save stays at the trailing edge rather than starting a line. */
 .settings-delegate-actions .button-primary { margin-left: auto; }
@@ -1229,8 +1230,10 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 /* Summaries reuses the Delegate row with no Effort column: the model takes the width it left. */
 .settings-summaries-fields { grid-template-columns: minmax(9.5rem, 1fr) minmax(0, 3fr); }
 /* Teams reuses the Delegate fieldset; its on/off switch leads the role, and number fields share a row. */
-.settings-team-enable { justify-content: flex-start; gap: var(--space-3); font-weight: var(--fw-semibold); }
+.settings-team-enable { justify-content: flex-start; align-self: flex-start; width: fit-content; gap: var(--space-3); font-weight: var(--fw-semibold); }
 .settings-team-role { max-width: 20rem; }
+/* Settings → Modes → Spec: who writes the spec, two radio rows sized to their text. */
+.settings-spec-writer .toggle { justify-content: flex-start; width: fit-content; }
 .settings-team-numbers { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--space-3); }
 .settings-intro code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); }
 @media (max-width: 640px) {
@@ -5242,7 +5245,7 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 
 /* Settings → Overseer. */
 .overseer-radios { display: flex; flex-direction: column; gap: var(--space-1); }
-.overseer-radios .toggle { justify-content: flex-start; }
+.overseer-radios .toggle { justify-content: flex-start; align-self: flex-start; width: fit-content; }
 .overseer-actions-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
 .overseer-action-row {
   display: flex;

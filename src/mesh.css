@@ -69,12 +69,14 @@
 .session-host .chip-dot { width: 6px; height: 6px; flex: none; }
 .session-host-down { color: var(--status-error); max-width: 18ch; }
 
-/* The session pane's host menu, under the search field: the chosen host (or All) as a small button,
-   the connected count beside it in caption muted. The panel is the action menu's shell. */
-.host-menu { display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin: calc(var(--space-1) * -1) 0; }
-.host-menu-trigger { min-width: 0; max-width: 24ch; gap: var(--space-1); font-size: var(--fs-caption); }
-.host-menu-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.host-menu-count { flex: none; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+/* The session pane's host row, the first row of its foot: a foot row (.insights-row) that is the
+   menu's trigger — the chosen host (or All) on the left, the connected count at the right end in
+   caption muted, kept at every width. The panel is the action menu's shell. */
+.host-menu { min-width: 0; }
+.host-menu-text { display: flex; align-items: center; gap: var(--space-1); }
+.host-menu-text > .icon { flex: none; color: var(--color-ink-muted); }
+.host-menu-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.host-menu-count { flex: none; margin-left: auto; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 .host-menu-option-text { flex-direction: row; align-items: center; gap: var(--space-1); }
 .host-menu-panel .mode-option { align-items: center; }
 .host-menu-panel .mode-option-check { margin-top: 0; }

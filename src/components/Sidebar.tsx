@@ -1463,10 +1463,6 @@ export function Sidebar(props: {
             </Show>
           </div>
           </div>
-          {/* Only with the mesh on and a peer: one host's sessions, or All, and the mesh details. */}
-          <Show when={hostFilterShown()}>
-            <MeshHostMenu value={hostFilter()} onChange={chooseHostFilter} />
-          </Show>
           <div class="spread">
             <p class="search-count" id="session-count" aria-live="polite">
               <Show when={props.sessions}>
@@ -1720,6 +1716,10 @@ export function Sidebar(props: {
         </nav>
 
         <div class="sidebar-foot">
+          {/* Only with the mesh on and a peer: one host's sessions, or All, and the mesh details. */}
+          <Show when={hostFilterShown()}>
+            <MeshHostMenu value={hostFilter()} onChange={chooseHostFilter} />
+          </Show>
           <a
             class="list-row list-row-interactive insights-row"
             href={usageHref()}

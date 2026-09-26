@@ -3168,6 +3168,27 @@
         "src/lib/api.ts",
         "scripts/mesh-termux/README.md"
       ]
+    },
+    "§mesh.phone/awake": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "scripts/mesh-termux/install.sh",
+        "scripts/mesh-termux/phone-test.sh"
+      ]
+    },
+    "§mesh.phone/ssh": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "scripts/mesh-termux/install.sh",
+        "scripts/mesh-termux/uninstall.sh",
+        "scripts/mesh-termux/phone-test.sh"
+      ]
     }
   },
   "boundary": {

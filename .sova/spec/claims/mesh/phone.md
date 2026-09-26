@@ -28,3 +28,23 @@ with a message instead of switching again. Uninstalling puts the container's ori
 `.credentials.json` back (or removes the synced one if there was none), first keeping the login the
 container holds at that moment, which may be a newer one made inside it, as
 `.credentials.json.sova-uninstall` at mode 0600; the rest of the container is untouched.
+
+## §mesh.phone/awake — The phone keeps Sova awake
+
+Every start of Sova on the phone, by the installer, after a crash or kill, or at boot, takes Termux's
+wake lock first, so Android does not suspend Termux while Sova runs. The installer warns when the
+phone's phantom-process limit is still on, since Android then kills Sova's worker processes.
+
+## §mesh.phone/ssh — Optional key-only ssh access
+
+With `--ssh-key`, the installer also keeps an ssh server for remote access: the key is added to the
+authorized keys, password and keyboard-interactive logins are turned off (through a drop-in file when
+the ssh configuration includes one, otherwise in the configuration itself with the original kept),
+the configuration is checked before it is used, and the ssh server runs as a service that restarts on
+its own and after reopening Termux or a reboot. An ssh server that was started by hand is replaced by
+the service. A configuration the ssh server rejects is put back as it was, and the phone is never left
+without an ssh server. Uninstalling undoes all of it: the key the installer added goes, password
+logins are back as before, the service is disabled and an ssh server that was started by hand before
+is started again. `uninstall.sh --keep-ssh` keeps the ssh server, its key, key-only logins and the
+wake lock, and remembers them so the next install takes them back into its record and a later full
+uninstall still removes them.

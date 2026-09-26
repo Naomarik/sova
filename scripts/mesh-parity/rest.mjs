@@ -72,6 +72,10 @@ export function restSteps({ f, cwd, extra = [] }) {
     G("peer-path-ws-off", "/peer/nope/ws/chat", { raw: true }),
     G("api-peer-hello-off", "/api/peer/hello"),
     J("api-peer-push-off", "POST", "/api/peer/credentials/push", {}),
+    // Browser access (feat/host-address): with the mesh off, each must answer what an unknown route did.
+    J("api-mesh-browser-access-off", "PUT", "/api/mesh/browser-access", { id: "x", browserAccess: false }),
+    J("api-peer-browser-access-off", "POST", "/api/peer/browser-access", { browserAccess: false }),
+    J("api-peer-set-browser-access-off", "POST", "/api/peer/set-browser-access", { browserAccess: false }),
   ];
   for (const [name, path] of Object.entries(f)) {
     steps.push(G(`transcript:${name}`, `/api/transcript?path=${q(path)}`));

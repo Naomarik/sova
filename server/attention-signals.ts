@@ -1,5 +1,6 @@
 import { open, stat } from "node:fs/promises";
 import type { DecisionSettings, SessionSummary, WorkerInfo } from "../shared/protocol";
+import { isLinkMessage } from "../shared/link-message";
 import type { WorkerTranscriptAdapters, WorkerTranscriptItem, WorkerTranscriptRef, WorkerTranscriptSummary } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import { DecisionError, type DecisionProvider, type DecisionResult, type JsonObject, type Question } from "./decide";
 import { maySend, terminalSession } from "./decide-settings";
@@ -271,10 +272,12 @@ export const STUCK: Question = {
   levels: ["making progress", "some repetition", "clearly looping or stuck"],
 };
 
-/** A main session's questions: the stuck one only for a long turn (fewer tokens otherwise). */
+/** A main session's questions: the stuck one only for a long turn (fewer tokens otherwise). A turn
+    a partner's link message opened never asks whether it asks the user: its question is to the
+    partner, so it never puts the session in Needs you (§mesh.links/transcript). */
 export function turnQuestions(f: TurnFacts): Record<string, Question> {
   const long = f.durationMs >= LONG_TURN_MS || f.tools.length >= LONG_TURN_TOOLS;
-  return { asks_user: ASKS_USER, ...(long ? { stuck: STUCK } : {}) };
+  return { ...(isLinkMessage(f.lastUser) ? {} : { asks_user: ASKS_USER }), ...(long ? { stuck: STUCK } : {}) };
 }
 
 // ---- eligibility (pure) --------------------------------------------------------------------------
@@ -447,8 +450,15 @@ export class AttentionSignals {
       return false;
     }
     if (!stored && now - facts.replyAt > FRESH_MS) return false;
+    const questions = turnQuestions(facts);
+    // A short turn a link message opened has nothing to ask: no model call, and like an errored
+    // turn it replaces the turn before it, so an older "asks you" does not stay on the row.
+    if (!Object.keys(questions).length) {
+      this.forgetBefore(s.id, facts.replyAt);
+      return false;
+    }
     const key = `${s.id}:${facts.turnId}`;
-    const result = await this.decide(key, "attention", turnState(s.title, facts), turnQuestions(facts));
+    const result = await this.decide(key, "attention", turnState(s.title, facts), questions);
     if (!result) return false;
     // The feature or the session's eligibility may have changed while the call ran: then drop it.
     if (exclusionReason(s, this.d.settings(), this.d.held(s.path), this.d.home)) return true;
@@ -465,8 +475,8 @@ export class AttentionSignals {
   }
 
   /**
-   * A turn that stopped with an error is not classified; the stored answers of the turn before it
-   * are dropped, since a newer turn replaces them and they would otherwise mark the row still.
+   * A turn that stopped with an error (or a short link-opened one) is not classified; the stored
+   * answers of the turn before it are dropped, since a newer turn replaces them and they would otherwise mark the row still.
    */
   private forgetBefore(id: string, replyAt: number): void {
     const stored = readSignals(this.file()).sessions[id];

@@ -21,7 +21,9 @@ import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } fro
 import { BATON_SENT_ENTRY, type BatonSentData } from "../shared/baton";
 import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
+import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { stripImageNotes } from "../shared/image-note";
+import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
 import { parseWakeNudge } from "../shared/wake";
 import { type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
@@ -60,6 +62,15 @@ const CLAUDE_CODE_FLAG = "claude-code-provider";
  *   registers the Claude Code CLI's models as first-class pi models. Read per runtime, so the
  *   switch applies to sessions created after it changed and never reaches an open one.
  */
+/** This server's own bound origin, for the `link` extension's `sova-link` flag (setLinkOrigin). */
+let linkOrigin: string | null = null;
+/** Set once the listener is bound (server/index.ts, through server/link-delivery.ts); runtimes
+    opened from then on get it. */
+export function setLinkOrigin(origin: string): void {
+  linkOrigin = origin;
+}
+export const currentLinkOrigin = (): string | null => linkOrigin;
+
 function sessionFlags(cwd: string, outline = true): Map<string, boolean | string> {
   const flags = new Map<string, boolean | string>(outline ? [["topic-outline-headless", true]] : []);
   const target = targetOfCwd(cwd);
@@ -666,6 +677,10 @@ export function resolveRegenerate(branch: readonly BranchEntry[], entryId: strin
     // now a lie. Nothing here is the user's message, so there is nothing to send again.
     if (parseWakeNudge(text))
       return { ok: false, reason: "wake", message: "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again." };
+    // A partner's message over a link (kind "link", §mesh.links/transcript) is not the user's
+    // either; replaying it would redeliver the partner's words as a fresh message.
+    if (isLinkMessage(text))
+      return { ok: false, reason: "link", message: "That reply answered a message from a linked session, not one you sent, so there is nothing to send again." };
     return { ok: true, userId: String(entry.id), text, ...(images ? { images } : {}) };
   }
   return notOnBranch("Nothing on this branch started that reply, so there is nothing to run again.");
@@ -834,7 +849,9 @@ class ChatSession {
     },
     streaming: () => this.session.isStreaming,
     paused: () => this.isCompacting(),
-    clearSdkQueue: () => this.session.clearQueue(),
+    // Every clear of the SDK's queue (Stop, the Overseer's stop, a removal) keeps the link messages
+    // in it: they are never the user's to take back (§mesh.links/delivery).
+    clearSdkQueue: () => this.clearSdkQueue(),
     guard: () => {
       assertNotLive(this.path);
       this.assertNoForeignWrites();
@@ -1066,6 +1083,147 @@ class ChatSession {
     for (const append of this.deferredAppends.splice(0)) append();
   }
 
+  /**
+   * Hand a partner's link message straight to this session's agent (§mesh.links/delivery): idle, it
+   * starts a turn; mid-turn, it goes in through the SDK's own steering and the model sees it at its
+   * next step; while a compaction runs, it is held here and goes in once it ends. NEVER through
+   * Sova's web queue: it is never a queued row, never counted or reordered with the user's
+   * messages, and Remove never reaches it.
+   *
+   * The refusals are a prompt's, checked now and thrown (BusyError for a TUI or a foreign writer),
+   * and the model policy BEFORE anything is handed over: model-policy's `input` handler answers
+   * `handled` for a model that is off, which would swallow the message silently. The deferred
+   * opening appends are written at the hand-off, as before any prompt.
+   *
+   * Returns "started" when this message opens a turn, "delivered" when the agent will see it at
+   * its next step (or once the compaction ends). Acceptance, not proof the agent acted on it.
+   */
+  deliverToAgent(text: string): "started" | "delivered" {
+    if (this.disposed) throw new Error("The session's runtime was closed.");
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    this.assertModelAllowed();
+    if (!text.trim()) throw new Error("A link message must not be blank.");
+    if (this.isCompacting()) {
+      this.linkHeld.push(text);
+      return "delivered";
+    }
+    const starts = !this.session.isStreaming && this.linkPending === 0;
+    this.handLinkToAgent(text);
+    return starts ? "started" : "delivered";
+  }
+
+  /** Link messages held while a compaction runs; released when it ends (releaseLinks). */
+  private linkHeld: string[] = [];
+  /** Link messages Stop took back from the SDK before the model saw them: they go in at the
+      session's next turn (its `agent_start`), never to the composer. */
+  private linkStopped: string[] = [];
+  /** Link messages steered into the SDK and not yet started (`message_start`): what clearSdkQueue
+      tells apart from the user's own texts. By exact text; the ids in the tag make it unique. */
+  private linkInSdk: string[] = [];
+  /** Hand-offs are serialized, so two messages arriving together keep their order and the second
+      steers into the turn the first starts. */
+  private linkChain: Promise<void> = Promise.resolve();
+  private linkPending = 0;
+
+  private handLinkToAgent(text: string): void {
+    this.linkPending++;
+    this.linkChain = this.linkChain
+      .then(() => this.linkToSdk(text))
+      .catch((err) => this.reportTurnFailure(err))
+      .finally(() => void this.linkPending--);
+  }
+
+  /** One link message into the SDK, the guards re-checked at the write (a TUI can grab the file
+      meanwhile; then the message stays only in the link inbox). Resolves once pi has accepted it. */
+  private async linkToSdk(text: string): Promise<void> {
+    if (this.disposed) return;
+    try {
+      assertNotLive(this.path);
+      this.assertNoForeignWrites();
+    } catch {
+      return;
+    }
+    if (this.isCompacting()) {
+      this.linkHeld.push(text);
+      return;
+    }
+    try {
+      this.assertModelAllowed();
+    } catch {
+      this.linkStopped.push(text); // the model was turned off meanwhile: the next turn, on another model
+      return;
+    }
+    this.flushDeferredAppends();
+    // Tracked from before the hand-off: a prompt made idle can still be queued as a steer.
+    this.linkInSdk.push(text);
+    const untrack = () => {
+      const i = this.linkInSdk.indexOf(text);
+      if (i >= 0) this.linkInSdk.splice(i, 1);
+    };
+    if (this.session.isStreaming) {
+      await this.session.steer(text, undefined, { source: "extension" }).catch((err) => {
+        untrack();
+        throw err;
+      });
+      return;
+    }
+    // Idle. `streamingBehavior: "steer"` covers a turn that started while the input handlers ran;
+    // prompt() resolves at TURN end, so acceptance is its preflight (or its settling, when pi
+    // defers it inside an agent_settled or refuses it).
+    await new Promise<void>((accepted) => {
+      this.session
+        .prompt(text, { expandPromptTemplates: false, source: "extension", streamingBehavior: "steer", preflightResult: () => accepted() })
+        .then(
+          () => accepted(),
+          (err) => {
+            accepted();
+            untrack();
+            if (this.disposed) return;
+            // Another turn won the race after the streaming check: steer into it instead.
+            if (err instanceof Error && /already processing/i.test(err.message)) this.handLinkToAgent(text);
+            else if (isCompactionInProgress(err)) this.linkHeld.push(text);
+            else this.reportTurnFailure(err);
+          },
+        );
+    });
+  }
+
+  /** Hand over what waited: a compaction's hold once it has ended, and at a turn's start what
+      Stop took back. A message already on the branch (Stop raced its delivery) is not sent twice. */
+  private releaseLinks(stopped: boolean): void {
+    if (this.disposed || this.isCompacting()) return;
+    const texts = [...this.linkHeld.splice(0), ...(stopped ? this.linkStopped.splice(0) : [])];
+    if (!texts.length) return;
+    const onBranch = new Set<string>();
+    for (const e of this.session.sessionManager.getBranch()) {
+      if (e.type !== "message" || e.message.role !== "user") continue;
+      const content = (e.message as { content?: unknown }).content;
+      const link = parseLinkMessage(typeof content === "string" ? content : textBlocks(content));
+      if (link) onBranch.add(link.messageId);
+    }
+    for (const text of texts) {
+      const id = parseLinkMessage(text)?.messageId;
+      if (id && onBranch.has(id)) continue;
+      this.handLinkToAgent(text);
+    }
+  }
+
+  /** The SDK's clearQueue(), minus the link messages in it, which go back on this chat's own hold
+      for the next turn: whoever cleared (Stop, above all) never hands them to a composer. */
+  private clearSdkQueue(): { steering: string[]; followUp: string[] } {
+    const cleared = this.session.clearQueue();
+    const keep = (texts: string[]) =>
+      texts.filter((t) => {
+        const i = this.linkInSdk.indexOf(t);
+        if (i < 0) return true;
+        this.linkInSdk.splice(i, 1);
+        this.linkStopped.push(t);
+        return false;
+      });
+    return { steering: keep(cleared.steering), followUp: keep(cleared.followUp) };
+  }
+
   /** A compaction is running on this runtime: a /compact of ours, pi's automatic one, or an
       extension's `ctx.compact()`. Every send is held in the queue meanwhile. */
   isCompacting(): boolean {
@@ -1161,7 +1319,18 @@ class ChatSession {
       // pi's AUTOMATIC compaction emits compaction_end before its finally clears the controller
       // `isCompacting` reads, so the wake above can still find the queue paused: look again once
       // that has unwound. (The manual path clears first, so this one is a no-op there.)
-      if (event.type === "compaction_end") setImmediate(() => !this.disposed && this.queue.onSdkEvent());
+      if (event.type === "compaction_end")
+        setImmediate(() => {
+          if (this.disposed) return;
+          this.queue.onSdkEvent();
+          this.releaseLinks(false);
+        });
+      if (event.type === "agent_start") this.releaseLinks(true);
+      if (event.type === "message_start" && this.linkInSdk.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
+        const content = (event as { message: { content?: unknown } }).message.content;
+        const i = this.linkInSdk.indexOf(typeof content === "string" ? content : textBlocks(content));
+        if (i >= 0) this.linkInSdk.splice(i, 1);
+      }
       if (event.type === "entry_appended" && (event as { entry?: unknown }).entry) {
         // Display entries an extension appended outside a turn (mode markers, align docs, …)
         // reach the pane now instead of at the next hello/resync. normalizeEntry returns []
@@ -1409,6 +1578,7 @@ class ChatSession {
     this.sendSandbox((m) => client.send(m));
     const snap = this.workersSnapshot();
     if (snap) client.send(snap);
+    pushLinks(this, client);
   }
 
   detach(client: ChatClient): void {
@@ -1930,6 +2100,7 @@ class ChatSession {
       client.send({ type: "compacted", id, entryId: outcome.entryId, tokensBefore: outcome.tokensBefore });
     }
     this.queue.onSdkEvent();
+    this.releaseLinks(false);
   }
 
   /**
@@ -2015,6 +2186,7 @@ class ChatSession {
     this.modeState = resolveChatMode(this.session.sessionManager.getBranch());
     this.broadcast(this.modeMessage());
     this.sendSandbox((m) => this.broadcast(m)); // the extension re-restores on session_tree too
+    pushLinks(this); // after every hello, as attach() does
   }
 
   broadcast(msg: ChatServerMessage): void {
@@ -2173,6 +2345,40 @@ class ChatSession {
 /** Listeners told each time a hosted chat's run settles (attention signals, tags). A registry, not
     an import, so those modules can import the list without a cycle back into this one. */
 const settledListeners = new Set<(path: string) => void>();
+/** Where a session's `links` rows come from (§mesh.links/agents-pane): server/mesh/links.ts
+    registers it through server/link-delivery.ts. Unset, no chat gets a `links` frame. */
+type LinksSource = (sessionId: string, path: string) => Promise<LinkedAgentInfo[]>;
+let linksSource: LinksSource | null = null;
+export function setLinksSource(fn: LinksSource | null): void {
+  linksSource = fn;
+}
+
+/** Send `links` to one client, or to every client of the chat. Best-effort: a failed read sends
+    nothing, and the insight poll still carries the rows. */
+function pushLinks(chat: ChatSession, client?: ChatClient): void {
+  const source = linksSource;
+  if (!source) return;
+  source(chat.session.sessionId, chat.path)
+    .then((links) => {
+      if (chat.disposed) return;
+      const msg: ChatServerMessage = { type: "links", links };
+      if (client) {
+        if (chat.clients.has(client)) client.send(msg);
+      } else chat.broadcast(msg);
+    })
+    .catch((err) => console.error("[chat] links frame failed", err));
+}
+
+/** A link message landed, or a link was made or ended: push `links` to every held chat of those
+    sessions, and to the Overseer's, whose pane lists every link on this host. */
+export function notifyLinksChanged(sessionIds: readonly string[]): void {
+  const ids = new Set(sessionIds);
+  for (const chat of heldChats()) {
+    if (!chat.clients.size) continue;
+    if (chat.overseer || ids.has(chat.session.sessionId)) pushLinks(chat);
+  }
+}
+
 export function onAgentSettled(fn: (path: string) => void): () => void {
   settledListeners.add(fn);
   return () => settledListeners.delete(fn);

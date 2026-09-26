@@ -10,6 +10,7 @@ import {
   type TagStatus,
   type TagTopic,
 } from "../shared/protocol";
+import { isLinkMessage } from "../shared/link-message";
 import { type Answer, DecisionError, type DecisionProvider, type Question } from "./decide";
 import { maySend, terminalSession } from "./decide-settings";
 import { serverRedactor } from "./overseer-redact";
@@ -357,7 +358,8 @@ function textOf(content: unknown): string {
 /**
  * The file's last finished assistant reply (its entry id and text) and the last user message
  * before it, scanned backwards from EOF (16 KB chunks, cap 256 KB, torn lines skipped) — the list's
- * own tail window, never a full-file read. null when the window holds no finished reply.
+ * own tail window, never a full-file read. null when the window holds no finished reply. `user` is
+ * null when that message is a partner's over a link.
  */
 export async function readTailTurn(path: string, size: number): Promise<{ turnId: string; assistant: string; user: string | null } | null> {
   const fh = await open(path, "r");
@@ -386,7 +388,9 @@ export async function readTailTurn(path: string, size: number): Promise<{ turnId
             if (!found && m?.role === "assistant" && m.stopReason !== "toolUse" && typeof e.id === "string") {
               found = { turnId: e.id, assistant: textOf(m.content) };
             } else if (found && m?.role === "user") {
-              return done(textOf(m.content));
+              // A partner's message over a link is never topic evidence (§mesh.links/transcript).
+              const user = textOf(m.content);
+              return done(isLinkMessage(user) ? null : user);
             }
           } catch {
             // torn line or not JSON: skip

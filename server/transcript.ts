@@ -22,6 +22,7 @@ const BATON_ROWS = new Set([
   BATON_WRAPUP_ENTRY,
 ]);
 import { stripImageNotes } from "../shared/image-note";
+import { parseLinkMessage } from "../shared/link-message";
 import { parseWakeNudge } from "../shared/wake";
 import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, parseTeamMessage, previewLine, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
@@ -156,6 +157,14 @@ function normalizeMessage(entry: Entry, id: string, state?: { model?: string }):
       if (wake) {
         const it = item(id, "wake", entry, raw);
         it.wake = wake;
+        return [it];
+      }
+      // A partner's message over a link (§mesh.links/transcript): the model's, never the user's.
+      // Its own kind, so the thread renders nothing for it while the turn logic still sees a start.
+      const link = parseLinkMessage(raw);
+      if (link) {
+        const it = item(id, "link", entry, raw);
+        it.link = link;
         return [it];
       }
       const it = item(id, "user", entry, undefined, undefined, contentImages(m.content));

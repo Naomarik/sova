@@ -6,6 +6,7 @@ import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveR
 import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import { stripImageNotes } from "../shared/image-note";
+import { isLinkMessage } from "../shared/link-message";
 import { parseWakeNudge } from "../shared/wake";
 import { RECENT_WRITE_MS } from "./write-guard";
 import { isArchived, setArchived } from "./archived-sessions";
@@ -99,6 +100,10 @@ function userText(content: unknown): string {
   }
   return "";
 }
+
+/** A user message that never titles a session: a fired wake nudge, or a partner's message over a
+    link (§mesh.links/transcript) — neither is something the user said. */
+const notTitle = (text: string): boolean => parseWakeNudge(text) !== null || isLinkMessage(text);
 
 /** Best-effort title from a user message line cut off by the read cap (huge pastes). */
 function titleFromPartial(line: string): string | null {
@@ -480,7 +485,7 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
         if (e.type === "message") {
           const msg = e.message ?? {};
           if (!model && msg.role === "assistant" && msg.provider && msg.model) model = `${msg.provider}/${msg.model}`;
-          if (msg.role === "user" && title === null && !parseWakeNudge(userText(msg.content))) title = oneLine(userText(msg.content));
+          if (msg.role === "user" && title === null && !notTitle(userText(msg.content))) title = oneLine(userText(msg.content));
         }
         if (title !== null && model) return { header, title, model, overseer };
       }
@@ -493,14 +498,14 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
         try {
           const e = JSON.parse(pending);
           if (!header && e?.type === "session") header = e;
-          else if (header && e?.type === "message" && e.message?.role === "user" && !parseWakeNudge(userText(e.message.content)))
+          else if (header && e?.type === "message" && e.message?.role === "user" && !notTitle(userText(e.message.content)))
             title = oneLine(userText(e.message.content));
         } catch {
           // partial line: ignore
         }
       } else if (header) {
         const t = titleFromPartial(pending);
-        if (t !== null && !parseWakeNudge(t)) title = oneLine(t);
+        if (t !== null && !notTitle(t)) title = oneLine(t);
       }
     }
     return header ? { header, title, model, overseer } : null;
@@ -869,6 +874,23 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
   };
 }
 
+const archivedListeners = new Set<(sessionId: string) => void>();
+/** Called with a session's id when it is archived, or deleted by cleanup: archiving a member ends
+    every link it is in (§mesh.links/record; server/mesh/links.ts registers `endFor`). */
+export function onSessionArchived(fn: (sessionId: string) => void): () => void {
+  archivedListeners.add(fn);
+  return () => archivedListeners.delete(fn);
+}
+function sessionArchived(id: string): void {
+  for (const fn of archivedListeners) {
+    try {
+      fn(id);
+    } catch (err) {
+      console.error("[sessions] archive listener failed", err);
+    }
+  }
+}
+
 export const SUBAGENTS_WORKING = "Subagents are working in this session. Stop them or wait for them to finish before archiving.";
 
 export type ArchiveResult =
@@ -918,6 +940,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
         dropSessionTags([s.id]);
         removeSessionAttachments(s.id);
         dropGroupAssignments([s.id]);
+        sessionArchived(s.id);
         return { ok: true, summary: { ...s, archived: true } };
       }
     }
@@ -925,7 +948,10 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   if (s.archived !== archived) setArchived(s.id, archived);
   // Archiving is the close gesture: shut the held runtime down (running subagents die with it).
   // There is no idle timer anymore — a runtime lives until this, a reload, or server shutdown.
-  if (archived) await disposeHeldChat(s.path, "Session archived; its runtime was closed.");
+  if (archived) {
+    await disposeHeldChat(s.path, "Session archived; its runtime was closed.");
+    sessionArchived(s.id);
+  }
   return { ok: true, summary: { ...s, archived } };
 }
 
@@ -1055,6 +1081,7 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
       dropSessionTitles([id]);
       dropSessionTags([id]);
       removeSessionAttachments(id);
+      sessionArchived(id);
       deletedIds.push(id);
       forgotten.push(id);
     } catch {

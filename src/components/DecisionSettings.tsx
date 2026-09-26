@@ -205,6 +205,13 @@ export function DecisionSettingsSection() {
   const unanswered = () => (draft() && loaded() ? unansweredIssue(draft()!, key()) : null);
   const exclusionsIssue = () => (draft() ? exclusionIssue(draft()!.exclusions) : null);
 
+  /** Test Decisions: one canned check through the saved chain, shown in every Jev key row. */
+  const testButton = (cls: string) => (
+    <button type="button" class={cls} disabled={probing() || !loaded()!.chain.ready} onClick={() => void runProbe()}>
+      {probing() ? "Asking…" : "Test Decisions"}
+    </button>
+  );
+
   /** A switch and its hint; an `issue` replaces the hint (in warn) while the switch is on. */
   const switchRow = (id: string, label: string, hint: string, checked: () => boolean, set: (on: boolean) => void, issue?: () => string | null) => (
     <div>
@@ -279,6 +286,7 @@ export function DecisionSettingsSection() {
           </ul>
           <Show when={key().source === "env"}>
             <p class="field-hint">The key comes from SOVA_JEV_KEY in the server's environment, so it can't be changed here.</p>
+            <div class="settings-delegate-actions">{testButton("button button-sm")}</div>
           </Show>
           <Show when={key().source !== "env"}>
             <Show
@@ -295,6 +303,7 @@ export function DecisionSettingsSection() {
                         <button type="button" class="button button-sm button-destructive" disabled={keyBusy()} onClick={() => setConfirmRemove(true)}>
                           Remove Key
                         </button>
+                        {testButton("button button-sm")}
                       </>
                     }
                   >
@@ -351,11 +360,23 @@ export function DecisionSettingsSection() {
                 <button type="button" class="button" disabled={keyBusy() || keyIssue() !== null} onClick={() => void saveKey()}>
                   {keyBusy() ? "Checking…" : "Save Key"}
                 </button>
+                {testButton("button button-ghost")}
               </div>
               <p class="field-hint">Checked with Jev before it's stored, and kept on this machine only. Sova never shows it again.</p>
             </Show>
           </Show>
           <Show when={keyError()}>{(m) => <p class="field-error">{m()}</p>}</Show>
+          <Show when={!probing() && probe()}>
+            {(r) => (
+              <p class={`settings-delegate-issue settings-delegate-issue-${r().ok ? (r().fellBackFrom ? "warn" : "muted") : "error"}`} role="status" data-testid="decisions-probe">
+                {probeLine(r())}
+              </p>
+            )}
+          </Show>
+          <Show when={!probing() && probeError()}>{(m) => <p class="field-error">{sentence(m())}</p>}</Show>
+          <Show when={decisionDirty()}>
+            <p class="field-hint">Tests what's saved, not your unsaved changes.</p>
+          </Show>
         </fieldset>
 
         <fieldset class="settings-delegate-profile" aria-describedby="decisions-fallback-desc">
@@ -421,6 +442,9 @@ export function DecisionSettingsSection() {
               </For>
             </div>
           </Show>
+          <p class="field-hint settings-delegate-desc" data-testid="decisions-chain-line">
+            {chainLine(loaded()!.settings, key(), loaded()!.chain)}
+          </p>
         </fieldset>
 
         <fieldset class="settings-delegate-profile">
@@ -498,29 +522,6 @@ export function DecisionSettingsSection() {
             {saving() ? "Saving…" : "Save Changes"}
           </button>
         </div>
-
-        <fieldset class="settings-delegate-profile">
-          <legend class="settings-delegate-legend">Check</legend>
-          <p class="field-hint settings-delegate-desc" data-testid="decisions-chain-line">
-            {chainLine(loaded()!.settings, key(), loaded()!.chain)}
-          </p>
-          <div class="settings-delegate-actions">
-            <button type="button" class="button button-sm" disabled={probing() || !loaded()!.chain.ready} onClick={() => void runProbe()}>
-              {probing() ? "Asking…" : "Test Decisions"}
-            </button>
-            <Show when={!probing() && probe()}>
-              {(r) => (
-                <span class={`settings-delegate-issue settings-delegate-issue-${r().ok ? (r().fellBackFrom ? "warn" : "muted") : "error"}`} role="status" data-testid="decisions-probe">
-                  {probeLine(r())}
-                </span>
-              )}
-            </Show>
-            <Show when={!probing() && probeError()}>{(m) => <span class="field-error">{sentence(m())}</span>}</Show>
-          </div>
-          <Show when={decisionDirty()}>
-            <p class="field-hint">Tests what's saved, not your unsaved changes.</p>
-          </Show>
-        </fieldset>
 
         <Show when={loaded()!.settings.features.tags || progress()?.running}>
           <fieldset class="settings-delegate-profile" aria-describedby="decisions-backfill-desc">

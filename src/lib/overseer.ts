@@ -180,12 +180,12 @@ export function headLists(digest: Pick<AttentionDigest, "items" | "counts">): { 
 export const isOverseerShortcut = (e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; code: string }) =>
   e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === "KeyO";
 
-/** The proactivity cycle: Off → Badge → Brief me → Off. */
+/** The proactivity cycle: Off → List Only → Brief Me → Off. */
 export const PROACTIVITY = ["off", "badge", "brief"] as const;
-export const PROACTIVITY_LABEL = { off: "Off", badge: "Badge", brief: "Brief Me" } as const;
+export const PROACTIVITY_LABEL = { off: "Off", badge: "List Only", brief: "Brief Me" } as const;
 export const PROACTIVITY_HINT = {
-  off: "No sidebar list, no briefs.",
-  badge: "Lists the sessions that need you at the top of the sidebar.",
-  brief: "Also starts a short brief when a session gets blocked, at most once every 10 minutes.",
+  off: "No Needs you list. The Overseer chat still works.",
+  badge: "Lists the sessions that need you in the sidebar. No messages from the Overseer.",
+  brief: "The list, plus an Overseer message when something new needs you, at most once every 10 minutes.",
 } as const;
 export const nextProactivity = (p: (typeof PROACTIVITY)[number]) => PROACTIVITY[(PROACTIVITY.indexOf(p) + 1) % PROACTIVITY.length]!;

@@ -136,8 +136,13 @@ writer**).
   project may point its agents at the same file without the mode; Sova's
   `CLAUDE.md` does. The tools it runs without asking are the three linked into
   the agent directory (`<agent dir>/extensions/spec/core/`, resolved like pi's
-  own agent dir: an exact `~` or a leading `~/` is home). A copy inside the
-  project is read and asked about first. Prompt-only: no widget, command or
+  own agent dir: an exact `~` or a leading `~/` is home), always through that
+  `sh` recipe, never a guessed path. A copy inside the
+  project is read and asked about first. The reply ends with one exact line,
+  `Also changes: §X — <what>` or `Also changes: none`, nothing after it: it
+  names foreign § only, never the task's new claims, and notes (the
+  exemption, a gap) go above it. A request, hook, helper or CSS class is
+  plumbing and never flags. Prompt-only: no widget, command or
   entry of its own. See `../spec/README.md`.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the

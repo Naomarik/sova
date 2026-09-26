@@ -18,8 +18,10 @@ core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$
 sha256sum pi-config/extensions/spec/core/*.mjs .sova/spec/tools/*.mjs "$core"/*.mjs
 ```
 
-Each file name must hash the same everywhere. The `$core` copies exist only after
-`pi-config/install.sh` has run. In any other project, treat vendored copies as foreign code: read
+Each file name must hash the same everywhere. Resolve `$core` with exactly that first line, never a
+guessed path such as `$HOME/.pi/agent/...`: the agent dir may be elsewhere (`PI_CODING_AGENT_DIR`),
+and a guessed path that finds nothing doesn't mean the tools are missing. The `$core` copies exist
+only after `pi-config/install.sh` has run. In any other project, treat vendored copies as foreign code: read
 them, or compare hashes, before you run them. The draft and review tools run the `sova-spec.mjs`
 beside them, so vendor them together.
 
@@ -62,12 +64,15 @@ lands in (`census.foreign`), with the rule, and on one stderr line. Adding `--re
 claim changes nothing: the parent is foreign either way and the flag is owed either way. Any § the task didn't create is foreign, even one your draft edits, and
 even the parent your new claim nests under; editing it in the draft (a row, a sub-claim, a sketch
 line) is itself a flag. Read a foreign § with `scope` and stay silent while its text holds;
-plumbing (an added request, hook or helper, types) never flags. Otherwise flag only a contradiction of its text, or
+plumbing (an added request, hook, helper, CSS class or types) never flags. Otherwise flag only a contradiction of its text, or
 something a user would see there that its own text doesn't describe; that your new claim describes
 it, in the parent's document or its own, does not remove the flag. A gap the foreign § already had (a field its prose never named) is not
 a change your task made, even when your feature now depends on that field: mention it above the last line, never in it, or open a baseline draft. Batch the flags into the plan as one question ("this
 also changes §X: <what>. OK?"). Before finishing, the reply's last line, exempt work included, is
-"Also changes: §X — <what>" (a list) or "Also changes: none", even when the user said not to ask.
+exactly "Also changes: §X — <what>" (a list) or "Also changes: none", with nothing after it, even
+when the user said not to ask. Notes (the exemption, a gap) go above it. The line names foreign §
+only, never your own new claims: a user-visible addition under a foreign § is that §'s change,
+even when your new claim describes it.
 Exempt work skips the draft, not the census or the last line.
 
 ## Changing the docs

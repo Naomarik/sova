@@ -64,7 +64,9 @@ carries `created: true|false`, and each foreign touched § gets a
 `touched-foreign` note (read it with `scope`; flag it if a user sees a change
 there, even one the new claim describes; a gap it already had never flags, even one you now rely on). Human output prints the summary
 before the touched list. Notes are reminders, not flags: the exit code is
-unchanged. Plain `census` and `check` are as before.
+unchanged. The rule counts a request, hook, helper or CSS class as plumbing, and
+says the reply's last line names these foreign §, never the task's new claims.
+Plain `census` and `check` are as before.
 
 Quote IDs, because `§` is not a shell word character. `scope` and `impact` read a
 bare namespace like `§app.shell` as `§app/shell`, with an `id-alias` note. `--budget` is accepted by

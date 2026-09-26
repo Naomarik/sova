@@ -336,7 +336,7 @@ test("spec: the shell prefix resolves the agent dir the way pi does", () => {
 
 test("spec: the prompt names the trusted tools, their real flags, and the draft workflow", () => {
 	const spec = buildMinorPrompt("spec");
-	assert.ok(spec.includes(`start each bash command with:\n\n\`\`\`sh\n${SPEC_CORE_SHELL}\n\`\`\``));
+	assert.ok(spec.includes(`start each bash command with exactly this, never a guessed path:\n\n\`\`\`sh\n${SPEC_CORE_SHELL}\n\`\`\``));
 	const here = dirname(fileURLToPath(import.meta.url));
 	const coreDir = join(here, "../spec/core");
 	// Every tool the prompt runs from $core ships in the linked directory, and so does the README it points to.
@@ -406,9 +406,11 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /wherever you put the claim/);
 	assert.match(spec, /never a gap it already had, even one you rely on/);
 	assert.match(spec, /"Also changes: none"/);
-	assert.match(spec, /Before finishing:\n(- .*\n)*- Your reply's last line, exempt work included: "Also changes: §X — <what>" or "Also changes: none"\./, "the handoff line is a finishing step, exempt work included");
+	assert.match(spec, /Before finishing:\n(- .*\n)*- Your reply's last line, exempt work included, is exactly "Also changes: §X — <what>" or "Also changes: none", nothing after; notes \(the exemption, a gap\) go above it\. It names foreign § only, never your new claims; an addition under one is that §'s change\./, "the handoff line is a finishing step, exempt work included");
 	assert.match(spec, /While coding, exempt work included, run `census --changed` \(/);
-	assert.ok(spec.split(/\s+/).length <= 700, "short enough to ride every turn");
+	assert.match(spec, /Trusted tools: start each bash command with exactly this, never a guessed path:\n\n```sh\n/, "the recipe, not a hard-coded agent dir");
+	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never flags/);
+	assert.ok(spec.split(/\s+/).length <= 740, "short enough to ride every turn");
 });
 
 test("mode helpers", () => {

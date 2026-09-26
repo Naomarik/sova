@@ -568,7 +568,7 @@ function relatedOf(ctx, hits, related) {
   const foreign = ids.filter((id) => cur.has(id)), surface = (id) => ctx.claims.get(id).kind === "surface";
   return { touched, foreign: [...foreign.filter(surface), ...foreign.filter((id) => !surface(id))], childUnderForeign };
 }
-const FOREIGN_RULE = "flag any where a user sees a change, even one your new claim describes, wherever you put it; plumbing never flags, nor a gap it already had, even one you now rely on";
+const FOREIGN_RULE = "flag any where a user sees a change, even one your new claim describes, wherever you put it; plumbing (a request, hook, helper or CSS class) never flags, nor a gap it already had, even one you now rely on; the last line names these foreign §, never your new claims";
 // Pushed last, so a truncated tail of the findings still carries it; the rule leads, so a byte cut keeps it.
 const foreignSummary = (foreign) => foreign.length && add("note", "foreign-summary",
   `${FOREIGN_RULE.replace("any", "any foreign §")}: ${foreign.length} touched (${foreign.join(", ")})`, { ids: foreign });

@@ -191,7 +191,7 @@ describe("the stream guard against a runaway stream (real provider path, local s
       evidence.baton = { argCharsSent: stub.stats.argChars, trip: chat.lastStreamTrip, wrapup: info };
       assert.equal(chat.lastStreamTrip?.kind, "tool-args");
       assert.equal(info?.state, "failed");
-      assert.equal(info?.error, "Stopped: a tool call's arguments passed 65,536 characters");
+      assert.equal(info?.error, "A tool call's arguments passed 65,536 characters, so the stream guard ended the turn.");
       assert.equal(baton.batonById(c.sessionId)!.row.wrapup?.state, "failed", "never left running");
       assert.equal(wrap.wantsWrapup(baton.batonById(c.sessionId)!.row), false, "and not retried on its own");
     });

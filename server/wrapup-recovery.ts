@@ -23,9 +23,9 @@ export function staleReason(row: Pick<BatonSession, "sessionId" | "wrapup">, now
   const w = row.wrapup;
   if (w?.state !== "running") return null;
   const at = Date.parse(w.at);
-  if (!Number.isFinite(at)) return wrapupActive(row.sessionId) ? null : "Interrupted: the wrap-up's start time was unreadable.";
-  if (now - at > STALE_AFTER_MS) return `Interrupted: the wrap-up ran past ${Math.round(BATON_RUN_WALL_MS / 60_000)} minutes.`;
-  if (at < processStart && !wrapupActive(row.sessionId)) return "Interrupted: the server stopped during the wrap-up.";
+  if (!Number.isFinite(at)) return wrapupActive(row.sessionId) ? null : "Its start time couldn't be read.";
+  if (now - at > STALE_AFTER_MS) return `It ran past ${Math.round(BATON_RUN_WALL_MS / 60_000)} minutes without finishing.`;
+  if (at < processStart && !wrapupActive(row.sessionId)) return "The server shut down during the wrap-up.";
   return null;
 }
 

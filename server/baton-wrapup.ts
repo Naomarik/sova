@@ -315,7 +315,7 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
     const { turn } = chat.acceptPrompt(wrapupPrompt(row, readRoster(row.orgId)), undefined, "server");
     await turn;
     const last = [...chat.session.sessionManager.getBranch()].reverse().find((e: any) => e.type === "message" && e.message?.role === "assistant") as any;
-    if (last?.message?.stopReason === "error" || last?.message?.stopReason === "aborted") error = chat.lastStreamTrip ? `Stopped: ${chat.lastStreamTrip.detail}` : String(last.message.errorMessage ?? "The model failed.");
+    if (last?.message?.stopReason === "error" || last?.message?.stopReason === "aborted") error = chat.lastStreamTrip ? `${chat.lastStreamTrip.detail.replace(/^./, (c) => c.toUpperCase())}, so the stream guard ended the turn.` : String(last.message.errorMessage ?? "The model failed.");
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   } finally {

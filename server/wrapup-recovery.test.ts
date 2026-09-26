@@ -57,9 +57,9 @@ describe("stale wrap-up rows", async () => {
       wrap.endWrapupRun(ancientMine);
     }
     assert.equal(state(orphan)?.state, "failed");
-    assert.equal(state(orphan)?.error, "Interrupted: the server stopped during the wrap-up.");
+    assert.equal(state(orphan)?.error, "The server shut down during the wrap-up.");
     assert.equal(state(orphan)?.at, running(start - 1_000).at, "keeps when it started");
-    assert.equal(state(ancient)?.error, "Interrupted: the wrap-up ran past 10 minutes.");
+    assert.equal(state(ancient)?.error, "It ran past 10 minutes without finishing.");
     assert.equal(state(mine)?.state, "running");
     assert.equal(state(fresh)?.state, "running");
     assert.equal(state(done)?.state, "done");

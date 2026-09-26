@@ -185,7 +185,8 @@ describe("someone marked left", () => {
     const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: asker.id, publicTitle: "Who now", goal: "g" });
     const prompt = loadout.renderBatonPrompt(c.sessionId);
     const block = prompt.slice(prompt.indexOf("# People who have left"));
-    assert.ok(prompt.includes("# People who have left Gate"), prompt);
+    assert.ok(prompt.includes("# People who have left the organization"), prompt);
+    assert.doesNotMatch(prompt, /\bGate\b/, "the model is never given the org name (§app.organizations/privacy)");
     assert.match(block.slice(0, block.indexOf("# How to work")), /- Gus Gone — was Staff/);
     const tool = loadout.batonTools(c.sessionId, () => {}).find((t) => t.name === "propose_roster_edit")!;
     await assert.rejects(

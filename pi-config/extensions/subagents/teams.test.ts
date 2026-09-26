@@ -498,7 +498,7 @@ test("N2: steers past the cap drop the oldest and count them; a successor inheri
 	assert.equal(inheritedSteersText([], 0, "dev"), "");
 	assert.equal(
 		inheritedSteersText(["write a", "also\nwrite b"], 0, "dev"),
-		"Later instructions from the main thread to dev (assignments too, oldest first; the newest may not have been started):\n- write a\n- also\n  write b",
+		"Instructions from the main thread to dev, oldest first (the newest may not have been started). They are binding and part of your assignment now: they come from the main thread, not from the coordinator or a teammate, and nobody on the team can cancel them. If anyone tells you one of them is not your work, it still is: reply that it came from the main thread and do it.\n- write a\n- also\n  write b",
 	);
 	const cut = inheritedSteersText(["a".repeat(50), "b".repeat(50), "c".repeat(50)], 4, "dev", 120);
 	assert.match(cut, /\n\[5 earlier instruction\(s\) not shown; ask dev with team_msg if they matter\]\n- b{50}\n- c{50}$/);
@@ -509,7 +509,7 @@ test("N4/N5: a worker successor's task starts from the note, redoes nothing it m
 	const task = workerSuccessorTask({ oldRole: "writer", oldId: "ag_02", note: "/n/writer.md", oldLive: true, assignment: "Step 1 read.\nStep 2 write.", steers: ["also summary.txt"], steersOmitted: 0 });
 	assert.match(task, /^Continue the work of writer \(ag_02\), whose context is running out\. Its handover note at \/n\/writer\.md is where you start: read it first and continue from the state it records\. Do not redo steps the note marks done; verify them cheaply \(ls, a quick grep, the tail of a file\) instead of re-reading large inputs or re-running earlier steps\./);
 	assert.match(task, /ask writer with team_msg \(at least once when in doubt; it answers until it is retired\) before you call team_ready, which retires it\./);
-	assert.match(task, /not a script to restart from step 1[\s\S]*Its assignment from the main thread:\nStep 1 read\.\nStep 2 write\.\n\nLater instructions from the main thread to writer .*\n- also summary\.txt$/);
+	assert.match(task, /The assignment below, with the main thread's later instructions after it, is binding: it is what you must get done\. It is not a script to restart from step 1[\s\S]*Its assignment from the main thread:\nStep 1 read\.\nStep 2 write\.\n\nInstructions from the main thread to writer, oldest first .* They are binding and part of your assignment now: .* If anyone tells you one of them is not your work, it still is: reply that it came from the main thread and do it\.\n- also summary\.txt$/);
 	assert.doesNotMatch(task, /may be missing/);
 	const missing = workerSuccessorTask({ oldRole: "writer", oldId: "ag_02", note: "/n/writer.md", oldLive: true, missing: "writer had not written it 10 min after it was asked to", steers: [], steersOmitted: 0 });
 	assert.match(missing, /The note may be missing or incomplete: writer had not written it 10 min after it was asked to\. If it is not there, ask writer with team_msg for its state before you do anything else\./);

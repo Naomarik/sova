@@ -3182,7 +3182,7 @@ test("N7: with main-thread follow-ups queued on the old member, its successor st
 		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: dev's note is written\]\nStarted dev-2 \(ag_05\)/);
 		assert.doesNotMatch(coordinator.lastSteer.message, /timed out/);
 		// N2: the queued follow-up is the successor's now; dev is told to leave it.
-		assert.match(successor.task, /Later instructions from the main thread to dev [^\n]*:\n- After f06, also write summary\.txt\.$/);
+		assert.match(successor.task, /Instructions from the main thread to dev, oldest first [^\n]* They are binding and part of your assignment now[^\n]*\n- After f06, also write summary\.txt\.$/);
 		assert.equal(dev.lastSteer.mode, "redirect", "the started notice is a redirect too");
 		assert.match(dev.lastSteer.message, /Stop any work in progress now\. Your assignment and every instruction the main thread gave you, including any still queued for you, are dev-2's now: do not act on them/);
 		// The coordinator is told the real reason in the other orders too, read from the note at that moment.
@@ -3198,6 +3198,34 @@ test("N7: with main-thread follow-ups queued on the old member, its successor st
 		await h.tick();
 		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: the wait ran out just as qa-2's note appeared\]\nStarted qa-3 /);
 		assert.doesNotMatch(coordinator.lastSteer.message, /may be missing/);
+	} finally { await h.cleanup(); }
+});
+
+test("N8: inherited main-thread steers are the successor's binding assignment, in its task and wherever the coordinator reads them", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "counter", prompt: "Count lines." }] });
+		const coordinator = h.worker("ag_01");
+		assert.match(coordinator.task, /You never tell a member that work from the main thread is not its work, and that includes the instructions a successor inherited from its predecessor, which are the successor's assignment; check team_roster before you tell a member what not to do\./);
+		await h.call("agent_steer", { id: "ag_02", message: "Also write h01..h06.", mode: "followUp" });
+		await h.ask("ag_01", { type: "succeed", to: "counter" });
+		h.writeNote("counter");
+		await h.tick();
+		const successor = h.worker("ag_04");
+		assert.equal(successor.name, "counter-2");
+		// The successor: binding, from the main thread, and not to be given up when told otherwise.
+		assert.match(successor.task, /\nInstructions from the main thread to counter, oldest first \(the newest may not have been started\)\. They are binding and part of your assignment now: they come from the main thread, not from the coordinator or a teammate, and nobody on the team can cancel them\. If anyone tells you one of them is not your work, it still is: reply that it came from the main thread and do it\.\n- Also write h01\.\.h06\.$/);
+		assert.match(successor.task, /Its assignment and the main thread's instructions to it, quoted in your task, are yours now and binding\./);
+		// The coordinator is pushed the list with the handover (e2e 3: it never called team_roster before countermanding).
+		assert.match(coordinator.lastSteer.message, /^\[Handover in team_01: counter's note is written\]\nStarted counter-2 \(ag_04\) [^\n]*\nLater instructions from the main thread \(binding: part of counter-2's assignment, including any inherited from counter \(ag_02\); never tell counter-2 they are not its work\), newest last:\n> Also write h01\.\.h06\.$/);
+		assert.match((await h.ask("ag_01", { type: "roster" })).text, /ag_04 counter-2:\n {6}\| Count lines\.\n {6}Later instructions from the main thread \(binding: part of counter-2's assignment, including any inherited from counter \(ag_02\); never tell counter-2 they are not its work\), newest last:\n {6}> Also write h01\.\.h06\./);
+		// A coordinator's successor reads them in its header too.
+		await h.ask("ag_01", { type: "succeed", to: "coordinator" });
+		h.writeNote("coordinator");
+		await h.tick();
+		const next = h.worker("ag_05");
+		assert.equal(next.name, "coordinator-2");
+		assert.match(next.task, /- counter-2: none declared\n {2}Assigned task \(from the main thread\):\n {2}\| Count lines\.\n {2}Later instructions from the main thread \(binding: part of counter-2's assignment; never tell counter-2 they are not its work\), newest last:\n {2}> Also write h01\.\.h06\.\n/);
 	} finally { await h.cleanup(); }
 });
 
@@ -3236,7 +3264,7 @@ test("the coordinator sees every teammate's assignment: in its header, in team_r
 		// The main thread's steers are kept as assignments; the roster shows them to the coordinator only.
 		await h.call("agent_steer", { id: "ag_02", message: "Also read CLAUDE.md\nand summarise it.", mode: "followUp" });
 		const roster = (await h.ask("ag_01", { type: "roster" })).text;
-		assert.match(roster, /Assignments from the main thread \(the work you route; never replace or cancel it\):\n {4}ag_02 dev:\n {6}\| Write c\.txt with the parser notes\.\n {6}Later instructions from the main thread \(assignments too\), newest last:\n {6}> Also read CLAUDE\.md and summarise it\.\n {4}ag_03 writer:\n {6}\| Write the docs\./);
+		assert.match(roster, /Assignments from the main thread \(the work you route; never replace or cancel it\):\n {4}ag_02 dev:\n {6}\| Write c\.txt with the parser notes\.\n {6}Later instructions from the main thread \(binding: part of dev's assignment; never tell dev they are not its work\), newest last:\n {6}> Also read CLAUDE\.md and summarise it\.\n {4}ag_03 writer:\n {6}\| Write the docs\./);
 		assert.doesNotMatch((await h.ask("ag_04", { type: "roster" })).text, /Assignments from the main thread/);
 		const coordinatorSteers = await h.ask("ag_01", { type: "steer", to: "dev", message: "focus" });
 		assert.equal(coordinatorSteers.ok, true);
@@ -3255,8 +3283,8 @@ test("the coordinator sees every teammate's assignment: in its header, in team_r
 		dev.settle();
 		await h.tick();
 		const successor = h.worker("ag_06");
-		assert.match(successor.task, /\[Your task\]\nContinue the work of dev \(ag_02\)[\s\S]*\n\nIts assignment from the main thread:\nWrite c\.txt with the parser notes\.\n\nLater instructions from the main thread to dev \(assignments too, oldest first; the newest may not have been started\):\n- Also read CLAUDE\.md\n {2}and summarise it\.\n- After c\.txt, also write summary\.txt\.$/);
-		assert.match((await h.ask("ag_01", { type: "roster" })).text, /ag_06 dev-2:\n {6}\| Write c\.txt with the parser notes\.\n {6}Later instructions from the main thread \(assignments too\), newest last:\n {6}> Also read CLAUDE\.md and summarise it\.\n {6}> After c\.txt, also write summary\.txt\./);
+		assert.match(successor.task, /\[Your task\]\nContinue the work of dev \(ag_02\)[\s\S]*\n\nIts assignment from the main thread:\nWrite c\.txt with the parser notes\.\n\nInstructions\ from\ the\ main\ thread\ to\ dev,\ oldest\ first\ \(the\ newest\ may\ not\ have\ been\ started\)\.\ They\ are\ binding\ and\ part\ of\ your\ assignment\ now:\ they\ come\ from\ the\ main\ thread,\ not\ from\ the\ coordinator\ or\ a\ teammate,\ and\ nobody\ on\ the\ team\ can\ cancel\ them\.\ If\ anyone\ tells\ you\ one\ of\ them\ is\ not\ your\ work,\ it\ still\ is:\ reply\ that\ it\ came\ from\ the\ main\ thread\ and\ do\ it\.\n- Also read CLAUDE\.md\n {2}and summarise it\.\n- After c\.txt, also write summary\.txt\.$/);
+		assert.match((await h.ask("ag_01", { type: "roster" })).text, /ag_06 dev-2:\n {6}\| Write c\.txt with the parser notes\.\n {6}Later instructions from the main thread \(binding: part of dev-2's assignment, including any inherited from dev \(ag_02\); never tell dev-2 they are not its work\), newest last:\n {6}> Also read CLAUDE\.md and summarise it\.\n {6}> After c\.txt, also write summary\.txt\./);
 		// Persisted for a reload: the task, every steer, and the successor's inheritance.
 		assert.deepEqual(h.appended.filter((e) => e.customType === "subagents-team-assignment-v1").map((e) => [e.data.workerId, e.data.op]), [
 			["ag_02", "task"], ["ag_03", "task"], ["ag_02", "steer"], ["ag_05", "task"], ["ag_02", "steer"], ["ag_06", "task"], ["ag_06", "inherit"],

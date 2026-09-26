@@ -25,12 +25,13 @@ import {
 	MAX_OWNED_PATHS,
 	MAX_TEAM_MEMBERS,
 	ASSIGNMENT_ENTRY_TYPE,
-	STEER_PREVIEW_CHARS,
 	TEAM_ENTRY_TYPE,
 	TEAM_EVENT_ENTRY_TYPE,
 	TeamStore,
 	ejectedStamp,
 	assignmentText,
+	bindingSteersLabel,
+	steerPreview,
 	malformedWarning,
 	memberTooling,
 	monitorSuccessorTask,
@@ -1736,12 +1737,9 @@ export function registerSubagents(
 				...(m.task ? assignmentText(m.task, m.role).split("\n").map((line) => `      | ${line}`) : ["      (not known in this session; ask the member with team_msg)"]),
 				...(m.steers.length
 					? [
-						"      Later instructions from the main thread (assignments too), newest last:",
+						`      ${bindingSteersLabel(m.role, m.inheritedFrom)}`,
 						...(m.steersOmitted ? [`      [${m.steersOmitted} earlier instruction(s) no longer kept]`] : []),
-						...m.steers.map((t) => {
-							const flat = t.replace(/\s*\n\s*/g, " ");
-							return `      > ${flat.length > STEER_PREVIEW_CHARS ? `${flat.slice(0, STEER_PREVIEW_CHARS)} […]` : flat}`;
-						}),
+						...m.steers.map((t) => `      > ${steerPreview(t)}`),
 					]
 					: []),
 			]),
@@ -2719,7 +2717,9 @@ export function registerSubagents(
 		}
 		scheduleRefresh();
 		const effort = launch?.effort ?? old?.effort;
-		const text = `Started ${role} (${successor.id}) to succeed ${target.role} (${target.workerId}) on ${target.backend}/${model ?? "default model"}${effort ? `/${effort}` : ""}. ${isLiveWorker(target.workerId) ? `${target.role} was told to brief it; it is retired when ${role} calls team_ready, or after ${retireMinutes} min.` : `${target.role} has already ended; the successor works from the handover note.`}${missing ? ` The note may be missing (${missing}); the successor was told so.` : ""}`;
+		const text = `Started ${role} (${successor.id}) to succeed ${target.role} (${target.workerId}) on ${target.backend}/${model ?? "default model"}${effort ? `/${effort}` : ""}. ${isLiveWorker(target.workerId) ? `${target.role} was told to brief it; it is retired when ${role} calls team_ready, or after ${retireMinutes} min.` : `${target.role} has already ended; the successor works from the handover note.`}${missing ? ` The note may be missing (${missing}); the successor was told so.` : ""}${
+			// N8: the coordinator is shown, unasked, that these are the successor's binding assignment.
+			steers.length ? `\n${bindingSteersLabel(role, `${target.role} (${target.workerId})`)}\n${steers.map((t) => `> ${steerPreview(t)}`).join("\n")}` : ""}`;
 		return { text, successorId: successor.id };
 	};
 	pi.registerTool({

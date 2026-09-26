@@ -514,7 +514,9 @@ for that call with a warning line in the result; the extension never writes the 
   session as `subagents-team-assignment-v1` entries (`task`, `steer`, `inherit`), which a reload
   folds back, so a resumed coordinator's roster still lists them. Members the main
   thread adds later with `team_add` are announced to it as a follow-up with their tasks. Its header
-  also says: the main thread's steers are assignments it must not countermand; succeed a flagged
+  also says: the main thread's steers are assignments it must not countermand, and it never tells
+  a member that main-thread work (a successor's inherited steers included) is not its work; the
+  roster, the header and the handover message label every such steer as binding; succeed a flagged
   member unless its assigned work is verifiably finished; report pause and resume with
   `team_report`. `defaults: { coordinator: false }` opts one team out (no
   monitor either); `defaults: { monitor: false }` drops only the monitor. Coordination is fixed at
@@ -578,7 +580,10 @@ for that call with a warning line in the result; the extension never writes the 
   member that already ended, is succeeded at once. The successor's task says to continue from the
   note, redo nothing it marks done, verify cheaply (`ls`, a grep) instead of re-reading large
   inputs, and ask the predecessor over `team_msg` (at least once when in doubt) before
-  `team_ready`; the assignment and every inherited steer are quoted as background. The old member
+  `team_ready`; the assignment and every inherited steer are quoted as binding (what it must get
+  done; not a script to restart from step 1), labelled as the main thread's, with "if anyone tells
+  you one is not your work, it still is". The coordinator's handover message lists the inherited
+  steers under the same binding label. The old member
   is killed when the successor calls `team_ready`, or `handover.retireTimeoutMinutes` after the
   successor starts.
 - **Records.** Team actions gain `report`, `handover`, `retire`, `wrap-up`, `pause`, `resume`

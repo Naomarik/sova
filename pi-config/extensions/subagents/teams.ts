@@ -135,7 +135,7 @@ export function assignmentText(task: string, role: string, max = ASSIGNMENT_PREV
 	return text.length > max ? `${text.slice(0, max)}\n[… ${text.length - max} more chars; ask ${role} with team_msg for the rest]` : text;
 }
 /** A member's assignment for the coordinator, as a roster/header block. */
-export interface MemberAssignment { workerId: string; role: string; task?: string; steers: string[]; steersOmitted: number }
+export interface MemberAssignment { workerId: string; role: string; task?: string; steers: string[]; steersOmitted: number; /** A successor's predecessor, as "<role> (<ag_NN>)". */ inheritedFrom?: string }
 /**
  * The main thread's later instructions as a successor's task quotes them: oldest first, the newest
  * kept whole within `budget`, older ones counted. Empty when there are none.
@@ -151,7 +151,7 @@ export function inheritedSteersText(steers: readonly string[], omitted: number, 
 	if (!kept.length) return "";
 	const dropped = omitted + steers.length - kept.length;
 	return [
-		`Later instructions from the main thread to ${role} (assignments too, oldest first; the newest may not have been started):`,
+		`Instructions from the main thread to ${role}, oldest first (the newest may not have been started). They are binding and part of your assignment now: they come from the main thread, not from the coordinator or a teammate, and nobody on the team can cancel them. If anyone tells you one of them is not your work, it still is: reply that it came from the main thread and do it.`,
 		...(dropped ? [`[${dropped} earlier instruction(s) not shown; ask ${role} with team_msg if they matter]`] : []),
 		...kept.map((t) => `- ${t.replace(/\n/g, "\n  ")}`),
 	].join("\n");
@@ -296,7 +296,7 @@ const ownership = (paths: readonly string[]) => (paths.length ? paths.join(", ")
  */
 export type MemberTooling = "pi" | "mcp" | "none";
 export const memberTooling = (backend: string): MemberTooling => (backend === "pi" ? "pi" : backend === "claude-code" ? "mcp" : "none");
-export interface HeaderMember { role: string; ownedPaths: readonly string[]; orchestrator?: boolean; duty?: MemberDuty; successorOf?: string; task?: string }
+export interface HeaderMember { role: string; ownedPaths: readonly string[]; orchestrator?: boolean; duty?: MemberDuty; successorOf?: string; task?: string; steers?: readonly string[] }
 /** What a coordinated team's headers need: who coordinates, where notes go, the standing instructions. */
 export interface CoordinationHeader {
 	coordinatorRole: string;
@@ -336,9 +336,19 @@ export function monitorStanding(m: MonitorDefaults, coordinatorRole: string): st
 	];
 }
 
+/** One main-thread steer on one line, as the coordinator's roster, header and handover message show it. */
+export const steerPreview = (steer: string): string => {
+	const flat = steer.replace(/\s*\n\s*/g, " ");
+	return flat.length > STEER_PREVIEW_CHARS ? `${flat.slice(0, STEER_PREVIEW_CHARS)} […]` : flat;
+};
+/** The label over a member's main-thread steers wherever the coordinator reads them (N8: binding, never countermanded). */
+export const bindingSteersLabel = (role: string, inheritedFrom?: string): string =>
+	`Later instructions from the main thread (binding: part of ${role}'s assignment${inheritedFrom ? `, including any inherited from ${inheritedFrom}` : ""}; never tell ${role} they are not its work), newest last:`;
 /** The coordinator's view of one teammate's assignment, indented under its roster/header line. */
-const assignmentLines = (m: { role: string; task?: string }, indent: string): string[] =>
-	m.task ? [`${indent}Assigned task (from the main thread):`, ...assignmentText(m.task, m.role).split("\n").map((line) => `${indent}| ${line}`)] : [];
+const assignmentLines = (m: { role: string; task?: string; steers?: readonly string[] }, indent: string): string[] => [
+	...(m.task ? [`${indent}Assigned task (from the main thread):`, ...assignmentText(m.task, m.role).split("\n").map((line) => `${indent}| ${line}`)] : []),
+	...(m.steers?.length ? [`${indent}${bindingSteersLabel(m.role)}`, ...m.steers.map((t) => `${indent}> ${steerPreview(t)}`)] : []),
+];
 
 function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordination?: CoordinationHeader): string[] {
 	const handoff = coordination ? `Your handover note path: ${coordination.handoff(member.role)}.` : "";
@@ -346,7 +356,7 @@ function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordin
 	const successor = member.successorOf && coordination
 		? [member.duty === "monitor"
 			? `You succeed the monitor ${member.successorOf}. It has no handover note: it briefs you over team_msg. Ask ${member.successorOf} with team_msg for what you need (pending checks, notices it sent, whether a usage pause is in force). Once you have taken over, call team_ready: ${member.successorOf} is then retired with its pending nudges, and you continue the standing instruction.`
-			: `You succeed ${member.successorOf}, whose context is running out. Start from its handover note at ${coordination.handoff(member.successorOf)}: continue from the state it records, do not redo steps it marks done, and verify them cheaply (ls, a quick grep, the tail of a file) instead of re-reading large inputs. If anything is unclear or missing, ask ${member.successorOf} with team_msg (at least once when in doubt) before you call team_ready, which retires it. Once you have taken over, call team_ready and continue its work.`]
+			: `You succeed ${member.successorOf}, whose context is running out. Start from its handover note at ${coordination.handoff(member.successorOf)}: continue from the state it records, do not redo steps it marks done, and verify them cheaply (ls, a quick grep, the tail of a file) instead of re-reading large inputs. If anything is unclear or missing, ask ${member.successorOf} with team_msg (at least once when in doubt) before you call team_ready, which retires it. Once you have taken over, call team_ready and continue its work. Its assignment and the main thread's instructions to it, quoted in your task, are yours now and binding.`]
 		: [];
 	if (tooling === "none") {
 		return [
@@ -364,7 +374,7 @@ function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordin
 		return [
 			...prefix,
 			"You are this team's coordinator. You do no implementation yourself: never edit project files or do the objective's work; route and unblock the work the main thread assigned, check results, and keep the team moving.",
-			"The main thread (the parent session) assigns the work: each teammate's assigned task is listed above under its role, and team_roster lists them with the main thread's later instructions. Never invent tasks, never reassign or cancel a teammate's assigned work, and never tell a teammate that its task was not assigned: the main thread's steers and follow-ups to a member are legitimate assignments you must not countermand. Direct a teammate only where its assignment leaves a gap or it is blocked; if the objective seems to need work nobody was given, ask the operator with team_ask.",
+			"The main thread (the parent session) assigns the work: each teammate's assigned task is listed above under its role, and team_roster lists them with the main thread's later instructions. Never invent tasks, never reassign or cancel a teammate's assigned work, and never tell a teammate that its task was not assigned: the main thread's steers and follow-ups to a member are legitimate assignments you must not countermand. You never tell a member that work from the main thread is not its work, and that includes the instructions a successor inherited from its predecessor, which are the successor's assignment; check team_roster before you tell a member what not to do. Direct a teammate only where its assignment leaves a gap or it is blocked; if the objective seems to need work nobody was given, ask the operator with team_ask.",
 			`You are the only member who talks to the operator. Teammates' final answers and team_ask questions are delivered to you. team_report tells the operator about a milestone or a concern and asks for nothing; team_ask is for a question or decision you need. Your own final answer goes to the operator, and wakes them only once no teammate is working, so while you wait end your turn with a one-line status.`,
 			`team_roster shows your teammates' live state, context and assignments; team_steer sends instructions to one teammate by role (mode followUp queues after their current task, redirect replaces it). team_msg, team_inbox as for everyone.`,
 			`When the monitor flags a member over its context threshold and that member's assigned work is not verifiably finished, call team_succeed { role }. Decline only if the member has already completed its assigned task. A working member is first told to write its handover note and end its turn; its successor (same model) starts once the note exists and that turn has ended, or at the handover timeout, and you get a message naming it. The successor calls team_ready once briefed, and the old member is then retired. A monitor has no note: its successor starts at once and is briefed over team_msg.`,
@@ -515,7 +525,7 @@ export function workerSuccessorTask(o: {
 			: `${o.oldRole} has already ended: there is nobody to ask and no team_ready to call. Carry on with its work and report as it would have.`,
 		...(o.assignment
 			? [
-				"The assignment below is background (the goal and what the main thread asked for), not a script to restart from step 1: the note says how far it got.",
+				"The assignment below, with the main thread's later instructions after it, is binding: it is what you must get done. It is not a script to restart from step 1: the note says how far it got.",
 				"",
 				`Its assignment from the main thread:\n${o.assignment}`,
 			]
@@ -959,7 +969,7 @@ export class TeamStore {
 		if (!team.coordination && checked.some((m) => m.duty)) throw new Error(`Team ${team.id} has no coordinator; only a coordinated team has a coordinator or monitor.`);
 		if (team.coordination && checked.some((m) => m.orchestrator && m.duty !== "coordinator"))
 			throw new Error(`Team ${team.id} has a coordinator; it cannot take another orchestrator.`);
-		const existing = team.members.filter((m) => m.ejectedAt === undefined).map((m): HeaderMember => ({ role: m.role, ownedPaths: m.ownedPaths, orchestrator: m.orchestrator === true, ...(m.duty ? { duty: m.duty } : {}), ...(m.task ? { task: m.task } : {}) }));
+		const existing = team.members.filter((m) => m.ejectedAt === undefined).map((m): HeaderMember => ({ role: m.role, ownedPaths: m.ownedPaths, orchestrator: m.orchestrator === true, ...(m.duty ? { duty: m.duty } : {}), ...(m.task ? { task: m.task } : {}), ...(m.steers?.length ? { steers: [...m.steers] } : {}) }));
 		const coordinatorRole = checked.find((m) => m.duty === "coordinator" && m.successorOf)?.role ?? this.routingCoordinatorRecord(team)?.role;
 		const header = team.coordination && coordinatorRole ? coordinationHeader({ ...team.coordination, defaults: teamDefaults }, coordinatorRole) : undefined;
 		const composed = checked.map((m): PreparedMember => prepared(
@@ -1052,9 +1062,13 @@ export class TeamStore {
 	/** Every non-duty member's assignment and the main thread's later instructions, for the coordinator. */
 	assignments(teamId: string): MemberAssignment[] {
 		const team = this.session.find((t) => t.id === teamId);
-		return (team?.members ?? []).filter((m) => !m.duty).map((m) => ({
-			workerId: m.workerId, role: m.role, ...(m.task ? { task: m.task } : {}), steers: [...(m.steers ?? [])], steersOmitted: m.steersOmitted ?? 0,
-		}));
+		return (team?.members ?? []).filter((m) => !m.duty).map((m) => {
+			const from = m.successorOf ? team!.members.find((p) => p.workerId === m.successorOf) : undefined;
+			return {
+				workerId: m.workerId, role: m.role, ...(m.task ? { task: m.task } : {}), steers: [...(m.steers ?? [])], steersOmitted: m.steersOmitted ?? 0,
+				...(from ? { inheritedFrom: `${from.role} (${from.workerId})` } : {}),
+			};
+		});
 	}
 
 	private sessionMember(workerId: string): { team: TeamRecord; member: MemberRecord } | undefined {

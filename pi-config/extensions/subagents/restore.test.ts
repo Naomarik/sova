@@ -426,7 +426,7 @@ test("restart: a paused team stays paused (its resumed monitor is sent the resum
 		assert.match(second.workers.at(-1).lastSteer, /^\[Team team_01 restored while paused\]\n.*your pending wake_nudges ended with it\. Run your standing instruction now: call team_roster;/);
 		await second.call("agent_resume", { id: "ag_01" });
 		const roster = await ask(second.workers.at(-1), { type: "roster" });
-		assert.match(roster.text, /Assignments from the main thread \(the work you route; never replace or cancel it\):\n {4}ag_02 dev:\n {6}\| Write f01-f10\.\n {6}Later instructions from the main thread \(assignments too\), newest last:\n {6}> After f10, also write summary\.txt\./);
+		assert.match(roster.text, /Assignments from the main thread \(the work you route; never replace or cancel it\):\n {4}ag_02 dev:\n {6}\| Write f01-f10\.\n {6}Later instructions from the main thread \(binding: part of dev's assignment; never tell dev they are not its work\), newest last:\n {6}> After f10, also write summary\.txt\./);
 		// A resumed non-monitor member is sent nothing, paused team or not.
 		const resumedDev = await second.call("agent_resume", { id: "ag_02" });
 		assert.match(resumedDev.content[0].text, /idle .*nothing was sent to it/);

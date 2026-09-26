@@ -908,13 +908,13 @@ test("census --related: without --changed, or on another command, is a usage err
   }
 });
 
-test("census --changed: without --related the JSON shape is unchanged", () => {
+test("census --changed: without --related, no touched list or per-§ notes; the foreign list is always there", () => {
   const root = repo();
   write(root, "lib/claimed.js", "2\n");
   const j = run(root, "census", "--changed");
   assert.equal(j.census.touched, undefined);
-  assert.deepEqual(Object.keys(j.census), ["mode", "base", "changed", "boundary", "files", "claimed", "unclaimed", "outside", "symlinks"]);
-  assert.ok(!codes(j).includes("touched-uninvestigated"));
+  assert.deepEqual(Object.keys(j.census), ["mode", "base", "changed", "foreignNote", "foreign", "childUnderForeign", "boundary", "files", "claimed", "unclaimed", "outside", "symlinks"]);
+  assert.deepEqual(codes(j), ["foreign-summary"]);
 });
 
 test("census --changed --related: human output lists touched § with the files that put them there", () => {
@@ -1000,7 +1000,7 @@ test("census --related without --spec: every touched § is foreign; no child-und
   assert.equal(j.exit, 0);
   const k = run(draftRepo(), "--spec", ...DRAFT, "census", "--changed");
   assert.equal(k.census.touched, undefined);
-  assert.deepEqual(codes(k), [], "--spec without --related adds nothing");
+  assert.deepEqual(codes(k), ["child-under-foreign", "foreign-summary"], "--spec without --related: no per-§ notes");
 });
 
 test("census --related --spec: a missing or broken current manifest leaks no findings; every draft id is created", () => {
@@ -1034,13 +1034,13 @@ test("census --related: foreign-summary is the last finding and names every fore
   assert.equal(j.exit, 1, "the unclaimed file sets the exit, not the notes");
 });
 
-test("census --related: foreign and childUnderForeign sit right after changed, with and without --spec", () => {
+test("census --related: foreignNote, foreign and childUnderForeign sit right after changed, with and without --spec", () => {
   const d = run(draftRepo(), "--spec", ...DRAFT, "census", "--changed", "--related");
-  assert.deepEqual(Object.keys(d.census).slice(0, 5), ["mode", "base", "changed", "foreign", "childUnderForeign"]);
+  assert.deepEqual(Object.keys(d.census).slice(0, 6), ["mode", "base", "changed", "foreignNote", "foreign", "childUnderForeign"]);
   assert.deepEqual(d.census.foreign, ["§core/net"]);
   assert.deepEqual(d.census.childUnderForeign, [{ id: "§core.net/new", parent: "§core/net" }]);
   const c = run(draftRepo(), "census", "--changed", "--related");
-  assert.deepEqual(Object.keys(c.census).slice(0, 5), ["mode", "base", "changed", "foreign", "childUnderForeign"]);
+  assert.deepEqual(Object.keys(c.census).slice(0, 6), ["mode", "base", "changed", "foreignNote", "foreign", "childUnderForeign"]);
 });
 
 test("census --related: nothing foreign touched → empty lists, no summary", () => {
@@ -1071,4 +1071,60 @@ test("census --related: human output starts the related block with the summary",
   assert.equal(h.status, 0);
   assert.match(h.stdout, /\nnote foreign-summary: 1 foreign § touched \(§chat\.input\/send\)[^\n]*\ntouched § \(read each/);
   assert.match(h.stdout, /  §chat\.input\/send \[behavior; foreign\] /);
+});
+
+// --- census --changed: the foreign list always, and on stderr ---
+
+test("census --changed without --related: foreignNote before foreign, childUnderForeign, summary last", () => {
+  const j = run(draftRepo(), "--spec", ...DRAFT, "census", "--changed");
+  const keys = Object.keys(j.census);
+  assert.equal(keys.indexOf("foreignNote") + 1, keys.indexOf("foreign"), "the rule sits just before the ids");
+  assert.equal(j.census.foreignNote, "flag any of these where a user sees a change, even one your new claim describes, wherever you put it; plumbing never flags");
+  assert.deepEqual(j.census.foreign, ["§core/net"]);
+  assert.deepEqual(j.census.childUnderForeign, [{ id: "§core.net/new", parent: "§core/net" }]);
+  assert.deepEqual([j.findings.at(-1).code, j.findings.at(-1).ids], ["foreign-summary", ["§core/net"]]);
+  assert.equal(j.exit, 0, "notes never change the exit");
+});
+
+test("census --changed: one stderr line iff something foreign is touched; stdout stays pure JSON", () => {
+  const sh = (root, ...a) => spawnSync(process.execPath, [CLI, ...a, "--root", root, "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const r = sh(draftRepo(), "census", "--changed");
+  assert.equal(r.stderr, "sova-spec: 1 foreign § touched (§chat.input/send): flag any where a user sees a change, even one your new claim describes, wherever you put it; plumbing never flags\n");
+  assert.deepEqual(JSON.parse(r.stdout).census.foreign, ["§chat.input/send"]);
+  const root = withDraft();
+  bound(root, ".sova/spec"); bound(root, ".sova/spec/drafts/feat/spec");
+  g(root, "init", "-q"); g(root, "add", "-A"); g(root, "commit", "-qm", "base");
+  write(root, "app.txt", "2\n");
+  assert.equal(sh(root, "--spec", ...DRAFT, "census", "--changed").stderr, "", "only created §s touched: silent");
+  assert.equal(sh(draftRepo(), "census").stderr, "", "plain census: silent");
+});
+
+test("census --changed: nothing claimed changed → empty lists, no summary, exit unchanged", () => {
+  const j = run(repo(), "census", "--changed");
+  assert.deepEqual([j.census.foreign, j.census.childUnderForeign], [[], []]);
+  assert.deepEqual(codes(j), []);
+  assert.equal(j.exit, 0);
+});
+
+test("census --changed --related: output otherwise as before (touched, per-§ notes)", () => {
+  const j = run(draftRepo(), "census", "--changed", "--related");
+  assert.deepEqual(j.census.touched.map((t) => [t.id, t.created, t.consumers]), [["§chat.input/send", false, []]]);
+  assert.deepEqual(codes(j), ["touched-foreign", "foreign-summary"]);
+});
+
+test("scope/impact: §a.b is read as §a/b with a did-you-mean note; unknown stays an error", () => {
+  const root = base();
+  const j = run(root, "scope", "§chat.input");
+  assert.equal(j.id, "§chat/input");
+  assert.equal(j.passages[0].id, "§chat/input");
+  const n = j.findings.find((f) => f.code === "id-alias");
+  assert.equal(n.severity, "note");
+  assert.match(n.message, /^§chat\.input is not a § identifier; read as §chat\/input \(did you mean §chat\/input\?\)$/);
+  assert.equal(j.exit, run(root, "scope", "§chat/input").exit, "the note changes no exit");
+  hasCode(run(root, "impact", "§core.net"), "id-alias");
+  const u = run(root, "scope", "§no.such");
+  hasCode(u, "unknown-id");
+  assert.match(u.findings.find((f) => f.code === "unknown-id").message, /§no\/such has no manifest record \(read from §no\.such\)/);
+  assert.equal(u.exit, 2);
+  hasCode(run(root, "scope", "§chat.input.x"), "usage");
 });

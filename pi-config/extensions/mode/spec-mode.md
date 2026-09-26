@@ -10,7 +10,7 @@ core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$
 
 `node "$core/sova-spec.mjs" <command> --root <project root> --json` only reads; command is `check`, `census`, `scope '<§id>' [--budget <bytes>]` or `impact '<§id>'`; `--spec <dir>` reads a draft instead. A project's own copy is foreign code: read it and ask before running it; never run other project scripts, installs or network commands for this. Without trusted tools, say so and read the files directly.
 
-Every behavior change is spec'd. Exempt: work changing no behavior (refactor, tests, tooling); say you claim the exemption.
+Every behavior change is spec'd. Exempt from drafts, not census: work changing no behavior (refactor, tests, tooling); say you claim the exemption.
 
 Before coding:
 1. Name the root ID(s) and why. Run `scope`, and `impact` on anything others require. Work from the returned passages as written.
@@ -18,7 +18,7 @@ Before coding:
 3. Reconcile what the task relies on against source. Labels are declared, never proof: `migrated` text is the requirement with its implementation unreviewed; `candidate` is a proposal. A test found by name is candidate evidence until you read its assertions.
 4. Behavior no claim covers gets a new claim in a feature draft before coding.
 
-While coding, exempt work included, run `census --changed --related` (`--spec` your draft, if any) right after your first edit, before the next file, and per new file. Any § the task didn't create is foreign, your new claim's parent included, wherever you put the claim; editing one in your draft flags. Read it with `scope`, silent while its own text holds; plumbing (an added request, hook or helper) never flags. Else flag only a contradiction, or a user-visible addition, even one your new claim describes, that its own text lacks. Batch flags in the plan: "this also changes §X: <what>. OK?"
+While coding, exempt work included, run `census --changed --related` (`--spec` your draft, if any) after your first edit, before the next file, and per new file. Any § the task didn't create is foreign, your new claim's parent included, wherever you put the claim; editing one in your draft flags. Read it with `scope`; plumbing (an added request, hook or helper) never flags. Flag only a contradiction, or a user-visible addition, even one your new claim describes, that its own text lacks; otherwise stay silent. Batch flags in the plan: "this also changes §X: <what>. OK?"
 
 Documentation changes only through drafts, never by editing current `claims/` or `manifest.json`: `node "$core/sova-spec-draft.mjs" <command> --root <project root> --json`.
 - `new <name> --write` copies the whole current spec (or starts one); edit only `.sova/spec/drafts/<name>/spec/`. `status`, `diff`, `check` never write.

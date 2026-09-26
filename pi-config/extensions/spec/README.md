@@ -51,18 +51,22 @@ a flag. `--related` without `--changed` is a usage error.
 
 Every § the task didn't create is foreign. Without `--spec` that is every
 touched §; with `--spec <draft spec dir>`, the ids the draft has and `.sova/spec`
-lacks are the task's own. Each `touched` entry carries `created: true|false`,
-each foreign touched § gets a `touched-foreign` note (read it with `scope`; flag
-it if a user sees a change there, even one the new claim describes), and, with
-`--spec` only, each new id whose H1 parent already exists gets a
-`child-under-foreign` note. One `foreign-summary` note naming every foreign id
-is the last finding, so a `tail` keeps it, and `census.foreign` /
-`census.childUnderForeign` sit right after `census.changed`, so a `head` keeps
-them; human output prints the summary before the touched list. Notes are
-reminders, not flags: the exit code is unchanged. Without `--related` the
-output is as before.
+lacks are the task's own. Every `census --changed`, with or without
+`--related`, carries `census.foreignNote` (the rule) then `census.foreign` and
+`census.childUnderForeign` right after `census.changed`, so a `head` keeps
+them; one `foreign-summary` note naming every foreign id is the last finding,
+so a `tail` keeps it; and when stdout is not a terminal the same summary is one
+`sova-spec: …` line on stderr, which a `grep` or JSON key-pick of stdout
+doesn't touch. With `--spec` only, each new id whose H1 parent already exists
+gets a `child-under-foreign` note. With `--related`, each `touched` entry also
+carries `created: true|false`, and each foreign touched § gets a
+`touched-foreign` note (read it with `scope`; flag it if a user sees a change
+there, even one the new claim describes). Human output prints the summary
+before the touched list. Notes are reminders, not flags: the exit code is
+unchanged. Plain `census` and `check` are as before.
 
-Quote IDs, because `§` is not a shell word character. `--budget` is accepted by
+Quote IDs, because `§` is not a shell word character. `scope` and `impact` read a
+bare namespace like `§app.shell` as `§app/shell`, with an `id-alias` note. `--budget` is accepted by
 `scope` only; with any other command it's a usage error. `--spec` reads another
 spec directory, given relative to the project root (default `.sova/spec`), such
 as a draft. Code and incumbent paths stay relative to the root. The core never

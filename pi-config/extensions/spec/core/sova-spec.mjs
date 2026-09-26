@@ -43,6 +43,7 @@ function parseArgs(argv) {
   const arity = { check: 0, census: 0, scope: 1, impact: 1 }[cmd];
   if (arity === undefined) o.usage = cmd ? `unknown command ${cmd}` : "missing command";
   else if (rest.length !== arity) o.usage = `${cmd} takes ${arity ? "one §id" : "no arguments"}`;
+  else if (arity && /^§[a-z][a-z-]*\.[a-z][a-z-]*$/.test(rest[0])) { o.alias = rest[0]; o.id = rest[0].replace(".", "/"); } // §app.shell names §app/shell
   else if (arity && !ID_RE.test(rest[0])) o.usage = `not a § identifier: ${rest[0]}`;
   else o.id = rest[0];
   if (!o.usage && o.spec !== undefined) {
@@ -543,13 +544,14 @@ function currentIds(root) {
   return new Set(cur ? Object.keys(cur.m.claims) : []);
 }
 
-// Each § a changed file lands in, with its declared requires and transitive consumers. No flags are judged here.
-// Each touched § says whether the task created it (only a draft read with --spec can); foreign ones get a note.
-function relatedOf(ctx, hits) {
-  const files = new Map(), rev = reverseOf(ctx), childUnderForeign = [];
+// Every § a changed file lands in is foreign unless the task created it (only a draft read with --spec can).
+// With --related, each also gets its declared requires and transitive consumers, and a note. No flags are judged here.
+function relatedOf(ctx, hits, related) {
+  const files = new Map(), childUnderForeign = [];
   const cur = ctx.specRel !== DEFAULT_SPEC ? currentIds(ctx.root) : new Set(ctx.claims.keys());
   for (const e of hits) for (const id of e.claims) files.set(id, [...(files.get(id) ?? []), e.path]);
-  const touched = [...files.keys()].sort().map((id) => {
+  const ids = [...files.keys()].sort(), rev = related && reverseOf(ctx);
+  const touched = related && ids.map((id) => {
     const rec = ctx.claims.get(id), d = ctx.decls.get(id);
     if (rec.kind === "behavior" && rec.requires === undefined)
       add("note", "touched-uninvestigated", `${id} is touched and has no requires key: dependencies not investigated`, { id });
@@ -562,12 +564,12 @@ function relatedOf(ctx, hits) {
     add("note", "child-under-foreign", `${id} is new under foreign ${p}: a user-visible addition there flags ${p}, even though ${id} describes it`, { id, parent: p });
     childUnderForeign.push({ id, parent: p });
   }
-  return { touched, foreign: touched.filter((t) => !t.created).map((t) => t.id), childUnderForeign };
+  return { touched, foreign: ids.filter((id) => cur.has(id)), childUnderForeign };
 }
+const FOREIGN_RULE = "flag any where a user sees a change, even one your new claim describes, wherever you put it; plumbing never flags";
 // Pushed last, so a truncated tail of the findings still carries it.
 const foreignSummary = (foreign) => foreign.length && add("note", "foreign-summary",
-  `${foreign.length} foreign § touched (${foreign.join(", ")}): flag any where a user sees a change, even one your new claim describes, wherever you put it; plumbing never flags`,
-  { ids: foreign });
+  `${foreign.length} foreign § touched (${foreign.join(", ")}): ${FOREIGN_RULE}`, { ids: foreign });
 
 function censusChanged(ctx, { base, related }, claimed) {
   const ch = changedFiles(ctx.root, base);
@@ -587,15 +589,15 @@ function censusChanged(ctx, { base, related }, claimed) {
   const head = { mode: "changed", base: { rev: base, commit: ch.commit }, changed: ch.paths.length };
   // Without a boundary no population is named: claims are still shown, nothing is judged unclaimed.
   const hits = files.filter((p) => claimed.has(p)).map(entry);
-  const rel = related && relatedOf(ctx, hits);
-  // foreign ids sit near the top, so a truncated head still carries them.
-  if (rel) Object.assign(head, { foreign: rel.foreign, childUnderForeign: rel.childUnderForeign });
-  const touched = rel ? { touched: rel.touched } : {};
-  if (!bd) { if (rel) foreignSummary(rel.foreign); return { census: { ...head, boundary: null, claimed: hits, unclaimed: null, outside: null, ...touched } }; }
+  const rel = relatedOf(ctx, hits, related);
+  // The rule, then the foreign ids, near the top, so a truncated head still carries both.
+  Object.assign(head, { foreignNote: FOREIGN_RULE.replace("any", "any of these"), foreign: rel.foreign, childUnderForeign: rel.childUnderForeign });
+  const touched = related ? { touched: rel.touched } : {};
+  if (!bd) { foreignSummary(rel.foreign); return { census: { ...head, boundary: null, claimed: hits, unclaimed: null, outside: null, ...touched } }; }
   const unclaimed = files.filter((p) => !claimed.has(p));
   for (const p of unclaimed) add("warn", "changed-unclaimed", `${p} changed and no record's code claims it`, { file: p });
   if (symlinks.length) add("note", "census-symlinks", `${symlinks.length} changed symlink(s) inside the boundary were not followed`);
-  if (rel) foreignSummary(rel.foreign);
+  foreignSummary(rel.foreign);
   return {
     census: {
       ...head,
@@ -672,7 +674,8 @@ function main(argv) {
       const ctx = load(root, opt.spec);
       if (ctx) {
         const broken = exitOf(findings) === 2;
-        if ((opt.cmd === "scope" || opt.cmd === "impact") && !ctx.claims.has(opt.id)) add("error", "unknown-id", `${opt.id} has no manifest record`, { id: opt.id });
+        if (opt.alias) add("note", "id-alias", `${opt.alias} is not a § identifier; read as ${opt.id} (did you mean ${opt.id}?)`, { id: opt.id });
+        if ((opt.cmd === "scope" || opt.cmd === "impact") && !ctx.claims.has(opt.id)) add("error", "unknown-id", `${opt.id} has no manifest record${opt.alias ? ` (read from ${opt.alias})` : ""}`, { id: opt.id });
         else if (broken && opt.cmd !== "check") add("note", "untrusted", "graph errors prevent a trustworthy result; fix them first");
         else {
           const run = { check: () => check(ctx), census: () => census(ctx, opt.changed && { base: opt.base ?? "HEAD", related: opt.related }), scope: () => scope(ctx, opt.id, opt.budget), impact: () => impact(ctx, opt.id) }[opt.cmd];
@@ -684,6 +687,9 @@ function main(argv) {
   out.exit = exitOf(findings);
   out.findings = findings;
   process.stdout.write(opt.json ? JSON.stringify(out, null, 2) + "\n" : human(out));
+  // Mirrored on stderr, which pipes that filter stdout (grep, head, a JSON key-pick) leave alone.
+  const sum = findings.find((f) => f.code === "foreign-summary");
+  if (sum && !process.stdout.isTTY) process.stderr.write(`sova-spec: ${sum.message}\n`);
   return out.exit;
 }
 

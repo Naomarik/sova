@@ -27,12 +27,19 @@ tool cards as they happen.
   workspace commits (§app.organizations/workspace-repo). Only the per-turn counters and the watch
   loop's timing are host-local.
 - **Loadout.** No pi-config extension, skill or prompt template loads (no mode; a mode switch is
-  refused); the project's own context files do. Its tools (§app.project-overseer/tools) plus
-  read-only `read`, `grep`, `find` and `ls` in the project root, which never read a secret file.
-  No shell, no edit or write tool. Its prompt is Sova's (`server/project-overseer-prompt.md`),
-  re-rendered at every run with the project, the level in force, the caps, the roster (name, role,
-  decision areas; never contact details), its ideas, the operator's to-dos, its notes and the
-  operator's extra instructions. Model and thinking from `overseer.json`, else the new-session
+  refused); the project's own context files do, and only those inside the project root: never the
+  agent dir's or a folder's above the root (the home folder's `AGENTS.md`). Its tools
+  (§app.project-overseer/tools) plus read-only `read`, `grep`, `find` and `ls` **confined to the
+  project root**: every path, as written (`..`, `~`, absolute) and at its realpath (a symlink in the
+  root that leads out), must be inside the root, and none may be inside an attached org's
+  workspace (the roster's contacts, every project's transcripts) or pi's or Sova's state (the
+  host's link store, every session), even when the root holds them. A path argument that fails is
+  refused with the reason; a listing or search leaves such entries out; a secret file inside the
+  root is still refused. No shell, no edit or write tool. Its prompt is Sova's
+  (`server/project-overseer-prompt.md`), re-rendered at every run with the project, the level in
+  force, the caps, the roster (name, role, decision areas; never contact details), its ideas, the
+  operator's open to-dos **in full** (oldest first, at most 20, each with its id and linked idea or
+  session; the rest counted), its notes and the operator's extra instructions. Model and thinking from `overseer.json`, else the new-session
   defaults; the composer's picks are saved there.
 
 ## §app.project-overseer/autonomy-levels — What it may do on its own
@@ -102,6 +109,11 @@ tool cards as they happen.
   (started or skipped, and why) and the reasons waiting: "Last looked on its own {time}, skipped:
   {why}." or "…, after {reasons}.", then "{n} run(s) today." — one period at the end of each
   sentence, whatever the reason's own text ends with (`lastRunTail`, `src/lib/project-overseer-view.ts`).
+  In "after {reasons}" each reason continues the sentence (its capitalised first word in lower
+  case). "Waiting to look at:" then lists the waiting reasons as sentences, each ending in exactly
+  one stop (`pendingLine`), never joined with commas under an added period.
+- An unattended run's message says how many of the operator's to-dos are open and that they are
+  listed in full in its prompt, to work on too.
 
 ## §app.project-overseer/gaps — Gaps against the roster
 
@@ -113,7 +125,12 @@ tool cards as they happen.
 ## §app.project-overseer/ideas-and-todos — The operator's items
 
 - Ideas (the overseer's and the operator's, `POST …/overseer/ideas`) and to-dos use the Overseer's
-  stores and shapes at the project's paths, so the same panels show them.
+  stores and shapes at the project's paths, so the same panels show them. The project page adds
+  either from its list: **Add Item** (a to-do) and **Add Idea** (a title; its id is
+  `§idea/<the title's words>`, numbered when taken).
+- An idea or a to-do the operator adds is a reason to look ("The operator added an idea." / "The
+  operator queued a to-do item."), so the next unattended look comes for it; the item itself
+  reaches the model through its prompt.
 - Each item offers **Send to person…** (`POST …/overseer/items/send`): a gathering session owned by
   the operator (one person, the operator, or an offer to several), with the public title and first
   question the operator writes (both required, 400 without them, and never taken from the item: they

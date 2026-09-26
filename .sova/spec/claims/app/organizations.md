@@ -339,7 +339,9 @@ the URL (§app.organizations/org-page).
 - Each org has projects in its workspace repo's `projects.json`: `{id, orgId, name, root,
   createdAt, origin: "manual"}`. `root` is an absolute directory on the home host; it need not be a
   git repo. Added and renamed from the org page (`POST /api/orgs/:id/projects`,
-  `PATCH /api/orgs/:id/projects/:pid`).
+  `PATCH /api/orgs/:id/projects/:pid`). A root (at its realpath) may not be an attached org's
+  workspace, sit inside one or hold one, nor sit inside Sova's state folder (400): the project
+  overseer reads its root (§app.project-overseer/identity).
 - This is the minimal registry baton sessions need; a host-wide Projects registry may absorb it
   later, keyed by the same ids and `orgId`.
 

@@ -3792,7 +3792,8 @@
       "code": [
         "server/orgs.ts",
         "shared/orgs.ts",
-        "src/components/OrgsView.tsx"
+        "src/components/OrgsView.tsx",
+        "server/project-overseer.test.ts"
       ]
     },
     "§app.organizations/referrals": {
@@ -3932,7 +3933,11 @@
         "server/project-overseer.ts",
         "server/overseer-todos.ts",
         "server/overseer-ideas.ts",
-        "src/components/ProjectOverseerPanel.tsx"
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/lib/project-overseer-view.ts",
+        "src/lib/api.ts",
+        "src/lib/project-overseer-view.test.ts",
+        "server/project-overseer.test.ts"
       ],
       "requires": [
         "§app.overseer/ideas",
@@ -3950,7 +3955,10 @@
         "server/chat-manager.ts",
         "server/overseer.ts",
         "server/overseer-file-tools.ts",
-        "server/project-overseer.test.ts"
+        "server/project-overseer.test.ts",
+        "server/overseer-deny.ts",
+        "server/overseer-file-tools.test.ts",
+        "server/orgs.ts"
       ],
       "requires": [
         "§app.overseer/hosting",
@@ -3981,7 +3989,11 @@
         "server/baton-events.ts",
         "server/reconcile.ts",
         "server/project-overseer.test.ts",
-        "server/orgs.ts"
+        "server/orgs.ts",
+        "src/lib/project-overseer-view.ts",
+        "src/lib/project-overseer-view.test.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "server/overseer-todos.ts"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels"

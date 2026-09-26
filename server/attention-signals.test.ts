@@ -52,7 +52,7 @@ function summary(path: string, over: Partial<SessionSummary> = {}): SessionSumma
 
 const on = (over: Partial<DecisionSettings> = {}): DecisionSettings => ({ ...decisionDefaults(), features: { attention: true, tags: false }, ...over });
 
-const ANSWERS = { asks_user: { p: 0.92 }, work_failed: { p: 0.1 }, outcome: { probabilities: { done: 0.1, partial: 0.1, failed: 0.1, blocked_on_user: 0.7 } }, stuck: { probabilities: [0.9, 0.1, 0] } };
+const ANSWERS = { asks_user: { p: 0.92 }, stuck: { probabilities: [0.9, 0.1, 0] } };
 
 function harness(over: Partial<import("./attention-signals").SignalsDeps> = {}, reply: any = ANSWERS) {
   const provider = createFakeProvider({ reply });
@@ -60,12 +60,16 @@ function harness(over: Partial<import("./attention-signals").SignalsDeps> = {}, 
   let now = NOW;
   let changed = 0;
   const replyAt = new Map<string, number>();
+  const replyStop = new Map<string, string>();
   const deps: import("./attention-signals").SignalsDeps = {
     settings: () => on(),
     provider: () => provider,
     list: async () => [],
     summary: async () => null,
-    lastReplyAt: (p) => replyAt.get(p),
+    lastReply: (p) => {
+      const at = replyAt.get(p);
+      return at === undefined ? undefined : { at, stopReason: replyStop.get(p) ?? "stop" };
+    },
     held: () => false,
     liveRecords: () => [],
     decodeWorkers: () => [],
@@ -79,7 +83,7 @@ function harness(over: Partial<import("./attention-signals").SignalsDeps> = {}, 
   };
   const s = new sig.AttentionSignals(deps);
   return {
-    s, provider, deps, storeFile, replyAt,
+    s, provider, deps, storeFile, replyAt, replyStop,
     setNow: (t: number) => void (now = t),
     changed: () => changed,
     stored: () => store.readSignals(storeFile),
@@ -131,61 +135,51 @@ describe("turnFacts: the last finished turn of a branch", () => {
   });
 });
 
-describe("D1: a failed tool call is a named fact, and failure has its own question", () => {
-  const t = (name: string, args: E, ok: boolean | undefined, result: string) => ({ name, args: JSON.stringify(args), ok, result });
-
-  test("the e2e shape (npm test in a missing dir, calmly reported) carries the failure, its input and the END of its error", () => {
-    const facts = {
-      ...sig.turnFacts(finishedTurn())!,
-      tools: [t("bash", { command: "npm test --prefix /nonexistent/proj" }, false, `${"npm error ".repeat(80)}enoent Could not read package.json\nCommand exited with code 254`)],
-      assistantLast: "The test run failed with exit code 254 because npm could not find a package.json.",
-    };
+describe("failure is a fact of the file, never a question", () => {
+  test("the excerpt carries no tool-failure counts or per-call failed marks (an exit-1 grep misled the classifier)", () => {
+    const facts = sig.turnFacts(finishedTurn())!;
+    assert.equal(facts.tools[0]!.ok, false, "the fixture does hold a failed call");
     const st = sig.turnState("t", facts) as any;
-    assert.equal(st.tool_calls_recent[0].status, "failed");
-    assert.deepEqual({ ...st.tool_failures, failed_calls: undefined }, { failed_tool_calls: 1, unresolved_failed_calls: 1, last_tool_call_failed: true, failed_calls: undefined });
-    const fc = st.tool_failures.failed_calls[0];
-    assert.equal(fc.tool, "bash");
-    assert.match(fc.input, /npm test --prefix \/nonexistent\/proj/);
-    assert.ok(fc.error.length <= sig.CAP.error);
-    assert.match(fc.error, /Command exited with code 254$/);
-  });
-
-  test("a failure fixed and re-run later in the turn is not unresolved; a different call does not resolve it", () => {
-    const run = { command: "pnpm test" };
-    const fixed = sig.toolFailures([t("bash", run, false, "fail 1"), t("edit", { path: "a" }, true, "ok"), t("bash", run, true, "pass")]) as any;
-    assert.equal(fixed.failed_tool_calls, 1);
-    assert.equal(fixed.unresolved_failed_calls, 0);
-    assert.equal(fixed.last_tool_call_failed, false);
-    const other = sig.toolFailures([t("read", { path: "/missing" }, false, "ENOENT"), t("read", { path: "/other" }, true, "x")]) as any;
-    assert.equal(other.unresolved_failed_calls, 1);
-  });
-
-  test("a worker's results carry no error flag: a non-zero exit in the text counts, exit 0 and plain text do not", () => {
-    assert.equal(sig.toolFailed(t("bash", {}, undefined, "boom\nCommand exited with code 2")), true);
-    assert.equal(sig.toolFailed(t("bash", {}, undefined, "Command terminated without an exit code")), true);
-    assert.equal(sig.toolFailed(t("bash", {}, undefined, "done; exited with code 0")), false);
-    assert.equal(sig.toolFailed(t("bash", {}, true, "Command exited with code 1")), false); // the source's own flag wins
-    const st = sig.workerState({ name: "w", status: "done" }, { lastAssistantText: "x", partialTurn: false, items: [
+    assert.equal(st.tool_failures, undefined);
+    assert.ok(st.tool_calls_recent.every((t: any) => Object.keys(t).sort().join() === "summary,tool"));
+    const ws = sig.workerState({ name: "w", status: "done" }, { lastAssistantText: "x", partialTurn: false, items: [
       { kind: "tool", toolName: "bash", text: '{"command":"make"}' }, { kind: "tool-result", text: "Command exited with code 2" },
     ] }, NOW) as any;
-    assert.equal(st.tool_failures.unresolved_failed_calls, 1);
+    assert.equal(ws.tool_failures, undefined);
   });
 
-  test("the failure question names the fact and says tone and expectation don't matter; the outcome no longer judges 'against what was asked'", () => {
-    const text = JSON.stringify(sig.WORK_FAILED);
-    assert.match(text, /unresolved_failed_calls/);
-    assert.match(text, /not how calmly it is told or whether the user expected it/);
-    assert.doesNotMatch(JSON.stringify(sig.OUTCOME), /against what was asked/);
+  test("no question asks whether the work failed, for a turn or a worker", () => {
+    const f = sig.turnFacts(finishedTurn())!;
+    const all = { ...sig.turnQuestions({ ...f, durationMs: sig.LONG_TURN_MS }) };
+    assert.deepEqual(Object.keys(all), ["asks_user", "stuck"]);
+    assert.doesNotMatch(JSON.stringify(all), /fail/i);
+    assert.equal((sig as any).OUTCOME, undefined);
+    assert.equal((sig as any).WORK_FAILED, undefined);
   });
 
-  test("task-failed fires from work_failed even when the outcome says done (the e2e answers)", async () => {
-    const h = harness({}, { asks_user: { p: 0.02 }, work_failed: { p: 0.98 }, outcome: { probabilities: { done: 0.83, partial: 0.01, failed: 0.16, blocked_on_user: 0 } } });
-    const path = file(finishedTurn());
-    await h.s.classifySession(summary(path), true);
-    const wire = store.toWire(h.stored().sessions[summary(path).id]!);
-    assert.deepEqual(wire.kinds, ["task-failed"]);
-    assert.equal(wire.workFailed, 0.98);
-    assert.equal(wire.outcome?.choice, "done");
+  test("a settled turn that stopped with an error is not classified, and the turn before it stops marking the row", async () => {
+    const h = harness();
+    const turn = finishedTurn();
+    const path = file(turn);
+    assert.equal(await h.s.classifySession(summary(path), true), true);
+    const id = summary(path).id;
+    assert.deepEqual(store.toWire(h.stored().sessions[id]!).kinds, ["asks-you"]);
+    writeFileSync(path, readFileSync(path, "utf8") + [user("u9", "a3", "widen it", NOW - 5000), assistant("a9", "u9", NOW - 1000, [], "error", { errorMessage: "529 overloaded" })].map((e) => JSON.stringify(e)).join("\n") + "\n");
+    const told = h.changed();
+    assert.equal(await h.s.classifySession(summary(path), true), false);
+    assert.equal(h.provider.calls.length, 1, "no call for the errored turn");
+    assert.equal(h.stored().sessions[id], undefined, "the previous turn's asks-you is gone");
+    assert.equal(h.changed(), told + 1, "and the feed was told");
+  });
+
+  test("the ticker skips an errored reply on the list's cached stopReason alone: no read, no call", async () => {
+    const h = harness();
+    const path = file([...finishedTurn().slice(0, 5), assistant("a3", "r2", NOW - 1000, [], "error", { errorMessage: "overloaded" })]);
+    h.replyAt.set(path, NOW - 1000);
+    h.replyStop.set(path, "error");
+    assert.equal(await h.s.classifySession(summary(path), false), false);
+    assert.equal(h.provider.calls.length, 0);
+    assert.deepEqual(h.stored().sessions, {});
   });
 });
 
@@ -222,8 +216,8 @@ describe("state and questions", () => {
 
   test("the stuck question is asked only of a long turn", () => {
     const f = sig.turnFacts(finishedTurn())!;
-    assert.deepEqual(Object.keys(sig.turnQuestions(f)), ["asks_user", "outcome", "work_failed"]);
-    assert.deepEqual(Object.keys(sig.turnQuestions({ ...f, durationMs: sig.LONG_TURN_MS })), ["asks_user", "outcome", "work_failed", "stuck"]);
+    assert.deepEqual(Object.keys(sig.turnQuestions(f)), ["asks_user"]);
+    assert.deepEqual(Object.keys(sig.turnQuestions({ ...f, durationMs: sig.LONG_TURN_MS })), ["asks_user", "stuck"]);
   });
 });
 
@@ -271,7 +265,7 @@ describe("AttentionSignals: classify each finished turn once", () => {
     assert.equal(h.provider.calls.length, 1);
     const req = h.provider.calls[0]!;
     assert.equal(req.purpose, "attention");
-    assert.deepEqual(Object.keys(req.questions), ["asks_user", "outcome", "work_failed"]);
+    assert.deepEqual(Object.keys(req.questions), ["asks_user"]);
     const id = summary(path).id;
     const t = h.stored().sessions[id]!;
     assert.equal(t.turnId, "a3");
@@ -383,7 +377,7 @@ describe("AttentionSignals: workers", () => {
   const parentPath = join(dir, "parent.jsonl");
   const parent = summary(parentPath, { id: "parent" });
   const worker = (over: Partial<WorkerInfo>): WorkerInfo => ({ id: "w1", name: "builder", status: "running", working: true, backend: "pi", sessionFile: "/w/w1.jsonl", ...over });
-  function workerHarness(workers: () => WorkerInfo[], reply: any = { stuck: { probabilities: [0, 0.1, 0.9] }, work_failed: { p: 0.2 }, outcome: { probabilities: { done: 0, partial: 0, failed: 1, blocked_on_user: 0 } } }) {
+  function workerHarness(workers: () => WorkerInfo[], reply: any = { stuck: { probabilities: [0, 0.1, 0.9] } }) {
     const reads: string[] = [];
     const adapters = new WorkerTranscriptAdapters([
       {
@@ -422,22 +416,23 @@ describe("AttentionSignals: workers", () => {
     assert.equal((req.state as any).repeats.same_tool_and_args_in_a_row, 6);
     assert.equal(h.stored().workers.w1?.kind, "stuck");
     assert.deepEqual(store.signalTextOf("parent", NOW, h.stored()).stuckWorkers, ["builder"]);
-    assert.deepEqual(store.workerSignalsOverlay("parent", { enabled: true, viewing: false }, NOW, h.stored()), { stuck: 1, failed: 0 });
+    assert.deepEqual(store.workerSignalsOverlay("parent", { enabled: true, viewing: false }, NOW, h.stored()), { stuck: 1 });
     h.setNow(NOW + 60_000);
     assert.equal(await h.s.tick(), 0);
     h.setNow(NOW + sig.WORKER_STUCK_EVERY_MS);
     assert.equal(await h.s.tick(), 1);
   });
 
-  test("a worker younger than 5 min is not checked; one that just ended gets one outcome check", async () => {
+  test("a worker younger than 5 min is not checked, and one that ended is never checked (its error is worker-error, in code)", async () => {
     let w = worker({ startedAt: NOW - 60_000 });
     const h = workerHarness(() => [w]);
     assert.equal(await h.s.tick(), 0);
-    w = worker({ startedAt: NOW - 60_000, status: "done", working: false, endedAt: NOW - 1000 });
-    assert.equal(await h.s.tick(), 1);
-    assert.deepEqual(Object.keys(h.provider.calls[0]!.questions), ["outcome", "work_failed"]);
-    assert.equal(await h.s.tick(), 0);
-    assert.deepEqual(store.workerSignalsOverlay("parent", { enabled: true, viewing: false }, NOW, h.stored()), { stuck: 0, failed: 1 });
+    for (const status of ["done", "error"] as const) {
+      w = worker({ startedAt: NOW - 10 * 60_000, status, working: false, endedAt: NOW - 1000 });
+      assert.equal(await h.s.tick(), 0);
+    }
+    assert.equal(h.provider.calls.length, 0);
+    assert.deepEqual(h.reads, []);
   });
 
   test("workers of an excluded parent are never read or sent", async () => {

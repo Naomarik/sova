@@ -1,6 +1,6 @@
 // The sidebar's "Needs you" region: the sessions the attention digest puts in its act tier
 // (server/attention.ts — a dialog open, an errored turn, a subagent error, or a decision signal
-// that asks you something, failed, or is stuck), said once more above Recent.
+// that asks you something or is stuck), said once more above Recent.
 //
 // Like Recent it is a SHORTCUT: every session it lists keeps its row wherever it lives. The digest,
 // not the session list, is the source, because two act kinds (a hosted pending dialog, a worker

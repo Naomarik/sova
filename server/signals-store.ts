@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { DecisionProviderId, SessionSignals, SignalKind, SignalOutcome } from "../shared/protocol";
+import type { DecisionProviderId, SessionSignals, SignalKind } from "../shared/protocol";
 import type { Answer } from "./decide";
 import { stateRoot } from "./state-root";
 
@@ -11,22 +11,20 @@ import { stateRoot } from "./state-root";
  * `workerSignalsOverlay`). Never a byte of this goes into a session file.
  *
  * The thresholds live here and are applied at READ time, so moving one needs no re-classification.
+ * Whether a turn FAILED is not a question here: that is the file's own stopReason, read by the
+ * session list (SessionSummary.turnError). Records written before that change may still carry
+ * `outcome` / `work_failed` answers; nothing reads them, and a worker "outcome" check is dropped
+ * on load.
  * Same store rules as seen.ts: re-read and merge before writing, atomic tmp+rename, ~1 s read cache.
  */
 
 /** asks_user.p at or above → "asks-you". */
 export const ASKS_USER_MIN = 0.7;
-/** outcome "failed" with confidence at or above → "task-failed". */
-export const FAILED_CONFIDENCE_MIN = 0.5;
-/** work_failed.p at or above → "task-failed" too (the narrow question; see attention-signals.ts WORK_FAILED). */
-export const WORK_FAILED_MIN = 0.7;
 /** stuck score (0..2) at or above, with confidence at or above STUCK_CONFIDENCE_MIN → "looping". */
 export const STUCK_SCORE_MIN = 1.5;
 export const STUCK_CONFIDENCE_MIN = 0.5;
 /** A worker's "looping" is current only this long after its check (checks repeat every 5 min while it runs). */
 export const WORKER_STUCK_FRESH_MS = 11 * 60_000;
-
-export const OUTCOMES: readonly SignalOutcome[] = ["done", "partial", "failed", "blocked_on_user"];
 
 /** One classified main-thread turn. */
 export interface StoredTurn {
@@ -44,14 +42,12 @@ export interface StoredTurn {
   detail?: string;
 }
 
-/** One check of a subagent worker: "stuck" while it runs (repeated), "outcome" once it ended. */
+/** One "stuck" check of a running subagent worker (repeated while it runs). */
 export interface StoredWorker {
   /** The parent session's id. */
   sessionId: string;
-  kind: "stuck" | "outcome";
+  kind: "stuck";
   at: number;
-  /** For "outcome": the worker's endedAt the check was for. */
-  endedAt?: number;
   /** The worker's name, for the digest's detail. */
   name?: string;
   provider: DecisionProviderId;
@@ -81,7 +77,7 @@ function load(file: string): SignalsFile {
         if (isRec(t) && typeof t.turnId === "string" && typeof t.at === "number" && isRec(t.answers)) out.sessions[k] = t as StoredTurn;
     if (isRec(v.workers))
       for (const [k, w] of Object.entries(v.workers))
-        if (isRec(w) && typeof w.sessionId === "string" && (w.kind === "stuck" || w.kind === "outcome") && typeof w.at === "number" && isRec(w.answers))
+        if (isRec(w) && typeof w.sessionId === "string" && w.kind === "stuck" && typeof w.at === "number" && isRec(w.answers))
           out.workers[k] = w as StoredWorker;
     return out;
   } catch {
@@ -119,7 +115,6 @@ export function updateSignals(fn: (data: SignalsFile) => void, file = signalsFil
 // ---- thresholds ---------------------------------------------------------------------------------
 
 const boolP = (a: Answer | undefined) => (a?.type === "boolean" ? a.p : undefined);
-const choiceOf = (a: Answer | undefined) => (a?.type === "choice" ? a : undefined);
 const scoreOf = (a: Answer | undefined) => (a?.type === "score" ? a : undefined);
 
 export function isLooping(answers: Record<string, Answer>): boolean {
@@ -127,18 +122,11 @@ export function isLooping(answers: Record<string, Answer>): boolean {
   return !!s && s.score >= STUCK_SCORE_MIN && s.confidence >= STUCK_CONFIDENCE_MIN;
 }
 
-export function isFailed(answers: Record<string, Answer>): boolean {
-  const o = choiceOf(answers.outcome);
-  const w = boolP(answers.work_failed);
-  return (!!o && o.choice === "failed" && o.confidence >= FAILED_CONFIDENCE_MIN) || (w !== undefined && w >= WORK_FAILED_MIN);
-}
-
 /** The kinds that fire for one turn's raw answers, most urgent first. */
 export function signalKinds(answers: Record<string, Answer>): SignalKind[] {
   const out: SignalKind[] = [];
   const p = boolP(answers.asks_user);
   if (p !== undefined && p >= ASKS_USER_MIN) out.push("asks-you");
-  if (isFailed(answers)) out.push("task-failed");
   if (isLooping(answers)) out.push("looping");
   return out;
 }
@@ -146,16 +134,12 @@ export function signalKinds(answers: Record<string, Answer>): SignalKind[] {
 /** A stored turn as the wire carries it. */
 export function toWire(t: StoredTurn): SessionSignals {
   const p = boolP(t.answers.asks_user);
-  const wf = boolP(t.answers.work_failed);
-  const o = choiceOf(t.answers.outcome);
   const s = scoreOf(t.answers.stuck);
   return {
     at: t.at,
     turnId: t.turnId,
     provider: t.provider,
     ...(p !== undefined ? { asksUser: p } : {}),
-    ...(wf !== undefined ? { workFailed: wf } : {}),
-    ...(o && (OUTCOMES as string[]).includes(o.choice) ? { outcome: { choice: o.choice as SignalOutcome, confidence: o.confidence } } : {}),
     ...(s ? { stuck: { score: s.score, confidence: s.confidence } } : {}),
     kinds: signalKinds(t.answers),
   };
@@ -203,18 +187,16 @@ export function signalsOverlay(id: string, ctx: OverlayContext, data = readSigna
 }
 
 /**
- * `SessionSummary.workerSignals`: this session's workers whose latest check fires — "stuck" while
- * that check is fresh (a worker that stopped being checked stopped running), "failed" from an
- * outcome check — counting only checks newer than the user's last look. Absent when both are 0.
+ * `SessionSummary.workerSignals`: this session's workers whose latest "stuck" check fires while
+ * it is fresh (a worker that stopped being checked stopped running), counting only checks newer
+ * than the user's last look. Absent when 0.
  */
-export function workerSignalsOverlay(id: string, ctx: Omit<OverlayContext, "running">, now = Date.now(), data = readSignals()): { stuck: number; failed: number } | undefined {
+export function workerSignalsOverlay(id: string, ctx: Omit<OverlayContext, "running">, now = Date.now(), data = readSignals()): { stuck: number } | undefined {
   if (!ctx.enabled) return undefined;
   let stuck = 0;
-  let failed = 0;
   for (const w of Object.values(data.workers)) {
     if (w.sessionId !== id || !unseen(w.at, { ...ctx, running: false })) continue;
     if (w.kind === "stuck" && now - w.at <= WORKER_STUCK_FRESH_MS && isLooping(w.answers)) stuck++;
-    if (w.kind === "outcome" && isFailed(w.answers)) failed++;
   }
-  return stuck || failed ? { stuck, failed } : undefined;
+  return stuck ? { stuck } : undefined;
 }

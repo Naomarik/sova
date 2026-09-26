@@ -17,7 +17,7 @@ import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { decodeWorkers, getAgentsInsight, getSessionInsight, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
-import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyAtOf, listCwds, listSessionFiles, listSessions } from "./sessions-index";
+import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
@@ -1077,7 +1077,7 @@ const attentionSignals = new AttentionSignals({
   provider: () => (decisionsReady() ? decisions() : null),
   list: listSessions,
   summary: (path) => getSessionSummary(path),
-  lastReplyAt: lastReplyAtOf,
+  lastReply: lastReplyOf,
   held: (path) => !!heldChat(path),
   liveRecords: () => readLiveRecords({ includeOwn: true }),
   decodeWorkers: (presence) => decodeWorkers(presence),

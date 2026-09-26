@@ -6,6 +6,7 @@ import {
   createNudgeThrottle,
   EMPTY_OVERLAY,
   overlaid,
+  rowLeadMark,
   rowNeedsYou,
   SIGNAL_CLASS,
   SIGNAL_ICON,
@@ -15,6 +16,7 @@ import {
   tagStatusWord,
   tagsTitle,
   tagTopicWord,
+  turnErrorTitle,
 } from "./signals";
 import { reuseUnchanged } from "./summary-diff";
 
@@ -27,9 +29,8 @@ test("the mark is the most urgent kind the server sent, never one it didn't", ()
   assert.equal(rowNeedsYou(row(), open), null);
   assert.equal(rowNeedsYou(row({ signals: sig([]) }), open), null, "a classified turn with no kinds shows nothing");
   assert.deepEqual(rowNeedsYou(row({ signals: sig(["looping", "asks-you"]) }), open), { kind: "asks-you", worker: false });
-  assert.deepEqual(rowNeedsYou(row({ signals: sig(["asks-you", "task-failed", "looping"]) }), open), { kind: "task-failed", worker: false });
   // Raw answers far past any threshold don't make a mark: the kinds are the server's word.
-  const raw = { ...sig([]), asksUser: 0.99, outcome: { choice: "failed" as const, confidence: 1 } };
+  const raw = { ...sig([]), asksUser: 0.99, stuck: { score: 2, confidence: 1 } };
   assert.equal(rowNeedsYou(row({ signals: raw }), open), null);
 });
 
@@ -43,25 +44,40 @@ test("hidden on the open session, while this tab runs a turn, and once seen afte
 });
 
 test("subagent counts mark the parent row, below the session's own kind of the same urgency", () => {
-  assert.deepEqual(rowNeedsYou(row({ workerSignals: { stuck: 1, failed: 0 } }), open), { kind: "looping", worker: true });
-  assert.deepEqual(rowNeedsYou(row({ workerSignals: { stuck: 1, failed: 2 } }), open), { kind: "task-failed", worker: true });
-  assert.equal(rowNeedsYou(row({ workerSignals: { stuck: 0, failed: 0 } }), open), null);
-  // A failed worker outranks the session's own asks-you (precedence is by kind first) …
-  assert.deepEqual(rowNeedsYou(row({ signals: sig(["asks-you"]), workerSignals: { stuck: 0, failed: 1 } }), open), { kind: "task-failed", worker: true });
-  // … but the session's own failure wins over a worker's.
-  assert.deepEqual(rowNeedsYou(row({ signals: sig(["task-failed"]), workerSignals: { stuck: 0, failed: 1 } }), open), { kind: "task-failed", worker: false });
+  assert.deepEqual(rowNeedsYou(row({ workerSignals: { stuck: 1 } }), open), { kind: "looping", worker: true });
+  assert.equal(rowNeedsYou(row({ workerSignals: { stuck: 0 } }), open), null);
+  // The session's own asks-you outranks a stuck worker (precedence is by kind first) …
+  assert.deepEqual(rowNeedsYou(row({ signals: sig(["asks-you"]), workerSignals: { stuck: 1 } }), open), { kind: "asks-you", worker: false });
+  // … and at the same kind, the session's own wins over a worker's.
+  assert.deepEqual(rowNeedsYou(row({ signals: sig(["looping"]), workerSignals: { stuck: 1 } }), open), { kind: "looping", worker: false });
   // Seen hides the session's own signal, not its workers' (the server sends those only while they apply).
-  assert.deepEqual(rowNeedsYou(row({ signals: sig(["asks-you"], 5), seenAt: 9, workerSignals: { stuck: 1, failed: 0 } }), open), { kind: "looping", worker: true });
+  assert.deepEqual(rowNeedsYou(row({ signals: sig(["asks-you"], 5), seenAt: 9, workerSignals: { stuck: 1 } }), open), { kind: "looping", worker: true });
+});
+
+test("line 1 leads with ONE state mark: the turn error in the unread dot's place, else the dot", () => {
+  assert.equal(rowLeadMark(row(), null), null);
+  assert.equal(rowLeadMark(row({ unread: true }), null), "unread");
+  assert.equal(rowLeadMark(row({ turnError: {} }), null), "error", "a never-stamped session has no unread, and still shows the error");
+  assert.equal(rowLeadMark(row({ unread: true, turnError: { message: "overloaded" } }), null), "error", "the error wins the slot");
+  assert.equal(rowLeadMark(row({ unread: true, turnError: {} }), "/s/a.jsonl"), null, "never on the open session");
+  // The error is no needs-you kind: it never reaches the signal mark after it.
+  assert.equal(rowNeedsYou(row({ turnError: {} }), open), null);
+});
+
+test("the turn-error tooltip says the fact, then pi's message when there is one", () => {
+  assert.equal(turnErrorTitle({}), "The last turn stopped with an error.");
+  assert.equal(turnErrorTitle({ message: "429 rate limited" }), "The last turn stopped with an error: 429 rate limited");
 });
 
 test("every kind has its own glyph, class and words", () => {
-  assert.deepEqual([...SIGNAL_PRECEDENCE].sort(), ["asks-you", "looping", "task-failed"]);
+  assert.deepEqual([...SIGNAL_PRECEDENCE].sort(), ["asks-you", "looping"]);
   const icons = SIGNAL_PRECEDENCE.map((k) => SIGNAL_ICON[k]);
   const classes = SIGNAL_PRECEDENCE.map((k) => SIGNAL_CLASS[k]);
   const words = SIGNAL_PRECEDENCE.flatMap((k) => [signalWords({ kind: k, worker: false }), signalWords({ kind: k, worker: true })]);
-  assert.equal(new Set(icons).size, 3);
-  assert.equal(new Set(classes).size, 3);
-  assert.equal(new Set(words).size, 5, "worker and session words differ except where one never applies");
+  assert.equal(new Set(icons).size, SIGNAL_PRECEDENCE.length);
+  assert.equal(new Set(classes).size, SIGNAL_PRECEDENCE.length);
+  // A worker only ever speaks for "looping", so its words are one sentence; the session's differ per kind.
+  assert.equal(new Set(words).size, 3, "worker and session words differ except where one never applies");
   for (const w of words) assert.match(w, /\. $/, "hidden words end a sentence before the title");
 });
 
@@ -103,8 +119,12 @@ test("the feed: deltas set, clear with null, and leave absent fields alone", () 
   const s = overlaid(row(), o);
   assert.equal(s.signals, undefined);
   assert.deepEqual(s.tags, { status: "done" });
-  o = applyMarks(o, { sessions: [{ id: "a", path: "/s/a.jsonl", workerSignals: { stuck: 1, failed: 0 } }] });
-  assert.deepEqual(overlaid(row(), o).workerSignals, { stuck: 1, failed: 0 });
+  o = applyMarks(o, { sessions: [{ id: "a", path: "/s/a.jsonl", workerSignals: { stuck: 1 } }] });
+  assert.deepEqual(overlaid(row(), o).workerSignals, { stuck: 1 });
+  // The turn-error mark rides the same feed: it appears and clears without a list read.
+  o = applyMarks(o, { sessions: [{ id: "a", path: "/s/a.jsonl", turnError: { message: "boom" } }] });
+  assert.deepEqual(overlaid(row(), o).turnError, { message: "boom" });
+  assert.equal(overlaid(row({ turnError: { message: "boom" } }), applyMarks(o, { sessions: [{ id: "a", path: "/s/a.jsonl", turnError: null }] })).turnError, undefined);
   assert.deepEqual(overlaid(row(), o).tags, { status: "done" });
   // A new full snapshot replaces everything the deltas built.
   o = applyMarks(o, { full: true, sessions: [] });

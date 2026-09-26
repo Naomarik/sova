@@ -501,7 +501,7 @@ export function DecisionSettingsSection() {
           {switchRow(
             "decisions-attention",
             "Flag sessions that need you",
-            "After each finished turn, checks whether it asks you something, failed, or is going in circles, and marks the row. The Overseer lists them too.",
+            "After each finished turn, checks whether it asks you something or is going in circles, and marks the row. The Overseer lists them too.",
             () => draft()!.features.attention,
             (on) => edit((c) => (c.features.attention = on)),
             unanswered,

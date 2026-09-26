@@ -2,8 +2,8 @@ import type { SessionFeedMessage, SessionMarks, SessionSummary } from "../shared
 
 /**
  * The session feed: WS /ws/watch?feed=sessions (shared/protocol.ts SessionFeedMessage). The server
- * PUSHES the list's decision overlays (`signals`, `workerSignals`, `tags`) so a mark appears or
- * clears without waiting for the client's list poll.
+ * PUSHES the list's decision overlays (`signals`, `workerSignals`, `tags`) and the turn-error mark
+ * (`turnError`) so a mark appears or clears without waiting for the client's list poll.
  *
  * The overlays are read from the list itself (the caller's `list`, i.e. listSessions), never from
  * the stores directly: what the feed sends is exactly what the next poll would show, visibility
@@ -18,7 +18,7 @@ import type { SessionFeedMessage, SessionMarks, SessionSummary } from "../shared
  */
 
 type Send = (msg: SessionFeedMessage) => void;
-const FIELDS = ["signals", "workerSignals", "tags"] as const;
+const FIELDS = ["signals", "workerSignals", "tags", "turnError"] as const;
 
 /** A row's overlays, or null when it has none. */
 export function marksOf(s: SessionSummary): SessionMarks | null {

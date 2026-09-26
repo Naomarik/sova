@@ -17,17 +17,24 @@ describe("diffMarks", () => {
       { id: "a", path: "/s/a.jsonl", signals: signals(1) },
       { id: "b", path: "/s/b.jsonl", tags: { topic: "docs" } },
     ]);
-    const second = diffMarks(first.next, [row("a", { signals: signals(1), workerSignals: { stuck: 1, failed: 0 } }), row("b", { tags: { topic: "docs", status: "done" } })]);
+    const second = diffMarks(first.next, [row("a", { signals: signals(1), workerSignals: { stuck: 1 } }), row("b", { tags: { topic: "docs", status: "done" } })]);
     assert.deepEqual(second.changes, [
-      { id: "a", path: "/s/a.jsonl", workerSignals: { stuck: 1, failed: 0 } },
+      { id: "a", path: "/s/a.jsonl", workerSignals: { stuck: 1 } },
       { id: "b", path: "/s/b.jsonl", tags: { topic: "docs", status: "done" } },
     ]);
-    const third = diffMarks(second.next, [row("a", { workerSignals: { stuck: 1, failed: 0 } })]);
+    const third = diffMarks(second.next, [row("a", { workerSignals: { stuck: 1 } })]);
     assert.deepEqual(third.changes, [
       { id: "a", path: "/s/a.jsonl", signals: null },
       { id: "b", path: "/s/b.jsonl", tags: null },
     ]);
-    assert.deepEqual(diffMarks(third.next, [row("a", { workerSignals: { stuck: 1, failed: 0 } })]).changes, []);
+    assert.deepEqual(diffMarks(third.next, [row("a", { workerSignals: { stuck: 1 } })]).changes, []);
+  });
+
+  test("the turn-error mark is pushed like the decision marks: it appears, and clears with null", () => {
+    const shown = diffMarks(new Map(), [row("a", { turnError: { message: "overloaded" } })]);
+    assert.deepEqual(shown.changes, [{ id: "a", path: "/s/a.jsonl", turnError: { message: "overloaded" } }]);
+    // Seen: the list stops carrying it, and the feed says so at once.
+    assert.deepEqual(diffMarks(shown.next, [row("a")]).changes, [{ id: "a", path: "/s/a.jsonl", turnError: null }]);
   });
 
   test("a row without overlays has no marks", () => {

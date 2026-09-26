@@ -5167,6 +5167,17 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   background: var(--color-accent);
 }
 
+/* The last turn stopped with an error, since you last had it open: an alert circle in error, in
+   the unread dot's place (one leading state mark; the dot is implied). Same size and spacing as
+   the needs-you glyph after it. aria-hidden; the hidden words carry it for AT. */
+.list-title .session-turn-error {
+  width: 1em;
+  height: 1em;
+  margin-right: var(--space-1);
+  vertical-align: -0.125em;
+  color: var(--status-error);
+}
+
 /* The page head: the session head's shape, with the proactivity cycle,
    History and Clear at its end. */
 .overseer-head .button-sm { flex: none; }
@@ -5280,12 +5291,11 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
    and the Decisions tab's key and provider lines.
    ============================================================================= */
 
-/* A finished turn that needs you: one glyph after the unread dot, before the draft pencil. It
-   is inline text like the pencil, not an indicator, so line 1 stays the title's. One mark per
-   row, the most urgent kind: failed, then asks, then looping. The kind differs in shape as well
-   as tone, so hue never carries it alone: asks-you is a speech bubble in the accent (the
-   accent's one spend, "this needs you"), task-failed an alert circle in error, looping the
-   refresh arrows in warn. The glyph is aria-hidden; the hidden word beside it names the kind.
+/* A finished turn that needs you: one glyph after the unread dot (or the turn-error mark), before
+   the draft pencil. It is inline text like the pencil, not an indicator, so line 1 stays the
+   title's. One mark per row, the most urgent kind: asks, then looping. The kind differs in shape
+   as well as tone, so hue never carries it alone: asks-you is a speech bubble in the accent (the
+   accent's one spend, "this needs you"), looping the refresh arrows in warn. The glyph is aria-hidden; the hidden word beside it names the kind.
    A wrapping span may carry the tooltip; it adds no box of its own. */
 .list-title .session-signal {
   width: 1em;
@@ -5294,7 +5304,6 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   vertical-align: -0.125em;
 }
 .session-signal-asks    { color: var(--color-accent); }
-.session-signal-failed  { color: var(--status-error); }
 .session-signal-looping { color: var(--status-warn); }
 
 /* The tag's status word joins line 3's facts, "2h ago · done · model", in the meta's own

@@ -72,7 +72,13 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   if (row.dialogs.length) add("act", "needs-input", row.activitySince || lastActive, `Waiting on: ${row.dialogs.join("; ")}`);
   else if (state === "needs-input")
     add("act", "needs-input", row.activitySince || lastActive, s.live ? "Waiting on a dialog in the terminal." : "Waiting on a dialog.");
-  if (state === "error") add("act", "error", row.activitySince || lastActive, s.activity?.error ?? "The last turn stopped with an error.");
+  // An errored turn: the file's last finished reply (turnError, already seen-gated by the list),
+  // else a live record's error state. One item either way.
+  if (s.turnError || state === "error") {
+    const message = s.turnError?.message ?? (state === "error" ? s.activity?.error : undefined);
+    const since = s.turnError ? row.lastReplyAt ?? lastActive : row.activitySince || lastActive;
+    add("act", "error", since, message ?? "The last turn stopped with an error.");
+  }
   // A worker error is acknowledged once the user has had the session in front of them after it
   // (the seen stamp is at or past the error, or a pane shows it now). A never-stamped session or an
   // error of unknown time is not acknowledged: a blocker errs on the side of showing.
@@ -82,17 +88,12 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
     add("act", "worker-error", lastActive, `${row.failedWorkers} subagent${row.failedWorkers === 1 ? "" : "s"} ended in an error.`);
   // Decision signals (server/signals-store.ts): the list carries them only while unseen and idle,
   // with the kinds already derived from the fixed thresholds. A main session's "looping" is a
-  // judgement call (decide); a looping or failed subagent is a blocker (act).
+  // judgement call (decide); a looping subagent is a blocker (act).
   const sig = s.signals?.kinds ?? [];
   const at = s.signals?.at ?? lastActive;
   const sentence = row.signalText?.sentence;
   if (sig.includes("asks-you")) add("act", "asks-you", at, sentence ? `Asks you: ${sentence}` : "The last reply asks you something.");
   const ws = s.workerSignals;
-  const failedDetail = [
-    ...(sig.includes("task-failed") ? [sentence ? `The last turn looks like it failed. ${sentence}` : "The last turn looks like it failed."] : []),
-    ...(ws?.failed ? [`${ws.failed} subagent${ws.failed === 1 ? "" : "s"} finished without doing the task.`] : []),
-  ];
-  if (failedDetail.length) add("act", "task-failed", at, failedDetail.join(" "));
   if (ws?.stuck) {
     const names = row.signalText?.stuckWorkers ?? [];
     const who = names.length === 1 ? `A subagent looks stuck: ${names[0]}.` : names.length > 1 ? `Subagents look stuck: ${names.join(", ")}.` : ws.stuck === 1 ? "A subagent looks stuck." : `${ws.stuck} subagents look stuck.`;

@@ -14,7 +14,7 @@ import { draftCounts, draftPreview, dropDrafts, readDrafts } from "./drafts";
 import { dropSessionTitles, readSessionTitles } from "./session-titles";
 import { removeSessionAttachments } from "./attachments";
 import { disposeHeldChat, getModelRuntime, isSessionBusy, pendingDialogCount } from "./chat-manager";
-import { isUnread, isViewing, readSeen } from "./seen";
+import { isUnread, isViewing, readSeen, turnErrorShows } from "./seen";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
 import { messageContextTokens } from "./transcript";
@@ -46,8 +46,8 @@ interface CacheEntry {
   summary: BaseSummary;
   contextModel: string | null;
   outline: OutlineScan | null;
-  /** ms epoch of the file's last assistant reply (tail window), for the unread dot. */
-  lastReplyAt: number | null;
+  /** The file's last finished assistant reply (tail window), for the unread dot and the turn-error mark. */
+  lastReply: LastReply | null;
   /** The file carries the Overseer marker. Whether it IS the Overseer's is decided per read
       (`overseerOf`): the answer changes with overseer-state.json, not with the file. */
   marked: boolean;
@@ -358,13 +358,38 @@ function entryTime(e: any): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
+/** A turn is still open while its last reply is one of these: it asked for a tool, is being
+    written, or was handed off to finish later. Every other stopReason ended the turn. */
+const UNFINISHED_STOPS = new Set(["toolUse", "pending", "deferred"]);
+/** How much of a reply's errorMessage the list keeps. */
+export const REPLY_ERROR_MAX = 300;
+
+/** The file's last finished assistant reply: when (ms epoch), how it stopped, and, for an error, why. */
+export interface LastReply {
+  at: number;
+  stopReason: string;
+  error?: string;
+}
+
+/** A parsed line as a finished reply, or null when it is not one. */
+export function finishedReply(e: any): LastReply | null {
+  if (e?.type !== "message" || e.message?.role !== "assistant") return null;
+  const stop = e.message.stopReason;
+  if (typeof stop !== "string" || UNFINISHED_STOPS.has(stop)) return null;
+  const at = entryTime(e);
+  if (at === null) return null;
+  const msg = e.message.errorMessage;
+  const error = stop === "error" && typeof msg === "string" && msg.trim() ? msg.trim().slice(0, REPLY_ERROR_MAX) : undefined;
+  return { at, stopReason: stop, ...(error ? { error } : {}) };
+}
+
 /**
- * When the file's LAST assistant reply was written (ms epoch), scanned backwards from EOF like
- * readTailModel (16KB chunks, cap 256KB, torn lines skipped). Only a reply that finished — not a
- * tool-use step mid-turn — counts, so "finished since you looked" means a turn ended. null when
- * the window has none.
+ * The file's LAST finished assistant reply, scanned backwards from EOF like readTailModel (16KB
+ * chunks, cap 256KB, torn lines skipped). A reply that leaves the turn open — a tool-use step, one
+ * still pending, one deferred — is skipped, so "finished since you looked" means a turn ended.
+ * null when the window has none.
  */
-async function readTailReplyAt(path: string, size: number): Promise<number | null> {
+export async function readTailReply(path: string, size: number): Promise<LastReply | null> {
   const fh = await open(path, "r");
   try {
     const floor = Math.max(0, size - MAX_TAIL);
@@ -384,11 +409,8 @@ async function readTailReplyAt(path: string, size: number): Promise<number | nul
         const line = buf.subarray(i + 1, stop);
         if (line.includes('"assistant"')) {
           try {
-            const e = JSON.parse(line.toString("utf-8"));
-            if (e?.type === "message" && e.message?.role === "assistant" && e.message.stopReason !== "toolUse") {
-              const t = entryTime(e);
-              if (t !== null) return t;
-            }
+            const hit = finishedReply(JSON.parse(line.toString("utf-8")));
+            if (hit) return hit;
           } catch {
             // torn trailing line or not JSON: skip
           }
@@ -564,7 +586,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     const scan = await readOutline(path, st.size, hit?.outline ?? null);
     const outline = scan?.found ?? null;
     const ctx = await readTailContext(path, st.size);
-    const lastReplyAt = await readTailReplyAt(path, st.size);
+    const lastReply = await readTailReply(path, st.size);
     const cwd = typeof h.cwd === "string" ? h.cwd : "";
     // An older session format is fanout-source metadata (legacyFormat ⇔ version ≠ current,
     // pre-versioning headers read as 1 — the same rule fanout's own head read applies), so the
@@ -589,7 +611,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
       ...(format !== CURRENT_SESSION_FORMAT ? { legacyFormat: true as const } : {}),
     };
-    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReplyAt, marked: head.overseer };
+    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, marked: head.overseer };
     cache.set(path, entry);
     return withWindow(entry, resolveWindow);
   } catch {
@@ -650,31 +672,39 @@ function withTitle(s: BaseSummary, titles: Record<string, string>): BaseSummary 
 
 /** ms epoch of a session's last assistant reply, from the cached tail read; undefined when unknown. */
 export function lastReplyAtOf(path: string): number | undefined {
-  return cache.get(path)?.lastReplyAt ?? undefined;
+  return cache.get(path)?.lastReply?.at;
+}
+
+/** A session's last finished reply, from the cached tail read; undefined when unknown. */
+export function lastReplyOf(path: string): LastReply | undefined {
+  return cache.get(path)?.lastReply ?? undefined;
 }
 
 /**
  * The attention overlay of one row: the live record's activity (a TUI's, else this server's own
- * runtime's), the hosted chat's live-pending dialogs, and the seen store's stamp and unread dot.
- * Never part of the cached summary: every input changes without the file changing.
+ * runtime's), the hosted chat's live-pending dialogs, and the seen store's stamp, unread dot and
+ * turn-error mark. Never part of the cached summary: every input changes without the file changing.
  */
 function attentionFields(
   s: BaseSummary,
   l: LiveRecord | undefined,
   own: RawLiveRecord | undefined,
   seen: Record<string, number>,
-): Pick<SessionSummary, "activity" | "pendingDialogs" | "seenAt" | "unread"> {
+): Pick<SessionSummary, "activity" | "pendingDialogs" | "seenAt" | "unread" | "turnError"> {
   const a = l?.activity ?? activityOf(own?.rec);
   const dialogs = pendingDialogCount(s.path);
   const seenAt = seen[s.id];
-  const lastReplyAt = cache.get(s.path)?.lastReplyAt ?? undefined;
+  const lastReply = cache.get(s.path)?.lastReply ?? undefined;
   const running = isSessionBusy(s.path) || a?.state === "working";
-  const unread = isUnread({ seenAt, lastReplyAt, viewing: isViewing(s.id), running });
+  const viewing = isViewing(s.id);
+  const unread = isUnread({ seenAt, lastReplyAt: lastReply?.at, viewing, running });
+  const turnError = turnErrorShows({ seenAt, lastReply, viewing, running });
   return {
     ...(a ? { activity: { state: a.state, ...(a.since ? { since: a.since } : {}), ...(a.error ? { error: a.error } : {}) } } : {}),
     ...(dialogs > 0 ? { pendingDialogs: dialogs } : {}),
     ...(seenAt !== undefined ? { seenAt } : {}),
     ...(unread ? { unread: true as const } : {}),
+    ...(turnError && lastReply ? { turnError: lastReply.error ? { message: lastReply.error } : {} } : {}),
   };
 }
 

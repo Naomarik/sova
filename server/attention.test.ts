@@ -37,6 +37,24 @@ describe("attention: which signal lands in which tier", () => {
     assert.deepEqual(kinds(row(summary("w"), { failedWorkers: 2 })), ["act:worker-error"]);
   });
 
+  test("an errored last turn from the file (turnError) is act:error, its message the detail, dated by the reply", () => {
+    const err = sessionItems(row(summary("f", { turnError: { message: "529 overloaded" } }), { lastReplyAt: NOW - 7000 }), NOW);
+    assert.deepEqual(err.map((i) => `${i.tier}:${i.kind}:${i.detail}`), ["act:error:529 overloaded"]);
+    assert.equal(err[0]!.since, NOW - 7000);
+    assert.deepEqual(sessionItems(row(summary("f", { turnError: {} })), NOW).map((i) => i.detail), ["The last turn stopped with an error."]);
+    // A closed session has no live record: the file is the only source, and it is enough.
+    assert.deepEqual(kinds(row(summary("c", { turnError: {}, live: null }))), ["act:error"]);
+    // An archived one comes back for it, like any blocker.
+    assert.deepEqual(kinds(row(summary("a", { turnError: {}, archived: true }))), ["act:error"]);
+  });
+
+  test("the file's error and a live error state are ONE error item, the file's message first", () => {
+    const both = sessionItems(row(summary("b", { turnError: { message: "from the file" }, activity: { state: "error", error: "from presence" } })), NOW);
+    assert.deepEqual(both.map((i) => `${i.kind}:${i.detail}`), ["error:from the file"]);
+    const noMsg = sessionItems(row(summary("b", { turnError: {}, activity: { state: "error", error: "from presence" } })), NOW);
+    assert.deepEqual(noMsg.map((i) => `${i.kind}:${i.detail}`), ["error:from presence"]);
+  });
+
   test("a pending dialog and a needs-input record are ONE needs-input item, not two", () => {
     assert.deepEqual(kinds(row(summary("x", { activity: { state: "needs-input" } }), { dialogs: ["Q"] })), ["act:needs-input"]);
   });
@@ -168,19 +186,18 @@ describe("attention: the digest", () => {
 });
 
 describe("attention: decision signals (the list carries them only while unseen and idle)", () => {
-  const signals = (kinds: ("asks-you" | "task-failed" | "looping")[]) => ({ at: NOW - 5000, turnId: "t", provider: "jev" as const, kinds });
+  const signals = (kinds: ("asks-you" | "looping")[]) => ({ at: NOW - 5000, turnId: "t", provider: "jev" as const, kinds });
 
-  test("asks-you and task-failed are act; a main session's looping is decide; each dated by the classification", () => {
-    const items = sessionItems(row(summary("s", { signals: signals(["asks-you", "task-failed", "looping"]) })), NOW);
-    assert.deepEqual(items.map((i) => `${i.tier}:${i.kind}`), ["act:asks-you", "act:task-failed", "decide:looping"]);
+  test("asks-you is act; a main session's looping is decide; each dated by the classification", () => {
+    const items = sessionItems(row(summary("s", { signals: signals(["asks-you", "looping"]) })), NOW);
+    assert.deepEqual(items.map((i) => `${i.tier}:${i.kind}`), ["act:asks-you", "decide:looping"]);
     assert.ok(items.every((i) => i.since === NOW - 5000));
   });
 
-  test("worker checks: stuck and failed subagents are act, one item per kind with the session's own", () => {
-    const items = sessionItems(row(summary("s", { signals: signals(["task-failed", "looping"]), workerSignals: { stuck: 2, failed: 1 } })), NOW);
-    assert.deepEqual(items.map((i) => `${i.tier}:${i.kind}`), ["act:task-failed", "act:looping"]);
-    assert.equal(items[0]!.detail, "The last turn looks like it failed. 1 subagent finished without doing the task.");
-    assert.equal(items[1]!.detail, "2 subagents look stuck. The last turn looks like it went in circles too.");
+  test("worker checks: stuck subagents are act, one item with the session's own looping", () => {
+    const items = sessionItems(row(summary("s", { signals: signals(["looping"]), workerSignals: { stuck: 2 } })), NOW);
+    assert.deepEqual(items.map((i) => `${i.tier}:${i.kind}`), ["act:looping"]);
+    assert.equal(items[0]!.detail, "2 subagents look stuck. The last turn looks like it went in circles too.");
   });
 
   test("details quote the stored sentence and name stuck workers; fixed fallbacks without them", () => {
@@ -189,10 +206,9 @@ describe("attention: decision signals (the list carries them only while unseen a
       sessionItems(row(s, t ? { signalText: t } : {}), NOW).map((i) => `${i.tier}:${i.kind}:${i.detail}`);
     assert.deepEqual(detail(summary("a", { signals: signals(["asks-you"]) }), text), ["act:asks-you:Asks you: Should I merge them first?"]);
     assert.deepEqual(detail(summary("a", { signals: signals(["asks-you"]) })), ["act:asks-you:The last reply asks you something."]);
-    assert.deepEqual(detail(summary("f", { signals: signals(["task-failed"]) }), { sentence: "The build still fails.", stuckWorkers: [] }), ["act:task-failed:The last turn looks like it failed. The build still fails."]);
     assert.deepEqual(detail(summary("l", { signals: signals(["looping"]) })), ["decide:looping:The last turn looks like it went in circles."]);
-    assert.deepEqual(detail(summary("w", { workerSignals: { stuck: 1, failed: 0 } }), text), ["act:looping:A subagent looks stuck: builder."]);
-    assert.deepEqual(detail(summary("w", { workerSignals: { stuck: 2, failed: 0 } }), { stuckWorkers: ["a", "b"] }), ["act:looping:Subagents look stuck: a, b."]);
+    assert.deepEqual(detail(summary("w", { workerSignals: { stuck: 1 } }), text), ["act:looping:A subagent looks stuck: builder."]);
+    assert.deepEqual(detail(summary("w", { workerSignals: { stuck: 2 } }), { stuckWorkers: ["a", "b"] }), ["act:looping:Subagents look stuck: a, b."]);
   });
 
   test("no kinds, no items; an empty kinds list is not a mark; the badge counts a signalled session as needs-you", () => {
@@ -204,6 +220,6 @@ describe("attention: decision signals (the list carries them only while unseen a
 
   test("Overseer and worker sessions never carry items, signals or not", () => {
     assert.deepEqual(kinds(row(summary("o", { overseer: true, signals: signals(["asks-you"]) }))), []);
-    assert.deepEqual(kinds(row(summary("w", { workerSession: true, workerSignals: { stuck: 1, failed: 0 } }))), []);
+    assert.deepEqual(kinds(row(summary("w", { workerSession: true, workerSignals: { stuck: 1 } }))), []);
   });
 });

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
@@ -30,7 +30,7 @@ import {
 } from "../lib/session-groups";
 import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
-import { overlaid, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, tagSearchText, tagStatusWord, tagsTitle } from "../lib/signals";
+import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, tagSearchText, tagStatusWord, tagsTitle, turnErrorTitle } from "../lib/signals";
 import { marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
 import { readKey, removeKey, writeKey } from "../lib/storage-keys";
@@ -213,6 +213,8 @@ function SessionRow(props: {
   const isBusy = () => sessionBusy(s());
   /** Line 1's "needs you" mark (src/lib/signals.ts): the server's kinds, never on the open or a running session. */
   const needsYou = createMemo(() => rowNeedsYou(s(), { selected: props.selected, busy: isBusy() }));
+  /** Line 1's leading state mark (src/lib/signals.ts): the turn-error mark, else the unread dot. */
+  const leadMark = () => rowLeadMark(s(), props.selected);
   const statusWord = () => tagStatusWord(s().tags);
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
   const working = () => sessionWorking(s());
@@ -412,12 +414,25 @@ function SessionRow(props: {
               session's state, and a draft is the user's own, not the session's. The pencil is
               decorative; the hidden word puts "Draft" in the row's accessible name. */}
           <p class="list-title" classList={{ "list-title-muted": s().title === "Untitled" }} title={s().title}>
-            {/* Something happened here since you last had it open (the server's seen store). The
-                open session never shows it: you are looking at it. The word is for AT. */}
-            <Show when={s().unread && props.selected !== s().path}>
-              <span class="session-unread" aria-hidden="true" />
-              <span class="visually-hidden">New activity. </span>
-            </Show>
+            {/* One leading state mark, since you last had it open (the server's seen store): the last
+                turn stopped with an error, else something happened here. The open session never
+                shows either: you are looking at it. The words are for AT. */}
+            <Switch>
+              <Match when={leadMark() === "error" && s().turnError}>
+                {(e) => (
+                  <>
+                    <span class="session-signal-wrap" title={turnErrorTitle(e())}>
+                      <Icon name="alert-circle" small class="session-turn-error" />
+                    </span>
+                    <span class="visually-hidden">Turn failed. </span>
+                  </>
+                )}
+              </Match>
+              <Match when={leadMark() === "unread"}>
+                <span class="session-unread" aria-hidden="true" />
+                <span class="visually-hidden">New activity. </span>
+              </Match>
+            </Switch>
             {/* What the last finished turn says about you (Settings → Decisions): one mark, the most
                 urgent kind, its shape and word per kind. Gone once you've seen the session. */}
             <Show when={needsYou()}>

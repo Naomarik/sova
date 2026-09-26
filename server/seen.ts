@@ -84,3 +84,20 @@ export function isUnread(opts: { seenAt: number | undefined; lastReplyAt: number
   if (opts.seenAt === undefined || opts.lastReplyAt === undefined) return false;
   return opts.lastReplyAt > opts.seenAt;
 }
+
+/**
+ * The last turn stopped with an error and the user has not looked since: the file's last finished
+ * reply has stopReason "error", the session is idle and not on screen, and the stamp is older than
+ * that reply. Unlike `isUnread`, a session never stamped DOES show it: a blocker errs on the side
+ * of showing. An aborted turn is the user's own stop, not an error.
+ */
+export function turnErrorShows(opts: {
+  seenAt: number | undefined;
+  lastReply: { at: number; stopReason: string } | undefined;
+  viewing: boolean;
+  running: boolean;
+}): boolean {
+  if (opts.viewing || opts.running) return false;
+  if (opts.lastReply?.stopReason !== "error") return false;
+  return opts.seenAt === undefined || opts.seenAt < opts.lastReply.at;
+}

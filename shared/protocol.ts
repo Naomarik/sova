@@ -135,10 +135,17 @@ export interface SessionSummary {
   /** When a Sova chat or watch socket last attached to or detached from this session (ms epoch),
       from `<stateRoot>/seen.json`. Absent = never seen by Sova. */
   seenAt?: number;
-  /** Something happened in this session since `seenAt` (its last assistant reply / file write is
-      newer, and it is not mid-turn): the sidebar's unread dot. Web sessions (origin "web") only. Server-computed from the same seen
+  /** Something happened in this session since `seenAt` (its last finished assistant reply is
+      newer, and it is not mid-turn): the sidebar's unread dot. Any session with a stamp, whatever
+      its origin; a session never stamped is never unread. Server-computed from the same seen
       store the Overseer digest uses. The tab showing the session hides its own dot. Safe by absence. */
   unread?: true;
+  /** The file's last finished assistant reply stopped with pi's `stopReason: "error"`, the session
+      is not mid-turn or on screen, and it has not been seen since that reply (a session never
+      stamped shows it too). `message` = the reply's errorMessage, ≤300 chars. The sidebar's red
+      mark in the unread dot's place, and the digest's act "error" item. Server-computed, needs no
+      decisions feature; an aborted turn is not an error. Safe by absence. */
+  turnError?: { message?: string };
 }
 
 /** A configured remote target (~/.pi/agent/targets.json, GET /api/targets). Credential-free. */
@@ -2194,7 +2201,7 @@ export interface OverseerInfo {
 export type AttentionTier = "act" | "decide" | "fyi";
 export type AttentionKind =
   | "needs-input"     // extension dialog open (activity needs-input, or hosted pending dialog)
-  | "error"           // errored turn (activity error)
+  | "error"           // the last turn stopped with an error (SessionSummary.turnError, or live activity error)
   | "worker-error"    // a subagent worker errored / was killed
   | "finished"        // replied since last seen, now idle
   | "draft"           // idle with an unsent composer draft
@@ -2203,7 +2210,6 @@ export type AttentionKind =
   | "working"         // running now
   | "stale"           // idle web session >3 days, not archived, no draft
   | "asks-you"        // decisions: the last reply asks the user something (SessionSignals.kinds)
-  | "task-failed"     // decisions: the last turn's outcome is "failed"
   | "looping";        // decisions: the session or a worker is repeating itself
 
 export interface AttentionItem {
@@ -2705,7 +2711,7 @@ export interface FrontDoorConfig {
 //
 // Push: WS /ws/watch?feed=sessions — the existing read-only socket, in a session-less mode (no
 // ?path=). Sends SessionFeedMessage: a full `marks` snapshot on connect, then one `marks` message
-// per change (a signal or tag written, cleared, or pruned) and `tags_backfill` progress while a
+// per change (a signal, tag or turn error written, cleared, or pruned) and `tags_backfill` progress while a
 // backfill runs. The client overlays these onto its SessionSummary list by id without waiting for
 // the list poll; the list itself still carries the same fields (the poll stays the source of truth
 // after a reconnect). Never writes; the socket ignores anything the client sends.
@@ -2817,8 +2823,7 @@ export interface DecisionProbeResult {
 }
 
 /** Attention-signal kinds the thresholds (fixed in server/attention-signals.ts) derive from raw answers. */
-export type SignalKind = "asks-you" | "task-failed" | "looping";
-export type SignalOutcome = "done" | "partial" | "failed" | "blocked_on_user";
+export type SignalKind = "asks-you" | "looping";
 
 /** One classified finished turn of a session (<stateRoot>/signals.json keeps the raw answers). */
 export interface SessionSignals {
@@ -2829,10 +2834,6 @@ export interface SessionSignals {
   provider: DecisionProviderId;
   /** P(the reply ends by asking the user something), 0..1. */
   asksUser?: number;
-  /** P(the turn's work failed), 0..1. task-failed fires on workFailed ≥ 0.7 OR outcome "failed"
-      with confidence ≥ 0.5, so `outcome` may say "done" while kinds holds "task-failed". */
-  workFailed?: number;
-  outcome?: { choice: SignalOutcome; confidence: number };
   /** score in [0, 2]: 0 progressing … 2 clearly looping. */
   stuck?: { score: number; confidence: number };
   /** The kinds that fire under the server's thresholds; [] = none. The client never re-derives
@@ -2865,8 +2866,9 @@ export interface SessionTags {
 // stores, never from the (mtime,size) cache). Absent = not classified, feature off, or an older server.
 export interface SessionSummary {
   signals?: SessionSignals;
-  /** Worker checks of this session's subagents: counts only; details are in the attention digest. */
-  workerSignals?: { stuck: number; failed: number };
+  /** Worker checks of this session's subagents: how many look stuck; details are in the attention
+      digest. (A worker that ended in an error is the digest's deterministic "worker-error".) */
+  workerSignals?: { stuck: number };
   tags?: SessionTags;
 }
 
@@ -2885,13 +2887,15 @@ export interface TagsBackfillProgress {
   stoppedReason?: string;
 }
 
-/** One session's decision overlays. `null` = cleared (remove the field); absent key = unchanged. */
+/** One session's pushed overlays (the decision marks and the turn-error mark). `null` = cleared (remove the field); absent key = unchanged. */
 export interface SessionMarks {
   id: string;
   path: string;
   signals?: SessionSignals | null;
-  workerSignals?: { stuck: number; failed: number } | null;
+  workerSignals?: { stuck: number } | null;
   tags?: SessionTags | null;
+  /** SessionSummary.turnError, pushed so the red mark appears and clears at once. */
+  turnError?: { message?: string } | null;
 }
 
 /** WS /ws/watch?feed=sessions (see the route comment at the top of this block). */

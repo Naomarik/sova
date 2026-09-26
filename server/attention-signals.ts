@@ -9,7 +9,7 @@ import { activeBranch, parseLines } from "./transcript";
 
 /**
  * Attention signals (Settings → Decisions → "needs you" marks): every FINISHED turn of a main
- * session, and subagent workers that run long or end, are classified through the decision seam
+ * session, and subagent workers that run long, are classified through the decision seam
  * (server/decide.ts — this module never knows which provider answers) and the raw answers stored
  * in signals.json (server/signals-store.ts, which also owns the thresholds and the list overlay).
  *
@@ -19,7 +19,10 @@ import { activeBranch, parseLines } from "./transcript";
  *    main-thread session whose last reply is newer than its stored turn. Transcripts are read with
  *    Sova's own parser from the tail of the file — never SessionManager.open(), never a write;
  *  - the same ticker for workers: a "stuck" check for a worker running > 5 min, at most every
- *    5 min, and one "outcome" check for a worker that just ended.
+ *    5 min.
+ * Whether a turn failed is never asked: that is a fact of the file (the last reply's stopReason
+ * "error"), which the session list reads itself (SessionSummary.turnError). A turn that stopped
+ * with an error is not classified at all.
  * Each (session id, last assistant entry id) is classified at most once. Nothing is sent while the
  * feature is off, for an excluded folder, for Overseer / worker / archived sessions, or — with
  * "never send TUI sessions" — for a session another process owns. Every state is capped and
@@ -188,42 +191,8 @@ export const head = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 
 /** The last `n` characters (a reply's end is where it asks), marked when cut. */
 export const tail = (s: string, n: number) => (s.length > n ? `…${s.slice(s.length - n + 1)}` : s);
 
-/** A worker transcript's result says nothing about errors: these endings are pi's and a shell's own. */
-const FAILED_RESULT = /\bCommand (?:exited with code [1-9]\d*|terminated without an exit code)\b/;
-
-/** Did the call fail: its result is an error, or (source silent) its text says a command failed. */
-export const toolFailed = (t: ToolCallFact): boolean => t.ok === false || (t.ok === undefined && FAILED_RESULT.test(t.result));
-
 function recentTools(tools: readonly ToolCallFact[]): JsonObject[] {
-  return tools.slice(-CAP.tools).map((t) => ({
-    tool: t.name,
-    ...(toolFailed(t) ? { status: "failed" } : t.ok === true ? { status: "succeeded" } : {}),
-    summary: head(squash(t.result || t.args), CAP.tool),
-  }));
-}
-
-/**
- * Tool calls that failed, counted in code (Jev does not count): how many, whether the LAST call
- * failed (a failure the turn never got past), and the last FAILED_SHOWN of them with what was run
- * and the END of the error (where the exit code and the cause are), each capped.
- */
-export const FAILED_SHOWN = 3;
-export function toolFailures(tools: readonly ToolCallFact[]): JsonObject {
-  const failed = tools.filter(toolFailed);
-  const last = tools[tools.length - 1];
-  // Unresolved: no later call of the same tool with the same input succeeded (a fixed-and-rerun
-  // test run is resolved; a missing file read once is not).
-  const unresolved = tools.filter((t, i) => toolFailed(t) && !tools.slice(i + 1).some((u) => !toolFailed(u) && u.name === t.name && u.args === t.args));
-  return {
-    failed_tool_calls: failed.length,
-    unresolved_failed_calls: unresolved.length,
-    last_tool_call_failed: !!last && toolFailed(last),
-    failed_calls: failed.slice(-FAILED_SHOWN).map((t) => ({
-      tool: t.name,
-      input: head(squash(t.args), CAP.tool),
-      error: tail(squash(t.result), CAP.error),
-    })),
-  };
+  return tools.slice(-CAP.tools).map((t) => ({ tool: t.name, summary: head(squash(t.result || t.args), CAP.tool) }));
 }
 
 export const SENTENCE_MAX = 160;
@@ -250,7 +219,6 @@ export function turnState(title: string, f: TurnFacts): JsonObject {
     last_user_message: head(f.lastUser, CAP.user),
     assistant_last: tail(f.assistantLast, CAP.assistant),
     tool_calls_recent: recentTools(f.tools),
-    tool_failures: toolFailures(f.tools),
     repeats: repeats(f.tools),
     turn: {
       stop_reason: f.stopReason,
@@ -273,7 +241,6 @@ export function workerState(w: Pick<WorkerInfo, "name" | "status" | "startedAt" 
     task: head(task, CAP.user),
     assistant_last: tail(s.lastAssistantText ?? "", CAP.assistant),
     tool_calls_recent: recentTools(tools),
-    tool_failures: toolFailures(tools),
     repeats: repeats(tools),
     worker: {
       status: w.status,
@@ -297,33 +264,6 @@ export const ASKS_USER: Question = {
   },
 };
 
-export const OUTCOME: Question = {
-  type: "choice",
-  instructions:
-    "Was the goal behind the request actually achieved? Judge the result, not the tone: a reply that calmly explains that a command, test or step failed, or that something could not be done, describes a failure, even when the user asked to be told what happened. Use `assistant_last` and `tool_failures` (tool calls that returned an error, counted in code).",
-  options: {
-    done: "The goal was achieved, and nothing that failed along the way is left unresolved.",
-    partial: "Part of the goal was achieved; the rest remains, was deferred, or is unverified.",
-    failed:
-      "The goal was not achieved: a command, test, build or step failed and was not fixed, a needed file or resource was missing, or the assistant says it could not do it.",
-    blocked_on_user: "It stopped to ask the user for a decision or information it needs before it can continue.",
-  },
-};
-
-/**
- * The failure question. A narrow yes/no with the code-counted fact named in it: a four-way outcome
- * alone let a calm report of a failure ("the file does not exist, so I cannot…") read as done.
- */
-export const WORK_FAILED: Question = {
-  type: "boolean",
-  instructions:
-    "Did something in this turn fail and stay failed? Read `assistant_last` and `tool_failures`. Judge what happened, not how calmly it is told or whether the user expected it.",
-  criteria: {
-    true: "A command, test, build, file read or other step failed or found something missing, and the turn ended without fixing it (`tool_failures.unresolved_failed_calls` above 0 is such a failure), or the assistant says it could not do what was asked.",
-    false: "Everything it ran succeeded, or every failure was fixed later in the turn, and it did what was asked.",
-  },
-};
-
 export const STUCK: Question = {
   type: "score",
   instructions:
@@ -334,7 +274,7 @@ export const STUCK: Question = {
 /** A main session's questions: the stuck one only for a long turn (fewer tokens otherwise). */
 export function turnQuestions(f: TurnFacts): Record<string, Question> {
   const long = f.durationMs >= LONG_TURN_MS || f.tools.length >= LONG_TURN_TOOLS;
-  return { asks_user: ASKS_USER, outcome: OUTCOME, work_failed: WORK_FAILED, ...(long ? { stuck: STUCK } : {}) };
+  return { asks_user: ASKS_USER, ...(long ? { stuck: STUCK } : {}) };
 }
 
 // ---- eligibility (pure) --------------------------------------------------------------------------
@@ -393,8 +333,8 @@ export interface SignalsDeps {
   provider: () => DecisionProvider | null;
   list: () => Promise<SessionSummary[]>;
   summary: (path: string) => Promise<SessionSummary | null>;
-  /** The list's cached last-reply time of a file (sessions-index lastReplyAtOf). */
-  lastReplyAt: (path: string) => number | undefined;
+  /** The list's cached last finished reply of a file (sessions-index lastReplyOf): when, and how it stopped. */
+  lastReply: (path: string) => { at: number; stopReason: string } | undefined;
   /** This server holds a runtime for it. */
   held: (path: string) => boolean;
   /** Every live record, this server's own included. */
@@ -479,12 +419,17 @@ export class AttentionSignals {
     if (exclusionReason(s, settings, this.d.held(s.path), this.d.home)) return false;
     if (s.busy || s.activity?.state === "working") return false;
     const stored = readSignals(this.file()).sessions[s.id];
-    const replyAt = this.d.lastReplyAt(s.path);
+    const reply = this.d.lastReply(s.path);
     const now = this.now();
-    // Cheap gates before any read: nothing newer than what is stored; a first sight of an old turn.
+    // Cheap gates before any read: nothing newer than what is stored; a first sight of an old turn;
+    // a turn that stopped with an error (the list's turn-error mark says so, not a classifier).
     if (!settled) {
-      if (replyAt === undefined) return false;
-      if (stored ? replyAt <= stored.replyAt : now - replyAt > FRESH_MS) return false;
+      if (reply === undefined) return false;
+      if (reply.stopReason === "error") {
+        this.forgetBefore(s.id, reply.at);
+        return false;
+      }
+      if (stored ? reply.at <= stored.replyAt : now - reply.at > FRESH_MS) return false;
     }
     let facts: TurnFacts | null;
     try {
@@ -493,6 +438,10 @@ export class AttentionSignals {
       return false;
     }
     if (!facts || stored?.turnId === facts.turnId) return false;
+    if (facts.stopReason === "error") {
+      this.forgetBefore(s.id, facts.replyAt);
+      return false;
+    }
     if (!stored && now - facts.replyAt > FRESH_MS) return false;
     const key = `${s.id}:${facts.turnId}`;
     const result = await this.decide(key, "attention", turnState(s.title, facts), turnQuestions(facts));
@@ -511,7 +460,18 @@ export class AttentionSignals {
     return true;
   }
 
-  /** Stuck checks for long-running workers, outcome checks for ones that just ended. */
+  /**
+   * A turn that stopped with an error is not classified; the stored answers of the turn before it
+   * are dropped, since a newer turn replaces them and they would otherwise mark the row still.
+   */
+  private forgetBefore(id: string, replyAt: number): void {
+    const stored = readSignals(this.file()).sessions[id];
+    if (!stored || stored.replyAt >= replyAt) return;
+    updateSignals((data) => void delete data.sessions[id], this.file());
+    this.d.changed();
+  }
+
+  /** Stuck checks for long-running workers. */
   private async checkWorkers(list: readonly SessionSummary[], budget: number): Promise<number> {
     const byPath = new Map(list.map((s) => [s.path, s]));
     const settings = this.d.settings();
@@ -528,19 +488,15 @@ export class AttentionSignals {
         if (seen.has(w.id)) continue;
         seen.add(w.id);
         const stored = readSignals(this.file()).workers[w.id];
-        let kind: "stuck" | "outcome" | null = null;
-        if (w.working && w.startedAt && now - w.startedAt >= WORKER_STUCK_AFTER_MS && stored?.kind !== "outcome" && (!stored || now - stored.at >= WORKER_STUCK_EVERY_MS))
-          kind = "stuck";
-        else if ((w.status === "done" || w.status === "error") && w.endedAt && now - w.endedAt <= FRESH_MS && !(stored?.kind === "outcome" && stored.endedAt === w.endedAt))
-          kind = "outcome";
-        if (!kind) continue;
-        if (await this.checkWorker(parent, w, kind)) used++;
+        if (!w.working || !w.startedAt || now - w.startedAt < WORKER_STUCK_AFTER_MS) continue;
+        if (stored && now - stored.at < WORKER_STUCK_EVERY_MS) continue;
+        if (await this.checkWorker(parent, w)) used++;
       }
     }
     return used;
   }
 
-  private async checkWorker(parent: SessionSummary, w: WorkerInfo, kind: "stuck" | "outcome"): Promise<boolean> {
+  private async checkWorker(parent: SessionSummary, w: WorkerInfo): Promise<boolean> {
     const ref = workerRef(w);
     if (!ref) return false;
     const adapter = this.d.adapters().get(ref.backend);
@@ -554,17 +510,15 @@ export class AttentionSignals {
     }
     if (!summary.found) return false;
     const now = this.now();
-    // A stuck check is keyed by its time slot; an outcome check by the ending.
-    const key = kind === "stuck" ? `${w.id}:stuck:${Math.floor(now / WORKER_STUCK_EVERY_MS)}` : `${w.id}:outcome:${w.endedAt}`;
-    const questions: Record<string, Question> = kind === "stuck" ? { stuck: STUCK } : { outcome: OUTCOME, work_failed: WORK_FAILED };
-    const result = await this.decide(key, "worker", workerState(w, summary, now), questions);
+    // A stuck check is keyed by its time slot.
+    const key = `${w.id}:stuck:${Math.floor(now / WORKER_STUCK_EVERY_MS)}`;
+    const result = await this.decide(key, "worker", workerState(w, summary, now), { stuck: STUCK });
     if (!result) return false;
     updateSignals((data) => {
       data.workers[w.id] = {
         sessionId: parent.id,
-        kind,
+        kind: "stuck",
         at: this.now(),
-        ...(kind === "outcome" && w.endedAt ? { endedAt: w.endedAt } : {}),
         name: head(squash(w.name), 80),
         provider: result.provider,
         model: result.model,

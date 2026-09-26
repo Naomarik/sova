@@ -1,11 +1,12 @@
-// The session row's decision marks: the "needs you" mark on line 1 (attention signals) and the tag
-// status word on line 3 (session tags), plus the live feed's overlay of both onto the list
-// (WS /ws/watch?feed=sessions). Pure: the sidebar reads these, the tests pin them.
+// The session row's marks: line 1's leading state mark (the turn-error mark, else the unread dot)
+// and its "needs you" mark (attention signals), the tag status word on line 3 (session tags), plus
+// the live feed's overlay of these onto the list (WS /ws/watch?feed=sessions). Pure: the sidebar
+// reads these, the tests pin them.
 
 import type { SessionMarks, SessionSummary, SessionTags, SignalKind } from "../../shared/protocol";
 
 /** The mark's kinds, most urgent first: one mark per row, the first of these that applies. */
-export const SIGNAL_PRECEDENCE: readonly SignalKind[] = ["task-failed", "asks-you", "looping"];
+export const SIGNAL_PRECEDENCE: readonly SignalKind[] = ["asks-you", "looping"];
 
 /** What a row's line-1 mark says: the kind, and whether it is about a subagent rather than the session. */
 export interface NeedsYouMark {
@@ -14,12 +15,28 @@ export interface NeedsYouMark {
 }
 
 /**
- * The row's mark, or null. The server decides the kinds (its thresholds, never re-derived here) and
- * sends `signals` only while the mark should show; `seenAt ≥ at` is checked again because it is the
- * rule. This tab adds what it knows sooner than the last list: the open session never shows it
- * (you're looking at it), and neither does one this tab is running a turn in. The session's own
- * kinds win a tie with its subagents': a failed worker only speaks when the session itself has no
- * mark as urgent.
+ * Line 1's leading state mark, or null: "error" when the last turn stopped with an error
+ * (`turnError`), else "unread" for the unread dot. One mark in one slot: an errored reply since you
+ * looked is new activity too, so the dot is implied. The server sends both only while they apply;
+ * the open session never shows either (you're looking at it).
+ */
+export function rowLeadMark(s: Pick<SessionSummary, "path" | "turnError" | "unread">, selected: string | null): "error" | "unread" | null {
+  if (s.path === selected) return null;
+  if (s.turnError) return "error";
+  return s.unread ? "unread" : null;
+}
+
+/** The turn-error mark's tooltip: the fact, then pi's own error message when there is one. */
+export function turnErrorTitle(e: NonNullable<SessionSummary["turnError"]>): string {
+  return e.message ? `The last turn stopped with an error: ${e.message}` : "The last turn stopped with an error.";
+}
+
+/**
+ * The row's needs-you mark, or null. The server decides the kinds (its thresholds, never re-derived
+ * here) and sends `signals` only while the mark should show; `seenAt ≥ at` is checked again because
+ * it is the rule. This tab adds what it knows sooner than the last list: the open session never
+ * shows it (you're looking at it), and neither does one this tab is running a turn in. The
+ * session's own kinds win a tie with its subagents'.
  */
 export function rowNeedsYou(
   s: Pick<SessionSummary, "path" | "signals" | "workerSignals" | "seenAt">,
@@ -28,7 +45,7 @@ export function rowNeedsYou(
   if (s.path === opts.selected || opts.busy) return null;
   const own = s.signals && !(s.seenAt !== undefined && s.seenAt >= s.signals.at) ? s.signals.kinds : [];
   const w = s.workerSignals;
-  const workers: SignalKind[] = [...(w && w.failed > 0 ? ["task-failed" as const] : []), ...(w && w.stuck > 0 ? ["looping" as const] : [])];
+  const workers: SignalKind[] = w && w.stuck > 0 ? ["looping"] : [];
   for (const kind of SIGNAL_PRECEDENCE) {
     if (own.includes(kind)) return { kind, worker: false };
     if (workers.includes(kind)) return { kind, worker: true };
@@ -37,24 +54,22 @@ export function rowNeedsYou(
 }
 
 /** The mark's glyph and class (src/design/base.css, "DECISIONS"): the shape differs per kind, so hue isn't alone. */
-export const SIGNAL_ICON = { "task-failed": "alert-circle", "asks-you": "chat", looping: "refresh" } as const satisfies Record<SignalKind, string>;
+export const SIGNAL_ICON = { "asks-you": "chat", looping: "refresh" } as const satisfies Record<SignalKind, string>;
 export const SIGNAL_CLASS: Record<SignalKind, string> = {
-  "task-failed": "session-signal session-signal-failed",
   "asks-you": "session-signal session-signal-asks",
   looping: "session-signal session-signal-looping",
 };
 
 /** The mark's hidden words, read as part of the row's name (trailing space: the title follows). */
 export function signalWords(m: NeedsYouMark): string {
-  if (m.worker) return m.kind === "looping" ? "A subagent may be stuck. " : "A subagent failed. ";
-  return { "task-failed": "Task failed. ", "asks-you": "Asks you. ", looping: "May be looping. " }[m.kind];
+  if (m.worker) return "A subagent may be stuck. ";
+  return { "asks-you": "Asks you. ", looping: "May be looping. " }[m.kind];
 }
 
 /** The mark's tooltip: the same fact, one sentence. */
 export function signalTitle(m: NeedsYouMark): string {
-  if (m.worker) return m.kind === "looping" ? "A subagent looks stuck." : "A subagent finished without doing the task.";
+  if (m.worker) return "A subagent looks stuck.";
   return {
-    "task-failed": "The last turn looks like it failed.",
     "asks-you": "The last reply asks you something.",
     looping: "The last turn looks like it went in circles.",
   }[m.kind];
@@ -93,8 +108,8 @@ export function tagSearchText(tags: SessionTags | undefined): string {
 // ---- The live feed's overlay ---------------------------------------------------------------------
 
 /** The overlaid fields, one session's worth. */
-type Marks = Pick<SessionSummary, "signals" | "workerSignals" | "tags">;
-const MARK_FIELDS = ["signals", "workerSignals", "tags"] as const;
+type Marks = Pick<SessionSummary, "signals" | "workerSignals" | "tags" | "turnError">;
+const MARK_FIELDS = ["signals", "workerSignals", "tags", "turnError"] as const;
 
 /**
  * What the feed has said, keyed by session path. `complete` is true once a full snapshot arrived on

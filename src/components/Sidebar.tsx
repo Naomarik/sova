@@ -1,8 +1,8 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
-import { HOME_HREF } from "../lib/sessions-route";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
+import { openOverview } from "../lib/overview-route";
 import { fetchTargets, listSessions, setSessionArchived } from "../lib/api";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
@@ -878,6 +878,17 @@ function AgentsGlance(props: { agents: AgentsInsight | undefined }) {
   );
 }
 
+/** The sova wordmark, a link to the list (`#/`): the list's head, and the overview's head on a
+    phone (§app.shell/overview). */
+export function BrandLink() {
+  return (
+    <a class="brand" href="#/">
+      <span class="icon" style={{ "--icon": "url(/icons/sova-mark.svg)" }} aria-hidden="true" />
+      sova
+    </a>
+  );
+}
+
 export function Sidebar(props: {
   sessions: SessionSummary[] | undefined;
   loading: boolean;
@@ -1474,11 +1485,13 @@ export function Sidebar(props: {
       {/* Collapsed, the pane's own body is not in the DOM at all — nothing hidden-but-readable. */}
       <Show when={!collapsed()} fallback={<Spine />}>
         <div class="sidebar-head">
-          {/* Home (§app.shell/home), at every width: on a phone the way back from the list. */}
-          <a class="brand" href={HOME_HREF}>
-            <span class="icon" style={{ "--icon": "url(/icons/sova-mark.svg)" }} aria-hidden="true" />
-            sova
-          </a>
+          <BrandLink />
+          {/* A phone's way to the overview (§app.shell/overview): wide, it is always beside the list. */}
+          <Show when={!props.unfolded}>
+            <button type="button" class="button button-icon button-ghost sidebar-overview" aria-label="Overview" title="Overview" onClick={openOverview}>
+              <Icon name="grid" />
+            </button>
+          </Show>
           <span class="sidebar-spacer" />
           <button type="button" class="button" onClick={() => props.onNew()}>
             <Icon name="plus" />
@@ -1689,7 +1702,7 @@ export function Sidebar(props: {
                       hides the whole region. Its click and keydown stop here, as the group head's
                       `⋯` does, so a press is never read as a press on the summary. Fanout is NOT
                       here — it is a creation gesture, not a curation one, and its front door is the
-                      welcome screen beside New Session. */}
+                      overview beside New Session. */}
                   <Show when={!searching()}>
                     <button
                       ref={newGroupToggle}

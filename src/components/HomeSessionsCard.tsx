@@ -8,8 +8,8 @@ import "../home.css";
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /**
- * The home screen's Sessions card (§chat.transcript/landing-page): the list at a glance. The card
- * itself opens the session list (`onOpenList`: the list view on a phone, the unfolded pane on a wide
+ * The overview's Sessions card (§chat.transcript/landing-page): the list at a glance. The card
+ * itself opens the session list (`onOpenList`: back to the list on a phone, the unfolded pane on a wide
  * window); the Needs-you names and Resume are their own links on top of it.
  */
 export function HomeSessionsCard(props: { glance: SessionsGlance; now: number; onOpenList(): void }) {

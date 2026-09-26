@@ -1,5 +1,4 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
-import { SESSIONS_HREF } from "../lib/sessions-route";
 import { Portal } from "solid-js/web";
 import { fetchMesh, fetchMeshDetails, putHostBrowserAccess, putHostLabel } from "../lib/api";
 import { isMeshHash, MESH_HREF, SELF_FILTER, setMeshState } from "../lib/mesh";
@@ -159,7 +158,7 @@ function HostSection(props: { host: MeshHostDetails; ownProtocol: string | undef
   const openThrough = () => {
     askHostFilter(h().self ? SELF_FILTER : h().id);
     props.onClose();
-    if (isMeshHash(location.hash)) location.hash = SESSIONS_HREF;
+    if (isMeshHash(location.hash)) location.hash = "#/";
   };
 
   const rows = () => detailRows(h(), props.ownProtocol, props.now);

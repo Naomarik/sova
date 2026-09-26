@@ -1,4 +1,4 @@
-// The home screen's Sessions card (§chat.transcript/landing-page): what the session list holds, at a
+// The overview's Sessions card (§chat.transcript/landing-page): what the session list holds, at a
 // glance, from data the page already has (the list and the attention digest; no server call).
 import type { AttentionDigest, OverseerProactivity, SessionSummary } from "../../shared/protocol";
 import { needsYouRows, needsYouShown } from "./needs-you";

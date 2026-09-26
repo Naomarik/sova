@@ -1,5 +1,4 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, onMount, Show } from "solid-js";
-import { FoldedNav } from "./FoldedNav";
 import type { AttentionDigest, OverseerInfo, OverseerProactivity, SessionSummary } from "../../shared/protocol";
 import { clearOverseer, getOverseer, getOverseerIdeas, getOverseerSettings, getOverseerTodos, putOverseerSettings } from "../lib/api";
 import { relativeTime, shortModel } from "../lib/format";
@@ -200,7 +199,9 @@ export function OverseerView(props: {
   const history = () => (props.info?.history ?? []).map((h) => (h.title === "Untitled" ? { ...h, title: "No messages" } : h));
   const Head = (p: { earlier?: { title: string; lastActiveAt: string } }) => (
     <header class="session-head overseer-head">
-      <FoldedNav back={p.earlier ? { href: OVERSEER_HASH, label: "Back to the Overseer" } : undefined} />
+      <a class="button button-icon button-ghost app-back" href={p.earlier ? OVERSEER_HASH : "#/"} aria-label={p.earlier ? "Back to the Overseer" : "Back to Sessions"}>
+        <Icon name="chevron-left" />
+      </a>
       <div class="session-head-main">
         <h1 class="session-head-title" tabindex="-1" ref={props.titleRef}>
           {p.earlier ? "Earlier Overseer Conversation" : "Overseer"}
@@ -237,7 +238,7 @@ export function OverseerView(props: {
           onClick={() => void cycleProactivity()}
         >
           <Icon name="bell" small />
-          <span class="overseer-proactivity-word">{PROACTIVITY_LABEL[shownProactivity()]}</span>
+          {PROACTIVITY_LABEL[shownProactivity()]}
         </button>
           </>
         )}
@@ -294,16 +295,14 @@ export function OverseerView(props: {
       <Show when={!p.earlier}>
         <button
           type="button"
-          class="button button-sm overseer-clear"
-          aria-label="Clear"
+          class="button button-sm"
           title="Start a new conversation. This one moves to History. Same as /clear."
           aria-disabled={clearing() || !props.info ? "true" : undefined}
           onClick={() => {
             void clear().then((ok) => ok && announce("Cleared. The previous conversation is in History."));
           }}
         >
-          <Icon name="plus" small />
-          <span class="overseer-clear-word">Clear</span>
+          Clear
         </button>
       </Show>
     </header>

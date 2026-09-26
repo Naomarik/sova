@@ -50,8 +50,8 @@ function TargetStatus(props: { target: TargetInfo; checking: boolean }) {
  * The type field chooses what the dialog starts: One session — this, the default —
  * or Fan out…, which creates nothing here: it closes this dialog and opens the fanout dialog on a fresh
  * prompt, carrying the chosen folder as its cwd. That handoff is fanout's entry at every window
- * width and on every route: the folded shell hides .app-main (the welcome CTA with it), and a
- * session view has no welcome screen at all.
+ * width and on every route: the folded shell hides .app-main (the overview's CTA with it), and a
+ * session view has no overview at all.
  */
 export function NewSessionDialog(props: {
   prefill: string;

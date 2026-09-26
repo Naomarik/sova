@@ -1,4 +1,4 @@
-/* The home screen's Sessions card (#/home and the empty main pane). Token values only. */
+/* The overview's Sessions card (the empty main pane; #/overview on a phone). Token values only. */
 
 .home-sessions {
   position: relative;
@@ -43,30 +43,6 @@
 .home-sessions-title { color: var(--color-ink-2); font-weight: var(--fw-medium); }
 .home-sessions-resume { flex: none; }
 
-/* A page head's leading links on a phone (FoldedNav): the brand mark home, then back. Hidden at
-   768px and up, where the list and its brand are beside every page. */
-.folded-nav { display: inline-flex; align-items: center; flex: none; }
-.folded-home { color: var(--color-accent); }
-@media (min-width: 768px) {
-  .folded-nav { display: none; }
-}
-/* The Overseer's head is the fullest: with FoldedNav's home mark and every button present
-   (proactivity, Ideas, Todos, History, Clear), a narrow head shows the proactivity cycle as its
-   bell and Clear as its plus (their aria-labels still say them). The icons are wide-hidden. */
-.overseer-clear .icon { display: none; }
-@container session-head (max-width: 479px) {
-  .overseer-head .overseer-proactivity .icon,
-  .overseer-head .overseer-clear .icon { display: inline-block; }
-  .overseer-head .overseer-proactivity-word,
-  .overseer-head .overseer-clear-word { display: none; }
-}
-/* The head is its own container, so its own gaps go by the window: folded, it is the window's width. */
-@media (max-width: 479px) {
-  .session-head.overseer-head { gap: var(--space-1); padding-left: var(--space-2); padding-right: var(--space-2); }
-}
-/* Under 400px the buttons can't share a row with the title (they need 390px with it), so they take
-   a second row, at its right end. */
-@media (max-width: 399px) {
-  .session-head.overseer-head { flex-wrap: wrap; justify-content: flex-end; row-gap: var(--space-1); }
-  .session-head.overseer-head > .session-head-main { flex: 1 1 calc(100% - 100px); }
-}
+/* A phone's overview keeps the list's head above it (§app.shell/overview): the same row, on the
+   surface it has in the list. */
+.overview-bar { background: var(--color-surface); }

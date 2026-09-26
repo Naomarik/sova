@@ -25,7 +25,6 @@ import { socketReconnects } from "./lib/socket";
 import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
-import { isMainThread } from "./lib/regions";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
@@ -41,7 +40,7 @@ import { createPoll } from "./lib/poll";
 import { homeFromSessionPath } from "./lib/format";
 import { reconcileTheme } from "./lib/theme";
 import { rememberedWidth, setSpine, spine, spineWidth } from "./lib/spine";
-import { isSessionsHash, SESSIONS_HREF } from "./lib/sessions-route";
+import { isOverviewHash, leaveOverview } from "./lib/overview-route";
 import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
 import { closeSettings, openSettings, settingsOpenAt } from "./lib/settings-nav";
@@ -54,7 +53,6 @@ import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ExplainGrid } from "./components/ExplainGallery";
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
-import { FoldedNav } from "./components/FoldedNav";
 import { HomeSessionsCard } from "./components/HomeSessionsCard";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
 import { MeshDetails } from "./components/MeshDetails";
@@ -64,7 +62,7 @@ import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./compone
 import { type AttentionFeed, OverseerView } from "./components/OverseerView";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
 import { SessionView } from "./components/SessionView";
-import { sessionHref, Sidebar } from "./components/Sidebar";
+import { BrandLink, sessionHref, Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
 import { UsageView } from "./components/UsageView";
 import { GlobalRegions, Icon } from "./components/ui";
@@ -248,8 +246,9 @@ export function App() {
   });
 
   redirectLegacyInsights();
-  /** `#/sessions`: a phone's session list (§app.shell/home); `#/` is the home screen. */
-  const [sessionsRoute, setSessionsRoute] = createSignal(isSessionsHash(location.hash));
+  /** `#/overview`: the overview as a phone's own page (§app.shell/overview); wide, it is the
+      empty main column as always. */
+  const [overviewRoute, setOverviewRoute] = createSignal(isOverviewHash(location.hash));
   const [route, setRoute] = createSignal<string | null>(pathFromHash());
   createEffect(
     on(route, (p) => {
@@ -389,7 +388,7 @@ export function App() {
         (err) => {
           if (sessionIdFromHash(location.hash) !== id) return;
           toast(err instanceof ApiError && err.status === 404 ? "That session is gone." : `Couldn't open that session. ${(err as Error).message}`);
-          history.replaceState(history.state, "", SESSIONS_HREF);
+          history.replaceState(history.state, "", "#/");
         },
       )
       .finally(() => {
@@ -407,7 +406,7 @@ export function App() {
     setExtRoute(extRouteFromHash(location.hash));
     setMeshRoute(isMeshHash(location.hash));
     setOrgsRoute(orgsRouteFromHash(location.hash));
-    setSessionsRoute(isSessionsHash(location.hash));
+    setOverviewRoute(isOverviewHash(location.hash));
   };
   // A `#/sid/` route opened before the first list load resolves when the lists land.
   createEffect(on([list, peerLists, meshSettled, peersSettled], () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
@@ -599,7 +598,7 @@ export function App() {
       return;
     }
     toast("That group is gone.");
-    location.hash = SESSIONS_HREF;
+    location.hash = "#/";
   });
 
   /** A session this tab just created opens for chat with its composer focused. */
@@ -673,7 +672,7 @@ export function App() {
    */
   const onArchived = (path: string, archived: boolean) => {
     if (archived && route() === path) {
-      location.hash = SESSIONS_HREF;
+      location.hash = "#/";
       batch(onHash);
     }
     if (dropArchived(created, path, archived)) setCreatedVersion((v) => v + 1);
@@ -720,19 +719,16 @@ export function App() {
     onCleanup(() => clearInterval(t));
   });
 
-  /** The sessions the landing page counts: main threads, as the sidebar lists them. */
-  const mainList = () => (list() ?? []).filter(isMainThread);
-  /** The home screen's Sessions card opens the list: its own view on a phone, the pane (expanded
-      from the spine) on a wide window, with the search focused. */
+  /** The overview's Sessions card opens the list: back to it on a phone (lib/overview-route),
+      the pane (expanded from the spine) on a wide window, with the search focused. */
   const openSessionList = () => {
     if (!unfolded()) {
-      location.hash = SESSIONS_HREF;
+      leaveOverview();
       return;
     }
     if (spine()) setSpine(false);
     queueMicrotask(() => document.getElementById("session-search")?.focus());
   };
-  const folderCount = () => new Set(mainList().map((s) => s.cwd)).size;
 
   // ---- Subagents pane: open for one session path, closed whenever the route changes ----------
   const [subagents, setSubagents] = createSignal<{ path: string; selected: string | null } | null>(null);
@@ -893,7 +889,7 @@ export function App() {
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}
-        data-view={groupRoute() ? "workspace" : sessionsRoute() ? "list" : "session"}
+        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || orgsRoute() || overviewRoute() ? "session" : "list"}
         data-ext-maximized={extMaximized() ? "1" : undefined}
       >
         <Sidebar
@@ -992,7 +988,9 @@ export function App() {
                       autofocus={autofocusPath() === path}
                       titleRef={(el) => (titleEl = el)}
                       lead={
-                        <FoldedNav />
+                        <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">
+                          <Icon name="chevron-left" />
+                        </a>
                       }
                       listVersion={wiring.listVersion}
                       now={wiring.now}
@@ -1022,7 +1020,7 @@ export function App() {
                   <div class="empty">
                     <p class="empty-title">Couldn't find this session.</p>
                     <p class="empty-body">It isn't in the list of sessions on disk anymore.</p>
-                    <a class="button empty-action" href={SESSIONS_HREF}>
+                    <a class="button empty-action" href="#/">
                       Back to Sessions
                     </a>
                   </div>
@@ -1060,16 +1058,23 @@ export function App() {
                 )}
               </Match>
               <Match when={!route() && !groupRoute() && !meshRoute() && !orgsRoute()}>
-                <div class="welcome">
-                  <div class="welcome-head">
+                {/* A phone keeps the list's head over its overview (§app.shell/overview): the
+                    brand back to the list, and New Session. */}
+                <Show when={!unfolded()}>
+                  <div class="sidebar-head overview-bar">
+                    <BrandLink />
+                    <span class="sidebar-spacer" />
+                    <button type="button" class="button" onClick={() => setCreating(true)}>
+                      <Icon name="plus" />
+                      New Session
+                    </button>
+                  </div>
+                </Show>
+                <div class="overview">
+                  <div class="overview-head">
                     <div class="empty">
-                      <Icon name="chat" class="empty-mark" />
-                      <p class="empty-title">
-                        <Show when={list()} fallback="Loading sessions.">
-                          {mainList().length} sessions across {folderCount()} folders.
-                        </Show>
-                      </p>
-                      <p class="empty-body">Pick one to read it, or start a new one.</p>
+                      {/* A plain title at every width: the Sessions card below is where the count lives. */}
+                      <h1 class="empty-title">Overview</h1>
                       {/* Two ways to start something: one session, or the same prompt to N models
                           at once (the empty screen is fanout's front door,
                           which is why it is offered here and not in the sidebar). */}

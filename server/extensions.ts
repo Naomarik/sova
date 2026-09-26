@@ -37,7 +37,7 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost"]);
 export const extensionsFile = (): string => process.env.SOVA_EXTENSIONS_FILE || join(stateRoot(), "extensions.json");
 
 // Each distinct complaint is logged once per process: the manifest is re-read per request, and a
-// bad entry would otherwise log on every poll of the welcome screen.
+// bad entry would otherwise log on every poll of the overview.
 const logged = new Set<string>();
 function warnOnce(message: string): void {
   if (logged.has(message)) return;

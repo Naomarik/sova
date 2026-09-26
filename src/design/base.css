@@ -1417,9 +1417,9 @@ html.is-resizing * {
    /explain page this machine has as one card grid. The grid is shown only
    when there is at least one; its own rules are in src/explain.css.
    .app-main is a fixed-height flex column with overflow hidden, so nothing
-   here scrolls unless .welcome is the scroll region itself. --------------- */
+   here scrolls unless .overview is the scroll region itself. --------------- */
 
-.welcome {
+.overview {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -1431,11 +1431,11 @@ html.is-resizing * {
      the grid's last row off the viewport edge. */
   padding: 0 var(--space-4) var(--space-6);
 }
-.welcome-head { flex: none; }
+.overview-head { flex: none; }
 /* Nothing explained yet — the opening is the whole page, so it centres in the
    pane instead of hanging from the top. A closed <Show> leaves a comment node,
    not an element, so :only-child still holds. */
-.welcome-head:only-child {
+.overview-head:only-child {
   flex: 1;
   display: flex;
   flex-direction: column;

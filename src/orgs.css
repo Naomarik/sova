@@ -239,3 +239,72 @@
 /* `.button-row` has no rule in base.css: the owner card's and the updates log's rows lay out here. */
 .orgs-owner-actions .button-row,
 .orgs-owner-confirm .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+
+/* ---- A project's overseer in the sidebar (§app.session-list/organizations): not a row but an eye
+   on its project's sticky heading. The heading row sticks now (the h4 inside it no longer does), so
+   the eye stays with the name while the rows scroll under it. */
+.org-project-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  background: var(--color-surface);
+}
+.org-project-head > .org-project-label { position: static; flex: 1; min-width: 0; background: transparent; }
+/* A 44px ghost icon in the right gutter, lined up under the org link; its one mark at the corner. */
+.org-overseer {
+  position: relative;
+  flex: none;
+  margin-right: var(--space-1);
+  color: var(--color-ink-muted);
+}
+.org-overseer:hover,
+.org-overseer:focus-visible { color: var(--color-ink); }
+.org-overseer .icon { width: 16px; height: 16px; }
+.org-overseer[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-ink); border-color: transparent; }
+.org-overseer-mark { position: absolute; top: 9px; right: 9px; pointer-events: none; }
+/* Busy's dot, pulsing: the one sanctioned animation, work in flight (reduced motion stops it). */
+.org-overseer .session-rail-dot { color: var(--color-accent); animation: live-pulse 1.6s var(--ease-standard) infinite; }
+.org-overseer .session-unread { width: 7px; height: 7px; border-radius: var(--r-full); background: var(--color-accent); }
+.org-overseer .icon.session-turn-error { top: 6px; right: 6px; width: 12px; height: 12px; color: var(--status-error); }
+
+/* ---- A project overseer's chat head (§app.project-overseer/page): the global Overseer head's
+   shape (.overseer-head), with the level, Run Now and ⋯, then a short status strip under it. */
+.po-head > .chip { flex: none; }
+.po-head-meta > .po-head-project { flex: none; max-width: 50%; color: inherit; }
+.po-head-meta > .po-head-project:hover { color: var(--color-ink); }
+.po-head-meta > .po-head-part { flex: 0 1 auto; white-space: nowrap; }
+/* Below 480px the level and Run Now leave line 1 for ⋯; the menu's own copies show only then.
+   A viewport rule on purpose: the menu is in the top layer, outside the head's container. */
+.po-menu-narrow { display: none; }
+@media (max-width: 479px) {
+  .po-head > .po-wide { display: none; }
+  /* The meta keeps the project: the org and the watch word go (⋯ says Watching). */
+  .po-head-meta > .po-head-part { display: none; }
+  .po-head-meta > .po-head-project { max-width: none; flex: 0 1 auto; }
+  .po-menu-narrow { display: contents; }
+}
+.po-menu-state { margin: 0; padding: var(--space-2) var(--space-3); }
+/* The level rows line up: the chosen one's check, an empty 16px slot on the others. */
+.po-level-spacer { flex: none; width: 16px; height: 16px; }
+.po-status {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-sunken);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.po-status-line { margin: 0; }
+.po-status-line > .button { min-height: 0; vertical-align: baseline; }
+.po-status-more { color: var(--color-ink-muted); }
+/* Wide, every line shows and Details has nothing to do; below 480px only line 1 until it is pressed. */
+.po-status-toggle { display: none; }
+@media (max-width: 479px) {
+  .po-status-toggle { display: inline-flex; }
+  .po-status:not(.po-status-open) > .po-status-more { display: none; }
+}

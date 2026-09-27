@@ -9,7 +9,11 @@ import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isMainThread, isOrdinarySession, isOrgSession, isTopSession } from "../lib/regions";
 import {
+  eyeLabel,
   finishedOpen as finishedOpenRule,
+  isClearedOverseer,
+  overseerEye,
+  regionCount,
   orgCount,
   orgNeedsYouRows,
   orgProjectItems,
@@ -217,6 +221,38 @@ const BUSY_CLAUSE = ", pi is replying in this session";
 
 /** Busy: this tab's own run wins over the last fetched list; Live wins over both. */
 const sessionBusy = (s: SessionSummary) => !s.live && !!(localRunning()[s.path] ?? s.busy);
+
+/**
+ * A project's current overseer, on its heading (§app.session-list/organizations): an eye, not a row.
+ * One mark at most, from the list alone: Busy's pulsing dot, else the turn-error mark, else the
+ * unread dot. Tinted and `aria-current` while its conversation is open, like the global eye.
+ */
+function OverseerEye(props: { session: SessionSummary; project: string; selected: string | null }) {
+  const eye = createMemo(() => overseerEye(props.session, { selected: props.selected, busy: sessionBusy(props.session) }));
+  const label = () => eyeLabel(props.project, eye().mark);
+  return (
+    <a
+      class="button button-icon button-ghost org-overseer"
+      href={`#/s/${encodeURIComponent(props.session.path)}`}
+      aria-current={eye().current ? "page" : undefined}
+      aria-label={label()}
+      title={label()}
+    >
+      <Icon name="eye" small />
+      <Switch>
+        <Match when={eye().mark === "working"}>
+          <span class="org-overseer-mark session-rail-dot" aria-hidden="true" />
+        </Match>
+        <Match when={eye().mark === "error"}>
+          <Icon name="alert-circle" small class="org-overseer-mark session-turn-error" />
+        </Match>
+        <Match when={eye().mark === "unread"}>
+          <span class="org-overseer-mark session-unread" aria-hidden="true" />
+        </Match>
+      </Switch>
+    </a>
+  );
+}
 
 /**
  * One session row: a wordless status rail on the left, then the link itself. The rail buttons are
@@ -1138,7 +1174,8 @@ export function Sidebar(props: {
       row's object across feed messages that don't touch it, so rows update in place. */
   const all = createMemo<SessionSummary[]>((prev) =>
     reuseUnchanged(
-      (props.sessions ?? []).filter(isMainThread).map((s) => overlaid(s, marksOverlay(), !!hostOf(s.path))),
+      // A cleared project overseer conversation is drawn nowhere: its overseer's History opens it.
+      (props.sessions ?? []).filter((s) => isMainThread(s) && !isClearedOverseer(s)).map((s) => overlaid(s, marksOverlay(), !!hostOf(s.path))),
       prev,
     ),
   );
@@ -1310,7 +1347,9 @@ export function Sidebar(props: {
    * then org → project → rows with a Finished tail. Open by default, a collapse remembered for the tab.
    */
   const orgs = createMemo(() => orgSections(orgHits()));
-  const orgTotal = () => all().filter(isOrgSession).length;
+  /** The region counts rows: a project's eye is not one. */
+  const orgRowCount = () => regionCount(orgs());
+  const orgTotal = () => regionCount(orgSections(all().filter(isOrgSession)));
   const orgNeedsYou = createMemo(() => orgNeedsYouRows(props.attention, orgHits()));
   /** Its Needs you items that are no session: projects to pick a main stakeholder for. */
   const orgItems = createMemo(() => orgProjectItems(props.attention, query()));
@@ -1323,10 +1362,7 @@ export function Sidebar(props: {
   const orgNeedsTitle = (k: number) =>
     k === 1 ? "The 1 organization session waiting on you." : `The ${k} organization sessions waiting on you, newest first.`;
   /** A project's label title: its root, read off the project overseer's folder, else its name. */
-  const projectTitle = (p: OrgProject) => {
-    const po = [...p.active, ...p.finished].find((s) => s.org?.kind === "overseer");
-    return po ? tildePath(po.cwd, home()) : p.name;
-  };
+  const projectTitle = (p: OrgProject) => (p.overseer ? tildePath(p.overseer.cwd, home()) : p.name);
   /** Paths waiting on the operator, for the org heads' warn dot. */
   const orgWaiting = createMemo(() => new Set(orgNeedsYou().map((r) => r.session.path)));
   const waitingIn = (rows: readonly SessionSummary[]) => rows.filter((r) => orgWaiting().has(r.path)).length;
@@ -1399,7 +1435,7 @@ export function Sidebar(props: {
   /** The Organizations door: its sessions, and who is waiting, so nothing waits unseen behind the spine. */
   const orgsDoorLabel = () => {
     const k = orgWaitingCount();
-    return `Organizations · ${sessionsWord(orgHits().length)}${k > 0 ? ` · ${k} waiting on you` : ""}`;
+    return `Organizations · ${sessionsWord(orgRowCount())}${k > 0 ? ` · ${k} waiting on you` : ""}`;
   };
   const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
 
@@ -1541,7 +1577,7 @@ export function Sidebar(props: {
                 }
               >
                 <Icon name="building" />
-                <span class="spine-count text-num">{orgHits().length}</span>
+                <span class="spine-count text-num">{orgRowCount()}</span>
                 <Show when={orgWaitingCount() > 0}>
                   <span class="spine-dot spine-dot-warn" aria-hidden="true" />
                 </Show>
@@ -1938,7 +1974,7 @@ export function Sidebar(props: {
                 >
                   <Icon name="chevron-right" small class="icon-twist" />
                   Organizations{" "}
-                  <span class="sidebar-region-count">· {searching() ? `${orgHits().length} of ${orgTotal()}` : orgHits().length}</span>
+                  <span class="sidebar-region-count">· {searching() ? `${orgRowCount()} of ${orgTotal()}` : orgRowCount()}</span>
                   {/* Nothing waits unseen: the warn dot and count stay on the head, open or shut. */}
                   <Show when={orgWaitingCount() > 0}>
                     <span class="chip chip-warn org-needs-chip" title={waitingTitle(orgWaitingCount())}>
@@ -2027,12 +2063,15 @@ export function Sidebar(props: {
                       <For each={o.projects}>
                         {(p) => (
                           <div class="org-project">
-                            <h4 class="list-group-label org-project-label" title={projectTitle(p)}>
-                              <span class="org-project-name">
-                                <bdi>{p.name}</bdi>
-                              </span>
-                              <span class="text-num">{projectCount(p)}</span>
-                            </h4>
+                            <div class="org-project-head">
+                              <h4 class="list-group-label org-project-label" title={projectTitle(p)}>
+                                <span class="org-project-name">
+                                  <bdi>{p.name}</bdi>
+                                </span>
+                                <span class="text-num">{projectCount(p)}</span>
+                              </h4>
+                              <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>
+                            </div>
                             <Show when={p.active.length > 0}>
                               <ul class="list">
                                 <For each={p.active}>
@@ -2044,7 +2083,7 @@ export function Sidebar(props: {
                               <details class="archive-date org-finished" open={projectFinishedOpen(o, p)} onToggle={(e) => onFinishedToggle(o, p, e)}>
                                 <summary
                                   class="list-group-label archive-date-label"
-                                  title="Hand-offs that reached their goal or were closed, cleared overseer conversations, and sessions you archived."
+                                  title="Hand-offs that reached their goal or were closed, and sessions you archived."
                                 >
                                   <Icon name="chevron-right" small class="icon-twist" />
                                   <span class="archive-date-name">Finished</span>

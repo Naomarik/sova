@@ -3,8 +3,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AttentionItem, SessionOrg, SessionSummary } from "../../shared/protocol";
 import {
+  eyeLabel,
   finishedOpen,
+  inOrgRegion,
   NO_PROJECT,
+  overseerEye,
+  regionCount,
+  orgRows,
   orgCount,
   orgNeedsYouRows,
   orgProjectItems,
@@ -54,7 +59,7 @@ test("org → project → rows; orgs and projects by name, Other last; ordinary 
   assert.ok(!sections.flatMap((o) => o.projects.flatMap((p) => p.active)).some((s) => s.id === "plain"));
 });
 
-test("inside a project: the current overseer first, then newest activity; Finished holds done, cleared and archived", () => {
+test("inside a project: the current overseer is the heading's eye, never a row; Finished holds done and archived only", () => {
   const o = orgSections([
     session("newest", { org: org(), lastActiveAt: at(9) }),
     session("po", { org: org({ kind: "overseer" }), lastActiveAt: at(1) }),
@@ -64,9 +69,74 @@ test("inside a project: the current overseer first, then newest activity; Finish
     session("archived", { org: org(), archived: true, lastActiveAt: at(7) }),
   ])[0]!;
   const p = o.projects[0]!;
-  assert.deepEqual(p.active.map((s) => s.id), ["po", "newest", "older"], "the hub is pinned though it is the oldest");
-  assert.deepEqual(p.finished.map((s) => s.id), ["cleared", "archived", "done"], "a cleared overseer is never pinned");
-  assert.equal(projectCount(p), 6);
+  assert.equal(p.overseer?.id, "po");
+  assert.deepEqual(p.active.map((s) => s.id), ["newest", "older"], "no pin: rows by activity, the overseer not among them");
+  assert.deepEqual(p.finished.map((s) => s.id), ["archived", "done"], "a cleared overseer conversation is not in Finished");
+  const drawn = [...p.active, ...p.finished].map((s) => s.id);
+  assert.ok(!drawn.includes("po") && !drawn.includes("cleared"), "neither overseer conversation is a row");
+  assert.equal(projectCount(p), 4, "counts are rows: the eye and a cleared conversation are not counted");
+  assert.equal(orgCount(o), 4);
+  assert.deepEqual(orgRows(o).map((s) => s.id).sort(), ["archived", "done", "newest", "older", "po"], "the section still holds its overseer (forced open, working dot)");
+});
+
+test("a project with only an overseer is a heading with an eye and no rows; with only cleared ones it is not drawn", () => {
+  const onlyEye = orgSections([session("po", { org: org({ kind: "overseer" }) })]);
+  assert.equal(onlyEye[0]?.projects[0]?.overseer?.id, "po");
+  assert.equal(projectCount(onlyEye[0]!.projects[0]!), 0);
+  assert.deepEqual(orgSections([session("c", { org: org({ kind: "overseer", finished: true }) })]), [], "a cleared conversation alone makes no org");
+  // An archived current overseer is still the current one: the eye, not a Finished row.
+  const archivedPo = orgSections([session("po", { org: org({ kind: "overseer" }), archived: true })])[0]!.projects[0]!;
+  assert.equal(archivedPo.overseer?.id, "po");
+  assert.equal(archivedPo.finished.length, 0);
+});
+
+test("two current overseers in one project: the newest is the eye, the other stays a row", () => {
+  const p = orgSections([
+    session("old", { org: org({ kind: "overseer" }), lastActiveAt: at(2) }),
+    session("new", { org: org({ kind: "overseer" }), lastActiveAt: at(6) }),
+  ])[0]!.projects[0]!;
+  assert.equal(p.overseer?.id, "new");
+  assert.deepEqual(p.active.map((s) => s.id), ["old"]);
+});
+
+test("inOrgRegion: org sessions, minus cleared overseer conversations", () => {
+  assert.equal(inOrgRegion(session("plain")), false);
+  assert.equal(inOrgRegion(session("g", { org: org() })), true);
+  assert.equal(inOrgRegion(session("po", { org: org({ kind: "overseer" }) })), true);
+  assert.equal(inOrgRegion(session("c", { org: org({ kind: "overseer", finished: true }) })), false);
+  assert.equal(inOrgRegion(session("d", { org: org({ finished: true }) })), true, "a finished hand-off stays, in Finished");
+  assert.equal(regionCount(orgSections([session("po", { org: org({ kind: "overseer" }) }), session("g", { org: org() })])), 1, "the region counts rows, not the eye");
+});
+
+test("the eye: one mark, working before a failed turn before a new reply; none of the last two while open", () => {
+  const po = (extra: Partial<SessionSummary> = {}) => session("po", { org: org({ kind: "overseer" }), ...extra });
+  const err = { at: 1, message: "boom" } as unknown as SessionSummary["turnError"];
+  const cases: [string, ReturnType<typeof overseerEye>][] = [
+    ["idle", overseerEye(po(), { selected: null, busy: false })],
+    ["working", overseerEye(po({ unread: true, turnError: err }), { selected: null, busy: true })],
+    ["error", overseerEye(po({ unread: true, turnError: err }), { selected: null, busy: false })],
+    ["unread", overseerEye(po({ unread: true }), { selected: null, busy: false })],
+    ["open", overseerEye(po({ unread: true, turnError: err }), { selected: "/s/po.jsonl", busy: false })],
+    ["open, working", overseerEye(po(), { selected: "/s/po.jsonl", busy: true })],
+  ];
+  assert.deepEqual(
+    cases.map(([, e]) => [e.mark, e.current]),
+    [
+      [null, false],
+      ["working", false],
+      ["error", false],
+      ["unread", false],
+      [null, true],
+      ["working", true],
+    ],
+  );
+  const labels = cases.slice(0, 4).map(([, e]) => eyeLabel("Rakiba site", e.mark));
+  assert.equal(new Set(labels).size, 4, "each state names itself differently");
+  for (const l of labels) assert.ok(l.startsWith("Open the Rakiba site overseer"), l);
+  assert.equal(labels[0], "Open the Rakiba site overseer");
+  assert.match(labels[1]!, /working/);
+  assert.match(labels[2]!, /failed/);
+  assert.match(labels[3]!, /new reply/);
 });
 
 test("the region's Needs you: org digest items plus baton waits the digest lacks; never an ordinary or finished row", () => {

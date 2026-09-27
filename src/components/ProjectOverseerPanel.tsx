@@ -127,7 +127,7 @@ export function ProjectOverseerPanel(props: {
           Run Now
         </button>
         <button type="button" class="button button-sm" aria-disabled={busy() ? "true" : undefined} onClick={openChat}>
-          <Icon name="chat" small />
+          <Icon name="eye" small />
           {info.data()?.exists ? "Open Overseer" : "Start Overseer"}
           <Show when={info.data()?.unread}>{(n) => <span class="chip chip-count">{n()}</span>}</Show>
         </button>

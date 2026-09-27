@@ -499,12 +499,13 @@
         "§chat.images/composer-attachments"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
         "src/design/base.css",
-        "src/app.css"
+        "src/app.css",
+        "src/components/AlignChip.tsx"
       ]
     },
     "§chat.composer/behavior": {
@@ -991,7 +992,9 @@
         "shared/link-message.ts",
         "src/lib/turn.ts",
         "src/lib/live.ts",
-        "src/components/ToolCard.tsx"
+        "src/components/ToolCard.tsx",
+        "src/components/AlignDocCard.tsx",
+        "shared/protocol.ts"
       ]
     },
     "§chat/composer": {
@@ -1055,8 +1058,8 @@
     },
     "§design.copy-deck/composer": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed"
     },
     "§design.copy-deck/composer-flyout": {
       "kind": "note",
@@ -1103,7 +1106,7 @@
     "§design.copy-deck/main-pane": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "reviewed"
     },
     "§design.copy-deck/markdown-and-code": {
       "kind": "note",
@@ -1143,7 +1146,7 @@
     "§design.copy-deck/sidebar": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/drag-archive.ts",
@@ -2850,7 +2853,8 @@
         "server/index.ts",
         "server/attention-signals.test.ts",
         "server/signals-store.test.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "server/link-delivery.test.ts"
       ],
       "requires": [
         "§app.decisions/interface",
@@ -3205,7 +3209,8 @@
         "server/attention-memo.ts",
         "server/attention-memo.test.ts",
         "server/org-routes.ts",
-        "server/overseer.ts"
+        "server/overseer.ts",
+        "server/attention.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest",
@@ -4944,7 +4949,8 @@
         "scripts/pwa-icons.sh",
         "server/push.test.ts",
         "server/web-push.test.ts",
-        "src/lib/push.test.ts"
+        "src/lib/push.test.ts",
+        "shared/protocol.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest",
@@ -5597,6 +5603,155 @@
         "src/components/ProjectOverseerHead.tsx",
         "src/lib/project-overseer-view.ts",
         "src/components/SessionView.tsx"
+      ]
+    },
+    "§chat.alignment/card": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/AlignDocCard.tsx",
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/align.ts",
+        "src/lib/align.test.ts",
+        "src/lib/hidden-rows.ts",
+        "src/design/align-viewer.css",
+        "server/transcript.ts",
+        "server/align-state.test.ts"
+      ],
+      "requires": [
+        "§chat.alignment/state",
+        "§chat.transcript/transcript-items"
+      ]
+    },
+    "§chat.alignment/chip": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/AlignChip.tsx",
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/align.ts",
+        "src/lib/align.test.ts",
+        "src/design/align-viewer.css"
+      ],
+      "requires": [
+        "§chat.alignment/card",
+        "§chat.composer/anatomy"
+      ]
+    },
+    "§chat.alignment/document": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/align.test.ts",
+        "shared/protocol.ts"
+      ],
+      "requires": []
+    },
+    "§chat.alignment/model": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/index.test.ts",
+        "pi-config/extensions/mode/align.test.ts",
+        "pi-config/extensions/mode/tests/align-turn.mjs"
+      ],
+      "requires": [
+        "§chat.alignment/state",
+        "§chat/mode-menu"
+      ]
+    },
+    "§chat.alignment/session-mark": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/align-state.ts",
+        "server/align-state.test.ts",
+        "server/sessions-index.ts",
+        "server/attention.ts",
+        "server/attention.test.ts",
+        "server/push.ts",
+        "server/push-store.ts",
+        "src/lib/signals.ts",
+        "src/lib/signals.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/components/PushSettings.tsx",
+        "src/lib/agents-board.ts",
+        "src/lib/summary-diff.ts",
+        "src/design/base.css",
+        "shared/protocol.ts"
+      ],
+      "requires": [
+        "§chat.alignment/state",
+        "§app.session-list/anatomy",
+        "§app.overseer/attention-digest"
+      ]
+    },
+    "§chat.alignment/state": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/index.ts",
+        "server/transcript.ts",
+        "server/align-state.ts",
+        "server/align-state.test.ts",
+        "shared/protocol.ts"
+      ],
+      "requires": [
+        "§chat.alignment/tool"
+      ]
+    },
+    "§chat.alignment/tool": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/align-tool.ts",
+        "pi-config/extensions/mode/align.test.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/mode/tests/align-turn.mjs"
+      ],
+      "requires": [
+        "§chat.alignment/document"
+      ]
+    },
+    "§chat.alignment/tui": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/align-ui.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/palette.ts",
+        "pi-config/extensions/mode/tests/smoke.mjs"
+      ],
+      "requires": [
+        "§chat.alignment/state"
+      ]
+    },
+    "§chat/alignment": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/index.ts"
       ]
     }
   },

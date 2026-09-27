@@ -418,15 +418,16 @@ itself.
   for size, the time this server saw the error count rise stands in (in memory, so after a restart
   such an error shows again until the session is seen). A session never seen, or an error of
   unknown time, still shows. This holds for archived sessions too.
+- **Needs you, open questions** (§chat.alignment/session-mark): an idle session that is not
+  archived, whose `align` counts say it has open questions, is `open-questions` ("{n} open
+  question(s) in {al_N} {title}" with one open alignment, else "… in {m} alignments"), dated by its
+  last reply. It needs no signal and no model; it shows with the attention feature off too.
 - **Needs you, from signals** (§app.decisions/attention-signals, only while the list carries them):
-  `asks-you` ("Asks you: {sentence}", the last question among the reply's last three sentences,
-  else its last sentence — a sentence ends at `.`, `!` or `?` (and any closing quote or bracket)
-  followed by a space or the end, so `notes.md` is not an end — code skipped, ≤160 characters, redacted; without one "The last reply asks
-  you something."); `looping` for stuck subagents ("A subagent looks stuck:
+  `looping` for stuck subagents ("A subagent looks stuck:
   {name}.", "Subagents look stuck: {a}, {b}.", else "{n} subagents look stuck."; adding " The last
   turn looks like it went in circles too." when it does), one item. A main session's own
   `looping`, alone, is **Finished (decide)**: "The last turn looks like it went in circles." The
-  sentence and the names are stored with the signal and reach only the digest, never the session
+  names are stored with the signal and reach only the digest, never the session
   list or the feed. With the feature off, none of these appear.
 - **Needs you, from a baton session** (§app.baton/needs-you): `baton-needs-you` while the baton is
   with the operator, "<from> → you: <question>", or while a person holds it through a hand-off no

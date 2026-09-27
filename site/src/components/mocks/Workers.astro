@@ -1,0 +1,48 @@
+---
+// A session's workers in the side pane, one open, and the git worktrees the session works in.
+import Frame from "../Frame.astro";
+import Icon from "../Icon.astro";
+import ContextRing from "../ContextRing.astro";
+
+const workers = [
+  { name: "reviewer", model: "claude-opus-5-5", state: "working", pct: 18, live: true, sel: true },
+  { name: "test-writer", model: "glm-5.3", state: "done · 4m", pct: 41 },
+  { name: "docs", model: "claude-sonnet-5", state: "done · 9m", pct: 12 },
+];
+---
+<Frame path="demo-app · workers" class="m-frame" caption="A session's workers pane: 3 workers with their models and context rings, one worker's transcript open beside them, and the 2 git worktrees the session works in, one of them merged.">
+  <div class="m-workers">
+    <div class="m-wlist">
+      <div class="m-group-label">Workers <span class="m-sep">·</span> 3</div>
+      {workers.map((w) => (
+        <div class:list={["m-wrow", w.sel && "m-wrow-sel"]}>
+          <Icon name="worker" size={14} />
+          <div class="m-row-main">
+            <div class="m-row-title">{w.live && <span class="live-dot" />}<span>{w.name}</span></div>
+            <div class="m-row-meta"><span class="m-mono">{w.model}</span><ContextRing pct={w.pct} /></div>
+            <div class="m-row-meta"><span>{w.state}</span><span>{w.pct}%</span></div>
+          </div>
+        </div>
+      ))}
+      <div class="m-wtree">
+        <div class="m-group-label" style="padding:4px 0 2px">Worktrees <span class="m-sep">·</span> 2</div>
+        <div class="m-wt"><Icon name="branch" size={13} /><span>feat/retry-backoff</span><span class="chip chip-info"><span class="chip-dot"></span>Active</span></div>
+        <div class="m-wt"><Icon name="branch" size={13} /><span>feat/upload-metrics</span><span class="chip chip-success"><span class="chip-dot"></span>Merged</span></div>
+      </div>
+    </div>
+    <div class="m-wdetail m-session">
+      <header class="m-head" style="height:44px">
+        <span class="m-head-title">reviewer</span>
+        <span class="m-head-sub m-mono">feat/retry-backoff</span>
+        <span class="m-head-end m-mono m-muted"><ContextRing pct={18} />36k / 200k</span>
+      </header>
+      <div class="m-thread">
+        <div class="m-msg-user">Review the retry change. Look for retries on non-idempotent calls.</div>
+        <div class="m-tool"><div class="m-tool-sum"><Icon name="chevron-right" size={12} /><span class="m-tool-name">bash</span><span class="m-tool-arg">git diff master...HEAD --stat</span><span class="m-ok">✓</span></div></div>
+        <div class="m-tool"><div class="m-tool-sum"><Icon name="chevron-right" size={12} /><span class="m-tool-name">read</span><span class="m-tool-arg">src/upload/client.ts</span><span class="m-ok">✓</span></div></div>
+        <p class="m-msg"><code>finalize()</code> also goes through <code>send()</code> now, and a retried finalize can commit twice. Checking whether the server dedupes by upload id…</p>
+        <div class="m-tool"><div class="m-tool-sum"><span class="live-dot"></span><span class="m-tool-name">grep</span><span class="m-tool-arg">uploadId server/</span></div></div>
+      </div>
+    </div>
+  </div>
+</Frame>

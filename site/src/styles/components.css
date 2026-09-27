@@ -1,0 +1,390 @@
+/* Components the page's mock-ups are built from: a subset of the design system's
+   fold-ai-dev.css (.claude/skills/fold-ai-dev-design/), copied as-is, plus the app's own
+   tool card and composer rules from src/design/base.css. Tokens only; no raw values. */
+
+/* =============================================================================
+   BUTTON
+   One primary per view. Destructive is outlined, never filled — a filled red
+   button is the most tappable thing on screen, which is exactly backwards.
+   ============================================================================= */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: 0 var(--space-4);
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color     var(--dur-fast) var(--ease-standard),
+    color            var(--dur-fast) var(--ease-standard);
+}
+
+.button:hover        { background: var(--color-sunken); }
+.button:focus-visible{ outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.button:active       { background: var(--color-sunken); transform: translateY(1px); }
+.button:disabled,
+.button[aria-disabled="true"] { opacity: .42; cursor: not-allowed; }
+
+.button-primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.button-primary:hover,
+.button-primary:active {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+.button-destructive {
+  background: transparent;
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+.button-destructive:hover,
+.button-destructive:active { background: var(--status-error-bg); }
+
+.button-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-ink-muted);
+}
+.button-ghost:hover,
+.button-ghost:active { background: var(--color-sunken); color: var(--color-ink); }
+
+/* Sizes. sm is allowed only inside an already-tapped context (a popover, a
+   desktop table cell) — never as the sole action on a touch surface. */
+.button-sm { min-height: var(--control-sm); padding: 0 var(--space-3); font-size: var(--fs-caption); }
+.button-lg { min-height: var(--control-lg); padding: 0 var(--space-5); font-size: var(--fs-heading-s); }
+
+.button-icon { width: var(--control-md); min-height: var(--control-md); padding: 0; }
+
+/* =============================================================================
+   CHIP / BADGE
+   Status is round. A chip is never a button — if it does something, it's a
+   button that happens to be small.
+   ============================================================================= */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-full);
+  background: var(--color-surface);
+  color: var(--color-ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* Status is never conveyed by hue alone — the dot is structural, and the label
+   always says the word. */
+.chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: currentColor;
+  flex: none;
+}
+
+.chip-success { color: var(--status-success); }
+.chip-warn    { color: var(--status-warn); }
+.chip-error   { color: var(--status-error); }
+.chip-info    { color: var(--status-info); }
+.chip-accent  { color: var(--color-accent); }
+
+.chip-solid.chip-success { background: var(--status-success-bg); border-color: transparent; }
+.chip-solid.chip-warn    { background: var(--status-warn-bg);    border-color: transparent; }
+.chip-solid.chip-error   { background: var(--status-error-bg);   border-color: transparent; }
+.chip-solid.chip-info    { background: var(--status-info-bg);    border-color: transparent; }
+
+.chip-count {
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+
+/* =============================================================================
+   LIST & ROW
+   44px minimum, 12px padding. The target grew; the row didn't.
+   ============================================================================= */
+
+.list { display: flex; flex-direction: column; }
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row-height);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  text-decoration: none;
+  color: inherit;
+}
+.list-row:last-child { border-bottom: 0; }
+.list-row-interactive { cursor: pointer; transition: background-color var(--dur-fast) var(--ease-standard); }
+.list-row-interactive:hover { background: var(--color-sunken); }
+.list-row-interactive:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.list-row-selected { background: var(--color-accent-tint); }
+
+.list-main { flex: 1; min-width: 0; }
+.list-title {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-meta {
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  margin: 2px 0 0;
+}
+.list-group-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+
+
+/* =============================================================================
+   METER
+   A measured number against what bounds it — 31 GB free of 48 GB allocated, on
+   a 64 GB machine.
+
+   NUMBER FIRST, BAR SECOND, AND NEVER A BAR ALONE. A bar is a picture of a
+   quantity nobody stated: it answers "roughly how full" and refuses "how much",
+   which is the question an operator deciding where to put a worktree is
+   actually asking. The number is the fact and the bar is the shape of it.
+
+   THE THIRD TERM IS NOT THE DENOMINATOR. `of 48 GB allocated` is what the bar
+   is drawn against; `64 GB machine` is the context the allocation itself sits
+   in, and collapsing the two loses the distinction between a full allocation
+   and a full machine.
+
+   A meter measures; it does not warn. Color the fill by status only where the
+   word is already on the screen — per Accessibility, hue is never the signal.
+   ============================================================================= */
+
+.meter { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.meter-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+}
+.meter-label { font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-ink-2); }
+.meter-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+.meter-of { color: var(--color-ink-muted); }
+
+/* The border is load-bearing: a fill and an empty track are a graphical object
+   carrying information, so the boundary needs the 3:1 value rather than the
+   divider one. */
+.meter-track {
+  height: 6px;
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  border-radius: var(--r-full);
+  background: var(--color-sunken);
+  overflow: hidden;
+}
+.meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-accent);
+}
+.meter-context { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+/* A measure the surface states and this rendering does not have a value for —
+   a wireframe, a row still loading its numbers. Dashed, because a solid empty
+   track reads as zero, and zero is a measurement. */
+.meter-ghost .meter-track { border-style: dashed; background: none; }
+
+
+/* =============================================================================
+   DIFF VIEWER — domain
+   Unified at folded width, side-by-side from unfolded. Added/removed carry a sign in the
+   gutter as well as a color — the review act must survive color blindness.
+
+   `.diff-split` goes inside a `.diff`, which is the box it measures.
+   ============================================================================= */
+
+/* Also the query container for `.diff-split` below, and it pays the same two
+   costs `.table-wrap` does — that note has the full version.
+
+   Containing block for fixed and absolute descendants: harmless, `overflow:
+   hidden` already clipped them. No intrinsic inline size: a `.diff` in a grid
+   `auto` track, or set to `inline-block`, measures 2px — its own borders.
+   Give it a track that supplies
+   a width.
+
+   It also captures a bare `@container` written inside it; see THE PANE. */
+.diff {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  container-type: inline-size;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+}
+.diff-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-sunken);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  color: var(--color-ink);
+  font-weight: var(--fw-medium);
+}
+.diff-stat-add { color: var(--status-success); }
+.diff-stat-del { color: var(--status-error); }
+
+.diff-hunk {
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-sunken);
+  color: var(--color-ink-muted);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.diff-line {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: var(--space-3);
+  padding: 1px var(--space-3) 1px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diff-gutter {
+  text-align: right;
+  padding-right: var(--space-2);
+  color: var(--color-ink-muted);
+  background: var(--diff-gutter);
+  user-select: none;
+}
+.diff-add { background: var(--diff-add-bg); color: var(--diff-add-ink); }
+.diff-del { background: var(--diff-del-bg); color: var(--diff-del-ink); }
+.diff-add .diff-gutter::after { content: "+"; margin-left: var(--space-1); }
+.diff-del .diff-gutter::after { content: "−"; margin-left: var(--space-1); }
+
+/* REPLACED, NOT UNIONED — the opposite of `.table-stack`, and for the reason
+   that rule's note names. This is a min-width query: it *expands* the layout,
+   so OR-ing a media query in would split a 630px pane the moment the window
+   passed 768 — the bug itself, not a floor under it.
+
+   Its failure mode is what makes replacement safe. No container above a
+   `.diff-split` means this never matches, and the diff stays unified — which is
+   the correct rendering at every width, merely conservative at wide ones. A
+   `.table-stack` failing the same way is broken; this one is only cautious. */
+.diff-split { display: block; }
+@container (min-width: 768px) {
+  .diff-split { display: grid; grid-template-columns: 1fr 1fr; }
+  .diff-split > * + * { border-left: var(--stroke-thin) solid var(--color-border); }
+}
+
+
+/* =============================================================================
+   CHAT THREAD — domain
+   ============================================================================= */
+
+.thread { display: flex; flex-direction: column; gap: var(--space-4); }
+
+.message { display: flex; flex-direction: column; gap: var(--space-2); max-width: 72ch; }
+.message-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+.message-author { font-weight: var(--fw-semibold); color: var(--color-ink); }
+.message-body {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  border: var(--stroke-thin) solid var(--color-border);
+  color: var(--color-ink-2);
+}
+.message-body p:last-child { margin-bottom: 0; }
+
+.message-user { align-self: flex-end; }
+.message-user .message-body { background: var(--color-accent-tint); border-color: transparent; color: var(--color-ink); }
+.message-user .message-head { justify-content: flex-end; }
+
+.message-tool .message-body {
+  background: var(--color-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-2);
+}
+
+
+/* =============================================================================
+   UTILITIES — small and curated. This is not a utility framework.
+   ============================================================================= */
+
+.text-display-xl { font-size: var(--fs-display-xl); line-height: var(--lh-display-xl); letter-spacing: var(--ls-display); font-weight: var(--fw-display); }
+.text-display-l  { font-size: var(--fs-display-l);  line-height: var(--lh-display-l);  letter-spacing: -.028em; font-weight: var(--fw-display); }
+.text-heading-m  { font-size: var(--fs-heading-m);  line-height: var(--lh-heading-m);  letter-spacing: var(--ls-heading); font-weight: var(--fw-semibold); }
+.text-heading-s  { font-size: var(--fs-heading-s);  line-height: var(--lh-heading-s);  font-weight: var(--fw-semibold); }
+.text-body       { font-size: var(--fs-body);       line-height: var(--lh-body); }
+.text-caption    { font-size: var(--fs-caption);    line-height: var(--lh-caption); }
+.text-mono       { font-family: var(--font-mono);   font-size: var(--fs-mono); }
+.text-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink-muted);
+}
+.text-muted   { color: var(--color-ink-muted); }
+.text-accent  { color: var(--color-accent); }
+.text-success { color: var(--status-success); }
+.text-warn    { color: var(--status-warn); }
+.text-error   { color: var(--status-error); }
+.text-num     { font-variant-numeric: tabular-nums; }
+
+.surface { background: var(--color-surface); }
+.sunken  { background: var(--color-sunken); }
+.bordered{ border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-lg); }
+
+.stack   { display: flex; flex-direction: column; gap: var(--space-4); }
+.stack-2 { display: flex; flex-direction: column; gap: var(--space-2); }
+.stack-5 { display: flex; flex-direction: column; gap: var(--space-5); }
+.cluster { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.spread  { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+
+.page {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4);
+}
+

@@ -1,0 +1,370 @@
+---
+import Base from "../layouts/Base.astro";
+import Icon from "../components/Icon.astro";
+import Mark from "../components/Mark.astro";
+import InstallBlock from "../components/InstallBlock.astro";
+import ThemeGrid from "../components/ThemeGrid.astro";
+import Workspace from "../components/mocks/Workspace.astro";
+import Fanout from "../components/mocks/Fanout.astro";
+import Transcript from "../components/mocks/Transcript.astro";
+import Watch from "../components/mocks/Watch.astro";
+import Workers from "../components/mocks/Workers.astro";
+import Overseer from "../components/mocks/Overseer.astro";
+import Phones from "../components/mocks/Phones.astro";
+import { themes } from "../data/themes";
+import * as site from "../data/site";
+
+const cards = [
+  {
+    icon: "shield", title: "A sandbox per session",
+    body: "Turn it on for one session and its <code>bash</code> runs in an OS sandbox (bubblewrap on Linux, Seatbelt on macOS), while file tools check every path against the same policy.",
+    limit: "It contains an agent's mistakes. It isn't a boundary for hostile code, and it hasn't been audited.",
+  },
+  {
+    icon: "file", title: "Playbooks",
+    body: "Markdown recipes an agent runs against a project: an accessibility audit, launch notes. Pick one from the composer, add a line of your own, and send.",
+    limit: "Sova ships a few. Yours live in <code>~/.pi/agent/sova/playbooks/</code>.",
+  },
+  {
+    icon: "terminal", title: "Claude Code models",
+    body: "Chat with Claude Code's models from Sova's model picker, and run workers on the Claude Code CLI with its own tools and login.",
+    limit: "Experimental. Needs the <code>claude</code> CLI installed and logged in.",
+  },
+  {
+    icon: "network", title: "Beyond your laptop",
+    body: "Run a session's tools on your own SSH, AWS SSM, Docker, or Incus targets. Tools run on the target, not through a local mount.",
+    limit: "Needs the <code>remote</code> extension and your targets in <code>~/.pi/agent/targets.json</code>.",
+  },
+  {
+    icon: "sliders", title: "Your model rules",
+    body: "Settings → Models decides which models this machine may use, and which may be given to subagents. A disabled model is never silently swapped for another.",
+    limit: "Saved in <code>~/.pi/agent/model-policy.json</code>.",
+  },
+  {
+    icon: "gauge", title: "Usage and agents",
+    body: "The Usage page shows your subscription and spend windows. The Agents page shows what's running on this machine, teams and their members included.",
+    limit: "Usage meters need the <code>usage-status</code> extension.",
+  },
+  {
+    icon: "grid", title: "Sova extensions",
+    body: "Add a small web app of your own: a card on Sova's landing page, and a page beside the sessions list, served from Sova's origin.",
+    limit: "It can call every Sova API. Install only extensions you trust.",
+  },
+  {
+    icon: "refresh", title: "Starts at login",
+    body: "The installer can run Sova as a per-user service that starts at login and restarts if it exits: launchd on macOS, a systemd user unit on Linux.",
+    limit: "Only if you say yes, or pass <code>--service</code>. No <code>sudo</code>.",
+  },
+];
+---
+<Base
+  title="Sova · Run pi sessions side by side"
+  description="Sova is an open-source browser interface for the pi coding agent. Send one prompt to several models, compare their approaches, and branch the conversation worth pursuing."
+>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="#top" aria-label="Sova, back to top"><Mark size={24} />sova</a>
+      <nav class="nav-links" aria-label="Page">
+        <a href="#features">Features</a>
+        <a href="#how">How It Works</a>
+        <a href="#source">Open Source</a>
+      </nav>
+      <span class="nav-spacer"></span>
+      <a class="button button-ghost nav-gh" href={site.repo}><Icon name="external" size={16} /><span class="nav-gh-label">GitHub</span><span class="visually-hidden"> (Sova on GitHub)</span></a>
+      <button type="button" class="button button-ghost button-icon theme-toggle" data-theme-toggle aria-label="Use Light Theme" aria-pressed="false">
+        <Icon name="sun" size={18} class="icon-sun" /><Icon name="moon" size={18} class="icon-moon" />
+      </button>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- HERO -->
+    <section class="hero" id="top">
+      <div class="wrap">
+        <div class="hero-copy">
+          <a class="hero-pill" href={`${site.repo}/releases/tag/${site.release}`}>
+            <span class="hero-pill-tag">{site.release}</span>
+            <span>Open source · Apache-2.0<span class="hero-pill-extra"> · For the pi coding agent</span></span>
+            <Icon name="arrow-right" size={14} />
+          </a>
+          <h1 class="h-hero"><span>Run pi sessions side by side.</span> <span class="quiet">Stop juggling terminals.</span></h1>
+          <p class="lead">Send one prompt to several models, compare their approaches, and branch the conversation worth pursuing. Sova gives your <a href={site.pi}>pi</a> coding agent a browser interface, from a full desktop workspace to your phone, using the sessions you already have.</p>
+          <div class="hero-actions">
+            <InstallBlock id="install-hero" />
+            <p class="hero-note">Then run <code>sova</code> and open <code>http://127.0.0.1:4800</code>. Needs Git, Node.js ≥22.19, and pnpm (or npx).</p>
+            <div class="hero-links">
+              <a class="button button-ghost" href={site.installScript}><Icon name="file" size={16} />Read the Install Script</a>
+              <a class="button button-ghost" href={site.gettingStarted}><Icon name="arrow-right" size={16} />Getting Started</a>
+            </div>
+          </div>
+        </div>
+        <div class="hero-stage"><Workspace /></div>
+      </div>
+      <div class="hero-band">
+        <div class="wrap">
+          <dl class="facts">
+            <div class="fact"><dt class="fact-label">Your sessions, read in place</dt><dd class="fact-value">~/.pi/agent</dd></div>
+            <div class="fact"><dt class="fact-label">Loopback by default</dt><dd class="fact-value">127.0.0.1:4800</dd></div>
+            <div class="fact"><dt class="fact-label">1 JSON file each</dt><dd class="fact-value">{themes.length} themes</dd></div>
+            <div class="fact"><dt class="fact-label">Read it, fork it</dt><dd class="fact-value">Apache-2.0</dd></div>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="section" id="features" aria-labelledby="features-title">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">What you get</span>
+          <h2 class="h-section" id="features-title">More work, less window switching.</h2>
+          <p class="lead">Sova is for people who already run pi: sessions on disk, a provider login, opinions about their terminal. It adds a second window, and keeps your setup yours.</p>
+        </div>
+
+        <article class="feature">
+          <div class="feature-copy">
+            <span class="eyebrow"><span class="eyebrow-num">01</span> Several approaches at once</span>
+            <h3 class="h-feature">Ask 3 models the same thing. Read the answers side by side.</h3>
+            <div class="prose">
+              <p>Fan out from the conversation you're in, and every copy branches at the same message. Or start fresh: several new sessions, one prompt. A group opens as split or tabbed panes, with 1 composer that writes to every member.</p>
+            </div>
+            <ul class="points">
+              <li><Icon name="check" size={16} />Repeat a model to see its spread, or mix models to see their differences.</li>
+              <li><Icon name="check" size={16} />See how full each member's context starts, against that model's own window.</li>
+            </ul>
+            <p class="limit"><Icon name="info" size={18} /><span>Every shared turn goes to every member, so it costs that many times as much. <strong>Sova says so before you create the group.</strong></span></p>
+          </div>
+          <div class="feature-visual"><Fanout /></div>
+        </article>
+
+        <article class="feature feature-flip">
+          <div class="feature-copy">
+            <span class="eyebrow"><span class="eyebrow-num">02</span> Change direction</span>
+            <h3 class="h-feature">Fork, rewind, steer. Keep the context you built.</h3>
+            <div class="prose">
+              <p>Every message you sent can be copied, forked, or rewound. Every reply can be copied, forked, or regenerated. Steer a running turn, queue the next one, switch models mid-session, and attach images and files.</p>
+              <p>Tool calls read as cards, and edits as diffs, so you can follow the work without digging through scrollback.</p>
+            </div>
+          </div>
+          <div class="feature-visual"><Transcript /></div>
+        </article>
+
+        <article class="feature">
+          <div class="feature-copy">
+            <span class="eyebrow"><span class="eyebrow-num">03</span> Keep your terminal</span>
+            <h3 class="h-feature">Your terminal sessions, live, in a browser tab.</h3>
+            <div class="prose">
+              <p>Sova lists every session in your agent directory. There's no import step and no copy. A session a terminal has open streams in live, and stays read-only here until the terminal lets it go. Sending, steering, and rewinding happen in web sessions.</p>
+            </div>
+            <p class="limit"><Icon name="info" size={18} /><span>Knowing which sessions a terminal has open takes the <code>sessions</code> extension, which the installer links for you. Without it, sessions are still listed and readable.</span></p>
+          </div>
+          <div class="feature-visual"><Watch /></div>
+        </article>
+
+        <article class="feature feature-flip">
+          <div class="feature-copy">
+            <span class="eyebrow"><span class="eyebrow-num">04</span> Workers and worktrees</span>
+            <h3 class="h-feature">Follow every worker down to its transcript.</h3>
+            <div class="prose">
+              <p>A session's workers open in a side pane, each with its own transcript and how full its context is. Teams show their members the same way.</p>
+              <p>A session also keeps track of the git worktrees it works in. Ask the agent to create, merge, or drop one; each merge lands in the transcript as a card, and workers start only in the session's folder or one of its worktrees.</p>
+            </div>
+            <p class="limit"><Icon name="info" size={18} /><span>Workers, teams, and worktrees come from the <code>subagents</code> and <code>worktrees</code> pi extensions. The installer links them; <code>--no-extensions</code> skips that.</span></p>
+          </div>
+          <div class="feature-visual"><Workers /></div>
+        </article>
+
+        <article class="feature">
+          <div class="feature-copy">
+            <span class="eyebrow"><span class="eyebrow-num">05</span> The Overseer</span>
+            <h3 class="h-feature">One session that keeps an eye on the rest.</h3>
+            <div class="prose">
+              <p>The Overseer reads every session and tells you which ones need you: an open question, an error, a stuck worker. Ask it to start sessions, send prompts, or tidy up. When a request is ambiguous or risky, it asks first, with a card that lists each session it would touch and why.</p>
+              <p>It also keeps your ideas and todos from plain chat, so a passing thought doesn't become a session by accident.</p>
+            </div>
+            <ul class="points">
+              <li><Icon name="check" size={16} /><span><strong>List Only</strong>, the default, shows who needs you in the sidebar and costs no tokens.</span></li>
+              <li><Icon name="check" size={16} />No shell and no file edits: it acts through Sova, with limits per turn you can set.</li>
+            </ul>
+          </div>
+          <div class="feature-visual"><Overseer /></div>
+        </article>
+
+        <article class="feature feature-flip">
+          <div class="feature-copy">
+            <span class="eyebrow"><span class="eyebrow-num">06</span> On your phone</span>
+            <h3 class="h-feature">Check on a long run from across the room.</h3>
+            <div class="prose">
+              <p>The layout folds to one column and installs as an app. Read transcripts, watch terminal sessions, and keep chatting in web sessions.</p>
+              <p>When a session needs you, Sova can send a notification to your phone, even with Sova closed: a question, an error, a stuck worker. No model call, no tokens.</p>
+            </div>
+            <p class="limit"><Icon name="info" size={18} /><span>Sova has no login of its own. Reach it through <strong>an authenticated tunnel or an HTTPS reverse proxy</strong> that protects every route, including <code>/api</code> and <code>/ws</code>. Notifications need that HTTPS address; on iPhone, add Sova to the Home Screen first.</span></p>
+          </div>
+          <div class="feature-visual"><Phones /></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- MORE -->
+    <section class="section section-alt" aria-labelledby="more-title">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">And the rest</span>
+          <h2 class="h-section" id="more-title">Small things that add up.</h2>
+        </div>
+        <ul class="cards">
+          {cards.map((c) => (
+            <li class="fcard">
+              <span class="fcard-icon"><Icon name={c.icon} size={20} /></span>
+              <h3>{c.title}</h3>
+              <p set:html={c.body} />
+              <p class="fcard-limit" set:html={c.limit} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+
+    <!-- THEMES -->
+    <section class="section" aria-labelledby="themes-title">
+      <div class="wrap">
+        <div class="split themes-head">
+          <div class="section-head" style="margin-bottom:0">
+            <span class="eyebrow">Make it yours</span>
+            <h2 class="h-section" id="themes-title">{themes.length} themes. Yours is 1 JSON file.</h2>
+            <p class="lead">Pick a built-in theme in Settings → Themes, or save your own in <code>~/.pi/agent/sova/themes/</code>. While the Themes tab is open, the picker picks it up within 2 seconds. No rebuild, no restart.</p>
+          </div>
+          <pre class="code" aria-label="Example theme file"><span class="c">// ~/.pi/agent/sova/themes/desk-lamp.json</span>
+&#123;
+  <span class="k">"name"</span>: <span class="s">"Desk Lamp"</span>,
+  <span class="k">"extends"</span>: <span class="s">"dark"</span>,
+  <span class="k">"vars"</span>: &#123; <span class="k">"amber"</span>: <span class="s">"#ffb454"</span> &#125;,
+  <span class="k">"colors"</span>: &#123;
+    <span class="k">"accent"</span>: <span class="a">"$amber"</span>,
+    <span class="k">"accent-tint"</span>: <span class="s">"#3a2f1c"</span>
+  &#125;
+&#125;</pre>
+        </div>
+        <ThemeGrid />
+      </div>
+    </section>
+
+    <!-- HOW IT WORKS -->
+    <section class="section section-alt" id="how" aria-labelledby="how-title">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">How it works</span>
+          <h2 class="h-section" id="how-title">One process, next to pi.</h2>
+          <p class="lead">Sova is a Node server with the pi SDK embedded, plus a web app. It reads the same agent directory as your terminal: the same sessions, the same login, the same extensions.</p>
+        </div>
+        <div class="arch">
+          <div class="arch-node">
+            <h3><Icon name="chat" size={18} />Your browser</h3>
+            <p>The desktop workspace, or the folded layout installed on a phone.</p>
+            <ul class="arch-list"><li>sessions and groups</li><li>transcripts and diffs</li><li>settings and themes</li></ul>
+          </div>
+          <div class="arch-link"><span>REST + WebSocket</span></div>
+          <div class="arch-node arch-node-core">
+            <h3><Mark size={18} />sova server</h3>
+            <p>Hono and the pi SDK, on <code>127.0.0.1:4800</code> by default.</p>
+            <ul class="arch-list"><li>hosts web sessions</li><li>watches terminal sessions</li><li>fans out, forks, rewinds</li><li>runs the Overseer</li></ul>
+          </div>
+          <div class="arch-link"><span>same files</span></div>
+          <div class="arch-node">
+            <h3><Icon name="folder" size={18} />~/.pi/agent</h3>
+            <p>Shared with pi in your terminal. Sova's own state lives in <code>sova/</code>.</p>
+            <ul class="arch-list"><li>sessions/*.jsonl</li><li>auth.json</li><li>extensions/</li><li>sova/</li></ul>
+          </div>
+          <div class="arch-link arch-link-down"><span>same files</span></div>
+          <div class="arch-node arch-node-tui">
+            <h3><Icon name="terminal" size={18} />pi in your terminal</h3>
+            <p>Unchanged. A session it has open streams into Sova live, and stays read-only there.</p>
+          </div>
+          <div class="arch-provider"><Icon name="external" size={16} /><span>Model requests go from Sova, and from pi in your terminal, to your configured provider. Tools and extensions may use the network too.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WHAT IT TOUCHES -->
+    <section class="section" aria-labelledby="touch-title">
+      <div class="wrap split">
+        <div class="section-head" style="margin-bottom:0">
+          <span class="eyebrow">Before you install</span>
+          <h2 class="h-section" id="touch-title">What it touches, and what it doesn't.</h2>
+          <p class="lead">Sova shares a directory with a process you trust, so here's the whole list.</p>
+          <ul class="not-list" aria-label="What Sova is not">
+            <li>Not a hosted service. It runs on your machine.</li>
+            <li>Not a multi-user product. 1 person, 1 machine.</li>
+            <li>Not a replacement for pi's TUI. It's a second window.</li>
+          </ul>
+        </div>
+        <dl class="touches">
+          <div class="touch"><dt>Install</dt><dd><code>~/.local/share/sova</code> and a <code>~/.local/bin/sova</code> launcher. No <code>sudo</code>, no toolchain, no shell-profile edits.</dd></div>
+          <div class="touch"><dt>pi extensions</dt><dd>One link per Sova extension in <code>~/.pi/agent/extensions/</code>. Anything already there that isn't its own link is left alone. <code>--no-extensions</code> skips this.</dd></div>
+          <div class="touch"><dt>Settings</dt><dd>None of pi's own configuration. It writes <code>~/.pi/agent/sova/settings.json</code> once, to switch on Claude Code models, and only if the file doesn't exist.</dd></div>
+          <div class="touch"><dt>Login service</dt><dd>Only if you ask for one.</dd></div>
+          <div class="touch"><dt>Your sessions</dt><dd>Read in place. A session open in a terminal is read-only here.</dd></div>
+          <div class="touch"><dt>Sova's state</dt><dd>Groups, drafts, archive, and themes, in <code>~/.pi/agent/sova/</code>.</dd></div>
+          <div class="touch"><dt>Network</dt><dd>Model requests go to your configured provider. Tools and extensions may use the network.</dd></div>
+          <div class="touch"><dt>Access</dt><dd>Single user, loopback by default, <strong>no built-in authentication</strong>. Anyone who can reach an unprotected Sova can read files and run commands as you.</dd></div>
+          <div class="touch"><dt>Re-running</dt><dd>Installs the same pinned release and changes nothing when it's already there.</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- OPEN SOURCE -->
+    <section class="section section-alt" id="source" aria-labelledby="source-title">
+      <div class="wrap split">
+        <div class="section-head" style="margin-bottom:0">
+          <span class="eyebrow">Open source</span>
+          <h2 class="h-section" id="source-title">Apache-2.0, built in the open.</h2>
+          <p class="lead">TypeScript end to end: a SolidJS web app, a Hono server with the pi SDK embedded, and the optional pi extensions in <code>pi-config/</code>. Read the code, file an issue, or run a checkout.</p>
+          <div class="oss-actions">
+            <a class="button button-primary" href={site.repo}><Icon name="external" size={16} />View on GitHub</a>
+            <a class="button button-ghost" href={site.contributing}>Read CONTRIBUTING</a>
+          </div>
+        </div>
+        <pre class="code" aria-label="Run a checkout"><span class="c"># Run a checkout: Git, Node.js ≥22.19, pnpm</span>
+<span class="k">git clone</span> https://github.com/Naomarik/sova.git
+<span class="k">cd</span> sova
+<span class="k">pnpm install</span> --frozen-lockfile
+<span class="k">pnpm run</span> build
+<span class="k">pnpm start</span>   <span class="c"># http://127.0.0.1:4800</span></pre>
+      </div>
+    </section>
+
+    <!-- CLOSING -->
+    <section class="section closing" aria-labelledby="closing-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 class="h-section" id="closing-title">Try it on the sessions you already have.</h2>
+          <p class="lead">Existing sessions are readable as soon as it starts. To chat, it uses your pi provider login.</p>
+        </div>
+        <div class="closing-install">
+          <InstallBlock id="install-closing" />
+          <p class="hero-note">Then run <code>sova</code> and open <code>http://127.0.0.1:4800</code>. Keep it running while you use the app; <code>Ctrl+C</code> stops it.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <a class="brand" href="#top"><Mark size={20} />sova</a>
+        <nav class="footer-links" aria-label="Footer">
+          <a href={site.repo}>Sova on GitHub</a>
+          <a href={site.gettingStarted}>Getting Started</a>
+          <a href={site.customization}>Customization</a>
+          <a href={site.license}>License</a>
+          <a href={site.pi}>pi</a>
+        </nav>
+      </div>
+      <div class="footer-meta">
+        <p>pi is a separate project; Sova is not affiliated with it. Sova is Apache-2.0; <code>pi-config/</code> is licensed separately.</p>
+        <p>Fonts: Inter and JetBrains Mono, SIL OFL 1.1. The screens on this page are mock-ups built from Sova's own styles.</p>
+        <p>Checked against <code>{site.verified.ref}</code> at <code>{site.verified.rev}</code> on {site.verified.date}; installs <code>{site.release}</code>.</p>
+      </div>
+    </div>
+  </footer>
+</Base>

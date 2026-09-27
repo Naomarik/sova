@@ -4559,57 +4559,6 @@ button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offse
   }
 }
 
-/* COST CARD (§app.project-costs/card). Money is mono with tabular digits and never wraps, so a
-   column of dollars lines up. The headline is the card's one large figure. */
-.cost-figure { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.cost-headline { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); margin: 0; }
-.cost-headline .cost-figure { font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); color: var(--color-ink); }
-.cost-headline-unit { color: var(--color-ink-muted); }
-.cost-lede, .cost-note { margin: 0; color: var(--color-ink-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); }
-.cost-notes { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
-/* Wrapper: `md md-table-wrap cost-table-wrap`, table `cost-table` (the Usage tab's .md table look).
-   A token cell holds its dollars over its token count; `.cost-tokens` is the muted second line. */
-.cost-table-wrap { margin: 0; }
-.cost-table td .cost-tokens { display: block; color: var(--color-ink-muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.cost-table td .cost-unpriced { color: var(--color-ink-muted); }
-.cost-table tfoot th, .cost-table tfoot td { background: var(--color-sunken); font-weight: var(--fw-semibold); border-bottom: 0; }
-.cost-table tfoot td .cost-tokens { font-weight: var(--fw-regular); }
-/* Top sessions: title (link or plain) with kind · who under it, cost at the right. */
-.cost-sessions { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
-.cost-session { display: flex; align-items: baseline; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
-.cost-session:last-child { border-bottom: 0; }
-.cost-session-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.cost-session-meta { display: block; color: var(--color-ink-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); }
-/* Under 560px of page the tables stack, as the Usage tab's does: one block per row, the row's
-   name on its first line, each figure under its column's name (the cell's data-label). */
-@container insights (max-width: 559px) {
-  .cost-table,
-  .cost-table tbody,
-  .cost-table tfoot { display: block; }
-  .cost-table thead { display: none; }
-  .cost-table tr {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 2px var(--space-3);
-    padding: var(--space-2) var(--space-3);
-    border-bottom: var(--stroke-thin) solid var(--color-border);
-  }
-  .cost-table tbody tr:last-child { border-bottom: 0; }
-  .cost-table tfoot tr { border-top: var(--stroke-thin) solid var(--color-border); border-bottom: 0; background: var(--color-sunken); }
-  .md .cost-table th,
-  .md .cost-table td { display: block; padding: 0; border: 0; background: none; }
-  .cost-table th[scope="row"] { grid-column: 1 / -1; }
-  .md .cost-table td[data-label] { display: flex; justify-content: flex-end; align-items: baseline; gap: var(--space-2); text-align: right; }
-  .cost-table td[data-label]::before {
-    content: attr(data-label);
-    margin-right: auto;
-    font-family: var(--font-body);
-    font-weight: var(--fw-regular);
-    color: var(--color-ink-muted);
-  }
-  .cost-table td .cost-tokens { display: inline; }
-}
-
 /* Explain tab: text rows on one card, the whole row the link (the gallery owns thumbnails).
    The summary is a sentence, so caption type, wrapped and clamped to 3 lines — .list-summary is
    micro type, which never carries a sentence. */

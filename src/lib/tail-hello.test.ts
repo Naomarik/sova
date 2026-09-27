@@ -135,3 +135,21 @@ test("'N new' counts from the hello's first row: rows prepended above never coun
   assert.equal(newRows(a.items, null).length, 30);
   assert.equal(newRows(a.items, "gone").length, 30);
 });
+
+test("historyApplier: chunks within the interval are applied together, the last at once; drop forgets the rest", async () => {
+  const { historyApplier } = await import("./tail-hello");
+  const calls: number[][] = [];
+  const a = historyApplier((chunks) => calls.push(chunks.map((c) => c.left)), 40);
+  a.push({ items: [], left: 30 }); // nothing applied yet in this interval: goes out on the next tick
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(calls, [[30]]);
+  a.push({ items: [], left: 20 });
+  a.push({ items: [], left: 10 });
+  assert.deepEqual(calls, [[30]], "within the interval: held");
+  a.push({ items: [], left: 0 });
+  assert.deepEqual(calls, [[30], [20, 10, 0]], "the last chunk flushes everything held, at once");
+  a.push({ items: [], left: 5 });
+  a.drop();
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(calls.length, 2, "dropped: never applied");
+});

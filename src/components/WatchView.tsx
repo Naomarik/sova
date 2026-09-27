@@ -4,7 +4,7 @@ import { createFork, fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
 import { landExplainJump } from "../lib/jump";
-import { type Arriving, helloItems, historyItems, newRows, tailFirst } from "../lib/tail-hello";
+import { type Arriving, helloItems, historyApplier, historyItems, newRows, tailFirst } from "../lib/tail-hello";
 import { hostOf, sessionViewKey } from "../lib/mesh";
 import { cachedTranscript, cacheItems, cacheSpot, reconcileItems } from "../lib/transcript-cache";
 import { copyText, hideThinking, hideTools, setSessionContext, toast } from "../lib/ui-state";
@@ -82,6 +82,7 @@ export function WatchView(props: {
   const reload = () =>
     void fetchTranscriptWithContext(props.path)
       .then((r) => {
+        history.drop();
         setItems((prev) => reconcileItems(prev, r.items));
         setArriving(null);
         setWhole(true);
@@ -188,6 +189,29 @@ export function WatchView(props: {
     note: (entryId) => (actionNote()?.entryId === entryId ? actionNote()!.text : null),
   };
 
+  // The snapshot's older rows, applied a few at a time (lib/tail-hello).
+  const history = historyApplier((chunks) => {
+    let list = items();
+    let next: ReturnType<typeof historyItems> | null = null;
+    for (const c of chunks) {
+      if (!list) return;
+      next = historyItems(list, next ? next.arriving : arriving(), c.items, c.left);
+      if (next.broken) {
+        setArriving(null);
+        reload();
+        return;
+      }
+      list = next.items;
+    }
+    if (!next) return;
+    const done = next;
+    batch(() => {
+      setItems(done.items);
+      setArriving(done.arriving);
+      if (!done.arriving) setWhole(true);
+    });
+  });
+  onCleanup(history.drop);
   const socket = createReconnectingSocket<WatchServerMessage>(tailFirst(wsUrl("/ws/watch", props.path)), {
     onMessage(msg) {
       switch (msg.type) {
@@ -195,6 +219,7 @@ export function WatchView(props: {
           // May repeat if the file is rewritten: always replace. Newest rows first: older rows
           // may follow as `history` (lib/tail-hello).
           setError(null);
+          history.drop();
           const w = windowOf(msg.context);
           if (w) setContextWindow(w);
           else askWindow();
@@ -211,22 +236,9 @@ export function WatchView(props: {
           setLastUpdate(new Date().toISOString());
           break;
         }
-        case "history": {
-          const list = items();
-          if (!list) break;
-          const next = historyItems(list, arriving(), msg.items, msg.left);
-          if (next.broken) {
-            setArriving(null);
-            reload();
-            break;
-          }
-          batch(() => {
-            setItems(next.items);
-            setArriving(next.arriving);
-            if (!next.arriving) setWhole(true);
-          });
+        case "history":
+          history.push(msg);
           break;
-        }
         case "append": {
           const w = windowOf(msg.context);
           if (w && !contextWindow()) setContextWindow(w);

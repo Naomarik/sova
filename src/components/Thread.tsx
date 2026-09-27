@@ -32,7 +32,7 @@ import { Banner, Chip, Icon } from "./ui";
 import { BriefRow, ConfirmCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow } from "./OverseerCards";
 import { confirmAnswer, confirmDetails, detailsOf, isBriefText } from "../lib/overseer";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
-import { type MessageStrip, stripLabel, stripsByRow } from "../lib/message-actions";
+import { type MessageStrip, sameStrip, stripLabel, stripsByRow } from "../lib/message-actions";
 
 /**
  * What a view hangs under each delivered message. The thread decides
@@ -591,6 +591,10 @@ export function HistoryItems(props: {
       <For each={built()}>
         {(item, local) => {
           const index = indexOf ? () => indexOf().get(item) ?? local() : local;
+          // The strip every list change rebuilds, kept while it offers the same thing: rows
+          // arriving above (a tail-first hello's history), an append or a turn-end reload would
+          // otherwise rebuild the buttons of every message on the page.
+          const strip = createMemo(() => strips().get(index()), undefined, { equals: sameStrip });
           return (
           // A link message is a partner's, shown only in the Agents tab (§mesh.links/transcript):
           // no row at all here, not even the wrapper. It still counts as a turn start (above).
@@ -741,7 +745,7 @@ export function HistoryItems(props: {
               </Match>
             </Switch>
             {/* Under the bubble, once per entry (see `strips`). */}
-            <Show when={strips().get(index())}>
+            <Show when={strip()}>
               {(strip) => (
                 <MessageActions
                   label={stripLabel(strip().role)}

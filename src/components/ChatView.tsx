@@ -101,7 +101,7 @@ import type { MessageActionItem } from "./MessageActions";
 import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
 import { entryIdOf, landExplainJump, LOADING_OLDER } from "../lib/jump";
-import { type Arriving, helloItems, historyItems, newRows, tailFirst } from "../lib/tail-hello";
+import { type Arriving, helloItems, historyApplier, historyItems, newRows, tailFirst } from "../lib/tail-hello";
 import { Composer, type ComposerReason } from "./Composer";
 import { openCreated } from "../lib/fork-stage";
 import { FlyoutSession, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
@@ -369,6 +369,7 @@ export function ChatView(props: {
         // are the only new ones.
         setItems((prev) => reconcileItems(prev, next.items));
         // The whole branch, from disk: any older rows still arriving are superseded.
+        history.drop();
         setArriving(null);
         setWhole(true);
         setLive(reconcile(emptyLive()));
@@ -496,6 +497,30 @@ export function ChatView(props: {
   };
   onCleanup(dropNotFound);
 
+  // The hello's older rows, applied a few at a time (lib/tail-hello).
+  const history = historyApplier((chunks) => {
+    let list = items();
+    let next: ReturnType<typeof historyItems> | null = null;
+    for (const c of chunks) {
+      if (!list) return;
+      next = historyItems(list, next ? next.arriving : arriving(), c.items, c.left);
+      if (next.broken) {
+        // The chunks didn't add up: the whole branch from disk instead.
+        setArriving(null);
+        void resync();
+        return;
+      }
+      list = next.items;
+    }
+    if (!next) return;
+    const done = next;
+    batch(() => {
+      setItems(done.items);
+      setArriving(done.arriving);
+      if (!done.arriving) setWhole(true);
+    });
+  });
+  onCleanup(history.drop);
   const socket = createReconnectingSocket<ChatServerMessage>(tailFirst(wsUrl("/ws/chat", props.path, props.force)), {
     onOpen(isReconnect) {
       setEverOpened(true);
@@ -513,6 +538,7 @@ export function ChatView(props: {
           owner.reset();
           batch(() => {
             // Newest rows first: older rows may follow as `history` (lib/tail-hello).
+            history.drop();
             const next = helloItems(items(), msg.items, msg.older);
             setItems(next.items);
             setArriving(next.arriving);
@@ -541,23 +567,9 @@ export function ChatView(props: {
           noteLinks(props.path, null);
           props.onModel(msg.model);
           break;
-        case "history": {
-          const list = items();
-          if (!list) break;
-          const next = historyItems(list, arriving(), msg.items, msg.left);
-          if (next.broken) {
-            // The chunks didn't add up: the whole branch from disk instead.
-            setArriving(null);
-            void resync();
-            break;
-          }
-          batch(() => {
-            setItems(next.items);
-            setArriving(next.arriving);
-            if (!next.arriving) setWhole(true);
-          });
+        case "history":
+          history.push(msg);
           break;
-        }
         case "workers":
           setWorkersWorking(msg.working);
           setWorkerList(msg.workers);
@@ -1087,6 +1099,10 @@ export function ChatView(props: {
     const g = batonComposerGate(props.summary?.()?.baton, batonMine());
     return g && { icon: g.ended ? "check" : "clock", text: g.text };
   };
+  /** Whether the list is here at all, as its own boolean: `blocked` is read by every message's
+      action strip, so reading the list itself there rebuilt every strip's buttons on each change
+      of the list (an append, a turn-end reload, each chunk of a tail-first hello's history). */
+  const listHere = createMemo(() => !!items());
   const blocked = (): ComposerReason | null => {
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
@@ -1101,7 +1117,7 @@ export function ChatView(props: {
       case "closed":
         return { icon: "clock", text: "Not connected." };
     }
-    if (!items()) return { icon: "clock", text: "Connecting…" };
+    if (!listHere()) return { icon: "clock", text: "Connecting…" };
     if (syncing()) return { icon: "clock", text: "Saving this turn…" };
     if (pendingModel()) return { icon: "clock", text: "Switching model…" };
     // Any compaction: this chat's /compact (asked, or already running), pi's automatic one, or an

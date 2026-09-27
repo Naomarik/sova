@@ -71,6 +71,42 @@ export function historyItems(list: TranscriptItem[], arriving: Arriving | null, 
   return { items: reconcileItems(list, whole), arriving: null };
 }
 
+/** Chunks that arrive within this long of the last change to the list are applied together. */
+export const HISTORY_APPLY_MS = 1000;
+
+/**
+ * Applies `history` chunks to a view's list at most once per HISTORY_APPLY_MS, the last one at once.
+ * Every change to the list re-derives what each built row shows, so on a slow link a 7 MB history
+ * applied chunk by chunk was ~29 of those passes while the user reads; coalesced it is a handful.
+ * `apply` gets the chunks received since the last call, in arrival order. `drop` forgets any not
+ * applied yet: a new hello or snapshot starts again, and a whole reload supersedes them.
+ */
+export function historyApplier(apply: (chunks: { items: TranscriptItem[]; left: number }[]) => void, ms = HISTORY_APPLY_MS) {
+  let queued: { items: TranscriptItem[]; left: number }[] = [];
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let last = 0;
+  const flush = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    const chunks = queued;
+    queued = [];
+    last = Date.now();
+    if (chunks.length) apply(chunks);
+  };
+  return {
+    push(chunk: { items: TranscriptItem[]; left: number }) {
+      queued.push(chunk);
+      if (chunk.left === 0) return flush();
+      if (timer === undefined) timer = setTimeout(flush, Math.max(0, last + ms - Date.now()));
+    },
+    drop() {
+      clearTimeout(timer);
+      timer = undefined;
+      queued = [];
+    },
+  };
+}
+
 /**
  * The rows that count as new for Jump to Latest's "N new": the hello's first row and after. Rows
  * that arrive above it are history, never new (§chat.transcript/rendering). A list without that

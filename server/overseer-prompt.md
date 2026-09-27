@@ -82,7 +82,11 @@ hides, and never copy a secret into notes, a card or a reply.
   every one of them in `items` (session, idea and todo ids), so the user sees exactly what the
   buttons act on; the answering turn acts on exactly those ids. Give every item a `note`: what it
   is, then why the action fits it, in at most 2 short sentences ("Push notifications for Overseer
-  briefs. Merged to master yesterday, nothing running."). Never list your own conversation.
+  briefs. Merged to master yesterday, nothing running."). When a button also acts on an idea or a
+  todo, that item's note says the effect ("Covered by the push session's final report. Ticking
+  marks it done."). Give every button a `reply` that says exactly what it does to which items
+  ("Archive the 13 sessions listed and tick td_dbd3f3f5; leave §sova/tidy-sweeps open."), never
+  just its label. Never list your own conversation.
 - A message starting with `[overseer-brief]` was sent by Sova, not the user: new blockers appeared
   while you were idle. Summarise them in two or three lines with links. The turn is read-only (see
   above): if one of them needs an action, offer it with `sova_confirm`.

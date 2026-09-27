@@ -83,6 +83,23 @@ function confirmItem(v: unknown): SovaConfirmItem[] {
   return [];
 }
 
+/** How many session rows a confirm card shows before "Show all". */
+export const CONFIRM_SESSIONS_SHOWN = 8;
+
+/**
+ * A confirm card's rows in display order: ideas and todos first and always shown (a card's
+ * effects on them, such as ticking a todo, are never behind a toggle), then the sessions, the
+ * first `CONFIRM_SESSIONS_SHOWN` of them unless `all`. `collapsible`: there is a toggle (it would
+ * hide 2 or more sessions; hiding 1 saves nothing). `hidden`: sessions not shown now.
+ */
+export function confirmRows(items: readonly SovaConfirmItem[], all: boolean): { rows: SovaConfirmItem[]; sessions: number; collapsible: boolean; hidden: number } {
+  const pinned = items.filter((i) => i.kind !== "session");
+  const sessions = items.filter((i) => i.kind === "session");
+  const collapsible = sessions.length - CONFIRM_SESSIONS_SHOWN > 1;
+  const shown = collapsible && !all ? sessions.slice(0, CONFIRM_SESSIONS_SHOWN) : sessions;
+  return { rows: [...pinned, ...shown], sessions: sessions.length, collapsible, hidden: sessions.length - shown.length };
+}
+
 /** The text a confirm option sends. */
 export const confirmReply = (o: SovaConfirmDetails["options"][number]): string => o.reply?.trim() || o.label;
 

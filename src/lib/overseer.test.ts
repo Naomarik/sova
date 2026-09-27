@@ -6,6 +6,8 @@ import {
   confirmAnswer,
   confirmDetails,
   confirmReply,
+  confirmRows,
+  CONFIRM_SESSIONS_SHOWN,
   createTurnOwner,
   detailsOf,
   headLists,
@@ -231,4 +233,26 @@ test("confirm details: an item's note parses on every kind, blank or non-string 
     ["Parser fix. Merged, nothing running.", undefined, undefined, "Covered by s1."],
   );
   assert.ok(!("note" in d!.items![1]!) && !("note" in d!.items![2]!));
+});
+
+test("confirm rows: ideas and todos come first and are never collapsed; only sessions follow the toggle", () => {
+  const session = (n: number) => ({ kind: "session" as const, id: `s${n}`, title: `S${n}` });
+  const idea = { kind: "idea" as const, id: "§sova/x", title: "X" };
+  const todo = { kind: "todo" as const, id: "td_aaaaaaaa", text: "Tick me", note: "Ticking marks it done." };
+  // The server's order (sessions, then ideas, then todos), 13 sessions: the todo is item 15.
+  const items = [...Array.from({ length: 13 }, (_, i) => session(i)), idea, todo];
+  const shut = confirmRows(items, false);
+  assert.deepEqual(shut.rows.slice(0, 2).map((r) => r.id), ["§sova/x", "td_aaaaaaaa"], "ideas and todos lead");
+  assert.equal(shut.rows.length, 2 + CONFIRM_SESSIONS_SHOWN, "the pinned rows don't use up the 8");
+  assert.ok(shut.rows.slice(2).every((r) => r.kind === "session"));
+  assert.deepEqual([shut.sessions, shut.collapsible, shut.hidden], [13, true, 5]);
+  const open = confirmRows(items, true);
+  assert.equal(open.rows.length, 15);
+  assert.equal(open.hidden, 0);
+  // Many todos and few sessions: nothing collapses, however many rows.
+  const todos = Array.from({ length: 12 }, (_, i) => ({ kind: "todo" as const, id: `td_${i}`, text: `T${i}` }));
+  const few = confirmRows([session(1), ...todos], false);
+  assert.deepEqual([few.rows.length, few.collapsible, few.rows.at(-1)!.id], [13, false, "s1"]);
+  // 9 sessions: hiding 1 saves nothing, so no toggle.
+  assert.equal(confirmRows(Array.from({ length: 9 }, (_, i) => session(i)), false).collapsible, false);
 });

@@ -1,7 +1,7 @@
 import { createContext, createSignal, For, Show, useContext } from "solid-js";
 import type { OverseerQuickAction, SovaConfirmDetails, SovaConfirmItem } from "../../shared/protocol";
 import type { MeshLinkView } from "../../shared/mesh-links";
-import { briefBody, confirmReply, goTo, navigateDetails, settingsTarget } from "../lib/overseer";
+import { briefBody, confirmReply, confirmRows, goTo, navigateDetails, settingsTarget } from "../lib/overseer";
 import { clockTime, relativeTime } from "../lib/format";
 import { groupLinkIndex, resolveAppLink, sessionIndex, sessionIndexVersion } from "../lib/session-links";
 import { openSettings } from "../lib/settings-nav";
@@ -81,28 +81,25 @@ export function ConfirmCard(props: { details: SovaConfirmDetails; answered: bool
   );
 }
 
-/** How many of a card's items show before "Show all". */
-export const CONFIRM_ITEMS_SHOWN = 8;
-
 /**
  * What a confirm card is about: the sessions, ideas and todos the server resolved when the card was
- * raised, as a snapshot. A session links to its route, named by its summary (else its title); an
+ * raised, as a snapshot. Ideas and todos come first and always show; only the sessions after them
+ * collapse (confirmRows). A session links to its route, named by its summary (else its title); an
  * idea is its id and title as text, never a link; a todo is its text. Each may carry the
  * Overseer's note under it.
  */
 function ConfirmItems(props: { items: SovaConfirmItem[] }) {
   const [all, setAll] = createSignal(false);
-  const extra = () => props.items.length - CONFIRM_ITEMS_SHOWN;
-  const shown = () => (all() || extra() <= 1 ? props.items : props.items.slice(0, CONFIRM_ITEMS_SHOWN));
+  const view = () => confirmRows(props.items, all());
   return (
     <div class="card-body overseer-confirm-items">
       <ul class="overseer-confirm-list" aria-label={`${props.items.length} ${props.items.length === 1 ? "item" : "items"}`}>
-        <For each={shown()}>{(it) => <ConfirmItemRow item={it} />}</For>
+        <For each={view().rows}>{(it) => <ConfirmItemRow item={it} />}</For>
       </ul>
-      <Show when={extra() > 1}>
+      <Show when={view().collapsible}>
         <button type="button" class="button button-ghost button-sm overseer-confirm-more" aria-expanded={all()} onClick={() => setAll(!all())}>
           <Icon name={all() ? "chevron-down" : "chevron-right"} small />
-          {all() ? "Show fewer" : `Show all ${props.items.length}`}
+          {all() ? "Show fewer" : `Show all ${view().sessions} sessions`}
         </button>
       </Show>
     </div>

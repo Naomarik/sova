@@ -147,7 +147,8 @@ const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
 const str = (description: string, extra: Record<string, unknown> = {}) => ({ type: "string", description, ...extra });
 const NOTE_DESC =
   `What the item is, then why the action fits it: at most 2 short sentences, ${CONFIRM_NOTE_MAX} characters, plain text. ` +
-  'E.g. "Push notifications for Overseer briefs. Merged to master yesterday, nothing running."';
+  'E.g. "Push notifications for Overseer briefs. Merged to master yesterday, nothing running." ' +
+  `For an idea or todo a button also acts on, say the effect: "Covered by the push session's final report. Ticking marks it done."`;
 const idList = (description: string) => ({
   type: "array",
   items: { anyOf: [{ type: "string" }, { type: "object", properties: { id: { type: "string" }, note: { type: "string", description: NOTE_DESC } }, required: ["id"], additionalProperties: false }] },
@@ -163,7 +164,8 @@ export function confirmTool(d: ConfirmToolDeps): Tool {
       `Show the ${who} an inline card with a question and buttons, under the reply you wrote. Use it when a request is ambiguous or an action is dangerous or large. ` +
       `Write your reply first (what you found, and why you ask), then call this LAST: the card ends your turn, and the ${who}'s choice arrives as their next message (the option's reply text, or its label). ` +
       `A card about specific things (archive, tick, send, …) lists every one of them in items, so the ${who} sees exactly what the buttons act on, ` +
-      `and gives each one a note: what it is, then why the action fits it, in at most 2 short sentences (e.g. "Push notifications for Overseer briefs. Merged to master yesterday, nothing running.").`,
+      `and gives each one a note: what it is, then why the action fits it, in at most 2 short sentences (e.g. "Push notifications for Overseer briefs. Merged to master yesterday, nothing running."); ` +
+      `an idea or todo a button also acts on says the effect in its note ("… Ticking marks it done."). Every option's reply says exactly what it does to which items.`,
     promptSnippet: `ask the ${who} with inline buttons, as the last call of your reply`,
     parameters: obj(
       {
@@ -177,7 +179,9 @@ export function confirmTool(d: ConfirmToolDeps): Tool {
           items: obj(
             {
               label: str("Button text, Title Case, short."),
-              reply: str("What is sent back when picked (default: the label)."),
+              reply: str(
+                'What is sent back when picked: exactly what this button does to which items, e.g. "Archive the 13 sessions listed and tick td_dbd3f3f5; leave §sova/tidy-sweeps open." (default: the label).',
+              ),
               tone: str("default | danger", { enum: ["default", "danger"] }),
             },
             ["label"],

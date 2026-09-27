@@ -8,7 +8,6 @@ import type {
   SessionGroup,
   SessionInsight,
   SessionSummary,
-  SovaConfirmDetails,
   SovaNavigateDetails,
   TargetInfo,
   TranscriptItem,
@@ -26,6 +25,9 @@ import { logAction, readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
 import { parseModePatch } from "./mode-state";
 import { ideaTools, type IdeaToolHost, type ToolCall } from "./overseer-idea-tools";
 import { todoTools } from "./overseer-todo-tools";
+import { readTodos } from "./overseer-todos";
+import { readManifest, resolveIdeaId } from "./overseer-ideas";
+import { confirmTool } from "./overseer-confirm";
 import { linkTools, type LinksApi } from "./overseer-link-tools";
 import type { PeerLinkRead } from "../shared/mesh-links";
 
@@ -1293,43 +1295,26 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         return { content: text(`Notes saved (${saved.length} characters). They are in your prompt from your next run on (the next message, brief or wake-up); you know them now.`), details: { length: saved.length } };
       }, { unattended: true }),
     },
-    {
-      name: "sova_confirm",
-      label: "Confirm",
-      description:
-        "Show the user an inline card with a question and buttons, in your own chat. Use it when a request is ambiguous or an action is dangerous or large. It does NOT wait: after calling it, END YOUR TURN at once; the user's choice arrives as their next message (the option's reply text, or its label).",
-      promptSnippet: "ask the user with inline buttons, then end your turn",
-      parameters: obj(
-        {
-          title: str("The question, short."),
-          detail: str("One or two sentences of context."),
-          options: {
-            type: "array",
-            minItems: 1,
-            maxItems: 4,
-            description: "The buttons.",
-            items: obj(
-              {
-                label: str("Button text, Title Case, short."),
-                reply: str("What is sent back when picked (default: the label)."),
-                tone: str("default | danger", { enum: ["default", "danger"] }),
-              },
-              ["label"],
-            ),
-          },
+    confirmTool({
+      audience: "user",
+      lookup: {
+        // Any session: a card only points at it, so TUI-live and archived sessions are fine.
+        session: async (ref) => {
+          const id = sessionRef(ref);
+          return id ? host.session(id) : null;
         },
-        ["title", "options"],
-      ),
-      execute: act("sova_confirm", async (p) => {
-        const options = (Array.isArray(p.options) ? p.options : [])
-          .slice(0, 4)
-          .filter((o: any) => o && typeof o.label === "string" && o.label.trim())
-          .map((o: any) => ({ label: cut(o.label, 40), ...(typeof o.reply === "string" && o.reply.trim() ? { reply: o.reply } : {}), ...(o.tone === "danger" ? { tone: "danger" as const } : {}) }));
-        if (!options.length) throw new Refusal("Give at least one option with a label.");
-        const details: SovaConfirmDetails = { title: cut(String(p.title ?? ""), 200), ...(p.detail ? { detail: cut(String(p.detail), 600) } : {}), options };
-        return { content: text("Shown to the user. End your turn now and wait for their reply."), details, terminate: true };
-      }, { unattended: true }),
-    },
+        // Any Overseer conversation, the current one or an older one: all are its own.
+        isSelf: (s) => !!s.overseer || s.id === host.overseerId(),
+        idea: (ref) => {
+          const m = readManifest();
+          const id = resolveIdeaId(ref, m);
+          return id ? { id, title: m.ideas[id]!.title } : null;
+        },
+        todo: (ref) => readTodos().todos.find((t) => t.id === ref) ?? null,
+      },
+      wrap: (run) => act("sova_confirm", run, { unattended: true }),
+      refusal: (m) => new Refusal(m),
+    }),
     ...ideaTools({
       host,
       act,

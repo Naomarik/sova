@@ -2455,14 +2455,27 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
+        "server/overseer-confirm.ts",
         "server/overseer-tools.ts",
+        "server/project-overseer-tools.ts",
+        "server/overseer-prompt.md",
+        "server/project-overseer-prompt.md",
+        "shared/protocol.ts",
         "src/components/OverseerCards.tsx",
         "src/lib/overseer.ts",
+        "src/lib/hidden-rows.ts",
         "src/components/Thread.tsx",
-        "server/overseer-redact.ts"
+        "src/design/base.css",
+        "server/overseer-redact.ts",
+        "server/overseer-tools.test.ts",
+        "server/project-overseer-tools.test.ts",
+        "src/lib/overseer.test.ts",
+        "src/lib/hidden-rows.test.ts"
       ],
       "requires": [
-        "§app.overseer/tools"
+        "§app.overseer/tools",
+        "§app.overseer/links",
+        "§app.overseer/ideas"
       ]
     },
     "§app.overseer/dialog-answers": {
@@ -2539,11 +2552,12 @@
     "§app.overseer/links": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/lib/session-links.ts",
         "src/lib/markdown.ts",
-        "src/components/Markdown.tsx"
+        "src/components/Markdown.tsx",
+        "src/App.tsx"
       ],
       "requires": []
     },
@@ -4951,7 +4965,8 @@
         "src/components/Thread.tsx",
         "server/mesh/links-routes.ts",
         "server/mesh/proxy.ts",
-        "server/overseer-runtime.test.ts"
+        "server/overseer-runtime.test.ts",
+        "src/lib/hidden-rows.ts"
       ],
       "requires": [
         "§app.overseer/tools",

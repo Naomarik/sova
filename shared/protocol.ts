@@ -2431,12 +2431,27 @@ export interface SovaNavigateDetails {
 /** `sova_confirm` details. Non-blocking: the tool returns at once and the model ends its turn.
     The card shows `options` as buttons; a click sends the option's `reply` (or its label) as the
     next user message. Answered/disabled once any later user message exists in the transcript
-    (`answer` = that message's text when it matches an option). */
+    (`answer` = that message's text when it matches an option). `items`: what the question is
+    about, resolved by the server when the card was raised and snapshotted here (absent on cards
+    raised without any, and on every card from before the field existed). */
 export interface SovaConfirmDetails {
   title: string;
   detail?: string;
   options: { label: string; reply?: string; tone?: "default" | "danger" }[];
+  items?: SovaConfirmItem[];
 }
+
+/** One thing a confirm card is about. A session row: its folder's short name (`project`), last
+    activity (ISO), a one-line summary when it has one, and how many subagents were working.
+    `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
+    sentences, `CONFIRM_NOTE_MAX` characters). */
+export type SovaConfirmItem =
+  | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; note?: string }
+  | { kind: "idea"; id: string; title: string; note?: string }
+  | { kind: "todo"; id: string; text: string; note?: string };
+
+/** The longest note one confirm item may carry. */
+export const CONFIRM_NOTE_MAX = 220;
 
 // --- The Overseer's ideas backlog: spec-shaped (manifest + one .md per idea, § ids), its own
 // small reader and link graph. Nothing is deleted; `dropped` is terminal. ---

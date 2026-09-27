@@ -1,4 +1,4 @@
-import { type AttentionDigest, OVERSEER_BRIEF_PREFIX, type SovaConfirmDetails, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
+import { type AttentionDigest, OVERSEER_BRIEF_PREFIX, type SovaConfirmDetails, type SovaConfirmItem, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
 import { isObj, str } from "./message";
 import { openSettings, SETTINGS_TABS, type SettingsSection, type SettingsTab } from "./settings-nav";
 
@@ -48,7 +48,56 @@ export function confirmDetails(details: unknown): SovaConfirmDetails | null {
     return [{ label: str(o.label)!, reply: str(o.reply), tone: o.tone === "danger" ? ("danger" as const) : undefined }];
   });
   if (options.length === 0) return null;
-  return { title, detail: str(details.detail), options };
+  const items = Array.isArray(details.items) ? details.items.flatMap(confirmItem) : [];
+  return { title, detail: str(details.detail), options, ...(items.length ? { items } : {}) };
+}
+
+/** One card item, tolerant: a row without its kind's id and name is dropped, bad optional fields go. */
+function confirmItem(v: unknown): SovaConfirmItem[] {
+  if (!isObj(v)) return [];
+  const id = str(v.id)?.trim();
+  if (!id) return [];
+  const text = str(v.note)?.replace(/\s+/g, " ").trim();
+  const note = text ? { note: text } : {};
+  if (v.kind === "session") {
+    const workers = typeof v.workers === "number" && Number.isFinite(v.workers) && v.workers > 0 ? Math.floor(v.workers) : undefined;
+    const at = str(v.lastActiveAt);
+    return [
+      {
+        kind: "session",
+        id,
+        title: str(v.title)?.trim() || id,
+        ...(str(v.project)?.trim() ? { project: str(v.project)!.trim() } : {}),
+        ...(at && Number.isFinite(Date.parse(at)) ? { lastActiveAt: at } : {}),
+        ...(str(v.summary)?.trim() ? { summary: str(v.summary)!.trim() } : {}),
+        ...(workers ? { workers } : {}),
+        ...note,
+      },
+    ];
+  }
+  if (v.kind === "idea") return [{ kind: "idea", id, title: str(v.title)?.trim() ?? "", ...note }];
+  if (v.kind === "todo") {
+    const text = str(v.text)?.trim();
+    return text ? [{ kind: "todo", id, text, ...note }] : [];
+  }
+  return [];
+}
+
+/** How many session rows a confirm card shows before "Show all". */
+export const CONFIRM_SESSIONS_SHOWN = 8;
+
+/**
+ * A confirm card's rows in display order: ideas and todos first and always shown (a card's
+ * effects on them, such as ticking a todo, are never behind a toggle), then the sessions, the
+ * first `CONFIRM_SESSIONS_SHOWN` of them unless `all`. `collapsible`: there is a toggle (it would
+ * hide 2 or more sessions; hiding 1 saves nothing). `hidden`: sessions not shown now.
+ */
+export function confirmRows(items: readonly SovaConfirmItem[], all: boolean): { rows: SovaConfirmItem[]; sessions: number; collapsible: boolean; hidden: number } {
+  const pinned = items.filter((i) => i.kind !== "session");
+  const sessions = items.filter((i) => i.kind === "session");
+  const collapsible = sessions.length - CONFIRM_SESSIONS_SHOWN > 1;
+  const shown = collapsible && !all ? sessions.slice(0, CONFIRM_SESSIONS_SHOWN) : sessions;
+  return { rows: [...pinned, ...shown], sessions: sessions.length, collapsible, hidden: sessions.length - shown.length };
 }
 
 /** The text a confirm option sends. */

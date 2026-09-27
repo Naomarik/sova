@@ -375,3 +375,19 @@ describe("coding sessions' modes (the operator's ceiling)", () => {
     assert.deepEqual(f.calls, ["send:/s/in-tree.jsonl"]);
   });
 });
+
+describe("sova_confirm items (the shared tool)", () => {
+  test("it resolves only the project's sessions, and runs in an unattended L0 run", async () => {
+    const f = fake({ autonomy: "L0" });
+    const out = await f.run("sova_confirm", { title: "Stop these?", options: [{ label: "Stop" }], items: { sessions: ["in-root", "sova://s/in-tree"] } });
+    assert.equal(out.terminate, true);
+    assert.deepEqual(
+      out.details.items.map((i: { id: string; project?: string }) => [i.id, i.project]),
+      [["in-root", "app"], ["in-tree", "proj-fix-abc123"]],
+    );
+    assert.match((out.content[0] as { text: string }).text, /^Shown to the operator under your reply/);
+    assert.match((out.content[0] as { text: string }).text, /- \[Inside\]\(sova:\/\/s\/in-root\) \(in-root\)/);
+    await assert.rejects(f.run("sova_confirm", { title: "?", options: [{ label: "Go" }], items: { sessions: ["in-root", "outside", "global"] } }), /sessions: outside, global/);
+    await assert.rejects(f.run("sova_confirm", { title: "?", options: [{ label: "Go" }], items: { sessions: ["po-self"] } }), /po-self is your own conversation/);
+  });
+});

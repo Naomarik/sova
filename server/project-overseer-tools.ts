@@ -5,8 +5,9 @@ import type { BatonSession, BatonView } from "../shared/baton";
 import type { DecisionsInfo, PromoteResult } from "../shared/decisions";
 import type { OrgProject, Person } from "../shared/orgs";
 import { GAP_TAG, type Autonomy, type ProjectCodingMode, type ProjectOverseerCaps, type ProjectOverseerSettings } from "../shared/project-overseer";
-import type { IdeaStatus, SessionSummary, SovaConfirmDetails, TranscriptItem } from "../shared/protocol";
-import { addIdea, IdeaError, readManifest, readProse, updateIdea } from "./overseer-ideas";
+import type { IdeaStatus, SessionSummary, TranscriptItem } from "../shared/protocol";
+import { confirmTool } from "./overseer-confirm";
+import { addIdea, IdeaError, readManifest, readProse, resolveIdeaId, updateIdea } from "./overseer-ideas";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
 import { logAction, NOTES_MAX, readNotes, writeNotes } from "./overseer-store";
 import { addTodo, readTodos, removeTodo, TodoError, updateTodo } from "./overseer-todos";
@@ -256,6 +257,9 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
     return { coding, batons: host.batons() };
   }
 
+  /** This project overseer's own conversation: by id, or by its marker for this project. */
+  const isOwn = (s: SessionSummary) => s.id === host.overseerId() || (s.projectOverseer?.projectId === host.project().id && s.projectOverseer?.orgId === host.project().orgId);
+
   const names = () => {
     const out: Record<string, string> = {};
     for (const x of host.roster()) out[x.id] = x.name;
@@ -495,34 +499,32 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
         return { content: text(`Notes saved (${saved.length} characters).`), details: { length: saved.length } };
       }),
     },
-    {
-      name: "sova_confirm",
-      label: "Confirm",
-      description: "Show the operator an inline card with a question and buttons. It does NOT wait: after calling it, END YOUR TURN; the operator's choice arrives as their next message.",
-      promptSnippet: "ask the operator with inline buttons, then end your turn",
-      parameters: obj(
-        {
-          title: str("The question, short."),
-          detail: str("One or two sentences of context."),
-          options: {
-            type: "array",
-            minItems: 1,
-            maxItems: 4,
-            items: obj({ label: str("Button text, Title Case, short."), reply: str("What is sent back when picked (default: the label)."), tone: str("default | danger", { enum: ["default", "danger"] }) }, ["label"]),
-          },
+    confirmTool({
+      audience: "operator",
+      lookup: {
+        // The sessions it may read: the project's coding sessions and its gathering sessions.
+        session: async (ref) => {
+          const id = sessionRef(ref);
+          // Its own conversation is out of scope; found here only so the refusal can say why.
+          const own = (await host.sessions()).find((x) => x.id === id && isOwn(x));
+          if (own) return own;
+          const { coding, batons } = await scoped();
+          const s = coding.find((x) => x.id === id);
+          if (s) return s;
+          if (!batons.some((b) => b.sessionId === id)) return null;
+          return (await host.sessions()).find((x) => x.id === id) ?? null;
         },
-        ["title", "options"],
-      ),
-      execute: act("sova_confirm", async (q) => {
-        const options = (Array.isArray(q.options) ? q.options : [])
-          .slice(0, 4)
-          .filter((o: any) => o && typeof o.label === "string" && o.label.trim())
-          .map((o: any) => ({ label: cut(o.label, 40), ...(typeof o.reply === "string" && o.reply.trim() ? { reply: o.reply } : {}), ...(o.tone === "danger" ? { tone: "danger" as const } : {}) }));
-        if (!options.length) throw new Refusal("Give at least one option with a label.");
-        const details: SovaConfirmDetails = { title: cut(String(q.title ?? ""), 200), ...(q.detail ? { detail: cut(String(q.detail), 600) } : {}), options };
-        return { content: text("Shown to the operator. End your turn now and wait for their reply."), details, terminate: true };
-      }),
-    },
+        isSelf: isOwn,
+        idea: (ref) => {
+          const m = readManifest(p.ideas);
+          const id = resolveIdeaId(ref, m);
+          return id ? { id, title: m.ideas[id]!.title } : null;
+        },
+        todo: (ref) => readTodos(p.todos).todos.find((t) => t.id === ref) ?? null,
+      },
+      wrap: (run) => act("sova_confirm", run),
+      refusal: (m) => new Refusal(m),
+    }),
     {
       name: "sova_idea",
       label: "Idea",

@@ -4507,6 +4507,19 @@
         "server/sessions-index.ts",
         "server/cleanup-org-guard.test.ts"
       ]
+    },
+    "§app.session-list/archive-org-guard": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/cleanup-org-guard",
+        "§app.organizations/workspace-repo"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sessions-index.ts",
+        "server/archive-org-guard.test.ts"
+      ]
     }
   },
   "boundary": {

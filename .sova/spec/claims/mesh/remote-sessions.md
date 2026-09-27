@@ -70,7 +70,8 @@ worktrees, the models its session pickers offer, starting a hand-off session, a 
 preview, Commit Now and the remote — goes to that host through `/peer/<id>/api/…`, which answers
 exactly as it answers its own page. Where such a page names a host, it names that one: a project
 paused by an attach reads "Paused at L0 on <peer>" and "This organization was attached on <peer>
-…", and a decision whose session isn't there says it isn't on <peer>. A local org's addresses and
+…", the daily limits "Resets at midnight on <peer>.", and a decision whose session isn't there says
+it isn't on <peer>. A local org's addresses and
 words are unchanged. `#/orgs` still lists this host's orgs only.
 
 ## §mesh.remote-sessions/never-cached — A peer's answers are never cached

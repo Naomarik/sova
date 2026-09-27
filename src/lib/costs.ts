@@ -18,8 +18,8 @@ export const ESTIMATE_TITLE = "Partly an estimate: see the note below.";
 /** The token kinds the model table shows; `cacheWrite` is both TTLs. */
 export const TOKEN_KINDS = ["input", "output", "cacheRead", "cacheWrite"] as const satisfies readonly (keyof CostTokens)[];
 
-/** Some part of the total is an estimate. */
-export const hasEstimate = (c: Pick<ProjectCost, "estimates">): boolean => c.estimates.some((e) => e.usd > 0);
+/** Some part of the total is an estimate: the merged Claude Code cache writes priced at the 1-hour rate (a dated alias is a price rule, not an estimate). */
+export const hasEstimate = (c: Pick<ProjectCost, "estimates">): boolean => c.estimates.some((e) => e.code === "cache-write-1h-assumed" && e.usd > 0);
 
 // ---- grouping ----
 
@@ -114,7 +114,7 @@ export function costNotes(c: Pick<ProjectCost, "unpriced" | "estimates" | "notOn
     if (u.model === "unknown") out.push({ text: `${tokens(u.tokens)} tokens counted before costs have no model recorded, so they aren't in the total.` });
     else out.push({ text: `${tokens(u.tokens)} tokens on ${u.model} have no API price, so they aren't in the total.`, title: u.why || undefined });
   }
-  if (c.estimates.some((e) => e.code === "cache-write-1h-assumed" && e.usd > 0)) {
+  if (hasEstimate(c)) {
     out.push({ text: "≈ Older Claude Code messages didn't record how long their cache was kept, so their cache writes are priced at the 1-hour rate." });
   }
   const off = c.notOnHost;

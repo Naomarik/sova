@@ -86,9 +86,9 @@ test("notes: each only when true, in the copy deck's order; the 2 always said la
     { text: "Not counted: topic summaries, image descriptions, and Sova's own side calls." },
     { text: "Prices from models.dev, as of Sep 28." },
   ]);
-  const bare = { unpriced: [], estimates: [{ code: "model-from-alias" as const, messages: 3, usd: 0 }], notOnHost: null, prices: { source: "models.dev" as const, fetchedAt: null } };
+  const bare = { unpriced: [], estimates: [{ code: "model-from-alias" as const, messages: 3, usd: 2 }, { code: "cache-write-1h-assumed" as const, messages: 1, usd: 0 }], notOnHost: null, prices: { source: "models.dev" as const, fetchedAt: null } };
   assert.deepEqual(costNotes(bare, now).map((n) => n.text), ["Not counted: topic summaries, image descriptions, and Sova's own side calls."]);
-  assert.equal(hasEstimate(bare), false, "an estimate that priced nothing doesn't make the total ≈");
+  assert.equal(hasEstimate(bare), false, "a dated alias is no estimate, and a merged cache write that priced nothing doesn't make the total ≈");
   assert.equal(emptyLine(4), "4 sessions in this project. Nothing spent yet.");
   assert.equal(emptyLine(0), "Nothing spent yet.");
 });

@@ -158,6 +158,13 @@ export class PoLimits {
     this.persist();
     return null;
   }
+  /** Give back `n` taken this turn and not used (a promotion's refused ids). */
+  giveBack(kind: PoLimitKind, attended: boolean, n: number): void {
+    if (n <= 0) return;
+    const ledger = attended ? this.used : this.today();
+    ledger[kind] = Math.max(0, ledger[kind] - n);
+    this.persist();
+  }
   /** Both allowances' use and limits, for the page. */
   use(caps: ProjectOverseerCaps): { message: AllowanceUse; today: AllowanceUse } {
     const today = this.today();
@@ -753,8 +760,17 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
       execute: act("sova_promote", async (q) => {
         const ids: string[] = Array.isArray(q.ids) ? [...new Set<string>(q.ids.map(String))] : [];
         if (!ids.length) throw new Refusal("Give the ids to promote.");
+        // The whole request against what is left, before promoting; then only what was promoted counts.
+        const attended = host.attended();
         take("promote", ids.length);
-        const r = await host.promote(ids);
+        let r: Awaited<ReturnType<typeof host.promote>>;
+        try {
+          r = await host.promote(ids);
+        } catch (err) {
+          limits.giveBack("promote", attended, ids.length);
+          throw err;
+        }
+        limits.giveBack("promote", attended, ids.length - ids.filter((id) => r.promoted.includes(id)).length);
         // Every id asked for is either promoted or refused with a reason; one the reconciler
         // passed over silently (unknown, another project's, not drafted) is refused here.
         const refused = [...r.refused];

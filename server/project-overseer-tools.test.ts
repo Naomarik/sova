@@ -288,7 +288,9 @@ describe("scope, caps and budget", () => {
     const f = fake({ attended: true });
     const out = JSON.stringify(await f.run("sova_promote", { ids: ["s:1", "c:2", "nope"] }));
     assert.match(out, /Promoted 1, refused 2: c:2 \(in an open conflict\); nope \(not a drafted decision of this project/);
+    assert.equal(f.limits.count("promote"), 1, "only the promoted id counts against the allowance");
     await assert.rejects(() => f.run("sova_promote", { ids: ["nope", "c:9"] }), /Promoted 0, refused 2/);
+    assert.equal(f.limits.count("promote"), 1, "a call that promotes nothing takes nothing");
     // An out-of-area decision: refused even in the operator's own turn, the reconciler's reason relayed as is.
     await assert.rejects(() => f.run("sova_promote", { ids: ["o:1"] }), /o:1 \(outside Ana Ruiz's decision area \(invoicing\): only the operator promotes it\)/);
     const log = readFileSync(f.paths.actions, "utf8").trim().split("\n").map((l) => JSON.parse(l));
@@ -299,6 +301,17 @@ describe("scope, caps and budget", () => {
     const last = readFileSync(f.paths.actions, "utf8").trim().split("\n").map((l) => JSON.parse(l)).at(-1);
     assert.deepEqual([last.outcome, last.error], ["ok", undefined]);
     assert.doesNotMatch(JSON.stringify(out), /"partial"/, "the model never sees the log's field");
+  });
+
+  test("sova_promote: a request over what is left is refused whole and takes nothing; refused ids are given back", async () => {
+    const f = fake({ attended: true, settings: { caps: { ...defaultPoSettings().caps, promotePerTurn: 2 } } });
+    await assert.rejects(() => f.run("sova_promote", { ids: ["s:1", "s:2", "s:3"] }), /This message's allowance is used: 0 of 2 decisions promoted per message you send\./);
+    assert.equal(f.limits.count("promote"), 0);
+    assert.deepEqual(f.calls.filter((c) => c.startsWith("promote")), [], "nothing promoted");
+    await f.run("sova_promote", { ids: ["s:1", "nope"] });
+    assert.equal(f.limits.count("promote"), 1);
+    await f.run("sova_promote", { ids: ["s:2"] });
+    assert.equal(f.limits.count("promote"), 2);
   });
 
   test("session ids in every form the tools print reach the same session; anything else is refused", async () => {

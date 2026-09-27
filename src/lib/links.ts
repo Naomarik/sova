@@ -1,10 +1,12 @@
 // The Agents tab's "Remotely linked agents" (§mesh.links/agents-pane): pure decisions only —
-// which host a member's URLs go to, the sections, the state chip, the thread's rows — so
-// LinkedAgents.tsx just renders them.
+// which host a member's URLs go to, the sections, the state chip, the thread's rows, the file
+// offers' status rows — so LinkedAgents.tsx just renders them.
 
-import type { LinkInboxRecord, LinkMemberRef, LinkThread, LinkedAgentInfo } from "../../shared/mesh-links";
+import type { LinkInboxRecord, LinkMemberRef, LinkOffer, LinkOfferRecipient, LinkThread, LinkedAgentInfo, LinkedTransfer, OfferRowState } from "../../shared/mesh-links";
 import type { MeshInfo } from "../../shared/protocol";
 import type { Tone } from "../components/ui";
+import { duration, thousands } from "./format";
+import { bytes } from "./mesh-details";
 
 /** Where the page reaches a member: `host` is a peer id of the host serving the page (null = the
     page's own host), or the member's host isn't one that host knows. */
@@ -198,6 +200,176 @@ export function newestFrom(thread: Pick<LinkThread, "messages">, from: LinkMembe
   return at;
 }
 
-/** What makes the open thread worth fetching again: anything the row says about new traffic. */
-export const threadSignature = (row: Pick<LinkedAgentInfo, "unread" | "lastActivity" | "state">): string =>
-  `${row.unread}:${row.lastActivity ?? ""}:${row.state}`;
+/** What makes the open thread worth fetching again: anything the row says about new traffic,
+    and a transfer moving (the server throttles those pushes). */
+export const threadSignature = (row: Pick<LinkedAgentInfo, "unread" | "lastActivity" | "state" | "transfer">): string => {
+  const t = row.transfer;
+  return `${row.unread}:${row.lastActivity ?? ""}:${row.state}:${t ? `${t.offerId}:${t.state}:${t.received ?? ""}` : ""}`;
+};
+
+// --- File offers (§mesh.links/offers, §mesh.links/transfer) ---
+
+/** "12 MB / 41 MB", "12 MB" with no size yet; null when nothing has moved. */
+export function progressText(received: number | undefined, size: number | undefined): string | null {
+  if (received === undefined) return null;
+  return size ? `${bytes(received)} / ${bytes(size)}` : bytes(received);
+}
+
+/**
+ * The member row's transfer chip, beside its state chip: what that member is doing with its newest
+ * open offer. `dir` is the member's side ("out": it sends). No pulse: the state chip carries that.
+ * Null for a final state (the server omits those; an older host sends no `transfer`).
+ */
+export function transferChip(t: LinkedTransfer | undefined): { text: string; title: string } | null {
+  if (!t) return null;
+  const verb = t.dir === "out" ? "Sending" : "Receiving";
+  const progress = progressText(t.received, t.size);
+  const title = `File offer ${t.offerId}`;
+  switch (t.state) {
+    case "offered":
+      return { text: "Waiting for an answer", title };
+    case "accepted":
+      return { text: `${verb}…`, title };
+    case "pulling":
+      return { text: progress ? `${verb} ${progress}` : `${verb}…`, title };
+    case "extracting":
+      return { text: "Unpacking", title };
+    default:
+      return null;
+  }
+}
+
+/** One recipient's line under an offer. */
+export interface OfferRecipientLine {
+  key: string;
+  /** The recipient, by title (or "This session"). */
+  who: string;
+  state: OfferRowState;
+  /** "Offered", "Pulling", "Unpacking", "Landed", "Failed"… */
+  label: string;
+  tone?: Tone;
+  /** "12 MB / 41 MB" while pulling. */
+  progress: string | null;
+  /** Where it lands, as its host resolved it, else as named. */
+  dest: string | null;
+  /** The moment worth showing: done, else started. */
+  at: number | null;
+  /** How long a landed pull took. */
+  took: string | null;
+  /** The refusal, failure or decline sentence. */
+  message: string | null;
+}
+
+/** One offer's status row in the thread, beside the messages by `at`. */
+export interface OfferRow {
+  id: string;
+  at: number;
+  /** The sender, as a message's author reads. */
+  from: string;
+  own: boolean;
+  /** From this session ("out"), to it ("in"), or between others (the Overseer's pane). */
+  dir: "out" | "in" | null;
+  /** "Offered", "Offered to this session". */
+  verb: string;
+  /** "proj/, notes.md": the names they land under; a directory ends in `/`. */
+  roots: string;
+  /** "5,012 files · 41 MB", uncompressed as listed. */
+  size: string;
+  /** The sender's packing, while it isn't ready: "Packing · 3 MB written", "Packing failed: …". */
+  packing: string | null;
+  note: string | null;
+  warnings: string[];
+  recipients: OfferRecipientLine[];
+}
+
+const ROW_STATE: Record<OfferRowState, { label: string; tone?: Tone }> = {
+  offered: { label: "Offered" },
+  accepted: { label: "Accepted" },
+  pulling: { label: "Pulling" },
+  extracting: { label: "Unpacking" },
+  done: { label: "Landed", tone: "success" },
+  declined: { label: "Declined" },
+  failed: { label: "Failed", tone: "error" },
+  expired: { label: "Expired" },
+  cancelled: { label: "Cancelled" },
+  refused: { label: "Refused", tone: "warn" },
+};
+
+type Names = readonly Pick<LinkedAgentInfo, "nodeId" | "sessionId" | "title" | "hostLabel">[];
+
+function memberName(ref: LinkMemberRef, viewer: LinkMemberRef | null, names: Names, viewerName: string, withHost: boolean): string {
+  if (viewer && sameRef(ref, viewer)) return viewerName;
+  const named = names.find((n) => n.nodeId === ref.nodeId && n.sessionId === ref.sessionId);
+  if (!named) return `Session ${ref.sessionId.slice(0, 8)}`;
+  return withHost ? `${named.title} · ${named.hostLabel}` : named.title;
+}
+
+function recipientLine(r: LinkOfferRecipient, offer: LinkOffer, viewer: LinkMemberRef | null, names: Names, viewerName: string): OfferRecipientLine {
+  const s = ROW_STATE[r.state];
+  const moving = r.state === "pulling" || r.state === "extracting";
+  return {
+    key: `${r.to.nodeId}:${r.to.sessionId}`,
+    who: memberName(r.to, viewer, names, viewerName, false),
+    state: r.state,
+    label: r.state === "pulling" && r.retries ? `${s.label}, resumed ${r.retries}×` : s.label,
+    ...(s.tone ? { tone: s.tone } : {}),
+    progress: moving ? progressText(r.received, offer.snapshot?.size) : null,
+    dest: r.resolvedDest ?? r.dest ?? null,
+    at: r.doneAt ?? r.startedAt ?? null,
+    took: r.state === "done" && r.doneAt && r.startedAt ? duration(r.doneAt - r.startedAt) : null,
+    message: r.message ?? (r.reason ? `Reason: ${r.reason}.` : null),
+  };
+}
+
+const plural = (n: number, one: string) => `${thousands(n)} ${one}${n === 1 ? "" : "s"}`;
+
+/** The offers' status rows, oldest first, deduped by id. Read-only, as the whole pane is. */
+export function offerRows(offers: readonly LinkOffer[], viewer: LinkMemberRef | null, names: Names, viewerName = "This session"): OfferRow[] {
+  const seen = new Set<string>();
+  const out: OfferRow[] = [];
+  for (const o of [...offers].sort((a, b) => a.at - b.at)) {
+    if (seen.has(o.id)) continue;
+    seen.add(o.id);
+    const p = o.packing;
+    const own = !!viewer && sameRef(o.from, viewer);
+    const dir = own ? "out" : viewer && o.recipients.some((r) => sameRef(r.to, viewer)) ? "in" : null;
+    out.push({
+      id: o.id,
+      at: o.at,
+      from: memberName(o.from, viewer, names, viewerName, true),
+      own,
+      dir,
+      verb: dir === "in" ? `Offered to ${viewerName.toLowerCase()}` : "Offered",
+      roots: o.roots.map((r) => (r.kind === "dir" ? `${r.name}/` : r.name)).join(", "),
+      size: `${plural(o.files, "file")} · ${bytes(o.bytes)}`,
+      packing: !p || p.state === "ready" ? null : p.state === "failed" ? `Packing failed${p.error ? `: ${p.error}` : "."}` : `Packing${p.written ? ` · ${bytes(p.written)} written` : "…"}`,
+      note: o.note?.trim() || null,
+      warnings: (o.warnings ?? []).map((w) =>
+        w.kind === "gitlink" ? `${w.path} is a worktree's pointer to ${w.gitdir}: it carries no history.` : `Changed while packing: ${w.message}`,
+      ),
+      recipients: o.recipients.map((r) => recipientLine(r, o, viewer, names, viewerName)),
+    });
+  }
+  return out;
+}
+
+/** The thread in one list: messages and offer status rows by `at`. An offer's own "offered"
+    notice is left out when its status row is there: the row says the same and stays current. */
+export type ThreadItem = ({ kind: "message" } & ThreadRow) | ({ kind: "offer" } & OfferRow);
+
+export function threadItems(
+  thread: Pick<LinkThread, "messages" | "offers">,
+  viewer: LinkMemberRef | null,
+  names: Names,
+  viewerName = "This session",
+): ThreadItem[] {
+  const offers = offerRows(thread.offers ?? [], viewer, names, viewerName);
+  const ids = new Set(offers.map((o) => o.id));
+  const notice = new Map(thread.messages.map((m) => [m.id, m.offer]));
+  const messages = threadRows(thread, viewer, names, viewerName).filter((m) => {
+    const o = notice.get(m.id);
+    return !(o && o.event === "offered" && ids.has(o.id));
+  });
+  const items: ThreadItem[] = [...messages.map((m) => ({ kind: "message" as const, ...m })), ...offers.map((o) => ({ kind: "offer" as const, ...o }))];
+  return items.sort((a, b) => a.at - b.at);
+}

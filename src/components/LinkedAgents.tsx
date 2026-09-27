@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js"
 import type { LinkThread, LinkedAgentInfo } from "../../shared/mesh-links";
 import { ApiError, fetchLinkThread, markLinkSeen } from "../lib/api";
 import { clockTime, compactModel } from "../lib/format";
-import { type LinkReach, linkStateChip, newestFrom, sessionIdOfPath, threadRows, threadSignature, unreadText } from "../lib/links";
+import { type LinkReach, type OfferRow, linkStateChip, newestFrom, sessionIdOfPath, threadItems, threadSignature, transferChip, unreadText } from "../lib/links";
 import { asOfClock } from "../lib/workers";
 import { Markdown } from "./Markdown";
 import { Banner, Chip, Icon } from "./ui";
@@ -26,6 +26,70 @@ export function LinkStateChip(props: { row: LinkedAgentInfo; liveSource: boolean
     <Chip tone={chip().tone} live={chip().live}>
       {chip().text}
     </Chip>
+  );
+}
+
+/** The row's file-transfer chip, beside its state chip: neutral, no pulse of its own. */
+export function LinkTransferChip(props: { row: LinkedAgentInfo }) {
+  const chip = () => transferChip(props.row.transfer);
+  return (
+    <Show when={chip()}>
+      {(c) => (
+        <span class="chip chip-count link-transfer-chip" title={c().title} data-transfer-state={props.row.transfer?.state}>
+          {c().text}
+        </span>
+      )}
+    </Show>
+  );
+}
+
+/** One file offer in the thread: who offered what, then one line per recipient. Read-only. */
+function LinkOfferStatus(props: { offer: OfferRow }) {
+  const o = () => props.offer;
+  return (
+    <li class="link-offer" data-own={o().own ? "true" : undefined} data-dir={o().dir ?? undefined} data-offer={o().id}>
+      <p class="link-message-head text-caption">
+        <span class="link-message-from">{o().from}</span>
+        <span class="text-mono" title={iso(o().at)}>
+          {clockTime(iso(o().at))}
+        </span>
+      </p>
+      <p class="link-offer-what">
+        {o().verb} <span class="text-mono">{o().roots}</span>
+        <MetaSep />
+        {o().size}
+      </p>
+      <Show when={o().note}>{(n) => <p class="link-offer-note">{n()}</p>}</Show>
+      <Show when={o().packing}>{(p) => <p class="text-caption link-message-note">{p()}</p>}</Show>
+      <For each={o().warnings}>{(w) => <p class="text-caption link-offer-warning">{w}</p>}</For>
+      <ul class="link-offer-recipients">
+        <For each={o().recipients}>
+          {(r) => (
+            <li class="link-offer-recipient text-caption" data-state={r.state}>
+              <span class="link-message-from">{r.who}</span>
+              <Chip tone={r.tone}>{r.label}</Chip>
+              <Show when={r.progress}>{(p) => <span class="text-mono">{p()}</span>}</Show>
+              <Show when={r.dest}>
+                {(d) => (
+                  <span class="text-mono link-offer-dest" title={d()}>
+                    {d()}
+                  </span>
+                )}
+              </Show>
+              <Show when={r.at}>
+                {(t) => (
+                  <span class="text-mono" title={iso(t())}>
+                    {clockTime(iso(t()))}
+                  </span>
+                )}
+              </Show>
+              <Show when={r.took}>{(t) => <span>in {t()}</span>}</Show>
+              <Show when={r.message}>{(m) => <span class="link-offer-message">{m()}</span>}</Show>
+            </li>
+          )}
+        </For>
+      </ul>
+    </li>
   );
 }
 
@@ -57,6 +121,7 @@ export function LinkedAgentRow(props: {
             </span>
           )}
         </Show>
+        <LinkTransferChip row={r()} />
         <LinkStateChip row={r()} liveSource={props.liveSource} />
       </span>
       <span class="subagent-row-meta meta-line">
@@ -174,7 +239,7 @@ export function LinkThreadView(props: {
   };
   const rows = createMemo(() => {
     const t = thread();
-    return t ? threadRows(t, viewerRef(), props.rows) : [];
+    return t ? threadItems(t, viewerRef(), props.rows) : [];
   });
 
   /** By value (a string, "" for none): a new reach object on every render must not refetch. */
@@ -259,18 +324,22 @@ export function LinkThreadView(props: {
       >
         <ol class="link-thread-list" ref={list} tabindex="0">
           <For each={rows()}>
-            {(m) => (
-              <li class="link-message" data-own={m.own ? "true" : undefined}>
-                <p class="link-message-head text-caption">
-                  <span class="link-message-from">{m.from}</span>
-                  <span class="text-mono" title={iso(m.at)}>
-                    {clockTime(iso(m.at))}
-                  </span>
-                </p>
-                <Markdown text={m.text} />
-                <For each={m.notes}>{(n) => <p class="text-caption link-message-note">{n}</p>}</For>
-              </li>
-            )}
+            {(m) =>
+              m.kind === "offer" ? (
+                <LinkOfferStatus offer={m} />
+              ) : (
+                <li class="link-message" data-own={m.own ? "true" : undefined}>
+                  <p class="link-message-head text-caption">
+                    <span class="link-message-from">{m.from}</span>
+                    <span class="text-mono" title={iso(m.at)}>
+                      {clockTime(iso(m.at))}
+                    </span>
+                  </p>
+                  <Markdown text={m.text} />
+                  <For each={m.notes}>{(n) => <p class="text-caption link-message-note">{n}</p>}</For>
+                </li>
+              )
+            }
           </For>
         </ol>
       </Show>

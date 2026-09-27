@@ -503,6 +503,9 @@ export function resolveDest(dest: string, o: { cwd: string; home: string }): str
  */
 export function checkDest(o: { resolvedDest: string; rootNames: readonly string[]; protectedRoots: readonly string[]; sandbox: SandboxWrite | null }): { scan: boolean } {
   const dest = o.resolvedDest;
+  // Root names come from the sender: each must be one plain path component.
+  for (const n of o.rootNames)
+    if (!n || n === "." || n === ".." || n.includes("/") || n.includes("\0")) throw new TransferError("bad-dest", `The offer names a root ${JSON.stringify(n)} that is not a plain name; nothing was pulled.`);
   const prot = [...new Set(o.protectedRoots.map(canonical))];
   let under = false;
   for (const p of prot) {

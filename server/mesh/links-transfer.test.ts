@@ -347,6 +347,9 @@ describe("resolveDest and checkDest", () => {
     assert.deepEqual(checkDest({ resolvedDest: agentParent, rootNames: ["proj"], protectedRoots, sandbox: null }), { scan: true });
     assert.deepEqual(checkDest({ resolvedDest: join(cwd, "in"), rootNames: ["agent"], protectedRoots, sandbox: null }), { scan: false });
   });
+  test("a root name that isn't one plain component: bad-dest", async () => {
+    for (const n of ["", ".", "..", "../x", "a/b"]) assert.equal((await refusal(() => checkDest({ resolvedDest: join(cwd, "in"), rootNames: [n], protectedRoots, sandbox: null }))).reason, "bad-dest", n);
+  });
   test("an existing non-directory: bad-dest", async () => {
     assert.equal((await refusal(() => checkDest({ resolvedDest: join(cwd, "a-file"), rootNames: ["p"], protectedRoots, sandbox: null }))).reason, "bad-dest");
   });

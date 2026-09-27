@@ -57,13 +57,12 @@ export function kindRows(rows: readonly { kind: CostKind; usd: number }[]): { ki
 const STARTER_ORDER: readonly string[] = ["overseer", "operator", "sova"];
 const STARTER_WORDS: Record<string, string> = { overseer: "the overseer", operator: "you", sova: "Sova on its own" };
 
-/** "Started by the overseer $8.10 · by you $4.02 · by Sova on its own $0.36": only starters with a cost; null when none has. */
-export function starterLine(rows: readonly { by: CostStarter; usd: number }[]): string | null {
-  const parts = rows
+/** "Started by the overseer $8.10 · by you $4.02 · by Sova on its own $0.36", as parts (each amount is its own figure): only starters with a cost, in a fixed order; empty when none has. */
+export function starterParts(rows: readonly { by: CostStarter; usd: number }[]): { words: string; usd: string }[] {
+  return rows
     .filter((r) => r.usd > 0 && STARTER_WORDS[r.by])
     .sort((a, b) => STARTER_ORDER.indexOf(a.by) - STARTER_ORDER.indexOf(b.by))
-    .map((r) => `by ${STARTER_WORDS[r.by]} ${usd(r.usd)}`);
-  return parts.length ? `Started ${parts.join(" · ")}` : null;
+    .map((r, i) => ({ words: `${i === 0 ? "Started by" : "by"} ${STARTER_WORDS[r.by]}`, usd: usd(r.usd) }));
 }
 
 /** A top session's second line: "Coding sessions · started by you". */

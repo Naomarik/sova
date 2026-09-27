@@ -1,7 +1,7 @@
 import { createEffect, For, type JSX, on, Show } from "solid-js";
 import type { CostModelRow, CostTokens, ProjectCost } from "../../shared/costs";
 import { getProjectCost } from "../lib/api";
-import { allModels, costNotes, emptyLine, ESTIMATE_TITLE, hasEstimate, KIND_LABEL, kindRows, moneyWord, modelRows, starterLine, TOKEN_KINDS, topMeta, usd } from "../lib/costs";
+import { allModels, costNotes, emptyLine, ESTIMATE_TITLE, hasEstimate, KIND_LABEL, kindRows, moneyWord, modelRows, starterParts, TOKEN_KINDS, topMeta, usd } from "../lib/costs";
 import { orgSessionHref } from "../lib/orgs-route";
 import { createPoll } from "../lib/poll";
 import { tokens } from "../lib/project-overseer-view";
@@ -47,7 +47,18 @@ function CostBody(props: { cost: ProjectCost; orgId: string }) {
         </p>
         <p class="cost-lede">What these sessions would cost at each provider's API prices. Your subscriptions bill differently.</p>
       </div>
-      <Show when={starterLine(c().byStarter)}>{(line) => <p class="cost-lede">{line()}</p>}</Show>
+      <Show when={starterParts(c().byStarter).length}>
+        <p class="cost-lede">
+          <For each={starterParts(c().byStarter)}>
+            {(p, i) => (
+              <>
+                {i() > 0 ? " · " : ""}
+                {p.words} <span class="cost-figure">{p.usd}</span>
+              </>
+            )}
+          </For>
+        </p>
+      </Show>
       <Show when={kinds().length}>
         <div class="md md-table-wrap cost-table-wrap">
           <table class="cost-table">

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CostModelRow, CostStarter } from "../../shared/costs";
-import { allModels, costNotes, emptyLine, hasEstimate, KIND_LABEL, KIND_ORDER, kindRows, moneyWord, modelRows, starterLine, topMeta, usd } from "./costs";
+import { allModels, costNotes, emptyLine, hasEstimate, KIND_LABEL, KIND_ORDER, kindRows, moneyWord, modelRows, starterParts, topMeta, usd } from "./costs";
 
 test("dollars: symbol first, comma thousands, 2 decimals; under a cent is <$0.01, never $0.00; ≈ marks an estimate", () => {
   assert.equal(usd(1240), "$1,240.00");
@@ -32,15 +32,19 @@ test("kinds read in the scope's order, whatever their size, only those with a co
 test("who started it: one line, only starters with a cost, in a fixed order; none at all is no line", () => {
   const sova = "sova" as CostStarter; // the spec's third starter, said when the wire carries it
   assert.equal(
-    starterLine([
+    starterParts([
       { by: sova, usd: 0.36 },
       { by: "operator", usd: 4.02 },
       { by: "overseer", usd: 8.1 },
     ]),
-    "Started by the overseer $8.10 · by you $4.02 · by Sova on its own $0.36",
+    [
+      { words: "Started by the overseer", usd: "$8.10" },
+      { words: "by you", usd: "$4.02" },
+      { words: "by Sova on its own", usd: "$0.36" },
+    ],
   );
-  assert.equal(starterLine([{ by: "operator", usd: 1 }, { by: "overseer", usd: 0 }]), "Started by you $1.00");
-  assert.equal(starterLine([]), null);
+  assert.deepEqual(starterParts([{ by: "operator", usd: 1 }, { by: "overseer", usd: 0 }]), [{ words: "Started by you", usd: "$1.00" }]);
+  assert.deepEqual(starterParts([]), []);
   assert.equal(topMeta("coding-operator", "operator"), "Coding sessions · started by you");
   assert.equal(topMeta("gathering", "overseer"), "Gathering and offers · started by the overseer");
   assert.equal(topMeta("reconcile", sova), "Reconciler · run by Sova");

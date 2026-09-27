@@ -121,7 +121,8 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   not count). Any other say is **self-asserted**: the conflict goes to the operator instead and is
   marked so, and a person cannot talk themselves into deciding. It never falls to the main
   stakeholder instead: an area someone claims to own is not an area no one owns.
-- Routing starts a baton session (§app/baton) to that person, owned by the operator or the project
+- Routing starts a **settle session**, a baton session (§app/baton) marked with its conflict (its id and area,
+  kept on the registry row even after a re-route closes it), to that person, owned by the operator or the project
   overseer (the run the server starts by itself takes the owner of the settle session whose decision
   started it, so in a project the overseer runs it stays the overseer's), on the project's gathering model and thinking (`gatheringModel`/`gatheringThinking`,
   else the overseer's own setting, else the new-session default; the overseer's own reconcile

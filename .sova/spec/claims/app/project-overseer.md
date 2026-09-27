@@ -6,15 +6,17 @@ session, like the Overseer (§app/overseer), that watches the project's decision
 them in gathering sessions (§app/baton), infers what is still missing against the roster, and acts
 on it at the autonomy level the operator grants: it starts gathering sessions, reconciles and
 promotes decisions (§app/requirements), and starts ordinary coding sessions in the project. The
-operator talks to it in the normal chat page, which is also its live view: its tool calls render as
-tool cards as they happen.
+operator talks to it in the normal chat page under a head of its own (§app.project-overseer/page),
+which is also its live view: its tool calls render as tool cards as they happen.
 
 ## §app.project-overseer/identity — One per project, in the workspace repo
 
 - Created on the operator's first open (`POST /api/orgs/:id/projects/:pid/overseer`); `GET` answers
-  `exists: false` until then. One current conversation per project; **Clear** starts a new one and
-  keeps the previous ones (up to 20) as read-only history; older ones are archived (they stay in
-  the workspace repo, like every workspace file). Settings, notes, ideas and to-dos stay.
+  `exists: false` until then. One current conversation per project; **Clear** (`POST …/overseer/clear`:
+  its chat head's ⋯ Clear, or `/clear` typed in its composer, §app.project-overseer/page) starts a new
+  one and keeps the previous ones (up to 20) as read-only history, opened from its chat head's
+  History; older ones are archived (they stay in the workspace repo, like every workspace file).
+  Settings, notes, ideas and to-dos stay.
 - Its file lives in the org's workspace repo (`sessions/`), carries an invisible
   `sova-project-overseer` marker `{v:1, orgId, projectId}`, and its cwd is the **project root**.
   It is that project's overseer only when the marker is present, the file is in THAT org's
@@ -56,6 +58,86 @@ tool cards as they happen.
   (pi's `clampThinkingLevel`: the nearest level the model offers above it, else the nearest below)
   and saves that, so `overseer.json` says what runs. A model Sova can't list
   is not judged.
+
+## §app.project-overseer/page — Its chat page
+
+The current conversation opens at `#/s/<path>` like any chat (the sidebar's eye on its project's
+heading, §app.session-list/organizations, or the project page's Open Overseer, which carries the
+same eye), but under a **head of
+its own** in place of the session head, with its status in a short strip under it. A workspace pane
+keeps the pane head. Everything else of the chat is unchanged: the thread is its live view, the
+composer has no mode switch.
+
+```html
+<header class="session-head overseer-head po-head">
+  <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">…</a>
+  <div class="session-head-main">
+    <h1 class="session-head-title">Overseer</h1>
+    <p class="session-head-meta">
+      <a href="#/orgs/<org>/projects/<pid>">Rakiba site</a> · Mamluk Arabia · Watching
+      · <button …>3 started</button>   <!-- a menu of the sessions it started; omitted at 0 -->
+    </p>
+  </div>
+  <span class="chip chip-accent"><i class="chip-dot live"></i>Working</span>   <!-- or the warn chip "L0 in force" -->
+  …context gauge…
+  <button class="button button-sm button-ghost po-level" aria-label="Level L1: Gather …. Change level">L1 ▾</button>
+  <button class="button button-sm button-ghost po-run">Run Now</button>
+  <button class="button button-icon button-ghost" aria-label="Overseer actions · Rakiba site">⋯</button>
+  <button class="button button-icon button-ghost session-details-open" aria-label="Session details">ⓘ</button>
+</header>
+<section class="po-status" aria-label="Overseer status">
+  <p>Last looked on its own 31m ago, after …. Waiting to look at 2 things.</p>   <!-- always -->
+  <p>Today on its own: 2 of 6 gathering sessions.</p>                            <!-- only when used -->
+  <p>Waiting until midnight: today's 6 gathering sessions are used.</p>          <!-- only when held -->
+</section>
+```
+
+- **Line 1**: back to Sessions, the title **Overseer**, its state chip, the context gauge, the
+  **level** button, **Run Now**, the **⋯** menu and Session details.
+- **Meta line**: the project (a link to its page) · the org · "Watching" or "Not watching" · "{n}
+  started", a menu of the sessions it started, newest first, each a link when its file is on this
+  host, with its kind and state ("Gathering · open", "Coding · working"); omitted while it started
+  none.
+- **State chip**: **Working** (accent, the live dot) while its turn runs, whoever started it (the
+  operator, a watch-loop look, Run Now); otherwise, while the **level in force** differs from the chosen
+  one or an attach paused it (§app.project-overseer/autonomy-levels), a warn chip, dot and word, "L0 in
+  force", its `title` the server's reason; otherwise none.
+- **Level**: a menu button reading the chosen level ("L1"), named "Level {level}, {meaning}" (then
+  " In force now: L0." while forced) and " Change level." Its rows are L0–L3, each with its meaning, the chosen one
+  marked; picking one sets it (`PATCH …/overseer {autonomy}`), which also ends an attach's pause, and
+  says "Level: {level}." Full settings (limits, models, coding mode, watch pace) stay on the project
+  page (§app.project-overseer/limits).
+- **Run Now** (`POST …/overseer/run`, §app.project-overseer/watch-loop): disabled while it works, with
+  the reason "Working now"; done: "The overseer is looking now."; refused: the server's sentence.
+- **⋯**: **Stop Watching** / **Start Watching** (`PATCH {watch}`: "Watching." / "Not watching."),
+  **History…** (the earlier conversations, newest first, each its title — "No messages" for an
+  untitled one — and its age, opening it; with none: "No earlier conversations yet."), **Clear**
+  ("Start a new conversation. This one moves to History."), and **Project Page**. Below 480px the level
+  and Run Now leave line 1 and are in ⋯ too (Run Now, and "Level…" with the same rows).
+- **Status strip**, at most 3 lines, each only when it has something to say:
+  1. **The last run**, in the project page's own words ("Last looked on its own {time}{how it went}."
+     or "It hasn't looked on its own yet."), then "Waiting to look at {n} things." (1: "1 thing") while
+     the watch loop has reasons waiting, the reasons in its `title`. **No time for the next look**: the
+     loop's timing can't be promised from here. While the level in force is L0 by an attach, this line
+     is the reason instead, with **Resume at {level}** (the chosen level; `PATCH {autonomy}`); forced by
+     an empty roster, the reason alone.
+  2. **Today's allowance used** (`allowanceLine`, §design.copy-deck/project-limits).
+  3. **What waits** (`waitingLines`): the held items' sentences, joined.
+  Below 480px only line 1 shows, with a **Details** toggle (`aria-expanded`) for the rest when there is any.
+- **Reading its status**: `GET …/overseer` when the page opens, when its turn ends (the list's `busy`
+  flips; a watch-loop run flips it too), and after each action — never on a timer: that read runs git
+  on every coding worktree.
+- **Clear**: ⋯ Clear and a bare `/clear` in its composer (the global Overseer's gesture,
+  §app.overseer/identity-and-clear) both `POST …/overseer/clear` and open the new conversation in
+  place of the old one, saying "Cleared. The previous conversation is in History."; nothing reaches the
+  runtime, and a failed clear keeps the draft and says "Couldn't clear the overseer. {why}". Another
+  tab that clears it moves this one to the new conversation too.
+- **An earlier conversation** (a cleared one, opened from History) opens read only, under the head
+  "Earlier Overseer Conversation", its meta "{title} · {age}", the back link going to the current
+  conversation ("Back to the overseer"), and the read-only line "An earlier conversation. Read only."
+  It has no level, Run Now, ⋯ or status strip.
+- **Phone** (below 480px): line 1 keeps back, the title, the state chip, ⋯ and Session details; the
+  meta line keeps only the project (the org and the watch word go; ⋯ says Stop or Start Watching).
 
 ## §app.project-overseer/autonomy-levels — What it may do on its own
 
@@ -234,8 +316,9 @@ tool cards as they happen.
   worktree).
 - **Told to commit.** Such a session's first prompt ends with a paragraph Sova adds: "You work in
   your own git worktree on the branch {branch}. Commit your work on this branch before you end
-  your turn: uncommitted changes can't be merged." A session run in the project root (no
-  worktree) gets no such paragraph.
+  your turn: uncommitted changes can't be merged. Before you end your turn, also merge {target}
+  into your branch and resolve any conflicts." A session run in the project root (no worktree)
+  gets no such paragraph.
 - **Names.** Branch `sova/<name>`, worktree `<parent of the repo's top level>/.worktrees/<repo
   folder name>-<name>`, outside the project root, as the `worktree` tool places its own
   (§chat.worktrees/tool). `<name>` is a slug of the session's title (the item's title, or the
@@ -252,8 +335,9 @@ tool cards as they happen.
   worktree could not be made ({git's first line}).".
 - **Recorded with the session.** The session's `started.json` row (kind `coding` or
   `operator-coding`) carries `worktree: {branch, base, target, path}` (`base` the commit it was
-  cut from, `target` the branch it merges into) and its later `merged: {at, commit}` or
-  `removed: at`, or `inRoot` (the reason it runs in the root). A worktree folder deleted by hand shows as missing ("Worktree folder missing");
+  cut from, `target` the branch it merges into) and its later `merged: {at, commit}` (the last
+  Merge Branch: history, not the branch's state) or `removed: at`, or `inRoot` (the reason it runs
+  in the root). A worktree folder deleted by hand shows as missing ("Worktree folder missing");
   its branch can still be merged. The tool result and the Start coding session answer name the branch and the path.
   `path` is this host's, like the row's session path: on a host where it doesn't exist the row
   shows the branch only, and no gesture acts on it ("On another host: its worktree is there.").
@@ -272,7 +356,14 @@ tool cards as they happen.
   possible, else a merge commit ("Merge sova/<name>: <title>"). A conflict is aborted and reported,
   changing nothing. It is refused while the session is working or has workers running, while the
   worktree has uncommitted changes (they would be left out of the merge), and when the branch has
-  no commits beyond `target`. After it the row says "Merged into <target>" with the time. A merge
+  no commits beyond `target`. After it the row says "Merged into <target>" with the time.
+- **Merged is read from git.** Whether a row's branch is merged is decided from git on every read
+  of the page, by the worktrees extension's own probe (§chat.worktrees/tool): merged when the
+  branch has commits beyond its base and none that `target` lacks. The recorded merge decides only
+  when the branch no longer exists (deleted with its worktree, or by hand) or git can't be read. So
+  a branch merged once that gains commits (the session was sent more work) is not merged: its row
+  offers Merge Branch again and says "{n} new commits since the last merge into <target>" with the
+  last merge's time; merging it again brings back "Merged into <target>". A merge
   refused for the worktree or the branch (uncommitted changes, a conflict, nothing to merge, a
   branch gone, git's own failure) is also a reason for the overseer to look
   (§app.project-overseer/watch-loop), so it can tell the session to commit or fix it; a refusal

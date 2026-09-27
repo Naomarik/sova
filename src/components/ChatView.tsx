@@ -17,7 +17,6 @@ import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
 import { OverseerThreadContext, QuickActions } from "./OverseerCards";
 import { BatonStrip } from "./BatonStrip";
-import { ProjectOverseerStrip } from "./ProjectOverseerStrip";
 import { createFork, fetchTranscriptWithContext, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
 import {
@@ -214,6 +213,8 @@ export function ChatView(props: {
   onTurnError?(message: string | null): void;
   /** Set only for the Overseer's own chat. */
   overseer?: OverseerChat;
+  /** Set only for a project overseer's current conversation: its "/clear", and a clear from another tab. */
+  projectOverseer?: { onClear(): Promise<boolean>; onReloaded(): void };
 }) {
   // One status region for the whole page: inside a workspace every sentence from this chat says
   // which pane it came from, and every DOM id below carries the pane's id.
@@ -733,6 +734,12 @@ export function ChatView(props: {
               if (props.overseer) {
                 socket.close();
                 props.overseer.onReloaded();
+                return;
+              }
+              // So can a project overseer's: open whichever conversation is current now.
+              if (props.projectOverseer) {
+                socket.close();
+                props.projectOverseer.onReloaded();
                 return;
               }
               socket.reconnect();
@@ -1347,9 +1354,6 @@ export function ChatView(props: {
       <Show when={props.summary?.()?.baton}>
         <BatonStrip path={props.path} summary={() => props.summary?.()} onNames={setBatonNames} onOperatorHolds={setBatonMine} />
       </Show>
-      <Show when={props.summary?.()?.projectOverseer} keyed>
-        {(po) => <ProjectOverseerStrip orgId={po.orgId} projectId={po.projectId} busy={!!props.summary?.()?.busy} />}
-      </Show>
       <ThreadScroller
         path={props.path}
         restore={cached?.spot}
@@ -1559,7 +1563,7 @@ export function ChatView(props: {
         inputsOpen={props.inputsOpen}
         paneTab={props.paneTab}
         onNewSession={props.overseer ? undefined : props.onNewSession}
-        onClear={props.overseer?.onClear}
+        onClear={props.overseer?.onClear ?? props.projectOverseer?.onClear}
         onMode={
           props.overseer
             ? () => {

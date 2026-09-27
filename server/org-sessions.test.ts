@@ -117,6 +117,25 @@ describe("SessionSummary.org", async () => {
     assert.equal(other, undefined);
   });
 
+  test("a build merged per git is finished; the others are not", async () => {
+    const { noteBuildMerged, resetBuildMerged } = await import("./build-merged");
+    // Its row as a worktree build records it; the operator's stays in the project root.
+    const rows = store.readStarted(p);
+    const before = structuredClone(rows);
+    rows.find((r) => r.sessionId === coding.id)!.worktree = { path: join(root, "wt"), branch: "sova/x", base: "abc", target: "main" };
+    store.writeStarted(p, rows);
+    try {
+      noteBuildMerged(coding.id, true);
+      assert.equal(orgLookup().of(coding.path, coding.id)?.finished, true);
+      assert.equal(orgLookup().of(operatorCoding.path, operatorCoding.id)?.finished, undefined, "no worktree: never merged");
+      noteBuildMerged(coding.id, false);
+      assert.equal(orgLookup().of(coding.path, coding.id)?.finished, undefined, "new commits since: not merged");
+    } finally {
+      store.writeStarted(p, before);
+      resetBuildMerged();
+    }
+  });
+
   test("the overseer's budget and caps read only its own coding rows", () => {
     const rows = store.readStarted(p);
     assert.deepEqual(rows.map((r) => r.kind).sort(), ["coding", "operator-coding"]);

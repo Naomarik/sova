@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CodingWorktree } from "../../shared/project-overseer";
-import { CODING_MODE_KEYS, codingModeKey, folderNote, codingModeLabel, codingModeOf, mergeGate, modeWords, offersMerge, offersRemove, promotionCommitLine, removeGate, startedBy, worktreeOrder } from "./coding-worktrees";
+import { CODING_MODE_KEYS, codingModeKey, folderNote, codingModeLabel, codingModeOf, mergeGate, mergeNote, modeWords, offersMerge, offersRemove, promotionCommitLine, removeGate, startedBy, worktreeOrder } from "./coding-worktrees";
 
 const wt = (over: Partial<CodingWorktree> = {}): CodingWorktree => ({
   sessionId: "s1",
@@ -66,6 +66,20 @@ test("the folder line: removed; on another host, never 'missing' there; missing 
   assert.equal(folderNote(wt({ state: "open", path: null })), "On another host: its worktree is there.");
   assert.equal(folderNote(wt({ state: "removed", path: null })), "Worktree removed");
   assert.equal(folderNote(wt({ state: "root", path: null, branch: null, worktree: null })), null);
+});
+
+test("the merge line: merged into its target; merged before, with commits since; else none", () => {
+  assert.equal(mergeNote(wt()), null);
+  assert.equal(mergeNote(wt({ state: "merged", merged: true, mergedAt: "2026-09-27T10:00:00Z" })), "Merged into");
+  // Merged by hand: git says so, no record.
+  assert.equal(mergeNote(wt({ state: "merged", merged: true })), "Merged into");
+  // Merged, then removed with its branch: the record says so.
+  assert.equal(mergeNote(wt({ state: "removed", merged: true, branchGone: true, mergedAt: "2026-09-27T10:00:00Z" })), "Merged into");
+  // Merged once, then more commits: not merged now, and the record never says it is.
+  const again = wt({ state: "open", merged: false, mergedAt: "2026-09-27T10:00:00Z", newSinceMerge: 3 });
+  assert.equal(mergeNote(again), "3 new commits since the last merge into");
+  assert.equal(offersMerge(again), true);
+  assert.equal(mergeNote(wt({ merged: false, mergedAt: "2026-09-27T10:00:00Z", newSinceMerge: 1 })), "1 new commit since the last merge into");
 });
 
 test("row words", () => {

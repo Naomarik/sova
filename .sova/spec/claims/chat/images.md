@@ -43,7 +43,13 @@ On a **user row**, the images go under the head, right-aligned, and *above* the 
 
 - **Sizing.**
   - **1 image** (`.message-images.message-images-single`): it keeps its own shape, fitted
-    inside 320 × 240 (`object-fit: contain`) and never wider than the column.
+    inside 320 × 240 (`object-fit: contain`) and never wider than the column. Its box has its
+    final height before the image loads, so nothing below it moves when it decodes: the size is
+    read from the image's own header in the data URL (PNG, GIF, WebP, JPEG, a JPEG's EXIF
+    rotation included). Once loaded, the image lays out exactly as it would with no
+    box held for it. An image whose size can't be read that way lays out as it loads, as
+    before: another format, a truncated header, metadata that could rescale it (a PNG's or
+    WebP's EXIF, a JPEG's resolution other than 72 dpi), a path attachment's file URL.
   - **2 or more:** 96 × 96 square tiles (`object-fit: cover`), with an `--space-2` gap. They
     wrap as needed: 2 tiles fit in one row at 320px.
 - **Surface.** `--r-md` (one step under the bubble's `--r-lg`), a 1px `--color-border` edge,

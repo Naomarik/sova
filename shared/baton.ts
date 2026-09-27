@@ -208,6 +208,12 @@ export interface BatonSession {
   closedAt?: string;
   /** The operator hid it from the org owner's page (§app.owner-page/chats). Absent: shown. */
   hiddenFromOwner?: boolean;
+  /** When someone it was sent to first wrote (ISO): a roster person, or the operator for a session
+      sent to the operator. Absent: nobody has yet. */
+  wroteAt?: string;
+  /** A settle session: the conflict it asks someone to settle (§app.requirements/routing), kept after
+      a re-route closes it. */
+  conflict?: { id: string; area: string };
 }
 
 export interface BatonStartInput {
@@ -321,6 +327,12 @@ export interface BatonSummaryField {
   linkAt?: string;
   /** People proposed from this session still waiting for approval (attention kind "roster-proposal"). */
   proposals?: { personId: string; name: string; role: string; by: string; since: number }[];
+  /** Someone it was sent to has written (the row's `wroteAt`): In progress, not Not started. */
+  written?: true;
+  /** A person (not a link previewer or a scanner) opened one of its links. */
+  opened?: true;
+  /** A settle session, and the area of the conflict it settles. */
+  settle?: { area: string };
 }
 
 // ---- the outsider view -----------------------------------------------------------------------------

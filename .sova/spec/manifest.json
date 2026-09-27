@@ -627,7 +627,10 @@
       "code": [
         "src/components/ToolCard.tsx",
         "src/design/base.css",
-        "src/components/ImageStrip.tsx"
+        "src/components/ImageStrip.tsx",
+        "src/lib/image-size.ts",
+        "src/lib/image-size.test.ts",
+        "src/app.css"
       ]
     },
     "§chat.markdown/accessibility": {
@@ -1136,7 +1139,8 @@
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/drag-archive.ts",
-        "src/lib/session-selection.ts"
+        "src/lib/session-selection.ts",
+        "src/lib/org-region.ts"
       ]
     },
     "§design.copy-deck/slash-commands": {
@@ -3899,7 +3903,7 @@
         "shared/project-overseer.ts",
         "src/components/OrgsView.tsx",
         "src/components/ProjectOverseerPanel.tsx",
-        "src/components/ProjectOverseerStrip.tsx",
+        "src/components/ProjectOverseerHead.tsx",
         "server/org-portable.test.ts",
         "server/visits.ts",
         "server/person-page.ts",
@@ -4021,7 +4025,10 @@
         "src/components/Sidebar.tsx",
         "server/project-updates.ts",
         "server/person-links.ts",
-        "server/org-holder.ts"
+        "server/org-holder.ts",
+        "server/baton-marks.ts",
+        "server/baton-progress.test.ts",
+        "shared/baton.ts"
       ]
     },
     "§app.organizations/wrap-up": {
@@ -4071,7 +4078,7 @@
         "server/orgs.ts",
         "server/project-overseer.ts",
         "src/components/ProjectOverseerPanel.tsx",
-        "src/components/ProjectOverseerStrip.tsx",
+        "src/components/ProjectOverseerHead.tsx",
         "server/org-portable.test.ts"
       ],
       "requires": [
@@ -4129,7 +4136,9 @@
         "src/components/ProjectOverseerPanel.tsx",
         "src/lib/project-overseer-view.ts",
         "src/lib/project-overseer-view.test.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/components/ProjectOverseerHead.tsx",
+        "src/components/ChatView.tsx"
       ],
       "requires": [
         "§app.overseer/hosting",
@@ -4272,7 +4281,9 @@
         "server/sessions-index.ts",
         "server/reconcile.test.ts",
         "shared/decisions.ts",
-        "server/project-overseer.ts"
+        "server/project-overseer.ts",
+        "server/baton.ts",
+        "shared/baton.ts"
       ],
       "requires": [
         "§app/baton",
@@ -4347,7 +4358,7 @@
         "server/project-overseer-routes.ts",
         "server/project-overseer-prompt.md",
         "src/components/ProjectOverseerPanel.tsx",
-        "src/components/ProjectOverseerStrip.tsx",
+        "src/components/ProjectOverseerHead.tsx",
         "src/lib/project-overseer-view.ts",
         "src/components/ProjectPage.tsx",
         "src/projects.css",
@@ -4722,7 +4733,15 @@
         "server/project-overseer-store.ts",
         "server/attention.ts",
         "server/index.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/lib/org-region.ts",
+        "src/lib/org-region.test.ts",
+        "server/build-merged.ts",
+        "server/build-merged.test.ts",
+        "server/baton.ts",
+        "server/visits.ts",
+        "shared/baton.ts",
+        "server/baton-progress.test.ts"
       ]
     },
     "§app.session-list/ordinary-surfaces": {
@@ -4762,7 +4781,8 @@
         "src/app.css",
         "src/design/base.css",
         "src/components/ui.tsx",
-        "public/icons/building.svg"
+        "public/icons/building.svg",
+        "src/orgs.css"
       ]
     },
     "§app.project-overseer/coding-mode": {
@@ -5493,7 +5513,8 @@
       "requires": [
         "§chat.transcript/live-watch",
         "§chat.timeline/jumping",
-        "§chat.transcript/message-actions"
+        "§chat.transcript/message-actions",
+        "§chat.images/thread-thumbnails"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -5511,6 +5532,37 @@
         "src/components/SubagentPane.tsx",
         "src/app.css",
         "src/design/base.css"
+      ]
+    },
+    "§app.project-overseer/page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ProjectOverseerHead.tsx",
+        "src/components/SessionView.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/project-overseer-view.ts",
+        "src/lib/project-overseer-view.test.ts",
+        "src/lib/api.ts",
+        "src/orgs.css"
+      ],
+      "requires": [
+        "§app.project-overseer/identity",
+        "§app.project-overseer/autonomy-levels",
+        "§app.project-overseer/limits",
+        "§app.project-overseer/watch-loop",
+        "§app.overseer/identity-and-clear"
+      ]
+    },
+    "§design.copy-deck/project-overseer-head": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ProjectOverseerHead.tsx",
+        "src/lib/project-overseer-view.ts",
+        "src/components/SessionView.tsx"
       ]
     }
   },

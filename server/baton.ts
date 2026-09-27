@@ -27,6 +27,7 @@ import {
 } from "../shared/baton";
 import type { Person } from "../shared/orgs";
 import { deadWhy, liveLinks, mintLink, revokeLinks, type LinkRecord, linkDead, findLink } from "./baton-links";
+import { openedSessions } from "./visits";
 import { emitBatonEvent } from "./baton-events";
 import { readBatonSettings } from "./baton-settings";
 import { onOrgAttached, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, readOrg, readProjects, readRoster, setOpenBatonCounter, shortId } from "./orgs";
@@ -327,7 +328,7 @@ function revokeWithdrawn(row: BatonSession, offer: Offer | undefined): void {
  * `mintLink: false` for a caller that can't show a link to anyone — then no link exists and the
  * session asks the operator to send one (Needs you, "Send <name> their link").
  */
-export function createBaton(input: BatonStartInput & { owner?: BatonOwner; mintLink?: boolean }, now = new Date()): Created {
+export function createBaton(input: BatonStartInput & { owner?: BatonOwner; mintLink?: boolean; settle?: { conflictId: string; area: string } }, now = new Date()): Created {
   const dir = orgDir(input.orgId);
   readOrg(input.orgId); // a readable org.json, or a 409 before anything is written
   const parent = typeof input.parentSessionId === "string" && input.parentSessionId ? batonById(input.parentSessionId) : null;
@@ -388,6 +389,7 @@ export function createBaton(input: BatonStartInput & { owner?: BatonOwner; mintL
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
     createdAt: now.toISOString(),
+    ...(input.settle ? { conflict: { id: input.settle.conflictId, area: input.settle.area } } : {}),
   };
   writeRows(dir, [...readRows(dir), row]);
   const mint = input.mintLink !== false;
@@ -532,6 +534,10 @@ function lapse(r: BatonSession, now: number): Noted["expired"] {
   return { n: o.n, offerId: o.id, by };
 }
 
+/** A message by `by` is by someone the session was sent to: a roster person, or the operator when the
+    first hand-off went to the operator (a conflict routed to them). */
+export const wroteForIt = (r: Pick<BatonSession, "handoffs">, by: PersonRef): boolean => by !== OPERATOR || r.handoffs[0]?.to === OPERATOR;
+
 /**
  * A message entered the session (from the share page or the operator's composer). The lock of
  * §app.baton/offers-and-leases lives here, in one synchronous read-modify-write (the whole server
@@ -569,6 +575,7 @@ export function noteMessage(sessionId: string, by: PersonRef, now = Date.now()):
     }
     if (budgetSpent(r)) throw new BudgetSpent(by);
     r.budget.messagesUsed++;
+    if (!r.wroteAt && wroteForIt(r, by)) r.wroteAt = new Date(now).toISOString();
     if (by === OPERATOR && r.state === "needs-you") r.state = "open";
     if (o && o.holder === by) {
       o.lastActivityAt = new Date(now).toISOString();
@@ -617,6 +624,16 @@ export function setBudgetUsed(sessionId: string, used: number, expected: number)
     if (r.budget.messagesUsed !== expected || used >= expected || used < 0) return;
     r.budget.messagesUsed = used;
     changed = true;
+  });
+  return changed;
+}
+
+/** The backfill's write (server/baton-marks.ts): set only what the row still lacks. */
+export function setBatonMarks(sessionId: string, marks: { wroteAt?: string; conflict?: { id: string; area: string } }): boolean {
+  let changed = false;
+  update(sessionId, (r) => {
+    if (marks.wroteAt && !r.wroteAt) (r.wroteAt = marks.wroteAt), (changed = true);
+    if (marks.conflict && !r.conflict) (r.conflict = marks.conflict), (changed = true);
   });
   return changed;
 }
@@ -804,6 +821,9 @@ export function batonSummaryField(path: string): BatonSummaryField | undefined {
     state: row.state,
     ...(offer ? { offer: { state: offer.state === "held" ? "held" : "open", invited: offer.to.length, ...(offer.holder ? { holder: nameOf(row.orgId, offer.holder) } : {}) } } : {}),
     ...(proposals.length ? { proposals } : {}),
+    ...(row.wroteAt ? { written: true as const } : {}),
+    ...(openedSessions(row.orgId).has(row.sessionId) ? { opened: true as const } : {}),
+    ...(row.conflict ? { settle: { area: row.conflict.area } } : {}),
     ...(row.state === "needs-you" && last && last.to === OPERATOR
       ? { needsYou: { from: nameOf(row.orgId, last.from), question: last.question, since: Date.parse(last.at) || 0 } }
       : {}),

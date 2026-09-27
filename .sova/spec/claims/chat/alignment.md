@@ -30,8 +30,9 @@ Done and dropped are terminal; everything else is **open** for the chip and the 
 The tool is in the agent's loadout only while the align minor mode is on; turning align off removes
 it. One call applies a batch of operations to one document, **atomically**: every op is checked
 first, and one bad op (an unknown id, a missing field, a field the op doesn't take) fails the whole
-call with a reason and changes nothing. With more than one open alignment, a call must name its
-document.
+call with a reason and changes nothing. A field name borrowed from another tool gets a hint at the
+one meant (`newText`, pi's own edit field, on an `edit` op: "did you mean `text`?"). With more than
+one open alignment, a call must name its document.
 
 - **create** `{title, summary, findings?, approach?, rejected?, questions?}` — a new document,
   `al_N`. Every question needs a topic, an ask and a recommendation.
@@ -78,7 +79,9 @@ any more, and they count toward no chip, row or digest.
 
 - **Instructions.** The align prompt block tells the agent to record every alignment with the tool
   and never as reply text (no freeform plan, no numbered list of decisions in prose), to have a
-  planning worker write the alignment JSON for `create` with `fromFile`, to change a document only
+  planning worker write the alignment JSON for `create` with `fromFile` (with Delegate on, at an
+  absolute path outside the project's working tree, so the plan leaves no file in the user's
+  repository), to change a document only
   through ops and never by re-creating it, to record answers with `decide`/`accept`, to use
   `exempt` for a work request that needs no alignment, and to mark `implementing` before building
   and `done` when finished. With Delegate on, the bridge paragraph says the same for the planning
@@ -89,18 +92,27 @@ any more, and they count toward no chip, row or digest.
   open alignments, their status and their open questions with ids and recommendations, so an answer
   like "q2 yes, your recs for the rest" maps onto the right ids. Nothing about alignments goes into
   the system prompt: a prompt change restarts a Claude Code session's CLI.
+- **A hidden note after a compaction.** A compaction summarizes the tool results away, and a run no
+  user prompt starts (a worker's report, a team message) carries no note. So while align is on and an
+  alignment is open, a compaction writes one more hidden `align-state` message right after its
+  summary: the open alignments with their open questions, and also their decided and dropped ones,
+  and a line saying the summary may describe them loosely and a recommendation is not a decision.
+  Every later request reads it.
 - **No gate.** Nothing blocks the agent from editing, spawning or creating worktrees while a
   question is open: a dead worker or a parallel concern must never leave the session stuck.
 - **One nudge per run.** When a run is about to settle, align is on, the run made no `align` call,
   and its final reply reads like a plan that asks the user to decide, the extension adds one hidden
   message (`align-nudge`) telling the agent to record it with `align` (or `exempt` if it isn't a
   design decision) and continues the run once. It never nudges twice in one run (until the run
-  settles). "Reads like a plan": an old markdown alignment block; or a reply whose last paragraph
+  settles). "Reads like a plan": an old markdown alignment block; a reply whose last paragraph
   ends in a question and either asks for a decision itself ("open questions", "should I go ahead",
   "which do you prefer", "take my recommendations", and the like) or follows a list of two or more
-  items with such words above it. Code blocks and the spec mode's closing "Also changes" line don't
-  count. Calibrated on two real sessions: it caught every alignment block and freeform plan there,
-  and one of about 80 other replies.
+  items with such words above it; or, anywhere in the reply, a short line with such words ("Questions
+  for you:") followed by a list with two or more questions, since a reply can close on a statement
+  after asking. Code blocks and the spec mode's closing "Also changes" line don't count.
+  Calibrated on two real sessions: it caught every alignment block and freeform plan there, and one
+  of about 80 other replies; the labelled list adds about 1 in 100 final replies across 222 other
+  sessions, nearly all prose plans asking for decisions.
 
 ## §chat.alignment/card — The card in the transcript
 

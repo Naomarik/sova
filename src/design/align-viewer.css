@@ -125,4 +125,10 @@
 /* The composer's alignment chip (§chat.alignment/chip) sits right before the Inputs trigger; the
    pair is pushed to the row's right end together. */
 .run-status-align { margin-left: auto; }
+@media (min-width: 768px) {
+  .model-menu.action-menu.align-menu { width: 340px; max-width: calc(100vw - var(--space-6)); }
+}
 .align-menu-item .mode-option-note { white-space: normal; }
+.align-menu-id { color: var(--color-ink-muted); }
+.align-doc code,
+.align-rev code { font-family: var(--font-mono); font-size: 0.92em; padding: 0 var(--space-1); border-radius: var(--r-xs); background: var(--color-sunken); overflow-wrap: anywhere; }

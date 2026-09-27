@@ -6,6 +6,16 @@ import "../design/align-viewer.css";
 
 let seq = 0;
 
+/** A field's text with its inline code spans and bold runs, the two marks models put in these one-liners; no other markdown. */
+function Inline(props: { text: string }) {
+  const parts = () => props.text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/).filter((p) => p !== "");
+  return (
+    <For each={parts()}>
+      {(p) => (p.startsWith("`") && p.endsWith("`") && p.length > 2 ? <code>{p.slice(1, -1)}</code> : p.startsWith("**") && p.endsWith("**") && p.length > 4 ? <strong>{p.slice(2, -2)}</strong> : p)}
+    </For>
+  );
+}
+
 /**
  * An `align` call's row (§chat.alignment/card): the full card for the newest revision of its
  * document on the branch, one line for an earlier revision (open it to read that revision), and
@@ -80,9 +90,9 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
 function AlignDocBody(props: { doc: AlignDocInfo }) {
   return (
     <>
-      <p class="align-doc-summary">{props.doc.summary}</p>
+      <p class="align-doc-summary"><Inline text={props.doc.summary} /></p>
       <Show when={props.doc.phase === "dropped" && props.doc.droppedWhy}>
-        <p class="align-doc-dropped">Dropped: {props.doc.droppedWhy}</p>
+        <p class="align-doc-dropped">Dropped: <Inline text={props.doc.droppedWhy ?? ""} /></p>
       </Show>
       <Show when={props.doc.questions.length > 0}>
         <ol class="align-questions" aria-label="Questions">
@@ -106,28 +116,28 @@ function AlignQuestion(props: { q: AlignQuestionInfo }) {
         <strong class="align-q-topic">{props.q.topic}</strong>
         <Chip tone={chip().tone}>{chip().label}</Chip>
       </p>
-      <p class="align-q-ask">{props.q.ask}</p>
+      <p class="align-q-ask"><Inline text={props.q.ask} /></p>
       <Show when={props.q.context}>
-        <p class="align-q-context">{props.q.context}</p>
+        <p class="align-q-context"><Inline text={props.q.context ?? ""} /></p>
       </Show>
       <Show when={props.q.options?.length}>
         <ul class="align-q-options" aria-label="Options">
           <For each={props.q.options}>
             {(o) => (
               <li>
-                <strong>{o.label}</strong> — {o.tradeoff}
+                <strong><Inline text={o.label} /></strong> — <Inline text={o.tradeoff} />
               </li>
             )}
           </For>
         </ul>
       </Show>
       <p class="align-q-rec">
-        <span class="align-q-label">Recommended:</span> <strong>{props.q.recommendation.choice}</strong> — {props.q.recommendation.why}
+        <span class="align-q-label">Recommended:</span> <strong><Inline text={props.q.recommendation.choice} /></strong> — <Inline text={props.q.recommendation.why} />
       </p>
       <Show when={props.q.decision}>
         {(d) => (
           <p class="align-q-decision">
-            <span class="align-q-label">Decided:</span> {d().text}
+            <span class="align-q-label">Decided:</span> <Inline text={d().text} />
             <span class="align-q-by"> · {d().by === "user" ? "you" : "accepted recommendation"}</span>
           </p>
         )}
@@ -135,7 +145,7 @@ function AlignQuestion(props: { q: AlignQuestionInfo }) {
       <Show when={props.q.dropped}>
         {(d) => (
           <p class="align-q-decision">
-            <span class="align-q-label">Dropped:</span> {d().why}
+            <span class="align-q-label">Dropped:</span> <Inline text={d().why} />
           </p>
         )}
       </Show>
@@ -148,7 +158,7 @@ function AlignSection(props: { label: string; items: { id: string; body: string 
     <For each={props.items}>
       {(item) => (
         <li>
-          <span class="text-mono align-item-id">{item.id}</span> {item.body}
+          <span class="text-mono align-item-id">{item.id}</span> <Inline text={item.body} />
         </li>
       )}
     </For>

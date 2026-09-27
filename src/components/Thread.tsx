@@ -426,7 +426,11 @@ export function HistoryItems(props: {
   // A baton wrap-up's turn reads profiles: folded behind its card unless asked for (lib/wrapup-rows).
   const [showWrapup, setShowWrapup] = createSignal(false);
   const wrapupRows = createMemo(() => (showWrapup() ? new Set<string>() : wrapupRowIds(props.items)));
-  const renderable = createMemo(() => props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id)));
+  /** Calls whose result is an alignment row: the row is the card, so the call has no row at all. */
+  const alignCalls = createMemo(() => new Set(props.items.flatMap((it) => (it.kind === "align" && it.toolCallId ? [it.toolCallId] : []))));
+  const renderable = createMemo(() =>
+    props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id) && !(it.kind === "tool-call" && it.toolCallId && alignCalls().has(it.toolCallId))),
+  );
   const split = createMemo(() =>
     props.hideTools || props.hideThinking ? splitHidden(renderable(), { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
   );
@@ -453,8 +457,7 @@ export function HistoryItems(props: {
   /** The newest revision of each alignment renders as the card; the rest as one line each. */
   const newestAligns = createMemo(() => newestAlignRows(props.items));
   const alignNewest = (item: TranscriptItem) => newestAligns().has(item.id) && !(item.align?.doc && props.liveAlignIds?.has(item.align.doc.id));
-  /** Calls whose result is an alignment row: the row is the card, so the call draws nothing. */
-  const alignCalls = createMemo(() => new Set(props.items.flatMap((it) => (it.kind === "align" && it.toolCallId ? [it.toolCallId] : []))));
+
   /** User rows a baton participant sent: target id → their ref, in any order (§app.baton/attribution). */
   const batonSent = createMemo(() => {
     const by = new Map<string, string>();
@@ -623,7 +626,6 @@ export function HistoryItems(props: {
                 <Thinking text={item.text ?? ""} />
               </Match>
               <Match when={item.kind === "align" && item.align}>{(row) => <AlignRow row={row()} newest={alignNewest(item)} />}</Match>
-              <Match when={item.kind === "tool-call" && item.toolCallId && alignCalls().has(item.toolCallId)}>{null}</Match>
               <Match when={item.kind === "report" && item.report && alignOf(item.report)}>
                 {(align) => (
                   <Show when={item.id === latestAlign()} fallback={<span class="align-superseded" hidden />}>

@@ -79,7 +79,7 @@ export interface ReconcileDeps {
   excluded: (root: string) => boolean;
   /** Settings → Decisions "Reconcile decisions". */
   enabled: () => boolean;
-  startBaton: (input: BatonStartInput & { owner?: BatonOwner; mintLink?: boolean }) => { sessionId: string; path: string };
+  startBaton: (input: BatonStartInput & { owner?: BatonOwner; mintLink?: boolean; settle?: { conflictId: string; area: string } }) => { sessionId: string; path: string };
   /** Close a baton the way the operator's Close does (share pages told, wrap-up scheduled). */
   endBaton: (sessionId: string) => Promise<void>;
   now: () => Date;
@@ -791,7 +791,8 @@ function startConflictBaton(d: ReconcileDeps, c: Conflict, byId: Map<string, Dec
   if (!a || !b) throw new OrgError("The conflict's decisions are gone", 409);
   const area = a.area;
   // No link is minted here (nobody could be shown it): Needs-you asks the operator to send one.
-  const created = d.startBaton({ ...batonFor(c, a, b, area), ...choice, ...(owner ? { owner } : {}), mintLink: false });
+  // Marked as this conflict's settle session, on every route (Reconcile, re-route, the overseer's, the automatic run).
+  const created = d.startBaton({ ...batonFor(c, a, b, area), ...choice, ...(owner ? { owner } : {}), mintLink: false, settle: { conflictId: c.id, area } });
   c.batonSessionId = created.sessionId;
   // Its path is derived from the id on each read (readConflicts), never stored in the repo.
   c.batonPath = created.path;

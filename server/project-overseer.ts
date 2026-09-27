@@ -28,6 +28,7 @@ import { clockTime } from "../pi-config/extensions/stamp/format.ts";
 import type { SessionSummary, TokenUsage } from "../shared/protocol";
 import { type BatonEvent, onBatonEvent } from "./baton-events";
 import { allBatons, batonById, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
+import { noteBuildMerged } from "./build-merged";
 import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, registerSpecialLoadout, setOpeningChoice, type ChatSession } from "./chat-manager";
 import { PROCESS_START, shuttingDown } from "./wrapup-recovery";
 import { getSessionInsight } from "./insights";
@@ -316,6 +317,9 @@ async function codingWorktrees(p: ProjectOverseerPaths, root: string): Promise<C
       continue;
     }
     const w = await readWorktree(r.worktree, root);
+    const merged = w.branch && !w.error ? w.merged : w.merged || !!r.merged || !!r.branchDeleted;
+    // The session list's Builds read the same answer (build-merged.ts): a fresh one is shared.
+    noteBuildMerged(r.sessionId, merged);
     out.push({
       ...common,
       branch: r.worktree.branch,
@@ -325,7 +329,7 @@ async function codingWorktrees(p: ProjectOverseerPaths, root: string): Promise<C
       state: r.removed ? "removed" : w.state,
       // Git decides, on every read (a branch merged once may have new commits); the recorded merge,
       // or removal with its branch (only ever a merged one), only when the branch is gone or git can't be read.
-      merged: w.branch && !w.error ? w.merged : w.merged || !!r.merged || !!r.branchDeleted,
+      merged,
       ...(!w.branch ? { branchGone: true } : {}),
       ...(r.merged ? { mergedAt: r.merged.at } : {}),
       ...(r.merged && w.branch && !w.error && !w.merged && w.unmerged > 0 ? { newSinceMerge: w.unmerged } : {}),
@@ -831,6 +835,7 @@ export async function mergeCodingWorktree(orgId: string, projectId: string, sess
   try {
     const m = await mergeBack(r.worktree, project.root, title);
     markStarted(p, r.sessionId, { merged: { at: new Date().toISOString(), commit: m.sha } });
+    noteBuildMerged(r.sessionId, true);
   } catch (err) {
     if (err instanceof WorktreeRefusal) {
       // The session's or the branch's to fix (commit, resolve): the overseer is told. The root's own checkout is the operator's.

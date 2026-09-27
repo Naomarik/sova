@@ -10,10 +10,11 @@ import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insi
 import { isMainThread, isOrdinarySession, isOrgSession, isTopSession } from "../lib/regions";
 import {
   eyeLabel,
-  finishedOpen as finishedOpenRule,
+  doneOpen as doneOpenRule,
   isClearedOverseer,
   overseerEye,
   regionCount,
+  rowLine,
   orgCount,
   orgNeedsYouRows,
   orgProjectItems,
@@ -133,10 +134,10 @@ const [openGroups, setOpenGroups] = createSignal<Record<string, boolean>>({});
     the same reason: the folder rules mint fresh folder objects on every poll, so every folder section
     in the list is rebuilt a few seconds after the user collapses one. */
 const [openFolders, setOpenFolders] = createSignal<Record<string, boolean>>({});
-/** Which org sections (by org id) and Finished tails (by org id + project id) the user opened or
+/** Which org sections (by org id) and Done tails (by org id + project id + group) the user opened or
     closed: memory only, module state for the same reason as the groups — rebuilt on every poll. */
 const [openOrgs, setOpenOrgs] = createSignal<Record<string, boolean>>({});
-const [openFinished, setOpenFinished] = createSignal<Record<string, boolean>>({});
+const [openDone, setOpenDone] = createSignal<Record<string, boolean>>({});
 /** The Groups head's `+` has opened the new-group name field. */
 const [newGroupField, setNewGroupField] = createSignal(false);
 
@@ -1344,7 +1345,7 @@ export function Sidebar(props: {
   };
   /**
    * Organizations (lib/org-region): the only place org sessions are listed. Its own Needs you first,
-   * then org → project → rows with a Finished tail. Open by default, a collapse remembered for the tab.
+   * then org → project → groups (Conversations, Conflicts to settle, Builds), each with a Done tail. Open by default, a collapse remembered for the tab.
    */
   const orgs = createMemo(() => orgSections(orgHits()));
   /** The region counts rows: a project's eye is not one. */
@@ -1388,13 +1389,58 @@ export function Sidebar(props: {
     if (open === orgOpen(o)) return;
     setOpenOrgs((m) => ({ ...m, [o.id]: open }));
   };
-  const finishedKey = (o: OrgSection, p: OrgProject) => `${o.id}\n${p.id}`;
-  const projectFinishedOpen = (o: OrgSection, p: OrgProject) =>
-    finishedOpenRule({ chosen: openFinished()[finishedKey(o, p)], searching: searching(), holdsSelected: holds(p.finished) });
-  const onFinishedToggle = (o: OrgSection, p: OrgProject, e: Event & { currentTarget: HTMLDetailsElement }) => {
+  /** A group's Done tail, keyed by org, project and group: collapsed by default, forced open by a search or the open session. */
+  const groupDoneOpen = (key: string, rows: readonly SessionSummary[]) =>
+    doneOpenRule({ chosen: openDone()[key], searching: searching(), holdsSelected: holds(rows) });
+  const onGroupDoneToggle = (key: string, rows: readonly SessionSummary[], e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
-    if (open === projectFinishedOpen(o, p)) return;
-    setOpenFinished((m) => ({ ...m, [finishedKey(o, p)]: open }));
+    if (open === groupDoneOpen(key, rows)) return;
+    setOpenDone((m) => ({ ...m, [key]: open }));
+  };
+  /** A project row: line 2 names a settle session's conflict, or why a conversation hasn't started. */
+  const ProjectRow = (r: { session: SessionSummary }) => {
+    const line = () => rowLine(r.session);
+    return <SessionRow session={r.session} selected={props.selected} now={props.now} targets={targets()} detail={line() ? { text: line()!, title: line()! } : null} />;
+  };
+  const rowList = (rows: readonly SessionSummary[]) => (
+    <ul class="list">
+      <For each={rows}>{(s) => <ProjectRow session={s} />}</For>
+    </ul>
+  );
+  /** One group of a project: its label and count, the live states, then its collapsed Done. */
+  const ProjectGroup = (g: { key: string; label: string; title: string; doneTitle: string; states: { label: string; rows: SessionSummary[] }[]; done: SessionSummary[] }) => {
+    const count = () => g.states.reduce((n, x) => n + x.rows.length, 0) + g.done.length;
+    return (
+      <Show when={count() > 0}>
+        <section class="org-group" aria-label={`${g.label}, ${count()}`}>
+          <h5 class="list-group-label org-group-label" title={g.title}>
+            {g.label} <span class="text-num">{count()}</span>
+          </h5>
+          <For each={g.states}>
+            {(st) => (
+              <Show when={st.rows.length > 0}>
+                <Show when={st.label}>
+                  <h6 class="org-state-label">
+                    {st.label} <span class="text-num">{st.rows.length}</span>
+                  </h6>
+                </Show>
+                {rowList(st.rows)}
+              </Show>
+            )}
+          </For>
+          <Show when={g.done.length > 0}>
+            <details class="archive-date org-done" open={groupDoneOpen(g.key, g.done)} onToggle={(e) => onGroupDoneToggle(g.key, g.done, e)}>
+              <summary class="list-group-label archive-date-label" title={g.doneTitle}>
+                <Icon name="chevron-right" small class="icon-twist" />
+                <span class="archive-date-name">Done</span>
+                <span class="text-num">{g.done.length}</span>
+              </summary>
+              {rowList(g.done)}
+            </details>
+          </Show>
+        </section>
+      </Show>
+    );
   };
   // Date sections: collapsed by default, each remembering its own choice the same way.
   const [storedDateOpen, setStoredDateOpen] = createSignal<Partial<Record<ArchiveGroupId, boolean>>>({});
@@ -1963,7 +2009,7 @@ export function Sidebar(props: {
 
           {/* Organizations, last before the Archive (lib/org-region): the only place an org's
               sessions are listed. Its own Needs you first, then org → project → rows, each project
-              with a collapsed Finished tail. Open by default; a collapse holds for the tab. */}
+              in groups, each with a collapsed Done tail. Open by default; a collapse holds for the tab. */}
           <Show when={showOrgs()}>
             <details class="sidebar-region sidebar-orgs" aria-labelledby="r-orgs" open={orgsOpen()} onToggle={onOrgsToggle}>
               <summary class="sidebar-orgs-summary">
@@ -2072,30 +2118,37 @@ export function Sidebar(props: {
                               </h4>
                               <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>
                             </div>
-                            <Show when={p.active.length > 0}>
-                              <ul class="list">
-                                <For each={p.active}>
-                                  {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
-                                </For>
-                              </ul>
-                            </Show>
-                            <Show when={p.finished.length > 0}>
-                              <details class="archive-date org-finished" open={projectFinishedOpen(o, p)} onToggle={(e) => onFinishedToggle(o, p, e)}>
-                                <summary
-                                  class="list-group-label archive-date-label"
-                                  title="Hand-offs that reached their goal or were closed, and sessions you archived."
-                                >
-                                  <Icon name="chevron-right" small class="icon-twist" />
-                                  <span class="archive-date-name">Finished</span>
-                                  <span class="text-num">{p.finished.length}</span>
-                                </summary>
-                                <ul class="list">
-                                  <For each={p.finished}>
-                                    {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
-                                  </For>
-                                </ul>
-                              </details>
-                            </Show>
+                            <ProjectGroup
+                              key={`${o.id}\n${p.id}\nconversations`}
+                              label="Conversations"
+                              title="Gathering sessions and offers sent to people."
+                              doneTitle="Done or closed, and the ones you archived."
+                              states={[
+                                { label: "Not started", rows: p.conversations.notStarted },
+                                { label: "In progress", rows: p.conversations.inProgress },
+                              ]}
+                              done={p.conversations.done}
+                            />
+                            <ProjectGroup
+                              key={`${o.id}\n${p.id}\nconflicts`}
+                              label="Conflicts to settle"
+                              title="Sessions asking someone to settle two decisions that disagree."
+                              doneTitle="Done or closed, and the ones you archived."
+                              states={[
+                                { label: "Not started", rows: p.conflicts.notStarted },
+                                { label: "In progress", rows: p.conflicts.inProgress },
+                              ]}
+                              done={p.conflicts.done}
+                            />
+                            <ProjectGroup
+                              key={`${o.id}\n${p.id}\nbuilds`}
+                              label="Builds"
+                              title="Coding sessions this project started."
+                              doneTitle="Merged, and the ones you archived."
+                              states={[{ label: "", rows: p.builds.active }]}
+                              done={p.builds.done}
+                            />
+                            <Show when={p.other.length > 0}>{rowList(p.other)}</Show>
                           </div>
                         )}
                       </For>

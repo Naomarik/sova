@@ -46,8 +46,8 @@ export function outsideLabel(target: OutsideTarget, drag: ArchiveDrag, title: st
  */
 export function archivedDropToast(deleted: boolean, project?: string | null): { text: string; undo: boolean } {
   if (deleted) return { text: "Deleted. It had no messages, so there was nothing to archive.", undo: false };
-  // An organization's session never enters the Archive: it goes to its project's Finished list.
-  return { text: project ? `Archived. Find it in ${project}, under Finished.` : "Archived. Find it under Archive.", undo: true };
+  // An organization's session never enters the Archive: it goes to its group's Done list in its project.
+  return { text: project ? `Archived. Find it in ${project}, under Done.` : "Archived. Find it under Archive.", undo: true };
 }
 
 /** What Undo (or Unarchive) says: an org session goes back to its project, the rest to Live & web. */

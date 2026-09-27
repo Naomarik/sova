@@ -103,14 +103,14 @@ export function archiveSummary(r: {
   done: number;
   blocked: readonly { reason: string }[];
   failed: readonly { reason: string }[];
-  /** How many of `done` were organization sessions: those go to their project's Finished list, not the Archive. */
+  /** How many of `done` were organization sessions: those go to their group's Done list in their project, not the Archive. */
   org?: number;
 }): string {
   const verb = r.mode === "unarchive" ? "Unarchived" : "Archived";
   const parts: string[] = [r.done > 0 ? `${verb} ${r.done} ${sessionsWord(r.done)}.` : `${verb} nothing.`];
   const org = Math.min(r.org ?? 0, r.done);
   if (org > 0 && r.mode === "archive")
-    parts.push(org === 1 ? "1 went to its project's Finished list." : `${org} went to their projects' Finished lists.`);
+    parts.push(org === 1 ? "1 went to its project's Done list." : `${org} went to their projects' Done lists.`);
   if (r.blocked.length > 0) parts.push(`Skipped ${r.blocked.length}: ${blockedSentence(r.blocked)}.`);
   if (r.failed.length > 0) parts.push(`${r.failed.length} failed: ${reasonsSentence(r.failed)}`);
   return parts.join(" ");

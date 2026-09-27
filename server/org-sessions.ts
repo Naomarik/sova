@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import type { BatonSession } from "../shared/baton";
 import type { SessionOrg, SessionOrgRef } from "../shared/protocol";
 import { allBatons } from "./baton";
+import { buildMerged } from "./build-merged";
 import { orgOfSessionPath, readIndex, readOrg, readProjects } from "./orgs";
 import { projectOverseerPaths, readPoMarker, readPoState, readStarted, type StartedRow } from "./project-overseer-store";
 
@@ -36,23 +37,26 @@ const NONE: OrgLookup = { of: () => undefined };
 export function orgLookup(): OrgLookup {
   const orgs = readIndex().orgs;
   if (!orgs.length) return NONE;
-  const names = new Map<string, { orgName: string; projects: Map<string, string> }>();
+  const names = new Map<string, { orgName: string; projects: Map<string, string>; roots: Map<string, string> }>();
   const namesOf = (orgId: string, dir: string) => {
     let n = names.get(orgId);
     if (!n) {
       let orgName = basename(dir);
       let projects = new Map<string, string>();
+      let roots = new Map<string, string>();
       try {
         orgName = readOrg(orgId).name;
       } catch {
         // no readable org.json: the folder's name
       }
       try {
-        projects = new Map(readProjects(orgId).map((p) => [p.id, p.name]));
+        const listed = readProjects(orgId);
+        projects = new Map(listed.map((p) => [p.id, p.name]));
+        roots = new Map(listed.map((p) => [p.id, p.root]));
       } catch {
         // detached between reads
       }
-      names.set(orgId, (n = { orgName, projects }));
+      names.set(orgId, (n = { orgName, projects, roots }));
     }
     return n;
   };
@@ -80,7 +84,7 @@ export function orgLookup(): OrgLookup {
     return currents.get(k) ?? null;
   };
 
-  let coding: Map<string, { orgId: string; dir: string; projectId: string }> | null = null;
+  let coding: Map<string, { orgId: string; dir: string; projectId: string; row: StartedRow }> | null = null;
   const codingOf = (id: string) => (coding ??= codingSessions(orgs)).get(id);
 
   return {
@@ -102,15 +106,18 @@ export function orgLookup(): OrgLookup {
         return { ...ref(ws.orgId, ws.dir, undefined), kind: "other" };
       }
       const c = codingOf(id);
-      return c ? { ...ref(c.orgId, c.dir, c.projectId), kind: "coding" } : undefined;
+      if (!c) return undefined;
+      // A build merged per git is finished: the Organizations region's Builds → Done.
+      const merged = buildMerged(c.row, namesOf(c.orgId, c.dir).roots.get(c.projectId) ?? null);
+      return { ...ref(c.orgId, c.dir, c.projectId), kind: "coding", ...(merged ? { finished: true as const } : {}) };
     },
   };
 }
 
 /** Session id → project, for every coding row of every project store of the attached orgs (a
     project removed from projects.json keeps its store, so its sessions stay organizational). */
-function codingSessions(orgs: readonly { id: string; dir: string }[]): Map<string, { orgId: string; dir: string; projectId: string }> {
-  const out = new Map<string, { orgId: string; dir: string; projectId: string }>();
+function codingSessions(orgs: readonly { id: string; dir: string }[]): Map<string, { orgId: string; dir: string; projectId: string; row: StartedRow }> {
+  const out = new Map<string, { orgId: string; dir: string; projectId: string; row: StartedRow }>();
   for (const o of orgs) {
     let pids: string[];
     try {
@@ -125,7 +132,7 @@ function codingSessions(orgs: readonly { id: string; dir: string }[]): Map<strin
       } catch {
         continue; // not a store id shape
       }
-      for (const r of rows) if (ORG_CODING_KINDS.has(r.kind) && !out.has(r.sessionId)) out.set(r.sessionId, { orgId: o.id, dir: o.dir, projectId });
+      for (const r of rows) if (ORG_CODING_KINDS.has(r.kind) && !out.has(r.sessionId)) out.set(r.sessionId, { orgId: o.id, dir: o.dir, projectId, row: r });
     }
   }
   return out;

@@ -85,11 +85,11 @@ test("a drop that archived offers Undo; one that deleted a never-sent session do
   assert.doesNotMatch(gone.text, /Archive\./);
 });
 
-test("an org session goes to its project's Finished list, and back to its project", () => {
+test("an org session goes to its group's Done list in its project, and back to its project", () => {
   const org = { orgId: "o", orgName: "Mamluk Arabia", projectId: "p", projectName: "Rakiba site", kind: "gathering" } as const;
   const project = orgProjectOf({ org });
   assert.equal(project, "Rakiba site");
-  assert.deepEqual(archivedDropToast(false, project), { text: "Archived. Find it in Rakiba site, under Finished.", undo: true });
+  assert.deepEqual(archivedDropToast(false, project), { text: "Archived. Find it in Rakiba site, under Done.", undo: true });
   assert.doesNotMatch(archivedDropToast(false, project).text, /under Archive/);
   assert.equal(unarchivedToast(project), "Moved back to Rakiba site.");
   assert.equal(unarchivedToast(orgProjectOf({})), "Moved back to Live & web.", "an ordinary session is unchanged");

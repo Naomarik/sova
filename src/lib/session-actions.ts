@@ -31,7 +31,7 @@ export async function renameSession(s: Pick<SessionSummary, "path" | "title" | "
 export async function archiveSession(path: string, archived: boolean, project?: string | null): Promise<boolean> {
   try {
     const res = await setSessionArchived(path, archived);
-    // `project`: an organization's session, which goes to that project's Finished list, not the Archive.
+    // `project`: an organization's session, which goes to its group's Done list in that project, not the Archive.
     // `deleted`: an empty husk was deleted instead, and the toast says so.
     const done = archived ? archivedDropToast(!!res.deleted, project).text : unarchivedToast(project);
     toast(done);

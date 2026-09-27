@@ -308,3 +308,23 @@
   .po-status-toggle { display: inline-flex; }
   .po-status:not(.po-status-open) > .po-status-more { display: none; }
 }
+
+/* ---- A project's groups in the Organizations region (§app.session-list/organizations):
+   Conversations, Conflicts to settle and Builds, each a small eyebrow label with its count, its
+   states as quieter labels, and a collapsed Done like an Archive date section. */
+.org-group + .org-group,
+.org-project-head + .org-group > .org-group-label { border-top: var(--stroke-thin) solid var(--color-border); }
+.org-group-label { padding-top: var(--space-2); padding-bottom: var(--space-1); }
+.org-state-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) var(--space-4) 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  font-weight: var(--fw-medium);
+  color: var(--color-ink-2);
+}
+.org-state-label > .text-num { margin-left: auto; color: var(--color-ink-muted); font-weight: var(--fw-regular); }
+.org-done { border-top: var(--stroke-thin) solid var(--color-border); }

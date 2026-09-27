@@ -1,10 +1,12 @@
 // The sidebar's Organizations region (§app.session-list/organizations): every organizational session
 // (`SessionSummary.org`), and only here. Last before the Archive: its own Needs you list first, then
-// org → project → rows, each project with a collapsed Finished tail. A project's current overseer is
-// not a row but the eye on its heading; its cleared conversations are in no region (its History).
+// org → project, each project's rows in groups — Conversations and Conflicts to settle (Not started /
+// In progress / Done) and Builds (active / Done). A project's current overseer is not a row but the
+// eye on its heading; its cleared conversations are in no region (its History).
 //
 // Pure on purpose, like `needs-you` and `group-open`: the grouping, order, counts, forced-open rules
 // and aggregates run under tsx --test, and the sidebar keeps the (sessionStorage / memory) state.
+// Which group and state a row is in is decided in `rowGroup` and `orgRowState` alone.
 
 import type { AttentionDigest, AttentionItem, SessionSummary } from "../../shared/protocol";
 import { needsYouRows, type NeedsYouRow } from "./needs-you";
@@ -15,15 +17,31 @@ import { rowLeadMark } from "./signals";
 /** Open by default; a collapse is remembered for the tab (the Needs-you pattern). */
 export const ORGS_KEY = "sova:orgs-open";
 
-/** One project inside an org: its overseer (the heading's eye), live rows, and the Finished tail. */
+/** A row's state: people conversations use all three; a build is in progress (running or waiting) or done. */
+export type OrgRowState = "not-started" | "in-progress" | "done";
+
+/** A group split by state, each list newest activity first. */
+export interface StateSplit {
+  notStarted: SessionSummary[];
+  inProgress: SessionSummary[];
+  done: SessionSummary[];
+}
+
+/** One project inside an org: its overseer (the heading's eye), then its groups. */
 export interface OrgProject {
   /** `projectId`, or "" for workspace files that belong to no project. */
   id: string;
   name: string;
   /** The current project overseer, drawn as the eye on the heading, never as a row. */
   overseer: SessionSummary | null;
-  active: SessionSummary[];
-  finished: SessionSummary[];
+  /** Gathering sessions and offers sent to people (not settle sessions). */
+  conversations: StateSplit;
+  /** Settle sessions: a conflict's baton session, whoever started it. */
+  conflicts: StateSplit;
+  /** Coding sessions the project started: running or waiting, then Done (merged per git, or archived). */
+  builds: { active: SessionSummary[]; done: SessionSummary[] };
+  /** Rows in no group: a workspace file no project claims, a second "current" overseer. */
+  other: SessionSummary[];
 }
 
 export interface OrgSection {
@@ -36,8 +54,8 @@ export interface OrgSection {
 export const UNKNOWN_PROJECT = "Unknown project";
 export const NO_PROJECT = "Other";
 
-/** Finished: a baton that reached its goal or was closed, or one the operator archived. */
-export const orgFinished = (s: Pick<SessionSummary, "org" | "archived">): boolean => !!s.org?.finished || s.archived === true;
+/** Done: a baton done or closed, a build merged per git (all `org.finished`), or one the operator archived. */
+export const orgDone = (s: Pick<SessionSummary, "org" | "archived">): boolean => !!s.org?.finished || s.archived === true;
 
 /** A project overseer's conversation that isn't the current one: its History opens it, no region lists it. */
 export const isClearedOverseer = (s: Pick<SessionSummary, "org">): boolean => s.org?.kind === "overseer" && !!s.org.finished;
@@ -48,11 +66,50 @@ const isCurrentOverseer = (s: Pick<SessionSummary, "org">): boolean => s.org?.ki
 /** What the region holds: every org session but a cleared overseer conversation. */
 export const inOrgRegion = (s: Pick<SessionSummary, "org">): boolean => !!s.org && !isClearedOverseer(s);
 
+/** Which of a project's groups a row goes in. */
+export function rowGroup(s: Pick<SessionSummary, "org" | "baton">): "conversations" | "conflicts" | "builds" | "other" {
+  const k = s.org?.kind;
+  if (k === "gathering" || k === "offer") return s.baton?.settle ? "conflicts" : "conversations";
+  if (k === "coding") return "builds";
+  return "other";
+}
+
+/** Not started until someone it was sent to has written (an opened link doesn't count); then In progress; Done. A build is never Not started. */
+export function orgRowState(s: Pick<SessionSummary, "org" | "archived" | "baton">): OrgRowState {
+  if (orgDone(s)) return "done";
+  if (s.org?.kind === "coding") return "in-progress";
+  return s.baton?.written ? "in-progress" : "not-started";
+}
+
+/** A Not started row's hint: why nobody has written yet. None while the operator holds it (Needs you says it). */
+function notStartedHint(s: Pick<SessionSummary, "baton">): string | null {
+  const b = s.baton;
+  if (!b || b.state === "needs-you") return null;
+  if (b.opened) return "Opened, no reply yet";
+  return b.linkAt ? "Not opened yet" : "Link not sent yet";
+}
+
+/** A project row's line 2 in place of its gist: a settle session names its conflict; a Not started row says why. */
+export function rowLine(s: Pick<SessionSummary, "org" | "archived" | "baton">): string | null {
+  const hint = orgRowState(s) === "not-started" ? notStartedHint(s) : null;
+  const area = s.baton?.settle?.area;
+  if (area) return hint ? `In conflict: ${area} · ${hint}` : `In conflict: ${area}`;
+  return hint;
+}
+
+const emptySplit = (): StateSplit => ({ notStarted: [], inProgress: [], done: [] });
+const SPLIT_KEY: Record<OrgRowState, keyof StateSplit> = { "not-started": "notStarted", "in-progress": "inProgress", done: "done" };
+const sortSplit = (x: StateSplit): StateSplit => ({ notStarted: x.notStarted.sort(byRecentActivity), inProgress: x.inProgress.sort(byRecentActivity), done: x.done.sort(byRecentActivity) });
+
+/** A split's rows, in state order. */
+export const splitRows = (x: StateSplit): SessionSummary[] => [...x.notStarted, ...x.inProgress, ...x.done];
+export const splitCount = (x: StateSplit): number => x.notStarted.length + x.inProgress.length + x.done.length;
+
 const byName = (a: { name: string; id: string }, b: { name: string; id: string }) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
 
 /**
- * Org sessions of `sessions` into org → project → {active, finished}. Orgs and projects by name
- * (ties on id), so the containers stay put between polls; "Other" (no project) goes last.
+ * Org sessions of `sessions` into org → project → groups. Orgs and projects by name (ties on id), so
+ * the containers stay put between polls; "Other" (no project) goes last.
  */
 export function orgSections(sessions: readonly SessionSummary[]): OrgSection[] {
   const orgs = new Map<string, { id: string; name: string; projects: Map<string, OrgProject> }>();
@@ -65,32 +122,49 @@ export function orgSections(sessions: readonly SessionSummary[]): OrgSection[] {
     if (o.orgName && org.name === o.orgId) org.name = o.orgName;
     const pid = o.projectId ?? "";
     let p = org.projects.get(pid);
-    if (!p) org.projects.set(pid, (p = { id: pid, name: pid ? o.projectName || UNKNOWN_PROJECT : NO_PROJECT, overseer: null, active: [], finished: [] }));
+    if (!p)
+      org.projects.set(
+        pid,
+        (p = { id: pid, name: pid ? o.projectName || UNKNOWN_PROJECT : NO_PROJECT, overseer: null, conversations: emptySplit(), conflicts: emptySplit(), builds: { active: [], done: [] }, other: [] }),
+      );
     if (o.projectName && p.name === UNKNOWN_PROJECT) p.name = o.projectName;
     if (isCurrentOverseer(s)) {
       // Only one is current; should the list ever carry two, the newest is the eye and the other stays a row.
       const [eye, row] = !p.overseer ? [s, null] : byRecentActivity(s, p.overseer) < 0 ? [s, p.overseer] : [p.overseer, s];
       p.overseer = eye;
-      if (row) p.active.push(row);
-    } else (orgFinished(s) ? p.finished : p.active).push(s);
+      if (row) p.other.push(row);
+      continue;
+    }
+    const g = rowGroup(s);
+    if (g === "builds") (orgDone(s) ? p.builds.done : p.builds.active).push(s);
+    else if (g === "other") p.other.push(s);
+    else p[g][SPLIT_KEY[orgRowState(s)]].push(s);
   }
   return [...orgs.values()]
     .map((org) => ({
       id: org.id,
       name: org.name,
       projects: [...org.projects.values()]
-        .map((p) => ({ ...p, active: p.active.sort(byRecentActivity), finished: p.finished.sort(byRecentActivity) }))
+        .map((p) => ({
+          ...p,
+          conversations: sortSplit(p.conversations),
+          conflicts: sortSplit(p.conflicts),
+          builds: { active: p.builds.active.sort(byRecentActivity), done: p.builds.done.sort(byRecentActivity) },
+          other: p.other.sort(byRecentActivity),
+        }))
         .sort((a, b) => Number(a.id === "") - Number(b.id === "") || byName(a, b)),
     }))
     .sort(byName);
 }
 
-/** Every row a section, project or the region holds, Finished included. The eye is not a row. */
-export const projectCount = (p: OrgProject): number => p.active.length + p.finished.length;
+/** Every row a project draws, in group order. The eye is not a row. */
+export const projectRows = (p: OrgProject): SessionSummary[] => [...splitRows(p.conversations), ...splitRows(p.conflicts), ...p.builds.active, ...p.builds.done, ...p.other];
+/** Every row a section, project or the region holds, Done included. */
+export const projectCount = (p: OrgProject): number => projectRows(p).length;
 export const orgCount = (o: OrgSection): number => o.projects.reduce((n, p) => n + projectCount(p), 0);
 export const regionCount = (orgs: readonly OrgSection[]): number => orgs.reduce((n, o) => n + orgCount(o), 0);
 /** Every session a section holds, its overseers included: what forces it open, and its working dot. */
-export const orgRows = (o: OrgSection): SessionSummary[] => o.projects.flatMap((p) => [...(p.overseer ? [p.overseer] : []), ...p.active, ...p.finished]);
+export const orgRows = (o: OrgSection): SessionSummary[] => o.projects.flatMap((p) => [...(p.overseer ? [p.overseer] : []), ...projectRows(p)]);
 
 /**
  * The eye's one mark, from the list alone: working (Busy), else a failed last turn, else a new reply.
@@ -136,7 +210,7 @@ export function orgNeedsYouRows(digest: Pick<AttentionDigest, "items"> | undefin
   const rows = needsYouRows(digest, org);
   const listed = new Set(rows.map((r) => r.session.path));
   for (const s of org) {
-    if (listed.has(s.path) || orgFinished(s)) continue;
+    if (listed.has(s.path) || orgDone(s)) continue;
     const w = batonWaitDetail(s);
     if (w) rows.push({ session: s, detail: w.text, details: [w.text], since: w.since });
   }
@@ -165,7 +239,7 @@ export const orgPlaceLabel = (s: Pick<SessionSummary, "org">): string => {
 
 /** The extra text search matches on an org row: its org, its project and the baton holder. */
 export const orgSearchText = (s: Pick<SessionSummary, "org" | "baton">): string =>
-  s.org ? [s.org.orgName, s.org.projectName ?? "", s.baton?.holder ?? "", s.baton?.offer?.holder ?? ""].join(" ") : "";
+  s.org ? [s.org.orgName, s.org.projectName ?? "", s.baton?.holder ?? "", s.baton?.offer?.holder ?? "", s.baton?.settle?.area ?? ""].join(" ") : "";
 
 /** The stored choice: only "0" (the user collapsed it) closes the region. */
 export const storedOrgsOpen = (raw: string | null): boolean => raw !== "0";
@@ -181,8 +255,8 @@ export const orgsRegionOpen = (input: { stored: boolean; searching: boolean; hol
 export const orgSectionOpen = (input: { chosen: boolean | undefined; searching: boolean; holdsSelected: boolean }): boolean =>
   input.searching || input.holdsSelected || (input.chosen ?? true);
 
-/** A Finished tail: collapsed by default (memory only), forced open by a search or the open session inside. */
-export const finishedOpen = (input: { chosen: boolean | undefined; searching: boolean; holdsSelected: boolean }): boolean =>
+/** A group's Done tail: collapsed by default (memory only), forced open by a search or the open session inside. */
+export const doneOpen = (input: { chosen: boolean | undefined; searching: boolean; holdsSelected: boolean }): boolean =>
   input.searching || input.holdsSelected || (input.chosen ?? false);
 
 /** The org head's title: its count, and who is waiting. */

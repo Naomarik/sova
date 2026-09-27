@@ -188,7 +188,9 @@ yet. After the first message a pick is that session's alone. A switch the user d
 the composer never saves: one the Overseer makes on a session it creates or acts on
 (§app.overseer/tools), or Settings → Overseer applying its choice to the Overseer's own
 conversation. The Overseer's own composer saves to `overseer.json` instead, never to this default
-(§app.overseer/hosting).
+(§app.overseer/hosting). Another special session's composer (a baton or project overseer session,
+§app/baton, §app/project-overseer) never saves this default either: its pick stays that session's
+own, or goes where that kind keeps it.
 
 ## §chat.model-menu/tokens — Tokens
 

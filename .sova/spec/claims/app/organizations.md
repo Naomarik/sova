@@ -128,7 +128,10 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
 - **Live.** The page re-reads its org every 10 seconds while the browser tab shows (paused while
   hidden, at once when shown again), so a session that finishes, closes or changes hands
   elsewhere updates its row (`With <holder>`, the state chip) without a reload; each read is
-  reconciled in place, so an open form keeps what was typed. A row's "started …" age moves on
+  reconciled in place, so an open form keeps what was typed. Saving a person's Edit form (on a
+  People card or their page) sends only the fields changed in the form, so what someone else
+  changed meanwhile (a wrap-up, another tab) is kept; with nothing changed it closes and sends
+  nothing. A row's "started …" age moves on
   every 30 seconds.
 - **Where the data comes from.** Every route that answers an `OrgDetail` adds `needsYou`, each
   baton row's `waiting` (`"reply"` or `"link"`), `projectConflicts` (`{projectId: n}`) and
@@ -302,7 +305,9 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   push is logged and shown as the org's last git error, and never undoes the write that caused it.
 - **Push**: after each commit, to the repo's configured remote (`PUT /api/orgs/:id/remote {url}`,
   stored as the repo's own `origin`; an empty url removes it); a push that failed is tried again at
-  the next due look, even with nothing new to commit. No remote means local commits only.
+  the next due look, even with nothing new to commit. Commit Now with nothing new still pushes the
+  commits the remote doesn't have yet (a just-set remote gets the history); nothing to push is a
+  no-op with no network call. No remote means local commits only.
   Profiles are personal data: the page says the remote must be private. Sova never creates a
   remote.
 - **Restore** = clone the repo onto a host and attach it (§app.organizations/portability).

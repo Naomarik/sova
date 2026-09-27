@@ -341,7 +341,9 @@ itself.
   input.
 - **FYI:** running now; context at or above 85%; idle web sessions older than 3 days that aren't
   archived and have no draft.
-- Items are sorted by tier, then age, capped at 30, each with at most 200 characters of detail and
+- Items are sorted by tier, then age, capped at 30 (every kind present keeps at least its newest
+  item, which takes the place of the last kept item of the lowest tier, so a flood of one kind
+  never hides another), each with at most 200 characters of detail and
   an in-app link. The `sova_attention` tool and `GET /api/overseer/attention` return it; the
   sidebar's Needs you region (§app.session-list/needs-you) lists its act tier, and the Overseer
   head's counts and menus come from it.

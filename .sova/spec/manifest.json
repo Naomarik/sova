@@ -198,7 +198,13 @@
         "src/lib/regions.ts",
         "src/lib/recent.ts",
         "server/sessions-index.ts",
-        "src/lib/regions.test.ts"
+        "src/lib/regions.test.ts",
+        "server/index.ts",
+        "src/lib/session-actions.ts",
+        "src/components/ChatView.tsx",
+        "src/lib/api.ts",
+        "src/lib/drag-archive.ts",
+        "server/archive-org-guard.test.ts"
       ]
     },
     "§app.session-list/search": {
@@ -2967,7 +2973,8 @@
         "server/chat-manager.ts",
         "server/overseer.ts",
         "server/chat-config.test.ts",
-        "server/overseer-runtime.test.ts"
+        "server/overseer-runtime.test.ts",
+        "server/baton-runtime.test.ts"
       ]
     },
     "§app.overseer/todos": {
@@ -3822,7 +3829,9 @@
         "src/components/PersonForm.tsx",
         "src/lib/profile-changes.ts",
         "src/components/PersonPage.tsx",
-        "src/components/InsightsPage.tsx"
+        "src/components/InsightsPage.tsx",
+        "src/lib/person-patch.ts",
+        "src/lib/person-patch.test.ts"
       ],
       "requires": [
         "§app.organizations/org-cards",

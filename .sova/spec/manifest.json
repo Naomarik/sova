@@ -3612,7 +3612,9 @@
         "server/baton-prompt.md",
         "server/chat-manager.ts",
         "server/queue.ts",
-        "server/queue.test.ts"
+        "server/queue.test.ts",
+        "server/baton-recount.ts",
+        "server/index.ts"
       ],
       "requires": [
         "§app.baton/links"
@@ -3638,7 +3640,11 @@
         "shared/baton.ts",
         "server/person-page.ts",
         "src/components/PersonPage.tsx",
-        "src/lib/api.ts"
+        "src/lib/api.ts",
+        "server/share/routes.ts",
+        "server/share/listener.ts",
+        "src/share/ShareApp.tsx",
+        "server/baton-handoff.test.ts"
       ]
     },
     "§app.baton/needs-you": {
@@ -3660,7 +3666,8 @@
         "server/chat-manager.ts",
         "src/lib/needs-you.ts",
         "server/baton-offers.test.ts",
-        "src/lib/org-region.ts"
+        "src/lib/org-region.ts",
+        "server/baton-links.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest"
@@ -3718,7 +3725,9 @@
         "server/baton.ts",
         "server/baton-handoff.test.ts",
         "src/lib/share-linkify.ts",
-        "src/lib/share-linkify.test.ts"
+        "src/lib/share-linkify.test.ts",
+        "server/person-page.ts",
+        "src/components/PersonPage.tsx"
       ],
       "requires": [
         "§app.organizations/privacy"

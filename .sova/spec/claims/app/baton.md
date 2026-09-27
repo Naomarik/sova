@@ -134,7 +134,9 @@ once), **lease** (an offer's lock on its first taker).
   close the write guards refuse (another writer on the file, the TUI), which keeps nothing and says
   so in the log; and a guard that trips while a message waits in the queue (a foreign write, the
   model turned off meanwhile): the operator gets an error, and that message is counted but not in
-  the transcript.
+  the transcript. After a restart each open session's count is the messages in its transcript
+  (never more than it was), so one a crash or kill lost no longer counts; a guard trip's lost
+  message still counts until the next restart.
 - The operator may **hand the session to a person** (`POST /api/baton/:sid/handoff {to, question,
   briefing?}`, "Hand this session to Bob"): an active roster person only (a proposed one is
   refused: approve first); recorded like any hand-off, and answered with that hand-off's link.
@@ -157,7 +159,12 @@ once), **lease** (an offer's lock on its first taker).
   constant time. Logs show at most 6 characters of a token.
 - A link **writes** only while its person holds the baton through that hand-off and the session is
   open. After the baton moves on, or once the session is **done**, the link still **reads** the
-  conversation; after **close**, revoke or expiry it answers 410. An unknown token answers 404. An
+  conversation; after **close**, revoke or expiry it answers 410, saying only whether it expired
+  (`why: "expired"`: "This link has expired." / "Links last 14 days. Ask the person who sent it for
+  a new one.") or the question went to someone else (`why: "withdrawn"`: "This question went to
+  someone else. Nothing more is needed from you."); every other dead link (closed, turned off, its
+  person gone from the roster) gets the one generic page, "This link is no longer active.", so a
+  forwarded link never reveals that its person left. An unknown token answers 404. An
   open page on a link that stops reading is told `gone` and closed (4410) within 30 seconds, even
   when nothing in the session changes (a sweep; expiry changes nothing in the session).
 - With no share address known (no listener bound and no `SOVA_SHARE_PUBLIC_URL`) a link is only a
@@ -218,7 +225,9 @@ once), **lease** (an offer's lock on its first taker).
 - Only: the public title; user messages with their sender's name; the model's reply text;
   hand-off cards (from and to names, the question, and the briefing only when the viewer is its
   addressee); the done card; the decision cards ("Noted", the area and the statement); and who
-  holds the baton now ("Waiting on <name>", "Your turn, <name>.", or done/closed). The composer
+  holds the baton now ("Waiting on <name>", "Your turn, <name>.", or done/closed); on a holder's
+  older link, while a newer one of theirs holds it, "You have a newer link to this conversation.
+  Use that one to write." and no composer. The composer
   appears only while the link writes, with the hint "{n} of 4,000 characters · Ctrl+Enter sends"
   (figures with a thousands comma).
 - Never: thinking, tool calls or results, the system prompt, the model, session id, path or cwd,
@@ -234,6 +243,12 @@ once), **lease** (an offer's lock on its first taker).
   `rel="noopener noreferrer nofollow"`). The page builds it as DOM nodes, never as HTML, so the
   text stays escaped. No other scheme is linked, nor an address without one (`www.x.com`, an
   e-mail address). The model's replies render as markdown, whose links open the same way.
+- A hand-off to the operator at the message limit shows people "This conversation reached its
+  message limit." as its question; the operator's own transcript keeps the instruction to them.
+- A reply that stopped before it finished (the stream guard, §chat.transcript/runaway-stream, a
+  shutdown, Take back or Stop) shows at most its first 4,000 characters and, under it, "This reply
+  was cut off."; one that stopped with no text shows nothing. The operator's transcript keeps it
+  whole.
 - Text only, both ways: images are refused on the share route, and the operator's composer
   refuses a send with images in a baton session ("A hand-off session is text only: images can't be
   sent.", code `refused`); a message starting with `/` is refused; ≤ 4000 characters.
@@ -290,7 +305,9 @@ once), **lease** (an offer's lock on its first taker).
   must arrive within 10 seconds and the whole request within 15 (408); per token 10 messages
   a minute (429; tokens with no message in the last minute are forgotten) and one WebSocket (a new one replaces the old, which is told it opened
   elsewhere; a frame over 1 KB closes it with 1009, and a share socket's error is logged, never
-  an uncaught exception); per client address 60 requests a minute (429). Behind a proxy on loopback or the
+  an uncaught exception); per client address 60 requests a minute (429; the page shell answers a
+  plain page, "Too many requests from this network. Wait a minute, then reload.", with
+  `Retry-After: 60`, and the API paths JSON). Behind a proxy on loopback or the
   tailnet, the client address is the last `X-Forwarded-For` hop; a direct client's is its own.
 - Every response is `Cache-Control: no-store` and `Referrer-Policy: no-referrer` (the token is in
   the URL); the page carries a CSP allowing only its own scripts, and reply links open with no
@@ -378,8 +395,10 @@ once), **lease** (an offer's lock on its first taker).
   every invitee has one.
 - A person proposed from the session and still waiting (§app.organizations/referrals) is a
   decide-tier item `roster-proposal`, "Approve Bob Smith (IT lead) proposed by Tony Reyes?", listed
-  in the Organizations region's Needs you. Approving or declining clears it at once (the session list is re-diffed; a baton
-  row's state is part of what the list compares).
+  in the Organizations region's Needs you.
+- Any change to a baton row or its links (Get Link, a reply, Extend, Take back, a hand-off,
+  approve, decline, close) re-diffs the session list at once (a baton row's state is part of what
+  the list compares), so its Needs-you item clears within a second.
 - Baton sessions are not classified by attention signals (§app.decisions/attention-signals).
 - A composer send the session refuses (someone else holds the baton, it is done, the budget is
   spent) comes back on `/ws/chat` as an error with code `refused` and the reason, never `internal`.

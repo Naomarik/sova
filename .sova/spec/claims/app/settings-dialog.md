@@ -358,6 +358,8 @@ TUI never reads it.
   default is offered even when the Claude Code CLI's model list omits it, and `claude-opus-5` is never offered;
   a save naming it for the explorer is refused, and a stored one reads back as the default.
 - **Standing Notes**: a textarea over `overseer-notes.md`.
+- **Phone Notifications**, after the form's "Stored in" line: its own section and its own form,
+  stored in `<stateRoot>/push.json` (§app.notifications/settings).
 - **Fresh, and only what changed.** Both files are read each time the screen mounts (each open of
   the dialog, each return to the tab); an unsaved edit kept across tabs is rebased onto that read:
   every field the user left alone shows the file's value. Save reads both files again and writes
@@ -464,7 +466,7 @@ Folders box or the tab writes nothing.
 ## §app.settings-dialog/save-bar — One Save in the footer, one close-hold
 
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Modes**
-(Delegate and Spec), **Teams**, **Overseer**, **Decisions**, **Summaries**, **Organizations**,
+(Delegate and Spec), **Teams**, **Overseer** (and its **Phone Notifications** form), **Decisions**, **Summaries**, **Organizations**,
 **Mesh** and **Experimental**. A change on them is staged, never written as it is made. No form has a Save or
 Discard button of its own: saving is the dialog's.
 
@@ -517,7 +519,8 @@ Discard button of its own: saving is the dialog's.
 - **Not gated.** General, Themes and Typography change only this browser and still apply as you
   pick. Actions run at once and are never part of a draft: Retry, Try Again, Check Again, Themes'
   Refresh, the Jev key's Save Key, Replace Key and Remove Key, Test Decisions, Tag Last 30 Days,
-  Tag All Sessions and Stop Tagging.
+  Tag All Sessions and Stop Tagging, and Phone Notifications' Enable on This Device, Turn Off on
+  This Device, Remove and Send Test.
 
 ## §app.settings-dialog/organizations — Organizations
 

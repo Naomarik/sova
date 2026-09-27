@@ -22,15 +22,15 @@ tool cards as they happen.
   The session list marks it (`projectOverseer`, and `org`, §app.organizations/org-sessions); nothing (the Overseer's prompt route included)
   writes a message into it but the operator's own composer.
 - Its state is in the workspace repo under `projects/<projectId>/overseer/`: `overseer.json`
-  (autonomy, model, thinking, the coding sessions' model, thinking and mode, caps, token budget,
-  watch on/off, extra instructions), `state.json`,
+  (autonomy, model, thinking, the coding sessions' model, thinking and mode, the limits and token
+  budget, the pace, watch on/off, extra instructions; §app.project-overseer/limits), `state.json`,
   `notes.md`, `actions.jsonl` (every act, refused or not; an act that did only part of what was asked, a
   promotion with refusals, is logged `partial` with what was refused), `ideas/`, `todos.json`, `started.json`
   (the sessions it started, and what its coding sessions spent; plus, as `operator-coding` rows that
   no cap or budget counts, the ones the operator started with Start coding session; each coding row
   also names its worktree, §app.project-overseer/coding-worktrees); committed with the org's
-  workspace commits (§app.organizations/workspace-repo). Only the per-turn counters and the watch
-  loop's timing are host-local.
+  workspace commits (§app.organizations/workspace-repo). Only the counters (each message's and
+  each day's) and the watch loop's timing and held items are host-local.
 - **Loadout.** No pi-config extension, skill or prompt template loads (no mode; a mode switch is
   refused); the project's own context files do, and only those inside the project root: never the
   agent dir's or a folder's above the root (the home folder's `AGENTS.md`). Its tools
@@ -76,13 +76,74 @@ tool cards as they happen.
   with a sentence telling the model to file the gap as an idea or raise a confirm card instead, the
   refusal is logged, and nothing reaches the gathering, reconcile, promote or session code. A level
   change applies from the next tool call.
-- **Caps**, per operator message (the watch loop's runs share the last one's): 3 gathering
-  sessions or offers started, 20 decisions promoted, 2 coding sessions started, 5 prompts to them;
-  at once, 5 of its gathering sessions open and 2 of its coding sessions running; a **token budget**
-  (default 2,000,000) over everything its coding sessions have spent, counted from their files,
-  **their workers included** (every worker and team member a coding session started, pi or Claude
-  Code, at its lifetime total), after which starting or prompting one refuses; at most 12 unattended runs a day. Over a cap a
-  tool refuses and takes nothing.
+- **Limits** (§app.project-overseer/limits): what it may start or send per message the operator
+  sends, per day on its own, and at once, and the coding token budget. Over a limit a tool refuses
+  and takes nothing.
+
+## §app.project-overseer/limits — Limits, per project
+
+- **Two allowances.** *Each message you send* covers the turns the operator started: 3 gathering
+  sessions or offers started, 20 decisions promoted, 2 coding sessions started, 5 prompts to them
+  (`gatherPerTurn`, `promotePerTurn`, `createPerTurn`, `promptsPerTurn`); an operator message and
+  Clear reset it. *On its own, each day* covers every run the operator did not start (a watch-loop
+  look, Run Now): 6 gathering sessions or offers, 60 promotions, 4 coding sessions, 12 prompts
+  (`gatherPerDay`, `promotePerDay`, `createPerDay`, `promptsPerDay`), reset at local midnight on
+  this host. An operator message never refills what a run on its own may do, and a run on its own
+  never uses the operator's message allowance. **Looks**: at most 12 unattended runs a day
+  (`unattendedPerDay`).
+- **At once**, for both kinds of turn: 5 of its gathering sessions open (0–20) and 2 of its coding
+  sessions running (0–10).
+- **Coding token budget** (default 2,000,000) over everything its coding sessions have spent,
+  counted from their files, **their workers included** (every worker and team member a coding
+  session started, pi or Claude Code, at its lifetime total), after which starting or prompting one
+  refuses.
+- **Unlimited** is `null` in `overseer.json` and in `PATCH …/overseer`: allowed for the eight
+  allowances, the looks per day and the token budget; **never for the two at-once limits**, which
+  are what stop a burst ("Coding sessions running can't be Unlimited: it's what stops a burst.").
+  Allowances are whole numbers from 0 to 1000, the budget from 0 to 1,000,000,000. A PATCH with a
+  bad value is refused (400) with the first problem as a sentence ("{Label} must be a whole number
+  from 0 to 1000, or Unlimited.", "Coding sessions running must be a whole number from 0 to
+  10.") and writes nothing. A hand-edited file is read tolerantly: a bad value falls back to its
+  default, and an at-once value above its maximum is read as the maximum. An older Sova reads
+  `null` as the default, so a project attached there is stricter, never looser.
+- **Pace, per project**: it looks on its own at most every `watchGapMin` minutes (default 10; the
+  page offers 2, 5, 10, 30 and 60; the server takes 1–1440), and after a reason to look soon at
+  `soonLookSec` seconds (default 60; the page offers 30, 60, 120, 300 and Off; the server takes
+  30–3600 or `null` = Off, when those reasons wait for the normal pace like any other).
+- **Held, then retried.** A refusal for an allowance, the looks per day or the budget records a
+  *held* item in the host-local watch memo (one per limit, at most 10) with a retry time: the next
+  local midnight for a daily allowance or the looks; at once for the message allowance (a later
+  look of its own may go on, at the normal pace, within today's allowance); none for the budget
+  (only the operator raising it). Every tick, a held item whose time has come becomes a reason to
+  look ("Today's allowance is back: it may start gathering sessions again (refused {time})."),
+  soon (unless Off) except the message allowance's, which waits for the normal pace. A PATCH that
+  raises a limit or sets it Unlimited releases its held items at once ("You raised the limit on
+  {what}."). The at-once limits hold nothing: a gathering session finishing or closing, and a
+  coding session finishing its turn, are already reasons to look.
+- **Refusal wording.** A refusal has a sentence for the operator, logged in `actions.jsonl` and
+  shown in the page's activity list, and a tail for the model only, never logged: a daily
+  allowance, "Today's allowance is used: {n} of {max} {what} on its own. It looks again at
+  midnight." + "Nothing starts before then. Tell the operator what is waiting; don't promise an
+  earlier look."; the message allowance, "This message's allowance is used: {n} of {max} {what}
+  per message you send." + "Stop here and tell the operator what is done and what is left, or ask
+  with sova_confirm."; the budget, "The coding token budget is spent ({spent} of {budget}). It
+  starts no coding session until you raise it." + "Tell the operator; they can raise it on the
+  project page. Don't promise a later look."; an at-once limit, "{n} of its gathering sessions are
+  open, and the limit is {max} at once." (or coding sessions running) + "One finishing is a reason
+  to look again; don't promise when." The prompt says never to promise a look "next time" unless
+  a tool result says when it comes, and lists every limit in force.
+- **The page** (the project's Overseer card) has a **Limits** section: every limit above, each
+  allowance and the budget with an `Unlimited` checkbox that disables its field (a blank field is
+  never Unlimited), the at-once limits without one, and the pace; one form, **Save Limits** (one
+  PATCH), **Reset Limits** (the defaults, into the form, unsaved), with the first problem under it
+  before anything is sent. It replaces the budget's own form. Under the status line, what it has
+  used today on its own and in the operator's last message, and a **Waiting** line per held item
+  that isn't the message allowance's. The Watch hint is built from the pace. Copy:
+  §design.copy-deck/project-limits.
+- `GET …/overseer` answers `usage.allowance` (`message` and `today`: per kind, `used` and `max`,
+  `null` = Unlimited), `usage.held` and `usage.tokenBudget` (`null` = Unlimited). `sova_project`
+  reports both allowances used and left, the looks today, the budget, the at-once limits and the
+  held items.
 
 ## §app.project-overseer/tools — Scoped to its project
 
@@ -239,17 +300,21 @@ tool cards as they happen.
   still open is not a reason: the session reaching its goal is. A coding session the operator
   started (Start coding session) never is.
 - Every 20 s, a project with reasons, watching on, not paused by an attach
-  (§app.organizations/portability), an idle overseer, ≥ 10 minutes since its last unattended look
-  and under the daily limit gets one unattended run, which lists the reasons and asks it to
-  re-read the project, infer gaps and act within its level.
+  (§app.organizations/portability), an idle overseer, at least its gap since its last unattended
+  look (10 minutes unless the project sets another, §app.project-overseer/limits) and under its
+  looks per day gets one unattended run, which lists the reasons and asks it to re-read the
+  project, infer gaps and act within its level. The same tick turns held items whose time has come
+  into reasons (§app.project-overseer/limits); a look refused for the looks per day is held until
+  midnight.
 - **Sooner for five reasons.** A gathering session reaching its goal, a gathering session it
   started handing the baton to the operator, a coding session it started finishing a turn, a
-  refused Merge Branch and a promotion the operator made start that run once 60 s have passed since
-  the first of them was noted, without waiting for the 10-minute gap; everything else about the run
+  refused Merge Branch and a promotion the operator made start that run once the project's soon
+  delay (60 s unless it sets another; Off: no sooner run) has passed since the first of them was
+  noted, without waiting for the gap; everything else about the run
   (the daily limit, watching on, not paused, an idle overseer) still holds, and the run lists every
   reason waiting.
-- **Run Now** (`POST …/overseer/run`) starts one now, skipping the reasons and the 10-minute gap
-  but not the daily limit or a busy overseer (409 with why). The project page shows the last run
+- **Run Now** (`POST …/overseer/run`) starts one now, skipping the reasons and the gap
+  but not the looks per day or a busy overseer (409 with why). The project page shows the last run
   and the reasons waiting: running ("Last looked on its own {time}, running now, after
   {reasons}."), finished ("…, after {reasons}."), stopped and why ("…, stopped: {why}.": the stream
   guard's trip, the model's error, or "Stopped" for an abort), cut off by a restart ("…, cut off by

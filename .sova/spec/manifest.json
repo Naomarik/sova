@@ -5431,6 +5431,35 @@
         "src/components/ProjectPage.tsx",
         "src/components/PersonPage.tsx"
       ]
+    },
+    "§app.project-overseer/limits": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/project-overseer.ts",
+        "server/project-overseer-store.ts",
+        "server/project-overseer-tools.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-prompt.md",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/lib/project-overseer-view.ts",
+        "src/projects.css",
+        "server/project-overseer-tools.test.ts",
+        "server/project-overseer.test.ts",
+        "server/project-overseer-watch-run.test.ts",
+        "server/stream-stub.ts",
+        "src/lib/project-overseer-view.test.ts"
+      ],
+      "requires": [
+        "§app.project-overseer/autonomy-levels",
+        "§app.project-overseer/watch-loop"
+      ]
+    },
+    "§design.copy-deck/project-limits": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
     }
   },
   "boundary": {

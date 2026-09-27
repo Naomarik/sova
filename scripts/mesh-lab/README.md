@@ -222,8 +222,9 @@ The harnesses:
     1.15 × the spool's bytes leave a's `tailscale0`, and the hashes match.
   - The sandbox, with b on:
     - b refuses at the offer (`not-writable`) a dest outside its writable roots, and a root named `.git`.
-    - b's pre-scan refuses a member that b's project `.sova/sandbox.json` makes read-only below a
-      writable root, after the download and with nothing extracted.
+    - b takes a dest under its cwd, and its cwd itself (`.`).
+    - b's pre-scan refuses a member that b's project `.sova/sandbox.json` makes read-only inside a
+      root already at dest. The refusal comes after the download, with nothing extracted.
   - The sandbox, with a on: a refuses `~/.ssh` and a path its project `.sova/sandbox.json` hides
     (`hidden`), and `exclude` lets the rest go.
   - A worktree's `.git` file warns in the result and in b's wake; the main checkout doesn't.

@@ -417,6 +417,12 @@ describe("5. the sandbox binds the server", () => {
     const ok = await offer("a", { session: L.s.a.id, paths: ["sbx"], dest: "sbx-in" });
     assert.equal(ok.status, 200, refusal(ok));
     await waitOffer("a", L.s.a.id, ok.json.offer.id, (o) => rowOf(o, L.s.b.id).state === "done", { what: "landed under b's cwd" });
+    // Its own cwd (which holds the read-only .git/hooks, .git/config, .envrc) is written into, not created.
+    trees.push(["b", `${CWD}/sbx`]);
+    const here = await offer("a", { session: L.s.a.id, paths: ["sbx"], dest: "." });
+    assert.equal(here.status, 200, refusal(here));
+    assert.deepEqual(here.json.deliveries.map((d) => [d.state, d.resolvedDest]), [["accepted", CWD]], JSON.stringify(here.json.deliveries));
+    await waitOffer("a", L.s.a.id, here.json.offer.id, (o) => rowOf(o, L.s.b.id).state === "done", { what: "landed in b's cwd" });
     await waitIdle("b", L.s.b.id).catch(() => {});
   });
 
@@ -429,9 +435,10 @@ describe("5. the sandbox binds the server", () => {
   });
 
   test("receiver on: the pre-scan refuses a member under a read-only path below the root, nothing extracted", async () => {
-    // b's project file makes pre/pj/locked read-only: the root pj itself stays writable, so only
-    // the pre-scan of the downloaded archive can see it.
+    // b's project file makes pre/pj/locked read-only. pj is already at dest, so the offer only writes
+    // into it: only the pre-scan of the downloaded archive can see the member under locked/.
     writeFileOn("b", `${CWD}/.sova/sandbox.json`, JSON.stringify({ readOnlyWithinWritable: ["pre/pj/locked"] }));
+    assert.equal(sh("b", `mkdir -p ${CWD}/pre/pj`).code, 0);
     const r = await offer("a", { session: L.s.a.id, paths: ["scan-src/pj"], dest: "pre" });
     assert.equal(r.status, 200, refusal(r));
     assert.deepEqual(r.json.deliveries.map((d) => d.state), ["accepted"], `passes the top-level check: ${JSON.stringify(r.json.deliveries)}`);
@@ -440,7 +447,7 @@ describe("5. the sandbox binds the server", () => {
     const row = rowOf(o, L.s.b.id);
     assert.deepEqual([row.state, row.reason], ["refused", "not-writable"], JSON.stringify(row));
     assert.match(row.message ?? "", /pj\/locked/);
-    assert.equal(sh("b", `test -e ${CWD}/pre/pj`).code, 1, "nothing extracted");
+    assert.equal(sh("b", `ls -A ${CWD}/pre/pj`).out, "", "nothing extracted");
     assert.deepEqual(filesIn("b", "incoming").filter((f) => f.startsWith(of)), [], "the .part deleted");
     rm("b", `${CWD}/.sova/sandbox.json`);
     await sandbox("b", L.s.b, false);

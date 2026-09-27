@@ -134,7 +134,42 @@ p code, li code, td code, dd code {
 
 /* ---- HERO. Centered copy, then the workspace, half on paper and half on a sunken band. ---- */
 
-.hero { padding: clamp(56px, 8vw, 104px) 0 0; }
+.hero { padding: clamp(56px, 8vw, 104px) 0 0; position: relative; isolation: isolate; }
+
+/* Hero + closing backdrop: the one deliberate exception to "no gradients/glow".
+   An indigo radial glow, plus (hero only) a faint grid masked out toward the edges. */
+:root[data-theme="dark"] {
+  --site-glow:   color-mix(in oklab, var(--brand-indigo) 42%, transparent);
+  --site-glow-2: color-mix(in oklab, #8a3fd8 26%, transparent);
+  --site-grid:   rgba(255, 255, 255, .045);
+  --site-grad:   linear-gradient(100deg, var(--brand-indigo-lighter) 0%, var(--brand-indigo-light) 45%, #c08bff 100%);
+}
+:root[data-theme="light"] {
+  --site-glow:   color-mix(in oklab, var(--brand-indigo) 14%, transparent);
+  --site-glow-2: color-mix(in oklab, #8a3fd8 9%, transparent);
+  --site-grid:   rgba(20, 20, 60, .05);
+  --site-grad:   linear-gradient(100deg, var(--brand-indigo-deep) 0%, var(--brand-indigo) 45%, #8a3fd8 100%);
+}
+.hero::before, .hero-copy::before {
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+}
+.hero::before {
+  inset: 0 0 auto; height: 900px;
+  background-image:
+    linear-gradient(var(--site-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--site-grid) 1px, transparent 1px);
+  background-size: 56px 56px; background-position: center top;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
+}
+.hero-copy { position: relative; }
+.hero-copy::before {
+  left: 50%; top: -320px; width: min(1300px, 180vw); height: 900px; transform: translateX(-50%);
+  background:
+    radial-gradient(closest-side at 38% 45%, var(--site-glow), transparent 70%),
+    radial-gradient(closest-side at 66% 40%, var(--site-glow-2), transparent 70%);
+  filter: blur(20px);
+}
+.h-hero .grad { display: inline; background: var(--site-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .hero-copy { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-5); }
 .hero .h-hero { max-width: 20ch; }
 .hero .h-hero > span { display: block; }
@@ -409,6 +444,15 @@ p code, li code, td code, dd code {
 .oss-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-5); }
 .stack-list { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-5); }
 
+.closing { position: relative; isolation: isolate; overflow: hidden; }
+.closing::before {
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+  left: 50%; top: 50%; width: min(1100px, 180vw); height: 640px; transform: translate(-50%, -50%);
+  background:
+    radial-gradient(closest-side at 40% 50%, var(--site-glow), transparent 70%),
+    radial-gradient(closest-side at 62% 45%, var(--site-glow-2), transparent 70%);
+  filter: blur(24px); opacity: .55;
+}
 .closing .section-head { margin: 0 auto var(--space-6); align-items: center; text-align: center; }
 .closing-install { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: var(--space-3); text-align: center; }
 

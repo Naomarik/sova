@@ -1250,7 +1250,10 @@ sessions in bulk. It uses `POST /api/sessions/cleanup` (`cleanupSessions` in `sr
 - **Actions.** `{ mode: "age", minAgeDays: 7 }`, `{ mode: "age", minAgeDays: 30 }`, and
   `{ mode: "husks" }` (sessions nothing was ever sent in — drafted ones included, and deleting
   one drops its stored draft too). The server decides what matches and
-  what it protects. The UI shows its numbers and never counts on its own.
+  what it protects. The UI shows its numbers and never counts on its own. None of them ever
+  matches a session in an attached organization's workspace `sessions/` (baton transcripts,
+  project-overseer conversations), however old or empty; those are left out silently and are not
+  in `skipped`. See §app.session-list/cleanup-org-guard.
 - **Hidden while searching.** Cleanup ignores the search, so a Clean Up… button under a
   filtered list would suggest it only acts on the matches.
 - **Flow.**
@@ -1301,7 +1304,10 @@ after).
   The bulk rules apply unchanged: live, mid-turn and just-written sessions are skipped and counted
   in `skipped`, and a file whose header doesn't parse, one that's already gone, or a path outside
   the sessions dir is refused rather than deleted. Refusals come back in the response's additive
-  `refused: [{ path, reason }]` (absent for age and husks), one entry per refused path.
+  `refused: [{ path, reason }]` (absent for age and husks), one entry per refused path. A
+  session in an attached organization's workspace is refused even when archived, with the reason
+  "Belongs to an organization's workspace — Clean Up never deletes it." See
+  §app.session-list/cleanup-org-guard.
 - **Flow.** The same dry-run-then-confirm flow as the bulk actions, through the same dialog: for
   one path the scope line reads "One archived session: “{title}”." and the irreversibility line is
   singular — "This permanently deletes its transcript file — this can't be undone." Refusals show

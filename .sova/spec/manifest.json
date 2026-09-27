@@ -144,7 +144,10 @@
     "§app.session-list/archive-cleanup": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "server/sessions-index.ts"
+      ]
     },
     "§app.session-list/content-rules": {
       "kind": "behavior",

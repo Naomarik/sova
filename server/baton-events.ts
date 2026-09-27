@@ -4,7 +4,9 @@
  * listener that throws is logged and never stops the emitter or the other listeners.
  */
 
-export type BatonEventType = "decision" | "handoff" | "offer" | "done" | "closed" | "wrapup" | "proposal";
+/** `asked-operator`: the session's model handed the baton to the operator (`hand_to`), never the
+    operator's own move; it follows that move's `handoff`. */
+export type BatonEventType = "decision" | "handoff" | "offer" | "done" | "closed" | "wrapup" | "proposal" | "asked-operator";
 
 export interface BatonEvent {
   type: BatonEventType;
@@ -13,6 +15,8 @@ export interface BatonEvent {
   sessionId: string;
   /** The custom entry that records it, when there is one (a decision's `sova-baton-decision`). */
   entryId?: string;
+  /** `asked-operator`: the question the model put to the operator. */
+  question?: string;
 }
 
 const listeners = new Set<(e: BatonEvent) => void>();

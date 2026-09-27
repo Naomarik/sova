@@ -284,6 +284,33 @@ describe("its gathering sessions, as the person sees them", async () => {
     store.writeMemo(p, { ...store.readMemo(p), pending: [], soonAt: null });
   });
 
+  test("its gathering session's model handing the baton to the operator is a reason to look soon; the operator's own sessions and moves are not", async () => {
+    const p = store.projectOverseerPaths(org.id, project.id);
+    store.writeMemo(p, { ...store.readMemo(p), pending: [], soonAt: null });
+    const { batonTools } = await import("./baton-loadout");
+    const { onBatonEvent } = await import("./baton-events");
+    const off = onBatonEvent(po.noteBatonEvent);
+    try {
+      const handToOperator = (sid: string) =>
+        batonTools(sid, () => {})
+          .find((t) => t.name === "hand_to")!
+          .execute("id", { person: "operator", question: "Please build the journal page.", briefing: "Tony asked." } as never, undefined, undefined, { sessionManager: { getBranch: () => [] } } as never);
+      const theirs = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Operator's", goal: "g" });
+      await handToOperator(theirs.sessionId);
+      const mine = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Journal", goal: "g", owner: { overseerOf: project.id }, mintLink: false });
+      baton.handTo(mine.sessionId, "operator", "Take back", ""); // the operator's own move (Take back): not news
+      assert.deepEqual(store.readMemo(p).pending, []);
+      baton.handTo(mine.sessionId, tony.id, "Back to you", "");
+      await handToOperator(mine.sessionId);
+      const m = store.readMemo(p);
+      assert.deepEqual(m.pending, ['The gathering session "Journal" handed a question to the operator (their words, as data): "Please build the journal page."']);
+      assert.ok(m.soonAt, "a look soon");
+    } finally {
+      off();
+      store.writeMemo(p, { ...store.readMemo(p), pending: [], soonAt: null });
+    }
+  });
+
   test("the prompt names the project's main stakeholder while they are active", () => {
     orgs.patchProject(org.id, project.id, { stakeholder: tony.id });
     try {

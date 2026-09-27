@@ -33,8 +33,33 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   would be the install itself), so the default the New Organization form advertises works in
   either install and every other dir in the tree stays refused. A refused dir answers 400 and
   nothing is written.
-- Two hosts attaching the same org is not detected; moving an org is detach here, clone and attach
-  there.
+- Moving an org is detach here, clone and attach there. One host holds an org at a time: the repo
+  records which (§app.organizations/holder), and attaching an org another host holds warns and
+  asks to confirm.
+
+## §app.organizations/holder — One holder at a time
+
+- **The holder record.** `holder.json` in the workspace repo names the host that holds the org:
+  `{version:1, host:{id, name}, since}`, or, once released, `{version:1, host:null, releasedBy:{id,
+  name}, at}`. A host's `id` is its own, made once and kept host-local in `<stateRoot>/host.json`
+  (`h_` + 8 characters); `name` is the machine's hostname, shown in the warning, followed by the
+  id in parentheses when it is this host's own name too (two installs on one machine).
+- **Written by the holder.** Creating an org and attaching one write this host as the holder and
+  commit at once (then push, when a remote is set), so a clone made after that names it.
+  **Detach** writes the release, commits and pushes it (best effort: a failure is logged and the
+  detach still happens), so moving an org (detach here, clone and attach there) never warns. A
+  repo with no `holder.json` (made before it existed) is held by nobody until its next attach.
+- **Held elsewhere.** Attach reads the record twice: in the clone, and on the clone's `origin`
+  when it has one (`git fetch`, at most 15 seconds; the remote's copy of the checked-out branch).
+  The org is held elsewhere when either names a host other than this one and not released; when
+  the remote can't be reached, only the clone's record counts. Held elsewhere, attach adds nothing
+  and answers 409 with `code: "held"`, the holder's name and since when, and the sentence: "{name}
+  holds this organization (since {time}). If it still runs there, attaching it here too makes two
+  copies that drift apart, and one host's work can't be pushed. Detach it on {name} first, or
+  attach anyway if {name} is gone." The attach form shows it as a warn banner with **Attach
+  Anyway** (`POST /api/orgs/attach {dir, confirm: true}`) and Cancel; confirmed, the attach goes
+  ahead and this host becomes the holder.
+- A record naming this host (a clone this host held) is not held elsewhere.
 
 ## §app.organizations/org-cards — The list: one card per organization
 
@@ -94,11 +119,15 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     folder path, a trailing chevron), and the Add Project form (`Project name`, `Folder`); with none,
     "No projects yet. A project is a folder that hand-off sessions and its overseer work in."
 - **Rows and width.** A hand-off session row's title and meta line wrap rather than truncate. Each
-  card on the org list, org and project pages stops at 880px wide, left-aligned.
+  card on the org list, org and project pages stops at 880px wide, left-aligned. The project
+  page's title, cut with an ellipsis when it doesn't fit, carries the whole project name as its
+  tooltip (`title`).
   - **Workspace**: the workspace repo card: how often changes are committed ("Changes are
     committed hourly[ and pushed to the remote], when there are any. Commit Now does it at once."),
     the last commit (relative time with the exact stamp as its title, short sha, message) and
-    "· uncommitted changes" while the repo has any, Commit Now, and the push remote.
+    "· uncommitted changes" while the repo has any, Commit Now, and the push remote. Commit Now
+    says what it did: "Committed {short sha} and pushed.", "Committed {short sha}.", "Nothing new
+    to commit. Pushed the commits the remote lacked." or "Nothing new to commit."
 - **Counts.** Each tab's label is followed by a count: Sessions, every baton session of the org;
   People, every roster person (active, proposed and left); Projects, the projects. Workspace shows
   no count: it holds one repo, not a list.
@@ -207,7 +236,9 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     link's state word (`Can write`, `Reads only`, `Turned off`, `Expired`, `Session closed`; the
     words of §app.baton/links' writes/reads/410; a closed session's link reads `Session closed`,
     though closing also turned it off), `sent {relative time}`, `expires {relative
-    time}` while it can still open, and `{n} visits`. A link that can still open has `Turn Off
+    time}` while it can still open, and `{n} visits`: a visit counts on the newest of this host's
+    links for its session, hand-off (and offer) and person that was made at or before the visit,
+    so a new link for the same hand-off never takes an older visit. A link that can still open has `Turn Off
     Link` (that one link; the session and every other link stay as they are). The row for the
     hand-off they hold now, or an open offer they are invited to, has `Get New Link`: the strip's
     Get Link (`GET /api/baton/:sid/link`, `?person=` for an offer), shown once with Copy Link.
@@ -224,7 +255,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     (`Opened the owner page` for a visit through an owner link),
     the device family, `for about {duration}` once it lasted a minute or more, and the relative
     time, the exact stamp in mono as its title (`2026-09-27 14:06`); a visit whose newest record
-    is from a link minted on another host adds `link from another host`. Rows never counted as
+    is from a link minted on another host (no link of this host for its hand-off was made at or
+    before it) adds `link from another host`. Rows never counted as
     opened: `Tried a turned-off link · {session title}`, and, muted, `Link preview by {service} ·
     {session title}` (`Link preview · {session title}` for a generic unfurler), `{Security scanner
     | Script} · {session title}` (a `bot` visit, its device family), and `Too many visits on this
@@ -266,6 +298,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
 
 - It is the org's **whole portable state** (§app.organizations/portability). Files:
   - `org.json` (id, name, slug, and the org's owner with its history, §app.owner-page/owner), `roster.json`, `roster-history.jsonl`, `projects.json`;
+  - `holder.json`, the host that holds the org, or its release (§app.organizations/holder);
   - `about.md` and `org-history.jsonl`: the org's About text and its history (§app.organizations/about);
   - `baton.json`, the baton registry: each session's holder, participants, hand-offs, offers and
     their leases, message budget, model and wrap-up state, and whether each is hidden from the
@@ -279,8 +312,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     conversation and history), `notes.md`, `actions.jsonl`, `ideas/`, `todos.json` and
     `started.json` (the sessions it started, with what each of its coding sessions spent when last
     counted, and the coding sessions the operator started with Start coding session, as
-    `operator-coding` rows; each coding row names its worktree's branch and this host's path to it,
-    which is host-local, like the row's session path);
+    `operator-coding` rows; each coding row names its title, its worktree's branch and this host's
+    path to it, which is host-local, like the row's session path);
   - `visits.jsonl`, the visit log: each time a roster person opened one of their links, and each
     link preview and turned-off-link attempt (§app.baton/visits) — never a token, a token's hash,
     an IP address or a raw user agent.
@@ -309,7 +342,9 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   since the repo's last commit (counted from HEAD, so Commit Now, a restart or a commit made on
   another host all count; `SOVA_WORKSPACE_COMMIT_MS` shortens the hour for tests only). Nothing
   changed: no commit. The message names what changed by top-level entry ("Workspace changes:
-  baton.json, sessions/ (2 files)"), never contents. **Commit Now** (`POST /api/orgs/:id/commit`)
+  baton.json, sessions/ (2 files)"), never contents. Every commit Sova makes in the repo is
+  authored and committed as `Sova <sova@localhost>`, whatever git identity the host has, so no
+  operator's name or email travels with a backup. **Commit Now** (`POST /api/orgs/:id/commit`)
   commits at once. A graceful shutdown (SIGINT or SIGTERM) stops every running turn first, then
   commits every repo with changes, due or not, after the runtimes are disposed; the process exits
   within 20 s whatever a step is waiting on. Commits of one repo run one at a time; a failed commit or
@@ -357,7 +392,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   spent when last counted.
 - A conflict's settle session is found by its id on this host; `conflicts.json` stores no path
   for it, so its card opens the session here after a move.
-- Two hosts attaching the same org is still not detected (§app.organizations/registry).
+- Attaching an org another host holds warns and asks to confirm first (§app.organizations/holder).
 
 ## §app.organizations/org-sessions — Which sessions are organizational
 

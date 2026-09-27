@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CodingWorktree } from "../../shared/project-overseer";
-import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, mergeGate, modeWords, offersMerge, offersRemove, promotionCommitLine, removeGate, startedBy, worktreeOrder } from "./coding-worktrees";
+import { CODING_MODE_KEYS, codingModeKey, folderNote, codingModeLabel, codingModeOf, mergeGate, modeWords, offersMerge, offersRemove, promotionCommitLine, removeGate, startedBy, worktreeOrder } from "./coding-worktrees";
 
 const wt = (over: Partial<CodingWorktree> = {}): CodingWorktree => ({
   sessionId: "s1",
@@ -57,6 +57,15 @@ test("gates: another host, then the session, then its workers", () => {
   assert.equal(mergeGate(wt({ path: null, running: true })), "On another host");
   assert.equal(mergeGate(wt({ running: true, workers: 2 })), "Session working");
   assert.equal(removeGate(wt({ workers: 1 })), "Workers running");
+});
+
+test("the folder line: removed; on another host, never 'missing' there; missing only on its own host", () => {
+  assert.equal(folderNote(wt()), null);
+  assert.equal(folderNote(wt({ state: "missing" })), "Worktree folder missing");
+  assert.equal(folderNote(wt({ state: "missing", path: null })), "On another host: its worktree is there.");
+  assert.equal(folderNote(wt({ state: "open", path: null })), "On another host: its worktree is there.");
+  assert.equal(folderNote(wt({ state: "removed", path: null })), "Worktree removed");
+  assert.equal(folderNote(wt({ state: "root", path: null, branch: null, worktree: null })), null);
 });
 
 test("row words", () => {

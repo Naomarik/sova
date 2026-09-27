@@ -50,6 +50,8 @@ import {
 import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
 import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, tagSearchText, tagStatusWord, tagsTitle, turnErrorTitle } from "../lib/signals";
+import { requestListRefresh } from "../lib/list-refresh";
+import { orgHref } from "../lib/orgs-route";
 import { marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
 import { readKey, removeKey, writeKey } from "../lib/storage-keys";
@@ -1126,8 +1128,11 @@ export function Sidebar(props: {
   });
 
   // Decision marks arrive over the session feed as they change, and so does word that the list itself
-  // changed (a session a TUI just started): that re-reads it. The list poll stays the fallback.
-  openSessionFeed(() => props.onRefresh());
+  // changed (a session a TUI just started): that re-reads it, and the attention digest with it (App,
+  // lib/list-refresh.ts), since the Organizations region's Needs you lists the digest's items: a reply
+  // or a Get Link in another tab clears its row at once, not at the digest's next 10 s read. The list
+  // poll stays the fallback.
+  openSessionFeed(requestListRefresh);
   /** Main threads only (src/lib/regions.ts): every region, search hit and count reads this. Each row
       carries the feed's marks over the list's (a peer's row keeps its own); `reuseUnchanged` keeps a
       row's object across feed messages that don't touch it, so rows update in place. */
@@ -2010,7 +2015,7 @@ export function Sidebar(props: {
                         <span class="text-num">{count()}</span>
                         <a
                           class="button button-icon button-ghost org-link"
-                          href={`#/orgs/${encodeURIComponent(o.id)}`}
+                          href={orgHref(o.id)}
                           aria-label={`Open the ${o.name} page`}
                           title={`Open the ${o.name} page`}
                           onClick={(e) => e.stopPropagation()}

@@ -20,7 +20,7 @@ import {
   runProjectOverseer,
   sendProjectItem,
 } from "../lib/api";
-import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, isDelegate, mergeGate, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
+import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, folderNote, isDelegate, mergeGate, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
 import { relativeTime, tildePath } from "../lib/format";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll } from "../lib/poll";
@@ -495,7 +495,6 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
                         <>
                           {" · "}
                           <span class="orgs-mono">{b()}</span>
-                          {row.path === null ? " · on another host" : ""}
                         </>
                       )}
                     </Show>
@@ -507,12 +506,7 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
                       <Show when={row.mergedAt}>{(at) => <> <time title={at()}>{relativeTime(at())}</time></>}</Show>
                     </span>
                   </Show>
-                  <Show when={row.state === "removed"}>
-                    <span class="list-meta">Worktree removed</span>
-                  </Show>
-                  <Show when={row.state === "missing"}>
-                    <span class="list-meta">Worktree folder missing</span>
-                  </Show>
+                  <Show when={folderNote(row)}>{(note) => <span class="list-meta">{note()}</span>}</Show>
                 </span>
                 <Show when={offersMerge(row) || offersRemove(row)}>
                   <div class="button-row project-worktree-actions">

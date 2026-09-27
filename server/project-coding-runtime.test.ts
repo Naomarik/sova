@@ -82,6 +82,7 @@ describe("a project's coding sessions", async () => {
     const row = store.readStarted(p).find((r) => r.kind === "operator-coding");
     assert.ok(row?.worktree && row.path, JSON.stringify(row));
     started = { path: row.path, sessionId: row.sessionId };
+    assert.equal(row.title, "Build the login page", "its title travels with the row, for a host without its file");
     const w = row.worktree;
     assert.equal(w.path, join(tmp, "src", ".worktrees", `client-${w.branch.replace(/^sova\//, "")}`));
     assert.match(w.branch, /^sova\/build-the-login-page-[0-9a-f]{6}$/);
@@ -113,8 +114,17 @@ describe("a project's coding sessions", async () => {
     const rowOf = () => info.worktrees.sessions.find((s) => s.sessionId === started!.sessionId);
     const r0 = rowOf();
     assert.deepEqual(r0 && { state: r0.state, merged: r0.merged, ahead: r0.ahead, startedBy: r0.startedBy, branch: r0.branch, target: r0.target }, { state: "open", merged: false, ahead: 0, startedBy: "operator", branch: w.branch, target: "master" });
+    await po.ensureProjectOverseer(org.id, project.id);
     await assert.rejects(po.mergeCodingWorktree(org.id, project.id, started.sessionId), /has nothing to merge into master/);
     writeFileSync(join(w.path, "login.txt"), "login\n");
+    // Uncommitted: refused, and the overseer is told (soon), so it can ask the session to commit.
+    await assert.rejects(po.mergeCodingWorktree(org.id, project.id, started.sessionId), /uncommitted changes in 1 file \(login.txt\)/);
+    const memo = store.readMemo(p);
+    assert.ok(
+      memo.pending.some((r) => r.startsWith('Merge Branch for "Build the login page" was refused: The worktree has uncommitted changes in 1 file')),
+      JSON.stringify(memo.pending),
+    );
+    assert.ok(memo.soonAt, "a look soon");
     git(w.path, "add", "login.txt");
     git(w.path, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "login");
     info = await po.mergeCodingWorktree(org.id, project.id, started.sessionId);
@@ -127,6 +137,27 @@ describe("a project's coding sessions", async () => {
     const row = store.readStarted(p).find((r) => r.sessionId === started!.sessionId)!;
     assert.ok(row.removed && row.merged?.commit, JSON.stringify(row));
     await assert.rejects(po.removeCodingWorktree(org.id, project.id, started.sessionId), /already removed/);
+  });
+
+  test("a coding row from another host: its recorded title, no link, not 'missing'", async () => {
+    const p = store.projectOverseerPaths(org.id, project.id);
+    const gone = join(tmp, "elsewhere");
+    store.writeStarted(p, [
+      ...store.readStarted(p),
+      { sessionId: "01a0e321-a85c-74d4-9349-c48f99e8336d", kind: "operator-coding", createdAt: new Date().toISOString(), path: join(gone, "s.jsonl"), title: "Add pickup hours", worktree: { path: join(gone, "wt"), branch: "sova/add-pickup-hours-abc123", base: git(client, "rev-parse", "HEAD"), target: "master" } },
+    ]);
+    const info = await po.projectOverseerInfo(org.id, project.id);
+    const row = info.worktrees.sessions.find((s) => s.sessionId === "01a0e321-a85c-74d4-9349-c48f99e8336d");
+    assert.deepEqual(row && { title: row.title, path: row.path, branch: row.branch }, { title: "Add pickup hours", path: null, branch: "sova/add-pickup-hours-abc123" });
+  });
+
+  test("a coding session in a worktree is told to commit on its branch; one in the root is not", () => {
+    const told = po.codingFirstPrompt("Build the API", { branch: "sova/api-abc123" });
+    assert.equal(
+      told,
+      "Build the API\n\nYou work in your own git worktree on the branch sova/api-abc123. Commit your work on this branch before you end your turn: uncommitted changes can't be merged.",
+    );
+    assert.equal(po.codingFirstPrompt("Tidy up", undefined), "Tidy up");
   });
 
   test("the overseer's sova_create_session: a worktree too, and the mode it asked for within the ceiling", async () => {
@@ -143,6 +174,15 @@ describe("a project's coding sessions", async () => {
     const row = store.readStarted(store.projectOverseerPaths(org.id, project.id)).find((r) => r.kind === "coding");
     assert.ok(row?.worktree && row.path, JSON.stringify(row));
     assert.match(row.worktree.branch, /^sova\/api-[0-9a-f]{6}$/);
+    assert.equal(row.title, "API");
+    // Untitled: the row still carries one, the prompt's first line (never Sova's commit paragraph).
+    const before2 = store.readStarted(store.projectOverseerPaths(org.id, project.id)).length;
+    await tool.execute("t4", { prompt: "Fix the footer\nIt overlaps the menu on phones." }, undefined, undefined, undefined as never).catch(() => {});
+    const rows2 = store.readStarted(store.projectOverseerPaths(org.id, project.id));
+    assert.equal(rows2.length, before2 + 1);
+    assert.equal(rows2.at(-1)!.title, "Fix the footer");
+    const info2 = await po.projectOverseerInfo(org.id, project.id);
+    assert.equal(info2.worktrees.sessions.find((s) => s.sessionId === rows2.at(-1)!.sessionId)?.title, "Fix the footer");
     assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec"] });
   });
 

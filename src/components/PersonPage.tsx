@@ -8,7 +8,7 @@ import { DECISION_STATE } from "../lib/decisions-view";
 import { relativeIn, relativeTime, stampTime } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
 import { ORG_POLL_MS } from "../lib/org-source";
-import { orgHref, orgTabHref, projectHref, startForHref } from "../lib/orgs-route";
+import { orgHref, orgSessionHref, orgTabHref, projectHref, startForHref } from "../lib/orgs-route";
 import {
   canPreview,
   firstName,
@@ -37,7 +37,6 @@ import "../projects.css";
 import "../person.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
-const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /** The exact stamp a relative time carries as its title: `2026-09-27 14:06`, local, 24-hour. */
 const exact = (at: string) => {
@@ -243,7 +242,7 @@ function StatusBanner(props: { data: PersonPageData; now: number; roster: readon
                     <>
                       {" in "}
                       <Show when={s().path} fallback={s().publicTitle}>
-                        {(path) => <a href={sessionHref(path())}>{s().publicTitle}</a>}
+                        {(path) => <a href={orgSessionHref(props.data.org.id, path())}>{s().publicTitle}</a>}
                       </Show>
                     </>
                   )}
@@ -380,7 +379,7 @@ function Sessions(props: { data: PersonPageData; now: number; onPreview(row: Per
                   <span class="person-row-title">
                     <Show when={s.path} fallback={<span class="list-title">{s.publicTitle}</span>}>
                       {(path) => (
-                        <a class="list-title" href={sessionHref(path())}>
+                        <a class="list-title" href={orgSessionHref(props.data.org.id, path())}>
                           {s.publicTitle}
                         </a>
                       )}
@@ -405,7 +404,7 @@ function Sessions(props: { data: PersonPageData; now: number; onPreview(row: Per
                       <span class="list-meta">
                         Started from{" "}
                         <Show when={ppath()} fallback={parent().publicTitle}>
-                          {(path) => <a href={sessionHref(path())}>{parent().publicTitle}</a>}
+                          {(path) => <a href={orgSessionHref(props.data.org.id, path())}>{parent().publicTitle}</a>}
                         </Show>
                       </span>
                     );
@@ -460,7 +459,7 @@ function Decisions(props: { data: PersonPageData; now: number }) {
                   <Show when={d.publicTitle}>
                     {" · in "}
                     <Show when={d.sessionPath ?? pathOf(d.sessionId)} fallback={d.publicTitle}>
-                      {(path) => <a href={sessionHref(path())}>{d.publicTitle}</a>}
+                      {(path) => <a href={orgSessionHref(props.data.org.id, path())}>{d.publicTitle}</a>}
                     </Show>
                   </Show>
                   {" · "}
@@ -487,7 +486,7 @@ function Decisions(props: { data: PersonPageData; now: number }) {
                   <Show when={c.publicTitle}>
                     {" · in "}
                     <Show when={c.batonPath ?? pathOf(c.batonSessionId)} fallback={c.publicTitle}>
-                      {(path) => <a href={sessionHref(path())}>{c.publicTitle}</a>}
+                      {(path) => <a href={orgSessionHref(props.data.org.id, path())}>{c.publicTitle}</a>}
                     </Show>
                   </Show>
                   {" · "}
@@ -581,7 +580,7 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                     <span class="person-row-title">
                       <Show when={session()?.path} fallback={l.publicTitle}>
                         {(path) => (
-                          <a class="list-title" href={sessionHref(path())}>
+                          <a class="list-title" href={orgSessionHref(props.data.org.id, path())}>
                             {l.publicTitle}
                           </a>
                         )}

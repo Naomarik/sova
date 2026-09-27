@@ -857,7 +857,8 @@ const jsonInit = (method: string, body?: unknown): RequestInit => ({
 
 export const getOrgs = () => request<OrgsInfo>("/api/orgs");
 export const createOrg = (name: string, dir?: string) => request<OrgDetail>("/api/orgs", jsonInit("POST", { name, ...(dir ? { dir } : {}) }));
-export const attachOrg = (dir: string) => request<OrgDetail>("/api/orgs/attach", jsonInit("POST", { dir }));
+/** `confirm`: attach although another host holds it (the answer to a 409 `code: "held"`). */
+export const attachOrg = (dir: string, confirm = false) => request<OrgDetail>("/api/orgs/attach", jsonInit("POST", { dir, ...(confirm ? { confirm: true } : {}) }));
 export const setOperatorName = (name: string) => request<OrgsInfo>("/api/orgs/operator", jsonInit("PUT", { name }));
 export const getOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`);
 export const patchOrg = (id: string, patch: { name?: string; about?: string }) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("PATCH", patch));

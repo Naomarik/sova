@@ -75,7 +75,8 @@ once), **lease** (an offer's lock on its first taker).
   its message limit. Extend it to write."
 - **Extend**: `POST /api/baton/:sid/extend {by}` raises the limit by `by` (a whole number, the
   result at most 1000; refused once the session is done or closed) and answers the strip's
-  `BatonInfo`. While an open session is at its limit the strip says "The message limit is reached
+  `BatonInfo`; the toast names the limit that answer carries ("Limit raised to {max} messages."), so
+  two tabs extending at once each show what the server now holds. While an open session is at its limit the strip says "The message limit is reached
   (<used> of <max>). Extend it to go on." with **Extend by** [20] and **Extend**, and its where-line
   reads "with you — extend the limit to write" while the operator holds it.
 
@@ -402,7 +403,9 @@ once), **lease** (an offer's lock on its first taker).
   in the Organizations region's Needs you.
 - Any change to a baton row or its links (Get Link, a reply, Extend, Take back, a hand-off,
   approve, decline, close) re-diffs the session list at once (a baton row's state is part of what
-  the list compares), so its Needs-you item clears within a second.
+  the list compares), and the page re-reads the attention digest whenever it re-reads the list for
+  the session feed's `list_changed` (the Organizations region's Needs you lists the digest's
+  items), so its Needs-you item clears within a second, whichever tab or host page made the change.
 - Baton sessions are not classified by attention signals (§app.decisions/attention-signals).
 - A composer send the session refuses (someone else holds the baton, it is done, the budget is
   spent) comes back on `/ws/chat` as an error with code `refused` and the reason, never `internal`.

@@ -318,6 +318,8 @@ export interface StartedRow {
   branchDeleted?: boolean;
   /** Why a coding session runs in the root itself (a tail: "it isn't a Git repository."). */
   inRoot?: string;
+  /** A coding session's title when it started, for a host without its file (§app.project-overseer/coding-worktrees). */
+  title?: string;
 }
 
 function parseWorktree(v: unknown): WorktreeRecord | undefined {
@@ -344,6 +346,7 @@ function parseStarted(v: unknown): StartedRow[] {
       ...(typeof s.removed === "string" && s.removed ? { removed: s.removed } : {}),
       ...(s.branchDeleted === true ? { branchDeleted: true } : {}),
       ...(typeof s.inRoot === "string" && s.inRoot ? { inRoot: s.inRoot } : {}),
+      ...(typeof s.title === "string" && s.title ? { title: s.title } : {}),
     }))
     .slice(-STARTED_MAX);
 }
@@ -397,7 +400,7 @@ export function recordTokens(p: ProjectOverseerPaths, counted: Map<string, numbe
 export const dayKey = (d = new Date()): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Record a session it started (the listing, the concurrency and token caps). */
-export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: StartedRow["kind"], now = new Date(), path?: string, extra: Pick<StartedRow, "worktree" | "inRoot"> = {}): void {
+export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: StartedRow["kind"], now = new Date(), path?: string, extra: Pick<StartedRow, "worktree" | "inRoot" | "title"> = {}): void {
   const rows = readStarted(p);
   if (rows.some((s) => s.sessionId === sessionId)) return;
   writeStarted(p, [...rows, { sessionId, kind, createdAt: now.toISOString(), ...(path ? { path } : {}), ...extra }]);

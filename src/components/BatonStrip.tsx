@@ -61,13 +61,14 @@ export function BatonStrip(props: {
     onCleanup(() => clearInterval(t));
   });
   const [retrying, setRetrying] = createSignal(false);
-  const act = async (fn: () => Promise<unknown>, done: string): Promise<boolean> => {
+  const act = async (fn: () => Promise<unknown>, done: string | ((r: unknown) => string)): Promise<boolean> => {
     try {
       const r = await fn();
       if (r && typeof r === "object" && "session" in r) mutate(r as BatonInfo);
       setError(null);
-      toast(done);
-      announce(done);
+      const said = typeof done === "string" ? done : done(r);
+      toast(said);
+      announce(said);
       await refetch();
       requestListRefresh();
       return true;
@@ -311,7 +312,7 @@ export function BatonStrip(props: {
 }
 
 /** At the message limit: raise it by N so the conversation can go on (bounded like any limit). */
-function ExtendRow(props: { info: BatonInfo; act(fn: () => Promise<unknown>, done: string): Promise<boolean> }) {
+function ExtendRow(props: { info: BatonInfo; act(fn: () => Promise<unknown>, done: string | ((r: unknown) => string)): Promise<boolean> }) {
   const room = () => MESSAGES_CAP - props.info.session.budget.messagesMax;
   const [by, setBy] = createSignal(20);
   const valid = () => Number.isInteger(by()) && by() >= 1 && by() <= room();
@@ -339,7 +340,7 @@ function ExtendRow(props: { info: BatonInfo; act(fn: () => Promise<unknown>, don
           type="button"
           class="button button-sm"
           disabled={!valid()}
-          onClick={() => void props.act(() => extendBaton(props.info.session.sessionId, by()), `Limit raised to ${props.info.session.budget.messagesMax + by()} messages.`)}
+          onClick={() => void props.act(() => extendBaton(props.info.session.sessionId, by()), (r) => `Limit raised to ${(r as BatonInfo).session.budget.messagesMax} messages.`)}
         >
           Extend
         </button>

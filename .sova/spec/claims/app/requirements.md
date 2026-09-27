@@ -175,8 +175,9 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   root's checkout has checked out. Other staged or unstaged changes in the repo stay as they were.
   The message names the promoted decisions: "Promote 2 decisions: payroll export — Exports run on
   Fridays; approvals — Over $5,000 needs a second approver." (each area and statement, cut to 72
-  characters, at most 10 then "and 3 more"). The author is the repo's configured identity, else
-  `Sova <sova@localhost>`, as for the workspace repo's commits.
+  characters, at most 10 then "and 3 more"). It is authored and committed as `Sova
+  <sova@localhost>`, whatever git identity the host or the repo has, as the workspace repo's
+  commits are.
 - **Skipped, with the reason**, and the promotion itself still stands (its files stay written,
   uncommitted):
   - a file the promotion changed already differed from `HEAD` before it (a change Sova didn't make):

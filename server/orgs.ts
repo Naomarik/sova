@@ -29,6 +29,7 @@ import {
   type OwnerChange,
   type StakeholderChange,
 } from "../shared/orgs";
+import { heldElsewhere, heldSentence, hostIdentity, readHolder, writeHeld, writeReleased } from "./org-holder";
 import { setExtraSessionRoots } from "./paths";
 import { stateRoot } from "./state-root";
 import { commitEveryMs, type CommitTarget } from "./workspace-commits";
@@ -55,6 +56,8 @@ export class OrgError extends Error {
   constructor(
     message: string,
     readonly status: 400 | 404 | 409 = 400,
+    /** A refusal the client acts on by name (`held`: attach an org another host holds). */
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -308,14 +311,19 @@ export async function createOrg(input: { name: unknown; dir?: unknown }): Promis
   if (!existsSync(historyFile(dir))) writeFileSync(historyFile(dir), "");
   // sessions/ must be in the first commit so a clone has it: git keeps no empty dirs.
   if (!existsSync(join(dir, "sessions", ".gitkeep"))) writeFileSync(join(dir, "sessions", ".gitkeep"), "");
+  writeHeld(dir);
   const index = readIndex();
   writeIndex({ ...index, orgs: [...index.orgs, { id, dir, attachedAt: org.createdAt }] });
   await commitAll(dir, `Create organization ${name}`);
   return org;
 }
 
-/** Attach an existing workspace repo (a restored clone) to this host. */
-export async function attachOrg(input: { dir: unknown }): Promise<Org> {
+/**
+ * Attach an existing workspace repo (a restored clone) to this host. Another host holding it
+ * (§app.organizations/holder) refuses with `code: "held"` unless `confirm`; attached, this host
+ * holds it, committed and pushed at once.
+ */
+export async function attachOrg(input: { dir: unknown; confirm?: unknown }): Promise<Org> {
   const dir = typeof input.dir === "string" ? resolve(input.dir.trim()) : "";
   if (!dir) throw new OrgError("dir is required");
   const problem = await workspaceDirProblem(dir);
@@ -324,6 +332,10 @@ export async function attachOrg(input: { dir: unknown }): Promise<Org> {
   if (!org) throw new OrgError("No org.json in that dir: not a workspace repo.");
   const index = readIndex();
   if (index.orgs.some((o) => o.id === org.id)) throw new OrgError("That organization is already attached here.", 409);
+  if (input.confirm !== true) {
+    const held = await heldElsewhere(dir);
+    if (held) throw new OrgError(heldSentence(held), 409, "held");
+  }
   mkdirSync(join(dir, "sessions"), { recursive: true });
   // A restore or a move: every project overseer waits at L0 until the operator sets its level on this host.
   const paused = readProjectsFile(dir).map((p) => p.id);
@@ -334,14 +346,28 @@ export async function attachOrg(input: { dir: unknown }): Promise<Org> {
     } catch (err) {
       console.warn(`[orgs] after attach: ${err instanceof Error ? err.message : String(err)}`);
     }
+  writeHeld(dir);
+  await commitAll(dir, `Attached on ${hostIdentity().name}`);
   return org;
 }
 
-/** Remove the org from this host's index. The repo stays where it is, untouched. */
-export function detachOrg(orgId: string): void {
+/**
+ * Remove the org from this host's index at once; then release it in the repo (§app.organizations/
+ * holder), committed and pushed, best effort: a move's attach elsewhere then asks nothing.
+ */
+export async function detachOrg(orgId: string): Promise<void> {
   const index = readIndex();
-  if (!index.orgs.some((o) => o.id === orgId)) throw new OrgError("Unknown organization", 404);
+  const entry = index.orgs.find((o) => o.id === orgId);
+  if (!entry) throw new OrgError("Unknown organization", 404);
   writeIndex({ ...index, orgs: index.orgs.filter((o) => o.id !== orgId) });
+  try {
+    if (readHolder(entry.dir)?.host?.id !== hostIdentity().id) return;
+    writeReleased(entry.dir);
+    const out = await commitAll(entry.dir, `Released by ${hostIdentity().name}`);
+    if (out.error) console.warn(`[orgs] detach ${orgId}: ${out.error}`);
+  } catch (err) {
+    console.warn(`[orgs] detach ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 export function patchOrg(orgId: string, patch: { name?: unknown; about?: unknown }): Org {

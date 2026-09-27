@@ -71,7 +71,8 @@ describe("stream guard", () => {
     const K = 1024;
     assert.deepEqual(capsFor("baton"), { whitespaceRunChars: 8 * K, toolArgChars: 64 * K, outputChars: 256 * K, runWallMs: 600_000, starvedMs: 750, starvedMinArgChars: 128 * K });
     assert.deepEqual(capsFor("overseer"), { whitespaceRunChars: 8 * K, toolArgChars: 64 * K, outputChars: null, runWallMs: 600_000, starvedMs: 750, starvedMinArgChars: 128 * K });
-    assert.deepEqual(capsFor("project-overseer"), capsFor("overseer"));
+    // A project overseer's conversation is in the org's workspace repo: its replies are capped (a runaway once wrote a 537 MB line there).
+    assert.deepEqual(capsFor("project-overseer"), { ...capsFor("overseer"), outputChars: K * K });
     assert.deepEqual(capsFor(null), { whitespaceRunChars: 8 * K, toolArgChars: K * K, outputChars: null, runWallMs: null, starvedMs: 750, starvedMinArgChars: 128 * K });
     assert.equal(BATON_RUN_WALL_MS, 600_000);
   });

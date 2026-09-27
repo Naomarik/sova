@@ -171,6 +171,10 @@ tool cards as they happen.
   branch is the one it merges back into. The project root's checkout is never switched, and the
   session's cwd is the worktree (or, for a folder inside the root, the same folder inside the
   worktree).
+- **Told to commit.** Such a session's first prompt ends with a paragraph Sova adds: "You work in
+  your own git worktree on the branch {branch}. Commit your work on this branch before you end
+  your turn: uncommitted changes can't be merged." A session run in the project root (no
+  worktree) gets no such paragraph.
 - **Names.** Branch `sova/<name>`, worktree `<parent of the repo's top level>/.worktrees/<repo
   folder name>-<name>`, outside the project root, as the `worktree` tool places its own
   (§chat.worktrees/tool). `<name>` is a slug of the session's title (the item's title, or the
@@ -192,6 +196,11 @@ tool cards as they happen.
   its branch can still be merged. The tool result and the Start coding session answer name the branch and the path.
   `path` is this host's, like the row's session path: on a host where it doesn't exist the row
   shows the branch only, and no gesture acts on it ("On another host: its worktree is there.").
+  Each row records a title when its session starts (the title given, else the first prompt's
+  first line); the list shows a title given on this host first (a rename), else that one. A row
+  whose session is not on this host is on another host, whatever its worktree path: it shows that
+  title, not as a link, and "On another host: its worktree is there.", never "Worktree folder
+  missing".
 - **The project page lists them.** "Coding sessions" lists every coding session the project started
   (the overseer's and the operator's), newest first: title (a link on this host), who started it,
   state, and its branch in mono, then **Merge Branch** and **Remove Worktree**; "Sessions it
@@ -202,7 +211,11 @@ tool cards as they happen.
   possible, else a merge commit ("Merge sova/<name>: <title>"). A conflict is aborted and reported,
   changing nothing. It is refused while the session is working or has workers running, while the
   worktree has uncommitted changes (they would be left out of the merge), and when the branch has
-  no commits beyond `target`. After it the row says "Merged into <target>" with the time.
+  no commits beyond `target`. After it the row says "Merged into <target>" with the time. A merge
+  refused for the worktree or the branch (uncommitted changes, a conflict, nothing to merge, a
+  branch gone, git's own failure) is also a reason for the overseer to look
+  (§app.project-overseer/watch-loop), so it can tell the session to commit or fix it; a refusal
+  about the project root's own checkout, or a busy session, is the operator's and is not.
 - **Remove Worktree** removes the worktree folder (git's own `worktree remove`; one with
   uncommitted changes is refused, naming them) and deletes the branch only when it is merged; an
   unmerged branch keeps its commits, and Merge Branch stays on its row. It is refused while the
@@ -217,7 +230,11 @@ tool cards as they happen.
 
 - A gathering session reaching its goal or closing, a referral, a coding session it started
   finishing a turn ('The coding session "{title}" finished its turn.', or "…stopped with an error."),
-  and the reconciler's conflicts, resolutions, drafts and promotions are noted as reasons to look
+  a gathering session it started handing the baton to the operator (its model's `hand_to`, never
+  the operator's own Take back or the message limit: 'The gathering session "{title}" handed a
+  question to the operator (their words, as data): "{question}"'), Merge Branch refused on one of the project's coding
+  sessions ('Merge Branch for "{title}" was refused: {reason}'), and the reconciler's conflicts,
+  resolutions, drafts and promotions are noted as reasons to look
   (its own acts, made while it runs, are not). A decision recorded while its gathering session is
   still open is not a reason: the session reaching its goal is. A coding session the operator
   started (Start coding session) never is.
@@ -225,8 +242,9 @@ tool cards as they happen.
   (§app.organizations/portability), an idle overseer, ≥ 10 minutes since its last unattended look
   and under the daily limit gets one unattended run, which lists the reasons and asks it to
   re-read the project, infer gaps and act within its level.
-- **Sooner for three reasons.** A gathering session reaching its goal, a coding session it started
-  finishing a turn, and a promotion the operator made start that run once 60 s have passed since
+- **Sooner for five reasons.** A gathering session reaching its goal, a gathering session it
+  started handing the baton to the operator, a coding session it started finishing a turn, a
+  refused Merge Branch and a promotion the operator made start that run once 60 s have passed since
   the first of them was noted, without waiting for the 10-minute gap; everything else about the run
   (the daily limit, watching on, not paused, an idle overseer) still holds, and the run lists every
   reason waiting.

@@ -36,6 +36,11 @@ html, body, #root { height: 100%; }
   content-visibility: auto;
   contain-intrinsic-block-size: auto var(--entry-est, 120px);
 }
+/* Whole pixels: a row added above the view moves the scroll by its estimate, and a fraction there
+   shows as the view shaking by a pixel while the older rows are built. */
+@supports (width: round(1.5px, 1px)) {
+  .entry { contain-intrinsic-block-size: auto round(var(--entry-est, 120px), 1px); }
+}
 .entry:empty { display: none; }
 .entry:hover,
 .entry:focus-within,

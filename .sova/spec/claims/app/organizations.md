@@ -124,7 +124,9 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   link.
 - **Width.** Under 480px of pane width the tabs tighten (`--space-1` padding and gap), so the four
   fit a 420px window with two-digit counts; narrower, the strip scrolls sideways and the selected
-  tab is scrolled into view whole.
+  tab is scrolled into view whole. A section's heading (on an org, project or person page) keeps
+  its whole word: when it and its buttons don't fit one line, the buttons wrap below it rather
+  than cutting it off.
 - **Live.** The page re-reads its org every 10 seconds while the browser tab shows (paused while
   hidden, at once when shown again), so a session that finishes, closes or changes hands
   elsewhere updates its row (`With <holder>`, the state chip) without a reload; each read is

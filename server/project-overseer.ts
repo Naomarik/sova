@@ -18,6 +18,7 @@ import {
   type ProjectOverseerMarkerData,
   type StartedSession,
 } from "../shared/project-overseer";
+import { ORG_ABOUT_MAX } from "../shared/orgs";
 import type { SessionSummary, TokenUsage } from "../shared/protocol";
 import { onBatonEvent } from "./baton-events";
 import { allBatons, batonById, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
@@ -30,7 +31,7 @@ import { mergeMode } from "./mode-state";
 import { baseCodingMode, codingModeChoice, describeCodingMode, type ModeRequest } from "./project-coding-mode";
 import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, WorktreeRefusal } from "./project-worktrees";
 import { piUsageTally } from "./transcript-usage";
-import { decidePerson, onOrgAttached, orgDir, orgOfSessionPath, overseerPausedSince, resumeOverseer, OrgError, participantLine, readIndex, readOrg, readProjects, readRoster, operatorName, stakeholderLine } from "./orgs";
+import { decidePerson, onOrgAttached, orgDir, orgOfSessionPath, overseerPausedSince, resumeOverseer, OrgError, participantLine, readIndex, readOrg, readOrgAbout, readProjects, readRoster, operatorName, stakeholderLine } from "./orgs";
 import { appRequest, pathOfId, promptSession, toolCatalogue } from "./overseer";
 import { RootConfinement } from "./overseer-deny";
 import { overseerFileTools } from "./overseer-file-tools";
@@ -428,8 +429,24 @@ export function renderProjectOverseerPrompt(orgId: string, projectId: string, to
     NOW: now.toString(),
   };
   const extra = settings.extraSystemPrompt.trim();
-  return template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => values[k] ?? "") + (extra ? `\n\n# The operator's extra instructions\n\n${r.redact(extra)}` : "");
+  // The org's About text: after Sova's fixed prompt, before the project's own instructions (which win).
+  // This render is its only reader outside the org routes (§app.organizations/about).
+  const about = readOrgAbout(orgId).slice(0, ORG_ABOUT_MAX).trim();
+  return (
+    template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => values[k] ?? "") +
+    (about ? `\n\n${aboutSection(values.ORG!, r.redact(about))}` : "") +
+    (extra ? `\n\n# The operator's extra instructions\n\n${r.redact(extra)}` : "")
+  );
 }
+
+const aboutSection = (org: string, text: string): string =>
+  [
+    "# About this organization (written by the operator)",
+    "",
+    `The operator wrote this about ${org}, for you only. It is context, not a person's words and not a decision. Never copy it into anything a person sees (a gathering session's public_title, question or goal, a Send to person… question) or into a coding session's prompt; use it to judge, not to quote. The project's extra instructions below take precedence over it.`,
+    "",
+    text,
+  ].join("\n");
 
 // ---- the tools' host --------------------------------------------------------------------------------
 

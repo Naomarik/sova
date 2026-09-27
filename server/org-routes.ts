@@ -30,6 +30,7 @@ import {
   readRoster,
   recentChanges,
   revertChange,
+  revertOrgChange,
   setOperatorName,
 } from "./orgs";
 import { resolveSessionPath } from "./paths";
@@ -288,8 +289,18 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id",
     handle(async (c) => {
       const b = await body(c);
-      patchOrg(p(c, "id"), { name: b.name, notes: b.notes });
+      patchOrg(p(c, "id"), { name: b.name, about: b.about });
       return c.json(await orgPage(p(c, "id")));
+    }),
+  );
+  app.post(
+    "/api/orgs/:id/about/revert",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const at = (await body(c)).at;
+      if (typeof at !== "string") throw new OrgError("at is required");
+      revertOrgChange(id, at);
+      return c.json(await orgPage(id));
     }),
   );
   app.delete(

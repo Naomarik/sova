@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AttentionItem } from "../shared/protocol";
 import {
+  ORG_ABOUT_MAX,
   PERSON_ITEM_MAX,
   PERSON_LIST_MAX,
   PERSON_NAME_MAX,
@@ -12,6 +13,7 @@ import {
   type Competence,
   type Org,
   type OrgBatonRow,
+  type OrgChange,
   type OrgDetail,
   type OrgProject,
   type OrgsInfo,
@@ -37,7 +39,8 @@ import { commitAll, gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./
  * - This host's index, `<stateRoot>/orgs.json`: which orgs are ATTACHED here (resident) and where
  *   their workspace repos are, which project overseers are paused since an attach, plus the
  *   operator's display name. Host state, never committed.
- * - Each org's workspace repo: `org.json`, `roster.json`, `roster-history.jsonl`, `projects.json`,
+ * - Each org's workspace repo: `org.json`, `about.md` and `org-history.jsonl` (the org's About text
+ *   and its history), `roster.json`, `roster-history.jsonl`, `projects.json`,
  *   `baton.json` (server/baton.ts), `sessions/` (baton and project-overseer transcripts) and
  *   `projects/<pid>/` (decisions, conflicts, the project overseer's files). It is the org's whole
  *   portable state, committed hourly (server/workspace-commits.ts); nothing secret is ever written there.
@@ -232,7 +235,6 @@ function readOrgFile(dir: string): Org | null {
     name: raw.name,
     slug: typeof raw.slug === "string" ? raw.slug : slugOf(raw.name),
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : "",
-    ...(typeof raw.notes === "string" && raw.notes ? { notes: raw.notes } : {}),
   };
 }
 
@@ -335,21 +337,100 @@ export function detachOrg(orgId: string): void {
   writeIndex({ ...index, orgs: index.orgs.filter((o) => o.id !== orgId) });
 }
 
-export function patchOrg(orgId: string, patch: { name?: unknown; notes?: unknown }): Org {
+export function patchOrg(orgId: string, patch: { name?: unknown; about?: unknown }): Org {
   const dir = orgDir(orgId);
   const org = readOrg(orgId);
+  const about = patch.about === undefined ? undefined : cleanAbout(patch.about);
   if (patch.name !== undefined) {
     const name = typeof patch.name === "string" ? patch.name.trim() : "";
     if (!name || name.length > PERSON_NAME_MAX) throw new OrgError(`name must be 1–${PERSON_NAME_MAX} characters`);
     org.name = name;
+    writeOrgFile(dir, org);
   }
-  if (patch.notes !== undefined) {
-    if (typeof patch.notes !== "string" || patch.notes.length > 4000) throw new OrgError("notes must be text of at most 4000 characters");
-    if (patch.notes.trim()) org.notes = patch.notes;
-    else delete org.notes;
-  }
-  writeOrgFile(dir, org);
+  if (about !== undefined) writeAbout(dir, about);
   return org;
+}
+
+// ---- the org's About text (§app.organizations/about) ------------------------------------------------
+//
+// The operator's context for the org's project overseers, and for nothing else. It is its own file,
+// never a field of `Org`, so nothing that reads the org carries it; readOrgAbout is its one reader,
+// called only by orgDetail (the operator's page) and the project overseer's prompt
+// (server/org-about-privacy.test.ts fails on any other).
+
+const aboutFile = (dir: string) => join(dir, "about.md");
+const orgHistoryFile = (dir: string) => join(dir, "org-history.jsonl");
+const ABOUT_HISTORY_ON_DETAIL = 20;
+
+function cleanAbout(v: unknown): string {
+  if (typeof v !== "string") throw new OrgError("about must be text");
+  const t = v.trim();
+  if (t.length > ORG_ABOUT_MAX) throw new OrgError(`about must be at most ${ORG_ABOUT_MAX.toLocaleString("en-US")} characters`);
+  return t;
+}
+
+function readAboutFile(dir: string): string {
+  try {
+    return readFileSync(aboutFile(dir), "utf8");
+  } catch {
+    return "";
+  }
+}
+
+/** The org's About text as the file holds it ("" = none); a hand edit may pass the cap. */
+export function readOrgAbout(orgId: string): string {
+  return readAboutFile(orgDir(orgId)).trim();
+}
+
+function readOrgHistoryFile(dir: string): OrgChange[] {
+  let text: string;
+  try {
+    text = readFileSync(orgHistoryFile(dir), "utf8");
+  } catch {
+    return [];
+  }
+  const out: OrgChange[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const c = JSON.parse(line);
+      if (isObj(c) && typeof c.at === "string" && c.field === "about" && typeof c.from === "string" && typeof c.to === "string") out.push(c as unknown as OrgChange);
+    } catch {
+      // a torn line: skip
+    }
+  }
+  return out;
+}
+
+/** The About text's history, oldest first. */
+export function readOrgHistory(orgId: string): OrgChange[] {
+  return readOrgHistoryFile(orgDir(orgId));
+}
+
+/** THE writer of about.md: one history line first, then the file (blank removes it). The same text writes nothing. */
+function writeAbout(dir: string, to: string, revertOf?: string): void {
+  const from = readAboutFile(dir).trim();
+  if (from === to) return;
+  const history = readOrgHistoryFile(dir);
+  let t = Date.now();
+  const lastAt = history.length ? Date.parse(history[history.length - 1]!.at) : 0;
+  if (t <= lastAt) t = lastAt + 1;
+  const line: OrgChange = { at: new Date(t).toISOString(), field: "about", from, to, by: { kind: "operator" }, ...(revertOf ? { revertOf } : {}) };
+  appendFileSync(orgHistoryFile(dir), `${JSON.stringify(line)}\n`);
+  if (!to) rmSync(aboutFile(dir), { force: true });
+  else {
+    const tmp = `${aboutFile(dir)}.${process.pid}.tmp`;
+    writeFileSync(tmp, to);
+    renameSync(tmp, aboutFile(dir));
+  }
+}
+
+/** Set the About text back to history line `at`'s `from`, as a new operator change. */
+export function revertOrgChange(orgId: string, at: string): void {
+  const dir = orgDir(orgId);
+  const line = readOrgHistoryFile(dir).find((c) => c.at === at);
+  if (!line) throw new OrgError("No such change", 404);
+  writeAbout(dir, line.from, at);
 }
 
 // ---- roster ------------------------------------------------------------------------------------------
@@ -860,6 +941,7 @@ export async function orgDetail(orgId: string): Promise<OrgDetail> {
   const roster = readRosterFile(dir);
   if (roster.problem) problems.push(roster.problem);
   const projectList = readProjectsFile(dir);
+  const about = readOrgAbout(orgId);
   return {
     ...(org ?? { id: orgId, name: orgId, slug: orgId, createdAt: "" }),
     id: orgId,
@@ -873,6 +955,8 @@ export async function orgDetail(orgId: string): Promise<OrgDetail> {
     git: { ...(await gitStatus(dir)), commitEveryMs: commitEveryMs() },
     recentChanges: recentChanges(orgId, 20, roster.people),
     problems,
+    ...(about ? { about } : {}),
+    aboutHistory: readOrgHistory(orgId).slice(-ABOUT_HISTORY_ON_DETAIL).reverse(),
   };
 }
 

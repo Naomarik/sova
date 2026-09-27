@@ -10,7 +10,9 @@
  * PUT    /api/orgs/operator                 body { name } -> OrgsInfo
  * GET    /api/orgs/:id                      -> OrgDetail (with needsYou, each baton's waiting, projectConflicts;
  *                                               so is every route below that answers OrgDetail)
- * PATCH  /api/orgs/:id                      body { name?, notes? } -> OrgDetail
+ * PATCH  /api/orgs/:id                      body { name?, about? } -> OrgDetail (about: the org's About text,
+ *                                               at most ORG_ABOUT_MAX characters; blank removes it)
+ * POST   /api/orgs/:id/about/revert         body { at } -> OrgDetail (the About text back to that line's `from`)
  * DELETE /api/orgs/:id                      -> { ok: true } (detach: removes it from this host's index only)
  * POST   /api/orgs/:id/commit               -> OrgDetail (Commit now; pushes when a remote is set)
  * PUT    /api/orgs/:id/remote               body { url } ("" removes it) -> OrgDetail
@@ -138,7 +140,22 @@ export interface Org {
   name: string;
   slug: string;
   createdAt: string;
-  notes?: string;
+}
+
+/** The most characters of the org's About text (`about.md`, §app.organizations/about). */
+export const ORG_ABOUT_MAX = 4000;
+
+/** One line of `org-history.jsonl`, append-only: a change of the org's About text. */
+export interface OrgChange {
+  /** ISO time; unique per org, the key Revert names. */
+  at: string;
+  field: "about";
+  /** "" = none. */
+  from: string;
+  to: string;
+  by: { kind: "operator" };
+  /** The `at` of the change this undoes. */
+  revertOf?: string;
 }
 
 export interface OrgGitStatus {
@@ -208,6 +225,11 @@ export interface OrgDetail extends OrgSummary {
   recentChanges: NamedChange[];
   /** Any file problem reading the repo (a hand-edited roster that doesn't parse). */
   problems: string[];
+  /** The org's About text, whole (a hand edit may pass the cap); absent when none. Only on the
+      detail: never on `Org` or `OrgSummary`. */
+  about?: string;
+  /** Its history, newest first, at most 20. */
+  aboutHistory?: OrgChange[];
   /** From the org routes: open conflicts routed to the operator with no session yet, per project id
       (projects with none are absent). */
   projectConflicts?: Record<string, number>;

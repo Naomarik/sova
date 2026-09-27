@@ -859,7 +859,9 @@ export const createOrg = (name: string, dir?: string) => request<OrgDetail>("/ap
 export const attachOrg = (dir: string) => request<OrgDetail>("/api/orgs/attach", jsonInit("POST", { dir }));
 export const setOperatorName = (name: string) => request<OrgsInfo>("/api/orgs/operator", jsonInit("PUT", { name }));
 export const getOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`);
-export const patchOrg = (id: string, patch: { name?: string; notes?: string }) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("PATCH", patch));
+export const patchOrg = (id: string, patch: { name?: string; about?: string }) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("PATCH", patch));
+/** The org's About text back to history line `at`'s `from` (§app.organizations/about). */
+export const revertOrgAbout = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/about/revert`, jsonInit("POST", { at }));
 export const detachOrg = (id: string) => request<{ ok: true }>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("DELETE"));
 export const commitOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/commit`, jsonInit("POST"));
 export const setOrgRemote = (id: string, url: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/remote`, jsonInit("PUT", { url }));

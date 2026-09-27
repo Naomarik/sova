@@ -148,6 +148,16 @@
 .orgs-change-fields .orgs-change + .orgs-change { border-top: 0; }
 .orgs-changes-filter { flex: none; min-width: 10rem; }
 
+/* About this organization (§app.organizations/about): the field, then its counter and buttons on one
+   row that wraps; each history row's text starts on one line, in full under Before and after. */
+.orgs-about-form { display: flex; flex-direction: column; gap: var(--space-2); }
+.orgs-about-text { min-height: 8rem; resize: vertical; }
+.orgs-about-foot { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.orgs-about-over { color: var(--status-warn); }
+.orgs-about-preview { color: var(--color-ink); overflow-wrap: anywhere; }
+.orgs-about-diff { display: flex; flex-direction: column; gap: var(--space-1); padding-top: var(--space-1); }
+.orgs-about-full { margin: 0 0 var(--space-2); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-ink-2); }
+
 /* The head's meta line (org and project pages): the way back stays whole, the long path takes the "…". */
 .session-head-meta > .orgs-meta-link { flex: none; }
 .session-head-meta > .orgs-meta-path { flex: 1 1 auto; overflow-wrap: normal; }

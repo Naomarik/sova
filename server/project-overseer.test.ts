@@ -479,3 +479,51 @@ describe("thinking levels a model doesn't offer", () => {
     assert.equal(readFileSync(p.settings, "utf8"), before);
   });
 });
+
+describe("the org's About text in its prompt (§app.organizations/about)", async () => {
+  const org = await orgs.createOrg({ name: "Aboutco", dir: join(root, "ws6") });
+  mkdirSync(join(root, "proj6"));
+  const project = orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj6") });
+  await po.ensureProjectOverseer(org.id, project.id);
+  const HEAD = "# About this organization (written by the operator)";
+  const EXTRA = "# The operator's extra instructions";
+  after(() => settled(join(root, "ws6")));
+
+  test("none: no section at all; the fixed rule is there anyway", () => {
+    const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
+    assert.ok(!prompt.includes(HEAD));
+    assert.match(prompt, /^- "About this organization", when your prompt has it, is the operator's private context: use it to\n\s+judge, never quote or copy it/m, "the rule line stands before any text exists");
+  });
+
+  test("after the fixed prompt, before the extra instructions; re-read at every render", async () => {
+    orgs.patchOrg(org.id, { about: "ABOUT-ONE: they close the books on the 5th." });
+    await po.patchProjectOverseer(org.id, project.id, { extraSystemPrompt: "EXTRA-ONE: be terse." });
+    const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
+    const at = prompt.indexOf(HEAD);
+    assert.ok(at > prompt.indexOf("## Tools"), "after the fixed prompt");
+    assert.ok(at < prompt.indexOf(EXTRA), "before the extra instructions");
+    assert.ok(prompt.indexOf("ABOUT-ONE") > at && prompt.indexOf("ABOUT-ONE") < prompt.indexOf(EXTRA));
+    assert.match(prompt, /The operator wrote this about Aboutco, for you only\./);
+    assert.match(prompt, /The project's extra instructions below take precedence over it\./);
+    orgs.patchOrg(org.id, { about: "ABOUT-TWO" });
+    const next = po.renderProjectOverseerPrompt(org.id, project.id, []);
+    assert.ok(next.includes("ABOUT-TWO") && !next.includes("ABOUT-ONE"), "the next run reads the new text");
+    await po.patchProjectOverseer(org.id, project.id, { extraSystemPrompt: "" });
+    assert.ok(po.renderProjectOverseerPrompt(org.id, project.id, []).trimEnd().endsWith("ABOUT-TWO"), "last when there are no extra instructions");
+  });
+
+  test("clipped to 4,000 characters; secrets redacted", () => {
+    writeFileSync(join(orgs.orgDir(org.id), "about.md"), `${"a".repeat(3999)}BCDEF`);
+    const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
+    assert.ok(prompt.includes(`${"a".repeat(3999)}B`) && !prompt.includes("BC"), "only the first 4,000 characters");
+    const key = "rdAboutKey-7fQ2mZ9xL4vN8pR1sT6uW3yA5bC0dE";
+    writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ about: { type: "api_key", key } }));
+    orgs.patchOrg(org.id, { about: `The staging key is ${key}.` });
+    const redacted = po.renderProjectOverseerPrompt(org.id, project.id, []);
+    assert.ok(!redacted.includes(key), "a secret is redacted");
+    assert.match(redacted, /The staging key is \S+\./);
+    rmSync(join(agentDir, "auth.json"));
+    orgs.patchOrg(org.id, { about: "" });
+    assert.ok(!po.renderProjectOverseerPrompt(org.id, project.id, []).includes(HEAD), "cleared: the section goes");
+  });
+});

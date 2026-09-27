@@ -7,7 +7,9 @@ subagents (subagents + sessions live records), and per-session summaries (topic-
 compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in
 `shared/protocol.ts`. **Every status says where it came from**: live-sourced states can pulse,
 while reported states (read from a session file after the fact) never pulse and carry
-"as of `14:06`".
+"as of `14:06`". A live record lists at most 40 workers, live ones first and then the newest
+(§app.subagents-pane/hidden-workers), so a count is always read from its `workerCounts` and a
+working worker is never the one it leaves out.
 
 ## §app.insights/placement — Placement
 

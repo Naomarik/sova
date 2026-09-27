@@ -56,6 +56,7 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
+import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
@@ -883,6 +884,27 @@ export const addOrgProject = (id: string, name: string, root: string) => request
 /** Set or clear a project's main stakeholder (a roster person's id, or null for none). */
 export const setProjectStakeholder = (id: string, pid: string, stakeholder: string | null) =>
   request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}`, jsonInit("PATCH", { stakeholder }));
+
+// ---- the org's owner and the Owner page (§app/owner-page; routes in shared/owner.ts) ----
+/** Set the org's owner (an active roster person's id), or none. */
+export const setOrgOwner = (id: string, personId: string | null) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/owner`, jsonInit("PUT", { personId }));
+/** Mint the owner's link, shown once; the older one stops at once. */
+export const ownerLink = (id: string) => request<OwnerLinkResult>(`/api/orgs/${encodeURIComponent(id)}/owner/link`);
+export const revokeOwnerLink = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/owner/revoke`, jsonInit("POST"));
+/** The Owner page as the owner sees it (Home, a project `q_…`, a conversation `k_…`); no token, no visit. */
+export const previewOwnerPage = (id: string, at?: { project?: string; c?: string }) =>
+  request<OwnerHome | OwnerProject | OwnerConversation>(
+    `/api/orgs/${encodeURIComponent(id)}/owner/preview${at?.project ? `?project=${encodeURIComponent(at.project)}` : at?.c ? `?c=${encodeURIComponent(at.c)}` : ""}`,
+  );
+/** Show this project on the owner's page, or not. */
+export const setProjectOwnerHidden = (id: string, pid: string, ownerHidden: boolean) =>
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}`, jsonInit("PATCH", { ownerHidden }));
+/** Hide one conversation from the owner's page, or show it again. */
+export const setBatonHiddenFromOwner = (sid: string, hidden: boolean) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/owner`, jsonInit("POST", { hidden }));
+/** The project's updates on the owner's page, newest first, withdrawn ones included. */
+export const getProjectUpdates = (id: string, pid: string) => request<ProjectUpdate[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/updates`);
+export const withdrawProjectUpdate = (id: string, pid: string, uid: string) =>
+  request<ProjectUpdate[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/updates/${encodeURIComponent(uid)}/withdraw`, jsonInit("POST"));
 
 export const startBaton = (input: BatonStartInput) => request<BatonStartResult>("/api/baton", jsonInit("POST", input));
 export const getBaton = (path: string) => request<BatonInfo>(`/api/baton?path=${encodeURIComponent(path)}`);

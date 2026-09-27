@@ -2,7 +2,7 @@ import { createMemo, createResource, createSignal, For, onMount, Show } from "so
 import { Portal } from "solid-js/web";
 import { OPERATOR, type BatonView, type BatonViewItem } from "../../shared/baton";
 import type { Person, PersonInput, PersonPage as PersonPageData, PersonSessionRow, ProfileChange, VisitRow } from "../../shared/orgs";
-import { ApiError, approvePerson, batonLink, declinePerson, getOrg, getPersonPage, inviteeLink, patchPerson, previewAsPerson, revertPersonChange, revokePersonLinks } from "../lib/api";
+import { ApiError, approvePerson, batonLink, declinePerson, getOrg, getPersonPage, inviteeLink, patchPerson, previewAsPerson, revertPersonChange, revokeOwnerLink, revokePersonLinks } from "../lib/api";
 import { proposedAreasLine } from "../lib/baton-strip";
 import { DECISION_STATE } from "../lib/decisions-view";
 import { relativeIn, relativeTime, stampTime } from "../lib/format";
@@ -15,6 +15,7 @@ import {
   holdLine,
   leftAt,
   LINK_STATE,
+  OWNER_LINK_STATE,
   linkLive,
   messagesLine,
   relationWords,
@@ -130,7 +131,14 @@ export function PersonPage(props: { orgId: string; personId: string; titleRef(el
       }
       titleAfter={
         <Show when={person()}>
-          {(p) => <Chip tone={STATUS_CHIP[p().status]?.tone}>{STATUS_CHIP[p().status]?.word ?? p().status}</Chip>}
+          {(p) => (
+            <>
+              <Chip tone={STATUS_CHIP[p().status]?.tone}>{STATUS_CHIP[p().status]?.word ?? p().status}</Chip>
+              <Show when={page.data()?.owner}>
+                <Chip tone="accent">Owner</Chip>
+              </Show>
+            </>
+          )}
         </Show>
       }
       back={{ href: orgTabHref(props.orgId, "people"), label: "People" }}
@@ -606,6 +614,44 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                           Turn Off Link
                         </button>
                       </Show>
+                    </div>
+                  </Show>
+                </li>
+              );
+            }}
+          </For>
+        </ul>
+      </Show>
+      <Show when={props.data.ownerLinks?.length}>
+        <h3 class="orgs-h3">Owner links</h3>
+        <ul class="list person-list">
+          <For each={props.data.ownerLinks}>
+            {(l) => {
+              const st = () => OWNER_LINK_STATE[l.state];
+              return (
+                <li class="person-row">
+                  <div class="person-row-head">
+                    <span class="person-row-title">The owner page</span>
+                    <Chip tone={st().tone}>{st().word}</Chip>
+                  </div>
+                  <span class="list-meta person-row-meta">
+                    sent <time title={exact(l.createdAt)}>{relativeTime(l.createdAt, props.now)}</time>
+                    <Show when={l.state === "live" && relativeIn(l.expiresAt, props.now)}>
+                      {(inRel) => (
+                        <>
+                          {" · expires "}
+                          <time title={exact(l.expiresAt)}>{inRel()}</time>
+                        </>
+                      )}
+                    </Show>
+                    {" · "}
+                    {plural(l.visits, "visit")}
+                  </span>
+                  <Show when={l.state === "live"}>
+                    <div class="button-row person-row-actions">
+                      <button type="button" class="button button-sm button-ghost" onClick={() => void props.act(() => revokeOwnerLink(props.data.org.id), "Owner link turned off.")}>
+                        Turn Off Owner Link
+                      </button>
                     </div>
                   </Show>
                 </li>

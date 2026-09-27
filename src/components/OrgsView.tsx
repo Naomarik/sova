@@ -35,6 +35,7 @@ import { orgTabsOf } from "../lib/org-tabs";
 import { toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { LinksBanner } from "./LinksBanner";
+import { OwnerCard } from "./OwnerCard";
 import { PersonForm } from "./PersonForm";
 import { PersonPage } from "./PersonPage";
 import { ProjectPage } from "./ProjectPage";
@@ -323,6 +324,7 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
                   />
                 </Match>
                 <Match when={tab() === "people"}>
+                  <OwnerCard org={o()} act={act} />
                   <PeopleSection org={o()} act={act} />
                   <ChangesSection org={o()} act={act} />
                 </Match>

@@ -10,7 +10,8 @@ import { orgHref, rememberStartParent, startForHref } from "../lib/orgs-route";
 import { announce, toast } from "../lib/ui-state";
 import { LinksBanner } from "./LinksBanner";
 import { createMemo, onCleanup } from "solid-js";
-import { retryWrapup } from "../lib/api";
+import { retryWrapup, setBatonHiddenFromOwner } from "../lib/api";
+import { firstName } from "../lib/person-page";
 import { Banner, Chip } from "./ui";
 import "../orgs.css";
 
@@ -140,6 +141,23 @@ export function BatonStrip(props: {
                 Hand On…
               </button>
             </Show>
+            {/* Hide From / Show To the org's owner (§app.owner-page/controls): this conversation on their page. */}
+            <Show when={i().owner}>
+              {(o) => (
+                <button
+                  type="button"
+                  class="button button-sm button-ghost"
+                  aria-pressed={i().session.hiddenFromOwner ? "true" : "false"}
+                  onClick={() => {
+                    const hide = !i().session.hiddenFromOwner;
+                    const first = firstName(o().name);
+                    void act(() => setBatonHiddenFromOwner(sid(), hide), hide ? `Hidden from ${first}'s owner page.` : `Shown on ${first}'s owner page.`);
+                  }}
+                >
+                  {i().session.hiddenFromOwner ? `Show To ${firstName(o().name)}` : `Hide From ${firstName(o().name)}`}
+                </button>
+              )}
+            </Show>
             <Show when={i().session.state !== "closed"}>
               <button
                 type="button"
@@ -156,6 +174,9 @@ export function BatonStrip(props: {
               </button>
             </Show>
           </div>
+          <Show when={i().owner && i().session.hiddenFromOwner}>
+            <p class="baton-strip-areas">Hidden from {firstName(i().owner!.name)}'s owner page.</p>
+          </Show>
           <Show when={open(i()) && spent(i())}>
             <ExtendRow info={i()} act={act} />
           </Show>

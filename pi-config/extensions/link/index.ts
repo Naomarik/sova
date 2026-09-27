@@ -61,8 +61,11 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 
 	const sessionOf = (ctx: ExtensionContext): string => ctx.sessionManager.getSessionId();
 	const text = (t: string, details: unknown = {}) => ({ content: [{ type: "text" as const, text: t }], details });
-	const refusal = (e: unknown) => {
-		if (e instanceof LinkHostError) return text(e.reason && UNLINKED_REASONS.has(e.reason) ? `${NOT_LINKED} (${e.message})` : e.message, { error: e.reason ?? e.status });
+	/** `asIs`: an answer about one offer, whose host sentence says it all ("No file offer of_… for
+	    this session." carries `not-member` but says nothing about the session's links). */
+	const refusal = (e: unknown, asIs = false) => {
+		if (e instanceof LinkHostError)
+			return text(!asIs && e.reason && UNLINKED_REASONS.has(e.reason) ? `${NOT_LINKED} (${e.message})` : e.message, { error: e.reason ?? e.status });
 		throw e;
 	};
 
@@ -228,7 +231,7 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 				const o = await c.accept(params.offer, { session, dest: params.dest }, signal);
 				return text(renderAnswer(o, session, await names(c, session, signal)), { offer: o });
 			} catch (e) {
-				return refusal(e);
+				return refusal(e, true);
 			}
 		},
 	});
@@ -255,7 +258,7 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 				const o = await c.decline(params.offer, { session, ...(params.reason?.trim() ? { reason: params.reason.trim() } : {}) }, signal);
 				return text(renderAnswer(o, session, await names(c, session, signal)), { offer: o });
 			} catch (e) {
-				return refusal(e);
+				return refusal(e, true);
 			}
 		},
 	});

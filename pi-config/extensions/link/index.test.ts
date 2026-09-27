@@ -178,4 +178,7 @@ test("link_offers lists both directions; an unknown offer is the host's sentence
 	assert.match(out, /of_0123456789abcdef on lk_a, from box\/s-b/);
 	assert.match(out, /Answer with link_accept/);
 	assert.equal(await r.run("link_decline", { offer: OF }), "No offer of_0123456789abcdef for this session.");
+	// The host names an unknown offer with reason not-member: shown as is, not as "in no link".
+	r.answers.push({ status: 404, body: { error: "No file offer of_0123456789abcdef for this session.", reason: "not-member" } });
+	assert.equal(await r.run("link_accept", { offer: OF, dest: "in" }), "No file offer of_0123456789abcdef for this session.");
 });

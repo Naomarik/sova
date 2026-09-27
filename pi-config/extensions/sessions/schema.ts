@@ -406,6 +406,22 @@ export function isFinishedWorker(worker: WorkerEntry): boolean {
   return s === "done" || s === "error" || s === "killed";
 }
 
+/** Settled for the record's purposes: finished, or known only from its durable record. */
+function settledWorker(worker: WorkerEntry): boolean {
+  return isFinishedWorker(worker) || isRestoredWorker(worker) || worker.restored === true;
+}
+
+/** The rows the record carries, in the order it carries them: live workers first (starting,
+ *  running, stopping, waiting), then the rest, each newest first (startedAt, then later spawn),
+ *  capped at MAX_WORKERS. So the cap and fit() drop old settled workers, never a working one. */
+export function presenceWorkers(workers: readonly WorkerEntry[]): WorkerEntry[] {
+  return workers
+    .map((w, i) => ({ w, i, live: !settledWorker(w) }))
+    .sort((a, b) => Number(b.live) - Number(a.live) || (b.w.startedAt ?? 0) - (a.w.startedAt ?? 0) || b.i - a.i)
+    .slice(0, MAX_WORKERS)
+    .map(x => x.w);
+}
+
 export function countWorkers(workers: WorkerEntry[]): WorkerCounts {
   const counts: WorkerCounts = { total: 0, working: 0, waiting: 0, done: 0, error: 0, killed: 0 };
   for (const w of workers) {
@@ -421,8 +437,10 @@ export function countWorkers(workers: WorkerEntry[]): WorkerCounts {
 const bytes = (record: LiveRecord) => Buffer.byteLength(JSON.stringify(record));
 
 /** Enforce the TOTAL serialized UTF-8 budget. Drop order: outline.detail,
- *  activity.buckets, preview → 600 chars, outline.overall+topics, per-worker
- *  usage, then workers (finished ones first, otherwise from the end).
+ *  activity.buckets, preview → 600 chars, outline.overall+topics, settled
+ *  workers' usage, settled workers (from the end), live workers' usage, then
+ *  live workers from the end. A live worker keeps its counts while any settled
+ *  row is left to drop.
  *  workerCounts and workerUsage are kept so the tallies stay truthful after
  *  truncation. Mutates and returns; never throws. */
 export function fit(record: LiveRecord, budget = RECORD_BUDGET): LiveRecord {
@@ -437,16 +455,17 @@ export function fit(record: LiveRecord, budget = RECORD_BUDGET): LiveRecord {
       delete p.outline.overall; delete p.outline.topics;
       if (bytes(record) <= budget) return record;
     }
-    // A row's own counts go before the row itself; the Σ in workerUsage survives either way.
-    if (p.workers.some(w => w.usage)) {
-      for (const w of p.workers) delete w.usage;
-      if (bytes(record) <= budget) return record;
-    }
-    while (p.workers.length && bytes(record) > budget) {
-      let index = -1;
-      for (let i = p.workers.length - 1; i >= 0; i--) if (isFinishedWorker(p.workers[i]) || isRestoredWorker(p.workers[i])) { index = i; break; }
-      p.workers.splice(index === -1 ? p.workers.length - 1 : index, 1);
-    }
+    // A row's own counts go before the row itself, and every settled row goes before a live
+    // row's counts; the Σ in workerUsage survives either way.
+    const stripUsage = (settled: boolean) => {
+      if (!p.workers.some(w => w.usage && settledWorker(w) === settled)) return false;
+      for (const w of p.workers) if (settledWorker(w) === settled) delete w.usage;
+      return bytes(record) <= budget;
+    };
+    if (stripUsage(true)) return record;
+    for (let i = p.workers.length - 1; i >= 0 && bytes(record) > budget; i--) if (settledWorker(p.workers[i])) p.workers.splice(i, 1);
+    if (bytes(record) <= budget || stripUsage(false)) return record;
+    while (p.workers.length && bytes(record) > budget) p.workers.pop();
   } catch { /* never throw from a writer path */ }
   return record;
 }

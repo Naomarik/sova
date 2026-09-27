@@ -31,6 +31,7 @@ import type {
   FanoutRequest,
   FanoutResult,
   SessionGroup,
+  SessionHiddenWorkers,
   SessionInsight,
   SessionSetup,
   SessionSummary,
@@ -714,6 +715,10 @@ export const fetchExplanations = () => request<ExplanationInfo[]>("/api/explanat
 
 export const fetchSessionInsight = (path: string) =>
   request<SessionInsight>(`/api/insights/session?path=${encodeURIComponent(path)}`);
+
+/** The workers the session's live record doesn't list, read from its file on request. */
+export const fetchHiddenWorkers = (path: string) =>
+  request<SessionHiddenWorkers>(`/api/insights/session/workers?path=${encodeURIComponent(path)}`);
 
 /** The repository around a session's folder (read-only git). `fresh` skips the server's ~10s cache.
     Use loadGitSummary (lib/git-summary.ts), which shares a request already running. */

@@ -4634,6 +4634,16 @@ button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offse
   background: var(--color-surface);
 }
 .subagents-list > li { border-bottom: var(--stroke-thin) solid var(--color-border); }
+/* The end of a list the live record cut short: how many show, and the button for the rest. */
+.subagents-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+.subagents-more > .text-caption { margin: 0; color: var(--color-ink-muted); }
 
 /* The back button and the row chevron exist only in list/detail; side by side
    both halves are on screen, so neither has anywhere to go. */

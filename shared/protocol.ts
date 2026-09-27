@@ -2129,6 +2129,11 @@ export interface SessionInsight {
   /** This session's own subagent workers, from its live record (empty when it isn't live, or
       absent from an older server). The nested subagents pane lists these. */
   workers?: WorkerInfo[];
+  /** How many workers the live record counts (its `workerCounts.total`), which can exceed
+      `workers`: the record lists at most 40. The pane offers the rest through
+      `GET /api/insights/session/workers` (SessionHiddenWorkers). Absent when the session isn't
+      live, when `workers` is already every worker, or from an older server. */
+  workerTotal?: number;
   /** The same lifetime token Σ as LiveAgentSession.usageTotal, for the session on screen. */
   usageTotal?: TokenUsageTotal;
 
@@ -2154,6 +2159,20 @@ export interface SessionInsight {
   /** The Agents tab's "Remotely linked agents" rows (§mesh.links/agents-pane), as the `links` chat
       frame carries them. Absent when the session is in no live link, or from an older server. */
   links?: LinkedAgentInfo[];
+}
+
+/** `GET /api/insights/session/workers?path=`: the workers recorded on the session's active branch
+    that its live record doesn't list, newest first, read from the session file only when asked
+    (§app.subagents-pane/hidden-workers). Each is built from its durable records alone: its usage
+    is the snapshot saved there (`usageSource: "snapshot"`, or "unavailable"), never its
+    transcript's. Nothing is hidden when the session has no live record: the insight then lists
+    every worker already. */
+export interface SessionHiddenWorkers {
+  workers: WorkerInfo[];
+  /** Rows the live record lists. */
+  listed: number;
+  /** listed + workers.length. */
+  total: number;
 }
 
 /** One tracked worktree as the Session tab shows it. */

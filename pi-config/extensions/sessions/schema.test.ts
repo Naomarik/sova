@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { clean, countWorkers, deriveState, fit, isFinishedWorker, isRestoredWorker, parseLiveRecord, parsePresence, workerState } from "./schema.ts";
+import { clean, countWorkers, deriveState, fit, isFinishedWorker, isRestoredWorker, parseLiveRecord, parsePresence, presenceWorkers, workerState } from "./schema.ts";
 import type { LiveRecord, SessionMeta, WorkerEntry } from "./schema.ts";
 
 const NOW = 1789804800000;
@@ -204,7 +204,7 @@ test("fit() drops fields in contract order as the budget shrinks", () => {
   assert.ok(r.presence!.workers.length < 40);
   assert.ok(r.presence!.workers.every(w => w.status === "running"), "all 10 finished workers dropped before any running one");
   const running = record.presence!.workers.filter(w => w.status === "running").map(w => w.id);
-  assert.deepEqual(r.presence!.workers.map(w => w.id), running.slice(0, r.presence!.workers.length), "then popped from the end");
+  assert.deepEqual(r.presence!.workers.map(w => w.id), running.slice(0, r.presence!.workers.length), "then live ones popped from the end");
   assert.deepEqual(r.presence!.workerCounts, record.presence!.workerCounts, "tally kept truthful");
 
   r = fit(clone(record), 1);
@@ -234,7 +234,7 @@ test("worker usage: bad counts read as 0, a bad object is dropped, the total kee
   assert.equal(parsePresence({ ...base, workers: [], workerUsage: 7 })?.workerUsage, undefined, "a non-object total is dropped");
 });
 
-test("fit() drops per-worker usage before any worker row", () => {
+test("fit() drops settled rows' usage before any row, and live usage before any live row", () => {
   const record = example("v2") as LiveRecord;
   const p = record.presence!;
   const usage = { input: 1_234_567, output: 234_567, cacheRead: 9_876_543, cacheWrite: 345_678, cost: 12.345678 };
@@ -242,24 +242,28 @@ test("fit() drops per-worker usage before any worker row", () => {
     status: i % 4 === 0 ? "done" : "running", usage: { ...usage } }));
   p.workerUsage = { ...usage, workers: 137 };
   const size = (r: LiveRecord) => Buffer.byteLength(JSON.stringify(r));
-  const noUsage = (() => { const r = clone(record); for (const w of r.presence!.workers) delete w.usage; return size(r); })();
-  assert.ok(noUsage < size(record), "usage is worth dropping");
+  const settledBare = (() => { const r = clone(record); for (const w of r.presence!.workers) if (w.status === "done") delete w.usage; return size(r); })();
+  assert.ok(settledBare < size(record), "usage is worth dropping");
 
-  const r = fit(clone(record), noUsage);
+  const r = fit(clone(record), settledBare);
   assert.equal(r.presence!.workers.length, 40, "every row survives");
-  assert.ok(r.presence!.workers.every(w => w.usage === undefined));
+  assert.ok(r.presence!.workers.every(w => (w.usage === undefined) === (w.status === "done")), "only settled rows lost their counts");
   assert.deepEqual(r.presence!.workerUsage, p.workerUsage, "the lifetime \u03a3 is kept");
 
-  // Everything the earlier steps can give up, and no per-worker usage: below that, rows go.
+  // Everything the earlier steps can give up, no settled row and no live usage: below that, live rows go.
   const floor = (() => {
     const r = clone(record); const q = r.presence!;
     delete q.outline!.detail; delete q.activity!.buckets; delete q.outline!.overall; delete q.outline!.topics;
     q.preview = Array.from(q.preview).slice(0, 600).join("");
+    q.workers = q.workers.filter(w => w.status !== "done");
     for (const w of q.workers) delete w.usage;
     return size(r);
   })();
+  const atFloor = fit(clone(record), floor);
+  assert.equal(atFloor.presence!.workers.length, 30);
+  assert.ok(atFloor.presence!.workers.every(w => w.status === "running" && w.usage === undefined));
   const tight = fit(clone(record), floor - 1);
-  assert.ok(tight.presence!.workers.length < 40, "then rows go, as before");
+  assert.ok(tight.presence!.workers.length < 30, "then live rows go, from the end");
   assert.deepEqual(tight.presence!.workerUsage, p.workerUsage);
   assert.ok(size(fit(clone(record), 16_384)) <= 16_384);
 });
@@ -315,4 +319,75 @@ test("fit() drops restored rows before live ones", () => {
   const size = Buffer.byteLength(JSON.stringify(record));
   const out = fit(record, size - 100);
   assert.deepEqual(out.presence!.workers.map(x => x.id), ["live", "idle"]);
+});
+
+/** A session that has started 57 workers, in spawn order (the manager's): 56 restored and
+ *  stopped, then ag_57 running. Sized like the real record that lost ag_57. */
+function crowded(): WorkerEntry[] {
+  const usage = { input: 12_345, output: 6_789, cacheRead: 234_567, cacheWrite: 34_567, cost: 0.4123 };
+  return Array.from({ length: 57 }, (_, i): WorkerEntry => {
+    const n = String(i + 1).padStart(2, "0");
+    const live = i === 56;
+    return { id: `ag_${n}`, name: `bw-r2-reviewer-${n}`, status: live ? "running" : "killed", model: "claude-opus-5-5[1m]", effort: "high",
+      preview: "plan delivered; see the report in the worktree for the full list of findings",
+      backend: "claude-code", sessionId: `0000000${n}-aaaa-bbbb-cccc-dddddddddddd`, startedAt: 1_000 + i, lastActivity: 2_000 + i,
+      ...(live ? {} : { endedAt: 3_000 + i, outcome: "success" as const, restored: true as const, usageSource: "transcript" as const,
+        usageAsOf: 1_790_495_397_765, resumable: true as const }),
+      usage: { ...usage } };
+  });
+}
+
+test("presenceWorkers: live workers first, then newest, capped at 40", () => {
+  const rows = presenceWorkers(crowded());
+  assert.equal(rows.length, 40);
+  assert.equal(rows[0].id, "ag_57", "the running worker survives the cap");
+  assert.deepEqual(rows.slice(1).map(w => w.id), Array.from({ length: 39 }, (_, i) => `ag_${String(56 - i).padStart(2, "0")}`),
+    "then settled ones, newest first");
+  const mixed: WorkerEntry[] = [
+    { id: "a", name: "a", status: "waiting", startedAt: 1 }, { id: "b", name: "b", status: "done", startedAt: 5 },
+    { id: "c", name: "c", status: "restored", startedAt: 9 }, { id: "d", name: "d", status: "starting" },
+    { id: "e", name: "e", status: "running", startedAt: 3 }, { id: "f", name: "f", status: "waiting", startedAt: 3, restored: true },
+  ];
+  assert.deepEqual(presenceWorkers(mixed).map(w => w.id), ["e", "a", "d", "c", "b", "f"],
+    "waiting counts as live, a restored flag as settled; no startedAt sorts oldest, ties go to the later spawn");
+});
+
+test("fit() keeps a crowded session's running worker, with its usage", () => {
+  const record = example("v2") as LiveRecord;
+  record.presence!.workers = presenceWorkers(crowded());
+  record.presence!.workerCounts = countWorkers(crowded());
+  const r = fit(clone(record), 16_384);
+  const rows = r.presence!.workers;
+  assert.ok(Buffer.byteLength(JSON.stringify(r)) <= 16_384);
+  assert.ok(rows.length > 1 && rows.length < 40, `${rows.length} rows`);
+  assert.equal(rows[0].id, "ag_57");
+  assert.deepEqual(rows[0].usage, crowded()[56].usage, "the live worker keeps its counts");
+  assert.deepEqual(rows.map(w => w.id), record.presence!.workers.slice(0, rows.length).map(w => w.id), "settled rows dropped oldest first");
+  assert.equal(r.presence!.workerCounts!.total, 57, "tally kept truthful");
+});
+
+test("fit() drops every settled row before a live worker's usage", () => {
+  const record = example("v2") as LiveRecord;
+  const p = record.presence!;
+  const usage = { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 };
+  p.workers = Array.from({ length: 20 }, (_, i): WorkerEntry => ({ id: `w${i}`, name: "文".repeat(40),
+    status: i < 5 ? "running" : "done", usage: { ...usage } }));
+  const size = (r: LiveRecord) => Buffer.byteLength(JSON.stringify(r));
+  const base = clone(record);
+  delete base.presence!.outline!.detail; delete base.presence!.activity!.buckets;
+  base.presence!.preview = base.presence!.preview.slice(0, 600); delete base.presence!.outline!.overall; delete base.presence!.outline!.topics;
+  const liveOnly = clone(base); liveOnly.presence!.workers = liveOnly.presence!.workers.slice(0, 5);
+  const settledBare = clone(base); for (const w of settledBare.presence!.workers.slice(5)) delete w.usage;
+
+  let r = fit(clone(record), size(settledBare));
+  assert.equal(r.presence!.workers.length, 20, "settled rows lose their counts first");
+  assert.ok(r.presence!.workers.slice(0, 5).every(w => w.usage) && r.presence!.workers.slice(5).every(w => !w.usage));
+
+  r = fit(clone(record), size(liveOnly));
+  assert.deepEqual(r.presence!.workers.map(w => w.id), ["w0", "w1", "w2", "w3", "w4"]);
+  assert.ok(r.presence!.workers.every(w => w.usage), "no live row lost its counts while a settled row was left");
+
+  r = fit(clone(record), size(liveOnly) - 1);
+  assert.equal(r.presence!.workers.length, 5, "then live counts go, before any live row");
+  assert.ok(r.presence!.workers.every(w => !w.usage));
 });

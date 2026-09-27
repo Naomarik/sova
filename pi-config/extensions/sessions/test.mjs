@@ -130,7 +130,9 @@ test('presence publishes each worker transcript path, session id and effort, dro
       { id: 'ag_03', name: 'bad', status: 'running', sessionFile: '/' + 'x'.repeat(1024), sessionId: 7, effort: 5 },
     ] });
     await tick();
-    const [pi, claude, bad] = h.latest().workers;
+    const rows = h.latest().workers;
+    assert.deepEqual(rows.map(w => w.id), ['ag_03', 'ag_02', 'ag_01'], 'live workers, newest spawn first');
+    const [pi, claude, bad] = ['ag_01', 'ag_02', 'ag_03'].map(id => rows.find(w => w.id === id));
     assert.equal(pi.sessionFile, file); assert.equal(pi.sessionId, '0199');
     assert.equal(claude.sessionFile, undefined); assert.equal(claude.sessionId, 'c'.repeat(64));
     assert.equal(bad.name, 'bad');
@@ -154,7 +156,8 @@ test('presence carries per-worker token counts and the session-lifetime total', 
       ] });
     await tick();
     const p = h.latest();
-    const [a, b, c] = p.workers;
+    assert.deepEqual(p.workers.map(w => w.id), ['ag_03', 'ag_01', 'ag_02'], 'live first, then settled');
+    const [a, b, c] = ['ag_01', 'ag_02', 'ag_03'].map(id => p.workers.find(w => w.id === id));
     assert.deepEqual(a.usage, { input: 100, output: 20, cacheRead: 900, cacheWrite: 50, cost: 0.25 });
     assert.deepEqual(b.usage, { input: 0, output: 0, cacheRead: 0, cacheWrite: 7 }, 'bad counts read as 0, no cost key');
     assert.ok(!('usage' in JSON.parse(JSON.stringify(c))), 'a non-object usage is dropped');

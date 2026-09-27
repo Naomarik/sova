@@ -12,7 +12,8 @@ last section (§chat.transcript/landing-page): totals across every org, the most
 orgs as links, and a link to `#/orgs`, shown whether or not any org exists; the sidebar has no
 Organizations row, at any width or in the collapsed spine. `#/orgs` is
 a grid of organization cards (§app.organizations/org-cards); an org's page has four tabs, each in
-the URL (§app.organizations/org-page).
+the URL (§app.organizations/org-page); each roster person has a page of their own,
+`#/orgs/<id>/people/<pid>` (§app.organizations/person-page).
 
 ## §app.organizations/registry — Attached orgs and residence
 
@@ -77,9 +78,15 @@ the URL (§app.organizations/org-page).
     person's head is their name and status chip, the role · language line under them, and the
     actions (Approve and Decline for a proposed person, Start a Session for an active one, Edit),
     each named with the person ("Approve Sam Okafor"); the actions wrap under the name as one
-    group when the card is narrow, and a name never breaks to fit them. A proposed person's
+    group when the card is narrow, and a name never breaks to fit them. The name is a link to the
+    person's page (§app.organizations/person-page). A proposed person's
     "Decides: … — approving {name} approves …" line shows only when they have decision areas.
-    History is a disclosure with a chevron that turns when open.
+    Under the role · language line, one line says when they last opened a link (§app.baton/visits): `Last opened
+    {relative time}`, the exact stamp as its title, from their newest visit (link previews,
+    scanners, scripts and turned-off-link attempts don't count); `Hasn't opened a link yet` when a
+    link was ever minted for them on this host and no visit exists; no line otherwise. The card has
+    no History disclosure: a person's history and its Revert buttons are on their page. A
+    person's name in Recent Profile Changes links to their page too.
   - **Projects**: the org's projects, each row one link to its project page (folder icon, name,
     folder path, a trailing chevron), and the Add Project form (`Project name`, `Folder`); with none,
     "No projects yet. A project is a folder that hand-off sessions and its overseer work in."
@@ -106,11 +113,13 @@ the URL (§app.organizations/org-page).
   so a reload doesn't reopen it, and every link afterwards (a session row, the sidebar) still
   opens its page. Picking a tab replaces the hash (no history entry per tab), and the page
   is not reloaded: the fetched org stays. `#/orgs/<id>/projects/<project>` stays the project page,
-  and its back link opens the Projects tab; the project page and its overseer are untabbed.
+  and its back link opens the Projects tab; `#/orgs/<id>/people/<pid>` is a person's page, and its
+  back link opens the People tab; the project page, its overseer and a person's page are untabbed.
 - **Keyboard.** The selected tab is the strip's one tab stop; Left/Right move focus along the
   strip (wrapping), Home/End jump, Enter or Space selects. Selecting keeps focus on the tab at
   every width: the phone's move-focus-to-the-title on a route change happens only when the page
-  changes (another org, the list or a project page), never for a tab or a start link.
+  changes (another org, the list, a project page or a person's page), never for a tab or a start
+  link.
 - **Width.** Under 480px of pane width the tabs tighten (`--space-1` padding and gap), so the four
   fit a 420px window with two-digit counts; narrower, the strip scrolls sideways and the selected
   tab is scrolled into view whole.
@@ -120,8 +129,124 @@ the URL (§app.organizations/org-page).
   reconciled in place, so an open form keeps what was typed. A row's "started …" age moves on
   every 30 seconds.
 - **Where the data comes from.** Every route that answers an `OrgDetail` adds `needsYou`, each
-  baton row's `waiting` (`"reply"` or `"link"`) and `projectConflicts` (`{projectId: n}`), all
-  optional on the wire.
+  baton row's `waiting` (`"reply"` or `"link"`), `projectConflicts` (`{projectId: n}`) and
+  `lastOpened` (`{personId: {at?, minted}}`, the People card's line), all optional on the wire;
+  without `lastOpened` the card shows no such line.
+
+## §app.organizations/person-page — One person's page
+
+- `#/orgs/<id>/people/<pid>` is one roster person's page, active, proposed or left: an untabbed
+  page like the project page. Its back arrow (named `People`, shown where the app shows one: at
+  folded width) opens `#/orgs/<id>/people`, and so does the meta line's `People` (the one way back from
+  unfolded width, where there is no back arrow; on a phone a long org name may clip it). A person id
+  the org doesn't have answers 404, and the page says "This organization has no person with that
+  id." with the back link. It is reached from the name on their People card, from their name in
+  Recent Profile Changes, and by URL. Each card on it stops at 880px wide, left-aligned, like the
+  org and project pages.
+- **Head.** Their name is the page's one title (the page head's `h1`, as on the project page),
+  with their status chip beside it (`Active`, `Proposed`, `Left`: dot and word; the name alone is
+  the heading's accessible name), and the meta line `Organizations · {org name} · People`, each a
+  link (the list, the org page, its People tab). The first card holds the role · language line. Then the same actions as
+  their People card, each named with the person: Approve and Decline (proposed), Start a Session
+  (active; it opens the org's start form aimed at them), Edit (the card's form, in place).
+  - **Left**: an info banner, "{name} left the organization {when}. Their links no longer open,
+    and nothing they send is accepted." — `{when}` from the history line that set `left` ("on Mar
+    4", "2d ago"), "left the organization." with no date when none records it.
+  - **Proposed**: an info banner with the referral, "{referrer} proposed {name} {when} in
+    {session title}: {why}", and, when they have decision areas, the card's "Decides: … —
+    approving {name} approves …" line.
+- **Profile.** In that first card, the People card's facts: Decides, Skills, Competence (per skill, `level {n} of 5 · {n}
+  sessions`), Voice, Contact, Referred. Contact shows here and on the card, nowhere else
+  (§app.organizations/privacy).
+- **Sessions** (`Sessions · {n}`; card headings are Title Case, like the org page's `Recent
+  Profile Changes`), newest activity first: every baton session of the org, in any
+  project, where they are or were the holder, a hand-off's target or source, an offer's invitee, a
+  participant, the person who referred someone in it or was referred from it, or the addressee of
+  a conflict it asks about. Coding sessions and the operator's other sessions are not listed, even
+  when they mention the person. A row reads:
+  - the public title, a link to the session (`#/s/<path>`), the project name, and the session's
+    state chip (the org page's words: `Open`, `Needs you`, `Done`, `Closed`);
+  - where the baton is: `Holds it now` (theirs), `With {holder}`, `With you` (the operator),
+    `Open to them and {n} others` (an offer that includes them, nobody holding it), `Open to {n}
+    people` (an open offer without them), or nothing once done or closed;
+  - each way they relate to it, in order of hand-off number: `Started with them`, `Handed to them
+    by {from} · #{n}`, `Passed on to {to} · #{n}`, `Offered to them with {n} others · #{n}`,
+    `Took the offer · #{n}`, `Their lease lapsed · #{n}`, `Referred here by {name}`, `Proposed
+    {name} here`, `Asked to settle {area}`, and `Took part` for a participant with none of those
+    ({from}/{to} are names, `you` for the operator; an offer passed on names its invitees, "Ana
+    and Ben"). An invitee who never held the offer reads `Offered to them …` only;
+  - `{n} messages · last wrote {relative time}` (from the transcript's sent markers; `0 messages`
+    when they never wrote), and `Started from {parent title}` (a link) when the row has a parent;
+  - `Preview as {first name}` (below), on a session they were addressed in — they held it, were
+    handed or offered it, or wrote in it; a session they relate to only as referrer, referred or
+    conflict addressee has no link of theirs to preview, and no button.
+  - With none: "{name} is on the roster, with 0 hand-off sessions so far." and, for an active
+    person, `Start a Session with {name}`; for someone who left, "{name} took part in 0 hand-off
+    sessions before leaving."
+- **Decisions** (`Decisions · {n}`), newest first, across every project: each decision whose `by`
+  is them — its area, the statement, their quote as a block quote, `{relative time} · in {session
+  title} · {project}` (links to the session and the project page), and its state chip in the
+  project page's words (`Pending`, `Drafted`, `Conflict`, `Promoted`, `Superseded`). A decision
+  outside their decision areas adds `outside their decision areas`. Then the open conflicts the
+  reconciler routed to them, under `Conflicts routed to {first name}`: `Asked to settle {area}`, with its session when one asks about it.
+  With neither: "{name} has recorded 0 decisions so far."
+- **Links and visits** (`Links and Visits`).
+  - A summary line first: `Opened {n} times · last {relative time}` (`Opened once · …` for 1);
+    `Hasn't opened a link yet.` when a link was ever minted for them on this host and there is no
+    visit; nothing when neither.
+  - **Their links on this host**, newest first: the session's public title, `hand-off #{n}`, the
+    link's state word (`Can write`, `Reads only`, `Turned off`, `Expired`, `Session closed`; the
+    words of §app.baton/links' writes/reads/410; a closed session's link reads `Session closed`,
+    though closing also turned it off), `sent {relative time}`, `expires {relative
+    time}` while it can still open, and `{n} visits`. A link that can still open has `Turn Off
+    Link` (that one link; the session and every other link stay as they are). The row for the
+    hand-off they hold now, or an open offer they are invited to, has `Get New Link`: the strip's
+    Get Link (`GET /api/baton/:sid/link`, `?person=` for an offer), shown once with Copy Link.
+    With 2 or more links that can open, the section has `Turn Off All {n} Links` (a destructive
+    button, apart from the others), confirmed with "{name}'s {n} links stop opening at once.
+    Their sessions, messages and visits stay." With no link: "No links for {name} on this host."
+    and, when their visits name links minted elsewhere, "Links sent from another host don't open
+    here."
+  - **Visits**, newest first, one row per visit (§app.baton/visits): `Opened {session title}`,
+    the device family, `for about {duration}` once it lasted a minute or more, and the relative
+    time, the exact stamp in mono as its title (`2026-09-27 14:06`); a visit whose newest record
+    is from a link minted on another host adds `link from another host`. Rows never counted as
+    opened: `Tried a turned-off link · {session title}`, and, muted, `Link preview by {service} ·
+    {session title}` (`Link preview · {session title}` for a generic unfurler), `{Security scanner
+    | Script} · {session title}` (a `bot` visit, its device family), and `Too many visits on this
+    link today; we stopped recording until tomorrow`. The first 20 show; `Show All {n} Visits` shows
+    the rest. With none and no link: "Nothing yet: visits show here once {name} opens a link.", or, for
+    someone who left, "{name} opened no links before leaving."
+- **Preview as {first name}** (a session row's button) opens a modal — a sheet at folded width —
+  titled `{session title}, as {first name} sees it`, showing exactly what the share page shows
+  them for that session now (the same server-side filter, §app.baton/outsider-view: an invitee
+  who never held an offer sees up to its card), with no composer. It needs no link and uses no
+  token, records no visit, claims nothing and changes nothing. One line under the title says:
+  "Read-only. Nothing you do here reaches {first name}, and no visit is recorded." When no link of
+  theirs could open the session now (they left, it's closed, or they were never given one), it
+  adds "{first name}'s links don't open this session now." `Close` closes it.
+- **Profile changes** (`Profile Changes`): the person's history, newest first — field, old → new,
+  who changed it (`you`, `wrap-up`, `referral`, `overseer`) and the quote, `a revert`, when —
+  each with `Revert` (§app.organizations/history-and-revert). With none: "No changes since
+  {name} was added."
+- **Live.** The page re-reads every 10 seconds while the browser tab shows (paused while hidden,
+  at once when shown again), reconciled in place so an open form, an open modal and `Show All`
+  keep their state; ages move on every 30 seconds. A person who leaves, is approved or declined
+  elsewhere updates head, banner and actions without a reload. Focus moves to the title only when
+  the page changes (another person, or from the org page), never on a re-read.
+- **Width.** Under 768px of pane width (folded) every row stacks: meta lines wrap and never
+  truncate, the actions wrap under the name as one group, a visit row is a list row (never a
+  table), and every control is at least 44px tall; the page fits a 390px window without
+  sideways scrolling.
+- **Where the data comes from.** `GET /api/orgs/:id/people/:pid` answers the page (`PersonPage`
+  in `shared/orgs.ts`): the person, the org's id and name, sessions with their relations,
+  decisions, routed conflicts, this host's links with their states, the visit rows (every
+  one, newest first), how many of them are openings and the newest one's time, and the history. `POST /api/orgs/:id/people/:pid/links/revoke
+  {sessionId?, n?}` turns off one link (both given) or every link of theirs (neither) and answers
+  the page. `GET /api/orgs/:id/people/:pid/preview?session=<sid>` answers the preview's view,
+  plus `linkOpens` (whether a link of theirs on this host opens that session now, which the
+  "links don't open this session now" line reads); its viewer can never write. None
+  of them is reachable on the share listener.
 
 ## §app.organizations/workspace-repo — What the workspace repo holds, and what it never holds
 
@@ -136,7 +261,10 @@ the URL (§app.organizations/org-page).
     (autonomy, models, caps, token budget, watch, extra instructions), `state.json` (current
     conversation and history), `notes.md`, `actions.jsonl`, `ideas/`, `todos.json` and
     `started.json` (the sessions it started, with what each of its coding sessions spent when last
-    counted).
+    counted);
+  - `visits.jsonl`, the visit log: each time a roster person opened one of their links, and each
+    link preview and turned-off-link attempt (§app.baton/visits) — never a token, a token's hash,
+    an IP address or a raw user agent.
   JSONL files are only ever appended to. A `.gitignore` excludes temp files (`*.tmp`, `*.lock`).
 - Sova lists and opens those transcripts like any session: a `.jsonl` directly inside an attached
   org's `sessions/` is accepted wherever a session path is (nothing nested, nothing else in the
@@ -178,12 +306,13 @@ the URL (§app.organizations/org-page).
 - Cloning an org's workspace repo onto any Sova host and attaching it ("Attach a Restored Repo",
   `POST /api/orgs/attach {dir}`) brings the whole organization: the org, its roster with every
   history line, its projects, every baton session with its transcript, holder, hand-offs, offers
-  and wrap-up state, the decisions and conflicts, and each project overseer with its
-  conversations, settings, notes, actions, ideas, to-dos and the sessions it started. Nothing is
-  read from the old host.
+  and wrap-up state, the decisions and conflicts, every recorded visit (§app.baton/visits), and each
+  project overseer with its conversations, settings, notes, actions, ideas, to-dos and the
+  sessions it started. Nothing is read from the old host.
 - **Links must be re-issued.** No link is in the repo, so every old link answers 404 on the new
   host; the operator sends new ones (Get Link, or Needs you's "Send <name> their link"). The attach
-  form says so.
+  form says so. A person's page lists no links until new ones are sent; their old visits still
+  show, marked `link from another host`, and new visits append to the same log.
 - **Project overseers start paused at L0.** The attach records every project of the org as paused
   in this host's index. While paused, the level in force is L0 ("Paused at L0: this organization
   was attached on this host. Set its level to resume."), the watch loop starts nothing for it (its
@@ -238,8 +367,8 @@ the URL (§app.organizations/org-page).
   then rewrites `roster.json`. Creating a person is one line per set field, from `null`.
 - **Revert** (`POST /api/orgs/:id/people/:pid/revert {at}`) writes a new change that sets the field
   back to that line's `from`, with `revertOf` naming the reverted line. History is never edited.
-- The org page shows each person's history, newest first — field, old → new value, who changed it
-  (and the quote when there is one), when — with a Revert button.
+- A person's page (§app.organizations/person-page) shows their history, newest first — field,
+  old → new value, who changed it (and the quote when there is one), when — with a Revert button.
 - **Recent profile changes**: the org's history across people, newest first, with each person's
   current name (`GET /api/orgs/:id/changes?limit=`; the org detail carries the last 20), each with
   one-click Revert — where the wrap-up's autonomous changes are seen and undone.
@@ -277,7 +406,8 @@ the URL (§app.organizations/org-page).
 - The org's name is never in the baton prompt; as a backstop the share page redacts it, as a
   whole word, from what the model wrote (a goal may carry it), unless the title or someone in the
   conversation used it.
-- Profiles appear only on the org page, never in a baton session pane.
+- Profiles appear only on the org's own pages (the org page and a person's page), never in a baton
+  session pane.
 
 ## §app.organizations/referrals — People not on the roster
 

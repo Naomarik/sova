@@ -4,6 +4,8 @@
 // Ctrl+F, the outline and the input list see the whole transcript once the fill completes).
 // This file is the arithmetic; Thread.tsx does the mounting and the scroll anchoring.
 
+import { dataUrlSize, type ImageSize, thumbBoxHeight } from "./image-size";
+
 /** Rows built with the hello: a phone screen holds ~10 rows, a desktop ~20, so this is several
     screens at either width, and the first frame never waits on the rest. */
 export const TAIL_ROWS = 60;
@@ -69,13 +71,48 @@ export function wrapLines(text: string, cols: number): number {
 /** A row's lines are capped here: a very long message still gets a tall estimate, not a huge one. */
 const MAX_EST_LINES = 200;
 
+/** Where a row's images sit, which decides the chrome around the strip: a user row's gap above it,
+    or a tool card's media strip (rule and padding). */
+export type ImagesAt = "user" | "tool";
+
+/** A thumbnail tile with its border (base.css `.thumb img`: 96px), and the gap between tiles. */
+const TILE = 98;
+const TILE_GAP = 8;
+/** Tiles to a row at the reading measure (6 at a 1024px window, 8 at 1440, 9 at 1920), and in a
+    folded-width transcript (3 at 390, 4 at 800). */
+const TILES_WIDE = 7;
+const TILES_NARROW = 3;
+/** A single image whose header can't be read counts as a 16:10 screenshot. */
+const UNKNOWN_IMAGE: ImageSize = { w: 1600, h: 1000 };
+
+const tileRows = (n: number, perRow: number) => {
+  const rows = Math.ceil(n / perRow);
+  return rows * TILE + (rows - 1) * TILE_GAP;
+};
+
+/**
+ * The height a row's images add, in a wide and in a folded-width transcript: one image at its box's
+ * own height (lib/image-size), two or more as rows of tiles, plus the strip's chrome.
+ */
+export function imagesEstimate(images: readonly string[] | undefined, at: ImagesAt): [wide: number, narrow: number] {
+  const n = images?.length ?? 0;
+  if (n === 0) return [0, 0];
+  const chrome = at === "user" ? 8 : 17;
+  if (n === 1) {
+    const h = chrome + thumbBoxHeight(dataUrlSize(images![0]!) ?? UNKNOWN_IMAGE);
+    return [h, h];
+  }
+  return [chrome + tileRows(n, TILES_WIDE), chrome + tileRows(n, TILES_NARROW)];
+}
+
 /**
  * A row's height until it is first drawn (`content-visibility: auto` skips rows off screen, and a
  * skipped row is laid out at this size): a fixed part for its chrome plus its text's wrapped lines,
- * which app.css turns into pixels for the width the transcript has. Only the scrollbar and a
- * long jump's first aim depend on it; a drawn row remembers its real height.
+ * which app.css turns into pixels for the width the transcript has, plus the images the row shows
+ * (`images`, `at` where they sit: a tool call's are its result's). Only the scrollbar and a long
+ * jump's first aim depend on it; a drawn row remembers its real height.
  */
-export function rowEstimate(item: { kind: string; text?: string }): string {
+export function rowEstimate(item: { kind: string; text?: string }, images?: readonly string[], at: ImagesAt = "user"): string {
   const text = item.text ?? "";
   const [base, lines] =
     item.kind === "assistant-text" ? [24, wrapLines(text, 80)]
@@ -84,5 +121,8 @@ export function rowEstimate(item: { kind: string; text?: string }): string {
     : item.kind === "report" ? [64, 0]
     : item.kind === "info" ? [8, 1]
     : [48, 1];
-  return `calc(${base}px + ${Math.min(lines, MAX_EST_LINES)} * var(--entry-line-est, 23px))`;
+  const est = `${base}px + ${Math.min(lines, MAX_EST_LINES)} * var(--entry-line-est, 23px)`;
+  const [wide, narrow] = imagesEstimate(images, at);
+  if (wide === 0) return `calc(${est})`;
+  return `calc(${est} + ${wide}px${narrow === wide ? "" : ` + var(--entry-narrow, 0) * ${narrow - wide}px`})`;
 }

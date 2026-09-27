@@ -583,7 +583,9 @@ is virtualized.
 - **Nothing is virtualized.** A built row stays in the page, so `Ctrl+F`, screen readers and
   text selection reach the whole transcript once the fill completes (a few hundred milliseconds
   for an 800-row session). A row off screen is skipped by layout and paint
-  (`content-visibility: auto`), at a height estimated from its text until it is first drawn. A
+  (`content-visibility: auto`), at a height estimated from its text and its images until it is
+  first drawn: a row's single image counts at the height its box will have
+  (§chat.images/thread-thumbnails), two or more at an estimate of their rows of tiles. A
   row being pointed at, focused or revealed (§chat.transcript/message-actions) is always drawn
   whole.
 - **Jumps build their target first.** Whether an entry can be jumped to is asked of the rows the

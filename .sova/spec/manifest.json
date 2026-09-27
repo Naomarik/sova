@@ -627,7 +627,10 @@
       "code": [
         "src/components/ToolCard.tsx",
         "src/design/base.css",
-        "src/components/ImageStrip.tsx"
+        "src/components/ImageStrip.tsx",
+        "src/lib/image-size.ts",
+        "src/lib/image-size.test.ts",
+        "src/app.css"
       ]
     },
     "§chat.markdown/accessibility": {
@@ -5510,7 +5513,8 @@
       "requires": [
         "§chat.transcript/live-watch",
         "§chat.timeline/jumping",
-        "§chat.transcript/message-actions"
+        "§chat.transcript/message-actions",
+        "§chat.images/thread-thumbnails"
       ],
       "authority": "accepted",
       "evidence": "verified",

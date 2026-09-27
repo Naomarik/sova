@@ -145,10 +145,36 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   with that preview's plan hash. The batch draft `sova-promote-<time>` is kept: its `draft.json`
   holds the evidence and the promotion record (local only, like every draft); one that promoted
   nothing is removed.
-- Sova never commits the client repo: promoted files are left for the project's owner (or a coding
-  session) to commit.
+- Sova commits a promotion, and nothing else, in the client repo (§app.requirements/promotion-commit).
 - A refusal of the spec tools (a conflicting hand edit, a pending transaction) is reported per
   decision and changes nothing; the index keeps them `drafted`.
+
+## §app.requirements/promotion-commit — A promotion is committed
+
+- **Why.** A coding session works in a worktree cut from the project root's `HEAD`
+  (§app.project-overseer/coding-worktrees), so a decision reaches it only once it is committed.
+- **What.** After a promotion that changed files, in a project root inside a Git work tree, Sova
+  commits the files under `.sova/spec/` that the promotion changed (`manifest.json`, the
+  `claims/` files, a `.gitignore` it added), by explicit path and nothing else, on the branch the
+  root's checkout has checked out. Other staged or unstaged changes in the repo stay as they were.
+  The message names the promoted decisions: "Promote 2 decisions: payroll export — Exports run on
+  Fridays; approvals — Over $5,000 needs a second approver." (each area and statement, cut to 72
+  characters, at most 10 then "and 3 more"). The author is the repo's configured identity, else
+  `Sova <sova@localhost>`, as for the workspace repo's commits.
+- **Skipped, with the reason**, and the promotion itself still stands (its files stay written,
+  uncommitted):
+  - a file the promotion changed already differed from `HEAD` before it (a change Sova didn't make):
+    "Not committed: .sova/spec/manifest.json had changes Sova didn't make. Commit or discard them,
+    and later promotions are committed again.";
+  - a merge, rebase, cherry-pick or revert in progress: "Not committed: the project root is in the
+    middle of a merge.";
+  - a detached `HEAD`: "Not committed: the project root's checkout is on a detached HEAD.";
+  - git fails (a hook refuses): "Not committed: " and git's own first line.
+- **Shown.** The promote answer carries `commit` (`{sha, branch, files, message}` or `{skipped}`), and the
+  Decisions tab says it after a promotion: "Promoted 2. Committed a1b2c3d on main." or the skip
+  reason. A project root that isn't inside a Git work tree gets no commit and no line, as before.
+- Only a promotion commits. Drafting, reconciling, a frozen hash and the workspace repo's own
+  commits (§app.organizations/workspace-repo) are unchanged; Sova never pushes the client repo.
 
 ## §app.requirements/rejected — Not done, and why
 

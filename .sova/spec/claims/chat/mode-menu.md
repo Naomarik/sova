@@ -11,7 +11,10 @@ only**, **from its next message**. You never start a new chat or reconnect, and 
 terminal session moves.
 
 `~/.pi/agent/mode.json` is the **default for new sessions** (plus the shortcuts). A session that
-has never toggled follows it; the first toggle pins that session. `GET /api/mode` reads it and
+has never toggled follows it; the first toggle pins that session. A session Sova starts with a
+mode of its own (a project's coding session, §app.project-overseer/coding-mode, or one the
+Overseer creates with a mode, §app.overseer/tools) is pinned from its start: Sova writes its
+`mode` entry before the first prompt, even when it equals the default. `GET /api/mode` reads it and
 `POST /api/mode` without `?path=` writes it; neither touches an open chat. From a terminal,
 `/mode default` saves the current session's mode as the default.
 

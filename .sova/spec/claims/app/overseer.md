@@ -105,7 +105,9 @@ error. Sessions are addressed by id. No tool passes `force`.
   user's todos (`sova_todos`: open, done or all; §app.overseer/todos).
 - **Act:** create a session in any folder or remote target, with an optional first prompt, model,
   mode and minor modes (`minor_modes`, e.g. `["spec"]`); the mode and minor modes are set before the
-  first prompt is sent, so its first turn already runs in them. An unknown mode or minor mode refuses
+  first prompt is sent, so its first turn already runs in them, and written into the session as its
+  `mode` entry even when they equal the default, so a later change to the default never moves it
+  (the same for `sova_set_session`). An unknown mode or minor mode refuses
   the whole call before any session is created, and a mode switch that fails sends no prompt: the
   result says the session was created but its first prompt was not sent. Send a message to a
   session (below); archive and unarchive

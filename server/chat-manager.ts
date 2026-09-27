@@ -1274,6 +1274,10 @@ class ChatSession {
         untrack();
         throw err;
       });
+      // The run can end while pi runs the steer's input handlers; the steer then sits in the SDK's
+      // queue with no run to drain it. Wake one (wakeQueuedRun is guarded: not streaming, not
+      // compacting, one at a time).
+      if (!this.session.isStreaming && this.linkInSdk.includes(text)) this.wakeQueuedRun();
       return;
     }
     // Idle. `streamingBehavior: "steer"` covers a turn that started while the input handlers ran;

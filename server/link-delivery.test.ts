@@ -182,6 +182,30 @@ describe("§mesh.links/delivery: ChatSession.deliverToAgent", () => {
     assert.ok(!log.some((m) => m.type === "queue"));
   });
 
+  test("busy as the turn ends: a steer queued after the run finished is not stranded, a run is woken for it", async () => {
+    const { chat, session } = await held();
+    let streaming = true;
+    Object.defineProperty(session, "isStreaming", { get: () => streaming, configurable: true });
+    let queued = 0;
+    let continued = 0;
+    session.agent.hasQueuedMessages = () => queued > 0;
+    session.agent.continue = async () => {
+      continued++;
+      queued = 0;
+    };
+    // pi awaits the input handlers before it queues a steer; the run settles meanwhile, so the
+    // message lands in the SDK's queue with no run left to drain it.
+    session.steer = async () => {
+      await new Promise((r) => setTimeout(r, 20));
+      streaming = false;
+      queued++;
+    };
+    session.prompt = async () => assert.fail("a steer in flight is woken, never prompted again");
+    assert.equal(chat.deliverToAgent(linkText()), "delivered");
+    await until(() => continued === 1);
+    assert.equal(queued, 0, "the woken run took it");
+  });
+
   test("two at once into an idle member: the first starts the turn, the second steers into it", async () => {
     const { chat, session } = await held();
     let streaming = false;

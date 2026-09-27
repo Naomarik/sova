@@ -15,16 +15,16 @@
  * Fail closed: every confined call takes a snapshot (policy re-read, proxy up, probe cached per
  * policy) and refuses when any of it fails. Never a passthrough.
  */
-import { lstatSync, mkdirSync, realpathSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { realpathSync, rmSync } from "node:fs";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ExtensionAPI, type ExtensionContext, getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { backendFor, gitProtectedPaths, type Policy, shadowSource } from "./backend.ts";
+import { backendFor, type Policy } from "./backend.ts";
 import { scrubEnv } from "./env.ts";
-import { canonicalize, loadPolicyFile, narrowScope, type ParentScope, parentScopeOf, parseParentScope, policyFilePath, resolvePolicy, type ResolvedPolicy, workerCwdRefusal, writeOnlyScope } from "./policy.ts";
+import { canonicalize, loadPolicyFile, narrowScope, type ParentScope, parentScopeOf, parseParentScope, policyFilePath, type ResolvedPolicy, workerCwdRefusal, writeOnlyScope } from "./policy.ts";
 import { type ProxyHandle, proxySocketPath, startProxy } from "./proxy.ts";
+import { ensureSessionTmpDir, resolveSessionPolicy } from "./session-policy.ts";
 import {
 	describeActive,
 	markerText,
@@ -74,15 +74,6 @@ function offState(level: SandboxLevel = "workspace-write"): SandboxActive {
 	return { version: 1, on: false, level, backend: "none", enforcement: "none" };
 }
 
-/** A private per-user base under the host tmp: refuse anything that is not our own real directory. */
-function sessionBase(): string {
-	const base = join(tmpdir(), `pi-sandbox-${process.getuid?.() ?? "u"}`);
-	mkdirSync(base, { recursive: true, mode: 0o700 });
-	const st = lstatSync(base);
-	if (!st.isDirectory() || st.isSymbolicLink() || (process.getuid && st.uid !== process.getuid())) throw new Error(`${base} is not a private directory of this user`);
-	return base;
-}
-
 export default function sandbox(pi: ExtensionAPI) {
 	pi.registerFlag(FLAG, {
 		description: "Start with the sandbox on or off (on|off). Workers get it from their parent; a session started with --sandbox on cannot turn it off",
@@ -128,10 +119,12 @@ export default function sandbox(pi: ExtensionAPI) {
 		}
 	}
 
+	/** The session id the tmp was first made for: the directory stays the same for this runtime. */
+	let tmpId: string | undefined;
+
 	function tmpDirOf(): string {
-		if (!sessionDir) sessionDir = join(sessionBase(), (sessionId || `pid${process.pid}`).replace(/[^A-Za-z0-9._-]/g, "_"));
-		const tmp = join(sessionDir, "tmp");
-		mkdirSync(tmp, { recursive: true, mode: 0o700 });
+		const tmp = ensureSessionTmpDir((tmpId ??= sessionId));
+		sessionDir = dirname(tmp);
 		return tmp;
 	}
 
@@ -161,15 +154,9 @@ export default function sandbox(pi: ExtensionAPI) {
 		} catch (e) {
 			return { ok: false, reason: `cannot create the session tmp: ${(e as Error).message}` };
 		}
-		const dir = agentDir();
-		// The platform lists apply; which caches are shadowed is the policy file's `shadowed`.
-		const defaults = backend.platformDefaults({ home: homedir(), agentDir: dir });
 		if (typeof parentScope === "string") return { ok: false, reason: parentScope };
-		const resolved = resolvePolicy({
-			agentDir: dir, cwd, tmpDir, defaults, shadowSource, git: gitProtectedPaths, parent: parentScope,
-			extraWritable: worktreeRoots,
-			extraReadOnly: worktreeRoots.map((r) => join(r, ".agent")),
-		});
+		// The same resolution Sova's server makes for this session (session-policy.ts).
+		const resolved = resolveSessionPolicy({ agentDir: agentDir(), cwd, sessionId, tmpDir, parent: parentScope, worktreeRoots, backend });
 		if (!resolved.ok) return { ok: false, reason: resolved.error };
 		const policy = resolved.value;
 		if (policy.outsideParent) {
@@ -392,6 +379,7 @@ export default function sandbox(pi: ExtensionAPI) {
 				// A leftover tmp is harmless; the next run of this session id reuses it.
 			}
 			sessionDir = undefined;
+			tmpId = undefined;
 		}
 	});
 

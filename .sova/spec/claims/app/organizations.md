@@ -339,6 +339,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
 - The coding sessions an overseer started are ordinary sessions on the host that ran them: on
   another host they are listed "(not on this host)", and the token budget counts what they had
   spent when last counted.
+- A conflict's settle session is found by its id on this host; `conflicts.json` stores no path
+  for it, so its card opens the session here after a move.
 - Two hosts attaching the same org is still not detected (§app.organizations/registry).
 
 ## §app.organizations/org-sessions — Which sessions are organizational

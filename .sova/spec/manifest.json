@@ -3630,7 +3630,8 @@
         "src/components/OrgsView.tsx",
         "shared/baton.ts",
         "server/person-page.ts",
-        "src/components/PersonPage.tsx"
+        "src/components/PersonPage.tsx",
+        "src/lib/api.ts"
       ]
     },
     "§app.baton/needs-you": {
@@ -3848,7 +3849,10 @@
         "server/org-portable.test.ts",
         "server/visits.ts",
         "server/person-page.ts",
-        "src/lib/org-region.ts"
+        "src/lib/org-region.ts",
+        "server/decisions.ts",
+        "server/reconcile.ts",
+        "shared/decisions.ts"
       ],
       "requires": [
         "§app.organizations/workspace-repo",
@@ -4103,7 +4107,12 @@
         "src/lib/project-overseer-view.ts",
         "src/lib/project-overseer-view.test.ts",
         "src/components/ProjectOverseerPanel.tsx",
-        "server/overseer-todos.ts"
+        "server/overseer-todos.ts",
+        "server/project-overseer-store.ts",
+        "server/project-overseer-watch-run.test.ts",
+        "server/wrapup-recovery.ts",
+        "server/index.ts",
+        "shared/project-overseer.ts"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels"
@@ -4173,7 +4182,11 @@
         "server/decide.ts",
         "server/decide-settings.ts",
         "shared/protocol.ts",
-        "server/reconcile.test.ts"
+        "server/reconcile.test.ts",
+        "shared/decisions.ts",
+        "src/lib/decisions-view.ts",
+        "src/lib/decisions-view.test.ts",
+        "src/components/ProjectPage.tsx"
       ],
       "requires": [
         "§app.decisions/interface",

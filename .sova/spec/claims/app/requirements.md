@@ -85,7 +85,8 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   nothing that was already answered, and never opens a second conflict or session for the same
   pair.
 - **Restatements.** A restatement or confirmation is **folded** into the earlier decision (its
-  quote and provenance join that record; it is superseded by it; no second record). Before
+  quote and provenance join that record, and so do those of anything already folded into it; it
+  is superseded by it; no second record). Before
   pairing, each pending decision is compared with its own author's earlier decisions of the area,
   superseded ones included (the same words need no question): a restatement of a superseded rule
   is superseded with it, by what replaced it, so a losing author repeating their rule never

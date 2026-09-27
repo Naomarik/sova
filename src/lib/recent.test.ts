@@ -140,3 +140,14 @@ test("Recent never lists a worker session, even when handed the whole list", () 
   const main = session({ id: "m", lastActiveAt: "2026-03-01T00:00:00Z" });
   assert.deepEqual(recentSessions([worker, main], 5).map((s) => s.id), ["m"]);
 });
+
+test("newest org session is not Recent's first row, in any state", () => {
+  const org = { orgId: "o", orgName: "O", projectId: "p", projectName: "P", kind: "overseer" } as SessionSummary["org"];
+  const plain = session({ id: "plain", lastActiveAt: "2026-01-02T00:00:00Z" });
+  // The org row is the newest by far, live and unread: still never here.
+  const orgRow = { ...session({ id: "org", lastActiveAt: "2026-01-09T00:00:00Z" }), org, origin: "web", live: { pid: 1, status: "idle" }, unread: true } as SessionSummary;
+  const rows = recentSessions([orgRow, plain], 5);
+  assert.equal(rows[0]?.id, "plain");
+  assert.deepEqual(ids(rows), ["plain"]);
+  assert.equal(recentEligible(orgRow), false);
+});

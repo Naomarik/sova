@@ -35,6 +35,7 @@ const full = (): Required<SessionSummary> => ({
   overseer: true,
   baton: { holder: "Tony", state: "open" },
   projectOverseer: { orgId: "org_a", projectId: "prj_a" },
+  org: { orgId: "org_a", orgName: "Acme", projectId: "prj_a", projectName: "Site", kind: "overseer" },
   activity: { state: "idle", since: 5 },
   pendingDialogs: 1,
   seenAt: 10,

@@ -2,7 +2,7 @@
 // it: how many rows it shows.
 //
 // Recent is a SHORTCUT, not a region in the pane rule's sense. It is additive the way a group is:
-// every session it lists is still in Live & web or the Archive underneath, so nothing here decides
+// every session it lists is still in Live & web or the Archive underneath (never an org session), so nothing here decides
 // where a session lives — only which few rows get said twice, at the top, because they are the
 // ones the user is most likely to want back.
 //
@@ -11,7 +11,7 @@
 
 import { createSignal } from "solid-js";
 import type { SessionSummary } from "../../shared/protocol";
-import { isMainThread } from "./regions";
+import { isOrdinarySession } from "./regions";
 import { readKey, writeKey } from "./storage-keys";
 
 /** The settings dialog spec's "General" tab: the count lives in localStorage, like the theme. It is this browser's, not the
@@ -76,11 +76,15 @@ export const recentCountValid = (raw: unknown): boolean => {
  * thread the user started. The sidebar already hands over main threads only; this rule holds
  * even when a caller passes the whole list.
  *
- * A server that predates `archived` or `workerSession` sends none, which counts as not archived
- * and a main thread (protocol.ts).
+ * An organization's session never is, in any state (live, busy, unread, just replied): it lives
+ * only in the Organizations region, as the Overseer's file lives only behind its door. The rule is
+ * here, not in the sidebar, so the spine's tiles and the overview's "Last active" get it too.
+ *
+ * A server that predates `archived`, `workerSession` or `org` sends none, which counts as not
+ * archived and an ordinary main thread (protocol.ts).
  */
-export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession" | "overseer">): boolean =>
-  s.archived !== true && isMainThread(s);
+export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession" | "overseer" | "org">): boolean =>
+  s.archived !== true && isOrdinarySession(s);
 
 /**
  * Recent's order: most recently ACTIVE first.

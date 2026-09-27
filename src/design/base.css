@@ -1575,6 +1575,8 @@ html.is-resizing * {
 /* A count under its icon, not beside it: 44px has no room for both across. */
 .spine-region,
 .spine-stat { flex-direction: column; gap: 2px; }
+/* A region door may carry one .spine-dot (Organizations' waiting dot). */
+.spine-region { position: relative; }
 .spine-count {
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
@@ -1640,6 +1642,10 @@ html.is-resizing * {
 }
 .spine-dot-busy,
 .spine-dot-working { animation: live-pulse 1.6s var(--ease-standard) infinite; }
+/* On a region door, not a tile: an organization session waits on you. Static —
+   waiting is not work in flight — and never alone: the door's name carries
+   "· {k} waiting on you". */
+.spine-dot-warn    { color: var(--status-warn); }
 
 .sidebar-search {
   display: flex;

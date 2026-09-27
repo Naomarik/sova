@@ -1,3 +1,4 @@
+import { archivedDropToast, orgProjectOf } from "../lib/drag-archive";
 import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
@@ -1311,7 +1312,7 @@ export function ChatView(props: {
     setArchiving(true);
     try {
       await setSessionArchived(props.path, true);
-      toast("Archived. Find it under Archive.");
+      toast(archivedDropToast(false, orgProjectOf(props.summary?.() ?? {})).text);
       props.onArchiveChanged?.(props.path, true);
       if (!scope.id) location.hash = "#/";
     } catch (err) {

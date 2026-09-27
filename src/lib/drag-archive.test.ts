@@ -3,7 +3,7 @@
 // outside, and when the pointer has left the window altogether.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { archiveDragOf, archivedDropToast, blockedDropSentence, leftWindow, outsideDropEffect, outsideLabel, outsideTarget } from "./drag-archive";
+import { archiveDragOf, archivedDropToast, blockedDropSentence, leftWindow, orgProjectOf, outsideDropEffect, outsideLabel, outsideTarget, unarchivedToast } from "./drag-archive";
 import type { SelectableSession } from "./session-selection";
 
 const row = (over: Partial<SelectableSession> = {}): SelectableSession => ({
@@ -83,4 +83,15 @@ test("a drop that archived offers Undo; one that deleted a never-sent session do
   assert.equal(gone.undo, false);
   // It must not claim the session is in the Archive: the server deleted the file.
   assert.doesNotMatch(gone.text, /Archive\./);
+});
+
+test("an org session goes to its project's Finished list, and back to its project", () => {
+  const org = { orgId: "o", orgName: "Mamluk Arabia", projectId: "p", projectName: "Rakiba site", kind: "gathering" } as const;
+  const project = orgProjectOf({ org });
+  assert.equal(project, "Rakiba site");
+  assert.deepEqual(archivedDropToast(false, project), { text: "Archived. Find it in Rakiba site, under Finished.", undo: true });
+  assert.doesNotMatch(archivedDropToast(false, project).text, /under Archive/);
+  assert.equal(unarchivedToast(project), "Moved back to Rakiba site.");
+  assert.equal(unarchivedToast(orgProjectOf({})), "Moved back to Live & web.", "an ordinary session is unchanged");
+  assert.equal(archivedDropToast(true, project).undo, false, "a deleted never-sent session is still deleted");
 });

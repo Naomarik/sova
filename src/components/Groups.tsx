@@ -175,6 +175,8 @@ export function MoveToGroupMenu(props: {
   const [error, setError] = createSignal<string | null>(null);
   const [active, setActive] = createSignal(0);
 
+  /** An organization's session is never grouped (§app.session-list/organizations; the server refuses too). */
+  const orgRefusal = () => (props.session.org ? "Organization sessions stay with their project." : null);
   const current = () => props.session.groupId ?? null;
   const currentName = () => groupNameOf(sessionGroups(), props.session.groupId ?? undefined);
   /** The radio rows in keyboard order: "No group" first, then each group in creation order. */
@@ -316,14 +318,25 @@ export function MoveToGroupMenu(props: {
         aria-expanded={open() ? "true" : "false"}
         aria-controls={uid}
         aria-label={props.iconOnly ? `Move ${quoted(props.session.title)} into a group` : undefined}
+        aria-disabled={orgRefusal() ? "true" : undefined}
         title={
-          beside()
+          orgRefusal() ??
+          (beside()
             ? "Open this session in a group's workspace, beside the sessions already in it"
             : currentName()
               ? `In the group ${quoted(currentName()!)}`
-              : "Move into group"
+              : "Move into group")
         }
-        onClick={() => (open() ? closeMenu() : openMenu())}
+        onClick={() => {
+          const refused = orgRefusal();
+          if (refused) {
+            toast(refused);
+            announce(refused);
+            return;
+          }
+          if (open()) closeMenu();
+          else openMenu();
+        }}
       >
         <Icon name={beside() ? "external" : "folder"} />
         <Show when={!props.iconOnly}>

@@ -1,3 +1,4 @@
+import { isOrdinarySession } from "../lib/regions";
 import { createEffect, createMemo, createSignal, For, onMount, Show, untrack } from "solid-js";
 import { GROUP_NAME_MAX, type BatchRefusal, type ContextInfo, type SessionSummary } from "../../shared/protocol";
 import { createFanout } from "../lib/api";
@@ -512,7 +513,7 @@ export function FanoutDialog(props: {
       <Show when={folders()}>
         <FolderPicker
           start={cwd()}
-          recents={[...new Set(props.sessions.map((s) => s.cwd))].slice(0, 8)}
+          recents={[...new Set(props.sessions.filter(isOrdinarySession).map((s) => s.cwd))].slice(0, 8)}
           onPick={(path) => {
             setCwd(path);
             setFolders(false);

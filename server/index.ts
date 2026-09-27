@@ -35,6 +35,7 @@ import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
 import { getSessionSetup } from "./session-setup";
+import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
 import { runFanout } from "./fanout";
@@ -247,6 +248,9 @@ app.post("/api/session-groups/assign", async (c) => {
   const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
   if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  // Organization sessions live under their project, never in a group (a removal still works, for
+  // an assignment made before that rule).
+  if (body.groupId !== null && isOrgSession(path, idOf(path))) return c.json({ error: ORG_NOT_GROUPED }, 400);
   const r = assignSession(idOf(path), body.groupId, label.label, body.index as number | undefined);
   // dissolved is set only when this write emptied a fanout group, which the server then deleted.
   return r.ok ? c.json({ ok: true, ...(r.dissolved ? { dissolved: true } : {}) }) : c.json({ error: r.error }, r.status);

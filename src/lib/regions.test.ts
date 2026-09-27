@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionSummary } from "../../shared/protocol";
-import { isMainThread, isTopSession } from "./regions";
+import { isMainThread, isOrdinarySession, isOrgSession, isTopSession, sidebarRegion } from "./regions";
 
 const live: SessionSummary["live"] = { pid: 1, status: "idle" };
 const row = (over: Partial<SessionSummary>) =>
@@ -32,4 +32,21 @@ test("a worker session is not a main thread; an unmarked one (older server) is",
   assert.equal(isMainThread({ workerSession: undefined }), true);
   assert.equal(isMainThread({ workerSession: true }), false);
   assert.equal(isMainThread({ overseer: true }), false, "an Overseer file is never a sidebar row");
+});
+
+test("org sessions: their own region, whatever else is true; never an ordinary session", () => {
+  const org = { orgId: "o", orgName: "O", kind: "gathering" } as SessionSummary["org"];
+  const base = { live: null, origin: "external", archived: false } as Pick<SessionSummary, "live" | "origin" | "archived">;
+  assert.equal(sidebarRegion({ ...base, org }), "org");
+  assert.equal(sidebarRegion({ ...base, org, live }), "org", "org beats live");
+  assert.equal(sidebarRegion({ ...base, org, origin: "web" }), "org", "org beats web");
+  assert.equal(sidebarRegion({ ...base, org, archived: true }), "org", "org beats archived");
+  assert.equal(sidebarRegion({ ...base, origin: "web" }), "top");
+  assert.equal(sidebarRegion(base), "archive");
+  assert.equal(isOrgSession({ org }), true);
+  assert.equal(isOrgSession({}), false, "an older server sends none: ordinary");
+  assert.equal(isOrdinarySession({ org }), false);
+  assert.equal(isOrdinarySession({}), true);
+  assert.equal(isOrdinarySession({ overseer: true }), false);
+  assert.equal(isMainThread({ org } as Pick<SessionSummary, "workerSession" | "overseer">), true, "still a main thread: the region and the board read it");
 });

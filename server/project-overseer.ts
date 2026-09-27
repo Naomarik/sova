@@ -664,6 +664,9 @@ export async function codeItem(orgId: string, projectId: string, body: ItemCodeI
     ...(body.thinking ? { thinking: body.thinking } : {}),
   });
   linkItem(p, item, made.sessionId);
+  // Organizational from now on (server/org-sessions.ts), under its own kind so the overseer's
+  // budget and caps, which read only "coding", never count the operator's sessions.
+  noteStarted(p, made.sessionId, "operator-coding", new Date(), made.path);
   return made;
 }
 

@@ -2,6 +2,7 @@
 // it starts; where the pointer is decides
 // whether that is showing. Pure, so it runs under `tsx --test`; Sidebar.tsx owns the listeners.
 
+import type { SessionSummary } from "../../shared/protocol";
 import { isTopSession } from "./regions";
 import { archiveBlockReason, type SelectableSession } from "./session-selection";
 
@@ -43,11 +44,18 @@ export function outsideLabel(target: OutsideTarget, drag: ArchiveDrag, title: st
  * (`archiveSession`, server/sessions-index.ts), so there is nothing an Undo could bring back.
  * `deleted`: the session is gone from the list after the archive.
  */
-export function archivedDropToast(deleted: boolean): { text: string; undo: boolean } {
-  return deleted
-    ? { text: "Deleted. It had no messages, so there was nothing to archive.", undo: false }
-    : { text: "Archived. Find it under Archive.", undo: true };
+export function archivedDropToast(deleted: boolean, project?: string | null): { text: string; undo: boolean } {
+  if (deleted) return { text: "Deleted. It had no messages, so there was nothing to archive.", undo: false };
+  // An organization's session never enters the Archive: it goes to its project's Finished list.
+  return { text: project ? `Archived. Find it in ${project}, under Finished.` : "Archived. Find it under Archive.", undo: true };
 }
+
+/** What Undo (or Unarchive) says: an org session goes back to its project, the rest to Live & web. */
+export const unarchivedToast = (project?: string | null): string => (project ? `Moved back to ${project}.` : "Moved back to Live & web.");
+
+/** The project an org row's archive and unarchive toasts name, or null for an ordinary session. */
+export const orgProjectOf = (s: Pick<SessionSummary, "org">): string | null =>
+  s.org ? (s.org.projectId ? s.org.projectName || "its project" : s.org.orgName || s.org.orgId) : null;
 
 /** What a drop outside the sidebar says when it can't archive, or null when it archives (or does nothing). */
 export function blockedDropSentence(drag: ArchiveDrag): string | null {

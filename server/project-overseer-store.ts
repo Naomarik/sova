@@ -241,7 +241,10 @@ export function writeMemo(p: ProjectOverseerPaths, m: WatchMemo): void {
 
 export interface StartedRow {
   sessionId: string;
-  kind: "gathering" | "offer" | "coding";
+  /** `coding`: started by the overseer (its token budget and caps count these, and only these);
+      `operator-coding`: started by the operator's Start coding session on an item — organizational
+      (listed under the project), never counted against the overseer. An older Sova ignores it. */
+  kind: "gathering" | "offer" | "coding" | "operator-coding";
   createdAt: string;
   /** A coding session's file on the host that started it (coding sessions are not in the repo). */
   path?: string;

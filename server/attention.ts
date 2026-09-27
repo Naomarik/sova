@@ -62,6 +62,8 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
     where: whereOf(s, home),
     href: `#/s/${encodeURIComponent(s.path)}`,
     ...(s.live ? { tuiLive: true as const } : {}),
+    // The sidebar lists an org session's items in the Organizations region's own Needs you.
+    ...(s.org ? { org: { orgId: s.org.orgId, orgName: s.org.orgName, ...(s.org.projectId ? { projectId: s.org.projectId } : {}), ...(s.org.projectName !== undefined ? { projectName: s.org.projectName } : {}) } } : {}),
   };
   const add = (tier: AttentionTier, kind: AttentionKind, since: number, detail?: string) =>
     out.push({ ...base, tier, kind, since, ...(detail ? { detail: cap(detail) } : {}) });

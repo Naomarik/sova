@@ -162,7 +162,9 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
           failed.push({ path: s.path, reason: (err as Error).message });
         }
       }
-      const sentence = archiveSummary({ mode: p.mode, done, blocked: p.blocked, failed });
+      const failedPaths = new Set(failed.map((f) => f.path));
+      const org = p.eligible.filter((s) => !failedPaths.has(s.path) && props.sessions.find((x) => x.path === s.path)?.org).length;
+      const sentence = archiveSummary({ mode: p.mode, done, blocked: p.blocked, failed, org });
       toast(sentence);
       announce(sentence);
       props.onRefresh(); // one refresh for the whole run, not one per row
@@ -179,7 +181,11 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
   const movePaths = async (groupId: string | null, paths: readonly string[]): Promise<string[]> => {
     const failed: string[] = [];
     let done = 0;
-    for (const path of paths) {
+    // Organization sessions are never put in a group (the server refuses too): skipped, and said
+    // once. Taking one out of a group made before that rule is still allowed.
+    const isOrg = (path: string) => groupId !== null && !!props.sessions.find((s) => s.path === path)?.org;
+    const skippedOrg = paths.filter(isOrg).length;
+    for (const path of paths.filter((p) => !isOrg(p))) {
       try {
         await assignSessionGroup(path, groupId);
         done++;
@@ -187,7 +193,7 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
         failed.push(path); // counted once in the sentence below, never a toast per row
       }
     }
-    const sentence = groupMoveSummary({ done, groupName: groupId ? groupNameOf(sessionGroups(), groupId) : null, failed: failed.length });
+    const sentence = groupMoveSummary({ done, groupName: groupId ? groupNameOf(sessionGroups(), groupId) : null, failed: failed.length, skippedOrg });
     toast(sentence);
     announce(sentence);
     props.onRefresh();

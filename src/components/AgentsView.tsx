@@ -29,6 +29,7 @@ import {
 import { clockTime, compactModel, relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, memberBadges, memberStatus, type MemberStatus, orderedMembers, splitTeamEvents, teamAnchor, teamFresh, teamHeadingId, teamKey, teamPause } from "../lib/insights";
 import type { Poll } from "../lib/poll";
+import { orgProjectOf } from "../lib/drag-archive";
 import { archiveSession, renameSession } from "../lib/session-actions";
 import { archiveBlockReason } from "../lib/session-selection";
 import { groupNameOf, loadSessionGroups, quoted, sessionGroups, setSessionGroup } from "../lib/session-groups";
@@ -411,7 +412,7 @@ function RowMenu(props: { row: BoardRow; ctx: BoardCtx; archive: { label: string
                       onRun={() => {
                         const path = s().path;
                         const next = !s().archived;
-                        void archiveSession(path, next).then((ok) => ok && props.ctx.onArchiveChanged(path, next));
+                        void archiveSession(path, next, orgProjectOf(s())).then((ok) => ok && props.ctx.onArchiveChanged(path, next));
                       }}
                     />
                   )}
@@ -462,7 +463,7 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
     if (!a || a.blocked) return;
     const path = s().path;
     const next = !s().archived;
-    void archiveSession(path, next).then((ok) => ok && props.ctx.onArchiveChanged(path, next));
+    void archiveSession(path, next, orgProjectOf(s())).then((ok) => ok && props.ctx.onArchiveChanged(path, next));
   };
   const saveTitle = async (title: string | null) => {
     props.ctx.setRenaming(null);

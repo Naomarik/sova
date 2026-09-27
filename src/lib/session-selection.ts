@@ -103,18 +103,26 @@ export function archiveSummary(r: {
   done: number;
   blocked: readonly { reason: string }[];
   failed: readonly { reason: string }[];
+  /** How many of `done` were organization sessions: those go to their project's Finished list, not the Archive. */
+  org?: number;
 }): string {
   const verb = r.mode === "unarchive" ? "Unarchived" : "Archived";
   const parts: string[] = [r.done > 0 ? `${verb} ${r.done} ${sessionsWord(r.done)}.` : `${verb} nothing.`];
+  const org = Math.min(r.org ?? 0, r.done);
+  if (org > 0 && r.mode === "archive")
+    parts.push(org === 1 ? "1 went to its project's Finished list." : `${org} went to their projects' Finished lists.`);
   if (r.blocked.length > 0) parts.push(`Skipped ${r.blocked.length}: ${blockedSentence(r.blocked)}.`);
   if (r.failed.length > 0) parts.push(`${r.failed.length} failed: ${reasonsSentence(r.failed)}`);
   return parts.join(" ");
 }
 
 /** The same shape for the bulk group move: one sentence, whatever the count. */
-export function groupMoveSummary(r: { done: number; groupName: string | null; failed: number }): string {
+export function groupMoveSummary(r: { done: number; groupName: string | null; failed: number; skippedOrg?: number }): string {
   const where = r.groupName === null ? "out of their group" : `to “${r.groupName}”`;
   const parts = [r.done > 0 ? `Moved ${r.done} ${sessionsWord(r.done)} ${where}.` : `Moved nothing ${where}.`];
+  // Organization sessions stay with their project (§app.session-list/organizations): said once, not per row.
+  if (r.skippedOrg)
+    parts.push(r.skippedOrg === 1 ? "Skipped 1: an organization session stays with its project." : `Skipped ${r.skippedOrg}: organization sessions stay with their project.`);
   if (r.failed > 0) parts.push(`${r.failed} failed.`);
   return parts.join(" ");
 }

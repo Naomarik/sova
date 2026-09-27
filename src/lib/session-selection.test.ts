@@ -271,3 +271,15 @@ test("an action that throws still hands the tab back (the caller's finally)", as
   assert.deepEqual([...selectedPaths()], ["/a"]);
   clearSelection();
 });
+
+test("bulk sentences name organization sessions once", () => {
+  assert.equal(
+    archiveSummary({ mode: "archive", done: 2, blocked: [], failed: [], org: 1 }),
+    "Archived 2 sessions. 1 went to its project's Finished list.",
+  );
+  assert.equal(archiveSummary({ mode: "unarchive", done: 2, blocked: [], failed: [], org: 1 }), "Unarchived 2 sessions.");
+  assert.equal(
+    groupMoveSummary({ done: 1, groupName: "G", failed: 0, skippedOrg: 1 }),
+    "Moved 1 session to “G”. Skipped 1: an organization session stays with its project.",
+  );
+});

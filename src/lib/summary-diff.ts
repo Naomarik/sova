@@ -39,6 +39,7 @@ const FIELDS: { [K in keyof Required<SessionSummary>]: "compare" | { exempt: str
   overseer: "compare",
   baton: "compare",
   projectOverseer: "compare",
+  org: "compare",
   activity: "compare",
   pendingDialogs: "compare",
   seenAt: { exempt: "Nothing renders it (`unread`, which does, is compared); it moves at every open and close of any tab, and a new row object would re-mount the row for nothing." },

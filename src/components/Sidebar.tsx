@@ -7,10 +7,27 @@ import { fetchTargets, listSessions, setSessionArchived } from "../lib/api";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
-import { isMainThread, isTopSession } from "../lib/regions";
+import { isMainThread, isOrdinarySession, isOrgSession, isTopSession } from "../lib/regions";
+import {
+  finishedOpen as finishedOpenRule,
+  orgCount,
+  orgNeedsYouRows,
+  orgPlaceLabel,
+  orgRows,
+  ORGS_KEY,
+  orgSearchText,
+  orgSectionOpen as orgSectionOpenRule,
+  orgSections,
+  orgsRegionOpen as orgsRegionOpenRule,
+  orgTitle,
+  type OrgProject,
+  type OrgSection,
+  projectCount,
+  storedOrgsOpen,
+} from "../lib/org-region";
 import { groupRemotePlaceOf, remoteMarkOf, remoteMarkSuffix, remoteMarkTitle } from "../lib/remote-mark";
 import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
-import { type ArchiveDrag, archiveDragOf, archivedDropToast, blockedDropSentence, leftWindow, outsideDropEffect, outsideLabel, outsideTarget } from "../lib/drag-archive";
+import { type ArchiveDrag, archiveDragOf, archivedDropToast, blockedDropSentence, leftWindow, orgProjectOf, outsideDropEffect, outsideLabel, outsideTarget, unarchivedToast } from "../lib/drag-archive";
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
 import { NEEDS_YOU_KEY, needsYouCut, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
@@ -86,7 +103,7 @@ const archiveDateKey = (id: ArchiveGroupId) => `sova:archive-date-open-${id}`;
  * moves it or does nothing; `archive` is what a drop outside the sidebar would do, decided when
  * the drag starts (lib/drag-archive).
  */
-const [dragging, setDragging] = createSignal<{ path: string; groupId: string | null; title: string; archive: ArchiveDrag } | null>(null);
+const [dragging, setDragging] = createSignal<{ path: string; groupId: string | null; title: string; archive: ArchiveDrag; org: string | null } | null>(null);
 /** A group id, "remove", or one of the two outside-the-sidebar states. */
 const [dropTarget, setDropTarget] = createSignal<string | "remove" | "archive" | "archive-blocked" | null>(null);
 const isOutsideTarget = (t: string | null): t is "archive" | "archive-blocked" => t === "archive" || t === "archive-blocked";
@@ -109,6 +126,10 @@ const [openGroups, setOpenGroups] = createSignal<Record<string, boolean>>({});
     the same reason: the folder rules mint fresh folder objects on every poll, so every folder section
     in the list is rebuilt a few seconds after the user collapses one. */
 const [openFolders, setOpenFolders] = createSignal<Record<string, boolean>>({});
+/** Which org sections (by org id) and Finished tails (by org id + project id) the user opened or
+    closed: memory only, module state for the same reason as the groups — rebuilt on every poll. */
+const [openOrgs, setOpenOrgs] = createSignal<Record<string, boolean>>({});
+const [openFinished, setOpenFinished] = createSignal<Record<string, boolean>>({});
 /** The Groups head's `+` has opened the new-group name field. */
 const [newGroupField, setNewGroupField] = createSignal(false);
 
@@ -131,6 +152,13 @@ async function applyDrop(groupId: string | null): Promise<boolean> {
   setDragging(null);
   setDropTarget(null);
   if (!from || from.groupId === groupId) return false;
+  // An organization's session is never grouped (the server refuses too); taking one OUT of a group is still fine.
+  if (from.org !== null && groupId !== null) {
+    const said = "Organization sessions stay with their project.";
+    toast(said);
+    announce(said);
+    return false;
+  }
   // Groups are this host's; a peer's session can't join one (the peer has its own, unseen here).
   const host = hostOf(from.path);
   if (host) {
@@ -199,6 +227,8 @@ function SessionRow(props: {
   targets: TargetInfo[];
   /** Needs you only: the digest's sentence, which takes line 2's place (`title`: every sentence). */
   detail?: { text: string; title: string } | null;
+  /** The Organizations region's Needs you only: where the row lives, "{org} · {project}". */
+  place?: string;
 }) {
   const s = () => props.session;
   /** The row's own remote mark: one row answers for itself, never its
@@ -300,7 +330,7 @@ function SessionRow(props: {
         setGroupDragData(e, s().path);
         // Busy as the row shows it: this tab's own run is newer than the last fetched list.
         const archive = archiveDragOf({ ...s(), busy: localRunning()[s().path] ?? s().busy });
-        setDragging({ path: s().path, groupId: s().groupId ?? null, title: s().title, archive });
+        setDragging({ path: s().path, groupId: s().groupId ?? null, title: s().title, archive, org: orgProjectOf(s()) });
       }}
       onDragEnd={() => {
         setDragging(null);
@@ -522,11 +552,24 @@ function SessionRow(props: {
                   </>
                 )}
               </Show>
-              <Show when={s().model}>
-                {" · "}
-                <span class="text-mono" title={s().model!}>
-                  {shortModel(s().model)}
-                </span>
+              {/* The region's Needs you says where the row lives in the model's place. */}
+              <Show
+                when={props.place}
+                fallback={
+                  <Show when={s().model}>
+                    {" · "}
+                    <span class="text-mono" title={s().model!}>
+                      {shortModel(s().model)}
+                    </span>
+                  </Show>
+                }
+              >
+                {(p) => (
+                  <>
+                    {" · "}
+                    <span class="org-place">{p()}</span>
+                  </>
+                )}
               </Show>
             </p>
             <Show when={contextOf(s())}>{(c) => <ContextRing info={c()} />}</Show>
@@ -984,7 +1027,7 @@ export function Sidebar(props: {
     });
   });
 
-  const archiveByDrag = async (d: { path: string; archive: ArchiveDrag }) => {
+  const archiveByDrag = async (d: { path: string; archive: ArchiveDrag; org: string | null }) => {
     const blocked = blockedDropSentence(d.archive);
     if (blocked) {
       toast(blocked);
@@ -1003,13 +1046,13 @@ export function Sidebar(props: {
     // A never-sent session is deleted rather than archived (lib/drag-archive), and only the list
     // can tell which happened: whether this tab still had a draft on the server is not known here.
     const deleted = (await listSessions().catch(() => null))?.every((s) => s.path !== d.path) ?? false;
-    const done = archivedDropToast(deleted);
+    const done = archivedDropToast(deleted, d.org);
     // Keyed: the next archive's toast replaces this one, so only the latest Undo is on screen.
-    toast(done.text, done.undo ? { key: "archive-undo", action: { label: "Undo", run: () => undoArchive(d.path) } } : undefined);
+    toast(done.text, done.undo ? { key: "archive-undo", action: { label: "Undo", run: () => undoArchive(d.path, d.org) } } : undefined);
     announce(done.text);
     props.onArchiveChanged(d.path, true);
   };
-  const undoArchive = async (path: string) => {
+  const undoArchive = async (path: string, org: string | null) => {
     try {
       await setSessionArchived(path, false);
     } catch (err) {
@@ -1018,7 +1061,7 @@ export function Sidebar(props: {
       announce(failed);
       return;
     }
-    const done = "Moved back to Live & web.";
+    const done = unarchivedToast(org);
     toast(done);
     announce(done);
     props.onArchiveChanged(path, false);
@@ -1122,12 +1165,21 @@ export function Sidebar(props: {
     // The host filter narrows first; with the mesh off it is always All and changes nothing.
     const h = hostFilter();
     const pool = h === null ? all() : all().filter((s) => passesHostFilter(h, s.path));
-    return q ? pool.filter((s) => `${s.title} ${where(s)} ${s.model ?? ""} ${tagSearchText(s.tags)}`.toLowerCase().includes(q)) : pool;
+    // An org row is also found by its org, its project and the baton holder (lib/org-region); it
+    // only ever shows in the Organizations region, so that is the only place such a hit appears.
+    return q
+      ? pool.filter((s) => `${s.title} ${where(s)} ${s.model ?? ""} ${tagSearchText(s.tags)} ${orgSearchText(s)}`.toLowerCase().includes(q))
+      : pool;
   });
+  /** Every ordinary surface — Needs you, Recent, Groups, Live & web, the Archive and its cleanup —
+      reads these, never `all()`/`hits()`: an organization's session lives only in its own region. */
+  const ordinary = createMemo(() => all().filter(isOrdinarySession));
+  const ordinaryHits = createMemo(() => hits().filter(isOrdinarySession));
+  const orgHits = createMemo(() => hits().filter(isOrgSession));
   // Pane rule: live, or web-spawned and not archived, stays on top (src/lib/regions.ts).
   const isTop = isTopSession;
-  const topHits = createMemo(() => hits().filter(isTop));
-  const archiveHits = createMemo(() => hits().filter((s) => !isTop(s)));
+  const topHits = createMemo(() => ordinaryHits().filter(isTop));
+  const archiveHits = createMemo(() => ordinaryHits().filter((s) => !isTop(s)));
   // Each region groups by cwd on its own, so a folder can appear in both.
   const topGroups = createMemo(() => groupByCreation(topHits()));
   /**
@@ -1143,7 +1195,7 @@ export function Sidebar(props: {
    * Recent. A shortcut like Recent — every row is still where it lives — and built from `hits()`
    * too, so the search narrows it and its count is always its rows. The open session stays listed.
    */
-  const needsYou = createMemo(() => needsYouRows(props.attention, hits()));
+  const needsYou = createMemo(() => needsYouRows(props.attention, ordinaryHits()));
   /** ONE rule for the region and its spine door: rows, and proactivity known and not Off. */
   const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYou().length);
   const needsYouCutNote = () => needsYouCut(props.attention);
@@ -1156,7 +1208,7 @@ export function Sidebar(props: {
     const sorted = [...archiveHits()].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
     return groupByArchiveDate(sorted, new Date(props.now)).map((d) => ({ ...d, groups: groupByActivity(d.items) }));
   });
-  const archiveTotal = () => all().filter((s) => !isTop(s)).length;
+  const archiveTotal = () => ordinary().filter((s) => !isTop(s)).length;
   /**
    * Whether each region is on screen right now — ONE rule, read by the region's own `<Show>` and
    * by the spine's count button, which is that region's door. Deriving the spine's boxes from
@@ -1170,9 +1222,10 @@ export function Sidebar(props: {
   // group can hold a TUI-live session and an archived one — so they read the whole search-hit list,
   // not one region's slice.
   const searching = () => !!query().trim();
-  const sections = createMemo(() => groupSections(hits(), sessionGroups(), searching()));
+  // Org sessions are never grouped, so an assignment made before that rule is kept but not drawn.
+  const sections = createMemo(() => groupSections(ordinaryHits(), sessionGroups(), searching()));
   /** A group's rows, from the same hit list the sections were built from. */
-  const rowsOf = (id: string) => hits().filter((s) => s.groupId === id);
+  const rowsOf = (id: string) => ordinaryHits().filter((s) => s.groupId === id);
   /** With no query the region always stands: its head carries the `+` that makes a group, the
       feature's front door. While searching it appears only when a group has a match — or when a row is in flight
       and needs its "Remove from …" target, which a fruitless search would otherwise hide. */
@@ -1247,6 +1300,58 @@ export function Sidebar(props: {
     setNeedsYouStored(open);
     writeKey(sessionStorage, NEEDS_YOU_KEY, open ? "1" : "0");
   };
+  /**
+   * Organizations (lib/org-region): the only place org sessions are listed. Its own Needs you first,
+   * then org → project → rows with a Finished tail. Open by default, a collapse remembered for the tab.
+   */
+  const orgs = createMemo(() => orgSections(orgHits()));
+  const orgTotal = () => all().filter(isOrgSession).length;
+  const orgNeedsYou = createMemo(() => orgNeedsYouRows(props.attention, orgHits()));
+  const orgNeedsYouDetail = (path: string) => {
+    const r = orgNeedsYou().find((row) => row.session.path === path);
+    return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
+  };
+  const waitingTitle = (k: number) => (k === 1 ? "1 session waiting on you." : `${k} sessions waiting on you.`);
+  const orgNeedsTitle = (k: number) =>
+    k === 1 ? "The 1 organization session waiting on you." : `The ${k} organization sessions waiting on you, newest first.`;
+  /** A project's label title: its root, read off the project overseer's folder, else its name. */
+  const projectTitle = (p: OrgProject) => {
+    const po = [...p.active, ...p.finished].find((s) => s.org?.kind === "overseer");
+    return po ? tildePath(po.cwd, home()) : p.name;
+  };
+  /** Paths waiting on the operator, for the org heads' warn dot. */
+  const orgWaiting = createMemo(() => new Set(orgNeedsYou().map((r) => r.session.path)));
+  const waitingIn = (rows: readonly SessionSummary[]) => rows.filter((r) => orgWaiting().has(r.path)).length;
+  /** ONE rule for the region and its spine door: any org row among the hits. */
+  const showOrgs = () => !!props.sessions && orgHits().length > 0;
+  const [orgsStored, setOrgsStored] = createSignal(storedOrgsOpen(readKey(sessionStorage, ORGS_KEY)));
+  const orgsOpen = () =>
+    orgsRegionOpenRule({
+      stored: orgsStored(),
+      searching: searching(),
+      holdsSelected: orgHits().some((s) => s.path === props.selected),
+    });
+  const onOrgsToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
+    const open = e.currentTarget.open;
+    if (open === orgsOpen()) return; // our own `open` update, not the user's
+    setOrgsStored(open);
+    writeKey(sessionStorage, ORGS_KEY, open ? "1" : "0");
+  };
+  const holds = (rows: readonly SessionSummary[]) => rows.some((r) => r.path === props.selected);
+  const orgOpen = (o: OrgSection) => orgSectionOpenRule({ chosen: openOrgs()[o.id], searching: searching(), holdsSelected: holds(orgRows(o)) });
+  const onOrgToggle = (o: OrgSection, e: Event & { currentTarget: HTMLDetailsElement }) => {
+    const open = e.currentTarget.open;
+    if (open === orgOpen(o)) return;
+    setOpenOrgs((m) => ({ ...m, [o.id]: open }));
+  };
+  const finishedKey = (o: OrgSection, p: OrgProject) => `${o.id}\n${p.id}`;
+  const projectFinishedOpen = (o: OrgSection, p: OrgProject) =>
+    finishedOpenRule({ chosen: openFinished()[finishedKey(o, p)], searching: searching(), holdsSelected: holds(p.finished) });
+  const onFinishedToggle = (o: OrgSection, p: OrgProject, e: Event & { currentTarget: HTMLDetailsElement }) => {
+    const open = e.currentTarget.open;
+    if (open === projectFinishedOpen(o, p)) return;
+    setOpenFinished((m) => ({ ...m, [finishedKey(o, p)]: open }));
+  };
   // Date sections: collapsed by default, each remembering its own choice the same way.
   const [storedDateOpen, setStoredDateOpen] = createSignal<Partial<Record<ArchiveGroupId, boolean>>>({});
   const dateStored = (id: ArchiveGroupId) => storedDateOpen()[id] ?? readKey(sessionStorage, archiveDateKey(id)) === "1";
@@ -1283,6 +1388,11 @@ export function Sidebar(props: {
     });
   };
   const agentsWorking = () => activeAgentCounts(props.agents).agents;
+  /** The Organizations door: its sessions, and who is waiting, so nothing waits unseen behind the spine. */
+  const orgsDoorLabel = () => {
+    const k = orgNeedsYou().length;
+    return `Organizations · ${sessionsWord(orgHits().length)}${k > 0 ? ` · ${k} waiting on you` : ""}`;
+  };
   const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
 
   /**
@@ -1373,7 +1483,7 @@ export function Sidebar(props: {
         {/* Each count is a door into its region, so a 0 is no door at all: the section it would
             scroll to is not on screen. Both at 0, the box goes with them — an empty one would
             still draw its divider. */}
-        <Show when={showNeedsYou() || showTop() || showArchive()}>
+        <Show when={showNeedsYou() || showTop() || showOrgs() || showArchive()}>
           <div class="spine-regions">
             <Show when={showNeedsYou()}>
               <button
@@ -1407,6 +1517,26 @@ export function Sidebar(props: {
               >
                 <Icon name="chat" />
                 <span class="spine-count text-num">{topHits().length}</span>
+              </button>
+            </Show>
+            <Show when={showOrgs()}>
+              <button
+                type="button"
+                class="button button-icon spine-item spine-region"
+                title={orgsDoorLabel()}
+                aria-label={orgsDoorLabel()}
+                onClick={() =>
+                  expandToRegion(
+                    () => aside.querySelector<HTMLElement>(".sidebar-orgs > summary"),
+                    (el) => el,
+                  )
+                }
+              >
+                <Icon name="building" />
+                <span class="spine-count text-num">{orgHits().length}</span>
+                <Show when={orgNeedsYou().length > 0}>
+                  <span class="spine-dot spine-dot-warn" aria-hidden="true" />
+                </Show>
               </button>
             </Show>
             <Show when={showArchive()}>
@@ -1775,7 +1905,7 @@ export function Sidebar(props: {
               <h2 class="sidebar-region-head" id="r-top">
                 Live &amp; web{" "}
                 <span class="sidebar-region-count">
-                  · {query().trim() ? `${topHits().length} of ${all().length - archiveTotal()}` : topHits().length}
+                  · {query().trim() ? `${topHits().length} of ${ordinary().length - archiveTotal()}` : topHits().length}
                 </span>
               </h2>
               <Show
@@ -1785,6 +1915,134 @@ export function Sidebar(props: {
                 <GroupList groups={topGroups()} selected={props.selected} now={props.now} idPrefix="t" targets={targets()} searching={searching()} />
               </Show>
             </section>
+          </Show>
+
+          {/* Organizations, last before the Archive (lib/org-region): the only place an org's
+              sessions are listed. Its own Needs you first, then org → project → rows, each project
+              with a collapsed Finished tail. Open by default; a collapse holds for the tab. */}
+          <Show when={showOrgs()}>
+            <details class="sidebar-region sidebar-orgs" aria-labelledby="r-orgs" open={orgsOpen()} onToggle={onOrgsToggle}>
+              <summary class="sidebar-orgs-summary">
+                <h2
+                  class="sidebar-region-head"
+                  id="r-orgs"
+                  title="Hand-offs, project overseers, and the coding sessions they started, by organization and project."
+                >
+                  <Icon name="chevron-right" small class="icon-twist" />
+                  Organizations{" "}
+                  <span class="sidebar-region-count">· {searching() ? `${orgHits().length} of ${orgTotal()}` : orgHits().length}</span>
+                  {/* Nothing waits unseen: the warn dot and count stay on the head, open or shut. */}
+                  <Show when={orgNeedsYou().length > 0}>
+                    <span class="chip chip-warn org-needs-chip" title={waitingTitle(orgNeedsYou().length)}>
+                      <i class="chip-dot" />
+                      <span class="text-num">{orgNeedsYou().length}</span> waiting
+                    </span>
+                  </Show>
+                  <Show when={!orgsOpen() && folderActive(orgHits(), localRunning())}>
+                    <span class="session-group-active" title="An agent is working in one of these sessions">
+                      <span class="session-rail-dot" />
+                      <span class="visually-hidden">, an agent is working here</span>
+                    </span>
+                  </Show>
+                </h2>
+              </summary>
+              <Show when={orgNeedsYou().length > 0}>
+                <section class="org-needs" aria-labelledby="r-orgs-needs">
+                  <h3 class="list-group-label org-needs-label" id="r-orgs-needs" title={orgNeedsTitle(orgNeedsYou().length)}>
+                    <span class="org-needs-dot" aria-hidden="true" />
+                    Needs you
+                    <span class="text-num">{orgNeedsYou().length}</span>
+                  </h3>
+                  <ul class="list">
+                    <For each={orgNeedsYou().map((r) => r.session)}>
+                      {(s) => (
+                        <SessionRow
+                          session={s}
+                          selected={props.selected}
+                          now={props.now}
+                          targets={targets()}
+                          detail={orgNeedsYouDetail(s.path)}
+                          place={orgPlaceLabel(s)}
+                        />
+                      )}
+                    </For>
+                  </ul>
+                </section>
+              </Show>
+              <For each={orgs()}>
+                {(o) => {
+                  const count = () => orgCount(o);
+                  const waiting = () => waitingIn(orgRows(o));
+                  return (
+                    <details class="group-section org-section" open={orgOpen(o)} onToggle={(e) => onOrgToggle(o, e)}>
+                      <summary class="list-group-label group-label org-label" title={orgTitle(o.name, count(), waiting())}>
+                        <Icon name="chevron-right" small class="icon-twist" />
+                        <span class="group-name">
+                          <bdi>{o.name}</bdi>
+                        </span>
+                        <Show when={waiting() > 0}>
+                          <span class="org-needs-dot" aria-hidden="true" />
+                          <span class="visually-hidden">, {waiting()} waiting on you</span>
+                        </Show>
+                        <Show when={folderActive(orgRows(o), localRunning())}>
+                          <span class="session-group-active" title="An agent is working in one of these sessions">
+                            <span class="session-rail-dot" />
+                            <span class="visually-hidden">, an agent is working here</span>
+                          </span>
+                        </Show>
+                        <span class="text-num">{count()}</span>
+                        <a
+                          class="button button-icon button-ghost org-link"
+                          href={`#/orgs/${encodeURIComponent(o.id)}`}
+                          aria-label={`Open the ${o.name} page`}
+                          title={`Open the ${o.name} page`}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
+                          <Icon name="arrow-right" small />
+                        </a>
+                      </summary>
+                      <For each={o.projects}>
+                        {(p) => (
+                          <div class="org-project">
+                            <h4 class="list-group-label org-project-label" title={projectTitle(p)}>
+                              <span class="org-project-name">
+                                <bdi>{p.name}</bdi>
+                              </span>
+                              <span class="text-num">{projectCount(p)}</span>
+                            </h4>
+                            <Show when={p.active.length > 0}>
+                              <ul class="list">
+                                <For each={p.active}>
+                                  {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
+                                </For>
+                              </ul>
+                            </Show>
+                            <Show when={p.finished.length > 0}>
+                              <details class="archive-date org-finished" open={projectFinishedOpen(o, p)} onToggle={(e) => onFinishedToggle(o, p, e)}>
+                                <summary
+                                  class="list-group-label archive-date-label"
+                                  title="Hand-offs that reached their goal or were closed, cleared overseer conversations, and sessions you archived."
+                                >
+                                  <Icon name="chevron-right" small class="icon-twist" />
+                                  <span class="archive-date-name">Finished</span>
+                                  <span class="text-num">{p.finished.length}</span>
+                                </summary>
+                                <ul class="list">
+                                  <For each={p.finished}>
+                                    {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
+                                  </For>
+                                </ul>
+                              </details>
+                            </Show>
+                          </div>
+                        )}
+                      </For>
+                    </details>
+                  );
+                }}
+              </For>
+            </details>
           </Show>
 
           <Show when={showArchive()}>
@@ -1810,7 +2068,7 @@ export function Sidebar(props: {
               </For>
               {/* Cleanup ignores the search, so it's hidden while one filters the list. */}
               <Show when={!query().trim()}>
-                <ArchiveCleanup sessions={all()} selected={props.selected} onDeleted={() => props.onRefresh()} />
+                <ArchiveCleanup sessions={ordinary()} selected={props.selected} onDeleted={() => props.onRefresh()} />
               </Show>
             </details>
           </Show>

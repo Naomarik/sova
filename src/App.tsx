@@ -1185,7 +1185,7 @@ export function App() {
         <Portal>
           <NewSessionDialog
             prefill={newSessionCwd(summary(), list() ?? []) ?? ""}
-            knownCwds={[...new Set((list() ?? []).filter((s) => !s.overseer).map((s) => s.cwd))]}
+            knownCwds={[...new Set((list() ?? []).filter((s) => !s.overseer && !s.org).map((s) => s.cwd))]}
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}
             onFanOut={(cwd) => {

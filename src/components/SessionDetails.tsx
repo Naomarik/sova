@@ -4,6 +4,7 @@ import { contextSentence, contextStateFor } from "../lib/context";
 import { relativeTime, thousands, tildePath } from "../lib/format";
 import { type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
 import { absoluteTime, firstLine, timelineEntries } from "../lib/spend";
+import { orgProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
 import { cwdLabel } from "../lib/remote-session";
 import { resumeCommand } from "../lib/session-command";
@@ -603,7 +604,7 @@ function ArchiveAction(props: { session: SessionSummary; archived: boolean; work
     const next = !props.archived;
     setPending(true);
     try {
-      if (await archiveSession(props.session.path, next)) props.onDone(next);
+      if (await archiveSession(props.session.path, next, orgProjectOf(props.session))) props.onDone(next);
     } finally {
       setPending(false);
     }

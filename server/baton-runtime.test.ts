@@ -2,7 +2,7 @@
 // tree's pi-config extensions linked in, so "no pi-config extension loads" is a real claim) and a
 // workspace in the OS temp dir; ~/.pi is never read or written. No model is called.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
@@ -75,6 +75,23 @@ describe("a baton session's runtime", async () => {
     assert.equal(err?.code, "refused");
     assert.match(err?.message ?? "", /Tony holds the baton/);
     assert.equal(err?.clientId, "c1", "the composer gets its draft back");
+  });
+
+  test("a composer pick in an empty baton stays that session's; it never becomes the host's default", async () => {
+    const defaultsFile = join(agentDir, "sova", "defaults.json");
+    rmSync(defaultsFile, { force: true });
+    const fresh = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Pristine", goal: "Settle it", mintLink: false });
+    const chat = await acquireChat(fresh.path);
+    assert.equal(chat.special, "baton");
+    const branch = chat.session.sessionManager.getBranch();
+    assert.ok(!branch.some((e) => e.type === "message" && e.message.role === "user"), "the baton has no user message yet");
+    // The model resolves without credentials and the SDK's switch is a no-op, as in chat-config.test.ts.
+    const inner = chat as unknown as { runtime: { services: { modelRuntime: { getAvailable(): Promise<unknown[]> } } } };
+    inner.runtime.services.modelRuntime.getAvailable = async () => [{ provider: "ollama-cloud", id: "glm-5.3" }];
+    (chat.session as unknown as { setModel(m: unknown): Promise<void> }).setModel = async () => {};
+    await chat.setModelRef("ollama-cloud/glm-5.3", { save: true });
+    chat.setThinking("low", { save: true });
+    assert.equal(existsSync(defaultsFile), false, "defaults.json was not written");
   });
 });
 

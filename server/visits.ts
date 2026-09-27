@@ -73,7 +73,8 @@ const PREVIEWERS: [RegExp, string][] = [
   [/Google-PageRenderer|Googlebot/i, "Google"],
   [/Embedly|Iframely|vkShare|Applebot|Bingbot|BingPreview/i, "Link preview"],
 ];
-const SCRIPTS = /^(curl|Wget|python-requests|python-urllib|Go-http-client|node-fetch|axios|okhttp|Java\/|libwww|HTTPie|undici)/i;
+// `node`: Node's built-in fetch sends exactly that (anchored, so no browser, which starts "Mozilla").
+const SCRIPTS = /^(curl|Wget|python-requests|python-urllib|Go-http-client|node-fetch|node(?:\/|$)|axios|okhttp|Java\/|libwww|HTTPie|undici)/i;
 const SCANNERS = /HeadlessChrome|PhantomJS|Puppeteer|Playwright|Proofpoint|Mimecast|Barracuda|SafeLinks|ms-office|Microsoft Office|\b(bot|crawler|spider|scanner)\b|bot\/|preview/i;
 
 export interface Device {

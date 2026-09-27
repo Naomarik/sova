@@ -1,5 +1,6 @@
 import { createSignal, Show, type JSX } from "solid-js";
 import type { Person, PersonInput } from "../../shared/orgs";
+import { changedFields } from "../lib/person-patch";
 
 const list = (s: string) =>
   s
@@ -7,8 +8,18 @@ const list = (s: string) =>
     .map((x) => x.trim())
     .filter(Boolean);
 
-/** A person's profile form: Add Person on the People tab, Edit on a card and on their page. */
-export function PersonForm(props: { person?: Person; submitLabel: string; onSubmit(input: PersonInput): void; onCancel(): void }) {
+/** Add Person submits the whole profile; Edit submits only the fields changed in the form. */
+type PersonFormProps = { submitLabel: string; onCancel(): void } & (
+  | { person?: undefined; onSubmit(input: PersonInput): void }
+  | { person: Person; onSubmit(input: Partial<PersonInput>): void }
+);
+
+/**
+ * A person's profile form: Add Person on the People tab, Edit on a card and on their page. Edit
+ * sends only what changed against the person as the form opened, so a field someone else wrote
+ * meanwhile (a wrap-up, another tab) is kept; with nothing changed it just closes.
+ */
+export function PersonForm(props: PersonFormProps) {
   const p = props.person;
   const [name, setName] = createSignal(p?.name ?? "");
   const [status, setStatus] = createSignal<Person["status"]>(p?.status ?? "active");
@@ -34,7 +45,7 @@ export function PersonForm(props: { person?: Person; submitLabel: string; onSubm
       onSubmit={(e) => {
         e.preventDefault();
         const contact = { ...(email().trim() ? { email: email().trim() } : {}), ...(phone().trim() ? { phone: phone().trim() } : {}), ...(whatsapp().trim() ? { whatsapp: whatsapp().trim() } : {}) };
-        props.onSubmit({
+        const input: PersonInput = {
           name: name().trim(),
           status: status(),
           role: role().trim(),
@@ -44,7 +55,11 @@ export function PersonForm(props: { person?: Person; submitLabel: string; onSubm
           voice: voice().trim(),
           contact,
           ...(status() === "proposed" || why().trim() || by().trim() ? { referral: { why: why().trim(), referredBy: by().trim() } } : {}),
-        });
+        };
+        if (!p) return (props.onSubmit as (input: PersonInput) => void)(input);
+        const patch = changedFields(p, input);
+        if (Object.keys(patch).length) props.onSubmit(patch);
+        else props.onCancel();
       }}
     >
       <div class="orgs-fields">

@@ -777,7 +777,7 @@ function PersonCard(props: { org: OrgDetail; person: Person; act: Act; now: numb
           person={p()}
           submitLabel="Save Changes"
           onCancel={() => setEditing(false)}
-          onSubmit={async (input) => {
+          onSubmit={async (input: Partial<PersonInput>) => {
             const ok = await props.act(() => patchPerson(props.org.id, p().id, input), "Saved.");
             if (ok) setEditing(false);
           }}

@@ -3,7 +3,7 @@ import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { fetchTargets, listSessions, setSessionArchived } from "../lib/api";
+import { fetchTargets, setSessionArchived } from "../lib/api";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
@@ -1036,17 +1036,16 @@ export function Sidebar(props: {
       return;
     }
     if (d.archive.kind !== "archive") return; // already archived: the gesture does nothing
+    let deleted: boolean;
     try {
-      await setSessionArchived(d.path, true);
+      // A never-sent session is deleted rather than archived (lib/drag-archive); the answer says which.
+      deleted = !!(await setSessionArchived(d.path, true)).deleted;
     } catch (err) {
       const failed = `Couldn't archive this session. ${(err as Error).message}`;
       toast(failed);
       announce(failed);
       return;
     }
-    // A never-sent session is deleted rather than archived (lib/drag-archive), and only the list
-    // can tell which happened: whether this tab still had a draft on the server is not known here.
-    const deleted = (await listSessions().catch(() => null))?.every((s) => s.path !== d.path) ?? false;
     const done = archivedDropToast(deleted, d.org);
     // Keyed: the next archive's toast replaces this one, so only the latest Undo is on screen.
     toast(done.text, done.undo ? { key: "archive-undo", action: { label: "Undo", run: () => undoArchive(d.path, d.org) } } : undefined);

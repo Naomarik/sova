@@ -58,6 +58,10 @@ test("classify: a coarse family, previewers and scanners apart, never the raw st
   });
   assert.deepEqual(visits.classify(HEADLESS), { device: "Security scanner", kind: "bot" });
   assert.deepEqual(visits.classify("curl/8.9.1"), { device: "Script", kind: "bot" });
+  // Node's built-in fetch sends exactly "node"; a versioned form reads the same.
+  assert.deepEqual(visits.classify("node"), { device: "Script", kind: "bot" });
+  assert.deepEqual(visits.classify("node/22"), { device: "Script", kind: "bot" });
+  assert.equal(visits.classify("nodeish-browser/1.0").kind, "person", "only the bare name or name/version is Node");
   assert.deepEqual(visits.classify(""), { device: "Browser", kind: "person" });
   // A phone model with "bot" inside its name is not a bot.
   assert.equal(visits.classify("Mozilla/5.0 (Linux; Android 13; CUBOT X30) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36").kind, "person");

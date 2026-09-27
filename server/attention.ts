@@ -151,7 +151,31 @@ export function buildDigest(rows: AttentionRow[], now = Date.now(), home?: strin
   all.sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || b.since - a.since);
   const counts = { act: 0, decide: 0, fyi: 0 };
   for (const it of all) counts[it.tier]++;
-  return { generatedAt: now, counts, items: all.slice(0, DIGEST_MAX), badge };
+  return { generatedAt: now, counts, items: capKeepingKinds(all), badge };
+}
+
+/**
+ * The first DIGEST_MAX of `sorted`, except that every kind present keeps its first (most urgent,
+ * newest) item: each one missing takes the place of the last kept item whose kind stays
+ * represented without it, so a flood of one kind never hides another. Order is kept.
+ */
+function capKeepingKinds(sorted: AttentionItem[]): AttentionItem[] {
+  const kept = sorted.slice(0, DIGEST_MAX);
+  const perKind = new Map<AttentionKind, number>();
+  for (const it of kept) perKind.set(it.kind, (perKind.get(it.kind) ?? 0) + 1);
+  const missing = new Map<AttentionKind, AttentionItem>();
+  for (const it of sorted.slice(DIGEST_MAX)) if (!perKind.has(it.kind) && !missing.has(it.kind)) missing.set(it.kind, it);
+  if (!missing.size) return kept;
+  const out = new Set(kept);
+  for (const it of missing.values()) {
+    const drop = [...out].reverse().find((k) => (perKind.get(k.kind) ?? 0) > 1);
+    if (!drop) break;
+    out.delete(drop);
+    perKind.set(drop.kind, perKind.get(drop.kind)! - 1);
+    out.add(it);
+    perKind.set(it.kind, 1);
+  }
+  return sorted.filter((it) => out.has(it));
 }
 
 /**

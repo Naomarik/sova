@@ -1,7 +1,7 @@
 import { createMemo, createResource, createSignal, For, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { OPERATOR, type BatonView, type BatonViewItem } from "../../shared/baton";
-import type { Person, PersonPage as PersonPageData, PersonSessionRow, ProfileChange, VisitRow } from "../../shared/orgs";
+import type { Person, PersonInput, PersonPage as PersonPageData, PersonSessionRow, ProfileChange, VisitRow } from "../../shared/orgs";
 import { ApiError, approvePerson, batonLink, declinePerson, getOrg, getPersonPage, inviteeLink, patchPerson, previewAsPerson, revertPersonChange, revokePersonLinks } from "../lib/api";
 import { proposedAreasLine } from "../lib/baton-strip";
 import { DECISION_STATE } from "../lib/decisions-view";
@@ -164,7 +164,7 @@ export function PersonPage(props: { orgId: string; personId: string; titleRef(el
                   person={d().person}
                   submitLabel="Save Changes"
                   onCancel={() => setEditing(false)}
-                  onSubmit={async (input) => {
+                  onSubmit={async (input: Partial<PersonInput>) => {
                     if (await act(() => patchPerson(props.orgId, props.personId, input), "Saved.")) setEditing(false);
                   }}
                 />

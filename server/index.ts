@@ -305,7 +305,8 @@ app.post("/api/sessions/fork", async (c) => {
   return c.json({ error: r.error }, r.status);
 });
 
-// Moves a web-spawned session between the sidebar regions. Changes Sova's own id list only.
+// Moves a web-spawned session between the sidebar regions. Changes Sova's own id list only, except
+// that an empty husk is deleted instead (the answer then carries `deleted: true`).
 app.post("/api/sessions/archive", async (c) => {
   let body: { path?: unknown; archived?: unknown };
   try {

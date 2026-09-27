@@ -354,8 +354,9 @@ export const connectTarget = (host?: string | null) =>
   });
 
 /** Moves a web-spawned session to the Archive region (true) or back to the top (false). */
+/** `deleted`: archiving an empty husk deleted its file instead (§app.session-list/archive-org-guard). */
 export const setSessionArchived = (path: string, archived: boolean) =>
-  request<SessionSummary>("/api/sessions/archive", {
+  request<SessionSummary & { deleted?: true }>("/api/sessions/archive", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path, archived }),

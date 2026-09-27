@@ -1804,7 +1804,8 @@ class ChatSession {
     // The level too: setModel re-clamped it, and the next conversation is seeded from the file.
     if (this.overseer) overseerRuntime?.saveChoice({ model: ref, thinking: this.session.thinkingLevel });
     else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { model: ref, thinking: this.session.thinkingLevel });
-    else if (this.isPristine()) saveDefaults({ model: ref });
+    // Another special kind (a baton) keeps the pick in its own file only: never the host's default.
+    else if (!this.specialEntry && this.isPristine()) saveDefaults({ model: ref });
   }
 
   /** Change thinking level: the `set_thinking` path, shared like setModelRef (and saved, like it,
@@ -1832,8 +1833,8 @@ class ChatSession {
     if (opts.save !== true) return after;
     if (this.overseer) overseerRuntime?.saveChoice({ thinking: after });
     else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { thinking: after });
-    // A session with no messages yet: this level is also the next new session's default.
-    else if (this.isPristine()) saveDefaults({ thinking: after });
+    // A session with no messages yet: this level is also the next new session's default (never a special kind's).
+    else if (!this.specialEntry && this.isPristine()) saveDefaults({ thinking: after });
     return after;
   }
 

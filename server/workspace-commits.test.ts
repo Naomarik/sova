@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { changeSummary, COMMIT_EVERY_MS, commitEveryMs, WorkspaceCommitter } from "./workspace-commits";
-import { commitAll, initRepo, setRemote } from "./workspace-git";
+import { commitAll, gitStatus, initRepo, setRemote } from "./workspace-git";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-wscommit-")));
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -101,6 +101,41 @@ describe("the hourly workspace commit", () => {
     assert.equal(retried?.committed, false);
     assert.equal(retried?.pushed, true);
     assert.equal(git(bare, "rev-parse", "main"), git(dir, "rev-parse", "HEAD"));
+  });
+
+  test("Commit Now with nothing new pushes the commits a just-set remote lacks; nothing to push is a no-op", async () => {
+    const bare = join(root, "late-remote.git");
+    execFileSync("git", ["init", "-q", "--bare", "-b", "main", bare]);
+    const dir = await repo("late");
+    await setRemote(dir, bare);
+    const first = await commitAll(dir, "Commit now");
+    assert.equal(first.committed, false, "nothing new to commit");
+    assert.equal(first.pushed, true, "the history went to the remote");
+    assert.equal(first.error, undefined);
+    assert.equal(git(bare, "rev-parse", "HEAD"), git(dir, "rev-parse", "HEAD"), "the remote has HEAD");
+    const again = await commitAll(dir, "Commit now");
+    assert.deepEqual(again, { committed: false }, "up to date: no push");
+    // A commit made while the remote was unset is pushed by the next Commit Now too.
+    await setRemote(dir, "");
+    writeFileSync(join(dir, "notes.md"), "x\n");
+    await commitAll(dir, "local only");
+    await setRemote(dir, bare);
+    const behind = await commitAll(dir, "Commit now");
+    assert.equal(behind.pushed, true);
+    assert.equal(git(bare, "rev-parse", "HEAD"), git(dir, "rev-parse", "HEAD"));
+    // Another, empty remote: the old one's tracking refs don't count, so it gets the history.
+    const other = join(root, "other-remote.git");
+    execFileSync("git", ["init", "-q", "--bare", "-b", "main", other]);
+    await setRemote(dir, other);
+    assert.equal((await commitAll(dir, "Commit now")).pushed, true);
+    assert.equal(git(other, "rev-parse", "HEAD"), git(dir, "rev-parse", "HEAD"));
+    // The remote is unreachable: the failure is recorded like a commit's push.
+    await setRemote(dir, join(root, "nowhere.git"));
+    writeFileSync(join(dir, "notes.md"), "y\n");
+    await commitAll(dir, "local only");
+    const failed = await commitAll(dir, "Commit now");
+    assert.match(failed.error ?? "", /git push failed/);
+    assert.match((await gitStatus(dir)).lastError ?? "", /git push failed/);
   });
 
   test("shutdown: every repo with changes is committed now, due or not; a clean one is left alone", async () => {

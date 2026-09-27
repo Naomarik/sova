@@ -34,6 +34,7 @@ test("archiving an org's empty baton keeps its file; an ordinary empty husk is s
   const fresh = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Fresh", goal: "g", mintLink: false });
   const r = await archiveSession(fresh.path, true);
   assert.ok(r.ok, r.ok ? "" : r.error);
+  assert.equal(r.ok && "deleted" in r.summary, false, "an org husk is archived, not reported deleted");
   assert.ok(existsSync(fresh.path), "the baton's file survived archiving");
   assert.equal(isArchived(fresh.sessionId), true, "archived normally, by mark");
   assert.ok(baton.batonById(fresh.sessionId), "baton.json still lists it");
@@ -44,6 +45,18 @@ test("archiving an org's empty baton keeps its file; an ordinary empty husk is s
   addWebSession(id);
   const h = await archiveSession(husk, true);
   assert.ok(h.ok, h.ok ? "" : h.error);
+  assert.equal(h.ok && h.summary.deleted, true, "the answer says the husk was deleted, so the toast can say so");
   assert.equal(existsSync(husk), false, "an ordinary husk is deleted on archive, as before");
   assert.equal(isArchived(idOf(husk)), false);
+
+  const sid = "01234567-89ab-7cde-8f01-00000000000e";
+  const said = join(ordinaryDir, `2026-09-01T00-00-01-000Z_${sid}.jsonl`);
+  const user = { type: "message", id: "u1", parentId: null, timestamp: "2026-09-01T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }], timestamp: 1 } };
+  writeFileSync(said, `${JSON.stringify({ type: "session", version: 3, id: sid, timestamp: "2026-09-01T00:00:01.000Z", cwd: "/tmp" })}\n${JSON.stringify(user)}\n`);
+  addWebSession(sid);
+  const s = await archiveSession(said, true);
+  assert.ok(s.ok, s.ok ? "" : s.error);
+  assert.equal(s.ok && "deleted" in s.summary, false, "a session with a message is archived, not deleted");
+  assert.ok(existsSync(said));
+  assert.equal(isArchived(sid), true);
 });

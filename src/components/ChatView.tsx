@@ -1305,14 +1305,14 @@ export function ChatView(props: {
     socket.retry();
   };
   /** The pane's Archive gesture, on the same endpoint with the same toast and list refresh:
-      moves this session to the Archive region and deletes nothing (the title says so). Then
-      out of the dead session, on the app's own route to the landing page (the back link's). */
+      moves this session to the Archive region (an empty husk is deleted instead, and the toast
+      says which). Then out of the dead session, on the app's own route to the landing page (the back link's). */
   const archive = async () => {
     if (archiving()) return;
     setArchiving(true);
     try {
-      await setSessionArchived(props.path, true);
-      toast(archivedDropToast(false, orgProjectOf(props.summary?.() ?? {})).text);
+      const res = await setSessionArchived(props.path, true);
+      toast(archivedDropToast(!!res.deleted, orgProjectOf(props.summary?.() ?? {})).text);
       props.onArchiveChanged?.(props.path, true);
       if (!scope.id) location.hash = "#/";
     } catch (err) {

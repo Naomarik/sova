@@ -449,6 +449,10 @@ describe("routes and the pane", () => {
     A.clock += MEMBER_CACHE_MS + 1;
     rows = await A.links.linkedAgents("sa");
     assert.equal(rows[0]!.state, "offline");
+    // As last known: its title and model stay, never the bare session id.
+    assert.equal(rows[0]!.title, "title sb");
+    assert.equal(rows[0]!.model, "p/m");
+    assert.equal(rows[0]!.lastActivity, 1000);
     // Ended links leave the pane.
     await A.links.end(v.link.id);
     assert.deepEqual(await A.links.linkedAgents("sa"), []);

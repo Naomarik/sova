@@ -148,6 +148,8 @@ export class MeshLinks {
   private readonly memberCache = new Map<string, { at: number; value: Promise<MemberLookup> }>();
   /** The last answer about each member, however old: what a brief view shows. */
   private readonly lastKnown = new Map<string, { at: number; value: MemberLookup }>();
+  /** The last summary each member's host gave: its title, model and activity while it is down. */
+  private readonly lastSummary = new Map<string, SessionSummary>();
 
   /** Wire the module to the server (server/index.ts via mountLinks) or to a test's fakes. */
   configure(deps: LinksDeps): void {
@@ -212,6 +214,7 @@ export class MeshLinks {
     this.file = null;
     this.memberCache.clear();
     this.lastKnown.clear();
+    this.lastSummary.clear();
   }
 
   // ---- identity -------------------------------------------------------------------------------
@@ -314,7 +317,8 @@ export class MeshLinks {
     const fresh = !!known && this.now() - known.at < MEMBER_CACHE_MS;
     const got: MemberLookup =
       brief && !self ? (known?.value ?? { reach: this.peerOfNode(m.nodeId) ? "down" : "unknown-host" }) : await this.lookupMember(m.nodeId, m.sessionId);
-    const s = got.summary ?? undefined;
+    // A host that is down keeps the member as last known (§mesh.links/agents-pane), state offline.
+    const s = got.summary ?? (got.reach === "down" || got.reach === "unknown-host" ? this.lastSummary.get(key) : undefined);
     const peer = got.peer ?? this.peerOfNode(m.nodeId) ?? undefined;
     const state: LinkMemberView["state"] =
       brief && !self && !fresh
@@ -346,6 +350,7 @@ export class MeshLinks {
     if (hit && this.now() - hit.at < MEMBER_CACHE_MS) return hit.value;
     const value = this.fetchMember(nodeId, sessionId).then((v) => {
       this.lastKnown.set(key, { at: this.now(), value: v });
+      if (v.summary) this.lastSummary.set(key, v.summary);
       return v;
     });
     this.memberCache.set(key, { at: this.now(), value });

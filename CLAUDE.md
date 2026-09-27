@@ -35,7 +35,10 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `model-policy.json` (extensions/model-policy: what may be used at all, and what subagents may be
   given — read by the TUI, the palette, subagent spawning and Sova alike), mode `mode.json` =
   the DEFAULT mode for new sessions; the active mode is per session, in the session's own `mode`
-  custom entry, and Sova restores it with `restoreActive` from `state.ts`; mode
+  custom entry, and Sova restores it with `restoreActive` from `state.ts` — and also WRITES that
+  entry's shape itself (`{mode, active: activeOf(state)}`, `pinEntryFor` in `server/mode-state.ts`)
+  to pin the sessions it starts with a mode (a project's coding sessions, the Overseer's
+  sova_create_session / sova_set_session), so the entry's shape is a contract too; mode
   `mode-delegate.json` = Delegate's global routing (four profiles, each backend/model/effort plus
   an optional fallback), written by Sova's Settings → Modes → Delegate and re-read by every
   Delegate session at each turn boundary — never snapshotted into a session; mode `mode-spec.json`

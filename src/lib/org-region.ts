@@ -5,7 +5,7 @@
 // Pure on purpose, like `needs-you` and `group-open`: the grouping, order, counts, forced-open rules
 // and aggregates run under tsx --test, and the sidebar keeps the (sessionStorage / memory) state.
 
-import type { AttentionDigest, SessionSummary } from "../../shared/protocol";
+import type { AttentionDigest, AttentionItem, SessionSummary } from "../../shared/protocol";
 import { needsYouRows, type NeedsYouRow } from "./needs-you";
 import { byRecentActivity } from "./recent";
 import { isOrgSession } from "./regions";
@@ -109,6 +109,18 @@ export function orgNeedsYouRows(digest: Pick<AttentionDigest, "items"> | undefin
     if (w) rows.push({ session: s, detail: w.text, details: [w.text], since: w.since });
   }
   return rows.sort((a, b) => b.since - a.since || a.session.path.localeCompare(b.session.path));
+}
+
+/**
+ * The region's Needs you items that belong to no session: a project whose main stakeholder left
+ * (§app.organizations/stakeholder). Each opens its project page and says the digest's own sentence.
+ * A search keeps only those whose project or org name matches. Newest first.
+ */
+export function orgProjectItems(digest: Pick<AttentionDigest, "items"> | undefined, query = ""): AttentionItem[] {
+  const q = query.trim().toLowerCase();
+  return (digest?.items ?? [])
+    .filter((it) => it.kind === "project-stakeholder" && (!q || `${it.title} ${it.where}`.toLowerCase().includes(q)))
+    .sort((a, b) => b.since - a.since || a.id.localeCompare(b.id));
 }
 
 /** A row's place, said under the region's Needs you rows: "{org} · {project}". */

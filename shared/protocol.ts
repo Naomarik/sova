@@ -2318,7 +2318,8 @@ export type AttentionKind =
   | "asks-you"        // decisions: the last reply asks the user something (SessionSignals.kinds)
   | "looping"         // decisions: the session or a worker is repeating itself
   | "baton-needs-you" // a baton session: the baton is with the operator, or a person needs their link
-  | "roster-proposal"; // a baton session proposed a new roster person (referral): approve or decline
+  | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
+  | "project-stakeholder"; // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
 
 export interface AttentionItem {
   /** Session id. */
@@ -2377,8 +2378,11 @@ export interface OverseerAction {
   toolCallId: string;
   tool: string;
   args: unknown;
-  outcome: "ok" | "refused" | "error";
+  /** partial: it did some of what was asked (a promotion with refusals); `error` says what was not done. */
+  outcome: "ok" | "partial" | "refused" | "error";
   error?: string;
+  /** A done act's one-line result worth showing (a project overseer's promotion commit, a coding session's branch). */
+  note?: string;
 }
 
 // --- Tool results the Overseer ChatView renders specially (tool_execution_end `result.details`

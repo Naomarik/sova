@@ -111,7 +111,7 @@ export interface Conflict {
   selfAsserted?: boolean;
   /** The baton session asking `routedTo` to settle it. */
   batonSessionId?: string;
-  /** That session's file on this host, for #/s/<path>. */
+  /** That session's file on this host, for #/s/<path>: derived from the id on each read, never stored. */
   batonPath?: string;
   state: "open" | "resolved";
   /** The DecisionRow that settled it (a new decision, or the side the operator kept). */
@@ -173,7 +173,12 @@ export interface PromoteResult {
   refused: { id: string; reason: string }[];
   /** The kept draft under the project's .sova/spec/drafts/ whose draft.json holds this promotion's evidence. */
   draft?: string;
+  /** The commit of the changed `.sova/spec/` files in the project root (a git root only), or why it
+      was skipped (the promotion itself stands). Absent: nothing was promoted, or the root is not in git. */
+  commit?: PromoteCommit;
 }
+
+export type PromoteCommit = { sha: string; branch: string; files: string[]; message: string } | { skipped: string };
 
 /** In-process events (server/reconcile.ts `onReconcileEvent`). */
 export interface ReconcileEvent {
@@ -182,6 +187,8 @@ export interface ReconcileEvent {
   projectId: string;
   /** DecisionRow ids, or Conflict ids for conflict/resolved. */
   ids: string[];
+  /** promoted: who asked (the operator by id or in bulk, or the project overseer). */
+  by?: "operator-explicit" | "bulk" | "overseer";
 }
 
 /** Settings → Decisions "Reconcile decisions" when the settings file doesn't say. */
@@ -193,3 +200,23 @@ export const RECONCILE_OFF = "Turn on Reconcile decisions in Settings → Decisi
 export const CONFLICT_P = 0.7;
 /** Spec namespace every decision files under. */
 export const REQUIREMENTS_NS = "requirements";
+
+/**
+ * Everything folded into `d`, and into what was folded into it, depth-first in folding order, each
+ * once (never `d` itself, even on a cycle). Its quotes all join `d`'s record (§app.requirements/reconciler).
+ */
+export function foldedRows<T extends Pick<DecisionRow, "id" | "folded">>(d: T, byId: ReadonlyMap<string, T>): T[] {
+  const seen = new Set([d.id]);
+  const out: T[] = [];
+  const walk = (row: T) => {
+    for (const id of row.folded ?? []) {
+      const next = byId.get(id);
+      if (!next || seen.has(id)) continue;
+      seen.add(id);
+      out.push(next);
+      walk(next);
+    }
+  };
+  walk(d);
+  return out;
+}

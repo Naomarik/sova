@@ -93,7 +93,8 @@ are atomic tmp+rename.
 The tools call the existing REST routes in-process, so every guard those routes have already
 (TUI-live refusal, archived refusal, the model policy; for archive and set-session, the mid-turn and
 working-subagent refusals) applies unchanged, and their refusal sentences come back as the tool's
-error. Sessions are addressed by id. No tool passes `force`.
+error. Sessions are addressed by id, bare or in any form the tools print it (`sova://s/<id>`,
+`s/<id>`, a `[title](sova://s/<id>)` link). No tool passes `force`.
 
 - **Read** (no side effects): the attention digest; list sessions (compact rows); one session's
   detail, whose summary topics read newest first, as the insight strip lists them
@@ -105,7 +106,9 @@ error. Sessions are addressed by id. No tool passes `force`.
   user's todos (`sova_todos`: open, done or all; §app.overseer/todos).
 - **Act:** create a session in any folder or remote target, with an optional first prompt, model,
   mode and minor modes (`minor_modes`, e.g. `["spec"]`); the mode and minor modes are set before the
-  first prompt is sent, so its first turn already runs in them. An unknown mode or minor mode refuses
+  first prompt is sent, so its first turn already runs in them, and written into the session as its
+  `mode` entry even when they equal the default, so a later change to the default never moves it
+  (the same for `sova_set_session`). An unknown mode or minor mode refuses
   the whole call before any session is created, and a mode switch that fails sends no prompt: the
   result says the session was created but its first prompt was not sent. Send a message to a
   session (below); archive and unarchive
@@ -338,7 +341,9 @@ itself.
   input.
 - **FYI:** running now; context at or above 85%; idle web sessions older than 3 days that aren't
   archived and have no draft.
-- Items are sorted by tier, then age, capped at 30, each with at most 200 characters of detail and
+- Items are sorted by tier, then age, capped at 30 (every kind present keeps at least its newest
+  item, which takes the place of the last kept item of the lowest tier, so a flood of one kind
+  never hides another), each with at most 200 characters of detail and
   an in-app link. The `sova_attention` tool and `GET /api/overseer/attention` return it; the
   sidebar's Needs you region (§app.session-list/needs-you) lists its act tier, and the Overseer
   head's counts and menus come from it.

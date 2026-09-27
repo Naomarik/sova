@@ -169,7 +169,8 @@ once), **lease** (an offer's lock on its first taker).
   current hand-off and turns off the older ones for it: the host cannot show a token it no longer
   has) and turn it off (`POST /api/baton/:sid/revoke`). A link is shown once, with a Copy Link
   button; it stays on the strip until the operator dismisses it or a later hand-off exists (a
-  reload of the strip's own data never clears it). During an offer, `GET /api/baton/:sid/link?person=<id>` re-mints one invitee's link and
+  reload of the strip's own data never clears it), and once a Get Link elsewhere (another tab)
+  turned it off, the strip says "Replaced by a newer link." in place of its Copy Link. During an offer, `GET /api/baton/:sid/link?person=<id>` re-mints one invitee's link and
   turns off that invitee's older one.
 - A person's page (§app.organizations/person-page) lists their links on this host with each one's
   state, and turns off one of them, or all of them at once; nothing else about the session
@@ -227,6 +228,12 @@ once), **lease** (an offer's lock on its first taker).
   by `you`. The filter runs on the server; the page receives nothing else.
 - Live: the page receives the filtered view again after every change and, while the model writes,
   only the reply's text so far — never raw events.
+- **Links.** An explicit `http://` or `https://` address in any text the page shows (messages,
+  the people's own included, hand-off and offer questions and briefings, decision statements, the
+  done summary, the sending echo) is a link that opens in a new tab (`target="_blank"`,
+  `rel="noopener noreferrer nofollow"`). The page builds it as DOM nodes, never as HTML, so the
+  text stays escaped. No other scheme is linked, nor an address without one (`www.x.com`, an
+  e-mail address). The model's replies render as markdown, whose links open the same way.
 - Text only, both ways: images are refused on the share route, and the operator's composer
   refuses a send with images in a baton session ("A hand-off session is text only: images can't be
   sent.", code `refused`); a message starting with `/` is refused; ≤ 4000 characters.

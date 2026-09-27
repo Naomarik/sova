@@ -30,9 +30,10 @@ export async function renameSession(s: Pick<SessionSummary, "path" | "title" | "
 /** Archive or unarchive one session; says what happened, and resolves whether it landed. */
 export async function archiveSession(path: string, archived: boolean, project?: string | null): Promise<boolean> {
   try {
-    await setSessionArchived(path, archived);
+    const res = await setSessionArchived(path, archived);
     // `project`: an organization's session, which goes to that project's Finished list, not the Archive.
-    const done = archived ? archivedDropToast(false, project).text : unarchivedToast(project);
+    // `deleted`: an empty husk was deleted instead, and the toast says so.
+    const done = archived ? archivedDropToast(!!res.deleted, project).text : unarchivedToast(project);
     toast(done);
     announce(done);
     return true;

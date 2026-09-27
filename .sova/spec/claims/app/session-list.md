@@ -1155,8 +1155,11 @@ the top region doesn't keep every one of them forever.
   splits the row's single target. It's the only archive control in the app, so it stays at every
   head width (§chat/transcript, §chat/context-window "Width budget").
 - **What it does.** `POST /api/sessions/archive { path, archived }`, then a list refresh. The id
-  goes into `~/.pi/agent/sova/archived-sessions.json`; the session file is never written.
-  Toast: "Archived. Find it under Archive." The row moves to the Archive, and case 2 keeps it
+  goes into `~/.pi/agent/sova/archived-sessions.json`; the session file is never written, except
+  that an empty husk outside any organization's workspace is deleted instead
+  (§app.session-list/archive-org-guard): the server's answer says so (`deleted: true`), and the
+  toast is "Deleted. It had no messages, so there was nothing to archive." with no Undo.
+  Otherwise the toast is "Archived. Find it under Archive." The row moves to the Archive, and case 2 keeps it
   visible while it's open.
 - **Undo.** On an archived session the same button is Unarchive Session. Toast: "Moved back to
   Live & web."

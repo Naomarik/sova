@@ -26,7 +26,7 @@ import { parseWakeNudge } from "../shared/wake";
 import { type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
-import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
+import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo, workerWindowResolver } from "./models";
@@ -61,12 +61,18 @@ const CLAUDE_CODE_FLAG = "claude-code-provider";
  *   registers the Claude Code CLI's models as first-class pi models. Read per runtime, so the
  *   switch applies to sessions created after it changed and never reaches an open one.
  */
-function sessionFlags(cwd: string, outline = true): Map<string, boolean | string> {
+function sessionFlags(cwd: string, outline = true, claudeCode = claudeCodeProviderEnabled()): Map<string, boolean | string> {
   const flags = new Map<string, boolean | string>(outline ? [["topic-outline-headless", true]] : []);
   const target = targetOfCwd(cwd);
   if (target) flags.set("target", target);
-  if (claudeCodeProviderEnabled()) flags.set(CLAUDE_CODE_FLAG, true);
+  if (claudeCode) flags.set(CLAUDE_CODE_FLAG, true);
   return flags;
+}
+
+/** The extension flags a runtime is handed: none for a loadout that loads no extension (a flag
+    nobody registered only logs "Unknown option"), else sessionFlags. Exported for the tests. */
+export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: boolean, claudeCode = claudeCodeProviderEnabled()): Map<string, boolean | string> {
+  return noExtensions ? new Map() : sessionFlags(cwd, outline, claudeCode);
 }
 
 /**
@@ -87,7 +93,7 @@ async function servicesForCwd(
   return await createAgentSessionServices({
     cwd,
     modelRuntime,
-    extensionFlagValues: sessionFlags(cwd, outline),
+    extensionFlagValues: extensionFlagsFor(cwd, outline, !!resourceLoaderOptions?.noExtensions),
     ...(resourceLoaderOptions ? { resourceLoaderOptions } : {}),
   });
 }
@@ -1364,6 +1370,29 @@ class ChatSession {
     return plan;
   }
 
+  /**
+   * Pin this chat to its current mode: append the extension's own `mode` entry (pinEntryFor) when
+   * the branch's newest snapshot differs, so the session keeps this mode on every reopen whatever
+   * mode.json says later — the extension itself appends only on a change, never for a mode equal
+   * to the default. Call it after applyMode returned "command". False when this chat can't be
+   * written (disposed, a foreign writer, live in a terminal).
+   */
+  pinMode(): boolean {
+    if (this.disposed || this.foreignWrite || this.hasForeignWrites()) return false;
+    try {
+      assertNotLive(this.path);
+    } catch {
+      return false;
+    }
+    const sm = this.session.sessionManager;
+    const pin = pinEntryFor(sm.getBranch(), this.modeState);
+    if (!pin) return true;
+    this.flushDeferredAppends(); // open-time entries go before the mode entry, as in applyMode
+    sm.appendCustomEntry(pin.customType, pin.data);
+    markOwned(this.path);
+    return true;
+  }
+
   /** The sandbox extension's /sandbox command in this runtime (server/sandbox-state.ts). */
   private sandboxCommand() {
     return sandboxCommandOf(this.session.extensionRunner);
@@ -1775,7 +1804,8 @@ class ChatSession {
     // The level too: setModel re-clamped it, and the next conversation is seeded from the file.
     if (this.overseer) overseerRuntime?.saveChoice({ model: ref, thinking: this.session.thinkingLevel });
     else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { model: ref, thinking: this.session.thinkingLevel });
-    else if (this.isPristine()) saveDefaults({ model: ref });
+    // Another special kind (a baton) keeps the pick in its own file only: never the host's default.
+    else if (!this.specialEntry && this.isPristine()) saveDefaults({ model: ref });
   }
 
   /** Change thinking level: the `set_thinking` path, shared like setModelRef (and saved, like it,
@@ -1803,8 +1833,8 @@ class ChatSession {
     if (opts.save !== true) return after;
     if (this.overseer) overseerRuntime?.saveChoice({ thinking: after });
     else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { thinking: after });
-    // A session with no messages yet: this level is also the next new session's default.
-    else if (this.isPristine()) saveDefaults({ thinking: after });
+    // A session with no messages yet: this level is also the next new session's default (never a special kind's).
+    else if (!this.specialEntry && this.isPristine()) saveDefaults({ thinking: after });
     return after;
   }
 
@@ -2339,6 +2369,17 @@ function settledTurn(path: string): void {
   }
 }
 
+/**
+ * The model and thinking a new session opens on instead of the saved new-session defaults, for the
+ * next open of that file only (a project's coding session gets its model at creation, so its file
+ * never records a switch from the default first). Ignored once the session has a user message.
+ */
+const openingChoices = new Map<string, { model?: string; thinking?: string }>();
+export function setOpeningChoice(path: string, choice: { model?: string | null; thinking?: string | null }): void {
+  const c = { ...(choice.model ? { model: choice.model } : {}), ...(choice.thinking ? { thinking: choice.thinking } : {}) };
+  if (Object.keys(c).length) openingChoices.set(path, c);
+}
+
 const sessions = new Map<string, Promise<ChatSession>>();
 /** Fully opened runtimes by canonical path (pending opens are not here), for sync busy lookups. */
 const held = new Map<string, ChatSession>();
@@ -2484,7 +2525,9 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     let defaultModel: Awaited<ReturnType<typeof modelRuntime.getAvailable>>[number] | undefined;
     let defaultThinking: ThinkingLevel | undefined;
     if (!sessionManager.getBranch().some((e) => e.type === "message" && e.message.role === "user")) {
-      const defaults = special ? { model: special.model ?? undefined, thinking: special.thinking ?? undefined } : loadDefaults();
+      const opening = openingChoices.get(path);
+      openingChoices.delete(path);
+      const defaults = special ? { model: special.model ?? undefined, thinking: special.thinking ?? undefined } : { ...loadDefaults(), ...opening };
       // A stored default the user has since turned off is stale like any other: skipped here, so
       // the session opens on pi's own default rather than on a model it would refuse to send with.
       if (defaults.model && modelAllowed(readModelPolicy(), defaults.model))

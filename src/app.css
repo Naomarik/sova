@@ -374,6 +374,10 @@ html, body, #root { height: 100%; }
 .org-needs-chip { letter-spacing: 0; text-transform: none; }
 .org-needs { border-bottom: var(--stroke-thin) solid var(--color-border); }
 .org-needs > .list { padding-bottom: var(--space-1); }
+/* A project to pick a main stakeholder for: a link to its page, its sentence under the name. */
+.org-needs-item { align-items: flex-start; }
+.org-needs-item .list-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.org-needs-item .list-meta { white-space: normal; overflow-wrap: anywhere; }
 .org-section + .org-section { border-top: var(--stroke-thin) solid var(--color-border); }
 /* The org head's count stays, open or shut (unlike a user's group, whose rows say it). */
 .org-section[open] > .group-label > .text-num { display: inline; }

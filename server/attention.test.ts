@@ -164,6 +164,30 @@ describe("attention: the digest", () => {
     assert.equal(d.items[2]!.id, "f1");
   });
 
+  test("past the cap, every kind present keeps its newest item, in place of the lowest tier's last", () => {
+    const rows: AttentionRow[] = [];
+    for (let i = 0; i < 31; i++) rows.push(row(summary(`e${i}`, { activity: { state: "error" } }), { activitySince: NOW - i * 1000 }));
+    const proposals = [
+      { personId: "p1", name: "Maria", role: "Payroll", by: "Tony", since: NOW - 90_000 },
+      { personId: "p2", name: "Karim", role: "", by: "Tony", since: NOW - 10_000 },
+    ];
+    rows.push(row(summary("referral", { baton: { proposals } as never })));
+    rows.push(row(summary("idle", { unread: true }), { lastReplyAt: NOW - 5000 }));
+    const d = buildDigest(rows, NOW);
+    assert.equal(d.items.length, DIGEST_MAX);
+    assert.deepEqual(d.counts, { act: 31, decide: 3, fyi: 0 }, "counts still cover everything");
+    const kept = d.items.map((i) => `${i.tier}:${i.kind}:${i.id}`);
+    assert.deepEqual(kept.filter((k) => !k.startsWith("act:error:")), ["decide:finished:idle", "decide:roster-proposal:referral"], "each kind once, newest first, after the act tier");
+    assert.match(d.items.find((i) => i.kind === "roster-proposal")!.detail!, /Approve Karim/, "the newest proposal");
+    assert.equal(d.items.filter((i) => i.kind === "error").length, 28, "the two oldest errors made room");
+    assert.ok(!kept.includes("act:error:e29") && !kept.includes("act:error:e30"));
+  });
+
+  test("under the cap the digest is unchanged: every item, tier then newest", () => {
+    const rows = [row(summary("a", { activity: { state: "error" } }), { activitySince: NOW - 1000 }), row(summary("b", { unread: true }), { lastReplyAt: NOW - 500 })];
+    assert.deepEqual(buildDigest(rows, NOW).items.map((i) => i.id), ["a", "b"]);
+  });
+
   test("the badge counts sessions at their most urgent tier, once each", () => {
     const d = buildDigest(
       [

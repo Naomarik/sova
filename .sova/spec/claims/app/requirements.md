@@ -85,7 +85,8 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   nothing that was already answered, and never opens a second conflict or session for the same
   pair.
 - **Restatements.** A restatement or confirmation is **folded** into the earlier decision (its
-  quote and provenance join that record; it is superseded by it; no second record). Before
+  quote and provenance join that record, and so do those of anything already folded into it; it
+  is superseded by it; no second record). Before
   pairing, each pending decision is compared with its own author's earlier decisions of the area,
   superseded ones included (the same words need no question): a restatement of a superseded rule
   is superseded with it, by what replaced it, so a losing author repeating their rule never
@@ -105,16 +106,29 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 
 ## §app.requirements/routing — Who settles a conflict
 
-- To the active roster person whose `decides` covers the area (same key), preferring one who wrote
-  neither side; with no such person, to the operator.
+- **Who owns an area.** The active roster people whose `decides` has the area's key own it. When
+  no active person has it, the project's main stakeholder (§app.organizations/stakeholder) owns
+  it; with no stakeholder either, nobody does.
+- A conflict goes to the area's owner, preferring one who wrote neither side; to the main
+  stakeholder when they own it, even when they wrote one side or both (a person who contradicts
+  their own earlier decision settles it); with no owner, to the operator. Any two live decisions of
+  one area are compared, whoever wrote them, one author's included. The conflict's reason says
+  which: "{name} decides {area}.", "{name} is this project's main stakeholder.", "Nobody on the
+  roster decides {area}."
 - **Operator-set say.** A `decides` entry counts only when the operator set it: the change that
   introduced it (per `roster-history.jsonl`) is the operator's, or a referral's for a person the
   operator approved afterwards (approval is the review step; a project overseer's approval does
   not count). Any other say is **self-asserted**: the conflict goes to the operator instead and is
-  marked so, and a person cannot talk themselves into deciding.
+  marked so, and a person cannot talk themselves into deciding. It never falls to the main
+  stakeholder instead: an area someone claims to own is not an area no one owns.
 - Routing starts a baton session (§app/baton) to that person, owned by the operator or the project
-  overseer, whose goal carries both statements with their authors and quotes and whose first
-  question names both, each with its author. Routed to the operator, the baton is held by the
+  overseer, on the project's gathering model and thinking (`gatheringModel`/`gatheringThinking`,
+  else the overseer's own setting, else the new-session default; the overseer's own reconcile
+  also falls back to what its runtime runs, as in §app.project-overseer/tools "Models"), whoever
+  routed it: the overseer's
+  reconcile, the operator's Reconcile or re-route, or the run the server starts by itself when a decision
+  is recorded in a conflict's settle session (§app.requirements/reconciler "When"). Its goal carries both statements with their authors and quotes, and its
+  first question names both, each with its author. Routed to the operator, the baton is held by the
   operator from the start, so it is a Needs-you item; routed to a person, no link is minted at
   start (nobody could be shown it) and Needs-you asks the operator to send one. A fresh baton is
   listed and in Needs-you before anyone has written in it.
@@ -134,7 +148,8 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 - The operator selects drafted decisions (or a project overseer allowed to promote does);
   anything else is refused with its reason.
 - **Out of area.** A decision whose author may not decide its area (`authorOwnsArea` false: not
-  the operator, and no operator-set say over the area, as in §app.requirements/routing) is promoted
+  the operator, not an owner of the area as §app.requirements/routing defines one, with an
+  operator-set say, and not the main stakeholder of an area no one owns) is promoted
   only when the operator names it: `promote {ids}` by id. **Select All Ready** (`bulk: true`) and
   a project overseer's promotion refuse it with "outside <name>'s decision area: promote it
   explicitly by id", and promote the rest. A promotion builds a fresh draft holding exactly the
@@ -145,10 +160,36 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   with that preview's plan hash. The batch draft `sova-promote-<time>` is kept: its `draft.json`
   holds the evidence and the promotion record (local only, like every draft); one that promoted
   nothing is removed.
-- Sova never commits the client repo: promoted files are left for the project's owner (or a coding
-  session) to commit.
+- Sova commits a promotion, and nothing else, in the client repo (§app.requirements/promotion-commit).
 - A refusal of the spec tools (a conflicting hand edit, a pending transaction) is reported per
   decision and changes nothing; the index keeps them `drafted`.
+
+## §app.requirements/promotion-commit — A promotion is committed
+
+- **Why.** A coding session works in a worktree cut from the project root's `HEAD`
+  (§app.project-overseer/coding-worktrees), so a decision reaches it only once it is committed.
+- **What.** After a promotion that changed files, in a project root inside a Git work tree, Sova
+  commits the files under `.sova/spec/` that the promotion changed (`manifest.json`, the
+  `claims/` files, a `.gitignore` it added), by explicit path and nothing else, on the branch the
+  root's checkout has checked out. Other staged or unstaged changes in the repo stay as they were.
+  The message names the promoted decisions: "Promote 2 decisions: payroll export — Exports run on
+  Fridays; approvals — Over $5,000 needs a second approver." (each area and statement, cut to 72
+  characters, at most 10 then "and 3 more"). The author is the repo's configured identity, else
+  `Sova <sova@localhost>`, as for the workspace repo's commits.
+- **Skipped, with the reason**, and the promotion itself still stands (its files stay written,
+  uncommitted):
+  - a file the promotion changed already differed from `HEAD` before it (a change Sova didn't make):
+    "Not committed: .sova/spec/manifest.json had changes Sova didn't make. Commit or discard them,
+    and later promotions are committed again.";
+  - a merge, rebase, cherry-pick or revert in progress: "Not committed: the project root is in the
+    middle of a merge.";
+  - a detached `HEAD`: "Not committed: the project root's checkout is on a detached HEAD.";
+  - git fails (a hook refuses): "Not committed: " and git's own first line.
+- **Shown.** The promote answer carries `commit` (`{sha, branch, files, message}` or `{skipped}`), and the
+  Decisions tab says it after a promotion: "Promoted 2. Committed a1b2c3d on main." or the skip
+  reason. A project root that isn't inside a Git work tree gets no commit and no line, as before.
+- Only a promotion commits. Drafting, reconciling, a frozen hash and the workspace repo's own
+  commits (§app.organizations/workspace-repo) are unchanged; Sova never pushes the client repo.
 
 ## §app.requirements/rejected — Not done, and why
 

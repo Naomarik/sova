@@ -75,11 +75,14 @@ const draftsDir = (root: string) => join(specDirOf(root), "drafts");
 const draftSpecDir = (root: string, name: string) => join(draftsDir(root), name, "spec");
 
 /** Drafts, reviews and pilot data are local only: a client repo gets the same ignore rule Sova's has. */
+/** The `.sova/spec/.gitignore` Sova adds when a project has none (a promotion commits it as its own). */
+export const LOCAL_ONLY_IGNORE = "# Local only: proposals, review packets and session metrics are never committed.\ndrafts/\nreviews/\npilot/\n";
+
 function ensureLocalOnlyIgnore(root: string): void {
   const file = join(specDirOf(root), ".gitignore");
   if (existsSync(file)) return;
   mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, "# Local only: proposals, review packets and session metrics are never committed.\ndrafts/\nreviews/\npilot/\n");
+  writeFileSync(file, LOCAL_ONLY_IGNORE);
 }
 
 /** Remove one of Sova's own drafts. Refuses while any promotion is in flight. */

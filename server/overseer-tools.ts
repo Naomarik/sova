@@ -61,6 +61,9 @@ export interface OverseerToolHost extends IdeaToolHost {
   open(path: string): Promise<void>;
   setModel(path: string, ref: string): Promise<void>;
   setThinking(path: string, level: string): Promise<string>;
+  /** Pin a held chat to the mode it is on now (ChatSession.pinMode): write its `mode` entry even when
+      that mode equals the default, so a later mode.json change never moves it. Throws when it can't. */
+  pinMode(path: string): Promise<void>;
   /** Record that the Overseer started work in this session (the concurrency cap). `prompted`: a
       prompt was just accepted there, so it counts as running from now on, even in the moment
       before its run reports streaming. */
@@ -420,6 +423,18 @@ function argSummary(raw: unknown, toolCallId?: string): string {
   return first ? cut(first, 60) : "";
 }
 
+/**
+ * A session reference as the tools themselves print it, reduced to its id: a bare id, `s/<id>`,
+ * `sova://s/<id>` or the markdown link `[title](sova://s/<id>)`. Anything else comes back as is
+ * (and matches no session). Pure.
+ */
+export function sessionRef(raw: unknown): string {
+  let t = typeof raw === "string" ? raw.trim() : "";
+  const link = /^\[[^\]]*\]\(([^)\s]+)\)$/.exec(t);
+  if (link) t = link[1]!;
+  return t.replace(/^sova:\/\/s\//, "").replace(/^s\//, "");
+}
+
 /** A bounded, untrusted-marked slice of a transcript (sova_read_session). */
 export function renderTranscript(
   items: TranscriptItem[],
@@ -517,7 +532,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
 
   /** Resolve a session reference, refusing the Overseer's own files. */
   async function resolve(ref: unknown): Promise<SessionSummary> {
-    const raw = typeof ref === "string" ? ref.trim().replace(/^sova:\/\/s\//, "") : "";
+    const raw = sessionRef(ref);
     if (!raw) throw new Refusal("Name the session by its id (from sova_list_sessions or sova_attention).");
     const s = await host.session(raw);
     if (!s) throw new Refusal(`No session with id ${raw}. List sessions again; it may have been deleted.`);
@@ -607,9 +622,13 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       if (p.minor_modes !== undefined) body.minorModes = p.minor_modes;
       // The mode route needs the chat open here, as in sova_set_session. A failed switch stops the
       // create short of its prompt, so the first turn never runs in a mode it wasn't given.
+      // Then pinned: the extension writes a mode entry only on a change, so a mode equal to the
+      // default would otherwise follow every later change of mode.json.
       const r = await host.open(s.path).then(
         () => call("POST", `/api/mode?path=${encodeURIComponent(s.path)}`, body),
         (err) => ({ status: 0, json: { error: err instanceof Error ? err.message : String(err) } }),
+      ).then(
+        (r) => (r.status === 200 ? host.pinMode(s.path).then(() => r, (err) => ({ status: 0, json: { error: err instanceof Error ? err.message : String(err) } })) : r),
       );
       if (r.status !== 200)
         throw new Refusal(
@@ -936,6 +955,10 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           await host.open(s.path);
           const r = await call("POST", `/api/mode?path=${encodeURIComponent(s.path)}`, body);
           if (r.status !== 200) throw failed(r, "Switching mode");
+          // Pinned, as in sova_create_session: a mode equal to the default still gets its entry.
+          await host.pinMode(s.path).catch((err) => {
+            throw new Error(`Switched, but its mode entry was not written (${err instanceof Error ? err.message : String(err)}), so it may follow a later default.`);
+          });
           done.push(`mode ${r.json?.mode ?? p.mode ?? ""}${Array.isArray(r.json?.minorModes) && r.json.minorModes.length ? ` + ${r.json.minorModes.join(", ")}` : ""}${r.json?.applies && r.json.applies !== "now" ? ` (applies ${r.json.applies})` : ""}`);
         }
         if (!done.length) throw new Refusal("Nothing to change: give title, model, thinking, mode or minor_modes.");

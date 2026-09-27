@@ -883,7 +883,8 @@ function orgField(path: string, id: string): Pick<SessionSummary, "org"> {
 export const SUBAGENTS_WORKING = "Subagents are working in this session. Stop them or wait for them to finish before archiving.";
 
 export type ArchiveResult =
-  | { ok: true; summary: SessionSummary }
+  // `deleted`: an empty husk's file was deleted instead of archived (the toast says so, with no Undo).
+  | { ok: true; summary: SessionSummary & { deleted?: true } }
   | { ok: false; status: 404 | 409; error: string };
 
 /**
@@ -932,7 +933,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
         dropSessionTags([s.id]);
         removeSessionAttachments(s.id);
         dropGroupAssignments([s.id]);
-        return { ok: true, summary: { ...s, archived: true } };
+        return { ok: true, summary: { ...s, archived: true, deleted: true } };
       }
     }
   }

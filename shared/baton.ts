@@ -237,6 +237,8 @@ export interface OfferLink {
   personId: string;
   name: string;
   link: string;
+  /** When it was minted (ISO): a strip showing it says it was replaced once a newer one exists. */
+  at?: string;
 }
 
 export interface BatonStartResult {
@@ -289,6 +291,9 @@ export interface BatonInfo {
   active: { id: string; name: string; role: string }[];
   /** Links of the current hand-off that still write (count only: the host keeps hashes, never tokens). */
   liveLinks: number;
+  /** personId → when their newest live link of the current hand-off (or open offer) was minted (ISO):
+      a strip still showing an older one says "Replaced by a newer link." */
+  linkAt: Record<string, string>;
   /** Whether a share listener is bound on this host, and where (for building a full URL). */
   share: { bound: boolean; publicUrl: string | null };
   /** The current offer, else the last one; null when none was ever made. */
@@ -307,6 +312,9 @@ export interface BatonSummaryField {
   sendLink?: { to: string; question: string; since: number };
   /** Present while an offer is open or held. `holder` is the claimer's name. */
   offer?: { state: "open" | "held"; invited: number; holder?: string };
+  /** When the newest live link of the current hand-off (or open offer) was minted (ISO): it moves on
+      every Get Link, so an open strip reads its data again. */
+  linkAt?: string;
   /** People proposed from this session still waiting for approval (attention kind "roster-proposal"). */
   proposals?: { personId: string; name: string; role: string; by: string; since: number }[];
 }

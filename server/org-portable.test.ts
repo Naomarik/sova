@@ -207,6 +207,24 @@ describe("clone + attach = the whole organization", async () => {
     assert.ok(!history.includes(UA) && !history.includes("Mozilla"), "no user agent");
   });
 
+  test("a conflict's settle session is found by its id here; the repo keeps no host path for it", async () => {
+    const decisions = await import("./decisions");
+    const reconcile = await import("./reconcile");
+    const file = join(bDir, "projects", project.id, "conflicts.json");
+    const conflict = { id: "cf_moved", orgId: b.id, projectId: project.id, areaKey: "payroll", a: "x", b: "y", state: "open", routedTo: tony.id, routeReason: "owner", batonSessionId: c1.sessionId, batonPath: "/old/host/ws/sessions/gone.jsonl", createdAt: "2026-09-27T00:00:00.000Z" };
+    mkdirSync(join(bDir, "projects", project.id), { recursive: true });
+    writeFileSync(file, JSON.stringify({ version: 1, conflicts: [conflict, { ...conflict, id: "cf_unknown", batonSessionId: "not-here" }] }));
+    const here = baton.sessionPathOf(bDir, baton.batonById(c1.sessionId)!.row);
+    const read = decisions.readConflicts(b.id, project.id);
+    assert.equal(read[0]!.batonPath, here, "this host's file, not the old host's");
+    assert.equal(read[1]!.batonPath, undefined, "a session unknown here has no path");
+    assert.equal(reconcile.listDecisions(b.id, project.id).conflicts.find((c) => c.id === "cf_moved")!.batonPath, here);
+    assert.equal(personPage(b.id, tony.id).conflicts.find((c) => c.id === "cf_moved")!.batonPath, here, "the person page too");
+    decisions.writeConflicts(b.id, project.id, read);
+    assert.doesNotMatch(readFileSync(file, "utf8"), /batonPath/, "a write stores no path");
+    assert.equal(decisions.readConflicts(b.id, project.id)[0]!.batonPath, here, "and it is derived again on the next read");
+  });
+
   test("the visit log moved: the person's page on the new host shows the visit", () => {
     const page = personPage(b.id, tony.id);
     assert.deepEqual(

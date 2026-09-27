@@ -326,6 +326,9 @@ export function personPage(orgId: string, pid: string, now = Date.now()): Person
     opened: opened.length,
     ...(opened[0] ? { lastOpenedAt: opened[0].at } : {}),
     history: readHistory(orgId, pid).reverse(),
+    stakeholderOf: readProjects(orgId)
+      .filter((p) => p.stakeholder === pid)
+      .map((p) => ({ projectId: p.id, name: p.name })),
   };
 }
 

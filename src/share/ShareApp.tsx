@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { SHARE_TEXT_MAX, type BatonView, type BatonViewItem, type ShareServerMessage } from "../../shared/baton";
+import { linkSegments } from "../lib/share-linkify";
 import { renderShareMarkdown } from "./markdown";
 import { visitTab } from "./visit-tab";
 
@@ -29,6 +30,25 @@ function Reply(props: { text: string }) {
   return <div class="share-md" innerHTML={renderShareMarkdown(props.text)} />;
 }
 
+/** Plain text with its explicit http(s) addresses as links: DOM nodes, never HTML. */
+function LinkedText(props: { text: string }) {
+  return (
+    <div class="share-text">
+      <For each={linkSegments(props.text)}>
+        {(seg) =>
+          "href" in seg ? (
+            <a href={seg.href} target="_blank" rel="noopener noreferrer nofollow">
+              {seg.text}
+            </a>
+          ) : (
+            seg.text
+          )
+        }
+      </For>
+    </div>
+  );
+}
+
 function Item(props: { item: BatonViewItem }) {
   const it = props.item;
   return (
@@ -37,7 +57,7 @@ function Item(props: { item: BatonViewItem }) {
         {(m) => (
           <article class="share-msg" classList={{ "share-msg-own": m().by === "you" }} aria-label={`${m().by === "you" ? "You" : m().name}`}>
             <span class="share-who">{m().by === "you" ? "You" : m().name}</span>
-            <div class="share-text">{m().text}</div>
+            <LinkedText text={m().text} />
           </article>
         )}
       </Match>
@@ -55,11 +75,11 @@ function Item(props: { item: BatonViewItem }) {
             <span class="share-card-head">
               {h().n === 1 ? `For ${h().to}` : `Passed from ${h().from} to ${h().to}`}
             </span>
-            <div class="share-text">{h().question}</div>
+            <LinkedText text={h().question} />
             <Show when={h().briefing}>
               <div class="share-brief">
                 <span class="share-card-head">What you need to know</span>
-                <div class="share-text">{h().briefing}</div>
+                <LinkedText text={h().briefing ?? ""} />
               </div>
             </Show>
           </aside>
@@ -70,11 +90,11 @@ function Item(props: { item: BatonViewItem }) {
           <aside class="share-card" aria-label="Offered">
             {/* Counted, never named: the server sends the count only, so "someone else is answering" names nobody. */}
             <span class="share-card-head">{`Open to you and ${othersWord(o().invited - 1)}: the first to answer takes it`}</span>
-            <div class="share-text">{o().question}</div>
+            <LinkedText text={o().question} />
             <Show when={o().briefing}>
               <div class="share-brief">
                 <span class="share-card-head">What you need to know</span>
-                <div class="share-text">{o().briefing}</div>
+                <LinkedText text={o().briefing ?? ""} />
               </div>
             </Show>
           </aside>
@@ -84,7 +104,7 @@ function Item(props: { item: BatonViewItem }) {
         {(d) => (
           <aside class="share-card share-card-quiet" aria-label="Noted">
             <span class="share-card-head">Noted · {d().area}</span>
-            <div class="share-text">{d().statement}</div>
+            <LinkedText text={d().statement} />
           </aside>
         )}
       </Match>
@@ -92,7 +112,7 @@ function Item(props: { item: BatonViewItem }) {
         {(d) => (
           <aside class="share-card" aria-label="Done">
             <span class="share-card-head">Done</span>
-            <div class="share-text">{d().summary}</div>
+            <LinkedText text={d().summary} />
           </aside>
         )}
       </Match>
@@ -238,7 +258,7 @@ export function ShareApp() {
             {(t) => (
               <article class="share-msg share-msg-own" aria-label="You, sending">
                 <span class="share-who">You · sending</span>
-                <div class="share-text">{t}</div>
+                <LinkedText text={t} />
               </article>
             )}
           </For>

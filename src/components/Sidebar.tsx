@@ -3,7 +3,7 @@ import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { fetchTargets, listSessions, setSessionArchived } from "../lib/api";
+import { fetchTargets, setSessionArchived } from "../lib/api";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
@@ -12,6 +12,7 @@ import {
   finishedOpen as finishedOpenRule,
   orgCount,
   orgNeedsYouRows,
+  orgProjectItems,
   orgPlaceLabel,
   orgRows,
   ORGS_KEY,
@@ -1035,17 +1036,16 @@ export function Sidebar(props: {
       return;
     }
     if (d.archive.kind !== "archive") return; // already archived: the gesture does nothing
+    let deleted: boolean;
     try {
-      await setSessionArchived(d.path, true);
+      // A never-sent session is deleted rather than archived (lib/drag-archive); the answer says which.
+      deleted = !!(await setSessionArchived(d.path, true)).deleted;
     } catch (err) {
       const failed = `Couldn't archive this session. ${(err as Error).message}`;
       toast(failed);
       announce(failed);
       return;
     }
-    // A never-sent session is deleted rather than archived (lib/drag-archive), and only the list
-    // can tell which happened: whether this tab still had a draft on the server is not known here.
-    const deleted = (await listSessions().catch(() => null))?.every((s) => s.path !== d.path) ?? false;
     const done = archivedDropToast(deleted, d.org);
     // Keyed: the next archive's toast replaces this one, so only the latest Undo is on screen.
     toast(done.text, done.undo ? { key: "archive-undo", action: { label: "Undo", run: () => undoArchive(d.path, d.org) } } : undefined);
@@ -1307,6 +1307,9 @@ export function Sidebar(props: {
   const orgs = createMemo(() => orgSections(orgHits()));
   const orgTotal = () => all().filter(isOrgSession).length;
   const orgNeedsYou = createMemo(() => orgNeedsYouRows(props.attention, orgHits()));
+  /** Its Needs you items that are no session: projects to pick a main stakeholder for. */
+  const orgItems = createMemo(() => orgProjectItems(props.attention, query()));
+  const orgWaitingCount = () => orgNeedsYou().length + orgItems().length;
   const orgNeedsYouDetail = (path: string) => {
     const r = orgNeedsYou().find((row) => row.session.path === path);
     return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
@@ -1390,7 +1393,7 @@ export function Sidebar(props: {
   const agentsWorking = () => activeAgentCounts(props.agents).agents;
   /** The Organizations door: its sessions, and who is waiting, so nothing waits unseen behind the spine. */
   const orgsDoorLabel = () => {
-    const k = orgNeedsYou().length;
+    const k = orgWaitingCount();
     return `Organizations · ${sessionsWord(orgHits().length)}${k > 0 ? ` · ${k} waiting on you` : ""}`;
   };
   const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
@@ -1534,7 +1537,7 @@ export function Sidebar(props: {
               >
                 <Icon name="building" />
                 <span class="spine-count text-num">{orgHits().length}</span>
-                <Show when={orgNeedsYou().length > 0}>
+                <Show when={orgWaitingCount() > 0}>
                   <span class="spine-dot spine-dot-warn" aria-hidden="true" />
                 </Show>
               </button>
@@ -1932,10 +1935,10 @@ export function Sidebar(props: {
                   Organizations{" "}
                   <span class="sidebar-region-count">· {searching() ? `${orgHits().length} of ${orgTotal()}` : orgHits().length}</span>
                   {/* Nothing waits unseen: the warn dot and count stay on the head, open or shut. */}
-                  <Show when={orgNeedsYou().length > 0}>
-                    <span class="chip chip-warn org-needs-chip" title={waitingTitle(orgNeedsYou().length)}>
+                  <Show when={orgWaitingCount() > 0}>
+                    <span class="chip chip-warn org-needs-chip" title={waitingTitle(orgWaitingCount())}>
                       <i class="chip-dot" />
-                      <span class="text-num">{orgNeedsYou().length}</span> waiting
+                      <span class="text-num">{orgWaitingCount()}</span> waiting
                     </span>
                   </Show>
                   <Show when={!orgsOpen() && folderActive(orgHits(), localRunning())}>
@@ -1946,12 +1949,12 @@ export function Sidebar(props: {
                   </Show>
                 </h2>
               </summary>
-              <Show when={orgNeedsYou().length > 0}>
+              <Show when={orgWaitingCount() > 0}>
                 <section class="org-needs" aria-labelledby="r-orgs-needs">
-                  <h3 class="list-group-label org-needs-label" id="r-orgs-needs" title={orgNeedsTitle(orgNeedsYou().length)}>
+                  <h3 class="list-group-label org-needs-label" id="r-orgs-needs" title={orgNeedsTitle(orgWaitingCount())}>
                     <span class="org-needs-dot" aria-hidden="true" />
                     Needs you
-                    <span class="text-num">{orgNeedsYou().length}</span>
+                    <span class="text-num">{orgWaitingCount()}</span>
                   </h3>
                   <ul class="list">
                     <For each={orgNeedsYou().map((r) => r.session)}>
@@ -1964,6 +1967,20 @@ export function Sidebar(props: {
                           detail={orgNeedsYouDetail(s.path)}
                           place={orgPlaceLabel(s)}
                         />
+                      )}
+                    </For>
+                    {/* A project to pick a main stakeholder for: no session, the row opens the project page. */}
+                    <For each={orgItems()}>
+                      {(it) => (
+                        <li>
+                          <a class="list-row list-row-interactive org-needs-item" href={it.href} title={it.detail}>
+                            <span class="list-main">
+                              <span class="list-title">{it.title}</span>
+                              <span class="list-meta org-needs-item-detail">{it.detail}</span>
+                              <span class="list-meta">{it.where}</span>
+                            </span>
+                          </a>
+                        </li>
                       )}
                     </For>
                   </ul>

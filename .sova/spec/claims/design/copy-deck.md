@@ -664,3 +664,41 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Fan out unavailable | the row is absent — no reply yet, a watch view, or a session open in a TUI. Nothing is disabled and nothing explains an absence |
 
 ---
+
+## §design.copy-deck/project-coding — Project page · coding sessions (§app.project-overseer/coding-mode, §app.project-overseer/coding-worktrees)
+
+| Where | Copy |
+|---|---|
+| Mode select (beside the coding sessions' model and thinking) | label `Coding sessions' mode` · options `Automatic` · `normal` · `normal · spec` · `delegate` · `delegate · spec` — the mode ids in lower case, as the mode menu shows them (§chat/mode-menu) |
+| …its hint (`.field-hint`) | "Every coding session this project starts runs in it, yours included. One started now: {codingModeNow}." — `{codingModeNow}` in mono, `normal` or `normal · spec` · for a `delegate` option, a second sentence: "Their workers' tokens count against the budget." |
+| …saved (toast) | "Coding sessions run {mode}." · Automatic: "Coding sessions' mode: Automatic." |
+| Budget hint (replaces the old one) | "Spent {tokens} of {budget}, workers included. At L3 it starts no coding session beyond it." |
+| List heading | `Coding sessions` — replaces "Sessions it started" for coding rows; gathering sessions and offers keep their own list |
+| Row | the title (a link on this host) · meta: "Started by the overseer" or "Started by you" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
+| Above the list, when the project can't have worktrees | "Coding sessions run in the project root: {reason}" — `{reason}` one of "it isn't a Git repository." · "the repository has no commits yet." · "its checkout is on a detached HEAD." |
+| …a row in the root | "In the project root: {reason}" — no branch, no buttons |
+| …after | "Merged into `{target}` {relative time}" · "Worktree removed" · "Worktree folder missing" |
+| Merge | `Merge Branch` (secondary) · disabled reasons: "Session working" · "Workers running" · "On another host" · done (toast): "Merged sova/{name} into {target}." |
+| …refused (`.field-error` under the row) | "The project root has {branch} checked out, not {target}. Check out {target} there, then merge." · "The project root has uncommitted changes to tracked files. Commit or stash them, then merge." · "The project root is in the middle of a {merge/rebase/cherry-pick}. Finish it, then merge." · detached root: "The project root's checkout is on a detached HEAD, not {target}. Check out {target} there, then merge." · uncommitted in the worktree: "The worktree has uncommitted changes in {n} files ({first file}). Commit them in the session first, then merge." · nothing to merge: "sova/{name} has nothing to merge into {target}." · conflict: "sova/{name} conflicts with {target} in {n} files. Nothing was merged. Resolve it in the worktree, then merge again." · busy (server): "The session is working." · "Its workers are running." · another host: "On another host: its worktree is there." |
+| Remove | `Remove Worktree` (destructive, outlined) · disabled reasons as Merge's · confirm, merged: "The folder `{path}` and the merged branch `sova/{name}` go away. The session and its transcript stay." · unmerged: "The folder `{path}` goes away. The branch `sova/{name}` keeps its commits, and the session and its transcript stay." · buttons `Remove Worktree` · `Cancel` · done: "Worktree removed." · refused: "The worktree has uncommitted changes in {n} files ({first file}). Nothing was removed. Commit or discard them first." · twice: "Its worktree was already removed." |
+| Start Coding Session (toast) | "Coding session started on sova/{name}." · in the root: "Coding session started in the project root." · mode not set (`.field-error`): "Started, but not prompted: its mode could not be set. Open it and send the message yourself." · no worktree (`.field-error`): "No session was started: its worktree could not be made ({git's first line})." |
+| Promote (Decisions tab, after a promotion) | "Promoted {n}. Committed {short sha} on {branch}." · skipped: the reason as §app.requirements/promotion-commit words it ("Not committed: …") · no Git: no second sentence |
+| Overseer tool refusals (the model reads them; the activity list shows them) | "Delegate is off for this project's coding sessions; the operator can allow it on the project page." · "Align needs someone to answer its questions, and nobody answers a coding session's." · "Spec is on for this project's coding sessions; only the operator can turn it off on the project page." · "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: only spec is allowed." · "Its worktree was removed, so it has no folder to work in." |
+
+## §design.copy-deck/project-stakeholder — Project page · main stakeholder, thinking, activity (§app.organizations/stakeholder, §app.project-overseer/identity)
+
+| Where | Copy |
+|---|---|
+| Stakeholder select (the project page's decisions area, above the decisions) | label `Main stakeholder` · options `None`, then the org's active people by name · hint (`.field-hint`): "Decides every area of this project that no one on the roster decides by name." |
+| …saved (toast) | "{name} is this project's main stakeholder." · None: "This project has no main stakeholder." |
+| …latest change (under the hint) | "Set by you {relative time}." · "Cleared {relative time}: {name} left the organization." |
+| …refused (`.field-error`) | "Only an active person on the roster can be a project's main stakeholder." |
+| Cleared banner (warn, while nobody is picked) | "{name} was this project's main stakeholder until they left the organization {relative time}. Pick someone else, or choose None." |
+| Suggestion (info line, no stakeholder, exactly 1 active person) | "{name} is the only person on the roster. Make them this project's main stakeholder?" · button `Make Main Stakeholder` (secondary) |
+| Needs you item | "Pick a main stakeholder for {project}: {name} left the organization." · org card kind: `{n} stakeholder to pick` / `{n} stakeholders to pick` |
+| Person page fact | "Main stakeholder of {project}, {project}" — each a link to its project page |
+| Conflict's reason (conflicts card) | "{name} is this project's main stakeholder." |
+| Decides refused (roster form, `.field-error`) | "“{entry}” names no decision area: use words, like “website”." |
+| Thinking refused (project page, `.field-error` under the select) | "{model} offers thinking {levels}." — levels comma-separated, as the model lists them |
+| Thinking moved after a model change (toast, after the model's own) | "Thinking is now {level}: {model} doesn't offer {old}." |
+| Activity chip for a partial act | `Partly` (warn: dot and word) beside `Done` · `Refused` · `Failed` · line: "{tool words}: partly ({n} refused: {id} ({reason}); …)" |

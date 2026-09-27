@@ -193,6 +193,12 @@ The harnesses:
   first prompt, and the first prompt is verbatim with no sova-overseer-sent marker. With
   concurrentSessions 1, a second create with a prompt is refused while the first still runs on b past
   its 15 s grace, and nothing new is created on b.
+- **m6-links-browser** (needs the playwright skill's node_modules and a Chromium; takes the LOCK;
+  restores a,b,c pairing and c's Sova): a page served by A views B's session linked to C. The row
+  maps C's nodeId to A's own (renamed) peer id and label, and C's transcript is read through
+  `/peer/<A's id for C>/ws/watch`. With C missing from A's peers.json, the view says "isn't
+  reachable from here". With C's Sova stopped, the row shows Offline, the view says "Host offline"
+  and the thread stays. Screenshots go to `~/.cache/mesh-links-lab-*.png`.
 
 Front-door Caddyfile essentials, the template for the real one: `lb_policy first`,
 `health_uri /api/health` with 1 s interval/timeout, `lb_try_duration 5s`, `flush_interval -1`,

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { Person } from "../shared/orgs";
-import type { Autonomy, ProjectOverseerSettings } from "../shared/project-overseer";
+import type { Autonomy, ProjectCodingMode, ProjectOverseerSettings } from "../shared/project-overseer";
 import type { SessionSummary } from "../shared/protocol";
 
 const root = mkdtempSync(join(tmpdir(), "sova-po-tools-"));
@@ -14,6 +14,7 @@ process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 const { projectOverseerTools, PoLimits, TOOL_NEEDS, autonomyRefusal, underRoot } = await import("./project-overseer-tools");
 const { defaultPoSettings, effectiveAutonomy, projectOverseerPaths, EMPTY_ROSTER_REASON } = await import("./project-overseer-store");
 const { AUTONOMY_LEVELS } = await import("../shared/project-overseer");
+const { baseCodingMode, codingModeChoice } = await import("./project-coding-mode");
 after(() => rmSync(root, { recursive: true, force: true }));
 
 const person = (id: string, name: string, status: Person["status"] = "active"): Person => ({
@@ -31,8 +32,10 @@ const person = (id: string, name: string, status: Person["status"] = "active"): 
 });
 
 let n = 0;
-function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]; tokens?: number; settings?: Partial<ProjectOverseerSettings> } = {}) {
+function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]; tokens?: number; settings?: Partial<ProjectOverseerSettings>; hasSpec?: boolean } = {}) {
   const calls: string[] = [];
+  /** The mode each create/send reached the host with (a send without one records null). */
+  const modes: (ProjectCodingMode | null)[] = [];
   const dir = join(root, `ws${n++}`);
   const paths = projectOverseerPaths("org_aaaaaaaa", "prj_bbbbbbbb", dir);
   const roster = opts.roster ?? [person("p_tony0001", "Tony"), person("p_bob00001", "Bob", "proposed")];
@@ -44,6 +47,9 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     { id: "global", path: "/s/ov.jsonl", cwd: "/proj", title: "Overseer", overseer: true } as SessionSummary,
     { id: "worker", path: "/s/w.jsonl", cwd: "/proj/app", title: "worker", workerSession: { parent: "/s/in-root.jsonl" } } as unknown as SessionSummary,
     { id: "a-baton", path: "/s/b.jsonl", cwd: "/proj", title: "Baton", baton: { holder: null, state: "open" } } as SessionSummary,
+    // A coding session the project started, in its own worktree outside the root.
+    { id: "in-tree", path: "/s/in-tree.jsonl", cwd: "/.worktrees/proj-fix-abc123", title: "Worktree" } as SessionSummary,
+    { id: "gone-tree", path: "/s/gone-tree.jsonl", cwd: "/.worktrees/proj-old-abc123", title: "Removed" } as SessionSummary,
   ];
   const state = { attended: opts.attended ?? false };
   const host = {
@@ -80,24 +86,29 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     },
     sessions: async () => sessions,
     transcript: async () => [],
-    createCoding: async (input: { cwd: string }) => {
+    codingMode: (req: { mode?: string; minor_modes?: unknown }) => codingModeChoice(req, baseCodingMode(settings.codingMode, "/proj", opts.hasSpec ?? false), settings.codingMode),
+    createCoding: async (input: { cwd: string; mode: ProjectCodingMode }) => {
       calls.push(`create:${input.cwd}`);
-      return { id: "c1", path: "/s/c1.jsonl" };
+      modes.push(input.mode);
+      return { id: "c1", path: "/s/c1.jsonl", cwd: input.cwd };
     },
-    send: async (path: string) => {
+    send: async (path: string, _text: string, mode?: ProjectCodingMode) => {
       calls.push(`send:${path}`);
+      modes.push(mode ?? null);
       return { queued: false };
     },
     coding: () => [],
+    startedCoding: () => new Map([["in-tree", { removed: false }], ["gone-tree", { removed: true }]]),
     codingTokens: async () => opts.tokens ?? 0,
   };
-  const tools = projectOverseerTools(host, new PoLimits(), () => ({ redact: (t: string) => t, redactDeep: <T>(v: T) => v }) as never);
+  const limits = new PoLimits();
+  const tools = projectOverseerTools(host, limits, () => ({ redact: (t: string) => t, redactDeep: <T>(v: T) => v }) as never);
   const run = async (name: string, params: Record<string, unknown> = {}) => {
     const t = tools.find((x) => x.name === name);
     assert.ok(t, name);
     return t.execute("call-1", params, undefined, undefined, undefined as never);
   };
-  return { host, tools, run, calls, paths, state };
+  return { host, tools, run, calls, modes, limits, paths, state };
 }
 
 /** A call per tool that does something when allowed (each the tool's "act" form). */
@@ -281,5 +292,65 @@ describe("scope, caps and budget", () => {
     const listed = await f.run("sova_idea", { op: "list" });
     assert.match(JSON.stringify(listed), /§gap\/vat-rate · open · No VAT rate decided · #gap/);
     await assert.rejects(() => f.run("sova_idea", { op: "add", id: "§sova/x", title: "t" }), /§gap\/<name> or §idea\/<name>/);
+  });
+});
+
+describe("coding sessions' modes (the operator's ceiling)", () => {
+  const N = (minorModes: string[] = []): ProjectCodingMode => ({ mode: "normal", minorModes });
+
+  test("Automatic: spec on when the project has a spec, off otherwise; never delegate", async () => {
+    const f = fake({ attended: true, hasSpec: true });
+    await f.run("sova_create_session", { prompt: "p" });
+    const g = fake({ attended: true, hasSpec: false });
+    await g.run("sova_create_session", { prompt: "p" });
+    assert.deepEqual([f.modes, g.modes], [[N(["spec"])], [N()]]);
+  });
+
+  test("each refused mode creates nothing and takes no cap", async () => {
+    const asks: [Record<string, unknown>, RegExp][] = [
+      [{ mode: "turbo" }, /Unknown mode turbo: use normal or delegate\./],
+      [{ minor_modes: ["bogus"] }, /Unknown minor mode bogus: only spec is allowed\./],
+      [{ minor_modes: ["align", "spec"] }, /Align needs someone to answer its questions, and nobody answers a coding session's\./],
+      [{ mode: "delegate" }, /Delegate is off for this project's coding sessions; the operator can allow it on the project page\./],
+      [{ minor_modes: [] }, /Spec is on for this project's coding sessions; only the operator can turn it off on the project page\./],
+    ];
+    for (const [ask, why] of asks) {
+      const f = fake({ attended: true, hasSpec: true });
+      await assert.rejects(() => f.run("sova_create_session", { prompt: "p", ...ask }), why, JSON.stringify(ask));
+      await assert.rejects(() => f.run("sova_send", { session: "in-root", text: "p", ...ask }), why, JSON.stringify(ask));
+      assert.deepEqual(f.calls, [], JSON.stringify(ask));
+      assert.equal(f.limits.count("create") + f.limits.count("prompt"), 0, JSON.stringify(ask));
+    }
+  });
+
+  test("a mode refusal comes before the budget and the caps (a spent budget still names the mode)", async () => {
+    const f = fake({ attended: true, tokens: 10 ** 12 });
+    await assert.rejects(() => f.run("sova_create_session", { prompt: "p", mode: "delegate" }), /Delegate is off/);
+  });
+
+  test("delegate once the operator chose it; spec may be turned on; normal is always allowed", async () => {
+    const f = fake({ attended: true, settings: { codingMode: { mode: "delegate", minorModes: [] } } });
+    await f.run("sova_create_session", { prompt: "p" });
+    await f.run("sova_create_session", { prompt: "p", mode: "normal", minor_modes: ["spec"] });
+    assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: [] }, N(["spec"])]);
+    // The setting says normal: the overseer can't raise it to delegate, but may add spec.
+    const g = fake({ attended: true, settings: { codingMode: N() } });
+    await assert.rejects(() => g.run("sova_create_session", { prompt: "p", mode: "delegate" }), /Delegate is off/);
+    await g.run("sova_create_session", { prompt: "p", minor_modes: ["spec"] });
+    assert.deepEqual(g.modes, [N(["spec"])]);
+  });
+
+  test("sova_send: a mode reaches the host with the text; none leaves the session's mode alone", async () => {
+    const f = fake({ attended: true });
+    await f.run("sova_send", { session: "in-root", text: "go", minor_modes: ["spec"] });
+    await f.run("sova_send", { session: "in-root", text: "go" });
+    assert.deepEqual(f.modes, [N(["spec"]), null]);
+  });
+
+  test("sova_send reaches a coding session it started in a worktree outside the root, never one whose worktree was removed", async () => {
+    const f = fake({ attended: true });
+    await f.run("sova_send", { session: "in-tree", text: "go" });
+    await assert.rejects(() => f.run("sova_send", { session: "gone-tree", text: "go" }), /Its worktree was removed, so it has no folder to work in\./);
+    assert.deepEqual(f.calls, ["send:/s/in-tree.jsonl"]);
   });
 });

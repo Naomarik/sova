@@ -487,6 +487,9 @@ const host: OverseerToolHost = {
     await chat.setModelRef(ref);
   },
   setThinking: async (path, level) => (await acquireChat(path)).setThinking(level),
+  pinMode: async (path) => {
+    if (!(await acquireChat(path)).pinMode()) throw new Error("its mode entry could not be written");
+  },
   started: (path, prompted) => {
     started.add(path);
     if (prompted) promptedAt.set(path, Date.now());

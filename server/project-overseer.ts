@@ -12,15 +12,21 @@ import {
   type ItemCodeResult,
   type ItemSendInput,
   type ItemSendResult,
+  type CodingWorktree,
+  type ProjectCodingMode,
   type ProjectOverseerInfo,
   type ProjectOverseerMarkerData,
   type StartedSession,
 } from "../shared/project-overseer";
-import type { SessionSummary } from "../shared/protocol";
+import type { SessionSummary, TokenUsage } from "../shared/protocol";
 import { onBatonEvent } from "./baton-events";
 import { allBatons, batonById, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
 import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, registerSpecialLoadout } from "./chat-manager";
+import { getSessionInsight } from "./insights";
 import { workingSubagents } from "./live";
+import { mergeMode } from "./mode-state";
+import { baseCodingMode, codingModeChoice, describeCodingMode, type ModeRequest } from "./project-coding-mode";
+import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, WorktreeRefusal } from "./project-worktrees";
 import { piUsageTally } from "./transcript-usage";
 import { decidePerson, onOrgAttached, orgDir, orgOfSessionPath, overseerPausedSince, resumeOverseer, OrgError, participantLine, readIndex, readOrg, readProjects, readRoster, operatorName } from "./orgs";
 import { appRequest, pathOfId, promptSession, toolCatalogue } from "./overseer";
@@ -57,6 +63,8 @@ import {
   recordTokens,
   readPoState,
   sessionIdOfFile,
+  type StartedRow,
+  markStarted,
   writeMemo,
   writePoSettings,
   writePoState,
@@ -252,8 +260,9 @@ async function codingTokens(p: ProjectOverseerPaths): Promise<number> {
     // From the file (every assistant message's usage, deduplicated), not a live record: a
     // session that is not running still counts what it spent.
     const text = await readFile(c.path, "utf8").catch(() => "");
-    const u = piUsageTally()(text, "snapshot");
-    const spent = u.input + u.output + u.cacheRead + u.cacheWrite;
+    // Its workers too (delegate, a spec writer): their lifetime total, live or restored.
+    const workers = await getSessionInsight(c.path).then((i) => i.usageTotal, () => undefined);
+    const spent = sessionSpend(piUsageTally()(text, "snapshot"), workers);
     counted.set(c.sessionId, spent);
     total += spent;
   }
@@ -261,6 +270,52 @@ async function codingTokens(p: ProjectOverseerPaths): Promise<number> {
   if (counted.size) recordTokens(p, counted);
   tokenMemo.set(k, { at: Date.now(), value: total });
   return total;
+}
+
+/** A coding session's spend: its own usage plus its workers' lifetime total. Pure, for the tests. */
+export function sessionSpend(own: TokenUsage, workers?: TokenUsage): number {
+  const sum = (u: TokenUsage) => u.input + u.output + u.cacheRead + u.cacheWrite;
+  return sum(own) + (workers ? sum(workers) : 0);
+}
+
+/** Every coding session the project started (both kinds), with its worktree or why it runs in the root, newest first. */
+async function codingWorktrees(p: ProjectOverseerPaths, root: string): Promise<CodingWorktree[]> {
+  const known = indexedSessionPaths();
+  const out: CodingWorktree[] = [];
+  for (const r of readStarted(p)) {
+    if (r.kind !== "coding" && r.kind !== "operator-coding") continue;
+    const path = known.get(r.sessionId) ?? (r.path && existsSync(r.path) ? r.path : null);
+    const common = {
+      sessionId: r.sessionId,
+      path,
+      title: path ? ((await getSessionSummary(path).catch(() => null))?.title ?? "") : "",
+      startedBy: r.kind === "coding" ? ("overseer" as const) : ("operator" as const),
+      running: path ? isSessionBusy(path) : false,
+      workers: path ? workingSubagents(path) : 0,
+      createdAt: r.createdAt,
+    };
+    if (!r.worktree) {
+      // Started before worktrees (no reason recorded) or in a root that can't have one.
+      out.push({ ...common, branch: null, ...(r.inRoot ? { inRoot: r.inRoot } : {}), worktree: null, base: null, target: null, state: "root", merged: false, ahead: 0, dirty: false });
+      continue;
+    }
+    const w = await readWorktree(r.worktree, root);
+    out.push({
+      ...common,
+      branch: r.worktree.branch,
+      worktree: w.worktree,
+      base: r.worktree.base,
+      target: r.worktree.target,
+      state: r.removed ? "removed" : w.state,
+      merged: w.merged,
+      ...(r.merged ? { mergedAt: r.merged.at } : {}),
+      ...(r.removed ? { removedAt: r.removed } : {}),
+      ahead: w.ahead,
+      dirty: w.dirty,
+      ...(w.error ? { error: w.error } : {}),
+    });
+  }
+  return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function projectOverseerInfo(orgId: string, projectId: string): Promise<ProjectOverseerInfo> {
@@ -294,6 +349,12 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
   ];
   for (const s of started) if (s.kind === "coding" && s.path) s.title = (await getSessionSummary(s.path).catch(() => null))?.title ?? "";
   started.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const repo = await gitRootOf(project.root);
+  const trees = await codingWorktrees(p, project.root);
+  for (const s of started) {
+    const t = trees.find((x) => x.sessionId === s.sessionId);
+    if (t?.branch) s.worktree = { branch: t.branch, state: t.state };
+  }
   return {
     orgId,
     projectId,
@@ -303,6 +364,8 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
     id: exists ? st!.current : null,
     history,
     settings,
+    codingModeNow: baseCodingMode(settings.codingMode, project.root),
+    worktrees: { available: !("reason" in repo), ...("reason" in repo ? { reason: repo.reason } : {}), sessions: trees },
     effective: effectiveAutonomy(settings, readRoster(orgId), overseerPausedSince(orgId, projectId)),
     paused: overseerPausedSince(orgId, projectId),
     busy: exists && path ? isSessionBusy(path) : false,
@@ -355,6 +418,7 @@ export function renderProjectOverseerPrompt(orgId: string, projectId: string, to
     AUTONOMY_REASON: eff.reason ? ` (${eff.reason})` : "",
     CAPS: `per operator message ${c.gatherPerTurn} gathering sessions, ${c.promotePerTurn} promotions, ${c.createPerTurn} coding sessions, ${c.promptsPerTurn} prompts to them; at once ${c.gatheringsOpen} open gatherings, ${c.codingRunning} coding sessions running; ${settings.tokenBudget} coding tokens in total`,
     ROOT: project.root,
+    CODING_MODE: `${describeCodingMode(baseCodingMode(settings.codingMode, project.root))}${settings.codingMode ? " (the operator's setting)" : " (Automatic)"}`,
     ROSTER: active.length ? active.map(participantLine).join("\n") : "(nobody yet: ask the operator to add people)",
     IDEAS: r.redact(promptToc(readManifest(p.ideas), readPoState(p)?.current ?? "")),
     TODOS: r.redact(promptOpenTodos(readTodos(p.todos))),
@@ -410,17 +474,30 @@ function toolHost(rt: Rt): PoToolHost {
     decideReferral: async (personId, approve) => decidePerson(orgId, personId, approve, { kind: "overseer", sessionId: readPoState(paths)?.current ?? "" }),
     sessions: () => listSessions(),
     transcript: async (path) => normalizeEntries(await readActiveBranch(path)),
-    async createCoding(input) {
-      const made = await startCodingSession(orgId, projectId, input);
-      noteStarted(paths, made.sessionId, "coding", new Date(), made.path);
-      return { id: made.sessionId, path: made.path };
+    codingMode(req) {
+      const s = settings();
+      return codingModeChoice(req, baseCodingMode(s.codingMode, projectOf(orgId, projectId).root), s.codingMode);
     },
-    async send(path, text) {
+    async createCoding(input) {
+      const made = await startCodingSession(orgId, projectId, { ...input, kind: "coding" });
+      return {
+        id: made.sessionId,
+        path: made.path,
+        cwd: made.cwd,
+        ...(made.worktree ? { worktree: made.worktree } : {}),
+        ...(made.note ? { note: made.note } : {}),
+        ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
+      };
+    },
+    async send(path, text, mode) {
+      let applies: "now" | "after-turn" | undefined;
+      if (mode) applies = await applyCodingMode(path, mode);
       const r = await promptSession(path, text);
       if (!r.ok) throw new Error(r.error);
-      return { queued: r.queued };
+      return { queued: r.queued, ...(applies ? { modeApplies: applies } : {}) };
     },
     coding: () => codingOf(paths),
+    startedCoding: () => new Map(readStarted(paths).filter((r) => r.kind === "coding" || r.kind === "operator-coding").map((r) => [r.sessionId, { removed: !!r.removed }])),
     codingTokens: () => codingTokens(paths),
   };
 }
@@ -461,21 +538,152 @@ async function overseerRunning(orgId: string, projectId: string): Promise<{ mode
   return { model: m ? `${m.provider}/${m.id}` : null, thinking: chat?.session.thinkingLevel ?? null };
 }
 
-/** A new ordinary session in `cwd` (the project root or inside it) through the same route the
-    browser uses, titled, with model/thinking, and its first prompt sent. */
-async function startCodingSession(orgId: string, projectId: string, input: { cwd?: string; prompt: string; title?: string; model?: string; thinking?: string }): Promise<{ sessionId: string; path: string }> {
+/**
+ * Set a coding session's mode and pin it (§app.project-overseer/tools, Modes): the mode extension's
+ * own handler (applyMode), then the `mode` entry Sova writes itself, so the session keeps this mode
+ * whatever mode.json says later. Throws when either can't be done: the caller then sends no prompt.
+ * Returns when the switch applies (a running turn finishes in the old mode).
+ */
+async function applyCodingMode(path: string, mode: ProjectCodingMode): Promise<"now" | "after-turn"> {
+  const chat = await acquireChat(path);
+  const plan = await chat.applyMode(mergeMode(chat.modeState, { mode: mode.mode, minorModes: mode.minorModes as never }));
+  if (plan !== "command")
+    throw new OrgError(plan === "unsupported" ? "the mode extension is not loaded in it" : "it is open in another writer (a terminal, or a process Sova doesn't know)", 409);
+  if (!chat.pinMode()) throw new OrgError("its mode entry could not be written", 409);
+  return chat.session.isStreaming ? "after-turn" : "now";
+}
+
+export interface StartedCoding {
+  sessionId: string;
+  path: string;
+  /** Where it runs: its worktree (or the folder inside it), else the root folder asked for. */
+  cwd: string;
+  mode: ProjectCodingMode;
+  worktree?: { path: string; branch: string };
+  /** Why it runs in the root itself (a tail: "it isn't a Git repository."). */
+  note?: string;
+  /** Its mode could not be set, so no prompt was sent: the sentence to show. */
+  notPrompted?: string;
+}
+
+export const NOT_PROMPTED = "Started, but not prompted: its mode could not be set.";
+
+/**
+ * A new ordinary coding session for the project (sova_create_session, Start coding session): in its
+ * own git worktree and branch cut from the root's HEAD when the root is in git (else in the root,
+ * with the reason recorded), created through the same route the browser uses, recorded in
+ * started.json at once (so it is listed and budgeted even when its prompt fails), titled, with
+ * model and thinking, then its mode set and pinned, and only then its first prompt. A mode that
+ * could not be set sends no prompt.
+ */
+async function startCodingSession(
+  orgId: string,
+  projectId: string,
+  input: { cwd?: string; prompt: string; title?: string; model?: string; thinking?: string; mode?: ProjectCodingMode; kind: "coding" | "operator-coding" },
+): Promise<StartedCoding> {
   const project = projectOf(orgId, projectId);
-  const cwd = input.cwd ?? project.root;
+  const p = projectOverseerPaths(orgId, projectId);
+  const settings = readPoSettings(p);
+  const mode = input.mode ?? baseCodingMode(settings.codingMode, project.root);
+  let cwd = input.cwd ?? project.root;
+  const repo = await gitRootOf(project.root);
+  let extra: Pick<StartedRow, "worktree" | "inRoot"> = {};
+  if ("reason" in repo) extra = { inRoot: repo.reason };
+  else {
+    try {
+      const cut = await cutWorktree(repo, cwd, input.title?.trim() || input.prompt.trim().split(/\s+/).slice(0, 8).join(" "));
+      cwd = cut.cwd;
+      extra = { worktree: cut.worktree };
+    } catch (err) {
+      throw new OrgError(`No session was started: its worktree could not be made (${err instanceof Error ? err.message : String(err)}).`, 409);
+    }
+  }
   const res = await appRequest("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd }) });
   const json = (await res.json().catch(() => null)) as (SessionSummary & { error?: string }) | null;
-  if (res.status !== 201 || !json?.path) throw new OrgError(json?.error ?? `Creating the session failed (HTTP ${res.status}).`, res.status === 409 ? 409 : 400);
-  if (input.title?.trim()) setSessionTitle(json.id, cleanSessionTitle(input.title) ?? null);
-  const choice = codingChoice(input, readPoSettings(projectOverseerPaths(orgId, projectId)), await overseerRunning(orgId, projectId));
+  if (res.status !== 201 || !json?.path) {
+    // Nothing runs in it: the worktree goes again (it holds nothing).
+    if (extra.worktree) await removeWorktree(extra.worktree, project.root).catch(() => {});
+    throw new OrgError(json?.error ?? `Creating the session failed (HTTP ${res.status}).`, res.status === 409 ? 409 : 400);
+  }
+  noteStarted(p, json.id, input.kind, new Date(), json.path, extra);
+  const title = input.title?.trim() ? cleanSessionTitle(input.title) : null;
+  if (title) setSessionTitle(json.id, title);
+  const choice = codingChoice(input, settings, await overseerRunning(orgId, projectId));
   if (choice.model) await (await acquireChat(json.path)).setModelRef(choice.model);
   if (choice.thinking) (await acquireChat(json.path)).setThinking(choice.thinking);
+  const made: StartedCoding = {
+    sessionId: json.id,
+    path: json.path,
+    cwd,
+    mode,
+    ...(extra.worktree ? { worktree: { path: extra.worktree.path, branch: extra.worktree.branch } } : {}),
+    ...(extra.inRoot ? { note: extra.inRoot } : {}),
+  };
+  try {
+    await applyCodingMode(json.path, mode);
+  } catch (err) {
+    // The session stays, listed and counted; its first turn never runs in a mode it wasn't given.
+    console.warn(`[project-overseer] ${json.id}: mode ${describeCodingMode(mode)} not set: ${err instanceof Error ? err.message : String(err)}`);
+    return { ...made, notPrompted: NOT_PROMPTED };
+  }
   const sent = await promptSession(json.path, input.prompt);
   if (!sent.ok) throw new OrgError(sent.error, 409);
-  return { sessionId: json.id, path: json.path };
+  return made;
+}
+
+// ---- worktrees: the operator's merge and removal ------------------------------------------------------
+
+function worktreeRow(p: ProjectOverseerPaths, sessionId: unknown): StartedRow & { worktree: NonNullable<StartedRow["worktree"]> } {
+  if (typeof sessionId !== "string" || !sessionId) throw new OrgError("Give the sessionId");
+  const r = readStarted(p).find((x) => x.sessionId === sessionId && (x.kind === "coding" || x.kind === "operator-coding"));
+  if (!r) throw new OrgError("Unknown coding session of this project", 404);
+  if (!r.worktree) throw new OrgError(`It runs in the project root${r.inRoot ? `: ${r.inRoot}` : "."}`, 409);
+  return r as StartedRow & { worktree: NonNullable<StartedRow["worktree"]> };
+}
+
+/** The session file on this host, or a refusal (a gesture never acts on another host's worktree); refused while it or its workers run. */
+function refuseBusy(r: StartedRow): string {
+  const path = indexedSessionPaths().get(r.sessionId) ?? (r.path && existsSync(r.path) ? r.path : null);
+  if (!path) throw new OrgError("On another host: its worktree is there.", 409);
+  if (isSessionBusy(path)) throw new OrgError("The session is working.", 409);
+  if (workingSubagents(path) > 0) throw new OrgError("Its workers are running.", 409);
+  return path;
+}
+
+/** POST …/worktrees/merge: Merge Branch, into its target in the project root's checkout. */
+export async function mergeCodingWorktree(orgId: string, projectId: string, sessionId: unknown): Promise<ProjectOverseerInfo> {
+  const project = projectOf(orgId, projectId);
+  const p = projectOverseerPaths(orgId, projectId);
+  const r = worktreeRow(p, sessionId);
+  const path = refuseBusy(r);
+  const title = (await getSessionSummary(path).catch(() => null))?.title || r.worktree.branch;
+  try {
+    const m = await mergeBack(r.worktree, project.root, title);
+    markStarted(p, r.sessionId, { merged: { at: new Date().toISOString(), commit: m.sha } });
+  } catch (err) {
+    if (err instanceof WorktreeRefusal) throw new OrgError(err.message, 409);
+    throw err;
+  }
+  return projectOverseerInfo(orgId, projectId);
+}
+
+/** POST …/worktrees/remove: Remove Worktree; the branch goes too only when merged. The session stays. */
+export async function removeCodingWorktree(orgId: string, projectId: string, sessionId: unknown): Promise<ProjectOverseerInfo> {
+  const project = projectOf(orgId, projectId);
+  const p = projectOverseerPaths(orgId, projectId);
+  const r = worktreeRow(p, sessionId);
+  if (r.removed) throw new OrgError("Its worktree was already removed.", 409);
+  const path = refuseBusy(r);
+  try {
+    await removeWorktree(r.worktree, project.root);
+    markStarted(p, r.sessionId, { removed: new Date().toISOString() });
+  } catch (err) {
+    if (err instanceof WorktreeRefusal) throw new OrgError(err.message, 409);
+    throw err;
+  }
+  // Its cwd is gone: a held runtime would run tools in nothing.
+  await disposeHeldChat(path, "Its worktree was removed, so it has no folder to work in.").catch(() => {});
+  return projectOverseerInfo(orgId, projectId);
 }
 
 // ---- the runtime loadout ------------------------------------------------------------------------------
@@ -657,17 +865,23 @@ export async function sendItem(orgId: string, projectId: string, body: ItemSendI
 export async function codeItem(orgId: string, projectId: string, body: ItemCodeInput): Promise<ItemCodeResult> {
   const p = projectOverseerPaths(orgId, projectId);
   const item = itemOf(p, body);
+  // Recorded at once as organizational (server/org-sessions.ts), under its own kind so the
+  // overseer's budget and caps, which read only "coding", never count the operator's sessions.
   const made = await startCodingSession(orgId, projectId, {
     prompt: body.prompt?.trim() || item.text,
     title: item.title.slice(0, 80),
     ...(body.model ? { model: body.model } : {}),
     ...(body.thinking ? { thinking: body.thinking } : {}),
+    kind: "operator-coding",
   });
   linkItem(p, item, made.sessionId);
-  // Organizational from now on (server/org-sessions.ts), under its own kind so the overseer's
-  // budget and caps, which read only "coding", never count the operator's sessions.
-  noteStarted(p, made.sessionId, "operator-coding", new Date(), made.path);
-  return made;
+  return {
+    path: made.path,
+    sessionId: made.sessionId,
+    ...(made.worktree ? { worktree: made.worktree } : {}),
+    ...(made.note ? { note: made.note } : {}),
+    ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
+  };
 }
 
 // ---- the watch loop ------------------------------------------------------------------------------------

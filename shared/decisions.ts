@@ -173,7 +173,12 @@ export interface PromoteResult {
   refused: { id: string; reason: string }[];
   /** The kept draft under the project's .sova/spec/drafts/ whose draft.json holds this promotion's evidence. */
   draft?: string;
+  /** The commit of the changed `.sova/spec/` files in the project root (a git root only), or why it
+      was skipped (the promotion itself stands). Absent: nothing was promoted, or the root is not in git. */
+  commit?: PromoteCommit;
 }
+
+export type PromoteCommit = { sha: string; branch: string; files: string[]; message: string } | { skipped: string };
 
 /** In-process events (server/reconcile.ts `onReconcileEvent`). */
 export interface ReconcileEvent {

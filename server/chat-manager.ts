@@ -26,7 +26,7 @@ import { parseWakeNudge } from "../shared/wake";
 import { type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
-import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
+import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo, workerWindowResolver } from "./models";
@@ -1362,6 +1362,29 @@ class ChatSession {
     this.modeApplies = applies;
     this.broadcast(this.modeMessage());
     return plan;
+  }
+
+  /**
+   * Pin this chat to its current mode: append the extension's own `mode` entry (pinEntryFor) when
+   * the branch's newest snapshot differs, so the session keeps this mode on every reopen whatever
+   * mode.json says later — the extension itself appends only on a change, never for a mode equal
+   * to the default. Call it after applyMode returned "command". False when this chat can't be
+   * written (disposed, a foreign writer, live in a terminal).
+   */
+  pinMode(): boolean {
+    if (this.disposed || this.foreignWrite || this.hasForeignWrites()) return false;
+    try {
+      assertNotLive(this.path);
+    } catch {
+      return false;
+    }
+    const sm = this.session.sessionManager;
+    const pin = pinEntryFor(sm.getBranch(), this.modeState);
+    if (!pin) return true;
+    this.flushDeferredAppends(); // open-time entries go before the mode entry, as in applyMode
+    sm.appendCustomEntry(pin.customType, pin.data);
+    markOwned(this.path);
+    return true;
   }
 
   /** The sandbox extension's /sandbox command in this runtime (server/sandbox-state.ts). */

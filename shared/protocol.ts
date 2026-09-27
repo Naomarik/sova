@@ -2379,6 +2379,8 @@ export interface OverseerAction {
   args: unknown;
   outcome: "ok" | "refused" | "error";
   error?: string;
+  /** A done act's one-line result worth showing (a project overseer's promotion commit, a coding session's branch). */
+  note?: string;
 }
 
 // --- Tool results the Overseer ChatView renders specially (tool_execution_end `result.details`

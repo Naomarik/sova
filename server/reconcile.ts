@@ -11,12 +11,14 @@ import {
   type ConflictResolveInput,
   type DecisionRow,
   type DecisionsInfo,
+  type PromoteCommit,
   type PromoteResult,
   type ReconcileEvent,
   type SpecStatus,
 } from "../shared/decisions";
 import type { Person } from "../shared/orgs";
 import { batonById, closeBaton, createBaton, namesOf } from "./baton";
+import { commitSpec, specSnapshot } from "./project-worktrees";
 import { onBatonEvent } from "./baton-events";
 import { DecisionError, type DecisionProvider, type Question } from "./decide";
 import { isExcluded } from "./decide-settings";
@@ -901,8 +903,11 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
     }
     let promoted: string[] = [];
     let draft: string | undefined;
+    let commit: PromoteCommit | undefined;
     if (rows.length) {
       const edit = editFor(store, rows, project.root);
+      // What git sees in the root's spec before the promotion, so the commit takes only its own changes.
+      const snap = await specSnapshot(project.root).catch(() => null);
       try {
         const out = await promoteEdit(project.root, edit, (rid) => verificationFor(store, rid, conflicts), d.now());
         if (out.draft) draft = out.draft;
@@ -913,6 +918,7 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
           promoted.push(r.id);
         }
         store.lastPromotedSpec = specHash(project.root);
+        if (snap && promoted.length) commit = await commitSpec(snap, promotionMessage(rows.filter((r) => promoted.includes(r.id)))).catch((err) => ({ skipped: `Not committed: ${err instanceof Error ? err.message : String(err)}` }));
       } catch (err) {
         const reason = err instanceof SpecToolError || err instanceof Error ? err.message : String(err);
         for (const r of rows) refused.push({ id: r.id, reason });
@@ -923,8 +929,17 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
     writeDecisionStore(orgId, projectId, store);
     await refreshDraft(orgId, projectId, store).catch(() => []);
     emit({ type: "promoted", orgId, projectId, ids: promoted });
-    return { info: info(orgId, projectId, store, conflicts), promoted, refused, ...(draft ? { draft } : {}) };
+    return { info: info(orgId, projectId, store, conflicts), promoted, refused, ...(draft ? { draft } : {}), ...(commit ? { commit } : {}) };
   });
+}
+
+/** The promotion commit's message (§app.requirements/promotion-commit): "Promote 2 decisions: payroll
+    export — Exports run on Fridays; approvals — …", each item cut to 72 characters, at most 10 then
+    "and k more". */
+export function promotionMessage(rows: Pick<DecisionRow, "statement" | "area">[]): string {
+  const items = rows.slice(0, 10).map((r) => clipText(`${r.area.toLowerCase()} — ${r.statement.replace(/\s+/g, " ").trim().replace(/[.;]+$/, "")}`, 72));
+  const more = rows.length > 10 ? ` and ${rows.length - 10} more` : "";
+  return `Promote ${rows.length} decision${rows.length === 1 ? "" : "s"}: ${items.join("; ")}${more}.`;
 }
 
 // ---- resolutions as they happen -----------------------------------------------------------------------------

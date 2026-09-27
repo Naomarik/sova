@@ -14,6 +14,8 @@ import type { OrgProject, Person } from "../shared/orgs";
 import type { OverseerState } from "../shared/protocol";
 import { EXTRA_PROMPT_MAX, HISTORY_MAX, readOverseerState, writeAtomic, writeOverseerState } from "./overseer-store";
 import { orgDir, OrgError, orgOfSessionPath, readProjects } from "./orgs";
+import { checkCodingModePatch, parseCodingMode } from "./project-coding-mode";
+import type { WorktreeRecord } from "./project-worktrees";
 import { stateRoot } from "./state-root";
 
 /**
@@ -91,7 +93,7 @@ const CAP_MAX = 1000;
 const BUDGET_MAX = 1_000_000_000;
 
 export function defaultPoSettings(): ProjectOverseerSettings {
-  return { version: 1, autonomy: DEFAULT_AUTONOMY, model: null, thinking: null, codingModel: null, codingThinking: null, gatheringModel: null, gatheringThinking: null, caps: { ...DEFAULT_PO_CAPS }, tokenBudget: DEFAULT_TOKEN_BUDGET, watch: true, extraSystemPrompt: "" };
+  return { version: 1, autonomy: DEFAULT_AUTONOMY, model: null, thinking: null, codingModel: null, codingThinking: null, codingMode: null, gatheringModel: null, gatheringThinking: null, caps: { ...DEFAULT_PO_CAPS }, tokenBudget: DEFAULT_TOKEN_BUDGET, watch: true, extraSystemPrompt: "" };
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -119,6 +121,7 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
     thinking: typeof raw.thinking === "string" && raw.thinking.trim() ? raw.thinking.trim() : null,
     codingModel: typeof raw.codingModel === "string" && raw.codingModel.trim() ? raw.codingModel.trim() : null,
     codingThinking: typeof raw.codingThinking === "string" && raw.codingThinking.trim() ? raw.codingThinking.trim() : null,
+    codingMode: parseCodingMode(raw.codingMode),
     gatheringModel: typeof raw.gatheringModel === "string" && raw.gatheringModel.trim() ? raw.gatheringModel.trim() : null,
     gatheringThinking: typeof raw.gatheringThinking === "string" && raw.gatheringThinking.trim() ? raw.gatheringThinking.trim() : null,
     caps,
@@ -149,6 +152,11 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown): Project
     if (v === undefined) continue;
     if (v !== null && typeof v !== "string") throw new OrgError(`${k} must be a string or null`);
     next[k] = typeof v === "string" && v.trim() ? v.trim() : null;
+  }
+  if (patch.codingMode !== undefined) {
+    const m = checkCodingModePatch(patch.codingMode);
+    if (m && "error" in m) throw new OrgError(m.error);
+    next.codingMode = m;
   }
   if (patch.tokenBudget !== undefined) {
     if (typeof patch.tokenBudget !== "number" || !Number.isInteger(patch.tokenBudget) || patch.tokenBudget < 0 || patch.tokenBudget > BUDGET_MAX)
@@ -251,6 +259,22 @@ export interface StartedRow {
   /** A coding session's spend (input + output + cache tokens) when last counted from its file, so
       the token budget still counts it on a host that doesn't have the file. */
   tokens?: number;
+  /** A coding session's own git worktree (§app.project-overseer/coding-worktrees). `path` is
+      host-local (the host that started it); the branch is in the client repo. */
+  worktree?: WorktreeRecord;
+  /** The operator's Merge Branch: when, and the target's commit after it. */
+  merged?: { at: string; commit: string };
+  /** When the operator's Remove Worktree ran (ISO). */
+  removed?: string;
+  /** Why a coding session runs in the root itself (a tail: "it isn't a Git repository."). */
+  inRoot?: string;
+}
+
+function parseWorktree(v: unknown): WorktreeRecord | undefined {
+  if (!isObj(v)) return undefined;
+  const { path, branch, base, target } = v;
+  if (typeof path !== "string" || !path || typeof branch !== "string" || !branch || typeof base !== "string" || typeof target !== "string") return undefined;
+  return { path, branch, base, target };
 }
 
 const STARTED_MAX = 200;
@@ -265,6 +289,10 @@ function parseStarted(v: unknown): StartedRow[] {
       createdAt: typeof s.createdAt === "string" ? s.createdAt : "",
       ...(typeof s.path === "string" && s.path ? { path: s.path } : {}),
       ...(typeof s.tokens === "number" && Number.isFinite(s.tokens) && s.tokens >= 0 ? { tokens: s.tokens } : {}),
+      ...(parseWorktree(s.worktree) ? { worktree: parseWorktree(s.worktree) } : {}),
+      ...(isObj(s.merged) && typeof s.merged.at === "string" && typeof s.merged.commit === "string" ? { merged: { at: s.merged.at, commit: s.merged.commit } } : {}),
+      ...(typeof s.removed === "string" && s.removed ? { removed: s.removed } : {}),
+      ...(typeof s.inRoot === "string" && s.inRoot ? { inRoot: s.inRoot } : {}),
     }))
     .slice(-STARTED_MAX);
 }
@@ -318,10 +346,20 @@ export function recordTokens(p: ProjectOverseerPaths, counted: Map<string, numbe
 export const dayKey = (d = new Date()): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Record a session it started (the listing, the concurrency and token caps). */
-export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: StartedRow["kind"], now = new Date(), path?: string): void {
+export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: StartedRow["kind"], now = new Date(), path?: string, extra: Pick<StartedRow, "worktree" | "inRoot"> = {}): void {
   const rows = readStarted(p);
   if (rows.some((s) => s.sessionId === sessionId)) return;
-  writeStarted(p, [...rows, { sessionId, kind, createdAt: now.toISOString(), ...(path ? { path } : {}) }]);
+  writeStarted(p, [...rows, { sessionId, kind, createdAt: now.toISOString(), ...(path ? { path } : {}), ...extra }]);
+}
+
+/** Record the operator's merge or removal on a coding session's row; false when the row or its worktree is unknown. */
+export function markStarted(p: ProjectOverseerPaths, sessionId: string, patch: Pick<StartedRow, "merged" | "removed">): boolean {
+  const rows = readStarted(p);
+  const r = rows.find((x) => x.sessionId === sessionId);
+  if (!r?.worktree) return false;
+  Object.assign(r, patch);
+  writeStarted(p, rows);
+  return true;
 }
 
 // ---- which files are project overseers ------------------------------------------------------------

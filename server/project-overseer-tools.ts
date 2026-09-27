@@ -4,7 +4,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { BatonSession, BatonView } from "../shared/baton";
 import type { DecisionsInfo, PromoteResult } from "../shared/decisions";
 import type { OrgProject, Person } from "../shared/orgs";
-import { GAP_TAG, type Autonomy, type ProjectOverseerCaps, type ProjectOverseerSettings } from "../shared/project-overseer";
+import { GAP_TAG, type Autonomy, type ProjectCodingMode, type ProjectOverseerCaps, type ProjectOverseerSettings } from "../shared/project-overseer";
 import type { IdeaStatus, SessionSummary, SovaConfirmDetails, TranscriptItem } from "../shared/protocol";
 import { addIdea, IdeaError, readManifest, readProse, updateIdea } from "./overseer-ideas";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
@@ -12,6 +12,7 @@ import { logAction, NOTES_MAX, readNotes, writeNotes } from "./overseer-store";
 import { addTodo, readTodos, removeTodo, TodoError, updateTodo } from "./overseer-todos";
 import { renderTranscript } from "./overseer-tools";
 import { participantLine } from "./orgs";
+import { describeCodingMode, type ModeRequest } from "./project-coding-mode";
 import { levelAtLeast, type ProjectOverseerPaths } from "./project-overseer-store";
 
 /**
@@ -53,10 +54,17 @@ export interface PoToolHost {
   /** Every listed session (the tools keep those under the root). */
   sessions(): Promise<SessionSummary[]>;
   transcript(path: string): Promise<TranscriptItem[]>;
-  /** A new ordinary session in `cwd` (inside the root), with its first prompt sent. */
-  createCoding(input: { cwd: string; prompt: string; title?: string; model?: string; thinking?: string }): Promise<{ id: string; path: string }>;
-  /** One message to a session, as its composer would send it. */
-  send(path: string, text: string): Promise<{ queued: boolean }>;
+  /** The mode a coding session gets for this request (the project's setting or Automatic, under
+      the operator's ceiling), or the refusal. Pure: nothing is created or counted. */
+  codingMode(req: ModeRequest): { mode: ProjectCodingMode } | { error: string };
+  /** A new ordinary session for `cwd` (inside the root; it runs in the same folder of its own
+      worktree when the root is in git), its mode set and pinned, then its first prompt sent. */
+  createCoding(input: { cwd: string; prompt: string; title?: string; model?: string; thinking?: string; mode: ProjectCodingMode }): Promise<{ id: string; path: string; cwd: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string }>;
+  /** One message to a session, as its composer would send it; with `mode`, the session's mode is set and pinned first. */
+  send(path: string, text: string, mode?: ProjectCodingMode): Promise<{ queued: boolean; modeApplies?: "now" | "after-turn" }>;
+  /** Every coding session the project started (both kinds), by id: they may run in worktrees outside
+      the root; `removed`: the operator removed its worktree. */
+  startedCoding(): Map<string, { removed: boolean }>;
   /** Coding sessions it started: their ids and whether each runs now. */
   coding(): { sessionId: string; path: string | null; running: boolean }[];
   /** Tokens those sessions have spent. */
@@ -211,13 +219,15 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
 
   function act(name: string, run: (params: any, toolCallId: string) => Promise<Out>, needOf: (params: any) => Need = () => TOOL_NEEDS[name] ?? "operator") {
     return async (toolCallId: string, params: any): Promise<Out> => {
-      const log = (outcome: "ok" | "refused" | "error", error?: string) =>
-        logAction({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: params, outcome, ...(error !== undefined ? { error } : {}) }, p.actions);
+      const log = (outcome: "ok" | "refused" | "error", error?: string, note?: string) =>
+        logAction({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: params, outcome, ...(error !== undefined ? { error } : {}), ...(note ? { note } : {}) }, p.actions);
       try {
         const refused = autonomyRefusal(name, needOf(params ?? {}), host.attended(), host.effective());
         if (refused) throw new Refusal(refused);
         const out = await run(params ?? {}, toolCallId);
-        log("ok");
+        // A one-line result for the project page's activity list (a promotion's commit, a session's branch).
+        const note = (out.details as { note?: unknown } | null)?.note;
+        log("ok", undefined, typeof note === "string" ? note : undefined);
         return out;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -239,7 +249,8 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
   async function scoped(): Promise<{ coding: SessionSummary[]; batons: BatonSession[] }> {
     const root = host.project().root;
     const all = await host.sessions();
-    const coding = all.filter((s) => underRoot(root, s.cwd) && !s.overseer && !s.baton && !s.projectOverseer && !s.workerSession);
+    const mine = host.startedCoding();
+    const coding = all.filter((s) => (underRoot(root, s.cwd) || mine.has(s.id)) && !s.overseer && !s.baton && !s.projectOverseer && !s.workerSession);
     return { coding, batons: host.batons() };
   }
 
@@ -632,22 +643,36 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
         for (const id of ids)
           if (!r.promoted.includes(id) && !refused.some((x) => x.id === id))
             refused.push({ id, reason: "not a drafted decision of this project (sova_decisions state drafted lists them; run sova_reconcile first)" });
-        const said = `Promoted ${r.promoted.length}, refused ${refused.length}${refused.length ? `: ${refused.map((x) => `${x.id} (${x.reason})`).join("; ")}` : ""}.`;
+        const committed = !r.commit ? "" : "sha" in r.commit ? ` Committed ${r.commit.sha.slice(0, 7)} on ${r.commit.branch}, so coding sessions started from now on have it.` : ` ${r.commit.skipped}`;
+        const said = `Promoted ${r.promoted.length}, refused ${refused.length}${refused.length ? `: ${refused.map((x) => `${x.id} (${x.reason})`).join("; ")}` : ""}.${r.promoted.length ? committed : ""}`;
         if (!r.promoted.length) throw new Refusal(said);
-        return { content: text(said), details: { promoted: r.promoted, refused } };
+        const note = !r.commit ? undefined : "sha" in r.commit ? `Committed ${r.commit.sha.slice(0, 7)} on ${r.commit.branch}.` : r.commit.skipped;
+        return { content: text(said), details: { promoted: r.promoted, refused, ...(r.commit ? { commit: r.commit } : {}), ...(note ? { note } : {}) } };
       }),
     },
     // ---- L3 --------------------------------------------------------------------------------------
     {
       name: "sova_create_session",
       label: "Start coding session",
-      description: "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. Counts against your coding caps and the project's token budget.",
+      description:
+        "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in the project's coding mode (normal, with spec on when the project has a spec, unless the operator set another); `mode`/`minor_modes` ask for another, within the operator's setting: delegate only if the operator chose it, align never, spec never off when the project has it on. Counts against your coding caps and the project's token budget (its workers included).",
       promptSnippet: "start a coding session in the project with a first prompt",
       parameters: obj(
-        { prompt: str("The first message: what to build, with the decisions it rests on."), folder: str("A folder inside the project root, absolute or relative to it (default: the root)."), title: str("A title for the list."), model: str('Model ref "provider/model".'), thinking: str("off | minimal | low | medium | high | xhigh") },
+        {
+          prompt: str("The first message: what to build, with the decisions it rests on."),
+          folder: str("A folder inside the project root, absolute or relative to it (default: the root)."),
+          title: str("A title for the list."),
+          model: str('Model ref "provider/model".'),
+          thinking: str("off | minimal | low | medium | high | xhigh"),
+          mode: str("normal | delegate (delegate only if the operator allows it). Omitted: the project's coding mode."),
+          minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes, e.g. ["spec"]. Omitted: the project\'s. Never "align"; never without "spec" when the project has it on.' },
+        },
         ["prompt"],
       ),
       execute: act("sova_create_session", async (q) => {
+        // The mode is checked first: a refusal creates nothing and takes no cap.
+        const m = host.codingMode({ mode: q.mode, minor_modes: q.minor_modes });
+        if ("error" in m) throw new Refusal(`${m.error} No session was created.`);
         const root = host.project().root;
         // A relative folder is relative to the project root ("app" → <root>/app); ".." still escapes and is refused below.
         const raw = typeof q.folder === "string" && q.folder.trim() ? q.folder.trim() : root;
@@ -660,28 +685,49 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
         const cap = host.settings().caps.codingRunning;
         if (running >= cap) throw new Refusal(`Limit reached: ${running} of your coding sessions are running, and the limit is ${cap} at once.`);
         take("create");
-        const made = await host.createCoding({ cwd, prompt: q.prompt, ...(q.title ? { title: String(q.title) } : {}), ...(q.model ? { model: String(q.model) } : {}), ...(q.thinking ? { thinking: String(q.thinking) } : {}) });
-        return { content: text(`Started ${link({ id: made.id, title: q.title ? String(q.title) : cut(q.prompt, 60) })} in ${cwd}.`), details: made };
+        const made = await host.createCoding({ cwd, prompt: q.prompt, mode: m.mode, ...(q.title ? { title: String(q.title) } : {}), ...(q.model ? { model: String(q.model) } : {}), ...(q.thinking ? { thinking: String(q.thinking) } : {}) });
+        const where = made.worktree ? `its worktree ${made.worktree.path} on ${made.worktree.branch}` : `the project root ${made.cwd} (${made.note ?? "no worktree"})`;
+        const note = made.worktree ? `On ${made.worktree.branch}.` : `In the project root: ${made.note ?? "no worktree."}`;
+        const said = link({ id: made.id, title: q.title ? String(q.title) : cut(q.prompt, 60) });
+        // Created and listed, but its first prompt was never sent: a failure the model must see.
+        if (made.notPrompted) throw new Error(`${made.notPrompted} ${said} is in ${where}; send the prompt with sova_send once its mode is set.`);
+        return { content: text(`Started ${said} in ${where}, mode ${describeCodingMode(m.mode)}.`), details: { ...made, mode: m.mode, note } };
       }),
     },
     {
       name: "sova_send",
       label: "Send to coding session",
-      description: "Send a message to one of the project's coding sessions (never a gathering session: people answer those). Counts against your prompt cap and the token budget.",
-      promptSnippet: "send a message to a coding session in the project",
-      parameters: obj({ session: str("Session id."), text: str("The message.") }, ["session", "text"]),
+      description:
+        "Send a message to one of the project's coding sessions (never a gathering session: people answer those). `mode`/`minor_modes` change its mode first, within the same limits as sova_create_session (mid-turn, the change applies after the running turn). Counts against your prompt cap and the token budget.",
+      promptSnippet: "send a message to a coding session in the project (optionally changing its mode)",
+      parameters: obj(
+        {
+          session: str("Session id."),
+          text: str("The message."),
+          mode: str("normal | delegate: change its mode first (delegate only if the operator allows it)."),
+          minor_modes: { type: "array", items: { type: "string" }, description: 'Change its minor modes first, e.g. ["spec"]. Never "align"; never without "spec" when the project has it on.' },
+        },
+        ["session", "text"],
+      ),
       execute: act("sova_send", async (q) => {
+        // Checked before anything else: a refused mode sends nothing and takes no cap.
+        const changing = (q.mode !== undefined && q.mode !== null && q.mode !== "") || (q.minor_modes !== undefined && q.minor_modes !== null);
+        const m = changing ? host.codingMode({ mode: q.mode, minor_modes: q.minor_modes }) : null;
+        if (m && "error" in m) throw new Refusal(`${m.error} Nothing was sent.`);
         const id = String(q.session ?? "").trim().replace(/^sova:\/\/s\//, "");
         const { coding, batons } = await scoped();
         if (batons.some((b) => b.sessionId === id)) throw new Refusal("That is a gathering session: only its participants write in it.");
         const s = coding.find((x) => x.id === id);
         if (!s) throw new Refusal(`No coding session ${id} in this project.`);
         if (s.live) throw new Refusal(`"${s.title}" is open in a terminal, so it is read-only.`);
+        if (host.startedCoding().get(s.id)?.removed) throw new Refusal("Its worktree was removed, so it has no folder to work in.");
         if (typeof q.text !== "string" || !q.text.trim()) throw new Refusal("text must not be blank.");
         await budgetCheck();
         take("prompt");
-        const r = await host.send(s.path, q.text);
-        return { content: text(r.queued ? `Queued in ${link(s)} behind its running turn.` : `Sent to ${link(s)}.`), details: { id: s.id, queued: r.queued } };
+        const mode = m && "mode" in m ? m.mode : undefined;
+        const r = await host.send(s.path, q.text, mode);
+        const modeSaid = mode ? ` Its mode is now ${describeCodingMode(mode)}${r.modeApplies === "after-turn" ? " (from after its running turn)" : ""}.` : "";
+        return { content: text(`${r.queued ? `Queued in ${link(s)} behind its running turn.` : `Sent to ${link(s)}.`}${modeSaid}`), details: { id: s.id, queued: r.queued, ...(mode ? { mode } : {}) } };
       }),
     },
     // ---- the operator's own list ----------------------------------------------------------------------

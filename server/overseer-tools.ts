@@ -61,6 +61,9 @@ export interface OverseerToolHost extends IdeaToolHost {
   open(path: string): Promise<void>;
   setModel(path: string, ref: string): Promise<void>;
   setThinking(path: string, level: string): Promise<string>;
+  /** Pin a held chat to the mode it is on now (ChatSession.pinMode): write its `mode` entry even when
+      that mode equals the default, so a later mode.json change never moves it. Throws when it can't. */
+  pinMode(path: string): Promise<void>;
   /** Record that the Overseer started work in this session (the concurrency cap). `prompted`: a
       prompt was just accepted there, so it counts as running from now on, even in the moment
       before its run reports streaming. */
@@ -607,9 +610,13 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       if (p.minor_modes !== undefined) body.minorModes = p.minor_modes;
       // The mode route needs the chat open here, as in sova_set_session. A failed switch stops the
       // create short of its prompt, so the first turn never runs in a mode it wasn't given.
+      // Then pinned: the extension writes a mode entry only on a change, so a mode equal to the
+      // default would otherwise follow every later change of mode.json.
       const r = await host.open(s.path).then(
         () => call("POST", `/api/mode?path=${encodeURIComponent(s.path)}`, body),
         (err) => ({ status: 0, json: { error: err instanceof Error ? err.message : String(err) } }),
+      ).then(
+        (r) => (r.status === 200 ? host.pinMode(s.path).then(() => r, (err) => ({ status: 0, json: { error: err instanceof Error ? err.message : String(err) } })) : r),
       );
       if (r.status !== 200)
         throw new Refusal(

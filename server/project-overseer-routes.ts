@@ -5,7 +5,7 @@ import { BusyError } from "./chat-manager";
 import { OrgError } from "./orgs";
 import { addIdea, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea } from "./overseer-ideas";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
-import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, noteReason, patchProjectOverseer, projectOverseerInfo, sendItem } from "./project-overseer";
+import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, noteReason, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, sendItem } from "./project-overseer";
 import { projectOf, projectOverseerPaths, type ProjectOverseerPaths } from "./project-overseer-store";
 import { shareInfo } from "./share/listener";
 
@@ -193,5 +193,14 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   app.post(`${base}/items/code`, handle(async (c) => {
     const p = pathsOf(c);
     return c.json(await codeItem(p.orgId, p.projectId, (await body(c)) as unknown as ItemCodeInput), 201);
+  }));
+  // A coding session's own worktree: merge its branch back into its target, or remove it once merged (or empty).
+  app.post(`${base}/worktrees/merge`, handle(async (c) => {
+    const p = pathsOf(c);
+    return c.json(await mergeCodingWorktree(p.orgId, p.projectId, (await body(c)).sessionId), 200, NO_STORE);
+  }));
+  app.post(`${base}/worktrees/remove`, handle(async (c) => {
+    const p = pathsOf(c);
+    return c.json(await removeCodingWorktree(p.orgId, p.projectId, (await body(c)).sessionId), 200, NO_STORE);
   }));
 }

@@ -394,7 +394,7 @@ comments): `yes`, `no`, or `partial` with what is missing.
 | Input | text, textarea, mono, invalid | md 44 | Label always present; placeholder is never the label. A field is a column unless you say `.field-row`. | partial — no `.field-row`; no `.input-invalid` rule (invalid is styled through `.input[aria-invalid="true"]`, not the class) |
 | Select | select, combobox | md 44 | Options are 44px targets too. | partial — no combobox (`.combobox-list`, `.combobox-option`) |
 | Toggle | checkbox, radio, switch | 18px box / 40px switch | The label row is the target, not the 18px box. | partial — no `.toggle-radio` |
-| Card | resting, raised, interactive | — | Interactive cards need a focus ring, not just a hover. | partial — no `.card-raised`, `.card-interactive` |
+| Card | resting, raised, interactive | — | Interactive cards need a focus ring, not just a hover. | partial — no `.card-raised` |
 | App bar | — | 56px | Brand, context, and status. Never actions that belong to content. | no |
 | Rail & bottom bar | rail, bottombar | 44px items | One or the other, never both. Bottom under 768px. | no |
 | Tabs | — | 44px | Tabs switch views; they never submit. State goes in the URL. | yes |

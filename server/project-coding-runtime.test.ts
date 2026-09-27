@@ -174,6 +174,15 @@ describe("a project's coding sessions", async () => {
     const row = store.readStarted(store.projectOverseerPaths(org.id, project.id)).find((r) => r.kind === "coding");
     assert.ok(row?.worktree && row.path, JSON.stringify(row));
     assert.match(row.worktree.branch, /^sova\/api-[0-9a-f]{6}$/);
+    assert.equal(row.title, "API");
+    // Untitled: the row still carries one, the prompt's first line (never Sova's commit paragraph).
+    const before2 = store.readStarted(store.projectOverseerPaths(org.id, project.id)).length;
+    await tool.execute("t4", { prompt: "Fix the footer\nIt overlaps the menu on phones." }, undefined, undefined, undefined as never).catch(() => {});
+    const rows2 = store.readStarted(store.projectOverseerPaths(org.id, project.id));
+    assert.equal(rows2.length, before2 + 1);
+    assert.equal(rows2.at(-1)!.title, "Fix the footer");
+    const info2 = await po.projectOverseerInfo(org.id, project.id);
+    assert.equal(info2.worktrees.sessions.find((s) => s.sessionId === rows2.at(-1)!.sessionId)?.title, "Fix the footer");
     assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec"] });
   });
 

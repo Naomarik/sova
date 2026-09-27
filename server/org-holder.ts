@@ -95,7 +95,9 @@ function elsewhere(r: HolderRecord | null, me: HostIdentity): { host: HostIdenti
 export async function heldElsewhere(dir: string): Promise<{ host: HostIdentity; since: string } | null> {
   const me = hostIdentity();
   const remote = await remoteFileText(dir, HOLDER_FILE, REMOTE_CHECK_MS);
-  return elsewhere(parseHolder(remote), me) ?? elsewhere(readHolder(dir), me);
+  const held = elsewhere(parseHolder(remote), me) ?? elsewhere(readHolder(dir), me);
+  // Two installs on one machine share its name: the id tells them apart.
+  return held && held.host.name === me.name ? { ...held, host: { ...held.host, name: `${held.host.name} (${held.host.id})` } } : held;
 }
 
 /** The attach form's warning. */

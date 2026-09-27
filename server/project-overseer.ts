@@ -286,8 +286,10 @@ async function codingWorktrees(p: ProjectOverseerPaths, root: string): Promise<C
     const common = {
       sessionId: r.sessionId,
       path,
-      // The title it had when it started, where its file isn't (another host), or while its own is untitled.
-      title: (path ? (await getSessionSummary(path).catch(() => null))?.title : "") || r.title || "",
+      // A title given here (a rename, Start coding session's) first; then the one it started with,
+      // which travels in the repo (another host has no file and no title store for it); then the
+      // listing's own (the first message, which ends with Sova's commit paragraph).
+      title: readSessionTitles()[r.sessionId] || r.title || (path ? ((await getSessionSummary(path).catch(() => null))?.title ?? "") : ""),
       startedBy: r.kind === "coding" ? ("overseer" as const) : ("operator" as const),
       running: path ? isSessionBusy(path) : false,
       workers: path ? workingSubagents(path) : 0,
@@ -626,7 +628,9 @@ async function startCodingSession(
     throw new OrgError(json?.error ?? `Creating the session failed (HTTP ${res.status}).`, res.status === 409 ? 409 : 400);
   }
   const title = input.title?.trim() ? cleanSessionTitle(input.title) : null;
-  noteStarted(p, json.id, input.kind, new Date(), json.path, { ...extra, ...(title ? { title } : {}) });
+  // The row always carries a title: the one given, else the prompt's first line.
+  const rowTitle = title ?? cleanSessionTitle((input.prompt.trim().split("\n")[0] ?? "").slice(0, 80));
+  noteStarted(p, json.id, input.kind, new Date(), json.path, { ...extra, ...(rowTitle ? { title: rowTitle } : {}) });
   if (title) setSessionTitle(json.id, title);
   const choice = codingChoice(input, settings, await overseerRunning(orgId, projectId));
   // Opened on its model and thinking from the start (its file never records the default first);

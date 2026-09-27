@@ -115,4 +115,25 @@ describe("D3: list_changed, for what the marks can't carry", () => {
     assert.equal(got.length, 2); // unchanged: no second nudge
     remove();
   });
+
+  test("a list change also drops the attention digest's memo, so Needs you re-reads it fresh (a Get Link, a share-page reply)", async () => {
+    const { onAttentionChanged } = await import("./attention-memo");
+    let drops = 0;
+    onAttentionChanged(() => drops++);
+    let list: SessionSummary[] = [row("a")];
+    const feed = new SessionFeed({ list: async () => list, intervalMs: 60_000, debounceMs: 0 });
+    const remove = feed.add(() => {});
+    await feed.idle();
+    assert.equal(drops, 0, "the baseline changes nothing");
+    list = [{ ...row("a"), baton: { holder: "p_1", state: "open" } as never }];
+    feed.nudge(0);
+    await new Promise((r) => setTimeout(r, 5));
+    await feed.idle();
+    assert.equal(drops, 1);
+    feed.nudge(0);
+    await new Promise((r) => setTimeout(r, 5));
+    await feed.idle();
+    assert.equal(drops, 1, "unchanged: the memo stays");
+    remove();
+  });
 });

@@ -163,8 +163,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 * Keeping the block in the base options makes the prompt the same whoever started the turn.
 	 *
 	 * Only a command context exposes the getter (`ctx.getSystemPromptOptions`): `/mode` and `/align`
-	 * adopt it, and Sova runs `/mode` at every chat open. Until one arrives (a session restored and
-	 * driven only by the TUI shortcut or palette), the old behaviour stands.
+	 * adopt it, and Sova runs the quiet `/mode sync` at every chat open. Until one arrives (a session
+	 * restored and driven only by the TUI shortcut or palette), the old behaviour stands.
 	 */
 	let hostPromptOptions: (() => { sections?: Record<string, string> }) | undefined;
 
@@ -581,7 +581,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		];
 	}
 
-	const usage = `Usage: /mode [${MODES.join("|")}|status|default|strict on|strict off|${MINOR_MODES.map((minor) => `${minor} [on|off]`).join("|")}]`;
+	const usage = `Usage: /mode [${MODES.join("|")}|status|default|sync|strict on|strict off|${MINOR_MODES.map((minor) => `${minor} [on|off]`).join("|")}]`;
 
 	// The ctrl+p "Mode" category; the palette asks for fresh rows on every open.
 	registerPaletteCategory(pi.events, {
@@ -642,17 +642,20 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		description: "Open the mode selector, or set a mode with an argument",
 		getArgumentCompletions: (argumentPrefix) => {
 			const minorItems = MINOR_MODES.flatMap((minor) => [minor, `${minor} on`, `${minor} off`]);
-			const items = [...MODES, "status", "default", "strict on", "strict off", ...minorItems]
+			const items = [...MODES, "status", "default", "sync", "strict on", "strict off", ...minorItems]
 				.filter((value) => value.startsWith(argumentPrefix.trim()))
 				.map((value) => ({ value, label: value }));
 			return items.length > 0 ? items : null;
 		},
 		handler: async (args, ctx) => {
-			// Any /mode call, even one that changes nothing (Sova's re-assertion at chat open), is the
+			// Any /mode call, even one that changes nothing (`/mode sync`, Sova's at chat open), is the
 			// moment the host's base sections become reachable: adopt and bring them in step now.
 			adoptHost(ctx);
 			syncHostSection();
 			const arg = args.trim();
+			// Only that: no entry, no notice, no status change. The session's mode is already restored
+			// (session_start); this puts its block into the host's base sections and keeps it there.
+			if (arg === "sync") return;
 			if (arg === "") {
 				if (ctx.mode === "tui") {
 					const opened = requestPaletteOpen(pi.events, ctx, [MODE_CATEGORY_ID]);

@@ -50,6 +50,7 @@ edit" is a prompt-level rule the orchestrator checks.
 | `/mode normal` · `/mode delegate` | Set explicitly |
 | `/mode status` | Show this session's mode, the default for new sessions, the Delegate routing (and, in delegate, what each profile is actually using), the spec writer (and, with spec on, what it is actually using), strict flag, minor modes, state file |
 | `/mode default` | Save this session's mode, strict flag and minor modes as the default for new sessions (the only command here that writes `mode.json`) |
+| `/mode sync` | Change nothing and say nothing: keep this session's mode block in the prompt whoever starts the turn (see below). Sova runs it at every chat open |
 | `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while in delegate (off by default) |
 | `/mode align [on\|off]` | Toggle (or set) the `align` minor mode |
 | `/mode spec [on\|off]` | Toggle (or set) the `spec` minor mode |
@@ -233,7 +234,7 @@ the next user prompt, and the claude-code provider restarted its CLI (and
 re-sent the whole history) at every switch. So the extension also keeps the
 block in the base options: they are reachable only through a command context
 (`ctx.getSystemPromptOptions`), which `/mode` and `/align` adopt — Sova runs
-`/mode` at every chat open — and from then on every switch, every
+the quiet `/mode sync` at every chat open — and from then on every switch, every
 `before_agent_start` and every run start (`agent_start`, after pi may have
 rebuilt the base on a tool change) writes the current block there. A session
 driven only by the shortcut or the palette, with no `/mode` yet, keeps the old

@@ -41,7 +41,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Org section head | {org}, wordless warn dot with hidden ", {k} waiting on you", then its count · `title`: "{n} sessions in {org}." + " {k} waiting on you." when k ≥ 1 |
 | Org page link (org head) | wordless `arrow-right` · `aria-label` and `title`: Open the {org} page |
 | Project label | {project}, then its count · `title`: the project root (from its overseer's folder), else {project} · Unknown project · Other |
-| Finished list | Finished {n} · `title`: "Hand-offs that reached their goal or were closed, cleared overseer conversations, and sessions you archived." |
+| Project overseer eye (project heading, §app.session-list/organizations) | wordless `eye`, one mark at most: Busy's pulsing dot · the turn-error mark · the unread dot · `aria-label` and `title`: Open the {project} overseer, + " · working" / " · last turn failed" / " · new reply" |
+| Finished list | Finished {n} · `title`: "Hand-offs that reached their goal or were closed, and sessions you archived." |
 | Organizations spine door | wordless `building` over {n} · `aria-label` and `title`: Organizations · {n} sessions (1: "1 session"), + " · {k} waiting on you" while k ≥ 1 |
 | Org archive toasts | "Archived. Find it in {project}, under Finished." · "Moved back to {project}." · no project: "Archived. Find it in {org}, under Finished." · "Moved back to {org}." · a project with no name left: {project} = "its project" |
 | Org group refusal (drop, Move into group reason, server 400) | Organization sessions stay with their project. |
@@ -719,6 +720,24 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Thinking refused (project page, `.field-error` under the select) | "{model} offers thinking {levels}." — levels comma-separated, as the model lists them |
 | Thinking moved after a model change (toast, after the model's own) | "Thinking is now {level}: {model} doesn't offer {old}." |
 | Activity chip for a partial act | `Partly` (warn: dot and word) beside `Done` · `Refused` · `Failed` · line: "{tool words}: partly ({n} refused: {id} ({reason}); …)" |
+
+## §design.copy-deck/project-overseer-head — Project overseer · chat head (§app.project-overseer/page)
+
+| Where | Copy |
+|---|---|
+| Title | `Overseer` · an earlier conversation: `Earlier Overseer Conversation`, meta "{title} · {age}", back link `aria-label` "Back to the overseer" |
+| Meta line | {project} (a link to its page) · {org} · `Watching` / `Not watching` · "{n} started" (a menu; `aria-label` "{n} sessions it started, show list"; rows "{kind} · {state}") |
+| State chip | `Working` (accent, live dot) · `L0 in force` (warn, dot and word; `title`: the server's reason) |
+| Level button | the chosen level, `L1` · `aria-label` "Level {level}, {meaning}" + " In force now: L0." while forced + " Change level." · rows `L0`–`L3`, each with its meaning (the project page's), the chosen one checked · done (toast): "Level: {level}." |
+| Project page's Open Overseer / Start Overseer | the `eye` icon (was `chat`) |
+| Run Now | `Run Now` (ghost) · disabled reason: "Working now" · done (toast): "The overseer is looking now." |
+| ⋯ menu | `aria-label` "Overseer actions · {project}" · `Stop Watching` / `Start Watching` (toasts "Not watching." / "Watching.") · `History…`, note "{n} earlier" while any (`aria-label` "History, {n} earlier conversations", 1: "conversation") · `Clear`, note "Start a new conversation. This one moves to History." · `Project Page` · below 480px also `Run Now` and `Level…` (note: the chosen level) |
+| Meta line, below 480px | {project} only: the org and the watch word go |
+| History screen | its earlier conversations, each "{title}" ("No messages" when untitled) with its age · none: "No earlier conversations yet." |
+| Clear / `/clear` | done (announced): "Cleared. The previous conversation is in History." · failed (toast): "Couldn't clear the overseer. {why}" |
+| Status strip, line 1 | "Last looked on its own {time}{tail}." or "It hasn't looked on its own yet." + " Waiting to look at {n} things." (1: "1 thing"; `title`: the reasons) · paused by an attach: the reason, then `Resume at {level}` · empty roster: the reason |
+| Status strip, lines 2–3 | the project page's readout ("Today on its own: …") and waiting sentences (§design.copy-deck/project-limits) · below 480px: `Details` toggles them |
+| Read-only line (earlier conversation) | "An earlier conversation. Read only." |
 
 ## §design.copy-deck/owner-page — Owner page (§app/owner-page)
 

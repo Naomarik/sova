@@ -1230,12 +1230,14 @@ draws once — org sessions included, the Overseer's never — so the number alw
 The organizations' sessions, in one region of their own: the **last region before the Archive**, so
 the pane reads Needs you → Recent → Groups → Live & web → **Organizations** → Archive. It is the only
 place in the pane that lists an organization session (§app.session-list/ordinary-surfaces): hand-offs
-and gathering sessions, offers, each project's overseer with its cleared conversations, and the coding
-sessions a project started. Shape: its own **Needs you** list first, then **organization → project →
-rows**, each project with a collapsed **Finished** list.
+and gathering sessions, offers, and the coding sessions a project started; each project's current
+overseer is not a row but an **eye on its project's heading**, and its cleared conversations are in
+no region (they are in the overseer's own History, §app.project-overseer/page). Shape: its own
+**Needs you** list first, then **organization → project → rows**, each project with a collapsed
+**Finished** list.
 
 ```html
-<!-- Omitted entirely when it has 0 rows (with a query: 0 hits), like the Archive. -->
+<!-- Omitted entirely when it has no row and no eye (with a query: 0 hits), like the Archive. -->
 <details class="sidebar-region sidebar-orgs" aria-labelledby="r-orgs" open>
   <!-- The Needs you head's pattern: the <summary> toggles, the <h2> is what the outline reads. -->
   <summary class="sidebar-orgs-summary">
@@ -1271,13 +1273,23 @@ rows**, each project with a collapsed **Finished** list.
          aria-label="Open the Mamluk Arabia page" title="Open the Mamluk Arabia page">…arrow-right…</a>
     </summary>
     <!-- one per project, by name; Other last -->
-    <h4 class="list-group-label org-project-label" title="~/webapps/rakiba-site">Rakiba site <span class="text-num">7</span></h4>
-    <ul class="list">…the current project overseer first, then rows by lastActiveAt, newest first…</ul>
+    <!-- the sticky project heading: the h4 is the outline's name, the eye sits beside it -->
+    <div class="org-project-head">
+      <h4 class="list-group-label org-project-label" title="~/webapps/rakiba-site">Rakiba site <span class="text-num">6</span></h4>
+      <!-- only while the project has a current overseer; hung into the right gutter -->
+      <a class="button button-icon button-ghost org-overseer" href="#/s/<its path>"
+         aria-label="Open the Rakiba site overseer · working" title="Open the Rakiba site overseer · working"
+         aria-current="page"><!-- only while its conversation is open -->
+        …eye…
+        <!-- at most one mark: Busy's pulsing dot (working), else the turn-error mark, else the unread dot -->
+      </a>
+    </div>
+    <ul class="list">…rows by lastActiveAt, newest first…</ul>
     <!-- collapsed, memory only; omitted when empty -->
     <details class="archive-date org-finished">
       <summary class="list-group-label archive-date-label"
-               title="Hand-offs that reached their goal or were closed, cleared overseer conversations, and sessions you archived.">
-        <svg class="icon icon-sm icon-twist" aria-hidden="true">…</svg> Finished <span class="text-num">4</span></summary>
+               title="Hand-offs that reached their goal or were closed, and sessions you archived.">
+        <svg class="icon icon-sm icon-twist" aria-hidden="true">…</svg> Finished <span class="text-num">3</span></summary>
       <ul class="list">…</ul>
     </details>
   </details>
@@ -1287,7 +1299,7 @@ rows**, each project with a collapsed **Finished** list.
 - **Which sessions.** Every search hit with `SessionSummary.org` (§app.organizations/org-sessions) — the
   same hit list every region reads, after the host filter and the query. `org` wins over every other
   field: a TUI-live org coding session, a web one, an archived one all live here and nowhere else in
-  the pane. Rows are the unchanged `SessionRow` — rail (a TUI word included), unread dot, turn-error
+  the pane — except a cleared overseer conversation, which no region lists. Rows are the unchanged `SessionRow` — rail (a TUI word included), unread dot, turn-error
   mark, needs-you mark, baton holder suffix, context ring — and open `#/s/<path>`.
 - **Its Needs you.** The region's first block, above the organizations: every org session **waiting on
   the operator**, one row per session, labelled with its place. A session waits on you when it isn't
@@ -1312,16 +1324,29 @@ rows**, each project with a collapsed **Finished** list.
   `title` is the project root, `~`-shortened, read from the project overseer's folder when the region
   holds one; otherwise the project's name (the list carries no project root). At
   folded width only project labels stick; org summaries don't, so two sticky levels don't eat the screen.
-- **Order inside a project.** The **current project overseer is pinned first** — it is the project's
-  hub — then rows by `lastActiveAt`, newest first, ties on `createdAt` then `id`
+- **Order inside a project.** Rows by `lastActiveAt`, newest first, ties on `createdAt` then `id`
   (`src/lib/session-order.ts`'s activity comparator): the question here is who replied.
+- **The project overseer's eye.** The project's current overseer (`org.kind` `overseer`, not
+  finished) is never a row: it is a 44px ghost **eye** link at the end of its project's heading, hung
+  into the right gutter like the org link, opening `#/s/<its path>` (a plain link: nothing is
+  written). A project with no overseer yet has no eye; its project page's Start Overseer is the way
+  in. The eye reads only the session list, so nothing more is fetched, and carries at most one mark,
+  in this order: **working** (the row's Busy: Busy's pulsing dot, the one sanctioned animation),
+  **last turn failed** (the row's turn-error mark), **new reply** (the row's unread dot). Its name
+  says the same: "Open the {project} overseer", plus " · working", " · last turn failed" or " · new
+  reply". While its conversation is open the eye is tinted selected with `aria-current="page"`, like
+  the global Overseer's eye on `#/overseer`, and shows no failed or new-reply mark (you are looking at
+  it). Level and pause are not shown here: they are its chat head's (§app.project-overseer/page).
+  Should a project ever list two current overseers, the newest is the eye and the other stays a row.
 - **Finished**, a collapsed tail per project (memory only, like the Archive's date sections), holds the
-  project's finished sessions (`org.finished`: a hand-off `done` or `closed`, a cleared overseer
-  conversation) and any org session the operator archived. Omitted when empty.
+  project's finished hand-offs (`org.finished`: `done` or `closed`) and any org session the operator
+  archived. Omitted when empty. A **cleared overseer conversation** (an `overseer` session that is
+  finished) is listed nowhere in the pane, Finished included: its overseer's History opens it.
 - **Counts are sessions.** The region head counts every row it holds once, Finished included (a Needs
-  you row is not counted twice); while searching it reads "· {hits} of {total}". Each org's count stays
-  visible open or closed, like a folder's in Live & web; each project counts all its rows, Finished
-  included, and Finished counts its own.
+  you row is not counted twice); while searching it reads "· {hits} of {total}". The eye is not a row
+  and is not counted, and neither is a cleared overseer conversation. Each org's count stays visible
+  open or closed, like a folder's in Live & web; each project counts all its rows, Finished included,
+  and Finished counts its own.
 - **Nothing waits unseen.** While any org session waits on you, the region head carries a warn chip —
   dot and word, "{k} waiting" — open or collapsed, and so does the spine door (below). Each org summary
   carries a wordless warn dot with its hidden clause (", {k} waiting on you") and the count in its
@@ -1332,8 +1357,8 @@ rows**, each project with a collapsed **Finished** list.
   default and Finished stays closed, both in memory only. **Forced open**, without changing the stored
   choice: while a search is on (with every org and Finished that holds a hit); and while the selected
   session (from the URL) is inside — then its org and, if needed, its Finished are forced open too, so
-  its `aria-current` row is visible (the Archive's case 2: it doesn't close under the operator while
-  they're on that session).
+  its `aria-current` row, or its project's `aria-current` eye, is visible (the Archive's case 2: it
+  doesn't close under the operator while they're on that session).
 - **The org link.** Each org summary ends with a 44px ghost icon link to `#/orgs/<id>`, hung into the
   right gutter like a group's `⋯`; it stops its own click and keydown so it doesn't also toggle the org.
   Names truncate with an ellipsis, the full name in `title`.
@@ -1346,7 +1371,9 @@ rows**, each project with a collapsed **Finished** list.
   under Finished." / "Moved back to {org}."; a project with no name left: "its project").
 - **Never grouped.** An org session can't be put in a group (§app.session-list/groups).
 - **Search** matches an org row on the org's name, the project's name and the baton holder's name, on
-  top of the usual fields, so "rakiba" or a person's name finds it (§app.session-list/search).
+  top of the usual fields, so "rakiba" or a person's name finds it (§app.session-list/search). A
+  search that hits a project's current overseer and nothing else there shows that project's heading
+  and eye with no rows.
 - **The spine** carries a door for the region, shown exactly when the region is on screen: the
   `building` icon over the region head's count, named "Organizations · {n} sessions" in its `title`
   and `aria-label`, plus " · {k} waiting on you" and a warn dot at its corner while any org session
@@ -1355,8 +1382,9 @@ rows**, each project with a collapsed **Finished** list.
 - **Accessibility.** The region head is the Needs you region's form, a `<summary>` wrapping the `h2`
   the outline reads; org heads and Finished are `<summary>` with plain spans (headings inside a
   summary are exposed inconsistently — the Archive's rule); the Needs you label is an `h3`, project
-  labels `h4`. The warn and working dots carry hidden words. Enter or Space toggles; the org link is a
-  real link with a name.
+  labels `h4`, and a project's eye is a real link beside its `h4`, never inside it. The warn and
+  working dots carry hidden words. Enter or Space toggles; the org link and the eye are real links
+  with a name.
 
 ## §app.session-list/archive-by-date — Archive by date
 

@@ -373,7 +373,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
 - **Project overseers start paused at L0.** The attach records every project of the org as paused
   in this host's index. While paused, the level in force is L0 ("Paused at L0: this organization
   was attached on this host. Set its level to resume."), the watch loop starts nothing for it (its
-  reasons wait), its strip says "watch paused", and the project page shows a warn banner "Paused
+  reasons wait), its chat head shows the warn chip "L0 in force" and the reason with **Resume at
+  {level}** (§app.project-overseer/page), and the project page shows a warn banner "Paused
   at L0 on this host" with a **Resume at {level}** button. Setting its level on this host
   (`PATCH …/overseer {autonomy}`, any level, the one it had included) ends the pause; no other
   setting does. An org created on this host, and a project added after the attach, are not paused;
@@ -414,7 +415,9 @@ apply the same rule, as the Overseer's flag does (§app.overseer/identity-and-cl
 - **`kind`**: a baton whose row has offers is an `offer`, any other baton a `gathering`; a file with
   THAT org's project-overseer marker is an `overseer` conversation, even one `state.json` no longer
   lists (pushed past the history cap); anything else in the workspace is `other`, with no project.
-- **`finished`**: a hand-off `done` or `closed`, or an overseer conversation that isn't the current one.
+- **`finished`**: a hand-off `done` or `closed`, or an overseer conversation that isn't the current one
+  (the sidebar lists such a conversation nowhere: its overseer's History opens it,
+  §app.project-overseer/page).
 - A project removed from `projects.json` keeps its `started.json`, so its coding sessions stay
   organizational, with no `projectName`.
 - Names come from `org.json` and `projects.json`; a project no longer listed leaves `projectName` unset.

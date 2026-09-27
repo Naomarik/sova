@@ -174,6 +174,26 @@ The harnesses:
   held through the front door closes when its host dies (never 4422), and a reconnect lands on the
   next host. The stale-tab check itself is frontend's.
 
+- **m6-links** (takes the lab LOCK; spends a few short glm-5.3 turns; leaves a,b,c paired, d and e
+  unpaired): linked sessions (§mesh/links) through `e2e/links-lib.mjs`, the shared helpers of every
+  `m6-links*` harness. A 2-host link on real whois identities: a's message starts a turn on b and a
+  reply comes back (b's model through link_send, or the API when the model won't); a 3-host link
+  made on a with members on b and c (a keeps the record and no thread); d with
+  `SOVA_MESH_IDENTITY=addresses` and peers by tailnet IP learns its own node identity from a copy's
+  `you` and from whoami; the outbox across a Sova stop (peer-up) and a `--reject` partition (the
+  drain path is read from a's `[links] outbox` log); e on a19d588 (no links) is refused
+  `old-build`, final, never held.
+- **m6-links-stop** (spends two short glm-5.3 turns on b): a link message that a sends while b is in
+  a long bash call is `delivered` into b's SDK steering queue, never the web queue. Stop through b's
+  /ws/chat hands none of it back: no link text in queue_cleared or any other composer frame. It is
+  not on b's branch until b's next turn, which takes it in exactly once. The link is ended afterwards.
+- **m6-links-overseer** (spends a few glm-5.3 Overseer turns; takes the LOCK; restores a's Overseer
+  settings): the Overseer on a, driven through its /ws/chat, runs sova_create_session with host b, a
+  model, thinking and mode. On b's disk the session carries them, the mode entry comes before the
+  first prompt, and the first prompt is verbatim with no sova-overseer-sent marker. With
+  concurrentSessions 1, a second create with a prompt is refused while the first still runs on b past
+  its 15 s grace, and nothing new is created on b.
+
 Front-door Caddyfile essentials, the template for the real one: `lb_policy first`,
 `health_uri /api/health` with 1 s interval/timeout, `lb_try_duration 5s`, `flush_interval -1`,
 `header_up Host {upstream_hostport}` (for `tailscale serve` upstreams), and

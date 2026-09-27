@@ -29,6 +29,7 @@ const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-m
 const { addTodo } = await import("./overseer-todos");
 const { resolveChatMode } = await import("./mode-state");
 const { settled } = await import("./workspace-git");
+const { offersMerge } = await import("../src/lib/coding-worktrees");
 
 after(async () => {
   await disposeAllChats();
@@ -130,10 +131,27 @@ describe("a project's coding sessions", async () => {
     info = await po.mergeCodingWorktree(org.id, project.id, started.sessionId);
     assert.equal(readFileSync(join(client, "login.txt"), "utf8"), "login\n");
     assert.deepEqual([rowOf()?.state, rowOf()?.merged, !!rowOf()?.mergedAt], ["merged", true, true]);
+    // The session is sent more work and commits again: git, not the record, says it is merged.
+    const firstMerge = rowOf()!.mergedAt;
+    writeFileSync(join(w.path, "logout.txt"), "logout\n");
+    git(w.path, "add", "logout.txt");
+    git(w.path, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "logout");
+    info = await po.projectOverseerInfo(org.id, project.id);
+    assert.deepEqual(
+      [rowOf()?.state, rowOf()?.merged, rowOf()?.newSinceMerge, rowOf()?.mergedAt],
+      ["open", false, 1, firstMerge],
+      "a merged branch with a new commit is open again, and its last merge stays as history",
+    );
+    assert.equal(offersMerge(rowOf()!), true, "Merge Branch is offered again");
+    info = await po.mergeCodingWorktree(org.id, project.id, started.sessionId);
+    assert.equal(readFileSync(join(client, "logout.txt"), "utf8"), "logout\n");
+    assert.deepEqual([rowOf()?.state, rowOf()?.merged, rowOf()?.newSinceMerge], ["merged", true, undefined]);
+    assert.equal(offersMerge(rowOf()!), false);
     info = await po.removeCodingWorktree(org.id, project.id, started.sessionId);
     assert.equal(existsSync(w.path), false);
     assert.equal(git(client, "branch", "--list", w.branch), "", "a merged branch goes with it");
     assert.deepEqual([rowOf()?.state, !!rowOf()?.removedAt, rowOf()?.merged, rowOf()?.branchGone], ["removed", true, true, true], "removed with its branch: still merged, nothing left to merge");
+    assert.equal(offersMerge(rowOf()!), false, "merged and deleted: the record says merged, nothing to offer");
     const row = store.readStarted(p).find((r) => r.sessionId === started!.sessionId)!;
     assert.ok(row.removed && row.merged?.commit, JSON.stringify(row));
     await assert.rejects(po.removeCodingWorktree(org.id, project.id, started.sessionId), /already removed/);
@@ -152,10 +170,10 @@ describe("a project's coding sessions", async () => {
   });
 
   test("a coding session in a worktree is told to commit on its branch; one in the root is not", () => {
-    const told = po.codingFirstPrompt("Build the API", { branch: "sova/api-abc123" });
+    const told = po.codingFirstPrompt("Build the API", { branch: "sova/api-abc123", target: "master" });
     assert.equal(
       told,
-      "Build the API\n\nYou work in your own git worktree on the branch sova/api-abc123. Commit your work on this branch before you end your turn: uncommitted changes can't be merged.",
+      "Build the API\n\nYou work in your own git worktree on the branch sova/api-abc123. Commit your work on this branch before you end your turn: uncommitted changes can't be merged. Before you end your turn, also merge master into your branch and resolve any conflicts.",
     );
     assert.equal(po.codingFirstPrompt("Tidy up", undefined), "Tidy up");
   });

@@ -323,10 +323,12 @@ async function codingWorktrees(p: ProjectOverseerPaths, root: string): Promise<C
       base: r.worktree.base,
       target: r.worktree.target,
       state: r.removed ? "removed" : w.state,
-      // Merged by Merge Branch, by hand (git sees it), or removed with its branch (only ever a merged one).
-      merged: w.merged || !!r.merged || !!r.branchDeleted,
+      // Git decides, on every read (a branch merged once may have new commits); the recorded merge,
+      // or removal with its branch (only ever a merged one), only when the branch is gone or git can't be read.
+      merged: w.branch && !w.error ? w.merged : w.merged || !!r.merged || !!r.branchDeleted,
       ...(!w.branch ? { branchGone: true } : {}),
       ...(r.merged ? { mergedAt: r.merged.at } : {}),
+      ...(r.merged && w.branch && !w.error && !w.merged && w.unmerged > 0 ? { newSinceMerge: w.unmerged } : {}),
       ...(r.removed ? { removedAt: r.removed } : {}),
       ahead: w.ahead,
       dirty: w.dirty,
@@ -792,12 +794,12 @@ async function startCodingSession(
 }
 
 /**
- * A coding session's first prompt: in its own worktree, told to commit there before it ends its
- * turn (Merge Branch refuses uncommitted work); in the project root, as asked.
+ * A coding session's first prompt: in its own worktree, told to commit there and merge its target
+ * in before it ends its turn (Merge Branch refuses uncommitted work and conflicts); in the project root, as asked.
  */
-export function codingFirstPrompt(prompt: string, worktree: { branch: string } | undefined): string {
+export function codingFirstPrompt(prompt: string, worktree: { branch: string; target: string } | undefined): string {
   if (!worktree) return prompt;
-  return `${prompt}\n\nYou work in your own git worktree on the branch ${worktree.branch}. Commit your work on this branch before you end your turn: uncommitted changes can't be merged.`;
+  return `${prompt}\n\nYou work in your own git worktree on the branch ${worktree.branch}. Commit your work on this branch before you end your turn: uncommitted changes can't be merged. Before you end your turn, also merge ${worktree.target} into your branch and resolve any conflicts.`;
 }
 
 // ---- worktrees: the operator's merge and removal ------------------------------------------------------

@@ -227,6 +227,13 @@ test("offerRows: the sender's packing shows until it's ready", () => {
   const failed = offerRows([offer({ packing: { state: "failed", error: "No room to pack 41 MB on this host." } })], null, []);
   assert.equal(failed[0]!.packing, "Packing failed: No room to pack 41 MB on this host.");
   assert.equal(failed[0]!.from, "Session sA");
+  // Every recipient done with it before the spool was: the withdrawn packing isn't news.
+  const withdrawn = offerRows(
+    [offer({ packing: { state: "failed", error: "withdrawn: every recipient is done with it" }, recipients: [{ to: { nodeId: "nB", sessionId: "sB" }, state: "declined" }] })],
+    null,
+    [],
+  );
+  assert.equal(withdrawn[0]!.packing, null);
 });
 
 test("threadItems interleaves offers with messages by time, dropping an offer's own offered notice", () => {

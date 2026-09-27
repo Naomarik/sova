@@ -2,6 +2,7 @@
 // which host a member's URLs go to, the sections, the state chip, the thread's rows, the file
 // offers' status rows — so LinkedAgents.tsx just renders them.
 
+import { OFFER_FINAL } from "../../shared/mesh-links";
 import type { LinkInboxRecord, LinkMemberRef, LinkOffer, LinkOfferRecipient, LinkThread, LinkedAgentInfo, LinkedTransfer, OfferRowState } from "../../shared/mesh-links";
 import type { MeshInfo } from "../../shared/protocol";
 import type { Tone } from "../components/ui";
@@ -275,7 +276,8 @@ export interface OfferRow {
   roots: string;
   /** "5,012 files · 41 MB", uncompressed as listed. */
   size: string;
-  /** The sender's packing, while it isn't ready: "Packing · 3 MB written", "Packing failed: …". */
+  /** The sender's packing, while it isn't ready and a recipient still wants it: "Packing · 3 MB
+      written", "Packing failed: …". Every row final (all declined, say): the packing is moot. */
   packing: string | null;
   note: string | null;
   warnings: string[];
@@ -330,7 +332,7 @@ export function offerRows(offers: readonly LinkOffer[], viewer: LinkMemberRef | 
   for (const o of [...offers].sort((a, b) => a.at - b.at)) {
     if (seen.has(o.id)) continue;
     seen.add(o.id);
-    const p = o.packing;
+    const p = o.recipients.every((r) => OFFER_FINAL.has(r.state)) ? undefined : o.packing;
     const own = !!viewer && sameRef(o.from, viewer);
     const dir = own ? "out" : viewer && o.recipients.some((r) => sameRef(r.to, viewer)) ? "in" : null;
     out.push({

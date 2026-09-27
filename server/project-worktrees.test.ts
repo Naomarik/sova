@@ -83,6 +83,13 @@ describe("a coding session's worktree", () => {
     writeFileSync(join(root, "README.md"), "dirty\n");
     await assert.rejects(mergeBack(cut.worktree, root, "Login"), /The project root has uncommitted changes to tracked files\. Commit or stash them, then merge\./);
     git(root, "checkout", "--", "README.md");
+    // A partial build: refused, naming the files; committed, it merges.
+    writeFileSync(join(cut.worktree.path, "half.txt"), "wip\n");
+    await assert.rejects(mergeBack(cut.worktree, root, "Login"), { message: "The worktree has uncommitted changes in 1 file (half.txt). Commit them in the session first, then merge." });
+    rmSync(join(cut.worktree.path, "half.txt"));
+    git(root, "checkout", "-q", "--detach");
+    await assert.rejects(mergeBack(cut.worktree, root, "Login"), /The project root's checkout is on a detached HEAD, not master\. Check out master there, then merge\./);
+    git(root, "checkout", "-q", "master");
     const ff = await mergeBack(cut.worktree, root, "Login");
     assert.equal(ff.sha, git(root, "rev-parse", "HEAD"));
     assert.equal(git(root, "log", "-1", "--format=%s"), "login.txt", "a fast-forward adds no commit");

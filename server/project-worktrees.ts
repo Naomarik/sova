@@ -156,14 +156,23 @@ async function inProgress(git: Git, dir: string): Promise<string | null> {
 
 /**
  * Merge Branch (the operator's gesture): merge `sova/<name>` into `target` in the project root's
- * checkout, which must have `target` checked out, no tracked changes and nothing in progress. A
+ * checkout, which must have `target` checked out, no tracked changes and nothing in progress, and
+ * the worktree (when its folder is here) must have nothing uncommitted. A
  * fast-forward when possible, else a merge commit "Merge sova/<name>: <title>"; a conflict is
  * aborted and reported. Works with the worktree folder gone: only the branch is needed.
  */
 export async function mergeBack(w: WorktreeRecord, root: string, title: string, git: Git = runGit): Promise<{ sha: string }> {
   const at = await git(["symbolic-ref", "--quiet", "--short", "HEAD"], root);
-  const checkedOut = at.code === 0 ? at.stdout.trim() : "a detached HEAD";
+  if (at.code !== 0 || !at.stdout.trim()) throw new WorktreeRefusal(`The project root's checkout is on a detached HEAD, not ${w.target}. Check out ${w.target} there, then merge.`);
+  const checkedOut = at.stdout.trim();
   if (checkedOut !== w.target) throw new WorktreeRefusal(`The project root has ${checkedOut} checked out, not ${w.target}. Check out ${w.target} there, then merge.`);
+  // A partial build is never merged silently: what the session hasn't committed would be left out.
+  // A folder that is gone has nothing to inspect.
+  if (existsSync(w.path)) {
+    const files = await uncommitted(git, w.path);
+    if (files.length)
+      throw new WorktreeRefusal(`The worktree has uncommitted changes in ${files.length} file${files.length === 1 ? "" : "s"} (${files[0]}). Commit them in the session first, then merge.`);
+  }
   const busy = await inProgress(git, root);
   if (busy) throw new WorktreeRefusal(`The project root is in the middle of a ${busy}. Finish it, then merge.`);
   const tracked = await git(["status", "--porcelain", "--untracked-files=no"], root);

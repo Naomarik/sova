@@ -680,6 +680,7 @@ export class MeshLinks {
   private enqueue(e: LinkOutboxEntry): void {
     mkdirSync(this.dir(), { recursive: true, mode: 0o700 });
     appendFileSync(this.outboxFile(), `${JSON.stringify(e)}\n`, { mode: 0o600 });
+    console.log(`[links] outbox: ${e.kind} for ${e.toNodeId} held (its host is down)`);
     this.arm();
   }
   private arm(): void {
@@ -715,6 +716,7 @@ export class MeshLinks {
       if (!entries.length) return this.disarm();
       const keep: LinkOutboxEntry[] = [];
       const down = new Set<string>();
+      let sent = 0;
       for (const e of entries) {
         if ((node && e.toNodeId !== node) || down.has(e.toNodeId)) {
           keep.push(e);
@@ -726,9 +728,11 @@ export class MeshLinks {
           keep.push({ ...e, tries: e.tries + 1, lastTry: this.now() });
           continue;
         }
+        sent++;
         if (e.kind === "message") this.settleMessage(e, toDelivery({ nodeId: e.toNodeId, sessionId: recipientOf(e) }, r));
         else if (r.state !== "sent") console.warn(`[links] ${e.kind} for ${e.toNodeId} dropped: ${r.why}`);
       }
+      if (sent) console.log(`[links] outbox: ${sent} settled (${peerId === undefined ? "timer" : `peer-up ${peerId}`}), ${keep.length} still held`);
       // Anything queued while this ran was appended to the file after what was read: kept too.
       const added = this.outbox().slice(entries.length);
       const next = [...keep, ...added];

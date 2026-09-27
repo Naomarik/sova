@@ -83,6 +83,7 @@ import { probePeer } from "./mesh/hello";
 import { meshLinks } from "./mesh/links";
 import { mountLinks } from "./mesh/links-routes";
 import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinkOrigin, setLinksSource } from "./link-delivery";
+import { linkSandboxOf } from "./link-sandbox";
 import { mountSync } from "./sync";
 import { mountClaudePool } from "./claude-pool";
 import { markSeen } from "./seen";
@@ -1245,6 +1246,19 @@ mountLinks(app, meshApi, {
   probe: async (peer) => (await probePeer(peer)).state,
   notify: notifyLinksChanged,
   renderPeerRead,
+  // File transfers: a session's sandbox binds what the server packs and where it extracts.
+  sandboxOf: (id) =>
+    linkSandboxOf(id, {
+      cwd: async (sid) => (await sessionById(sid))?.cwd ?? null,
+      branch: async (sid) => {
+        const path = await pathOfId(sid);
+        if (!path) return [];
+        return heldChat(path)?.session.sessionManager.getBranch() ?? readActiveBranch(path);
+      },
+      agentDir: getAgentDir,
+    }),
+  homedir,
+  protectedRoots: () => [stateRoot(), SESSIONS_DIR],
 });
 // The `links` chat frame: a member's partners; the Overseer's pane, every link on this host.
 const linkedAgents = async (id: string, path: string) => meshLinks.linkedAgents(id, { overseer: !!(await getSessionSummary(path))?.overseer });

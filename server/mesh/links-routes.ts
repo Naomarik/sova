@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { LinkError, LinkInbox, LinksList, LinkWhoami, PeerLinkRead } from "../../shared/mesh-links";
+import type { LinkError, LinkInbox, LinkOffersList, LinksList, LinkWhoami, PeerLinkRead } from "../../shared/mesh-links";
 import type { MeshApi } from "./index";
 import { LinkActError, type LinksDeps, type MeshLinks, meshLinks as theLinks } from "./links";
 import { PROXIED_HEADER } from "./proxy";
@@ -19,6 +19,8 @@ const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
 const small = bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
 /** A message: its text is the bulk. */
 const message = bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
+/** A file offer: its roots, note and warnings; never the files. */
+const offerBody = bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
 const json = (c: Context) => c.req.json().catch(() => null);
 const intOf = (v: string | undefined): number | undefined => (v !== undefined && /^\d{1,9}$/.test(v) ? Number(v) : undefined);
 
@@ -75,7 +77,70 @@ export function mountLinks(app: Hono, mesh: LinksDeps["mesh"] & Pick<MeshApi, "r
     return c.json(r.body, r.status);
   });
 
+  app.post("/api/peer/links/:id/offers", offerBody, async (c) => {
+    const caller = mesh.requestPeer(c);
+    if (!caller) return notFound(c);
+    const r = await meshLinks.takeOffer(caller, c.req.param("id"), await json(c));
+    return c.json(r.body, r.status);
+  });
+
+  // The spool, streamed from disk: a server-to-server GET that never passes the page proxy.
+  app.get("/api/peer/links/:id/offers/:offer/tar", async (c) => {
+    const caller = mesh.requestPeer(c);
+    if (!caller) return notFound(c);
+    const r = await meshLinks.serveTar(caller, c.req.param("id"), c.req.param("offer"), {
+      ...(c.req.header("range") ? { range: c.req.header("range") } : {}),
+      ...(c.req.header("if-range") ? { ifRange: c.req.header("if-range") } : {}),
+    });
+    return r instanceof Response ? r : c.json(r.body, r.status);
+  });
+
+  app.post("/api/peer/links/:id/offers/:offer/result", small, async (c) => {
+    const caller = mesh.requestPeer(c);
+    if (!caller) return notFound(c);
+    const r = meshLinks.takeReport(caller, c.req.param("id"), c.req.param("offer"), await json(c));
+    return c.json(r.body, r.status);
+  });
+
   // ---- local acts (the link extension, the Overseer's page) --------------------------------------
+
+  app.get("/api/mesh/links/offers", (c) => {
+    if (!local(c)) return notFound(c);
+    const session = c.req.query("session") ?? "";
+    if (!deps.held(session)) return c.json({ error: "That session isn't running on this host.", reason: "not-member" } satisfies LinkError, 403);
+    try {
+      return c.json({ offers: meshLinks.offersOf(session) } satisfies LinkOffersList, 200, { "Cache-Control": "no-store" });
+    } catch (err) {
+      return failed(c, err);
+    }
+  });
+
+  app.post("/api/mesh/links/offers", offerBody, async (c) => {
+    if (!local(c)) return notFound(c);
+    try {
+      return c.json(await meshLinks.createOffer(await json(c)));
+    } catch (err) {
+      return failed(c, err);
+    }
+  });
+
+  app.post("/api/mesh/links/offers/:offer/accept", small, async (c) => {
+    if (!local(c)) return notFound(c);
+    try {
+      return c.json(await meshLinks.acceptOffer(c.req.param("offer"), await json(c)));
+    } catch (err) {
+      return failed(c, err);
+    }
+  });
+
+  app.post("/api/mesh/links/offers/:offer/decline", small, async (c) => {
+    if (!local(c)) return notFound(c);
+    try {
+      return c.json(await meshLinks.declineOffer(c.req.param("offer"), await json(c)));
+    } catch (err) {
+      return failed(c, err);
+    }
+  });
 
   app.get("/api/mesh/links", async (c) => {
     if (!local(c)) return notFound(c);

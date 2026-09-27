@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { BATON_LEASE_ENTRY, BATON_SENT_ENTRY, OPERATOR, POOL, type BatonSession } from "../shared/baton";
 import type { DecisionRow } from "../shared/decisions";
 import type { NamedRef, Person, PersonConflict, PersonPreview, PersonDecision, PersonLinkRow, PersonPage, PersonRelation, PersonSessionRow, VisitRow } from "../shared/orgs";
-import { accessOf, allBatons, heldOffer, sessionPathOf } from "./baton";
+import { accessOf, allBatons, heldOffer, outsiderCut, sessionPathOf } from "./baton";
 import { linkDead, linksOfPerson, type LinkRecord } from "./baton-links";
 import { readConflicts, readDecisionStore } from "./decisions";
 import { operatorName, orgDir, OrgError, readHistory, readOrg, readProjects, readRoster } from "./orgs";
@@ -346,12 +346,9 @@ export async function previewAs(orgId: string, pid: string, sessionId: string, n
   const offered = (row.offers ?? []).filter((o) => o.to.includes(pid));
   const addressed = row.participants.includes(pid) || row.holder === pid || row.handoffs.some((h) => h.to === pid) || offered.length > 0;
   if (!addressed) throw new OrgError(`${person.name} has no link to this session.`, 404);
-  // As their newest link: the newest offer to them they never held cuts the view at that offer,
+  // As their links show it: the newest offer to them they never held cuts the view at that offer,
   // unless they held the baton some other way after it.
-  const lastOffer = offered[offered.length - 1];
-  const lastDirect = [...row.handoffs].reverse().find((h) => h.to === pid);
-  const outsider = !!lastOffer && !heldOffer(row, lastOffer.id, pid) && (!lastDirect || lastDirect.n < lastOffer.n);
-  const view = await readView(row, ctx.dir, pid, outsider ? lastOffer!.n : undefined);
+  const view = await readView(row, ctx.dir, pid, outsiderCut(row, pid));
   const canWrite = row.holder === pid && (row.state === "open" || row.state === "needs-you");
   const linkOpens = person.status !== "left" && linksOfPerson(orgId, pid).some((l) => l.sessionId === sessionId && accessOf(l, row, now).ok);
   return {

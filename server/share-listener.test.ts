@@ -184,3 +184,29 @@ describe("the share server", async () => {
     assert.ok(links.findLink(mariaToken), "untouched");
   });
 });
+
+test("past the address limit the page shell answers a plain page asking to wait, never JSON; the API keeps JSON", async () => {
+  const server = createShareServer();
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    let res: Response | null = null;
+    for (let i = 0; i < 61; i++) {
+      res = await fetch(`${base}/h/${TOKEN}`);
+      if (i < 60) await res.arrayBuffer();
+    }
+    assert.equal(res!.status, 429);
+    assert.match(res!.headers.get("content-type") ?? "", /^text\/html/);
+    assert.equal(res!.headers.get("retry-after"), "60");
+    assert.match(res!.headers.get("content-security-policy") ?? "", /default-src 'self'/);
+    assert.equal(res!.headers.get("cache-control"), "no-store");
+    assert.match(await res!.text(), /Too many requests from this network\. Wait a minute, then reload\./);
+    const api = await fetch(`${base}/api/h/${TOKEN}`);
+    assert.equal(api.status, 429);
+    assert.match(api.headers.get("content-type") ?? "", /application\/json/);
+    await api.json();
+  } finally {
+    server.close();
+    server.closeAllConnections();
+  }
+});

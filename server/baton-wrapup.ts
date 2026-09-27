@@ -16,6 +16,7 @@ import { readActiveBranch } from "./transcript";
 import { aboutSomeoneElse, detectLanguage } from "./baton-guards";
 import { withoutAuthorNotes } from "./baton-view";
 import { applyChange, operatorName, readHistory, readRoster } from "./orgs";
+import { shuttingDown } from "./wrapup-recovery";
 
 /**
  * The autonomous wrap-up (§app.organizations/wrap-up): once a baton session is done (goal_done) or
@@ -312,10 +313,18 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
     chat.appendSpecialEntry(BATON_WRAPUP_ENTRY, { v: 1, phase: "start" } satisfies BatonWrapupData);
     run = beginWrapupRun(sessionId);
     chat.session.setActiveToolsByName([WRAPUP_TOOL]);
+    const from = chat.session.sessionManager.getBranch().length;
     const { turn } = chat.acceptPrompt(wrapupPrompt(row, readRoster(row.orgId)), undefined, "server");
     await turn;
-    const last = [...chat.session.sessionManager.getBranch()].reverse().find((e: any) => e.type === "message" && e.message?.role === "assistant") as any;
-    if (last?.message?.stopReason === "error" || last?.message?.stopReason === "aborted") error = chat.lastStreamTrip ? `${chat.lastStreamTrip.detail.replace(/^./, (c) => c.toUpperCase())}, so the stream guard ended the turn.` : String(last.message.errorMessage ?? "The model failed.");
+    // Only this turn's answer counts: a stop that wrote none must not read as the session's own
+    // earlier turn (goal_done, an ordinary tool call).
+    const last = [...chat.session.sessionManager.getBranch().slice(from)].reverse().find((e: any) => e.type === "message" && e.message?.role === "assistant") as any;
+    const stop = last?.message?.stopReason;
+    if (!last || stop === "error" || stop === "aborted") {
+      if (chat.lastStreamTrip) error = `${chat.lastStreamTrip.detail.replace(/^./, (c) => c.toUpperCase())}, so the stream guard ended the turn.`;
+      else if (shuttingDown()) error = "The server shut down during the wrap-up.";
+      else error = last?.message?.errorMessage ? String(last.message.errorMessage) : "The wrap-up turn ended without an answer.";
+    }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   } finally {

@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { nudgeMarks } from "./session-feed";
 import { stateRoot } from "./state-root";
 
 /**
@@ -26,6 +27,8 @@ export interface LinkRecord {
   createdAt: string;
   expiresAt: string;
   revokedAt?: string;
+  /** Set when it was turned off because its offer went to someone else (the page may say so). */
+  revokedWhy?: "withdrawn";
 }
 
 const file = () => join(stateRoot(), "baton-links.json");
@@ -53,6 +56,8 @@ function write(links: LinkRecord[]): void {
   writeFileSync(tmp, `${JSON.stringify({ version: 1, links }, null, 2)}\n`, { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, file());
+  // A link's life is part of Needs you ("Send <name> their link"): re-diff the session list now.
+  nudgeMarks();
 }
 
 /** Mint a link for hand-off `n` of a session to `personId`. Returns the token (shown once). */
@@ -83,13 +88,21 @@ export function findLink(token: string): LinkRecord | null {
 
 export const linkDead = (l: LinkRecord, now = Date.now()): boolean => !!l.revokedAt || Date.parse(l.expiresAt) <= now;
 
+/** Why a dead link is dead, when the page may say it; undefined for a live link and for every
+    other reason (turned off, its person left). */
+export function deadWhy(l: LinkRecord, now = Date.now()): "expired" | "withdrawn" | undefined {
+  if (l.revokedAt) return l.revokedWhy === "withdrawn" ? "withdrawn" : undefined;
+  return Date.parse(l.expiresAt) <= now ? "expired" : undefined;
+}
+
 /** Revoke every live link matching `match`. Returns how many were revoked. */
-export function revokeLinks(match: (l: LinkRecord) => boolean, now = Date.now()): number {
+export function revokeLinks(match: (l: LinkRecord) => boolean, now = Date.now(), why?: "withdrawn"): number {
   const links = read();
   let n = 0;
   for (const l of links)
     if (!l.revokedAt && match(l)) {
       l.revokedAt = new Date(now).toISOString();
+      if (why) l.revokedWhy = why;
       n++;
     }
   if (n) write(links);

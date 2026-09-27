@@ -777,6 +777,9 @@ function PreviewItem(props: { item: BatonViewItem }) {
         <article class="person-preview-msg">
           <span class="person-preview-who">Facilitator</span>
           <div class="person-preview-text">{it.text}</div>
+          <Show when={it.cutOff}>
+            <span class="field-hint">This reply was cut off.</span>
+          </Show>
         </article>
       );
     case "handoff":

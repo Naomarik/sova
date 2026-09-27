@@ -10,6 +10,7 @@ import { bodyLimit } from "hono/body-limit";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
+import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
@@ -1107,6 +1108,8 @@ const workspaceCommits = new WorkspaceCommitter(attachedWorkspaces);
 workspaceCommits.start();
 // A wrap-up row left "running" by an earlier process, or older than any run can be, is recorded failed.
 startWrapupRecovery();
+// Messages a crash or kill lost stop counting against their session's limit.
+startBudgetRecount();
 
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
 // The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);

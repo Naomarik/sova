@@ -16,6 +16,7 @@ const orgs = await import("./orgs");
 const baton = await import("./baton");
 const links = await import("./baton-links");
 const { commitAll } = await import("./workspace-git");
+const feed = await import("./session-feed");
 
 after(() => rmSync(root, { recursive: true, force: true }));
 
@@ -153,11 +154,73 @@ describe("baton sessions", async () => {
     assert.ok(access.ok && !access.canWrite && access.reason === "budget");
   });
 
+  test("any write to a baton row or its links re-diffs the session list at once, with no timer tick", async () => {
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Nudge", goal: "g" });
+    let reads = 0;
+    const f = feed.configureSessionFeed({ list: async () => [{ path: `p${++reads}` } as never], debounceMs: 0, intervalMs: 60_000 });
+    const got: string[] = [];
+    const off = f.add((m) => got.push(m.type));
+    try {
+      await f.idle();
+      const base = reads;
+      for (const act of [() => baton.rotateLink(c.sessionId), () => baton.extendBudget(c.sessionId, 1)]) {
+        const before = reads;
+        const changed = got.filter((t) => t === "list_changed").length;
+        act();
+        await new Promise((r) => setTimeout(r, 5));
+        await f.idle();
+        assert.ok(reads > before, "the list was re-read");
+        assert.ok(got.filter((t) => t === "list_changed").length > changed, "and list_changed published");
+      }
+      assert.ok(reads >= base + 2);
+    } finally {
+      off();
+      feed.configureSessionFeed({ list: async () => [] }).stop();
+    }
+  });
+
   test("input limits", () => {
     const base = { orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "T", goal: "g" };
     assert.throws(() => baton.createBaton({ ...base, publicTitle: "x".repeat(121) }), /at most 120/);
     assert.throws(() => baton.createBaton({ ...base, goal: "" }), /goal is required/);
     assert.throws(() => baton.createBaton({ ...base, to: "Pedro" }), /not on the roster/);
     assert.throws(() => baton.createBaton({ ...base, projectId: "nope" }), /Unknown project/);
+  });
+});
+
+describe("after a restart each open session's count is the messages in its transcript", async () => {
+  const { appendFileSync } = await import("node:fs");
+  const { recountBudgets } = await import("./baton-recount");
+  const org = await orgs.createOrg({ name: "Recount", dir: join(root, "ws-recount") });
+  mkdirSync(join(root, "proj-recount"));
+  const project = orgs.addProject(org.id, { name: "P", root: join(root, "proj-recount") });
+  const tony = orgs.addPerson(org.id, { name: "Tony Recount", role: "IT" });
+  const userRows = (path: string, n: number) => {
+    let parent = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l)).at(-1).id;
+    for (let i = 0; i < n; i++) {
+      const id = `u${Math.random().toString(36).slice(2, 10)}`;
+      appendFileSync(path, `${JSON.stringify({ type: "message", id, parentId: parent, timestamp: new Date().toISOString(), message: { role: "user", content: [{ type: "text", text: `m${i}` }], timestamp: Date.now() } })}\n`);
+      parent = id;
+    }
+  };
+  const used = (sid: string) => baton.batonById(sid)!.row.budget.messagesUsed;
+
+  test("three counted, one in the file (two lost to a kill): the count is one; never raised; a done session untouched", async () => {
+    const lost = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Lost", goal: "g" });
+    for (let i = 0; i < 3; i++) baton.noteMessage(lost.sessionId, tony.id);
+    userRows(lost.path, 1);
+    const kept = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Kept", goal: "g" });
+    baton.noteMessage(kept.sessionId, tony.id);
+    userRows(kept.path, 2);
+    const done = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Done", goal: "g" });
+    baton.noteMessage(done.sessionId, tony.id);
+    baton.noteMessage(done.sessionId, tony.id);
+    baton.markDone(done.sessionId);
+
+    const changed = await recountBudgets(orgs.orgDir(org.id));
+    assert.equal(used(lost.sessionId), 1);
+    assert.equal(used(kept.sessionId), 1, "never raised");
+    assert.equal(used(done.sessionId), 2, "a done session keeps its count");
+    assert.deepEqual(changed, [lost.sessionId]);
   });
 });

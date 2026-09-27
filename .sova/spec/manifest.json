@@ -1005,7 +1005,9 @@
       "evidence": "verified",
       "code": [
         "pi-config/extensions/mode/state.ts",
-        "server/mode-state.ts"
+        "server/mode-state.ts",
+        "server/chat-manager.ts",
+        "server/project-overseer.ts"
       ]
     },
     "§chat/model-menu": {
@@ -2634,7 +2636,7 @@
     "§app.overseer/tools": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-tools.ts",
         "server/overseer-deny.ts",
@@ -4063,7 +4065,9 @@
       "code": [
         "server/project-overseer-tools.ts",
         "server/project-overseer.ts",
-        "server/project-overseer-tools.test.ts"
+        "server/project-overseer-tools.test.ts",
+        "server/project-coding-mode.ts",
+        "server/project-overseer-prompt.md"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -4137,7 +4141,8 @@
       "code": [
         "server/reconcile.ts",
         "server/spec-draft-writer.ts",
-        "server/reconcile.test.ts"
+        "server/reconcile.test.ts",
+        "server/project-worktrees.ts"
       ],
       "requires": [
         "§app.requirements/drafts-with-provenance",
@@ -4666,6 +4671,81 @@
         "src/components/ui.tsx",
         "public/icons/building.svg"
       ]
+    },
+    "§app.project-overseer/coding-mode": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/tools",
+        "§chat/mode-menu"
+      ],
+      "code": [
+        "server/project-coding-mode.ts",
+        "server/project-coding-mode.test.ts",
+        "server/project-coding-runtime.test.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-tools.ts",
+        "server/project-overseer-tools.test.ts",
+        "server/project-overseer-store.ts",
+        "server/project-overseer-routes.ts",
+        "server/project-overseer-prompt.md",
+        "server/chat-manager.ts",
+        "server/mode-state.ts",
+        "shared/project-overseer.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/lib/coding-worktrees.ts",
+        "src/lib/coding-worktrees.test.ts",
+        "src/lib/api.ts"
+      ]
+    },
+    "§app.project-overseer/coding-worktrees": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/tools",
+        "§chat.worktrees/tool"
+      ],
+      "code": [
+        "server/project-worktrees.ts",
+        "server/project-worktrees.test.ts",
+        "server/project-coding-runtime.test.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-tools.ts",
+        "server/project-overseer-store.ts",
+        "server/project-overseer-routes.ts",
+        "shared/project-overseer.ts",
+        "shared/protocol.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/lib/coding-worktrees.ts",
+        "src/lib/coding-worktrees.test.ts",
+        "src/lib/api.ts",
+        "src/projects.css"
+      ]
+    },
+    "§app.requirements/promotion-commit": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.requirements/promotion",
+        "§app.project-overseer/coding-worktrees"
+      ],
+      "code": [
+        "server/project-worktrees.ts",
+        "server/project-worktrees.test.ts",
+        "server/reconcile.ts",
+        "server/spec-draft-writer.ts",
+        "shared/decisions.ts",
+        "src/components/ProjectPage.tsx",
+        "src/lib/coding-worktrees.ts"
+      ]
+    },
+    "§design.copy-deck/project-coding": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
     }
   },
   "boundary": {

@@ -259,11 +259,12 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     (current and history), written there directly by pi (`SessionManager.create(cwd, sessionDir)`);
   - per project, `projects/<projectId>/`: `decisions.json` (the decision index, its last reconcile
     run and last promotion), `conflicts.json`, and the overseer's `overseer/` — `overseer.json`
-    (autonomy, models, caps, token budget, watch, extra instructions), `state.json` (current
+    (autonomy, models, the coding sessions' mode, caps, token budget, watch, extra instructions), `state.json` (current
     conversation and history), `notes.md`, `actions.jsonl`, `ideas/`, `todos.json` and
     `started.json` (the sessions it started, with what each of its coding sessions spent when last
     counted, and the coding sessions the operator started with Start coding session, as
-    `operator-coding` rows);
+    `operator-coding` rows; each coding row names its worktree's branch and this host's path to it,
+    which is host-local, like the row's session path);
   - `visits.jsonl`, the visit log: each time a roster person opened one of their links, and each
     link preview and turned-off-link attempt (§app.baton/visits) — never a token, a token's hash,
     an IP address or a raw user agent.

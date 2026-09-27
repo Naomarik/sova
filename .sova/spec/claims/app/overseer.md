@@ -240,18 +240,49 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
 
 ## §app.overseer/confirm — Inline confirmation
 
-`sova_confirm({title, detail?, options[]})` does not block: it returns at once, and the prompt tells
-the model to end its turn after calling it. The Overseer decides when a request is ambiguous or
-dangerous enough to ask.
+`sova_confirm({title, detail?, options[], items?})` does not block: it returns at once and ends the
+run (the whole tool batch terminates, so the model is not called again until the user answers). The
+Overseer decides when a request is ambiguous or dangerous enough to ask. The prompt and the tool's
+description tell it to write its reply first (what it found, the sessions as links, why it asks) and
+to call `sova_confirm` last, so the card shows under that reply, and to list in `items` every
+session, idea or todo a card about specific things acts on (archive, tick, send, …). That rule is
+the prompt's; the server cannot tell such a card from any other, so it never requires `items`.
 
-- The chat renders that tool call as a **confirm card** in the thread: title, detail, and one button
-  per option.
+- **Items.** `items` is `{sessions?, ideas?, todos?}`, each a list of ids. Sessions are addressed in
+  any form the tools print them (§app.overseer/tools), and any session on this host will do (a
+  card only points at it: TUI-live or archived is fine); ideas by their § id (a former id resolves
+  to the idea it was renamed to); todos by their `td_` id. The server resolves every id when the card
+  is raised. An id that matches nothing refuses the whole card, and the refusal names every such id
+  by kind; so does a card with more than 50 ids. The same thing named twice shows once.
+- **A snapshot.** The resolved rows are stored in the card (`SovaConfirmDetails.items`), so the card
+  shows what the Overseer asked about then, whatever changes later. A session row carries its
+  title, its folder's short name, its last activity, its one-line summary when it has one, and how
+  many subagents were working in it.
+- **The result repeats them.** The tool result lists the items again with their exact ids, sessions
+  as `[title](sova://s/<id>)`, so the turn that answers the card acts on exactly those.
+- The chat renders that tool call as a **confirm card** in the thread: title, detail, the items, and
+  one button per option.
+  - The items sit between the detail and the buttons, one compact row each, sessions first, then
+    ideas, then todos. A session row is its title as an in-app link (resolved like a session link,
+    §app.overseer/links; the snapshot's title while the list doesn't know it), then its folder and
+    how long ago it was active ("sova · 3d ago"), a warning chip ("2 subagents working") when it had
+    working subagents, and its summary on one muted line under it, cut to fit. An idea row is its §
+    id and title as plain text, never a link (§app.overseer/ideas). A todo row is its text.
+  - Past 8 items the card shows the first 8 and a **Show all N** toggle (Show fewer, open); a card
+    with 9 shows all 9, since hiding one row saves nothing.
+  - A card without items (every card from before they existed) renders exactly as before.
+- **Hide tool calls never folds it.** The card is the Overseer's question, not its working, so
+  "Hide tool calls" leaves it (and its result) in the thread, like the link card
+  (§app.overseer/links-tools).
 - A click sends the option's reply as the next user message.
-- Its title, detail and options never hold a secret value: the arguments are redacted before the
-  card is built, so a card shows `[redacted]` in its place (§app.overseer/tools).
+- Its title, detail, options and items never hold a secret value: the arguments are redacted before
+  the card is built, so a card shows `[redacted]` in its place (§app.overseer/tools).
 - Once any later user message exists, the card shows as answered (the chosen option marked when the
   message matches one) and its buttons are disabled. Because the state is read from the transcript,
   it survives reloads and server restarts.
+- **The project overseer** raises the same card with the same tool: it says "the operator" where
+  this one says "the user", and it resolves only the sessions it may read (the project's coding and
+  gathering sessions, §app/project-overseer), its own ideas and its own todos.
 
 ## §app.overseer/caps — Limits and the audit log
 
@@ -302,7 +333,8 @@ Three tools let the Overseer make and end links between sessions on different ho
   is **no confirmation card**: linking changes no session and sends nothing, so it is not
   destructive. Like every act it is refused in an unattended turn (§app.overseer/tools), counts
   against a per-turn cap of 3 links (§app.overseer/caps), and is written to the action log. The
-  transcript shows the call as a card naming the members and their hosts.
+  transcript shows the call as a card naming the members and their hosts; "Hide tool calls" never
+  folds that card, or `sova_unlink`'s.
 - **`sova_unlink {link}`** (an act) ends a link on every member host (§mesh.links/record).
 - **`sova_links {}`** (a read) lists every link this host knows, with each member's host, state
   and last activity, ended links included and marked.
@@ -436,7 +468,10 @@ itself.
 
 In Overseer messages, `sova://s/<id>` and `sova://g/<groupId>` links render as **in-app** links:
 same tab, no new-tab glyph. The client resolves the id to the session's route from the session list.
-An unknown id renders as its text, unlinked.
+A session id the list doesn't carry (or a list not loaded yet) still links, by id (`#/sid/<id>`):
+an unlisted id is not proof the session is gone. Opening it asks the server, which swaps in the
+session's route, or says "That session is gone." and goes back to `#/`. An unknown **group** id
+renders as its text, unlinked.
 
 ## §app.overseer/quick-actions — Quick actions
 

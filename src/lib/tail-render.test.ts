@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { carriedStart, chunkStart, imagesEstimate, initialStart, MAX_CHUNK, MIN_CHUNK, nextChunk, rowEstimate, rowIndexFor, TAIL_ROWS, wrapLines } from "./tail-render";
+import { carriedStart, chunkStart, imagesEstimate, initialStart, MAX_CHUNK, MIN_CHUNK, nextChunk, rowEstimate, rowIndexFor, TAIL_ROWS, textShape } from "./tail-render";
 
 test("a long list opens on its last TAIL_ROWS rows; a short one is built whole", () => {
   assert.equal(initialStart(802), 802 - TAIL_ROWS);
@@ -52,20 +52,24 @@ test("the window survives appends and refetches, and restarts at the tail when i
   assert.equal(carriedStart("rewound-away", at, ids.length), initialStart(ids.length), "back to the tail");
 });
 
-test("wrapLines counts hard lines and their wraps", () => {
-  assert.equal(wrapLines("", 80), 1);
-  assert.equal(wrapLines("a\n\nb", 80), 3);
-  assert.equal(wrapLines("x".repeat(161), 80), 3);
+test("textShape counts prose lines and characters apart from code, fences and tables", () => {
+  assert.deepEqual(textShape(""), { lines: 0, chars: 0, code: 0, fences: 0, table: 0 });
+  assert.deepEqual(textShape("ab\n\ncd e"), { lines: 2, chars: 6, code: 0, fences: 0, table: 0 }, "a blank line is a paragraph break");
+  assert.deepEqual(textShape("ab\n\ncd e", true), { lines: 3, chars: 6, code: 0, fences: 0, table: 0 }, "plain text keeps it as a line");
+  assert.deepEqual(textShape("x\n```ts\nconst a = 1;\n\n```\n| a | b |\n|---|---|"), { lines: 1, chars: 1, code: 2, fences: 1, table: 2 });
+  assert.deepEqual(textShape("```\nunclosed"), { lines: 0, chars: 0, code: 1, fences: 1, table: 0 });
+  assert.deepEqual(textShape("| not a table", true), { lines: 1, chars: 13, code: 0, fences: 0, table: 0 }, "plain text has no markdown");
 });
 
-test("a row's estimate grows with its text and is capped", () => {
-  const short = rowEstimate({ kind: "assistant-text", text: "hi" });
-  const long = rowEstimate({ kind: "assistant-text", text: "word ".repeat(2000) });
-  const huge = rowEstimate({ kind: "assistant-text", text: "x\n".repeat(100_000) });
-  assert.match(short, /^calc\(24px \+ 1 \* var\(--entry-line-est, 23px\)\)$/);
-  assert.match(long, /\+ 125 \*/);
-  assert.match(huge, /\+ 200 \*/);
-  assert.match(rowEstimate({ kind: "tool-call", text: "bash" }), /^calc\(40px \+ 0 \*/, "a collapsed card is one line of chrome");
+test("a row's estimate grows with its text over the width's characters a line, and is capped", () => {
+  const lines = "min(200, 0.8 + 2 / var(--entry-cols, 110)) * var(--entry-line, 22.5px)";
+  assert.equal(rowEstimate({ kind: "assistant-text", text: "hi" }), `calc(99px + ${lines})`);
+  assert.equal(rowEstimate({ kind: "assistant-text", text: "hi\n```\na\nb\n```" }), `calc(${99 + 2 * 19 + 93}px + ${lines})`);
+  assert.match(rowEstimate({ kind: "assistant-text", text: "word ".repeat(2000) }), /0\.8 \+ 10000 \/ var/);
+  assert.match(rowEstimate({ kind: "user", text: "a\n\nb" }), /^calc\(97px \+ min\(200, 2\.1 \+ 2 \//);
+  assert.match(rowEstimate({ kind: "assistant-text", text: "x\n".repeat(100_000) }), /^calc\(99px \+ min\(200, 80000 \+/);
+  assert.equal(rowEstimate({ kind: "tool-call", text: "bash" }), "calc(46px)", "a collapsed card");
+  assert.equal(rowEstimate({ kind: "thinking", text: "long ".repeat(500) }), "calc(36px)", "a folded disclosure");
 });
 
 /** A PNG data URL of this size: the IHDR, then an IEND (the size reader stops at either). */
@@ -99,9 +103,14 @@ test("a row's images count in its estimate: one at its box's height, more as row
 test("a row without images keeps its text-only estimate; with them, it adds a wide and a folded term", () => {
   const item = { kind: "user", text: "look" };
   assert.equal(rowEstimate(item, []), rowEstimate(item));
-  assert.equal(rowEstimate(item, [pngUrl(2000, 1000)]), `calc(48px + 1 * var(--entry-line-est, 23px) + 169px)`);
+  assert.equal(rowEstimate(item, [pngUrl(2000, 1000)]), `calc(97px + min(200, 0.7 + 4 / var(--entry-cols, 110)) * var(--entry-line, 22.5px) + 169px)`);
   assert.equal(
     rowEstimate(item, new Array(4).fill(pngUrl(10, 10))),
-    `calc(48px + 1 * var(--entry-line-est, 23px) + 106px + var(--entry-narrow, 0) * 106px)`,
+    `calc(97px + min(200, 0.7 + 4 / var(--entry-cols, 110)) * var(--entry-line, 22.5px) + 106px + var(--entry-narrow, 0) * 106px)`,
   );
+});
+
+test("a compaction is estimated as its folded disclosure, not its summary", () => {
+  assert.equal(rowEstimate({ kind: "info", text: "summary ".repeat(5000), raw: { type: "compaction" } }), "calc(36px)");
+  assert.match(rowEstimate({ kind: "info", text: "Model changed" }), /^calc\(-4px \+ min\(200, 1 \+ 13 \//);
 });

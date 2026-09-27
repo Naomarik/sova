@@ -40,10 +40,17 @@ html, body, #root { height: 100%; }
 .entry:hover,
 .entry:focus-within,
 .entry[data-actions-revealed] { content-visibility: visible; }
-/* Text wraps to about twice the lines in a folded-width transcript, and image tiles to half as
-   many a row (lib/tail-render `imagesEstimate`). */
-.thread { --entry-line-est: 23px; --entry-narrow: 0; }
-@container (width < 600px) { .thread { --entry-line-est: 42px; --entry-narrow: 1; } }
+/* What a row's estimate needs from the width (lib/tail-render `rowEstimate`): a body line's height,
+   and the characters a message line holds. A message is as wide as the pane less its padding, up to
+   the reading measure; `tan(atan2(w, 1px))` is that width as a number of px, and 60px of bubble
+   padding and 7px a character are fitted to real rows. Image tiles fold to half as many a row
+   (`imagesEstimate`). Without container units or trig functions, a fixed count at each side of the
+   fold. */
+.thread { --entry-line: calc(var(--fs-body) * var(--lh-body)); --entry-cols: 110; --entry-narrow: 0; }
+@container (width < 600px) { .thread { --entry-cols: 42; --entry-narrow: 1; } }
+@supports (width: calc(tan(atan2(1cqi, 1px)) * 1px)) {
+  .thread { --entry-cols: calc((tan(atan2(min(100cqi - 2 * var(--space-4), var(--measure)), 1px)) - 60) / 7); }
+}
 
 /* Archive date sections: each a <details> whose summary is
    the eyebrow label (twist, name, count), collapsed by default; a rule between sections. */

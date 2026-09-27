@@ -1,8 +1,9 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js";
-import type { Conflict, DecisionRow, DecisionsInfo } from "../../shared/decisions";
+import type { Conflict, DecisionRow, DecisionsInfo, PromoteResult } from "../../shared/decisions";
 import type { OrgDetail } from "../../shared/orgs";
 import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, redraftProject, resolveConflict, routeConflict, setSpecFrozen } from "../lib/api";
 import { areaGroups, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
+import { promotionCommitLine } from "../lib/coding-worktrees";
 import { relativeTime } from "../lib/format";
 import { orgTabHref } from "../lib/orgs-route";
 import { announce, toast } from "../lib/ui-state";
@@ -397,6 +398,8 @@ function DecisionsCard(props: CardProps) {
   const [selection, setSelection] = createSignal<PromoteSelection>(emptySelection());
   const selected = () => selection().ids;
   const [refused, setRefused] = createSignal<{ id: string; reason: string }[]>([]);
+  /** The last promotion's commit in the project root, or why it made none. */
+  const [commit, setCommit] = createSignal<ReturnType<typeof promotionCommitLine>>(null);
   // A refresh may promote, conflict or drop a selected decision: keep only what can still go.
   createEffect(on(() => props.info.decisions, (d) => setSelection((s) => refreshSelection(s, d)), { defer: true }));
   const groups = createMemo(() => areaGroups(props.info.decisions, { superseded: showSuperseded() }));
@@ -408,16 +411,18 @@ function DecisionsCard(props: CardProps) {
   const toggle = (id: string, on: boolean) => setSelection((s) => toggleSelection(s, id, on));
   const promote = async (ids: string[], bulk: boolean) => {
     if (!ids.length) return;
-    let result: { promoted: string[]; refused: { id: string; reason: string }[] } | null = null;
+    let result: PromoteResult | null = null;
     const ok = await props.act("promote", async () => {
       const r = await promoteDecisions(props.orgId, props.projectId, ids, bulk);
       result = r;
       return r.info;
     });
     if (!ok || !result) return;
-    const r = result as { promoted: string[]; refused: { id: string; reason: string }[] };
+    const r = result as PromoteResult;
     setRefused(r.refused);
-    const words = `Promoted ${r.promoted.length} ${r.promoted.length === 1 ? "decision" : "decisions"}${r.refused.length ? `; ${r.refused.length} refused` : ""}.`;
+    const line = r.promoted.length ? promotionCommitLine(r.commit) : null;
+    setCommit(line);
+    const words = `Promoted ${r.promoted.length}${r.refused.length ? `; ${r.refused.length} refused` : ""}.${line ? ` ${line.text}` : ""}`;
     toast(words);
     announce(words);
   };
@@ -436,6 +441,7 @@ function DecisionsCard(props: CardProps) {
           </label>
         </Show>
       </div>
+      <Show when={commit()}>{(c) => <p class="orgs-line" classList={{ "project-muted": c().tone === "success" }} role="status">{c().text}</p>}</Show>
       <Show when={refused().length}>
         <Banner
           tone="warn"

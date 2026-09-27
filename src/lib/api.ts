@@ -907,3 +907,8 @@ export const sendProjectItem = (orgId: string, projectId: string, input: ItemSen
   request<ItemSendResult>(`${overseerBase(orgId, projectId)}/items/send`, jsonInit("POST", input));
 export const codeProjectItem = (orgId: string, projectId: string, input: ItemCodeInput) =>
   request<ItemCodeResult>(`${overseerBase(orgId, projectId)}/items/code`, jsonInit("POST", input));
+/** The operator's gestures on a coding session's worktree: merge its branch into the root's, or remove it. */
+export const mergeCodingWorktree = (orgId: string, projectId: string, sessionId: string) =>
+  request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
+export const removeCodingWorktree = (orgId: string, projectId: string, sessionId: string) =>
+  request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));

@@ -24,7 +24,7 @@ import {
   getBatonSettings,
 } from "../lib/api";
 import { commitNowWords } from "../lib/commit-now";
-import { ESTIMATE_TITLE, usd } from "../lib/costs";
+import { usd } from "../lib/costs";
 import { duration, relativeTime, stampTime } from "../lib/format";
 import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
 import { proposedAreasLine } from "../lib/baton-strip";
@@ -1074,7 +1074,7 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
       <Show when={props.org.projectList.length > 0 && costs()}>
         {(c) => (
           <p class="orgs-line orgs-projects-cost">
-            All projects: <span class="text-num orgs-mono" title={c().estimate ? ESTIMATE_TITLE : undefined}>{usd(c().totalUsd, c().estimate)}</span> at API prices.
+            All projects: <span class="cost-figure">{usd(c().totalUsd)}</span> at API prices.
           </p>
         )}
       </Show>
@@ -1094,9 +1094,7 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
                   </span>
                   <Show when={costOf(p.id)}>
                     {(c) => (
-                      <span class="list-meta text-num orgs-mono orgs-project-cost" title={c().estimate ? ESTIMATE_TITLE : undefined}>
-                        {usd(c().totalUsd, c().estimate)}
-                      </span>
+                      <span class="cost-figure text-muted orgs-project-cost">{usd(c().totalUsd)}</span>
                     )}
                   </Show>
                   <Icon name="chevron-right" class="orgs-row-go" />

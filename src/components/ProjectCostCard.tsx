@@ -1,21 +1,13 @@
 import { createEffect, For, type JSX, on, Show } from "solid-js";
+import type { CostModelRow, CostTokens, ProjectCost } from "../../shared/costs";
 import { getProjectCost } from "../lib/api";
-import { allModels, costNotes, emptyLine, ESTIMATE_TITLE, KIND_LABEL, kindRows, modelRows, starterLine, TOKEN_KINDS, topMeta, type CostTokens, type ModelCost, type ProjectCost, usd } from "../lib/costs";
+import { allModels, costNotes, emptyLine, ESTIMATE_TITLE, hasEstimate, KIND_LABEL, kindRows, moneyWord, modelRows, starterLine, TOKEN_KINDS, topMeta, usd } from "../lib/costs";
 import { orgSessionHref } from "../lib/orgs-route";
 import { createPoll } from "../lib/poll";
 import { tokens } from "../lib/project-overseer-view";
 
 const COST_POLL_MS = 60_000;
-const TOKEN_HEAD: Record<keyof CostTokens, string> = { input: "Input", output: "Output", cacheRead: "Cache read", cacheWrite: "Cache write" };
-
-/** A figure in mono; `≈` and its title when part of it is an estimate. */
-function Usd(props: { n: number; estimate?: boolean }) {
-  return (
-    <span class="text-num project-cost-usd" title={props.estimate ? ESTIMATE_TITLE : undefined}>
-      {usd(props.n, props.estimate)}
-    </span>
-  );
-}
+const TOKEN_HEAD: Record<(typeof TOKEN_KINDS)[number], string> = { input: "Input", output: "Output", cacheRead: "Cache read", cacheWrite: "Cache write" };
 
 /**
  * What the project's sessions would cost at each provider's API prices (§app.project-costs/card):
@@ -27,18 +19,11 @@ export function ProjectCostCard(props: { orgId: string; projectId: string; tick:
   const poll = createPoll(() => getProjectCost(props.orgId, props.projectId), COST_POLL_MS);
   createEffect(on(() => props.tick, () => poll.refetch(), { defer: true }));
   return (
-    <section class="card orgs-section project-cost" aria-labelledby="project-cost">
+    <section class="card orgs-section" aria-labelledby="project-cost">
       <h2 class="orgs-h2" id="project-cost">
         Cost
       </h2>
-      <Show
-        when={poll.data()}
-        fallback={
-          <p class="orgs-line project-muted" role="status">
-            {poll.error() ? `Couldn't count this project's cost. ${poll.error()}` : "Counting…"}
-          </p>
-        }
-      >
+      <Show when={poll.data()} fallback={<p class="cost-lede">{poll.error() ? `Couldn't count this project's cost. ${poll.error()}` : "Counting…"}</p>}>
         {(c) => <CostBody cost={c()} orgId={props.orgId} />}
       </Show>
     </section>
@@ -50,18 +35,22 @@ function CostBody(props: { cost: ProjectCost; orgId: string }) {
   const kinds = () => kindRows(c().byKind);
   const models = () => modelRows(c().byModel);
   const spent = () => c().totalUsd > 0 || models().length > 0;
+  const estimate = () => hasEstimate(c());
   return (
     <Show when={spent()} fallback={<p class="orgs-line">{emptyLine(c().sessions)}</p>}>
-      <div class="project-cost-head">
-        <p class="project-cost-total">
-          <Usd n={c().totalUsd} estimate={c().estimate} /> <span class="project-muted">at API prices</span>
+      <div>
+        <p class="cost-headline">
+          <span class="cost-figure" title={estimate() ? ESTIMATE_TITLE : undefined}>
+            {usd(c().totalUsd, estimate())}
+          </span>
+          <span class="cost-headline-unit">at API prices</span>
         </p>
-        <p class="orgs-line project-muted">What these sessions would cost at each provider's API prices. Your subscriptions bill differently.</p>
+        <p class="cost-lede">What these sessions would cost at each provider's API prices. Your subscriptions bill differently.</p>
       </div>
-      <Show when={starterLine(c().byStarter)}>{(line) => <p class="orgs-line project-cost-starters">{line()}</p>}</Show>
+      <Show when={starterLine(c().byStarter)}>{(line) => <p class="cost-lede">{line()}</p>}</Show>
       <Show when={kinds().length}>
-        <div class="md md-table-wrap project-cost-wrap">
-          <table class="project-cost-table project-cost-kinds">
+        <div class="md md-table-wrap cost-table-wrap">
+          <table class="cost-table">
             <caption class="visually-hidden">Cost by kind</caption>
             <thead>
               <tr>
@@ -77,7 +66,7 @@ function CostBody(props: { cost: ProjectCost; orgId: string }) {
                   <tr>
                     <th scope="row">{KIND_LABEL[r.kind]}</th>
                     <td align="right" data-label="Cost">
-                      <Usd n={r.usd} estimate={r.estimate} />
+                      <span class="cost-figure">{usd(r.usd)}</span>
                     </td>
                   </tr>
                 )}
@@ -87,8 +76,8 @@ function CostBody(props: { cost: ProjectCost; orgId: string }) {
         </div>
       </Show>
       <Show when={models().length}>
-        <div class="md md-table-wrap project-cost-wrap">
-          <table class="project-cost-table project-cost-models">
+        <div class="md md-table-wrap cost-table-wrap">
+          <table class="cost-table">
             <caption class="visually-hidden">Cost by model and token kind</caption>
             <thead>
               <tr>
@@ -109,7 +98,7 @@ function CostBody(props: { cost: ProjectCost; orgId: string }) {
               <For each={models()}>
                 {(r) => (
                   <tr>
-                    <th scope="row" class="text-mono" title={r.name && r.name !== r.model ? r.model : undefined}>
+                    <th scope="row" class="text-mono" title={r.name ? r.model : undefined}>
                       {r.name ?? r.model}
                     </th>
                     <ModelCells row={r} />
@@ -120,7 +109,7 @@ function CostBody(props: { cost: ProjectCost; orgId: string }) {
             <tfoot>
               <tr>
                 <th scope="row">All models</th>
-                <ModelCells row={allModels(models())} />
+                <ModelCells row={{ ...allModels(models()), status: "priced" }} />
               </tr>
             </tfoot>
           </table>
@@ -128,28 +117,26 @@ function CostBody(props: { cost: ProjectCost; orgId: string }) {
       </Show>
       <Show when={c().top.length}>
         <h3 class="orgs-h3">Most expensive sessions</h3>
-        <ul class="list project-cost-top">
+        <ol class="cost-sessions">
           <For each={c().top}>
             {(s) => (
-              <li class="list-row project-cost-top-row">
-                <span class="list-main">
-                  <span class="list-title">
-                    <Show when={s.path} fallback={<>{s.title} <span class="project-muted">(not on this host)</span></>}>
-                      {(p) => <a href={orgSessionHref(props.orgId, p())}>{s.title}</a>}
-                    </Show>
-                  </span>
-                  <span class="list-meta">{topMeta(s.kind, s.by)}</span>
+              <li class="cost-session">
+                <span class="cost-session-main">
+                  <Show when={s.path} fallback={<>{s.title}{s.countedAt ? " (not on this host)" : ""}</>}>
+                    {(p) => <a href={orgSessionHref(props.orgId, p())}>{s.title}</a>}
+                  </Show>
+                  <span class="cost-session-meta">{topMeta(s.kind, s.by)}</span>
                 </span>
-                <Usd n={s.usd} estimate={s.estimate} />
+                <span class="cost-figure">{usd(s.usd)}</span>
               </li>
             )}
           </For>
-        </ul>
+        </ol>
       </Show>
-      <ul class="project-cost-notes">
+      <ul class="cost-notes">
         <For each={costNotes(c())}>
           {(n) => (
-            <li class="orgs-line project-muted" title={n.title}>
+            <li class="cost-note" title={n.title}>
               {n.text}
             </li>
           )}
@@ -160,32 +147,22 @@ function CostBody(props: { cost: ProjectCost; orgId: string }) {
 }
 
 /** A model row's cells: each token kind's dollars over its count (muted), then the row's cost. Local and unpriced models say so instead of a figure. */
-function ModelCells(props: { row: Pick<ModelCost, "tokens" | "usd" | "totalUsd" | "estimate" | "local" | "unpriced"> }): JSX.Element {
-  const r = () => props.row;
-  const money = (n: number, estimate?: boolean) =>
-    r().unpriced !== undefined ? (
-      <span class="project-muted" title={r().unpriced || undefined}>
-        unpriced
-      </span>
-    ) : r().local ? (
-      <span class="project-muted">local</span>
-    ) : (
-      <Usd n={n} estimate={estimate} />
-    );
+function ModelCells(props: { row: Pick<CostModelRow, "tokens" | "usdBy" | "usd" | "status" | "why"> }): JSX.Element {
+  const word = () => moneyWord(props.row);
+  const money = (n: number) => (word() === "usd" ? <span class="cost-figure">{usd(n)}</span> : <span class="cost-unpriced" title={word() === "unpriced" ? props.row.why : undefined}>{word()}</span>);
+  const cell = (k: keyof CostTokens) => props.row.tokens[k];
   return (
     <>
       <For each={TOKEN_KINDS}>
         {(k) => (
           <td align="right" data-label={TOKEN_HEAD[k]}>
-            <span class="project-cost-cell">
-              {money(r().usd[k])}
-              <span class="text-mono text-num project-muted project-cost-tokens">{tokens(r().tokens[k])}</span>
-            </span>
+            {money(props.row.usdBy[k])}
+            <span class="cost-tokens">{tokens(cell(k))}</span>
           </td>
         )}
       </For>
       <td align="right" data-label="Cost">
-        {money(r().totalUsd, r().estimate)}
+        {money(props.row.usd)}
       </td>
     </>
   );

@@ -1,48 +1,9 @@
 // Project costs at API prices (§app/project-costs): the card's and the org roll-up's pure rules,
 // so they run under tsx --test. Words: §design.copy-deck/project-costs.
 
-import { tokens } from "./project-overseer-view";
+import type { CostKind, CostModelRow, CostStarter, CostTokens, ProjectCost } from "../../shared/costs";
 import { shortDate } from "./format";
-
-// ---- STUB wire shape until shared/costs.ts lands; replaced by an import ----
-
-export type CostKind = "overseer" | "gathering" | "settle" | "wrapup" | "coding" | "workers" | "reconcile";
-export type CostBy = "overseer" | "operator" | "sova";
-export interface CostTokens {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-}
-export interface ModelCost {
-  model: string;
-  name?: string;
-  local?: true;
-  unpriced?: string;
-  tokens: CostTokens;
-  usd: CostTokens;
-  totalUsd: number;
-  estimate: boolean;
-}
-export interface ProjectCost {
-  totalUsd: number;
-  estimate: boolean;
-  asOf: string;
-  pricesAsOf: string | null;
-  sessions: number;
-  byStarter: { by: CostBy; usd: number; estimate: boolean }[];
-  byKind: { kind: CostKind; usd: number; estimate: boolean }[];
-  byModel: ModelCost[];
-  top: { title: string; path: string | null; kind: CostKind; by: CostBy; usd: number; estimate: boolean }[];
-  unpriced: { model: string; tokens: number; why: string }[];
-  legacyTokens: number;
-  notOnHost: { sessions: number; countedAt: string | null } | null;
-}
-export interface OrgCosts {
-  totalUsd: number;
-  estimate: boolean;
-  projects: { projectId: string; totalUsd: number; estimate: boolean }[];
-}
+import { tokens } from "./project-overseer-view";
 
 // ---- figures ----
 
@@ -54,12 +15,28 @@ export function usd(n: number, estimate = false): string {
 /** The `title` on a figure written with `≈`. */
 export const ESTIMATE_TITLE = "Partly an estimate: see the note below.";
 
-export const TOKEN_KINDS: readonly (keyof CostTokens)[] = ["input", "output", "cacheRead", "cacheWrite"];
+/** The token kinds the model table shows; `cacheWrite` is both TTLs. */
+export const TOKEN_KINDS = ["input", "output", "cacheRead", "cacheWrite"] as const satisfies readonly (keyof CostTokens)[];
+
+/** Some part of the total is an estimate. */
+export const hasEstimate = (c: Pick<ProjectCost, "estimates">): boolean => c.estimates.some((e) => e.usd > 0);
 
 // ---- grouping ----
 
-export const KIND_ORDER: readonly CostKind[] = ["overseer", "gathering", "settle", "wrapup", "coding", "workers", "reconcile"];
-export const KIND_LABEL: Record<CostKind, string> = {
+/** A kind as the card shows it: coding sessions are one row whoever started them (the starters line says who). */
+export type CardKind = "overseer" | "gathering" | "settle" | "wrapup" | "coding" | "workers" | "reconcile";
+const CARD_KIND: Record<CostKind, CardKind> = {
+  overseer: "overseer",
+  gathering: "gathering",
+  settle: "settle",
+  wrapup: "wrapup",
+  "coding-overseer": "coding",
+  "coding-operator": "coding",
+  workers: "workers",
+  reconcile: "reconcile",
+};
+export const KIND_ORDER: readonly CardKind[] = ["overseer", "gathering", "settle", "wrapup", "coding", "workers", "reconcile"];
+export const KIND_LABEL: Record<CardKind, string> = {
   overseer: "Overseer conversations",
   gathering: "Gathering and offers",
   settle: "Settling",
@@ -69,47 +46,59 @@ export const KIND_LABEL: Record<CostKind, string> = {
   reconcile: "Reconciler",
 };
 
-/** The kinds with a cost, in the scope's order (never by size: the order is how the card reads). */
-export const kindRows = <T extends { kind: CostKind; usd: number }>(rows: readonly T[]): T[] =>
-  KIND_ORDER.flatMap((k) => rows.filter((r) => r.kind === k && r.usd > 0));
+/** The kinds with a cost, in the scope's order (never by size), both coding kinds as one row. */
+export function kindRows(rows: readonly { kind: CostKind; usd: number }[]): { kind: CardKind; usd: number }[] {
+  const sums = new Map<CardKind, number>();
+  for (const r of rows) sums.set(CARD_KIND[r.kind], (sums.get(CARD_KIND[r.kind]) ?? 0) + r.usd);
+  return KIND_ORDER.filter((k) => (sums.get(k) ?? 0) > 0).map((kind) => ({ kind, usd: sums.get(kind)! }));
+}
 
-const STARTER_ORDER: readonly CostBy[] = ["overseer", "operator", "sova"];
-const STARTER_WORDS: Record<CostBy, string> = { overseer: "the overseer", operator: "you", sova: "Sova on its own" };
+// "sova" is the spec's third starter (the reconciler's automatic runs), said when the wire carries it.
+const STARTER_ORDER: readonly string[] = ["overseer", "operator", "sova"];
+const STARTER_WORDS: Record<string, string> = { overseer: "the overseer", operator: "you", sova: "Sova on its own" };
 
 /** "Started by the overseer $8.10 · by you $4.02 · by Sova on its own $0.36": only starters with a cost; null when none has. */
-export function starterLine(rows: readonly { by: CostBy; usd: number; estimate: boolean }[]): string | null {
-  const parts = STARTER_ORDER.flatMap((by) => rows.filter((r) => r.by === by && r.usd > 0)).map((r) => `by ${STARTER_WORDS[r.by]} ${usd(r.usd, r.estimate)}`);
+export function starterLine(rows: readonly { by: CostStarter; usd: number }[]): string | null {
+  const parts = rows
+    .filter((r) => r.usd > 0 && STARTER_WORDS[r.by])
+    .sort((a, b) => STARTER_ORDER.indexOf(a.by) - STARTER_ORDER.indexOf(b.by))
+    .map((r) => `by ${STARTER_WORDS[r.by]} ${usd(r.usd)}`);
   return parts.length ? `Started ${parts.join(" · ")}` : null;
 }
 
 /** A top session's second line: "Coding sessions · started by you". */
-export function topMeta(kind: CostKind, by: CostBy): string {
-  return `${KIND_LABEL[kind]} · ${by === "sova" ? "run by Sova" : `started by ${STARTER_WORDS[by]}`}`;
+export function topMeta(kind: CostKind, by: CostStarter): string {
+  return `${KIND_LABEL[CARD_KIND[kind]]} · ${(by as string) === "sova" ? "run by Sova" : `started by ${STARTER_WORDS[by] ?? by}`}`;
 }
 
-/** Models most expensive first, priced before local before unpriced; ties by tokens, then name. */
-export function modelRows(rows: readonly ModelCost[]): ModelCost[] {
-  const rank = (r: ModelCost) => (r.unpriced !== undefined ? 2 : r.local ? 1 : 0);
-  const sum = (t: CostTokens) => t.input + t.output + t.cacheRead + t.cacheWrite;
+const sum = (t: CostTokens) => t.input + t.output + t.cacheRead + t.cacheWrite;
+
+/** Models most expensive first, priced before free before unpriced; ties by tokens, then name. An empty row goes. */
+export function modelRows(rows: readonly CostModelRow[]): CostModelRow[] {
+  const rank = { priced: 0, free: 1, unpriced: 2 } as const;
   return rows
-    .filter((r) => r.totalUsd > 0 || sum(r.tokens) > 0)
-    .sort((a, b) => rank(a) - rank(b) || b.totalUsd - a.totalUsd || sum(b.tokens) - sum(a.tokens) || a.model.localeCompare(b.model));
+    .filter((r) => r.usd > 0 || sum(r.tokens) > 0)
+    .sort((a, b) => rank[a.status] - rank[b.status] || b.usd - a.usd || sum(b.tokens) - sum(a.tokens) || a.model.localeCompare(b.model));
 }
 
-/** The `All models` row: each column summed (an unpriced model adds tokens, never dollars). */
-export function allModels(rows: readonly ModelCost[]): { tokens: CostTokens; usd: CostTokens; totalUsd: number; estimate: boolean } {
-  const tokens: CostTokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-  const dollars: CostTokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-  let totalUsd = 0;
+/** The `All models` row: each column summed (an unpriced model adds tokens, never dollars: the wire's usd is 0 for it). */
+export function allModels(rows: readonly CostModelRow[]): Pick<CostModelRow, "tokens" | "usdBy" | "usd"> {
+  const zero = (): CostTokens => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 });
+  const tokens = zero();
+  const usdBy = zero();
+  let total = 0;
   for (const r of rows) {
-    for (const k of TOKEN_KINDS) {
+    for (const k of Object.keys(tokens) as (keyof CostTokens)[]) {
       tokens[k] += r.tokens[k];
-      if (r.unpriced === undefined) dollars[k] += r.usd[k];
+      if (r.status !== "unpriced") usdBy[k] += r.usdBy[k];
     }
-    if (r.unpriced === undefined) totalUsd += r.totalUsd;
+    if (r.status !== "unpriced") total += r.usd;
   }
-  return { tokens, usd: dollars, totalUsd, estimate: rows.some((r) => r.estimate) };
+  return { tokens, usdBy, usd: total };
 }
+
+/** What a model's money cells say: dollars, or `local`, or `unpriced`. */
+export const moneyWord = (r: Pick<CostModelRow, "status" | "why">): "usd" | "local" | "unpriced" => (r.status === "unpriced" ? "unpriced" : r.status === "free" && r.why === "local" ? "local" : "usd");
 
 // ---- notes ----
 
@@ -118,18 +107,23 @@ export interface CostNote {
   title?: string;
 }
 
-/** The card's notes, one line each and only when true, then the 2 always said. */
-export function costNotes(c: Pick<ProjectCost, "unpriced" | "legacyTokens" | "estimate" | "notOnHost" | "pricesAsOf">, now = Date.now()): CostNote[] {
-  const out: CostNote[] = c.unpriced.map((u) => ({ text: `${tokens(u.tokens)} tokens on ${u.model} have no API price, so they aren't in the total.`, title: u.why || undefined }));
-  if (c.legacyTokens > 0) out.push({ text: `${tokens(c.legacyTokens)} tokens counted before costs have no model recorded, so they aren't in the total.` });
-  if (c.estimate) out.push({ text: "≈ Older Claude Code messages didn't record how long their cache was kept, so their cache writes are priced at the 1-hour rate." });
+/** The card's notes, one line each and only when true, then the 2 always said (the prices' date when known). */
+export function costNotes(c: Pick<ProjectCost, "unpriced" | "estimates" | "notOnHost" | "prices">, now = Date.now()): CostNote[] {
+  const out: CostNote[] = [];
+  for (const u of c.unpriced) {
+    if (u.model === "unknown") out.push({ text: `${tokens(u.tokens)} tokens counted before costs have no model recorded, so they aren't in the total.` });
+    else out.push({ text: `${tokens(u.tokens)} tokens on ${u.model} have no API price, so they aren't in the total.`, title: u.why || undefined });
+  }
+  if (c.estimates.some((e) => e.code === "cache-write-1h-assumed" && e.usd > 0)) {
+    out.push({ text: "≈ Older Claude Code messages didn't record how long their cache was kept, so their cache writes are priced at the 1-hour rate." });
+  }
   const off = c.notOnHost;
   if (off && off.sessions > 0) {
     const n = `${off.sessions} ${off.sessions === 1 ? "session isn't" : "sessions aren't"} on this host: `;
     out.push({ text: off.countedAt ? `${n}their cost is as last counted, ${shortDate(Date.parse(off.countedAt), now)}.` : `${n}their cost is as last counted.` });
   }
   out.push({ text: "Not counted: topic summaries, image descriptions, and Sova's own side calls." });
-  if (c.pricesAsOf) out.push({ text: `Prices from models.dev, as of ${shortDate(Date.parse(c.pricesAsOf), now)}.` });
+  if (c.prices.fetchedAt) out.push({ text: `Prices from models.dev, as of ${shortDate(Date.parse(c.prices.fetchedAt), now)}.` });
   return out;
 }
 

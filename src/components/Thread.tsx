@@ -1,4 +1,4 @@
-import { children, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { children, createContext, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, useContext, type JSX } from "solid-js";
 import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
@@ -8,7 +8,8 @@ import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
-import { entryIdOf, JUMP_EVENT, registerTranscript } from "../lib/jump";
+import { entryIdOf, JUMP_EVENT, registerRows, registerTranscript } from "../lib/jump";
+import { carriedStart, chunkStart, FIRST_CHUNK, initialStart, nextChunk, rowEstimate, rowIndexFor } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { isChangeRow } from "../lib/change-rows";
@@ -409,6 +410,8 @@ export function HistoryItems(props: {
   /** Per-message actions. Absent: no strips at all (a subagent transcript, the hidden-rows
       disclosure) — an action is about the chat you are in, not about every transcript on screen. */
   actions?: MessageActionsProvider;
+  /** Build every row at once, even inside a transcript (the hidden-rows disclosure's own list). */
+  whole?: boolean;
 }) {
   /**
    * The items the thread may render: the settings-change rows are dropped before anything else,
@@ -490,17 +493,74 @@ export function HistoryItems(props: {
     return iso ? clockTime(iso) : null;
   });
 
+  /**
+   * Tail-first (lib/tail-render): inside a transcript, the newest rows are built with the list and
+   * the older ones prepended above them while the browser is idle, until all are built. The window
+   * is held as the id of its first row, so an append or a refetch keeps what is already built.
+   * Every index below is the row's index in `rows()`, never in the built slice.
+   */
+  const scroller = props.whole ? null : useContext(ScrollerContext);
+  const rowAt = createMemo(() => {
+    const at = new Map<string, number>();
+    rows().forEach((r, i) => at.set(r.id, i));
+    return at;
+  });
+  const idAt = (i: number) => (i <= 0 ? null : (rows()[i]?.id ?? null));
+  const [firstId, setFirstId] = createSignal<string | null>(scroller ? idAt(initialStart(rows().length)) : null);
+  const start = createMemo(() => (scroller ? carriedStart(firstId(), (id) => rowAt().get(id) ?? -1, rows().length) : 0));
+  const built = createMemo(() => (start() === 0 ? rows() : rows().slice(start())));
+  const indexOf = scroller ? createMemo(() => new Map(rows().map((r, i) => [r, i] as const))) : null;
+  if (scroller) {
+    const root = scroller.root();
+    const ids = createMemo(() => rows().map((r) => (r.kind === "link" ? null : r.id)));
+    /** Builds from row `i` down, keeping the view where it is. */
+    const buildFrom = (i: number) => scroller.prepend(() => setFirstId(idAt(i)));
+    let chunk = FIRST_CHUNK;
+    let cancel: (() => void) | null = null;
+    const step = () => {
+      cancel = null;
+      const s = start();
+      if (s === 0) return;
+      // A jump's smooth scroll is under way: moving the content now would stop it short.
+      if (scroller.jumping()) return schedule();
+      const next = chunkStart(s, chunk);
+      const t0 = performance.now();
+      buildFrom(next);
+      chunk = nextChunk(chunk, performance.now() - t0);
+      if (next > 0) schedule();
+    };
+    const schedule = () => {
+      if (cancel) return;
+      cancel = whenIdle(step);
+    };
+    createEffect(() => start() > 0 && schedule());
+    onCleanup(() => cancel?.());
+    registerRows(root, {
+      has: (entryId) => rowIndexFor(ids(), entryId) >= 0,
+      ensure: (entryId) => {
+        const i = rowIndexFor(ids(), entryId);
+        if (i < 0) return false;
+        if (i < start()) buildFrom(i);
+        return true;
+      },
+    });
+    onCleanup(() => registerRows(root, null));
+  }
+
   return (
     <>
-      <For each={rows()}>
-        {(item, index) =>
+      <For each={built()}>
+        {(item, local) => {
+          const index = indexOf ? () => indexOf().get(item) ?? local() : local;
+          return (
           // A link message is a partner's, shown only in the Agents tab (§mesh.links/transcript):
           // no row at all here, not even the wrapper. It still counts as a turn start (above).
           item.kind === "link" ? (
             <Show when={forkAfter() === index() && props.fork}>{(fork) => <ForkRow fork={fork()} time={forkTime()} />}</Show>
           ) : (
-          // A box-less wrapper so the outline strip can find an entry's row (Jump to Message).
-          <div class="entry" data-entry={item.id}>
+          // The row's box: the outline strip finds an entry's row by it (Jump to Message), and the
+          // estimate is its height until it is first drawn (content-visibility, app.css).
+          <div class="entry" data-entry={item.id} style={{ "--entry-est": rowEstimate(item) }}>
             <Switch fallback={<Unknown raw={item.raw} />}>
               <Match when={item.kind === "user" && isBriefText(item.text)}>
                 <BriefRow text={item.text ?? ""} time={timestampOf(item.raw)} />
@@ -657,12 +717,13 @@ export function HistoryItems(props: {
             <Show when={forkAfter() === index() && props.fork}>{(fork) => <ForkRow fork={fork()} time={forkTime()} />}</Show>
           </div>
           )
-        }
+          );
+        }}
       </For>
       <Show when={split()?.hidden.length ? split() : null}>
         {(s) => (
           <HiddenRows calls={s().calls} failed={s().failed} thinking={s().thinking}>
-            {() => <HistoryItems items={s().hidden} author={props.author} names={props.names} streaming={props.streaming} openFrom={s().openFrom} />}
+            {() => <HistoryItems items={s().hidden} author={props.author} names={props.names} streaming={props.streaming} openFrom={s().openFrom} whole />}
           </HiddenRows>
         )}
       </Show>
@@ -832,6 +893,28 @@ export function LiveEntries(props: {
   );
 }
 
+/** What a transcript offers the rows inside it (tail-first rendering, lib/tail-render). */
+interface ScrollerApi {
+  /** The transcript element: jumps find its rows through it (lib/jump `registerRows`). */
+  root(): HTMLElement;
+  /** Runs `build`, which adds rows above the ones on screen, and keeps the view where it was:
+      at the bottom while following, else the same distance from the end. */
+  prepend(build: () => void): void;
+  /** A jump's smooth scroll is under way. */
+  jumping(): boolean;
+}
+const ScrollerContext = createContext<ScrollerApi | null>(null);
+
+/** Runs `fn` once the browser is idle (at the latest after a short wait); returns a cancel. */
+function whenIdle(fn: () => void): () => void {
+  if (typeof requestIdleCallback === "function") {
+    const id = requestIdleCallback(fn, { timeout: 100 });
+    return () => cancelIdleCallback(id);
+  }
+  const id = setTimeout(fn, 16);
+  return () => clearTimeout(id);
+}
+
 /** Within this distance of the end, the transcript follows new content. */
 const FOLLOW_PX = 80;
 /** How long a jump's smooth scroll may take before a scroll near the bottom means following again. */
@@ -878,10 +961,41 @@ export function ThreadScroller(props: {
     setAway(near ? null : props.count);
   };
 
-  const observer = new MutationObserver(() => {
-    if (follow) toBottom();
-  });
+  /**
+   * A disclosure the user just opened or closed (a tool card, thinking, a report): what it adds or
+   * removes is theirs to look at, so the view stays where it is and following is re-read from the
+   * new position instead of pulling the bottom back into view. Held for two frames: the growth
+   * lands in the next frame's layout.
+   */
+  let toggled: Element | null = null;
+  const onToggle = (e: Event) => {
+    toggled = e.target as Element;
+    requestAnimationFrame(() => requestAnimationFrame(() => (toggled = null)));
+  };
+  /** Content changed size or shape: back to the bottom while following. */
+  const settle = () => {
+    if (!follow) return;
+    if (toggled) return onScroll();
+    toBottom();
+  };
+  const observer = new MutationObserver(settle);
   onCleanup(() => observer.disconnect());
+  // Rows change height with no mutation too: an image decoding, a row first drawn at its real
+  // height instead of its estimate (content-visibility, app.css).
+  const resized = typeof ResizeObserver === "function" ? new ResizeObserver(settle) : null;
+  onCleanup(() => resized?.disconnect());
+  const api: ScrollerApi = {
+    root: () => el,
+    prepend(build) {
+      const fromEnd = el.scrollHeight - el.scrollTop;
+      build();
+      // The rows just added are above the view: not new content to follow.
+      observer.takeRecords();
+      const want = follow ? el.scrollHeight - el.clientHeight : el.scrollHeight - fromEnd;
+      if (Math.abs(el.scrollTop - want) >= 1) el.scrollTop = want;
+    },
+    jumping: () => performance.now() < jumpingUntil,
+  };
   createEffect(on(() => props.resume, resumeFollowing, { defer: true }));
 
   const newCount = () => {
@@ -901,6 +1015,7 @@ export function ThreadScroller(props: {
           el = node;
           observer.observe(node, { childList: true, subtree: true, characterData: true });
           // A jump (lib/jump) takes the view away from the bottom: stop following, as a scroll up would.
+          node.addEventListener("toggle", onToggle, true);
           node.addEventListener(JUMP_EVENT, () => {
             jumpingUntil = performance.now() + JUMP_SETTLE_MS;
             if (!follow) return;
@@ -920,7 +1035,9 @@ export function ThreadScroller(props: {
           <div class="transcript-banner">{banner()}</div>
         </Show>
         <div class="transcript-inner">
-          <div class="thread">{props.children}</div>
+          <div class="thread" ref={(thread) => resized?.observe(thread)}>
+            <ScrollerContext.Provider value={api}>{props.children}</ScrollerContext.Provider>
+          </div>
         </div>
       </section>
       <Show when={away() !== null}>

@@ -71,6 +71,44 @@ export function transcriptRoot(path?: string | null): HTMLElement | null {
   return document.getElementById("transcript");
 }
 
+/**
+ * The rows a transcript renders, as data. The thread opens on its newest rows and builds the older
+ * ones in the background (lib/tail-render), so a row can be on the branch and not in the DOM yet:
+ * "is it there" is asked of these, and a jump mounts its target before it scrolls.
+ */
+export interface TranscriptRows {
+  /** Whether the thread renders a row for this entry, built yet or not. */
+  has(entryId: string): boolean;
+  /** Builds every row from this entry's down, now. False when the thread has no such row. */
+  ensure(entryId: string): boolean;
+}
+
+const rowSources = new WeakMap<HTMLElement, TranscriptRows>();
+
+/** Called by the thread inside a transcript: its rows on mount, null on cleanup. */
+export function registerRows(root: HTMLElement, rows: TranscriptRows | null): void {
+  if (rows) rowSources.set(root, rows);
+  else rowSources.delete(root);
+}
+
+/**
+ * The entry's rendered row, built first if the thread hasn't reached it yet; null when the
+ * transcript has no row for it. A transcript that doesn't register its rows (a worker's) answers
+ * from the DOM alone, as does a row only an open hidden-rows disclosure shows.
+ */
+export function ensureRendered(entryId: string, root: HTMLElement | null = transcriptRoot()): HTMLElement | null {
+  if (!root) return null;
+  rowSources.get(root)?.ensure(entryId);
+  return findEntryRow(entryId, root);
+}
+
+/** Whether the transcript has a row for this entry, built yet or not: the outline strip's
+    "Jump to Message" is offered on this. */
+export function hasEntryRow(entryId: string, root: HTMLElement | null = transcriptRoot()): boolean {
+  if (!root) return false;
+  return !!rowSources.get(root)?.has(entryId) || !!findEntryRow(entryId, root);
+}
+
 /** The rendered row for an entry id, or null when the transcript doesn't show it (compacted
     away, or a different session on screen). */
 export function findEntryRow(entryId: string, root: ParentNode | null = transcriptRoot()): HTMLElement | null {
@@ -90,7 +128,7 @@ export function findEntryRow(entryId: string, root: ParentNode | null = transcri
  */
 export function jumpToEntry(entryId: string, path?: string | null): boolean {
   const root = transcriptRoot(path);
-  const row = findEntryRow(entryId, root);
+  const row = ensureRendered(entryId, root);
   if (!row) return false;
   root?.dispatchEvent(new Event(JUMP_EVENT));
   row.scrollIntoView({ block: "center", behavior: "smooth" });

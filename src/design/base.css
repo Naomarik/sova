@@ -5109,17 +5109,16 @@ a.subagent-row { text-decoration: none; }
    holds the strip open through the states that outlive a pointer — an armed
    confirm, Copy's check, a refusal.
 
-   the band is the row's. the strip hangs below the bubble and a row is
-   `display: contents`, so it has no box of its own: the pointer keeps `.entry:hover`
-   only while it is over one of the row's children, all the way down to a button.
-   so the strip's box owns the whole thread gap above it — pulled up by the gap and
+   the band is the row's. the strip hangs below the bubble, a gap of the row's own
+   column (app.css `.entry`, which keeps the thread's gap between its children) away.
+   so the strip's box owns the whole gap above it — pulled up by the gap and
    padded back down by the same amount less the old 4px lift, which leaves the icons
    where they were and the row's flow height unchanged — and a hidden strip's BOX is
    hit-testable while its CONTENTS are not (`pointer-events: none` on the children).
    that second half is what keeps the first tap safe: a tap on an unseen button
    lands on the strip box, reveals the row and presses nothing. the band's height
-   IS `.thread`'s gap (`--space-4`): change that gap and this margin and padding
-   change with it.
+   IS `.thread`'s gap (`--space-4`), which `.entry` repeats: change that gap and this
+   margin and padding change with it.
 
    Revealed, the ink is a semantic colour at full opacity, never alpha over the page —
    `--color-ink-muted` is 4.7:1 or better on every surface a message sits on (paper,

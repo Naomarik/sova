@@ -1,0 +1,88 @@
+// Tail-first rendering of a long transcript. A session opens on its newest rows: those are built
+// in the same task as the hello, the frame paints, and the older rows are then prepended above
+// them in small chunks while the browser is idle, until every row is in the DOM again (so
+// Ctrl+F, the outline and the input list see the whole transcript once the fill completes).
+// This file is the arithmetic; Thread.tsx does the mounting and the scroll anchoring.
+
+/** Rows built with the hello: a phone screen holds ~10 rows, a desktop ~20, so this is several
+    screens at either width, and the first frame never waits on the rest. */
+export const TAIL_ROWS = 60;
+/** The first backfill chunk, before any has been timed. */
+export const FIRST_CHUNK = 50;
+/** What one chunk may cost: under a frame, so a chunk never becomes a long task. */
+export const CHUNK_BUDGET_MS = 12;
+export const MIN_CHUNK = 5;
+export const MAX_CHUNK = 200;
+
+/** The first row built with the hello, for a list of `n` rows. */
+export const initialStart = (n: number, tail = TAIL_ROWS): number => Math.max(0, n - tail);
+
+/**
+ * The next chunk's size, from how long the last one took: scaled toward the budget, never more
+ * than doubling or less than halving at a time (one expensive row shouldn't collapse the rate),
+ * and within [MIN_CHUNK, MAX_CHUNK].
+ */
+export function nextChunk(prevRows: number, prevMs: number, budgetMs = CHUNK_BUDGET_MS): number {
+  const scaled = prevMs <= 0.5 ? prevRows * 2 : Math.floor((prevRows * budgetMs) / prevMs);
+  const bounded = Math.min(prevRows * 2, Math.max(Math.floor(prevRows / 2), scaled));
+  return Math.min(MAX_CHUNK, Math.max(MIN_CHUNK, bounded));
+}
+
+/** The first mounted row after one more chunk above `start`. */
+export const chunkStart = (start: number, rows: number): number => Math.max(0, start - rows);
+
+/**
+ * The index of the row an entry id resolves to, the way the transcript's `[data-entry]` lookup
+ * does (lib/jump `entrySelectors`): the entry's own row or the first of its blocks (`<id>:<i>`),
+ * then, for a block id, the first row of the entry it came from. `ids` holds each rendered row's
+ * id, or null for a row that draws no `.entry` (a link message). -1: not in the rows at all.
+ */
+export function rowIndexFor(ids: readonly (string | null)[], entryId: string): number {
+  const find = (id: string) => {
+    const prefix = `${id}:`;
+    return ids.findIndex((r) => r !== null && (r === id || r.startsWith(prefix)));
+  };
+  const own = find(entryId);
+  if (own >= 0) return own;
+  const i = entryId.indexOf(":");
+  return i < 0 ? -1 : find(entryId.slice(0, i));
+}
+
+/**
+ * Where the window starts in a new row list: at the row it started at before (appends and
+ * reconciled refetches keep everything already built), at 0 when everything was built, and at
+ * the tail when that row is gone (a rewind, or hiding the kind of row it was).
+ */
+export function carriedStart(firstId: string | null, indexOfId: (id: string) => number, n: number): number {
+  if (firstId === null) return 0;
+  const i = indexOfId(firstId);
+  return i >= 0 ? i : initialStart(n);
+}
+
+/** Lines `text` wraps to at `cols` characters, counting each hard line at least once. */
+export function wrapLines(text: string, cols: number): number {
+  let lines = 0;
+  for (const line of text.split("\n")) lines += Math.max(1, Math.ceil(line.length / cols));
+  return lines;
+}
+
+/** A row's lines are capped here: a very long message still gets a tall estimate, not a huge one. */
+const MAX_EST_LINES = 200;
+
+/**
+ * A row's height until it is first drawn (`content-visibility: auto` skips rows off screen, and a
+ * skipped row is laid out at this size): a fixed part for its chrome plus its text's wrapped lines,
+ * which app.css turns into pixels for the width the transcript has. Only the scrollbar and a
+ * long jump's first aim depend on it; a drawn row remembers its real height.
+ */
+export function rowEstimate(item: { kind: string; text?: string }): string {
+  const text = item.text ?? "";
+  const [base, lines] =
+    item.kind === "assistant-text" ? [24, wrapLines(text, 80)]
+    : item.kind === "user" ? [48, wrapLines(text, 64)]
+    : item.kind === "tool-call" || item.kind === "tool-result" || item.kind === "thinking" ? [40, 0]
+    : item.kind === "report" ? [64, 0]
+    : item.kind === "info" ? [8, 1]
+    : [48, 1];
+  return `calc(${base}px + ${Math.min(lines, MAX_EST_LINES)} * var(--entry-line-est, 23px))`;
+}

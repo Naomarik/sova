@@ -20,8 +20,29 @@ html, body, #root { height: 100%; }
 /* .search supplies its own Clear Search button; drop the UA's duplicate on type="search". */
 .search input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 
-/* Transcript entry wrapper (data-entry anchor for outline jumps); adds no box to the thread. */
-.entry { display: contents; }
+/* Transcript entry wrapper (data-entry anchor for jumps). A real box, so a row off screen is
+   skipped by layout and paint (`content-visibility`) and costs only its estimated height
+   (`--entry-est`, lib/tail-render) until it is first drawn; `auto` then remembers the real one.
+   Its children keep the thread's column and gap. The padding, taken back by the margin, leaves
+   room inside the box for what paint containment would clip at its edge: card shadows, focus
+   rings, the action strip's 44px targets. A row being pointed at, focused or revealed is never
+   skipped or clipped. An entry that draws nothing (a sent marker) takes no gap. */
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-2);
+  margin: calc(var(--space-2) * -1);
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto var(--entry-est, 120px);
+}
+.entry:empty { display: none; }
+.entry:hover,
+.entry:focus-within,
+.entry[data-actions-revealed] { content-visibility: visible; }
+/* Text wraps to about twice the lines in a folded-width transcript. */
+.thread { --entry-line-est: 23px; }
+@container (width < 600px) { .thread { --entry-line-est: 42px; } }
 
 /* Archive date sections: each a <details> whose summary is
    the eyebrow label (twist, name, count), collapsed by default; a rule between sections. */

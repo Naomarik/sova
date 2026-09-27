@@ -26,6 +26,8 @@ import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-sto
 import { dropSessionTags, tagsFor } from "./session-tags";
 import { batonSummaryField } from "./baton";
 import { projectOverseerOfPath } from "./project-overseer-store";
+import { orgLookup } from "./org-sessions";
+import { orgOfSessionPath, readIndex } from "./orgs";
 
 /** `baton` for a baton session's file (§app/baton), `projectOverseer` for a project overseer's
     (§app/project-overseer), else nothing. */
@@ -783,6 +785,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const groups = readAssignments();
   const seen = readSeen();
   const attention = readDecisionSettings().features.attention;
+  const orgs = orgLookup();
   // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
   // session's file is gone" pane IS that assignment rendered (spec 14-workspaces "Gone from
   // disk"), and pruning here — on every listing pass — would race the pane's own Remove From
@@ -820,6 +823,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
     }
     const l = live.get(s.path);
     const ownRec = own.get(s.path);
+    const org = orgs.of(s.path, s.id);
     // The husk check above reads the DERIVED title on purpose: what keeps an empty session out of
     // the list is that nobody has written in it, which renaming it doesn't change.
     out.push({
@@ -837,6 +841,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
       ...(preview !== undefined ? { draftPreview: preview } : {}),
       ...(hasDraft ? { hasDraft: true as const } : {}),
       ...special,
+      ...(org ? { org } : {}),
     });
   }
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
@@ -879,6 +884,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...attentionFields(s, l, ownRec, readSeen()),
     ...decisionFields(s, l, ownRec, readSeen(), readDecisionSettings().features.attention),
     ...batonFields(s.path),
+    ...orgField(s.path, s.id),
   };
 }
 
@@ -899,15 +905,22 @@ function sessionArchived(id: string): void {
   }
 }
 
+function orgField(path: string, id: string): Pick<SessionSummary, "org"> {
+  const org = orgLookup().of(path, id);
+  return org ? { org } : {};
+}
+
 export const SUBAGENTS_WORKING = "Subagents are working in this session. Stop them or wait for them to finish before archiving.";
 
 export type ArchiveResult =
-  | { ok: true; summary: SessionSummary }
+  // `deleted`: an empty husk's file was deleted instead of archived (the toast says so, with no Undo).
+  | { ok: true; summary: SessionSummary & { deleted?: true } }
   | { ok: false; status: 404 | 409; error: string };
 
 /**
  * POST /api/sessions/archive: set or clear the manual archive mark of a web-spawned session.
- * Only Sova's own id list changes; the session file is never touched. Archiving a session
+ * Only Sova's own id list changes; the session file is never touched, except that an empty husk
+ * outside any attached org's workspace is deleted (below). Archiving a session
  * that's live in a TUI is refused (it would stay on top anyway), and so is one that's mid-turn or
  * has subagents working (archiving closes its runtime, which would kill them); unarchiving always
  * works.
@@ -934,7 +947,9 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   // skips it), so archiving one deletes the file outright instead of marking an id whose row can
   // never render: same bookkeeping the cleanup "husks" mode does per file. A husk WITH a stored
   // draft is a new session the user is writing in, not an abandoned stub — it archives normally.
-  if (archived) {
+  // So does an attached org's workspace session: a fresh baton waiting on its first link is a
+  // husk by shape, and baton.json and overseer state name the file, so it is never deleted here.
+  if (archived && !orgOfSessionPath(s.path)) {
     const st = await stat(s.path).catch(() => null);
     if (st && (await isZeroInput(s.path, st.size))) {
       if (!draftCounts(readDrafts()[s.id])) {
@@ -949,7 +964,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
         removeSessionAttachments(s.id);
         dropGroupAssignments([s.id]);
         sessionArchived(s.id);
-        return { ok: true, summary: { ...s, archived: true } };
+        return { ok: true, summary: { ...s, archived: true, deleted: true } };
       }
     }
   }
@@ -1019,7 +1034,7 @@ export interface CleanupResult {
  * the route and the archive gesture apply), so a path outside the sessions dir is refused. The
  * rest is refused with the reason in `refused` too: an unarchived session (archive it first), a
  * file that's gone, and a file whose header doesn't parse — never delete what can't be read as
- * a pi session.
+ * a pi session. Every mode leaves an attached org's workspace sessions alone (refused, in paths mode).
  */
 export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResult> {
   const targets = req.mode === "paths" ? req.paths : await listSessionFiles();
@@ -1036,6 +1051,13 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     const path = req.mode === "paths" ? resolveSessionPath(target) : target;
     if (!path) {
       refusals.push({ path: target, reason: "Not a session file under the pi sessions dir." });
+      continue;
+    }
+    // An attached org's workspace sessions (batons, project-overseer conversations) belong to the
+    // org: baton.json and overseer state name them, so no mode ever deletes one. Silent in the
+    // bulk modes, like the Overseer's files, so the dry run's count is what the real run deletes.
+    if (orgOfSessionPath(path)) {
+      if (req.mode === "paths") refusals.push({ path, reason: "Belongs to an organization's workspace — Clean Up never deletes it." });
       continue;
     }
     let st;
@@ -1116,15 +1138,23 @@ function isDir(p: string): boolean {
 
 /** Distinct existing cwds from the index, most recently used first. */
 export async function listCwds(): Promise<string[]> {
-  return recentCwds(await listSessions(), overseerDir());
+  return recentCwds(await listSessions(), overseerDir(), isDir, readIndex().orgs.map((o) => o.dir));
 }
 
 /** listCwds over a given list, for the tests. The Overseer's own folder is its state, not a
-    project: its files, and anything that was ever started there, never offer it. */
-export function recentCwds(list: readonly Pick<SessionSummary, "cwd" | "overseer">[], overseerCwd: string, exists: (p: string) => boolean = isDir): string[] {
+    project: its files, and anything that was ever started there, never offer it. The same holds for
+    every attached org's workspace (`workspaces`) and the org's own conversations there (baton
+    sessions, the project overseer); a project's coding sessions still offer the project's folder. */
+export function recentCwds(
+  list: readonly Pick<SessionSummary, "cwd" | "overseer" | "org">[],
+  overseerCwd: string,
+  exists: (p: string) => boolean = isDir,
+  workspaces: readonly string[] = [],
+): string[] {
   const seen = new Set<string>();
+  const hidden = new Set([overseerCwd, ...workspaces]);
   for (const s of list) {
-    if (!s.cwd || seen.has(s.cwd) || s.overseer || s.cwd === overseerCwd) continue;
+    if (!s.cwd || seen.has(s.cwd) || s.overseer || hidden.has(s.cwd) || (s.org && s.org.kind !== "coding")) continue;
     if (exists(s.cwd)) seen.add(s.cwd);
   }
   return [...seen];

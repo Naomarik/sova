@@ -8,7 +8,9 @@ import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { MINOR_DESCRIPTIONS, MINOR_MODES } from "../pi-config/extensions/mode/minor.ts";
 import {
+  activeOf,
   loadState,
+  MODE_ENTRY_TYPE,
   MODE_DESCRIPTIONS,
   MODES,
   normalizeState,
@@ -156,4 +158,18 @@ export function modeApplyPlan(chat: { foreign: boolean; hasModeCommand: boolean;
 export function appliesAfter(plan: ReturnType<typeof modeApplyPlan>, streaming: boolean): ModeApplies {
   if (plan === "skip" || plan === "unsupported") return "new-chats";
   return streaming ? "after-turn" : "now";
+}
+
+/**
+ * The `mode` entry that pins a session to `state`, in the extension's own shape (its legacy marker
+ * plus the `active` snapshot restoreActive reads), or null when the branch's newest snapshot already
+ * is `state`. The extension appends an entry only on a change, so a session whose mode equals the
+ * default would otherwise follow every later change of mode.json; Sova writes this one itself for
+ * the sessions it starts with a mode (a project's coding sessions, the Overseer's sova_create_session).
+ */
+export function pinEntryFor(branch: BranchEntries, state: Pick<ModeState, "mode" | "strict" | "minorModes">): { customType: string; data: { mode: ModeState["mode"]; active: ReturnType<typeof activeOf> } } | null {
+  const want = activeOf(state);
+  const have = restoreActive(branch);
+  if (have && have.mode === want.mode && have.strict === want.strict && have.minorModes.join(",") === want.minorModes.join(",")) return null;
+  return { customType: MODE_ENTRY_TYPE, data: { mode: want.mode, active: want } };
 }

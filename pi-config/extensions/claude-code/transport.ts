@@ -285,9 +285,19 @@ export interface ClaudeArgvOptions {
 	 * worker brought back after a restart. Exclusive with sessionId.
 	 */
 	resume?: string;
-	/** Opaque `--settings` JSON (the sandbox extension's, while a session's sandbox is on); never interpreted here. */
+	/**
+	 * `--settings` JSON (the sandbox extension's, while a session's sandbox is on). It must parse to an
+	 * object; buildClaudeArgv merges NO_ATTRIBUTION over it and passes the result as the one `--settings`.
+	 */
 	settingsJson?: string;
 }
+/**
+ * Always sent: no "Co-Authored-By" commit trailer, no "Generated with Claude Code" PR footer.
+ * `--setting-sources ""` keeps the user's own settings (and any attribution choice in them) out,
+ * so this rides on `--settings`, which applies regardless. The CLI takes one `--settings` (a
+ * repeat overwrites), so it is merged into the caller's JSON, and wins over it.
+ */
+export const NO_ATTRIBUTION = { attribution: { commit: "", pr: "" } } as const;
 export type ClaudeArgvResult =
 	| { args: string[]; mcpServers: [string, ClaudeMcpServerEntry][]; error?: undefined }
 	| { args?: undefined; mcpServers?: undefined; error: string };
@@ -314,7 +324,14 @@ export function buildClaudeArgv(o: ClaudeArgvOptions): ClaudeArgvResult {
 		if (!UUID.test(o.resume)) return { error: "Invalid resume: the CLI requires a canonical session UUID" };
 		args.push("--resume", o.resume);
 	}
-	if (o.settingsJson !== undefined) args.push("--settings", o.settingsJson);
+	let settings: Record<string, unknown> = {};
+	if (o.settingsJson !== undefined) {
+		let parsed: unknown;
+		try { parsed = JSON.parse(o.settingsJson); } catch { parsed = undefined; }
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { error: "Invalid settingsJson: must be a JSON object" };
+		settings = parsed as Record<string, unknown>;
+	}
+	args.push("--settings", JSON.stringify({ ...settings, ...NO_ATTRIBUTION }));
 	if (o.model) args.push("--model", o.model);
 	if (o.effort) args.push("--effort", o.effort);
 	args.push("--tools", (o.tools ?? DEFAULT_CLAUDE_TOOLS).join(","));

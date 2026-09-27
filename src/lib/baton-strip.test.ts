@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { BatonInfo } from "../../shared/baton";
-import { leaseMinutes, linksStale, liveOffer, namesList, proposedAreasLine, whereLine, wrapupLine } from "./baton-strip";
+import type { BatonInfo, BatonSummaryField } from "../../shared/baton";
+import { batonComposerGate, leaseMinutes, linkReplaced, linksStale, liveOffer, namesList, proposedAreasLine, whereLine, wrapupLine } from "./baton-strip";
 
 const NOW = Date.parse("2026-09-26T12:00:00Z");
 const info = (session: Partial<BatonInfo["session"]>, offer: BatonInfo["offer"] = null): Pick<BatonInfo, "offer" | "session" | "names"> => ({
@@ -47,7 +47,18 @@ test("every place the baton can be has its phrase", () => {
     whereLine(info({ offerId: "off_1", holder: "p_2" }, offer("held", { holder: { id: "p_2", name: "Ana" }, leaseUntil: "2026-09-26T12:01:00Z" })), NOW),
     "Ana is answering (offered to Tony, Ana, and Bob) — theirs for 1 more minute of quiet",
   );
+  // A lapsed lease: someone answered and went quiet, so the offer is open again, not untouched.
+  assert.equal(
+    whereLine(info({ offerId: "off_1" }, offer("open", { lastActivityAt: "2026-09-26T11:30:00Z" })), NOW),
+    "offered to Tony, Ana, and Bob — open again; nobody is answering right now",
+  );
+  // A lease with seconds left (a short test lease, or the last minute of a real one) is not "1 more minute".
+  assert.equal(
+    whereLine(info({ offerId: "off_1", holder: "p_2" }, offer("held", { holder: { id: "p_2", name: "Ana" }, leaseUntil: "2026-09-26T12:00:05Z" })), NOW),
+    "Ana is answering (offered to Tony, Ana, and Bob) — theirs for less than a minute more of quiet",
+  );
   assert.equal(whereLine(info({ holder: "operator", state: "needs-you" }), NOW), "with you — you can write now");
+  assert.equal(whereLine(info({ holder: "operator", state: "needs-you", budget: { messagesMax: 5, messagesUsed: 5 } }), NOW), "with you — extend the limit to write");
   assert.equal(whereLine(info({ holder: "p_1" }), NOW), "with Tony — you can write once you take it back");
 });
 
@@ -74,4 +85,29 @@ test("the wrap-up line: skipped and running offer no review; done and failed do"
   assert.deepEqual(wrapupLine(w("done", { applied: 1 })), { text: "Wrap-up: 1 profile field updated.", review: true });
   assert.equal(wrapupLine(w("done", { applied: 3, refused: [{ personId: "p", field: "role", reason: "x" }] })).text, "Wrap-up: 3 profile fields updated, 1 refused.");
   assert.deepEqual(wrapupLine(w("failed", { error: "Model timed out." })), { text: "Wrap-up stopped: Model timed out. Profiles it didn't reach are unchanged.", review: true });
+});
+
+test("the operator's composer is read-only whenever someone else has the baton, whatever the list lags", () => {
+  const field = (f: Partial<BatonSummaryField>): BatonSummaryField => ({ holder: "Bob", state: "open", ...f });
+  const theirs = { ended: false, text: "Bob holds the baton. Take it back to write." };
+  // A Hand On from the strip: the strip already reads Bob, the list still says it's the operator's turn.
+  assert.deepEqual(batonComposerGate(field({ state: "needs-you", holder: "Omar" }), false), { ended: false, text: "Omar holds the baton. Take it back to write." });
+  assert.deepEqual(batonComposerGate(field({}), false), theirs);
+  assert.deepEqual(batonComposerGate(field({}), undefined), theirs, "not read yet: the list's open means a person's");
+  assert.equal(batonComposerGate(field({ state: "needs-you", holder: "Omar" }), undefined), null, "not read yet: needs-you is the operator's");
+  assert.equal(batonComposerGate(field({ holder: "Omar" }), true), null, "open after Take Back and a reply: the operator's");
+  assert.deepEqual(batonComposerGate(field({ holder: null, offer: { state: "open", invited: 3 } }), true)?.text, "Offered to 3 people; nobody is answering right now. Withdraw it to write.");
+  assert.deepEqual(batonComposerGate(field({ offer: { state: "held", invited: 3, holder: "Ana" } }), false)?.text, "Ana took the offer and is answering. Withdraw it to write.");
+  assert.deepEqual(batonComposerGate(field({ state: "done", holder: null }), true), { ended: true, text: "This hand-off session is done." });
+  assert.equal(batonComposerGate(undefined, undefined), null, "not a baton session");
+});
+
+test("a shown link reads as replaced only once a newer link of the same person exists", () => {
+  const shown = { personId: "p_1", name: "Tony", link: "/h/x", at: "2026-09-27T10:00:00.000Z" };
+  assert.equal(linkReplaced(shown, { linkAt: { p_1: "2026-09-27T10:00:00.000Z" } }), false, "itself");
+  assert.equal(linkReplaced(shown, { linkAt: { p_1: "2026-09-27T10:00:05.000Z" } }), true, "another tab's Get Link");
+  assert.equal(linkReplaced(shown, { linkAt: { p_2: "2026-09-27T10:00:05.000Z" } }), false, "another invitee's new link is not this one's");
+  assert.equal(linkReplaced(shown, { linkAt: {} }), false, "turned off, not replaced");
+  assert.equal(linkReplaced({ ...shown, at: undefined }, { linkAt: { p_1: "2026-09-27T10:00:05.000Z" } }), false, "no mint time known: never guessed");
+  assert.equal(linkReplaced(shown, undefined), false);
 });

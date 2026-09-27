@@ -10,6 +10,8 @@
  * POST /api/baton/:sid/revoke        -> BatonInfo (revokes every link of the current hand-off)
  * POST /api/baton/:sid/take          -> BatonInfo (Take back: a hand-off to the operator)
  * POST /api/baton/:sid/close         -> BatonInfo
+ * POST /api/baton/:sid/extend        body { by } -> BatonInfo (raises the message limit by `by`)
+ * GET  /api/baton/settings           -> BatonSettings; PUT body BatonSettings -> BatonSettings (the host's defaults)
  *
  * Share listener (the only routes it has):
  * GET  /h/<token>                    the share page
@@ -44,6 +46,13 @@ export const POOL: PersonRef = "pool";
 /** An offer's lease: idle time after the later of the holder's last message and the last reply.
     The server reads SOVA_BATON_LEASE_MS instead when it is set (hermetic tests only). */
 export const LEASE_IDLE_MS = 15 * 60_000;
+
+/** A session's message limit (messages in, §app.baton/goal-and-loadout): the default when
+    Settings holds none, and the bounds every limit (the default, a start's own, an extension's
+    result) must stay within. */
+export const MESSAGES_DEFAULT = 60;
+export const MESSAGES_MIN = 1;
+export const MESSAGES_CAP = 1000;
 
 /** "operator" or a roster person's id. */
 export type PersonRef = string;
@@ -144,6 +153,8 @@ export interface Offer {
   /** open: in the pool (nobody holds it); held: `holder` holds the lease; withdrawn: over. */
   state: "open" | "held" | "withdrawn";
   holder?: string;
+  /** Everyone who has held this offer's lease, the current holder included (claim order). */
+  heldBy?: string[];
   leaseUntil?: string;
   lastActivityAt?: string;
   createdAt: string;
@@ -213,12 +224,21 @@ export interface BatonStartInput {
   parentSessionId?: string;
   model?: string;
   thinking?: string;
+  /** This session's message limit (MESSAGES_MIN..MESSAGES_CAP); default: Settings' default. */
+  messagesMax?: number;
+}
+
+/** GET/PUT /api/baton/settings — the host's defaults for new baton sessions. */
+export interface BatonSettings {
+  messagesMax: number;
 }
 
 export interface OfferLink {
   personId: string;
   name: string;
   link: string;
+  /** When it was minted (ISO): a strip showing it says it was replaced once a newer one exists. */
+  at?: string;
 }
 
 export interface BatonStartResult {
@@ -230,6 +250,9 @@ export interface BatonStartResult {
   link?: string;
   /** One link per invitee when started as an offer. Shown once. */
   links?: OfferLink[];
+  /** Set when a link was minted but no share listener is known on this host: the link is only a
+      path, and nobody outside can open it until one is configured. Say so to the operator. */
+  linkWarning?: string;
 }
 
 /** An offer as the operator's strip shows it. */
@@ -268,6 +291,9 @@ export interface BatonInfo {
   active: { id: string; name: string; role: string }[];
   /** Links of the current hand-off that still write (count only: the host keeps hashes, never tokens). */
   liveLinks: number;
+  /** personId → when their newest live link of the current hand-off (or open offer) was minted (ISO):
+      a strip still showing an older one says "Replaced by a newer link." */
+  linkAt: Record<string, string>;
   /** Whether a share listener is bound on this host, and where (for building a full URL). */
   share: { bound: boolean; publicUrl: string | null };
   /** The current offer, else the last one; null when none was ever made. */
@@ -286,6 +312,9 @@ export interface BatonSummaryField {
   sendLink?: { to: string; question: string; since: number };
   /** Present while an offer is open or held. `holder` is the claimer's name. */
   offer?: { state: "open" | "held"; invited: number; holder?: string };
+  /** When the newest live link of the current hand-off (or open offer) was minted (ISO): it moves on
+      every Get Link, so an open strip reads its data again. */
+  linkAt?: string;
   /** People proposed from this session still waiting for approval (attention kind "roster-proposal"). */
   proposals?: { personId: string; name: string; role: string; by: string; since: number }[];
 }
@@ -293,6 +322,8 @@ export interface BatonSummaryField {
 // ---- the outsider view -----------------------------------------------------------------------------
 
 export type BatonViewItem =
+  /** `by`: the sender's person id in the operator's and the overseer's views; on a share page never
+      an id — "you" (the viewer), "operator", or "person-<n>" numbered within that view. */
   | { kind: "message"; id: string; by: PersonRef; name: string; text: string; at?: string }
   | { kind: "reply"; id: string; text: string; at?: string }
   | { kind: "handoff"; id: string; n: number; from: string; to: string; question: string; briefing?: string }

@@ -49,8 +49,13 @@ export function worktreeChips(w: Pick<SessionWorktreeInfo, "exists" | "hasAgentD
   return out;
 }
 
-/** The pane's one-line summary under the heading: "2 active · 1 merged · 1 dropped". */
+/** The Session tab's line for a branch that tracks none: the section stays, and says so. */
+export const NO_WORKTREES = "This session tracks no worktrees.";
+
+/** The pane's one-line summary under the heading: "2 active · 1 merged · 1 dropped", or
+    NO_WORKTREES for an empty set. */
 export function worktreesSummary(rows: Pick<SessionWorktreeInfo, "status">[]): string {
+  if (rows.length === 0) return NO_WORKTREES;
   const count = (s: SessionWorktreeInfo["status"]) => rows.filter((r) => r.status === s).length;
   return (["active", "merged", "dropped"] as const)
     .map((s) => [count(s), s] as const)

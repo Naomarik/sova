@@ -1,9 +1,10 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
-import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, ModelSpend, SessionInsight, SessionSummary, SessionWorktreeInfo, TokenUsage, TranscriptItem } from "../../shared/protocol";
-import { contextSentence, contextStateFor, formatTokens } from "../lib/context";
-import { compactModel, relativeTime, thousands, tildePath } from "../lib/format";
+import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, SessionWorktreeInfo, TranscriptItem } from "../../shared/protocol";
+import { contextSentence, contextStateFor } from "../lib/context";
+import { relativeTime, thousands, tildePath } from "../lib/format";
 import { type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
-import { absoluteTime, anyCost, firstLine, originLabel, spendRows, timelineEntries } from "../lib/spend";
+import { absoluteTime, firstLine, timelineEntries } from "../lib/spend";
+import { orgProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
 import { cwdLabel } from "../lib/remote-session";
 import { resumeCommand } from "../lib/session-command";
@@ -25,34 +26,24 @@ import {
   visiblePath,
 } from "../lib/git-summary";
 import { copyText, home } from "../lib/ui-state";
-import { asOfClock, formatCost, idList, lifetimeIncludes, sessionWorking, usageHeadline, usageTitle, usageTotal } from "../lib/workers";
+import { sessionWorking } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
 import { sessionHref } from "./Sidebar";
 import { GroupWithParent, MoveToGroupMenu } from "./Groups";
-
-/** The distinct "as of" times of the snapshot-cost rows, oldest first, as `21:08` or `21:08 and
-    22:25`; null when no row carries one. */
-function snapshotTimes(rows: readonly ModelSpend[]): string | null {
-  const times = [...new Set(rows.flatMap((r) => (r.asOf !== undefined && (r.cost ?? 0) > 0 ? [r.asOf] : [])))].sort((a, b) => a - b);
-  return times.length ? idList([...new Set(times.map(asOfClock))]) : null;
-}
-
-/** A table cell that never wraps. */
-const oneLine = { "white-space": "nowrap" } as const;
 
 /** Long machine facts wrap instead of widening the sheet. */
 const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
 
 /**
- * What a session is and what it has spent, read-only: the body of the Session
- * info modal and the session pane's Session tab, one implementation for both. Its parent owns
- * the data and the scroll box; this renders sections as siblings for a flex column with gaps.
+ * What a session is, read-only: the session pane's Session tab (what it has spent is the Usage
+ * tab's, SessionUsage.tsx). Its parent owns the data and the scroll box; this renders sections as
+ * siblings for a flex column with gaps. Repository and Worktrees sit above Identity and hold about
+ * their settled height while they load, so Identity's buttons don't move under the pointer.
  *
  *   path      the session file (shown and copyable)
  *   insight   the session's insight, or null before the first load
- *   error     a failed insight load to report, or null
- *   onRetry   what the error's Retry does; without it the banner offers none
- *   skeleton  the load has been slow: show the skeleton while `insight` is still null
+ *   error     a failed first insight load to report, or null (the poll retries on its own)
+ *   pending   the first insight load is still out: Worktrees shows a placeholder, never its empty line
  *   summary   App-level session list row (undefined before the list loads)
  *   context   the transcript's context fill from the server (ContextGauge's source)
  *   items     transcript rows (the model/thinking/mode timeline, and "compacted" for context)
@@ -62,35 +53,25 @@ const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
  *   onGroupsChanged   after the session's group changes: re-read the session list
  *   gitChanged  bumped when the session's file changed (the pane's insight reload): the Repository
  *               section reads git again once the bumps settle
- *   gitRefresh  bumped by a surface's own Refresh: the Repository section reads git again now
- *   idPrefix  prefix of the section heading ids ("si", the modal's, by default), so the modal and
- *             the pane can both be open without duplicate ids
  */
 export function SessionDetails(props: {
   path: string;
   insight: SessionInsight | null;
   error: string | null;
-  onRetry?: () => void;
-  skeleton: boolean;
+  pending: boolean;
   summary: SessionSummary | undefined;
   context: ContextInfo | null;
   items: TranscriptItem[];
   now: number;
-  onArchiveChanged?: (path: string, archived: boolean) => void;
-  onGroupsChanged?: () => void;
-  gitChanged?: number;
-  gitRefresh?: number;
-  idPrefix?: string;
+  onArchiveChanged(path: string, archived: boolean): void;
+  onGroupsChanged(): void;
+  gitChanged: number;
 }) {
-  const id = (section: string) => `${props.idPrefix ?? "si"}-${section}-label`;
+  const id = (section: string) => `sp-${section}-label`;
   const insight = () => props.insight;
   const now = () => props.now;
   const summary = () => props.summary;
-  const usage = () => insight()?.usage;
-  const rows = () => spendRows(usage());
-  const workers = () => insight()?.workers ?? [];
-  const working = () => workers().filter((w) => w.working).length;
-  const subagentTotal = () => usageTotal(insight());
+  const working = () => (insight()?.workers ?? []).filter((w) => w.working).length;
   const compactions = () => insight()?.compactions ?? [];
   const timeline = () => timelineEntries(props.items);
   /** The gauge's own state, so the sentence here and the one in the head can't disagree. */
@@ -104,20 +85,7 @@ export function SessionDetails(props: {
   return (
     <>
       <Show when={props.error}>
-        {(message) => (
-          <Banner
-            tone="error"
-            title="Couldn't load this session's insight."
-            body={`Nothing was changed. ${message()}`}
-            action={
-              props.onRetry && (
-                <button type="button" class="button button-sm" onClick={() => props.onRetry?.()}>
-                  Retry
-                </button>
-              )
-            }
-          />
-        )}
+        {(message) => <Banner tone="error" title="Couldn't load this session's insight." body={`Nothing was changed. ${message()}`} />}
       </Show>
 
       {/* 1 · Path. The one fact the user came here to copy. */}
@@ -139,109 +107,7 @@ export function SessionDetails(props: {
         </div>
       </section>
 
-      {/* 2 · Usage. One row per model × origin, plus the two Σs those rows can't carry. */}
-      <Show when={usage()}>
-        {(u) => (
-          <section class="stack-2" aria-labelledby={id("usage")}>
-            <h3 class="text-eyebrow" id={id("usage")}>
-              Usage
-            </h3>
-            <p class="text-mono" style={{ margin: 0 }} title={usageTitle(u().total)}>
-              {formatTokens(usageHeadline(u().total))} tokens in and out
-              <Show when={formatCost(u().total.cost)}>{(cost) => <> · {cost()}</>}</Show>
-            </p>
-            <Show when={rows().length > 0}>
-              <div class="md md-table-wrap">
-                <table>
-                  <caption class="visually-hidden">Tokens by model and where they were spent</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Model</th>
-                      <th scope="col">Where</th>
-                      <th scope="col" align="right">
-                        In
-                      </th>
-                      <th scope="col" align="right">
-                        Out
-                      </th>
-                      <th scope="col" align="right">
-                        Cache read
-                      </th>
-                      <th scope="col" align="right">
-                        Cache write
-                      </th>
-                      <Show when={anyCost(rows())}>
-                        <th scope="col" align="right">
-                          Cost
-                        </th>
-                      </Show>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <For each={rows()}>{(row) => <SpendRow row={row} cost={anyCost(rows())} />}</For>
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <th scope="row" colSpan={2}>
-                        Main thread Σ
-                      </th>
-                      <Cells usage={u().main} cost={anyCost(rows())} />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </Show>
-            <p class="usage-note">Main thread counts the active branch only.</p>
-            <Show when={snapshotTimes(rows())}>
-              {(times) => (
-                <p class="usage-note">
-                  * Cost as of <span class="text-mono">{times()}</span>, the last report before the restart.
-                </p>
-              )}
-            </Show>
-            {/* A worker the restart left with no readable transcript and no report: its spend is
-                unknown, so it is named here rather than counted as 0 anywhere. */}
-            <Show when={u().unavailable?.length ? u().unavailable : null}>
-              {(ids) => (
-                <p class="usage-note">
-                  Usage unavailable for <span class="text-mono">{idList(ids())}</span>: we couldn't read{" "}
-                  {ids().length === 1 ? "its transcript" : "their transcripts"}, so the totals above leave{" "}
-                  {ids().length === 1 ? "it" : "them"} out.
-                </p>
-              )}
-            </Show>
-            <Show when={u().workersTotal}>
-              {(total) => (
-                <p class="usage-note text-muted" title={usageTitle(total(), total().workers)}>
-                  Subagent lifetime: {formatTokens(usageHeadline(total()))} tokens
-                  <Show when={formatCost(total().cost)}>
-                    {(cost) => (
-                      <>
-                        {" · "}
-                        {cost()}
-                        <Show when={total().asOf}>
-                          {(at) => (
-                            <>
-                              {" as of "}
-                              <span class="text-mono" title={new Date(at()).toISOString()}>
-                                {asOfClock(at())}
-                              </span>
-                            </>
-                          )}
-                        </Show>
-                      </>
-                    )}
-                  </Show>{" "}
-                  across {total().workers} {total().workers === 1 ? "worker" : "workers"}
-                  {lifetimeIncludes(total(), workers())}.
-                </p>
-              )}
-            </Show>
-          </section>
-        )}
-      </Show>
-
-      {/* 3 · Context. The gauge's own sentence, so the two never drift. */}
+      {/* 2 · Context. The gauge's own sentence, so the two never drift. */}
       <Show when={context()}>
         {(state) => (
           <section class="stack-2" aria-labelledby={id("context")}>
@@ -253,7 +119,31 @@ export function SessionDetails(props: {
         )}
       </Show>
 
-      {/* 4 · Identity. What this session is, where it runs, and since when. */}
+      {/* 3 · Repository. The git state of the folder the session works in, read on its own
+          schedule: never part of the insight poll. */}
+      <RepositorySection path={props.path} now={now()} changed={props.gitChanged} labelId={id("repository")} />
+
+      {/* 4 · Worktrees. The ones this session tracks (the worktrees extension's entry on the
+          branch), read with the insight; the pane only shows them, the agent's tool changes them.
+          Present from the first paint: a placeholder while the insight loads, then the rows or the
+          empty line. Only a failed first load (the banner above says so) leaves it out. */}
+      <Show
+        when={insight()}
+        fallback={
+          <Show when={props.pending}>
+            <section class="stack-2" aria-labelledby={id("worktrees")} aria-busy="true">
+              <h3 class="text-eyebrow" id={id("worktrees")}>
+                Worktrees
+              </h3>
+              <span class="skeleton skeleton-line" aria-hidden="true" />
+            </section>
+          </Show>
+        }
+      >
+        {(i) => <WorktreesSection rows={i().worktrees ?? []} labelId={id("worktrees")} />}
+      </Show>
+
+      {/* 5 · Identity. What this session is, where it runs, and since when. */}
       <Show when={summary()}>
         {(s) => (
           <section class="stack-2" aria-labelledby={id("identity")}>
@@ -302,12 +192,12 @@ export function SessionDetails(props: {
             {/* Archiving is ours to define only for sessions Sova started (it closes their
                 runtime); grouping is Sova's own bookkeeping for any session. */}
             <div class="cluster">
-              <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged?.()} />
+              <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged()} />
               {/* The same assignment, read as a place to work: file it and open that group's
                   workspace with this session focused. */}
-              <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged?.()} variant="beside" />
+              <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged()} variant="beside" />
               {/* Forked from a session and in no group: one press puts the pair in one workspace. */}
-              <GroupWithParent session={s()} onChanged={() => props.onGroupsChanged?.()} />
+              <GroupWithParent session={s()} onChanged={() => props.onGroupsChanged()} />
               <Show when={s().origin === "web"}>
                 <ArchiveAction
                   session={s()}
@@ -315,7 +205,7 @@ export function SessionDetails(props: {
                   working={Math.max(sessionWorking(s()), working())}
                   onDone={(next) => {
                     setArchivedNow(next);
-                    props.onArchiveChanged?.(props.path, next);
+                    props.onArchiveChanged(props.path, next);
                   }}
                 />
               </Show>
@@ -324,44 +214,7 @@ export function SessionDetails(props: {
         )}
       </Show>
 
-      {/* 5 · Repository. The git state of the folder the session works in, read on its own
-          schedule: never part of the insight poll. */}
-      <RepositorySection path={props.path} now={now()} changed={props.gitChanged} refresh={props.gitRefresh} labelId={id("repository")} />
-
-      {/* 5b · Worktrees. The ones this session tracks (the worktrees extension's entry on the
-          branch), read with the insight; the pane only shows them, the agent's tool changes them. */}
-      <Show when={props.insight?.worktrees?.length ? props.insight.worktrees : undefined}>
-        {(rows) => <WorktreesSection rows={rows()} labelId={id("worktrees")} />}
-      </Show>
-
-      <Show when={props.skeleton && !props.insight}>
-        <div class="stack-2" aria-hidden="true">
-          <span class="skeleton skeleton-title" />
-          <span class="skeleton skeleton-line" />
-          <span class="skeleton skeleton-line" />
-        </div>
-      </Show>
-
-      {/* 6 · Subagents. This session's own workers — never the session's own spend. */}
-      <Show when={workers().length > 0 || subagentTotal()}>
-        <section class="stack-2" aria-labelledby={id("subagents")}>
-          <h3 class="text-eyebrow" id={id("subagents")}>
-            Subagents
-          </h3>
-          <p class="usage-note">
-            {workers().length} {workers().length === 1 ? "subagent" : "subagents"} in this session · {working()} working
-          </p>
-          <Show when={subagentTotal()}>
-            {(total) => (
-              <p class="usage-note text-muted" title={usageTitle(total(), total().workers)}>
-                {formatTokens(usageHeadline(total()))} tokens across {total().workers} {total().workers === 1 ? "worker" : "workers"}
-              </p>
-            )}
-          </Show>
-        </section>
-      </Show>
-
-      {/* 7 · Compactions. Where the transcript was summarized, on demand. */}
+      {/* 6 · Compactions. Where the transcript was summarized, on demand. */}
       <Show when={compactions().length > 0}>
         <details class="disclosure">
           <summary class="disclosure-summary">
@@ -378,7 +231,7 @@ export function SessionDetails(props: {
         </details>
       </Show>
 
-      {/* 8 · Changes. Model, thinking and mode changes, in the order they happened. The pane's
+      {/* 7 · Changes. Model, thinking and mode changes, in the order they happened. The pane's
           Timeline tab is the session's whole axis; this stays the settings history. */}
       <Show when={timeline().length > 0}>
         <details class="disclosure">
@@ -424,12 +277,11 @@ const GIT_SETTLE_MS = 2_000;
 /**
  * The repository around the session's folder: branch, what's changed, the upstream as this repo
  * last saw it, the latest commit, and, folded, every changed path with its line counts (never its
- * contents). Mounted only while its surface shows (the pane's Session tab, the info modal), so
- * that is when it reads: on open, when the session's file settles after a change, every
- * GIT_REFRESH_MS while the page is visible, on return to the page, and on Refresh. The server
- * caches ~10s; Refresh skips that.
+ * contents). Mounted only while the pane's Session tab shows, so that is when it reads: on open,
+ * when the session's file settles after a change, every GIT_REFRESH_MS while the page is visible,
+ * on return to the page, and on Refresh. The server caches ~10s; Refresh skips that.
  */
-function RepositorySection(props: { path: string; now: number; changed?: number; refresh?: number; labelId: string }) {
+function RepositorySection(props: { path: string; now: number; changed: number; labelId: string }) {
   const [git, setGit] = createSignal<GitSummary | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
@@ -457,10 +309,9 @@ function RepositorySection(props: { path: string; now: number; changed?: number;
       void load(false);
     }),
   );
-  // Memos, so the effects below fire on a new VALUE only: `on` re-runs whenever anything it read
+  // A memo, so the effect below fires on a new VALUE only: `on` re-runs whenever anything it read
   // changed, and the pane's insight object is new on every poll while `changed` stays put.
   const changed = createMemo(() => props.changed);
-  const refresh = createMemo(() => props.refresh);
   const visible = () => document.visibilityState === "visible";
   /** A settled change that landed while the page was hidden, owed a fresh read on return. */
   let owed = false;
@@ -478,7 +329,6 @@ function RepositorySection(props: { path: string; now: number; changed?: number;
       { defer: true },
     ),
   );
-  createEffect(on(refresh, () => void load(true), { defer: true }));
   const stale = () => {
     const g = git();
     return !g || Date.now() - g.checkedAt >= GIT_REFRESH_MS;
@@ -531,7 +381,15 @@ function RepositorySection(props: { path: string; now: number; changed?: number;
           {(message) => <p class="usage-note">Couldn't read this session's repository. Nothing was changed. {message()}</p>}
         </Match>
         <Match when={!git()}>
-          <div class="stack-2" aria-hidden="true">
+          {/* About a read repository's height (its root, four facts, the commit's subject, the
+              changed-path fold, the "Read" line), so what sits below doesn't jump when git answers. */}
+          <div class="git-skeleton" aria-hidden="true">
+            <span class="skeleton skeleton-line" />
+            <span class="skeleton skeleton-line" />
+            <span class="skeleton skeleton-line" />
+            <span class="skeleton skeleton-line" />
+            <span class="skeleton skeleton-line" />
+            <span class="skeleton skeleton-line" />
             <span class="skeleton skeleton-line" />
             <span class="skeleton skeleton-line" />
           </div>
@@ -561,7 +419,8 @@ function RepositorySection(props: { path: string; now: number; changed?: number;
   );
 }
 
-/** The session's tracked worktrees, dropped and merged ones included. Read-only. */
+/** The session's tracked worktrees, dropped and merged ones included, or the line saying it tracks
+    none. Read-only. */
 function WorktreesSection(props: { rows: SessionWorktreeInfo[]; labelId: string }) {
   return (
     <section class="stack-2" aria-labelledby={props.labelId}>
@@ -569,9 +428,11 @@ function WorktreesSection(props: { rows: SessionWorktreeInfo[]; labelId: string 
         Worktrees
       </h3>
       <p class="usage-note">{worktreesSummary(props.rows)}</p>
-      <ul class="list worktree-list">
-        <For each={props.rows}>{(w) => <WorktreeRow worktree={w} />}</For>
-      </ul>
+      <Show when={props.rows.length > 0}>
+        <ul class="list worktree-list">
+          <For each={props.rows}>{(w) => <WorktreeRow worktree={w} />}</For>
+        </ul>
+      </Show>
     </section>
   );
 }
@@ -743,7 +604,7 @@ function ArchiveAction(props: { session: SessionSummary; archived: boolean; work
     const next = !props.archived;
     setPending(true);
     try {
-      if (await archiveSession(props.session.path, next)) props.onDone(next);
+      if (await archiveSession(props.session.path, next, orgProjectOf(props.session))) props.onDone(next);
     } finally {
       setPending(false);
     }
@@ -771,69 +632,6 @@ function Fact(props: { label: string; children: JSX.Element }) {
         {props.children}
       </dd>
     </div>
-  );
-}
-
-/** The four token columns and, when any row reports one, the cost. */
-function Cells(props: { usage: TokenUsage & { asOf?: number }; cost: boolean }) {
-  const cell = (n: number) => (
-    <td align="right" class="text-mono text-num">
-      {formatTokens(n)}
-    </td>
-  );
-  return (
-    <>
-      {cell(props.usage.input)}
-      {cell(props.usage.output)}
-      {cell(props.usage.cacheRead)}
-      {cell(props.usage.cacheWrite)}
-      <Show when={props.cost}>
-        {/* A snapshot cost carries a muted mark; its time is in the note under the table, so the
-            row stays one line and the column keeps its width. */}
-        <td align="right" class="text-mono text-num" style={oneLine}>
-          <Show
-            when={formatCost(props.usage.cost)}
-            fallback={
-              <>
-                <span class="text-muted" aria-hidden="true">
-                  —
-                </span>
-                <span class="visually-hidden">Not reported</span>
-              </>
-            }
-          >
-            {(cost) => (
-              <>
-                {cost()}
-                {/* Part of it is a restored worker's last report (Claude transcripts carry no cost). */}
-                <Show when={props.usage.asOf}>
-                  {(at) => (
-                    <span class="text-muted" title={`As of ${asOfClock(at())}`}>
-                      *
-                    </span>
-                  )}
-                </Show>
-              </>
-            )}
-          </Show>
-        </td>
-      </Show>
-    </>
-  );
-}
-
-/** A model × origin row. The id is shortened; the full one stays in the `title`. */
-function SpendRow(props: { row: ModelSpend; cost: boolean }) {
-  return (
-    <tr>
-      {/* One line per row ("glm-5.3" broke at its hyphen, "Main thread" at its space): the table
-          scrolls sideways instead of rows growing taller. */}
-      <td class="text-mono" style={oneLine} title={props.row.model}>
-        {compactModel(props.row.model) ?? props.row.model}
-      </td>
-      <td style={oneLine}>{originLabel(props.row.origin)}</td>
-      <Cells usage={props.row} cost={props.cost} />
-    </tr>
   );
 }
 

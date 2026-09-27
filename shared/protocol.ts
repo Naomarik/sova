@@ -135,6 +135,14 @@ export interface SessionSummary {
   /** Present on a project overseer's own session (§app/project-overseer): which org's project it
       oversees. Like `overseer`, it is never classified, tagged or listed for attention. */
   projectOverseer?: { orgId: string; projectId: string };
+  /** An ORGANIZATIONAL session (§app.session-list/organizations): the org's own records make it one —
+      every file in an attached org's workspace `sessions/` (baton sessions, offers, the project
+      overseer's current and cleared conversations, any unregistered file there), and every coding
+      session a project's `started.json` records (the overseer's `coding`, Start coding session's
+      `operator-coding`). Never inferred from the folder: a session the operator opens by hand in a
+      project root, a fork or copy of an org session, and anything on a host where the org is not
+      attached are ordinary. The sidebar lists these only in its Organizations region. Safe by absence. */
+  org?: SessionOrg;
   /** Activity from this session's live record (a TUI's, or this server's own runtime): the
       sessions extension's `presence.activity`. Absent when no live record reports one (closed
       sessions, older writers). `error` is set only for state "error", ≤200 chars. */
@@ -1930,7 +1938,8 @@ export interface WorkerInfo {
       transcript isn't a local file this server can read. Never 0 for unknown. */
   context?: ContextInfo | "compacted";
   /** The worker's context window, from the model it was spawned with (claude-code: 1M for a
-      `[1m]` variant, else 200k; pi: the model's catalog window). Absent when unknown. */
+      `[1m]` variant or a natively 1M model, else 200k; pi: the model's catalog window). Absent
+      when unknown. */
   contextWindow?: number;
 }
 export interface TeamMember {
@@ -2336,7 +2345,8 @@ export type AttentionKind =
   | "asks-you"        // decisions: the last reply asks the user something (SessionSignals.kinds)
   | "looping"         // decisions: the session or a worker is repeating itself
   | "baton-needs-you" // a baton session: the baton is with the operator, or a person needs their link
-  | "roster-proposal"; // a baton session proposed a new roster person (referral): approve or decline
+  | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
+  | "project-stakeholder"; // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
 
 export interface AttentionItem {
   /** Session id. */
@@ -2355,6 +2365,30 @@ export interface AttentionItem {
   href: string;
   /** The session is open in a TUI: read-only for the Overseer. */
   tuiLive?: true;
+  /** An organizational session's item (its `SessionSummary.org`, names only): the sidebar lists it
+      in the Organizations region's own Needs you, never in the global one. The Overseer's badge,
+      briefs and sova_attention still count it. */
+  org?: SessionOrgRef;
+}
+
+/** Which org (and project) an organizational session belongs to; names as they read now. `projectId`
+    is absent for a workspace file no project claims (an unregistered file); `projectName` is absent
+    when the project is no longer in projects.json. */
+export interface SessionOrgRef {
+  orgId: string;
+  orgName: string;
+  projectId?: string;
+  projectName?: string;
+}
+
+export interface SessionOrg extends SessionOrgRef {
+  /** `gathering`/`offer`: a baton session (an offer = started for several people); `overseer`: a
+      project overseer's conversation; `coding`: a coding session the project started (by its
+      overseer or Start coding session); `other`: an unregistered file in the workspace. */
+  kind: "gathering" | "offer" | "overseer" | "coding" | "other";
+  /** A baton `done`/`closed`, or a cleared (not the current) overseer conversation. The operator's
+      own archive mark is `archived`, not this. */
+  finished?: true;
 }
 
 /** GET /api/overseer/attention and the sova_attention tool. Sorted tier, then age; ≤30 items. */
@@ -2371,8 +2405,11 @@ export interface OverseerAction {
   toolCallId: string;
   tool: string;
   args: unknown;
-  outcome: "ok" | "refused" | "error";
+  /** partial: it did some of what was asked (a promotion with refusals); `error` says what was not done. */
+  outcome: "ok" | "partial" | "refused" | "error";
   error?: string;
+  /** A done act's one-line result worth showing (a project overseer's promotion commit, a coding session's branch). */
+  note?: string;
 }
 
 // --- Tool results the Overseer ChatView renders specially (tool_execution_end `result.details`

@@ -35,7 +35,10 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `model-policy.json` (extensions/model-policy: what may be used at all, and what subagents may be
   given — read by the TUI, the palette, subagent spawning and Sova alike), mode `mode.json` =
   the DEFAULT mode for new sessions; the active mode is per session, in the session's own `mode`
-  custom entry, and Sova restores it with `restoreActive` from `state.ts`; mode
+  custom entry, and Sova restores it with `restoreActive` from `state.ts` — and also WRITES that
+  entry's shape itself (`{mode, active: activeOf(state)}`, `pinEntryFor` in `server/mode-state.ts`)
+  to pin the sessions it starts with a mode (a project's coding sessions, the Overseer's
+  sova_create_session / sova_set_session), so the entry's shape is a contract too; mode
   `mode-delegate.json` = Delegate's global routing (four profiles, each backend/model/effort plus
   an optional fallback), written by Sova's Settings → Modes → Delegate and re-read by every
   Delegate session at each turn boundary — never snapshotted into a session; mode `mode-spec.json`
@@ -60,7 +63,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `pi-config/extensions/worktrees/state.ts` (builtins only: the `worktrees` entry, its fold, the
   merge card's details) and `git.ts` (builtins only: the extension's own "is this branch merged"
   probe, git by argv), `server/insights.ts` imports
-  `pi-config/extensions/usage-status/fetch.ts`, and the worker-transcript protocol is imported by
+  `pi-config/extensions/usage-status/fetch.ts`, `server/worker-context.ts` and `server/delegate.ts`
+  import `pi-config/extensions/claude-code/context-window.ts` (imports nothing: the one Claude Code
+  window rule, `[1m]` or natively 1M else 200k, and the list rule that adds `opus[1m]` and
+  `claude-fable-5-1[1m]` after their listed base; the provider, `agent_models` and the subagents
+  roster use the same file), and the worker-transcript protocol is imported by
   `server/insights.ts`, `worker-restore.ts`, `worker-adapters.ts`, `transcript-usage.ts` and
   `claude-transcript.ts`: `pi-config/extensions/subagents/worker-transcript.ts` (types, the one
   manifest fold `readWorkerManifests`, usage helpers), `subagents/adapters/index.ts` and `pi.ts`,
@@ -69,14 +76,15 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   every `/ws/watch` usage total; the dev watcher does not watch these, so an edit there reaches a
   running server only at its next restart). The frontend imports one file, the only pi-config
   import in `src/`: `src/lib/format.ts` re-exports `pi-config/extensions/stamp/format.ts` (the
-  12-hour clock, stamp and relative time, shared with the TUI's `stamp` extension). Vite bundles
+  12-hour clock, stamp and relative time, shared with the TUI's `stamp` extension); the server
+  imports the same file directly, for the ages on `sova_session`'s topics (`server/overseer-tools.ts`). Vite bundles
   it for the browser, so it must import nothing at all. So an edit to any of these can break Sova's
   typecheck. Keep them pi-runtime-free (node builtins and, for the mode trio and the protocol set,
   each other only), and import nothing else from pi-config at runtime. `minor.ts` also reads its sibling `spec-mode.md` once at load, and
   refuses to load if that file's shell block is malformed. One test-only exception: `server/claude-models.test.ts` imports
   `pi-config/extensions/claude-code/transport.ts` (builtins only) to pin the server's Claude
-  model-discovery argv to the extension's; beyond that and the protocol set above, the server never
-  imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
+  model-discovery argv to the extension's; beyond that, `context-window.ts` and the protocol set
+  above, the server never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
   Sova has no sshfs/mount support: a remote session's cwd is always its local placeholder, and

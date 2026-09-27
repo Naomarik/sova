@@ -72,6 +72,11 @@ export function setRemote(dir: string, url: string): Promise<void> {
     }
     const r = await git(dir, had ? ["remote", "set-url", "origin", url] : ["remote", "add", "origin", url]);
     if (r.code !== 0) throw new Error(`git remote failed: ${r.stderr.trim()}`);
+    // Another remote: what the old one had says nothing about it, so Commit Now pushes everything.
+    if (had && had !== url) {
+      const refs = await git(dir, ["for-each-ref", "--format=%(refname)", "refs/remotes/origin/"]);
+      for (const ref of refs.stdout.split("\n").filter(Boolean)) await git(dir, ["update-ref", "-d", ref]);
+    }
   });
 }
 
@@ -101,6 +106,13 @@ export function commitAll(dir: string, message: string): Promise<CommitOutcome> 
       if (add.code !== 0) throw new Error(`git add failed: ${add.stderr.trim()}`);
       const staged = await git(dir, ["diff", "--cached", "--quiet"]);
       if (staged.code === 0) {
+        // Nothing new, but the remote may lack commits (one just set, or commits made without it):
+        // push them. Only Commit Now gets here; the committer calls this only with changes.
+        if ((await remoteOf(dir)) && (await unpushed(dir))) {
+          const push = await git(dir, ["push", "-q", "origin", "HEAD"]);
+          if (push.code !== 0) throw new Error(`git push failed: ${push.stderr.trim()}`);
+          out.pushed = true;
+        }
         lastErrors.set(dir, null);
         return out;
       }
@@ -121,6 +133,17 @@ export function commitAll(dir: string, message: string): Promise<CommitOutcome> 
     }
     return out;
   });
+}
+
+/** Whether HEAD has commits `origin` lacks, going by the remote-tracking branch (no network):
+    none known for this branch counts as all of them. False without a commit or on a detached HEAD. */
+async function unpushed(dir: string): Promise<boolean> {
+  const branch = await git(dir, ["symbolic-ref", "-q", "--short", "HEAD"]);
+  if (branch.code !== 0 || (await git(dir, ["rev-parse", "-q", "--verify", "HEAD"])).code !== 0) return false;
+  const ref = `refs/remotes/origin/${branch.stdout.trim()}`;
+  if ((await git(dir, ["rev-parse", "-q", "--verify", ref])).code !== 0) return true;
+  const ahead = await git(dir, ["rev-list", "--count", `${ref}..HEAD`]);
+  return ahead.code === 0 && Number(ahead.stdout.trim()) > 0;
 }
 
 /** The paths `git status` reports as changed (tracked or not), or [] when clean or not a repo. */
@@ -182,6 +205,12 @@ export async function gitStatus(dir: string): Promise<OrgGitStatus> {
 /** Whether `dir` is ignored by the git repo at `repo` (for the "never inside Sova" rule). */
 export async function isIgnoredBy(repo: string, dir: string): Promise<boolean> {
   return (await git(repo, ["check-ignore", "-q", "--no-index", dir])).code === 0;
+}
+
+/** Whether `dir` is inside a git work tree (a Sova install may be a plain copy, not a checkout). */
+export async function isInGitWorkTree(dir: string): Promise<boolean> {
+  const r = await git(dir, ["rev-parse", "--is-inside-work-tree"]);
+  return r.code === 0 && r.stdout.trim() === "true";
 }
 
 /** Wait for every queued job of `dir` (tests). */

@@ -18,7 +18,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } from "../shared/protocol";
-import { BATON_SENT_ENTRY, type BatonSentData } from "../shared/baton";
+import { BATON_SENT_ENTRY, type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
@@ -28,7 +28,7 @@ import { parseWakeNudge } from "../shared/wake";
 import { type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
-import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
+import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo, workerWindowResolver } from "./models";
@@ -37,6 +37,7 @@ import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resu
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
 import { isOverseerId } from "./overseer-store";
+import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
 import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
@@ -74,13 +75,19 @@ export const currentLinkOrigin = (): string | null => linkOrigin;
  *   extension on (link_members/link_send/link_inbox call its /api/mesh/links/* routes). Absent
  *   until the listener is bound; workers never get it, so the tools are inert there.
  */
-function sessionFlags(cwd: string, outline = true): Map<string, boolean | string> {
+function sessionFlags(cwd: string, outline = true, claudeCode = claudeCodeProviderEnabled()): Map<string, boolean | string> {
   const flags = new Map<string, boolean | string>(outline ? [["topic-outline-headless", true]] : []);
   const target = targetOfCwd(cwd);
   if (target) flags.set("target", target);
-  if (claudeCodeProviderEnabled()) flags.set(CLAUDE_CODE_FLAG, true);
+  if (claudeCode) flags.set(CLAUDE_CODE_FLAG, true);
   if (linkOrigin) flags.set("sova-link", linkOrigin);
   return flags;
+}
+
+/** The extension flags a runtime is handed: none for a loadout that loads no extension (a flag
+    nobody registered only logs "Unknown option"), else sessionFlags. Exported for the tests. */
+export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: boolean, claudeCode = claudeCodeProviderEnabled()): Map<string, boolean | string> {
+  return noExtensions ? new Map() : sessionFlags(cwd, outline, claudeCode);
 }
 
 /**
@@ -101,7 +108,7 @@ async function servicesForCwd(
   return await createAgentSessionServices({
     cwd,
     modelRuntime,
-    extensionFlagValues: sessionFlags(cwd, outline),
+    extensionFlagValues: extensionFlagsFor(cwd, outline, !!resourceLoaderOptions?.noExtensions),
     ...(resourceLoaderOptions ? { resourceLoaderOptions } : {}),
   });
 }
@@ -454,8 +461,9 @@ export interface SpecialLoadout {
   /** Every AgentSession the runtime builds. */
   watchSession?(session: AgentSession, path: string): void;
   /** A message from this server's own composer (/ws/chat prompt or steer): who sent it, or throw a
-      refusal the client is told. Absent: sent as usual, unattributed. */
-  clientSend?(path: string): { by: string };
+      refusal the client is told. Absent: sent as usual, unattributed. `undo` puts back what the
+      kind recorded for it when the runtime then refuses the message. */
+  clientSend?(path: string, msg: { images: number }): { by: string; undo?(): void };
   /** A client gesture this kind refuses (a message for the client), or null. */
   refuses?(gesture: "rewind" | "regenerate" | "mode"): string | null;
   /** Runs the SDK call that hands this runtime a message the operator sent from the UI (origin
@@ -785,6 +793,9 @@ const senderOfItem = (item: Pick<WebQueueItem, "overseer" | "baton">): Sender | 
 class ChatSession {
   readonly clients = new Set<ChatClient>();
   private unsubscribe: (() => void) | null = null;
+  private streamGuardOff: (() => void) | null = null;
+  /** This runtime's last stream-guard trip (server/stream-guard.ts); cleared when a run starts. */
+  lastStreamTrip: StreamTrip | null = null;
   private pendingUi = new Map<string, PendingUi>();
   private guard: ForeignWriteGuard | null = null;
   private guardTimer: NodeJS.Timeout | null = null;
@@ -815,6 +826,38 @@ class ChatSession {
   }
   /** Texts sent here whose user entry still needs its sender marker. */
   private senderMarks: SenderMark[] = [];
+  /**
+   * A prompt() handed to an idle session whose run has not begun: the SDK awaits its input
+   * handlers before `isStreaming` turns true, and a second prompt() in that gap is refused
+   * ("already processing") after the first was accepted — a message lost after its send was
+   * acknowledged. While set, acceptPrompt queues instead and the queue waits (its `paused`).
+   * Cleared at the first event of the run, or when that prompt settles without one.
+   */
+  private starting: Promise<unknown> | null = null;
+  private startWaiters: (() => void)[] = [];
+
+  private noteStarting(turn: Promise<unknown>): void {
+    this.starting = turn;
+    const clear = () => {
+      if (this.starting !== turn) return;
+      this.startedNow();
+      if (!this.disposed) this.queue.onSdkEvent();
+    };
+    turn.then(clear, clear);
+  }
+  private startedNow(): void {
+    this.starting = null;
+    for (const w of this.startWaiters.splice(0)) w();
+  }
+  /** A turn was handed to the SDK and its run has not begun (see `starting`): the SDK's abort()
+      misses it, so whoever must stop it waits for `whenStarted` first. */
+  get turnStarting(): boolean {
+    return this.starting !== null;
+  }
+  /** Resolves once no turn is starting: its run has begun, or its prompt settled without one. */
+  whenStarted(): Promise<void> {
+    return this.starting ? new Promise((r) => this.startWaiters.push(r)) : Promise.resolve();
+  }
   /** How the last switch of THIS chat applies (ModeApplies); set at bind and by applyMode. */
   modeApplies: ModeApplies = "now";
   /**
@@ -852,7 +895,7 @@ class ChatSession {
       mirrorHas: (kind, text) => (kind === "steer" ? this.session.getSteeringMessages() : this.session.getFollowUpMessages()).includes(text),
     },
     streaming: () => this.session.isStreaming,
-    paused: () => this.isCompacting(),
+    paused: () => this.isCompacting() || this.starting !== null,
     // Every clear of the SDK's queue (Stop, the Overseer's stop, a removal) keeps the link messages
     // in it: they are never the user's to take back (§mesh.links/delivery).
     clearSdkQueue: () => this.clearSdkQueue(),
@@ -960,7 +1003,9 @@ class ChatSession {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
       // turn nobody is awaiting, and must not be reported as a hand-off failure (which would hand
       // the text back to the composer for a message that HAS been sent).
-      toSdk(() => this.session.prompt(item.text, { images })).catch((err) => {
+      const turn = toSdk(() => this.session.prompt(item.text, { images }));
+      this.noteStarting(turn);
+      turn.catch((err) => {
         if (mark) this.dropSenderMark(mark);
         if (this.heldForCompaction(err, { ...item, id: undefined })) return;
         this.reportTurnFailure(err);
@@ -1112,7 +1157,7 @@ class ChatSession {
       this.linkHeld.push(text);
       return "delivered";
     }
-    const starts = !this.session.isStreaming && this.linkPending === 0;
+    const starts = !this.session.isStreaming && !this.starting && this.linkPending === 0;
     this.handLinkToAgent(text);
     return starts ? "started" : "delivered";
   }
@@ -1141,6 +1186,9 @@ class ChatSession {
   /** One link message into the SDK, the guards re-checked at the write (a TUI can grab the file
       meanwhile; then the message stays only in the link inbox). Resolves once pi has accepted it. */
   private async linkToSdk(text: string): Promise<void> {
+    // A turn handed over and not yet begun (`starting`) would refuse this prompt: wait for its run,
+    // then steer into it.
+    if (this.starting) await this.whenStarted();
     if (this.disposed) return;
     try {
       assertNotLive(this.path);
@@ -1175,21 +1223,23 @@ class ChatSession {
     // Idle. `streamingBehavior: "steer"` covers a turn that started while the input handlers ran;
     // prompt() resolves at TURN end, so acceptance is its preflight (or its settling, when pi
     // defers it inside an agent_settled or refuses it).
+    // It is a turn starting like any prompt (noteStarting): a user's send in the gap queues instead
+    // of being refused by pi.
     await new Promise<void>((accepted) => {
-      this.session
-        .prompt(text, { expandPromptTemplates: false, source: "extension", streamingBehavior: "steer", preflightResult: () => accepted() })
-        .then(
-          () => accepted(),
-          (err) => {
-            accepted();
-            untrack();
-            if (this.disposed) return;
-            // Another turn won the race after the streaming check: steer into it instead.
-            if (err instanceof Error && /already processing/i.test(err.message)) this.handLinkToAgent(text);
-            else if (isCompactionInProgress(err)) this.linkHeld.push(text);
-            else this.reportTurnFailure(err);
-          },
-        );
+      const turn = this.session.prompt(text, { expandPromptTemplates: false, source: "extension", streamingBehavior: "steer", preflightResult: () => accepted() });
+      this.noteStarting(turn);
+      turn.then(
+        () => accepted(),
+        (err) => {
+          accepted();
+          untrack();
+          if (this.disposed) return;
+          // Another turn won the race after the streaming check: steer into it instead.
+          if (err instanceof Error && /already processing/i.test(err.message)) this.handLinkToAgent(text);
+          else if (isCompactionInProgress(err)) this.linkHeld.push(text);
+          else this.reportTurnFailure(err);
+        },
+      );
     });
   }
 
@@ -1292,6 +1342,15 @@ class ChatSession {
     this.guardTimer.unref();
     this.workersTimer = setInterval(() => this.pushWorkers(), GUARD_POLL_MS);
     this.workersTimer.unref();
+    this.streamGuardOff?.();
+    this.streamGuardOff = attachStreamGuard(session, () => capsFor(this.special), {
+      onRunStart: () => (this.lastStreamTrip = null),
+      onTrip: (trip) => {
+        this.lastStreamTrip = trip;
+        console.warn(`[stream-guard] ${this.path}: ${trip.kind} (${trip.detail}); turn stopped`);
+        this.broadcast({ type: "error", code: "internal", message: `Stopped the turn: ${trip.detail}.` });
+      },
+    });
     await session.bindExtensions({
       uiContext: this.createUiContext(),
       mode: "rpc",
@@ -1300,6 +1359,10 @@ class ChatSession {
     });
     this.unsubscribe?.();
     this.unsubscribe = session.subscribe((event) => {
+      if (this.starting && this.session.isStreaming) {
+        this.startedNow(); // the run has begun: a send now queues on isStreaming
+        this.queue.onSdkEvent();
+      }
       try {
         this.broadcast({ type: "event", event: toWireEvent(event) });
       } catch (err) {
@@ -1485,6 +1548,29 @@ class ChatSession {
     return plan;
   }
 
+  /**
+   * Pin this chat to its current mode: append the extension's own `mode` entry (pinEntryFor) when
+   * the branch's newest snapshot differs, so the session keeps this mode on every reopen whatever
+   * mode.json says later — the extension itself appends only on a change, never for a mode equal
+   * to the default. Call it after applyMode returned "command". False when this chat can't be
+   * written (disposed, a foreign writer, live in a terminal).
+   */
+  pinMode(): boolean {
+    if (this.disposed || this.foreignWrite || this.hasForeignWrites()) return false;
+    try {
+      assertNotLive(this.path);
+    } catch {
+      return false;
+    }
+    const sm = this.session.sessionManager;
+    const pin = pinEntryFor(sm.getBranch(), this.modeState);
+    if (!pin) return true;
+    this.flushDeferredAppends(); // open-time entries go before the mode entry, as in applyMode
+    sm.appendCustomEntry(pin.customType, pin.data);
+    markOwned(this.path);
+    return true;
+  }
+
   /** The sandbox extension's /sandbox command in this runtime (server/sandbox-state.ts). */
   private sandboxCommand() {
     return sandboxCommandOf(this.session.extensionRunner);
@@ -1631,7 +1717,7 @@ class ChatSession {
     // a queue that some messages could skip would not be a queue.
     // A compaction running is the same: pi refuses every prompt until it ends, so the message is
     // held, and the queue hands it over (as a fresh turn) at compaction_end.
-    if (this.session.isStreaming || this.isCompacting()) {
+    if (this.session.isStreaming || this.isCompacting() || this.starting) {
       const overseer = opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {};
       const baton = opts?.sentByBaton ? { baton: opts.sentByBaton } : {};
       this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton });
@@ -1649,6 +1735,7 @@ class ChatSession {
     const send: SenderMark | null = sender ? { text, sender } : null;
     if (send) this.senderMarks.push(send);
     const turn = this.toSdk(origin, () => this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }));
+    this.noteStarting(turn);
     if (send)
       turn.catch(() => {
         const i = this.senderMarks.indexOf(send);
@@ -1717,6 +1804,82 @@ class ChatSession {
         if (items.length) this.broadcast({ type: "append", items });
       }
     });
+  }
+
+  /**
+   * Stop the run, keeping the queued messages `keep` picks (the rest go back as `queue_cleared`,
+   * as Stop's do). Returns the kept ones, for `enterQueued` once nothing runs any more.
+   */
+  async stopRun(keep: (item: WebQueueItem) => boolean): Promise<WebQueueItem[]> {
+    const { steering, followUp, kept } = await this.queue.drain(keep);
+    if (steering.length || followUp.length) this.broadcast({ type: "queue_cleared", steering, followUp });
+    await this.session.abort();
+    return kept;
+  }
+
+  /** Stop the run and write the queued messages `keep` picks into the transcript as their senders'
+      (stopRun, then enterQueued): a baton session's Stop, and its clean close. */
+  async keepQueued(keep: (item: WebQueueItem) => boolean): Promise<number> {
+    const since = this.leafId();
+    return this.enterQueued(await this.stopRun(keep), since);
+  }
+
+  /** The current leaf, the point `enterQueued` looks back to for messages the run took itself. */
+  leafId(): string | null {
+    return this.session.sessionManager.getLeafId();
+  }
+
+  /**
+   * Write queued messages a stopped run never took into the transcript as their senders' user
+   * messages (with the `sova-baton-sent` / `sova-overseer-sent` marker), with no turn: nothing
+   * anyone sent is lost when a reply is cut short (§app.baton/hand-off). One the run did take
+   * after `since` (a message in the transcript with its text) is not written twice. The model
+   * reads them with the next turn. Refused mid-turn, like appendSpecialEntry.
+   */
+  enterQueued(items: readonly WebQueueItem[], since: string | null): number {
+    if (!items.length) return 0;
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (this.session.isStreaming || this.isCompacting()) throw new BusyError("Wait for the reply to finish first.", "busy");
+    const sm = this.session.sessionManager;
+    const branch = sm.getBranch();
+    const from = since ? branch.findIndex((e) => e.id === since) + 1 : 0;
+    const taken = branch
+      .slice(from)
+      .filter((e) => e.type === "message" && e.message.role === "user")
+      .map((e) => (e.type === "message" ? textBlocks((e.message as { content?: unknown }).content) : ""));
+    this.flushDeferredAppends();
+    let n = 0;
+    for (const item of items) {
+      const t = taken.indexOf(item.text);
+      if (t >= 0) {
+        taken.splice(t, 1);
+        continue;
+      }
+      const marks = this.senderMarks.filter((m) => m.itemId === item.id);
+      for (const m of marks) this.dropSenderMark(m);
+      const id = sm.appendMessage({ role: "user", content: [{ type: "text", text: item.text }, ...(item.images ?? [])], timestamp: Date.now() });
+      const sender = senderOfItem(item);
+      const markerId =
+        sender?.kind === "baton"
+          ? sm.appendCustomEntry(BATON_SENT_ENTRY, { v: 1, targetId: id, by: sender.by } satisfies BatonSentData)
+          : sender?.kind === "overseer"
+            ? sm.appendCustomEntry(OVERSEER_SENT_ENTRY, { v: 1, targetId: id, ...(sender.overseerId ? { overseerId: sender.overseerId } : {}) } satisfies OverseerSentMarkerData)
+            : null;
+      const items = [id, markerId].flatMap((eid) => {
+        const entry = eid ? sm.getEntry(eid) : undefined;
+        return entry ? normalizeEntry(entry as unknown as Record<string, any>) : [];
+      });
+      if (items.length) this.broadcast({ type: "append", items });
+      n++;
+    }
+    if (n) {
+      markOwned(this.path);
+      // The agent's context is the session's projection, re-read after a write outside a run, as
+      // the SDK does for its own (agent-session.js _refreshFinalizedContext, 0.87.1).
+      (this.session as unknown as { _refreshFinalizedContext(): void })._refreshFinalizedContext();
+    }
+    return n;
   }
 
   /**
@@ -1820,7 +1983,8 @@ class ChatSession {
     // The level too: setModel re-clamped it, and the next conversation is seeded from the file.
     if (this.overseer) overseerRuntime?.saveChoice({ model: ref, thinking: this.session.thinkingLevel });
     else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { model: ref, thinking: this.session.thinkingLevel });
-    else if (this.isPristine()) saveDefaults({ model: ref });
+    // Another special kind (a baton) keeps the pick in its own file only: never the host's default.
+    else if (!this.specialEntry && this.isPristine()) saveDefaults({ model: ref });
   }
 
   /** Change thinking level: the `set_thinking` path, shared like setModelRef (and saved, like it,
@@ -1848,8 +2012,8 @@ class ChatSession {
     if (opts.save !== true) return after;
     if (this.overseer) overseerRuntime?.saveChoice({ thinking: after });
     else if (this.specialEntry?.saveChoice) this.specialEntry.saveChoice(this.path, { thinking: after });
-    // A session with no messages yet: this level is also the next new session's default.
-    else if (this.isPristine()) saveDefaults({ thinking: after });
+    // A session with no messages yet: this level is also the next new session's default (never a special kind's).
+    else if (!this.specialEntry && this.isPristine()) saveDefaults({ thinking: after });
     return after;
   }
 
@@ -1895,13 +2059,22 @@ class ChatSession {
           }
           // A special kind that attributes its composer's messages (a baton session: only while
           // the operator holds the baton) decides here, before anything is queued or written.
-          const by = this.specialEntry?.clientSend?.(this.path);
-          if (by) {
+          // The model gate runs first, so a refusal never counts against the kind (a baton's budget);
+          // a refusal from acceptPrompt itself is handed back through `undo`.
+          if (this.specialEntry?.clientSend) {
             this.assertModelAllowed();
-            const { queued, turn } = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId, {
-              sentByBaton: by,
-              ...(msg.type === "steer" ? { delivery: "steer" as const } : {}),
-            });
+            const sent = this.specialEntry.clientSend(this.path, { images: msg.images?.length ?? 0 });
+            let accepted: ReturnType<ChatSession["acceptPrompt"]>;
+            try {
+              accepted = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId, {
+                sentByBaton: { by: sent.by },
+                ...(msg.type === "steer" ? { delivery: "steer" as const } : {}),
+              });
+            } catch (err) {
+              sent.undo?.();
+              throw err;
+            }
+            const { queued, turn } = accepted;
             if (clientId) client.send({ type: "send_ack", clientId, queued });
             turn.catch(fail);
             return;
@@ -1927,6 +2100,12 @@ class ChatSession {
         case "abort":
           // The queue drains Sova's held items AND the SDK's, so Stop still means "nothing
           // queued survives this", and the drained text still comes back as `queue_cleared`.
+          // In a baton session a participant's queued message is theirs, not the composer's to
+          // take back: it enters the transcript instead (§app.baton/hand-off, nothing dropped).
+          if (this.special === "baton") {
+            this.keepQueued((it) => !!it.baton && it.baton.by !== OPERATOR).catch(fail);
+            return;
+          }
           drainQueueThenAbort(this.session, (m) => this.broadcast(m), this.queue).catch(fail);
           return;
         case "queue_remove": {
@@ -2240,11 +2419,19 @@ class ChatSession {
 
   async dispose(): Promise<void> {
     if (this.disposed) return;
+    // A baton session closing cleanly (archive, shutdown, reload) keeps every message still
+    // waiting in its queue, as its sender's: nothing sent is dropped (§app.baton/hand-off). A
+    // refused write (a foreign one, the TUI) keeps nothing, said in the log.
+    if (this.special === "baton" && (this.queue.size || this.turnStarting))
+      await this.whenStarted()
+        .then(() => this.keepQueued((it) => !!it.baton))
+        .catch((err) => console.warn(`[chat] queued messages not kept at close: ${err instanceof Error ? err.message : String(err)}`));
     this.disposed = true;
     this.queue.close(); // nothing more is handed to a runtime that is going away
     if (this.guardTimer) clearInterval(this.guardTimer);
     if (this.workersTimer) clearInterval(this.workersTimer);
     this.unsubscribe?.();
+    this.streamGuardOff?.();
     for (const p of this.pendingUi.values()) p.resolve(undefined);
     this.pendingUi.clear();
     if (held.get(this.path) === this) held.delete(this.path); // a reload may already hold a newer one
@@ -2397,6 +2584,17 @@ function settledTurn(path: string): void {
   }
 }
 
+/**
+ * The model and thinking a new session opens on instead of the saved new-session defaults, for the
+ * next open of that file only (a project's coding session gets its model at creation, so its file
+ * never records a switch from the default first). Ignored once the session has a user message.
+ */
+const openingChoices = new Map<string, { model?: string; thinking?: string }>();
+export function setOpeningChoice(path: string, choice: { model?: string | null; thinking?: string | null }): void {
+  const c = { ...(choice.model ? { model: choice.model } : {}), ...(choice.thinking ? { thinking: choice.thinking } : {}) };
+  if (Object.keys(c).length) openingChoices.set(path, c);
+}
+
 const sessions = new Map<string, Promise<ChatSession>>();
 /** Fully opened runtimes by canonical path (pending opens are not here), for sync busy lookups. */
 const held = new Map<string, ChatSession>();
@@ -2542,7 +2740,9 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     let defaultModel: Awaited<ReturnType<typeof modelRuntime.getAvailable>>[number] | undefined;
     let defaultThinking: ThinkingLevel | undefined;
     if (!sessionManager.getBranch().some((e) => e.type === "message" && e.message.role === "user")) {
-      const defaults = special ? { model: special.model ?? undefined, thinking: special.thinking ?? undefined } : loadDefaults();
+      const opening = openingChoices.get(path);
+      openingChoices.delete(path);
+      const defaults = special ? { model: special.model ?? undefined, thinking: special.thinking ?? undefined } : { ...loadDefaults(), ...opening };
       // A stored default the user has since turned off is stale like any other: skipped here, so
       // the session opens on pi's own default rather than on a model it would refuse to send with.
       if (defaults.model && modelAllowed(readModelPolicy(), defaults.model))

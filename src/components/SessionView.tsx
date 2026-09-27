@@ -1,11 +1,10 @@
-import { batch, createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
-import { createStore, reconcile } from "solid-js/store";
-import type { SessionInsight, SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
-import { fetchSessionInsight } from "../lib/api";
+import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import type { SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { agentsFeed } from "../lib/agents-feed";
 import { agentsHref, teamKey, teamPause, teamPulse } from "../lib/insights";
 import { relativeTime, shortModel } from "../lib/format";
 import { sourceBlocked } from "../lib/fanout";
+import { createPaneInsight } from "../lib/pane-insight";
 import { PaneScopeProvider, type PaneScope } from "../lib/pane-scope";
 import { cwdLabel } from "../lib/remote-session";
 import type { RewindControl } from "../lib/inputs";
@@ -31,10 +30,6 @@ export type Decision =
   | { path: string; mode: "chat"; force: boolean; autofocus?: boolean }
   | { path: string; mode: "watch"; why: WatchWhy; listVersion: number };
 
-/** Session insight (outline, teams) reloads this long after the session's file last changed. */
-const SESSION_INSIGHT_DEBOUNCE_MS = 1500;
-/** While the session pane is open, its worker status and file paths refresh this often. */
-const PANE_INSIGHT_POLL_MS = 3000;
 /** While a session is watched, poll the list so live status (and TUI exit) shows up on its own. */
 const WATCH_POLL_MS = 10_000;
 
@@ -161,50 +156,7 @@ export function SessionView(props: {
   // Outline, teams and workers of this session; reloaded (debounced) when its file changes, and
   // polled while the session pane is open for it — the one poller of this endpoint. The pane
   // reads this same store.
-  const [insight, setInsight] = createStore<PaneInsight>({ data: null, error: null, pending: true, changed: 0 });
-  let insightRun = 0;
-  /** Set when the file changed; the next load to land says so through `changed`. */
-  let fileMoved = false;
-  const loadInsight = async () => {
-    const mine = ++insightRun;
-    try {
-      const next: SessionInsight = await fetchSessionInsight(path);
-      if (mine !== insightRun) return;
-      // Keyed by id so open topics stay open when a newer outline lands.
-      batch(() => {
-        setInsight("data", reconcile(next, { key: "id" }));
-        setInsight("error", null);
-      });
-    } catch (err) {
-      // Secondary to the transcript: keep the last outline, the next change retries.
-      if (mine !== insightRun) return;
-      setInsight("error", (err as Error).message);
-    }
-    batch(() => {
-      setInsight("pending", false);
-      if (fileMoved) setInsight("changed", (n) => n + 1);
-      fileMoved = false;
-    });
-  };
-  let insightTimer: ReturnType<typeof setTimeout> | undefined;
-  const reloadInsight = () => {
-    clearTimeout(insightTimer);
-    insightTimer = setTimeout(() => {
-      fileMoved = true;
-      void loadInsight();
-    }, SESSION_INSIGHT_DEBOUNCE_MS);
-  };
-  onCleanup(() => {
-    clearTimeout(insightTimer);
-    insightRun++;
-  });
-  void loadInsight();
-  createEffect(() => {
-    if (props.subagentsPath() !== path) return;
-    void loadInsight();
-    const t = setInterval(() => document.hidden || void loadInsight(), PANE_INSIGHT_POLL_MS);
-    onCleanup(() => clearInterval(t));
-  });
+  const { insight, load: loadInsight, reload: reloadInsight } = createPaneInsight(path, () => props.subagentsPath() === path);
   props.onInsight(path, insight);
   onCleanup(() => props.onInsight(path, null));
   // A team event (pause, resume, handover) or a working count can change with no turn of this
@@ -236,11 +188,11 @@ export function SessionView(props: {
   /**
    * The pane name's `title`: the full string, then the cwd, then the member's session-lifetime
    * spend when the server reports one. "Which answer won" includes cost, and the spend already
-   * lives in the member's Session-info dialog — this puts it one hover away from the comparison
-   * itself instead of a dialog deep in each pane. The cwd is the raw path (no tilde folding): a
+   * lives in the member's Usage tab — this puts it one hover away from the comparison
+   * itself instead of a tab deep in each pane. The cwd is the raw path (no tilde folding): a
    * tooltip is where the long form earns its place.
    *
-   * The cost is `SessionInsight.usage.total` — the SAME field the Session-info dialog's spend
+   * The cost is `SessionInsight.usage.total` — the SAME field the Usage tab's spend
    * table tallies, not a second computation that could drift — and `total` rather than `main`
    * on purpose: a member that spawned workers to answer spent them as part of its answer, and a
    * comparison that hid subagent cost would tilt "which answer won" toward exactly the members
@@ -389,6 +341,7 @@ export function SessionView(props: {
       </Show>
       <InsightStrip
         path={path}
+        sessionId={s().id}
         outline={insight.data?.outline ?? null}
         explanations={insight.data?.explanations}
         now={props.now}
@@ -404,6 +357,7 @@ export function SessionView(props: {
                 {(w) => (
                   <WatchView
                     path={path}
+                    sessionId={s().id}
                     author={author()}
                     streaming={!!s().live}
                     onCreated={props.onCreated}
@@ -477,7 +431,6 @@ export function SessionView(props: {
                       onRefused={onRefused}
                       onStarted={props.onRefresh}
                       onArchiveChanged={props.onArchiveChanged}
-                      onGroupsChanged={props.onRefresh}
                       onSettled={() => {
                         props.onRefresh();
                         reloadInsight();

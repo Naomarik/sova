@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import { overseerFileTools } from "./overseer-file-tools";
-import { isEnvFile, SECRET_REFUSAL, SecretGuard, secretRules } from "./overseer-deny";
+import { EXCLUDED_REFUSAL, isEnvFile, outsideRootRefusal, RootConfinement, SECRET_REFUSAL, SecretGuard, secretRules } from "./overseer-deny";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-deny-")));
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -177,5 +177,82 @@ describe("the Overseer's read/grep/find/ls never reach a secret", () => {
     assert.match(fromHome, /^proj\/src\/main\.ts:1: TOKEN=1 in a file$/m, "pi's own line format");
     assert.match(fromHome, /^proj\/\.env\.example:1:/m);
     assert.equal(await call("grep", { pattern: "TOKEN", path: agentDir }), "No matches found");
+  });
+});
+
+describe("the project overseer's read/grep/find/ls stay inside the project root", () => {
+  // <box>/proj is the root; <box>/org is the org's workspace beside it, <box>/proj/ws another one
+  // the root happens to hold, <box>/state Sova's state. Every file holds MARK.
+  const box = join(root, "confined");
+  const proot = join(box, "proj");
+  const orgWs = join(box, "org");
+  const innerWs = join(proot, "ws");
+  const state = join(box, "state");
+  const IN = [join(proot, "README.md"), join(proot, "src", "a.ts")];
+  const OUT = [join(orgWs, "roster.json"), join(box, "outside.txt"), join(innerWs, "roster.json"), join(state, "baton-links.json"), join(home, "AGENTS.md")];
+  for (const p of [...IN, ...OUT]) put(p, "MARK here\n");
+  put(join(proot, ".env"));
+  symlinkSync(orgWs, join(proot, "org-link"));
+  symlinkSync(join(box, "outside.txt"), join(proot, "notes.md"));
+  symlinkSync(box, join(proot, "up"));
+  const ptools = Object.fromEntries(
+    overseerFileTools(proot, guard, undefined, () => new RootConfinement(proot, [orgWs, innerWs, state])).map((t) => [t.name, t]),
+  );
+  const pcall = async (name: string, params: Record<string, unknown>) => {
+    try {
+      const r = await ptools[name]!.execute("tc", params as never, undefined, undefined, undefined as never);
+      return (r.content as { type: string; text?: string }[]).map((c) => c.text ?? `[${c.type}]`).join("");
+    } catch (err) {
+      return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  };
+  const outside = `ERROR: ${outsideRootRefusal(proot)}`;
+  const excluded = `ERROR: ${EXCLUDED_REFUSAL}`;
+
+  test("read: files in the root read; every way out is refused", async () => {
+    for (const p of IN) assert.match(await pcall("read", { path: p }), /MARK/, p);
+    assert.match(await pcall("read", { path: "src/a.ts" }), /MARK/);
+    assert.match(await pcall("read", { path: "src/../README.md" }), /MARK/);
+    assert.equal(await pcall("read", { path: join(proot, ".env") }), refused, "still no secret inside the root");
+    for (const p of [join(orgWs, "roster.json"), join(box, "outside.txt"), join(state, "baton-links.json"), join(home, "AGENTS.md"), "/etc/hostname"])
+      assert.equal(await pcall("read", { path: p }), outside, p);
+    for (const p of ["../outside.txt", "../org/roster.json", "src/../../outside.txt", "~/AGENTS.md", "@../outside.txt"]) assert.equal(await pcall("read", { path: p }), outside, p);
+    for (const p of ["org-link/roster.json", "notes.md", "up/outside.txt"]) assert.equal(await pcall("read", { path: p }), outside, `symlink ${p}`);
+    assert.equal(await pcall("read", { path: "ws/roster.json" }), excluded, "a workspace inside the root");
+  });
+
+  test("ls: the root lists without the excluded and the escaping entries; nothing else lists", async () => {
+    const list = await pcall("ls", { path: "." });
+    assert.match(list, /^README\.md$/m);
+    assert.match(list, /^src\/$/m);
+    assert.doesNotMatch(list, /^(ws|org-link|notes\.md|up|\.env)\/?$/m);
+    for (const p of ["..", orgWs, "/", "~", "org-link", "up", "../proj/.."]) assert.equal(await pcall("ls", { path: p }), outside, p);
+    assert.equal(await pcall("ls", { path: "ws" }), excluded);
+  });
+
+  test("find: searches are held to the root, whatever the pattern", async () => {
+    for (const p of ["..", "/", box, "org-link", "~"]) assert.equal(await pcall("find", { pattern: "*", path: p }), outside, p);
+    assert.equal(await pcall("find", { pattern: "*", path: "ws" }), excluded);
+    for (const pattern of ["*", "**/*", "roster.json", "../*", "/**", `${box}/**`, "**/outside.txt"]) {
+      const out = await pcall("find", { pattern });
+      assert.doesNotMatch(out, /roster\.json|outside\.txt|baton-links|AGENTS|\.env$/m, pattern);
+    }
+    assert.match(await pcall("find", { pattern: "*.ts" }), /src\/a\.ts/);
+  });
+
+  test("grep: searches are held to the root, whatever the path or glob", async () => {
+    for (const p of ["..", "/", box, orgWs, "org-link", "notes.md", "~", "../outside.txt"]) assert.equal(await pcall("grep", { pattern: "MARK", path: p }), outside, p);
+    assert.equal(await pcall("grep", { pattern: "MARK", path: "ws" }), excluded);
+    for (const glob of [undefined, "**", "../**", "**/roster.json", "*.json"]) {
+      const out = await pcall("grep", { pattern: "MARK", ...(glob ? { glob } : {}) });
+      assert.doesNotMatch(out, /roster|outside|baton-links|AGENTS/, `glob ${glob}`);
+    }
+    const all = await pcall("grep", { pattern: "MARK" });
+    assert.match(all, /^README\.md:1: MARK here$/m);
+    assert.match(all, /^src\/a\.ts:1:/m);
+  });
+
+  test("the main Overseer, given no root, still reads outside any project", async () => {
+    assert.match(await call("read", { path: join(box, "outside.txt") }), /MARK/);
   });
 });

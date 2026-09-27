@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DecisionRow } from "../../shared/decisions";
-import { areaGroups, conflictSides, decisionsLine, emptySelection, keepPromotable, outsideTheirArea, promotable, refName, refreshSelection, selectAllReady, toggleSelection } from "./decisions-view";
+import { alsoCarriesLine, areaGroups, conflictSides, decisionsLine, emptySelection, keepPromotable, outsideTheirArea, promotable, refName, refreshSelection, selectAllReady, toggleSelection } from "./decisions-view";
 
 const row = (id: string, areaKey: string, state: DecisionRow["state"], area = areaKey): DecisionRow => ({
   id,
@@ -95,4 +95,18 @@ test("a refresh keeps how the selection was made and drops what stopped being pr
   const after = refreshSelection(sel, [own("1", "promoted", true), own("4", "drafted", true)]);
   assert.deepEqual([...after.ids], ["4"]);
   assert.equal(after.bulk, true);
+});
+
+test("Also carries: every statement folded in, through a fold of a fold, earlier or later, each once", () => {
+  const a = { ...row("a", "lunch", "drafted"), folded: ["b"] };
+  const b = { ...row("b", "lunch", "superseded"), folded: ["c", "a"] };
+  const c = { ...row("c", "lunch", "superseded"), folded: ["b"] };
+  const byId = new Map([a, b, c].map((d) => [d.id, d]));
+  assert.equal(alsoCarriesLine(a, byId), "Also carries 2 more statements of the same decision, with their quotes.");
+  assert.equal(alsoCarriesLine(b, byId), "Also carries 2 more statements of the same decision, with their quotes.", "a cycle back counts nothing twice, nor itself");
+  assert.equal(alsoCarriesLine({ ...a, folded: ["c"] }, byId), "Also carries 2 more statements of the same decision, with their quotes.");
+  assert.equal(alsoCarriesLine({ ...a, folded: ["gone"] }, byId), null);
+  const one = { ...row("x", "lunch", "drafted"), folded: ["y"] };
+  assert.equal(alsoCarriesLine(one, new Map([[one.id, one], ["y", row("y", "lunch", "superseded")]])), "Also carries 1 more statement of the same decision, with its quote.");
+  assert.doesNotMatch(alsoCarriesLine(a, byId)!, /earlier/, "a confirmation can come later");
 });

@@ -1,27 +1,31 @@
-import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, Show } from "solid-js";
 import type { IdeaRecord, OverseerAction, OverseerTodosInfo } from "../../shared/protocol";
-import { AUTONOMY_LEVELS, AUTONOMY_MEANING, type Autonomy, type ItemCodeInput, type ItemCodeResult, type ItemSendInput, type ItemSendResult, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
+import { AUTONOMY_LEVELS, AUTONOMY_MEANING, type Autonomy, type ItemCodeInput, type ItemCodeResult, type ItemSendInput, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { OrgDetail } from "../../shared/orgs";
 import {
+  addProjectOverseerIdea,
   addProjectOverseerTodo,
   ApiError,
   codeProjectItem,
   getProjectOverseer,
   listModels,
+  mergeCodingWorktree,
   openProjectOverseer,
   patchProjectOverseer,
   patchProjectOverseerTodo,
   projectOverseerActions,
   projectOverseerIdeas,
   projectOverseerTodos,
+  removeCodingWorktree,
   runProjectOverseer,
   sendProjectItem,
 } from "../lib/api";
-import { relativeTime } from "../lib/format";
+import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, isDelegate, mergeGate, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
+import { relativeTime, tildePath } from "../lib/format";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll } from "../lib/poll";
-import { actionLine, gapArea, isGap, itemSendInput, lastRunTail, openIdeas, STARTED_KIND, tokens } from "../lib/project-overseer-view";
-import { announce, toast } from "../lib/ui-state";
+import { actionLine, gapArea, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, openIdeas, operatorIdeaId, pendingLine, STARTED_KIND, tokens } from "../lib/project-overseer-view";
+import { announce, home, toast } from "../lib/ui-state";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon } from "./ui";
 
@@ -151,12 +155,15 @@ export function ProjectOverseerPanel(props: {
                 info={i()}
                 kind="gathering"
                 label="Gathering sessions"
-                onSave={(patch, done) => void run(() => patchProjectOverseer(o(), p(), patch), done)}
+                save={async (patch) => info.set(await patchProjectOverseer(o(), p(), patch))}
               />
-              <SessionModel info={i()} kind="coding" label="Coding sessions" onSave={(patch, done) => void run(() => patchProjectOverseer(o(), p(), patch), done)} />
+              <SessionModel info={i()} kind="coding" label="Coding sessions" save={async (patch) => info.set(await patchProjectOverseer(o(), p(), patch))}>
+                <CodingMode info={i()} onSave={(key) => run(() => patchProjectOverseer(o(), p(), { codingMode: codingModeOf(key) }), key === "auto" ? "Coding sessions' mode: Automatic." : `Coding sessions run ${codingModeLabel(key)}.`)} />
+              </SessionModel>
               <TokenBudget info={i()} onSave={(n) => void run(() => patchProjectOverseer(o(), p(), { tokenBudget: n }), "Budget saved.")} />
             </div>
             <Started info={i()} />
+            <CodingSessions info={i()} merge={(w) => mergeCodingWorktree(o(), p(), w.sessionId)} remove={(w) => removeCodingWorktree(o(), p(), w.sessionId)} onInfo={info.set} />
           </>
         )}
       </Show>
@@ -166,6 +173,11 @@ export function ProjectOverseerPanel(props: {
         org={props.org}
         ideas={ideas.data() ? openIdeas(ideas.data()!.ideas) : undefined}
         error={ideas.error()}
+        add={async (title) => {
+          // Fresh ids: the poll may lag another tab's or the overseer's latest idea.
+          const taken = new Set((await projectOverseerIdeas(o(), p())).ideas.map((i) => i.id));
+          ideas.set(await addProjectOverseerIdea(o(), p(), { id: operatorIdeaId(title, taken), title }));
+        }}
         onLinks={setLinks}
         send={(input) => sendProjectItem(o(), p(), input)}
         code={(input) => codeProjectItem(o(), p(), input)}
@@ -210,7 +222,7 @@ function StatusLine(props: { info: ProjectOverseerInfo }) {
         {u().unattendedToday} {u().unattendedToday === 1 ? "run" : "runs"} today.
       </p>
       <Show when={u().pending.length}>
-        <p class="orgs-line project-muted">Waiting to look at: {u().pending.join(", ")}.</p>
+        <p class="orgs-line project-muted">Waiting to look at: {pendingLine(u().pending)}</p>
       </Show>
     </>
   );
@@ -245,9 +257,31 @@ const SAME = "";
 
 /**
  * The model and thinking level of the sessions it starts: gathering (the model a roster person
- * talks to) or coding (L3). Empty = the overseer's own (null in the settings).
+ * talks to) or coding (L3). Empty = the overseer's own (null in the settings). A level the model
+ * doesn't offer is refused under the select (§app.project-overseer/identity); a model change that
+ * leaves the saved level unsupported moves it to the level pi would run, and says so.
  */
-function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "coding"; label: string; onSave(patch: ProjectOverseerPatch, done: string): void }) {
+function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "coding"; label: string; save(patch: ProjectOverseerPatch): Promise<void>; children?: JSX.Element }) {
+  const [err, setErr] = createSignal<string | null>(null);
+  const [saving, setSaving] = createSignal(false);
+  /** One save: its toast, or its refusal under the fields with the select back on what is saved. */
+  const save = async (patch: ProjectOverseerPatch, done: string, el: HTMLSelectElement, saved: () => string | null): Promise<boolean> => {
+    if (saving()) return false;
+    setSaving(true);
+    try {
+      await props.save(patch);
+      setErr(null);
+      toast(done);
+      announce(done);
+      return true;
+    } catch (x) {
+      setErr(errText(x));
+      el.value = saved() ?? SAME;
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
   const [models] = createResource(() => listModels());
   const modelKey = (): "codingModel" | "gatheringModel" => (props.kind === "coding" ? "codingModel" : "gatheringModel");
   const thinkingKey = (): "codingThinking" | "gatheringThinking" => (props.kind === "coding" ? "codingThinking" : "gatheringThinking");
@@ -272,10 +306,19 @@ function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "c
         <span class="field-label">{props.label}</span>
         <select
           class="select"
-          onChange={(e) => {
-            const v = e.currentTarget.value;
+          onChange={async (e) => {
+            const el = e.currentTarget;
+            const v = el.value;
+            const before = thinking();
             const patch: ProjectOverseerPatch = v === SAME ? { [modelKey()]: null, [thinkingKey()]: null } : { [modelKey()]: v };
-            props.onSave(patch, v === SAME ? `${noun()} use the overseer's model.` : `${noun()} use ${v}.`);
+            if (!(await save(patch, v === SAME ? `${noun()} use the overseer's model.` : `${noun()} use ${v}.`, el, model))) return;
+            // The server moved a level the new model doesn't offer to the one pi would run: said after the model's own toast.
+            const after = thinking();
+            if (v !== SAME && before && after && after !== before) {
+              const words = `Thinking is now ${after}: ${v} doesn't offer ${before}.`;
+              toast(words);
+              announce(words);
+            }
           }}
         >
           <option value={SAME} selected={!model()}>
@@ -290,7 +333,7 @@ function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "c
           class="select"
           onChange={(e) => {
             const v = e.currentTarget.value;
-            props.onSave({ [thinkingKey()]: v === SAME ? null : v }, v === SAME ? `${noun()}: thinking same as the overseer.` : `${noun()}: thinking ${v}.`);
+            void save({ [thinkingKey()]: v === SAME ? null : v }, v === SAME ? `${noun()}: thinking same as the overseer.` : `${noun()}: thinking ${v}.`, e.currentTarget, thinking);
           }}
         >
           <option value={SAME} selected={!thinking()}>
@@ -298,7 +341,9 @@ function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "c
           </option>
           <For each={levels()}>{(l) => <option value={l} selected={l === thinking()}>{l}</option>}</For>
         </select>
+        <Show when={err()}>{(e) => <span class="field-error">{e()}</span>}</Show>
       </label>
+      {props.children}
     </div>
   );
 }
@@ -325,18 +370,55 @@ function TokenBudget(props: { info: ProjectOverseerInfo; onSave(n: number): void
         </button>
       </form>
       <p class="field-hint orgs-inline-hint" id="project-budget-hint">
-        Spent {tokens(u().codingTokens)} of {tokens(u().tokenBudget)}. At L3 it starts no coding session beyond it.
+        Spent {tokens(u().codingTokens)} of {tokens(u().tokenBudget)}, workers included. At L3 it starts no coding session beyond it.
       </p>
     </div>
   );
 }
 
-function Started(props: { info: ProjectOverseerInfo }) {
+/**
+ * The mode every coding session it starts gets (sova_create_session, Start Coding Session).
+ * Automatic follows the project: spec on when it has one. Delegate is the operator's opt-in; the
+ * overseer may ask for it only when chosen here.
+ */
+function CodingMode(props: { info: ProjectOverseerInfo; onSave(key: CodingModeKey): Promise<boolean> }) {
+  const key = () => codingModeKey(props.info.settings.codingMode ?? null);
+  const now = () => props.info.codingModeNow;
   return (
-    <Show when={props.info.started.length}>
+    <label class="field">
+      <span class="field-label">Coding sessions' mode</span>
+      <select
+        class="select"
+        aria-describedby="project-coding-mode-hint"
+        onChange={async (e) => {
+          const el = e.currentTarget;
+          if (!(await props.onSave(el.value as CodingModeKey))) el.value = key();
+        }}
+      >
+        <For each={CODING_MODE_KEYS}>
+          {(k) => (
+            <option value={k} selected={k === key()}>
+              {codingModeLabel(k)}
+            </option>
+          )}
+        </For>
+      </select>
+      <span class="field-hint" id="project-coding-mode-hint">
+        Every coding session this project starts runs in it, yours included. One started now: <span class="orgs-mono">{modeWords(now())}</span>.
+        <Show when={isDelegate(key())}> Their workers' tokens count against the budget.</Show>
+      </span>
+    </label>
+  );
+}
+
+/** Its gathering sessions and offers; coding sessions list under "Coding sessions". */
+function Started(props: { info: ProjectOverseerInfo }) {
+  const rows = createMemo(() => props.info.started.filter((s) => s.kind !== "coding"));
+  return (
+    <Show when={rows().length}>
       <h3 class="orgs-h3">Sessions it started</h3>
       <ul class="list">
-        <For each={props.info.started}>
+        <For each={rows()}>
           {(s) => (
             <li class="list-row orgs-row">
               <span class="list-main">
@@ -359,8 +441,152 @@ function Started(props: { info: ProjectOverseerInfo }) {
   );
 }
 
+/**
+ * Every coding session the project started, the overseer's and the operator's (§app.project-overseer/
+ * coding-worktrees): each runs in a worktree and branch of its own, cut from the root's branch, or
+ * in the root when it can't. Merging the branch back, and removing the worktree, are the operator's.
+ */
+function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorktree): Promise<ProjectOverseerInfo>; remove(w: CodingWorktree): Promise<ProjectOverseerInfo>; onInfo(i: ProjectOverseerInfo): void }) {
+  const wt = () => props.info.worktrees;
+  const rows = createMemo(() => worktreeOrder(wt().sessions));
+  const [confirming, setConfirming] = createSignal<string | null>(null);
+  const [working, setWorking] = createSignal<string | null>(null);
+  /** A refusal stays under its own row. */
+  const [errors, setErrors] = createSignal<Record<string, string>>({});
+  const act = async (w: CodingWorktree, fn: () => Promise<ProjectOverseerInfo>, done: string) => {
+    if (working()) return;
+    setWorking(w.sessionId);
+    try {
+      props.onInfo(await fn());
+      setErrors(({ [w.sessionId]: _, ...rest }) => rest);
+      toast(done);
+      announce(done);
+    } catch (x) {
+      setErrors((e) => ({ ...e, [w.sessionId]: errText(x) }));
+    } finally {
+      // Done or refused, the confirmation has had its answer; a refusal stays under the row.
+      setConfirming(null);
+      setWorking(null);
+    }
+  };
+  return (
+    <Show when={rows().length || !wt().available}>
+      <h3 class="orgs-h3">Coding sessions</h3>
+      <Show when={!wt().available && wt().reason}>{(r) => <p class="orgs-line project-muted">Coding sessions run in the project root: {r()}</p>}</Show>
+      <ul class="list">
+        <For each={rows()}>
+          {(row) => {
+            const armed = () => confirming() === row.sessionId;
+            const folder = () => (row.worktree ? tildePath(row.worktree, home()) : "");
+            return (
+              <li class="list-row orgs-row project-worktree">
+                <span class="list-main">
+                  <Show when={row.path} fallback={<span class="list-title">{row.title}</span>}>
+                    {(path) => (
+                      <a class="list-title" href={sessionHref(path())}>
+                        {row.title}
+                      </a>
+                    )}
+                  </Show>
+                  <span class="list-meta">
+                    {startedBy(row)} · {row.running ? "working" : "idle"} · <time title={row.createdAt}>{relativeTime(row.createdAt)}</time>
+                    <Show when={row.branch}>
+                      {(b) => (
+                        <>
+                          {" · "}
+                          <span class="orgs-mono">{b()}</span>
+                          {row.path === null ? " · on another host" : ""}
+                        </>
+                      )}
+                    </Show>
+                  </span>
+                  <Show when={row.state === "root" && row.inRoot}>{(why) => <span class="list-meta">In the project root: {why()}</span>}</Show>
+                  <Show when={row.state === "merged" || row.mergedAt}>
+                    <span class="list-meta">
+                      Merged into <span class="orgs-mono">{row.target}</span>
+                      <Show when={row.mergedAt}>{(at) => <> <time title={at()}>{relativeTime(at())}</time></>}</Show>
+                    </span>
+                  </Show>
+                  <Show when={row.state === "removed"}>
+                    <span class="list-meta">Worktree removed</span>
+                  </Show>
+                  <Show when={row.state === "missing"}>
+                    <span class="list-meta">Worktree folder missing</span>
+                  </Show>
+                </span>
+                <Show when={offersMerge(row) || offersRemove(row)}>
+                  <div class="button-row project-worktree-actions">
+                    <Show when={offersMerge(row)}>
+                      <button
+                        type="button"
+                        class="button button-sm"
+                        aria-disabled={mergeGate(row) || working() ? "true" : undefined}
+                        title={mergeGate(row) ?? undefined}
+                        onClick={() => !mergeGate(row) && void act(row, () => props.merge(row), `Merged ${row.branch} into ${row.target}.`)}
+                      >
+                        Merge Branch
+                      </button>
+                    </Show>
+                    <Show when={offersRemove(row)}>
+                      <button
+                        type="button"
+                        class="button button-sm button-destructive"
+                        aria-disabled={removeGate(row) || working() ? "true" : undefined}
+                        aria-expanded={armed()}
+                        title={removeGate(row) ?? undefined}
+                        onClick={() => !removeGate(row) && setConfirming(armed() ? null : row.sessionId)}
+                      >
+                        Remove Worktree
+                      </button>
+                    </Show>
+                  </div>
+                </Show>
+                <Show when={errors()[row.sessionId]}>{(e) => <p class="field-error project-worktree-note">{e()}</p>}</Show>
+                <Show when={armed()}>
+                  <div class="person-confirm project-worktree-note" role="group" aria-label="Remove worktree">
+                    <p class="orgs-line">
+                      <Show
+                        when={row.merged}
+                        fallback={
+                          <>
+                            The folder <span class="orgs-mono">{folder()}</span> goes away. The branch <span class="orgs-mono">{row.branch}</span> keeps its commits, and the session and its transcript stay.
+                          </>
+                        }
+                      >
+                        The folder <span class="orgs-mono">{folder()}</span> and the merged branch <span class="orgs-mono">{row.branch}</span> go away. The session and its transcript stay.
+                      </Show>
+                    </p>
+                    <div class="button-row">
+                      <button
+                        type="button"
+                        class="button button-sm button-destructive"
+                        aria-disabled={working() ? "true" : undefined}
+                        onClick={() => void act(row, () => props.remove(row), "Worktree removed.")}
+                      >
+                        Remove Worktree
+                      </button>
+                      <button type="button" class="button button-sm button-ghost" onClick={() => setConfirming(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </Show>
+              </li>
+            );
+          }}
+        </For>
+      </ul>
+    </Show>
+  );
+}
+
 function Activity(props: { actions: OverseerAction[] | undefined; error: string | null }) {
-  const OUTCOME = { ok: { word: "Done", tone: "success" as const }, refused: { word: "Refused", tone: "warn" as const }, error: { word: "Failed", tone: "error" as const } };
+  const OUTCOME = {
+    ok: { word: "Done", tone: "success" as const },
+    partial: { word: "Partly", tone: "warn" as const },
+    refused: { word: "Refused", tone: "warn" as const },
+    error: { word: "Failed", tone: "error" as const },
+  };
   return (
     <details class="orgs-history orgs-history-section" open>
       <summary>Activity{props.actions ? ` · ${props.actions.length}` : ""}</summary>
@@ -371,7 +597,8 @@ function Activity(props: { actions: OverseerAction[] | undefined; error: string 
             {(a) => (
               <li class="orgs-change">
                 <span class="orgs-change-main">
-                  {actionLine(a)} <span class="list-meta">· <time title={a.at}>{relativeTime(a.at)}</time></span>
+                  {actionLine(a)}
+                  <Show when={a.note}>{(n) => <span class="project-muted"> · {n()}</span>}</Show> <span class="list-meta">· <time title={a.at}>{relativeTime(a.at)}</time></span>
                 </span>
                 <Chip tone={OUTCOME[a.outcome].tone}>{OUTCOME[a.outcome].word}</Chip>
               </li>
@@ -393,11 +620,13 @@ interface ItemCallbacks {
   after(): void;
 }
 
-function Ideas(props: ItemCallbacks & { ideas: IdeaRecord[] | undefined; error: string | null }) {
+function Ideas(props: ItemCallbacks & { ideas: IdeaRecord[] | undefined; error: string | null; add(title: string): Promise<void> }) {
+  const [draft, setDraft] = createSignal("");
+  const [err, setErr] = createSignal<string | null>(null);
   return (
     <details class="orgs-history orgs-history-section" open>
       <summary>Gaps and ideas{props.ideas ? ` · ${props.ideas.length}` : ""}</summary>
-      <Show when={props.error}>{(e) => <p class="field-error">{e()}</p>}</Show>
+      <Show when={props.error ?? err()}>{(e) => <p class="field-error">{e()}</p>}</Show>
       <Show when={props.ideas?.length} fallback={<p class="orgs-empty">No open ideas. Gaps it finds between the decisions and who decides them land here.</p>}>
         <ul class="project-items">
           <For each={props.ideas}>
@@ -419,6 +648,29 @@ function Ideas(props: ItemCallbacks & { ideas: IdeaRecord[] | undefined; error: 
           </For>
         </ul>
       </Show>
+      <form
+        class="orgs-inline"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const title = draft().trim();
+          if (!title) return;
+          props.add(title).then(
+            () => {
+              setDraft("");
+              setErr(null);
+            },
+            (x) => setErr(unchangedError(errText(x), "Nothing was added.")),
+          );
+        }}
+      >
+        <label class="field orgs-grow">
+          <span class="field-label">New idea</span>
+          <input class="input" value={draft()} onInput={(e) => setDraft(e.currentTarget.value)} maxlength={IDEA_TITLE_MAX} />
+        </label>
+        <button type="submit" class="button">
+          Add Idea
+        </button>
+      </form>
     </details>
   );
 }
@@ -506,9 +758,14 @@ function ItemActions(props: ItemCallbacks & { item: Item }) {
     setWorking(true);
     try {
       const r = await props.code(ref());
-      setErr(null);
-      toast("Coding session started.");
       props.after();
+      // Started but not prompted: it stays on this page, with the item's Open Its Session, to send the message by hand.
+      if (r.notPrompted) {
+        setErr(`${r.notPrompted} Open it and send the message yourself.`);
+        return;
+      }
+      setErr(null);
+      toast(r.worktree ? `Coding session started on ${r.worktree.branch}.` : "Coding session started in the project root.");
       location.hash = sessionHref(r.path);
     } catch (x) {
       setErr(unchangedError(errText(x), "No session was started."));

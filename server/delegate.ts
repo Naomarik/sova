@@ -27,6 +27,7 @@ import type {
   ModelInfo,
   ModelPolicy,
 } from "../shared/protocol";
+import { withLongContextVariants } from "../pi-config/extensions/claude-code/context-window.ts";
 import { discoverClaudeModels, type ClaudeModel } from "./claude-models";
 import { CLAUDE_CODE_PROVIDER } from "./models";
 
@@ -85,40 +86,21 @@ export interface DelegateSources {
 }
 
 const CLAUDE_TTL_MS = 60_000;
-/**
- * How long a `[1m]` id stays listed after a later discovery omits it. The CLI's initialize model
- * list is remote and account-gated, and alternates within minutes between a shape that carries
- * the 1M-context aliases (`opus[1m]`, `claude-fable-5-1[1m]`) and one that does not, while the CLI
- * accepts them at runtime either way; without this the picker flickers between the two shapes.
- * Long enough to outlast that, short enough that a model really withdrawn drops out the same hour.
- */
-const CLAUDE_1M_MEMORY_MS = 30 * 60_000;
 let claudeCache: { at: number; models: ClaudeModel[] } | undefined;
 let claudeInFlight: Promise<ClaudeModel[]> | undefined;
-/** `[1m]` ids by last sighting. */
-let recent1m = new Map<string, { model: ClaudeModel; at: number }>();
 
 /**
- * A fresh CLI list, plus every `[1m]` id seen within CLAUDE_1M_MEMORY_MS that it omits (as last
- * reported, efforts included). Sightings older than that are forgotten. Pure but for the sighting
- * map; exported for tests.
+ * Claude discovery cached 60 s like the extension's backend; failures are not cached, concurrent
+ * asks share one CLI run. The CLI's initialize list is remote and account-gated and has dropped
+ * the 1M-context aliases it once listed (`opus[1m]`, `claude-fable-5-1[1m]`) while still accepting
+ * them, so the extension's list rule (claude-code/context-window.ts withLongContextVariants, the
+ * same one `agent_models` and the chat picker apply) adds each back after its listed base.
  */
-export function withRecent1m(models: ClaudeModel[], now = Date.now()): ClaudeModel[] {
-  for (const model of models) if (model.id.endsWith("[1m]")) recent1m.set(model.id, { model, at: now });
-  const merged = [...models];
-  for (const [id, seen] of recent1m) {
-    if (now - seen.at > CLAUDE_1M_MEMORY_MS) recent1m.delete(id);
-    else if (!merged.some((m) => m.id === id)) merged.push(seen.model);
-  }
-  return merged;
-}
-
-/** Claude discovery cached 60 s like the extension's backend; failures are not cached, concurrent asks share one CLI run. */
 export function cachedClaudeModels(discover: () => Promise<ClaudeModel[]> = () => discoverClaudeModels()): Promise<ClaudeModel[]> {
   if (claudeCache && Date.now() - claudeCache.at < CLAUDE_TTL_MS) return Promise.resolve(claudeCache.models);
   claudeInFlight ??= discover()
     .then((discovered) => {
-      const models = withRecent1m(discovered);
+      const models = withLongContextVariants(discovered);
       claudeCache = { at: Date.now(), models };
       return models;
     })
@@ -128,11 +110,10 @@ export function cachedClaudeModels(discover: () => Promise<ClaudeModel[]> = () =
   return claudeInFlight;
 }
 
-/** Test seam: forget the cached Claude list and the `[1m]` sightings. */
+/** Test seam: forget the cached Claude list. */
 export const resetClaudeCache = () => {
   claudeCache = undefined;
   claudeInFlight = undefined;
-  recent1m = new Map();
 };
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
@@ -198,8 +179,8 @@ const sessionScoped = (backend: DelegateBackendOptions, model: string): boolean 
  * What discovery says about one tuple: an error when the backend answered and cannot run it, a
  * warning when it cannot be checked or the policy refuses it. Pure; exported for tests.
  *
- * Claude Code is the exception to "answered without it means gone": its list varies (see
- * CLAUDE_1M_MEMORY_MS), and the CLI accepts a valid alias at runtime, so a shape-valid Claude id
+ * Claude Code is the exception to "answered without it means gone": its list is remote and varies
+ * (see cachedClaudeModels), and the CLI accepts a valid alias at runtime, so a shape-valid Claude id
  * the list omits is a warning, never an error — the same reading the mode extension routes by
  * (routing.ts assess). pi's registry is local and reliable: there absence stands.
  */

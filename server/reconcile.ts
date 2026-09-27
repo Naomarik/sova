@@ -7,16 +7,20 @@ import {
   RECONCILE_DEFAULT,
   RECONCILE_OFF,
   REQUIREMENTS_NS,
+  foldedRows,
   type Conflict,
   type ConflictResolveInput,
   type DecisionRow,
   type DecisionsInfo,
+  type PromoteCommit,
   type PromoteResult,
   type ReconcileEvent,
   type SpecStatus,
 } from "../shared/decisions";
 import type { Person } from "../shared/orgs";
 import { batonById, closeBaton, createBaton, namesOf } from "./baton";
+import { commitSpec, specSnapshot } from "./project-worktrees";
+import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 import { onBatonEvent } from "./baton-events";
 import { DecisionError, type DecisionProvider, type Question } from "./decide";
 import { isExcluded } from "./decide-settings";
@@ -169,7 +173,7 @@ const markChecked = (x: DecisionRow, y: DecisionRow) => {
 /** The record a promoted row should have in the current spec, and whether the spec has it. */
 function upToDate(d: DecisionRow, byId: Map<string, DecisionRow>, current: Record<string, unknown>): boolean {
   if (!d.recordId) return false;
-  const also = (d.folded ?? []).map((id) => byId.get(id)).filter((x): x is DecisionRow => !!x);
+  const also = foldedRows(d, byId);
   if (JSON.stringify(current[d.recordId]) !== JSON.stringify(manifestRecord(d, undefined, also))) return false;
   // Every promoted decision it replaced must say so in the spec, too.
   for (const s of byId.values())
@@ -185,18 +189,33 @@ function upToDate(d: DecisionRow, byId: Map<string, DecisionRow>, current: Recor
  * current spec still says what it should; else it is `drafted` again: re-promotable), compared
  * clean with its whole area by a successful run (`drafted`), else `pending`.
  */
-/** Whether the author may decide the row's area: the operator, or an active person whose
-    operator-set `decides` covers it (a self-asserted say does not count). */
-export function authorOwnsArea(orgId: string, roster: Person[], d: Pick<DecisionRow, "by" | "areaKey">, trusted = decidesTrusted): boolean {
-  if (d.by === OPERATOR) return true;
-  const p = roster.find((x) => x.id === d.by && x.status === "active");
-  return !!p && p.decides.some((x) => areaKeyOf(x) === d.areaKey) && trusted(orgId, p, d.areaKey);
+/**
+ * Who may decide an area of a project: the active people whose `decides` names it (explicit
+ * owners), else the project's main stakeholder while they are active (they own every area no one
+ * else on the roster decides), else nobody (the operator). Pure over the roster.
+ */
+export function ownersOf(roster: Person[], areaKey: string, stakeholder?: string | null): { owners: Person[]; via: "decides" | "stakeholder" | null } {
+  const explicit = roster.filter((p) => p.status === "active" && p.decides.some((x) => areaKeyOf(x) === areaKey));
+  if (explicit.length) return { owners: explicit, via: "decides" };
+  const main = stakeholder ? roster.find((p) => p.id === stakeholder && p.status === "active") : undefined;
+  return main ? { owners: [main], via: "stakeholder" } : { owners: [], via: null };
 }
 
-function settleStates(store: DecisionStore, conflicts: Conflict[], root?: string, orgId?: string): void {
+/** Whether the author may decide the row's area: the operator; an active person whose operator-set
+    `decides` covers it (a self-asserted say does not count); or, in an area no one on the roster
+    decides, the project's main stakeholder. */
+export function authorOwnsArea(orgId: string, roster: Person[], d: Pick<DecisionRow, "by" | "areaKey">, trusted = decidesTrusted, stakeholder?: string | null): boolean {
+  if (d.by === OPERATOR) return true;
+  const { owners, via } = ownersOf(roster, d.areaKey, stakeholder);
+  const p = owners.find((x) => x.id === d.by);
+  if (!p) return false;
+  return via === "stakeholder" || trusted(orgId, p, d.areaKey);
+}
+
+function settleStates(store: DecisionStore, conflicts: Conflict[], root?: string, orgId?: string, stakeholder?: string | null): void {
   if (orgId) {
     const roster = readRoster(orgId);
-    for (const d of store.decisions) d.authorOwnsArea = authorOwnsArea(orgId, roster, d);
+    for (const d of store.decisions) d.authorOwnsArea = authorOwnsArea(orgId, roster, d, decidesTrusted, stakeholder);
   }
   const live = store.decisions.filter((d) => !d.supersededBy);
   const byId = new Map(store.decisions.map((d) => [d.id, d]));
@@ -291,7 +310,8 @@ function info(orgId: string, projectId: string, store: DecisionStore, conflicts:
 export function listDecisions(orgId: string, projectId: string): DecisionsInfo {
   const { store } = syncDecisions(orgId, projectId);
   const conflicts = readConflicts(orgId, projectId);
-  settleStates(store, conflicts, projectOf(orgId, projectId).root, orgId);
+  const project = projectOf(orgId, projectId);
+  settleStates(store, conflicts, project.root, orgId, project.stakeholder);
   return info(orgId, projectId, store, conflicts);
 }
 
@@ -316,19 +336,31 @@ export function setFrozen(orgId: string, projectId: string, frozen: boolean): Sp
 const clipText = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const brief = (d: DecisionRow) => ({ statement: clipText(d.statement, 500), quote: clipText(d.quote, 600), by: d.name, at: d.at.slice(0, 10) });
 
-const CONTRADICT: (x: string, y: string) => Question = (x, y) => ({
-  type: "boolean",
-  instructions: `Do decisions ${x} and ${y} contradict each other, so that a team could not follow both at once?`,
-  criteria: {
-    true: "They give incompatible answers to the same question (different values, owners, tools, rules or dates for the same thing).",
-    false: "They are about different things, one refines or adds to the other, or they agree.",
+/** One pair, classified: a contradiction needs the SAME question answered differently; the same
+    rule said twice is a restatement; anything else (another subject in the same area, a detail
+    added) is neither. Three options, so "different subject" is a real answer, not a low "yes". */
+const CLASSIFY: (x: string, y: string) => Question = (x, y) => ({
+  type: "choice",
+  instructions:
+    `Compare decisions ${x} and ${y}. First name the single question each one answers (for example "who approves invoices over what amount?" or "which weekday are payments made?"). ` +
+    `Only if both answer the SAME question can they conflict or be the same.`,
+  options: {
+    conflict: "Both answer the same question, with incompatible answers (a team could not follow both).",
+    same: "Both state the same rule (a restatement or confirmation, possibly worded differently).",
+    different: "They answer different questions, or one only adds a detail the other does not settle.",
   },
 });
 
 const PAIRS_PER_REQUEST = 12;
 
-async function askPairs(provider: DecisionProvider, areaKey: string, area: string, pairs: [DecisionRow, DecisionRow][], dedupe: string): Promise<number[]> {
-  const out: number[] = [];
+/** A pair's answer: P(contradiction) and P(same rule restated). */
+export interface PairVerdict {
+  conflict: number;
+  same: number;
+}
+
+async function askPairs(provider: DecisionProvider, areaKey: string, area: string, pairs: [DecisionRow, DecisionRow][], dedupe: string): Promise<PairVerdict[]> {
+  const out: PairVerdict[] = [];
   for (let i = 0; i < pairs.length; i += PAIRS_PER_REQUEST) {
     const chunk = pairs.slice(i, i + PAIRS_PER_REQUEST);
     const label = new Map<string, string>();
@@ -341,14 +373,36 @@ async function askPairs(provider: DecisionProvider, areaKey: string, area: strin
           decisions[l] = brief(d);
         }
     const questions: Record<string, Question> = {};
-    chunk.forEach(([x, y], j) => (questions[`pair${j + 1}`] = CONTRADICT(label.get(x.id)!, label.get(y.id)!)));
+    chunk.forEach(([x, y], j) => (questions[`pair${j + 1}`] = CLASSIFY(label.get(x.id)!, label.get(y.id)!)));
     const r = await provider.decide({ purpose: "reconcile", state: { area: area || areaKey, decisions }, questions, dedupeKey: `${dedupe}:${areaKey}:${i}` });
     chunk.forEach((_, j) => {
       const a = r.answers[`pair${j + 1}`];
-      out.push(a?.type === "boolean" ? a.p : 0);
+      out.push(a?.type === "choice" ? { conflict: a.probabilities.conflict ?? 0, same: a.probabilities.same ?? 0 } : { conflict: 0, same: 0 });
     });
   }
   return out;
+}
+
+/** The same words: one author saying one rule twice needs no model to tell. */
+const sameWords = (x: DecisionRow, y: DecisionRow) => {
+  const n = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return n(x.statement) === n(y.statement);
+};
+
+/** Where a superseded decision's line ends now (the live decision that replaced it, transitively). */
+function finalWinner(d: DecisionRow, byId: Map<string, DecisionRow>): DecisionRow | undefined {
+  let cur: DecisionRow | undefined = d;
+  for (let n = 0; n < 50 && cur?.supersededBy; n++) cur = byId.get(cur.supersededBy);
+  return cur && !cur.supersededBy ? cur : undefined;
+}
+
+/** `later` says `first` again: it joins `first`'s record (no second one) and shares its fate. */
+function fold(first: DecisionRow, later: DecisionRow, byId: Map<string, DecisionRow>): void {
+  if (first.supersededBy && finalWinner(first, byId) === later) return markChecked(first, later);
+  first.folded = [...new Set([...(first.folded ?? []), later.id])];
+  // A restatement of a superseded rule is superseded with it, by what replaced it.
+  later.supersededBy = first.supersededBy ? (finalWinner(first, byId)?.id ?? first.supersededBy) : first.id;
+  markChecked(first, later);
 }
 
 /** Same subject by wording alone: every word of one key is in the other ("payroll-export" ⊂ "payroll-export-format"). */
@@ -449,10 +503,15 @@ export function decidesTrusted(orgId: string, person: Person, areaKey: string): 
   return true;
 }
 
-/** Who settles a conflict in `areaKey`: the owner of the area other than the authors when there is one. Pure over the roster. */
-export function routeConflict(orgId: string, roster: Person[], areaKey: string, area: string, authors: string[], trusted = decidesTrusted): Route {
-  const owners = roster.filter((p) => p.status === "active" && p.decides.some((x) => areaKeyOf(x) === areaKey));
+/**
+ * Who settles a conflict in `areaKey`: the area's owner other than the authors when there is one;
+ * in an area no one on the roster decides, the project's main stakeholder (even when they wrote a
+ * side: one person contradicting themselves); else the operator. Pure over the roster.
+ */
+export function routeConflict(orgId: string, roster: Person[], areaKey: string, area: string, authors: string[], trusted = decidesTrusted, stakeholder?: string | null): Route {
+  const { owners, via } = ownersOf(roster, areaKey, stakeholder);
   if (!owners.length) return { to: OPERATOR, reason: `Nobody on the roster decides ${area}.` };
+  if (via === "stakeholder") return { to: owners[0]!.id, reason: `${owners[0]!.name} is this project's main stakeholder.` };
   const pick = owners.find((p) => !authors.includes(p.id)) ?? owners[0]!;
   if (!trusted(orgId, pick, areaKey)) return { to: OPERATOR, reason: `${pick.name}'s say over ${area} was not set by ${operatorName()} (self-asserted).`, selfAsserted: true };
   return { to: pick.id, reason: `${pick.name} decides ${area}.` };
@@ -485,9 +544,33 @@ export interface ReconcileOptions {
   /** Started by Sova itself (a routed conflict's answer): with the switch off it is skipped and
       recorded in lastRun.error instead of refused. */
   auto?: boolean;
+  /** The settle sessions' model and thinking (the project overseer passes its gathering choice);
+      default: the project's gathering model (settleChoice). */
+  model?: string;
+  thinking?: string;
 }
 
-function decisionOutcome(provider: DecisionProvider, c: Conflict, a: DecisionRow, b: DecisionRow, r: DecisionRow): Promise<"a" | "b" | "both" | "neither"> {
+/**
+ * The model and thinking of a settle session (the person talks to it, like any gathering
+ * session): the project's `gatheringModel`/`gatheringThinking`, else the overseer's own setting,
+ * else nothing (the new-session default). For every settle session, the operator's included.
+ */
+export function settleChoice(orgId: string, projectId: string): { model?: string; thinking?: string } {
+  try {
+    const s = readPoSettings(projectOverseerPaths(orgId, projectId));
+    const model = s.gatheringModel ?? s.model;
+    const thinking = s.gatheringThinking ?? s.thinking;
+    return { ...(model ? { model } : {}), ...(thinking ? { thinking } : {}) };
+  } catch {
+    return {};
+  }
+}
+
+type Outcome = "a" | "b" | "both" | "neither";
+
+/** What a resolution does, and whether it only says the kept side again (then it is folded into
+    that record; otherwise it is a decision of its own, and never evidence for the other rule). */
+function decisionOutcome(provider: DecisionProvider, c: Conflict, a: DecisionRow, b: DecisionRow, r: DecisionRow): Promise<{ outcome: Outcome; restates: boolean }> {
   return provider
     .decide({
       purpose: "reconcile",
@@ -498,22 +581,30 @@ function decisionOutcome(provider: DecisionProvider, c: Conflict, a: DecisionRow
           instructions: "A and B contradicted each other; the resolution was then decided by the person who owns the area. What does the resolution do?",
           options: { a: "It keeps A (B no longer holds).", b: "It keeps B (A no longer holds).", neither: "It replaces both with something else.", both: "It says both hold; they do not really contradict." },
         },
+        restates: {
+          type: "boolean",
+          instructions: "Does the resolution state the same rule as A or as B (the same question with the same answer), rather than something else?",
+          criteria: { true: "Its rule is A's or B's, said again.", false: "It is about something else, or adds a rule neither A nor B states." },
+        },
       },
       dedupeKey: `reconcile:${c.id}:outcome`,
     })
     .then((res) => {
       const ans = res.answers.outcome;
-      return ans?.type === "choice" && (ans.choice === "a" || ans.choice === "b" || ans.choice === "both" || ans.choice === "neither") ? ans.choice : "neither";
+      const outcome = ans?.type === "choice" && (ans.choice === "a" || ans.choice === "b" || ans.choice === "both" || ans.choice === "neither") ? ans.choice : "neither";
+      const re = res.answers.restates;
+      return { outcome, restates: re?.type === "boolean" && re.p >= 0.5 };
     });
 }
 
-function applyOutcome(c: Conflict, a: DecisionRow, b: DecisionRow, resolver: DecisionRow | null, outcome: "a" | "b" | "both" | "neither", now: Date): void {
+function applyOutcome(c: Conflict, a: DecisionRow, b: DecisionRow, resolver: DecisionRow | null, outcome: Outcome, now: Date, restates = true): void {
   const kept = outcome === "a" ? a : outcome === "b" ? b : null;
   const lost = outcome === "a" ? b : outcome === "b" ? a : null;
   if (kept && lost) {
     lost.supersededBy = kept.id;
     // A resolution that keeps a side says it again: its words join that record, not a second one.
-    if (resolver) {
+    // One that says something else stays a decision of its own.
+    if (resolver && restates) {
       resolver.supersededBy = kept.id;
       kept.folded = [...new Set([...(kept.folded ?? []), resolver.id])];
     }
@@ -552,7 +643,7 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
     const run = { at: now.toISOString(), compared: 0, found: 0 } as NonNullable<DecisionStore["lastRun"]>;
     const newConflicts: string[] = [];
     const resolved: string[] = [];
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     try {
       if (d.excluded(project.root)) throw new DecisionError("unavailable", "This project's folder is excluded in Settings → Decisions.");
       const provider = d.provider();
@@ -568,21 +659,46 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
           .filter((x) => x.sessionId === c.batonSessionId && !x.resolves && x.state === "pending")
           .sort((x, y) => x.at.localeCompare(y.at))[0];
         if (!a || !b || !r) continue;
-        applyOutcome(c, a, b, r, await decisionOutcome(provider, c, a, b, r), now);
+        const { outcome, restates } = await decisionOutcome(provider, c, a, b, r);
+        applyOutcome(c, a, b, r, outcome, now, restates);
         resolved.push(c.id);
       }
-      settleStates(store, conflicts, project.root, orgId);
+      settleStates(store, conflicts, project.root, orgId, project.stakeholder);
 
       // 3. Areas.
       await fileAreas(provider, store, dedupe);
-      settleStates(store, conflicts, project.root, orgId);
+      settleStates(store, conflicts, project.root, orgId, project.stakeholder);
 
       // 4. Pairs.
       const inConflict = new Set(conflicts.map((c) => pairKey(c.a, c.b)));
       const live = store.decisions.filter((x) => !x.supersededBy);
       const areas = [...new Set(live.map((x) => x.areaKey))];
       for (const areaKey of areas) {
-        const group = live.filter((x) => x.areaKey === areaKey).sort((x, y) => x.at.localeCompare(y.at));
+        // Restatements first: a pending decision that says again what its author said before
+        // shares that statement's fate (superseded with it), so a losing author repeating their
+        // rule never reopens the settled conflict.
+        const again: [DecisionRow, DecisionRow][] = [];
+        const before = store.decisions.filter((x) => x.areaKey === areaKey).sort((x, y) => x.at.localeCompare(y.at));
+        for (const y of before) {
+          if (y.supersededBy || y.state !== "pending" || y.promotedAt || y.resolves) continue;
+          for (const x of before) {
+            if (x === y || x.by !== y.by || x.at > y.at || checked(x, y) || y.supersededBy) continue;
+            if (!x.supersededBy && !sameWords(x, y)) continue; // a live pair is asked below
+            if (sameWords(x, y)) fold(x, y, byId);
+            else again.push([x, y]);
+          }
+        }
+        if (again.length) {
+          const vs = await askPairs(provider, areaKey, again[0]![0].area, again, `${dedupe}:again`);
+          run.compared += again.length;
+          again.forEach(([x, y], k) => {
+            if (y.supersededBy) return;
+            if ((vs[k]?.same ?? 0) >= CONFLICT_P) fold(x, y, byId);
+            else markChecked(x, y);
+          });
+          settleStates(store, conflicts, project.root, orgId, project.stakeholder);
+        }
+        const group = store.decisions.filter((x) => !x.supersededBy && x.areaKey === areaKey).sort((x, y) => x.at.localeCompare(y.at));
         const pairs: [DecisionRow, DecisionRow][] = [];
         for (let i = 0; i < group.length; i++)
           for (let j = i + 1; j < group.length; j++) {
@@ -601,12 +717,19 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
         const roster = readRoster(orgId);
         for (let k = 0; k < pairs.length; k++) {
           const [x, y] = pairs[k]!;
-          const p = ps[k] ?? 0;
+          if (x.supersededBy || y.supersededBy) continue;
+          const v = ps[k] ?? { conflict: 0, same: 0 };
+          const p = v.conflict;
+          // The same rule said twice (a confirmation, a second person agreeing): one record, both quotes.
+          if (v.same >= CONFLICT_P && p < CONFLICT_P && !y.promotedAt && !y.resolves) {
+            fold(x, y, byId);
+            continue;
+          }
           if (p < CONFLICT_P || openConflictOf(conflicts, x.id) || openConflictOf(conflicts, y.id)) {
             if (p < CONFLICT_P) markChecked(x, y);
             continue;
           }
-          const route = routeConflict(orgId, roster, areaKey, area, [x.by, y.by]);
+          const route = routeConflict(orgId, roster, areaKey, area, [x.by, y.by], decidesTrusted, project.stakeholder);
           const c: Conflict = {
             id: shortId("cf_"),
             orgId,
@@ -625,7 +748,7 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
           inConflict.add(pairKey(x.id, y.id));
           newConflicts.push(c.id);
           run.found++;
-          settleStates(store, conflicts, project.root, orgId);
+          settleStates(store, conflicts, project.root, orgId, project.stakeholder);
         }
       }
       // Every live decision has now been filed and compared (or is in a conflict).
@@ -633,14 +756,14 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
     } catch (err) {
       run.error = err instanceof Error ? err.message : String(err);
     }
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
 
     // Route the new conflicts (a failure here leaves the conflict open, routable by hand).
     if (opts.route !== false)
       for (const id of newConflicts) {
         const c = conflicts.find((x) => x.id === id)!;
         try {
-          startConflictBaton(d, c, byId, opts.owner);
+          startConflictBaton(d, c, byId, opts.owner, opts.model || opts.thinking ? { ...(opts.model ? { model: opts.model } : {}), ...(opts.thinking ? { thinking: opts.thinking } : {}) } : undefined);
         } catch (err) {
           run.error = `${run.error ? `${run.error}; ` : ""}routing ${c.id}: ${err instanceof Error ? err.message : String(err)}`;
         }
@@ -662,14 +785,15 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
   });
 }
 
-function startConflictBaton(d: ReconcileDeps, c: Conflict, byId: Map<string, DecisionRow>, owner?: BatonOwner): void {
+function startConflictBaton(d: ReconcileDeps, c: Conflict, byId: Map<string, DecisionRow>, owner?: BatonOwner, choice: { model?: string; thinking?: string } = settleChoice(c.orgId, c.projectId)): void {
   const a = byId.get(c.a);
   const b = byId.get(c.b);
   if (!a || !b) throw new OrgError("The conflict's decisions are gone", 409);
   const area = a.area;
   // No link is minted here (nobody could be shown it): Needs-you asks the operator to send one.
-  const created = d.startBaton({ ...batonFor(c, a, b, area), ...(owner ? { owner } : {}), mintLink: false });
+  const created = d.startBaton({ ...batonFor(c, a, b, area), ...choice, ...(owner ? { owner } : {}), mintLink: false });
   c.batonSessionId = created.sessionId;
+  // Its path is derived from the id on each read (readConflicts), never stored in the repo.
   c.batonPath = created.path;
 }
 
@@ -688,7 +812,8 @@ function editFor(store: DecisionStore, rows: DecisionRow[], root: string): SpecE
     out.push(s);
   }
   const also = new Map<string, DecisionRow[]>();
-  for (const r of rows) if (r.recordId && r.folded?.length) also.set(r.recordId, r.folded.map((id) => byId.get(id)).filter((x): x is DecisionRow => !!x));
+  // A fold of a fold too: a confirmation folded into a resolution that was itself folded here.
+  for (const r of rows) if (r.recordId && r.folded?.length) also.set(r.recordId, foldedRows(r, byId));
   return { rows: out, supersededBy, also };
 }
 
@@ -707,7 +832,7 @@ export function draftProject(orgId: string, projectId: string): Promise<Decision
     const project = projectOf(orgId, projectId);
     const { store } = syncDecisions(orgId, projectId);
     const conflicts = readConflicts(orgId, projectId);
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     assignRecordIds(project.root, store);
     writeDecisionStore(orgId, projectId, store);
     const ids = await refreshDraft(orgId, projectId, store);
@@ -741,7 +866,7 @@ export function routeConflictNow(orgId: string, projectId: string, conflictId: s
     const old = previous ? batonById(previous)?.row : undefined;
     if (old && old.state !== "closed") await d.endBaton(old.sessionId);
     writeConflicts(orgId, projectId, conflicts);
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     return info(orgId, projectId, store, conflicts);
   });
 }
@@ -771,7 +896,7 @@ export function resolveConflict(orgId: string, projectId: string, conflictId: st
     // Settled by hand: the session still asking someone about it is over, and so is its Needs-you item.
     const asking = c.batonSessionId ? batonById(c.batonSessionId)?.row : undefined;
     if (asking && asking.state !== "closed") await d.endBaton(asking.sessionId);
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     assignRecordIds(project.root, store);
     writeDecisionStore(orgId, projectId, store);
     writeConflicts(orgId, projectId, conflicts);
@@ -810,7 +935,7 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
     const project = projectOf(orgId, projectId);
     const { store } = syncDecisions(orgId, projectId);
     const conflicts = readConflicts(orgId, projectId);
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     assignRecordIds(project.root, store);
     const refused: PromoteResult["refused"] = [];
     const rows: DecisionRow[] = [];
@@ -823,8 +948,11 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
     }
     let promoted: string[] = [];
     let draft: string | undefined;
+    let commit: PromoteCommit | undefined;
     if (rows.length) {
       const edit = editFor(store, rows, project.root);
+      // What git sees in the root's spec before the promotion, so the commit takes only its own changes.
+      const snap = await specSnapshot(project.root).catch(() => null);
       try {
         const out = await promoteEdit(project.root, edit, (rid) => verificationFor(store, rid, conflicts), d.now());
         if (out.draft) draft = out.draft;
@@ -835,18 +963,29 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
           promoted.push(r.id);
         }
         store.lastPromotedSpec = specHash(project.root);
+        if (snap && promoted.length) commit = await commitSpec(snap, promotionMessage(rows.filter((r) => promoted.includes(r.id)))).catch((err) => ({ skipped: `Not committed: ${err instanceof Error ? err.message : String(err)}` }));
       } catch (err) {
         const reason = err instanceof SpecToolError || err instanceof Error ? err.message : String(err);
         for (const r of rows) refused.push({ id: r.id, reason });
         promoted = [];
       }
     }
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     writeDecisionStore(orgId, projectId, store);
     await refreshDraft(orgId, projectId, store).catch(() => []);
-    emit({ type: "promoted", orgId, projectId, ids: promoted });
-    return { info: info(orgId, projectId, store, conflicts), promoted, refused, ...(draft ? { draft } : {}) };
+    emit({ type: "promoted", orgId, projectId, ids: promoted, by: opts.by });
+    return { info: info(orgId, projectId, store, conflicts), promoted, refused, ...(draft ? { draft } : {}), ...(commit ? { commit } : {}) };
   });
+}
+
+/** The promotion commit's message (§app.requirements/promotion-commit): "Promote 2 decisions: payroll
+    export — Exports run on Fridays; approvals — …", each item cut to 72 characters, at most 10 then
+    "and k more". */
+export function promotionMessage(rows: Pick<DecisionRow, "statement" | "area">[]): string {
+  const items = rows.slice(0, 10).map((r) => clipText(`${r.area.toLowerCase()} — ${r.statement.replace(/\s+/g, " ").trim().replace(/[.;]+$/, "")}`, 72));
+  const more = rows.length > 10 ? ` and ${rows.length - 10} more` : "";
+  const line = `Promote ${rows.length} decision${rows.length === 1 ? "" : "s"}: ${items.join("; ")}${more}`;
+  return /[.…]$/.test(line) ? line : `${line}.`;
 }
 
 // ---- resolutions as they happen -----------------------------------------------------------------------------
@@ -855,8 +994,9 @@ let watching: (() => void) | null = null;
 const pendingRuns = new Map<string, ReturnType<typeof setTimeout>>();
 
 /**
- * A decision recorded in an open conflict's baton session settles it without waiting for the next
- * Reconcile: run the project's reconciler shortly after (debounced; one run per project). Other
+ * A decision recorded in a conflict's baton session settles it (or, once settled, is compared and
+ * folded) without waiting for the next Reconcile: run the project's reconciler shortly after
+ * (debounced; one run per project). Other
  * decisions wait for the operator or the project overseer. Idempotent; returns the stop.
  */
 export function watchResolutions(delayMs = 2000): () => void {
@@ -865,7 +1005,8 @@ export function watchResolutions(delayMs = 2000): () => void {
     if (e.type !== "decision") return;
     let open: Conflict[];
     try {
-      open = readConflicts(e.orgId, e.projectId).filter((c) => c.state === "open" && c.batonSessionId === e.sessionId);
+      // Resolved too: a second confirmation in the same session is folded without a Reconcile click.
+      open = readConflicts(e.orgId, e.projectId).filter((c) => c.batonSessionId === e.sessionId);
     } catch {
       return;
     }

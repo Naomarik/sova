@@ -378,9 +378,11 @@ export class WebQueue {
       // either drops someone else's message or claims to have stopped one already sent.
       if (holds === "unsure") return refuse("shared_queue");
       // "yes" already proves the real queues hold our item and nothing else (see sdkHolds), which
-      // is exactly the precondition clearQueue() needs: it empties BOTH queues wholesale.
-      this.deps.clearSdkQueue();
+      // is exactly the precondition clearQueue() needs: it empties BOTH queues wholesale. Ours
+      // first: the clear emits `queue_update`, which pumps, and a pump that still saw the item in
+      // flight would report it delivered.
       this.clearInFlight();
+      this.deps.clearSdkQueue();
       this.depart(item, "removed");
       this.deps.onChange(this.snapshot());
       void this.pump();
@@ -409,24 +411,46 @@ export class WebQueue {
    * `queue_cleared` has always promised. The SDK's texts are the EXPANDED ones, ours are raw; that
    * difference is pre-existing (a drained steer has always come back expanded) and is why our own
    * items are reported raw rather than re-expanded to match.
+   *
+   * `keep`: the items it picks are not cleared but handed back whole in `kept`, to be written to
+   * the transcript without a turn (a baton move that stops a reply keeps every queued message,
+   * §app.baton/hand-off). They depart "delivered" and their texts leave `steering`/`followUp`.
+   * The handed-off item is kept only while the SDK really still holds it: once the loop has taken
+   * it, it is the run's message already.
    */
-  async drain(): Promise<{ steering: string[]; followUp: string[] }> {
+  async drain(keep?: (item: WebQueueItem) => boolean): Promise<{ steering: string[]; followUp: string[]; kept: WebQueueItem[] }> {
     // STOP MUST NOT RACE A HAND-OFF. An item parked in an extension `input` handler is neither in
     // `held` nor in the SDK, so clearing both would report it cleared, hand back no text, and then
     // let the hand-off finish and deliver it AFTER the user pressed Stop. Waiting for the hand-off
     // is what makes "nothing queued survives this" true; the delay is bounded by the same handler
     // the send was already waiting on, and `abort()` follows either way.
     if (this.handing) await this.handOffSettled;
-    const sdk = this.deps.clearSdkQueue();
+    const inFlight = this.inFlight;
+    const inSdk = inFlight && this.deps.sdk.hasQueued() ? inFlight : null;
+    // Ours first, then the SDK's: clearing the SDK's queue emits `queue_update` synchronously,
+    // which pumps, and a pump that still saw our items would call the handed-off one delivered
+    // and put the next one into the SDK, past this drain and the abort after it.
     const held = this.held.splice(0);
-    const gone = this.inFlight ? [this.inFlight, ...held] : held;
+    const gone = inFlight ? [inFlight, ...held] : held;
     this.clearInFlight();
-    const ours = (kind: QueueKind) => held.filter((it) => it.kind === kind).map((it) => it.text);
-    for (const item of gone) this.depart(item, "cleared");
+    const sdk = this.deps.clearSdkQueue();
+    const picked = keep ? gone.filter(keep) : [];
+    // A picked item the loop already took is delivered (its sender mark waits for its message), not kept.
+    const kept = picked.filter((it) => it !== inFlight || it === inSdk);
+    const sdkKind = (kind: QueueKind, texts: string[]) => {
+      // A picked handed-off item's (possibly expanded) text leaves the SDK's list (the mirror still
+      // lists one the loop has taken): the first match, else the only one.
+      if (!inFlight || !picked.includes(inFlight) || inFlight.kind !== kind || !texts.length) return texts;
+      const i = texts.indexOf(inFlight.text);
+      return i >= 0 ? texts.filter((_, j) => j !== i) : texts.length === 1 ? [] : texts;
+    };
+    const ours = (kind: QueueKind) => held.filter((it) => it.kind === kind && !kept.includes(it)).map((it) => it.text);
+    for (const item of gone) this.depart(item, picked.includes(item) ? "delivered" : "cleared");
     this.deps.onChange(this.snapshot());
     return {
-      steering: [...sdk.steering, ...ours("steer")],
-      followUp: [...sdk.followUp, ...ours("followUp")],
+      steering: [...sdkKind("steer", sdk.steering), ...ours("steer")],
+      followUp: [...sdkKind("followUp", sdk.followUp), ...ours("followUp")],
+      kept,
     };
   }
 

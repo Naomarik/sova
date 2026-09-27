@@ -6,7 +6,8 @@ import { linkAccess } from "../baton";
 import { TOKEN_RE } from "../baton-links";
 import { refuse } from "../extensions";
 import { addWatcher, viewForToken } from "./hub";
-import { createShareApp } from "./routes";
+import { socketClosed, socketOpened } from "../visits";
+import { createShareApp, logVisit } from "./routes";
 
 /**
  * The share listener (§app.baton/share-listener): the ONE port an organization's home host exposes
@@ -37,6 +38,11 @@ export function shareMayReach(method: string, pathname: string): boolean {
 
 export const BODY_MAX = 16 * 1024;
 export const REQUESTS_PER_MINUTE = 60;
+/** A request's headers must arrive within this, and its whole body within REQUEST_TIMEOUT_MS
+    (else 408): a 16 KB body needs no more, and a slow client can't hold a socket for Node's
+    default five minutes. */
+export const HEADERS_TIMEOUT_MS = 10_000;
+export const REQUEST_TIMEOUT_MS = 15_000;
 
 /**
  * The client's address for the per-address limit. Behind the reverse proxy every connection comes
@@ -79,13 +85,20 @@ export interface ShareListenerState {
   port: number;
 }
 
-/** Build (not bind) the share server: tests bind it on port 0. */
-export function createShareServer(): Server {
+/** Build (not bind) the share server: tests bind it on port 0 (and may shorten the timeouts). */
+export function createShareServer(timeouts: { headersMs?: number; requestMs?: number; checkMs?: number } = {}): Server {
   const app = createShareApp();
   const handle = getRequestListener(app.fetch);
   const perAddress = new RateLimiter(REQUESTS_PER_MINUTE);
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
-  const server = createServer((req, res) => {
+  const requestTimeout = timeouts.requestMs ?? REQUEST_TIMEOUT_MS;
+  const options = {
+    headersTimeout: Math.min(timeouts.headersMs ?? HEADERS_TIMEOUT_MS, requestTimeout),
+    requestTimeout,
+    // How often Node looks for requests past those limits (default 30 s).
+    connectionsCheckingInterval: timeouts.checkMs ?? 1000,
+  };
+  const server = createServer(options, (req, res) => {
     let url: URL;
     try {
       url = new URL(req.url ?? "/", "http://share");
@@ -138,7 +151,15 @@ export function createShareServer(): Server {
     wss.handleUpgrade(req, socket, head, (ws) => {
       // Read-only: messages go through POST /api/h/<token>/message. Anything sent here is ignored.
       ws.on("message", () => {});
+      // A frame over maxPayload (or any protocol error): ws closes the socket (1009 and the like);
+      // without a listener the error would escape as an uncaughtException.
+      ws.on("error", (err) => console.warn(`[share] socket error: ${err.message}`));
       addWatcher(sessionId, ws, token);
+      // A socket continues the tab's visit (never starts one); its close is the visit's last seen.
+      logVisit(token, "socket", () => {
+        const visit = socketOpened(access.link, { tab: url.searchParams.get("v"), userAgent: req.headers["user-agent"] });
+        if (visit) ws.on("close", () => logVisit(token, "socket close", () => socketClosed(visit)));
+      });
       void viewForToken(token).then((view) => {
         if (!("status" in view) && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "view", view }));
       });

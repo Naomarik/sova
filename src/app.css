@@ -344,20 +344,68 @@ html, body, #root { height: 100%; }
 /* The Groups and Needs you region heads: a <details> like the Archive, but
    its <summary> wraps the region's own <h2> so the heading and `aria-labelledby` survive the
    twist. base.css styles the h2; everything the summary itself needs is here. */
-:is(.sidebar-groups, .sidebar-needs-you) > summary {
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs) > summary {
   display: block;
   cursor: pointer;
   list-style: none;
   user-select: none;
 }
-:is(.sidebar-groups, .sidebar-needs-you) > summary::-webkit-details-marker { display: none; }
-:is(.sidebar-groups, .sidebar-needs-you) > summary > .sidebar-region-head { transition: color var(--dur-fast) var(--ease-standard); }
-:is(.sidebar-groups, .sidebar-needs-you) > summary:hover > .sidebar-region-head { color: var(--color-ink); }
-:is(.sidebar-groups, .sidebar-needs-you) > summary:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
-:is(.sidebar-groups, .sidebar-needs-you) > summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
-:is(.sidebar-groups, .sidebar-needs-you)[open] > summary .icon-twist { transform: rotate(90deg); }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs) > summary::-webkit-details-marker { display: none; }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs) > summary > .sidebar-region-head { transition: color var(--dur-fast) var(--ease-standard); }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs) > summary:hover > .sidebar-region-head { color: var(--color-ink); }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs) > summary:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs) > summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs)[open] > summary .icon-twist { transform: rotate(90deg); }
 /* Collapsed, the head is the region's last row: the region rule below it is the only divider. */
-:is(.sidebar-groups, .sidebar-needs-you):not([open]) > summary > .sidebar-region-head { border-bottom: 0; }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs):not([open]) > summary > .sidebar-region-head { border-bottom: 0; }
+
+/* ---- ORGANIZATIONS (§app.session-list/organizations): last before the Archive. Its own Needs you
+   list, then org (a group-section head) → project (a sticky label) → rows, each project with a
+   Finished tail shaped like an Archive date section. */
+/* The warn needs-you dot: on an org head and the Needs you label (the region head carries a chip). */
+.org-needs-dot {
+  flex: none;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--status-warn);
+}
+.org-needs-chip { letter-spacing: 0; text-transform: none; }
+.org-needs { border-bottom: var(--stroke-thin) solid var(--color-border); }
+.org-needs > .list { padding-bottom: var(--space-1); }
+/* A project to pick a main stakeholder for: a link to its page, its sentence under the name. */
+.org-needs-item { align-items: flex-start; }
+.org-needs-item .list-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.org-needs-item .list-meta { white-space: normal; overflow-wrap: anywhere; }
+.org-section + .org-section { border-top: var(--stroke-thin) solid var(--color-border); }
+/* The org head's count stays, open or shut (unlike a user's group, whose rows say it). */
+.org-section[open] > .group-label > .text-num { display: inline; }
+/* The org page link: a 44px ghost icon hung into the gutter, like a group's ⋯. */
+.org-label .org-link {
+  flex: none;
+  margin-right: calc(var(--space-4) * -1 + var(--space-1));
+  color: var(--color-ink-muted);
+}
+.org-label .org-link:hover,
+.org-label .org-link:focus-visible { color: var(--color-ink); }
+.org-label .org-link .icon { width: 16px; height: 16px; }
+/* Projects: sticky labels, not sections — one level of sticking inside the pane. */
+.org-project {
+  padding-left: calc(var(--space-1) / 2);
+  border-left: calc(var(--stroke-thin) * 2) solid var(--color-border);
+}
+.org-project-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--fs-mono);
+}
+.org-project-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.org-finished { border-top: var(--stroke-thin) solid var(--color-border); }
 
 /* The Recent region: a flat list, so it has no folder
    <details> to close it off the way every other region does. The rule under the last row is what
@@ -434,6 +482,11 @@ html, body, #root { height: 100%; }
 /* Label and hash · age on one unbroken line; the subject below, full width, wrapped whole. */
 .git-commit-meta { flex: none; margin: 0; white-space: nowrap; }
 .git-commit-subject { margin: var(--space-1) 0 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
+/* Loading: lines at the read facts' rhythm, so the section is about as tall as it will be. */
+.git-skeleton { display: flex; flex-direction: column; padding-top: var(--space-1); }
+.git-skeleton > .skeleton-line { margin-bottom: 14px; }
+.git-skeleton > .skeleton-line:first-child { width: 60%; }
+.git-skeleton > .skeleton-line:last-child { width: 30%; margin-bottom: 0; }
 
 /* §chat.worktrees/pane: a tracked worktree's status and what runs there, wrapping as one group. */
 .worktree-row { align-items: flex-start; }

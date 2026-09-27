@@ -1511,7 +1511,7 @@ export function registerSubagents(
 			appendTeamEvent(teamId, "wrap-up", target, contextShare(tokens, window));
 		}
 	};
-	/** The window of the model a worker was spawned with (claude-code: the [1m] rule; pi: the registry). */
+	/** The window of the model a worker was spawned with (claude-code: claudeContextWindow, `[1m]` or natively 1M; pi: the registry). */
 	const contextWindowOf = (a: Worker | undefined, member: { backend: string; model?: string }): number | undefined => {
 		const model = (a && launches.get(a)?.model) ?? member.model ?? a?.model;
 		if (member.backend === "claude-code") return claudeContextWindow(model ?? "");

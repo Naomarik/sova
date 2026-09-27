@@ -195,6 +195,55 @@ describe("§mesh.links/delivery: ChatSession.deliverToAgent", () => {
     assert.deepEqual(calls, [`prompt ${a.slice(0, 32)}`, `steer ${b.slice(0, 32)}`]);
   });
 
+  test("a user's send while a link-opened turn is starting queues, never refused by pi", async () => {
+    const { chat, session } = await held();
+    let streaming = false;
+    Object.defineProperty(session, "isStreaming", { get: () => streaming, configurable: true });
+    const prompts: string[] = [];
+    let settle!: () => void;
+    session.prompt = (text: string, opts: any) => {
+      prompts.push(text);
+      if (prompts.length > 1) return Promise.reject(new Error("Agent is already processing."));
+      opts?.preflightResult?.(true);
+      return new Promise<void>((r) => (settle = r));
+    };
+    const link = linkText();
+    assert.equal(chat.deliverToAgent(link), "started");
+    await until(() => prompts.length === 1);
+    assert.equal(chat.turnStarting, true, "the link's turn is starting, not yet streaming");
+    assert.equal(chat.acceptPrompt("mine", undefined, "client").queued, true);
+    assert.deepEqual(prompts, [link], "the user's text never reached pi in the gap");
+    streaming = true;
+    session._emit({ type: "agent_start" });
+    assert.equal(chat.turnStarting, false);
+    streaming = false;
+    settle();
+  });
+
+  test("a link message while a user's turn is starting waits for its run, then steers into it", async () => {
+    const { chat, session } = await held();
+    let streaming = false;
+    Object.defineProperty(session, "isStreaming", { get: () => streaming, configurable: true });
+    const calls: string[] = [];
+    let settle!: () => void;
+    session.prompt = (text: string) => {
+      calls.push(`prompt ${text}`);
+      return calls.length > 1 ? Promise.reject(new Error("Agent is already processing.")) : new Promise<void>((r) => (settle = r));
+    };
+    session.steer = async (text: string) => void calls.push(`steer ${text.slice(0, 10)}`);
+    assert.equal(chat.acceptPrompt("mine", undefined, "client").queued, false);
+    const link = linkText();
+    assert.equal(chat.deliverToAgent(link), "delivered", "a turn is starting: this one joins it");
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepEqual(calls, ["prompt mine"], "held until the run begins");
+    streaming = true;
+    session._emit({ type: "agent_start" });
+    await until(() => calls.length === 2);
+    assert.deepEqual(calls, ["prompt mine", `steer ${link.slice(0, 10)}`]);
+    streaming = false;
+    settle();
+  });
+
   test("compacting: held, then handed over once the compaction ends", async () => {
     const { chat, session } = await held();
     let compacting = true;

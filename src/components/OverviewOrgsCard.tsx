@@ -52,7 +52,7 @@ export function OverviewOrgsCard(props: { now: number }) {
           </div>
         </div>
         <Show when={poll.error() && !glance()}>
-          <p class="overview-orgs-error">Couldn't load your organizations: {poll.error()}. We'll try again shortly.</p>
+          <p class="overview-orgs-error">Couldn't load your organizations: {String(poll.error()).replace(/[.\s]+$/, "")}. We'll try again shortly.</p>
         </Show>
         <Show when={glance()}>
           {(g) => (

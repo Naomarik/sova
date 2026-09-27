@@ -240,3 +240,23 @@ export function promptTodos(f: TodosFile): string {
   const done = f.todos.filter((t) => t.done).length;
   return `${f.todos.length - done} open, ${done} done (sova_todos lists them)`;
 }
+
+/** How many open to-dos a project overseer's prompt carries in full. */
+export const PROMPT_TODOS_MAX = 20;
+
+/**
+ * What a project overseer's prompt carries (§app.project-overseer/identity): the operator's open
+ * to-dos in full, oldest first, at most `max` of them (each is at most TODO_TEXT_MAX characters),
+ * with the idea or session each is linked to. Unlike the Overseer's counts, these are its queued
+ * work: re-rendered at every run, so a to-do queued between runs reaches the next one.
+ */
+export function promptOpenTodos(f: TodosFile, max = PROMPT_TODOS_MAX): string {
+  if (!f.todos.length) return "(no to-dos)";
+  const open = f.todos.filter((t) => !t.done);
+  const done = f.todos.length - open.length;
+  const head = `${open.length} open, ${done} done.`;
+  if (!open.length) return head;
+  const rows = open.slice(0, max).map((t) => `- [${t.id}] ${t.text}${t.ideaId ? ` (idea ${t.ideaId})` : ""}${t.sessionId ? ` (session ${t.sessionId})` : ""}`);
+  const more = open.length > max ? `\n- … and ${open.length - max} more (sova_todos lists them all)` : "";
+  return `${head} The open ones, oldest first:\n${rows.join("\n")}${more}`;
+}

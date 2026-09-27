@@ -40,7 +40,6 @@ import type {
   UploadResult,
   UsageInsight,
   WebSettings,
-  WorkerResumeResult,
   WorktreesInsight,
   MeshCandidate,
   MeshHello,
@@ -51,8 +50,8 @@ import type {
   MeshSessions,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, ProfileChange } from "../../shared/orgs";
-import type { BatonInfo, BatonStartInput, BatonStartResult, BatonView, OfferLink } from "../../shared/baton";
+import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
+import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
@@ -317,11 +316,6 @@ export const setSandbox = (path: string, on: boolean) =>
     body: JSON.stringify({ on }),
   });
 
-/** POST /api/workers/resume?path=&id=: start one restored worker of that held chat again, idle.
-    Throws ApiError with the extension's reason (409) when it can't. */
-export const resumeWorker = (path: string, id: string) =>
-  request<WorkerResumeResult>(`/api/workers/resume?path=${encodeURIComponent(path)}&id=${encodeURIComponent(id)}`, { method: "POST" });
-
 /** A local folder (string), or a folder on a configured target; `host`: on that peer, which then holds it. */
 export const createSession = (where: string | { target: string; remoteCwd: string }, host?: string | null) =>
   request<SessionSummary>(hostUrl(host, "/api/sessions"), {
@@ -373,8 +367,9 @@ export const connectTarget = (host?: string | null) =>
   });
 
 /** Moves a web-spawned session to the Archive region (true) or back to the top (false). */
+/** `deleted`: archiving an empty husk deleted its file instead (§app.session-list/archive-org-guard). */
 export const setSessionArchived = (path: string, archived: boolean) =>
-  request<SessionSummary>("/api/sessions/archive", {
+  request<SessionSummary & { deleted?: true }>("/api/sessions/archive", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path, archived }),
@@ -853,25 +848,43 @@ export const patchPerson = (id: string, pid: string, patch: Partial<PersonInput>
 export const personHistory = (id: string, pid: string) => request<ProfileChange[]>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/history`);
 export const revertPersonChange = (id: string, pid: string, at: string) =>
   request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/revert`, jsonInit("POST", { at }));
+/** One person's page (§app.organizations/person-page). */
+export const getPersonPage = (id: string, pid: string) => request<PersonPage>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}`);
+/** Turns off one link of theirs (`one`), or every live link of theirs on this host. */
+export const revokePersonLinks = (id: string, pid: string, one?: { sessionId: string; n: number }) =>
+  request<PersonPage>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/links/revoke`, jsonInit("POST", one ?? {}));
+/** A session as their link shows it, read-only ("Preview as {name}"); no token. */
+export const previewAsPerson = (id: string, pid: string, sid: string) =>
+  request<PersonPreview>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/preview?session=${encodeURIComponent(sid)}`);
 export const addOrgProject = (id: string, name: string, root: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects`, jsonInit("POST", { name, root }));
+/** Set or clear a project's main stakeholder (a roster person's id, or null for none). */
+export const setProjectStakeholder = (id: string, pid: string, stakeholder: string | null) =>
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}`, jsonInit("PATCH", { stakeholder }));
 
 export const startBaton = (input: BatonStartInput) => request<BatonStartResult>("/api/baton", jsonInit("POST", input));
 export const getBaton = (path: string) => request<BatonInfo>(`/api/baton?path=${encodeURIComponent(path)}`);
-export const batonLink = (sid: string) => request<{ link: string; n: number }>(`/api/baton/${encodeURIComponent(sid)}/link`);
+export const batonLink = (sid: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link`);
 export const revokeBatonLink = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/revoke`, jsonInit("POST"));
 export const takeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/take`, jsonInit("POST"));
 export const closeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/close`, jsonInit("POST"));
+/** Raise the session's message limit by `by` (the operator, at the limit). */
+export const extendBaton = (sid: string, by: number) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/extend`, jsonInit("POST", { by }));
+/** The host's defaults for new hand-off sessions (Settings → Organizations). */
+export const getBatonSettings = () => request<BatonSettings>("/api/baton/settings");
+export const putBatonSettings = (settings: BatonSettings) => request<BatonSettings>("/api/baton/settings", jsonInit("PUT", settings));
 export const offerBaton = (sid: string, to: string[], question?: string, briefing?: string) =>
   request<{ links: OfferLink[]; info?: BatonInfo }>(`/api/baton/${encodeURIComponent(sid)}/offer`, jsonInit("POST", { to, ...(question ? { question } : {}), ...(briefing ? { briefing } : {}) }));
 export const withdrawOffer = (sid: string) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/offer/withdraw`, jsonInit("POST"));
 /** A fresh link for one invitee of the open offer (their older one stops working). */
-export const inviteeLink = (sid: string, personId: string) => request<{ link: string; n: number }>(`/api/baton/${encodeURIComponent(sid)}/link?person=${encodeURIComponent(personId)}`);
+export const inviteeLink = (sid: string, personId: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link?person=${encodeURIComponent(personId)}`);
 /** The operator hands the session to a person ("Hand this session to Bob"). */
 export const handBaton = (sid: string, to: string, question: string, briefing?: string) =>
-  request<{ info?: BatonInfo; link?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
+  request<{ info?: BatonInfo; link?: string; at?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
 export const approvePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/approve`, jsonInit("POST"));
 export const declinePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/decline`, jsonInit("POST"));
 export const orgChanges = (id: string, limit = 50) => request<NamedChange[]>(`/api/orgs/${encodeURIComponent(id)}/changes?limit=${limit}`);
+/** Run a wrap-up that stopped again (the operator's Retry Wrap-Up). */
+export const retryWrapup = (sid: string) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/wrapup/retry`, jsonInit("POST"));
 
 // ---- a project's decisions, their reconciliation and promotion (§app/requirements) ------------------
 
@@ -900,6 +913,8 @@ export const runProjectOverseer = (orgId: string, projectId: string) => request<
 export const projectOverseerActions = (orgId: string, projectId: string, limit = 30) =>
   request<OverseerAction[]>(`${overseerBase(orgId, projectId)}/actions?limit=${limit}`);
 export const projectOverseerIdeas = (orgId: string, projectId: string) => request<OverseerIdeasInfo>(`${overseerBase(orgId, projectId)}/ideas`);
+export const addProjectOverseerIdea = (orgId: string, projectId: string, idea: { id: string; title: string }) =>
+  request<OverseerIdeasInfo>(`${overseerBase(orgId, projectId)}/ideas`, jsonInit("POST", idea));
 export const projectOverseerTodos = (orgId: string, projectId: string) => request<OverseerTodosInfo>(`${overseerBase(orgId, projectId)}/todos`);
 export const addProjectOverseerTodo = (orgId: string, projectId: string, text: string) =>
   request<OverseerTodosInfo>(`${overseerBase(orgId, projectId)}/todos`, jsonInit("POST", { text }));
@@ -909,3 +924,8 @@ export const sendProjectItem = (orgId: string, projectId: string, input: ItemSen
   request<ItemSendResult>(`${overseerBase(orgId, projectId)}/items/send`, jsonInit("POST", input));
 export const codeProjectItem = (orgId: string, projectId: string, input: ItemCodeInput) =>
   request<ItemCodeResult>(`${overseerBase(orgId, projectId)}/items/code`, jsonInit("POST", input));
+/** The operator's gestures on a coding session's worktree: merge its branch into the root's, or remove it. */
+export const mergeCodingWorktree = (orgId: string, projectId: string, sessionId: string) =>
+  request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
+export const removeCodingWorktree = (orgId: string, projectId: string, sessionId: string) =>
+  request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));

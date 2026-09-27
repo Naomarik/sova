@@ -3,9 +3,11 @@ import { OPERATOR, type BatonInfo, type BatonSession, type BatonStartInput, type
 import { statSync } from "node:fs";
 import { join } from "node:path";
 import type { OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
+import { attentionChanged } from "./attention-memo";
 import { readConflicts } from "./decisions";
-import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf } from "./baton";
+import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, linkTimes, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf } from "./baton";
 import { moveBaton, offerBaton, scheduleWrapup } from "./baton-loadout";
+import { readBatonSettings, writeBatonSettings } from "./baton-settings";
 import { BusyError } from "./chat-manager";
 import {
   addPerson,
@@ -34,6 +36,9 @@ import { resolveSessionPath } from "./paths";
 import { refreshShare } from "./share/hub";
 import { shareInfo } from "./share/listener";
 import { nudgeMarks } from "./session-feed";
+import { personPage, previewAs } from "./person-page";
+import { findLink, linksOfOrg, revokePersonLinks } from "./baton-links";
+import { lastVisits } from "./visits";
 import { commitAll, setRemote } from "./workspace-git";
 
 /**
@@ -53,6 +58,12 @@ async function body(c: Context): Promise<Record<string, unknown>> {
 
 /** A link as the operator copies it: the share listener's public address when known, else the path. */
 const linkUrl = (token: string): string => `${shareInfo().publicUrl ?? ""}/h/${token}`;
+
+/** With no share address known, a link is only a path nobody outside can open: every response that
+    carries one says so, and the strip shows it (BatonInfo.share). */
+export const NO_SHARE_WARNING =
+  "No share listener is running on this host, so this link can't be opened from outside. Set SOVA_SHARE_HOST and SOVA_SHARE_PORT (and SOVA_SHARE_PUBLIC_URL behind a proxy), then restart Sova.";
+const linkWarning = (): { linkWarning?: string } => (shareInfo().publicUrl ? {} : { linkWarning: NO_SHARE_WARNING });
 
 /** The operator's strip for a baton row (GET /api/baton and every baton route that answers with it). */
 export function batonInfo(row: BatonSession): BatonInfo {
@@ -78,6 +89,7 @@ export function batonInfo(row: BatonSession): BatonInfo {
     names: namesOf(row.orgId),
     active: roster.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, role: p.role })),
     liveLinks: liveLinkCount(row),
+    linkAt: linkTimes(row),
     share: shareInfo(),
     offer,
     proposed: roster
@@ -104,8 +116,14 @@ const infoOf = (sid: string): BatonInfo => {
   return batonInfo(hit.row);
 };
 
+/** When a link just minted was minted (its record's own time, so it compares with BatonInfo.linkAt). */
+const mintedAt = (token: string): { at?: string } => {
+  const at = findLink(token)?.createdAt;
+  return at ? { at } : {};
+};
+
 const offerLinks = (orgId: string, links: { personId: string; token: string }[]): OfferLink[] =>
-  links.map((l) => ({ personId: l.personId, name: nameOf(orgId, l.personId), link: linkUrl(l.token) }));
+  links.map((l) => ({ personId: l.personId, name: nameOf(orgId, l.personId), link: linkUrl(l.token), ...mintedAt(l.token) }));
 
 /** The newest of some ISO times and epoch ms ("" when none parses). */
 export function latestTime(times: readonly (string | number | undefined)[]): string {
@@ -131,10 +149,11 @@ interface Waiting {
  * session is already that session's reply). `rows` are the org's baton rows.
  */
 function waitingIn(orgId: string, dir: string, rows: readonly BatonSession[]): Waiting {
-  const w: Waiting = { needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0 }, batons: new Map(), projectConflicts: {} };
+  const w: Waiting = { needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0 }, batons: new Map(), projectConflicts: {} };
   try {
     w.needsYou.proposals = readRoster(orgId).filter((p) => p.status === "proposed").length;
     for (const project of readProjects(orgId)) {
+      if (project.stakeholderCleared) w.needsYou.stakeholders = (w.needsYou.stakeholders ?? 0) + 1;
       const n = readConflicts(orgId, project.id).filter((c) => c.state === "open" && c.routedTo === OPERATOR && !c.batonSessionId).length;
       if (n) w.projectConflicts[project.id] = n;
       w.needsYou.conflicts += n;
@@ -201,7 +220,21 @@ export async function orgPage(orgId: string): Promise<OrgDetail> {
       return why ? { ...b, waiting: why } : b;
     }),
     projectConflicts: w.projectConflicts,
+    ...lastOpenedOf(orgId),
   };
+}
+
+/** The People cards' "Last opened" (§app.baton/visits): never fails the page. */
+function lastOpenedOf(orgId: string): { lastOpened?: Record<string, { at?: string; minted: boolean }> } {
+  try {
+    const at = lastVisits(orgId);
+    const minted = new Set(linksOfOrg(orgId).map((l) => l.personId));
+    const out: Record<string, { at?: string; minted: boolean }> = {};
+    for (const pid of new Set([...Object.keys(at), ...minted])) out[pid] = { ...(at[pid] ? { at: at[pid] } : {}), minted: minted.has(pid) };
+    return Object.keys(out).length ? { lastOpened: out } : {};
+  } catch {
+    return {};
+  }
 }
 
 /** A route param ("" when absent: every lookup then answers 404). */
@@ -212,7 +245,10 @@ const handle =
   (fn: (c: Context) => Promise<Response> | Response) =>
   async (c: Context): Promise<Response> => {
     try {
-      return await fn(c);
+      const res = await fn(c);
+      // A write that landed may have moved Needs you (a hand-off, a link, an approval).
+      if (c.req.method !== "GET" && res.ok) attentionChanged();
+      return res;
     } catch (err) {
       if (err instanceof OrgError) return c.json({ error: err.message }, err.status);
       if (err instanceof BusyError) return c.json({ error: err.message }, 409);
@@ -325,6 +361,29 @@ export function registerOrgRoutes(app: Hono<any>): void {
     }),
   );
   app.get(
+    "/api/orgs/:id/people/:pid",
+    handle((c) => c.json(personPage(p(c, "id"), p(c, "pid")))),
+  );
+  app.get(
+    "/api/orgs/:id/people/:pid/preview",
+    handle(async (c) => c.json(await previewAs(p(c, "id"), p(c, "pid"), c.req.query("session") ?? ""))),
+  );
+  app.post(
+    "/api/orgs/:id/people/:pid/links/revoke",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const pid = p(c, "pid");
+      if (!readRoster(id).some((x) => x.id === pid)) throw new OrgError("Unknown person", 404);
+      const b = await body(c).catch(() => ({}) as Record<string, unknown>);
+      const one = b.sessionId !== undefined || b.n !== undefined;
+      if (one && (typeof b.sessionId !== "string" || !Number.isInteger(b.n))) throw new OrgError("Give both sessionId and n, or neither");
+      const changed = revokePersonLinks(id, pid, one ? { sessionId: b.sessionId as string, n: b.n as number } : undefined);
+      if (one && !changed.length) throw new OrgError("That link isn't open.", 409);
+      for (const sid of changed) refreshShare(sid);
+      return c.json(personPage(id, pid));
+    }),
+  );
+  app.get(
     "/api/orgs/:id/people/:pid/history",
     handle((c) => c.json(readHistory(p(c, "id"), p(c, "pid")).reverse())),
   );
@@ -352,7 +411,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       const b = await body(c);
-      patchProject(id, p(c, "pid"), { name: b.name, root: b.root, ...(b.spec !== undefined ? { spec: b.spec } : {}) });
+      patchProject(id, p(c, "pid"), { name: b.name, root: b.root, ...(b.spec !== undefined ? { spec: b.spec } : {}), ...(b.stakeholder !== undefined ? { stakeholder: b.stakeholder } : {}) });
       return c.json(await orgPage(id));
     }),
   );
@@ -373,9 +432,28 @@ export function registerOrgRoutes(app: Hono<any>): void {
           sessionId: created.sessionId,
           ...(created.token ? { link: linkUrl(created.token) } : {}),
           ...(created.links ? { links: offerLinks(orgId, created.links) } : {}),
+          ...(created.token || created.links ? linkWarning() : {}),
         },
         201,
       );
+    }),
+  );
+  app.get("/api/baton/settings", (c) => c.json(readBatonSettings()));
+  app.put(
+    "/api/baton/settings",
+    handle(async (c) => {
+      const result = writeBatonSettings(await body(c));
+      if ("error" in result) throw new OrgError(result.error, 400);
+      return c.json(result);
+    }),
+  );
+  app.post(
+    "/api/baton/:sid/extend",
+    handle(async (c) => {
+      const sid = p(c, "sid");
+      extendBudget(sid, (await body(c)).by);
+      refreshShare(sid);
+      return c.json(infoOf(sid));
     }),
   );
   app.get(
@@ -392,7 +470,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle((c) => {
       const person = c.req.query("person");
       const { token, n } = rotateLink(p(c, "sid"), person || undefined);
-      return c.json({ link: linkUrl(token), n });
+      return c.json({ link: linkUrl(token), n, ...mintedAt(token), ...linkWarning() });
     }),
   );
   app.post(
@@ -411,7 +489,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const hit = batonById(sid);
       if (!hit) throw new OrgError("Unknown baton session", 404);
       if (hit.row.holder === OPERATOR) throw new OrgError("You already hold the baton.", 409);
-      await moveBaton(sid, OPERATOR, "(taken back)");
+      await moveBaton(sid, OPERATOR, "(taken back)", "", { interrupt: true });
       return c.json({ ok: true });
     }),
   );
@@ -434,8 +512,8 @@ export function registerOrgRoutes(app: Hono<any>): void {
       if (!Array.isArray(b.to)) throw new OrgError("to must be a list of people");
       const hit = batonById(sid);
       if (!hit) throw new OrgError("Unknown baton session", 404);
-      const out = await offerBaton(sid, b.to, typeof b.question === "string" ? b.question : "", typeof b.briefing === "string" ? b.briefing : "");
-      return c.json({ info: infoOf(sid), links: offerLinks(hit.row.orgId, out.links) }, 201);
+      const out = await offerBaton(sid, b.to, typeof b.question === "string" ? b.question : "", typeof b.briefing === "string" ? b.briefing : "", { interrupt: true });
+      return c.json({ info: infoOf(sid), links: offerLinks(hit.row.orgId, out.links), ...linkWarning() }, 201);
     }),
   );
   app.post(
@@ -445,7 +523,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const hit = batonById(sid);
       if (!hit) throw new OrgError("Unknown baton session", 404);
       if (!hit.row.offerId) throw new OrgError("There is no open offer.", 409);
-      await moveBaton(sid, OPERATOR, "(offer withdrawn)");
+      await moveBaton(sid, OPERATOR, "(offer withdrawn)", "", { interrupt: true });
       return c.json(infoOf(sid));
     }),
   );
@@ -463,9 +541,9 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const question = typeof b.question === "string" ? b.question.trim().slice(0, 1000) : "";
       if (!question) throw new OrgError("question is required");
       const briefing = typeof b.briefing === "string" ? b.briefing.trim().slice(0, 4000) : "";
-      await moveBaton(sid, to, question, briefing);
+      await moveBaton(sid, to, question, briefing, { interrupt: true });
       const { token } = rotateLink(sid);
-      return c.json({ info: infoOf(sid), link: linkUrl(token) });
+      return c.json({ info: infoOf(sid), link: linkUrl(token), ...mintedAt(token), ...linkWarning() });
     }),
   );
 }

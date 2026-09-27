@@ -6,6 +6,7 @@ import {
   addPendingPrompt,
   applyEvent,
   applyQueue,
+  BATON_SENT_EVENT,
   emptyLive,
   markDelivered,
   markQueued,
@@ -537,4 +538,18 @@ test("a link message's start draws no row and claims none of this tab's pending 
     assert.equal(s.entries[0].text, "my own");
     assert.notEqual(s.entries[0].started, true, "still waiting for its own start");
   }
+});
+
+test("a baton sender marker names the live row it follows: the newest started row no marker has named", () => {
+  const [s, set] = store();
+  const userStart = (text: string) => ({ type: "message_start", message: { role: "user", content: text } });
+  applyEvent(set, userStart("from the operator"));
+  applyEvent(set, { type: BATON_SENT_EVENT, by: "operator" });
+  applyEvent(set, userStart("from Bob"));
+  applyEvent(set, { type: BATON_SENT_EVENT, by: "p_bob00001" });
+  const users = s.entries.filter((e) => e.kind === "user") as { text: string; by?: string }[];
+  assert.deepEqual(users.map((u) => [u.text, u.by]), [["from the operator", "operator"], ["from Bob", "p_bob00001"]]);
+  // A marker with no live row waiting for one names nothing (the row is history already).
+  applyEvent(set, { type: BATON_SENT_EVENT, by: "p_other001" });
+  assert.deepEqual((s.entries.filter((e) => e.kind === "user") as { by?: string }[]).map((u) => u.by), ["operator", "p_bob00001"]);
 });

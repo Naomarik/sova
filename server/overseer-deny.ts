@@ -159,3 +159,38 @@ export class SecretGuard {
     if (this.isSecret(p)) throw new Error(SECRET_REFUSAL);
   }
 }
+
+/** What the project overseer's read/grep/find/ls answer for a path outside its project root. */
+export const outsideRootRefusal = (root: string) => `That path is outside the project root ${root}; the project overseer reads only inside it.`;
+/** …and for the org workspace or Sova's own state, even when the root holds them. */
+export const EXCLUDED_REFUSAL = "That folder holds an organization's workspace or Sova's own state; the project overseer can't read it.";
+
+/**
+ * Confines one tool call to a root: a path is inside only if it is, both as written (resolved, so
+ * `..` is gone) and at its realpath (so a symlink in the root can't lead out), under the root, and
+ * under none of `excluded` (either way). The root and each excluded folder are taken both as given
+ * and at their realpath.
+ */
+export class RootConfinement {
+  private readonly roots: string[];
+  private readonly excluded: string[];
+  constructor(
+    readonly root: string,
+    excluded: string[] = [],
+  ) {
+    const both = (p: string) => [...new Set([resolve(p), realpathLoose(p)])];
+    this.roots = both(root);
+    this.excluded = excluded.flatMap(both);
+  }
+  /** Why `p` (absolute) may not be read, or null when it may. */
+  problem(p: string): string | null {
+    const forms = [resolve(p), realpathLoose(p)];
+    if (!forms.every((c) => this.roots.some((r) => within(c, r)))) return outsideRootRefusal(this.root);
+    if (forms.some((c) => this.excluded.some((d) => within(c, d)))) return EXCLUDED_REFUSAL;
+    return null;
+  }
+  check(p: string): void {
+    const why = this.problem(p);
+    if (why) throw new Error(why);
+  }
+}

@@ -21,3 +21,9 @@ test("orgCountsLine", () => {
   assert.equal(orgCountsLine({ people: 1, projects: 0, openBatons: 1 }), "1 person · 0 projects · 1 open hand-off");
   assert.equal(orgCountsLine({ people: 4, projects: 2, openBatons: 0 }), "4 people · 2 projects · 0 open hand-offs");
 });
+
+test("a project to pick a main stakeholder for counts and says so", () => {
+  const n = { replies: 0, links: 0, proposals: 0, conflicts: 1, stakeholders: 2 };
+  assert.equal(needsYouCount(n), 3);
+  assert.equal(needsYouLabel(n), "1 conflict to settle · 2 stakeholders to pick");
+});

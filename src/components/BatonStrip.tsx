@@ -1,14 +1,16 @@
 import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
-import { OPERATOR, type BatonInfo, type OfferLink, type ProposedPerson } from "../../shared/baton";
+import { MESSAGES_CAP, OPERATOR, type BatonInfo, type OfferLink, type ProposedPerson } from "../../shared/baton";
 import type { SessionSummary } from "../../shared/protocol";
-import { ApiError, approvePerson, batonLink, closeBaton, declinePerson, getBaton, handBaton, inviteeLink, offerBaton, revokeBatonLink, takeBaton, withdrawOffer } from "../lib/api";
-import { linksStale, liveOffer, proposedAreasLine, whereLine, wrapupLine } from "../lib/baton-strip";
+import { ApiError, approvePerson, batonLink, closeBaton, declinePerson, extendBaton, getBaton, handBaton, inviteeLink, offerBaton, revokeBatonLink, takeBaton, withdrawOffer } from "../lib/api";
+import { linkReplaced, linksStale, liveOffer, proposedAreasLine, whereLine, wrapupLine } from "../lib/baton-strip";
 import { requestListRefresh } from "../lib/list-refresh";
 import { confirmActivate } from "../lib/confirm-step";
 import { useMinuteNow } from "../lib/minute-clock";
 import { orgHref, rememberStartParent, startForHref } from "../lib/orgs-route";
 import { announce, toast } from "../lib/ui-state";
 import { LinksBanner } from "./LinksBanner";
+import { createMemo, onCleanup } from "solid-js";
+import { retryWrapup } from "../lib/api";
 import { Banner, Chip } from "./ui";
 import "../orgs.css";
 
@@ -50,6 +52,14 @@ export function BatonStrip(props: {
     }),
   );
   createEffect(on(() => info.latest?.session.handoffs.length, (count) => linksStale(shown()?.at ?? null, count) && setShown(null)));
+  // A wrap-up's end moves nothing the list carries: while one runs, read again until it has ended.
+  const wrapupState = createMemo(() => info.latest?.session.wrapup?.state);
+  createEffect(() => {
+    if (wrapupState() !== "running") return;
+    const t = setInterval(() => void refetch(), 5000);
+    onCleanup(() => clearInterval(t));
+  });
+  const [retrying, setRetrying] = createSignal(false);
   const act = async (fn: () => Promise<unknown>, done: string): Promise<boolean> => {
     try {
       const r = await fn();
@@ -69,6 +79,7 @@ export function BatonStrip(props: {
   const personHolds = (i: BatonInfo) => i.session.holder !== null && i.session.holder !== OPERATOR;
   const open = (i: BatonInfo) => i.session.state === "open" || i.session.state === "needs-you";
   const nameOf = (i: BatonInfo, id: string) => i.names[id] ?? "someone";
+  const spent = (i: BatonInfo) => i.session.budget.messagesUsed >= i.session.budget.messagesMax;
   return (
     <Show when={info.latest}>
       {(i) => (
@@ -99,7 +110,7 @@ export function BatonStrip(props: {
                   void act(async () => {
                     const r = await batonLink(sid());
                     const holder = i().session.holder!;
-                    showLinks([{ personId: holder, name: nameOf(i(), holder), link: r.link }], r.n);
+                    showLinks([{ personId: holder, name: nameOf(i(), holder), link: r.link, ...(r.at ? { at: r.at } : {}) }], r.n);
                   }, "New link ready below.")
                 }
               >
@@ -145,6 +156,18 @@ export function BatonStrip(props: {
               </button>
             </Show>
           </div>
+          <Show when={open(i()) && spent(i())}>
+            <ExtendRow info={i()} act={act} />
+          </Show>
+          <Show when={open(i()) && !i().share.publicUrl && (personHolds(i()) || liveOffer(i()))}>
+            <div class="baton-strip-link">
+              <Banner
+                tone="warn"
+                title="Links from this host can't be opened from outside."
+                body="No share listener is running here. Set SOVA_SHARE_HOST and SOVA_SHARE_PORT (and SOVA_SHARE_PUBLIC_URL behind a proxy), then restart Sova."
+              />
+            </div>
+          </Show>
           <Show when={liveOffer(i())}>
             {(o) => (
               <div class="baton-strip-row baton-strip-invitees" role="group" aria-label="Invitees' links">
@@ -158,7 +181,7 @@ export function BatonStrip(props: {
                       onClick={() =>
                         void act(async () => {
                           const r = await inviteeLink(sid(), p.id);
-                          showLinks([{ personId: p.id, name: p.name, link: r.link }], r.n);
+                          showLinks([{ personId: p.id, name: p.name, link: r.link, ...(r.at ? { at: r.at } : {}) }], r.n);
                         }, `New link for ${p.name} ready below.`)
                       }
                     >
@@ -230,13 +253,26 @@ export function BatonStrip(props: {
                     <a href={orgHref(i().session.orgId)}>Review or Revert</a>
                   </Show>
                 </span>
+                <Show when={w().state === "failed"}>
+                  <button
+                    type="button"
+                    class="button button-sm button-ghost"
+                    disabled={retrying()}
+                    onClick={() => {
+                      setRetrying(true);
+                      void act(() => retryWrapup(sid()), "Wrap-up started again.").finally(() => setRetrying(false));
+                    }}
+                  >
+                    Retry Wrap-Up
+                  </button>
+                </Show>
               </div>
             )}
           </Show>
           <Show when={links()}>
             {(l) => (
               <div class="baton-strip-link">
-                <LinksBanner links={l()} onDismiss={() => setShown(null)} />
+                <LinksBanner links={l()} replaced={(link) => linkReplaced(link, info.latest)} onDismiss={() => setShown(null)} />
               </div>
             )}
           </Show>
@@ -250,6 +286,44 @@ export function BatonStrip(props: {
         </section>
       )}
     </Show>
+  );
+}
+
+/** At the message limit: raise it by N so the conversation can go on (bounded like any limit). */
+function ExtendRow(props: { info: BatonInfo; act(fn: () => Promise<unknown>, done: string): Promise<boolean> }) {
+  const room = () => MESSAGES_CAP - props.info.session.budget.messagesMax;
+  const [by, setBy] = createSignal(20);
+  const valid = () => Number.isInteger(by()) && by() >= 1 && by() <= room();
+  return (
+    <div class="baton-strip-row baton-strip-card" role="group" aria-label="Message limit reached">
+      <span class="baton-strip-card-main">
+        The message limit is reached ({props.info.session.budget.messagesUsed} of {props.info.session.budget.messagesMax}).{" "}
+        {room() > 0 ? "Extend it to go on." : `That is the most a conversation can have (${MESSAGES_CAP.toLocaleString("en-US")}).`}
+      </span>
+      <Show when={room() > 0}>
+        <label class="baton-strip-meta">
+          Extend by{" "}
+          <input
+            class="input input-sm baton-extend-input"
+            type="number"
+            min="1"
+            max={room()}
+            step="1"
+            value={by()}
+            aria-invalid={!valid()}
+            onInput={(e) => setBy(e.currentTarget.valueAsNumber)}
+          />
+        </label>
+        <button
+          type="button"
+          class="button button-sm"
+          disabled={!valid()}
+          onClick={() => void props.act(() => extendBaton(props.info.session.sessionId, by()), `Limit raised to ${props.info.session.budget.messagesMax + by()} messages.`)}
+        >
+          Extend
+        </button>
+      </Show>
+    </div>
   );
 }
 
@@ -309,7 +383,7 @@ function HandOnForm(props: {
       if (to().length === 1) {
         const who = to()[0]!;
         const r = await handBaton(sid, who, question().trim(), briefing().trim() || undefined);
-        props.onDone(r.link ? [{ personId: who, name: nameOf(who), link: r.link }] : [], `Handed to ${nameOf(who)}.`, r.info, [who]);
+        props.onDone(r.link ? [{ personId: who, name: nameOf(who), link: r.link, ...(r.at ? { at: r.at } : {}) }] : [], `Handed to ${nameOf(who)}.`, r.info, [who]);
       } else {
         const r = await offerBaton(sid, to(), question().trim(), briefing().trim() || undefined);
         props.onDone(r.links, `Offered to ${to().length} people. The first to answer takes it.`, r.info, to());

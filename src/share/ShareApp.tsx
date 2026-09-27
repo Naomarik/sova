@@ -1,6 +1,8 @@
 import { createEffect, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { SHARE_TEXT_MAX, type BatonView, type BatonViewItem, type ShareServerMessage } from "../../shared/baton";
+import { linkSegments } from "../lib/share-linkify";
 import { renderShareMarkdown } from "./markdown";
+import { visitTab } from "./visit-tab";
 
 /**
  * The share page (§app.baton/outsider-view): one conversation, as the person holding this link may
@@ -8,6 +10,15 @@ import { renderShareMarkdown } from "./markdown";
  */
 
 const TOKEN = /^\/h\/([A-Za-z0-9_-]{43})\/?$/.exec(location.pathname)?.[1] ?? null;
+/** This tab's visit id (§app.baton/visits): a reload or a reconnect continues the same visit. */
+const storage = (): Storage | null => {
+  try {
+    return sessionStorage;
+  } catch {
+    return null;
+  }
+};
+const VISIT = visitTab(storage());
 
 type Problem = { title: string; body: string };
 const GONE: Problem = { title: "This link is no longer active.", body: "The conversation was closed or the link was turned off. Ask the person who sent it for a new one." };
@@ -19,15 +30,34 @@ function Reply(props: { text: string }) {
   return <div class="share-md" innerHTML={renderShareMarkdown(props.text)} />;
 }
 
-function Item(props: { item: BatonViewItem; me: string | undefined }) {
+/** Plain text with its explicit http(s) addresses as links: DOM nodes, never HTML. */
+function LinkedText(props: { text: string }) {
+  return (
+    <div class="share-text">
+      <For each={linkSegments(props.text)}>
+        {(seg) =>
+          "href" in seg ? (
+            <a href={seg.href} target="_blank" rel="noopener noreferrer nofollow">
+              {seg.text}
+            </a>
+          ) : (
+            seg.text
+          )
+        }
+      </For>
+    </div>
+  );
+}
+
+function Item(props: { item: BatonViewItem }) {
   const it = props.item;
   return (
     <Switch>
       <Match when={it.kind === "message" && it}>
         {(m) => (
-          <article class="share-msg" classList={{ "share-msg-own": m().name === props.me }} aria-label={`${m().name === props.me ? "You" : m().name}`}>
-            <span class="share-who">{m().name === props.me ? "You" : m().name}</span>
-            <div class="share-text">{m().text}</div>
+          <article class="share-msg" classList={{ "share-msg-own": m().by === "you" }} aria-label={`${m().by === "you" ? "You" : m().name}`}>
+            <span class="share-who">{m().by === "you" ? "You" : m().name}</span>
+            <LinkedText text={m().text} />
           </article>
         )}
       </Match>
@@ -45,11 +75,11 @@ function Item(props: { item: BatonViewItem; me: string | undefined }) {
             <span class="share-card-head">
               {h().n === 1 ? `For ${h().to}` : `Passed from ${h().from} to ${h().to}`}
             </span>
-            <div class="share-text">{h().question}</div>
+            <LinkedText text={h().question} />
             <Show when={h().briefing}>
               <div class="share-brief">
                 <span class="share-card-head">What you need to know</span>
-                <div class="share-text">{h().briefing}</div>
+                <LinkedText text={h().briefing ?? ""} />
               </div>
             </Show>
           </aside>
@@ -60,11 +90,11 @@ function Item(props: { item: BatonViewItem; me: string | undefined }) {
           <aside class="share-card" aria-label="Offered">
             {/* Counted, never named: the server sends the count only, so "someone else is answering" names nobody. */}
             <span class="share-card-head">{`Open to you and ${othersWord(o().invited - 1)}: the first to answer takes it`}</span>
-            <div class="share-text">{o().question}</div>
+            <LinkedText text={o().question} />
             <Show when={o().briefing}>
               <div class="share-brief">
                 <span class="share-card-head">What you need to know</span>
-                <div class="share-text">{o().briefing}</div>
+                <LinkedText text={o().briefing ?? ""} />
               </div>
             </Show>
           </aside>
@@ -74,7 +104,7 @@ function Item(props: { item: BatonViewItem; me: string | undefined }) {
         {(d) => (
           <aside class="share-card share-card-quiet" aria-label="Noted">
             <span class="share-card-head">Noted · {d().area}</span>
-            <div class="share-text">{d().statement}</div>
+            <LinkedText text={d().statement} />
           </aside>
         )}
       </Match>
@@ -82,7 +112,7 @@ function Item(props: { item: BatonViewItem; me: string | undefined }) {
         {(d) => (
           <aside class="share-card" aria-label="Done">
             <span class="share-card-head">Done</span>
-            <div class="share-text">{d().summary}</div>
+            <LinkedText text={d().summary} />
           </aside>
         )}
       </Match>
@@ -104,13 +134,14 @@ export function ShareApp() {
   const apply = (v: BatonView) => {
     setView(v);
     setStreaming("");
-    const mine = new Set(v.items.filter((i) => i.kind === "message" && i.name === v.viewer?.name).map((i) => (i as { text: string }).text));
+    // The server labels the viewer's own messages "you" (it sends no person ids).
+    const mine = new Set(v.items.filter((i) => i.kind === "message" && i.by === "you").map((i) => (i as { text: string }).text));
     setPending((p) => p.filter((t) => !mine.has(t)));
   };
 
   const load = async () => {
     if (!TOKEN) return;
-    const res = await fetch(`/api/h/${TOKEN}`, { cache: "no-store" }).catch(() => null);
+    const res = await fetch(`/api/h/${TOKEN}?v=${VISIT}`, { cache: "no-store" }).catch(() => null);
     if (!res) return;
     if (res.status === 410) return setProblem(GONE);
     if (res.status === 404) return setProblem(UNKNOWN);
@@ -123,7 +154,7 @@ export function ShareApp() {
   let stopped = false;
   const connect = () => {
     if (!TOKEN || stopped) return;
-    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/h?token=${TOKEN}`);
+    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/h?token=${TOKEN}&v=${VISIT}`);
     socket = ws;
     ws.onopen = () => (backoff = 2000);
     ws.onmessage = (e) => {
@@ -222,12 +253,12 @@ export function ShareApp() {
           </Show>
         </header>
         <section class="share-thread" aria-label="Conversation">
-          <For each={view()?.items ?? []}>{(it) => <Item item={it} me={view()?.viewer?.name} />}</For>
+          <For each={view()?.items ?? []}>{(it) => <Item item={it} />}</For>
           <For each={pending()}>
             {(t) => (
               <article class="share-msg share-msg-own" aria-label="You, sending">
                 <span class="share-who">You · sending</span>
-                <div class="share-text">{t}</div>
+                <LinkedText text={t} />
               </article>
             )}
           </For>

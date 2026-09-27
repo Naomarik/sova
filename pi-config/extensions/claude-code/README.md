@@ -23,6 +23,13 @@ directly, never a shell alias. No credentials are copied into configuration.
 Use `agent_models` with `backend: "claude-code"`, or `/subagents models opus`.
 Choices and effort levels come from the installed CLI's initialize response,
 without a model request. Only model metadata is returned, never account details.
+The CLI's list no longer carries the 1M-context forms it still accepts, so
+`opus[1m]` and `claude-fable-5-1[1m]` are added right after `opus` and
+`claude-fable-5-1` whenever those are listed (`context-window.ts`
+`withLongContextVariants`; the provider's picker and Sova's Settings lists apply
+the same rule). A model's context window is `context-window.ts`
+`claudeContextWindow`: 1M for a `[1m]` id or a natively 1M model (bare `opus`,
+`sonnet`, `claude-fable-5-1`, …, per the CLI's own catalog), else 200k.
 Successful discovery is cached for 60 seconds; errors are surfaced explicitly.
 A discovery call returns within 15 seconds, and immediately when cancelled. The
 discovery process is still stopped (EOF, then SIGTERM, then SIGKILL) afterward,
@@ -205,8 +212,8 @@ See [docs/protocol-probes.md](docs/protocol-probes.md).
 ## Claude Code as pi models (experimental provider)
 
 The same extension can also expose the installed Claude Code CLI as ordinary pi
-models — provider `claude-code-cli`, models `claude-fable-5-1[1m]`, `opus[1m]`,
-`sonnet` and `haiku` — selectable in `/model` and in Sova's picker, streaming,
+models — provider `claude-code-cli`, the CLI's discovered models (offline:
+`claude-fable-5-1[1m]`, `opus[1m]`, `sonnet` and `haiku`) — selectable in `/model` and in Sova's picker, streaming,
 and running **pi's own tools**. It is opt-in and off by default:
 
 - TUI: `pi --claude-code-provider`.
@@ -267,7 +274,7 @@ clamped to 64 KiB–2 MiB (`foldBudgetChars`). 2.2 (`FOLD_CHARS_PER_TOKEN`) is
 measured, not the usual 4: a live restart sent a 524,682-character fold that cost
 231,491 input tokens. With Sova's system prompt (~34–43K characters) and 19 tools
 (~30K characters) that comes to about 155K–163K characters for a 200K model and
-about 1.65M for a `[1m]` one. Over budget, the OLDEST
+about 1.65M for a 1M one. Over budget, the OLDEST
 messages go first: the last user message is always kept whole, the first
 (usually the task) is kept if it is small, then the newest messages back from
 the end, and the fold opens with `[N earlier message(s) omitted to fit the

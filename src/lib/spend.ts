@@ -1,6 +1,6 @@
-// Pure derivations behind the Session info modal: the spend table's rows and
+// Pure derivations behind the session pane's Usage and Session tabs: the spend table's rows and
 // labels, the model/thinking/mode timeline read off the transcript, and the two text helpers the
-// modal needs. Nothing here touches the DOM, so it is unit-tested in spend.test.ts.
+// Session tab needs. Nothing here touches the DOM, so it is unit-tested in spend.test.ts.
 
 import type { ModelSpend, SessionUsage, SpendOrigin, TokenUsage, TranscriptItem } from "../../shared/protocol";
 import { clockTime, shortDate } from "./format";
@@ -24,6 +24,16 @@ export function spendRows(usage: SessionUsage | undefined): ModelSpend[] {
   return [...(usage?.models ?? [])].sort(
     (a, b) => rank(a.origin) - rank(b.origin) || spoken(b) - spoken(a) || a.model.localeCompare(b.model),
   );
+}
+
+/**
+ * Whether the Usage tab has spend to show: a token counted anywhere, or a worker whose spend is
+ * unknown (that note must show even at 0 tokens). An older server that sends no usage has none.
+ */
+export function spentAnything(usage: SessionUsage | undefined): boolean {
+  if (!usage) return false;
+  const t = usage.total;
+  return t.input + t.output + t.cacheRead + t.cacheWrite > 0 || usage.models.length > 0 || (usage.unavailable?.length ?? 0) > 0;
 }
 
 /** Whether the Cost column is worth a column: only a backend that reports USD fills it. */

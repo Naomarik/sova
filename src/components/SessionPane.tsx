@@ -6,12 +6,13 @@ import { explainCaption, explainHref, explainState, newestFirst } from "../lib/e
 import { relativeTime } from "../lib/format";
 import { absoluteTime } from "../lib/spend";
 import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state";
-import { capTitle, usageHeadline, usageTitle, usageTotal, type UsageTotalView, workerLabel, workerTeam } from "../lib/workers";
+import { capTitle, usageHeadline, usageTitle, usageTotal, type UsageTotalView, type UsageView, workerLabel, workerTeam } from "../lib/workers";
 import type { RewindControl } from "../lib/inputs";
 import { jumpToEntry } from "../lib/jump";
 import { RemotePaneStatus } from "./RemoteStatus";
 import { SessionDetails } from "./SessionDetails";
 import { SessionTimeline } from "./SessionTimeline";
+import { SessionUsageTab } from "./SessionUsage";
 import { type AgentsView, SubagentPane } from "./SubagentPane";
 import { Chip, Icon } from "./ui";
 
@@ -27,23 +28,25 @@ export interface PaneInsight {
   changed: number;
 }
 
-export type TabId = "session" | "timeline" | "agents" | "skills" | "explain";
+export type TabId = "session" | "timeline" | "agents" | "usage" | "skills" | "explain";
 const TABS: readonly { id: TabId; label: string }[] = [
   { id: "session", label: "Session" },
   { id: "timeline", label: "Timeline" },
   { id: "agents", label: "Agents" },
+  { id: "usage", label: "Usage" },
   { id: "skills", label: "Skills" },
   { id: "explain", label: "Explain" },
 ];
 const isTab = (id: string | null): id is TabId => TABS.some((t) => t.id === id);
 
 /**
- * The session detail pane: a head, a tab strip, and one tab's panel. Session
- * is the Session info modal's body (SessionDetails); Timeline is the session's one time axis;
- * Agents is the subagents pane it grew out
- * of; Skills says which skills loaded and when, here and in each worker; Explain lists this
- * session's /explain pages. The tab is kept per session path; with none kept, it opens on Agents while a worker is
- * working, else on Session. Read-only throughout, except the Timeline's rewind, which goes through the chat.
+ * The session detail pane: a head, a tab strip, and one tab's panel. Session is what the session
+ * is (SessionDetails); Timeline is the session's one time axis; Agents is the subagents pane it grew
+ * out of; Usage is what the session has spent (SessionUsage); Skills says which skills loaded and
+ * when, here and in each worker; Explain lists this session's /explain pages. The tab is kept per
+ * session path; with none kept, it opens on Agents while a worker is working, else on Session —
+ * never on Usage, which its tab and the head's token chip open. Read-only throughout, except the
+ * Timeline's rewind, which goes through the chat.
  */
 export function SessionPane(props: {
   path: string;
@@ -96,8 +99,14 @@ export function SessionPane(props: {
   onCleanup(() => run++);
 
   const working = () => (props.chatWorkers ?? props.insight.data?.workers ?? []).filter((w) => w.working).length;
-  /** The Σ the chat socket reports, else the insight's — a lifetime total either way. */
-  const total = () => props.chatUsage ?? usageTotal(props.insight.data);
+  /** The session's own spend, the Usage tab's headline; before the insight has one, the workers'
+      lifetime Σ the chat socket reports, else the insight's. */
+  const total = (): { usage: UsageView; workers?: number } | null => {
+    const session = props.insight.data?.usage?.total;
+    if (session && usageHeadline(session) > 0) return { usage: session };
+    const lifetime = props.chatUsage ?? usageTotal(props.insight.data);
+    return lifetime ? { usage: lifetime, workers: lifetime.workers } : null;
+  };
   // Settled once, on open: a default that followed the working count would move the tab under
   // the reader when the last worker finished.
   const fallback: TabId = untrack(working) > 0 ? "agents" : "session";
@@ -114,6 +123,9 @@ export function SessionPane(props: {
   onCleanup(() => props.onTab?.(null));
 
   const tabEls: HTMLButtonElement[] = [];
+  // The strip scrolls sideways in a narrow pane: keep the tab showing, on open and on every change,
+  // so a tab a door opened (Explain, Usage) is never off the end of the strip.
+  createEffect(() => tabEls[TABS.findIndex((t) => t.id === tab())]?.scrollIntoView({ inline: "nearest", block: "nearest" }));
   let aside!: HTMLElement;
   onMount(() =>
     queueMicrotask(() => {
@@ -151,10 +163,16 @@ export function SessionPane(props: {
           <span class="chip chip-count">{working()} working</span>
         </Show>
         <Show when={total()}>
-          {(u) => (
-            <span class="chip chip-count subagents-usage" title={usageTitle(u(), u().workers)}>
-              {formatTokens(usageHeadline(u()))} tokens
-            </span>
+          {(t) => (
+            <button
+              type="button"
+              class="chip chip-count subagents-usage"
+              aria-label={`${formatTokens(usageHeadline(t().usage))} tokens — show usage`}
+              title={usageTitle(t().usage, t().workers)}
+              onClick={() => setActiveTab(props.path, "usage")}
+            >
+              {formatTokens(usageHeadline(t().usage))} tokens
+            </button>
           )}
         </Show>
         <button type="button" class="button button-icon button-ghost subagents-close" aria-label="Close session detail" onClick={() => props.onClose()}>
@@ -229,6 +247,9 @@ export function SessionPane(props: {
               overseer={!!props.summary?.overseer}
             />
           </Match>
+          <Match when={tab() === "usage"}>
+            <SessionUsageTab insight={props.insight} chatWorkers={props.chatWorkers} />
+          </Match>
           <Match when={tab() === "skills"}>
             <SkillsTab
               path={props.path}
@@ -253,8 +274,8 @@ export function SessionPane(props: {
 // ---- Session ----------------------------------------------------------------------------------
 
 /**
- * The Session info modal's body, fed from App's shared insight and the pane's shared transcript
- * read, which the Changes list and the context sentence need — no fetch of its own.
+ * The Session tab, fed from App's shared insight and the pane's shared transcript read, which the
+ * Changes list and the context sentence need — no fetch of its own.
  */
 function SessionTab(props: {
   path: string;
@@ -265,7 +286,7 @@ function SessionTab(props: {
   onArchiveChanged(path: string, archived: boolean): void;
   onGroupsChanged(): void;
 }) {
-  /** The gauge's reading; "compacted" is re-derived from the items, as in the modal. */
+  /** The gauge's reading; "compacted" is re-derived from the items. */
   const context = () => {
     const c = sessionContext()[props.path];
     return c && c !== "compacted" ? c : null;
@@ -280,7 +301,7 @@ function SessionTab(props: {
         path={props.path}
         insight={props.insight.data}
         error={failure()}
-        skeleton={props.insight.pending}
+        pending={props.insight.pending}
         summary={props.summary}
         context={context()}
         items={props.items ?? []}
@@ -288,7 +309,6 @@ function SessionTab(props: {
         onArchiveChanged={props.onArchiveChanged}
         onGroupsChanged={props.onGroupsChanged}
         gitChanged={props.insight.changed}
-        idPrefix="sp"
       />
     </div>
   );
@@ -297,8 +317,8 @@ function SessionTab(props: {
 // ---- Explain ----------------------------------------------------------------------------------
 
 /**
- * This session's /explain pages, newest first, as text rows: the gallery (from the insight strip)
- * owns thumbnails, and both open the same page through `explainHref`. Read off the shared insight.
+ * This session's /explain pages, newest first, as text rows: the Explanations page (from the
+ * insight strip) owns thumbnails, and both open the same page through `explainHref`. Read off the shared insight.
  */
 function ExplainTab(props: { insight: PaneInsight; now: number }) {
   const items = () => newestFirst(props.insight.data?.explanations ?? []);

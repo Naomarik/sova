@@ -8,7 +8,7 @@ the session stays behind, closed by the scrim, Esc, or its Close button (Cancel 
 is unsaved, §app.settings-dialog/save-bar).
 
 The rail is the structure: each settings screen is one tab — General, Models, Modes, Teams,
-Overseer, Decisions, Summaries, Themes, Mesh, Experimental.
+Overseer, Decisions, Summaries, Organizations, Themes, Mesh, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
 (§chat/mode-menu) opens Modes directly, and nothing else about the chat changes. Which tab is open lives in
@@ -156,16 +156,16 @@ side by side when the panel has room and stacked under 640px.
   carrying the reason, its rows say only "Not verified: {backend} couldn't list its models.", and
   saves still go through, with one "not verified" note per backend naming every slot on it.
 - **A Claude Code alias the CLI's list omits is not gone.** The `claude` initialize model list is
-  remote and account-gated and alternates within minutes between a shape that carries the `[1m]`
-  aliases (`opus[1m]`, `claude-fable-5-1[1m]`) and one that does not, while the CLI accepts a valid
-  alias at runtime either way. So a shape-valid Claude Code model (an alias: no `/`, no leading
+  remote and account-gated and has changed shape under us: it once carried the `[1m]` aliases
+  (`opus[1m]`, `claude-fable-5-1[1m]`) and now does not, while the CLI accepts a valid alias at
+  runtime either way. So a shape-valid Claude Code model (an alias: no `/`, no leading
   `-`, no whitespace) missing from a list the CLI did answer reads "— not verified" in the select
   and, under its row, muted: "Not verified: the Claude Code CLI's model list doesn't include
   {model} right now (the list varies). It will still be used." — the same soft state Delegate
   routes it by. Only a shape-invalid Claude id, or a pi model its registry doesn't list, is "not
   offered". The server's save check reads such a row the same way: never refused for absence from
-  the list, saved with that note; and its options list unions `[1m]` ids seen in recent discoveries
-  (30 minutes) so the picker doesn't flicker between the two shapes.
+  the list, saved with that note; and its options list offers the known 1M forms itself
+  (§app.settings-dialog/claude-long-context-offered).
 - **Efforts.** A model's effort list is what its backend reported, cut to what the backend
   accepts; a model reporting none usable (no list, an empty one, or only efforts the backend
   refuses) takes every effort the backend accepts — the same rule Delegate routes by.
@@ -464,8 +464,8 @@ Folders box or the tab writes nothing.
 ## §app.settings-dialog/save-bar — One Save in the footer, one close-hold
 
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Modes**
-(Delegate and Spec), **Teams**, **Overseer**, **Decisions**, **Summaries**, **Mesh** and
-**Experimental**. A change on them is staged, never written as it is made. No form has a Save or
+(Delegate and Spec), **Teams**, **Overseer**, **Decisions**, **Summaries**, **Organizations**,
+**Mesh** and **Experimental**. A change on them is staged, never written as it is made. No form has a Save or
 Discard button of its own: saving is the dialog's.
 
 - **The footer.** Left to right: a status line, then **Discard Changes** (ghost), **Save Changes**
@@ -519,6 +519,21 @@ Discard button of its own: saving is the dialog's.
   Refresh, the Jev key's Save Key, Replace Key and Remove Key, Test Decisions, Tag Last 30 Days,
   Tag All Sessions and Stop Tagging.
 
+## §app.settings-dialog/organizations — Organizations
+
+The tab after Summaries: **Hand-off sessions**, the defaults for new baton sessions
+(§app.baton/goal-and-loadout). Today one field, **Message limit** — how many messages a hand-off
+session takes in, from everyone, before it comes back to the operator; a whole number from 1 to
+1000, default 60. The hint says it applies to new sessions only ("New sessions only; sessions
+already started keep theirs."), and while the field holds anything else it says "A whole number
+from 1 to 1,000." Save-gated: the dialog's footer saves it (§app.settings-dialog/save-bar), and
+while the field is invalid Save Changes is disabled and the status line says "Organizations needs
+a message limit from 1 to 1,000." A failed save shows "Couldn't save the message limit." at the
+form's end, with the reason and "Your saved limit is unchanged."
+Host state, not the workspace repo: `<stateRoot>/baton-settings.json`, read and written through
+`GET`/`PUT /api/baton/settings {messagesMax}` (400 outside the bounds; a missing or corrupt file
+reads as 60).
+
 ## §app.settings-dialog/toggle-target — A left-aligned toggle's target
 
 Every switch, checkbox and radio in Settings is a label row: the native input hidden inside it, so
@@ -539,3 +554,16 @@ pick against that list (Settings → Modes → Delegate and Spec, Teams, Oversee
 "— not verified" in the select, and it takes `<alias>`'s efforts and policy marks. When `<alias>`
 is not listed either, the pick reads as before (§app.settings-dialog/modes). Only Claude Code: a pi
 model ending in `[1m]` is never read as its base.
+
+## §app.settings-dialog/claude-long-context-offered — The known Claude Code 1M forms are offered
+
+The CLI's list names `opus` and `claude-fable-5-1` but no longer their 1M-context forms, which it
+accepts. So wherever Sova or its extensions list Claude Code models — every Settings row that picks
+a Claude Code model (Modes → Delegate and Spec, Teams, Decisions, Overseer, Summaries), the chat
+model picker's `claude-code-cli/*` models, and `agent_models` — `opus[1m]` and
+`claude-fable-5-1[1m]` are offered right after `opus` and `claude-fable-5-1` whenever the CLI lists
+that base and not already its `[1m]` form: the base's efforts, named "{base name} (1M context)".
+Only those two: the list rule is fixed, not learned, so it holds from the first discovery after a
+restart and never depends on having seen the CLI list them. Nothing is removed or reordered, and
+a base the CLI doesn't list gains nothing. All three surfaces apply one rule (the claude-code
+extension's `context-window.ts`).

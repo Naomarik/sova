@@ -1,7 +1,7 @@
 // The baton strip's words (§app/baton): who has the baton, or the offer, in one phrase. Pure, so
 // every state is pinned by tsx --test.
 
-import { OPERATOR, type BatonInfo, type WrapupInfo } from "../../shared/baton";
+import { OPERATOR, type BatonInfo, type BatonSummaryField, type OfferLink, type WrapupInfo } from "../../shared/baton";
 
 /** "Ana", "Ana and Bob", "Ana, Bob, and Carl" (serial comma). */
 export function namesList(names: readonly string[]): string {
@@ -27,12 +27,15 @@ export function whereLine(i: Pick<BatonInfo, "offer" | "session" | "names">, now
   if (offer) {
     const invited = namesList(offer.to.map((p) => p.name));
     if (offer.state === "held" && offer.holder) {
+      const ms = offer.leaseUntil ? Date.parse(offer.leaseUntil) - now : null;
       const left = offer.leaseUntil ? leaseMinutes(offer.leaseUntil, now) : null;
-      return `${offer.holder.name} is answering (offered to ${invited})${left === null ? "" : ` — theirs for ${left} more ${left === 1 ? "minute" : "minutes"} of quiet`}`;
+      const quiet = ms === null ? "" : ms < 60_000 ? " — theirs for less than a minute more of quiet" : ` — theirs for ${left} more ${left === 1 ? "minute" : "minutes"} of quiet`;
+      return `${offer.holder.name} is answering (offered to ${invited})${quiet}`;
     }
-    return `offered to ${invited} — nobody has answered yet`;
+    // Someone answered before and went quiet: the offer is open again, not untouched.
+    return offer.lastActivityAt ? `offered to ${invited} — open again; nobody is answering right now` : `offered to ${invited} — nobody has answered yet`;
   }
-  if (s.holder === OPERATOR) return "with you — you can write now";
+  if (s.holder === OPERATOR) return s.budget && s.budget.messagesUsed >= s.budget.messagesMax ? "with you — extend the limit to write" : "with you — you can write now";
   if (s.holder) return `with ${i.names[s.holder] ?? "someone"} — you can write once you take it back`;
   return "with nobody";
 }
@@ -43,6 +46,16 @@ export function whereLine(i: Pick<BatonInfo, "offer" | "session" | "names">, now
  * any change of the count wiped a link the moment the refetch after minting it landed.
  */
 export const linksStale = (at: number | null, count: number | undefined): boolean => at !== null && count !== undefined && count > at;
+
+/**
+ * A link on screen that a Get Link elsewhere (another tab) turned off: its person has a newer live
+ * link now. Never guessed: a link with no mint time, or no newer one (turned off, or none read
+ * yet), is not replaced.
+ */
+export function linkReplaced(link: Pick<OfferLink, "personId" | "at">, info: Pick<BatonInfo, "linkAt"> | undefined): boolean {
+  const newest = info?.linkAt?.[link.personId];
+  return !!link.at && !!newest && Date.parse(newest) > Date.parse(link.at);
+}
 
 /**
  * The decision areas a referral asks the operator to grant, said on the approval card: a referred
@@ -75,4 +88,22 @@ export function wrapupLine(w: WrapupInfo): { text: string; review: boolean } {
         review: true,
       };
   }
+}
+
+/**
+ * Why the operator's composer can't write in a baton session (§app.baton/attribution), or null
+ * when it can. `mine` is the strip's own read of the holder (undefined until it has read): it wins
+ * over the list's state, which lags a hand-off made from the strip until the next list read. Either
+ * way the box is read-only, Send gone: a box that takes typing and says "Enter sends" reads as
+ * sendable whatever the button looks like.
+ */
+export function batonComposerGate(baton: BatonSummaryField | undefined, mine: boolean | undefined): { ended: boolean; text: string } | null {
+  if (!baton) return null;
+  if (baton.state === "done" || baton.state === "closed") return { ended: true, text: `This hand-off session is ${baton.state}.` };
+  if (baton.offer?.state === "held") return { ended: false, text: `${baton.offer.holder ?? "Someone"} took the offer and is answering. Withdraw it to write.` };
+  if (baton.offer?.state === "open") return { ended: false, text: `Offered to ${baton.offer.invited} people; nobody is answering right now. Withdraw it to write.` };
+  // "needs-you" is the operator's turn, and so is "open" once the operator has written after Take
+  // Back: the list carries only the holder's display name, so the strip says whose it is.
+  const others = mine === false || (mine === undefined && baton.state === "open");
+  return others ? { ended: false, text: `${baton.holder ?? "Someone"} holds the baton. Take it back to write.` } : null;
 }

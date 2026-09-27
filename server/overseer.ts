@@ -17,6 +17,7 @@ import {
 } from "../shared/protocol";
 import { setArchived } from "./archived-sessions";
 import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./attention";
+import { stakeholderAttention } from "./orgs";
 import {
   acquireChat,
   BusyError,
@@ -67,6 +68,7 @@ import type { PeerLinkRead } from "../shared/mesh-links";
 import { normalizeEntries, readActiveBranch } from "./transcript";
 import { markOwned } from "./write-guard";
 import { signalTextOf } from "./signals-store";
+import { onAttentionChanged } from "./attention-memo";
 
 /**
  * The Overseer: ONE special Sova session that watches every other session and acts on them
@@ -300,6 +302,7 @@ function noteFailedRise(path: string, failed: number, now: number): number {
   return at;
 }
 let digestMemo: { at: number; value: Promise<ReturnType<typeof buildDigest>> } | null = null;
+onAttentionChanged(() => (digestMemo = null));
 
 /** The digest, memoised ~3s (the badge rides a poll). */
 export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
@@ -337,7 +340,7 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
         ...(s.signals || s.workerSignals ? { signalText: signalTextOf(s.id, nowMs) } : {}),
       };
     });
-    return buildDigest(rows, Date.now(), homedir());
+    return buildDigest(rows, Date.now(), homedir(), stakeholderAttention());
   })();
   digestMemo = { at: now, value };
   value.catch(() => {
@@ -541,6 +544,9 @@ const host: OverseerToolHost = {
     await chat.setModelRef(ref);
   },
   setThinking: async (path, level) => (await acquireChat(path)).setThinking(level),
+  pinMode: async (path) => {
+    if (!(await acquireChat(path)).pinMode()) throw new Error("its mode entry could not be written");
+  },
   started: (path, prompted) => {
     started.add(path);
     if (prompted) promptedAt.set(path, Date.now());

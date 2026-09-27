@@ -26,16 +26,24 @@
     "§app.insights/insight-strip": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/InsightStrip.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/components/SessionView.tsx",
+        "src/lib/insights.ts",
+        "shared/outline-order.ts",
+        "src/lib/outline-order.test.ts"
       ]
     },
     "§app.insights/placement": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/insights.ts",
+        "src/App.tsx"
+      ]
     },
     "§app.insights/sidebar-foot": {
       "kind": "behavior",
@@ -68,7 +76,8 @@
         "src/components/SelectionToolbar.tsx",
         "src/components/SessionDetails.tsx",
         "src/App.tsx",
-        "src/components/InsightsPage.tsx"
+        "src/components/InsightsPage.tsx",
+        "src/lib/pane-insight.ts"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {
@@ -108,7 +117,7 @@
     "§app.session-list/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -135,7 +144,11 @@
     "§app.session-list/archive-cleanup": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified",
+      "code": [
+        "server/sessions-index.ts",
+        "src/components/Sidebar.tsx"
+      ]
     },
     "§app.session-list/content-rules": {
       "kind": "behavior",
@@ -157,7 +170,10 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/components/Groups.tsx",
+        "src/components/Sidebar.tsx",
+        "server/index.ts"
       ]
     },
     "§app.session-list/recent": {
@@ -165,7 +181,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/lib/recent.ts"
+        "src/lib/recent.ts",
+        "src/lib/recent.test.ts"
       ]
     },
     "§app.session-list/regions-top-and-archive": {
@@ -180,7 +197,14 @@
         "src/lib/storage-keys.ts",
         "src/lib/regions.ts",
         "src/lib/recent.ts",
-        "server/sessions-index.ts"
+        "server/sessions-index.ts",
+        "src/lib/regions.test.ts",
+        "server/index.ts",
+        "src/lib/session-actions.ts",
+        "src/components/ChatView.tsx",
+        "src/lib/api.ts",
+        "src/lib/drag-archive.ts",
+        "server/archive-org-guard.test.ts"
       ]
     },
     "§app.session-list/search": {
@@ -189,13 +213,19 @@
       "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
-        "src/lib/signals.ts"
+        "src/lib/signals.ts",
+        "src/lib/org-region.ts"
       ]
     },
     "§app.session-list/selecting-several-sessions": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified",
+      "code": [
+        "src/lib/session-selection.ts",
+        "src/lib/session-selection.test.ts",
+        "src/components/SelectionToolbar.tsx"
+      ]
     },
     "§app.session-list/states": {
       "kind": "behavior",
@@ -237,7 +267,11 @@
         "§app.settings-dialog/models"
       ],
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "code": [
+        "server/delegate.ts",
+        "src/lib/delegate-form.ts"
+      ]
     },
     "§app.settings-dialog/one-height": {
       "kind": "behavior",
@@ -310,13 +344,15 @@
     "§app.subagents-pane/head": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.worker-restore/usage-from-transcripts"
       ],
       "code": [
         "src/components/SubagentPane.tsx",
-        "server/insights.ts"
+        "server/insights.ts",
+        "src/components/SessionPane.tsx",
+        "src/design/base.css"
       ]
     },
     "§app.subagents-pane/motion": {
@@ -337,7 +373,13 @@
     "§app.subagents-pane/shell-a-third-column": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified",
+      "code": [
+        "src/components/SessionPane.tsx",
+        "src/App.tsx",
+        "src/lib/pane-insight.ts",
+        "src/components/SessionView.tsx"
+      ]
     },
     "§app.subagents-pane/tokens": {
       "kind": "note",
@@ -417,7 +459,8 @@
       "evidence": "reviewed",
       "code": [
         "src/components/SettingsDialog.tsx",
-        "src/lib/settings-nav.ts"
+        "src/lib/settings-nav.ts",
+        "src/lib/settings-nav.test.ts"
       ]
     },
     "§app/shell": {
@@ -844,13 +887,14 @@
       "evidence": "unreviewed",
       "code": [
         "src/components/Thread.tsx",
-        "server/transcript.ts"
+        "server/transcript.ts",
+        "src/components/SessionDetails.tsx"
       ]
     },
     "§chat.transcript/landing-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/App.tsx",
         "src/components/ExtensionView.tsx",
@@ -866,7 +910,9 @@
         "src/lib/org-cards.ts",
         "src/lib/api.ts",
         "src/components/MeshView.tsx",
-        "src/extensions.css"
+        "src/extensions.css",
+        "src/components/ExplanationsView.tsx",
+        "src/lib/explanations.ts"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -965,7 +1011,9 @@
       "evidence": "verified",
       "code": [
         "pi-config/extensions/mode/state.ts",
-        "server/mode-state.ts"
+        "server/mode-state.ts",
+        "server/chat-manager.ts",
+        "server/project-overseer.ts"
       ]
     },
     "§chat/model-menu": {
@@ -1078,7 +1126,12 @@
     "§design.copy-deck/sidebar": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "verified",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/lib/drag-archive.ts",
+        "src/lib/session-selection.ts"
+      ]
     },
     "§design.copy-deck/slash-commands": {
       "kind": "note",
@@ -1088,7 +1141,12 @@
     "§design.copy-deck/subagents-pane": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/SessionUsage.tsx",
+        "src/components/SessionPane.tsx",
+        "src/components/SubagentPane.tsx"
+      ]
     },
     "§design.copy-deck/timeline-tab": {
       "kind": "note",
@@ -1183,7 +1241,10 @@
     "§workspace.fanout/entry-points": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ComposerMenu.tsx"
+      ]
     },
     "§workspace.fanout/states": {
       "kind": "behavior",
@@ -1238,7 +1299,10 @@
         "§chat/transcript"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/SessionView.tsx"
+      ]
     },
     "§workspace.groups/accessibility": {
       "kind": "behavior",
@@ -1729,7 +1793,8 @@
         "pi-config/extensions/subagents/restored.ts",
         "pi-config/extensions/subagents/teams.ts",
         "src/components/AgentsView.tsx",
-        "pi-config/extensions/subagents/worker-transcript.ts"
+        "pi-config/extensions/subagents/worker-transcript.ts",
+        "src/components/SessionUsage.tsx"
       ]
     },
     "§app.worker-restore/resume": {
@@ -1739,7 +1804,7 @@
         "§chat.sandbox/workers"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "pi-config/extensions/subagents/index.ts",
         "pi-config/extensions/subagents/registry.ts",
@@ -2337,7 +2402,10 @@
         "src/lib/workers.ts",
         "pi-config/extensions/subagents/worker-transcript.ts",
         "pi-config/extensions/subagents/adapters/pi.ts",
-        "pi-config/extensions/claude-code/transcript-adapter.ts"
+        "pi-config/extensions/claude-code/transcript-adapter.ts",
+        "pi-config/extensions/claude-code/context-window.ts",
+        "server/worker-context.test.ts",
+        "server/insights-restored.test.ts"
       ],
       "requires": [
         "§chat.context-window/last-reply",
@@ -2440,7 +2508,7 @@
     "§app.overseer/identity-and-clear": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer.ts",
         "server/overseer-store.ts",
@@ -2574,7 +2642,7 @@
     "§app.overseer/tools": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-tools.ts",
         "server/overseer-deny.ts",
@@ -2589,7 +2657,8 @@
         "server/index.ts",
         "shared/protocol.ts",
         "server/overseer-markers.test.ts",
-        "server/overseer-todo-tools.ts"
+        "server/overseer-todo-tools.ts",
+        "server/overseer-tools.test.ts"
       ],
       "requires": [
         "§app.overseer/caps",
@@ -2904,7 +2973,8 @@
         "server/chat-manager.ts",
         "server/overseer.ts",
         "server/chat-config.test.ts",
-        "server/overseer-runtime.test.ts"
+        "server/overseer-runtime.test.ts",
+        "server/baton-runtime.test.ts"
       ]
     },
     "§app.overseer/todos": {
@@ -3081,13 +3151,19 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
         "src/components/Sidebar.tsx",
         "src/App.tsx",
-        "src/app.css"
+        "src/app.css",
+        "src/lib/list-refresh.ts",
+        "src/lib/list-refresh.test.ts",
+        "server/attention-memo.ts",
+        "server/attention-memo.test.ts",
+        "server/org-routes.ts",
+        "server/overseer.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest",
@@ -3190,7 +3266,8 @@
         "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
-        "pi-config/extensions/subagents/README.md"
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/claude-code/context-window.ts"
       ]
     },
     "§teams.defaults/routing": {
@@ -3416,7 +3493,9 @@
         "src/components/SummarizerSettings.tsx",
         "src/components/MeshSettings.tsx",
         "src/lib/settings-save-all.test.ts",
-        "src/app.css"
+        "src/app.css",
+        "src/lib/baton-settings-draft.ts",
+        "src/components/BatonSettings.tsx"
       ]
     },
     "§design.copy-deck/settings-experimental": {
@@ -3464,7 +3543,20 @@
         "src/components/ChatView.tsx",
         "server/overseer.ts",
         "server/share/routes.ts",
-        "server/baton-runtime.test.ts"
+        "server/baton-runtime.test.ts",
+        "server/baton-loadout.ts",
+        "server/baton.ts",
+        "server/share-message.test.ts",
+        "src/lib/live.ts",
+        "src/lib/live.test.ts",
+        "src/lib/baton-strip.ts",
+        "src/lib/baton-strip.test.ts",
+        "server/baton-view.ts",
+        "server/baton-view.test.ts",
+        "server/baton-wrapup.ts",
+        "server/baton-prompt.md",
+        "server/baton-handoff.test.ts",
+        "server/baton-guards.test.ts"
       ],
       "requires": [
         "§app.overseer/sent-marker"
@@ -3486,7 +3578,18 @@
         "server/baton-runtime.test.ts",
         "server/org-routes.ts",
         "server/baton-offers.test.ts",
-        "src/lib/list-refresh.ts"
+        "src/lib/list-refresh.ts",
+        "server/baton-settings.ts",
+        "server/share/routes.ts",
+        "shared/baton.ts",
+        "server/share-message.test.ts",
+        "src/lib/baton-strip.ts",
+        "src/lib/baton-strip.test.ts",
+        "src/lib/api.ts",
+        "src/orgs.css",
+        "server/baton-handoff.test.ts",
+        "server/baton-guards.test.ts",
+        "server/share/hub.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -3502,7 +3605,14 @@
         "server/org-routes.ts",
         "server/baton.test.ts",
         "server/baton-events.ts",
-        "server/baton-offers.test.ts"
+        "server/baton-offers.test.ts",
+        "server/baton-handoff.test.ts",
+        "server/baton-guards.ts",
+        "server/baton-guards.test.ts",
+        "server/baton-prompt.md",
+        "server/chat-manager.ts",
+        "server/queue.ts",
+        "server/queue.test.ts"
       ],
       "requires": [
         "§app.baton/links"
@@ -3521,7 +3631,14 @@
         "server/baton-offers.test.ts",
         "src/lib/baton-strip.ts",
         "src/lib/baton-strip.test.ts",
-        "src/components/LinksBanner.tsx"
+        "src/components/LinksBanner.tsx",
+        "server/share/hub.ts",
+        "server/share-message.test.ts",
+        "src/components/OrgsView.tsx",
+        "shared/baton.ts",
+        "server/person-page.ts",
+        "src/components/PersonPage.tsx",
+        "src/lib/api.ts"
       ]
     },
     "§app.baton/needs-you": {
@@ -3542,7 +3659,8 @@
         "server/session-feed.test.ts",
         "server/chat-manager.ts",
         "src/lib/needs-you.ts",
-        "server/baton-offers.test.ts"
+        "server/baton-offers.test.ts",
+        "src/lib/org-region.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest"
@@ -3568,7 +3686,11 @@
         "server/share-listener.test.ts",
         "src/lib/baton-strip.ts",
         "src/lib/baton-strip.test.ts",
-        "src/components/LinksBanner.tsx"
+        "src/components/LinksBanner.tsx",
+        "server/share-message.test.ts",
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "server/baton-handoff.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -3588,7 +3710,15 @@
         "src/share/main.tsx",
         "src/share/index.html",
         "server/baton-view.test.ts",
-        "server/baton-offers.test.ts"
+        "server/baton-offers.test.ts",
+        "server/baton-loadout.ts",
+        "server/chat-manager.ts",
+        "shared/baton.ts",
+        "server/share-message.test.ts",
+        "server/baton.ts",
+        "server/baton-handoff.test.ts",
+        "src/lib/share-linkify.ts",
+        "src/lib/share-linkify.test.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -3608,7 +3738,13 @@
         "server/share/routes.ts",
         "server/index.ts",
         "vite.config.ts",
-        "server/share-listener.test.ts"
+        "server/share-listener.test.ts",
+        "server/share/hub.ts",
+        "server/share-message.test.ts",
+        "server/visits.ts",
+        "server/visits.test.ts",
+        "src/share/visit-tab.ts",
+        "src/share/ShareApp.tsx"
       ],
       "requires": [
         "§app.baton/links",
@@ -3627,7 +3763,8 @@
       "code": [
         "server/orgs.ts",
         "server/orgs.test.ts",
-        "server/baton-offers.test.ts"
+        "server/baton-offers.test.ts",
+        "server/org-routes.ts"
       ],
       "requires": [
         "§app.organizations/roster"
@@ -3644,13 +3781,15 @@
         "server/org-routes.ts",
         "server/baton-offers.test.ts",
         "src/lib/profile-changes.ts",
-        "src/lib/profile-changes.test.ts"
+        "src/lib/profile-changes.test.ts",
+        "src/components/PersonPage.tsx",
+        "server/person-page.ts"
       ]
     },
     "§app.organizations/org-cards": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "shared/orgs.ts",
         "server/org-routes.ts",
@@ -3658,7 +3797,10 @@
         "src/components/OrgsView.tsx",
         "src/lib/org-cards.ts",
         "src/lib/org-cards.test.ts",
-        "src/orgs.css"
+        "src/orgs.css",
+        "server/orgs.ts",
+        "src/lib/org-tabs.ts",
+        "src/lib/org-tabs.test.ts"
       ],
       "requires": [
         "§app.organizations/registry",
@@ -3668,7 +3810,7 @@
     "§app.organizations/org-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/OrgsView.tsx",
         "src/lib/org-tabs.ts",
@@ -3680,7 +3822,17 @@
         "src/components/ProjectPage.tsx",
         "server/org-routes.ts",
         "shared/orgs.ts",
-        "server/org-list.test.ts"
+        "server/org-list.test.ts",
+        "src/lib/org-page-route.ts",
+        "src/lib/org-page-route.test.ts",
+        "src/lib/org-source.ts",
+        "src/lib/org-source.test.ts",
+        "src/components/PersonForm.tsx",
+        "src/lib/profile-changes.ts",
+        "src/components/PersonPage.tsx",
+        "src/components/InsightsPage.tsx",
+        "src/lib/person-patch.ts",
+        "src/lib/person-patch.test.ts"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -3703,7 +3855,13 @@
         "src/components/OrgsView.tsx",
         "src/components/ProjectOverseerPanel.tsx",
         "src/components/ProjectOverseerStrip.tsx",
-        "server/org-portable.test.ts"
+        "server/org-portable.test.ts",
+        "server/visits.ts",
+        "server/person-page.ts",
+        "src/lib/org-region.ts",
+        "server/decisions.ts",
+        "server/reconcile.ts",
+        "shared/decisions.ts"
       ],
       "requires": [
         "§app.organizations/workspace-repo",
@@ -3722,7 +3880,10 @@
         "server/share/hub.ts",
         "server/baton-view.ts",
         "server/baton-view.test.ts",
-        "server/orgs.test.ts"
+        "server/orgs.test.ts",
+        "server/baton-guards.test.ts",
+        "src/components/PersonPage.tsx",
+        "server/person-page.ts"
       ]
     },
     "§app.organizations/projects": {
@@ -3732,7 +3893,8 @@
       "code": [
         "server/orgs.ts",
         "shared/orgs.ts",
-        "src/components/OrgsView.tsx"
+        "src/components/OrgsView.tsx",
+        "server/project-overseer.test.ts"
       ]
     },
     "§app.organizations/referrals": {
@@ -3748,7 +3910,8 @@
         "server/org-routes.ts",
         "src/components/BatonStrip.tsx",
         "src/components/OrgsView.tsx",
-        "server/baton-offers.test.ts"
+        "server/baton-offers.test.ts",
+        "server/baton-handoff.test.ts"
       ],
       "requires": [
         "§app.organizations/roster",
@@ -3775,7 +3938,9 @@
         "shared/orgs.ts",
         "src/components/OrgsView.tsx",
         "server/orgs.test.ts",
-        "server/baton.ts"
+        "server/baton.ts",
+        "server/baton-loadout.ts",
+        "server/baton-handoff.test.ts"
       ]
     },
     "§app.organizations/workspace-repo": {
@@ -3801,7 +3966,9 @@
         "server/baton-wrapup.ts",
         "server/project-overseer.ts",
         "server/project-overseer-store.ts",
-        "server/org-portable.test.ts"
+        "server/org-portable.test.ts",
+        "server/visits.ts",
+        "src/components/Sidebar.tsx"
       ]
     },
     "§app.organizations/wrap-up": {
@@ -3819,11 +3986,22 @@
         "server/baton-offers.test.ts",
         "src/lib/wrapup-rows.ts",
         "src/lib/wrapup-rows.test.ts",
-        "src/components/Thread.tsx"
+        "src/components/Thread.tsx",
+        "server/baton-guards.ts",
+        "server/baton-guards.test.ts",
+        "server/wrapup-recovery.ts",
+        "server/wrapup-recovery.test.ts",
+        "server/wrapup-routes.ts",
+        "server/stream-guard-runtime.test.ts",
+        "server/baton.ts",
+        "server/index.ts",
+        "src/components/BatonStrip.tsx",
+        "src/lib/api.ts"
       ],
       "requires": [
         "§app.organizations/field-authority",
-        "§app.organizations/history-and-revert"
+        "§app.organizations/history-and-revert",
+        "§chat.transcript/runaway-stream"
       ]
     },
     "§app.project-overseer/autonomy-levels": {
@@ -3855,7 +4033,8 @@
         "server/project-overseer-tools.ts",
         "server/project-overseer-prompt.md",
         "shared/project-overseer.ts",
-        "server/project-overseer-tools.test.ts"
+        "server/project-overseer-tools.test.ts",
+        "server/project-overseer.ts"
       ]
     },
     "§app.project-overseer/ideas-and-todos": {
@@ -3867,7 +4046,11 @@
         "server/project-overseer.ts",
         "server/overseer-todos.ts",
         "server/overseer-ideas.ts",
-        "src/components/ProjectOverseerPanel.tsx"
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/lib/project-overseer-view.ts",
+        "src/lib/api.ts",
+        "src/lib/project-overseer-view.test.ts",
+        "server/project-overseer.test.ts"
       ],
       "requires": [
         "§app.overseer/ideas",
@@ -3885,7 +4068,15 @@
         "server/chat-manager.ts",
         "server/overseer.ts",
         "server/overseer-file-tools.ts",
-        "server/project-overseer.test.ts"
+        "server/project-overseer.test.ts",
+        "server/overseer-deny.ts",
+        "server/overseer-file-tools.test.ts",
+        "server/orgs.ts",
+        "server/project-overseer-tools.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/lib/project-overseer-view.ts",
+        "src/lib/project-overseer-view.test.ts",
+        "shared/protocol.ts"
       ],
       "requires": [
         "§app.overseer/hosting",
@@ -3899,7 +4090,12 @@
       "code": [
         "server/project-overseer-tools.ts",
         "server/project-overseer.ts",
-        "server/project-overseer-tools.test.ts"
+        "server/project-overseer-tools.test.ts",
+        "server/project-coding-mode.ts",
+        "server/project-overseer-prompt.md",
+        "server/baton-loadout.ts",
+        "server/chat-manager.ts",
+        "server/project-coding-runtime.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -3916,7 +4112,16 @@
         "server/baton-events.ts",
         "server/reconcile.ts",
         "server/project-overseer.test.ts",
-        "server/orgs.ts"
+        "server/orgs.ts",
+        "src/lib/project-overseer-view.ts",
+        "src/lib/project-overseer-view.test.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "server/overseer-todos.ts",
+        "server/project-overseer-store.ts",
+        "server/project-overseer-watch-run.test.ts",
+        "server/wrapup-recovery.ts",
+        "server/index.ts",
+        "shared/project-overseer.ts"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels"
@@ -3969,7 +4174,8 @@
       "code": [
         "server/reconcile.ts",
         "server/spec-draft-writer.ts",
-        "server/reconcile.test.ts"
+        "server/reconcile.test.ts",
+        "server/project-worktrees.ts"
       ],
       "requires": [
         "§app.requirements/drafts-with-provenance",
@@ -3985,7 +4191,11 @@
         "server/decide.ts",
         "server/decide-settings.ts",
         "shared/protocol.ts",
-        "server/reconcile.test.ts"
+        "server/reconcile.test.ts",
+        "shared/decisions.ts",
+        "src/lib/decisions-view.ts",
+        "src/lib/decisions-view.test.ts",
+        "src/components/ProjectPage.tsx"
       ],
       "requires": [
         "§app.decisions/interface",
@@ -4006,7 +4216,9 @@
       "code": [
         "server/reconcile.ts",
         "server/sessions-index.ts",
-        "server/reconcile.test.ts"
+        "server/reconcile.test.ts",
+        "shared/decisions.ts",
+        "server/project-overseer.ts"
       ],
       "requires": [
         "§app/baton",
@@ -4064,7 +4276,9 @@
         "src/orgs.css",
         "src/lib/api.ts",
         "src/App.tsx",
-        "src/lib/org-cards.ts"
+        "src/lib/org-cards.ts",
+        "src/components/PersonPage.tsx",
+        "src/components/Sidebar.tsx"
       ]
     },
     "§app/project-overseer": {
@@ -4181,7 +4395,8 @@
         "src/components/SessionDetails.tsx",
         "src/lib/worktrees.ts",
         "src/lib/worktrees.test.ts",
-        "src/app.css"
+        "src/app.css",
+        "src/components/SessionPane.tsx"
       ]
     },
     "§chat.worktrees/sandbox": {
@@ -4262,6 +4477,347 @@
         "pi-config/extensions/worktrees/state.ts",
         "pi-config/extensions/worktrees/README.md"
       ]
+    },
+    "§app.insights/explanations-page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.insights/usage-page-and-agents-page",
+        "§app.insights/insight-strip",
+        "§chat.transcript/landing-page"
+      ],
+      "code": [
+        "src/components/ExplanationsView.tsx",
+        "src/components/ExplainTiles.tsx",
+        "src/lib/explanations.ts",
+        "src/lib/explanations.test.ts",
+        "src/lib/insights.ts",
+        "src/lib/jump.ts",
+        "src/lib/jump.test.ts",
+        "src/components/ChatView.tsx",
+        "src/components/WatchView.tsx",
+        "src/components/Thread.tsx",
+        "src/explain.css",
+        "src/App.tsx",
+        "src/lib/explain.ts",
+        "src/lib/explain.test.ts"
+      ]
+    },
+    "§app.settings-dialog/organizations": {
+      "kind": "behavior",
+      "requires": [
+        "§app/settings-dialog",
+        "§app.settings-dialog/save-bar"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/BatonSettings.tsx",
+        "src/lib/baton-settings-draft.ts",
+        "src/lib/baton-settings-draft.test.ts",
+        "server/baton-settings.ts",
+        "server/org-routes.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/api.ts",
+        "shared/baton.ts",
+        "server/share-message.test.ts"
+      ]
+    },
+    "§chat.transcript/runaway-stream": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/streaming"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/stream-guard.ts",
+        "server/chat-manager.ts",
+        "server/stream-guard.test.ts",
+        "server/stream-guard-runtime.test.ts",
+        "server/stream-stub.ts"
+      ]
+    },
+    "§app.subagents-pane/tabs": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§chat.worktrees/pane",
+        "§app.worker-restore/restore",
+        "§app.subagents-pane/head"
+      ],
+      "code": [
+        "src/components/SessionPane.tsx",
+        "src/components/SessionUsage.tsx",
+        "src/components/SessionDetails.tsx",
+        "src/design/base.css",
+        "src/lib/spend.ts",
+        "src/lib/spend.test.ts",
+        "src/components/AgentsView.tsx",
+        "src/App.tsx"
+      ]
+    },
+    "§app.settings-dialog/claude-long-context-offered": {
+      "kind": "behavior",
+      "requires": [
+        "§app.settings-dialog/modes",
+        "§app.settings-dialog/claude-long-context-listed"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/delegate.ts",
+        "server/delegate.test.ts",
+        "pi-config/extensions/claude-code/context-window.ts",
+        "pi-config/extensions/claude-code/context-window.test.ts",
+        "pi-config/extensions/claude-code/tests/fixtures/long-context-lists.json",
+        "pi-config/extensions/claude-code/index.ts",
+        "pi-config/extensions/claude-code/provider/index.ts"
+      ]
+    },
+    "§app.session-list/cleanup-org-guard": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/archive-cleanup",
+        "§app.organizations/workspace-repo"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sessions-index.ts",
+        "server/cleanup-org-guard.test.ts"
+      ]
+    },
+    "§app.session-list/archive-org-guard": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/cleanup-org-guard",
+        "§app.organizations/workspace-repo"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sessions-index.ts",
+        "server/archive-org-guard.test.ts"
+      ]
+    },
+    "§app.baton/visits": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.baton/links",
+        "§app.baton/share-listener",
+        "§app.organizations/workspace-repo"
+      ],
+      "code": [
+        "server/visits.ts",
+        "server/share/routes.ts",
+        "server/share/listener.ts",
+        "server/index.ts",
+        "src/share/visit-tab.ts",
+        "src/lib/visit-tab.test.ts",
+        "src/share/ShareApp.tsx",
+        "server/visits.test.ts"
+      ]
+    },
+    "§app.organizations/person-page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/org-page",
+        "§app.organizations/roster",
+        "§app.organizations/history-and-revert",
+        "§app.organizations/privacy",
+        "§app.baton/links",
+        "§app.baton/outsider-view",
+        "§app.baton/visits",
+        "§app.requirements/decisions",
+        "§app.requirements/routing"
+      ],
+      "code": [
+        "src/components/PersonPage.tsx",
+        "src/lib/person-page.ts",
+        "src/lib/person-page.test.ts",
+        "src/person.css",
+        "src/components/PersonForm.tsx",
+        "server/person-page.ts",
+        "server/org-routes.ts",
+        "shared/orgs.ts",
+        "server/baton-links.ts",
+        "server/baton.ts",
+        "src/lib/api.ts",
+        "src/lib/orgs-route.ts",
+        "src/components/InsightsPage.tsx",
+        "server/person-page.test.ts"
+      ]
+    },
+    "§app.organizations/org-sessions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/org-sessions.ts",
+        "server/org-sessions.test.ts",
+        "server/sessions-index.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-store.ts",
+        "server/attention.ts",
+        "server/index.ts",
+        "shared/protocol.ts"
+      ]
+    },
+    "§app.session-list/ordinary-surfaces": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/regions.ts",
+        "src/lib/regions.test.ts",
+        "src/lib/recent.ts",
+        "src/lib/recent.test.ts",
+        "src/lib/home-sessions.ts",
+        "src/lib/home-sessions.test.ts",
+        "src/components/FanoutDialog.tsx",
+        "src/components/Groups.tsx",
+        "src/components/SelectionToolbar.tsx",
+        "src/lib/session-selection.ts",
+        "src/lib/session-selection.test.ts",
+        "src/components/Sidebar.tsx"
+      ]
+    },
+    "§app.session-list/organizations": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-list/ordinary-surfaces",
+        "§app.organizations/org-sessions"
+      ],
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/lib/org-region.ts",
+        "src/lib/org-region.test.ts",
+        "src/lib/drag-archive.ts",
+        "src/lib/drag-archive.test.ts",
+        "src/lib/session-actions.ts",
+        "src/app.css",
+        "src/design/base.css",
+        "src/components/ui.tsx",
+        "public/icons/building.svg"
+      ]
+    },
+    "§app.project-overseer/coding-mode": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/tools",
+        "§chat/mode-menu"
+      ],
+      "code": [
+        "server/project-coding-mode.ts",
+        "server/project-coding-mode.test.ts",
+        "server/project-coding-runtime.test.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-tools.ts",
+        "server/project-overseer-tools.test.ts",
+        "server/project-overseer-store.ts",
+        "server/project-overseer-routes.ts",
+        "server/project-overseer-prompt.md",
+        "server/chat-manager.ts",
+        "server/mode-state.ts",
+        "shared/project-overseer.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/lib/coding-worktrees.ts",
+        "src/lib/coding-worktrees.test.ts",
+        "src/lib/api.ts"
+      ]
+    },
+    "§app.project-overseer/coding-worktrees": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-overseer/tools",
+        "§chat.worktrees/tool"
+      ],
+      "code": [
+        "server/project-worktrees.ts",
+        "server/project-worktrees.test.ts",
+        "server/project-coding-runtime.test.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-tools.ts",
+        "server/project-overseer-store.ts",
+        "server/project-overseer-routes.ts",
+        "shared/project-overseer.ts",
+        "shared/protocol.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/lib/coding-worktrees.ts",
+        "src/lib/coding-worktrees.test.ts",
+        "src/lib/api.ts",
+        "src/projects.css"
+      ]
+    },
+    "§app.requirements/promotion-commit": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.requirements/promotion",
+        "§app.project-overseer/coding-worktrees"
+      ],
+      "code": [
+        "server/project-worktrees.ts",
+        "server/project-worktrees.test.ts",
+        "server/reconcile.ts",
+        "server/spec-draft-writer.ts",
+        "shared/decisions.ts",
+        "src/components/ProjectPage.tsx",
+        "src/lib/coding-worktrees.ts"
+      ]
+    },
+    "§design.copy-deck/project-coding": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§app.organizations/stakeholder": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.requirements/routing",
+        "§app.organizations/roster"
+      ],
+      "code": [
+        "server/orgs.ts",
+        "server/orgs.test.ts",
+        "server/org-routes.ts",
+        "server/org-list.test.ts",
+        "server/attention.ts",
+        "server/person-page.ts",
+        "shared/orgs.ts",
+        "shared/protocol.ts",
+        "src/components/ProjectPage.tsx",
+        "src/components/PersonPage.tsx",
+        "src/components/Sidebar.tsx",
+        "src/lib/stakeholder.ts",
+        "src/lib/stakeholder.test.ts",
+        "src/lib/org-region.ts",
+        "src/lib/org-region.test.ts",
+        "src/lib/api.ts",
+        "src/projects.css"
+      ]
+    },
+    "§design.copy-deck/project-stakeholder": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
     }
   },
   "boundary": {

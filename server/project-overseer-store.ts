@@ -6,6 +6,7 @@ import {
   PROJECT_OVERSEER_ENTRY,
   type ProjectOverseerMarkerData,
   type Autonomy,
+  type LastRunOutcome,
   type ProjectOverseerCaps,
   type ProjectOverseerPatch,
   type ProjectOverseerSettings,
@@ -14,6 +15,8 @@ import type { OrgProject, Person } from "../shared/orgs";
 import type { OverseerState } from "../shared/protocol";
 import { EXTRA_PROMPT_MAX, HISTORY_MAX, readOverseerState, writeAtomic, writeOverseerState } from "./overseer-store";
 import { orgDir, OrgError, orgOfSessionPath, readProjects } from "./orgs";
+import { checkCodingModePatch, parseCodingMode } from "./project-coding-mode";
+import type { WorktreeRecord } from "./project-worktrees";
 import { stateRoot } from "./state-root";
 
 /**
@@ -91,7 +94,7 @@ const CAP_MAX = 1000;
 const BUDGET_MAX = 1_000_000_000;
 
 export function defaultPoSettings(): ProjectOverseerSettings {
-  return { version: 1, autonomy: DEFAULT_AUTONOMY, model: null, thinking: null, codingModel: null, codingThinking: null, gatheringModel: null, gatheringThinking: null, caps: { ...DEFAULT_PO_CAPS }, tokenBudget: DEFAULT_TOKEN_BUDGET, watch: true, extraSystemPrompt: "" };
+  return { version: 1, autonomy: DEFAULT_AUTONOMY, model: null, thinking: null, codingModel: null, codingThinking: null, codingMode: null, gatheringModel: null, gatheringThinking: null, caps: { ...DEFAULT_PO_CAPS }, tokenBudget: DEFAULT_TOKEN_BUDGET, watch: true, extraSystemPrompt: "" };
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -119,6 +122,7 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
     thinking: typeof raw.thinking === "string" && raw.thinking.trim() ? raw.thinking.trim() : null,
     codingModel: typeof raw.codingModel === "string" && raw.codingModel.trim() ? raw.codingModel.trim() : null,
     codingThinking: typeof raw.codingThinking === "string" && raw.codingThinking.trim() ? raw.codingThinking.trim() : null,
+    codingMode: parseCodingMode(raw.codingMode),
     gatheringModel: typeof raw.gatheringModel === "string" && raw.gatheringModel.trim() ? raw.gatheringModel.trim() : null,
     gatheringThinking: typeof raw.gatheringThinking === "string" && raw.gatheringThinking.trim() ? raw.gatheringThinking.trim() : null,
     caps,
@@ -135,8 +139,48 @@ export function writePoSettings(p: ProjectOverseerPaths, s: ProjectOverseerSetti
   return s;
 }
 
-/** A PATCH: strict (the first problem is the answer, as a sentence), then merged and written. */
-export function patchPoSettings(p: ProjectOverseerPaths, body: unknown): ProjectOverseerSettings {
+/** pi's thinking ladder, lowest first (pi-ai's EXTENDED_THINKING_LEVELS). */
+const LADDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/** The level pi runs a model at when asked for `level` (pi-ai's clampThinkingLevel, over the
+    model's offered levels): itself when offered, else the next offered one up, else the next down. Pure. */
+export function clampLevel(level: string, offered: string[]): string {
+  if (offered.includes(level)) return level;
+  const i = LADDER.indexOf(level);
+  if (i === -1) return offered[0] ?? "off";
+  for (let j = i; j < LADDER.length; j++) if (offered.includes(LADDER[j]!)) return LADDER[j]!;
+  for (let j = i - 1; j >= 0; j--) if (offered.includes(LADDER[j]!)) return LADDER[j]!;
+  return offered[0] ?? "off";
+}
+
+/** The three model/thinking pairs of the settings, each with the model it runs on. */
+const PAIRS = [
+  { thinking: "thinking", model: (s: ProjectOverseerSettings, d: string | null) => s.model ?? d },
+  { thinking: "codingThinking", model: (s: ProjectOverseerSettings, d: string | null) => s.codingModel ?? s.model ?? d },
+  { thinking: "gatheringThinking", model: (s: ProjectOverseerSettings, d: string | null) => s.gatheringModel ?? s.model ?? d },
+] as const;
+
+/**
+ * Every stored thinking level the model it runs on offers (§app.project-overseer/identity): one
+ * the PATCH names itself is refused with the levels offered; one a model change left behind is
+ * brought to the level pi would run it at, and saved. A model not in `models` (unknown here, e.g.
+ * a provider switched off) is not judged. Mutates `next`.
+ */
+export function fitThinking(next: ProjectOverseerSettings, patch: ProjectOverseerPatch, models: { ref: string; thinkingLevels: string[] }[], defaultModel: string | null): void {
+  for (const pair of PAIRS) {
+    const level = next[pair.thinking];
+    const ref = pair.model(next, defaultModel);
+    if (!level || !ref) continue;
+    const offered = models.find((m) => m.ref === ref)?.thinkingLevels;
+    if (!offered?.length || offered.includes(level)) continue;
+    if (patch[pair.thinking] !== undefined) throw new OrgError(`${ref} offers thinking ${offered.join(", ")}.`);
+    next[pair.thinking] = clampLevel(level, offered);
+  }
+}
+
+/** A PATCH: strict (the first problem is the answer, as a sentence), then merged and written.
+    `check` runs on the merged settings before anything is written (a throw writes nothing). */
+export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: (next: ProjectOverseerSettings, patch: ProjectOverseerPatch) => void): ProjectOverseerSettings {
   if (!isObj(body)) throw new OrgError("Expected a JSON object body");
   const patch = body as ProjectOverseerPatch;
   const next = readPoSettings(p);
@@ -149,6 +193,11 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown): Project
     if (v === undefined) continue;
     if (v !== null && typeof v !== "string") throw new OrgError(`${k} must be a string or null`);
     next[k] = typeof v === "string" && v.trim() ? v.trim() : null;
+  }
+  if (patch.codingMode !== undefined) {
+    const m = checkCodingModePatch(patch.codingMode);
+    if (m && "error" in m) throw new OrgError(m.error);
+    next.codingMode = m;
   }
   if (patch.tokenBudget !== undefined) {
     if (typeof patch.tokenBudget !== "number" || !Number.isInteger(patch.tokenBudget) || patch.tokenBudget < 0 || patch.tokenBudget > BUDGET_MAX)
@@ -172,6 +221,7 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown): Project
       next.caps[k as keyof ProjectOverseerCaps] = v;
     }
   }
+  check?.(next, patch);
   return writePoSettings(p, next);
 }
 
@@ -213,19 +263,25 @@ export interface WatchMemo {
   pending: string[];
   /** ISO of the last unattended run it started. */
   lastRunAt: string | null;
-  lastRun: { at: string; reasons: string[]; outcome: "started" | "skipped"; detail?: string } | null;
+  /** The last unattended run: `started` while it runs, then how it ended (§app.project-overseer/watch-loop). */
+  lastRun: { at: string; reasons: string[]; outcome: LastRunOutcome; detail?: string } | null;
   /** Unattended runs per local day, `YYYY-MM-DD` → count (the last few days only). */
   perDay: Record<string, number>;
+  /** ISO time a look is due regardless of the 10-minute gap: set by an event that should be seen
+      soon (a gathering session done, a coding session's turn over, the operator's promotion), about
+      a minute after the first such event since the last look. Null: none waiting. */
+  soonAt: string | null;
 }
 
 export function readMemo(p: ProjectOverseerPaths): WatchMemo {
   const raw = readJson(p.memo);
-  const m: WatchMemo = { version: 1, pending: [], lastRunAt: null, lastRun: null, perDay: {} };
+  const m: WatchMemo = { version: 1, pending: [], lastRunAt: null, lastRun: null, perDay: {}, soonAt: null };
   if (!isObj(raw)) return m;
   if (Array.isArray(raw.pending)) m.pending = raw.pending.filter((x): x is string => typeof x === "string").slice(-50);
   if (typeof raw.lastRunAt === "string") m.lastRunAt = raw.lastRunAt;
   if (isObj(raw.lastRun) && typeof raw.lastRun.at === "string") m.lastRun = raw.lastRun as WatchMemo["lastRun"];
   if (isObj(raw.perDay)) for (const [k, v] of Object.entries(raw.perDay)) if (typeof v === "number") m.perDay[k] = v;
+  if (typeof raw.soonAt === "string") m.soonAt = raw.soonAt;
   return m;
 }
 
@@ -233,21 +289,42 @@ export function writeMemo(p: ProjectOverseerPaths, m: WatchMemo): void {
   // The first write of the memo also moves a legacy `started` list out of it into the repo.
   migrateStarted(p);
   const days = Object.keys(m.perDay).sort().slice(-7);
-  const { version, pending, lastRunAt, lastRun } = m;
-  writeAtomic(p.memo, `${JSON.stringify({ version, pending, lastRunAt, lastRun, perDay: Object.fromEntries(days.map((d) => [d, m.perDay[d]])) }, null, 2)}\n`);
+  const { version, pending, lastRunAt, lastRun, soonAt } = m;
+  writeAtomic(p.memo, `${JSON.stringify({ version, pending, lastRunAt, lastRun, perDay: Object.fromEntries(days.map((d) => [d, m.perDay[d]])), soonAt }, null, 2)}\n`);
 }
 
 // ---- the sessions it started (in the repo) ----------------------------------------------------------
 
 export interface StartedRow {
   sessionId: string;
-  kind: "gathering" | "offer" | "coding";
+  /** `coding`: started by the overseer (its token budget and caps count these, and only these);
+      `operator-coding`: started by the operator's Start coding session on an item — organizational
+      (listed under the project), never counted against the overseer. An older Sova ignores it. */
+  kind: "gathering" | "offer" | "coding" | "operator-coding";
   createdAt: string;
   /** A coding session's file on the host that started it (coding sessions are not in the repo). */
   path?: string;
   /** A coding session's spend (input + output + cache tokens) when last counted from its file, so
       the token budget still counts it on a host that doesn't have the file. */
   tokens?: number;
+  /** A coding session's own git worktree (§app.project-overseer/coding-worktrees). `path` is
+      host-local (the host that started it); the branch is in the client repo. */
+  worktree?: WorktreeRecord;
+  /** The operator's Merge Branch: when, and the target's commit after it. */
+  merged?: { at: string; commit: string };
+  /** When the operator's Remove Worktree ran (ISO). */
+  removed?: string;
+  /** Remove Worktree deleted the branch too, which it does only for a merged one. */
+  branchDeleted?: boolean;
+  /** Why a coding session runs in the root itself (a tail: "it isn't a Git repository."). */
+  inRoot?: string;
+}
+
+function parseWorktree(v: unknown): WorktreeRecord | undefined {
+  if (!isObj(v)) return undefined;
+  const { path, branch, base, target } = v;
+  if (typeof path !== "string" || !path || typeof branch !== "string" || !branch || typeof base !== "string" || typeof target !== "string") return undefined;
+  return { path, branch, base, target };
 }
 
 const STARTED_MAX = 200;
@@ -262,6 +339,11 @@ function parseStarted(v: unknown): StartedRow[] {
       createdAt: typeof s.createdAt === "string" ? s.createdAt : "",
       ...(typeof s.path === "string" && s.path ? { path: s.path } : {}),
       ...(typeof s.tokens === "number" && Number.isFinite(s.tokens) && s.tokens >= 0 ? { tokens: s.tokens } : {}),
+      ...(parseWorktree(s.worktree) ? { worktree: parseWorktree(s.worktree) } : {}),
+      ...(isObj(s.merged) && typeof s.merged.at === "string" && typeof s.merged.commit === "string" ? { merged: { at: s.merged.at, commit: s.merged.commit } } : {}),
+      ...(typeof s.removed === "string" && s.removed ? { removed: s.removed } : {}),
+      ...(s.branchDeleted === true ? { branchDeleted: true } : {}),
+      ...(typeof s.inRoot === "string" && s.inRoot ? { inRoot: s.inRoot } : {}),
     }))
     .slice(-STARTED_MAX);
 }
@@ -315,10 +397,20 @@ export function recordTokens(p: ProjectOverseerPaths, counted: Map<string, numbe
 export const dayKey = (d = new Date()): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Record a session it started (the listing, the concurrency and token caps). */
-export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: StartedRow["kind"], now = new Date(), path?: string): void {
+export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: StartedRow["kind"], now = new Date(), path?: string, extra: Pick<StartedRow, "worktree" | "inRoot"> = {}): void {
   const rows = readStarted(p);
   if (rows.some((s) => s.sessionId === sessionId)) return;
-  writeStarted(p, [...rows, { sessionId, kind, createdAt: now.toISOString(), ...(path ? { path } : {}) }]);
+  writeStarted(p, [...rows, { sessionId, kind, createdAt: now.toISOString(), ...(path ? { path } : {}), ...extra }]);
+}
+
+/** Record the operator's merge or removal on a coding session's row; false when the row or its worktree is unknown. */
+export function markStarted(p: ProjectOverseerPaths, sessionId: string, patch: Pick<StartedRow, "merged" | "removed" | "branchDeleted">): boolean {
+  const rows = readStarted(p);
+  const r = rows.find((x) => x.sessionId === sessionId);
+  if (!r?.worktree) return false;
+  Object.assign(r, patch);
+  writeStarted(p, rows);
+  return true;
 }
 
 // ---- which files are project overseers ------------------------------------------------------------

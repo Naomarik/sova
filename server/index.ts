@@ -8,13 +8,16 @@ import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { registerOrgRoutes } from "./org-routes";
+import { registerWrapupRoutes } from "./wrapup-routes";
+import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
 import { WorkspaceCommitter } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
 import { startShareListener, stopShareListener } from "./share/listener";
-import { disposeAllChats, getModelRuntime, heldChat, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
+import { flushOpenVisits } from "./visits";
+import { disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { stateRoot } from "./state-root";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
@@ -33,6 +36,7 @@ import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
 import { getSessionSetup } from "./session-setup";
+import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
 import { runFanout } from "./fanout";
@@ -182,6 +186,7 @@ app.post("/api/sessions/connect", async (c) => {
 
 // Organizations, rosters and baton sessions (server/org-routes.ts; §app/organizations, §app/baton).
 registerOrgRoutes(app);
+registerWrapupRoutes(app);
 registerProjectOverseerRoutes(app);
 // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
 registerDecisionRoutes(app);
@@ -250,6 +255,9 @@ app.post("/api/session-groups/assign", async (c) => {
   const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
   if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  // Organization sessions live under their project, never in a group (a removal still works, for
+  // an assignment made before that rule).
+  if (body.groupId !== null && isOrgSession(path, idOf(path))) return c.json({ error: ORG_NOT_GROUPED }, 400);
   const r = assignSession(idOf(path), body.groupId, label.label, body.index as number | undefined);
   // dissolved is set only when this write emptied a fanout group, which the server then deleted.
   return r.ok ? c.json({ ok: true, ...(r.dissolved ? { dissolved: true } : {}) }) : c.json({ error: r.error }, r.status);
@@ -303,7 +311,8 @@ app.post("/api/sessions/fork", async (c) => {
   return c.json({ error: r.error }, r.status);
 });
 
-// Moves a web-spawned session between the sidebar regions. Changes Sova's own id list only.
+// Moves a web-spawned session between the sidebar regions. Changes Sova's own id list only, except
+// that an empty husk is deleted instead (the answer then carries `deleted: true`).
 app.post("/api/sessions/archive", async (c) => {
   let body: { path?: unknown; archived?: unknown };
   try {
@@ -1139,6 +1148,8 @@ startProjectOverseerLoop();
 // Every attached org's workspace repo: committed at most hourly when anything changed, then pushed.
 const workspaceCommits = new WorkspaceCommitter(attachedWorkspaces);
 workspaceCommits.start();
+// A wrap-up row left "running" by an earlier process, or older than any run can be, is recorded failed.
+startWrapupRecovery();
 
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
 // The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);
@@ -1191,15 +1202,30 @@ let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) process.exit(1);
   shuttingDown = true;
+  // Whatever a step below waits on, the process ends.
+  setTimeout(() => {
+    console.error("[server] shutdown took over 20 s; exiting");
+    process.exit(1);
+  }, 20_000).unref();
   // Hosted subagent workers (PI_WORKER_TRANSPORT=host) outlive this process: the
   // subagents extension's session_shutdown detaches them instead of killing them.
   // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
   (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
+  // Stop every turn first: a turn still streaming keeps the CPU busy through every await below.
+  // Marked first, so a run that records how it ended says the shutdown cut it off.
+  markShutdown();
+  for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
   usagePoller.stop();
   meshLinks.stop();
   stopMesh();
   stopShareListener();
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
+  // Every visit with an open share socket is seen now, so the commit below carries it.
+  try {
+    flushOpenVisits();
+  } catch (err) {
+    console.warn(`[server] visit flush failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
   // After the runtimes' last writes: whatever changed in a workspace repo since its last commit.
   workspaceCommits.stop();
   await Promise.race([workspaceCommits.flush("shutdown").catch(() => []), new Promise((r) => setTimeout(r, 10_000))]);

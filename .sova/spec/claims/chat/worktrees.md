@@ -114,9 +114,11 @@ A merge this session did not make gets no card; the pane still shows the worktre
 
 ## §chat.worktrees/pane — The Worktrees section
 
-The Session tab (and the session info dialog, which reuses it) shows a read-only **Worktrees**
-section right after Repository when the branch tracks any: a count line ("2 active · 1 merged ·
-1 dropped"), then one row per worktree in recorded order, dropped and merged ones included. A row
+The session pane's Session tab (§app.subagents-pane/tabs) shows a read-only **Worktrees**
+section right after Repository: a count line ("2 active · 1 merged · 1 dropped"), then one row per
+worktree in recorded order, dropped and merged ones included. When the branch tracks none the
+section stays, with one line: "This session tracks no worktrees." While the insight's first load
+is out the section shows its heading over a placeholder line, never that sentence. A row
 names the branch and the path, and carries a status chip — Active, Dropped, or Merged with "into
 <target> at <sha>" — plus, when true, Missing (the directory is gone), `.agent`, the number of
 this session's workers with a live process inside it, and "Shared with session <id>" linking the

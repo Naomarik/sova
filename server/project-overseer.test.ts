@@ -2,11 +2,11 @@
 // this tree's pi-config extensions linked in, so "no pi-config extension loads" is a real claim), an
 // org workspace and a project root in the OS temp dir; ~/.pi is never touched. No model is called.
 import assert from "node:assert/strict";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
-import { PROJECT_OVERSEER_ENTRY } from "../shared/project-overseer";
+import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerSettings } from "../shared/project-overseer";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-")));
 const agentDir = join(root, "agent");
@@ -30,6 +30,8 @@ after(async () => {
   await settled(join(root, "ws"));
   await settled(join(root, "ws2"));
   await settled(join(root, "ws3"));
+  await settled(join(root, "ws4"));
+  await settled(join(root, "ws5"));
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -108,6 +110,19 @@ describe("a project overseer", async () => {
     await assert.rejects(() => acquireChat(before.path), BusyError);
   });
 
+  test("past 20 cleared conversations, the oldest is archived, and its file stays in the workspace", async () => {
+    const { isArchived } = await import("./archived-sessions");
+    await po.ensureProjectOverseer(org.id, project.id);
+    const first = store.readPoState(store.projectOverseerPaths(org.id, project.id))!;
+    const oldest = first.history.at(-1) ?? first.current;
+    const oldestPath = join(orgs.orgDir(org.id), "sessions", readdirSync(join(orgs.orgDir(org.id), "sessions")).find((f) => f.endsWith(`_${oldest}.jsonl`))!);
+    let info = await po.projectOverseerInfo(org.id, project.id);
+    while (info.history.some((h) => h.id === oldest) || info.id === oldest) info = await po.clearProjectOverseer(org.id, project.id);
+    assert.equal(info.history.length, store.HISTORY_MAX, "20 kept as history");
+    assert.ok(isArchived(oldest), "the one that fell off is archived");
+    assert.ok(existsSync(oldestPath), "and its file is still in the workspace repo");
+  });
+
   test("PATCH is strict", async () => {
     await assert.rejects(() => po.patchProjectOverseer(org.id, project.id, { autonomy: "L9" }), /autonomy must be one of/);
     await assert.rejects(() => po.patchProjectOverseer(org.id, project.id, { caps: { nope: 1 } }), /Unknown cap/);
@@ -121,6 +136,93 @@ describe("a project overseer", async () => {
     const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
     assert.match(prompt, /Level in force now: \*\*L2/);
     assert.match(prompt, /Tony \(id p_[a-z0-9]+\) — IT; decides: invoicing/);
+  });
+});
+
+describe("its reach: the project root only", async () => {
+  // A context file in the agent dir and one above the root (the host's), one in the root (the project's).
+  const box = join(root, "p4");
+  const projRoot = join(box, "proj");
+  mkdirSync(projRoot, { recursive: true });
+  writeFileSync(join(agentDir, "AGENTS.md"), "HOST-AGENT-DIR context\n");
+  writeFileSync(join(box, "AGENTS.md"), "HOST-ABOVE-ROOT context\n");
+  writeFileSync(join(projRoot, "AGENTS.md"), "PROJECT context\n");
+  writeFileSync(join(projRoot, "README.md"), "inside\n");
+  writeFileSync(join(box, "outside.txt"), "outside\n");
+  const org = await orgs.createOrg({ name: "Reach", dir: join(root, "ws4") });
+  const project = orgs.addProject(org.id, { name: "Reach", root: projRoot });
+  const text = (r: { content: { type: string; text?: string }[] }) => r.content.map((c) => c.text ?? "").join("");
+  const run = async (name: string, params: Record<string, unknown>) => {
+    const chat = await acquireChat((await po.ensureProjectOverseer(org.id, project.id)).path);
+    try {
+      return text((await chat.session.getToolDefinition(name)!.execute("tc", params as never, undefined, undefined, undefined as never)) as never);
+    } catch (err) {
+      return `ERROR: ${(err as Error).message}`;
+    }
+  };
+
+  test("its file tools read the root and refuse the org's workspace, the folder above and the agent dir", async () => {
+    assert.match(await run("read", { path: "README.md" }), /inside/);
+    for (const p of ["../outside.txt", join(root, "ws4", "org.json"), join(agentDir, "AGENTS.md")]) assert.match(await run("read", { path: p }), /^ERROR: .*outside the project root/, p);
+    assert.match(await run("ls", { path: join(root, "ws4") }), /^ERROR: .*outside the project root/);
+    assert.match(await run("grep", { pattern: "context", path: box }), /^ERROR: .*outside the project root/);
+    assert.match(await run("find", { pattern: "*", path: root }), /^ERROR: .*outside the project root/);
+  });
+
+  test("only the project's own context files load, never the host's", async () => {
+    const chat = await acquireChat((await po.ensureProjectOverseer(org.id, project.id)).path);
+    const files = chat.runtime.services.resourceLoader.getAgentsFiles().agentsFiles;
+    assert.deepEqual(files.map((f) => f.path), [join(projRoot, "AGENTS.md")]);
+    assert.doesNotMatch(chat.session.systemPrompt, /HOST-/);
+    assert.match(chat.session.systemPrompt, /PROJECT context/);
+  });
+
+  test("a project root may not be, hold or sit inside an org's workspace, nor sit inside Sova's state", () => {
+    mkdirSync(join(root, "ws4", "inner"), { recursive: true });
+    mkdirSync(join(agentDir, "sova", "x"), { recursive: true });
+    for (const bad of [join(root, "ws4"), join(root, "ws4", "inner"), root, join(agentDir, "sova", "x")])
+      assert.throws(() => orgs.addProject(org.id, { name: "Bad", root: bad }), /must not be, hold or sit inside/, bad);
+    assert.throws(() => orgs.patchProject(org.id, project.id, { root: join(root, "ws4") }), /must not be/);
+    assert.equal(orgs.addProject(org.id, { name: "Beside", root: box }).root, box, "beside the workspace is fine");
+  });
+});
+
+describe("the operator's queued items reach its next run", async () => {
+  const org = await orgs.createOrg({ name: "Queue", dir: join(root, "ws5") });
+  mkdirSync(join(root, "proj5"));
+  const project = orgs.addProject(org.id, { name: "Queue", root: join(root, "proj5") });
+  await po.ensureProjectOverseer(org.id, project.id);
+  const p = store.projectOverseerPaths(org.id, project.id);
+  const { Hono } = await import("hono");
+  const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
+  const { updateTodo, readTodos } = await import("./overseer-todos");
+  const app = new Hono();
+  registerProjectOverseerRoutes(app);
+  const post = (what: string, b: unknown) =>
+    app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/${what}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+
+  test("a to-do or idea the operator adds is a reason to look; the to-do's own words are in the prompt", async () => {
+    assert.equal((await post("todos", { text: "Name in a note who owns the approval threshold" })).status, 201);
+    assert.ok(store.readMemo(p).pending.some((r) => /queued a to-do/.test(r)), "a reason to look");
+    assert.equal((await post("ideas", { id: "§ops/duplicates", title: "Detect duplicate invoices" })).status, 201);
+    assert.ok(store.readMemo(p).pending.some((r) => /added an idea/.test(r)));
+    const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
+    assert.match(prompt, /- \[td_[^\]]+\] Name in a note who owns the approval threshold$/m);
+    assert.match(po.watchText([], "L1", 1), /1 open to-do item for you, listed in full in your prompt: work on it too\./);
+    assert.match(po.watchText([], "L1", 3), /3 open to-do items for you, listed in full in your prompt: work on them too\./);
+    assert.doesNotMatch(po.watchText([], "L1", 0), /to-do/);
+  });
+
+  test("bounded: the first 20 open ones in full, done ones left out, the rest counted", async () => {
+    for (let i = 1; i <= 24; i++) await post("todos", { text: `Queued item number ${i}` });
+    const first = readTodos(p.todos).todos[0]!;
+    updateTodo(first.id, { done: true }, p.todos);
+    const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
+    assert.doesNotMatch(prompt, /approval threshold/, "a done to-do is not carried");
+    assert.match(prompt, /24 open, 1 done\./);
+    assert.match(prompt, /Queued item number 20$/m);
+    assert.doesNotMatch(prompt, /Queued item number 21$/m);
+    assert.match(prompt, /… and 4 more \(sova_todos lists them all\)/);
   });
 });
 
@@ -159,6 +261,37 @@ describe("its gathering sessions, as the person sees them", async () => {
     po.noteReason(org.id, project.id, "A decision was recorded in \"Payment terms\".");
     po.noteReason(org.id, project.id, "2 decisions are drafted and promotable.", true);
     assert.deepEqual(store.readMemo(p).pending, ["A decision was recorded in \"Payment terms\".", "2 decisions are drafted and promotable."]);
+  });
+
+  test("its coding sessions' finished turns are reasons to look soon; the operator's never are", () => {
+    const p = store.projectOverseerPaths(org.id, project.id);
+    const now = Date.parse("2026-09-27T10:00:00Z");
+    store.writeMemo(p, { ...store.readMemo(p), pending: [], soonAt: null });
+    const mine = join(root, "coding-mine.jsonl");
+    const theirs = join(root, "coding-theirs.jsonl");
+    for (const f of [mine, theirs]) writeFileSync(f, "{}\n");
+    store.noteStarted(p, "S-MINE-1", "coding", new Date(now), mine);
+    store.noteStarted(p, "S-THEIRS-1", "operator-coding", new Date(now), theirs);
+    po.noteCodingSettled(theirs, now);
+    po.noteCodingSettled(join(root, "unknown.jsonl"), now);
+    assert.deepEqual(store.readMemo(p).pending, [], "the operator's own session and an unknown file: nothing");
+    po.noteCodingSettled(mine, now);
+    po.noteCodingSettled(mine, now + 30_000);
+    const m = store.readMemo(p);
+    assert.equal(m.pending.length, 1, "one reason, however many turns");
+    assert.match(m.pending[0]!, /S-MINE-1/, "names the session (its id while it has no title)");
+    assert.equal(m.soonAt, new Date(now + po.WATCH_SOON_MS).toISOString(), "a look a minute after the first, not pushed back by the second");
+    store.writeMemo(p, { ...store.readMemo(p), pending: [], soonAt: null });
+  });
+
+  test("the prompt names the project's main stakeholder while they are active", () => {
+    orgs.patchProject(org.id, project.id, { stakeholder: tony.id });
+    try {
+      assert.match(po.renderProjectOverseerPrompt(org.id, project.id, []), /Main stakeholder: Tony: decides every area of this project that no one else on the roster decides\./);
+    } finally {
+      orgs.patchProject(org.id, project.id, { stakeholder: null });
+    }
+    assert.doesNotMatch(po.renderProjectOverseerPrompt(org.id, project.id, []), /Main stakeholder/);
   });
 
   test("Send to person… requires the public title and question: never taken from the item", async () => {
@@ -297,9 +430,52 @@ describe("the watch loop's decision", () => {
     assert.equal(po.watchDecision({ ...base, force: true, today: 12 }).run, false);
     assert.equal(po.watchDecision({ ...base, force: true, idle: false }).run, false);
   });
+  test("an event wanting a look soon lets it run once its time comes, whatever the gap; never over the other rules", () => {
+    const soonAt = base.now - 1;
+    const recent = { ...base, lastRunAt: base.now - 60_000 };
+    assert.equal(po.watchDecision(recent).run, false, "inside the gap");
+    assert.equal(po.watchDecision({ ...recent, soonAt }).run, true, "due: the gap is skipped");
+    assert.equal(po.watchDecision({ ...recent, soonAt: base.now + 1 }).run, false, "not yet due");
+    for (const k of [{ today: 12 }, { watch: false }, { idle: false }, { pending: [] as string[] }]) assert.equal(po.watchDecision({ ...recent, soonAt, ...k }).run, false, JSON.stringify(k));
+  });
   test("the watch message says it is automatic and names the level", () => {
     const t = po.watchText(["A decision was recorded in \"Invoicing\"."], "L1");
     assert.ok(t.startsWith(po.WATCH_PREFIX));
     assert.match(t, /within your autonomy \(L1\)/);
+  });
+});
+
+describe("thinking levels a model doesn't offer", () => {
+  const models = [
+    { ref: "zai/glm-5.3", thinkingLevels: ["low", "high", "max"] },
+    { ref: "p/basic", thinkingLevels: ["off"] },
+  ];
+  const settings = (over: Partial<ProjectOverseerSettings>) => ({ ...store.defaultPoSettings(), ...over });
+  test("pi's clamp: the level itself, else the next offered up, else the next down", () => {
+    assert.equal(store.clampLevel("medium", ["low", "high", "max"]), "high");
+    assert.equal(store.clampLevel("max", ["low", "medium"]), "medium");
+    assert.equal(store.clampLevel("low", ["low", "high"]), "low");
+    assert.equal(store.clampLevel("bogus", ["low"]), "low");
+  });
+  test("a level the patch names is refused with the levels offered; one a model change left behind is moved and kept", () => {
+    assert.throws(() => store.fitThinking(settings({ model: "zai/glm-5.3", thinking: "medium" }), { thinking: "medium" }, models, null), { message: "zai/glm-5.3 offers thinking low, high, max." });
+    // Coding and gathering pairs fall back to the overseer's model.
+    assert.throws(() => store.fitThinking(settings({ model: "zai/glm-5.3", codingThinking: "minimal" }), { codingThinking: "minimal" }, models, null), /zai\/glm-5\.3 offers/);
+    const moved = settings({ model: "zai/glm-5.3", thinking: "medium", gatheringModel: "p/basic", gatheringThinking: "low" });
+    store.fitThinking(moved, { model: "zai/glm-5.3", gatheringModel: "p/basic" }, models, null);
+    assert.deepEqual([moved.thinking, moved.gatheringThinking], ["high", "off"]);
+    // A model this host can't list is not judged; the default model stands in for an unset one.
+    const unknown = settings({ model: "x/unlisted", thinking: "medium" });
+    store.fitThinking(unknown, { thinking: "medium" }, models, null);
+    assert.equal(unknown.thinking, "medium");
+    assert.throws(() => store.fitThinking(settings({ thinking: "medium" }), { thinking: "medium" }, models, "zai/glm-5.3"), /offers thinking/);
+  });
+  test("a refused PATCH writes nothing", () => {
+    const dir = join(root, "ws-think");
+    const p = store.projectOverseerPaths("org_aaaaaaaa", "prj_bbbbbbbb", dir);
+    store.writePoSettings(p, settings({ model: "zai/glm-5.3", thinking: "high" }));
+    const before = readFileSync(p.settings, "utf8");
+    assert.throws(() => store.patchPoSettings(p, { thinking: "medium" }, (next, patch) => store.fitThinking(next, patch, models, null)), /offers thinking/);
+    assert.equal(readFileSync(p.settings, "utf8"), before);
   });
 });

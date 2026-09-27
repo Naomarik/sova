@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildPrompt, extractJsonObject, parseSummarizerJson, SummarizerChain } from "./summarizers/chain.ts";
+import { buildPrompt, clampText, extractJsonObject, parseSummarizerJson, SummarizerChain } from "./summarizers/chain.ts";
 import { SummarizerError, type SummarizeInput, type SummarizerResult } from "./types.ts";
 import { fingerprintKey, fingerprintOf, isMarkedMessage, locateMarker, locateMarkerRow, markerOrdinalIndex, markerRows, sameFingerprint, stripAnsi } from "./anchors.ts";
 import { NowLine, OutlineStore, applyUpdates, earliestUserRequest, extractDelta, lastMessageEntryId } from "./state.ts";
@@ -35,6 +35,70 @@ test("buildPrompt carries the anchor request and asks overall to lead with the s
   assert.ok(/first few words/.test(prompt));
   // A real change of goal is allowed; progress alone is not a reason to rewrite it.
   assert.ok(/Rewrite it when the user's goal actually changes/.test(prompt));
+});
+
+test("buildPrompt states the rules the outline's prose depends on", () => {
+  const prompt = buildPrompt(input());
+  // An update replaces the stored bullets and heading, so the model must resend what still matters.
+  assert.ok(prompt.includes("send the COMPLETE summary for that topic"));
+  assert.ok(prompt.includes("Resend the earlier facts that still matter"));
+  assert.ok(prompt.includes("replaces the stored heading"));
+  // Headings name a subject; the status lives in the bullets.
+  assert.ok(prompt.includes("A heading never states a status"));
+  // The chat is ongoing: open items are not outcomes.
+  assert.ok(prompt.includes("Leave out open items, to-dos, next steps and anything still open"));
+  // A topic is something the user raised; worker traffic folds in.
+  assert.ok(prompt.includes("A topic is one thing the user asked for or raised"));
+  assert.ok(prompt.includes("Prefer updating an existing topic over creating a new one"));
+  assert.ok(prompt.includes("Only facts the messages state"));
+  // Storage has one summary per topic: the old "visit" wording asked for something it can't hold.
+  assert.ok(!/visit/i.test(prompt));
+});
+
+test("buildPrompt's worked example obeys its own rules and parses", () => {
+  const prompt = buildPrompt(input());
+  const line = prompt.split("\n").findIndex(l => l.startsWith('{"now":"Merged'));
+  assert.ok(line > 0, "the example response is in the prompt");
+  const lines = prompt.split("\n");
+  let json = "";
+  for (let i = line; i < lines.length; i++) {
+    json += lines[i];
+    if (lines[i].endsWith("]}")) break;
+  }
+  const example = JSON.parse(json) as { now: string; overall: string; topicUpdates: { kind: string; heading: string; summary: string[] }[] };
+  assert.ok(example.now.length <= 60);
+  assert.ok(!/^\w+ing\b/.test(example.now));
+  assert.ok(example.overall.split(" ").length <= 8);
+  for (const update of example.topicUpdates) {
+    assert.ok(update.heading.split(" ").length <= 4, update.heading);
+    assert.ok(!/\b(blocked|fixed|done|pending|waiting)\b/i.test(update.heading), update.heading);
+    assert.ok(update.summary.length >= 1 && update.summary.length <= 2, update.heading);
+    for (const bullet of update.summary) assert.ok(bullet.length <= 70, bullet);
+  }
+  // The parser takes it as written (anchors are the example's own refs).
+  const parsed = parseSummarizerJson(json, new Set(["m14", "m16", "m18", "m20"]));
+  assert.equal(parsed.topicUpdates.length, example.topicUpdates.length);
+});
+
+test("clampText ends an over-long text on a word boundary with an ellipsis", () => {
+  assert.equal(clampText("  short   text ", 120), "short text");
+  const long = "Workers come back after a restart, with their usage intact, and resume picks up where each left off.";
+  const clipped = clampText(long, 40)!;
+  assert.ok(clipped.length <= 40);
+  assert.ok(clipped.endsWith("…"));
+  assert.ok(long.startsWith(clipped.slice(0, -1)), "no word is cut and nothing is invented");
+  assert.equal(clipped, "Workers come back after a restart, with…");
+  // One unbroken token has no boundary to end on: it is cut, not dropped.
+  assert.equal(clampText("x".repeat(50), 10), "xxxxxxxxx…");
+  assert.equal(clampText("   ", 10), undefined);
+});
+
+test("parseSummarizerJson clamps a bullet at 120 characters", () => {
+  const bullet = "word ".repeat(60).trim();
+  const raw = JSON.stringify({ now: "n", overall: "o", topicUpdates: [{ kind: "new", heading: "H", anchor: "m1", summary: [bullet] }] });
+  const line = parseSummarizerJson(raw, new Set(["m1"])).topicUpdates[0].summary[0];
+  assert.ok(line.length <= 120);
+  assert.ok(line.endsWith("word…"));
 });
 
 test("buildPrompt says the anchor is unknown rather than leaving the section empty", () => {
@@ -184,6 +248,20 @@ test("OutlineStore applies new+updates, assigns ids, snapshots and restores", ()
   // An update replaces the topic's summary and moves its anchor forward.
   assert.deepEqual(store.topics[0].summary, ["Verified"]);
   assert.equal(store.topics[0].anchor.entryId, "e5");
+  // The update's heading replaces the stored one, so a heading can follow its topic.
+  assert.ok(store.apply({
+    now: "Done", overall: "Auth fix",
+    topicUpdates: [{ kind: "update", topicId: "t1", heading: "Token refresh", anchor: "m5", summary: ["Verified", "Refresh fixed"] }],
+  }, anchors, "e5", limits));
+  assert.equal(store.topics.length, 1);
+  assert.equal(store.topics[0].heading, "Token refresh");
+  // The update is the complete summary: nothing from the stored one survives unless resent.
+  assert.deepEqual(store.topics[0].summary, ["Verified", "Refresh fixed"]);
+  assert.ok(store.apply({
+    now: "Done", overall: "Auth fix",
+    topicUpdates: [{ kind: "update", topicId: "t1", heading: "Token refresh", anchor: "m5", summary: ["Refresh fixed"] }],
+  }, anchors, "e5", limits));
+  assert.deepEqual(store.topics[0].summary, ["Refresh fixed"]);
   // Snapshot round-trip through restore().
   const data = store.snapshot();
   const entry = { id: "snap", type: "custom", customType: "topic-outline", data };
@@ -205,6 +283,14 @@ test("manual #-topics are appended instantly and capped", () => {
   assert.equal(topic.manual, true);
   assert.equal(store.topics[0].heading, "My heading");
   assert.equal(store.state, "stale");
+  // A model update takes the bullets but keeps the heading you typed.
+  const anchors = new Map([["m2", { entryId: "e10", role: "assistant" as const, fingerprint: "ok" }]]);
+  store.apply({
+    now: "n", overall: "o",
+    topicUpdates: [{ kind: "update", topicId: topic.id, heading: "Renamed", anchor: "m2", summary: ["Done"] }],
+  }, anchors, "e10", { maxTopics: 40, maxBullets: 2 });
+  assert.equal(store.topics[0].heading, "My heading");
+  assert.deepEqual(store.topics[0].summary, ["Done"]);
 });
 
 test("lastHeading prefers the latest manual # heading, else the latest topic", () => {

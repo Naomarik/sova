@@ -74,7 +74,8 @@ is one click rather than a wait for the turn to settle.
     <header class="subagents-head">
       <h2 class="subagents-title">Subagents</h2>
       <span class="chip chip-count">2 working</span>            <!-- omitted at 0 -->
-      <span class="chip chip-count subagents-usage" title="41.9k in · 11.3k out · 402k cache read · 61.8k cache write · $0.72">53.2k tokens</span>
+      <button type="button" class="chip chip-count subagents-usage" aria-label="53.2k tokens — show usage"
+              title="41.9k in · 11.3k out · 402k cache read · 61.8k cache write · $0.72">53.2k tokens</button>
       <button class="button button-icon button-ghost subagents-close" aria-label="Close subagents">
         <span class="icon" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
       </button>
@@ -89,7 +90,9 @@ is one click rather than a wait for the turn to settle.
 
 The aside is a direct child of `.app`, after `.app-main`, and it's **mounted only while open**.
 The grid keys off its presence (`.app:has(> .app-subagents)`), so nothing else has to change
-state. Changing route closes it. The shell is the window, so, like §app/shell, the bands are `@media`:
+state. Changing route closes it, with one exception: opened from the Agents board
+(§app.insights/team-cards), it stays beside the board across `#/agents` ⇄ `#/agents/{teamKey}`, and
+leaving the page closes it. There the pane sits beside the board rather than a session. The shell is the window, so, like §app/shell, the bands are `@media`:
 
 | Window | The pane | Session pane (`.app-main`) |
 |---|---|---|
@@ -116,17 +119,60 @@ pushed right, `aria-label="Close subagents"`. Its chevron points right: it sends
 the way it came.
 
 **The token Σ** sits beside the working count as a second neutral chip, `{n} tokens` in mono
-(`.subagents-usage`), left out when nothing has been spent. It is a **session-lifetime** total:
-every worker this session ever started, on any branch, including the ones the manager's
-retention cap and the live record's 40-row cap dropped, so it is normally larger than the rows add
-up to. While the runtime runs it never goes down. After a server restart it is **rebuilt from the
-workers' transcripts** (§app.worker-restore/usage-from-transcripts), which may give a different
-total than the one shown before: the rebuild counts what the live count left out (cache-warm
-calls), and a Claude Code worker's cost is its last snapshot's. The headline is input + output, the §chat/context-window token format. Everything the headline hides
+(`.subagents-usage`), left out when nothing has been spent. It is the **session's** spend, the
+same figure the Usage tab headlines (§app.subagents-pane/tabs): the main thread on the active
+branch plus this session's listed workers (`SessionUsage.total`). Before the insight carries one,
+it falls back to the workers' **session-lifetime** total: every worker this session ever started,
+on any branch, including the ones the manager's retention cap and the live record's 40-row cap
+dropped, so it is normally larger than the rows add up to. While the runtime runs that lifetime
+total never goes down. After a server restart it is **rebuilt from the workers' transcripts**
+(§app.worker-restore/usage-from-transcripts), which may give a different total than the one shown
+before: the rebuild counts what the live count left out (cache-warm calls), and a Claude Code
+worker's cost is its last snapshot's. The Usage tab's Subagent lifetime line keeps saying that
+figure. The headline is input + output, the §chat/context-window token format. Everything the headline hides
 is in the `title`: `{in} in · {out} out · {cacheRead} cache read · {cacheWrite} cache write`,
-the cost (`$0.72`, `<$0.01`) when a backend reports one, and the head count it covers
-("57 subagents so far"). Under 520px of pane the chip goes and the working count stays: one
-answers whether anything is happening, the other only how much it cost.
+the cost (`$0.72`, `<$0.01`) when a backend reports one, and, on the lifetime fallback, the head
+count it covers ("57 subagents so far"). **The chip is a button**: it opens the Usage tab, and its
+accessible name says so ("53.2k tokens — show usage"). Under 520px of pane the chip goes and the
+working count stays: one answers whether anything is happening, the other only how much it cost;
+the Usage tab stays one tap away in the strip.
+
+## §app.subagents-pane/tabs — Tabs, and what the Session and Usage tabs hold
+
+The pane is Session detail: a head, the remote controls row (§app.shell/remote-session-chips), a
+tab strip, and one tab's panel, which scrolls on its own. The tabs, in this order: **Session ·
+Timeline · Agents · Usage · Skills · Explain** (`.tabs.session-tabs`, `role="tablist"`, one
+`role="tabpanel"`; roving `tabindex`, Left/Right wrapping, Home/End). Every tab is always in the
+strip, empty or not: a tab that came and went would move the strip under the reader.
+
+- **Which tab opens.** Every door names its own tab (the head's Session details button, the
+  remote chip, and the Agents board's Session details button and ⋯ item: Session; the board's ⋯
+  Open Subagents: Agents; the composer's subagents row: Agents; the Timeline doors,
+  §chat.timeline/opening-it; the head's token chip: Usage). The pane keeps the chosen tab per
+  session path, in memory only. With none kept, it opens on Agents when a worker is working at
+  open, else on Session, settled once at open so the tab never moves when the last worker
+  finishes. Usage is never the default.
+- **The strip never wraps.** In a narrow pane the tabs tighten, then the strip scrolls sideways,
+  and the selected tab is scrolled into view (to the nearest edge) when the pane opens and whenever
+  the tab changes, so a tab a door opened is never off-screen at 375px.
+- **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
+  Command), Context, Repository, Worktrees (§chat.worktrees/pane), Identity (with Move into group,
+  Group with parent and, for web sessions, Archive), Compactions, Changes. Repository and Worktrees
+  load after Identity, which sits below them, so both hold a placeholder of about their settled
+  height while they load: Identity's buttons don't move under a reader about to press one.
+- **Usage** is what the session has spent, off the same insight the pane polls. First the
+  headline, `{n} tokens in and out · $x` (input + output; cache in its `title`). Then a table with
+  one row per model × origin, the main thread first and then the biggest spender: Model · Where
+  (Main thread, Subagents, Team) · In · Out · Cache read · Cache write, and Cost only when a
+  backend reports USD, with a **Main thread Σ** footer. Then the notes: "Main thread counts the
+  active branch only.", the snapshot-cost note and "Usage unavailable for …"
+  (§app.worker-restore/restore). Then this session's workers: `{n} subagents · {w} working` and
+  the Subagent lifetime line. Under 400px of pane the table stacks, one block per row: Model and
+  Where on its first line, each count labelled under it. Before anything is spent the tab says
+  "Nothing spent in this session yet." (the worker count still shows when there are workers);
+  while the first load is out it shows a placeholder, never that line.
+- **Timeline** is §chat/timeline, **Agents** the list and transcript below; **Skills** says which
+  skills loaded and when, and **Explain** lists the session's /explain pages.
 
 ## §app.subagents-pane/body-list-transcript — Body: list | transcript
 
@@ -254,12 +300,9 @@ A nested, read-only session view: **no composer, no Send, no Steer, no Stop, no 
 no disabled composer with a reason either. The one exception is a restored worker
 (§app.worker-restore/restore). Under its view head, a `usage-note` says what happened: a
 `restored` one reads "Not running since a server restart." (interrupted: "Not running since a
-server restart; it was mid-task at {HH:MM}, and that turn never finished."). When the worker is
-`resumable` (a session this server hosts, on a backend that resumes), the note adds "Resuming
-starts it idle; nothing is sent to it." and a **Resume Worker** button (`.button.button-sm`,
-"Resuming…" while busy) follows (§app.worker-restore/resume). A worker that had ended shows only
-that sentence and the button. A failed resume adds an alert, "Couldn't resume {name}. {reason}
-Nothing else changed." The transcript itself stays read-only. A worker's session belongs to its worker, and the
+server restart; it was mid-task at {HH:MM}, and that turn never finished."). The pane offers no
+resume: that is the parent agent's `agent_resume` or `/agent-resume` (§app.worker-restore/resume).
+A worker that had ended shows no note. The transcript itself stays read-only. A worker's session belongs to its worker, and the
 webapp never writes to it (CLAUDE.md: no file locking).
 
 ```html
@@ -357,10 +400,12 @@ nothing before its first such reply. Never 0 for unknown. It rides the wire as
 - **Restored workers** take it from their transcript summary: the worker-transcript protocol's
   additive `lastContextTokens` (a number, or `null` when a compaction followed it), read by each
   backend's adapter over the worker's own branch or main chain.
-- **The window** is the one the worker was **spawned** with. claude-code: the provider's rule, a
-  `[1m]` alias is 1,000,000 and anything else 200,000 — and the model is the spawn model (the
-  manifest's spec, else its last snapshot's biggest row), never the transcript's, which is the bare
-  id and would drop the `[1m]`. A live row's model already carries it; a restored or resumed one
+- **The window** is the one the worker was **spawned** with. claude-code: the claude-code
+  extension's rule, 1,000,000 for a `[1m]` alias or a model the CLI's own catalog runs natively at
+  1M (`opus`, `sonnet`, `claude-opus-5-5`, `claude-fable-5-1`, `claude-sonnet-5`, …, as the CLI's
+  own result reports), anything else 200,000 (haiku, the 4.5 and 4.6 models) — and the model is the
+  spawn model (the manifest's spec, else its last snapshot's biggest row), never the transcript's,
+  which is the bare id and would drop the `[1m]` of a model that isn't natively 1M. A live row's model already carries it; a restored or resumed one
   names what it ran under, so the session's manifests supply it, and the row's model takes the spawn
   model's variant too: a restored `opus[1m]` worker reads "opus-5.5 1M", like its 1M ring and head. pi: the model's catalog window,
   and a fill takes its own reply's model's window when that differs.

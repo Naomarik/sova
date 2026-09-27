@@ -2,7 +2,7 @@
 // under tsx --test.
 
 import type { IdeaRecord, OverseerAction } from "../../shared/protocol";
-import { GAP_TAG, type ItemSendInput, type StartedSession } from "../../shared/project-overseer";
+import { GAP_TAG, type ItemSendInput, type LastRunOutcome, type StartedSession } from "../../shared/project-overseer";
 import { settled } from "./ideas";
 
 /** The ideas worth acting on: not done or dropped, gaps first, then the store's order. */
@@ -21,27 +21,69 @@ export const STARTED_KIND: Record<StartedSession["kind"], string> = { gathering:
 /** A tool name as the activity list says it: `sova_start_gathering` → "start gathering". */
 export const toolWords = (tool: string): string => tool.replace(/^sova_/, "").replace(/_/g, " ");
 
-/** One act, as a line: what it did, and for a refusal or failure, why. */
+/** One act, as a line: what it did, and for a refusal, a failure or an act done only in part (a promotion with refusals), why. */
 export function actionLine(a: Pick<OverseerAction, "tool" | "outcome" | "error">): string {
   const what = toolWords(a.tool);
   if (a.outcome === "ok") return what;
   const why = a.error?.trim().replace(/\.$/, "");
-  return `${what}: ${a.outcome === "refused" ? "refused" : "failed"}${why ? ` (${why})` : ""}`;
+  return `${what}: ${a.outcome === "partial" ? "partly" : a.outcome === "refused" ? "refused" : "failed"}${why ? ` (${why})` : ""}`;
 }
 
 /**
- * What follows "Last looked on its own {time}" in the status line, up to its full stop: a skip and
- * its reason, or what woke it. The reason arrives as a sentence of its own ("the session was
- * closed."), so its end punctuation goes: the line ends with exactly one period.
+ * What follows "Last looked on its own {time}" in the status line, up to its full stop: how the run
+ * went (running now, finished, stopped and why, cut off by a restart, skipped and why) and, while
+ * it runs or once it finished, what woke it. The reason arrives as a sentence of its own ("the
+ * session was closed."), so its end punctuation goes: the line ends with exactly one period.
  */
-export function lastRunTail(run: { reasons: readonly string[]; outcome: "started" | "skipped"; detail?: string }): string {
+export function lastRunTail(run: { reasons: readonly string[]; outcome: LastRunOutcome; detail?: string }): string {
   const bare = (s: string) => s.trim().replace(/[.\s]+$/, "");
-  if (run.outcome === "skipped") {
+  if (run.outcome === "skipped" || run.outcome === "stopped") {
     const why = run.detail ? bare(run.detail) : "";
-    return why ? `, skipped: ${why}` : ", skipped";
+    // An abort's own "Stopped." says nothing the word doesn't.
+    return why && why.toLowerCase() !== run.outcome ? `, ${run.outcome}: ${why}` : `, ${run.outcome}`;
   }
-  const reasons = run.reasons.map(bare).filter(Boolean);
-  return reasons.length ? `, after ${reasons.join(", ")}` : "";
+  if (run.outcome === "cut-off") return ", cut off by a restart";
+  // Each reason is a sentence ("The gathering session … reached its goal."); inside this one it
+  // continues mid-sentence, so its capitalised first word goes lower case (never an acronym: "IT").
+  const reasons = run.reasons.map(bare).filter(Boolean).map((r) => r.replace(/^[A-Z](?=[a-z\s])/, (c) => c.toLowerCase()));
+  const after = reasons.length ? `, after ${reasons.join(", ")}` : "";
+  return run.outcome === "started" ? `, running now${after}` : after;
+}
+
+/**
+ * The reasons waiting for its next look, as the "Waiting to look at:" line says them: each is a
+ * sentence of its own, so they are joined as sentences, each ending in exactly one stop (its own
+ * `.`, `?` or `!`, or an added period), never listed with commas and a period on top.
+ */
+export function pendingLine(reasons: readonly string[]): string {
+  return reasons
+    .map((r) =>
+      r
+        .trim()
+        .replace(/\.{2,}$/, ".")
+        // A quoted title that ends a sentence itself: `in "Rules?".` → `in "Rules?"`.
+        .replace(/([.?!]["”’)])\.$/, "$1"),
+    )
+    .filter(Boolean)
+    .map((r) => (/[.?!]["”’)]?$/.test(r) ? r : `${r}.`))
+    .join(" ");
+}
+
+/** The operator's ideas' namespace, beside the overseer's `§gap`. */
+export const OPERATOR_IDEA_NS = "idea";
+/** The server's limit on an idea's title (server/overseer-ideas.ts IDEA_TITLE_MAX). */
+export const IDEA_TITLE_MAX = 120;
+
+/**
+ * An id for an idea the operator adds by title: `§idea/<words of the title>`, a number added when
+ * the id is taken (`-2`, `-3`, …), so adding the same title twice files two ideas, never a clash.
+ */
+export function operatorIdeaId(title: string, taken: ReadonlySet<string>): string {
+  const base = title.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/, "") || "idea";
+  const id = (n: number) => `§${OPERATOR_IDEA_NS}/${n === 1 ? base : `${base}-${n}`}`;
+  let n = 1;
+  while (taken.has(id(n))) n++;
+  return id(n);
 }
 
 /** Tokens as a short figure: 950, 12.3k, 1.2M. */

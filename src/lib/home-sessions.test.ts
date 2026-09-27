@@ -52,3 +52,14 @@ test("needs you: the region's rows, first two newest first; none while proactivi
 test("an empty list", () => {
   assert.deepEqual(sessionsGlance([], undefined, "badge"), { total: 0, folders: 0, live: 0, working: 0, needsYou: 0, needsYouFirst: [], last: null });
 });
+
+test("org sessions: counted in the total, never Live & web, Last active or Needs you", () => {
+  const org = { orgId: "o", orgName: "O", kind: "gathering" } as SessionSummary["org"];
+  const withOrg = [...list, session("g", { org, origin: "web", lastActiveAt: "2026-02-01T00:00:00Z" })];
+  const g = sessionsGlance(withOrg, { items: [act("g", 99), act("a", 1)] }, "badge");
+  assert.equal(g.total, 5, "the org row is still a session");
+  assert.equal(g.live, 3, "a web org session is not Live & web");
+  assert.equal(g.last?.id, "a", "the newest org row is not Last active");
+  assert.equal(g.needsYou, 1, "the global Needs you leaves the org row to its region");
+  assert.deepEqual(g.needsYouFirst.map((s) => s.id), ["a"]);
+});

@@ -74,3 +74,16 @@
 .project-link-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .project-link-name { font-weight: var(--fw-semibold); }
 .project-chips { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); }
+
+/* Coding worktrees: a row wraps its confirmation under itself. */
+.project-worktree { flex-wrap: wrap; }
+/* Narrow: the buttons wrap under the words rather than squeezing them. */
+.orgs-row.project-worktree .list-main { flex: 1 1 18rem; }
+.project-worktree-path { white-space: normal; overflow-wrap: anywhere; }
+.project-worktree-actions { flex: none; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.project-worktree-note .button-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.project-worktree-note { flex-basis: 100%; margin: 0; }
+
+/* The main stakeholder, at the top of the Requirements card: its banners above the select. */
+.project-stakeholder { display: flex; flex-direction: column; gap: var(--space-2); }
+.project-stakeholder-field { max-width: 28rem; }

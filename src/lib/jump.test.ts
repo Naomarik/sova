@@ -23,3 +23,28 @@ test("entryIdOf unwraps a rendered row's id to the entry the server knows", () =
   assert.equal(entryIdOf("01a0c3c1"), "01a0c3c1");
   assert.equal(entryIdOf(""), "");
 });
+
+test("a pending explain jump is claimed once, by its own session, on the explanation's row", async () => {
+  const { requestExplainJump, claimExplainJump, pendingExplainJump, clearExplainJump, PENDING_JUMP_TTL_MS } = await import("./jump");
+  const items = [{ id: "u1" }, { id: "row-9", report: { explain: { id: "exp-1" } } }, { id: "row-10", report: { explain: { id: "exp-2" } } }];
+  requestExplainJump({ explainId: "exp-2", sessionId: "sid-a", path: "/a.jsonl" }, 1000);
+  assert.equal(claimExplainJump({ path: "/b.jsonl", sessionId: "sid-b" }, items, 1001), null, "another session leaves it waiting");
+  assert.ok(pendingExplainJump());
+  assert.deepEqual(claimExplainJump({ path: "/a.jsonl" }, items, 1002), { kind: "jump", rowId: "row-10" });
+  assert.equal(claimExplainJump({ path: "/a.jsonl" }, items, 1003), null, "consumed: a reload doesn't jump again");
+
+  // Linked by id (#/sid/): no path, the view's session id matches.
+  requestExplainJump({ explainId: "exp-1", sessionId: "sid-a", path: null }, 1000);
+  assert.deepEqual(claimExplainJump({ path: "/a.jsonl", sessionId: "sid-a" }, items, 1001), { kind: "jump", rowId: "row-9" });
+
+  // Off the branch on screen: consumed, and says so.
+  requestExplainJump({ explainId: "exp-gone", sessionId: "sid-a", path: "/a.jsonl" }, 1000);
+  assert.deepEqual(claimExplainJump({ path: "/a.jsonl" }, items, 1001), { kind: "missing" });
+  assert.equal(pendingExplainJump(), null);
+
+  // Unclaimed past its TTL: dropped, never fired late.
+  requestExplainJump({ explainId: "exp-1", sessionId: "sid-a", path: "/a.jsonl" }, 1000);
+  assert.equal(claimExplainJump({ path: "/a.jsonl" }, items, 1000 + PENDING_JUMP_TTL_MS + 1), null);
+  assert.equal(pendingExplainJump(), null);
+  clearExplainJump();
+});

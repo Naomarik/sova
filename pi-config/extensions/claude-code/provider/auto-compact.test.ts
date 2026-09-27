@@ -7,7 +7,7 @@ import { beforeEach, test } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Message } from "@earendil-works/pi-ai";
 import { registerAutoCompact } from "./auto-compact.ts";
-import { CLAUDE_PROVIDER_FLAG, CLAUDE_PROVIDER_ID, REGISTERED_MARKER, registerProviderIfEnabled, STATIC_MODELS } from "./index.ts";
+import { CLAUDE_PROVIDER_FLAG, CLAUDE_PROVIDER_ID, REGISTERED_MARKER, registerProviderIfEnabled, STATIC_MODELS, toProviderModel } from "./index.ts";
 import { foldBudgetChars, foldSizeEstimate } from "./session-bridge.ts";
 import type { ClaudeSessionBridge } from "./types.ts";
 
@@ -60,8 +60,11 @@ function conversation(chars: number): Message[] {
 	return out;
 }
 
+/** A 200K-window Claude model (bare `sonnet` is natively 1M). */
+const SMALL = "claude-sonnet-4-6";
+
 function model(id: string, provider = CLAUDE_PROVIDER_ID) {
-	return { ...STATIC_MODELS.find((m) => m.id === id)!, provider, api: provider, baseUrl: "x" };
+	return { ...(STATIC_MODELS.find((m) => m.id === id) ?? toProviderModel({ id, name: id })), provider, api: provider, baseUrl: "x" };
 }
 
 function fakeCtx(messages: Message[], options: { model?: ReturnType<typeof model>; leaf?: string; branchTypes?: string[]; idle?: boolean; pending?: boolean; session?: string } = {}) {
@@ -69,7 +72,7 @@ function fakeCtx(messages: Message[], options: { model?: ReturnType<typeof model
 	const calls: { onComplete?: (r: unknown) => void; onError?: (e: Error) => void }[] = [];
 	const notes: string[] = [];
 	const ctx = {
-		model: options.model ?? model("sonnet"),
+		model: options.model ?? model(SMALL),
 		isIdle: () => state.idle,
 		hasPendingMessages: () => state.pending,
 		getSystemPrompt: () => "You are pi.",
@@ -114,7 +117,7 @@ test("the budget follows the model's window: what compacts a 200K model does not
 	const large = fakeCtx(messages, { model: model("opus[1m]") });
 	await settle(large.ctx);
 	assert.equal(large.calls.length, 0);
-	const small = fakeCtx(messages, { model: model("sonnet"), leaf: "leaf-2" });
+	const small = fakeCtx(messages, { model: model(SMALL), leaf: "leaf-2" });
 	await settle(small.ctx);
 	assert.equal(small.calls.length, 1);
 });
@@ -131,7 +134,7 @@ test("only active tools count against the window", async () => {
 test("never for another provider, with the flag off, mid-run, with queued messages, or right after a compaction", async () => {
 	const messages = conversation(budget200k() + 20_000);
 	const cases: [string, boolean, Parameters<typeof fakeCtx>[1]][] = [
-		["other provider", true, { model: model("sonnet", "anthropic") }],
+		["other provider", true, { model: model(SMALL, "anthropic") }],
 		["flag off", false, {}],
 		["not idle", true, { idle: false }],
 		["queued messages", true, { pending: true }],

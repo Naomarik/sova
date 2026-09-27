@@ -88,11 +88,11 @@ for (const permissionMode of [undefined, "bypassPermissions", "acceptEdits", "ma
 test("a sandboxed launch (settings, dontAsk, no host prompt) reaches the CLI as given; none by default", async (t) => {
 	const json = '{"sandbox":{"enabled":true}}';
 	const f = fixture({ settingsJson: json, permissionMode: "dontAsk" }); cleanup(t, f); await ready(f);
-	assert.equal(f.argv[f.argv.indexOf("--settings") + 1], json);
+	assert.deepEqual(JSON.parse(f.argv[f.argv.indexOf("--settings") + 1]), { ...JSON.parse(json), attribution: { commit: "", pr: "" } });
 	assert.equal(f.argv[f.argv.indexOf("--permission-mode") + 1], "dontAsk");
 	assert.equal(f.argv[f.argv.indexOf("--permission-prompts") + 1], "none");
 	const plain = fixture(); cleanup(t, plain); await ready(plain);
-	assert.ok(!plain.argv.includes("--settings"));
+	assert.deepEqual(JSON.parse(plain.argv[plain.argv.indexOf("--settings") + 1]), { attribution: { commit: "", pr: "" } });
 });
 
 test("resume: --resume <id> with the sandbox settings and system prompt, idle after initialize, no user message, no completion", async (t) => {
@@ -102,7 +102,7 @@ test("resume: --resume <id> with the sandbox settings and system prompt, idle af
 	await tick();
 	assert.equal(f.argv[f.argv.indexOf("--resume") + 1], id);
 	assert.ok(!f.argv.includes("--session-id"), "--session-id would create a new record, or collide with this one");
-	assert.equal(f.argv[f.argv.indexOf("--settings") + 1], json);
+	assert.equal(JSON.parse(f.argv[f.argv.indexOf("--settings") + 1]).sandbox.enabled, true);
 	assert.equal(f.argv[f.argv.indexOf("--permission-mode") + 1], "dontAsk");
 	assert.ok(f.argv.includes("--append-system-prompt-file"));
 	assert.equal(f.runner.sessionId, id);

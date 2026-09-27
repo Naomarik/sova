@@ -91,6 +91,43 @@ describe("organizations", async () => {
     assert.throws(() => orgs.applyChange(org.id, al.id, { status: "proposed" }, { kind: "operator" }), /A proposed person needs/);
   });
 
+  test("a decides entry with no letter names no area: refused, never filed under \"general\"", () => {
+    for (const bad of ["*", "-", "2024"]) assert.throws(() => orgs.addPerson(org.id, { name: `Star ${bad}`, decides: ["website", bad] }), { message: `“${bad}” names no decision area: use words, like “website”.` });
+    assert.deepEqual(orgs.addPerson(org.id, { name: "Ok Areas", decides: ["Café", "site structure / pages"] }).decides, ["Café", "site structure / pages"]);
+  });
+
+  test("the main stakeholder: operator-set, active people only, history kept; cleared when they leave, with a Needs-you item until any save", () => {
+    mkdirSync(join(root, "site"), { recursive: true });
+    const pr = orgs.addProject(org.id, { name: "Website", root: join(root, "site") });
+    const alp = orgs.addPerson(org.id, { name: "Alperen", role: "Owner", decides: ["website"] });
+    const prop = orgs.addPerson(org.id, { name: "Prop Osed", status: "proposed", role: "x", contact: { email: "p@example.com" }, referral: { why: "w", referredBy: alp.id } }, { kind: "referral" });
+    const refusal = { message: "Only an active person on the roster can be a project's main stakeholder." };
+    for (const bad of ["p_nobody00", prop.id, 42]) assert.throws(() => orgs.patchProject(org.id, pr.id, { stakeholder: bad }), refusal, String(bad));
+    const project = () => orgs.readProjects(org.id).find((x) => x.id === pr.id)!;
+    assert.equal(project().stakeholder, undefined, "a refusal writes nothing");
+    orgs.patchProject(org.id, pr.id, { stakeholder: alp.id });
+    orgs.patchProject(org.id, pr.id, { stakeholder: alp.id });
+    assert.equal(project().stakeholder, alp.id);
+    assert.deepEqual(project().stakeholderHistory?.map((h) => [h.from, h.to, h.why]), [[null, alp.id, "operator"]], "a save that changes nothing adds no line");
+    assert.equal(orgs.stakeholderOf(org.id, pr.id), alp.id);
+    assert.deepEqual(orgs.stakeholderAttention(), []);
+    // They leave: cleared at once, with the why, and one decide-tier item for the project.
+    orgs.applyChange(org.id, alp.id, { status: "left" }, { kind: "operator" });
+    assert.equal(project().stakeholder, null);
+    assert.deepEqual(project().stakeholderHistory?.map((h) => [h.from, h.to, h.why]), [[null, alp.id, "operator"], [alp.id, null, "left"]]);
+    assert.deepEqual({ ...project().stakeholderCleared, at: "" }, { personId: alp.id, name: "Alperen", at: "" });
+    const items = orgs.stakeholderAttention().filter((i) => i.id === `project-stakeholder:${pr.id}`);
+    assert.deepEqual(
+      items.map((i) => [i.tier, i.kind, i.detail, i.href, i.org?.projectId]),
+      [["decide", "project-stakeholder", "Pick a main stakeholder for Website: Alperen left the organization.", `#/orgs/${org.id}/projects/${pr.id}`, pr.id]],
+    );
+    // Choosing None answers it too.
+    orgs.patchProject(org.id, pr.id, { stakeholder: null });
+    assert.equal(project().stakeholderCleared, undefined);
+    assert.deepEqual(orgs.stakeholderAttention().filter((i) => i.id === `project-stakeholder:${pr.id}`), []);
+    assert.throws(() => orgs.patchProject(org.id, pr.id, { stakeholder: alp.id }), refusal, "someone who left can't be picked");
+  });
+
   test("caps are refused, never cut", () => {
     assert.throws(() => orgs.addPerson(org.id, { name: "Long", voice: "x".repeat(301) }), /at most 300/);
     assert.throws(() => orgs.addPerson(org.id, { name: "Many", skills: Array.from({ length: 13 }, (_, i) => `s${i}`) }), /at most 12/);
@@ -134,5 +171,25 @@ describe("workspace dirs never inside Sova's own repo", () => {
     assert.equal(await orgs.workspaceDirProblem(join(sova, ".agent", "sova", "workspaces", "x"), sova), null);
     assert.equal(await orgs.workspaceDirProblem(join(root, "elsewhere"), sova), null);
     assert.match((await orgs.workspaceDirProblem("relative/dir", sova)) ?? "", /absolute/);
+  });
+
+  // An install that is not a git checkout (a copied or unpacked tree): nothing can say what it
+  // ignores, so only Sova's own state dir (the default workspaces base) is allowed inside it.
+  test("not a git checkout: the default workspaces dir is allowed, the rest of the tree is not", async () => {
+    const plain = join(root, "plain-install");
+    const base = join(plain, ".agent", "sova", "workspaces");
+    mkdirSync(join(plain, "server"), { recursive: true });
+    writeFileSync(join(plain, ".gitignore"), ".agent/\n");
+    assert.equal(await orgs.workspaceDirProblem(join(base, "acme"), plain, base), null);
+    assert.equal(await orgs.workspaceDirProblem(join(base, "deep", "acme"), plain, base), null);
+    assert.match((await orgs.workspaceDirProblem(join(plain, "server", "x"), plain, base)) ?? "", /must not live inside Sova/);
+    assert.match((await orgs.workspaceDirProblem(join(plain, ".agent", "sova", "other"), plain, base)) ?? "", /must not live inside Sova/);
+    assert.match((await orgs.workspaceDirProblem(join(plain, ".agent", "sova", "workspaces-x"), plain, base)) ?? "", /must not live inside Sova/);
+    assert.match((await orgs.workspaceDirProblem(plain, plain, base)) ?? "", /must not live inside Sova/);
+    // The base is the root itself: that exception would cover the whole tree, so it never applies.
+    assert.match((await orgs.workspaceDirProblem(join(plain, "server", "x"), plain, plain)) ?? "", /must not live inside Sova/);
+    // In a git checkout the ignore rules decide, base or not: an unignored base is still refused.
+    const unignored = join(sova, "state", "workspaces");
+    assert.match((await orgs.workspaceDirProblem(join(unignored, "acme"), sova, unignored)) ?? "", /must not live inside Sova/);
   });
 });

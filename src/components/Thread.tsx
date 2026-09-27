@@ -8,7 +8,7 @@ import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
-import { entryIdOf, registerTranscript } from "../lib/jump";
+import { entryIdOf, JUMP_EVENT, registerTranscript } from "../lib/jump";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { isChangeRow } from "../lib/change-rows";
@@ -195,7 +195,7 @@ function BatonCard(props: { mark: Exclude<BatonMark, { kind: "sent" }>; name(ref
       <Match when={m.kind === "lease" && m}>
         {(l) => (
           <p class="baton-card-line">
-            {l().event === "claimed" ? `${props.name(l().by)} took the offer.` : `${props.name(l().by)} went quiet for 15 minutes; the offer is open to everyone again.`}
+            {l().event === "claimed" ? `${props.name(l().by)} took the offer.` : `${props.name(l().by)} went quiet, so the offer is open to every invitee again.`}
           </p>
         )}
       </Match>
@@ -729,6 +729,8 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
 export function LiveEntries(props: {
   live: LiveState;
   author: string;
+  /** A baton session's names by ref: a live row's sender, once its marker arrived. */
+  names?: Record<string, string>;
   hideTools?: boolean;
   hideThinking?: boolean;
   /** What a message of ours that hasn't been delivered offers — one Remove, from the chat. A row
@@ -768,6 +770,7 @@ export function LiveEntries(props: {
                         state={e().state}
                         origin={e().origin}
                         overseer={e().overseer}
+                        sender={e().by ? (props.names?.[e().by!] ?? (e().by === "operator" ? "You" : "Someone")) : undefined}
                         images={e().images}
                         attachments={e().attachments}
                       />
@@ -831,6 +834,8 @@ export function LiveEntries(props: {
 
 /** Within this distance of the end, the transcript follows new content. */
 const FOLLOW_PX = 80;
+/** How long a jump's smooth scroll may take before a scroll near the bottom means following again. */
+const JUMP_SETTLE_MS = 1000;
 
 /**
  * The transcript scroll region. Follows new content while the user is near the bottom; scrolling
@@ -862,8 +867,12 @@ export function ThreadScroller(props: {
     setAway(null);
     toBottom();
   };
+  /** Until then a jump's own smooth scroll is under way: its first frames are still near the
+      bottom, and must not read as the user coming back to follow it. */
+  let jumpingUntil = 0;
   const onScroll = () => {
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_PX;
+    if (near && performance.now() < jumpingUntil) return;
     if (near === follow) return;
     follow = near;
     setAway(near ? null : props.count);
@@ -891,6 +900,13 @@ export function ThreadScroller(props: {
         ref={(node) => {
           el = node;
           observer.observe(node, { childList: true, subtree: true, characterData: true });
+          // A jump (lib/jump) takes the view away from the bottom: stop following, as a scroll up would.
+          node.addEventListener(JUMP_EVENT, () => {
+            jumpingUntil = performance.now() + JUMP_SETTLE_MS;
+            if (!follow) return;
+            follow = false;
+            setAway(props.count);
+          });
           if (props.path) {
             const path = props.path;
             registerTranscript(path, node);

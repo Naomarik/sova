@@ -1,0 +1,46 @@
+/* One person's page (§app.organizations/person-page). Rows stack at every width: a title line
+   (title + chip) and wrapping meta under it, so nothing truncates at folded width. Token values only. */
+
+.person-list > li + li { border-top: var(--stroke-thin) solid var(--color-border); }
+.person-row { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3) 0; min-width: 0; }
+.person-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.person-row-title { flex: 1 1 12rem; min-width: 0; color: var(--color-ink); overflow-wrap: anywhere; }
+.person-row .list-title { white-space: normal; overflow-wrap: anywhere; color: var(--color-ink); }
+.person-row-meta,
+.person-row .list-meta { white-space: normal; overflow-wrap: anywhere; }
+.person-row-relations { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); overflow-wrap: anywhere; }
+.person-row-actions { margin-top: var(--space-1); }
+.person-head-meta { font-size: var(--fs-body); }
+.person-summary { font-weight: var(--fw-medium); color: var(--color-ink); }
+.person-confirm { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+
+/* The visit timeline: a list, the time at the end (under the words when narrow). */
+.person-visit { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); padding: var(--space-2) 0; min-height: var(--tap-min); box-sizing: border-box; }
+.person-visit-text { flex: 1 1 16rem; min-width: 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
+.person-visit-time { flex: none; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.person-visit-muted .person-visit-text { color: var(--color-ink-muted); font-size: var(--fs-caption); }
+
+/* Preview as {name}: the share page's thread, quieter, inside a modal (a sheet when folded). */
+.person-preview { width: min(640px, calc(100vw - 2 * var(--space-4))); max-height: 85vh; display: flex; flex-direction: column; }
+.person-preview-body { overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-3); }
+.person-preview-thread { display: flex; flex-direction: column; gap: var(--space-3); }
+.person-preview-msg { display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+.person-preview-own { background: var(--color-accent-tint); }
+.person-preview-who { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.person-preview-text { color: var(--color-ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* The People card's name is the way to the page. */
+a.orgs-person-link { color: var(--color-ink); text-decoration: none; }
+a.orgs-person-link:hover { color: var(--color-accent); text-decoration: underline; }
+
+/* The page head: the name and its status chip read as one unit; the chip wraps under a long name. */
+.session-head-titleline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-width: 0; }
+.session-head-titleline > .session-head-title { min-width: 0; max-width: 100%; }
+
+/* Banners line up with the cards under them. */
+.person-page .banner { max-width: 880px; }
+
+/* Folded (the pane under 768): every control on the page is a 44px target; desktop keeps 36. */
+@container insights (max-width: 767.98px) {
+  .person-page .button-sm { min-height: var(--tap-min); }
+}

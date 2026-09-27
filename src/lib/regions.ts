@@ -16,3 +16,22 @@ export const isTopSession = (s: Pick<SessionSummary, "live" | "origin" | "archiv
  * never a row. A server that predates `workerSession` or `overseer` sends none: a main thread.
  */
 export const isMainThread = (s: Pick<SessionSummary, "workerSession" | "overseer">): boolean => s.workerSession !== true && s.overseer !== true;
+
+/**
+ * Whether a session belongs to an organization (`SessionSummary.org`, §app.session-list/organizations):
+ * a file in an attached org's workspace, or a coding session that org's project started. Such a
+ * session lives only in the Organizations region. A server that predates `org` sends none: ordinary.
+ */
+export const isOrgSession = (s: Pick<SessionSummary, "org">): boolean => !!s.org;
+
+/**
+ * The one check every ordinary surface reads (Recent, Needs you, Groups, Live & web, the Archive and
+ * its cleanup, recent folders, the overview): a main thread that no organization owns. It is NOT
+ * folded into `isMainThread`, because the Organizations region, the Overseer page and the Agents
+ * board still read org sessions.
+ */
+export const isOrdinarySession = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org">): boolean => isMainThread(s) && !isOrgSession(s);
+
+/** Which of the pane's three places a main thread lives in: org wins over live, web and archived. */
+export const sidebarRegion = (s: Pick<SessionSummary, "live" | "origin" | "archived" | "org">): "org" | "top" | "archive" =>
+  isOrgSession(s) ? "org" : isTopSession(s) ? "top" : "archive";

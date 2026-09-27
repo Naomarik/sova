@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
-import { OPERATOR, type BatonStartResult, type BatonView, type BatonViewItem, type OfferLink } from "../../shared/baton";
+import { MESSAGES_CAP, MESSAGES_DEFAULT, MESSAGES_MIN, OPERATOR, type BatonStartResult, type BatonView, type BatonViewItem, type OfferLink } from "../../shared/baton";
 import type { NamedChange, OrgDetail, Person, PersonInput, ProfileChange } from "../../shared/orgs";
 import {
   addOrgProject,
@@ -14,36 +14,34 @@ import {
   getOrgs,
   openProjectOverseer,
   patchPerson,
-  personHistory,
   revertPersonChange,
   setOperatorName,
   setOrgRemote,
   startBaton,
+  getBatonSettings,
 } from "../lib/api";
 import { duration, relativeTime, stampTime } from "../lib/format";
 import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
 import { proposedAreasLine } from "../lib/baton-strip";
-import { groupChanges, revertible, valueText } from "../lib/profile-changes";
-import { orgHref, orgTabHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
+import { groupChanges, revertible, STATUS_CHIP, valueText, WRITER } from "../lib/profile-changes";
+import { orgPageRoute } from "../lib/org-page-route";
+import { createOrgSource } from "../lib/org-source";
+import { useMinuteNow } from "../lib/minute-clock";
+import { orgHref, orgTabHref, personHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
 import { orgTabsOf } from "../lib/org-tabs";
 import { toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { LinksBanner } from "./LinksBanner";
+import { PersonForm } from "./PersonForm";
+import { PersonPage } from "./PersonPage";
 import { ProjectPage } from "./ProjectPage";
 import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
 import "../projects.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
-const list = (s: string) =>
-  s
-    .split(",")
-    .map((x) => x.trim())
-    .filter(Boolean);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
-/** Who wrote a profile change, in words. */
-const WRITER: Record<ProfileChange["by"]["kind"], string> = { operator: "you", wrapup: "wrap-up", referral: "referral", overseer: "overseer" };
 
 const STATE_WORDS: Record<string, { word: string; tone: "info" | "warn" | "success" | undefined }> = {
   open: { word: "Open", tone: "info" },
@@ -53,8 +51,10 @@ const STATE_WORDS: Record<string, { word: string; tone: "info" | "warn" | "succe
 };
 
 /** The organizations page: `#/orgs`, `#/orgs/<id>[/<tab>|/start/<person>]`,
-    `#/orgs/<id>/projects/<project>[/overseer]`. */
+    `#/orgs/<id>/projects/<project>[/overseer]`, `#/orgs/<id>/people/<person>`. */
 export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElement): void }) {
+  // Memos, not ternaries in the props below: the start form reads `start` from its Cancel handler.
+  const page = orgPageRoute(() => props.route);
   return (
     <Switch>
       <Match when={props.route.kind === "list"}>
@@ -62,6 +62,9 @@ export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElem
       </Match>
       <Match when={props.route.kind === "project" && props.route} keyed>
         {(r) => <ProjectPage orgId={r.id} projectId={r.projectId} titleRef={props.titleRef} />}
+      </Match>
+      <Match when={props.route.kind === "person" && props.route} keyed>
+        {(r) => <PersonPage orgId={r.id} personId={r.personId} titleRef={props.titleRef} />}
       </Match>
       <Match when={props.route.kind === "overseer" && props.route} keyed>
         {(r) => <OverseerDoor orgId={r.id} projectId={r.projectId} titleRef={props.titleRef} />}
@@ -71,8 +74,8 @@ export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElem
         {(id) => (
           <OrgPage
             id={id}
-            start={props.route.kind === "org" ? props.route.start : undefined}
-            tab={props.route.kind === "org" ? props.route.tab : undefined}
+            start={page.start()}
+            tab={page.tab()}
             titleRef={props.titleRef}
           />
         )}
@@ -262,14 +265,14 @@ function OrgList(props: { titleRef(el: HTMLHeadingElement): void }) {
 // ---- one org -------------------------------------------------------------------------------------
 
 function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el: HTMLHeadingElement): void }) {
-  const [org, { refetch, mutate }] = createResource(() => props.id, getOrg);
+  const org = createOrgSource(props.id);
   const [error, setError] = createSignal<string | null>(null);
   const [links, setLinks] = createSignal<OfferLink[] | null>(null);
+  const [linkWarning, setLinkWarning] = createSignal<string | undefined>();
   const act = async (fn: () => Promise<OrgDetail | unknown>, done?: string): Promise<boolean> => {
     try {
       const r = await fn();
-      if (r && typeof r === "object" && "roster" in r) mutate(r as OrgDetail);
-      else await refetch();
+      org.set(r && typeof r === "object" && "roster" in r ? (r as OrgDetail) : await getOrg(props.id));
       setError(null);
       if (done) toast(done);
       return true;
@@ -282,31 +285,39 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
   const tab = (): OrgTab => (props.start ? "sessions" : (props.tab ?? "sessions"));
   return (
     <InsightsPage
-      title={org()?.name ?? "Organization"}
+      title={org.data()?.name ?? "Organization"}
       meta={
-        org() ? (
+        org.data() ? (
           <>
-            <a class="orgs-meta-link" href="#/orgs">Organizations</a> · <span class="orgs-mono orgs-meta-path" title={org()!.dir}>{org()!.dir}</span>
+            <a class="orgs-meta-link" href="#/orgs">Organizations</a> · <span class="orgs-mono orgs-meta-path" title={org.data()!.dir}>{org.data()!.dir}</span>
           </>
         ) : undefined
       }
       refreshLabel="Refresh Organization"
-      onRefresh={() => void refetch()}
-      error={error() ?? (org.error ? errText(org.error) : null)}
+      onRefresh={() => org.refetch()}
+      error={error() ?? org.error()}
       errorTitle="Couldn't update this organization."
-      busy={org.loading}
+      busy={org.pending()}
       titleRef={props.titleRef}
     >
-      <Show when={org()}>
+      <Show when={org.data()}>
         {(o) => (
           <>
             <For each={o().problems}>{(p) => <Banner tone="warn" title="The workspace repo has a problem." body={p} />}</For>
-            <Show when={links()}>{(l) => <LinksBanner links={l()} onDismiss={() => setLinks(null)} />}</Show>
+            <Show when={links()}>{(l) => <LinksBanner links={l()} warning={linkWarning()} onDismiss={() => setLinks(null)} />}</Show>
             <OrgTabs org={o()} tab={tab()} />
             <div class="org-tabpanel" role="tabpanel" id="org-tabpanel" aria-labelledby={`org-tab-${tab()}`}>
               <Switch>
                 <Match when={tab() === "sessions"}>
-                  <BatonSection org={o()} start={props.start} act={act} onLinks={setLinks} />
+                  <BatonSection
+                    org={o()}
+                    start={props.start}
+                    act={act}
+                    onLinks={(l, warning) => {
+                      setLinkWarning(warning);
+                      setLinks(l);
+                    }}
+                  />
                 </Match>
                 <Match when={tab() === "people"}>
                   <PeopleSection org={o()} act={act} />
@@ -434,7 +445,7 @@ function GitCard(props: { org: OrgDetail; act: Act }) {
   );
 }
 
-function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks(l: OfferLink[] | null): void }) {
+function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks(l: OfferLink[] | null, warning?: string): void }) {
   const active = () => props.org.roster.filter((p) => p.status === "active");
   const [projectId, setProjectId] = createSignal("");
   const [to, setTo] = createSignal<string[]>([]);
@@ -443,11 +454,18 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
   const [briefing, setBriefing] = createSignal("");
   const [goal, setGoal] = createSignal("");
   const [model, setModel] = createSignal("");
+  /** This session's message limit; blank = Settings' default. */
+  const [limit, setLimit] = createSignal("");
+  const [defaults] = createResource(() => getBatonSettings().catch(() => null));
   // Closed behind its button, except when a start link ("Start a session for Bob") brought us here.
   const [starting, setStarting] = createSignal(false);
   /** The baton session a start link came from (the new one records it as its parent). */
   const [parent, setParent] = createSignal<string | undefined>();
   let formEl: HTMLFormElement | undefined;
+  // "started 5m ago" moves on while the page stays open.
+  const [now, setNow] = createSignal(Date.now());
+  const tick = setInterval(() => setNow(Date.now()), 30_000);
+  onCleanup(() => clearInterval(tick));
   // "Start a session for Bob" (`…/start/<person>`, on first load or any later hash change) opens the
   // form with Bob ticked (and, from a baton session, that session as parent). Not an active person:
   // the form opens with nobody ticked.
@@ -489,17 +507,19 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
         ...(question().trim() ? { question: question().trim() } : {}),
         ...(briefing().trim() ? { briefing: briefing().trim() } : {}),
         ...(model().trim() ? { model: model().trim() } : {}),
+        ...(limit().trim() ? { messagesMax: Number(limit()) } : {}),
         ...(parent() ? { parentSessionId: parent() } : {}),
       });
     }, Array.isArray(who) ? `Offered to ${who.length} people.` : "Hand-off session started.");
     if (!ok || !started) return;
     const s = started as BatonStartResult;
-    if (s.links?.length) props.onLinks(s.links);
-    else if (s.link && typeof who === "string") props.onLinks([{ personId: who, name: nameOf(who), link: s.link }]);
+    if (s.links?.length) props.onLinks(s.links, s.linkWarning);
+    else if (s.link && typeof who === "string") props.onLinks([{ personId: who, name: nameOf(who), link: s.link }], s.linkWarning);
     setTitle("");
     setQuestion("");
     setBriefing("");
     setGoal("");
+    setLimit("");
     setTo([]);
     closeForm();
   };
@@ -518,7 +538,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
                     {b.publicTitle}
                   </a>
                   <span class="list-meta">
-                    {b.holder ? `With ${b.holder} · ` : ""}started {relativeTime(b.createdAt)}
+                    {b.holder ? `With ${b.holder} · ` : ""}started {relativeTime(b.createdAt, now())}
                   </span>
                 </span>
                 {/* Open, but nobody has a link to it yet: that is the operator's to do. */}
@@ -599,6 +619,20 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
               <span class="field-label">Model</span>
               <input class="input input-mono" value={model()} onInput={(e) => setModel(e.currentTarget.value)} placeholder="Default: the new-session default" />
             </label>
+            <label class="field">
+              <span class="field-label">Message limit</span>
+              <input
+                class="input"
+                type="number"
+                min={MESSAGES_MIN}
+                max={MESSAGES_CAP}
+                step="1"
+                value={limit()}
+                onInput={(e) => setLimit(e.currentTarget.value)}
+                placeholder={`Default: ${defaults()?.messagesMax ?? MESSAGES_DEFAULT}`}
+              />
+              <span class="field-hint">Messages in, from everyone. At the limit the session comes back to you, and you can extend it.</span>
+            </label>
             <div class="button-row">
               <button type="submit" class="button button-primary">
                 {to().length > 1 ? `Offer to ${to().length}` : "Start Session"}
@@ -618,6 +652,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
 
 function PeopleSection(props: { org: OrgDetail; act: Act }) {
   const [adding, setAdding] = createSignal(false);
+  const now = useMinuteNow();
   return (
     <section class="card orgs-section" aria-labelledby="orgs-people">
       <div class="orgs-head">
@@ -640,20 +675,14 @@ function PeopleSection(props: { org: OrgDetail; act: Act }) {
       </Show>
       <Show when={props.org.roster.length} fallback={<p class="orgs-empty">Nobody on the roster yet.</p>}>
         <ul class="orgs-people">
-          <For each={props.org.roster}>{(p) => <PersonCard org={props.org} person={p} act={props.act} />}</For>
+          <For each={props.org.roster}>{(p) => <PersonCard org={props.org} person={p} act={props.act} now={now()} />}</For>
         </ul>
       </Show>
     </section>
   );
 }
 
-const STATUS_CHIP: Record<string, { word: string; tone?: "success" | "warn" }> = {
-  active: { word: "Active", tone: "success" },
-  proposed: { word: "Proposed", tone: "warn" },
-  left: { word: "Left" },
-};
-
-function PersonCard(props: { org: OrgDetail; person: Person; act: Act }) {
+function PersonCard(props: { org: OrgDetail; person: Person; act: Act; now: number }) {
   const [editing, setEditing] = createSignal(false);
   const p = () => props.person;
   const contact = () =>
@@ -668,10 +697,25 @@ function PersonCard(props: { org: OrgDetail; person: Person; act: Act }) {
       <div class="orgs-person-head">
         <div class="orgs-person-main">
           <span class="orgs-person-title">
-            <span class="orgs-person-name">{p().name}</span>
+            <a class="orgs-person-name orgs-person-link" href={personHref(props.org.id, p().id)}>
+              {p().name}
+            </a>
             <Chip tone={STATUS_CHIP[p().status]?.tone}>{STATUS_CHIP[p().status]?.word ?? p().status}</Chip>
           </span>
           <Show when={[p().role, p().language].filter(Boolean).join(" · ")}>{(meta) => <span class="orgs-person-meta">{meta()}</span>}</Show>
+          {/* The newest time they opened one of their links (§app.baton/visits); nothing when no
+              link was ever sent from this host. */}
+          <Show when={props.org.lastOpened?.[p().id]}>
+            {(o) => (
+              <Show when={o().at} fallback={<Show when={o().minted}><span class="orgs-person-meta">Hasn't opened a link yet</span></Show>}>
+                {(at) => (
+                  <span class="orgs-person-meta">
+                    Last opened <time title={stampTime(at())}>{relativeTime(at(), props.now)}</time>
+                  </span>
+                )}
+              </Show>
+            )}
+          </Show>
         </div>
         <div class="orgs-person-actions">
         <Show when={p().status === "proposed"}>
@@ -733,138 +777,13 @@ function PersonCard(props: { org: OrgDetail; person: Person; act: Act }) {
           person={p()}
           submitLabel="Save Changes"
           onCancel={() => setEditing(false)}
-          onSubmit={async (input) => {
+          onSubmit={async (input: Partial<PersonInput>) => {
             const ok = await props.act(() => patchPerson(props.org.id, p().id, input), "Saved.");
             if (ok) setEditing(false);
           }}
         />
       </Show>
-      <History orgId={props.org.id} person={p()} act={props.act} />
     </li>
-  );
-}
-
-function History(props: { orgId: string; person: Person; act: Act }) {
-  const [open, setOpen] = createSignal(false);
-  const [lines, { refetch }] = createResource(
-    () => (open() ? { org: props.orgId, pid: props.person.id, v: JSON.stringify(props.person) } : null),
-    (k) => personHistory(k.org, k.pid),
-  );
-  return (
-    <details class="orgs-history" onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary>History</summary>
-      <Show when={lines()} fallback={<p class="orgs-empty">Loading history.</p>}>
-        <ul class="orgs-history-list">
-          <For each={lines()}>
-            {(c: ProfileChange) => (
-              <li class="orgs-change">
-                <span class="orgs-change-main">
-                  <span class="orgs-change-field">{c.field}</span> {valueText(c.field, c.from)} → {valueText(c.field, c.to)}
-                  <span class="list-meta">
-                    {" "}
-                    · {WRITER[c.by.kind] ?? c.by.kind}
-                    {c.by.quote ? ` · “${c.by.quote}”` : ""}
-                    {c.revertOf ? " · a revert" : ""} · <time title={c.at}>{relativeTime(c.at)}</time>
-                  </span>
-                </span>
-                <Show when={c.field !== "name" || c.from !== null}>
-                  <button
-                    type="button"
-                    class="button button-sm button-ghost"
-                    onClick={async () => {
-                      if (await props.act(() => revertPersonChange(props.orgId, props.person.id, c.at), `Reverted ${c.field}.`)) void refetch();
-                    }}
-                  >
-                    <Icon name="undo" small /> Revert
-                  </button>
-                </Show>
-              </li>
-            )}
-          </For>
-        </ul>
-      </Show>
-    </details>
-  );
-}
-
-function PersonForm(props: { person?: Person; submitLabel: string; onSubmit(input: PersonInput): void; onCancel(): void }) {
-  const p = props.person;
-  const [name, setName] = createSignal(p?.name ?? "");
-  const [status, setStatus] = createSignal<Person["status"]>(p?.status ?? "active");
-  const [role, setRole] = createSignal(p?.role ?? "");
-  const [decides, setDecides] = createSignal(p?.decides.join(", ") ?? "");
-  const [skills, setSkills] = createSignal(p?.skills.join(", ") ?? "");
-  const [language, setLanguage] = createSignal(p?.language ?? "");
-  const [voice, setVoice] = createSignal(p?.voice ?? "");
-  const [email, setEmail] = createSignal(p?.contact.email ?? "");
-  const [phone, setPhone] = createSignal(p?.contact.phone ?? "");
-  const [whatsapp, setWhatsapp] = createSignal(p?.contact.whatsapp ?? "");
-  const [why, setWhy] = createSignal(p?.referral?.why ?? "");
-  const [by, setBy] = createSignal(p?.referral?.referredBy ?? "");
-  const text = (label: string, get: () => string, set: (v: string) => void, extra: JSX.InputHTMLAttributes<HTMLInputElement> = {}) => (
-    <label class="field">
-      <span class="field-label">{label}</span>
-      <input class="input" value={get()} onInput={(e) => set(e.currentTarget.value)} {...extra} />
-    </label>
-  );
-  return (
-    <form
-      class="orgs-form orgs-subform"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const contact = { ...(email().trim() ? { email: email().trim() } : {}), ...(phone().trim() ? { phone: phone().trim() } : {}), ...(whatsapp().trim() ? { whatsapp: whatsapp().trim() } : {}) };
-        props.onSubmit({
-          name: name().trim(),
-          status: status(),
-          role: role().trim(),
-          decides: list(decides()),
-          skills: list(skills()),
-          language: language().trim(),
-          voice: voice().trim(),
-          contact,
-          ...(status() === "proposed" || why().trim() || by().trim() ? { referral: { why: why().trim(), referredBy: by().trim() } } : {}),
-        });
-      }}
-    >
-      <div class="orgs-fields">
-        {text("Name", name, setName, { maxlength: 80, required: true })}
-        <label class="field">
-          <span class="field-label">Status</span>
-          <select class="select" value={status()} onChange={(e) => setStatus(e.currentTarget.value as Person["status"])}>
-            <option value="active">Active</option>
-            <option value="proposed">Proposed</option>
-            <option value="left">Left</option>
-          </select>
-        </label>
-        {text("Role", role, setRole, { maxlength: 300 })}
-        {text("Language", language, setLanguage, { placeholder: "es-CO", maxlength: 35 })}
-        {text("Decides", decides, setDecides, { placeholder: "invoicing, bank access" })}
-        {text("Skills", skills, setSkills, { placeholder: "Excel, SQL" })}
-        {text("Email", email, setEmail, { type: "email" })}
-        {text("Phone", phone, setPhone)}
-        {text("WhatsApp", whatsapp, setWhatsapp)}
-      </div>
-      <label class="field">
-        <span class="field-label">Voice</span>
-        <textarea class="input textarea" rows={2} maxlength={300} value={voice()} onInput={(e) => setVoice(e.currentTarget.value)} />
-        <span class="field-hint">How to talk to them. Never shown to them or anyone else outside this page.</span>
-      </label>
-      <Show when={status() === "proposed"}>
-        <div class="orgs-fields">
-          {text("Why referred", why, setWhy, { maxlength: 300, required: true })}
-          {text("Referred by", by, setBy, { maxlength: 80, required: true })}
-        </div>
-        <p class="field-hint">A proposed person needs a name, a contact, a role, and who referred them and why.</p>
-      </Show>
-      <div class="button-row">
-        <button type="submit" class="button button-primary">
-          {props.submitLabel}
-        </button>
-        <button type="button" class="button button-ghost" onClick={() => props.onCancel()}>
-          Cancel
-        </button>
-      </div>
-    </form>
   );
 }
 
@@ -910,7 +829,9 @@ function ChangesSection(props: { org: OrgDetail; act: Act }) {
               <li class="orgs-change orgs-change-group">
                 <div class="orgs-change-main">
                   <span>
-                    <span class="orgs-person-name">{g.name}</span>
+                    <a class="orgs-person-name orgs-person-link" href={personHref(props.org.id, g.personId)}>
+                      {g.name}
+                    </a>
                     {g.added ? " added" : ""}
                     <span class="list-meta">
                     {" "}

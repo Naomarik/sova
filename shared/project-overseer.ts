@@ -32,6 +32,8 @@
  * POST   /api/orgs/:id/projects/:pid/overseer/run           -> ProjectOverseerInfo (Run Now: one watch-loop turn, now; 409 while busy)
  * POST   /api/orgs/:id/projects/:pid/overseer/items/send    body ItemSendInput -> 201 ItemSendResult (Send to person…)
  * POST   /api/orgs/:id/projects/:pid/overseer/items/code    body ItemCodeInput -> 201 ItemCodeResult (Start coding session)
+ * POST   /api/orgs/:id/projects/:pid/overseer/worktrees/merge  body { sessionId } -> ProjectOverseerInfo (merge a coding session's branch into its target)
+ * POST   /api/orgs/:id/projects/:pid/overseer/worktrees/remove body { sessionId } -> ProjectOverseerInfo (remove its worktree; the branch too once merged)
  */
 
 /** `customType` of the marker a project overseer's file carries (data `ProjectOverseerMarkerData`). */
@@ -74,6 +76,14 @@ export interface ProjectOverseerCaps {
   unattendedPerDay: number; // default 12: watch-loop runs per day
 }
 
+/** The mode a coding session the project starts runs in (the mode extension's major mode and minor
+    modes). `align` is never allowed: nobody answers a coding session's alignment questions. */
+export interface ProjectCodingMode {
+  mode: "normal" | "delegate";
+  /** Canonical order; only "spec" may be on. */
+  minorModes: string[];
+}
+
 export interface ProjectOverseerSettings {
   version: 1;
   autonomy: Autonomy;
@@ -84,6 +94,10 @@ export interface ProjectOverseerSettings {
       null = the overseer's own model; `codingThinking` likewise (null = the overseer's own level). */
   codingModel: string | null;
   codingThinking: string | null;
+  /** The mode its coding sessions start in; null = Automatic (normal, with spec on when the project
+      root has a spec, `.sova/spec/manifest.json`). The overseer may never exceed it: delegate only
+      when set here, spec never turned off when it is on. */
+  codingMode: ProjectCodingMode | null;
   /** The gathering sessions and offers it starts (and Send to person…): the model the person talks
       to; null = the overseer's own. `gatheringThinking` likewise. */
   gatheringModel: string | null;
@@ -96,9 +110,12 @@ export interface ProjectOverseerSettings {
   extraSystemPrompt: string;
 }
 
-export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "gatheringModel" | "gatheringThinking" | "tokenBudget" | "watch" | "extraSystemPrompt">> & {
+export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "tokenBudget" | "watch" | "extraSystemPrompt">> & {
   caps?: Partial<ProjectOverseerCaps>;
 };
+
+/** How the last unattended run went; `started` means it is running now. */
+export type LastRunOutcome = "started" | "finished" | "stopped" | "cut-off" | "skipped";
 
 export interface ProjectOverseerInfo {
   orgId: string;
@@ -112,14 +129,22 @@ export interface ProjectOverseerInfo {
   /** Earlier conversations, newest first (read-only). */
   history: { id: string; path: string; title: string; lastActiveAt: string }[];
   settings: ProjectOverseerSettings;
+  /** The mode a coding session started now gets (`settings.codingMode`, or what Automatic resolves to now). */
+  codingModeNow: ProjectCodingMode;
+  /** Coding sessions run in their own git worktree and branch when the project root is in a git
+      repository; `reason` (a tail: "it isn't a Git repository.") says why not: they then run in the
+      root itself. `sessions`: every coding session the project started, newest first. */
+  worktrees: { available: boolean; reason?: string; sessions: CodingWorktree[] };
   /** The level in force now: `settings.autonomy`, or L0 with a reason ("The roster has no active people yet."). */
   effective: { autonomy: Autonomy; reason?: string };
   /** When an attach on this host paused it at L0 (ISO): unattended runs wait and the level in force
       is L0 until the operator sets its level here. Null or absent: not paused. */
   paused?: string | null;
   busy: boolean;
-  /** The last watch-loop run (null: never). `outcome` "skipped" carries why (busy, daily cap). */
-  lastRun: { at: string; reasons: string[]; outcome: "started" | "skipped"; detail?: string } | null;
+  /** The last watch-loop run (null: never). `started`: running now; then `finished`, `stopped`
+      (why: the guard's trip, the model's error, "Stopped."), `cut-off` (the server stopped during
+      it), or `skipped` (why: busy, daily cap). */
+  lastRun: { at: string; reasons: string[]; outcome: LastRunOutcome; detail?: string } | null;
   /** Sessions it started, newest first. */
   started: StartedSession[];
   /** Replies newer than the operator last looked. */
@@ -144,6 +169,51 @@ export interface StartedSession {
   /** Baton state for gathering/offer; "idle" | "working" for coding. */
   state: string;
   createdAt: string;
+  /** A coding session's own worktree branch, when it has one. */
+  worktree?: { branch: string; state: CodingWorktree["state"] };
+}
+
+/**
+ * One coding session the project started (the overseer's or the operator's), with its own git
+ * worktree (§app.project-overseer/coding-worktrees), or the reason it runs in the project root.
+ * `worktree` is a path on the host that started it (host-local); the branch is in the client repo.
+ */
+export interface CodingWorktree {
+  sessionId: string;
+  /** The session file on this host, for #/s/<path>; null when it is not here (on another host: no gesture acts on it). */
+  path: string | null;
+  title: string;
+  startedBy: "overseer" | "operator";
+  /** `sova/<name>`; null for a session in the project root. */
+  branch: string | null;
+  /** Why it runs in the project root (a tail: "it isn't a Git repository."). */
+  inRoot?: string;
+  /** The worktree's top level when it exists on this host. */
+  worktree: string | null;
+  /** The commit it was cut from. */
+  base: string | null;
+  /** The branch it merges into (the root's branch when it was cut). */
+  target: string | null;
+  /** open: its folder is here, not merged; merged: its branch is in target (by Merge Branch or by hand);
+      removed: Remove Worktree ran; missing: its folder is gone otherwise; root: it runs in the project root. */
+  state: "open" | "merged" | "removed" | "missing" | "root";
+  /** Its work is in target: merged by Merge Branch or by hand, or removed with its branch (only a merged one is). */
+  merged: boolean;
+  /** True when the branch no longer exists (deleted with a merged worktree, or by hand): nothing left to merge. Absent otherwise. */
+  branchGone?: boolean;
+  mergedAt?: string;
+  removedAt?: string;
+  /** Commits on the branch beyond base. */
+  ahead: number;
+  /** Uncommitted changes in the worktree. */
+  dirty: boolean;
+  /** The session itself is working. */
+  running: boolean;
+  /** Its workers running now. */
+  workers: number;
+  createdAt: string;
+  /** Git could not be read. */
+  error?: string;
 }
 
 /** A gap the overseer inferred is an idea (OverseerIdeasInfo) with the tag "gap", id `§gap/<name>`,
@@ -185,4 +255,9 @@ export interface ItemCodeInput {
 export interface ItemCodeResult {
   path: string;
   sessionId: string;
+  /** The worktree it runs in; absent when it runs in the root (`note`, a tail, says why). */
+  worktree?: { path: string; branch: string };
+  note?: string;
+  /** Its mode could not be set, so its first prompt was not sent (the session exists and is listed). */
+  notPrompted?: string;
 }

@@ -10,26 +10,59 @@ const BACKOFF_STEPS_MS = [60_000, 300_000, 900_000];
 
 export function buildPrompt(input: SummarizeInput): string {
   return [
-    "You maintain a live topical outline of a coding-agent conversation between USER and ASSISTANT.",
+    "You maintain a live outline of a coding-agent conversation between USER and ASSISTANT.",
+    "The user glances at it to see what the session is for, where things stand, and what came of each thing they asked.",
     "You are shown the existing outline and only the newest messages. Update the outline incrementally.",
-    "Rules:",
-    "- Group work into topics with short headings (3-7 words).",
-    "- A topic is one concern the user raised; add a new visit when an existing topic is raised again.",
-    "- Each visit summary: 1-3 short bullets about what the assistant did or concluded, in plain language.",
-    "- Mention important file basenames; never include secrets, tokens, or commands verbatim.",
+    "",
+    "Topics:",
+    "- A topic is one thing the user asked for or raised. Worker and subagent reports, timers, status checks and",
+    "  restarts are not topics: fold them into the topic they serve.",
+    '- Prefer updating an existing topic over creating a new one. Use "new" only when the user raises something new.',
+    "- A heading names the subject in 1-4 plain words. A heading never states a status (blocked, fixed, done, pending,",
+    "  waiting): the summary says how things stand, the heading only what it is about.",
+    "",
+    "Bullets:",
+    "- 1-2 bullets per topic, each at most 70 characters, one fact each, in plain words, not needlessly technical.",
+    "- For kind=update, send the COMPLETE summary for that topic: your bullets replace the stored ones, and your heading",
+    "  replaces the stored heading. Resend the earlier facts that still matter, drop what the new messages made",
+    "  obsolete, and add what is new.",
+    "- Say what was decided, done or found, never the steps taken to get there. No check times.",
+    '- Address the user as "you". Never open with "User asked", "The user", "The assistant" or "Assistant".',
+    "- Leave out commit hashes, file and function names, worker ids, and internal names, unless the user typed them.",
+    "- Leave out open items, to-dos, next steps and anything still open: the chat is ongoing, and the topics record",
+    "  outcomes only.",
+    "- Only facts the messages state. Never infer a regression, a problem, a cause or a result they don't state.",
+    "- Never include secrets, tokens, keys, or commands verbatim.",
     '- "anchor" must be one of the provided message refs (like "m12") where the topic was started or last advanced.',
     "- Never invent refs or topics outside the provided messages.",
-    '- "now": one sentence describing what the assistant is working on NOW, based on the latest messages.',
-    '- "overall": what this session is FOR, at most 14 words, starting with its subject.',
+    "",
+    '- "now": where things stand right now, at most 60 characters. Never open with an -ing word ("Working on…").',
+    '- "overall": what this session is FOR, at most 8 words, starting with its subject.',
     '  Answer "what is this session about?", never "what just happened?" — a narrow list shows only',
     "  its first few words. Rewrite it when the user's goal actually changes; leave it alone as work",
-    '  merely progresses. Plain language, and never open with "The assistant", "Subagent", a commit',
-    '  hash, or a status word.',
+    "  merely progresses. Name the subject, not the process (planning, testing, merge). Plain language,",
+    '  and never open with "The assistant", "Subagent", a commit hash, or a status word.',
     '  Good: "Fanout UX: dialog redesign and model-pick bug". Bad: "The round is committed as dc63576".',
+    "",
+    "Example. The existing outline is:",
+    '[{"id":"t1","heading":"Merge blocked","summary":["Blocked by your uncommitted sidebar edits."]},',
+    ' {"id":"t2","heading":"Model names","summary":["Claude workers show the same model name everywhere."]},',
+    ' {"id":"t3","heading":"Workers after a restart","summary":["Workers come back after a restart, with their usage intact."]}]',
+    "The new messages say you committed the sidebar edits, the merge landed unpushed, tests and build pass, resume",
+    "picks up where each worker left off, Claude Code chats that failed to start after a restart are fixed, the",
+    "sandbox menu was missing because of an old build and a rebuild fixed it, and the install is done. A good response:",
+    '{"now":"Merged and installed. Restart Sova when you\'re ready.","overall":"Bringing workers back after a Sova restart","topicUpdates":[',
+    ' {"kind":"update","topicId":"t1","heading":"Merge","anchor":"m14","summary":["Merged after you committed your sidebar edits. Not pushed.","Tests and build pass."]},',
+    ' {"kind":"update","topicId":"t3","heading":"Workers after a restart","anchor":"m16","summary":["Workers come back after a restart, with their usage intact.","Resume picks up where each worker left off."]},',
+    ' {"kind":"new","heading":"Chat after a restart","anchor":"m18","summary":["Claude Code chats failed to start after a restart. Fixed."]},',
+    ' {"kind":"new","heading":"Sandbox menu","anchor":"m20","summary":["It was missing because of an old build. A rebuild fixed it."]}]}',
+    'Note: t1\'s status heading became a subject and its obsolete "blocked" fact is gone; t3 resends the fact it',
+    "already had; t2 is unchanged, so it is left out.",
+    "",
     "- Respond with ONLY a single JSON object, no markdown fences:",
     '{"now":"...","overall":"...","topicUpdates":[{"kind":"new"|"update","heading":"...","topicId":"t1?","anchor":"m12","summary":["..."]}]}',
-    "For kind=update include topicId of an existing topic. For kind=new provide a new heading.",
-    "If nothing material changed, return {\"now\":\"...\",\"overall\":\"...\",\"topicUpdates\":[]}.",
+    "For kind=update include the topicId of an existing topic. For kind=new provide a new heading.",
+    "Only include topics the new messages changed. If nothing material changed, return {\"now\":\"...\",\"overall\":\"...\",\"topicUpdates\":[]}.",
     "",
     'SESSION ANCHOR — the earliest user request still in view. It is usually what the session is for,',
     'but it may be a mid-session message, and the user may since have moved on. Weigh it with the',
@@ -69,10 +102,22 @@ export function extractJsonObject(text: string): string | undefined {
   return undefined;
 }
 
-function clampText(value: unknown, max: number): string | undefined {
+/** Collapse whitespace; a text over `max` ends on a word boundary with "…" (never over `max` in all).
+ *  A safety net: the prompt asks for far shorter text. A single word longer than half of `max` is cut
+ *  mid-word rather than dropped. */
+export function clampText(value: unknown, max: number): string | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
-  return value.replace(/\s+/g, " ").trim().slice(0, max);
+  const text = value.replace(/\s+/g, " ").trim();
+  if (text.length <= max) return text;
+  const head = text.slice(0, max - 1);
+  // The head ends on a whole word when the next character is the space after it.
+  const space = text[max - 1] === " " ? head.length : head.lastIndexOf(" ");
+  const kept = space > max / 2 ? head.slice(0, space) : head;
+  return `${kept.replace(/[\s,;:.\-–—]+$/, "")}…`;
 }
+
+/** Bullets are asked for at most 70 characters; this is the parser's ceiling above that. */
+const BULLET_CHARS = 120;
 
 /**
  * Parse and validate summarizer output. Throws SummarizerError when the envelope
@@ -108,13 +153,13 @@ export function parseSummarizerJson(text: string, validRefs: Set<string>): Summa
       const summary: string[] = [];
       if (Array.isArray(entry.summary)) {
         for (const bullet of entry.summary.slice(0, 4)) {
-          const line = clampText(bullet, 240);
+          const line = clampText(bullet, BULLET_CHARS);
           if (line) summary.push(line);
         }
       }
       if (!summary.length) continue;
       const update: SummarizerResult["topicUpdates"][number] = { kind, heading, anchor, summary };
-      const topicId = clampText(entry.topicId, 24);
+      const topicId = typeof entry.topicId === "string" ? entry.topicId.trim().slice(0, 24) : "";
       if (topicId) update.topicId = topicId;
       updates.push(update);
     }

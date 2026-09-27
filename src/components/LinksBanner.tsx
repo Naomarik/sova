@@ -5,11 +5,13 @@ import { Banner, CopyButton } from "./ui";
 
 export type Links = OfferLink[];
 
-/** Links minted for a new session or offer: shown once, one row per person. */
-export function LinksBanner(props: { links: Links; onDismiss(): void }) {
+/** Links minted for a new session or offer: shown once, one row per person. `warning`: why they
+    can't be opened from outside yet (no share listener on this host). `replaced`: a link a Get
+    Link elsewhere turned off, said in place of its text and Copy Link. */
+export function LinksBanner(props: { links: Links; warning?: string; replaced?(link: OfferLink): boolean; onDismiss(): void }) {
   return (
     <Banner
-      tone="info"
+      tone={props.warning ? "warn" : "info"}
       title={props.links.length === 1 ? `${props.links[0]!.name}'s link — shown once` : `${props.links.length} links — shown once`}
       body={
         <span class="project-links">
@@ -19,11 +21,19 @@ export function LinksBanner(props: { links: Links; onDismiss(): void }) {
                 <Show when={props.links.length > 1}>
                   <span class="project-link-name">{l.name}</span>
                 </Show>
-                <span class="orgs-mono orgs-link">{l.link}</span>
-                <CopyButton label={`Copy ${l.name}'s Link`} text={() => l.link} onCopy={(t) => copyText(t, "Link copied.")} />
+                <Show
+                  when={!props.replaced?.(l)}
+                  fallback={<span class="field-hint">Replaced by a newer link.</span>}
+                >
+                  <span class="orgs-mono orgs-link">{l.link}</span>
+                  <CopyButton label={`Copy ${l.name}'s Link`} text={() => l.link} onCopy={(t) => copyText(t, "Link copied.")} />
+                </Show>
               </span>
             )}
           </For>
+          <Show when={props.warning}>
+            <span class="field-hint">{props.warning}</span>
+          </Show>
         </span>
       }
       action={

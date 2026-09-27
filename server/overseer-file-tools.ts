@@ -17,7 +17,7 @@ import {
   truncateLine,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { SecretGuard } from "./overseer-deny";
+import { type RootConfinement, SecretGuard } from "./overseer-deny";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
 
 /**
@@ -32,12 +32,23 @@ import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact"
  * receives the absolute path pi resolved (including read's unicode variants). grep can't: pi's grep
  * formats ripgrep's matches itself, so this one runs ripgrep the same way and drops secret files'
  * matches before formatting them.
+ *
+ * With `confine` (the project overseer's), every path is also held to a root: a path argument
+ * outside it (or in an excluded folder) is refused, and listings and searches leave such entries
+ * out, exactly as they do secret files.
  */
 export function overseerFileTools(
   cwd: string,
-  guard: () => SecretGuard = () => new SecretGuard(),
+  secrets: () => SecretGuard = () => new SecretGuard(),
   redactor: () => Redactor = serverRedactor,
+  confine?: () => RootConfinement,
 ): ToolDefinition[] {
+  const guard = (): PathGuard => {
+    const s = secrets();
+    const c = confine?.();
+    if (!c) return s;
+    return { check: (p) => (c.check(p), s.check(p)), isSecret: (p) => c.problem(p) !== null || s.isSecret(p) };
+  };
   const read = createReadToolDefinition(cwd);
   const find = createFindToolDefinition(cwd);
   const ls = createLsToolDefinition(cwd);
@@ -87,6 +98,9 @@ export function overseerFileTools(
   ].map((t) => redactingTool(t as ToolDefinition, redactor, { args: false }));
 }
 
+/** What the tools ask of a path: refuse it (`check`), or leave it out of a result (`isSecret`). */
+type PathGuard = Pick<SecretGuard, "check" | "isSecret">;
+
 /** pi's path argument rule (`@` stripped, `~` expanded, relative to cwd). */
 function resolveArg(p: string, cwd: string): string {
   let s = p.startsWith("@") ? p.slice(1) : p;
@@ -102,7 +116,7 @@ function toolBinary(name: "rg" | "fd"): string {
 }
 
 /** pi's find, through fd with pi's arguments, secret files left out (and not counted against the limit). */
-async function fdGlob(pattern: string, searchPath: string, ignore: string[], limit: number, g: SecretGuard): Promise<string[]> {
+async function fdGlob(pattern: string, searchPath: string, ignore: string[], limit: number, g: PathGuard): Promise<string[]> {
   const args = ["--glob", "--color=never", "--hidden", "--absolute-path"];
   for (const i of ignore) args.push("--exclude", i.replace(/^\*\*\//, "").replace(/\/\*\*$/, ""));
   let inGit = false;
@@ -142,7 +156,7 @@ async function fdGlob(pattern: string, searchPath: string, ignore: string[], lim
 type GrepParams = { pattern: string; path?: string; glob?: string; ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number };
 
 /** pi's grep (same arguments, same output), with secret files' matches dropped before they count. */
-async function guardedGrep(p: GrepParams, cwd: string, signal: AbortSignal | undefined, g: SecretGuard) {
+async function guardedGrep(p: GrepParams, cwd: string, signal: AbortSignal | undefined, g: PathGuard) {
   const searchPath = resolveArg(p.path || ".", cwd);
   g.check(searchPath);
   let isDir: boolean;

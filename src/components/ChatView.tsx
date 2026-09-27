@@ -1,3 +1,4 @@
+import { archivedDropToast, orgProjectOf } from "../lib/drag-archive";
 import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
@@ -13,6 +14,7 @@ import type {
   WorkerInfo,
 } from "../../shared/protocol";
 import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
+import { batonComposerGate } from "../lib/baton-strip";
 import { OverseerThreadContext, QuickActions } from "./OverseerCards";
 import { BatonStrip } from "./BatonStrip";
 import { ProjectOverseerStrip } from "./ProjectOverseerStrip";
@@ -21,6 +23,7 @@ import { contextStateFor, messageContextTokens, windowOf } from "../lib/context"
 import {
   addPendingPrompt,
   applyEvent,
+  BATON_SENT_EVENT,
   applyQueue,
   emptyLive,
   markDelivered,
@@ -97,12 +100,11 @@ import {
 import type { MessageActionItem } from "./MessageActions";
 import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
-import { entryIdOf } from "../lib/jump";
+import { entryIdOf, landExplainJump } from "../lib/jump";
 import { Composer, type ComposerReason } from "./Composer";
 import { openCreated } from "../lib/fork-stage";
 import { FlyoutSession, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
-import { SessionInfoDialog } from "./SessionInfoDialog";
 import { SessionSetupCard } from "./SessionSetup";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
@@ -150,7 +152,7 @@ const UI_DIALOG_METHODS = ["select", "confirm", "input", "editor"];
  */
 export function ChatView(props: {
   path: string;
-  /** The session-list row for this chat, live from the sidebar's poll: feeds the info modal. */
+  /** The session-list row for this chat, live from the sidebar's poll. */
   summary?: () => SessionSummary | undefined;
   cwdLabel: string;
   author: string;
@@ -175,13 +177,10 @@ export function ChatView(props: {
   /** The pane's active tab while it is open for this session ("timeline", "agents", …), else null:
       each status-row trigger is aria-expanded only for its own tab. */
   paneTab?: string | null;
-  /** The session pane re-reads this after its Archive/Unarchive action succeeds; the info modal
-      needs the same, or the sidebar row stays stale until its next poll. An archived session is
-      off the list for good, so the path and the new state go with it. */
+  /** The session list re-reads this after the open-failure banner's Archive succeeds, or the
+      sidebar row stays stale until its next poll. An archived session is off the
+      list for good, so the path and the new state go with it. */
   onArchiveChanged?(path: string, archived: boolean): void;
-  /** The same, after a group change in the info modal (Move into group): the sidebar's Groups
-      region and the row's own groupId come from the session list. */
-  onGroupsChanged?(): void;
   /** A bare "/new" in the composer; resolves to the new session's folder label, or null. */
   onNewSession?(): Promise<string | null>;
   /** Opens the session pane's Timeline tab: a bare "/timeline" unfiltered; a bare "/tree" and
@@ -228,6 +227,9 @@ export function ChatView(props: {
   const turnWord = (member: string, alone: string) => (scope.id ? member : alone);
 
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
+  // "Open in Session" from an Explanations card: once the transcript is here (hello), land on that
+  // explanation's row. Only a jump waiting for this session is claimed, and only once.
+  createEffect(on(items, (list) => list && landExplainJump({ path: props.path, sessionId: props.summary?.()?.id }, list, toast)));
   /** Whether the running turn is this tab's: only then does a navigate result move this tab. */
   const owner = createTurnOwner((id) => sentHere(props.path, id));
   const [live, setLive] = createStore<LiveState>(emptyLive());
@@ -259,8 +261,6 @@ export function ChatView(props: {
   /** Level asked for, until the echo. A refusal ends it and leaves the level as it was. */
   const [pendingThinking, setPendingThinking] = createSignal<string | null>(null);
   const [thinkingError, setThinkingError] = createSignal<{ target: string; from: string | null; body: string } | null>(null);
-  /** The per-session info modal, opened from the composer flyout. */
-  const [showInfo, setShowInfo] = createSignal(false);
   const [showPlaybooks, setShowPlaybooks] = createSignal(false);
 
   /**
@@ -666,6 +666,12 @@ export function ChatView(props: {
         // to: hello's own items carry them.
         case "append":
           setItems((list) => (list ? appendItems(list, msg.items) : list));
+          // A baton sender marker also names the live row it follows, in event order (applyEvent).
+          for (const it of msg.items)
+            if (it.batonMark?.kind === "sent") {
+              queue.push({ type: BATON_SENT_EVENT, by: it.batonMark.by });
+              if (!frame) frame = requestAnimationFrame(flush);
+            }
           break;
         case "mode":
           setModeState({ mode: msg.mode, minorModes: msg.minorModes, strict: msg.strict, applies: msg.applies });
@@ -1023,16 +1029,15 @@ export function ChatView(props: {
 
   /** Whether the operator holds this baton session's baton, from its strip; undefined until it has read. */
   const [batonMine, setBatonMine] = createSignal<boolean | undefined>(undefined);
+  const batonGate = (): ComposerReason | null => {
+    const g = batonComposerGate(props.summary?.()?.baton, batonMine());
+    return g && { icon: g.ended ? "check" : "clock", text: g.text };
+  };
   const blocked = (): ComposerReason | null => {
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
-    const baton = props.summary?.()?.baton;
-    if (baton && (baton.state === "done" || baton.state === "closed")) return { icon: "check", text: `This hand-off session is ${baton.state}.` };
-    if (baton?.offer?.state === "held") return { icon: "clock", text: `${baton.offer.holder ?? "Someone"} took the offer and is answering. Withdraw it to write.` };
-    if (baton?.offer?.state === "open") return { icon: "clock", text: `Offered to ${baton.offer.invited} people; nobody has answered yet. Withdraw it to write.` };
-    // "open" with the operator holding (after Take Back and a reply) is the operator's turn: the
-    // list's field carries only the holder's display name, so the strip's own read says whose it is.
-    if (baton && baton.state === "open" && batonMine() !== true) return { icon: "clock", text: `${baton.holder ?? "Someone"} holds the baton. Take it back to write.` };
+    const baton = batonGate();
+    if (baton) return baton;
     switch (socket.status()) {
       case "connecting":
         return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : { icon: "clock", text: "Connecting…" };
@@ -1310,14 +1315,14 @@ export function ChatView(props: {
     socket.retry();
   };
   /** The pane's Archive gesture, on the same endpoint with the same toast and list refresh:
-      moves this session to the Archive region and deletes nothing (the title says so). Then
-      out of the dead session, on the app's own route to the landing page (the back link's). */
+      moves this session to the Archive region (an empty husk is deleted instead, and the toast
+      says which). Then out of the dead session, on the app's own route to the landing page (the back link's). */
   const archive = async () => {
     if (archiving()) return;
     setArchiving(true);
     try {
-      await setSessionArchived(props.path, true);
-      toast("Archived. Find it under Archive.");
+      const res = await setSessionArchived(props.path, true);
+      toast(archivedDropToast(!!res.deleted, orgProjectOf(props.summary?.() ?? {})).text);
       props.onArchiveChanged?.(props.path, true);
       if (!scope.id) location.hash = "#/";
     } catch (err) {
@@ -1329,11 +1334,6 @@ export function ChatView(props: {
 
   /** A baton session's names, from its strip (§app/baton). */
   const [batonNames, setBatonNames] = createSignal<Record<string, string> | undefined>(undefined);
-  /** A done or closed baton session takes no more messages: the box goes read-only, not just Send. */
-  const batonEnded = (): ComposerReason | null => {
-    const b = props.summary?.()?.baton;
-    return b && (b.state === "done" || b.state === "closed") ? { icon: "check", text: `This hand-off session is ${b.state}.` } : null;
-  };
   return (
     <>
       <Show when={props.summary?.()?.baton}>
@@ -1465,6 +1465,7 @@ export function ChatView(props: {
               <LiveEntries
                 live={live}
                 author={props.author}
+                names={batonNames()}
                 hideTools={hideTools(props.path)}
                 hideThinking={hideThinking(props.path)}
                 queueActions={queueActions}
@@ -1534,7 +1535,7 @@ export function ChatView(props: {
         path={props.path}
         cwd={props.summary?.()?.cwd ?? null}
         blocked={blocked()}
-        readOnly={batonEnded()}
+        readOnly={batonGate()}
         commands={props.overseer ? commands().filter((c) => c.name !== "mode") : commands()}
         running={live.running}
         compacting={compacting()}
@@ -1577,7 +1578,6 @@ export function ChatView(props: {
         thinking={thinkingControl}
         mode={props.overseer || props.summary?.()?.baton || props.summary?.()?.projectOverseer ? null : modeControl}
         sandbox={sandboxControl}
-        onShowInfo={() => setShowInfo(true)}
         onPlaybooks={() => setShowPlaybooks(true)}
         onFanOut={fanOut()}
         undo={undoControl}
@@ -1586,23 +1586,6 @@ export function ChatView(props: {
         restored={restored()}
       />
       </FlyoutSession.Provider>
-      <Show when={showInfo()}>
-        <SessionInfoDialog
-          path={props.path}
-          summary={props.summary}
-          onArchiveChanged={props.onArchiveChanged}
-          onGroupsChanged={props.onGroupsChanged}
-          items={() => items() ?? []}
-          context={() => {
-            const state = sessionContext()[props.path];
-            return state && state !== "compacted" ? state : null;
-          }}
-          onClose={() => {
-            setShowInfo(false);
-            queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());
-          }}
-        />
-      </Show>
       <Show when={showPlaybooks()}>
         <PlaybooksDialog
           path={props.path}

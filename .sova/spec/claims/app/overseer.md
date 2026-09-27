@@ -36,11 +36,13 @@ are atomic tmp+rename.
 - **Route.** `#/overseer` is the identity. The app resolves it through `GET /api/overseer` and
   mounts the normal chat view on that path, keyed on the path, so a rotation remounts it cleanly.
   The view's head reads "Overseer" (no cwd).
-- **Hidden everywhere else.** `SessionSummary.overseer` is set by that rule. No Overseer file,
-  current or historical, appears in any sidebar region, search, Recent, the spine, the cleanup
-  count or a group's candidates. Its folder (`<stateRoot>/overseer/`) is never offered as a recent
-  folder (`GET /api/cwds`, the New Session dialog's Recent folders, `sova_list_folders`), even if
-  some other session was once started there.
+- **Hidden everywhere else.** `SessionSummary.overseer` is set by that rule. An Overseer file,
+  current or historical, is a special session (§app.session-list/ordinary-surfaces, the one list of
+  what that means, shared with organization sessions): it appears on no ordinary surface — no
+  sidebar region, Recent, the spine, the cleanup count or a group's candidates — and, unlike an
+  organization session, in no search and no region of its own. Its folder (`<stateRoot>/overseer/`)
+  is never offered as a recent folder (`GET /api/cwds`, the New Session dialog's Recent folders,
+  `sova_list_folders`), even if some other session was once started there.
 - **`/clear`.** A bare `/clear` is a local command recognised **only** in the Overseer's composer
   (elsewhere it is an ordinary message). It and the head's **Clear** action call
   `POST /api/overseer/clear`, which never refuses: it stops a running turn, disposes the runtime,
@@ -91,17 +93,22 @@ are atomic tmp+rename.
 The tools call the existing REST routes in-process, so every guard those routes have already
 (TUI-live refusal, archived refusal, the model policy; for archive and set-session, the mid-turn and
 working-subagent refusals) applies unchanged, and their refusal sentences come back as the tool's
-error. Sessions are addressed by id. No tool passes `force`.
+error. Sessions are addressed by id, bare or in any form the tools print it (`sova://s/<id>`,
+`s/<id>`, a `[title](sova://s/<id>)` link). No tool passes `force`.
 
 - **Read** (no side effects): the attention digest; list sessions (compact rows); one session's
-  detail; a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
+  detail, whose summary topics read newest first, as the insight strip lists them
+  (§app.insights/insight-strip), each heading with how long ago it was last updated
+  (`Topics (newest first): Merge (1m ago); Sandbox menu (2h ago)`); a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
   untrusted content from another session, read with Sova's own parser so a TUI-live file is never
   opened for writing); list groups, targets, models and folders; the ideas backlog (`sova_ideas`: its table of contents,
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the
   user's todos (`sova_todos`: open, done or all; §app.overseer/todos).
 - **Act:** create a session in any folder or remote target, with an optional first prompt, model,
   mode and minor modes (`minor_modes`, e.g. `["spec"]`); the mode and minor modes are set before the
-  first prompt is sent, so its first turn already runs in them. An unknown mode or minor mode refuses
+  first prompt is sent, so its first turn already runs in them, and written into the session as its
+  `mode` entry even when they equal the default, so a later change to the default never moves it
+  (the same for `sova_set_session`). An unknown mode or minor mode refuses
   the whole call before any session is created, and a mode switch that fails sends no prompt: the
   result says the session was created but its first prompt was not sent. Send a message to a
   session (below); archive and unarchive
@@ -334,7 +341,9 @@ itself.
   input.
 - **FYI:** running now; context at or above 85%; idle web sessions older than 3 days that aren't
   archived and have no draft.
-- Items are sorted by tier, then age, capped at 30, each with at most 200 characters of detail and
+- Items are sorted by tier, then age, capped at 30 (every kind present keeps at least its newest
+  item, which takes the place of the last kept item of the lowest tier, so a flood of one kind
+  never hides another), each with at most 200 characters of detail and
   an in-app link. The `sova_attention` tool and `GET /api/overseer/attention` return it; the
   sidebar's Needs you region (§app.session-list/needs-you) lists its act tier, and the Overseer
   head's counts and menus come from it.

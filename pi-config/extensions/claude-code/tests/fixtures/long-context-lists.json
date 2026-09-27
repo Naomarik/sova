@@ -1,0 +1,26 @@
+{
+  "about": "Discovered Claude model lists and the list every surface must offer after withLongContextVariants (context-window.ts). Read by this extension's context-window.test.ts (agent_models and the chat picker) AND by Sova's server/delegate.test.ts (Settings lists), so all three agree. `expected` is [id, name, efforts?] in order.",
+  "cases": [
+    { "name": "the CLI's 2026-09-27 shape: bare aliases only, so the [1m] forms are added right after their base", "input": [
+      { "id": "opus", "name": "Opus 5.5", "efforts": ["low", "medium", "high", "xhigh", "max"] },
+      { "id": "claude-fable-5-1", "name": "Fable 5.1", "efforts": ["low", "high"] },
+      { "id": "sonnet", "name": "Sonnet 5", "efforts": ["low"] },
+      { "id": "haiku", "name": "Haiku 4.5" } ],
+      "expected": [
+      ["opus", "Opus 5.5", ["low", "medium", "high", "xhigh", "max"]],
+      ["opus[1m]", "Opus 5.5 (1M context)", ["low", "medium", "high", "xhigh", "max"]],
+      ["claude-fable-5-1", "Fable 5.1", ["low", "high"]],
+      ["claude-fable-5-1[1m]", "Fable 5.1 (1M context)", ["low", "high"]],
+      ["sonnet", "Sonnet 5", ["low"]],
+      ["haiku", "Haiku 4.5"] ] },
+    { "name": "the 2026-09-22 shape already lists the [1m] forms: nothing added, nothing reordered", "input": [
+      { "id": "claude-fable-5-1[1m]", "name": "Fable" },
+      { "id": "opus[1m]", "name": "Opus (1M context)" },
+      { "id": "opus", "name": "Opus" } ],
+      "expected": [["claude-fable-5-1[1m]", "Fable"], ["opus[1m]", "Opus (1M context)"], ["opus", "Opus"]] },
+    { "name": "only the known bases gain a variant", "input": [
+      { "id": "sonnet", "name": "Sonnet" }, { "id": "claude-opus-5-5", "name": "Opus 5.5" }, { "id": "fable", "name": "Fable" } ],
+      "expected": [["sonnet", "Sonnet"], ["claude-opus-5-5", "Opus 5.5"], ["fable", "Fable"]] },
+    { "name": "an empty list stays empty", "input": [], "expected": [] }
+  ]
+}

@@ -1,9 +1,9 @@
 // Run: pnpm exec tsx --test server/baton-view.test.ts. Pure: no files, no agent dir.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BATON_DECISION_ENTRY, BATON_DONE_ENTRY, BATON_ENTRY, BATON_HANDOFF_ENTRY, BATON_SENT_ENTRY } from "../shared/baton";
+import { BATON_DECISION_ENTRY, BATON_DONE_ENTRY, BATON_ENTRY, BATON_HANDOFF_ENTRY, BATON_OFFER_ENTRY, BATON_SENT_ENTRY, BATON_WRAPUP_ENTRY } from "../shared/baton";
 import { OVERSEER_SENT_ENTRY } from "../shared/protocol";
-import { batonView, redactPhrases } from "./baton-view";
+import { authorNotes, batonView, labelAuthors, redactPhrases } from "./baton-view";
 
 const names = { operator: "Omar", p_t: "Tony", p_m: "Maria" };
 const custom = (id: string, customType: string, data: unknown) => ({ type: "custom", id, customType, data });
@@ -82,4 +82,60 @@ test("a message whose sender marker hasn't landed yet is the holder's only when 
     v.items.map((i) => (i.kind === "message" ? i.name : "")),
     ["Someone", "Maria"],
   );
+});
+
+/** A model context as pi builds it from `branch`: the user and assistant messages, timestamps kept. */
+const contextOf = (branch: any[]) => branch.filter((e) => e.type === "message" && e.message.role !== "system").map((e) => structuredClone(e.message));
+const at = (e: any, timestamp: number) => ((e.message.timestamp = timestamp), e);
+const texts = (messages: any[]) => messages.filter((m) => m.role === "user").map((m) => (typeof m.content === "string" ? m.content : m.content.map((b: any) => b.text ?? "").join("")));
+
+test("the model's context: each person's message opens with its own author, and the moves since the one before", () => {
+  const branch = BRANCH.map((e: any) => (e.type === "message" ? at(structuredClone(e), Number(e.id.replace(/\D/g, "") || 0) + 1) : e));
+  const labelled = labelAuthors(contextOf(branch), authorNotes(branch, names, null));
+  assert.deepEqual(texts(labelled), [
+    "[The conversation passed from Omar (the operator) to Tony]\n[From Tony]\nOn srv-01.",
+    "[The conversation passed from Tony to Maria]\n[From Maria]\nExcel please. Omar decides bonuses.",
+    "[From Omar (the operator)]\nYes, include bonuses.",
+  ]);
+  // Tony's words are never Maria's and hers never his (a label that only named the holder would fail here).
+  assert.doesNotMatch(texts(labelled)[0]!, /Maria/);
+  assert.doesNotMatch(texts(labelled)[1]!, /From Tony/);
+  const image = labelled.find((m: any) => m.role === "user")!.content as any[];
+  assert.equal(image.at(-1).type, "image", "the person's own blocks are kept, after the label");
+  assert.ok(labelled.filter((m: any) => m.role === "assistant").every((m: any, i: number) => m === labelled.filter((x: any) => x.role === "assistant")[i]));
+});
+
+test("labels are the markers' (one rule with the views): the unmarked last message is the holder's; an earlier one is someone's", () => {
+  const branch = [at(msg("u1", "user", "first"), 1), at(msg("u2", "user", "second"), 2)];
+  assert.deepEqual(texts(labelAuthors(contextOf(branch), authorNotes(branch, names, "p_m"))), ["[From someone]\nfirst", "[From Maria]\nsecond"]);
+});
+
+test("an offer is a line; the wrap-up's prompt and anything after its marker carry no author", () => {
+  const branch = [
+    custom("o1", BATON_OFFER_ENTRY, { v: 1, n: 1, offerId: "of", from: "operator", to: ["p_t", "p_m"], question: "Q?", briefing: "B" }),
+    at(msg("u1", "user", "mine"), 1),
+    custom("m1", BATON_SENT_ENTRY, { v: 1, targetId: "u1", by: "p_m" }),
+    custom("w1", BATON_WRAPUP_ENTRY, { v: 1, phase: "start" }),
+    at(msg("u2", "user", "[Wrap-up] record profiles"), 2),
+  ];
+  assert.deepEqual(texts(labelAuthors(contextOf(branch), authorNotes(branch, names, "p_m"))), [
+    "[Omar (the operator) offered the conversation to Tony, Maria]\n[From Maria]\nmine",
+    "[Wrap-up] record profiles",
+  ]);
+});
+
+test("a message is found by its timestamp and text, in branch order, and matched on the context before redaction", () => {
+  // The same words twice, by two people; a context that starts later (a compaction dropped the first).
+  const branch = [
+    at(msg("u1", "user", "ok"), 1),
+    custom("m1", BATON_SENT_ENTRY, { v: 1, targetId: "u1", by: "p_t" }),
+    at(msg("u2", "user", "ok sk-SECRET"), 2),
+    custom("m2", BATON_SENT_ENTRY, { v: 1, targetId: "u2", by: "p_m" }),
+  ];
+  const original = contextOf(branch).slice(1);
+  const redacted = original.map((m: any) => ({ ...m, content: "ok [redacted]" }));
+  const out = labelAuthors(redacted, authorNotes(branch, names, null), original);
+  assert.deepEqual(texts(out), ["[From Maria]\nok [redacted]"]);
+  const none = [{ role: "user", content: "not on the branch", timestamp: 9 }];
+  assert.equal(labelAuthors(none, authorNotes(branch, names, null)), none, "nothing labelled: the same array");
 });

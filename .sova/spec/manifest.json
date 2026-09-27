@@ -144,7 +144,10 @@
     "§app.session-list/archive-cleanup": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "server/sessions-index.ts"
+      ]
     },
     "§app.session-list/content-rules": {
       "kind": "behavior",
@@ -4490,6 +4493,19 @@
         "pi-config/extensions/claude-code/tests/fixtures/long-context-lists.json",
         "pi-config/extensions/claude-code/index.ts",
         "pi-config/extensions/claude-code/provider/index.ts"
+      ]
+    },
+    "§app.session-list/cleanup-org-guard": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/archive-cleanup",
+        "§app.organizations/workspace-repo"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sessions-index.ts",
+        "server/cleanup-org-guard.test.ts"
       ]
     }
   },

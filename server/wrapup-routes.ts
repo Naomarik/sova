@@ -38,8 +38,8 @@ export async function retryWrapup(sessionId: string, tools: readonly string[] = 
   const hit = batonById(sessionId);
   if (!hit) throw new RetryError("Unknown baton session", 404);
   const before = hit.row.wrapup;
+  if (wrapupActive(sessionId) || before?.state === "running") throw new RetryError("The wrap-up is already running.", 409);
   if (before?.state !== "failed") throw new RetryError("Only a wrap-up that stopped can be retried.", 409);
-  if (wrapupActive(sessionId)) throw new RetryError("The wrap-up is already running.", 409);
   if (heldChat(sessionPathOf(hit.dir, hit.row))?.session.isStreaming) throw new RetryError("A reply is running in this session. Retry when it finishes.", 409);
   clearWrapup(sessionId);
   let result: Awaited<ReturnType<typeof runWrapup>> | undefined;

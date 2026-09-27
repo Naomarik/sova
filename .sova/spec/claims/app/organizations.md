@@ -531,7 +531,9 @@ Organizations region's own Needs you, never the global one.
 - **A turn that stops is a failed wrap-up.** A wrap-up turn that errors, or is stopped (by the
   stream guard, §chat.transcript/runaway-stream, or an abort), records `state: "failed"` with its
   reason — "A tool call's arguments passed 65,536 characters, so the stream guard ended the turn."
-  for a guard stop — and the strip says "Wrap-up stopped: {reason} Profiles it didn't reach are
+  for a guard stop, "The server shut down during the wrap-up." for a graceful shutdown's stop, else
+  the model's error, else "The wrap-up turn ended without an answer." Only the wrap-up turn's own
+  answer counts: a stop that leaves it none is failed, never read as the session's earlier turn. The strip says "Wrap-up stopped: {reason} Profiles it didn't reach are
   unchanged." Updates it applied before stopping stay applied.
 - **A row can't stay running.** A row whose wrap-up says `running` while no process runs it — left
   by a server that stopped mid-run, or older than any run can be (the guard's 10-minute limit plus a
@@ -541,7 +543,8 @@ Organizations region's own Needs you, never the global one.
   do it again). The strip shows **Retry Wrap-Up** beside it; it clears the failure and runs the
   wrap-up again (`POST /api/baton/:sid/wrapup/retry`, answered with the strip's info once the new run
   shows), only while no wrap-up and no reply runs in the session — otherwise it is refused (409) and
-  says why, and a wrap-up in any other state is never retried. While a wrap-up runs, the strip
+  says why ("The wrap-up is already running." while one runs, a retry's included), and a wrap-up in
+  any other state is never retried. While a wrap-up runs, the strip
   re-reads itself until it ends.
 
 ## §app.organizations/projects — The org's projects

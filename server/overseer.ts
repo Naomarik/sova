@@ -69,6 +69,7 @@ import { normalizeEntries, readActiveBranch } from "./transcript";
 import { markOwned } from "./write-guard";
 import { signalTextOf } from "./signals-store";
 import { onAttentionChanged } from "./attention-memo";
+import { notifyBlockers, pushWanted, resetPushState } from "./push";
 
 /**
  * The Overseer: ONE special Sova session that watches every other session and acts on them
@@ -863,13 +864,19 @@ async function tick(): Promise<void> {
   await applySettingsNow();
   const settings = readOverseerSettings();
   const st = readOverseerState();
+  // Phone notifications (server/push.ts) ride the same digest, with no Overseer needed and under
+  // every proactivity. With nothing to send to, the digest is read only for a brief.
+  const wanted = pushWanted();
+  if (!wanted) resetPushState();
+  if (!st && !wanted) return; // no Overseer yet and no phone to tell: nothing to do
+  const digest = await attentionDigest();
+  const act = digest.items.filter((i) => i.tier === "act");
+  if (wanted) await notifyBlockers(act, digest.badge.act);
   if (!st) return; // no Overseer yet: nothing to brief
   const path = await pathOfId(st.current);
   if (!path) return;
   // The user looked at the Overseer since the last brief: the unattended run starts over.
   if ((readSeen()[st.current] ?? 0) > lastBriefAt || isViewing(st.current)) unattended = 0;
-  const digest = await attentionDigest();
-  const act = digest.items.filter((i) => i.tier === "act");
   const chat = heldChat(path);
   const idle = !chat || (!chat.session.isStreaming && chat.queue.size === 0);
   const d = briefDecision({ current: act.map(blockerKey), announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt, unattended, overseerIdle: idle });
@@ -889,8 +896,9 @@ async function tick(): Promise<void> {
 }
 
 let ticking = false;
-/** Start the background loop (index.ts, once). Brief turns start only under "brief"; the loop also
-    applies a Settings model change that arrived mid-turn. */
+/** Start the background loop (index.ts, once). Brief turns start only under "brief"; phone
+    notifications go out under any proactivity; the loop also applies a Settings model change that
+    arrived mid-turn. */
 export function startOverseerLoop(): void {
   const timer = setInterval(() => {
     if (ticking) return;

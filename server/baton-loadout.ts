@@ -9,6 +9,7 @@ import {
   BATON_LEASE_ENTRY,
   BATON_OFFER_ENTRY,
   BATON_PROPOSAL_ENTRY,
+  LIMIT_QUESTION,
   OPERATOR,
   type BatonDecisionData,
   type BatonDoneData,
@@ -148,8 +149,7 @@ export async function moveBaton(sessionId: string, to: PersonRef, question: stri
   return n;
 }
 
-/** The Needs-you question when the limit sends the baton to the operator. */
-export const LIMIT_QUESTION = "The message limit is reached. Extend it to go on, or close the session.";
+export { LIMIT_QUESTION };
 
 /**
  * The budget stop (§app.baton/goal-and-loadout): once a session's messages reach its limit, the

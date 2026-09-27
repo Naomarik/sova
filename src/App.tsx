@@ -22,6 +22,7 @@ import {
   setSessionArchived,
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
+import { actSessionCount, setAppBadge } from "./lib/push";
 import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
@@ -307,6 +308,16 @@ export function App() {
     reading: attentionReading,
     refetch: attentionPoll.refetch,
   };
+  // The app badge (an installed app, with notifications allowed): the sessions that need you, kept
+  // current from the digest this page already reads; zero clears it (lib/push.ts).
+  const badgeCount = createMemo(() => {
+    const d = attentionPoll.data();
+    return d ? actSessionCount(d) : null;
+  });
+  createEffect(() => {
+    const n = badgeCount();
+    if (n !== null) setAppBadge(n);
+  });
   const extensions = createPoll(fetchExtensions, EXTENSIONS_POLL_MS);
   /** The landing page shows the Extensions section only when something is installed. */
   const installed = createMemo(() => {

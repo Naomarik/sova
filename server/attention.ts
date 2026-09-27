@@ -193,4 +193,4 @@ export function workerErrorTime(failed: number, rowTimes: number[], risenAt?: nu
 }
 
 /** A stable key per blocker, for "Brief me": a NEW key is a new blocker. */
-export const blockerKey = (it: AttentionItem) => `${it.id}:${it.kind}`;
+export const blockerKey = (it: Pick<AttentionItem, "id" | "kind">) => `${it.id}:${it.kind}`;

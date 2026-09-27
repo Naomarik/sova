@@ -1,6 +1,6 @@
 import type { WebSocket } from "ws";
-import { OPERATOR, type BatonSession, type BatonView, type BatonViewItem, type PersonRef, type ShareServerMessage } from "../../shared/baton";
-import { batonById, heldOffer, linkAccess, namesOf, sessionPathOf } from "../baton";
+import { OPERATOR, type BatonSession, type GoneWhy, type BatonView, type BatonViewItem, type PersonRef, type ShareServerMessage } from "../../shared/baton";
+import { batonById, linkAccess, namesOf, outsiderCut, sessionPathOf } from "../baton";
 import { batonView, conversationVocabulary, redactPhrases, secretPhrases } from "../baton-view";
 import { profileRedactTexts, publicTerms, readOrg, readRoster } from "../orgs";
 
@@ -55,12 +55,11 @@ export async function readView(row: BatonSession, dir: string, viewer?: PersonRe
 
 /** The view a token's holder gets, with what their link may do now. An offer's invitee who has not
     held THAT offer sees the conversation only up to it: never what another invitee said since, even
-    when they held an earlier hand-off of the session. */
-export async function viewForToken(token: string): Promise<BatonView | { status: 404 | 410 }> {
+    when they held an earlier hand-off of the session, and through any link of theirs (outsiderCut). */
+export async function viewForToken(token: string): Promise<BatonView | { status: 404 | 410; why?: GoneWhy }> {
   const access = linkAccess(token);
-  if (!access.ok) return { status: access.status };
-  const outsider = !!access.link.offerId && !heldOffer(access.row, access.link.offerId, access.link.personId);
-  const view = await readView(access.row, access.dir, access.link.personId, outsider ? access.link.n : undefined);
+  if (!access.ok) return { status: access.status, ...(access.why ? { why: access.why } : {}) };
+  const view = await readView(access.row, access.dir, access.link.personId, outsiderCut(access.row, access.link.personId));
   const names = namesOf(access.row.orgId);
   return {
     ...view,
@@ -122,8 +121,9 @@ export function sweepWatchers(): number {
   let closed = 0;
   for (const set of watchers.values())
     for (const w of [...set]) {
-      if (linkAccess(w.token).ok) continue;
-      send(w, { type: "error", code: "gone", message: "This link is no longer active." });
+      const access = linkAccess(w.token);
+      if (access.ok) continue;
+      send(w, { type: "error", code: "gone", message: "This link is no longer active.", ...(access.why ? { why: access.why } : {}) });
       w.socket.close(4410, "gone");
       set.delete(w);
       closed++;
@@ -151,7 +151,7 @@ async function pushViews(sessionId: string): Promise<void> {
     const view = await viewForToken(w.token).catch(() => null);
     if (!view) continue;
     if ("status" in view) {
-      send(w, { type: "error", code: view.status === 410 ? "gone" : "not-found", message: view.status === 410 ? "This link is no longer active." : "Unknown link." });
+      send(w, { type: "error", code: view.status === 410 ? "gone" : "not-found", message: view.status === 410 ? "This link is no longer active." : "Unknown link.", ...(view.why ? { why: view.why } : {}) });
       w.socket.close(4410, "gone");
       continue;
     }
@@ -175,10 +175,10 @@ export function streamShare(sessionId: string, text: string): void {
   for (const w of set) if (!offerOutsider(w.token)) send(w, { type: "streaming", text: redacted });
 }
 
-/** Whether a token is an offer link of someone who has never held that offer. */
+/** Whether a token's person reads the session only up to an offer they never held (outsiderCut). */
 export function offerOutsider(token: string): boolean {
   const access = linkAccess(token);
-  return !access.ok || (!!access.link.offerId && !heldOffer(access.row, access.link.offerId, access.link.personId));
+  return !access.ok || outsiderCut(access.row, access.link.personId) !== undefined;
 }
 
 export const watcherCount = (sessionId: string): number => watchers.get(sessionId)?.size ?? 0;

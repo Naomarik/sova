@@ -22,6 +22,22 @@
 //                                     its own parser and redacts it with its own secrets; 404 unknown
 //                                     session)
 //
+// File offers (§mesh.links/offers, §mesh.links/transfer). Pull, never push: the sender packs once
+// into a spool at offer time, each recipient's host pulls it with Range and reports back.
+// POST /api/peer/links/:id/offers     PeerLinkOffer -> PeerLinkOfferResult   (64 KiB bodyLimit;
+//                                     caller = offer.from.nodeId and a member; the one row is this
+//                                     host's member. Refusals are 200 {state:"refused"}; 404 unknown
+//                                     link: the sender re-copies the link first, as for messages)
+// GET  /api/peer/links/:id/offers/:offer/tar   (Range: bytes=N-, If-Range: "<sha256>")
+//                                     200/206 application/zstd, ETag "<sha256>", Accept-Ranges,
+//                                     Content-Length, Content-Range. 503 {state:"packing", written}
+//                                     + Retry-After while the spool is incomplete; 403 the caller is
+//                                     not a recipient or its row isn't accepted/pulling; 410 its row
+//                                     is final, or the offer expired, was cancelled or its link ended
+//                                     (spool gone); 416 Range past the end; 404 unknown offer
+// POST /api/peer/links/:id/offers/:offer/result   PeerOfferReport -> {ok:true}   (small bodyLimit;
+//                                     caller = the row's recipient; state transitions only, idempotent)
+//
 // Main listener, local acts (under /api/mesh/, so the peer listener refuses them and the page proxy
 // never forwards them; 404 while the mesh is off). The acting session is named in the body or query
 // and must be a session this host holds (a loaded runtime) and a member of the link: sender
@@ -33,11 +49,20 @@
 // POST /api/mesh/links/:id/end        -> MeshLinkView   (sova_unlink; fans out)
 // POST /api/mesh/links/send           LinkSend -> LinkSendResult   (link_send)
 // GET  /api/mesh/links/inbox?session=<id>&limit=<n>  -> LinkInbox   (link_inbox, newest last)
+// POST /api/mesh/links/offers         LinkOfferCreate -> LinkOfferCreateResult   (link_offer: list
+//                                     the paths, write the offer, start packing, fan out; 400/409
+//                                     LinkError with an OfferRefusal before anything is written)
+// POST /api/mesh/links/offers/:offer/accept   LinkOfferAnswer -> LinkOffer   (link_accept; the
+//                                     recipient's row must be `offered` and unexpired)
+// POST /api/mesh/links/offers/:offer/decline  LinkOfferDecline -> LinkOffer   (link_decline)
+// GET  /api/mesh/links/offers?session=<id>    -> LinkOffersList   (link_offers: both directions,
+//                                     newest first)
 //
 // Main listener, page reads (ordinary /api/ routes: a page reaches a peer's through
 // /peer/<id>/api/links/…; not tool acts, so a peer reaching them does no harm):
 // GET  /api/links/:id/thread          -> LinkThread   (this host's inbox files for that link,
-//                                     merged, deduped by message id, oldest first)
+//                                     merged, deduped by message id, oldest first; plus this host's
+//                                     copies of the link's offers)
 // POST /api/links/:id/seen            LinkSeen -> {ok:true}   (the pane opened the thread: messages
 //                                     from `from` up to `at` stop counting as unread)
 //
@@ -124,6 +149,9 @@ export interface LinkInboxRecord extends LinkMessage {
   deliveries?: LinkDelivery[];
   /** dir "in": this member's own outcome. */
   delivery?: LinkDelivery;
+  /** A file offer's notice (the offer itself, its landing, a decline, the sender's one wake): an
+      ordinary link message whose record is upserted by message id as the offer moves on. */
+  offer?: { id: string; event: LinkOfferEvent };
 }
 
 /** One line of `<stateRoot>/mesh-links/outbox.jsonl`: something for a peer that was down. Drained
@@ -138,6 +166,8 @@ export type LinkOutboxEntry = {
   | { kind: "link"; body: PeerLinkCopy }
   | { kind: "end"; linkId: string; body: PeerLinkEnd }
   | { kind: "message"; linkId: string; body: PeerLinkMessage }
+  | { kind: "offer"; linkId: string; body: PeerLinkOffer }
+  | { kind: "offer-report"; linkId: string; offerId: string; body: PeerOfferReport }
 );
 
 // --- Peer route bodies ---
@@ -210,7 +240,7 @@ export interface LinkCreate {
 /** A 4xx body from a local act. `member` is the index into LinkCreate.members it names. */
 export interface LinkError {
   error: string;
-  reason?: LinkRefusal | "same-host" | "too-few" | "worker" | "skewed";
+  reason?: OfferRefusal | "same-host" | "too-few" | "worker" | "skewed";
   member?: number;
 }
 export interface LinkSend {
@@ -238,6 +268,8 @@ export interface LinkThread {
   link: MeshLink;
   /** Oldest first, both directions, deduped by message id. */
   messages: LinkInboxRecord[];
+  /** This host's copies of the link's offers, oldest first (by `at`). Absent from an older host. */
+  offers?: LinkOffer[];
 }
 export interface LinkSeen {
   /** The local member whose pane read it. */
@@ -269,6 +301,188 @@ export interface LinkedAgentInfo {
   lastActivity?: number; // ms epoch
   /** Messages from this member not yet seen here (LinkSeen). */
   unread: number;
+  /** The newest non-final file transfer with this member, either way. Absent from an older host. */
+  transfer?: LinkedTransfer;
+}
+
+/** LinkedAgentInfo.transfer: what the row's chip says. `received`/`size` are compressed bytes. */
+export interface LinkedTransfer {
+  offerId: string;
+  /** "out": this member's host is sending; "in": it is receiving. */
+  dir: "in" | "out";
+  state: OfferRowState;
+  received?: number;
+  size?: number;
+}
+
+// --- File offers (§mesh.links/offers, §mesh.links/transfer) ---
+
+/** of_ + 16 hex, minted by the sending host. */
+export const OFFER_ID_RE = /^of_[0-9a-f]{16}$/;
+
+/** One recipient's row. `offered`: no dest yet, waiting for link_accept / link_decline;
+    `accepted`: dest known (implicit or answered), the pull hasn't started; `pulling`: bytes
+    moving, or waiting on a packing or down sender; `extracting`: verified, tar is writing dest. */
+export type OfferRowState =
+  | "offered"
+  | "accepted"
+  | "pulling"
+  | "extracting"
+  | "done"
+  | "declined"
+  | "failed"
+  | "expired"
+  | "cancelled"
+  | "refused";
+export const OFFER_FINAL: ReadonlySet<OfferRowState> = new Set<OfferRowState>(["done", "declined", "failed", "expired", "cancelled", "refused"]);
+
+/** Why an offer, or one recipient's row, was refused or failed. Final. */
+export type OfferRefusal =
+  | LinkRefusal
+  | "hidden" // sender sandbox: an offered path is, or holds, a path its tools can't read
+  | "not-writable" // receiver sandbox: dest, or a member under it, is outside its writable roots
+  | "protected" // dest in, or reaching into, Sova's state root or the sessions dir
+  | "no-path" // an offered path doesn't exist, or is `/`
+  | "same-name" // two offered paths share a name (each lands at dest/<its name>)
+  | "no-tar" // no tar on the host
+  | "no-space" // ENOSPC while packing (sender) or downloading (receiver)
+  | "bad-dest" // empty, `~user`, NUL, or not a directory
+  | "bad-hash" // the download didn't match the snapshot twice
+  | "tar-failed"; // tar exited non-zero while packing or extracting
+
+/** One offered path, by the name it lands under at dest; never the sender's absolute path. */
+export interface LinkOfferRoot {
+  name: string;
+  kind: "dir" | "file" | "symlink" | "other";
+  /** Regular files and their bytes, uncompressed, as listed. */
+  files: number;
+  bytes: number;
+}
+
+export type LinkOfferWarning =
+  /** A `.git` file whose gitdir is absolute or resolves outside the offered roots: it carries no
+      history. `path` is from dest (`proj/.git`). */
+  | { kind: "gitlink"; root: string; path: string; gitdir: string }
+  /** GNU tar's exit 1: a file changed while it was packed. */
+  | { kind: "changed"; message: string };
+
+export interface LinkOfferRecipient {
+  to: LinkMemberRef;
+  /** As named: by the sender (implicit) or by the recipient's link_accept. */
+  dest?: string;
+  /** dest was given with the offer: accepted with no turn. */
+  implicit?: boolean;
+  /** Absolute, as the recipient's host resolved it. */
+  resolvedDest?: string;
+  state: OfferRowState;
+  /** Compressed bytes: served to it (the sender's copy) / on disk (the recipient's copy). */
+  received?: number;
+  /** ms epoch of the last byte moved; a pulling row keeps going until lastByteAt + 1 h. */
+  lastByteAt?: number;
+  /** Overrides the offer's expiresAt for this row (a slow pull still moving). */
+  expiresAt?: number;
+  startedAt?: number;
+  doneAt?: number;
+  retries?: number;
+  /** A refusal's or failure's reason; a decline carries none. */
+  reason?: OfferRefusal;
+  /** The refusal, failure or decline sentence. */
+  message?: string;
+}
+
+/** An offer: `<stateRoot>/mesh-links/<linkId>/offers.json` on the sender and on every recipient's
+    host (each holding only its own row). */
+export interface LinkOffer {
+  id: string;
+  linkId: string;
+  /** ms epoch, the sender's clock. */
+  at: number;
+  /** at + 24 h. */
+  expiresAt: number;
+  from: LinkMemberRef;
+  roots: LinkOfferRoot[];
+  /** Totals, uncompressed, as listed. */
+  files: number;
+  bytes: number;
+  exclude?: string[];
+  note?: string;
+  warnings?: LinkOfferWarning[];
+  /** Set when the spool is complete. */
+  snapshot?: { sha256: string; size: number; encoding: "zstd"; packedAt: number };
+  /** The sender's packing; `written` is compressed bytes so far. */
+  packing?: { state: "packing" | "ready" | "failed"; written?: number; error?: string };
+  /** The sender's copy: every recipient. A recipient's copy: its own row only. */
+  recipients: LinkOfferRecipient[];
+  /** The sender's copy: its one wake has been delivered (every row final, or the first failure). */
+  wokeSender?: boolean;
+}
+
+/** What an inbox record's notice is about. */
+export type LinkOfferEvent = "offered" | "landed" | "declined" | "failed" | "finished" | "expired" | "cancelled";
+
+// Peer bodies
+
+export interface PeerLinkOffer {
+  /** `from.nodeId` must equal the verified caller; `recipients` is the callee's one row. */
+  offer: LinkOffer;
+  /** The sender session's title, for the tag line and the notice. Display only. */
+  fromTitle?: string;
+}
+export type PeerLinkOfferResult =
+  /** dest given: resolved and checked, the pull is queued. */
+  | { state: "accepted"; resolvedDest: string }
+  /** No dest: the offer message reached the agent. */
+  | { state: "offered"; delivery: "started" | "delivered" }
+  | { state: "refused"; reason: OfferRefusal; message: string };
+/** A recipient's row moved (the sender marks `pulling` itself, at the first tar GET). */
+export interface PeerOfferReport {
+  /** The recipient member's session id. */
+  session: string;
+  state: "accepted" | "extracting" | "declined" | "done" | "failed" | "refused";
+  resolvedDest?: string;
+  /** Compressed bytes on the recipient's disk. */
+  received?: number;
+  /** ms from the first byte to done. */
+  took?: number;
+  reason?: OfferRefusal;
+  message?: string;
+}
+
+// Local acts
+
+export interface LinkOfferCreate {
+  /** The offering session: held by this host and a member of the link. */
+  session: string;
+  link?: string;
+  /** As LinkSend.to. */
+  to?: string | string[];
+  /** Resolved against the session's cwd; `~` expanded; absolute allowed. */
+  paths: string[];
+  /** Pattern without `/`: any path component (`node_modules`, `*.log`); with `/`: the member name
+      from the root (`proj/dist`). `*`, `?`, `**`, `[…]`. No default excludes. */
+  exclude?: string[];
+  /** A directory on the recipient's host; each path lands at dest/<its name>. One for all, or by
+      member as `to` names them. Given: implicit accept. */
+  dest?: string | Record<string, string>;
+  note?: string;
+}
+/** One recipient's answer to the fan-out. */
+export type LinkOfferDelivery = { to: LinkMemberRef } & (PeerLinkOfferResult | { state: "outbox" });
+export interface LinkOfferCreateResult {
+  offer: LinkOffer;
+  deliveries: LinkOfferDelivery[];
+}
+export interface LinkOfferAnswer {
+  /** The recipient session: held by this host and the offer's recipient. */
+  session: string;
+  dest: string;
+}
+export interface LinkOfferDecline {
+  session: string;
+  reason?: string;
+}
+export interface LinkOffersList {
+  offers: LinkOffer[];
 }
 
 // --- Configure (§mesh.links/configure) ---

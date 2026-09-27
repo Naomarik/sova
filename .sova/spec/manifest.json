@@ -5163,6 +5163,32 @@
         "shared/protocol.ts",
         "server/mesh/links.test.ts"
       ]
+    },
+    "§app.organizations/about": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/orgs.ts",
+        "server/org-routes.ts",
+        "shared/orgs.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-prompt.md",
+        "src/components/OrgsView.tsx",
+        "src/lib/api.ts",
+        "src/lib/org-about.ts",
+        "src/orgs.css",
+        "server/orgs.test.ts",
+        "server/project-overseer.test.ts",
+        "server/org-portable.test.ts",
+        "server/org-about-privacy.test.ts",
+        "src/lib/org-about.test.ts"
+      ],
+      "requires": [
+        "§app.organizations/workspace-repo",
+        "§app.organizations/org-page",
+        "§app.project-overseer/identity"
+      ]
     }
   },
   "boundary": {

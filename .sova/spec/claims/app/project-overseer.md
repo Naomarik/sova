@@ -46,7 +46,7 @@ tool cards as they happen.
   stakeholder ("Main stakeholder: {name}: decides every area of this project that no one else on
   the roster decides."), its ideas, the
   operator's open to-dos **in full** (oldest first, at most 20, each with its id and linked idea or
-  session; the rest counted), its notes and the operator's extra instructions. Model and thinking from `overseer.json`, else the new-session
+  session; the rest counted), its notes, the organization's About text (§app.organizations/about) and, last, the operator's extra instructions. Model and thinking from `overseer.json`, else the new-session
   defaults; the composer's picks are saved there.
 - **Thinking levels a model doesn't offer.** A `PATCH …/overseer` naming a thinking level (its own,
   `codingThinking` or `gatheringThinking`) that the model it applies to doesn't offer is refused

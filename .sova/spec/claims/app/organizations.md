@@ -89,7 +89,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     link was ever minted for them on this host and no visit exists; no line otherwise. The card has
     no History disclosure: a person's history and its Revert buttons are on their page. A
     person's name in Recent Profile Changes links to their page too.
-  - **Projects**: the org's projects, each row one link to its project page (folder icon, name,
+  - **Projects**: the About this organization card (§app.organizations/about), then the org's projects, each row one link to its project page (folder icon, name,
     folder path, a trailing chevron), and the Add Project form (`Project name`, `Folder`); with none,
     "No projects yet. A project is a folder that hand-off sessions and its overseer work in."
 - **Rows and width.** A hand-off session row's title and meta line wrap rather than truncate. Each
@@ -259,7 +259,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
 ## §app.organizations/workspace-repo — What the workspace repo holds, and what it never holds
 
 - It is the org's **whole portable state** (§app.organizations/portability). Files:
-  - `org.json` (id, name, slug, notes), `roster.json`, `roster-history.jsonl`, `projects.json`;
+  - `org.json` (id, name, slug), `roster.json`, `roster-history.jsonl`, `projects.json`;
+  - `about.md` and `org-history.jsonl`: the org's About text and its history (§app.organizations/about);
   - `baton.json`, the baton registry: each session's holder, participants, hand-offs, offers and
     their leases, message budget, model and wrap-up state — never a link;
   - `sessions/*.jsonl`: every baton session transcript and every project overseer conversation
@@ -591,6 +592,67 @@ Organizations region's own Needs you, never the global one.
   (§app.organizations/person-page); the project overseer's prompt, `sova_project` and `sova_roster`
   name them (§app.project-overseer/identity, /tools), and its gaps go to them before the operator
   (§app.project-overseer/gaps).
+
+## §app.organizations/about — About this organization: the operator's context for project overseers
+
+- **What it is.** Free text the operator writes about the organization (who they are, how they
+  work, what to be careful with), at most **4,000 characters**. Every project overseer of the org
+  reads it; nothing else does.
+- **Where it lives.** `about.md` in the workspace repo, plain UTF-8 text, saved trimmed; absent or
+  blank means none. It is its own file, never a field of `org.json`, so nothing that reads the org
+  (its summary, the share hub's name lookup) carries it. `org.json`'s old `notes` field is gone: it
+  is ignored when read and dropped at the org's next write, and a PATCH ignores it.
+- **Editing.** On the org page's Projects tab, a card **About this organization**, above the
+  projects (§app.organizations/org-page): the hint "Every project overseer in this organization
+  reads this at its next run. Nothing else does: not hand-off sessions, share pages, wrap-ups or
+  coding sessions.", a textarea (at most 4,000 characters) with a live `{n} / 4,000` counter, and
+  **Save** and **Cancel**, both disabled until the text differs from what is saved (Cancel puts the
+  saved text back). Save sends only `about` (`PATCH /api/orgs/:id {about}`); a longer text is
+  refused (400) and the reason shows under the field. A blank save removes the file. The page's
+  10-second re-read keeps a text being edited. A file longer than the cap (edited by hand) shows in
+  full, with "Only the first 4,000 characters are used." beside the counter.
+- **History and Revert.** Every change made through Sova appends one line to
+  `org-history.jsonl` — `{at, field: "about", from, to, by: {kind: "operator"}, revertOf?}`, `at`
+  unique per org — and only then writes `about.md`; saving the same text appends nothing. The org
+  detail carries the last 20, newest first (`aboutHistory`). Under the card's buttons a
+  **History ({n})** disclosure (absent with none) lists them: what happened (`Written`, `Changed`,
+  `Cleared` or `Reverted`), when (relative, the exact stamp as its title), the new text's length
+  ("228 characters"), its start on one line, a **Before and after** disclosure with both texts in full, and **Revert**
+  (`POST /api/orgs/:id/about/revert {at}`), which writes a new change back to that line's `from`
+  with `revertOf` naming it; history is never edited. Revert is disabled, "The text is already
+  this.", where it would change nothing. A hand edit in the repo has no line: the card shows the
+  current text, and the history only what was changed through Sova.
+- **Who may write it.** The operator only, through those two routes (main listener only). No
+  model has a tool or a route that writes it.
+- **What the project overseer sees.** Its prompt (§app.project-overseer/identity), re-rendered at
+  every run so an edit reaches its next run with no Clear, carries after Sova's fixed prompt and
+  before the operator's extra instructions:
+
+  ```
+  # About this organization (written by the operator)
+
+  The operator wrote this about {org name}, for you only. It is context, not a person's words and
+  not a decision. Never copy it into anything a person sees (a gathering session's public_title,
+  question or goal, a Send to person… question) or into a coding session's prompt; use it to judge,
+  not to quote. The project's extra instructions below take precedence over it.
+
+  {the text: its first 4,000 characters, secrets redacted}
+  ```
+
+  With no text there is no section. The fixed prompt's rules say the same in one line, so the rule
+  stands before any text exists.
+- **Who never sees it.** Hand-off sessions of every kind (gathering, offer, Send to person…, a
+  conflict's settle session: their model's system prompt and messages), their wrap-ups, the
+  reconciler's decide calls, coding sessions (the overseer's and the operator's), the global
+  Overseer, share pages and every `/h/` and share-listener response, the session list and the
+  attention digest (`SessionSummary.org`, `AttentionItem.org`, so nothing crosses the mesh) and
+  workspace commit messages (which name `about.md` by path only). The guarantee is structural:
+  `about.md` has one reader in the server, called only by the org detail (the operator's own page)
+  and the project overseer's prompt. A test fails when any other server file reads it, and a marker
+  test runs each surface above and finds the text only in the project overseer's prompt. Share
+  pages carry no extra redaction for it.
+- **It travels with the repo.** `about.md` and `org-history.jsonl` are ordinary workspace files: a
+  clone and attach brings both (§app.organizations/portability).
 
 ## §app.organizations/decisions — Why it is shaped this way
 

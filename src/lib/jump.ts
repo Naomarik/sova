@@ -134,7 +134,44 @@ export function jumpToEntry(entryId: string, path?: string | null): boolean {
   row.scrollIntoView({ block: "center", behavior: "smooth" });
   row.classList.add(JUMP_CLASS);
   setTimeout(() => row.classList.remove(JUMP_CLASS), JUMP_HIGHLIGHT_MS);
+  if (root) recenter(root, row, JUMP_CORRECTIONS);
   return true;
+}
+
+/** Off center by more than this after a jump's scroll, the jump aims again. */
+const JUMP_TOLERANCE_PX = 24;
+/** At most this many more aims. */
+const JUMP_CORRECTIONS = 2;
+/** A scroll is over once no scroll event has come for this long. */
+const SCROLL_QUIET_MS = 150;
+
+/**
+ * A long jump aims at a position computed partly from estimated row heights (rows never drawn are
+ * skipped at an estimate, app.css `.entry`), and the rows it passes are drawn at their real
+ * heights on the way. Once the scroll comes to rest, aim again from the row's real position if it
+ * didn't land in the middle: each pass starts nearer, among rows already drawn.
+ */
+function recenter(root: HTMLElement, row: HTMLElement, left: number): void {
+  let timer = 0;
+  const done = () => {
+    root.removeEventListener("scroll", onScroll);
+    if (!row.isConnected) return;
+    const view = root.getBoundingClientRect();
+    const box = row.getBoundingClientRect();
+    const off = (box.top + box.bottom) / 2 - (view.top + view.bottom) / 2;
+    // A row taller than the view never sits inside it: filling it is landing enough.
+    const landed = Math.abs(off) <= JUMP_TOLERANCE_PX || (box.height > view.height && box.top <= view.top && box.bottom >= view.bottom);
+    if (landed || left <= 0) return;
+    root.dispatchEvent(new Event(JUMP_EVENT));
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    recenter(root, row, left - 1);
+  };
+  const onScroll = () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(done, SCROLL_QUIET_MS);
+  };
+  root.addEventListener("scroll", onScroll, { passive: true });
+  timer = window.setTimeout(done, SCROLL_QUIET_MS);
 }
 
 // ---- A jump asked for before the session is on screen ------------------------------------------

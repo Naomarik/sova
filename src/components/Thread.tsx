@@ -942,8 +942,11 @@ export function ThreadScroller(props: {
   // Resolve once: reading a JSX prop twice would build its DOM twice.
   const banner = children(() => props.banner);
 
+  /** How far the view was from the end when last read: 0 right after a scroll to the bottom. */
+  let lastGap = 0;
   const toBottom = () => {
     el.scrollTop = el.scrollHeight;
+    lastGap = 0;
   };
   const resumeFollowing = () => {
     follow = true;
@@ -954,7 +957,8 @@ export function ThreadScroller(props: {
       bottom, and must not read as the user coming back to follow it. */
   let jumpingUntil = 0;
   const onScroll = () => {
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_PX;
+    lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const near = lastGap < FOLLOW_PX;
     if (near && performance.now() < jumpingUntil) return;
     if (near === follow) return;
     follow = near;
@@ -972,7 +976,7 @@ export function ThreadScroller(props: {
     toggled = e.target as Element;
     requestAnimationFrame(() => requestAnimationFrame(() => (toggled = null)));
   };
-  /** Content changed size or shape: back to the bottom while following. */
+  /** Content was added or changed: back to the bottom while following. */
   const settle = () => {
     if (!follow) return;
     if (toggled) return onScroll();
@@ -981,17 +985,22 @@ export function ThreadScroller(props: {
   const observer = new MutationObserver(settle);
   onCleanup(() => observer.disconnect());
   // Rows change height with no mutation too: an image decoding, a row first drawn at its real
-  // height instead of its estimate (content-visibility, app.css).
-  const resized = typeof ResizeObserver === "function" ? new ResizeObserver(settle) : null;
+  // height instead of its estimate (content-visibility, app.css). Only a view that sat at the end
+  // is put back there: rows drawn above a view scrolling up (a smooth scroll's first frames are
+  // still "following") must not pull it back down.
+  const resized = typeof ResizeObserver === "function" ? new ResizeObserver(() => lastGap <= 2 && settle()) : null;
   onCleanup(() => resized?.disconnect());
   const api: ScrollerApi = {
     root: () => el,
     prepend(build) {
       const fromEnd = el.scrollHeight - el.scrollTop;
       build();
-      // The rows just added are above the view: not new content to follow.
+      // The rows just added are above the view: not new content to follow. The view keeps its
+      // distance from the end, which at the bottom is the bottom. The browser's own scroll
+      // anchoring usually has done this already; then nothing is written, and a scroll under way
+      // (a jump, Align to Fork) carries on.
       observer.takeRecords();
-      const want = follow ? el.scrollHeight - el.clientHeight : el.scrollHeight - fromEnd;
+      const want = el.scrollHeight - fromEnd;
       if (Math.abs(el.scrollTop - want) >= 1) el.scrollTop = want;
     },
     jumping: () => performance.now() < jumpingUntil,

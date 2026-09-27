@@ -3,7 +3,7 @@ import type { ExplanationInfo, OutlineTopic, SessionOutline } from "../../shared
 import { newestTopics, topicTime } from "../../shared/outline-order";
 import { newestFirst } from "../lib/explain";
 import { explanationsHref } from "../lib/insights";
-import { findEntryRow, jumpToEntry, transcriptRoot } from "../lib/jump";
+import { hasEntryRow, jumpToEntry, transcriptRoot } from "../lib/jump";
 import { relativeTime, stampTime } from "../lib/format";
 import { Icon } from "./ui";
 
@@ -14,11 +14,12 @@ const STATE_CLAUSE: Partial<Record<SessionOutline["state"], string>> = {
 
 function Topic(props: { topic: OutlineTopic; now: number; open: boolean; path: string }) {
   // Whether the anchor is in the transcript is checked each time the strip opens: it may have been
-  // compacted away, and the transcript renders after this strip. A topic that arrives while the
-  // strip is open mounts with `open` already true, so it is checked too.
+  // compacted away, and the transcript renders after this strip. It asks the transcript's rows, not
+  // the DOM: an older row may not be built yet, and the jump builds it. A topic that arrives while
+  // the strip is open mounts with `open` already true, so it is checked too.
   const [target, setTarget] = createSignal(false);
   createEffect(() => {
-    if (props.open) setTarget(!!props.topic.entryId && !!findEntryRow(props.topic.entryId, transcriptRoot(props.path)));
+    if (props.open) setTarget(!!props.topic.entryId && hasEntryRow(props.topic.entryId, transcriptRoot(props.path)));
   });
   const jump = () => {
     // Gone since the strip opened (compacted away): the button goes rather than scrolling nowhere.

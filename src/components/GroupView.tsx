@@ -35,7 +35,7 @@ import {
 import { announce, home, setGroupComposerActive, toast } from "../lib/ui-state";
 import { cwdLabel } from "../lib/remote-session";
 import { failureLines, partialClosing, partialTitle } from "../lib/fanout";
-import { findEntryRow, transcriptRoot } from "../lib/jump";
+import { ensureRendered, transcriptRoot } from "../lib/jump";
 import { clearPartial, pendingPartial } from "./FanoutDialog";
 import { sessionWorking, type UsageTotalView } from "../lib/workers";
 import type { PaneInsight, TabId } from "./SessionPane";
@@ -347,7 +347,8 @@ export function GroupView(props: {
   const scrollToMarker = (path: string) => {
     const seed = props.group.seed;
     if (!seed) return false;
-    const row = findEntryRow(seed.leafId, transcriptRoot(path));
+    // Built first if the pane hasn't reached it yet (tail-first rendering, lib/tail-render).
+    const row = ensureRendered(seed.leafId, transcriptRoot(path));
     if (!row) return false;
     row.scrollIntoView({ block: "start", behavior: reduceMotion() ? "auto" : "smooth" });
     return true;

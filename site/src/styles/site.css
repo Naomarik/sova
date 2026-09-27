@@ -137,7 +137,10 @@ p code, li code, td code, dd code {
 .hero { padding: clamp(56px, 8vw, 104px) 0 0; position: relative; isolation: isolate; }
 
 /* Hero + closing backdrop: the one deliberate exception to "no gradients/glow".
-   An indigo radial glow, plus (hero only) a faint grid masked out toward the edges. */
+   An indigo radial glow, plus (hero only) a faint grid masked out toward the edges.
+   Dark is the default with no data-theme set (tokens.css §3), so plain :root carries the dark
+   values too; otherwise a first visit, with nothing saved, gets no glow and no gradient text. */
+:root,
 :root[data-theme="dark"] {
   --site-glow:   color-mix(in oklab, var(--brand-indigo) 42%, transparent);
   --site-glow-2: color-mix(in oklab, #8a3fd8 26%, transparent);

@@ -419,7 +419,8 @@ itself.
   such an error shows again until the session is seen). A session never seen, or an error of
   unknown time, still shows. This holds for archived sessions too.
 - **Needs you, open questions** (§chat.alignment/session-mark): an idle session that is not
-  archived, whose `align` counts say it has open questions, is `open-questions` ("{n} open
+  archived, whose `align` counts say it waits on the user's answers (align on, and no user prompt
+  since the alignment last changed), is `open-questions` ("{n} open
   question(s) in {al_N} {title}" with one open alignment, else "… in {m} alignments"), dated by its
   last reply. It needs no signal and no model; it shows with the attention feature off too.
 - **Needs you, from signals** (§app.decisions/attention-signals, only while the list carries them):

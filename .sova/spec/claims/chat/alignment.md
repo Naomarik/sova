@@ -37,15 +37,20 @@ one open alignment, a call must name its document.
 - **create** `{title, summary, findings?, approach?, rejected?, questions?}` — a new document,
   `al_N`. Every question needs a topic, an ask and a recommendation.
 - **create** `{fromFile}` — the same document read from a JSON file (the create fields, nothing
-  else), relative to the session's cwd, so a planning worker can write the alignment and the agent
-  imports it without retyping. The file is validated strictly: malformed JSON, an unknown key or a
-  wrong type is refused with the path of the bad field.
+  else), at an absolute path (a relative one is from the session's cwd), so a planning worker can
+  write the alignment and the agent imports it without retyping. Only a regular file up to 256 KB
+  is read (a pipe, a device or a directory is refused before any read, so the server never blocks
+  on one). The file is validated strictly: malformed JSON (named by position only, never quoting the
+  file), an unknown key or a wrong type is refused with the path of the bad field. In a **remote
+  session** (tools on a target) the file would be on the target, so `fromFile` is refused with a
+  reason, and the agent creates the alignment inline.
 - **add** `{findings?, approach?, rejected?, questions?}`, **edit** `{id, …fields}` (a question's
   topic, ask, context, options or recommendation; a finding's or step's text; a rejected
   alternative's option or why; without `id`, the title or summary), **remove** `{ids}` (findings,
   steps and rejected alternatives; a question is dropped instead, so its id keeps its meaning).
 - **decide** `{q, decision}` records the user's answer; **accept** `{q: "open" | [ids]}` takes the
-  recommendation as the decision, recorded as accepted; **reopen** `{q}` clears a decision or a
+  recommendation as the decision, recorded as accepted — never over a decided question (the user's
+  answer is not replaced; reopen it first) and never one id named twice; **reopen** `{q}` clears a decision or a
   drop; **drop** `{q, why}` drops a question, and `{why}` alone drops the document.
 - **status** `{to: implementing | done | open}` — the lifecycle moves the data can't show.
   Implementing and done need every question decided or dropped first (an `accept` earlier in the
@@ -79,9 +84,10 @@ any more, and they count toward no chip, row or digest.
 
 - **Instructions.** The align prompt block tells the agent to record every alignment with the tool
   and never as reply text (no freeform plan, no numbered list of decisions in prose), to have a
-  planning worker write the alignment JSON for `create` with `fromFile` (with Delegate on, at an
-  absolute path outside the project's working tree, so the plan leaves no file in the user's
-  repository), to change a document only
+  planning worker write the alignment JSON for `create` with `fromFile` at an absolute path outside
+  the repository that the agent names (with Delegate on, the delegate block's no-edit rule for
+  planning workers names this one file as its exception; in a remote session the worker reports the
+  JSON and the agent creates inline), to change a document only
   through ops and never by re-creating it, to record answers with `decide`/`accept`, to use
   `exempt` for a work request that needs no alignment, and to mark `implementing` before building
   and `done` when finished. With Delegate on, the bridge paragraph says the same for the planning
@@ -104,15 +110,20 @@ any more, and they count toward no chip, row or digest.
   and its final reply reads like a plan that asks the user to decide, the extension adds one hidden
   message (`align-nudge`) telling the agent to record it with `align` (or `exempt` if it isn't a
   design decision) and continues the run once. It never nudges twice in one run (until the run
-  settles). "Reads like a plan": an old markdown alignment block; a reply whose last paragraph
-  ends in a question and either asks for a decision itself ("open questions", "should I go ahead",
-  "which do you prefer", "take my recommendations", and the like) or follows a list of two or more
-  items with such words above it; or, anywhere in the reply, a short line with such words ("Questions
-  for you:") followed by a list with two or more questions, since a reply can close on a statement
-  after asking. Code blocks and the spec mode's closing "Also changes" line don't count.
+  settles). Only a successful call that changed a document or recorded an exemption counts as an
+  align call here: a refused call or a bare `get` does not. The reply judged is the run's last
+  assistant message, even one with no text. "Reads like a plan": an old markdown alignment block
+  (its `## Alignment: <title>` heading; a heading or bold line that merely mentions alignment is
+  not one); a last paragraph with a question that puts a decision to the user — labelled ("open
+  questions"), a go-ahead ("should I go ahead", "take my recommendations") or a choice ("which do
+  you prefer", except when the run's user prompt was itself a question the options answer), never a
+  merge, push, restart or similar confirmation; a list of two or more items with such words, closed
+  by a bare go-ahead ("Go?"); or, anywhere in the reply, a short line with such words ("Questions for
+  you:") followed by a list with two or more questions that aren't such confirmations, since a reply
+  can close on a statement after asking. Code blocks and the spec mode's closing "Also changes" line don't count.
   Calibrated on two real sessions: it caught every alignment block and freeform plan there, and one
-  of about 80 other replies; the labelled list adds about 1 in 100 final replies across 222 other
-  sessions, nearly all prose plans asking for decisions.
+  of about 80 other replies (none after the tightening); across 230 other sessions about 2 in 100
+  final replies fire, nearly all prose plans asking for decisions.
 
 ## §chat.alignment/card — The card in the transcript
 
@@ -209,10 +220,16 @@ chip and the Inputs trigger sit together at the row's right end.
 
 ## §chat.alignment/session-mark — The session's open questions
 
-The session list knows, from the file and with no model, whether a session has open questions:
-each summary carries `align: {openDocs, openQuestions}` (open alignments on the active branch and
-their open questions) whenever an alignment is open. The fold reads the whole file only for
-session files that contain an `align` tool result, and only when the file changed.
+The session list knows, from the file and with no model, whether a session is waiting on the
+user's answers: each summary carries `align: {openDocs, openQuestions}` (open alignments on the
+active branch and their open questions) while an alignment is open, **align is on** (the newest
+`mode` entry on the branch), and **the session waits**: the newest align result that changed a
+document comes after the user's last prompt (a wake nudge or a partner's link message is not one).
+Once the user has spoken again and the agent moved on without touching an alignment, or align is
+turned off (nothing could record an answer), the questions stay on the card and the chip but leave
+the row mark, Needs you and push; the next align result that changes a document brings them back.
+Files with no `align` tool result are only searched for it, never parsed; after the first one, each
+change parses only the lines appended since (a file that shrank or was rewritten is read again).
 
 - **Row mark.** A row whose session has open questions shows the needs-you mark on line 1 as a
   speech bubble in the accent followed by the count ("3"), with the hidden words "3 open

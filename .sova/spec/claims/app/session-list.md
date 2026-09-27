@@ -107,7 +107,7 @@
                    `title` says the fact in one sentence ("3 open questions in 2 alignments", "The
                    last turn looks like it went in circles.", "A subagent looks stuck.").
                    Kinds differ in glyph as well as tone. The looping mark is gone once the session
-                   is seen after it was classified; open questions stay until they are answered. No
+                   is seen after it was classified; open questions stay until they are answered, the user moves on, or align is turned off. No
                    mark shows while this tab runs a turn there.
                    Every line-1 mark is hidden on the open session,
                    so this row (the open one) has none; on another row line 1 reads:

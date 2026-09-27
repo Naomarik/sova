@@ -44,7 +44,8 @@ Brief Me uses — and each is sent **at most once, until it clears**: a blocker 
 tier and comes back is new again.
 
 - **Kinds.** `needs-input` (a dialog is open), `open-questions` (an idle session's alignment has
-  questions waiting on your answer, §chat.alignment/session-mark), `error` (the
+  questions waiting on your answer, §chat.alignment/session-mark; a stored choice for the kind it
+  replaced, `asks-you`, carries over to it, and a client still sending that key is not refused), `error` (the
   last turn stopped with an error), `looping` (a subagent looks stuck — a main session's own
   looping is not a blocker), `baton-needs-you` (a baton session waits on you) and `worker-error`
   (a subagent ended in an error). Each can be switched off; all are on by default except

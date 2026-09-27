@@ -1,8 +1,19 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import {
+  AT_ONCE_MAX,
   AUTONOMY_LEVELS,
+  budgetProblem,
+  capProblem,
   DEFAULT_AUTONOMY,
+  DEFAULT_PO_CAPS,
+  DEFAULT_SOON_LOOK_SEC,
+  DEFAULT_TOKEN_BUDGET,
+  DEFAULT_WATCH_GAP_MIN,
+  gapProblem,
+  isAtOnce,
+  soonProblem,
+  type HeldItem,
   PROJECT_OVERSEER_ENTRY,
   type ProjectOverseerMarkerData,
   type Autonomy,
@@ -24,8 +35,8 @@ import { stateRoot } from "./state-root";
  * workspace repo, under `projects/<projectId>/overseer/`, so they move with the org and are
  * committed with it — settings, state, notes, actions, ideas, to-dos, and the sessions it started
  * with what their coding sessions spent (`started.json`, so the token budget survives a move).
- * Only the per-turn counters and the watch loop's timing (pending reasons, last run, runs per day)
- * are host-local: a restore starts them fresh. The stores are the Overseer's own
+ * Only the counters (each message's and each day's) and the watch loop's timing (pending reasons,
+ * last run, runs per day, held items) are host-local: a restore starts them fresh. The stores are the Overseer's own
  * (server/overseer-store.ts, overseer-ideas.ts, overseer-todos.ts), called with these paths.
  */
 
@@ -80,25 +91,29 @@ export function projectOf(orgId: string, projectId: string): OrgProject {
 
 // ---- settings --------------------------------------------------------------------------------
 
-export const DEFAULT_PO_CAPS: ProjectOverseerCaps = {
-  gatherPerTurn: 3,
-  gatheringsOpen: 5,
-  promotePerTurn: 20,
-  createPerTurn: 2,
-  promptsPerTurn: 5,
-  codingRunning: 2,
-  unattendedPerDay: 12,
-};
-export const DEFAULT_TOKEN_BUDGET = 2_000_000;
-const CAP_MAX = 1000;
-const BUDGET_MAX = 1_000_000_000;
+export { DEFAULT_PO_CAPS, DEFAULT_TOKEN_BUDGET };
 
 export function defaultPoSettings(): ProjectOverseerSettings {
-  return { version: 1, autonomy: DEFAULT_AUTONOMY, model: null, thinking: null, codingModel: null, codingThinking: null, codingMode: null, gatheringModel: null, gatheringThinking: null, caps: { ...DEFAULT_PO_CAPS }, tokenBudget: DEFAULT_TOKEN_BUDGET, watch: true, extraSystemPrompt: "" };
+  return {
+    version: 1,
+    autonomy: DEFAULT_AUTONOMY,
+    model: null,
+    thinking: null,
+    codingModel: null,
+    codingThinking: null,
+    codingMode: null,
+    gatheringModel: null,
+    gatheringThinking: null,
+    caps: { ...DEFAULT_PO_CAPS },
+    tokenBudget: DEFAULT_TOKEN_BUDGET,
+    watchGapMin: DEFAULT_WATCH_GAP_MIN,
+    soonLookSec: DEFAULT_SOON_LOOK_SEC,
+    watch: true,
+    extraSystemPrompt: "",
+  };
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const isCap = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= CAP_MAX;
 const isAutonomy = (v: unknown): v is Autonomy => typeof v === "string" && (AUTONOMY_LEVELS as readonly string[]).includes(v);
 
 function readJson(file: string): unknown {
@@ -114,7 +129,13 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
   const d = defaultPoSettings();
   if (!isObj(raw)) return d;
   const caps = { ...d.caps };
-  if (isObj(raw.caps)) for (const k of Object.keys(caps) as (keyof ProjectOverseerCaps)[]) if (isCap(raw.caps[k])) caps[k] = raw.caps[k] as number;
+  if (isObj(raw.caps))
+    for (const k of Object.keys(caps) as (keyof ProjectOverseerCaps)[]) {
+      const v = raw.caps[k];
+      // An at-once limit above its maximum still means "as many as allowed"; never Unlimited.
+      if (isAtOnce(k) && typeof v === "number" && Number.isInteger(v) && v > AT_ONCE_MAX[k]) caps[k] = AT_ONCE_MAX[k];
+      else if (capProblem(k, v) === null) Object.assign(caps, { [k]: v });
+    }
   return {
     version: 1,
     autonomy: isAutonomy(raw.autonomy) ? raw.autonomy : d.autonomy,
@@ -126,7 +147,9 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
     gatheringModel: typeof raw.gatheringModel === "string" && raw.gatheringModel.trim() ? raw.gatheringModel.trim() : null,
     gatheringThinking: typeof raw.gatheringThinking === "string" && raw.gatheringThinking.trim() ? raw.gatheringThinking.trim() : null,
     caps,
-    tokenBudget: typeof raw.tokenBudget === "number" && Number.isInteger(raw.tokenBudget) && raw.tokenBudget >= 0 && raw.tokenBudget <= BUDGET_MAX ? raw.tokenBudget : d.tokenBudget,
+    tokenBudget: "tokenBudget" in raw && budgetProblem(raw.tokenBudget) === null ? (raw.tokenBudget as number | null) : d.tokenBudget,
+    watchGapMin: gapProblem(raw.watchGapMin) === null ? (raw.watchGapMin as number) : d.watchGapMin,
+    soonLookSec: "soonLookSec" in raw && soonProblem(raw.soonLookSec) === null ? (raw.soonLookSec as number | null) : d.soonLookSec,
     watch: typeof raw.watch === "boolean" ? raw.watch : d.watch,
     extraSystemPrompt: typeof raw.extraSystemPrompt === "string" ? raw.extraSystemPrompt.slice(0, EXTRA_PROMPT_MAX) : "",
   };
@@ -200,9 +223,19 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: 
     next.codingMode = m;
   }
   if (patch.tokenBudget !== undefined) {
-    if (typeof patch.tokenBudget !== "number" || !Number.isInteger(patch.tokenBudget) || patch.tokenBudget < 0 || patch.tokenBudget > BUDGET_MAX)
-      throw new OrgError(`tokenBudget must be a whole number from 0 to ${BUDGET_MAX}`);
+    const why = budgetProblem(patch.tokenBudget);
+    if (why) throw new OrgError(why);
     next.tokenBudget = patch.tokenBudget;
+  }
+  if (patch.watchGapMin !== undefined) {
+    const why = gapProblem(patch.watchGapMin);
+    if (why) throw new OrgError(why);
+    next.watchGapMin = patch.watchGapMin;
+  }
+  if (patch.soonLookSec !== undefined) {
+    const why = soonProblem(patch.soonLookSec);
+    if (why) throw new OrgError(why);
+    next.soonLookSec = patch.soonLookSec;
   }
   if (patch.watch !== undefined) {
     if (typeof patch.watch !== "boolean") throw new OrgError("watch must be true or false");
@@ -217,8 +250,9 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: 
     if (!isObj(patch.caps)) throw new OrgError("caps must be an object");
     for (const [k, v] of Object.entries(patch.caps)) {
       if (!(k in next.caps)) throw new OrgError(`Unknown cap: ${k}`);
-      if (!isCap(v)) throw new OrgError(`caps.${k} must be a whole number from 0 to ${CAP_MAX}`);
-      next.caps[k as keyof ProjectOverseerCaps] = v;
+      const why = capProblem(k as keyof ProjectOverseerCaps, v);
+      if (why) throw new OrgError(why);
+      next.caps = { ...next.caps, [k]: v };
     }
   }
   check?.(next, patch);
@@ -271,17 +305,41 @@ export interface WatchMemo {
       soon (a gathering session done, a coding session's turn over, the operator's promotion), about
       a minute after the first such event since the last look. Null: none waiting. */
   soonAt: string | null;
+  /** What refusals held for later, one per key, at most HELD_MAX (§app.project-overseer/limits). */
+  held: HeldItem[];
+}
+
+export const HELD_MAX = 10;
+
+function parseHeld(v: unknown): HeldItem[] {
+  if (!Array.isArray(v)) return [];
+  const out: HeldItem[] = [];
+  for (const h of v) {
+    if (!isObj(h) || typeof h.key !== "string" || typeof h.what !== "string" || typeof h.why !== "string" || typeof h.since !== "string") continue;
+    if (h.retryAt !== null && typeof h.retryAt !== "string") continue;
+    if (out.some((x) => x.key === h.key)) continue;
+    out.push({ key: h.key, what: h.what, why: h.why, since: h.since, retryAt: h.retryAt });
+  }
+  return out.slice(-HELD_MAX);
+}
+
+/** Add or replace the held item with this key (the first refusal's time kept); at most HELD_MAX. */
+export function holdItem(m: WatchMemo, h: HeldItem): WatchMemo {
+  const prev = m.held.find((x) => x.key === h.key);
+  const held = [...m.held.filter((x) => x.key !== h.key), { ...h, since: prev?.since ?? h.since }].slice(-HELD_MAX);
+  return { ...m, held };
 }
 
 export function readMemo(p: ProjectOverseerPaths): WatchMemo {
   const raw = readJson(p.memo);
-  const m: WatchMemo = { version: 1, pending: [], lastRunAt: null, lastRun: null, perDay: {}, soonAt: null };
+  const m: WatchMemo = { version: 1, pending: [], lastRunAt: null, lastRun: null, perDay: {}, soonAt: null, held: [] };
   if (!isObj(raw)) return m;
   if (Array.isArray(raw.pending)) m.pending = raw.pending.filter((x): x is string => typeof x === "string").slice(-50);
   if (typeof raw.lastRunAt === "string") m.lastRunAt = raw.lastRunAt;
   if (isObj(raw.lastRun) && typeof raw.lastRun.at === "string") m.lastRun = raw.lastRun as WatchMemo["lastRun"];
   if (isObj(raw.perDay)) for (const [k, v] of Object.entries(raw.perDay)) if (typeof v === "number") m.perDay[k] = v;
   if (typeof raw.soonAt === "string") m.soonAt = raw.soonAt;
+  m.held = parseHeld(raw.held);
   return m;
 }
 
@@ -290,7 +348,7 @@ export function writeMemo(p: ProjectOverseerPaths, m: WatchMemo): void {
   migrateStarted(p);
   const days = Object.keys(m.perDay).sort().slice(-7);
   const { version, pending, lastRunAt, lastRun, soonAt } = m;
-  writeAtomic(p.memo, `${JSON.stringify({ version, pending, lastRunAt, lastRun, perDay: Object.fromEntries(days.map((d) => [d, m.perDay[d]])), soonAt }, null, 2)}\n`);
+  writeAtomic(p.memo, `${JSON.stringify({ version, pending, lastRunAt, lastRun, perDay: Object.fromEntries(days.map((d) => [d, m.perDay[d]])), soonAt, held: parseHeld(m.held) }, null, 2)}\n`);
 }
 
 // ---- the sessions it started (in the repo) ----------------------------------------------------------
@@ -318,6 +376,8 @@ export interface StartedRow {
   branchDeleted?: boolean;
   /** Why a coding session runs in the root itself (a tail: "it isn't a Git repository."). */
   inRoot?: string;
+  /** A coding session's title when it started, for a host without its file (§app.project-overseer/coding-worktrees). */
+  title?: string;
 }
 
 function parseWorktree(v: unknown): WorktreeRecord | undefined {
@@ -344,6 +404,7 @@ function parseStarted(v: unknown): StartedRow[] {
       ...(typeof s.removed === "string" && s.removed ? { removed: s.removed } : {}),
       ...(s.branchDeleted === true ? { branchDeleted: true } : {}),
       ...(typeof s.inRoot === "string" && s.inRoot ? { inRoot: s.inRoot } : {}),
+      ...(typeof s.title === "string" && s.title ? { title: s.title } : {}),
     }))
     .slice(-STARTED_MAX);
 }
@@ -394,10 +455,13 @@ export function recordTokens(p: ProjectOverseerPaths, counted: Map<string, numbe
   if (changed) writeStarted(p, rows);
 }
 
+/** The next local midnight after `d`: when a day's allowances and looks come back. */
+export const nextMidnight = (d = new Date()): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+
 export const dayKey = (d = new Date()): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Record a session it started (the listing, the concurrency and token caps). */
-export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: StartedRow["kind"], now = new Date(), path?: string, extra: Pick<StartedRow, "worktree" | "inRoot"> = {}): void {
+export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: StartedRow["kind"], now = new Date(), path?: string, extra: Pick<StartedRow, "worktree" | "inRoot" | "title"> = {}): void {
   const rows = readStarted(p);
   if (rows.some((s) => s.sessionId === sessionId)) return;
   writeStarted(p, [...rows, { sessionId, kind, createdAt: now.toISOString(), ...(path ? { path } : {}), ...extra }]);

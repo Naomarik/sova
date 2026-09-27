@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -6,6 +6,11 @@ import { type AgentSession, getAgentDir, SessionManager } from "@earendil-works/
 import { OPERATOR, type BatonSession } from "../shared/baton";
 import {
   AUTONOMY_MEANING,
+  LIMIT_WHAT,
+  PER_DAY,
+  PER_TURN,
+  PO_LIMIT_KINDS,
+  type PoLimitKind,
   type ProjectOverseerSettings,
   PROJECT_OVERSEER_ENTRY,
   type ItemCodeInput,
@@ -18,8 +23,10 @@ import {
   type ProjectOverseerMarkerData,
   type StartedSession,
 } from "../shared/project-overseer";
+import { ORG_ABOUT_MAX } from "../shared/orgs";
+import { clockTime } from "../pi-config/extensions/stamp/format.ts";
 import type { SessionSummary, TokenUsage } from "../shared/protocol";
-import { onBatonEvent } from "./baton-events";
+import { type BatonEvent, onBatonEvent } from "./baton-events";
 import { allBatons, batonById, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
 import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, registerSpecialLoadout, setOpeningChoice, type ChatSession } from "./chat-manager";
 import { PROCESS_START, shuttingDown } from "./wrapup-recovery";
@@ -30,13 +37,14 @@ import { mergeMode } from "./mode-state";
 import { baseCodingMode, codingModeChoice, describeCodingMode, type ModeRequest } from "./project-coding-mode";
 import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, WorktreeRefusal } from "./project-worktrees";
 import { piUsageTally } from "./transcript-usage";
-import { decidePerson, onOrgAttached, orgDir, orgOfSessionPath, overseerPausedSince, resumeOverseer, OrgError, participantLine, readIndex, readOrg, readProjects, readRoster, operatorName, stakeholderLine } from "./orgs";
+import { decidePerson, onOrgAttached, orgDir, orgOfSessionPath, overseerPausedSince, resumeOverseer, OrgError, participantLine, readIndex, readOrg, readOrgAbout, readProjects, readRoster, operatorName, stakeholderLine } from "./orgs";
 import { appRequest, pathOfId, promptSession, toolCatalogue } from "./overseer";
 import { RootConfinement } from "./overseer-deny";
 import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { readNotes, rotateState } from "./overseer-store";
+import { appendUpdate, cleanUpdateText, lastUpdate } from "./project-updates";
 import { promptOpenTodos, readTodos, updateTodo } from "./overseer-todos";
 import { UserTurns } from "./overseer-tools";
 import { canonicalPath } from "./paths";
@@ -53,6 +61,8 @@ import { markOwned } from "./write-guard";
 import {
   dayKey,
   effectiveAutonomy,
+  holdItem,
+  nextMidnight,
   fitThinking,
   isPoId,
   noteStarted,
@@ -62,6 +72,7 @@ import {
   projectOverseerPaths,
   readMemo,
   readPoSettings,
+  type WatchMemo,
   readStarted,
   recordTokens,
   readPoState,
@@ -98,6 +109,11 @@ interface Rt {
   session: AgentSession | null;
 }
 const rts = new Map<string, Rt>();
+/** The clock the watch loop, the counters and held items read (tests move it to another day). */
+let clock = (): number => Date.now();
+export function setClockForTest(fn: (() => number) | null): void {
+  clock = fn ?? (() => Date.now());
+}
 const keyOf = (orgId: string, projectId: string) => `${orgId}/${projectId}`;
 
 function rtOf(orgId: string, projectId: string): Rt {
@@ -105,7 +121,7 @@ function rtOf(orgId: string, projectId: string): Rt {
   let rt = rts.get(k);
   if (!rt) {
     const p = projectOverseerPaths(orgId, projectId);
-    rt = { orgId, projectId, turns: new UserTurns(), limits: new PoLimits(p.turn), session: null };
+    rt = { orgId, projectId, turns: new UserTurns(), limits: new PoLimits(p.turn, () => new Date(clock())), session: null };
     rts.set(k, rt);
   }
   return rt;
@@ -231,13 +247,13 @@ function batonPath(b: BatonSession): string | null {
 const projectBatons = (orgId: string, projectId: string): BatonSession[] => allBatons().filter((b) => b.orgId === orgId && b.projectId === projectId);
 const ownedBy = (b: BatonSession, projectId: string) => typeof b.owner === "object" && b.owner.overseerOf === projectId;
 
-function codingOf(p: ProjectOverseerPaths): { sessionId: string; path: string | null; running: boolean; createdAt: string; tokens?: number }[] {
+function codingOf(p: ProjectOverseerPaths): { sessionId: string; path: string | null; running: boolean; createdAt: string; tokens?: number; title?: string }[] {
   const known = indexedSessionPaths();
   return readStarted(p)
     .filter((s) => s.kind === "coding")
     .map((s) => {
       const path = known.get(s.sessionId) ?? (s.path && existsSync(s.path) ? s.path : null);
-      return { sessionId: s.sessionId, path, running: path ? isSessionBusy(path) || workingSubagents(path) > 0 : false, createdAt: s.createdAt, tokens: s.tokens };
+      return { sessionId: s.sessionId, path, running: path ? isSessionBusy(path) || workingSubagents(path) > 0 : false, createdAt: s.createdAt, tokens: s.tokens, title: s.title };
     });
 }
 
@@ -285,7 +301,10 @@ async function codingWorktrees(p: ProjectOverseerPaths, root: string): Promise<C
     const common = {
       sessionId: r.sessionId,
       path,
-      title: path ? ((await getSessionSummary(path).catch(() => null))?.title ?? "") : "",
+      // A title given here (a rename, Start coding session's) first; then the one it started with,
+      // which travels in the repo (another host has no file and no title store for it); then the
+      // listing's own (the first message, which ends with Sova's commit paragraph).
+      title: readSessionTitles()[r.sessionId] || r.title || (path ? ((await getSessionSummary(path).catch(() => null))?.title ?? "") : ""),
       startedBy: r.kind === "coding" ? ("overseer" as const) : ("operator" as const),
       running: path ? isSessionBusy(path) : false,
       workers: path ? workingSubagents(path) : 0,
@@ -344,9 +363,9 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
         state: b.state,
         createdAt: b.createdAt,
       })),
-    ...codingOf(p).map((c) => ({ sessionId: c.sessionId, path: c.path, title: c.path ? "" : "(not on this host)", kind: "coding" as const, state: c.running ? "working" : "idle", createdAt: c.createdAt })),
+    ...codingOf(p).map((c) => ({ sessionId: c.sessionId, path: c.path, title: c.path ? "" : (c.title ?? "(not on this host)"), kind: "coding" as const, state: c.running ? "working" : "idle", createdAt: c.createdAt })),
   ];
-  for (const s of started) if (s.kind === "coding" && s.path) s.title = (await getSessionSummary(s.path).catch(() => null))?.title ?? "";
+  for (const s of started) if (s.kind === "coding" && s.path) s.title = (await getSessionSummary(s.path).catch(() => null))?.title || s.title;
   started.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const repo = await gitRootOf(project.root);
   const trees = await codingWorktrees(p, project.root);
@@ -371,7 +390,15 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
     lastRun: memo.lastRun,
     started,
     unread: exists && path && !isViewing(st!.current) ? await unreadReplies(path, readSeen()[st!.current]) : 0,
-    usage: { codingTokens: await codingTokens(p), tokenBudget: settings.tokenBudget, unattendedToday: memo.perDay[dayKey()] ?? 0, lastWatchAt: memo.lastRunAt, pending: memo.pending },
+    usage: {
+      codingTokens: await codingTokens(p),
+      tokenBudget: settings.tokenBudget,
+      allowance: rtOf(orgId, projectId).limits.use(settings.caps),
+      held: memo.held,
+      unattendedToday: memo.perDay[dayKey(new Date(clock()))] ?? 0,
+      lastWatchAt: memo.lastRunAt,
+      pending: memo.pending,
+    },
   };
 }
 
@@ -381,7 +408,9 @@ export async function patchProjectOverseer(orgId: string, projectId: string, bod
   const p = projectOverseerPaths(orgId, projectId);
   // A thinking level the model doesn't offer: refused when the patch names it, else brought to pi's level and saved.
   const models = await listModels().catch(() => []);
+  const before = readPoSettings(p);
   const s = patchPoSettings(p, body, (next, patch) => fitThinking(next, patch, models, loadDefaults().model ?? null));
+  releaseRaised(orgId, projectId, before, s);
   // Setting the level on this host (any level, the same one too) ends the pause an attach put on it.
   if ((body as { autonomy?: unknown }).autonomy !== undefined) resumeOverseer(orgId, projectId);
   const st = readPoState(p);
@@ -417,7 +446,7 @@ export function renderProjectOverseerPrompt(orgId: string, projectId: string, to
     OPERATOR: operatorName(),
     AUTONOMY: `${eff.autonomy} — ${AUTONOMY_MEANING[eff.autonomy]}`,
     AUTONOMY_REASON: eff.reason ? ` (${eff.reason})` : "",
-    CAPS: `per operator message ${c.gatherPerTurn} gathering sessions, ${c.promotePerTurn} promotions, ${c.createPerTurn} coding sessions, ${c.promptsPerTurn} prompts to them; at once ${c.gatheringsOpen} open gatherings, ${c.codingRunning} coding sessions running; ${settings.tokenBudget} coding tokens in total`,
+    CAPS: limitsText(settings),
     ROOT: project.root,
     CODING_MODE: `${describeCodingMode(baseCodingMode(settings.codingMode, project.root))}${settings.codingMode ? " (the operator's setting)" : " (Automatic)"}`,
     ROSTER: active.length ? [...active.map(participantLine), stakeholderLine(project, roster) ?? ""].filter(Boolean).join("\n") : "(nobody yet: ask the operator to add people)",
@@ -428,8 +457,37 @@ export function renderProjectOverseerPrompt(orgId: string, projectId: string, to
     NOW: now.toString(),
   };
   const extra = settings.extraSystemPrompt.trim();
-  return template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => values[k] ?? "") + (extra ? `\n\n# The operator's extra instructions\n\n${r.redact(extra)}` : "");
+  // The org's About text: after Sova's fixed prompt, before the project's own instructions (which win).
+  // This render is its only reader outside the org routes (§app.organizations/about).
+  const about = readOrgAbout(orgId).slice(0, ORG_ABOUT_MAX).trim();
+  return (
+    template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => values[k] ?? "") +
+    (about ? `\n\n${aboutSection(values.ORG!, r.redact(about))}` : "") +
+    (extra ? `\n\n# The operator's extra instructions\n\n${r.redact(extra)}` : "")
+  );
 }
+
+/** Every limit in force, for the prompt's {{CAPS}}; Unlimited reads "no limit". Pure. */
+export function limitsText(s: Pick<ProjectOverseerSettings, "caps" | "tokenBudget" | "watchGapMin" | "soonLookSec">): string {
+  const c = s.caps;
+  const n = (v: number | null) => (v === null ? "no limit" : String(v));
+  return (
+    `each message the operator sends: gathering sessions ${n(c.gatherPerTurn)}, promotions ${n(c.promotePerTurn)}, coding sessions ${n(c.createPerTurn)}, prompts to them ${n(c.promptsPerTurn)}; ` +
+    `on your own each day: gathering sessions ${n(c.gatherPerDay)}, promotions ${n(c.promotePerDay)}, coding sessions ${n(c.createPerDay)}, prompts to them ${n(c.promptsPerDay)}, looks ${n(c.unattendedPerDay)} (these reset at local midnight); ` +
+    `looks on your own at most one every ${s.watchGapMin} min${s.soonLookSec === null ? "" : `, or ${s.soonLookSec} s after something that should be seen soon`}; ` +
+    `at once: ${c.gatheringsOpen} open gathering sessions, ${c.codingRunning} coding sessions running; ` +
+    `coding tokens ${s.tokenBudget === null ? "no limit" : `${s.tokenBudget} in total`}`
+  );
+}
+
+const aboutSection = (org: string, text: string): string =>
+  [
+    "# About this organization (written by the operator)",
+    "",
+    `The operator wrote this about ${org}, for you only. It is context, not a person's words and not a decision. Never copy it into anything a person sees (a gathering session's public_title, question or goal, a Send to person… question) or into a coding session's prompt; use it to judge, not to quote. The project's extra instructions below take precedence over it.`,
+    "",
+    text,
+  ].join("\n");
 
 // ---- the tools' host --------------------------------------------------------------------------------
 
@@ -501,7 +559,97 @@ function toolHost(rt: Rt): PoToolHost {
     coding: () => codingOf(paths),
     startedCoding: () => new Map(readStarted(paths).filter((r) => r.kind === "coding" || r.kind === "operator-coding").map((r) => [r.sessionId, { removed: !!r.removed }])),
     codingTokens: () => codingTokens(paths),
+    hold: (item) => writeMemo(paths, holdItem(readMemo(paths), { ...item, since: new Date(clock()).toISOString() })),
+    held: () => readMemo(paths).held,
+    async postOwnerUpdate(input) {
+      const owner = readRoster(orgId).find((x) => x.id === readOrg(orgId).owner && x.status === "active");
+      if (!owner) throw new Error("This organization has no owner, so there is no page to post to.");
+      const text = cleanUpdateText(input.text);
+      const leak = ownerUpdateLeak(orgId, projectId, text);
+      if (leak) throw new Error(leak);
+      if (!input.attended) {
+        const last = lastUpdate(orgId, projectId);
+        const now = Date.now();
+        if (last && now - Date.parse(last.at) < OWNER_UPDATE_EVERY_MS) throw new Error(`An update was posted ${hoursAgo(last.at, now)}: at most one a day.`);
+        if (!(await milestoneSince(orgId, projectId, last ? Date.parse(last.at) : 0)))
+          throw new Error("Nothing new since the last update: post one when a conversation finishes, a decision is agreed, or a coding session finishes or is merged.");
+      }
+      const update = appendUpdate(orgId, projectId, { text, run: input.attended ? "operator" : "auto" });
+      return { update, owner: owner.name };
+    },
   };
+}
+
+/** The shortest repeated run that counts as copying private text into an owner update. */
+export const OWNER_UPDATE_REPEAT = 24;
+/** At most one owner update per project in this long, in runs the operator did not start. */
+export const OWNER_UPDATE_EVERY_MS = 24 * 3_600_000;
+
+const hoursAgo = (at: string, now: number): string => {
+  const h = Math.floor((now - Date.parse(at)) / 3_600_000);
+  return h < 1 ? "less than an hour ago" : h === 1 ? "1 hour ago" : `${h} hours ago`;
+};
+
+/**
+ * A real milestone of the project since `since` (ms), for an update in a run the operator did not
+ * start (§app.owner-page/updates): a conversation shown on the owner page finished, a decision was
+ * agreed (promoted), or a coding session of the project was merged, or finished (not working now,
+ * its file last written after `since`).
+ */
+export async function milestoneSince(orgId: string, projectId: string, since: number): Promise<boolean> {
+  const after = (t: string | undefined) => !!t && Date.parse(t) > since;
+  const project = projectOf(orgId, projectId);
+  const shown = projectBatons(orgId, projectId).filter((b) => !b.hiddenFromOwner && !project.ownerHidden);
+  if (shown.some((b) => b.state === "done" && after(b.closedAt))) return true;
+  const shownIds = new Set(shown.map((b) => b.sessionId));
+  try {
+    if (listDecisions(orgId, projectId).decisions.some((d) => d.state === "promoted" && shownIds.has(d.sessionId) && after(d.promotedAt))) return true;
+  } catch {
+    // an index that can't sync: no decision counts
+  }
+  const known = indexedSessionPaths();
+  for (const r of readStarted(projectOverseerPaths(orgId, projectId))) {
+    if (r.kind !== "coding" && r.kind !== "operator-coding") continue;
+    if (after(r.merged?.at)) return true;
+    const path = known.get(r.sessionId) ?? r.path;
+    if (!path || !existsSync(path) || isSessionBusy(path)) continue;
+    try {
+      if (statSync(path).mtimeMs > since) return true;
+    } catch {
+      // gone
+    }
+  }
+  return false;
+}
+
+/**
+ * The refusal for an owner update that repeats private text, or null (§app.owner-page/updates). An update is
+ * written by this project's overseer, whose prompt holds the org's About text, its notes and the
+ * operator's instructions: any run of OWNER_UPDATE_REPEAT characters from those, from a
+ * conversation's goal or a hand-off briefing, or from a person's profile, and any contact value,
+ * refuses the post. The About text is read here to be kept OUT of the update, never to write it.
+ */
+export function ownerUpdateLeak(orgId: string, projectId: string, text: string): string | null {
+  const norm = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+  const hay = norm(text);
+  const repeats = (secret: string): boolean => {
+    const s = norm(secret);
+    for (let i = 0; i + OWNER_UPDATE_REPEAT <= s.length; i++) if (hay.includes(s.slice(i, i + OWNER_UPDATE_REPEAT))) return true;
+    return false;
+  };
+  const paths = projectOverseerPaths(orgId, projectId);
+  const roster = readRoster(orgId);
+  const batons = projectBatons(orgId, projectId);
+  const PRIVATE = "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words.";
+  const OTHER = "This update repeats private text (a conversation's goal or briefing, the operator's instructions, or a person's profile or contact). Updates are for the client: write it again in your own words.";
+  const sources: [string, string[]][] = [
+    [PRIVATE, [readOrgAbout(orgId), readNotes(paths.notes)]],
+    [OTHER, [readPoSettings(paths).extraSystemPrompt, ...batons.flatMap((b) => [b.goal, ...b.handoffs.map((h) => h.briefing), ...(b.offers ?? []).map((o) => o.briefing)])]],
+    [OTHER, roster.flatMap((x) => [x.voice, x.role, ...x.skills, x.referral?.why ?? ""])],
+  ];
+  for (const [what, texts] of sources) if (texts.some((t) => t && repeats(t))) return what;
+  for (const x of roster) for (const v of Object.values(x.contact ?? {})) if (typeof v === "string" && v.trim().length >= 5 && hay.includes(norm(v))) return OTHER;
+  return null;
 }
 
 /**
@@ -607,8 +755,10 @@ async function startCodingSession(
     if (extra.worktree) await removeWorktree(extra.worktree, project.root).catch(() => {});
     throw new OrgError(json?.error ?? `Creating the session failed (HTTP ${res.status}).`, res.status === 409 ? 409 : 400);
   }
-  noteStarted(p, json.id, input.kind, new Date(), json.path, extra);
   const title = input.title?.trim() ? cleanSessionTitle(input.title) : null;
+  // The row always carries a title: the one given, else the prompt's first line.
+  const rowTitle = title ?? cleanSessionTitle((input.prompt.trim().split("\n")[0] ?? "").slice(0, 80));
+  noteStarted(p, json.id, input.kind, new Date(), json.path, { ...extra, ...(rowTitle ? { title: rowTitle } : {}) });
   if (title) setSessionTitle(json.id, title);
   const choice = codingChoice(input, settings, await overseerRunning(orgId, projectId));
   // Opened on its model and thinking from the start (its file never records the default first);
@@ -636,9 +786,18 @@ async function startCodingSession(
     console.warn(`[project-overseer] ${json.id}: mode ${describeCodingMode(mode)} not set: ${err instanceof Error ? err.message : String(err)}`);
     return { ...made, notPrompted: NOT_PROMPTED };
   }
-  const sent = await promptSession(json.path, input.prompt);
+  const sent = await promptSession(json.path, codingFirstPrompt(input.prompt, extra.worktree));
   if (!sent.ok) throw new OrgError(sent.error, 409);
   return made;
+}
+
+/**
+ * A coding session's first prompt: in its own worktree, told to commit there before it ends its
+ * turn (Merge Branch refuses uncommitted work); in the project root, as asked.
+ */
+export function codingFirstPrompt(prompt: string, worktree: { branch: string } | undefined): string {
+  if (!worktree) return prompt;
+  return `${prompt}\n\nYou work in your own git worktree on the branch ${worktree.branch}. Commit your work on this branch before you end your turn: uncommitted changes can't be merged.`;
 }
 
 // ---- worktrees: the operator's merge and removal ------------------------------------------------------
@@ -671,7 +830,11 @@ export async function mergeCodingWorktree(orgId: string, projectId: string, sess
     const m = await mergeBack(r.worktree, project.root, title);
     markStarted(p, r.sessionId, { merged: { at: new Date().toISOString(), commit: m.sha } });
   } catch (err) {
-    if (err instanceof WorktreeRefusal) throw new OrgError(err.message, 409);
+    if (err instanceof WorktreeRefusal) {
+      // The session's or the branch's to fix (commit, resolve): the overseer is told. The root's own checkout is the operator's.
+      if (!err.message.startsWith("The project root")) noteReason(orgId, projectId, `Merge Branch for "${title}" was refused: ${err.message}`, false, true);
+      throw new OrgError(err.message, 409);
+    }
     throw err;
   }
   return projectOverseerInfo(orgId, projectId);
@@ -897,8 +1060,9 @@ export async function codeItem(orgId: string, projectId: string, body: ItemCodeI
 // ---- the watch loop ------------------------------------------------------------------------------------
 
 export const WATCH_TICK_MS = 20_000;
+/** The default gap between looks on its own; a project sets its own (`watchGapMin`). */
 export const WATCH_MIN_GAP_MS = 10 * 60_000;
-/** An event that should be seen soon starts a look this long after it (bypassing the 10-minute gap). */
+/** An event that should be seen soon starts a look this long after it, by default (`soonLookSec`; bypassing the gap). */
 export const WATCH_SOON_MS = 60_000;
 export const WATCH_PREFIX = "[project watch]";
 
@@ -911,7 +1075,10 @@ export function watchDecision(input: {
   now: number;
   lastRunAt: number;
   today: number;
-  perDay: number;
+  /** Looks per day; null = Unlimited. */
+  perDay: number | null;
+  /** The project's gap between looks (ms); default WATCH_MIN_GAP_MS. */
+  gapMs?: number;
   force?: boolean;
   /** When an event asked for a look soon (ms; 0 = none): due from then on, whatever the gap. */
   soonAt?: number;
@@ -922,9 +1089,9 @@ export function watchDecision(input: {
     if (!input.watch) return { run: false, why: "watching is off" };
     if (!input.pending.length) return { run: false, why: "nothing new" };
     const soon = !!input.soonAt && input.now >= input.soonAt;
-    if (!soon && input.now - input.lastRunAt < WATCH_MIN_GAP_MS) return { run: false, why: "too soon" };
+    if (!soon && input.now - input.lastRunAt < (input.gapMs ?? WATCH_MIN_GAP_MS)) return { run: false, why: "too soon" };
   }
-  if (input.today >= input.perDay) return { run: false, why: `the daily limit of ${input.perDay} unattended runs is reached` };
+  if (input.perDay !== null && input.today >= input.perDay) return { run: false, why: `the daily limit of ${input.perDay} unattended runs is reached` };
   return { run: true };
 }
 
@@ -947,20 +1114,67 @@ export function watchText(reasons: string[], autonomy: string, openTodos = 0): s
  * its own sova_reconcile/sova_promote acts, not news to it. (The gatherings it starts emit
  * hand-off/offer events, which are never reasons.)
  */
-export function noteReason(orgId: string, projectId: string, reason: string, own = false, soon = false, now = Date.now()): void {
+export function noteReason(orgId: string, projectId: string, reason: string, own = false, soon = false, now = clock()): void {
   try {
     const p = projectOverseerPaths(orgId, projectId);
     if (!readPoState(p)) return;
     const rt = rts.get(keyOf(orgId, projectId));
     if (own && rt?.session?.isStreaming) return;
-    const m = readMemo(p);
-    if (!m.pending.includes(reason)) m.pending.push(reason);
-    // The first such event since the last look sets when; later ones don't push it back.
-    if (soon && !m.soonAt) m.soonAt = new Date(now + WATCH_SOON_MS).toISOString();
-    writeMemo(p, m);
+    writeMemo(p, withReason(readMemo(p), reason, soon ? readPoSettings(p).soonLookSec : null, now));
   } catch {
     // an org detached meanwhile: nothing to note
   }
+}
+
+/** The memo with `reason` waiting; `soonSec` (null: none, or Off) sets when a look is due soon,
+    unless one is already set (the first such event since the last look sets when). Pure. */
+function withReason(m: WatchMemo, reason: string, soonSec: number | null, now: number): WatchMemo {
+  const pending = m.pending.includes(reason) ? m.pending : [...m.pending, reason];
+  const soonAt = soonSec !== null && !m.soonAt ? new Date(now + soonSec * 1000).toISOString() : m.soonAt;
+  return { ...m, pending, soonAt };
+}
+
+const DO: Record<PoLimitKind, string> = { gather: "start gathering sessions", promote: "promote decisions", create: "start coding sessions", prompt: "prompt coding sessions" };
+
+/**
+ * Held items whose time has come become reasons to look (§app.project-overseer/limits): a day's
+ * allowance or the looks at midnight (soon, unless Off), the message allowance's at once (at the
+ * normal pace). The budget's waits for the operator (releaseRaised).
+ */
+export function releaseHeld(orgId: string, projectId: string, now = clock()): void {
+  const p = projectOverseerPaths(orgId, projectId);
+  let m = readMemo(p);
+  const due = m.held.filter((h) => h.retryAt !== null && Date.parse(h.retryAt) <= now);
+  if (!due.length) return;
+  const soonSec = readPoSettings(p).soonLookSec;
+  m = { ...m, held: m.held.filter((h) => !due.includes(h)) };
+  for (const h of due) {
+    const [ledger, kind] = h.key.split(":") as [string, PoLimitKind | undefined];
+    const at = clockTime(h.since);
+    if (h.key === "looks") m = withReason(m, `Today's looks are back (refused ${at}).`, soonSec, now);
+    else if (ledger === "day" && kind && DO[kind]) m = withReason(m, `Today's allowance is back: it may ${DO[kind]} again (refused ${at}).`, soonSec, now);
+    else if (ledger === "message") m = withReason(m, `The operator's last message reached its limit on ${h.what}; it may go on within today's allowance.`, null, now);
+  }
+  writeMemo(p, m);
+}
+
+/** A PATCH that raised a limit (or made it Unlimited) releases what it held, at once. */
+function releaseRaised(orgId: string, projectId: string, before: ProjectOverseerSettings, after: ProjectOverseerSettings): void {
+  const raised = (a: number | null, b: number | null) => a !== null && (b === null || b > a);
+  const keys = new Map<string, string>();
+  for (const k of PO_LIMIT_KINDS) {
+    if (raised(before.caps[PER_DAY[k]], after.caps[PER_DAY[k]])) keys.set(`day:${k}`, LIMIT_WHAT[k]);
+    if (raised(before.caps[PER_TURN[k]], after.caps[PER_TURN[k]])) keys.set(`message:${k}`, LIMIT_WHAT[k]);
+  }
+  if (raised(before.caps.unattendedPerDay, after.caps.unattendedPerDay)) keys.set("looks", "looks");
+  if (raised(before.tokenBudget, after.tokenBudget)) keys.set("budget", "coding tokens");
+  const p = projectOverseerPaths(orgId, projectId);
+  let m = readMemo(p);
+  const freed = m.held.filter((h) => keys.has(h.key));
+  if (!freed.length) return;
+  m = { ...m, held: m.held.filter((h) => !keys.has(h.key)) };
+  for (const h of freed) m = withReason(m, `You raised the limit on ${keys.get(h.key)}.`, after.soonLookSec, clock());
+  writeMemo(p, m);
 }
 
 /** Start one unattended look now, when the rules allow (the ticker, Run Now). */
@@ -972,30 +1186,35 @@ export async function lookNow(orgId: string, projectId: string, force = false): 
   const memo = readMemo(p);
   const chat = path ? heldChat(path) : undefined;
   const idle = !chat || (!chat.session.isStreaming && chat.queue.size === 0);
-  const today = dayKey();
+  const now = clock();
+  const today = dayKey(new Date(now));
   const d = watchDecision({
     pending: memo.pending,
     watch: settings.watch,
     exists: !!path,
     idle,
-    now: Date.now(),
+    now,
     lastRunAt: memo.lastRunAt ? Date.parse(memo.lastRunAt) : 0,
     today: memo.perDay[today] ?? 0,
     perDay: settings.caps.unattendedPerDay,
+    gapMs: settings.watchGapMin * 60_000,
     force,
     soonAt: memo.soonAt ? Date.parse(memo.soonAt) : 0,
   });
   if (!d.run) {
     // Only a refusal worth showing is recorded (not the ticker's everyday "nothing new").
-    if (force || (memo.pending.length && d.why?.startsWith("the daily limit"))) {
-      memo.lastRun = { at: new Date().toISOString(), reasons: memo.pending, outcome: "skipped", ...(d.why ? { detail: d.why } : {}) };
-      writeMemo(p, memo);
+    const daily = d.why?.startsWith("the daily limit");
+    if (force || (memo.pending.length && daily)) {
+      let m: WatchMemo = { ...memo, lastRun: { at: new Date(now).toISOString(), reasons: memo.pending, outcome: "skipped", ...(d.why ? { detail: d.why } : {}) } };
+      // Held until midnight, so the page says what it waits for; the reasons keep.
+      if (daily) m = holdItem(m, { key: "looks", what: "looks", why: `Today's ${settings.caps.unattendedPerDay} looks on its own are used.`, since: new Date(now).toISOString(), retryAt: nextMidnight(new Date(now)).toISOString() });
+      writeMemo(p, m);
     }
     return { started: false, ...(d.why ? { why: d.why } : {}) };
   }
   const eff = effectiveAutonomy(settings, readRoster(orgId), overseerPausedSince(orgId, projectId));
   const reasons = memo.pending;
-  const at = new Date().toISOString();
+  const at = new Date(now).toISOString();
   try {
     const po = await acquireChat(path!);
     po.assertModelAllowed();
@@ -1132,7 +1351,9 @@ async function tick(): Promise<void> {
         const p = projectOverseerPaths(o.id, pr.id);
         // Paused by an attach: the watch loop waits (its reasons keep) until the operator sets its level here.
         if (overseerPausedSince(o.id, pr.id)) continue;
-        if (!readPoState(p) || !readMemo(p).pending.length) continue;
+        if (!readPoState(p)) continue;
+        releaseHeld(o.id, pr.id);
+        if (!readMemo(p).pending.length) continue;
         await lookNow(o.id, pr.id);
       } catch (err) {
         console.warn("[project-overseer] watch failed:", err instanceof Error ? err.message : String(err));
@@ -1143,19 +1364,31 @@ async function tick(): Promise<void> {
 
 const batonTitle = (sessionId: string) => batonById(sessionId)?.row.publicTitle ?? sessionId;
 
+/** A baton event as a reason to look (the loop's listener; exported for the tests). */
+export function noteBatonEvent(e: BatonEvent): void {
+  // A decision recorded mid-session is not a reason on its own: the session's end is, and it
+  // comes with its decisions (a settle session's answer reaches the reconciler, whose events are).
+  if (e.type === "done") noteReason(e.orgId, e.projectId, `The gathering session "${batonTitle(e.sessionId)}" reached its goal.`, false, true);
+  else if (e.type === "closed") noteReason(e.orgId, e.projectId, `The gathering session "${batonTitle(e.sessionId)}" was closed.`);
+  else if (e.type === "proposal") noteReason(e.orgId, e.projectId, `Someone was referred in "${batonTitle(e.sessionId)}" (a proposed roster person).`);
+  // Its own gathering session's model put a question to the operator (a person's request it passed
+  // on): the overseer, who started it, acts on it, not only the operator.
+  else if (e.type === "asked-operator") {
+    const row = batonById(e.sessionId)?.row;
+    if (row && ownedBy(row, e.projectId)) noteReason(e.orgId, e.projectId, `The gathering session "${row.publicTitle}" handed a question to the operator (their words, as data): "${e.question ?? ""}"`, false, true);
+  }
+}
+
+/** One tick of the watch loop, now (tests). */
+export const tickForTest = (): Promise<void> => tick();
+
 let started = false;
 /** Start the listeners and the ticker (index.ts, once). */
 export function startProjectOverseerLoop(): void {
   if (started) return;
   started = true;
   sweepCutOffRuns();
-  onBatonEvent((e) => {
-    // A decision recorded mid-session is not a reason on its own: the session's end is, and it
-    // comes with its decisions (a settle session's answer reaches the reconciler, whose events are).
-    if (e.type === "done") noteReason(e.orgId, e.projectId, `The gathering session "${batonTitle(e.sessionId)}" reached its goal.`, false, true);
-    else if (e.type === "closed") noteReason(e.orgId, e.projectId, `The gathering session "${batonTitle(e.sessionId)}" was closed.`);
-    else if (e.type === "proposal") noteReason(e.orgId, e.projectId, `Someone was referred in "${batonTitle(e.sessionId)}" (a proposed roster person).`);
-  });
+  onBatonEvent(noteBatonEvent);
   onReconcileEvent((e) => {
     const n = e.ids.length;
     if (e.type === "conflict") noteReason(e.orgId, e.projectId, `${n} new conflict${n === 1 ? "" : "s"} between decisions.`, true);

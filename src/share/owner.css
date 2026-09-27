@@ -1,0 +1,152 @@
+/* The Owner page (§app.owner-page/page): one reading column, phone first, capped at 720px. Token
+   values only. Loaded by the share build and by the operator's preview modal, so it styles nothing
+   outside `.owner` (no body rules, no fonts: those are share.css's). Meta lines wrap; nothing
+   truncates. Every row and button is at least 44px. */
+
+.owner {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow-wrap: anywhere;
+}
+.owner-preview .owner { padding: 0; }
+.owner p { margin: 0; }
+
+.owner-head { display: flex; flex-direction: column; gap: var(--space-1); }
+.owner-org {
+  margin: 0;
+  font-size: var(--fs-display-l);
+  line-height: var(--lh-display-l);
+  font-weight: var(--fw-display);
+  letter-spacing: var(--ls-display);
+}
+.owner-title {
+  margin: 0;
+  font-size: var(--fs-heading-m);
+  line-height: var(--lh-heading-m);
+  font-weight: var(--fw-semibold);
+}
+.owner-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.owner-lead { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); color: var(--color-ink); }
+.owner-note { color: var(--color-ink-2); }
+.owner-meta { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+
+.owner-back {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: var(--tap-min);
+  color: var(--color-accent);
+  text-decoration: none;
+  font-weight: var(--fw-medium);
+}
+.owner-back:hover { text-decoration: underline; }
+.owner-back:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+
+/* A section: a plain card with its heading inside. */
+.owner-section {
+  display: flex;
+  flex-direction: column;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+.owner-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-4) var(--space-2);
+}
+.owner-h2 {
+  margin: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+}
+.owner-section-body { padding: 0 var(--space-4) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.owner-empty { color: var(--color-ink-muted); }
+.owner-attention { border-color: var(--status-warn); }
+
+.owner-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.owner-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: var(--row-height);
+  box-sizing: border-box;
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  color: inherit;
+  text-decoration: none;
+}
+a.owner-row { cursor: pointer; transition: background-color var(--dur-fast) var(--ease-standard); }
+a.owner-row:hover { background: var(--color-sunken); }
+a.owner-row:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.owner-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.owner-row-title { font-weight: var(--fw-medium); color: var(--color-ink); }
+.owner-row-go { flex: none; align-self: center; color: var(--color-ink-muted); }
+.owner-row .chip { align-self: flex-start; margin-top: 2px; }
+.owner-row-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+/* A project card on the home page: the whole card is one link. */
+.owner-projects { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.owner-project {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  color: inherit;
+  text-decoration: none;
+}
+.owner-project-name { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); }
+.owner-project-news { color: var(--color-ink-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* News: one post per row. */
+.owner-news { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3) 0; border-top: var(--stroke-thin) solid var(--color-border); }
+.owner-news:first-child { border-top: 0; padding-top: 0; }
+.owner-news-text { white-space: pre-wrap; }
+.owner-news-text a,
+.owner-note a { color: var(--color-accent); }
+
+/* Decisions, grouped by topic. */
+.owner-topic { display: flex; flex-direction: column; gap: var(--space-2); }
+.owner-topic + .owner-topic { padding-top: var(--space-3); border-top: var(--stroke-thin) solid var(--color-border); }
+.owner-topic-name { font-weight: var(--fw-semibold); color: var(--color-ink-2); font-size: var(--fs-caption); }
+.owner-decision { display: flex; flex-direction: column; gap: var(--space-1); }
+.owner-decision-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
+.owner-decision-head > p { flex: 1 1 16ch; }
+.owner-words > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  cursor: pointer;
+  color: var(--color-accent);
+  font-size: var(--fs-caption);
+}
+.owner-words > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.owner-quote {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-border-strong);
+  background: var(--color-sunken);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  white-space: pre-wrap;
+}
+.owner-difference { padding: var(--space-3); border-radius: var(--r-md); background: var(--status-warn-bg); color: var(--color-ink); }
+
+.owner-built { font-size: var(--fs-heading-s); font-weight: var(--fw-medium); }
+
+.owner-more { align-self: flex-start; }
+.owner-foot { color: var(--color-ink-muted); font-size: var(--fs-caption); padding-top: var(--space-2); }
+
+.owner-thread { display: flex; flex-direction: column; gap: var(--space-3); }
+
+.owner-problem { margin: auto; padding: var(--space-7) var(--space-4); }
+.owner-skeleton { display: flex; flex-direction: column; gap: var(--space-3); }

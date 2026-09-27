@@ -26,6 +26,8 @@ import {
   STALE_BUILD_NOTE,
   noteHost,
   notePeerSessions,
+  notePeerOrgs,
+  orgHostOf,
   pathsNamed,
   peerUnavailable,
   resetHosts,
@@ -63,6 +65,33 @@ test("with no peer known, every URL is left exactly as it was", () => {
   for (const url of [`/api/transcript?path=${q(A)}`, "/api/sessions", `/api/upload?draft=${q(A)}`, "/explain/x"]) {
     assert.equal(routeUrl(url, JSON.stringify({ path: A })), url);
   }
+});
+
+test("a peer's hand-off session: its baton strip's actions go to that peer, by the session id (§mesh.remote-sessions/host-scope)", () => {
+  resetHosts();
+  const sid = "01a0e321-3878-75db-a86c-b3194794ed09";
+  notePeerSessions("vps", [`/srv/ws/mesh-test-co/sessions/2026-09-27T13-40-00-000Z_${sid}.jsonl`]);
+  for (const tail of ["link", "link?person=p_x", "revoke", "take", "close", "extend", "handoff", "offer", "offer/withdraw", "wrapup/retry"])
+    assert.equal(routeUrl(`/api/baton/${sid}/${tail}`, "{}"), `/peer/vps/api/baton/${sid}/${tail}`, tail);
+  // Not a peer's: here. The host's own settings are never a session.
+  assert.equal(routeUrl("/api/baton/01a0e399-0000-7000-8000-000000000000/take"), "/api/baton/01a0e399-0000-7000-8000-000000000000/take");
+  assert.equal(routeUrl("/api/baton/settings"), "/api/baton/settings");
+  resetHosts();
+});
+
+test("a peer's organization: its routes, and a hand-off started in it, go to that peer (§mesh.remote-sessions/org-pages)", () => {
+  resetHosts();
+  notePeerOrgs("vps", ["org_iad7rvz9"]);
+  assert.equal(orgHostOf("org_iad7rvz9"), "vps");
+  assert.equal(orgHostOf("org_here"), null);
+  assert.equal(routeUrl("/api/orgs/org_iad7rvz9"), "/peer/vps/api/orgs/org_iad7rvz9");
+  assert.equal(routeUrl("/api/orgs/org_iad7rvz9/projects/prj_1/overseer/todos"), "/peer/vps/api/orgs/org_iad7rvz9/projects/prj_1/overseer/todos");
+  assert.equal(routeUrl("/api/orgs/org_iad7rvz9/people/p_1/links/revoke", "{}"), "/peer/vps/api/orgs/org_iad7rvz9/people/p_1/links/revoke");
+  assert.equal(routeUrl("/api/baton", JSON.stringify({ orgId: "org_iad7rvz9", projectId: "prj_1", to: "p_1" })), "/peer/vps/api/baton");
+  // This host's own: the list, attach, the operator's name, a local org, a local start.
+  for (const url of ["/api/orgs", "/api/orgs/attach", "/api/orgs/operator", "/api/orgs/org_here", "/api/orgs/org_here/commit"]) assert.equal(routeUrl(url, "{}"), url);
+  assert.equal(routeUrl("/api/baton", JSON.stringify({ orgId: "org_here" })), "/api/baton");
+  resetHosts();
 });
 
 test("a request naming a peer's session goes to that peer, by query or by body", () => {

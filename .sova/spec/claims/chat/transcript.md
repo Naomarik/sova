@@ -507,13 +507,16 @@ project's overseer) has its turn stopped once the model's stream passes a limit 
 model that degenerates — endless whitespace inside a tool call is the case seen — otherwise costs
 the server more CPU with every piece it streams, until nothing else on it answers.
 
-| Limit | Baton | Overseer, project overseer | Ordinary chat |
-|---|---|---|---|
-| Raw whitespace in a row inside one tool call's arguments | 8,192 | 8,192 | 8,192 |
-| One tool call's arguments | 65,536 characters | 65,536 | 1,048,576 |
-| One reply (text, thinking and tool arguments) | 262,144 characters | none | none |
-| One run, start to end | 10 minutes | 10 minutes | none |
-| The server stalled over 750 ms while one tool call is at least 131,072 characters | stop | stop | stop |
+| Limit | Baton | Overseer | Project overseer | Ordinary chat |
+|---|---|---|---|---|
+| Raw whitespace in a row inside one tool call's arguments | 8,192 | 8,192 | 8,192 | 8,192 |
+| One tool call's arguments | 65,536 characters | 65,536 | 65,536 | 1,048,576 |
+| One reply (text, thinking and tool arguments) | 262,144 characters | none | 1,048,576 | none |
+| One run, start to end | 10 minutes | 10 minutes | 10 minutes | none |
+| The server stalled over 750 ms while one tool call is at least 131,072 characters | stop | stop | stop | stop |
+
+A project overseer's conversation lives in its org's workspace repo, which every host clones, so a
+runaway reply there is capped: it can't write a line too long to read back or to back up.
 
 - Characters are counted as they stream; the clock is checked as each piece arrives as well as by a
   timer, since a busy server runs timers late.

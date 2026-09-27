@@ -50,6 +50,15 @@ export const offersRemove = (w: Row): boolean => w.state === "open" || w.state =
 export const mergeGate = (w: Row): Gate => busyGate(w);
 export const removeGate = (w: Row): Gate => busyGate(w);
 
+/** The line about its worktree folder, or null: removed; on another host (its folder is there, not
+    missing); missing only on the host that made it. */
+export function folderNote(w: Pick<CodingWorktree, "state" | "path">): string | null {
+  if (w.state === "removed") return "Worktree removed";
+  if (w.state === "root") return null;
+  if (w.path === null) return "On another host: its worktree is there.";
+  return w.state === "missing" ? "Worktree folder missing" : null;
+}
+
 /** The row's meta line before its branch: "Started by you · idle · 2h ago" (time added by the caller). */
 export const startedBy = (w: Pick<CodingWorktree, "startedBy">): string => (w.startedBy === "overseer" ? "Started by the overseer" : "Started by you");
 

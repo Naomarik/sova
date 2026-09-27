@@ -35,7 +35,7 @@ once), **lease** (an offer's lock on its first taker).
   public title, with ` · <holder>` after the title. Open, a strip above its transcript shows org, project,
   holder, state and message count — and the public title, only when the session head above shows a
   different one (a renamed session): otherwise it would say the title twice — and Get Link / Turn Off Link / Take Back / Close
-  Session; the strip never shows a profile. Each strip action re-reads the session list at once,
+  Session, and, while the org has an owner, Hide From / Show To the owner (§app.owner-page/conversations); the strip never shows a profile. Each strip action re-reads the session list at once,
   so the ` · <holder>` suffix moves without waiting for the list's next poll.
 - **Loadout.** No pi-config extension, skill, prompt template or context file is loaded; the only
   extension is Sova's inline baton extension. The SDK tool list is exactly `hand_to`, `goal_done`,
@@ -75,7 +75,8 @@ once), **lease** (an offer's lock on its first taker).
   its message limit. Extend it to write."
 - **Extend**: `POST /api/baton/:sid/extend {by}` raises the limit by `by` (a whole number, the
   result at most 1000; refused once the session is done or closed) and answers the strip's
-  `BatonInfo`. While an open session is at its limit the strip says "The message limit is reached
+  `BatonInfo`; the toast names the limit that answer carries ("Limit raised to {max} messages."), so
+  two tabs extending at once each show what the server now holds. While an open session is at its limit the strip says "The message limit is reached
   (<used> of <max>). Extend it to go on." with **Extend by** [20] and **Extend**, and its where-line
   reads "with you — extend the limit to write" while the operator holds it.
 
@@ -298,7 +299,9 @@ once), **lease** (an offer's lock on its first taker).
   listener otherwise). It serves only: `GET /h/<token>` (the share page), `GET /h/assets/*` (the
   share page's own build, never the operator app's), `GET /api/h/<token>` (the filtered view and
   state), `POST /api/h/<token>/message {text}` and the WebSocket `/ws/h?token=`, the page's
-  visit id riding along as `?v=` on the view and the socket (§app.baton/visits). Every other path
+  visit id riding along as `?v=` on the view and the socket (§app.baton/visits); and, for the owner
+  page, only `GET /i/<token>`, `GET /api/i/<token>` and its `/p/<q_handle>` and `/c/<k_handle>`
+  (§app.owner-page/page). Every other path
   answers 404 before any routing; the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
   `/ext/*` are unreachable on it. The main listener never serves the share page.
 - Limits: request bodies over 16 KB (or without a length) are refused (413); a request's headers
@@ -358,6 +361,8 @@ once), **lease** (an offer's lock on its first taker).
     person left): someone tried a turned-off link; at most one per link each 10 minutes;
   - `{kind:"capped", id, at, personId, via, sessionId, n, offerId?}` — the link reached its cap
     (below).
+  An owner link's lines (§app.owner-page/link) carry `via:"owner"` and no `sessionId`, `n` or
+  `offerId`; they follow every rule here.
   An unknown token (404) records nothing: there is no person to record it against.
 - **Never recorded**: the token, its hash or any part of either, an IP address or anything
   derived from one, the raw user agent, cookies or headers, and anything the person wrote. The
@@ -398,7 +403,9 @@ once), **lease** (an offer's lock on its first taker).
   in the Organizations region's Needs you.
 - Any change to a baton row or its links (Get Link, a reply, Extend, Take back, a hand-off,
   approve, decline, close) re-diffs the session list at once (a baton row's state is part of what
-  the list compares), so its Needs-you item clears within a second.
+  the list compares), and the page re-reads the attention digest whenever it re-reads the list for
+  the session feed's `list_changed` (the Organizations region's Needs you lists the digest's
+  items), so its Needs-you item clears within a second, whichever tab or host page made the change.
 - Baton sessions are not classified by attention signals (§app.decisions/attention-signals).
 - A composer send the session refuses (someone else holds the baton, it is done, the budget is
   spent) comes back on `/ws/chat` as an error with code `refused` and the reason, never `internal`.

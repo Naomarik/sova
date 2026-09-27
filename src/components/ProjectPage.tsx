@@ -5,17 +5,18 @@ import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, red
 import { alsoCarriesLine, areaGroups, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
 import { promotionCommitLine } from "../lib/coding-worktrees";
 import { relativeTime } from "../lib/format";
-import { orgTabHref } from "../lib/orgs-route";
+import { hostLabel, orgHostOf } from "../lib/mesh";
+import { orgSessionHref, orgTabHref } from "../lib/orgs-route";
 import { stakeholderView } from "../lib/stakeholder";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
+import { OwnerProjectCard } from "./OwnerProjectCard";
 import { ProjectOverseerPanel } from "./ProjectOverseerPanel";
 import { Banner, Chip } from "./ui";
 import "../orgs.css";
 import "../projects.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
-const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
 const RUNNING_POLL_MS = 3000;
 
 /**
@@ -74,6 +75,7 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
   return (
     <InsightsPage
       title={project()?.name ?? "Project"}
+      titleTip
       meta={
         <Show when={org()}>
           {(o) => (
@@ -102,6 +104,10 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       titleRef={props.titleRef}
     >
       <Show when={org()}>{(o) => <ProjectOverseerPanel org={o()} projectId={props.projectId} onBusy={setOverseerBusy} />}</Show>
+      {/* Only while the org has an owner (§app.owner-page/controls). */}
+      <Show when={org()?.ownerPage?.person && project()}>
+        <OwnerProjectCard org={org()!} project={project()!} onOrg={mutateOrg} />
+      </Show>
       <Show when={info()}>
         {(i) => (
           <>
@@ -202,12 +208,13 @@ function Stakeholder(props: { org: OrgDetail; project: OrgProject; onSet(id: str
         <span class="field-hint" id="project-stakeholder-hint">
           Decides every area of this project that no one on the roster decides by name.
         </span>
+        {/* Read through l() each time: a re-pick changes the latest line in place (the Show stays shown). */}
         <Show when={v().latest}>
-          {(l) => {
-            const x = l();
-            return (
-              <span class="field-hint">
-                {x.why === "left" ? (
+          {(l) => (
+            <span class="field-hint">
+              {(() => {
+                const x = l();
+                return x.why === "left" ? (
                   <>
                     Cleared <time title={x.at}>{relativeTime(x.at)}</time>: {x.name} left the organization.
                   </>
@@ -215,10 +222,10 @@ function Stakeholder(props: { org: OrgDetail; project: OrgProject; onSet(id: str
                   <>
                     Set by you <time title={x.at}>{relativeTime(x.at)}</time>.
                   </>
-                )}
-              </span>
-            );
-          }}
+                );
+              })()}
+            </span>
+          )}
         </Show>
         <Show when={err()}>{(e) => <span class="field-error">{e()}</span>}</Show>
       </label>
@@ -377,8 +384,8 @@ function ConflictItem(props: CardProps & { org: OrgDetail | undefined; conflict:
         <Chip tone={c().state === "open" ? "warn" : "success"}>{c().state === "open" ? "Open" : "Resolved"}</Chip>
       </div>
       <div class="project-sides">
-        <Side label="First" row={sides().a} kept={c().outcome === "a" || c().outcome === "both"} />
-        <Side label="Second" row={sides().b} kept={c().outcome === "b" || c().outcome === "both"} />
+        <Side orgId={props.orgId} label="First" row={sides().a} kept={c().outcome === "a" || c().outcome === "both"} />
+        <Side orgId={props.orgId} label="Second" row={sides().b} kept={c().outcome === "b" || c().outcome === "both"} />
       </div>
       <p class="orgs-line project-muted">
         <span class="orgs-mono" title="How likely the two contradict, from the decision model.">
@@ -390,7 +397,7 @@ function ConflictItem(props: CardProps & { org: OrgDetail | undefined; conflict:
           {(path) => (
             <>
               {" · "}
-              <a href={sessionHref(path())}>Open Its Session</a>
+              <a href={orgSessionHref(props.orgId, path())}>Open Its Session</a>
             </>
           )}
         </Show>
@@ -462,7 +469,7 @@ function ConflictItem(props: CardProps & { org: OrgDetail | undefined; conflict:
   );
 }
 
-function Side(props: { label: string; row: DecisionRow | null; kept: boolean }) {
+function Side(props: { orgId: string; label: string; row: DecisionRow | null; kept: boolean }) {
   return (
     <div class="project-side" classList={{ "project-side-kept": props.kept }}>
       <span class="project-side-label">
@@ -470,26 +477,27 @@ function Side(props: { label: string; row: DecisionRow | null; kept: boolean }) 
         {props.kept ? " · kept" : ""}
       </span>
       <Show when={props.row} fallback={<p class="orgs-empty">This decision is no longer in the index.</p>}>
-        {(r) => <Provenance row={r()} />}
+        {(r) => <Provenance orgId={props.orgId} row={r()} />}
       </Show>
     </div>
   );
 }
 
 /** A decision in the words it was recorded with: the statement, the quote, who, when, where. */
-function Provenance(props: { row: DecisionRow }) {
+function Provenance(props: { orgId: string; row: DecisionRow }) {
   const r = () => props.row;
+  const host = () => orgHostOf(props.orgId);
   return (
     <>
       <p class="project-statement">{r().statement}</p>
       <blockquote class="project-quote">{r().quote}</blockquote>
       <p class="project-by">
         {r().name} · <time title={r().at}>{relativeTime(r().at)}</time>
-        <Show when={r().sessionPath} fallback={<span title="The session isn't on this host."> · session elsewhere</span>}>
+        <Show when={r().sessionPath} fallback={<span title={`The session isn't on ${host() ? hostLabel(host()!) : "this host"}.`}> · session elsewhere</span>}>
           {(p) => (
             <>
               {" · "}
-              <a href={sessionHref(p())}>Open Session</a>
+              <a href={orgSessionHref(undefined, p())}>Open Session</a>
             </>
           )}
         </Show>
@@ -589,7 +597,7 @@ function DecisionsCard(props: CardProps) {
                         </label>
                       </Show>
                       <div class="project-decision-main">
-                        <Provenance row={d} />
+                        <Provenance orgId={props.orgId} row={d} />
                         <Show when={alsoCarriesLine(d, byId())}>{(line) => <p class="project-by">{line()}</p>}</Show>
                         <Show when={d.recordId}>
                           {(id) => <p class="orgs-mono project-muted">{id()}</p>}

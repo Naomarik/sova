@@ -349,6 +349,7 @@ export function batonTools(sessionId: string, append: AppendEntry): ToolDefiniti
         const { n, from } = handTo(sessionId, target.ref, question, briefing);
         append(BATON_HANDOFF_ENTRY, { v: 1, n, from, to: target.ref, question, briefing } satisfies BatonHandoffData);
         refreshShare(sessionId);
+        if (target.ref === OPERATOR) emitBatonEvent({ type: "asked-operator", orgId: row.orgId, projectId: row.projectId, sessionId, question });
         const who = nameOf(row.orgId, target.ref);
         return { ...say(`Handed to ${who}. Your turn has ended.`), terminate: true };
       },

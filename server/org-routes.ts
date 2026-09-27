@@ -2,10 +2,10 @@ import type { Context, Hono } from "hono";
 import { OPERATOR, type BatonInfo, type BatonSession, type BatonStartInput, type OfferInfo, type OfferLink } from "../shared/baton";
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import type { OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
+import type { CommitNowOutcome, OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
 import { attentionChanged } from "./attention-memo";
 import { readConflicts } from "./decisions";
-import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, linkTimes, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf } from "./baton";
+import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, linkTimes, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf, setHiddenFromOwner } from "./baton";
 import { moveBaton, offerBaton, scheduleWrapup } from "./baton-loadout";
 import { readBatonSettings, writeBatonSettings } from "./baton-settings";
 import { BusyError } from "./chat-manager";
@@ -30,6 +30,7 @@ import {
   readRoster,
   recentChanges,
   revertChange,
+  revertOrgChange,
   setOperatorName,
 } from "./orgs";
 import { resolveSessionPath } from "./paths";
@@ -39,6 +40,10 @@ import { nudgeMarks } from "./session-feed";
 import { personPage, previewAs } from "./person-page";
 import { findLink, linksOfOrg, revokePersonLinks } from "./baton-links";
 import { lastVisits } from "./visits";
+import type { OwnerLinkResult } from "../shared/owner";
+import { mintOwnerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setOwner } from "./owner";
+import { ownerView } from "./owner-page";
+import { readUpdates, withdrawUpdate } from "./project-updates";
 import { commitAll, setRemote } from "./workspace-git";
 
 /**
@@ -58,6 +63,8 @@ async function body(c: Context): Promise<Record<string, unknown>> {
 
 /** A link as the operator copies it: the share listener's public address when known, else the path. */
 const linkUrl = (token: string): string => `${shareInfo().publicUrl ?? ""}/h/${token}`;
+/** An owner link (§app.owner-page/link), likewise. */
+const ownerLinkUrl = (token: string): string => `${shareInfo().publicUrl ?? ""}/i/${token}`;
 
 /** With no share address known, a link is only a path nobody outside can open: every response that
     carries one says so, and the strip shows it (BatonInfo.share). */
@@ -107,7 +114,15 @@ export function batonInfo(row: BatonSession): BatonInfo {
         };
       }),
     wrapup: row.wrapup ?? null,
+    owner: ownerName(row.orgId, roster),
   };
+}
+
+/** The org's owner's name for the strip's Hide From {first}, or null. */
+function ownerName(orgId: string, roster: ReturnType<typeof readRoster>): { name: string } | null {
+  const id = readOrg(orgId).owner;
+  const p = id ? roster.find((x) => x.id === id && x.status === "active") : undefined;
+  return p ? { name: p.name } : null;
 }
 
 const infoOf = (sid: string): BatonInfo => {
@@ -149,8 +164,9 @@ interface Waiting {
  * session is already that session's reply). `rows` are the org's baton rows.
  */
 function waitingIn(orgId: string, dir: string, rows: readonly BatonSession[]): Waiting {
-  const w: Waiting = { needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0 }, batons: new Map(), projectConflicts: {} };
+  const w: Waiting = { needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0, ownerLink: 0 }, batons: new Map(), projectConflicts: {} };
   try {
+    w.needsYou.ownerLink = ownerLinkNeeds(orgId);
     w.needsYou.proposals = readRoster(orgId).filter((p) => p.status === "proposed").length;
     for (const project of readProjects(orgId)) {
       if (project.stakeholderCleared) w.needsYou.stakeholders = (w.needsYou.stakeholders ?? 0) + 1;
@@ -221,6 +237,7 @@ export async function orgPage(orgId: string): Promise<OrgDetail> {
     }),
     projectConflicts: w.projectConflicts,
     ...lastOpenedOf(orgId),
+    ownerPage: ownerPageInfo(orgId),
   };
 }
 
@@ -250,7 +267,7 @@ const handle =
       if (c.req.method !== "GET" && res.ok) attentionChanged();
       return res;
     } catch (err) {
-      if (err instanceof OrgError) return c.json({ error: err.message }, err.status);
+      if (err instanceof OrgError) return c.json({ error: err.message, ...(err.code ? { code: err.code } : {}) }, err.status);
       if (err instanceof BusyError) return c.json({ error: err.message }, 409);
       throw err;
     }
@@ -269,7 +286,8 @@ export function registerOrgRoutes(app: Hono<any>): void {
   app.post(
     "/api/orgs/attach",
     handle(async (c) => {
-      const org = await attachOrg({ dir: (await body(c)).dir });
+      const b = await body(c);
+      const org = await attachOrg({ dir: b.dir, confirm: b.confirm });
       return c.json(await orgPage(org.id), 201);
     }),
   );
@@ -288,14 +306,26 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id",
     handle(async (c) => {
       const b = await body(c);
-      patchOrg(p(c, "id"), { name: b.name, notes: b.notes });
+      patchOrg(p(c, "id"), { name: b.name, about: b.about });
       return c.json(await orgPage(p(c, "id")));
+    }),
+  );
+  app.post(
+    "/api/orgs/:id/about/revert",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const at = (await body(c)).at;
+      if (typeof at !== "string") throw new OrgError("at is required");
+      revertOrgChange(id, at);
+      return c.json(await orgPage(id));
     }),
   );
   app.delete(
     "/api/orgs/:id",
-    handle((c) => {
-      detachOrg(p(c, "id"));
+    handle(async (c) => {
+      // Its owner link stops working here; an attach elsewhere sends a new one.
+      if (orgDir(p(c, "id"))) revokeOwnerLinks(p(c, "id"), "detached");
+      await detachOrg(p(c, "id"));
       return c.json({ ok: true });
     }),
   );
@@ -305,7 +335,8 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const out = await commitAll(orgDir(id), `Commit now (${readOrg(id).name})`);
       if (out.error) return c.json({ error: out.error }, 502);
-      return c.json(await orgPage(id));
+      const commit: CommitNowOutcome = { committed: out.committed, ...(out.sha ? { sha: out.sha } : {}), ...(out.pushed ? { pushed: true } : {}) };
+      return c.json({ ...(await orgPage(id)), commit });
     }),
   );
   app.put(
@@ -411,8 +442,69 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       const b = await body(c);
-      patchProject(id, p(c, "pid"), { name: b.name, root: b.root, ...(b.spec !== undefined ? { spec: b.spec } : {}), ...(b.stakeholder !== undefined ? { stakeholder: b.stakeholder } : {}) });
+      patchProject(id, p(c, "pid"), {
+        name: b.name,
+        root: b.root,
+        ...(b.spec !== undefined ? { spec: b.spec } : {}),
+        ...(b.stakeholder !== undefined ? { stakeholder: b.stakeholder } : {}),
+        ...(b.ownerHidden !== undefined ? { ownerHidden: b.ownerHidden } : {}),
+      });
       return c.json(await orgPage(id));
+    }),
+  );
+
+  // ---- the owner and the Owner page (§app.owner-page) -----------------------------------------------
+
+  app.put(
+    "/api/orgs/:id/owner",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const b = await body(c);
+      if (!("personId" in b)) throw new OrgError("personId is required (null: no owner)");
+      setOwner(id, b.personId);
+      return c.json(await orgPage(id));
+    }),
+  );
+  app.get(
+    "/api/orgs/:id/owner/link",
+    handle((c) => {
+      const rec = mintOwnerLinkFor(p(c, "id"));
+      const out: OwnerLinkResult = { link: ownerLinkUrl(rec.token), createdAt: rec.createdAt, expiresAt: rec.expiresAt, ...linkWarning() };
+      return c.json(out);
+    }),
+  );
+  app.post(
+    "/api/orgs/:id/owner/revoke",
+    handle(async (c) => {
+      const id = p(c, "id");
+      revokeOwnerLinks(id);
+      return c.json(await orgPage(id));
+    }),
+  );
+  // Preview Owner Page: the same function the owner's link calls; no token, no visit.
+  app.get(
+    "/api/orgs/:id/owner/preview",
+    handle(async (c) => {
+      const project = c.req.query("project");
+      const conversation = c.req.query("c");
+      return c.json(await ownerView(p(c, "id"), { ...(project !== undefined ? { project } : {}), ...(conversation !== undefined ? { conversation } : {}) }));
+    }),
+  );
+  app.get(
+    "/api/orgs/:id/projects/:pid/updates",
+    handle((c) => {
+      const id = p(c, "id");
+      if (!readProjects(id).some((x) => x.id === p(c, "pid"))) throw new OrgError("Unknown project", 404);
+      return c.json(readUpdates(id, p(c, "pid")));
+    }),
+  );
+  app.post(
+    "/api/orgs/:id/projects/:pid/updates/:uid/withdraw",
+    handle((c) => {
+      const id = p(c, "id");
+      if (!readProjects(id).some((x) => x.id === p(c, "pid"))) throw new OrgError("Unknown project", 404);
+      withdrawUpdate(id, p(c, "pid"), p(c, "uid"));
+      return c.json(readUpdates(id, p(c, "pid")));
     }),
   );
 
@@ -471,6 +563,16 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const person = c.req.query("person");
       const { token, n } = rotateLink(p(c, "sid"), person || undefined);
       return c.json({ link: linkUrl(token), n, ...mintedAt(token), ...linkWarning() });
+    }),
+  );
+  app.post(
+    "/api/baton/:sid/owner",
+    handle(async (c) => {
+      const sid = p(c, "sid");
+      const hidden = (await body(c)).hidden;
+      if (typeof hidden !== "boolean") throw new OrgError("hidden must be true or false");
+      setHiddenFromOwner(sid, hidden);
+      return c.json(infoOf(sid));
     }),
   );
   app.post(

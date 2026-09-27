@@ -148,6 +148,16 @@
 .orgs-change-fields .orgs-change + .orgs-change { border-top: 0; }
 .orgs-changes-filter { flex: none; min-width: 10rem; }
 
+/* About this organization (§app.organizations/about): the field, then its counter and buttons on one
+   row that wraps; each history row's text starts on one line, in full under Before and after. */
+.orgs-about-form { display: flex; flex-direction: column; gap: var(--space-2); }
+.orgs-about-text { min-height: 8rem; resize: vertical; }
+.orgs-about-foot { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.orgs-about-over { color: var(--status-warn); }
+.orgs-about-preview { color: var(--color-ink); overflow-wrap: anywhere; }
+.orgs-about-diff { display: flex; flex-direction: column; gap: var(--space-1); padding-top: var(--space-1); }
+.orgs-about-full { margin: 0 0 var(--space-2); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-ink-2); }
+
 /* The head's meta line (org and project pages): the way back stays whole, the long path takes the "…". */
 .session-head-meta > .orgs-meta-link { flex: none; }
 .session-head-meta > .orgs-meta-path { flex: 1 1 auto; overflow-wrap: normal; }
@@ -209,3 +219,23 @@
   .org-tabs { gap: 0; }
   .org-tabs > .tab { padding: 0 var(--space-1); gap: var(--space-1); }
 }
+
+/* The owner card (People tab, §app.owner-page/owner): the select, the link line, the buttons with
+   Turn Off apart from them, and the inline confirm. */
+.orgs-owner-field { max-width: 28rem; }
+.orgs-owner-warn { color: var(--status-warn); }
+.orgs-owner-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-5); }
+.orgs-owner-confirm { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+.owner-preview .modal-body { background: var(--color-bg); color: var(--color-ink); }
+/* The project page's log of updates on the owner's page: the text as the owner reads it, then who
+   posted it and when, with Take Down at the end of the row. A taken-down update stays, muted. */
+.owner-updates { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.owner-update { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) 0; border-top: var(--stroke-thin) solid var(--color-border); }
+.owner-update:first-child { border-top: 0; padding-top: 0; }
+.owner-update-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-ink); }
+.owner-update-down .owner-update-text { color: var(--color-ink-muted); }
+.owner-update-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.owner-update-meta { white-space: normal; }
+/* `.button-row` has no rule in base.css: the owner card's and the updates log's rows lay out here. */
+.orgs-owner-actions .button-row,
+.orgs-owner-confirm .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }

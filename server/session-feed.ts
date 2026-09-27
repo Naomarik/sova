@@ -1,4 +1,5 @@
 import type { SessionFeedMessage, SessionMarks, SessionSummary } from "../shared/protocol";
+import { attentionChanged } from "./attention-memo";
 
 /**
  * The session feed: WS /ws/watch?feed=sessions (shared/protocol.ts SessionFeedMessage). The server
@@ -172,7 +173,12 @@ export class SessionFeed {
     if (changes.length) this.publish({ type: "marks", sessions: changes });
     const rows = new Map(list.map((s) => [s.path, rowSignature(s)]));
     // The first diff is the baseline (a client that connects re-reads the list itself).
-    if (this.rows && listChanged(this.rows, rows)) this.publish({ type: "list_changed" });
+    if (this.rows && listChanged(this.rows, rows)) {
+      // What changed a row (a Get Link, a share-page reply, a hand-off) may be on the attention
+      // digest too, which is memoized: its next read, the one list_changed prompts, is fresh.
+      attentionChanged();
+      this.publish({ type: "list_changed" });
+    }
     this.rows = rows;
   }
 }

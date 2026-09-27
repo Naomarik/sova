@@ -171,6 +171,8 @@ describe("the promotion commit", () => {
     assert.equal(git(root, "rev-parse", "HEAD"), c.sha);
     assert.deepEqual(git(root, "show", "--name-only", "--format=", "HEAD").split("\n").sort(), c.files);
     assert.equal(git(root, "log", "-1", "--format=%s"), "Promote 1 decision: invoicing — Tony approves.");
+    // Sova's identity, never the repo's configured one (t@example.invalid here).
+    assert.equal(git(root, "log", "-1", "--format=%an <%ae> / %cn <%ce>"), "Sova <sova@localhost> / Sova <sova@localhost>");
     // (trimmed: README.md's leading status space goes)
     assert.equal(git(root, "status", "--porcelain"), "M README.md\nA  notes.txt");
   });

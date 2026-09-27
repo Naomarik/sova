@@ -65,10 +65,17 @@ export const LINK_STATE: Record<LinkState, { word: string; tone?: "success" | "i
   closed: { word: "Session closed" },
 };
 
+/** An owner link's state (§app.owner-page/link): it opens the page, or it doesn't any more. */
+export const OWNER_LINK_STATE: Record<"live" | "expired" | "off", { word: string; tone?: "success" | "info" | "warn" }> = {
+  live: { word: "Can read", tone: "success" },
+  off: { word: "Turned off" },
+  expired: { word: "Expired" },
+};
+
 /** A link that still opens: Turn Off applies to it. */
 export const linkLive = (state: LinkState): boolean => state === "writes" || state === "reads";
 
-type VisitIn = Pick<VisitRow, "kind" | "at" | "lastSeenAt" | "device" | "publicTitle" | "bot" | "otherHost">;
+type VisitIn = Pick<VisitRow, "kind" | "at" | "lastSeenAt" | "device" | "publicTitle" | "bot" | "otherHost"> & Partial<Pick<VisitRow, "via">>;
 
 /** "for about 12 min" from a visit's first and last sighting; nothing under a minute. */
 export function visitDuration(v: { at: string; lastSeenAt?: string }): string | null {
@@ -84,12 +91,14 @@ export function visitDuration(v: { at: string; lastSeenAt?: string }): string | 
 /** The row's words, without the time (the time goes in its own `<time>`). Previews and scanners
     are muted rows: they are not the person opening their link. */
 export function visitWords(v: VisitIn): { text: string; muted: boolean } {
-  if (v.kind === "preview") return { text: `${!v.device || v.device === "Link preview" ? "Link preview" : `Link preview by ${v.device}`} · ${v.publicTitle}`, muted: true };
-  if (v.kind === "refused") return { text: `Tried a turned-off link · ${v.publicTitle}`, muted: false };
+  // An owner-page visit names the page, not a conversation (§app.owner-page/link).
+  const what = v.via === "owner" ? "the owner page" : v.publicTitle;
+  if (v.kind === "preview") return { text: `${!v.device || v.device === "Link preview" ? "Link preview" : `Link preview by ${v.device}`} · ${what}`, muted: true };
+  if (v.kind === "refused") return { text: `Tried a turned-off link · ${what}`, muted: false };
   if (v.kind === "capped") return { text: "Too many visits on this link today; we stopped recording until tomorrow", muted: true };
-  if (v.bot) return { text: `${v.device} · ${v.publicTitle}`, muted: true };
+  if (v.bot) return { text: `${v.device} · ${what}`, muted: true };
   const dur = visitDuration(v);
-  const parts = [`Opened ${v.publicTitle}`, v.device, ...(dur ? [dur] : []), ...(v.otherHost ? ["link from another host"] : [])];
+  const parts = [`Opened ${what}`, v.device, ...(dur ? [dur] : []), ...(v.otherHost ? ["link from another host"] : [])];
   return { text: parts.join(" · "), muted: false };
 }
 

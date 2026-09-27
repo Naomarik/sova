@@ -2,7 +2,20 @@
 // under tsx --test.
 
 import type { IdeaRecord, OverseerAction } from "../../shared/protocol";
-import { GAP_TAG, type ItemSendInput, type LastRunOutcome, type StartedSession } from "../../shared/project-overseer";
+import {
+  budgetProblem,
+  capProblem,
+  GAP_TAG,
+  PER_DAY,
+  PO_LIMIT_KINDS,
+  type AllowanceUse,
+  type HeldItem,
+  type ItemSendInput,
+  type LastRunOutcome,
+  type PoLimitKind,
+  type ProjectOverseerCaps,
+  type StartedSession,
+} from "../../shared/project-overseer";
 import { settled } from "./ideas";
 
 /** The ideas worth acting on: not done or dropped, gaps first, then the store's order. */
@@ -110,4 +123,62 @@ export function itemSendInput(ref: { ideaId?: string; todoId?: string }, form: {
     publicTitle,
     question,
   };
+}
+
+// ---- limits (§app.project-overseer/limits, §design.copy-deck/project-limits) ----
+
+/** The limits the Limits section edits, in the order it shows them (the first problem is theirs). */
+export const LIMIT_FIELDS: readonly (keyof ProjectOverseerCaps)[] = [
+  "gatherPerTurn",
+  "promotePerTurn",
+  "createPerTurn",
+  "promptsPerTurn",
+  "gatherPerDay",
+  "promotePerDay",
+  "createPerDay",
+  "promptsPerDay",
+  "unattendedPerDay",
+  "gatheringsOpen",
+  "codingRunning",
+];
+
+/** Why the Limits form can't be saved, as the server would say it, or null. An empty field is NaN, never Unlimited (null). */
+export function limitsProblem(d: { caps: Record<keyof ProjectOverseerCaps, number | null>; tokenBudget: number | null }): string | null {
+  for (const k of LIMIT_FIELDS) {
+    const why = capProblem(k, d.caps[k]);
+    if (why) return why;
+  }
+  return budgetProblem(d.tokenBudget);
+}
+
+/** A gap in minutes as the page says it: "10 min", "1 hour". */
+export const gapWords = (min: number): string => (min % 60 === 0 ? `${min / 60} ${min === 60 ? "hour" : "hours"}` : `${min} min`);
+/** A delay in seconds: "30 s", "1 min". */
+export const soonWords = (sec: number): string => (sec % 60 === 0 ? `${sec / 60} min` : `${sec} s`);
+
+/** The Watch hint, from the project's pace. */
+export function watchHint(gapMin: number, soonSec: number | null): string {
+  const head = "When a session finishes, a conflict appears, or you promote, it looks on its own";
+  return soonSec === null ? `${head} at most every ${gapWords(gapMin)}.` : `${head}: within ${soonWords(soonSec)} for the important ones, otherwise at most every ${gapWords(gapMin)}.`;
+}
+
+/** Each kind as the readout names it. */
+const USED_NOUN: Record<PoLimitKind, string> = { gather: "gathering sessions", promote: "decisions promoted", create: "coding sessions", prompt: "prompts to coding sessions" };
+
+/** "Today on its own: 3 of 6 gathering sessions, 2 coding sessions (no limit)." — only what was used; null when nothing was. */
+export function allowanceLine(prefix: string, use: AllowanceUse): string | null {
+  const parts = PO_LIMIT_KINDS.filter((k) => use[k].used > 0).map((k) => (use[k].max === null ? `${use[k].used} ${USED_NOUN[k]} (no limit)` : `${use[k].used} of ${use[k].max} ${USED_NOUN[k]}`));
+  return parts.length ? `${prefix}: ${parts.join(", ")}.` : null;
+}
+
+/** One line per held item the operator should know of (the message allowance's retries at once: not shown). */
+export function waitingLines(held: readonly HeldItem[], s: { caps: ProjectOverseerCaps; tokenBudget: number | null }, spent: number): string[] {
+  const out: string[] = [];
+  for (const h of held) {
+    const [ledger, kind] = h.key.split(":") as [string, PoLimitKind | undefined];
+    if (h.key === "budget") out.push(`Waiting for you: the coding token budget is spent (${tokens(spent)} of ${s.tokenBudget === null ? "no limit" : tokens(s.tokenBudget)}).`);
+    else if (h.key === "looks") out.push(`Waiting until midnight: today's ${s.caps.unattendedPerDay ?? "unlimited"} looks are used.`);
+    else if (ledger === "day" && kind && kind in USED_NOUN) out.push(`Waiting until midnight: today's ${s.caps[PER_DAY[kind]] ?? "unlimited"} ${USED_NOUN[kind]} are used.`);
+  }
+  return out;
 }

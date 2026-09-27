@@ -20,8 +20,8 @@ export const NOT_GIT = "it isn't a Git repository.";
 export const NO_COMMITS = "the repository has no commits yet.";
 export const DETACHED = "its checkout is on a detached HEAD.";
 
-/** The identity for a commit when the repo has none configured (as the workspace repo's commits). */
-const FALLBACK_ID = ["-c", "user.name=Sova", "-c", "user.email=sova@localhost"];
+/** Sova's own identity: always for a promotion commit; for Merge Branch (the operator's gesture) only when the repo has none configured. */
+const SOVA_ID = ["-c", "user.name=Sova", "-c", "user.email=sova@localhost"];
 
 const firstLine = (s: string) => s.trim().split("\n")[0]?.trim() || "git failed";
 
@@ -185,7 +185,7 @@ export async function mergeBack(w: WorktreeRecord, root: string, title: string, 
   if (!b) throw new WorktreeRefusal(`The branch ${w.branch} no longer exists.`);
   if ((await git(["merge-base", "--is-ancestor", b, "HEAD"], root)).code === 0) throw new WorktreeRefusal(`${w.branch} has nothing to merge into ${w.target}.`);
   const who = await git(["config", "user.email"], root);
-  const id = who.code === 0 && who.stdout.trim() ? [] : FALLBACK_ID;
+  const id = who.code === 0 && who.stdout.trim() ? [] : SOVA_ID;
   const r = await git([...id, "-c", "commit.gpgsign=false", "merge", "--no-edit", "-m", `Merge ${w.branch}: ${title}`, "--", `refs/heads/${w.branch}`], root);
   if (r.code !== 0) {
     const conflicted = await git(["diff", "--name-only", "--diff-filter=U"], root);
@@ -317,9 +317,8 @@ export async function commitSpec(snap: SpecSnapshot, message: string, git: Git =
   if (!files.length) return undefined;
   const add = await git(["add", "--", ...files], snap.top);
   if (add.code !== 0) return { skipped: `Not committed: ${firstLine(add.stderr || add.stdout)}` };
-  const who = await git(["config", "user.email"], snap.top);
-  const id = who.code === 0 && who.stdout.trim() ? [] : FALLBACK_ID;
-  const c = await git([...id, "-c", "commit.gpgsign=false", "commit", "--only", "-m", message, "--", ...files], snap.top);
+  // Sova's identity, never the repo's or the host's: the commit is Sova's act, not the operator's.
+  const c = await git([...SOVA_ID, "-c", "commit.gpgsign=false", "commit", "--only", "-m", message, "--", ...files], snap.top);
   if (c.code !== 0) return { skipped: `Not committed: ${firstLine(c.stderr || c.stdout)}` };
   const sha = await git(["rev-parse", "HEAD"], snap.top);
   return { sha: sha.stdout.trim(), branch: snap.branch ?? "", files, message };

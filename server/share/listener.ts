@@ -26,6 +26,11 @@ const ROUTES: { method: string; re: RegExp }[] = [
   { method: "GET", re: /^\/h\/assets\/[A-Za-z0-9_-][A-Za-z0-9._-]*$/ },
   { method: "GET", re: new RegExp(`^/api/h/${TOKEN}$`) },
   { method: "POST", re: new RegExp(`^/api/h/${TOKEN}/message$`) },
+  // The Owner page (§app.owner-page/link): read-only, GET only, no socket.
+  { method: "GET", re: new RegExp(`^/i/${TOKEN}$`) },
+  { method: "GET", re: new RegExp(`^/api/i/${TOKEN}$`) },
+  { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/p/q_[a-z2-9]{8}$`) },
+  { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/c/k_[a-z2-9]{8}$`) },
 ];
 
 /** Whether a request may reach the share app. Raw pathname, exact shapes, no escapes at all (a
@@ -75,7 +80,7 @@ export class RateLimiter {
   }
 }
 
-const PAGE_SHELL = new RegExp(`^/h/${TOKEN}$`);
+const PAGE_SHELL = new RegExp(`^/[hi]/${TOKEN}$`);
 /** A phone past the address limit reloading its link gets a page, not raw JSON. Static: no token,
     no names. */
 const TOO_MANY_PAGE =

@@ -672,7 +672,6 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Mode select (beside the coding sessions' model and thinking) | label `Coding sessions' mode` · options `Automatic` · `normal` · `normal · spec` · `delegate` · `delegate · spec` — the mode ids in lower case, as the mode menu shows them (§chat/mode-menu) |
 | …its hint (`.field-hint`) | "Every coding session this project starts runs in it, yours included. One started now: {codingModeNow}." — `{codingModeNow}` in mono, `normal` or `normal · spec` · for a `delegate` option, a second sentence: "Their workers' tokens count against the budget." |
 | …saved (toast) | "Coding sessions run {mode}." · Automatic: "Coding sessions' mode: Automatic." |
-| Budget hint (replaces the old one) | "Spent {tokens} of {budget}, workers included. At L3 it starts no coding session beyond it." |
 | List heading | `Coding sessions` — replaces "Sessions it started" for coding rows; gathering sessions and offers keep their own list |
 | Row | the title (a link on this host) · meta: "Started by the overseer" or "Started by you" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
 | Above the list, when the project can't have worktrees | "Coding sessions run in the project root: {reason}" — `{reason}` one of "it isn't a Git repository." · "the repository has no commits yet." · "its checkout is on a detached HEAD." |
@@ -684,6 +683,24 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Start Coding Session (toast) | "Coding session started on sova/{name}." · in the root: "Coding session started in the project root." · mode not set (`.field-error`): "Started, but not prompted: its mode could not be set. Open it and send the message yourself." · no worktree (`.field-error`): "No session was started: its worktree could not be made ({git's first line})." |
 | Promote (Decisions tab, after a promotion) | "Promoted {n}. Committed {short sha} on {branch}." · skipped: the reason as §app.requirements/promotion-commit words it ("Not committed: …") · no Git: no second sentence |
 | Overseer tool refusals (the model reads them; the activity list shows them) | "Delegate is off for this project's coding sessions; the operator can allow it on the project page." · "Align needs someone to answer its questions, and nobody answers a coding session's." · "Spec is on for this project's coding sessions; only the operator can turn it off on the project page." · "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: only spec is allowed." · "Its worktree was removed, so it has no folder to work in." |
+
+## §design.copy-deck/project-limits — Project page · limits and pace (§app.project-overseer/limits)
+
+| Where | Copy |
+|---|---|
+| Section | legend `Limits` · hint "Past a limit it stops and tells you. Your own Start Coding Session and Send to Person aren't counted." |
+| Groups | `Each message you send` · `On its own, each day`, hint "Resets at midnight on this host." · `At once`, hint "These never go Unlimited: they are what stops a burst." · `Coding token budget` · `Pace` |
+| Allowance fields | `Gathering sessions started` · `Decisions promoted` · `Coding sessions started` · `Prompts to coding sessions` · per day also `Looks` · each with a checkbox `Unlimited` |
+| At-once fields | `Gathering sessions open` (0–20) · `Coding sessions running` (0–10) · no Unlimited |
+| Budget hint | "Spent {tokens} by sessions it started, workers included." · Unlimited: "Spent {tokens} by sessions it started, workers included. No limit." |
+| Pace | `Looks at most every` [`2 min` · `5 min` · `10 min` · `30 min` · `1 hour`] · `After a session finishes, it looks within` [`30 s` · `1 min` · `2 min` · `5 min` · `Off`] |
+| Buttons | `Save Limits` (secondary, like the other saves on the card) · `Reset Limits` (ghost: the defaults into the form, not saved) · saved (toast): "Limits saved." |
+| Problems (`.field-error`, before sending; the server's 400 says the same) | "{Label} must be a whole number from 0 to 1000, or Unlimited." · "Coding token budget must be a whole number from 0 to 1,000,000,000, or Unlimited." · "Gathering sessions open must be a whole number from 0 to 20." · "Coding sessions running must be a whole number from 0 to 10." · server only: "Coding sessions running can't be Unlimited: it's what stops a burst." |
+| Watch hint (built from the pace) | "When a session finishes, a conflict appears, or you promote, it looks on its own: within {soon} for the important ones, otherwise at most every {gap}." · soon Off: "When a session finishes, a conflict appears, or you promote, it looks on its own at most every {gap}." |
+| Readout (under the status line; only kinds used) | "Today on its own: {n} of {max} gathering sessions, {n} coding sessions (no limit)." · "Your last message: {n} of {max} prompts to coding sessions." |
+| Waiting (one line each) | "Waiting until midnight: today's {max} {what} are used." · looks: "Waiting until midnight: today's {max} looks are used." · "Waiting for you: the coding token budget is spent ({spent} of {budget})." |
+| Refusals (activity list; the operator's sentence only) | "Today's allowance is used: {n} of {max} {what} on its own. It looks again at midnight." · "This message's allowance is used: {n} of {max} {what} per message you send." · "The coding token budget is spent ({spent} of {budget}). It starts no coding session until you raise it." · "{n} of its gathering sessions are open, and the limit is {max} at once." · "{n} of its coding sessions are running, and the limit is {max} at once." |
+| Reasons it gets back (the model reads them; "Waiting to look at:" shows them) | "Today's allowance is back: it may start {what} again (refused {time})." · "Today's looks are back (refused {time})." · "The operator's last message reached its limit on {what}; it may go on within today's allowance." · "You raised the limit on {what}." |
 
 ## §design.copy-deck/project-stakeholder — Project page · main stakeholder, thinking, activity (§app.organizations/stakeholder, §app.project-overseer/identity)
 
@@ -702,3 +719,93 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Thinking refused (project page, `.field-error` under the select) | "{model} offers thinking {levels}." — levels comma-separated, as the model lists them |
 | Thinking moved after a model change (toast, after the model's own) | "Thinking is now {level}: {model} doesn't offer {old}." |
 | Activity chip for a partial act | `Partly` (warn: dot and word) beside `Done` · `Refused` · `Failed` · line: "{tool words}: partly ({n} refused: {id} ({reason}); …)" |
+
+## §design.copy-deck/owner-page — Owner page (§app/owner-page)
+
+The owner is not technical: short sentences, everyday words, full words for time. `{first}` is a
+person's first name, `{op}` the operator's first name, `{org}` the org's name, `{project}` a
+project's name. Times on the owner page: "just now", "{n} minutes ago", "{n} hours ago",
+"yesterday", "{n} days ago", then "Mar 4" (and "Mar 4, 2025" in another year); singular "1 minute
+ago", "1 hour ago"; the exact date and time as the element's title. Every count has its singular.
+
+**Owner page (what the owner reads)**
+
+| Where | Copy |
+|---|---|
+| Browser tab title | `{org}` |
+| Greeting | "Hi {first}. Here's how your projects are going." |
+| Read-only line | "You can read everything here. Nothing you do on this page changes anything." |
+| Freshness | "Updated just now" · "Updated {time}" |
+| Waiting on you, heading | "Waiting on you" |
+| …line | "1 question is waiting for your answer." / "{n} questions are waiting for your answer." |
+| …row | "{conversation title}" · "{project} · asked {time}" |
+| …hint | "Answer it using the link {op} sent you for it." |
+| Projects, heading | "Your projects" |
+| Project card, counts | "Talked to {n} people · {n} decisions · {n} pieces of work finished" — singulars "1 person", "1 decision", "1 piece of work" |
+| …no updates yet | "No updates yet." |
+| Projects, none | "There are no projects on this page yet. When {op} starts one, it will show up here." |
+| Project status chips | `Waiting on you` (warn) · `Asking questions` (info) · `Building` (info) · `Quiet` (neutral) |
+| Back links | "← All projects" · "← {project}" |
+| Updates, heading | "Updates" |
+| …none | "{n} conversations so far. No updates yet." |
+| …show all | `Show All {n} Updates` |
+| Who we've talked to, heading | "Who we've talked to" |
+| …row | "{name}" · "{n} conversations · last wrote {time}" / "{n} conversations · hasn't replied yet" |
+| …none | "Nobody has been asked anything yet." |
+| What's been decided, heading | "What's been decided" |
+| …row meta | "{name}, {date}" · disclosure "In {first}'s words" |
+| …status chips | `Agreed` (success) · `Noted` (neutral) · `Needs a choice` (warn) |
+| …none | "{n} conversations so far. Nothing has been decided yet." |
+| …show all | `Show All {n} Decisions` |
+| Different answers | "{A} and {B} gave different answers about {topic}. We've asked {C} to choose." · to the owner: "…We've asked you to choose." · to the operator: "…{op} will choose." |
+| What's been built, heading | "What's been built" |
+| …counts | "{n} pieces of work finished · {n} in progress" |
+| …none | "Nothing has been built yet." |
+| Conversations, heading | "Conversations" |
+| …row | "{conversation title}" · "Started {time} · {n} messages" |
+| …status chips | `Waiting on you` (warn) · `Waiting on {first}` (info) · `With {op}` (info) · `Asked {n} people` (info) · `Finished` (success) · `Ended` (neutral) |
+| …none | "No conversations yet." |
+| …show all | `Show All {n} Conversations` |
+| Conversation, line | "You can read this conversation. You can't write here." |
+| …when it's the owner's turn | "It's your turn in this conversation. Answer it using the link {op} sent you." |
+| Footer | "Only people with this link can open this page. If someone else gets it, tell {op} and they'll turn it off." |
+| Link expired (410) | "This link has expired." / "These links last 90 days. Ask the person who sent it for a new one." |
+| Link no longer active (410) | "This link is no longer active." / "Ask the person who sent it for a new one." |
+| Unknown link (404) | "This link doesn't open anything." / "Check that you copied all of it." |
+| A project or conversation not on the page (404) | "This isn't on your page." / "Go back to all your projects to see what is." · "← All projects" |
+| Couldn't load | "We couldn't load this page. Your link still works. Try again in a minute." · `Try Again` |
+| Too many requests | "Too many requests from this network. Wait a minute, then reload." |
+
+Never on the owner page, in any form: baton, hand-off, holder, offer, lease, overseer, agent,
+model, AI, promote, promoted, draft, drafted, reconcile, conflict, stakeholder, worktree, branch,
+merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
+
+**Operator side**
+
+| Where | Copy |
+|---|---|
+| People tab, card title | "Owner" |
+| …hint | "The owner follows every project on one page: the overseer's updates, who was asked, what was decided, and each conversation. They can read it, not change it." |
+| …select | label `Owner` · options `None`, then active people by name |
+| …saved (toast) | "{name} is the owner now." · None: "This organization has no owner now." |
+| …refused (`.field-error`) | "Only an active person on the roster can be the owner." |
+| …latest change | "Set by you {relative time}." |
+| …cleared (warn banner) | "{name} left the organization, so it has no owner now. Their owner link stopped working." |
+| …link line | "Owner link made {relative time} · expires {relative time} · opened {n} times" · none: "No owner link yet." · newest turned off or replaced: "The owner link is turned off." · under 14 days (warn): "Owner link expires {relative time}." · expired: "The owner link expired {relative time}." |
+| …buttons | `Get Owner Link` (secondary) · `Preview Owner Page` (secondary) · `Turn Off Owner Link` (destructive, outlined, apart) |
+| Get Owner Link, while one is live (confirm) | "{first}'s current link stops working at once. The new one works from now." · `Get Owner Link` · `Cancel` |
+| Get Owner Link, no owner | "Pick an owner first." |
+| Turn Off, confirm | "{first}'s owner page stops opening at once. The conversations and updates stay." · `Turn Off Owner Link` · `Cancel` |
+| Link shown once | the baton strip's Copy Link pattern; `linkWarning` when no share address is known |
+| Preview modal title | "{org}, as {first} sees it" |
+| …line | "Read only. Nothing you do here reaches {first}, and no visit is recorded." |
+| Project page card title | "Owner Page" |
+| …switch | "Show this project on {first}'s page" |
+| …updates log heading | "Updates for {first}" |
+| …log row meta | "Posted by the overseer {relative time}" · "Posted when you asked {relative time}" · taken down: "Taken down {relative time}" |
+| …none | "The overseer hasn't posted an update yet. It posts when a conversation finishes, something is agreed, or a piece of work is finished, at most once a day." |
+| …Take Down | `Take Down` (destructive, outlined) · confirm: "{first} stops seeing this update. It stays in this list and in the workspace history." · `Take Down` · `Cancel` |
+| …switch saved (toast) | "{project} shows on {first}'s page." · "{project} is off {first}'s page." |
+| Baton strip | `Hide From {first}` / `Show To {first}` · while hidden: "Hidden from {first}'s owner page." · toasts "Hidden from {first}'s owner page." / "Shown on {first}'s owner page." |
+| Person page | chip `Owner` beside the status · link row title "The owner page", state `Can read` / `Turned off` / `Expired` · visit row "Opened the owner page · {device} · {relative time}" |
+| Overseer tool refusals (the model reads them; the activity list shows them) | "Nothing new since the last update: post one when a conversation finishes, a decision is agreed, or a coding session finishes or is merged." · "An update was posted {relative time}: at most one a day." · "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words." · "This update repeats private text (a conversation's goal or briefing, the operator's instructions, or a person's profile or contact). Updates are for the client: write it again in your own words." · "An update is at most 2,000 characters." · "This organization has no owner, so there is no page to post to." |

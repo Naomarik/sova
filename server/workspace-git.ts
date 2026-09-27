@@ -18,12 +18,12 @@ const GITIGNORE = "# Written by Sova. Link tokens, credentials and Sova's settin
 /** Automated commits must never block on a signing prompt or a hook asking for input. */
 const NON_INTERACTIVE = ["-c", "commit.gpgsign=false", "-c", "core.editor=true"];
 
-function git(dir: string, args: string[], extraEnv: Record<string, string> = {}): Promise<{ code: number; stdout: string; stderr: string }> {
+function git(dir: string, args: string[], extraEnv: Record<string, string> = {}, timeout = TIMEOUT_MS): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     execFile(
       "git",
       [...NON_INTERACTIVE, "-C", dir, ...args],
-      { timeout: TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", ...extraEnv } },
+      { timeout, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", ...extraEnv } },
       (err, stdout, stderr) => {
         const code = err ? (typeof (err as { code?: unknown }).code === "number" ? ((err as { code: number }).code) : 1) : 0;
         resolve({ code, stdout: String(stdout), stderr: String(stderr || (err && !stderr ? err.message : "")) });
@@ -63,6 +63,20 @@ export async function remoteOf(dir: string): Promise<string | null> {
 }
 
 /** Set (or with "" remove) the repo's `origin`. */
+/**
+ * A file as the repo's `origin` has it on the checked-out branch, fetched now (within `timeoutMs`);
+ * null with no remote, an unreachable one, or no such file there.
+ */
+export async function remoteFileText(dir: string, file: string, timeoutMs: number): Promise<string | null> {
+  if (!(await remoteOf(dir))) return null;
+  const branch = await git(dir, ["symbolic-ref", "-q", "--short", "HEAD"]);
+  if (branch.code !== 0 || !branch.stdout.trim()) return null;
+  const fetched = await git(dir, ["fetch", "-q", "origin"], {}, timeoutMs);
+  if (fetched.code !== 0) return null;
+  const shown = await git(dir, ["show", `refs/remotes/origin/${branch.stdout.trim()}:${file}`]);
+  return shown.code === 0 ? shown.stdout : null;
+}
+
 export function setRemote(dir: string, url: string): Promise<void> {
   return serial(dir, async () => {
     const had = await remoteOf(dir);
@@ -80,12 +94,9 @@ export function setRemote(dir: string, url: string): Promise<void> {
   });
 }
 
-/** An identity for the commit when the repo (or the user's global config) has none. */
-async function identityEnv(dir: string): Promise<Record<string, string>> {
-  const email = (await git(dir, ["config", "user.email"])).stdout.trim();
-  if (email) return {};
-  return { GIT_AUTHOR_NAME: "Sova", GIT_AUTHOR_EMAIL: "sova@localhost", GIT_COMMITTER_NAME: "Sova", GIT_COMMITTER_EMAIL: "sova@localhost" };
-}
+/** Every commit Sova makes here is Sova's: the host's own git identity (an operator's name and
+    email) never travels with the org's backup. Author and committer both. */
+const SOVA_IDENTITY: Record<string, string> = { GIT_AUTHOR_NAME: "Sova", GIT_AUTHOR_EMAIL: "sova@localhost", GIT_COMMITTER_NAME: "Sova", GIT_COMMITTER_EMAIL: "sova@localhost" };
 
 export interface CommitOutcome {
   committed: boolean;
@@ -116,7 +127,7 @@ export function commitAll(dir: string, message: string): Promise<CommitOutcome> 
         lastErrors.set(dir, null);
         return out;
       }
-      const commit = await git(dir, ["commit", "-q", "--no-verify", "-m", message], await identityEnv(dir));
+      const commit = await git(dir, ["commit", "-q", "--no-verify", "-m", message], SOVA_IDENTITY);
       if (commit.code !== 0) throw new Error(`git commit failed: ${commit.stderr.trim()}`);
       out.committed = true;
       out.sha = (await git(dir, ["rev-parse", "--short", "HEAD"])).stdout.trim();

@@ -121,3 +121,10 @@ test("preview only where they were addressed", () => {
   for (const r of [{ kind: "started-with" }, { kind: "offered", n: 1, others: 1 }, { kind: "participant" }] as PersonRelation[])
     assert.equal(canPreview({ holdsNow: false, relations: [r] }), true, r.kind);
 });
+
+test("an owner-page visit names the page, not a conversation", () => {
+  const v = { kind: "visit" as const, at: "2026-09-27T10:00:00Z", device: "Phone · Safari", publicTitle: "", via: "owner" as const };
+  assert.equal(visitWords(v).text, "Opened the owner page · Phone · Safari");
+  assert.equal(visitWords({ ...v, kind: "refused" }).text, "Tried a turned-off link · the owner page");
+  assert.equal(visitWords({ ...v, kind: "visit", via: undefined, publicTitle: "Pricing" }).text, "Opened Pricing · Phone · Safari");
+});

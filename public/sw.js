@@ -2,14 +2,18 @@
 // notifications (Web Push: server/push.ts sends, this shows).
 // Hand-rolled, no build step. Bump CACHE to drop every cached response on the next activate.
 // Only this app's own `sova-` caches are deleted; anything else on the origin is left alone.
-const CACHE = "sova-v2";
+// v3: v2 stored peers' /peer/ answers, so a browser that ran it holds stale peer data.
+const CACHE = "sova-v3";
 
-// Live data is never cached: REST under /api, WebSockets under /ws*. Nor is anything an
+// Live data is never cached: REST under /api, WebSockets under /ws*, and everything a peer
+// answers through this host (/peer/<id>/api, /peer/<id>/ws). Nor is anything an
 // extension serves (/ext/: its UI, its API, its sockets) or the design CSS extensions link
 // (/design/): the network and their own Cache-Control decide, so they are never served stale.
+// The share pages (/h/, /i/) are served only by the share listener, on another origin.
 const isPassthrough = (url) =>
   url.pathname.startsWith("/api/") ||
   url.pathname.startsWith("/ws") ||
+  url.pathname.startsWith("/peer/") ||
   url.pathname.startsWith("/ext/") ||
   url.pathname.startsWith("/design/");
 

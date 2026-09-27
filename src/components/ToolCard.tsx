@@ -62,8 +62,7 @@ function fileView(name: string, args: unknown): FileView | null {
 
 const codeClass = (lang: string) => (lang ? `hljs language-${lang}` : undefined);
 
-/** A tool call and its result, collapsed to one mono line until opened; returned images stay visible below it. */
-export function ToolCard(props: {
+interface ToolCardProps {
   name: string;
   args: unknown;
   /** Raw argument JSON while the model is still streaming it. */
@@ -75,38 +74,26 @@ export function ToolCard(props: {
   attachments?: TmpAttachment[];
   /** A control on the collapsed line, before the status chip (a navigate result's "Go"). */
   action?: JSX.Element;
-}) {
-  const [showAll, setShowAll] = createSignal(false);
-  const hasArgs = () => props.args !== undefined || !!props.argsText;
+}
+
+/**
+ * A tool call and its result, collapsed to one mono line until opened; returned images stay visible
+ * below it. The body (Arguments, Output, their highlighting) is built the first time the card is
+ * opened and kept after, like a report's: a long session holds hundreds of closed cards, and their
+ * bodies were most of its DOM and all of its highlighting at open.
+ */
+export function ToolCard(props: ToolCardProps) {
+  const [opened, setOpened] = createSignal(false);
   const failed = () => props.status === "error";
   // Images the tool returned itself show under the summary row, open or closed.
   const hasImages = () => (props.images?.length ?? 0) > 0;
-  const lines = () => (props.output ?? "").split("\n");
-  const shown = () => (showAll() || lines().length <= MAX_LINES ? props.output : lines().slice(0, HEAD_LINES).join("\n"));
   const summary = () => argsSummary(props.args);
-  // Highlighting is string work; memos keep it off unrelated re-renders. Streaming args
-  // (props.args still undefined) stay plain JSON text.
-  const file = createMemo(() => (props.args === undefined ? null : fileView(props.name, props.args)));
-  const written = () => {
-    const f = file();
-    return f?.kind === "write" ? f : null;
-  };
-  const edited = () => {
-    const f = file();
-    return f?.kind === "edit" ? f : null;
-  };
-  const readPath = () => (props.name === "read" && !failed() && isObj(props.args) ? str(props.args.path) : undefined);
-  const readCode = createMemo((): Code | null => {
-    const path = readPath();
-    const code = path === undefined ? null : highlightByPath(shown() ?? "", path);
-    return code?.lang ? code : null;
-  });
 
   // The wrapper stays the same element whether or not images have arrived, so a live card that
   // gains its first image mid-stream keeps its open state.
   return (
     <div class="toolcard">
-      <details class="toolcard-details">
+      <details class="toolcard-details" onToggle={(e) => e.currentTarget.open && setOpened(true)}>
         <summary class="toolcard-summary">
           <Icon name="chevron-right" small class="icon-twist" />
           <Icon name={toolIcon(props.name)} small />
@@ -132,99 +119,131 @@ export function ToolCard(props: {
             </Match>
           </Switch>
         </summary>
-        <div class="toolcard-body">
-          <Switch
-            fallback={
-              <Show when={hasArgs()}>
-                <div class="toolcard-section">
-                  <div class="toolcard-section-label">Arguments</div>
-                  <pre>{props.args !== undefined ? prettyJson(props.args) : props.argsText}</pre>
-                </div>
-              </Show>
-            }
-          >
-            <Match when={written()}>
-              {(v) => (
-                <div class="toolcard-section">
-                  <div class="toolcard-section-label">
-                    Content
-                    <CopyButton label="Copy Code" text={() => v().content} onCopy={(t) => copyText(t, "Copied code.")} />
-                  </div>
-                  <div class="toolcard-path">{v().path}</div>
-                  <pre class="toolcard-code">
-                    <code class={codeClass(v().code.lang)} innerHTML={v().code.html} />
-                  </pre>
-                </div>
-              )}
-            </Match>
-            <Match when={edited()}>
-              {(v) => (
-                <>
-                  <div class="toolcard-path">{v().path}</div>
-                  <For each={v().edits}>
-                    {(e, i) => {
-                      const of = () => (v().edits.length > 1 ? ` · ${i() + 1} of ${v().edits.length}` : "");
-                      return (
-                        <div class="toolcard-section">
-                          <div class="toolcard-section-label">Replaced{of()}</div>
-                          <pre class="toolcard-code toolcard-code-del">
-                            <code class={codeClass(e.before.lang)} innerHTML={e.before.html} />
-                          </pre>
-                          <div class="toolcard-section-label">
-                            With{of()}
-                            <CopyButton label="Copy Code" text={() => e.newText} onCopy={(t) => copyText(t, "Copied code.")} />
-                          </div>
-                          <pre class="toolcard-code toolcard-code-add">
-                            <code class={codeClass(e.after.lang)} innerHTML={e.after.html} />
-                          </pre>
-                        </div>
-                      );
-                    }}
-                  </For>
-                </>
-              )}
-            </Match>
-          </Switch>
-          <Show when={props.output}>
-            <div class="toolcard-section">
-              <div class="toolcard-section-label">
-                {failed() ? "Error" : "Output"}
-                <CopyButton label="Copy Output" text={() => props.output ?? ""} onCopy={(t) => copyText(t, "Copied output.")} />
-              </div>
-              <Show
-                when={readCode()}
-                fallback={
-                  <pre class="toolcard-output" classList={{ "toolcard-output-error": failed() }}>
-                    {shown()}
-                  </pre>
-                }
-              >
-                {(code) => (
-                  <pre class="toolcard-output toolcard-code">
-                    <code class={codeClass(code().lang)} innerHTML={code().html} />
-                  </pre>
-                )}
-              </Show>
-              <Show when={!showAll() && lines().length > MAX_LINES}>
-                <button type="button" class="button button-sm" onClick={() => setShowAll(true)}>
-                  Show All {lines().length.toLocaleString("en-US")} Lines
-                </button>
-              </Show>
-            </div>
-          </Show>
-          <Show when={props.attachments && props.attachments.length > 0}>
-            <div class="toolcard-section">
-              <div class="toolcard-section-label">Attachments · {props.attachments!.length}</div>
-              <For each={props.attachments}>
-                {(a) => <PathAttachment attachment={a} where={`from tool result ${props.name}`} />}
-              </For>
-            </div>
-          </Show>
-        </div>
+        <Show when={opened()}>
+          <ToolCardBody {...props} />
+        </Show>
       </details>
       <Show when={hasImages()}>
         <div class="toolcard-media">
           <ImageStrip images={props.images} where={`from tool result ${props.name}`} />
+        </div>
+      </Show>
+    </div>
+  );
+}
+
+/** Arguments and Output, built once the card is first opened; they follow a streaming call from then on. */
+function ToolCardBody(props: ToolCardProps) {
+  const [showAll, setShowAll] = createSignal(false);
+  const hasArgs = () => props.args !== undefined || !!props.argsText;
+  const failed = () => props.status === "error";
+  const lines = () => (props.output ?? "").split("\n");
+  const shown = () => (showAll() || lines().length <= MAX_LINES ? props.output : lines().slice(0, HEAD_LINES).join("\n"));
+  // Highlighting is string work; memos keep it off unrelated re-renders. Streaming args
+  // (props.args still undefined) stay plain JSON text.
+  const file = createMemo(() => (props.args === undefined ? null : fileView(props.name, props.args)));
+  const written = () => {
+    const f = file();
+    return f?.kind === "write" ? f : null;
+  };
+  const edited = () => {
+    const f = file();
+    return f?.kind === "edit" ? f : null;
+  };
+  const readPath = () => (props.name === "read" && !failed() && isObj(props.args) ? str(props.args.path) : undefined);
+  const readCode = createMemo((): Code | null => {
+    const path = readPath();
+    const code = path === undefined ? null : highlightByPath(shown() ?? "", path);
+    return code?.lang ? code : null;
+  });
+
+  return (
+    <div class="toolcard-body">
+      <Switch
+        fallback={
+          <Show when={hasArgs()}>
+            <div class="toolcard-section">
+              <div class="toolcard-section-label">Arguments</div>
+              <pre>{props.args !== undefined ? prettyJson(props.args) : props.argsText}</pre>
+            </div>
+          </Show>
+        }
+      >
+        <Match when={written()}>
+          {(v) => (
+            <div class="toolcard-section">
+              <div class="toolcard-section-label">
+                Content
+                <CopyButton label="Copy Code" text={() => v().content} onCopy={(t) => copyText(t, "Copied code.")} />
+              </div>
+              <div class="toolcard-path">{v().path}</div>
+              <pre class="toolcard-code">
+                <code class={codeClass(v().code.lang)} innerHTML={v().code.html} />
+              </pre>
+            </div>
+          )}
+        </Match>
+        <Match when={edited()}>
+          {(v) => (
+            <>
+              <div class="toolcard-path">{v().path}</div>
+              <For each={v().edits}>
+                {(e, i) => {
+                  const of = () => (v().edits.length > 1 ? ` · ${i() + 1} of ${v().edits.length}` : "");
+                  return (
+                    <div class="toolcard-section">
+                      <div class="toolcard-section-label">Replaced{of()}</div>
+                      <pre class="toolcard-code toolcard-code-del">
+                        <code class={codeClass(e.before.lang)} innerHTML={e.before.html} />
+                      </pre>
+                      <div class="toolcard-section-label">
+                        With{of()}
+                        <CopyButton label="Copy Code" text={() => e.newText} onCopy={(t) => copyText(t, "Copied code.")} />
+                      </div>
+                      <pre class="toolcard-code toolcard-code-add">
+                        <code class={codeClass(e.after.lang)} innerHTML={e.after.html} />
+                      </pre>
+                    </div>
+                  );
+                }}
+              </For>
+            </>
+          )}
+        </Match>
+      </Switch>
+      <Show when={props.output}>
+        <div class="toolcard-section">
+          <div class="toolcard-section-label">
+            {failed() ? "Error" : "Output"}
+            <CopyButton label="Copy Output" text={() => props.output ?? ""} onCopy={(t) => copyText(t, "Copied output.")} />
+          </div>
+          <Show
+            when={readCode()}
+            fallback={
+              <pre class="toolcard-output" classList={{ "toolcard-output-error": failed() }}>
+                {shown()}
+              </pre>
+            }
+          >
+            {(code) => (
+              <pre class="toolcard-output toolcard-code">
+                <code class={codeClass(code().lang)} innerHTML={code().html} />
+              </pre>
+            )}
+          </Show>
+          <Show when={!showAll() && lines().length > MAX_LINES}>
+            <button type="button" class="button button-sm" onClick={() => setShowAll(true)}>
+              Show All {lines().length.toLocaleString("en-US")} Lines
+            </button>
+          </Show>
+        </div>
+      </Show>
+      <Show when={props.attachments && props.attachments.length > 0}>
+        <div class="toolcard-section">
+          <div class="toolcard-section-label">Attachments · {props.attachments!.length}</div>
+          <For each={props.attachments}>
+            {(a) => <PathAttachment attachment={a} where={`from tool result ${props.name}`} />}
+          </For>
         </div>
       </Show>
     </div>

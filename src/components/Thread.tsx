@@ -968,14 +968,22 @@ export function ThreadScroller(props: {
   /**
    * A disclosure the user just opened or closed (a tool card, thinking, a report): what it adds or
    * removes is theirs to look at, so the view stays where it is and following is re-read from the
-   * new position instead of pulling the bottom back into view. Held for two frames: the growth
-   * lands in the next frame's layout.
+   * new position instead of pulling the bottom back into view. Marked at the summary's click, which
+   * comes before the open state changes (the `toggle` event is queued and may come after the frame
+   * that lays the growth out), and again at `toggle`, where a lazy body is built; held for two
+   * frames after the later of the two.
    */
-  let toggled: Element | null = null;
-  const onToggle = (e: Event) => {
-    toggled = e.target as Element;
-    requestAnimationFrame(() => requestAnimationFrame(() => (toggled = null)));
+  let toggled = false;
+  let toggleFrame = 0;
+  const markToggle = () => {
+    toggled = true;
+    cancelAnimationFrame(toggleFrame);
+    toggleFrame = requestAnimationFrame(() => (toggleFrame = requestAnimationFrame(() => (toggled = false))));
   };
+  const onClick = (e: MouseEvent) => {
+    if ((e.target as Element | null)?.closest?.("summary")) markToggle();
+  };
+  onCleanup(() => cancelAnimationFrame(toggleFrame));
   /** Content was added or changed: back to the bottom while following. */
   const settle = () => {
     if (!follow) return;
@@ -1024,7 +1032,10 @@ export function ThreadScroller(props: {
           el = node;
           observer.observe(node, { childList: true, subtree: true, characterData: true });
           // A jump (lib/jump) takes the view away from the bottom: stop following, as a scroll up would.
-          node.addEventListener("toggle", onToggle, true);
+          node.addEventListener("click", onClick, true);
+          node.addEventListener("toggle", markToggle, true);
+          // The view itself shrinks too (the composer's status row appearing): a view at the end stays there.
+          resized?.observe(node);
           node.addEventListener(JUMP_EVENT, () => {
             jumpingUntil = performance.now() + JUMP_SETTLE_MS;
             if (!follow) return;

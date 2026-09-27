@@ -90,7 +90,9 @@ is one click rather than a wait for the turn to settle.
 
 The aside is a direct child of `.app`, after `.app-main`, and it's **mounted only while open**.
 The grid keys off its presence (`.app:has(> .app-subagents)`), so nothing else has to change
-state. Changing route closes it. The shell is the window, so, like §app/shell, the bands are `@media`:
+state. Changing route closes it, with one exception: opened from the Agents board
+(§app.insights/team-cards), it stays beside the board across `#/agents` ⇄ `#/agents/{teamKey}`, and
+leaving the page closes it. There the pane sits beside the board rather than a session. The shell is the window, so, like §app/shell, the bands are `@media`:
 
 | Window | The pane | Session pane (`.app-main`) |
 |---|---|---|
@@ -143,8 +145,9 @@ Timeline · Agents · Usage · Skills · Explain** (`.tabs.session-tabs`, `role=
 `role="tabpanel"`; roving `tabindex`, Left/Right wrapping, Home/End). Every tab is always in the
 strip, empty or not: a tab that came and went would move the strip under the reader.
 
-- **Which tab opens.** Every door names its own tab (the head's Session details button and the
-  remote chip: Session; the composer's subagents row: Agents; the Timeline doors,
+- **Which tab opens.** Every door names its own tab (the head's Session details button, the
+  remote chip, and the Agents board's Session details button and ⋯ item: Session; the board's ⋯
+  Open Subagents: Agents; the composer's subagents row: Agents; the Timeline doors,
   §chat.timeline/opening-it; the head's token chip: Usage). The pane keeps the chosen tab per
   session path, in memory only. With none kept, it opens on Agents when a worker is working at
   open, else on Session, settled once at open so the tab never moves when the last worker
@@ -297,12 +300,9 @@ A nested, read-only session view: **no composer, no Send, no Steer, no Stop, no 
 no disabled composer with a reason either. The one exception is a restored worker
 (§app.worker-restore/restore). Under its view head, a `usage-note` says what happened: a
 `restored` one reads "Not running since a server restart." (interrupted: "Not running since a
-server restart; it was mid-task at {HH:MM}, and that turn never finished."). When the worker is
-`resumable` (a session this server hosts, on a backend that resumes), the note adds "Resuming
-starts it idle; nothing is sent to it." and a **Resume Worker** button (`.button.button-sm`,
-"Resuming…" while busy) follows (§app.worker-restore/resume). A worker that had ended shows only
-that sentence and the button. A failed resume adds an alert, "Couldn't resume {name}. {reason}
-Nothing else changed." The transcript itself stays read-only. A worker's session belongs to its worker, and the
+server restart; it was mid-task at {HH:MM}, and that turn never finished."). The pane offers no
+resume: that is the parent agent's `agent_resume` or `/agent-resume` (§app.worker-restore/resume).
+A worker that had ended shows no note. The transcript itself stays read-only. A worker's session belongs to its worker, and the
 webapp never writes to it (CLAUDE.md: no file locking).
 
 ```html

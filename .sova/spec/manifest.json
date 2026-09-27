@@ -76,7 +76,8 @@
         "src/components/SelectionToolbar.tsx",
         "src/components/SessionDetails.tsx",
         "src/App.tsx",
-        "src/components/InsightsPage.tsx"
+        "src/components/InsightsPage.tsx",
+        "src/lib/pane-insight.ts"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {
@@ -347,9 +348,12 @@
     "§app.subagents-pane/shell-a-third-column": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
-        "src/components/SessionPane.tsx"
+        "src/components/SessionPane.tsx",
+        "src/App.tsx",
+        "src/lib/pane-insight.ts",
+        "src/components/SessionView.tsx"
       ]
     },
     "§app.subagents-pane/tokens": {
@@ -1108,7 +1112,8 @@
       "evidence": "reviewed",
       "code": [
         "src/components/SessionUsage.tsx",
-        "src/components/SessionPane.tsx"
+        "src/components/SessionPane.tsx",
+        "src/components/SubagentPane.tsx"
       ]
     },
     "§design.copy-deck/timeline-tab": {
@@ -1767,7 +1772,7 @@
         "§chat.sandbox/workers"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "pi-config/extensions/subagents/index.ts",
         "pi-config/extensions/subagents/registry.ts",
@@ -4456,7 +4461,9 @@
         "src/components/SessionDetails.tsx",
         "src/design/base.css",
         "src/lib/spend.ts",
-        "src/lib/spend.test.ts"
+        "src/lib/spend.test.ts",
+        "src/components/AgentsView.tsx",
+        "src/App.tsx"
       ]
     }
   },

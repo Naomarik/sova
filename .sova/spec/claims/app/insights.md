@@ -380,7 +380,7 @@ Sova that aren't archived.
         <div class="board-cell board-activity">model · context ring · 5m ago · state chip</div>
         <div class="board-cell board-workers">2/5 working · team chip → #/agents/{teamKey} · $1.20</div>
         <div class="board-cell board-trees">feat/x · ↑3 ↓1 · +120 −4 · dirty dot · +1</div>
-        <div class="board-cell board-actions">Open · Subagents · Archive · Move into group · ⋯</div>
+        <div class="board-cell board-actions">Open · Session details (aria-expanded) · Archive · Move into group · ⋯</div>
       </div>
       <div class="board-detail">…one line per worker, the team, one line per worktree…</div>   <!-- open rows only -->
     </li>
@@ -409,9 +409,8 @@ Sova that aren't archived.
   model, the context ring (the sidebar row's rule: the open view's live fill wins, never without a
   window), last active in relative time, the state chip. Workers:
   `{working}/{total} working`, a count chip per team linking to its `#/agents/{teamKey}`, the
-  workers' lifetime spend. Worktrees: see §app.insights/subagent-cards. Actions: Open, Subagents
-  (opens the session with its subagents pane on the Agents tab), Archive or Unarchive, Move into
-  group (the session pane's group menu, icon only), and ⋯. The head's totals line (working ·
+  workers' lifetime spend. Worktrees: see §app.insights/subagent-cards. Actions: Open, Session
+  details, Archive or Unarchive, Move into group (the session pane's group menu, icon only), and ⋯. The head's totals line (working ·
   live · spend today · unmerged, with its `title`) leaves the page head and sits right-aligned on
   the filter line (`.board-totals`); below 1000px it stays in the head.
 - **Wide** (the `insights` container ≥1600px). Session takes the extra width (titles and gists
@@ -420,11 +419,22 @@ Sova that aren't archived.
 - **Page.** Only this page drops the 1280px page cap: side margins `--space-4` below 1600px and
   `--space-6` from there, the content capped at 2400px and centered; the head, the bar and the
   board share the same left and right edges. Other insights pages keep 1280px.
-- **Condensed** (768–999px): Activity sits over Workers in one column; the actions are Open and
-  ⋯. **Folded** (<768px): stacked rows — title with the state chip, the gist, a micro line
+- **Condensed** (768–999px): Activity sits over Workers in one column; the actions are Open,
+  Session details and ⋯. **Folded** (<768px): stacked rows — title with the state chip, the gist, a micro line
   (model · workers · last active), the worktree chips — a tap on the row's bare surface opens it,
   and ⋯ is the door to every action. Every target is 44px.
-- **⋯ menu.** Open Session, Open Subagents, Rename…, Use Gist as Title (the gist on one line,
+- **Session details.** The info button (`aria-controls="session-pane"`, named "Session details of
+  “{title}”") opens that session's Session detail pane (§app/subagents-pane) on its Session tab in
+  place: the board stays on `#/agents`, and no session view opens. `aria-expanded` says whether
+  the pane shows this row's session. Its own row's button closes it; another row's switches it
+  to that session, on Session again. The pane follows the shell's bands, so from 1280px it takes a
+  column and the board beside it reflows, usually to its folded layout, where ⋯ is the door; below
+  1280px it covers the actions, and its own close comes first. A team link (`#/agents/{teamKey}`)
+  keeps it open; leaving the page closes it. With no chat on screen, workers come from the polled
+  insight, the Timeline can't rewind ("Only a chat open in Sova can rewind."), and a row's jump
+  says the message isn't in the transcript on screen.
+- **⋯ menu.** Session Details (Close Session Details while that row's pane is open), Open
+  Session, Open Subagents (opens the session with its pane on the Agents tab), Rename…, Use Gist as Title (the gist on one line,
   cut to the title limit; off, with the reason, when there's none or it already is the title),
   Reset to Original Title (off when not renamed), Move to Group… (a screen of the groups, with
   "No group"), Archive or Unarchive, Copy Path.
@@ -434,9 +444,8 @@ Sova that aren't archived.
 - **Archive.** Only for sessions started in Sova, or already archived. Refused with its reason
   (open in a TUI, mid-turn, subagents working) before the press, never after.
 - **Open row.** One line per worker outside a team (working first): name, id and model in mono,
-  the preview while working, the status chip (the table below), and **Resume** for a restored
-  worker the server can resume (`POST /api/workers/resume`). Then each team, then one line per
-  worktree.
+  the preview while working, and the status chip (the table below); a line has no actions. Then
+  each team, then one line per worktree.
 - **Team.** A bordered block, `.team-group`, `id="team-{teamKey}"`, `tabindex="-1"`: the name,
   its id in mono, Paused (warn) when its newest pause/resume is a pause, "{n} working", the
   objective on one line, then its members one line each — coordinator (or orchestrator) first,

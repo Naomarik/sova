@@ -943,6 +943,10 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           await host.open(s.path);
           const r = await call("POST", `/api/mode?path=${encodeURIComponent(s.path)}`, body);
           if (r.status !== 200) throw failed(r, "Switching mode");
+          // Pinned, as in sova_create_session: a mode equal to the default still gets its entry.
+          await host.pinMode(s.path).catch((err) => {
+            throw new Error(`Switched, but its mode entry was not written (${err instanceof Error ? err.message : String(err)}), so it may follow a later default.`);
+          });
           done.push(`mode ${r.json?.mode ?? p.mode ?? ""}${Array.isArray(r.json?.minorModes) && r.json.minorModes.length ? ` + ${r.json.minorModes.join(", ")}` : ""}${r.json?.applies && r.json.applies !== "now" ? ` (applies ${r.json.applies})` : ""}`);
         }
         if (!done.length) throw new Refusal("Nothing to change: give title, model, thinking, mode or minor_modes.");

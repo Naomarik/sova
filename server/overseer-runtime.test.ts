@@ -922,6 +922,23 @@ describe("a model, thinking level or mode the Overseer sets applies to that sess
     }
   });
 
+  test("sova_set_session pins a mode equal to the default too", async () => {
+    writeOverseerSettings({ ...defaultSettings() });
+    const modeFile = join(agentDir, "mode.json");
+    const had = existsSync(modeFile) ? readFileSync(modeFile, "utf8") : null;
+    writeFileSync(modeFile, JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: [] }));
+    try {
+      const s = await newSession();
+      await userSends(await overseerChat(), "keep that one normal");
+      await result("sova_set_session", { session: s.id, mode: "normal", minor_modes: [] });
+      const pins = entriesOf(s.path).filter((e) => e.type === "custom" && e.customType === "mode");
+      assert.deepEqual(pins.map((e) => e.data?.active), [{ version: 1, mode: "normal", strict: false, minorModes: [] }]);
+    } finally {
+      if (had === null) rmSync(modeFile, { force: true });
+      else writeFileSync(modeFile, had);
+    }
+  });
+
   test("sova_create_session whose mode switch fails sends no prompt, and says so", async () => {
     writeOverseerSettings({ ...defaultSettings(), caps: { ...DEFAULT_CAPS, createPerTurn: 10, concurrentSessions: 10 } });
     await userSends(await overseerChat(), "start a spec session");

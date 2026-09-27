@@ -34,7 +34,7 @@ import {
   runProjectOverseer,
   sendProjectItem,
 } from "../lib/api";
-import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, folderNote, isDelegate, mergeGate, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
+import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, folderNote, isDelegate, mergeGate, mergeNote, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
 import { relativeTime, tildePath } from "../lib/format";
 import { hostLabel, orgHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
@@ -700,11 +700,13 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
                     </Show>
                   </span>
                   <Show when={row.state === "root" && row.inRoot}>{(why) => <span class="list-meta">In the project root: {why()}</span>}</Show>
-                  <Show when={row.state === "merged" || row.mergedAt}>
-                    <span class="list-meta">
-                      Merged into <span class="orgs-mono">{row.target}</span>
-                      <Show when={row.mergedAt}>{(at) => <> <time title={at()}>{relativeTime(at())}</time></>}</Show>
-                    </span>
+                  <Show when={mergeNote(row)}>
+                    {(lead) => (
+                      <span class="list-meta">
+                        {lead()} <span class="orgs-mono">{row.target}</span>
+                        <Show when={row.mergedAt}>{(at) => <> <time title={at()}>{relativeTime(at())}</time></>}</Show>
+                      </span>
+                    )}
                   </Show>
                   <Show when={folderNote(row)}>{(note) => <span class="list-meta">{note()}</span>}</Show>
                 </span>

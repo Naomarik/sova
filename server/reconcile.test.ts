@@ -739,6 +739,37 @@ describe("restatements, confirmations and resolutions that say something else", 
   });
 });
 
+describe("a fold of a fold", async () => {
+  const org = await orgs.createOrg({ name: "Gate", dir: join(tmp, "ws-fold2") });
+  const client = join(tmp, "client-fold2");
+  mkdirSync(client);
+  const project = orgs.addProject(org.id, { name: "Lunch", root: client });
+  const kim = orgs.addPerson(org.id, { name: "Kim Park", role: "Office", decides: ["lunch"] });
+  const s = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Lunch", goal: "g" });
+
+  test("promoting the kept decision carries the quotes of what was folded into what was folded into it, once each", async () => {
+    const a = `${s.sessionId}:${say(s.path, kim.id, "Lunch at noon.", { area: "lunch", statement: "Lunch is at noon.", quote: "Lunch at noon." }).markerId}`;
+    const b = `${s.sessionId}:${say(s.path, kim.id, "Noon, as decided.", { area: "lunch hour", statement: "The lunch hour starts at noon.", quote: "Noon, as decided." }).markerId}`;
+    const c = `${s.sessionId}:${say(s.path, kim.id, "Yes, noon.", { area: "lunch time", statement: "Lunch starts at 12.", quote: "Yes, noon." }).markerId}`;
+    await reconcile.reconcileProject(org.id, project.id);
+    // B was folded into A (a resolution restating it), and C into B (a confirmation of that),
+    // with a cycle back from C to B that must not repeat anything.
+    const store = decisions.readDecisionStore(org.id, project.id);
+    const row = (id: string) => store.decisions.find((d) => d.id === id)!;
+    row(a).folded = [b];
+    Object.assign(row(b), { state: "superseded", supersededBy: a, folded: [c] });
+    Object.assign(row(c), { state: "superseded", supersededBy: b, folded: [b] });
+    decisions.writeDecisionStore(org.id, project.id, store);
+    await reconcile.draftProject(org.id, project.id);
+    const r = await reconcile.promoteDecisions(org.id, project.id, [a]);
+    assert.deepEqual(r.promoted, [a]);
+    const rec = specManifest(client).claims[r.info.decisions.find((d) => d.id === a)!.recordId!];
+    assert.deepEqual(rec.provenance.map((p: any) => p.quote), ["Lunch at noon.", "Noon, as decided.", "Yes, noon."]);
+    assert.equal(r.info.decisions.find((d) => d.id === a)!.state, "promoted", "and it reads as up to date");
+    assert.equal((await reconcile.reconcileProject(org.id, project.id)).decisions.find((d) => d.id === a)!.state, "promoted", "not promotable again on the next run");
+  });
+});
+
 // The spec tool itself, against a project whose spec someone else already wrote: our records join it.
 describe("an existing spec", () => {
   test("appends an area file without touching other claims", async () => {

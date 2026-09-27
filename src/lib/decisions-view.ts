@@ -1,7 +1,7 @@
 // The project page's decisions (§app/requirements): pure rules the page renders, so they run under
 // tsx --test. The server owns every state; these only group, count and pick.
 
-import type { Conflict, DecisionRow, DecisionState, DecisionsInfo } from "../../shared/decisions";
+import { foldedRows, type Conflict, type DecisionRow, type DecisionState, type DecisionsInfo } from "../../shared/decisions";
 
 export const DECISION_STATE: Record<DecisionState, { word: string; tone?: "info" | "warn" | "success"; hint: string }> = {
   pending: { word: "Pending", hint: "Not compared with the rest of its area yet." },
@@ -96,3 +96,14 @@ export const refreshSelection = (sel: PromoteSelection, decisions: readonly Deci
   ids: keepPromotable(sel.ids, decisions),
   bulk: sel.bulk,
 });
+
+/**
+ * The line under a decision that carries others: every statement folded into it, a fold of a fold
+ * included (as its spec record's provenance counts them), each once. A fold may be a later
+ * confirmation as well as an earlier restatement, so the line says neither. Null when none is known.
+ */
+export function alsoCarriesLine(d: Pick<DecisionRow, "id" | "folded">, byId: ReadonlyMap<string, Pick<DecisionRow, "id" | "folded">>): string | null {
+  const n = foldedRows(d, byId).length;
+  if (!n) return null;
+  return n === 1 ? "Also carries 1 more statement of the same decision, with its quote." : `Also carries ${n} more statements of the same decision, with their quotes.`;
+}

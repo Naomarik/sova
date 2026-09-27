@@ -7,6 +7,7 @@ import {
   RECONCILE_DEFAULT,
   RECONCILE_OFF,
   REQUIREMENTS_NS,
+  foldedRows,
   type Conflict,
   type ConflictResolveInput,
   type DecisionRow,
@@ -172,7 +173,7 @@ const markChecked = (x: DecisionRow, y: DecisionRow) => {
 /** The record a promoted row should have in the current spec, and whether the spec has it. */
 function upToDate(d: DecisionRow, byId: Map<string, DecisionRow>, current: Record<string, unknown>): boolean {
   if (!d.recordId) return false;
-  const also = (d.folded ?? []).map((id) => byId.get(id)).filter((x): x is DecisionRow => !!x);
+  const also = foldedRows(d, byId);
   if (JSON.stringify(current[d.recordId]) !== JSON.stringify(manifestRecord(d, undefined, also))) return false;
   // Every promoted decision it replaced must say so in the spec, too.
   for (const s of byId.values())
@@ -810,7 +811,8 @@ function editFor(store: DecisionStore, rows: DecisionRow[], root: string): SpecE
     out.push(s);
   }
   const also = new Map<string, DecisionRow[]>();
-  for (const r of rows) if (r.recordId && r.folded?.length) also.set(r.recordId, r.folded.map((id) => byId.get(id)).filter((x): x is DecisionRow => !!x));
+  // A fold of a fold too: a confirmation folded into a resolution that was itself folded here.
+  for (const r of rows) if (r.recordId && r.folded?.length) also.set(r.recordId, foldedRows(r, byId));
   return { rows: out, supersededBy, also };
 }
 

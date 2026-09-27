@@ -29,7 +29,6 @@
 .orgs-project-row .orgs-row-go { color: var(--color-ink-muted); }
 /* Its cost at API prices, beside the chevron; the org total sits in the section head. */
 .orgs-project-cost { flex: none; }
-.orgs-projects-cost { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .orgs-projects-cost .text-num { color: var(--color-ink); }
 
 .orgs-form { display: flex; flex-direction: column; gap: var(--space-3); }

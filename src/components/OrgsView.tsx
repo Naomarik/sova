@@ -24,7 +24,7 @@ import {
   getBatonSettings,
 } from "../lib/api";
 import { commitNowWords } from "../lib/commit-now";
-import { usd } from "../lib/costs";
+import { ESTIMATE_TITLE, usd } from "../lib/costs";
 import { duration, relativeTime, stampTime } from "../lib/format";
 import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
 import { proposedAreasLine } from "../lib/baton-strip";
@@ -1065,19 +1065,19 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
   // Each project's cost at API prices (§app/project-costs/org-rollup); the list stands without it.
   const orgId = createMemo(() => props.org.id);
   const [costs] = createResource(orgId, (id) => getOrgCosts(id).catch(() => null));
-  const costOf = (pid: string) => costs()?.projects.find((c) => c.projectId === pid)?.totalUsd;
+  const costOf = (pid: string) => costs()?.projects.find((c) => c.projectId === pid);
   return (
     <section class="card orgs-section" aria-labelledby="orgs-projects">
-      <div class="orgs-head">
-        <h2 class="orgs-h2" id="orgs-projects">
-          Projects
-        </h2>
-        <Show when={costs() && props.org.projectList.length}>
-          <span class="orgs-projects-cost">
-            <span class="text-num orgs-mono">{usd(costs()!.totalUsd)}</span> at API prices
-          </span>
-        </Show>
-      </div>
+      <h2 class="orgs-h2" id="orgs-projects">
+        Projects
+      </h2>
+      <Show when={props.org.projectList.length > 0 && costs()}>
+        {(c) => (
+          <p class="orgs-line orgs-projects-cost">
+            All projects: <span class="text-num orgs-mono" title={c().estimate ? ESTIMATE_TITLE : undefined}>{usd(c().totalUsd, c().estimate)}</span> at API prices.
+          </p>
+        )}
+      </Show>
       <Show when={props.org.projectList.length} fallback={<p class="orgs-empty">No projects yet. A project is a folder that hand-off sessions and its overseer work in.</p>}>
         <ul class="list orgs-project-list">
           <For each={props.org.projectList}>
@@ -1092,8 +1092,12 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
                       {p.root}
                     </span>
                   </span>
-                  <Show when={costOf(p.id) !== undefined}>
-                    <span class="list-meta text-num orgs-mono orgs-project-cost">{usd(costOf(p.id)!)}</span>
+                  <Show when={costOf(p.id)}>
+                    {(c) => (
+                      <span class="list-meta text-num orgs-mono orgs-project-cost" title={c().estimate ? ESTIMATE_TITLE : undefined}>
+                        {usd(c().totalUsd, c().estimate)}
+                      </span>
+                    )}
                   </Show>
                   <Icon name="chevron-right" class="orgs-row-go" />
                 </a>

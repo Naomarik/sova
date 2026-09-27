@@ -108,7 +108,9 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       titleRef={props.titleRef}
     >
       <Show when={org()}>{(o) => <ProjectOverseerPanel org={o()} projectId={props.projectId} onBusy={setOverseerBusy} />}</Show>
-      <ProjectCostCard orgId={props.orgId} projectId={props.projectId} tick={costTick()} />
+      <Show when={`${props.orgId}/${props.projectId}`} keyed>
+        <ProjectCostCard orgId={props.orgId} projectId={props.projectId} tick={costTick()} />
+      </Show>
       {/* Only while the org has an owner (§app.owner-page/controls). */}
       <Show when={org()?.ownerPage?.person && project()}>
         <OwnerProjectCard org={org()!} project={project()!} onOrg={mutateOrg} />

@@ -96,46 +96,40 @@
 .project-stakeholder { display: flex; flex-direction: column; gap: var(--space-2); }
 .project-stakeholder-field { max-width: 28rem; }
 
-/* The Cost card (§app/project-costs/card): the total, then each breakdown as a table that
-   stacks, one block per row, when the page is narrow. */
+/* The Cost card (§app.project-costs/card): the total, then each breakdown as a table that
+   stacks, one block per row, under 560px of page. */
+.project-cost-head { display: flex; flex-direction: column; gap: var(--space-1); }
 .project-cost-total { margin: 0; display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
-.project-cost-usd { font-family: var(--font-mono); font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.project-cost-total .project-cost-usd { font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.project-cost-usd { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); white-space: nowrap; }
 .project-cost-wrap { margin: 0; }
 .project-cost-table { width: 100%; }
-.project-cost-caption {
-  caption-side: top;
-  text-align: left;
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--fs-micro);
-  letter-spacing: var(--ls-eyebrow);
-  text-transform: uppercase;
-  color: var(--color-ink-muted);
-  background: var(--color-surface);
-}
 .md .project-cost-table th[scope="row"] { font-weight: var(--fw-regular); background: none; white-space: normal; }
-.md .project-cost-table tfoot th[scope="row"],
+.md .project-cost-table tfoot th,
 .md .project-cost-table tfoot td { font-weight: var(--fw-semibold); background: var(--color-sunken); border-bottom: 0; }
-.project-cost-cell-usd { color: var(--color-ink); }
+.project-cost-cell { display: inline-flex; flex-direction: column; align-items: flex-end; }
+.project-cost-tokens { font-size: var(--fs-caption); }
+.project-cost-top-row { gap: var(--space-3); }
+.project-cost-top-row .list-title a { color: var(--color-ink); }
 .project-cost-notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--fs-caption); }
-@container insights (max-width: 599px) {
-  .project-cost-table,
-  .project-cost-table tbody,
-  .project-cost-table tfoot { display: block; }
-  .project-cost-caption { display: block; }
-  .project-cost-table thead { display: none; }
-  .project-cost-table tr {
+@container insights (max-width: 559px) {
+  .project-cost-models,
+  .project-cost-models tbody,
+  .project-cost-models tfoot { display: block; }
+  .project-cost-models thead { display: none; }
+  .project-cost-models tr {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 2px var(--space-3);
+    gap: var(--space-1) var(--space-3);
     padding: var(--space-2) var(--space-3);
     border-bottom: var(--stroke-thin) solid var(--color-border);
   }
-  .project-cost-table tfoot tr { border-bottom: 0; background: var(--color-sunken); }
-  .md .project-cost-table th,
-  .md .project-cost-table td { display: block; padding: 0; border: 0; background: none; }
-  .md .project-cost-table th[scope="row"] { grid-column: 1 / -1; font-weight: var(--fw-semibold); }
-  .md .project-cost-table td[data-label] { display: flex; justify-content: flex-end; }
-  .project-cost-table td[data-label]::before {
+  .project-cost-models tfoot tr { border-bottom: 0; background: var(--color-sunken); }
+  .md .project-cost-models th,
+  .md .project-cost-models td { display: block; padding: 0; border: 0; background: none; }
+  .md .project-cost-models th[scope="row"] { grid-column: 1 / -1; font-weight: var(--fw-semibold); }
+  .md .project-cost-models td[data-label] { display: flex; justify-content: flex-end; align-items: baseline; }
+  .project-cost-models td[data-label]::before {
     content: attr(data-label);
     margin-right: auto;
     padding-right: var(--space-2);

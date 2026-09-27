@@ -405,6 +405,15 @@ export function SubagentPane(props: {
                     </h3>
                     <span class="subagents-view-wid text-mono text-muted">{w().id}</span>
                   </div>
+                  {/* The minor modes it was given at its start (spec): a quiet chip right before the
+                      status chip, so the meta line keeps to one row. */}
+                  <Show when={w().modes?.length ? w().modes : undefined}>
+                    {(m) => (
+                      <span class="chip chip-count" title="The modes this worker was given when it started.">
+                        {m().join(", ")}
+                      </span>
+                    )}
+                  </Show>
                   <StatusChip worker={w()} liveSource={liveSource()} />
                   <Show when={teamOf(w())}>
                     {(t) => (
@@ -420,15 +429,6 @@ export function SubagentPane(props: {
                       </span>
                     )}
                   </For>
-                  {/* The minor modes it was given at its start (spec): a quiet chip beside the
-                      others, so the meta line keeps to one row. */}
-                  <Show when={w().modes?.length ? w().modes : undefined}>
-                    {(m) => (
-                      <span class="chip chip-count" title="The modes this worker was given when it started.">
-                        {m().join(", ")}
-                      </span>
-                    )}
-                  </Show>
                   <p class="subagents-view-meta meta-line">
                     {/* The model leads, bare: the route that serves it (`claude code` for that
                         backend, a pi ref's prefix or a catalog lookup otherwise) and the full id

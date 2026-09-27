@@ -249,6 +249,10 @@ session, idea or todo a card about specific things acts on (archive, tick, send,
 **note**: what it is, then why the action fits it, in at most 2 short sentences ("Push
 notifications for Overseer briefs. Merged to master yesterday, nothing running."). That rule is the
 prompt's; the server cannot tell such a card from any other, so it never requires `items` or notes.
+When a button also acts on an idea or a todo, that item's note says the effect ("Covered by the push
+session's final report. Ticking marks it done."), and every option's `reply` says exactly what it
+does to which items ("Archive the 13 sessions listed and tick td_dbd3f3f5; leave §sova/tidy-sweeps
+open."), never just its label. These too are the prompt's and the tool description's.
 
 - **Items.** `items` is `{sessions?, ideas?, todos?}`, each a list whose entries are an id or
   `{id, note}` (a bare id is still valid). Sessions are addressed in
@@ -271,8 +275,8 @@ prompt's; the server cannot tell such a card from any other, so it never require
   answers the card acts on exactly those.
 - The chat renders that tool call as a **confirm card** in the thread: title, detail, the items, and
   one button per option.
-  - The items sit between the detail and the buttons, one compact row each, sessions first, then
-    ideas, then todos. A session row is an in-app link (resolved like a session link,
+  - The items sit between the detail and the buttons, one compact row each: ideas, then todos, then
+    sessions. A session row is an in-app link (resolved like a session link,
     §app.overseer/links) whose text is the session's summary, or its title when it has none (the
     title is the first prompt, which rarely names the work); then its folder and how long ago it was
     active ("sova · 3d ago"), and a warning chip ("2 subagents working") when it had working
@@ -280,8 +284,10 @@ prompt's; the server cannot tell such a card from any other, so it never require
     A todo row is its text.
   - Under each row, its note in body text (not muted), up to 2 lines and then clamped; a row
     without a note has nothing under it.
-  - Past 8 items the card shows the first 8 and a **Show all N** toggle (Show fewer, open); a card
-    with 9 shows all 9, since hiding one row saves nothing.
+  - Ideas and todos always show: a card's effect on them (ticking a todo, closing an idea) is never
+    behind a toggle. Only sessions collapse: past 8 sessions the card shows the first 8 and a **Show
+    all N sessions** toggle (Show fewer, open), so the rows it reveals are only ever sessions; a card
+    with 9 sessions shows all 9, since hiding one row saves nothing.
   - A card without items (every card from before they existed) renders exactly as before.
 - **Hide tool calls never folds it.** The card is the Overseer's question, not its working, so
   "Hide tool calls" leaves it (and its result) in the thread, like the link card

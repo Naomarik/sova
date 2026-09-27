@@ -313,6 +313,12 @@ export interface WorkerManifest {
 	 * then apply.
 	 */
 	resumedAt?: number;
+	/**
+	 * The minor modes the worker was given at its start (the mode extension's worker-scope ones, e.g.
+	 * `["spec"]`; `[]` for none), newest start winning: a resume records the ones it gave. Absent from
+	 * records of older writers, which then say nothing about modes.
+	 */
+	modes?: string[];
 	/** Extension-owned spawn spec needed to resume; opaque to every other reader. Newest replaces whole. */
 	launch?: Record<string, unknown>;
 	/** Newest record time folded in (ms epoch). */
@@ -446,6 +452,12 @@ export function readWorkerManifests(entries: readonly unknown[], options: { acti
 		manifests.set(record.workerId, next);
 	}
 	return { manifests, refused };
+}
+
+/** The minor modes a record says the worker was given, or undefined when it says nothing (older writers) or nonsense. */
+export function manifestModes(manifest: Pick<WorkerManifest, "modes">): string[] | undefined {
+	const modes: unknown = manifest.modes;
+	return Array.isArray(modes) && modes.every((m) => typeof m === "string" && /^[a-z][a-z0-9-]*$/.test(m)) ? [...modes] : undefined;
 }
 
 /** The worker was mid-turn when its owner went away: status still running, or lost. */

@@ -16,7 +16,23 @@ export const MINOR_DESCRIPTIONS: Record<MinorMode, string> = {
 	spec: "Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented",
 };
 
-export const ALIGN_INSTRUCTIONS = `# Minor mode: align
+/**
+ * Whether each minor mode reaches the workers a session starts (§chat.mode-menu/workers). A record over
+ * the union, so a new minor mode cannot compile without deciding. align is a conversation with the user,
+ * which a worker doesn't have; spec is a discipline a worker's edits need too. Major modes never reach a
+ * worker: workers spawn no workers, so Delegate has nothing to route there.
+ */
+export const MINOR_WORKER: Record<MinorMode, boolean> = {
+	align: false,
+	spec: true,
+};
+
+/** The worker-scope subset of `minorModes`, in registry order. */
+export function workerMinorModes(minorModes: readonly MinorMode[]): MinorMode[] {
+	return MINOR_MODES.filter((mode) => MINOR_WORKER[mode] && minorModes.includes(mode));
+}
+
+export const ALIGN_INSTRUCTIONS =`# Minor mode: align
 
 Before building anything non-trivial, align with the user on what to build. Do not edit files or spawn implementation workers until the user has confirmed a plan.
 

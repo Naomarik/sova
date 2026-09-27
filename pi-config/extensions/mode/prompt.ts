@@ -1,6 +1,6 @@
 /** The delegate system-prompt text, prompt composition, and status labels. Pure functions: unit-testable. */
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateDefaults, type DelegateProfileId, type WorkerChoice } from "./delegate.ts";
-import { buildMinorPrompt, type MinorMode } from "./minor.ts";
+import { buildMinorPrompt, workerMinorModes, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import type { Mode, ModeState } from "./state.ts";
 
@@ -95,6 +95,29 @@ export function composePrompt(
 		const block = buildMinorPrompt(minor);
 		blocks.push(minor === "spec" && writer ? `${block}\n\n${buildSpecWriterPrompt(writer)}` : block);
 	}
+	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
+}
+
+/**
+ * Appended to the spec block in a worker's prompt (never the parent's): spec-mode.md is written to the
+ * session that plans, promotes and briefs, and stays byte-identical, so what differs for a worker is said
+ * here. The parent promotes; the worker's brief can say otherwise.
+ */
+export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and it promotes. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Do not promote, commit, or record \`--commit\` evidence unless your brief says to; say instead what is ready to promote. Put any flags as one question in your final report, whose last line is the \`Also changes:\` line.`;
+
+/** One minor mode's block as a worker receives it: spec gets the worker note, never the writer paragraph. */
+function buildWorkerMinorPrompt(mode: MinorMode): string {
+	const block = buildMinorPrompt(mode);
+	return mode === "spec" ? `${block}\n\n${SPEC_WORKER_NOTE}` : block;
+}
+
+/**
+ * What a worker this session starts gets of its modes (§chat.mode-menu/workers): the worker-scope minor
+ * modes only (MINOR_WORKER), in registry order. No major-mode block, no Delegate+align bridge, no spec
+ * writer. undefined when none applies.
+ */
+export function composeWorkerPrompt(state: Pick<ModeState, "minorModes">): string | undefined {
+	const blocks = workerMinorModes(state.minorModes).map(buildWorkerMinorPrompt);
 	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
 }
 

@@ -1904,6 +1904,10 @@ export interface WorkerInfo {
       level then; claude-code: its effort, or absent for the backend default). Absent when the
       writer didn't publish it (older pi-config). */
   effort?: string;
+  /** The mode extension's minor modes this worker was given at its start (today only `spec`
+      reaches workers; §chat.mode-menu/workers), a resumed worker's being the ones its resume gave.
+      Absent when it was given none, and from records of an older pi-config — show nothing then. */
+  modes?: string[];
   startedAt?: number; lastActivity?: number; endedAt?: number;
   outcome?: "success" | "error" | "aborted";
   teamId?: string;

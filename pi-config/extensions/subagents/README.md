@@ -261,7 +261,23 @@ the parent's sessions directory for that cwd (so Sova lists and watches it like 
 tree's `extensions/mode` loaded by path with `--major normal --minor spec`, and `--approve`.
 Discovery stays off and the model policy is the parent's. It is recorded in the launch spec, so
 `agent_resume` applies it again. A worker never loads any copy of `subagents` or `worktrees`
-through `extensions`.
+through `extensions`. The tree's mode extension learns it runs in a worker from the worker marker
+(`subagents:worker` on the child's bus, `mode/events.ts`): it ignores the parent's `mode`
+snapshots a `fork` copied and offers no spec writer.
+
+## The parent's modes
+
+The mode extension announces what this session's workers get of its modes on the bus
+(`mode:worker`, `mode/events.ts`; asked for at load with `mode:worker-discover`): today the spec
+block plus a worker note while spec is on, nothing otherwise. Every worker started from then on —
+pi or Claude Code, plain, remote, sandboxed, hosted, team member or successor — gets that text
+appended last to its system prompt (after its agent type, its brief and any remote instructions);
+the text is never interpreted here. It is a snapshot: a later switch never reaches a running
+worker, and `agent_resume` takes the session's current announcement (the launch spec keeps the raw
+brief). Two exceptions get nothing: a team's monitor (it has no tools) and a `useWorktreeConfig`
+worker (its tree's mode extension gives it spec itself). The minor modes given are recorded with
+the worker (the manifest's `modes`, newest start winning; `[]` for none) and published in the
+workers snapshot (`modes`, absent for none), which Sova shows on the worker's view head.
 
 ## Remote sessions
 

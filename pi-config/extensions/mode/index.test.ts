@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL } from "./minor.ts";
+import { ALIGN_INSTRUCTIONS, buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, workerMinorModes } from "./minor.ts";
+import { parseModeWorkerEvent } from "./events.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { delegateDefaults, type DelegateSettings } from "./delegate.ts";
 import {
@@ -13,9 +14,11 @@ import {
 	buildDelegatePrompt,
 	buildSpecWriterPrompt,
 	composePrompt,
+	composeWorkerPrompt,
 	DEFAULT_ROUTES,
 	DELEGATE_ALIGN_BRIDGE,
 	MODE_SECTION,
+	SPEC_WORKER_NOTE,
 	statusLabel,
 } from "./prompt.ts";
 import { routeAll, routeWriter, type Discovery } from "./routing.ts";
@@ -757,4 +760,47 @@ test("composePrompt takes a ModeActive, so the per-session state drives the turn
 	assert.ok(block.indexOf("# Mode: delegate") < block.indexOf(DELEGATE_ALIGN_BRIDGE), "delegate block, then the align bridge");
 	assert.match(block, /# Minor mode: align/);
 	assert.equal(composePrompt({ version: 1, mode: "normal", strict: true, minorModes: [] } satisfies ModeActive, ALL_OK), undefined);
+});
+
+// ── Workers (§chat.mode-menu/workers) ────────────────────────────────────────
+
+test("MINOR_WORKER declares every minor mode, and nothing else: spec reaches workers, align does not", () => {
+	assert.deepEqual(Object.keys(MINOR_WORKER).sort(), [...MINOR_MODES].sort());
+	for (const minor of MINOR_MODES) assert.equal(typeof MINOR_WORKER[minor], "boolean", minor);
+	assert.equal(MINOR_WORKER.spec, true);
+	assert.equal(MINOR_WORKER.align, false);
+	assert.deepEqual(workerMinorModes(["spec", "align"]), ["spec"], "registry order, worker-scope only");
+	assert.deepEqual(workerMinorModes(["align"]), []);
+});
+
+test("composeWorkerPrompt: the spec block byte for byte, then the worker note; never delegate, align, the bridge or a writer", () => {
+	const discovery: Record<string, Discovery> = {};
+	const writer = routeWriter({ ...specDefaults(), writer: { primary: { backend: "claude-code", model: "sonnet", effort: "high" }, fallback: null } } as SpecSettings, discovery, () => null);
+	const everything = { mode: "delegate" as const, strict: true, minorModes: ["align", "spec"] as MinorMode[] };
+	// The parent's own block carries all of it: the worker's must carry none of it.
+	const parent = composePrompt(everything, DEFAULT_ROUTES, writer)!;
+	assert.ok(parent.includes("# Mode: delegate") && parent.includes("# Minor mode: align") && parent.includes("Spec writer:"), "the parent block is the full one");
+	const worker = composeWorkerPrompt(everything)!;
+	assert.equal(worker, `${SPEC_INSTRUCTIONS}\n\n${SPEC_WORKER_NOTE}`);
+	assert.ok(worker.startsWith(SPEC_INSTRUCTIONS), "starts with spec-mode.md exactly");
+	for (const absent of ["# Mode: delegate", "# Minor mode: align", DELEGATE_ALIGN_BRIDGE, "Spec writer:", ALIGN_INSTRUCTIONS.slice(0, 200)])
+		assert.ok(!worker.includes(absent), `worker prompt must not include ${absent.slice(0, 40)}`);
+	assert.equal(composeWorkerPrompt({ minorModes: ["align"] }), undefined, "align alone reaches no worker");
+	assert.equal(composeWorkerPrompt({ minorModes: [] }), undefined);
+});
+
+test("SPEC_WORKER_NOTE: the parent promotes, the brief is the go-ahead, and the reply ends on the Also changes line spec-mode.md names", () => {
+	assert.match(SPEC_WORKER_NOTE, /parent session started you, and it promotes/);
+	assert.match(SPEC_WORKER_NOTE, /Do not promote, commit, or record `--commit` evidence unless your brief says to/);
+	assert.match(SPEC_WORKER_NOTE, /Your brief is your go-ahead/);
+	// The note leans on spec-mode.md's own wording; a rewrite there must revisit the note.
+	for (const phrase of ["`--commit`", "Also changes:", "draft", "promote"]) assert.ok(SPEC_INSTRUCTIONS.includes(phrase.replace(/`/g, "")) || SPEC_INSTRUCTIONS.includes(phrase), phrase);
+	assert.ok(!SPEC_INSTRUCTIONS.includes(SPEC_WORKER_NOTE), "spec-mode.md itself stays the parent's text");
+});
+
+test("parseModeWorkerEvent keeps a v1 payload and drops everything else", () => {
+	assert.deepEqual(parseModeWorkerEvent({ version: 1, minorModes: ["spec"], prompt: "x" }), { version: 1, minorModes: ["spec"], prompt: "x" });
+	assert.deepEqual(parseModeWorkerEvent({ version: 1, minorModes: [] }), { version: 1, minorModes: [] });
+	for (const bad of [null, "x", { version: 2, minorModes: [] }, { version: 1 }, { version: 1, minorModes: [1] }, { version: 1, minorModes: [""] }, { version: 1, minorModes: [], prompt: 3 }, { version: 1, minorModes: [], prompt: "  " }])
+		assert.equal(parseModeWorkerEvent(bad), undefined, JSON.stringify(bad));
 });

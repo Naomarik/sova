@@ -59,6 +59,9 @@ type Rec = Record<string, any>;
 
 const isRec = (v: unknown): v is Rec => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+/** A worker's `modes` (sessions schema WorkerEntry): short lower-case names, else nothing at all. */
+const workerModesOf = (v: unknown): string[] | undefined =>
+  Array.isArray(v) && v.length > 0 && v.length <= 8 && v.every((m) => typeof m === "string" && m.length <= 32 && /^[a-z][a-z0-9-]*$/.test(m)) ? [...v] : undefined;
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 const count = (v: unknown): number => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0);
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
@@ -748,6 +751,8 @@ function decodeWorker(w: unknown, hosted: boolean): WorkerInfo | null {
   const provider = backend === "claude-code" ? "claude code" : modelProvider(model);
   if (provider) out.provider = provider;
   if (effort) out.effort = effort;
+  const modes = workerModesOf(w.modes);
+  if (modes) out.modes = modes;
   if (backend) out.backend = backend;
   if (preview) out.preview = preview;
   const sessionFile = str(w.sessionFile);

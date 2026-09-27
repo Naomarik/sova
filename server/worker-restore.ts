@@ -11,6 +11,7 @@ import { stat } from "node:fs/promises";
 import type { TokenUsage, TokenUsageTotal, WorkerInfo, WorkerStatus } from "../shared/protocol";
 import {
   type FoldedWorkerManifest,
+  manifestModes,
   readWorkerManifests,
   resolvedModel,
   resolveWorkerUsage,
@@ -132,6 +133,9 @@ function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | 
   if (provider) w.provider = provider;
   const effort = m.spec?.effort ?? summary?.effort;
   if (effort) w.effort = effort;
+  // The modes its newest start gave it; a record of an older pi-config says nothing.
+  const modes = manifestModes(m);
+  if (modes?.length) w.modes = modes;
   if (m.ref?.kind === "pi-session-file") w.sessionFile = m.ref.locator;
   const sessionId = m.ref?.kind === "claude-session-id" ? m.ref.locator : m.ref?.sessionId;
   if (sessionId) w.sessionId = sessionId;

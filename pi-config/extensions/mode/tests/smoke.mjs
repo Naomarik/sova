@@ -838,4 +838,61 @@ await commands.get("mode").handler("normal", ctx);
 	assert.equal(await beforeAgentStart({ systemPrompt: "base" }, ctx), undefined, "back to normal with no host: inert");
 }
 
+// ── Workers (§chat.mode-menu/workers): what a worker gets, published on the bus; the worker role ──
+{
+	const { composeWorkerPrompt } = await jiti.import(pathToFileURL(path.resolve(new URL("../prompt.ts", import.meta.url).pathname)).href);
+	const published = [];
+	const off = events.on("mode:worker", (e) => published.push(e));
+	const last = () => published.at(-1);
+	await commands.get("mode").handler("normal", ctx);
+	await commands.get("mode").handler("align on", ctx);
+	events.emit("mode:worker-discover", { version: 1 });
+	assert.deepEqual(last(), { version: 1, minorModes: [] }, "align alone: nothing reaches a worker, and discover is answered");
+	events.emit("mode:worker-discover", { version: 2 });
+	const count = published.length;
+	await commands.get("mode").handler("spec on", ctx);
+	assert.equal(published.length, count + 1, "a minor switch publishes");
+	assert.deepEqual(last().minorModes, ["spec"]);
+	assert.equal(last().prompt, composeWorkerPrompt({ minorModes: ["spec"] }), "the worker form: spec block plus note");
+	assert.doesNotMatch(last().prompt, /# Minor mode: align|# Mode: delegate|Spec writer:/);
+	await commands.get("mode").handler("delegate", ctx);
+	assert.equal(last().prompt, composeWorkerPrompt({ minorModes: ["spec"] }), "a major switch changes nothing a worker gets");
+	await commands.get("mode").handler("normal", ctx);
+	await commands.get("mode").handler("spec off", ctx);
+	assert.deepEqual(last(), { version: 1, minorModes: [] }, "spec off: no prompt");
+	await hook("session_start", { reason: "resume" });
+	assert.deepEqual(last(), { version: 1, minorModes: [] }, "a restore publishes the resolved state");
+	await commands.get("mode").handler("align off", ctx);
+	off();
+
+	// A worker on its worktree's own agent dir: the marker (loaded first) says so, and a fork copied
+	// the parent's delegate + strict + align snapshot onto its branch; mode-spec.json names a writer.
+	const specFile = path.join(process.env.PI_CODING_AGENT_DIR, "mode-spec.json");
+	writeFileSync(specFile, JSON.stringify({ version: 1, writer: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null } }));
+	const forkedBranch = [{ type: "custom", customType: "mode", data: { mode: "delegate", active: { version: 1, mode: "delegate", strict: true, minorModes: ["align"] } } }];
+	const saved = { ...flagValues };
+	flagValues.major = "normal";
+	flagValues.minor = "spec";
+	const load = (asWorker) => {
+		const w = makeApi();
+		if (asWorker) w.events.on("subagents:worker-discover", () => w.events.emit("subagents:worker", { version: 1 }));
+		modeExtension(w.api);
+		const wStore = { status: new Map(), notices: [], widgets: new Map(), branch: forkedBranch, customCalls: [] };
+		return { ...w, ctx: makeCtx(wStore), wStore };
+	};
+	const worker = load(true);
+	for (const fn of worker.hooks.get("session_start")) await fn({ reason: "startup" }, worker.ctx);
+	assert.equal(worker.wStore.status.get("mode"), "<accent>normal · spec</accent>", "the copied snapshot is ignored: normal, spec, not strict");
+	assert.deepEqual(worker.getTools(), ["read", "bash", "edit", "write", "grep"], "strict never strips a worker's edit/write");
+	const block = (await worker.hooks.get("before_agent_start")[0]({ systemPrompt: "base" }, worker.ctx)).systemPrompt;
+	assert.equal(block, `base\n\n${composeWorkerPrompt({ minorModes: ["spec"] })}`, "the worker form, with no writer paragraph although one is set");
+	// The same branch and flags without the marker: the snapshot wins, as before (the regression's other side).
+	const parent = load(false);
+	for (const fn of parent.hooks.get("session_start")) await fn({ reason: "startup" }, parent.ctx);
+	assert.match(parent.wStore.status.get("mode"), /delegate/, "without the marker the fork's snapshot is restored");
+	for (const [k, v] of Object.entries(saved)) flagValues[k] = v;
+	for (const k of Object.keys(flagValues)) if (!(k in saved)) delete flagValues[k];
+	rmSync(specFile);
+}
+
 console.log("mode smoke tests passed");

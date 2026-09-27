@@ -45,6 +45,15 @@ export const WORKER_SESSION_FILE_MAX = 1024;
 export const WORKER_SESSION_ID_MAX = 64;
 /** WorkerEntry.effort cap: level names are short ("off", "medium", "xhigh", "max"). */
 export const WORKER_EFFORT_MAX = 32;
+/** WorkerEntry.modes caps: at most this many names, each at most WORKER_MODE_MAX chars ("spec"). */
+export const WORKER_MODES_MAX = 8;
+export const WORKER_MODE_MAX = 32;
+
+/** WorkerEntry.modes as a reader may trust it: a short list of short lower-case names ("spec"), else undefined (dropped whole). */
+export function workerModes(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0 || value.length > WORKER_MODES_MAX) return;
+  return value.every((m) => typeof m === "string" && m.length <= WORKER_MODE_MAX && /^[a-z][a-z0-9-]*$/.test(m)) ? [...value] : undefined;
+}
 /** Records dated further in the future than this are treated as garbage. */
 const FUTURE_SKEW_MS = 5 * 60_000;
 
@@ -84,6 +93,8 @@ export interface WorkerEntry {
   sessionId?: string;
   /** Thinking/effort level the worker was spawned with; absent when the writer didn't publish one. */
   effort?: string;
+  /** The mode extension's minor modes the worker was given at its start (e.g. ["spec"]); absent when none, or unpublished. */
+  modes?: string[];
   startedAt?: number;
   lastActivity?: number;
   endedAt?: number;
@@ -229,6 +240,7 @@ function parseWorker(value: unknown): WorkerEntry | undefined {
     sessionId: whole(value.sessionId, WORKER_SESSION_ID_MAX),
     // A truncated level would name a different one: same drop-don't-truncate rule.
     effort: whole(value.effort, WORKER_EFFORT_MAX),
+    modes: workerModes(value.modes),
     startedAt: num(value.startedAt) ? value.startedAt : undefined,
     lastActivity: num(value.lastActivity) ? value.lastActivity : undefined,
     endedAt: num(value.endedAt) ? value.endedAt : undefined,

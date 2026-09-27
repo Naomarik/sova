@@ -449,6 +449,16 @@ export function SubagentPane(props: {
                         </span>
                       )}
                     </Show>
+                    {/* The minor modes it was given at its start (spec): another fact about the
+                        worker, so it sits with the effort, before the count. */}
+                    <Show when={w().modes?.length ? w().modes : undefined}>
+                      {(m) => (
+                        <span title="The modes this worker was given when it started.">
+                          <MetaSep />
+                          {m().length > 1 ? "modes" : "mode"} <span class="text-mono">{m().join(", ")}</span>
+                        </span>
+                      )}
+                    </Show>
                     <Show
                       when={watched() ?? workerUsage(w())}
                       fallback={

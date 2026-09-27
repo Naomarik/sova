@@ -14,6 +14,7 @@ import { MEMBER_ENV, awaitResponse, decodeMemberContext, requestId, writeRequest
 import { BACKEND_REGISTER_EVENT } from "./contracts.ts";
 import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
 import { resolvedModel } from "./worker-transcript.ts";
+import { MODE_WORKER_EVENT } from "../mode/events.ts";
 
 const SNAPSHOT = "subagents:workers-snapshot";
 const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");
@@ -473,4 +474,37 @@ test("resume: the worktree gate applies again — refused once the worker's work
 	} finally {
 		fs.rmSync(root, { recursive: true, force: true });
 	}
+});
+
+test("resume: a worker takes the parent's CURRENT worker modes, not its first start's; restored ones show what they were given", async () => {
+	const BLOCK = "# Minor mode: spec (worker form, test)";
+	const file = sessionFile();
+	const first = manager(file);
+	first.start();
+	first.bus.emit(MODE_WORKER_EVENT, { version: 1, minorModes: ["spec"], prompt: BLOCK });
+	await first.call("agent_spawn", { agents: [{ prompt: "one", name: "a", systemPrompt: "BRIEF" }, { prompt: "two", name: "b", systemPrompt: "BRIEF" }] });
+	for (const [i, w] of first.workers.entries()) { w.identify(`/nowhere/m${i}.jsonl`); }
+	await new Promise((r) => setTimeout(r, 150));
+	for (const w of first.workers) w.settle();
+	assert.equal(first.workers[0].systemPrompt, `BRIEF\n\n${BLOCK}`);
+
+	const m = manager(file);
+	m.start();
+	await until(() => (m.snapshot()?.workers ?? []).length === 2, "restored workers");
+	assert.deepEqual(m.snapshot().workers.map((w: any) => w.modes), [["spec"], ["spec"]], "a restored worker shows the modes its record names");
+	// The parent turned spec off since: a resume gives none.
+	m.bus.emit(MODE_WORKER_EVENT, { version: 1, minorModes: [] });
+	await m.call("agent_resume", { id: "ag_01" });
+	assert.equal(m.workers.at(-1).systemPrompt, "BRIEF", "no block: the raw brief, re-applied");
+	const recordsOf = (id: string) => file.entries.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.workerId === id).map((e) => e.data);
+	assert.deepEqual(recordsOf("ag_01").find((r) => r.resumedAt)?.modes, [], "the resume records what it gave: none");
+	await until(() => m.snapshot().workers.find((w: any) => w.id === "ag_01")?.status === "waiting", "resumed snapshot");
+	assert.ok(!("modes" in m.snapshot().workers.find((w: any) => w.id === "ag_01")), "given none now: no field");
+	// And back on: the next resume carries the block once, after the brief.
+	m.bus.emit(MODE_WORKER_EVENT, { version: 1, minorModes: ["spec"], prompt: BLOCK });
+	await m.call("agent_resume", { id: "ag_02" });
+	assert.equal(m.workers.at(-1).systemPrompt, `BRIEF\n\n${BLOCK}`);
+	assert.deepEqual(recordsOf("ag_02").find((r) => r.resumedAt)?.modes, ["spec"]);
+	await m.shutdown();
+	await first.shutdown();
 });

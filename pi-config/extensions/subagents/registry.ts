@@ -100,7 +100,7 @@ export class WorkerRegistryRecorder {
 	}
 
 	/** First record for a published worker, with whatever identity is already known. */
-	track(worker: Worker, team?: { teamId: string; role: string; orchestrator?: boolean }, launch?: WorkerLaunchSpec): void {
+	track(worker: Worker, team?: { teamId: string; role: string; orchestrator?: boolean }, launch?: WorkerLaunchSpec, modes?: readonly string[]): void {
 		if (this.tracked.has(worker.id)) return;
 		const { key, ref } = identity(worker);
 		this.tracked.set(worker.id, { identity: key, busy: true, finished: false });
@@ -118,6 +118,7 @@ export class WorkerRegistryRecorder {
 			...(team ? { team: { teamId: team.teamId, role: team.role, ...(team.orchestrator ? { orchestrator: true } : {}) } } : {}),
 			...(ref ? { ref } : {}),
 			status: "running",
+			...(modes ? { modes: [...modes] } : {}),
 			...(launch ? { launch: launch as unknown as Record<string, unknown> } : {}),
 		});
 	}
@@ -168,11 +169,14 @@ export class WorkerRegistryRecorder {
 		});
 	}
 
-	/** A restored worker came back idle (agent_resume): clears its ending in the fold. */
-	resumed(worker: Worker): void {
+	/**
+	 * A restored worker came back idle (agent_resume): clears its ending in the fold. `modes` are the
+	 * ones this start gave it (the parent's current ones), replacing its first start's, empty included.
+	 */
+	resumed(worker: Worker, modes?: readonly string[]): void {
 		const { key, ref } = identity(worker);
 		this.tracked.set(worker.id, { identity: key, busy: false, finished: false });
-		this.write(worker, { resumedAt: Date.now(), status: "waiting", ...(ref ? { ref } : {}) });
+		this.write(worker, { resumedAt: Date.now(), status: "waiting", ...(ref ? { ref } : {}), ...(modes ? { modes: [...modes] } : {}) });
 	}
 
 	/** Re-adopted workers were recorded by an earlier instance; continue from their last identity. */

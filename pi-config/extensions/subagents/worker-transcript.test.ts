@@ -13,6 +13,7 @@ import {
 	parseJsonLines,
 	isInterrupted,
 	hasEnded,
+	manifestModes,
 	readWorkerManifests,
 	resolvedModel,
 	resolveWorkerUsage,
@@ -347,4 +348,13 @@ test("resolvedModel: transcript reply, else the biggest snapshot row, else the s
 	assert.equal(resolvedModel(claude, undefined), "sonnet");
 	assert.equal(resolvedModel({ ...claude, backend: "pi" }, summary("claude/x")), "claude/x");
 	assert.equal(resolvedModel({ v: 1, workerId: "ag_02", backend: "pi", at: 1 }, undefined), undefined);
+});
+
+test("manifest modes: the newest start's win (a resume's [] included); absent says nothing; malformed reads as unknown", () => {
+	const rec = (at: number, extra: Record<string, unknown>) => ({ type: "custom", customType: WORKER_MANIFEST_ENTRY_TYPE, data: { v: 1, kind: "worker-manifest", workerId: "ag_01", backend: "pi", at, ...extra } });
+	const fold = (...entries: unknown[]) => readWorkerManifests(entries).manifests.get("ag_01")!;
+	assert.equal(manifestModes(fold(rec(1, { status: "running" }))), undefined, "an older writer's record says nothing");
+	assert.deepEqual(manifestModes(fold(rec(1, { modes: ["spec"] }), rec(2, { status: "waiting" }))), ["spec"], "later records without the field keep it");
+	assert.deepEqual(manifestModes(fold(rec(1, { modes: ["spec"] }), rec(2, { resumedAt: 2, status: "waiting", modes: [] }))), [], "a resume that gave none replaces it");
+	for (const bad of [["Spec"], [""], [3], "spec", {}]) assert.equal(manifestModes({ modes: bad as any }), undefined, JSON.stringify(bad));
 });

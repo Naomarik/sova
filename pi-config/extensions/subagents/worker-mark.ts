@@ -10,6 +10,7 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { MEMBER_ENV, decodeMemberContext } from "./mailbox.ts";
+import { WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type WorkerRoleEvent } from "../mode/events.ts";
 
 export const WORKER_SESSION_ENTRY = "subagents-worker-session";
 
@@ -51,7 +52,27 @@ function activateRequested(pi: ExtensionAPI): void {
 	if (add.length) pi.setActiveTools([...active, ...add]);
 }
 
+/**
+ * Its third job: tell a mode extension loaded into this worker (a worker on its worktree's own agent
+ * dir) that it runs as a worker (mode/events.ts). Said at load, and again to anyone who asks: this
+ * extension loads first, so a later extension's question is what usually gets the answer.
+ */
+function announceWorker(pi: ExtensionAPI): void {
+	const events = pi.events;
+	if (!events) return;
+	const role: WorkerRoleEvent = { version: 1 };
+	events.on(WORKER_ROLE_DISCOVER_EVENT, (data: unknown) => {
+		if ((data as { version?: unknown } | null)?.version === 1) events.emit(WORKER_ROLE_EVENT, role);
+	});
+	events.emit(WORKER_ROLE_EVENT, role);
+}
+
 export default function workerMarkExtension(pi: ExtensionAPI): void {
+	try {
+		announceWorker(pi);
+	} catch {
+		// No event bus: a mode extension here runs as a session of its own.
+	}
 	try {
 		pi.on("session_start", (_event, ctx) => {
 			try {

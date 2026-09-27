@@ -43,6 +43,20 @@ test("decodeWorkers carries the worker's sessionFile/sessionId, dropping non-str
   assert.equal(bad.name, "bad");
 });
 
+test("decodeWorkers carries the modes a worker was given, whole or not at all", () => {
+  const workers = decodeWorkers({ workers: [
+    { id: "ag_01", name: "a", status: "running", modes: ["spec"] },
+    { id: "ag_02", name: "b", status: "running" },
+    { id: "ag_03", name: "c", status: "running", modes: [] },
+    { id: "ag_04", name: "d", status: "running", modes: ["spec", 7] },
+    { id: "ag_05", name: "e", status: "running", modes: "spec" },
+  ] }) as WorkerInfo[];
+  assert.deepEqual(workers[0]!.modes, ["spec"]);
+  for (const w of workers.slice(1)) assert.ok(!("modes" in w), `${w.id}: absent, never a partial list`);
+  // Round trip through the wire: what the pane reads is exactly what was published.
+  assert.deepEqual((JSON.parse(JSON.stringify(workers[0])) as WorkerInfo).modes, ["spec"]);
+});
+
 test("decodeWorkers names each worker's provider: the ref's, the catalog's, or claude code", () => {
   // A bare id resolves through pi's cached catalogs — models-store.json in this throwaway dir.
   writeFileSync(join(agentDir, "models-store.json"), JSON.stringify({ zai: { models: [{ id: "glm-5.3" }] } }));

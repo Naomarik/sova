@@ -309,8 +309,8 @@ webapp never writes to it (CLAUDE.md: no file locking).
 <div class="subagents-view">
   <header class="subagents-view-head">
     <div class="subagents-view-name"><h3 class="subagents-view-title">designer</h3> <span class="subagents-view-wid text-mono text-muted">ag_03</span></div>
-    <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
     <span class="chip chip-count" title="The modes this worker was given when it started.">spec</span>   <!-- only when it was given modes -->
+    <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
     <p class="subagents-view-meta meta-line"><span class="text-mono meta-line-shrink" title="anthropic · anthropic/claude-opus-5">opus-5</span> <span class="text-mono" title="effort medium"><span class="meta-line-sep" aria-hidden="true">·</span> medium</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41"><span class="meta-line-sep" aria-hidden="true">·</span> 23.7k tok</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> <span class="context-readout"><span class="context-compact" title="{the sentence}"><span class="context-ring" title="{the sentence}">…</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></span></p>
   </header>
   <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
@@ -325,11 +325,11 @@ webapp never writes to it (CLAUDE.md: no file locking).
   it never scrolls away (sticky by construction, not by `position: sticky`). The title is body
   semibold, with **the worker id** right beside it, quieter (`.subagents-view-wid`: mono, caption
   size, muted ink); the title truncates (two lines at most) before the id or the chips go anywhere
-  odd. Then the same status chip as the row (then its team and badge chips, when it has
-  them), then **the modes it was given** at its start as one more quiet `chip chip-count` on that
-  row (§chat.mode-menu/workers: the names, comma-joined, e.g. `spec`; `title` "The modes this
-  worker was given when it started."; a worker given none, or recorded by an older pi-config,
-  shows no chip), then a meta line of four short facts, so it holds one row at a normal pane
+  odd. Then **the modes it was given** at its start as a quiet `chip chip-count`, right before
+  the status chip (§chat.mode-menu/workers: the names, comma-joined, e.g. `spec`; `title` "The
+  modes this worker was given when it started."; a worker given none, or recorded by an older
+  pi-config, shows no chip), then the same status chip as the row (then its team and badge chips,
+  when it has them), then a meta line of four short facts, so it holds one row at a normal pane
   width: **the model** leads, bare and in mono, the only fact that clips
   (`.meta-line-shrink`); its `title` carries the route that serves it and the full id
   (`{provider} · {model id}`, e.g. "claude code · claude-haiku-4-5-20251001"). Then **the

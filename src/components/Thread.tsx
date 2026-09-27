@@ -1026,17 +1026,17 @@ export function ThreadScroller(props: {
   createEffect(on(() => props.resume, resumeFollowing, { defer: true }));
 
   /**
-   * Where the view is: following, or the first row whose drawn part reaches into the view and how
-   * far its top is below the view's top. Rows that draw nothing (`display: none`) are skipped.
+   * Where the view is: following, or the first row reaching into the view and how far its top is
+   * below the view's top. Measured on the rows' own boxes, never inside them: a row off screen is
+   * skipped (content-visibility), and measuring inside one lays it out.
    */
   const spot = (): ScrollSpot | null => {
     if (!el?.isConnected) return null;
     if (follow) return { follow: true };
     const top = el.getBoundingClientRect().top;
     for (const entry of el.querySelectorAll<HTMLElement>(".thread > .entry")) {
-      const row = entry.firstElementChild;
-      if (!row || entry.getClientRects().length === 0) continue;
-      const box = row.getBoundingClientRect();
+      const box = entry.getBoundingClientRect();
+      if (box.height === 0) continue; // draws nothing
       if (box.bottom > top) return { follow: false, rowId: entry.dataset.entry ?? "", offset: box.top - top };
     }
     return null;
@@ -1056,9 +1056,9 @@ export function ThreadScroller(props: {
     const r = props.restore;
     if (!r || r.follow || !r.rowId) return false;
     const place = () => {
-      const row = ensureRendered(r.rowId, el);
-      if (!row) return false;
-      el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - r.offset;
+      const entry = ensureRendered(r.rowId, el)?.closest(".entry");
+      if (!entry) return false;
+      el.scrollTop += entry.getBoundingClientRect().top - el.getBoundingClientRect().top - r.offset;
       lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
       return true;
     };

@@ -3,11 +3,12 @@ import { extname, join, resolve } from "node:path";
 import { Hono } from "hono";
 import { SHARE_TEXT_MAX } from "../../shared/baton";
 import { BudgetSpent, linkAccess, noteMessage, sessionPathOf, undoNote } from "../baton";
-import { tokenTag } from "../baton-links";
+import { findLink, tokenTag } from "../baton-links";
 import { budgetStop, recordNoted } from "../baton-loadout";
 import { acquireChat } from "../chat-manager";
 import { OrgError } from "../orgs";
 import { refreshShare, viewForToken } from "./hub";
+import { classify, recordOpen, recordRefused, recordShellFetch } from "../visits";
 
 /**
  * The share listener's whole API (§app.baton/share-listener). Its own Hono app: nothing of the
@@ -21,6 +22,15 @@ export const SHARE_DIST = resolve(import.meta.dirname, "..", "..", "dist-share")
 
 export const MESSAGES_PER_MINUTE = 10;
 const perToken = new Map<string, number[]>();
+
+/** Visit logging (server/visits.ts) never fails or delays a request past its own write. */
+export function logVisit(token: string, what: string, fn: () => unknown): void {
+  try {
+    fn();
+  } catch (err) {
+    console.warn(`[share] visit log (${what}) on ${tokenTag(token)} failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
 
 /** Sliding one-minute window per token; true when this message is over the limit. Tokens with no
     message inside the window are dropped on the way, so the map holds only recent writers. */
@@ -77,13 +87,33 @@ export function createShareApp(): Hono {
   app.get("/h/:token", (c) => {
     const index = join(SHARE_DIST, "index.html");
     if (!existsSync(index)) return c.text("The share page is not built on this host.", 503);
+    // The shell never looks at the token (no validity oracle), except for a known link previewer's
+    // fetch, which the person's page lists as "Link preview by <service>" (§app.baton/visits).
+    const ua = c.req.header("user-agent");
+    if (classify(ua).kind === "preview")
+      logVisit(c.req.param("token"), "preview", () => {
+        const link = findLink(c.req.param("token"));
+        if (link) recordShellFetch(link, ua);
+      });
     return c.body(readFileSync(index, "utf8"), 200, { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": PAGE_CSP });
   });
 
   app.get("/api/h/:token", async (c) => {
-    const view = await viewForToken(c.req.param("token"));
-    if ("status" in view)
+    const token = c.req.param("token");
+    const view = await viewForToken(token);
+    const ua = c.req.header("user-agent");
+    if ("status" in view) {
+      if (view.status === 410)
+        logVisit(token, "refused", () => {
+          const link = findLink(token);
+          if (link) recordRefused(link, ua);
+        });
       return c.json(view.status === 410 ? refusal("gone", "This link is no longer active.") : refusal("not-found", "Unknown link."), view.status);
+    }
+    logVisit(token, "open", () => {
+      const link = findLink(token);
+      if (link) recordOpen(link, { tab: c.req.query("v"), userAgent: ua });
+    });
     return c.json(view);
   });
 

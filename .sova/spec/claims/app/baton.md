@@ -171,6 +171,9 @@ once), **lease** (an offer's lock on its first taker).
   button; it stays on the strip until the operator dismisses it or a later hand-off exists (a
   reload of the strip's own data never clears it). During an offer, `GET /api/baton/:sid/link?person=<id>` re-mints one invitee's link and
   turns off that invitee's older one.
+- A person's page (§app.organizations/person-page) lists their links on this host with each one's
+  state, and turns off one of them, or all of them at once; nothing else about the session
+  changes.
 
 ## §app.baton/attribution — Every message by name
 
@@ -272,7 +275,8 @@ once), **lease** (an offer's lock on its first taker).
 - A second HTTP server, bound only when `SOVA_SHARE_HOST` and `SOVA_SHARE_PORT` are set (no
   listener otherwise). It serves only: `GET /h/<token>` (the share page), `GET /h/assets/*` (the
   share page's own build, never the operator app's), `GET /api/h/<token>` (the filtered view and
-  state), `POST /api/h/<token>/message {text}` and the WebSocket `/ws/h?token=`. Every other path
+  state), `POST /api/h/<token>/message {text}` and the WebSocket `/ws/h?token=`, the page's
+  visit id riding along as `?v=` on the view and the socket (§app.baton/visits). Every other path
   answers 404 before any routing; the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
   `/ext/*` are unreachable on it. The main listener never serves the share page.
 - Limits: request bodies over 16 KB (or without a length) are refused (413); a request's headers
@@ -284,9 +288,75 @@ once), **lease** (an offer's lock on its first taker).
 - Every response is `Cache-Control: no-store` and `Referrer-Policy: no-referrer` (the token is in
   the URL); the page carries a CSP allowing only its own scripts, and reply links open with no
   referrer.
+- The listener records visits (§app.baton/visits): it reads the user agent only to name a device
+  family, a scanner or a link previewer, and keeps neither it nor the client address. The page
+  shell resolves a token only for a known previewer's user agent, and answers the same either way.
 - The share page is its own Vite build (`vite build --mode share` → `dist-share/`).
 - Public exposure is a deployment step outside Sova: a TLS reverse proxy (e.g. Caddy on the VPS)
   forwarding to the share port, over the tailnet when the home host is the laptop.
+
+## §app.baton/visits — The visit log: each time someone opened their link
+
+- A **visit** is one person reading one of their links in one browser tab. It starts at the first
+  `GET /api/h/<token>` that resolves the token (200: the page's own script ran and loaded the
+  conversation). A reload of that tab, a WebSocket reconnect and a server restart with the tab
+  still open continue the same visit; they never start a new one. Fetching the page shell
+  (`GET /h/<token>`) alone is never a visit, and neither is a WebSocket on its own or a message
+  (the transcript already records who wrote what, §app.baton/attribution).
+- **Continuing.** The share page makes one random id per browser tab (16 bytes, 22 base64url
+  characters), keeps it in `sessionStorage`, and sends it as `?v=` on `/api/h/<token>` and
+  `/ws/h`. The same link with the same `v` is the same visit. A new `v`, a missing one (a page
+  loaded before this existed) or one of any other shape (ignored, never a 400) continues the
+  link's newest visit when that visit was seen under 10 minutes ago from the same device family and
+  class (a scanner's visit never absorbs a person's; "Chrome · Windows" never absorbs "Safari ·
+  iPhone"), and starts a new one otherwise. A second tab on the same device is a new visit. The `v` grants nothing: it is not
+  checked against anything but the log.
+- **What a line records**, appended to `visits.jsonl` at the org's workspace repo root
+  (§app.organizations/workspace-repo), one JSON object per line, each with its own `id` (`v_` + 8
+  base64url characters):
+  - `{kind:"visit", id, at, personId, via:"handoff", sessionId, n, offerId?, tab?, device, bot?}`
+    — `tab` is the page's `v` (absent when the page sent none of the right shape); `device` a
+    coarse family worked out from the user agent on the server ("Safari · iPhone", "Chrome ·
+    Windows", "Firefox · Linux"; "Browser" when nothing is recognised, an empty user agent
+    included). `bot: true` marks a known security scanner (Outlook Safe Links, Proofpoint,
+    Mimecast, headless browsers, generic bots and crawlers; device "Security scanner") or a script
+    (curl, wget, python-requests, Go and Node HTTP clients; device "Script");
+  - `{kind:"seen", id, at, tab?}` — the visit (by its `id`) is still open: every 5 minutes while
+    its page is connected, and once when its socket closes; it carries `tab` when a new tab id
+    continued the visit inside the 10-minute window, so that tab finds it again too;
+  - `{kind:"preview", id, at, personId, via, sessionId, n, offerId?, device}` — a known link
+    previewer fetched the page shell of one of this host's links (turned off or not); `device` names the service (Slack,
+    WhatsApp, iMessage, Facebook, Telegram, Discord, LinkedIn, X, Microsoft Teams, Viber,
+    Mattermost, Reddit, Pinterest, Google; "Link preview" for generic unfurlers); at most one per
+    link and service each 10 minutes;
+  - `{kind:"refused", id, at, personId, via, sessionId, n, offerId?, status:410, device, bot?}` —
+    `GET /api/h/<token>` answered 410 (the link was turned off, expired, its session closed, or its
+    person left): someone tried a turned-off link; at most one per link each 10 minutes;
+  - `{kind:"capped", id, at, personId, via, sessionId, n, offerId?}` — the link reached its cap
+    (below).
+  An unknown token (404) records nothing: there is no person to record it against.
+- **Never recorded**: the token, its hash or any part of either, an IP address or anything
+  derived from one, the raw user agent, cookies or headers, and anything the person wrote. The
+  session id and hand-off number identify the link without the capability, as `baton.json`
+  already does.
+- **Cap.** At most 20 new visits per link per day (UTC), previews and refused attempts included;
+  past that, one `capped` line for that link that day and nothing more until the next day. A
+  continued visit is never capped. Lines are only ever appended, synchronously, one at a time; the
+  log is kept forever, never pruned or rewritten.
+- **Never in the way.** Recording a visit never changes a response: the share routes answer
+  exactly as before (the page shell stays the same 200 for every well-formed token, previewer or
+  not), and a failed write is logged with at most 6 characters of the token and ignored.
+- **Restart and shutdown.** The last-seen time of each open visit is kept in memory, folded from
+  the whole log on first use and folded again whenever the file isn't as this process left it
+  (an attach, another writer); so after a restart a request carrying a `v` finds its visit again. A graceful shutdown writes a `seen` line for every visit whose page is still connected,
+  before the workspace commit (§app.organizations/workspace-repo). After a crash a visit's end is
+  its last `seen`, at most 5 minutes early.
+- **Who reads it.** Only the operator, on the person's page (§app.organizations/person-page) and
+  their People card's `Last opened` line; a visit counts as opened unless it is a `bot` one (a scanner or a script).
+  Nothing on the share page reads it, the project overseer does not see it, and it never enters a
+  model prompt. It travels with the repo (§app.organizations/portability); the operator's own opens
+  of a person's link are counted like anyone's, since nothing tells them apart (Preview as
+  {name} is the way to look without opening one).
 
 ## §app.baton/needs-you — The operator's turn
 

@@ -23,7 +23,14 @@
  * GET    /api/orgs/:id/changes?limit=50     -> NamedChange[] (newest first, across the roster: Recent profile changes)
  * POST   /api/orgs/:id/projects             body { name, root } -> 201 OrgDetail
  * PATCH  /api/orgs/:id/projects/:pid        body { name?, root? } -> OrgDetail
+ * GET    /api/orgs/:id/people/:pid          -> PersonPage (a person's page, §app.organizations/person-page)
+ * GET    /api/orgs/:id/people/:pid/preview?session=<sid> -> PersonPreview (Preview as {name}: read-only, as
+ *                                               their link shows it; no token, no visit; 404 when the session isn't theirs)
+ * POST   /api/orgs/:id/people/:pid/links/revoke body { sessionId?, n? } -> PersonPage (both: turns off that one
+ *                                               link of theirs; neither: every live /h/ link of theirs on this host)
  */
+
+import type { BatonView } from "./baton";
 
 export type PersonStatus = "active" | "proposed" | "left";
 
@@ -186,6 +193,179 @@ export interface OrgDetail extends OrgSummary {
   /** From the org routes: open conflicts routed to the operator with no session yet, per project id
       (projects with none are absent). */
   projectConflicts?: Record<string, number>;
+  /** From the org routes: the People card's "Last opened" line, per person id (§app.baton/visits).
+      `at`: the start of their newest visit (link previews, scanners and turned-off attempts don't
+      count); `minted`: a link was ever minted for them on this host. People with neither are absent. */
+  lastOpened?: Record<string, { at?: string; minted: boolean }>;
+}
+
+// ---- a person's page (§app.organizations/person-page) -------------------------------------------------
+
+/** A person (or the operator, id "operator") with their current display name. */
+export interface NamedRef {
+  id: string;
+  name: string;
+}
+
+/** How a person relates to one baton session. A session can carry several. */
+export type PersonRelation =
+  /** The session's first hand-off went to them. */
+  | { kind: "started-with" }
+  /** A later hand-off (#n) went to them. */
+  | { kind: "handed-to"; n: number; from: NamedRef }
+  /** They passed the baton on at hand-off #n: to one person, or (an offer) to several. */
+  | { kind: "passed-on"; n: number; to: NamedRef[] }
+  /** Offer #n included them; `others` = how many more were invited. */
+  | { kind: "offered"; n: number; others: number }
+  /** They took offer #n (their message claimed it). */
+  | { kind: "took-offer"; n: number }
+  /** Their lease on offer #n ran out (the offer went back to the pool). */
+  | { kind: "lease-lapsed"; n: number }
+  /** They were proposed for the roster in this session, by `by` (a person, the operator, or a free-text name with id ""). */
+  | { kind: "referred-here"; by: NamedRef }
+  /** They proposed someone for the roster in this session. */
+  | { kind: "proposed"; person: NamedRef }
+  /** This session asks them to settle conflict `conflictId` (area `area`). */
+  | { kind: "conflict"; conflictId: string; area: string }
+  /** A participant with none of the above (older rows). */
+  | { kind: "participant" };
+
+export interface PersonSessionRow {
+  sessionId: string;
+  /** The session file on this host, for #/s/<path>; null when it isn't here. */
+  path: string | null;
+  publicTitle: string;
+  projectId: string;
+  projectName: string;
+  state: "open" | "needs-you" | "done" | "closed";
+  /** Who holds it now; null when nobody does (done, closed, or an open offer in its pool). */
+  holder: NamedRef | null;
+  /** This person holds it now. */
+  holdsNow: boolean;
+  /** The current offer (open or held), when there is one. */
+  offer?: { state: "open" | "held"; invited: number; includesThem: boolean; holder?: NamedRef };
+  relations: PersonRelation[];
+  /** Messages they wrote in it. */
+  messages: number;
+  lastWroteAt?: string;
+  /** Newest of: created, each hand-off, their last message, the offer's activity, closed. */
+  lastActivityAt: string;
+  createdAt: string;
+  parent?: { sessionId: string; publicTitle: string };
+}
+
+/** A decision they stated (DecisionRow's fields a page needs), with its project and session. */
+export interface PersonDecision {
+  id: string;
+  projectId: string;
+  projectName: string;
+  area: string;
+  areaKey: string;
+  statement: string;
+  quote: string;
+  at: string;
+  sessionId: string;
+  /** The session's public title ("" when the row is gone). */
+  publicTitle: string;
+  sessionPath: string | null;
+  entryId: string;
+  state: "pending" | "drafted" | "promoted" | "superseded" | "conflict";
+  /** false: outside their decision area. */
+  authorOwnsArea: boolean;
+}
+
+/** A conflict routed to them. */
+export interface PersonConflict {
+  id: string;
+  projectId: string;
+  projectName: string;
+  areaKey: string;
+  /** The area as recorded on its older decision (areaKey when unknown). */
+  area: string;
+  state: "open" | "resolved";
+  routeReason: string;
+  batonSessionId?: string;
+  batonPath?: string;
+  /** The asking session's public title, when it has one. */
+  publicTitle?: string;
+  createdAt: string;
+  resolvedAt?: string;
+}
+
+/** What a link can do now. writes: its person holds that hand-off; reads: the baton moved on or the
+    session is done; off: turned off (revoked, rotated, left, withdrawn); expired; closed: the session was closed. */
+export type LinkState = "writes" | "reads" | "off" | "expired" | "closed";
+
+/** One /h/ link of theirs minted on THIS host (tokens and hashes never leave the host's link store). */
+export interface PersonLinkRow {
+  sessionId: string;
+  publicTitle: string;
+  /** The hand-off it belongs to. */
+  n: number;
+  offerId?: string;
+  createdAt: string;
+  expiresAt: string;
+  revokedAt?: string;
+  state: LinkState;
+  /** Why a reading link can't write ("moved-on", "done", "taken", …; shared/baton.ts ViewerReason). */
+  reason?: string;
+  /** It belongs to the session's current hand-off. */
+  current: boolean;
+  /** Visits through it (scanners and previews not counted). */
+  visits: number;
+  lastVisitAt?: string;
+}
+
+/**
+ * One row of their visit log (`visits.jsonl`, §app.baton/visits), newest first.
+ * - visit: they opened a link (the share page's API answered); `lastSeenAt` from later activity.
+ *   `bot`: a security scanner or script, not a person (show muted, never counted as opened).
+ * - preview: a link previewer fetched the page (`device` names the service: "Slack", "WhatsApp", …).
+ * - refused: someone opened a link after it was turned off (the page said it no longer works).
+ * - capped: the link reached its 20 visits for that day; later ones that day are not recorded.
+ */
+export interface VisitRow {
+  id: string;
+  kind: "visit" | "preview" | "refused" | "capped";
+  at: string;
+  lastSeenAt?: string;
+  sessionId: string;
+  /** The session's public title ("" when the row is gone). */
+  publicTitle: string;
+  n: number;
+  /** A coarse device family ("Safari · iPhone", "Chrome · Windows"), a preview service, or "Security scanner". */
+  device: string;
+  bot?: boolean;
+  /** No link of this hand-off exists on this host (it was minted where the org lived before). */
+  otherHost?: boolean;
+}
+
+/** GET /api/orgs/:id/people/:pid/preview?session=: the session as their link shows it now (the
+    share page's view, `viewer.canWrite` always false). `linkOpens`: a link of theirs on this host
+    opens this session now (false: they left, it's closed, or they were never sent one here). */
+export type PersonPreview = BatonView & { linkOpens: boolean };
+
+/** GET /api/orgs/:id/people/:pid. */
+export interface PersonPage {
+  person: Person;
+  org: { id: string; name: string };
+  operatorName: string;
+  /** Newest activity first. */
+  sessions: PersonSessionRow[];
+  /** Newest first, across the org's projects. */
+  decisions: PersonDecision[];
+  /** Routed to them: open first, then newest. */
+  conflicts: PersonConflict[];
+  /** This host's links of theirs, newest first. */
+  links: PersonLinkRow[];
+  /** Every row of their visit log, newest first. */
+  visits: VisitRow[];
+  /** Visits by a person (kind "visit", not bot). */
+  opened: number;
+  /** Start of their newest such visit. */
+  lastOpenedAt?: string;
+  /** Their profile history, newest first (as GET …/history). */
+  history: ProfileChange[];
 }
 
 export interface OrgsInfo {

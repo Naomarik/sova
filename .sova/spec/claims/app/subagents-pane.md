@@ -400,10 +400,12 @@ nothing before its first such reply. Never 0 for unknown. It rides the wire as
 - **Restored workers** take it from their transcript summary: the worker-transcript protocol's
   additive `lastContextTokens` (a number, or `null` when a compaction followed it), read by each
   backend's adapter over the worker's own branch or main chain.
-- **The window** is the one the worker was **spawned** with. claude-code: the provider's rule, a
-  `[1m]` alias is 1,000,000 and anything else 200,000 — and the model is the spawn model (the
-  manifest's spec, else its last snapshot's biggest row), never the transcript's, which is the bare
-  id and would drop the `[1m]`. A live row's model already carries it; a restored or resumed one
+- **The window** is the one the worker was **spawned** with. claude-code: the claude-code
+  extension's rule, 1,000,000 for a `[1m]` alias or a model the CLI's own catalog runs natively at
+  1M (`opus`, `sonnet`, `claude-opus-5-5`, `claude-fable-5-1`, `claude-sonnet-5`, …, as the CLI's
+  own result reports), anything else 200,000 (haiku, the 4.5 and 4.6 models) — and the model is the
+  spawn model (the manifest's spec, else its last snapshot's biggest row), never the transcript's,
+  which is the bare id and would drop the `[1m]` of a model that isn't natively 1M. A live row's model already carries it; a restored or resumed one
   names what it ran under, so the session's manifests supply it, and the row's model takes the spawn
   model's variant too: a restored `opus[1m]` worker reads "opus-5.5 1M", like its 1M ring and head. pi: the model's catalog window,
   and a fill takes its own reply's model's window when that differs.

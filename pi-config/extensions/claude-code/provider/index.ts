@@ -15,6 +15,7 @@
  */
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
+import { claudeContextWindow, withLongContextVariants } from "../context-window.ts";
 import { discoverClaudeModels } from "../models.ts";
 import type { BackendModel } from "../../subagents/contracts.ts";
 import { registerAutoCompact } from "./auto-compact.ts";
@@ -46,17 +47,12 @@ function thinkingLevelMap(efforts: readonly string[]): ThinkingLevelMap {
 	};
 }
 
-/** `[1m]`-suffixed CLI aliases are the 1M-context variants. */
-export function contextWindowFor(id: string): number {
-	return id.endsWith("[1m]") ? 1_000_000 : 200_000;
-}
-
 function maxTokensFor(id: string): number {
 	return id.startsWith("haiku") ? 32_000 : 64_000;
 }
 
 /** One model definition, shared by the static list and refreshModels. */
-export function toProviderModel(model: { id: string; name: string; efforts?: string[] }): ProviderModelConfig {
+export function toProviderModel(model: { id: string; name: string; efforts?: string[]; resolvedModel?: string }): ProviderModelConfig {
 	const efforts = model.efforts ?? [];
 	return {
 		id: model.id,
@@ -68,7 +64,7 @@ export function toProviderModel(model: { id: string; name: string; efforts?: str
 		// A subscription CLI turn has no per-token list price to report here.
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		// No promptCache on purpose: pi must not warm a cache it cannot address.
-		contextWindow: contextWindowFor(model.id),
+		contextWindow: claudeContextWindow(model.id, model.resolvedModel),
 		maxTokens: maxTokensFor(model.id),
 	};
 }
@@ -86,17 +82,21 @@ export const STATIC_MODELS: ProviderModelConfig[] = [
 	toProviderModel({ id: "haiku", name: "Haiku" }),
 ];
 
-/** Live catalog from the installed CLI; falls back to the baked-in list. */
-export async function refreshClaudeModels(context: { allowNetwork: boolean; signal: AbortSignal }): Promise<ProviderModelConfig[]> {
+/** Live catalog from the installed CLI; falls back to the baked-in list. `discover` is a test seam. */
+export async function refreshClaudeModels(
+	context: { allowNetwork: boolean; signal: AbortSignal },
+	discover: (signal: AbortSignal) => Promise<BackendModel[]> = discoverClaudeModels,
+): Promise<ProviderModelConfig[]> {
 	// allowNetwork is false during offline startup; never spawn the CLI then.
 	if (!context.allowNetwork) return STATIC_MODELS;
 	let discovered: BackendModel[];
 	try {
-		discovered = await discoverClaudeModels(context.signal);
+		discovered = await discover(context.signal);
 	} catch {
 		return STATIC_MODELS; // Discovery failure must not empty the picker.
 	}
-	const models = discovered.filter((model) => model.id !== "default").map(toProviderModel);
+	// The CLI's list may omit the `[1m]` forms it still accepts; the rule adds them back.
+	const models = withLongContextVariants(discovered.filter((model) => model.id !== "default")).map(toProviderModel);
 	return models.length > 0 ? models : STATIC_MODELS;
 }
 

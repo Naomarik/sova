@@ -249,7 +249,11 @@
         "§app.settings-dialog/models"
       ],
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "code": [
+        "server/delegate.ts",
+        "src/lib/delegate-form.ts"
+      ]
     },
     "§app.settings-dialog/one-height": {
       "kind": "behavior",
@@ -2373,7 +2377,10 @@
         "src/lib/workers.ts",
         "pi-config/extensions/subagents/worker-transcript.ts",
         "pi-config/extensions/subagents/adapters/pi.ts",
-        "pi-config/extensions/claude-code/transcript-adapter.ts"
+        "pi-config/extensions/claude-code/transcript-adapter.ts",
+        "pi-config/extensions/claude-code/context-window.ts",
+        "server/worker-context.test.ts",
+        "server/insights-restored.test.ts"
       ],
       "requires": [
         "§chat.context-window/last-reply",
@@ -3233,7 +3240,8 @@
         "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
-        "pi-config/extensions/subagents/README.md"
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/claude-code/context-window.ts"
       ]
     },
     "§teams.defaults/routing": {
@@ -3601,7 +3609,9 @@
         "server/share/hub.ts",
         "server/share-message.test.ts",
         "src/components/OrgsView.tsx",
-        "shared/baton.ts"
+        "shared/baton.ts",
+        "server/person-page.ts",
+        "src/components/PersonPage.tsx"
       ]
     },
     "§app.baton/needs-you": {
@@ -3700,7 +3710,11 @@
         "vite.config.ts",
         "server/share-listener.test.ts",
         "server/share/hub.ts",
-        "server/share-message.test.ts"
+        "server/share-message.test.ts",
+        "server/visits.ts",
+        "server/visits.test.ts",
+        "src/share/visit-tab.ts",
+        "src/share/ShareApp.tsx"
       ],
       "requires": [
         "§app.baton/links",
@@ -3736,7 +3750,9 @@
         "server/org-routes.ts",
         "server/baton-offers.test.ts",
         "src/lib/profile-changes.ts",
-        "src/lib/profile-changes.test.ts"
+        "src/lib/profile-changes.test.ts",
+        "src/components/PersonPage.tsx",
+        "server/person-page.ts"
       ]
     },
     "§app.organizations/org-cards": {
@@ -3760,7 +3776,7 @@
     "§app.organizations/org-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/OrgsView.tsx",
         "src/lib/org-tabs.ts",
@@ -3776,7 +3792,11 @@
         "src/lib/org-page-route.ts",
         "src/lib/org-page-route.test.ts",
         "src/lib/org-source.ts",
-        "src/lib/org-source.test.ts"
+        "src/lib/org-source.test.ts",
+        "src/components/PersonForm.tsx",
+        "src/lib/profile-changes.ts",
+        "src/components/PersonPage.tsx",
+        "src/components/InsightsPage.tsx"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -3799,7 +3819,9 @@
         "src/components/OrgsView.tsx",
         "src/components/ProjectOverseerPanel.tsx",
         "src/components/ProjectOverseerStrip.tsx",
-        "server/org-portable.test.ts"
+        "server/org-portable.test.ts",
+        "server/visits.ts",
+        "server/person-page.ts"
       ],
       "requires": [
         "§app.organizations/workspace-repo",
@@ -3819,7 +3841,9 @@
         "server/baton-view.ts",
         "server/baton-view.test.ts",
         "server/orgs.test.ts",
-        "server/baton-guards.test.ts"
+        "server/baton-guards.test.ts",
+        "src/components/PersonPage.tsx",
+        "server/person-page.ts"
       ]
     },
     "§app.organizations/projects": {
@@ -3902,7 +3926,8 @@
         "server/baton-wrapup.ts",
         "server/project-overseer.ts",
         "server/project-overseer-store.ts",
-        "server/org-portable.test.ts"
+        "server/org-portable.test.ts",
+        "server/visits.ts"
       ]
     },
     "§app.organizations/wrap-up": {
@@ -4187,7 +4212,8 @@
         "src/orgs.css",
         "src/lib/api.ts",
         "src/App.tsx",
-        "src/lib/org-cards.ts"
+        "src/lib/org-cards.ts",
+        "src/components/PersonPage.tsx"
       ]
     },
     "§app/project-overseer": {
@@ -4469,6 +4495,24 @@
         "src/App.tsx"
       ]
     },
+    "§app.settings-dialog/claude-long-context-offered": {
+      "kind": "behavior",
+      "requires": [
+        "§app.settings-dialog/modes",
+        "§app.settings-dialog/claude-long-context-listed"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/delegate.ts",
+        "server/delegate.test.ts",
+        "pi-config/extensions/claude-code/context-window.ts",
+        "pi-config/extensions/claude-code/context-window.test.ts",
+        "pi-config/extensions/claude-code/tests/fixtures/long-context-lists.json",
+        "pi-config/extensions/claude-code/index.ts",
+        "pi-config/extensions/claude-code/provider/index.ts"
+      ]
+    },
     "§app.session-list/cleanup-org-guard": {
       "kind": "behavior",
       "requires": [
@@ -4480,6 +4524,71 @@
       "code": [
         "server/sessions-index.ts",
         "server/cleanup-org-guard.test.ts"
+      ]
+    },
+    "§app.session-list/archive-org-guard": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/cleanup-org-guard",
+        "§app.organizations/workspace-repo"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sessions-index.ts",
+        "server/archive-org-guard.test.ts"
+      ]
+    },
+    "§app.baton/visits": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.baton/links",
+        "§app.baton/share-listener",
+        "§app.organizations/workspace-repo"
+      ],
+      "code": [
+        "server/visits.ts",
+        "server/share/routes.ts",
+        "server/share/listener.ts",
+        "server/index.ts",
+        "src/share/visit-tab.ts",
+        "src/lib/visit-tab.test.ts",
+        "src/share/ShareApp.tsx",
+        "server/visits.test.ts"
+      ]
+    },
+    "§app.organizations/person-page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/org-page",
+        "§app.organizations/roster",
+        "§app.organizations/history-and-revert",
+        "§app.organizations/privacy",
+        "§app.baton/links",
+        "§app.baton/outsider-view",
+        "§app.baton/visits",
+        "§app.requirements/decisions",
+        "§app.requirements/routing"
+      ],
+      "code": [
+        "src/components/PersonPage.tsx",
+        "src/lib/person-page.ts",
+        "src/lib/person-page.test.ts",
+        "src/person.css",
+        "src/components/PersonForm.tsx",
+        "server/person-page.ts",
+        "server/org-routes.ts",
+        "shared/orgs.ts",
+        "server/baton-links.ts",
+        "server/baton.ts",
+        "src/lib/api.ts",
+        "src/lib/orgs-route.ts",
+        "src/components/InsightsPage.tsx",
+        "server/person-page.test.ts"
       ]
     }
   },

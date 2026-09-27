@@ -71,8 +71,8 @@ export function sessionScoped(options: DelegateOptions | undefined, choice: Draf
 
 /**
  * A Claude Code alias the CLI would accept at runtime, missing from a list it did answer. The
- * CLI's model list is remote and account-gated and alternates within minutes between a shape
- * with the `[1m]` aliases and one without, so absence from it is weak evidence: the pick reads
+ * CLI's model list is remote and account-gated and has changed shape under us (it once listed the
+ * `[1m]` aliases, then dropped them), so absence from it is weak evidence: the pick reads
  * "not verified", never "not offered". Same shape rule as the mode extension's modelShapeError
  * for claude-code (an alias: no "/", no leading "-", no whitespace); pi's registry is local and
  * reliable, so a pi model missing from its list stays an error.
@@ -84,7 +84,8 @@ export function unlistedClaudeAlias(choice: DraftChoice): boolean {
 
 /**
  * The listed entry a pick stands for: its own id, or, for a Claude Code `<alias>[1m]`, the listed
- * `<alias>` — the CLI's list names the base alias but never its 1M-context form, which it accepts.
+ * `<alias>`. The server adds `<alias>[1m]` itself only for a few known aliases (claude-code
+ * context-window.ts withLongContextVariants); the CLI accepts the 1M form of others it lists too.
  */
 export function findListedModel<M extends { id: string }>(models: readonly M[], backend: string, model: string): M | undefined {
   const own = models.find((m) => m.id === model);

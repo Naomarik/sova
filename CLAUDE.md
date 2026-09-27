@@ -60,7 +60,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `pi-config/extensions/worktrees/state.ts` (builtins only: the `worktrees` entry, its fold, the
   merge card's details) and `git.ts` (builtins only: the extension's own "is this branch merged"
   probe, git by argv), `server/insights.ts` imports
-  `pi-config/extensions/usage-status/fetch.ts`, and the worker-transcript protocol is imported by
+  `pi-config/extensions/usage-status/fetch.ts`, `server/worker-context.ts` and `server/delegate.ts`
+  import `pi-config/extensions/claude-code/context-window.ts` (imports nothing: the one Claude Code
+  window rule, `[1m]` or natively 1M else 200k, and the list rule that adds `opus[1m]` and
+  `claude-fable-5-1[1m]` after their listed base; the provider, `agent_models` and the subagents
+  roster use the same file), and the worker-transcript protocol is imported by
   `server/insights.ts`, `worker-restore.ts`, `worker-adapters.ts`, `transcript-usage.ts` and
   `claude-transcript.ts`: `pi-config/extensions/subagents/worker-transcript.ts` (types, the one
   manifest fold `readWorkerManifests`, usage helpers), `subagents/adapters/index.ts` and `pi.ts`,
@@ -76,8 +80,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   each other only), and import nothing else from pi-config at runtime. `minor.ts` also reads its sibling `spec-mode.md` once at load, and
   refuses to load if that file's shell block is malformed. One test-only exception: `server/claude-models.test.ts` imports
   `pi-config/extensions/claude-code/transport.ts` (builtins only) to pin the server's Claude
-  model-discovery argv to the extension's; beyond that and the protocol set above, the server never
-  imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
+  model-discovery argv to the extension's; beyond that, `context-window.ts` and the protocol set
+  above, the server never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
   Sova has no sshfs/mount support: a remote session's cwd is always its local placeholder, and

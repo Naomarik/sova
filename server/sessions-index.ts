@@ -888,7 +888,8 @@ export type ArchiveResult =
 
 /**
  * POST /api/sessions/archive: set or clear the manual archive mark of a web-spawned session.
- * Only Sova's own id list changes; the session file is never touched. Archiving a session
+ * Only Sova's own id list changes; the session file is never touched, except that an empty husk
+ * outside any attached org's workspace is deleted (below). Archiving a session
  * that's live in a TUI is refused (it would stay on top anyway), and so is one that's mid-turn or
  * has subagents working (archiving closes its runtime, which would kill them); unarchiving always
  * works.
@@ -915,7 +916,9 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   // skips it), so archiving one deletes the file outright instead of marking an id whose row can
   // never render: same bookkeeping the cleanup "husks" mode does per file. A husk WITH a stored
   // draft is a new session the user is writing in, not an abandoned stub — it archives normally.
-  if (archived) {
+  // So does an attached org's workspace session: a fresh baton waiting on its first link is a
+  // husk by shape, and baton.json and overseer state name the file, so it is never deleted here.
+  if (archived && !orgOfSessionPath(s.path)) {
     const st = await stat(s.path).catch(() => null);
     if (st && (await isZeroInput(s.path, st.size))) {
       if (!draftCounts(readDrafts()[s.id])) {

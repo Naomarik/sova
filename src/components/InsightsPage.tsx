@@ -56,6 +56,10 @@ export function InsightsPage(props: {
   /** First load in flight: marks the page body busy for assistive tech. */
   busy: boolean;
   titleRef(el: HTMLHeadingElement): void;
+  /** Beside the title (a status chip), wrapping under it when narrow; not part of the h1's name. */
+  titleAfter?: JSX.Element;
+  /** Where the back arrow goes, and its name; default the session list. */
+  back?: { href: string; label: string };
   /** Page-specific class on the head and the pane, for a page that lays out its own width. */
   class?: string;
   children: JSX.Element;
@@ -63,13 +67,25 @@ export function InsightsPage(props: {
   return (
     <>
       <header class={props.class ? `session-head ${props.class}` : "session-head"}>
-        <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">
+        <a class="button button-icon button-ghost app-back" href={props.back?.href ?? "#/"} aria-label={props.back?.label ?? "Back to Sessions"} title={props.back?.label}>
           <Icon name="chevron-left" />
         </a>
         <div class="session-head-main">
-          <h1 class="session-head-title" tabindex="-1" ref={props.titleRef}>
-            {props.title}
-          </h1>
+          <Show
+            when={props.titleAfter}
+            fallback={
+              <h1 class="session-head-title" tabindex="-1" ref={props.titleRef}>
+                {props.title}
+              </h1>
+            }
+          >
+            <div class="session-head-titleline">
+              <h1 class="session-head-title" tabindex="-1" ref={props.titleRef}>
+                {props.title}
+              </h1>
+              {props.titleAfter}
+            </div>
+          </Show>
           <Show when={props.meta}>
             <p class="session-head-meta">{props.meta}</p>
           </Show>

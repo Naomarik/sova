@@ -50,7 +50,7 @@ import type {
   MeshSessions,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, ProfileChange } from "../../shared/orgs";
+import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
@@ -834,11 +834,19 @@ export const patchPerson = (id: string, pid: string, patch: Partial<PersonInput>
 export const personHistory = (id: string, pid: string) => request<ProfileChange[]>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/history`);
 export const revertPersonChange = (id: string, pid: string, at: string) =>
   request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/revert`, jsonInit("POST", { at }));
+/** One person's page (§app.organizations/person-page). */
+export const getPersonPage = (id: string, pid: string) => request<PersonPage>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}`);
+/** Turns off one link of theirs (`one`), or every live link of theirs on this host. */
+export const revokePersonLinks = (id: string, pid: string, one?: { sessionId: string; n: number }) =>
+  request<PersonPage>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/links/revoke`, jsonInit("POST", one ?? {}));
+/** A session as their link shows it, read-only ("Preview as {name}"); no token. */
+export const previewAsPerson = (id: string, pid: string, sid: string) =>
+  request<PersonPreview>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/preview?session=${encodeURIComponent(sid)}`);
 export const addOrgProject = (id: string, name: string, root: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects`, jsonInit("POST", { name, root }));
 
 export const startBaton = (input: BatonStartInput) => request<BatonStartResult>("/api/baton", jsonInit("POST", input));
 export const getBaton = (path: string) => request<BatonInfo>(`/api/baton?path=${encodeURIComponent(path)}`);
-export const batonLink = (sid: string) => request<{ link: string; n: number }>(`/api/baton/${encodeURIComponent(sid)}/link`);
+export const batonLink = (sid: string) => request<{ link: string; n: number; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link`);
 export const revokeBatonLink = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/revoke`, jsonInit("POST"));
 export const takeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/take`, jsonInit("POST"));
 export const closeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/close`, jsonInit("POST"));
@@ -851,7 +859,7 @@ export const offerBaton = (sid: string, to: string[], question?: string, briefin
   request<{ links: OfferLink[]; info?: BatonInfo }>(`/api/baton/${encodeURIComponent(sid)}/offer`, jsonInit("POST", { to, ...(question ? { question } : {}), ...(briefing ? { briefing } : {}) }));
 export const withdrawOffer = (sid: string) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/offer/withdraw`, jsonInit("POST"));
 /** A fresh link for one invitee of the open offer (their older one stops working). */
-export const inviteeLink = (sid: string, personId: string) => request<{ link: string; n: number }>(`/api/baton/${encodeURIComponent(sid)}/link?person=${encodeURIComponent(personId)}`);
+export const inviteeLink = (sid: string, personId: string) => request<{ link: string; n: number; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link?person=${encodeURIComponent(personId)}`);
 /** The operator hands the session to a person ("Hand this session to Bob"). */
 export const handBaton = (sid: string, to: string, question: string, briefing?: string) =>
   request<{ info?: BatonInfo; link?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));

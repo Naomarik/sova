@@ -209,8 +209,9 @@ it". No other resumed member is sent anything.
 
 `team_roster` and `team_list` show each live member's context: `context 123k/200k (61%)` — the
 last reply's context tokens as the runner counts them, over the window of the model it was spawned
-with (a pi model: the session's model registry; claude-code: 1,000,000 for a `[1m]` model, else
-200,000), rounded down to a whole percent. Unknown parts say so: `context —` before the first
+with (a pi model: the session's model registry; claude-code: 1,000,000 for a `[1m]` model or one
+natively 1M such as bare `opus`, else 200,000 — the claude-code extension's rule, the same the
+subagents pane uses), rounded down to a whole percent. Unknown parts say so: `context —` before the first
 reply, `context 64k/?` without a known window. For a monitor or coordinator, `team_roster` also
 carries the file's current thresholds and, from `<agent dir>/cache/usage-status.json`, each
 provider window the team's members use (percent and reset time, and the cache's age). A window

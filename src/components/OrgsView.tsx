@@ -14,7 +14,6 @@ import {
   getOrgs,
   openProjectOverseer,
   patchPerson,
-  personHistory,
   revertPersonChange,
   setOperatorName,
   setOrgRemote,
@@ -24,29 +23,25 @@ import {
 import { duration, relativeTime, stampTime } from "../lib/format";
 import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
 import { proposedAreasLine } from "../lib/baton-strip";
-import { groupChanges, revertible, valueText } from "../lib/profile-changes";
+import { groupChanges, revertible, STATUS_CHIP, valueText, WRITER } from "../lib/profile-changes";
 import { orgPageRoute } from "../lib/org-page-route";
 import { createOrgSource } from "../lib/org-source";
-import { orgHref, orgTabHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
+import { useMinuteNow } from "../lib/minute-clock";
+import { orgHref, orgTabHref, personHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
 import { orgTabsOf } from "../lib/org-tabs";
 import { toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { LinksBanner } from "./LinksBanner";
+import { PersonForm } from "./PersonForm";
+import { PersonPage } from "./PersonPage";
 import { ProjectPage } from "./ProjectPage";
 import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
 import "../projects.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
-const list = (s: string) =>
-  s
-    .split(",")
-    .map((x) => x.trim())
-    .filter(Boolean);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
-/** Who wrote a profile change, in words. */
-const WRITER: Record<ProfileChange["by"]["kind"], string> = { operator: "you", wrapup: "wrap-up", referral: "referral", overseer: "overseer" };
 
 const STATE_WORDS: Record<string, { word: string; tone: "info" | "warn" | "success" | undefined }> = {
   open: { word: "Open", tone: "info" },
@@ -56,7 +51,7 @@ const STATE_WORDS: Record<string, { word: string; tone: "info" | "warn" | "succe
 };
 
 /** The organizations page: `#/orgs`, `#/orgs/<id>[/<tab>|/start/<person>]`,
-    `#/orgs/<id>/projects/<project>[/overseer]`. */
+    `#/orgs/<id>/projects/<project>[/overseer]`, `#/orgs/<id>/people/<person>`. */
 export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElement): void }) {
   // Memos, not ternaries in the props below: the start form reads `start` from its Cancel handler.
   const page = orgPageRoute(() => props.route);
@@ -67,6 +62,9 @@ export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElem
       </Match>
       <Match when={props.route.kind === "project" && props.route} keyed>
         {(r) => <ProjectPage orgId={r.id} projectId={r.projectId} titleRef={props.titleRef} />}
+      </Match>
+      <Match when={props.route.kind === "person" && props.route} keyed>
+        {(r) => <PersonPage orgId={r.id} personId={r.personId} titleRef={props.titleRef} />}
       </Match>
       <Match when={props.route.kind === "overseer" && props.route} keyed>
         {(r) => <OverseerDoor orgId={r.id} projectId={r.projectId} titleRef={props.titleRef} />}
@@ -654,6 +652,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
 
 function PeopleSection(props: { org: OrgDetail; act: Act }) {
   const [adding, setAdding] = createSignal(false);
+  const now = useMinuteNow();
   return (
     <section class="card orgs-section" aria-labelledby="orgs-people">
       <div class="orgs-head">
@@ -676,20 +675,14 @@ function PeopleSection(props: { org: OrgDetail; act: Act }) {
       </Show>
       <Show when={props.org.roster.length} fallback={<p class="orgs-empty">Nobody on the roster yet.</p>}>
         <ul class="orgs-people">
-          <For each={props.org.roster}>{(p) => <PersonCard org={props.org} person={p} act={props.act} />}</For>
+          <For each={props.org.roster}>{(p) => <PersonCard org={props.org} person={p} act={props.act} now={now()} />}</For>
         </ul>
       </Show>
     </section>
   );
 }
 
-const STATUS_CHIP: Record<string, { word: string; tone?: "success" | "warn" }> = {
-  active: { word: "Active", tone: "success" },
-  proposed: { word: "Proposed", tone: "warn" },
-  left: { word: "Left" },
-};
-
-function PersonCard(props: { org: OrgDetail; person: Person; act: Act }) {
+function PersonCard(props: { org: OrgDetail; person: Person; act: Act; now: number }) {
   const [editing, setEditing] = createSignal(false);
   const p = () => props.person;
   const contact = () =>
@@ -704,10 +697,25 @@ function PersonCard(props: { org: OrgDetail; person: Person; act: Act }) {
       <div class="orgs-person-head">
         <div class="orgs-person-main">
           <span class="orgs-person-title">
-            <span class="orgs-person-name">{p().name}</span>
+            <a class="orgs-person-name orgs-person-link" href={personHref(props.org.id, p().id)}>
+              {p().name}
+            </a>
             <Chip tone={STATUS_CHIP[p().status]?.tone}>{STATUS_CHIP[p().status]?.word ?? p().status}</Chip>
           </span>
           <Show when={[p().role, p().language].filter(Boolean).join(" · ")}>{(meta) => <span class="orgs-person-meta">{meta()}</span>}</Show>
+          {/* The newest time they opened one of their links (§app.baton/visits); nothing when no
+              link was ever sent from this host. */}
+          <Show when={props.org.lastOpened?.[p().id]}>
+            {(o) => (
+              <Show when={o().at} fallback={<Show when={o().minted}><span class="orgs-person-meta">Hasn't opened a link yet</span></Show>}>
+                {(at) => (
+                  <span class="orgs-person-meta">
+                    Last opened <time title={stampTime(at())}>{relativeTime(at(), props.now)}</time>
+                  </span>
+                )}
+              </Show>
+            )}
+          </Show>
         </div>
         <div class="orgs-person-actions">
         <Show when={p().status === "proposed"}>
@@ -775,132 +783,7 @@ function PersonCard(props: { org: OrgDetail; person: Person; act: Act }) {
           }}
         />
       </Show>
-      <History orgId={props.org.id} person={p()} act={props.act} />
     </li>
-  );
-}
-
-function History(props: { orgId: string; person: Person; act: Act }) {
-  const [open, setOpen] = createSignal(false);
-  const [lines, { refetch }] = createResource(
-    () => (open() ? { org: props.orgId, pid: props.person.id, v: JSON.stringify(props.person) } : null),
-    (k) => personHistory(k.org, k.pid),
-  );
-  return (
-    <details class="orgs-history" onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary>History</summary>
-      <Show when={lines()} fallback={<p class="orgs-empty">Loading history.</p>}>
-        <ul class="orgs-history-list">
-          <For each={lines()}>
-            {(c: ProfileChange) => (
-              <li class="orgs-change">
-                <span class="orgs-change-main">
-                  <span class="orgs-change-field">{c.field}</span> {valueText(c.field, c.from)} → {valueText(c.field, c.to)}
-                  <span class="list-meta">
-                    {" "}
-                    · {WRITER[c.by.kind] ?? c.by.kind}
-                    {c.by.quote ? ` · “${c.by.quote}”` : ""}
-                    {c.revertOf ? " · a revert" : ""} · <time title={c.at}>{relativeTime(c.at)}</time>
-                  </span>
-                </span>
-                <Show when={c.field !== "name" || c.from !== null}>
-                  <button
-                    type="button"
-                    class="button button-sm button-ghost"
-                    onClick={async () => {
-                      if (await props.act(() => revertPersonChange(props.orgId, props.person.id, c.at), `Reverted ${c.field}.`)) void refetch();
-                    }}
-                  >
-                    <Icon name="undo" small /> Revert
-                  </button>
-                </Show>
-              </li>
-            )}
-          </For>
-        </ul>
-      </Show>
-    </details>
-  );
-}
-
-function PersonForm(props: { person?: Person; submitLabel: string; onSubmit(input: PersonInput): void; onCancel(): void }) {
-  const p = props.person;
-  const [name, setName] = createSignal(p?.name ?? "");
-  const [status, setStatus] = createSignal<Person["status"]>(p?.status ?? "active");
-  const [role, setRole] = createSignal(p?.role ?? "");
-  const [decides, setDecides] = createSignal(p?.decides.join(", ") ?? "");
-  const [skills, setSkills] = createSignal(p?.skills.join(", ") ?? "");
-  const [language, setLanguage] = createSignal(p?.language ?? "");
-  const [voice, setVoice] = createSignal(p?.voice ?? "");
-  const [email, setEmail] = createSignal(p?.contact.email ?? "");
-  const [phone, setPhone] = createSignal(p?.contact.phone ?? "");
-  const [whatsapp, setWhatsapp] = createSignal(p?.contact.whatsapp ?? "");
-  const [why, setWhy] = createSignal(p?.referral?.why ?? "");
-  const [by, setBy] = createSignal(p?.referral?.referredBy ?? "");
-  const text = (label: string, get: () => string, set: (v: string) => void, extra: JSX.InputHTMLAttributes<HTMLInputElement> = {}) => (
-    <label class="field">
-      <span class="field-label">{label}</span>
-      <input class="input" value={get()} onInput={(e) => set(e.currentTarget.value)} {...extra} />
-    </label>
-  );
-  return (
-    <form
-      class="orgs-form orgs-subform"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const contact = { ...(email().trim() ? { email: email().trim() } : {}), ...(phone().trim() ? { phone: phone().trim() } : {}), ...(whatsapp().trim() ? { whatsapp: whatsapp().trim() } : {}) };
-        props.onSubmit({
-          name: name().trim(),
-          status: status(),
-          role: role().trim(),
-          decides: list(decides()),
-          skills: list(skills()),
-          language: language().trim(),
-          voice: voice().trim(),
-          contact,
-          ...(status() === "proposed" || why().trim() || by().trim() ? { referral: { why: why().trim(), referredBy: by().trim() } } : {}),
-        });
-      }}
-    >
-      <div class="orgs-fields">
-        {text("Name", name, setName, { maxlength: 80, required: true })}
-        <label class="field">
-          <span class="field-label">Status</span>
-          <select class="select" value={status()} onChange={(e) => setStatus(e.currentTarget.value as Person["status"])}>
-            <option value="active">Active</option>
-            <option value="proposed">Proposed</option>
-            <option value="left">Left</option>
-          </select>
-        </label>
-        {text("Role", role, setRole, { maxlength: 300 })}
-        {text("Language", language, setLanguage, { placeholder: "es-CO", maxlength: 35 })}
-        {text("Decides", decides, setDecides, { placeholder: "invoicing, bank access" })}
-        {text("Skills", skills, setSkills, { placeholder: "Excel, SQL" })}
-        {text("Email", email, setEmail, { type: "email" })}
-        {text("Phone", phone, setPhone)}
-        {text("WhatsApp", whatsapp, setWhatsapp)}
-      </div>
-      <label class="field">
-        <span class="field-label">Voice</span>
-        <textarea class="input textarea" rows={2} maxlength={300} value={voice()} onInput={(e) => setVoice(e.currentTarget.value)} />
-        <span class="field-hint">How to talk to them. Never shown to them or anyone else outside this page.</span>
-      </label>
-      <Show when={status() === "proposed"}>
-        <div class="orgs-fields">
-          {text("Why referred", why, setWhy, { maxlength: 300, required: true })}
-          {text("Referred by", by, setBy, { maxlength: 80, required: true })}
-        </div>
-        <p class="field-hint">A proposed person needs a name, a contact, a role, and who referred them and why.</p>
-      </Show>
-      <div class="button-row">
-        <button type="submit" class="button button-primary">
-          {props.submitLabel}
-        </button>
-        <button type="button" class="button button-ghost" onClick={() => props.onCancel()}>
-          Cancel
-        </button>
-      </div>
-    </form>
   );
 }
 
@@ -946,7 +829,9 @@ function ChangesSection(props: { org: OrgDetail; act: Act }) {
               <li class="orgs-change orgs-change-group">
                 <div class="orgs-change-main">
                   <span>
-                    <span class="orgs-person-name">{g.name}</span>
+                    <a class="orgs-person-name orgs-person-link" href={personHref(props.org.id, g.personId)}>
+                      {g.name}
+                    </a>
                     {g.added ? " added" : ""}
                     <span class="list-meta">
                     {" "}

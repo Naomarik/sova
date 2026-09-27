@@ -66,6 +66,25 @@ tabs, its projects, the project overseer, its people and their pages
 (`#/orgs/<id>/projects/<pid>?host=<peer>`, `#/orgs/<id>/people/<pid>?host=<peer>`), so a reload
 or a shared link opens it on the right host. Every read and change such a page makes — the org, its
 people, projects, decisions, conflicts, the project overseer and its settings, ideas, to-dos and
-worktrees, starting a hand-off session, a person's links and preview, Commit Now and the remote —
-goes to that host through `/peer/<id>/api/…`, which answers exactly as it answers its own page. A
-local org's addresses are unchanged. `#/orgs` still lists this host's orgs only.
+worktrees, the models its session pickers offer, starting a hand-off session, a person's links and
+preview, Commit Now and the remote — goes to that host through `/peer/<id>/api/…`, which answers
+exactly as it answers its own page. Where such a page names a host, it names that one: a project
+paused by an attach reads "Paused at L0 on <peer>" and "This organization was attached on <peer>
+…", and a decision whose session isn't there says it isn't on <peer>. A local org's addresses and
+words are unchanged. `#/orgs` still lists this host's orgs only.
+
+## §mesh.remote-sessions/never-cached — A peer's answers are never cached
+
+The page's service worker leaves everything under `/peer/` to the network, as it does `/api/` and
+`/ws`: a peer's API reads, its sockets and anything else there are neither answered from the
+worker's cache nor stored in it, so every read shows what the peer says now (a second New Link
+shows the new link, a strip re-read after an action shows its result). A browser whose worker
+stored peer answers under an earlier version drops that whole cache when the new worker activates.
+The share pages (`/h/`, `/i/`) are served only by the share listener, on its own origin, which this
+worker never controls.
+
+## §mesh.remote-sessions/head-host — A peer session's head names its host
+
+A peer session's head starts its meta line with the host, `on <peer> · <folder> · …`, titled "This
+session lives on <peer>". When the line is too narrow (a 390px phone), the folder gives way first:
+the host keeps its whole name unless that name alone is longer than half the line.

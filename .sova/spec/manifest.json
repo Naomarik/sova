@@ -5419,7 +5419,7 @@
         "§app.organizations/person-page"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/mesh.ts",
         "src/lib/mesh.test.ts",
@@ -5429,7 +5429,32 @@
         "src/components/Sidebar.tsx",
         "src/components/OrgsView.tsx",
         "src/components/ProjectPage.tsx",
-        "src/components/PersonPage.tsx"
+        "src/components/PersonPage.tsx",
+        "src/components/ProjectOverseerPanel.tsx"
+      ]
+    },
+    "§mesh.remote-sessions/head-host": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.remote-sessions/routing"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/SessionView.tsx",
+        "src/design/base.css"
+      ]
+    },
+    "§mesh.remote-sessions/never-cached": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.remote-sessions/proxy"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "public/sw.js",
+        "src/lib/sw.test.ts"
       ]
     }
   },

@@ -46,6 +46,7 @@ import { applySidebarWidth } from "./lib/sidebar-width";
 import { closeSettings, openSettings, settingsOpenAt } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
 import { activeTab, home, setActiveTab, setHome, toast } from "./lib/ui-state";
+import { createPaneInsight } from "./lib/pane-insight";
 import { sessionWorking, type UsageTotalView } from "./lib/workers";
 import { sourceBlocked } from "./lib/fanout";
 import { AgentsView } from "./components/AgentsView";
@@ -734,7 +735,8 @@ export function App() {
   };
 
   // ---- Subagents pane: open for one session path, closed whenever the route changes ----------
-  const [subagents, setSubagents] = createSignal<{ path: string; selected: string | null } | null>(null);
+  /** `board`: opened in place from the Agents board, for a session with no view on screen. */
+  const [subagents, setSubagents] = createSignal<{ path: string; selected: string | null; board?: boolean } | null>(null);
   /** Each open chat's live workers (WS "workers"), reconciled by id so pane rows keep identity,
       with the runtime's session-lifetime token Σ beside them. By path: a workspace runs several. */
   const [chatWorkers, setChatWorkers] = createStore<Record<string, { list: WorkerInfo[]; usage: UsageTotalView | null } | undefined>>({});
@@ -756,11 +758,30 @@ export function App() {
       delete next[path];
       return next;
     });
-  /** The pane's session: open, and one of the sessions on screen. */
+  /** The pane's session: open, and one of the sessions on screen — or, from the Agents board, a
+      row of that board while it is showing. */
   const subagentsPath = () => {
-    const p = subagents()?.path;
-    return p && openPaths().includes(p) ? p : null;
+    const s = subagents();
+    if (!s) return null;
+    if (s.board) return insightsPage() === "agents" && (list() ?? []).some((x) => x.path === s.path) ? s.path : null;
+    return openPaths().includes(s.path) ? s.path : null;
   };
+  /** The pane the board opened: a team link (`#/agents/<team>`) keeps it, leaving the page closes it. */
+  createEffect(on(insightsPage, (page) => page !== "agents" && subagents()?.board && setSubagents(null), { defer: true }));
+  /** The board's pane has no session view to load its insight: this loads and polls it instead. */
+  const boardPanePath = createMemo(() => (subagents()?.board ? subagentsPath() : null));
+  createEffect(
+    on(boardPanePath, (path) => {
+      if (!path) return;
+      const { insight, reload } = createPaneInsight(path, () => true);
+      noteInsight(path, insight);
+      // No file watch here: a newer last-active time in the list is the file having moved.
+      const last = createMemo(() => summaryOf(path)?.lastActiveAt);
+      createEffect(on(last, reload, { defer: true }));
+      // Only its own entry: a session view mounting for the same path publishes one of its own.
+      onCleanup(() => paneInsights()[path] === insight && noteInsight(path, null));
+    }),
+  );
   let subagentsTrigger: HTMLElement | null = null;
   const closeSubagents = () => {
     const was = subagentsPath();
@@ -784,7 +805,15 @@ export function App() {
   };
   /** The composer's subagents row and /subagents promise the workers: Agents. */
   const toggleSubagents = (path: string) => openPane(path, "agents");
-  /** The Agents board's Subagents action: open the session, then its pane on the Agents tab.
+  /** The Agents board's Session details button: the pane in place, on its Session tab, for that
+      row. Its own row's button closes it; another row's switches it to that session. */
+  const openDetailsFor = (path: string) => {
+    if (subagentsPath() === path) return closeSubagents();
+    subagentsTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setActiveTab(path, "session");
+    setSubagents({ path, selected: null, board: true });
+  };
+  /** The Agents board's Open Subagents: open the session, then its pane on the Agents tab.
       Route first: the pane only opens beside a session that is on screen. */
   const openSubagentsFor = (path: string) => {
     location.hash = sessionHref(path);
@@ -956,6 +985,8 @@ export function App() {
                     onRefresh={refresh}
                     onArchiveChanged={onArchived}
                     onOpenSubagents={openSubagentsFor}
+                    detailsPath={boardPanePath()}
+                    onOpenDetails={openDetailsFor}
                   />
                 </Match>
                 {/* Every /explain page as a card (#/explanations[/<sessionId>]). */}
@@ -1127,14 +1158,15 @@ export function App() {
                 summary={summaryOf(path)}
                 onArchiveChanged={onArchived}
                 onGroupsChanged={refresh}
-                chatWorkers={chatWorkers[path]?.list ?? null}
-                chatUsage={chatWorkers[path]?.usage ?? null}
-                rewind={rewindControls()[path]}
+                chatWorkers={subagents()?.board ? null : (chatWorkers[path]?.list ?? null)}
+                chatUsage={subagents()?.board ? null : (chatWorkers[path]?.usage ?? null)}
+                // No chat on screen from the board: the Timeline can't rewind, as when watching.
+                rewind={subagents()?.board ? undefined : rewindControls()[path]}
                 rewound={rewound()?.path === path ? rewound()! : null}
                 inputsOnly={inputsOnly() === path}
                 onInputsOnly={(on) => setInputsOnly(on ? path : null)}
                 selected={subagents()?.selected ?? null}
-                onSelect={(id) => setSubagents({ path, selected: id })}
+                onSelect={(id) => setSubagents((s) => (s ? { ...s, selected: id } : s))}
                 onClose={closeSubagents}
                 now={now()}
               />

@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import type { ContextInfo, TeamInfo, TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
-import { ApiError, claudeWatchUrl, resumeWorker, wsUrl } from "../lib/api";
+import { claudeWatchUrl, wsUrl } from "../lib/api";
 import { hostOf } from "../lib/mesh";
 import { clockTime, compactModel, shortModel } from "../lib/format";
 import { memberBadges, memberStatus, newestEventLine } from "../lib/insights";
@@ -392,8 +392,8 @@ export function SubagentPane(props: {
                   </p>
                 </div>
               </header>
-              <Show when={w().status === "restored" || w().resumable}>
-                <RestoredBar path={props.path} worker={w()} name={label(w())} />
+              <Show when={w().status === "restored"}>
+                <RestoredBar worker={w()} />
               </Show>
               <Show
                 when={sourceKey(w())}
@@ -440,61 +440,25 @@ export function SubagentPane(props: {
   );
 }
 
-/**
- * What a restart did to this worker, and the one thing to do about it. Resume starts it again
- * from its own transcript, idle: nothing is sent to it, so its next task is still yours to give.
- * The button shows only where this server can do that (`resumable`: a session it hosts, on a
- * backend that resumes); anywhere else the sentence stands alone.
- */
-function RestoredBar(props: { path: string; worker: WorkerInfo; name: string }) {
-  const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  createEffect(on(() => props.worker.id, () => setError(null), { defer: true }));
+/** What a restart did to this worker: not running, and whether a turn was cut off. */
+function RestoredBar(props: { worker: WorkerInfo }) {
   const interrupted = () => props.worker.interruptedAt;
-  const resume = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await resumeWorker(props.path, props.worker.id);
-    } catch (err) {
-      setError(err instanceof ApiError || err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
     <div class="subagents-restored">
       <p class="usage-note">
-        <Show when={props.worker.status === "restored"}>
-          Not running since a server restart
-          <Show when={interrupted()} fallback=".">
-            {(at) => (
-              <>
-                ; it was mid-task at{" "}
-                <span class="text-mono" title={new Date(at()).toISOString()}>
-                  {asOfClock(at())}
-                </span>
-                , and that turn never finished.
-              </>
-            )}
-          </Show>
-        </Show>
-        <Show when={props.worker.resumable}>
-          {props.worker.status === "restored" ? " " : ""}Resuming starts it idle; nothing is sent to it.
+        Not running since a server restart
+        <Show when={interrupted()} fallback=".">
+          {(at) => (
+            <>
+              ; it was mid-task at{" "}
+              <span class="text-mono" title={new Date(at()).toISOString()}>
+                {asOfClock(at())}
+              </span>
+              , and that turn never finished.
+            </>
+          )}
         </Show>
       </p>
-      <Show when={props.worker.resumable}>
-        <button type="button" class="button button-sm" disabled={busy()} aria-busy={busy() ? "true" : undefined} onClick={() => void resume()}>
-          {busy() ? "Resuming…" : "Resume Worker"}
-        </button>
-      </Show>
-      <Show when={error()}>
-        {(message) => (
-          <p class="usage-note subagents-restored-error" role="alert">
-            Couldn't resume {props.name}. {message()} Nothing else changed.
-          </p>
-        )}
-      </Show>
     </div>
   );
 }

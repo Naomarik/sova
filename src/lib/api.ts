@@ -40,7 +40,6 @@ import type {
   UploadResult,
   UsageInsight,
   WebSettings,
-  WorkerResumeResult,
   WorktreesInsight,
   MeshCandidate,
   MeshHello,
@@ -303,11 +302,6 @@ export const setSandbox = (path: string, on: boolean) =>
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ on }),
   });
-
-/** POST /api/workers/resume?path=&id=: start one restored worker of that held chat again, idle.
-    Throws ApiError with the extension's reason (409) when it can't. */
-export const resumeWorker = (path: string, id: string) =>
-  request<WorkerResumeResult>(`/api/workers/resume?path=${encodeURIComponent(path)}&id=${encodeURIComponent(id)}`, { method: "POST" });
 
 /** A local folder (string), or a folder on a configured target; `host`: on that peer, which then holds it. */
 export const createSession = (where: string | { target: string; remoteCwd: string }, host?: string | null) =>

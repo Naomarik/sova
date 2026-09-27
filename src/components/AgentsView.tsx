@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import type { AgentsInsight, ContextInfo, SessionSummary, TeamInfo, TeamMember, WorkerInfo, WorktreeStatus } from "../../shared/protocol";
-import { ApiError, fetchWorktrees, resumeWorker } from "../lib/api";
+import { fetchWorktrees } from "../lib/api";
 import {
   BOARD_FILTERS,
   BOARD_PAGE,
@@ -60,7 +60,9 @@ interface BoardCtx {
   onRefresh(): void;
   onArchiveChanged(path: string, archived: boolean): void;
   onOpenSubagents(path: string): void;
-  refetchAgents(): void;
+  /** The session whose Session details pane is open beside the board, if any. */
+  detailsPath: string | null;
+  onOpenDetails(path: string): void;
 }
 
 const STATE_TONE: Record<BoardRow["state"], Tone | "accent" | undefined> = { working: "accent", "needs-you": "warn", idle: undefined, archived: undefined };
@@ -191,39 +193,6 @@ function TreesCell(props: { trees: WorktreeStatus[] | undefined; down: boolean }
   );
 }
 
-/** Resume a restored worker; the agents poll then shows it idle. */
-function ResumeButton(props: { path: string | null; worker: WorkerInfo; name: string; onDone(): void }) {
-  const [busy, setBusy] = createSignal(false);
-  const run = async () => {
-    const path = props.path;
-    if (!path || busy()) return;
-    setBusy(true);
-    try {
-      await resumeWorker(path, props.worker.id);
-      const done = `${props.name} is running again, idle until you give it a task.`;
-      toast(done);
-      announce(done);
-      props.onDone();
-    } catch (err) {
-      toast(`Couldn't resume ${props.name}. ${err instanceof ApiError || err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <button
-      type="button"
-      class="button button-sm"
-      aria-label={`Resume ${props.name}`}
-      aria-disabled={busy() ? "true" : undefined}
-      title={busy() ? "Resuming…" : "Start it again from its own transcript, idle"}
-      onClick={() => void run()}
-    >
-      Resume
-    </button>
-  );
-}
-
 /** One worker, one line: name, badges, id and model in mono, the preview while working, status. */
 function WorkerLine(props: {
   name: string;
@@ -233,9 +202,7 @@ function WorkerLine(props: {
   id: string;
   model?: string | null;
   status: MemberStatus;
-  hostPath: string | null;
   owns?: string[];
-  onResumed(): void;
 }) {
   const w = () => props.worker;
   return (
@@ -265,15 +232,12 @@ function WorkerLine(props: {
       <Chip tone={props.status.tone} live={props.status.live}>
         {props.status.text}
       </Chip>
-      <Show when={w()?.status === "restored" && w()?.resumable}>
-        <ResumeButton path={props.hostPath} worker={w()!} name={props.name} onDone={props.onResumed} />
-      </Show>
     </li>
   );
 }
 
 /** A team inside its session's row: head, objective, members one line each, then its events. */
-function TeamBlock(props: { team: TeamInfo; ctx: BoardCtx; hostPath: string | null }) {
+function TeamBlock(props: { team: TeamInfo; ctx: BoardCtx }) {
   const key = () => teamKey(props.team);
   const live = () => props.team.live && teamFresh(props.ctx.agents, props.team);
   const events = () => splitTeamEvents(props.team);
@@ -316,9 +280,7 @@ function TeamBlock(props: { team: TeamInfo; ctx: BoardCtx; hostPath: string | nu
               id={m.workerId}
               model={m.worker?.model ?? m.model}
               status={memberStatus(m, live())}
-              hostPath={props.hostPath}
               owns={m.ownedPaths}
-              onResumed={props.ctx.refetchAgents}
             />
           )}
         </For>
@@ -394,6 +356,12 @@ function RowMenu(props: { row: BoardRow; ctx: BoardCtx; archive: { label: string
             <div class="model-menu-list" role="menu" aria-label={`Actions for ${quoted(s().title)}`}>
               <div class="model-menu-group" role="group" aria-label="Open">
                 <menu.Item label="Open Session" aria={`Open ${quoted(s().title)}`} icon={<Icon name="arrow-right" small />} href={sessionHref(s().path)} />
+                <menu.Item
+                  label={props.ctx.detailsPath === s().path ? "Close Session Details" : "Session Details"}
+                  aria={`${props.ctx.detailsPath === s().path ? "Close the session details" : "Session details"} of ${quoted(s().title)}`}
+                  icon={<Icon name="info" small />}
+                  onRun={() => props.ctx.onOpenDetails(s().path)}
+                />
                 <menu.Item
                   label="Open Subagents"
                   aria={`Open the subagents pane of ${quoted(s().title)}`}
@@ -480,6 +448,7 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
   const trees = () => props.ctx.treesOf(s().path);
   const open = () => props.ctx.expanded(s().path);
   const detailId = () => `board-detail-${s().id}`;
+  const detailsOpen = () => props.ctx.detailsPath === s().path;
   const gist = () => summaryLineOf(s());
   /** Archive/Unarchive: only for what you started in Sova, or already archived; the reason when it can't. */
   const archive = () => {
@@ -614,12 +583,14 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
           </a>
           <button
             type="button"
-            class="button button-icon button-ghost board-act board-act-wide"
-            aria-label={`Open the subagents pane of ${quoted(s().title)}`}
-            title="Open subagents pane"
-            onClick={() => props.ctx.onOpenSubagents(s().path)}
+            class="button button-icon button-ghost board-act board-act-details"
+            aria-label={`Session details of ${quoted(s().title)}`}
+            aria-controls="session-pane"
+            aria-expanded={detailsOpen() ? "true" : "false"}
+            title="Session details"
+            onClick={() => props.ctx.onOpenDetails(s().path)}
           >
-            <Icon name="worker" />
+            <Icon name="info" />
           </button>
           <Show when={archive()} fallback={<span class="board-act-gap board-act-wide" aria-hidden="true" />}>
             {(a) => (
@@ -662,14 +633,12 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
                     id={w.id}
                     model={w.model}
                     status={memberStatus({ workerId: w.id, role: w.name, orchestrator: false, backend: w.backend ?? "", ownedPaths: [], addedAt: 0, worker: w }, !!r().agent?.fresh)}
-                    hostPath={r().agent?.path ?? null}
-                    onResumed={props.ctx.refetchAgents}
                   />
                 )}
               </For>
             </ul>
           </Show>
-          <For each={r().teams}>{(t) => <TeamBlock team={t} ctx={props.ctx} hostPath={r().agent?.path ?? null} />}</For>
+          <For each={r().teams}>{(t) => <TeamBlock team={t} ctx={props.ctx} />}</For>
           <Show when={trees()?.length}>
             <ul class="board-tree-list" aria-label="Worktrees">
               <For each={trees()}>{(t) => <TreeLine tree={t} />}</For>
@@ -700,6 +669,8 @@ export function AgentsView(props: {
   onRefresh(): void;
   onArchiveChanged(path: string, archived: boolean): void;
   onOpenSubagents(path: string): void;
+  detailsPath: string | null;
+  onOpenDetails(path: string): void;
 }) {
   const [filter, setFilter] = createSignal<BoardFilter | null>(null);
   const [query, setQuery] = createSignal("");
@@ -820,7 +791,10 @@ export function AgentsView(props: {
     onRefresh: () => props.onRefresh(),
     onArchiveChanged: (p, a) => props.onArchiveChanged(p, a),
     onOpenSubagents: (p) => props.onOpenSubagents(p),
-    refetchAgents: () => props.agents.refetch(),
+    get detailsPath() {
+      return props.detailsPath;
+    },
+    onOpenDetails: (p) => props.onOpenDetails(p),
   };
 
   const meta = () => (props.sessions ? totalsLine(totals()) : undefined);

@@ -239,7 +239,7 @@
 /* ---- Unfolded, condensed: Activity over Workers in one column; Open and ⋯ ---- */
 @container insights (min-width: 768px) {
   .board-line {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1.2fr) calc(var(--control-md) * 2 + var(--space-1));
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1.2fr) calc(var(--control-md) * 3 + var(--space-1) * 2);
     grid-template-areas: "session activity trees actions" "session workers trees actions";
     gap: 2px var(--space-3);
     padding: var(--space-1) var(--space-2) var(--space-1) var(--space-2);

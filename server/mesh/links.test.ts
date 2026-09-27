@@ -755,6 +755,26 @@ describe("file offers (§mesh.links/offers, §mesh.links/transfer)", () => {
     assert.equal(existsSync(join(B.root, "work", "in", "proj")), false, "nothing extracted on b");
   });
 
+  test("final reports back to back wake the sender exactly once", async () => {
+    const C = makeHost("c", "Gamma");
+    workIn(C, "sc");
+    const v = await link([{ session: "sa" }, { host: "b", session: "sb" }, { host: "c", session: "sc" }]);
+    const r = await offer({ paths: ["notes.md"], to: "all" });
+    const id = r.json.offer.id;
+    const rep = (from: Host, sid: string) =>
+      A.app.request(`/api/peer/links/${v.link.id}/offers/${id}/result`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session: sid, state: "declined" }) }, { meshPeer: entryOf(from) });
+    const answers = await Promise.all([rep(B, "sb"), rep(C, "sc"), rep(C, "sc"), rep(B, "sb")]);
+    assert.deepEqual(
+      answers.map((a) => a.status),
+      [200, 200, 200, 200],
+    );
+    await until(() => wakes(A).length === 1, 3_000, "the wake");
+    await settle();
+    await settle();
+    assert.equal(wakes(A).length, 1);
+    assert.equal(offerOf(A, id)!.wokeSender, true);
+  });
+
   test("ending the link cancels its open offers on every host; the spool goes and pulls get 410", async () => {
     const v = await link();
     const r = await offer({ paths: ["proj"] });

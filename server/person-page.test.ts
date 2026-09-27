@@ -153,7 +153,8 @@ describe("decisions, conflicts, links, visits", () => {
   });
 
   test("visits: folded newest first with session titles, counted per link; scanners not counted; another host's link flagged", () => {
-    const t = Date.now() - 3600_000;
+    // (Visits after the link was made: one made before it can't be from it.)
+    const t = Date.parse(kimS1.createdAt) + 1000;
     visits.recordOpen(kimS1, { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Mobile Safari/604.1", now: t });
     visits.recordOpen(kimS1, { userAgent: "curl/8", now: t + 1000 });
     visits.recordOpen({ ...kimS1, sessionId: "gone-session", n: 9 }, { userAgent: "Mozilla/5.0 (Windows NT 10.0) Chrome/140.0 Safari/537.36", now: t + 2000 });
@@ -169,6 +170,31 @@ describe("decisions, conflicts, links, visits", () => {
       ],
     );
     assert.equal(page.links.find((l) => l.sessionId === s1.sessionId)!.visits, 1);
+  });
+
+  test("a new link for the same hand-off never takes an older visit: another host's stays marked, this host's stays on its own link", async () => {
+    const s5 = baton.createBaton({ orgId: org.id, projectId: pa.id, to: dee.id, publicTitle: "Leases", goal: "g" });
+    const first = links.findLink(s5.token!)!;
+    const made = Date.parse(first.createdAt);
+    // Before any link of this host for it: minted on the host that held the org before the restore.
+    visits.recordOpen(first, { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Mobile Safari/604.1", now: made - 60_000 });
+    // On this host's first link.
+    visits.recordOpen(first, { userAgent: "Mozilla/5.0 (Windows NT 10.0) Chrome/140.0 Safari/537.36", now: made + 1 });
+    // Get Link again, same hand-off, a little later: a newer link, the first turned off.
+    await new Promise((r) => setTimeout(r, 20));
+    const again = links.findLink(baton.rotateLink(s5.sessionId).token)!;
+    const page = personPage(org.id, dee.id);
+    const mine = page.visits.filter((v) => v.sessionId === s5.sessionId);
+    assert.deepEqual(
+      mine.map((v) => [v.device, !!v.otherHost]),
+      [
+        ["Chrome · Windows", false],
+        ["Safari · iPhone", true],
+      ],
+    );
+    const rows = page.links.filter((l) => l.sessionId === s5.sessionId);
+    assert.equal(rows.find((l) => l.createdAt === again.createdAt)!.visits, 0, "the new link has none of the older visits");
+    assert.equal(rows.find((l) => l.createdAt === first.createdAt)!.visits, 1, "this host's visit stays on the link it was made with");
   });
 });
 

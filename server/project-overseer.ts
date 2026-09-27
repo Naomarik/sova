@@ -20,7 +20,7 @@ import {
 } from "../shared/project-overseer";
 import { ORG_ABOUT_MAX } from "../shared/orgs";
 import type { SessionSummary, TokenUsage } from "../shared/protocol";
-import { onBatonEvent } from "./baton-events";
+import { type BatonEvent, onBatonEvent } from "./baton-events";
 import { allBatons, batonById, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
 import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, registerSpecialLoadout, setOpeningChoice, type ChatSession } from "./chat-manager";
 import { PROCESS_START, shuttingDown } from "./wrapup-recovery";
@@ -232,13 +232,13 @@ function batonPath(b: BatonSession): string | null {
 const projectBatons = (orgId: string, projectId: string): BatonSession[] => allBatons().filter((b) => b.orgId === orgId && b.projectId === projectId);
 const ownedBy = (b: BatonSession, projectId: string) => typeof b.owner === "object" && b.owner.overseerOf === projectId;
 
-function codingOf(p: ProjectOverseerPaths): { sessionId: string; path: string | null; running: boolean; createdAt: string; tokens?: number }[] {
+function codingOf(p: ProjectOverseerPaths): { sessionId: string; path: string | null; running: boolean; createdAt: string; tokens?: number; title?: string }[] {
   const known = indexedSessionPaths();
   return readStarted(p)
     .filter((s) => s.kind === "coding")
     .map((s) => {
       const path = known.get(s.sessionId) ?? (s.path && existsSync(s.path) ? s.path : null);
-      return { sessionId: s.sessionId, path, running: path ? isSessionBusy(path) || workingSubagents(path) > 0 : false, createdAt: s.createdAt, tokens: s.tokens };
+      return { sessionId: s.sessionId, path, running: path ? isSessionBusy(path) || workingSubagents(path) > 0 : false, createdAt: s.createdAt, tokens: s.tokens, title: s.title };
     });
 }
 
@@ -286,7 +286,8 @@ async function codingWorktrees(p: ProjectOverseerPaths, root: string): Promise<C
     const common = {
       sessionId: r.sessionId,
       path,
-      title: path ? ((await getSessionSummary(path).catch(() => null))?.title ?? "") : "",
+      // The title it had when it started, where its file isn't (another host), or while its own is untitled.
+      title: (path ? (await getSessionSummary(path).catch(() => null))?.title : "") || r.title || "",
       startedBy: r.kind === "coding" ? ("overseer" as const) : ("operator" as const),
       running: path ? isSessionBusy(path) : false,
       workers: path ? workingSubagents(path) : 0,
@@ -345,9 +346,9 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
         state: b.state,
         createdAt: b.createdAt,
       })),
-    ...codingOf(p).map((c) => ({ sessionId: c.sessionId, path: c.path, title: c.path ? "" : "(not on this host)", kind: "coding" as const, state: c.running ? "working" : "idle", createdAt: c.createdAt })),
+    ...codingOf(p).map((c) => ({ sessionId: c.sessionId, path: c.path, title: c.path ? "" : (c.title ?? "(not on this host)"), kind: "coding" as const, state: c.running ? "working" : "idle", createdAt: c.createdAt })),
   ];
-  for (const s of started) if (s.kind === "coding" && s.path) s.title = (await getSessionSummary(s.path).catch(() => null))?.title ?? "";
+  for (const s of started) if (s.kind === "coding" && s.path) s.title = (await getSessionSummary(s.path).catch(() => null))?.title || s.title;
   started.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const repo = await gitRootOf(project.root);
   const trees = await codingWorktrees(p, project.root);
@@ -624,8 +625,8 @@ async function startCodingSession(
     if (extra.worktree) await removeWorktree(extra.worktree, project.root).catch(() => {});
     throw new OrgError(json?.error ?? `Creating the session failed (HTTP ${res.status}).`, res.status === 409 ? 409 : 400);
   }
-  noteStarted(p, json.id, input.kind, new Date(), json.path, extra);
   const title = input.title?.trim() ? cleanSessionTitle(input.title) : null;
+  noteStarted(p, json.id, input.kind, new Date(), json.path, { ...extra, ...(title ? { title } : {}) });
   if (title) setSessionTitle(json.id, title);
   const choice = codingChoice(input, settings, await overseerRunning(orgId, projectId));
   // Opened on its model and thinking from the start (its file never records the default first);
@@ -653,9 +654,18 @@ async function startCodingSession(
     console.warn(`[project-overseer] ${json.id}: mode ${describeCodingMode(mode)} not set: ${err instanceof Error ? err.message : String(err)}`);
     return { ...made, notPrompted: NOT_PROMPTED };
   }
-  const sent = await promptSession(json.path, input.prompt);
+  const sent = await promptSession(json.path, codingFirstPrompt(input.prompt, extra.worktree));
   if (!sent.ok) throw new OrgError(sent.error, 409);
   return made;
+}
+
+/**
+ * A coding session's first prompt: in its own worktree, told to commit there before it ends its
+ * turn (Merge Branch refuses uncommitted work); in the project root, as asked.
+ */
+export function codingFirstPrompt(prompt: string, worktree: { branch: string } | undefined): string {
+  if (!worktree) return prompt;
+  return `${prompt}\n\nYou work in your own git worktree on the branch ${worktree.branch}. Commit your work on this branch before you end your turn: uncommitted changes can't be merged.`;
 }
 
 // ---- worktrees: the operator's merge and removal ------------------------------------------------------
@@ -688,7 +698,11 @@ export async function mergeCodingWorktree(orgId: string, projectId: string, sess
     const m = await mergeBack(r.worktree, project.root, title);
     markStarted(p, r.sessionId, { merged: { at: new Date().toISOString(), commit: m.sha } });
   } catch (err) {
-    if (err instanceof WorktreeRefusal) throw new OrgError(err.message, 409);
+    if (err instanceof WorktreeRefusal) {
+      // The session's or the branch's to fix (commit, resolve): the overseer is told. The root's own checkout is the operator's.
+      if (!err.message.startsWith("The project root")) noteReason(orgId, projectId, `Merge Branch for "${title}" was refused: ${err.message}`, false, true);
+      throw new OrgError(err.message, 409);
+    }
     throw err;
   }
   return projectOverseerInfo(orgId, projectId);
@@ -1160,19 +1174,28 @@ async function tick(): Promise<void> {
 
 const batonTitle = (sessionId: string) => batonById(sessionId)?.row.publicTitle ?? sessionId;
 
+/** A baton event as a reason to look (the loop's listener; exported for the tests). */
+export function noteBatonEvent(e: BatonEvent): void {
+  // A decision recorded mid-session is not a reason on its own: the session's end is, and it
+  // comes with its decisions (a settle session's answer reaches the reconciler, whose events are).
+  if (e.type === "done") noteReason(e.orgId, e.projectId, `The gathering session "${batonTitle(e.sessionId)}" reached its goal.`, false, true);
+  else if (e.type === "closed") noteReason(e.orgId, e.projectId, `The gathering session "${batonTitle(e.sessionId)}" was closed.`);
+  else if (e.type === "proposal") noteReason(e.orgId, e.projectId, `Someone was referred in "${batonTitle(e.sessionId)}" (a proposed roster person).`);
+  // Its own gathering session's model put a question to the operator (a person's request it passed
+  // on): the overseer, who started it, acts on it, not only the operator.
+  else if (e.type === "asked-operator") {
+    const row = batonById(e.sessionId)?.row;
+    if (row && ownedBy(row, e.projectId)) noteReason(e.orgId, e.projectId, `The gathering session "${row.publicTitle}" handed a question to the operator (their words, as data): "${e.question ?? ""}"`, false, true);
+  }
+}
+
 let started = false;
 /** Start the listeners and the ticker (index.ts, once). */
 export function startProjectOverseerLoop(): void {
   if (started) return;
   started = true;
   sweepCutOffRuns();
-  onBatonEvent((e) => {
-    // A decision recorded mid-session is not a reason on its own: the session's end is, and it
-    // comes with its decisions (a settle session's answer reaches the reconciler, whose events are).
-    if (e.type === "done") noteReason(e.orgId, e.projectId, `The gathering session "${batonTitle(e.sessionId)}" reached its goal.`, false, true);
-    else if (e.type === "closed") noteReason(e.orgId, e.projectId, `The gathering session "${batonTitle(e.sessionId)}" was closed.`);
-    else if (e.type === "proposal") noteReason(e.orgId, e.projectId, `Someone was referred in "${batonTitle(e.sessionId)}" (a proposed roster person).`);
-  });
+  onBatonEvent(noteBatonEvent);
   onReconcileEvent((e) => {
     const n = e.ids.length;
     if (e.type === "conflict") noteReason(e.orgId, e.projectId, `${n} new conflict${n === 1 ? "" : "s"} between decisions.`, true);

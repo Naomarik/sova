@@ -44,6 +44,8 @@ export function ListSkeleton(props: { groups: number; rows: number }) {
  */
 export function InsightsPage(props: {
   title: string;
+  /** The title's tooltip, for a title that may be cut with an ellipsis (a long project name). */
+  titleTip?: boolean;
   /** Head meta line; left out entirely when empty (e.g. nothing loaded yet). */
   meta?: JSX.Element;
   refreshLabel: string;
@@ -74,13 +76,13 @@ export function InsightsPage(props: {
           <Show
             when={props.titleAfter}
             fallback={
-              <h1 class="session-head-title" tabindex="-1" ref={props.titleRef}>
+              <h1 class="session-head-title" tabindex="-1" ref={props.titleRef} title={props.titleTip ? props.title : undefined}>
                 {props.title}
               </h1>
             }
           >
             <div class="session-head-titleline">
-              <h1 class="session-head-title" tabindex="-1" ref={props.titleRef}>
+              <h1 class="session-head-title" tabindex="-1" ref={props.titleRef} title={props.titleTip ? props.title : undefined}>
                 {props.title}
               </h1>
               {props.titleAfter}

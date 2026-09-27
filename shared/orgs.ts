@@ -215,12 +215,21 @@ export interface OrgBatonRow {
   waiting?: "reply" | "link";
 }
 
+/** What Commit Now did: a commit (its short sha), a push, both, or nothing. */
+export interface CommitNowOutcome {
+  committed: boolean;
+  sha?: string;
+  pushed?: boolean;
+}
+
 export interface OrgDetail extends OrgSummary {
   roster: Person[];
   projectList: OrgProject[];
   /** Newest first. */
   batons: OrgBatonRow[];
   git: OrgGitStatus;
+  /** Only on Commit Now's answer (`POST /api/orgs/:id/commit`): what it did. */
+  commit?: CommitNowOutcome;
   /** Newest first, at most 20: the Recent profile changes feed. */
   recentChanges: NamedChange[];
   /** Any file problem reading the repo (a hand-edited roster that doesn't parse). */

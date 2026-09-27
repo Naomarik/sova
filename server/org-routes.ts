@@ -2,7 +2,7 @@ import type { Context, Hono } from "hono";
 import { OPERATOR, type BatonInfo, type BatonSession, type BatonStartInput, type OfferInfo, type OfferLink } from "../shared/baton";
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import type { OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
+import type { CommitNowOutcome, OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
 import { attentionChanged } from "./attention-memo";
 import { readConflicts } from "./decisions";
 import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, linkTimes, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf } from "./baton";
@@ -251,7 +251,7 @@ const handle =
       if (c.req.method !== "GET" && res.ok) attentionChanged();
       return res;
     } catch (err) {
-      if (err instanceof OrgError) return c.json({ error: err.message }, err.status);
+      if (err instanceof OrgError) return c.json({ error: err.message, ...(err.code ? { code: err.code } : {}) }, err.status);
       if (err instanceof BusyError) return c.json({ error: err.message }, 409);
       throw err;
     }
@@ -270,7 +270,8 @@ export function registerOrgRoutes(app: Hono<any>): void {
   app.post(
     "/api/orgs/attach",
     handle(async (c) => {
-      const org = await attachOrg({ dir: (await body(c)).dir });
+      const b = await body(c);
+      const org = await attachOrg({ dir: b.dir, confirm: b.confirm });
       return c.json(await orgPage(org.id), 201);
     }),
   );
@@ -305,8 +306,8 @@ export function registerOrgRoutes(app: Hono<any>): void {
   );
   app.delete(
     "/api/orgs/:id",
-    handle((c) => {
-      detachOrg(p(c, "id"));
+    handle(async (c) => {
+      await detachOrg(p(c, "id"));
       return c.json({ ok: true });
     }),
   );
@@ -316,7 +317,8 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const out = await commitAll(orgDir(id), `Commit now (${readOrg(id).name})`);
       if (out.error) return c.json({ error: out.error }, 502);
-      return c.json(await orgPage(id));
+      const commit: CommitNowOutcome = { committed: out.committed, ...(out.sha ? { sha: out.sha } : {}), ...(out.pushed ? { pushed: true } : {}) };
+      return c.json({ ...(await orgPage(id)), commit });
     }),
   );
   app.put(

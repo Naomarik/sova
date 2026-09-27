@@ -5,7 +5,7 @@ import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, red
 import { alsoCarriesLine, areaGroups, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
 import { promotionCommitLine } from "../lib/coding-worktrees";
 import { relativeTime } from "../lib/format";
-import { orgTabHref } from "../lib/orgs-route";
+import { orgSessionHref, orgTabHref } from "../lib/orgs-route";
 import { stakeholderView } from "../lib/stakeholder";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
@@ -15,7 +15,6 @@ import "../orgs.css";
 import "../projects.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
-const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
 const RUNNING_POLL_MS = 3000;
 
 /**
@@ -74,6 +73,7 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
   return (
     <InsightsPage
       title={project()?.name ?? "Project"}
+      titleTip
       meta={
         <Show when={org()}>
           {(o) => (
@@ -202,12 +202,13 @@ function Stakeholder(props: { org: OrgDetail; project: OrgProject; onSet(id: str
         <span class="field-hint" id="project-stakeholder-hint">
           Decides every area of this project that no one on the roster decides by name.
         </span>
+        {/* Read through l() each time: a re-pick changes the latest line in place (the Show stays shown). */}
         <Show when={v().latest}>
-          {(l) => {
-            const x = l();
-            return (
-              <span class="field-hint">
-                {x.why === "left" ? (
+          {(l) => (
+            <span class="field-hint">
+              {(() => {
+                const x = l();
+                return x.why === "left" ? (
                   <>
                     Cleared <time title={x.at}>{relativeTime(x.at)}</time>: {x.name} left the organization.
                   </>
@@ -215,10 +216,10 @@ function Stakeholder(props: { org: OrgDetail; project: OrgProject; onSet(id: str
                   <>
                     Set by you <time title={x.at}>{relativeTime(x.at)}</time>.
                   </>
-                )}
-              </span>
-            );
-          }}
+                );
+              })()}
+            </span>
+          )}
         </Show>
         <Show when={err()}>{(e) => <span class="field-error">{e()}</span>}</Show>
       </label>
@@ -390,7 +391,7 @@ function ConflictItem(props: CardProps & { org: OrgDetail | undefined; conflict:
           {(path) => (
             <>
               {" · "}
-              <a href={sessionHref(path())}>Open Its Session</a>
+              <a href={orgSessionHref(props.orgId, path())}>Open Its Session</a>
             </>
           )}
         </Show>
@@ -489,7 +490,7 @@ function Provenance(props: { row: DecisionRow }) {
           {(p) => (
             <>
               {" · "}
-              <a href={sessionHref(p())}>Open Session</a>
+              <a href={orgSessionHref(undefined, p())}>Open Session</a>
             </>
           )}
         </Show>

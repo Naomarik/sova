@@ -248,6 +248,17 @@ export function personConflicts(ctx: Ctx, pid: string): PersonConflict[] {
 const sameLink = (l: Pick<LinkRecord, "sessionId" | "n" | "offerId">, v: { sessionId: string; n: number; offerId?: string }) =>
   l.sessionId === v.sessionId && l.n === v.n && (l.offerId ?? "") === (v.offerId ?? "");
 
+/**
+ * The link of this host a visit was made with: the newest of its hand-off's links (one person's)
+ * made at or before the visit. None: a link minted on another host (a restore, a move). So a new
+ * link for the same hand-off never takes an older visit.
+ */
+function linkOfVisit<L extends Pick<LinkRecord, "sessionId" | "n" | "offerId" | "createdAt">>(links: readonly L[], v: { sessionId: string; n: number; offerId?: string; at: string }): L | undefined {
+  let best: L | undefined;
+  for (const l of links) if (sameLink(l, v) && l.createdAt <= v.at && (!best || l.createdAt >= best.createdAt)) best = l;
+  return best;
+}
+
 /** The state word of a link on this host, from its session's row (no token needed). */
 export function linkState(link: LinkRecord, row: BatonSession | undefined, now = Date.now()): { state: PersonLinkRow["state"]; reason?: string } {
   // Closing a session turns its links off too: the reason that matters is the close.
@@ -261,10 +272,11 @@ export function linkState(link: LinkRecord, row: BatonSession | undefined, now =
 
 export function personLinks(ctx: Ctx, pid: string, visits: (VisitRow & { offerId?: string })[], now = Date.now()): PersonLinkRow[] {
   const rows = new Map(ctx.rows.map((r) => [r.sessionId, r]));
-  return linksOfPerson(ctx.orgId, pid)
+  const all = linksOfPerson(ctx.orgId, pid);
+  return all
     .map((l): PersonLinkRow => {
       const row = rows.get(l.sessionId);
-      const mine = visits.filter((v) => v.kind === "visit" && !v.bot && sameLink(l, v));
+      const mine = visits.filter((v) => v.kind === "visit" && !v.bot && linkOfVisit(all, v) === l);
       const current = !!row && row.handoffs[row.handoffs.length - 1]?.n === l.n && !linkDead(l, now);
       return {
         sessionId: l.sessionId,
@@ -298,7 +310,7 @@ export function personVisits(ctx: Ctx, pid: string): (VisitRow & { offerId?: str
     ...(v.offerId ? { offerId: v.offerId } : {}),
     device: v.device,
     ...(v.bot ? { bot: true } : {}),
-    ...(links.some((l) => sameLink(l, v)) ? {} : { otherHost: true }),
+    ...(linkOfVisit(links, v) ? {} : { otherHost: true }),
   }));
 }
 

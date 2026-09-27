@@ -24,7 +24,7 @@ import {
 import { socketReconnects } from "./lib/socket";
 import { actSessionCount, setAppBadge } from "./lib/push";
 import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
-import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
+import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
@@ -203,7 +203,12 @@ export function App() {
     try {
       const answer = await fetchMeshSessions();
       const next = mergePeerLists(peerLists(), answer, meshPeers());
-      for (const p of meshPeers()) notePeerSessions(p.id, (next.get(p.id) ?? []).map((s) => s.path));
+      for (const p of meshPeers()) {
+        const rows = next.get(p.id) ?? [];
+        notePeerSessions(p.id, rows.map((s) => s.path));
+        // Its organizations' pages route there too (§mesh.remote-sessions/org-pages).
+        notePeerOrgs(p.id, [...new Set(rows.flatMap((s) => (s.org ? [s.org.orgId] : [])))]);
+      }
       setPeerLists(next);
     } catch {
       // Keep the last lists: the peers' own status (GET /api/mesh) says what is down.
@@ -268,7 +273,13 @@ export function App() {
   const [overseerRoute, setOverseerRoute] = createSignal(overseerRouteFromHash(location.hash));
   const [extRoute, setExtRoute] = createSignal(extRouteFromHash(location.hash));
   const [meshRoute, setMeshRoute] = createSignal(isMeshHash(location.hash));
-  const [orgsRoute, setOrgsRoute] = createSignal(orgsRouteFromHash(location.hash));
+  /** An org page's address names its host when the org is a peer's: noted before the page reads it. */
+  const orgsRouteOf = (hash: string) => {
+    const r = orgsRouteFromHash(hash);
+    if (r && r.kind !== "list" && r.host) notePeerOrgs(r.host, [r.id]);
+    return r;
+  };
+  const [orgsRoute, setOrgsRoute] = createSignal(orgsRouteOf(location.hash));
   /** The extension on screen: the view is keyed by this, so a sub-route change never remounts it
       (which would reload the extension's iframe). */
   const extId = createMemo(() => extRoute()?.id ?? null);
@@ -415,7 +426,7 @@ export function App() {
     setOverseerRoute(overseerRouteFromHash(location.hash));
     setExtRoute(extRouteFromHash(location.hash));
     setMeshRoute(isMeshHash(location.hash));
-    setOrgsRoute(orgsRouteFromHash(location.hash));
+    setOrgsRoute(orgsRouteOf(location.hash));
     setOverviewRoute(isOverviewHash(location.hash));
   };
   // A `#/sid/` route opened before the first list load resolves when the lists land.

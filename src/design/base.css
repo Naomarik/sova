@@ -4805,20 +4805,17 @@ button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offse
    used to separate them is now inside the fact. */
 .subagents-view-meta .meta-line-sep { margin-right: var(--space-1); }
 
-/* The view head's context readout: the chat head's gauge ("Context 64k / 1M · 6%") as one meta
-   fact. It is in no .session-head, and the head's window-width floors (CONTEXT WINDOW) would hide
-   it on a phone, where this pane is the whole screen, so they're undone here; it collapses to the
-   percent by the pane's own width instead. */
+/* The view head's context readout, compact: the list's ring and the percent ("◔ 6%"), the full
+   sentence in the title, so the meta line holds one row at a normal pane width. Without a window
+   or just after a compaction there is no ring to draw, and the gauge's words stay ("Context 64k",
+   "Context compacted"). It is in no .session-head, so the head's width floors are undone here. */
 .context-readout { display: inline-flex; }
 .context-readout > .context-gauge { display: inline-flex; font-size: inherit; }
 .context-readout .context-label,
 .context-readout .context-value { display: inline; }
-.context-readout .context-pct { display: none; }
-@container subagents (max-width: 479px) {
-  .context-readout .context-label,
-  .context-readout .context-value { display: none; }
-  .context-readout .context-pct { display: inline; }
-}
+.context-readout .context-gauge .context-pct { display: none; }
+.context-compact { display: inline-flex; align-items: center; gap: var(--space-1); }
+.context-compact .context-pct { display: inline; }
 
 /* A restored worker's note under the head: what the restart did, and Resume Worker when this
    server can do it. Sunken, like other context strips; the button sits at the end. */

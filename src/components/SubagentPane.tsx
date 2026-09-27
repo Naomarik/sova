@@ -415,6 +415,15 @@ export function SubagentPane(props: {
                       </span>
                     )}
                   </For>
+                  {/* The minor modes it was given at its start (spec): a quiet chip beside the
+                      others, so the meta line keeps to one row. */}
+                  <Show when={w().modes?.length ? w().modes : undefined}>
+                    {(m) => (
+                      <span class="chip chip-count" title="The modes this worker was given when it started.">
+                        {m().join(", ")}
+                      </span>
+                    )}
+                  </Show>
                   <p class="subagents-view-meta meta-line">
                     <span class="text-mono">{w().id}</span>
                     {/* The provider leads: the route that
@@ -446,16 +455,6 @@ export function SubagentPane(props: {
                         <span>
                           <MetaSep />
                           effort <span class="text-mono">{e()}</span>
-                        </span>
-                      )}
-                    </Show>
-                    {/* The minor modes it was given at its start (spec): another fact about the
-                        worker, so it sits with the effort, before the count. */}
-                    <Show when={w().modes?.length ? w().modes : undefined}>
-                      {(m) => (
-                        <span title="The modes this worker was given when it started.">
-                          <MetaSep />
-                          {m().length > 1 ? "modes" : "mode"} <span class="text-mono">{m().join(", ")}</span>
                         </span>
                       )}
                     </Show>

@@ -35,7 +35,7 @@ import {
 import { announce, home, setGroupComposerActive, toast } from "../lib/ui-state";
 import { cwdLabel } from "../lib/remote-session";
 import { failureLines, partialClosing, partialTitle } from "../lib/fanout";
-import { ensureRendered, transcriptRoot } from "../lib/jump";
+import { ensureRendered, transcriptRoot, whenRowsArrive } from "../lib/jump";
 import { clearPartial, pendingPartial } from "./FanoutDialog";
 import { sessionWorking, type UsageTotalView } from "../lib/workers";
 import type { PaneInsight, TabId } from "./SessionPane";
@@ -344,12 +344,15 @@ export function GroupView(props: {
    * announcement overstating something the user cannot check.
    */
   const [pendingAlign, setPendingAlign] = createSignal<Set<string>>(new Set());
-  const scrollToMarker = (path: string) => {
+  const scrollToMarker = (path: string): boolean | "waiting" => {
     const seed = props.group.seed;
     if (!seed) return false;
     // Built first if the pane hasn't reached it yet (tail-first rendering, lib/tail-render).
-    const row = ensureRendered(seed.leafId, transcriptRoot(path));
-    if (!row) return false;
+    const root = transcriptRoot(path);
+    const row = ensureRendered(seed.leafId, root);
+    // Not there while the pane's older rows are still arriving (lib/tail-hello): not missing yet,
+    // it aligns once they have.
+    if (!row) return whenRowsArrive(root, () => void scrollToMarker(path)) ? "waiting" : false;
     row.scrollIntoView({ block: "start", behavior: reduceMotion() ? "auto" : "smooth" });
     return true;
   };
@@ -357,6 +360,7 @@ export function GroupView(props: {
     const seed = props.group.seed;
     if (!seed) return;
     const missed: string[] = [];
+    const waiting: string[] = [];
     const deferred = new Set<string>();
     let aligned = 0;
     for (const key of panes()) {
@@ -365,19 +369,22 @@ export function GroupView(props: {
         deferred.add(key);
         continue;
       }
-      if (!scrollToMarker(key)) missed.push(nameOf(key));
+      const done = scrollToMarker(key);
+      if (!done) missed.push(nameOf(key));
+      else if (done === "waiting") waiting.push(nameOf(key));
       else aligned += 1;
     }
     setPendingAlign(deferred);
     const head =
       missed.length === 0
-        ? `Aligned ${aligned} ${aligned === 1 ? "member" : "members"}${deferred.size > 0 ? " now." : " to the fork point."}`
+        ? `Aligned ${aligned} ${aligned === 1 ? "member" : "members"}${deferred.size > 0 || waiting.length > 0 ? " now." : " to the fork point."}`
         : `Aligned ${aligned} ${aligned === 1 ? "member" : "members"}. ${missed.join(", ")} has no fork point on its branch.`;
     const tail =
       deferred.size > 0
         ? ` ${[...deferred].map(nameOf).join(", ")} will align when you open ${deferred.size === 1 ? "its" : "their"} tab.`
         : "";
-    announce(head + tail);
+    const later = waiting.length > 0 ? ` ${waiting.join(", ")} will align once ${waiting.length === 1 ? "its" : "their"} older messages have loaded.` : "";
+    announce(head + tail + later);
   };
   // The deferred alignments land the moment their pane is shown: a tab switch (which is also how
   // Ctrl+Alt+←/→ arrives, through focusPane) or a return to split, where every pane is visible.

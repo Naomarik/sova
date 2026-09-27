@@ -10,7 +10,7 @@ import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, registerRows, registerTranscript } from "../lib/jump";
 import type { ScrollSpot } from "../lib/transcript-cache";
-import { carriedStart, chunkStart, FIRST_CHUNK, type ImagesAt, initialStart, nextChunk, rowEstimate, rowIndexFor } from "../lib/tail-render";
+import { carriedStart, chunkStart, FIRST_CHUNK, type ImagesAt, initialStart, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { isChangeRow } from "../lib/change-rows";
@@ -413,6 +413,8 @@ export function HistoryItems(props: {
   actions?: MessageActionsProvider;
   /** Build every row at once, even inside a transcript (the hidden-rows disclosure's own list). */
   whole?: boolean;
+  /** Older rows are still arriving (lib/tail-hello): a jump to a row not here yet waits for them. */
+  arriving?: boolean;
 }) {
   /**
    * The items the thread may render: the settings-change rows are dropped before anything else,
@@ -513,9 +515,17 @@ export function HistoryItems(props: {
     rows().forEach((r, i) => at.set(r.id, i));
     return at;
   });
-  const idAt = (i: number) => (i <= 0 ? null : (rows()[i]?.id ?? null));
+  const idAt = (i: number) => windowId(rows(), i);
   const [firstId, setFirstId] = createSignal<string | null>(scroller ? idAt(initialStart(rows().length)) : null);
-  const start = createMemo(() => (scroller ? carriedStart(firstId(), (id) => rowAt().get(id) ?? -1, rows().length) : 0));
+  const start = createMemo<number>((prev) => (scroller ? carriedStart(firstId(), (id) => rowAt().get(id) ?? -1, rows().length, prev) : 0), 0);
+  // The window is held by a row that is on the list: once its row is gone (or there was none, an
+  // empty list), it is held again by the row it starts at now, so rows that arrive above later
+  // (lib/tail-hello) go to the fill instead of being built at once.
+  if (scroller)
+    createEffect(() => {
+      const id = firstId();
+      if (rows().length > 0 && (id === null || !rowAt().has(id))) setFirstId(idAt(start()));
+    });
   const built = createMemo(() => (start() === 0 ? rows() : rows().slice(start())));
   const indexOf = scroller ? createMemo(() => new Map(rows().map((r, i) => [r, i] as const))) : null;
   if (scroller) {
@@ -543,6 +553,20 @@ export function HistoryItems(props: {
     };
     createEffect(() => start() > 0 && schedule());
     onCleanup(() => cancel?.());
+    // Waiters for the older rows: called once they have all arrived, dropped with the thread.
+    const waiters = new Set<() => void>();
+    createEffect(
+      on(
+        () => !!props.arriving,
+        (arriving) => {
+          if (arriving) return;
+          const now = [...waiters];
+          waiters.clear();
+          for (const fn of now) fn();
+        },
+      ),
+    );
+    onCleanup(() => waiters.clear());
     registerRows(root, {
       has: (entryId) => rowIndexFor(ids(), entryId) >= 0,
       ensure: (entryId) => {
@@ -550,6 +574,11 @@ export function HistoryItems(props: {
         if (i < 0) return false;
         if (i < start()) buildFrom(i);
         return true;
+      },
+      arriving: () => !!props.arriving,
+      whenArrived: (fn) => {
+        waiters.add(fn);
+        return () => void waiters.delete(fn);
       },
     });
     onCleanup(() => registerRows(root, null));

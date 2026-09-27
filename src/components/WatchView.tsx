@@ -1,9 +1,10 @@
-import { createEffect, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
+import { batch, createEffect, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
 import type { SessionSummary, TranscriptItem, WatchServerMessage } from "../../shared/protocol";
 import { createFork, fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
 import { landExplainJump } from "../lib/jump";
+import { type Arriving, helloItems, historyItems, newRows, tailFirst } from "../lib/tail-hello";
 import { hostOf, sessionViewKey } from "../lib/mesh";
 import { cachedTranscript, cacheItems, cacheSpot, reconcileItems } from "../lib/transcript-cache";
 import { copyText, hideThinking, hideTools, setSessionContext, toast } from "../lib/ui-state";
@@ -67,9 +68,25 @@ export function WatchView(props: {
   const cached = cachedTranscript(cacheKey);
   const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
   createEffect(on(items, (list) => list && cacheItems(cacheKey, list)));
+  /** The snapshot's older rows still on their way (lib/tail-hello); null once they're all here. */
+  const [arriving, setArriving] = createSignal<Arriving | null>(null);
+  /** The list is this connection's whole branch (as ChatView's `whole`). */
+  const [whole, setWhole] = createSignal(false);
+  /** The last snapshot's first row: rows that arrive above it are history, never "N new". */
+  const [newFrom, setNewFrom] = createSignal<string | null>(null);
   // "Open in Session" from an Explanations card: land on that explanation's row once the snapshot
-  // is here. Only a jump waiting for this session is claimed, and only once.
-  createEffect(on(items, (list) => list && landExplainJump({ path: props.path, sessionId: props.sessionId }, list, toast)));
+  // is here. Only a jump waiting for this session is claimed, and only once; one whose row isn't
+  // here yet waits until the list is whole.
+  createEffect(on([items, whole], ([list, w]) => list && landExplainJump({ path: props.path, sessionId: props.sessionId }, list, toast, w)));
+  /** The chunks didn't add up: the whole branch from disk instead. */
+  const reload = () =>
+    void fetchTranscriptWithContext(props.path)
+      .then((r) => {
+        setItems((prev) => reconcileItems(prev, r.items));
+        setArriving(null);
+        setWhole(true);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
   const [error, setError] = createSignal<string | null>(null);
   const [lastUpdate, setLastUpdate] = createSignal<string | null>(null);
 
@@ -162,14 +179,39 @@ export function WatchView(props: {
     note: (entryId) => (actionNote()?.entryId === entryId ? actionNote()!.text : null),
   };
 
-  const socket = createReconnectingSocket<WatchServerMessage>(wsUrl("/ws/watch", props.path), {
+  const socket = createReconnectingSocket<WatchServerMessage>(tailFirst(wsUrl("/ws/watch", props.path)), {
     onMessage(msg) {
       switch (msg.type) {
-        case "snapshot": // may repeat if the file is rewritten: always replace
+        case "snapshot": {
+          // May repeat if the file is rewritten: always replace. Newest rows first: older rows
+          // may follow as `history` (lib/tail-hello).
           setError(null);
-          setItems((prev) => reconcileItems(prev, msg.items));
+          const next = helloItems(items(), msg.items, msg.older);
+          batch(() => {
+            setItems(next.items);
+            setArriving(next.arriving);
+            setWhole(!next.arriving);
+            setNewFrom(msg.items[0]?.id ?? null);
+          });
           setLastUpdate(new Date().toISOString());
           break;
+        }
+        case "history": {
+          const list = items();
+          if (!list) break;
+          const next = historyItems(list, arriving(), msg.items, msg.left);
+          if (next.broken) {
+            setArriving(null);
+            reload();
+            break;
+          }
+          batch(() => {
+            setItems(next.items);
+            setArriving(next.arriving);
+            if (!next.arriving) setWhole(true);
+          });
+          break;
+        }
         case "append":
           setItems((prev) => [...(prev ?? []), ...msg.items]);
           setLastUpdate(new Date().toISOString());
@@ -189,7 +231,7 @@ export function WatchView(props: {
         path={props.path}
         restore={cached?.spot}
         onSpot={(spot) => cacheSpot(cacheKey, spot)}
-        count={visibleCount(items() ?? [], { tools: hideTools(props.path), thinking: hideThinking(props.path) })}
+        count={visibleCount(newRows(items() ?? [], newFrom()), { tools: hideTools(props.path), thinking: hideThinking(props.path) })}
         busy={!items()}
         banner={
           <div class="stack-2">
@@ -217,7 +259,7 @@ export function WatchView(props: {
         <Show when={items()} fallback={<TranscriptSkeleton />}>
           {(list) => (
             <Show
-              when={list().length > 0}
+              when={list().length > 0 || !whole()}
               fallback={
                 <div class="empty">
                   <p class="empty-title">0 entries in this session so far.</p>
@@ -233,6 +275,7 @@ export function WatchView(props: {
                 hideThinking={hideThinking(props.path)}
                 fork={props.fork}
                 actions={watchActions}
+                arriving={!!arriving()}
               />
             </Show>
           )}

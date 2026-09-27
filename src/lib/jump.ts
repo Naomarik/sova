@@ -81,6 +81,11 @@ export interface TranscriptRows {
   has(entryId: string): boolean;
   /** Builds every row from this entry's down, now. False when the thread has no such row. */
   ensure(entryId: string): boolean;
+  /** Older rows are still arriving (a tail-first hello or snapshot, lib/tail-hello): a row that
+      isn't here may still come, so "not there" isn't known yet. */
+  arriving(): boolean;
+  /** Calls `fn` once, when they have all arrived. Returns its cancel. */
+  whenArrived(fn: () => void): () => void;
 }
 
 const rowSources = new WeakMap<HTMLElement, TranscriptRows>();
@@ -100,6 +105,19 @@ export function ensureRendered(entryId: string, root: HTMLElement | null = trans
   if (!root) return null;
   rowSources.get(root)?.ensure(entryId);
   return findEntryRow(entryId, root);
+}
+
+/** Whether the transcript's older rows are still arriving: until they have, a row that isn't
+    there may still come. */
+export function rowsArriving(root: HTMLElement | null = transcriptRoot()): boolean {
+  return !!root && !!rowSources.get(root)?.arriving();
+}
+
+/** Calls `fn` once the transcript's older rows have all arrived; null (and no call) when none are
+    arriving. Returns the cancel. */
+export function whenRowsArrive(root: HTMLElement | null, fn: () => void): (() => void) | null {
+  const rows = root ? rowSources.get(root) : undefined;
+  return rows?.arriving() ? rows.whenArrived(fn) : null;
 }
 
 /** Whether the transcript has a row for this entry, built yet or not: the outline strip's
@@ -136,6 +154,41 @@ export function jumpToEntry(entryId: string, path?: string | null): boolean {
   setTimeout(() => row.classList.remove(JUMP_CLASS), JUMP_HIGHLIGHT_MS);
   if (root) recenter(root, row, JUMP_CORRECTIONS);
   return true;
+}
+
+/** Said when a jump has waited this long for the older rows it needs. */
+export const LOADING_OLDER = "Loading older messages…";
+export const LOADING_OLDER_MS = 500;
+
+/** The jump waiting for older rows, if any: a newer jump replaces it. */
+let waitingJump: (() => void) | null = null;
+
+/**
+ * `jumpToEntry`, except that a row not there while the transcript's older rows are still arriving
+ * isn't "not there" yet: the jump waits for them, then lands (or, the transcript whole, calls
+ * `missing`). If the wait passes LOADING_OLDER_MS, `say` tells the user. A newer jump, from
+ * anywhere, drops a waiting one.
+ */
+export function jumpWhenArrived(entryId: string, path: string | null | undefined, say: (text: string) => void, missing: () => void): "jumped" | "waiting" | "missing" {
+  waitingJump?.();
+  waitingJump = null;
+  if (jumpToEntry(entryId, path)) return "jumped";
+  let timer = 0;
+  const cancel = whenRowsArrive(transcriptRoot(path), () => {
+    clearTimeout(timer);
+    waitingJump = null;
+    if (!jumpToEntry(entryId, path)) missing();
+  });
+  if (!cancel) {
+    missing();
+    return "missing";
+  }
+  timer = window.setTimeout(() => say(LOADING_OLDER), LOADING_OLDER_MS);
+  waitingJump = () => {
+    clearTimeout(timer);
+    cancel();
+  };
+  return "waiting";
 }
 
 /** Off center by more than this after a jump's scroll, the jump aims again. */
@@ -216,16 +269,22 @@ export function clearExplainJump(): void {
 /** What a loaded transcript does with the request: jump to this row, or say it isn't there. */
 export type ExplainJumpClaim = { kind: "jump"; rowId: string } | { kind: "missing" };
 
+const forView = (p: PendingExplainJump, view: { path: string; sessionId?: string | null }) =>
+  p.path === view.path || (!!view.sessionId && p.sessionId === view.sessionId);
+
 /**
  * Called by a session view each time its transcript (re)loads. Null when nothing waits for THIS
  * session (another session's request stays). Otherwise the request is consumed, found or not, so it
  * fires exactly once; one past its TTL is dropped unclaimed. The row is the explanation's own
- * report row, found by explanation id: the transcript renders one per id.
+ * report row, found by explanation id: the transcript renders one per id. While the transcript
+ * isn't `whole` (its older rows are still arriving, or it is a list kept from the last visit), a
+ * request whose row isn't there yet stays waiting: only a whole transcript can say "missing".
  */
 export function claimExplainJump(
   view: { path: string; sessionId?: string | null },
   items: readonly { id: string; report?: { explain?: { id: string } } }[],
   now = Date.now(),
+  whole = true,
 ): ExplainJumpClaim | null {
   const p = pending;
   if (!p) return null;
@@ -233,11 +292,15 @@ export function claimExplainJump(
     pending = null;
     return null;
   }
-  if (p.path !== view.path && !(view.sessionId && p.sessionId === view.sessionId)) return null;
-  pending = null;
+  if (!forView(p, view)) return null;
   const row = items.find((it) => it.report?.explain?.id === p.explainId);
+  if (!row && !whole) return null;
+  pending = null;
   return row ? { kind: "jump", rowId: row.id } : { kind: "missing" };
 }
+
+/** The request the loading toast was said for, so it is said once. */
+let loadingSaidFor: PendingExplainJump | null = null;
 
 /** The toast when the explanation's row isn't in the transcript that loaded. */
 export const EXPLAIN_OFF_BRANCH = "That explanation isn't on this branch of the session.";
@@ -245,14 +308,22 @@ export const EXPLAIN_OFF_BRANCH = "That explanation isn't on this branch of the 
 /**
  * A session view's side of "Open in Session": each time its transcript (re)loads, claim a jump
  * waiting for this session and land on the row once it has rendered (two frames: the rows, then
- * the transcript's own first scroll to the bottom). `say` reports a row that isn't there.
+ * the transcript's own first scroll to the bottom). `say` reports a row that isn't there, which
+ * only a `whole` transcript can know; while it isn't, the request waits, and a wait past
+ * LOADING_OLDER_MS is said once.
  */
 export function landExplainJump(
   view: { path: string; sessionId?: string | null },
   items: readonly { id: string; report?: { explain?: { id: string } } }[],
   say: (text: string) => void,
+  whole = true,
 ): void {
-  const claim = claimExplainJump(view, items);
+  const claim = claimExplainJump(view, items, Date.now(), whole);
+  const p = pending;
+  if (!claim && !whole && p && forView(p, view) && loadingSaidFor !== p) {
+    loadingSaidFor = p;
+    setTimeout(() => pending === p && say(LOADING_OLDER), LOADING_OLDER_MS);
+  }
   if (!claim) return;
   if (claim.kind === "missing") return say(EXPLAIN_OFF_BRANCH);
   requestAnimationFrame(() => requestAnimationFrame(() => !jumpToEntry(claim.rowId, view.path) && say(EXPLAIN_OFF_BRANCH)));

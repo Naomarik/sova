@@ -8,7 +8,7 @@ import { absoluteTime } from "../lib/spend";
 import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state";
 import { capTitle, usageHeadline, usageTitle, usageTotal, type UsageTotalView, type UsageView, workerLabel, workerTeam } from "../lib/workers";
 import type { RewindControl } from "../lib/inputs";
-import { jumpToEntry } from "../lib/jump";
+import { jumpWhenArrived } from "../lib/jump";
 import { RemotePaneStatus } from "./RemoteStatus";
 import { SessionDetails } from "./SessionDetails";
 import { SessionTimeline } from "./SessionTimeline";
@@ -413,7 +413,7 @@ function SkillsTab(props: { path: string; insight: PaneInsight; now: number; onS
   const loads = () => (own()?.used.length ?? 0) + workerLoads().reduce((n, w) => n + w.skills.used.length, 0);
 
   const jump = (entryId: string) => {
-    if (!jumpToEntry(entryId, props.path)) toast("That entry isn't in the transcript on screen.");
+    jumpWhenArrived(entryId, props.path, toast, () => toast("That entry isn't in the transcript on screen."));
   };
 
   return (

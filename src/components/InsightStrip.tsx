@@ -3,8 +3,9 @@ import type { ExplanationInfo, OutlineTopic, SessionOutline } from "../../shared
 import { newestTopics, topicTime } from "../../shared/outline-order";
 import { newestFirst } from "../lib/explain";
 import { explanationsHref } from "../lib/insights";
-import { hasEntryRow, jumpToEntry, transcriptRoot } from "../lib/jump";
+import { hasEntryRow, jumpWhenArrived, rowsArriving, transcriptRoot } from "../lib/jump";
 import { relativeTime, stampTime } from "../lib/format";
+import { toast } from "../lib/ui-state";
 import { Icon } from "./ui";
 
 const STATE_CLAUSE: Partial<Record<SessionOutline["state"], string>> = {
@@ -19,11 +20,15 @@ function Topic(props: { topic: OutlineTopic; now: number; open: boolean; path: s
   // the strip is open mounts with `open` already true, so it is checked too.
   const [target, setTarget] = createSignal(false);
   createEffect(() => {
-    if (props.open) setTarget(!!props.topic.entryId && hasEntryRow(props.topic.entryId, transcriptRoot(props.path)));
+    // While the transcript's older rows are still arriving, the row may be among them: offered,
+    // and the jump waits for them.
+    const root = () => transcriptRoot(props.path);
+    if (props.open) setTarget(!!props.topic.entryId && (hasEntryRow(props.topic.entryId, root()) || rowsArriving(root())));
   });
   const jump = () => {
     // Gone since the strip opened (compacted away): the button goes rather than scrolling nowhere.
-    if (!props.topic.entryId || !jumpToEntry(props.topic.entryId, props.path)) setTarget(false);
+    if (!props.topic.entryId) return setTarget(false);
+    jumpWhenArrived(props.topic.entryId, props.path, toast, () => setTarget(false));
   };
   // The topic's own section, not the summarizer's clock (topicTime falls back to it).
   const at = () => new Date(topicTime(props.topic)).toISOString();

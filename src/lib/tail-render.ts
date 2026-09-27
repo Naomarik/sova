@@ -51,14 +51,23 @@ export function rowIndexFor(ids: readonly (string | null)[], entryId: string): n
 }
 
 /**
- * Where the window starts in a new row list: at the row it started at before (appends and
- * reconciled refetches keep everything already built), at 0 when everything was built, and at
- * the tail when that row is gone (a rewind, or hiding the kind of row it was).
+ * The id that holds the window's start at row `i`: that row's own, at index 0 too. Holding "none"
+ * there would mean "everything is built", and rows that arrive later above it (a tail-first hello's
+ * history, lib/tail-hello) would then be built all at once, in one long task per chunk, outside the
+ * scroll anchoring; held by id, they land above the window and the idle fill builds them.
  */
-export function carriedStart(firstId: string | null, indexOfId: (id: string) => number, n: number): number {
+export const windowId = (ids: readonly { id: string }[], i: number): string | null => ids[i]?.id ?? null;
+
+/**
+ * Where the window starts in a new row list: at the row it started at before (appends and
+ * reconciled refetches keep everything already built; rows that arrive above it are left to the
+ * fill), at 0 when there was no row to hold it by, and, when that row is gone (a rewind, or hiding
+ * the kind of row it was), at 0 again if everything was built (`prev`), else at the tail.
+ */
+export function carriedStart(firstId: string | null, indexOfId: (id: string) => number, n: number, prev?: number): number {
   if (firstId === null) return 0;
   const i = indexOfId(firstId);
-  return i >= 0 ? i : initialStart(n);
+  return i >= 0 ? i : prev === 0 ? 0 : initialStart(n);
 }
 
 /** Lines `text` wraps to at `cols` characters, counting each hard line at least once. */

@@ -15,7 +15,7 @@ import {
   type RewindStep,
   type Rewound,
 } from "../lib/inputs";
-import { jumpToEntry } from "../lib/jump";
+import { jumpWhenArrived } from "../lib/jump";
 import { absoluteTime } from "../lib/spend";
 import { GAP_MS, newestFirst, timelineRows, timelineState, type TimelineRow } from "../lib/timeline";
 import { toast } from "../lib/ui-state";
@@ -144,7 +144,10 @@ export function SessionTimeline(props: {
   onCleanup(() => query.removeEventListener("change", onBand));
 
   const jump = (entryId: string | undefined) => {
-    if (!entryId || !jumpToEntry(entryId, props.path)) return toast("That message isn't in the transcript on screen.");
+    const missing = () => toast("That message isn't in the transcript on screen.");
+    if (!entryId) return missing();
+    // A jump that waits for older rows still closes the drawer: the thread is where it lands.
+    if (jumpWhenArrived(entryId, props.path, toast, missing) === "missing") return;
     if (isDrawer()) props.onClose();
   };
 

@@ -100,7 +100,8 @@ import {
 import type { MessageActionItem } from "./MessageActions";
 import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
-import { entryIdOf, landExplainJump } from "../lib/jump";
+import { entryIdOf, landExplainJump, LOADING_OLDER } from "../lib/jump";
+import { type Arriving, helloItems, historyItems, newRows, tailFirst } from "../lib/tail-hello";
 import { Composer, type ComposerReason } from "./Composer";
 import { openCreated } from "../lib/fork-stage";
 import { FlyoutSession, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
@@ -234,9 +235,18 @@ export function ChatView(props: {
   const cached = cachedTranscript(cacheKey);
   const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
   createEffect(on(items, (list) => list && cacheItems(cacheKey, list)));
+  /** The hello's older rows still on their way (lib/tail-hello); null once they're all here. */
+  const [arriving, setArriving] = createSignal<Arriving | null>(null);
+  /** The list is this connection's whole branch: a hello that wasn't cut, its last history chunk,
+      or a reload. Never a list kept from the last visit, which may be partial or stale. Until then
+      nothing says a row isn't there, and nothing counts the whole list. */
+  const [whole, setWhole] = createSignal(false);
+  /** The last hello's first row: rows that arrive above it are history, never "N new". */
+  const [newFrom, setNewFrom] = createSignal<string | null>(null);
   // "Open in Session" from an Explanations card: once the transcript is here (hello), land on that
-  // explanation's row. Only a jump waiting for this session is claimed, and only once.
-  createEffect(on(items, (list) => list && landExplainJump({ path: props.path, sessionId: props.summary?.()?.id }, list, toast)));
+  // explanation's row. Only a jump waiting for this session is claimed, and only once; one whose
+  // row isn't here yet waits until the list is whole.
+  createEffect(on([items, whole], ([list, w]) => list && landExplainJump({ path: props.path, sessionId: props.summary?.()?.id }, list, toast, w)));
   /** Whether the running turn is this tab's: only then does a navigate result move this tab. */
   const owner = createTurnOwner((id) => sentHere(props.path, id));
   const [live, setLive] = createStore<LiveState>(emptyLive());
@@ -288,7 +298,8 @@ export function ChatView(props: {
    */
   const fanOut = () => {
     const list = items();
-    if (!props.onFanOut || !list || list.length === 0) return undefined;
+    // "up to message {n}" needs the whole branch: absent until it has arrived.
+    if (!props.onFanOut || !list || list.length === 0 || !whole()) return undefined;
     if (!list.some((it) => it.kind === "assistant-text" || it.kind === "tool-call")) return undefined;
     const leafId = entryIdOf(list[list.length - 1]!.id);
     if (!leafId) return undefined;
@@ -357,6 +368,9 @@ export function ChatView(props: {
         // Rows whose entry didn't change keep their DOM (open cards, focus): the turn's own rows
         // are the only new ones.
         setItems((prev) => reconcileItems(prev, next.items));
+        // The whole branch, from disk: any older rows still arriving are superseded.
+        setArriving(null);
+        setWhole(true);
         setLive(reconcile(emptyLive()));
         setCommandRows([]); // local only; the persisted entries now tell the story
       });
@@ -482,7 +496,7 @@ export function ChatView(props: {
   };
   onCleanup(dropNotFound);
 
-  const socket = createReconnectingSocket<ChatServerMessage>(wsUrl("/ws/chat", props.path, props.force), {
+  const socket = createReconnectingSocket<ChatServerMessage>(tailFirst(wsUrl("/ws/chat", props.path, props.force)), {
     onOpen(isReconnect) {
       setEverOpened(true);
       // hello follows and replaces everything; dialogs belonged to the old connection.
@@ -498,7 +512,12 @@ export function ChatView(props: {
           statusAsker.hello();
           owner.reset();
           batch(() => {
-            setItems((prev) => reconcileItems(prev, msg.items));
+            // Newest rows first: older rows may follow as `history` (lib/tail-hello).
+            const next = helloItems(items(), msg.items, msg.older);
+            setItems(next.items);
+            setArriving(next.arriving);
+            setWhole(!next.arriving);
+            setNewFrom(msg.items[0]?.id ?? null);
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
             setCompacting(!!msg.isCompacting);
@@ -519,6 +538,23 @@ export function ChatView(props: {
           noteLinks(props.path, null);
           props.onModel(msg.model);
           break;
+        case "history": {
+          const list = items();
+          if (!list) break;
+          const next = historyItems(list, arriving(), msg.items, msg.left);
+          if (next.broken) {
+            // The chunks didn't add up: the whole branch from disk instead.
+            setArriving(null);
+            void resync();
+            break;
+          }
+          batch(() => {
+            setItems(next.items);
+            setArriving(next.arriving);
+            if (!next.arriving) setWhole(true);
+          });
+          break;
+        }
         case "workers":
           setWorkersWorking(msg.working);
           setWorkerList(msg.workers);
@@ -880,7 +916,7 @@ export function ChatView(props: {
       if (block === "streaming") return "Stop the turn first, then undo.";
       if (block === "compacting") return "Wait for compaction to finish, then undo.";
       if (rewindsPending() > 0) return "A rewind is already in progress.";
-      return lastInput() ? null : "Nothing to undo yet.";
+      return lastInput() ? null : whole() ? "Nothing to undo yet." : LOADING_OLDER;
     },
     run: () => {
       const id = lastInput();
@@ -1358,7 +1394,7 @@ export function ChatView(props: {
         path={props.path}
         restore={cached?.spot}
         onSpot={(spot) => cacheSpot(cacheKey, spot)}
-        count={visibleCount(items() ?? [], { tools: hideTools(props.path), thinking: hideThinking(props.path) }) + live.entries.length}
+        count={visibleCount(newRows(items() ?? [], newFrom()), { tools: hideTools(props.path), thinking: hideThinking(props.path) }) + live.entries.length}
         resume={resume()}
         busy={!items()}
         banner={
@@ -1475,6 +1511,7 @@ export function ChatView(props: {
                 hideThinking={hideThinking(props.path)}
                 fork={props.fork}
                 actions={chatActions}
+                arriving={!!arriving()}
               />
               <LiveEntries
                 live={live}
@@ -1519,6 +1556,7 @@ export function ChatView(props: {
                   rows): nothing has been said yet. */}
               <Show
                 when={
+                  whole() &&
                   (props.overseer ? list().every((it) => it.kind === "info") : list().every(isChangeRow)) &&
                   live.entries.length === 0 &&
                   commandRows().length === 0
@@ -1586,7 +1624,7 @@ export function ChatView(props: {
             : undefined
         }
         onShowTimeline={props.onShowTimeline}
-        inputCount={inputCount(items() ?? [])}
+        inputCount={whole() ? inputCount(items() ?? []) : 0}
         autofocus={props.autofocus}
         model={modelControl}
         thinking={thinkingControl}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { carriedStart, chunkStart, imagesEstimate, initialStart, MAX_CHUNK, MIN_CHUNK, nextChunk, rowEstimate, rowIndexFor, TAIL_ROWS, wrapLines } from "./tail-render";
+import { carriedStart, chunkStart, imagesEstimate, initialStart, MAX_CHUNK, MIN_CHUNK, nextChunk, rowEstimate, rowIndexFor, TAIL_ROWS, windowId, wrapLines } from "./tail-render";
 
 test("a long list opens on its last TAIL_ROWS rows; a short one is built whole", () => {
   assert.equal(initialStart(802), 802 - TAIL_ROWS);
@@ -50,6 +50,20 @@ test("the window survives appends and refetches, and restarts at the tail when i
   assert.equal(carriedStart("r120", at, ids.length), 120, "kept where it was");
   assert.equal(carriedStart(null, at, ids.length), 0, "fully built stays fully built");
   assert.equal(carriedStart("rewound-away", at, ids.length), initialStart(ids.length), "back to the tail");
+  assert.equal(carriedStart("rewound-away", at, ids.length, 0), 0, "all built before: all built still");
+  assert.equal(carriedStart("rewound-away", at, ids.length, 5), initialStart(ids.length));
+});
+
+test("a list built whole is held by its first row, so rows prepended later are left to the fill", () => {
+  // A tail-first hello's 60 rows are all built at once; its history then lands above them.
+  const tail = Array.from({ length: TAIL_ROWS }, (_, i) => ({ id: `t${i}` }));
+  const first = windowId(tail, initialStart(tail.length));
+  assert.equal(first, "t0", "index 0 holds an id, not 'everything built'");
+  const history = Array.from({ length: 250 }, (_, i) => ({ id: `h${i}` }));
+  const after = [...history, ...tail];
+  const start = carriedStart(first, (id) => after.findIndex((r) => r.id === id), after.length, 0);
+  assert.equal(start, 250, "the prepended rows are above the window, not built");
+  assert.equal(windowId([], 0), null);
 });
 
 test("wrapLines counts hard lines and their wraps", () => {

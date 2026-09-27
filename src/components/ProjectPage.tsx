@@ -421,7 +421,7 @@ function DecisionsCard(props: CardProps) {
     const r = result as PromoteResult;
     setRefused(r.refused);
     const line = r.promoted.length ? promotionCommitLine(r.commit) : null;
-    setCommit(line);
+    setCommit(line && { ...line, text: `Promoted ${r.promoted.length}. ${line.text}` });
     const words = `Promoted ${r.promoted.length}${r.refused.length ? `; ${r.refused.length} refused` : ""}.${line ? ` ${line.text}` : ""}`;
     toast(words);
     announce(words);

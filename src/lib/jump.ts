@@ -153,8 +153,13 @@ const SCROLL_QUIET_MS = 150;
  */
 function recenter(root: HTMLElement, row: HTMLElement, left: number): void {
   let timer = 0;
-  const done = () => {
+  let over = false;
+  const finish = () => {
+    if (over) return;
+    over = true;
+    clearTimeout(timer);
     root.removeEventListener("scroll", onScroll);
+    root.removeEventListener("scrollend", finish);
     if (!row.isConnected) return;
     const view = root.getBoundingClientRect();
     const box = row.getBoundingClientRect();
@@ -166,12 +171,15 @@ function recenter(root: HTMLElement, row: HTMLElement, left: number): void {
     row.scrollIntoView({ block: "center", behavior: "smooth" });
     recenter(root, row, left - 1);
   };
+  // The scroll is over at `scrollend` where the browser has it, else after a quiet spell (which
+  // also covers a scroll that never started: the row was already in place).
   const onScroll = () => {
     clearTimeout(timer);
-    timer = window.setTimeout(done, SCROLL_QUIET_MS);
+    timer = window.setTimeout(finish, SCROLL_QUIET_MS);
   };
   root.addEventListener("scroll", onScroll, { passive: true });
-  timer = window.setTimeout(done, SCROLL_QUIET_MS);
+  root.addEventListener("scrollend", finish);
+  timer = window.setTimeout(finish, SCROLL_QUIET_MS);
 }
 
 // ---- A jump asked for before the session is on screen ------------------------------------------

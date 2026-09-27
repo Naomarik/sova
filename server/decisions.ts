@@ -67,13 +67,24 @@ export function writeDecisionStore(orgId: string, projectId: string, store: Deci
   writeJson(decisionsFile(orgId, projectId), { version: 1, decisions: store.decisions, lastRun: store.lastRun, ...(store.lastPromotedSpec !== undefined ? { lastPromotedSpec: store.lastPromotedSpec } : {}) });
 }
 
+/** A conflict's settle session is found by its id on THIS host (§app.organizations/portability):
+    `batonPath` is derived on every read, never taken from the repo, and absent when the session is
+    unknown here. */
 export function readConflicts(orgId: string, projectId: string): Conflict[] {
   const raw = readJson(conflictsFile(orgId, projectId));
-  return isObj(raw) && Array.isArray(raw.conflicts) ? raw.conflicts.filter((c): c is Conflict => isObj(c) && typeof c.id === "string" && typeof c.a === "string") : [];
+  const conflicts = isObj(raw) && Array.isArray(raw.conflicts) ? raw.conflicts.filter((c): c is Conflict => isObj(c) && typeof c.id === "string" && typeof c.a === "string") : [];
+  if (!conflicts.length) return conflicts;
+  const dir = orgDir(orgId);
+  const paths = new Map(allBatons().filter((b) => b.orgId === orgId).map((b) => [b.sessionId, sessionPathOf(dir, b)]));
+  return conflicts.map(({ batonPath: _stored, ...c }) => {
+    const path = c.batonSessionId ? paths.get(c.batonSessionId) : undefined;
+    return path ? { ...c, batonPath: path } : c;
+  });
 }
 
+/** The repo holds no host path: `batonPath` is stripped (a read derives it again). */
 export function writeConflicts(orgId: string, projectId: string, conflicts: Conflict[]): void {
-  writeJson(conflictsFile(orgId, projectId), { version: 1, conflicts });
+  writeJson(conflictsFile(orgId, projectId), { version: 1, conflicts: conflicts.map(({ batonPath: _path, ...c }) => c) });
 }
 
 // ---- keys --------------------------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 // The baton strip's words (§app/baton): who has the baton, or the offer, in one phrase. Pure, so
 // every state is pinned by tsx --test.
 
-import { OPERATOR, type BatonInfo, type BatonSummaryField, type WrapupInfo } from "../../shared/baton";
+import { OPERATOR, type BatonInfo, type BatonSummaryField, type OfferLink, type WrapupInfo } from "../../shared/baton";
 
 /** "Ana", "Ana and Bob", "Ana, Bob, and Carl" (serial comma). */
 export function namesList(names: readonly string[]): string {
@@ -46,6 +46,16 @@ export function whereLine(i: Pick<BatonInfo, "offer" | "session" | "names">, now
  * any change of the count wiped a link the moment the refetch after minting it landed.
  */
 export const linksStale = (at: number | null, count: number | undefined): boolean => at !== null && count !== undefined && count > at;
+
+/**
+ * A link on screen that a Get Link elsewhere (another tab) turned off: its person has a newer live
+ * link now. Never guessed: a link with no mint time, or no newer one (turned off, or none read
+ * yet), is not replaced.
+ */
+export function linkReplaced(link: Pick<OfferLink, "personId" | "at">, info: Pick<BatonInfo, "linkAt"> | undefined): boolean {
+  const newest = info?.linkAt?.[link.personId];
+  return !!link.at && !!newest && Date.parse(newest) > Date.parse(link.at);
+}
 
 /**
  * The decision areas a referral asks the operator to grant, said on the approval card: a referred

@@ -2,7 +2,7 @@ import { createEffect, createMemo, createResource, createSignal, For, type JSX, 
 import type { Conflict, DecisionRow, DecisionsInfo, PromoteResult } from "../../shared/decisions";
 import type { OrgDetail, OrgProject } from "../../shared/orgs";
 import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, redraftProject, resolveConflict, routeConflict, setProjectStakeholder, setSpecFrozen } from "../lib/api";
-import { areaGroups, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
+import { alsoCarriesLine, areaGroups, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
 import { promotionCommitLine } from "../lib/coding-worktrees";
 import { relativeTime } from "../lib/format";
 import { orgTabHref } from "../lib/orgs-route";
@@ -510,6 +510,7 @@ function DecisionsCard(props: CardProps) {
   // A refresh may promote, conflict or drop a selected decision: keep only what can still go.
   createEffect(on(() => props.info.decisions, (d) => setSelection((s) => refreshSelection(s, d)), { defer: true }));
   const groups = createMemo(() => areaGroups(props.info.decisions, { superseded: showSuperseded() }));
+  const byId = createMemo(() => new Map(props.info.decisions.map((d) => [d.id, d])));
   const ready = createMemo(() => props.info.decisions.filter(promotable));
   /** What Select All Ready would take, and the promotable ones it leaves to a tick of their own. */
   const bulkReady = createMemo(() => selectAllReady(props.info.decisions).ids);
@@ -589,13 +590,7 @@ function DecisionsCard(props: CardProps) {
                       </Show>
                       <div class="project-decision-main">
                         <Provenance row={d} />
-                        <Show when={d.folded?.length}>
-                          {(n) => (
-                            <p class="project-by">
-                              Also carries {n()} earlier {n() === 1 ? "statement" : "statements"} of the same decision, with their quotes.
-                            </p>
-                          )}
-                        </Show>
+                        <Show when={alsoCarriesLine(d, byId())}>{(line) => <p class="project-by">{line()}</p>}</Show>
                         <Show when={d.recordId}>
                           {(id) => <p class="orgs-mono project-muted">{id()}</p>}
                         </Show>

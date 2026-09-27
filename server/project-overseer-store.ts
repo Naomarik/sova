@@ -6,6 +6,7 @@ import {
   PROJECT_OVERSEER_ENTRY,
   type ProjectOverseerMarkerData,
   type Autonomy,
+  type LastRunOutcome,
   type ProjectOverseerCaps,
   type ProjectOverseerPatch,
   type ProjectOverseerSettings,
@@ -262,7 +263,8 @@ export interface WatchMemo {
   pending: string[];
   /** ISO of the last unattended run it started. */
   lastRunAt: string | null;
-  lastRun: { at: string; reasons: string[]; outcome: "started" | "skipped"; detail?: string } | null;
+  /** The last unattended run: `started` while it runs, then how it ended (§app.project-overseer/watch-loop). */
+  lastRun: { at: string; reasons: string[]; outcome: LastRunOutcome; detail?: string } | null;
   /** Unattended runs per local day, `YYYY-MM-DD` → count (the last few days only). */
   perDay: Record<string, number>;
   /** ISO time a look is due regardless of the 10-minute gap: set by an event that should be seen

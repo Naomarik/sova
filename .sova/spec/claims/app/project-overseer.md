@@ -13,7 +13,8 @@ tool cards as they happen.
 
 - Created on the operator's first open (`POST /api/orgs/:id/projects/:pid/overseer`); `GET` answers
   `exists: false` until then. One current conversation per project; **Clear** starts a new one and
-  keeps the previous ones (up to 20) as read-only history. Settings, notes, ideas and to-dos stay.
+  keeps the previous ones (up to 20) as read-only history; older ones are archived (they stay in
+  the workspace repo, like every workspace file). Settings, notes, ideas and to-dos stay.
 - Its file lives in the org's workspace repo (`sessions/`), carries an invisible
   `sova-project-overseer` marker `{v:1, orgId, projectId}`, and its cwd is the **project root**.
   It is that project's overseer only when the marker is present, the file is in THAT org's
@@ -230,8 +231,11 @@ tool cards as they happen.
   reason waiting.
 - **Run Now** (`POST …/overseer/run`) starts one now, skipping the reasons and the 10-minute gap
   but not the daily limit or a busy overseer (409 with why). The project page shows the last run
-  (started or skipped, and why) and the reasons waiting: "Last looked on its own {time}, skipped:
-  {why}." or "…, after {reasons}.", then "{n} run(s) today." — one period at the end of each
+  and the reasons waiting: running ("Last looked on its own {time}, running now, after
+  {reasons}."), finished ("…, after {reasons}."), stopped and why ("…, stopped: {why}.": the stream
+  guard's trip, the model's error, or "Stopped" for an abort), cut off by a restart ("…, cut off by
+  a restart.": the server stopped during the run, recorded when it next starts) or skipped and why
+  ("…, skipped: {why}."), then "{n} run(s) today." — one period at the end of each
   sentence, whatever the reason's own text ends with (`lastRunTail`, `src/lib/project-overseer-view.ts`).
   In "after {reasons}" each reason continues the sentence (its capitalised first word in lower
   case). "Waiting to look at:" then lists the waiting reasons as sentences, each ending in exactly

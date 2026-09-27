@@ -2,7 +2,7 @@
 // under tsx --test.
 
 import type { IdeaRecord, OverseerAction } from "../../shared/protocol";
-import { GAP_TAG, type ItemSendInput, type StartedSession } from "../../shared/project-overseer";
+import { GAP_TAG, type ItemSendInput, type LastRunOutcome, type StartedSession } from "../../shared/project-overseer";
 import { settled } from "./ideas";
 
 /** The ideas worth acting on: not done or dropped, gaps first, then the store's order. */
@@ -30,20 +30,24 @@ export function actionLine(a: Pick<OverseerAction, "tool" | "outcome" | "error">
 }
 
 /**
- * What follows "Last looked on its own {time}" in the status line, up to its full stop: a skip and
- * its reason, or what woke it. The reason arrives as a sentence of its own ("the session was
- * closed."), so its end punctuation goes: the line ends with exactly one period.
+ * What follows "Last looked on its own {time}" in the status line, up to its full stop: how the run
+ * went (running now, finished, stopped and why, cut off by a restart, skipped and why) and, while
+ * it runs or once it finished, what woke it. The reason arrives as a sentence of its own ("the
+ * session was closed."), so its end punctuation goes: the line ends with exactly one period.
  */
-export function lastRunTail(run: { reasons: readonly string[]; outcome: "started" | "skipped"; detail?: string }): string {
+export function lastRunTail(run: { reasons: readonly string[]; outcome: LastRunOutcome; detail?: string }): string {
   const bare = (s: string) => s.trim().replace(/[.\s]+$/, "");
-  if (run.outcome === "skipped") {
+  if (run.outcome === "skipped" || run.outcome === "stopped") {
     const why = run.detail ? bare(run.detail) : "";
-    return why ? `, skipped: ${why}` : ", skipped";
+    // An abort's own "Stopped." says nothing the word doesn't.
+    return why && why.toLowerCase() !== run.outcome ? `, ${run.outcome}: ${why}` : `, ${run.outcome}`;
   }
+  if (run.outcome === "cut-off") return ", cut off by a restart";
   // Each reason is a sentence ("The gathering session … reached its goal."); inside this one it
   // continues mid-sentence, so its capitalised first word goes lower case (never an acronym: "IT").
   const reasons = run.reasons.map(bare).filter(Boolean).map((r) => r.replace(/^[A-Z](?=[a-z\s])/, (c) => c.toLowerCase()));
-  return reasons.length ? `, after ${reasons.join(", ")}` : "";
+  const after = reasons.length ? `, after ${reasons.join(", ")}` : "";
+  return run.outcome === "started" ? `, running now${after}` : after;
 }
 
 /**

@@ -6,8 +6,9 @@ import { Banner, CopyButton } from "./ui";
 export type Links = OfferLink[];
 
 /** Links minted for a new session or offer: shown once, one row per person. `warning`: why they
-    can't be opened from outside yet (no share listener on this host). */
-export function LinksBanner(props: { links: Links; warning?: string; onDismiss(): void }) {
+    can't be opened from outside yet (no share listener on this host). `replaced`: a link a Get
+    Link elsewhere turned off, said in place of its text and Copy Link. */
+export function LinksBanner(props: { links: Links; warning?: string; replaced?(link: OfferLink): boolean; onDismiss(): void }) {
   return (
     <Banner
       tone={props.warning ? "warn" : "info"}
@@ -20,8 +21,13 @@ export function LinksBanner(props: { links: Links; warning?: string; onDismiss()
                 <Show when={props.links.length > 1}>
                   <span class="project-link-name">{l.name}</span>
                 </Show>
-                <span class="orgs-mono orgs-link">{l.link}</span>
-                <CopyButton label={`Copy ${l.name}'s Link`} text={() => l.link} onCopy={(t) => copyText(t, "Link copied.")} />
+                <Show
+                  when={!props.replaced?.(l)}
+                  fallback={<span class="field-hint">Replaced by a newer link.</span>}
+                >
+                  <span class="orgs-mono orgs-link">{l.link}</span>
+                  <CopyButton label={`Copy ${l.name}'s Link`} text={() => l.link} onCopy={(t) => copyText(t, "Link copied.")} />
+                </Show>
               </span>
             )}
           </For>

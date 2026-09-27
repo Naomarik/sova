@@ -2,7 +2,7 @@
 // this tree's pi-config extensions linked in, so "no pi-config extension loads" is a real claim), an
 // org workspace and a project root in the OS temp dir; ~/.pi is never touched. No model is called.
 import assert from "node:assert/strict";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
@@ -108,6 +108,19 @@ describe("a project overseer", async () => {
     assert.deepEqual(info.history.map((h) => h.id), [before.id]);
     assert.ok(store.projectOverseerOfPath(before.path), "still recognised as its conversation");
     await assert.rejects(() => acquireChat(before.path), BusyError);
+  });
+
+  test("past 20 cleared conversations, the oldest is archived, and its file stays in the workspace", async () => {
+    const { isArchived } = await import("./archived-sessions");
+    await po.ensureProjectOverseer(org.id, project.id);
+    const first = store.readPoState(store.projectOverseerPaths(org.id, project.id))!;
+    const oldest = first.history.at(-1) ?? first.current;
+    const oldestPath = join(orgs.orgDir(org.id), "sessions", readdirSync(join(orgs.orgDir(org.id), "sessions")).find((f) => f.endsWith(`_${oldest}.jsonl`))!);
+    let info = await po.projectOverseerInfo(org.id, project.id);
+    while (info.history.some((h) => h.id === oldest) || info.id === oldest) info = await po.clearProjectOverseer(org.id, project.id);
+    assert.equal(info.history.length, store.HISTORY_MAX, "20 kept as history");
+    assert.ok(isArchived(oldest), "the one that fell off is archived");
+    assert.ok(existsSync(oldestPath), "and its file is still in the workspace repo");
   });
 
   test("PATCH is strict", async () => {

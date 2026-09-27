@@ -4465,6 +4465,19 @@
         "src/components/AgentsView.tsx",
         "src/App.tsx"
       ]
+    },
+    "§app.session-list/cleanup-org-guard": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/archive-cleanup",
+        "§app.organizations/workspace-repo"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sessions-index.ts",
+        "server/cleanup-org-guard.test.ts"
+      ]
     }
   },
   "boundary": {

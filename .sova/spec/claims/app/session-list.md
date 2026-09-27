@@ -1310,6 +1310,25 @@ after).
 - **After.** The list refreshes like the bulk path, and the open session's deletion navigates to
   `#/` for the same reason (a transcript that can no longer load).
 
+## §app.session-list/cleanup-org-guard — Cleanup never deletes organization sessions
+
+Every session file inside an attached organization's workspace `sessions/` folder (baton
+transcripts, project-overseer conversations, anything else started there) is out of reach of
+`POST /api/sessions/cleanup`, in every mode. That folder belongs to the organization, and its
+`baton.json` and overseer state point at those files by name, so deleting one leaves a record whose
+transcript is gone.
+
+- **Older Than 7 / 30 Days, Empty Sessions.** An organization file never matches, however long it
+  has been idle and whether or not anything was ever sent in it (a fresh baton waiting on its first
+  link is a husk by shape). It is left out silently, like the Overseer's files, and is not counted
+  in `skipped`.
+- **Dry run = real run.** The count the confirm dialog shows comes from the same rule, so it never
+  includes a file the delete would then refuse.
+- **One archived session (`paths`).** Even archived and named, an organization file is refused with
+  the reason "Belongs to an organization's workspace — Clean Up never deletes it."
+- **Which folder.** The server's own mapping from a session path to its attached organization
+  decides membership. Ordinary sessions, and a folder no longer attached, follow the usual rules.
+
 ## §app.session-list/search — Search
 
 - **Matching.** Case-insensitive substring match on `title`, `cwd`, `model`, and the session's

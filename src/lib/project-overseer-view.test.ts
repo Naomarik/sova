@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { IdeaRecord } from "../../shared/protocol";
 import { IDEA_ID_RE } from "../../shared/protocol";
-import { actionLine, gapArea, itemSendInput, lastRunTail, openIdeas, operatorIdeaId, pendingLine, tokens, toolWords } from "./project-overseer-view";
+import { actionLine, allowanceLine, gapArea, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, tokens, toolWords, waitingLines, watchHint } from "./project-overseer-view";
+import { DEFAULT_PO_CAPS } from "../../shared/project-overseer";
 
 const idea = (id: string, status: IdeaRecord["status"], tags: string[] = []): IdeaRecord => ({
   id,
@@ -104,4 +105,49 @@ test("operatorIdeaId: a valid idea id from any title, never one already taken", 
     assert.ok(!taken.has(id), `${title} → ${id} collides`);
     taken.add(id);
   }
+});
+
+// ---- limits (§app.project-overseer/limits, §design.copy-deck/project-limits) ----
+
+const DEFAULTS = { ...DEFAULT_PO_CAPS };
+const draft = (caps: Partial<Record<keyof typeof DEFAULTS, number | null>> = {}, tokenBudget: number | null = 2_000_000) => ({ caps: { ...DEFAULTS, ...caps }, tokenBudget });
+
+test("a draft's first problem, as the server says it; Unlimited is null, never a blank field", () => {
+  assert.equal(limitsProblem(draft()), null);
+  assert.equal(limitsProblem(draft({ gatherPerDay: null, unattendedPerDay: null }, null)), null);
+  assert.equal(limitsProblem(draft({ promptsPerDay: Number.NaN })), "Prompts to coding sessions (on its own, each day) must be a whole number from 0 to 1000, or Unlimited.");
+  assert.equal(limitsProblem(draft({ gatherPerTurn: 1001 })), "Gathering sessions started (each message you send) must be a whole number from 0 to 1000, or Unlimited.");
+  assert.equal(limitsProblem(draft({ codingRunning: 11 })), "Coding sessions running must be a whole number from 0 to 10.");
+  assert.equal(limitsProblem(draft({ gatheringsOpen: -1 })), "Gathering sessions open must be a whole number from 0 to 20.");
+  assert.equal(limitsProblem(draft({}, 1.5)), "Coding token budget must be a whole number from 0 to 1,000,000,000, or Unlimited.");
+});
+
+test("the watch hint is built from the pace", () => {
+  assert.equal(watchHint(10, 60), "When a session finishes, a conflict appears, or you promote, it looks on its own: within 1 min for the important ones, otherwise at most every 10 min.");
+  assert.equal(watchHint(60, 30), "When a session finishes, a conflict appears, or you promote, it looks on its own: within 30 s for the important ones, otherwise at most every 1 hour.");
+  assert.equal(watchHint(5, null), "When a session finishes, a conflict appears, or you promote, it looks on its own at most every 5 min.");
+});
+
+test("the readout names only what was used, Unlimited as no limit", () => {
+  const n = (used: number, max: number | null) => ({ used, max });
+  const today = { gather: n(3, 6), promote: n(0, 60), create: n(2, null), prompt: n(0, 12) };
+  assert.equal(allowanceLine("Today on its own", today), "Today on its own: 3 of 6 gathering sessions, 2 coding sessions (no limit).");
+  assert.equal(allowanceLine("Your last message", { gather: n(0, 3), promote: n(0, 20), create: n(0, 2), prompt: n(5, 5) }), "Your last message: 5 of 5 prompts to coding sessions.");
+  assert.equal(allowanceLine("Today on its own", { gather: n(0, 6), promote: n(0, 60), create: n(0, 4), prompt: n(0, 12) }), null);
+});
+
+test("what it waits for, one line per held item; the message allowance's isn't shown", () => {
+  const since = "2026-09-27T14:11:00.000Z";
+  const s = { caps: { ...DEFAULTS }, tokenBudget: 2_000_000 };
+  const lines = waitingLines(
+    [
+      { key: "day:gather", what: "gathering sessions started", why: "", since, retryAt: "2026-09-28T00:00:00.000Z" },
+      { key: "looks", what: "looks", why: "", since, retryAt: "2026-09-28T00:00:00.000Z" },
+      { key: "budget", what: "coding tokens", why: "", since, retryAt: null },
+      { key: "message:prompt", what: "prompts to coding sessions", why: "", since, retryAt: since },
+    ],
+    s,
+    2_000_000,
+  );
+  assert.deepEqual(lines, ["Waiting until midnight: today's 6 gathering sessions are used.", "Waiting until midnight: today's 12 looks are used.", "Waiting for you: the coding token budget is spent (2.0M of 2.0M)."]);
 });

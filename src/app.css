@@ -24,9 +24,13 @@ html, body, #root { height: 100%; }
    skipped by layout and paint (`content-visibility`) and costs only its estimated height
    (`--entry-est`, lib/tail-render) until it is first drawn; `auto` then remembers the real one.
    Its children keep the thread's column and gap. The padding, taken back by the margin, leaves
-   room inside the box for what paint containment would clip at its edge: card shadows, focus
-   rings, the action strip's 44px targets. A row being pointed at, focused or revealed is never
-   skipped or clipped. An entry that draws nothing (a sent marker) takes no gap. */
+   room inside the box for what paint containment clips at its edge: card shadows, focus rings,
+   the action strip's 44px targets; the clip margin covers what bleeds into that padding (the
+   thinking row's summary, whose focus ring would lose its left edge). A row being pointed at is
+   on screen, so never skipped; a focused or revealed one is never skipped, even scrolled away.
+   No state changes the row's containment: a row that drops paint containment is drawn again at
+   a different pixel offset, and all its text visibly shifts (glyph antialiasing, a line 1px
+   off) as the strip appears. An entry that draws nothing (a sent marker) takes no gap. */
 .entry {
   display: flex;
   flex-direction: column;
@@ -35,11 +39,11 @@ html, body, #root { height: 100%; }
   margin: calc(var(--space-2) * -1);
   content-visibility: auto;
   contain-intrinsic-block-size: auto var(--entry-est, 120px);
+  overflow-clip-margin: var(--space-2);
 }
 .entry:empty { display: none; }
-.entry:hover,
 .entry:focus-within,
-.entry[data-actions-revealed] { content-visibility: visible; }
+.entry[data-actions-revealed] { content-visibility: visible; contain: layout paint style; }
 /* Text wraps to about twice the lines in a folded-width transcript. */
 .thread { --entry-line-est: 23px; }
 @container (width < 600px) { .thread { --entry-line-est: 42px; } }

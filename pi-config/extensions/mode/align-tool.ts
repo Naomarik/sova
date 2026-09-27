@@ -7,8 +7,7 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readAlignFile } from "./align-file.ts";
 import { renderAlignCall, renderAlignResult } from "./align-ui.ts";
 import { ALIGN_FILE_SCHEMA, ALIGN_OPS, ALIGN_TOOL, AlignError, applyAlignCall, type AlignDetails, type AlignDocument } from "./align.ts";
 
@@ -17,12 +16,14 @@ export interface AlignToolHost {
 	docs(): readonly AlignDocument[];
 	/** A call changed a document: the host keeps the new snapshot and refreshes its UI. */
 	changed(doc: AlignDocument): void;
+	/** The session's target while its tools run remotely (the remote extension's announcement). */
+	remoteTarget(): string | undefined;
 }
 
 export const ALIGN_TOOL_DESCRIPTION = `Record and update alignments with the user: structured documents of what to build, one per concern, each with an id al_N. Several can be open at once. One call = one document, a batch of ops applied atomically (one bad op fails the call and changes nothing).
 Ops:
 - create {title, summary, findings?, approach?, rejected?, questions?} starts al_N. questions: [{topic, ask, context?, options?: [{label, tradeoff}], recommendation: {choice, why}}]; rejected: [{option, why}].
-- create {fromFile: "path.json"} imports the same document from a JSON file (relative to the cwd), validated strictly. Schema: ${ALIGN_FILE_SCHEMA}
+- create {fromFile: "/abs/path.json"} imports the same document from a JSON file (a regular file up to 256 KB; a relative path is from the cwd), validated strictly; refused in a remote session (tools on a target), where you create inline. Schema: ${ALIGN_FILE_SCHEMA}
 - add {findings?, approach?, rejected?, questions?}; edit {id: "q3"|"f2"|"a1"|"x1", fields…} or {title?, summary?} without id; remove {ids: ["f2"]} (findings, approach, rejected only).
 - decide {q: "q3", decision: "the user's answer"}; accept {q: "open" | ["q1","q4"]} takes your recommendation as the decision; reopen {q}; drop {q, why} drops a question, drop {why} drops the whole alignment.
 - status {to: "implementing" | "done" | "open"}: implementing before you build (no open questions left), done when finished and verified.
@@ -95,7 +96,7 @@ export function registerAlignTool(pi: ExtensionAPI, host: AlignToolHost): void {
 			try {
 				const outcome = applyAlignCall(host.docs(), params, {
 					now: new Date().toISOString(),
-					readFile: (path) => readFileSync(resolve(ctx.cwd, path), "utf8"),
+					readFile: (path) => readAlignFile(ctx.cwd, path, host.remoteTarget()),
 				});
 				if (outcome.details.doc) host.changed(outcome.details.doc);
 				return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details as AlignDetails };

@@ -33,7 +33,7 @@ import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
 // read-only (it appends "\n" to a trailing partial line and rewrites the file when
 // migrating old versions), and these files may be owned by a running TUI.
 
-type Entry = Record<string, any>;
+export type Entry = Record<string, any>;
 
 const RESULT_TEXT_MAX = 2000;
 

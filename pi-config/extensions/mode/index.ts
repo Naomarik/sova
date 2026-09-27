@@ -65,6 +65,10 @@ import {
 } from "./align.ts";
 import { registerAlignTool } from "./align-tool.ts";
 import { ALIGN_OVERLAY_OPTIONS, alignWidget, createAlignViewer, type AlignViewer } from "./align-ui.ts";
+
+/** remote/workers.ts: a session on a target announces itself; asking makes it announce again. */
+const REMOTE_SESSION_EVENT = "remote:session";
+const REMOTE_DISCOVER_EVENT = "remote:discover";
 import { policyDenial, readPolicy } from "../subagents/policy.ts";
 import { DELEGATE_FILE_NAME, DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateKey, delegateReader, type DelegateBackend } from "./delegate.ts";
 import { WorkerProbe } from "./discovery.ts";
@@ -150,6 +154,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	let runAlignCalls = 0;
 	let lastReplyText = "";
 	let nudged = false;
+	/** This run was started by a user prompt that asked a question (options offered back answer it). */
+	let runUserAsked = false;
 	/** The open overlay viewer, refreshed live on each align call; undefined when closed. */
 	let liveViewer: AlignViewer | undefined;
 	/** The latest context seen, for refreshing the widget from the tool (which has no UI of its own). */
@@ -542,12 +548,25 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		}
 	}
 
+	/**
+	 * The session's target while its tools run remotely: the remote extension announces it on
+	 * `pi.events` (remote/workers.ts REMOTE_SESSION_EVENT) and re-announces on request, so load order
+	 * never matters. align fromFile reads the local disk and is refused while this is set.
+	 */
+	let remoteTarget: string | undefined;
+	pi.events?.on(REMOTE_SESSION_EVENT, (data: unknown) => {
+		const target = (data as { target?: unknown } | undefined)?.target;
+		if (typeof target === "string" && target !== "") remoteTarget = target;
+	});
+	pi.events?.emit(REMOTE_DISCOVER_EVENT, { version: 1 });
+
 	registerAlignTool(pi, {
 		docs: () => alignDocs,
 		changed: (doc) => {
 			alignDocs = [...alignDocs.filter((d) => d.id !== doc.id), doc];
 			if (lastCtx) refreshAlignViews(lastCtx);
 		},
+		remoteTarget: () => remoteTarget,
 	});
 
 	/** One line per profile: the configured tuple(s) and, in delegate, what is actually in use. */
@@ -746,18 +765,25 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		});
 	}
 
-	// What this run did, for the settle nudge: whether it called align, and its last reply's text.
+	// What this run recorded, for the settle nudge: an align call counts only when it succeeded and
+	// changed a document or recorded an exemption. A refused call or a bare get records nothing.
+	pi.on("tool_execution_end", async (event) => {
+		if (event.toolName !== ALIGN_TOOL || event.isError) return;
+		const details = (event.result as { details?: { doc?: unknown; exempt?: unknown } } | undefined)?.details;
+		if (details?.doc !== undefined || details?.exempt !== undefined) runAlignCalls++;
+	});
+
+	// The run's last reply: every assistant message replaces it, text or not, so the nudge never
+	// judges an earlier turn's words when the final message has none.
 	pi.on("turn_end", async (event, ctx) => {
 		lastCtx = ctx;
 		const m = event.message as { role?: string; content?: unknown } | undefined;
 		if (!m || m.role !== "assistant" || !Array.isArray(m.content)) return;
-		const blocks = m.content as { type?: string; name?: string; text?: string }[];
-		if (blocks.some((b) => b?.type === "toolCall" && b.name === ALIGN_TOOL)) runAlignCalls++;
-		const text = blocks
+		const blocks = m.content as { type?: string; text?: string }[];
+		lastReplyText = blocks
 			.filter((b) => b?.type === "text" && typeof b.text === "string")
 			.map((b) => b.text)
 			.join("\n");
-		if (text.trim() !== "") lastReplyText = text;
 	});
 
 	/**
@@ -766,7 +792,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 */
 	pi.on("agent_before_settle", async (event) => {
 		if (!hasMinor(active, "align") || nudged || runAlignCalls > 0 || event.outcome !== "completed") return;
-		if (!looksLikeUncapturedPlan(lastReplyText)) return;
+		if (!looksLikeUncapturedPlan(lastReplyText, { userAsked: runUserAsked })) return;
 		nudged = true;
 		return {
 			entries: [
@@ -780,6 +806,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	pi.on("agent_settled", async () => {
 		runAlignCalls = 0;
 		lastReplyText = "";
+		runUserAsked = false;
 		nudged = false;
 	});
 
@@ -815,6 +842,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	// and stay in use — spawn is the final check, and the prompt's retry rule covers a miss. The spec
 	// writer is re-read and probed the same way whenever spec is on, in either major mode.
 	pi.on("before_agent_start", async (event, ctx) => {
+		// Only a user prompt reaches here: the run it starts answers a question when it ends in one.
+		runUserAsked = /\?\s*$/.test(event.prompt ?? "");
 		if (active.mode === "delegate" || hasMinor(active, "spec")) {
 			const { key } = probeScope();
 			recomputeRoutes();

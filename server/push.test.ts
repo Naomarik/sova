@@ -139,6 +139,22 @@ describe("stores", () => {
     assert.equal(tolerant.kinds.error, false);
   });
 
+  test("asks-you became open-questions: a stored choice carries over, an explicit one wins, and the old key is never a 400", () => {
+    const parsed = (raw: unknown, strict: boolean) => {
+      const out = store.parsePushSettings(raw, strict);
+      if ("error" in out) throw new Error(out.error);
+      return out;
+    };
+    const off = parsed({ kinds: { "asks-you": false } }, false);
+    assert.equal(off.kinds["open-questions"], false, "a user who turned asks-you off keeps open questions off");
+    assert.ok(!("asks-you" in off.kinds), "the old key is not kept");
+    assert.equal(parsed({ kinds: { "asks-you": false, "open-questions": true } }, false).kinds["open-questions"], true, "an explicit open-questions wins");
+    assert.equal(parsed({ kinds: { "open-questions": true, "asks-you": false } }, false).kinds["open-questions"], true, "in either key order");
+    const stale = parsed({ kinds: { "asks-you": true, error: false } }, true);
+    assert.equal(stale.kinds["open-questions"], true, "a stale client's PUT with the old key is accepted");
+    assert.equal(parsed({}, false).kinds["open-questions"], true, "no stored choice: the default");
+  });
+
   test("quiet hours wrap across midnight, in server-local time", () => {
     const q = { enabled: true, start: "22:00", end: "07:00" };
     const at = (h: number, m = 0) => new Date(2026, 0, 1, h, m);

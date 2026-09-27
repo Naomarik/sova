@@ -6,7 +6,7 @@
 //   enters the system prompt;
 // - a run that ends in a prose plan gets one hidden `align-nudge` and exactly one more request.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { jiti } from "../../subagents/tests/runtime.mjs";
@@ -20,6 +20,8 @@ const cwd = mkdtempSync(path.join(scratchRoot, "align-turn-cwd-"));
 const { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { createAssistantMessageEventStream, getCurrentSystemPrompt } = await jiti.import("@earendil-works/pi-ai");
 
+/** The test's own extension API: its event bus is the one the mode extension listens on. */
+let hostPi;
 /** Every provider request: the system prompt and the messages it was sent. */
 const requests = [];
 /** What the scripted model does, one step per request. */
@@ -64,6 +66,7 @@ const resourceLoader = new DefaultResourceLoader({
 	additionalExtensionPaths: [path.resolve(new URL("../index.ts", import.meta.url).pathname)],
 	extensionFactories: [
 		(pi) => {
+			hostPi = pi;
 			pi.registerProvider("scripted", {
 				baseUrl: "http://localhost",
 				apiKey: "unused",
@@ -137,6 +140,32 @@ try {
 	assert.equal(requests.length, wakeAt + 1, "the report started one run");
 	assert.match(seen(requests[wakeAt]), /\[align\] The context was just compacted/, "the report's run read the note");
 	assert.match(seen(requests[wakeAt]), /q1 Format: decided — JSONL/, "with the decision, which the summary never had");
+
+	// The execute wrapper: fromFile at an absolute path imports; a refused call says nothing changed
+	// and changes nothing; in a remote session fromFile is refused before any read.
+	const planFile = path.join(scratchRoot, `align-turn-plan-${process.pid}.json`);
+	writeFileSync(planFile, JSON.stringify({ title: "From a worker", summary: "Planned elsewhere.", questions: [{ topic: "Cap", ask: "400?", recommendation: { choice: "yes", why: "enough" } }] }));
+	const alignResults = () => sessionManager.getBranch().filter((e) => e.type === "message" && e.message.role === "toolResult" && e.message.toolName === "align");
+	try {
+		script.push({ tool: "align", args: { ops: [{ op: "create", fromFile: planFile }] } }, { text: "Imported." });
+		await session.prompt("import the plan");
+		const imported = alignResults().at(-1).message;
+		assert.equal(imported.isError, false);
+		assert.equal(imported.details.doc.title, "From a worker");
+		const before = foldAlignments(sessionManager.getBranch()).docs.map((d) => [d.id, d.rev]);
+		script.push({ tool: "align", args: { ops: [{ op: "create", fromFile: scratchRoot }] } }, { text: "Hm." });
+		await session.prompt("import the folder");
+		const refused = alignResults().at(-1).message;
+		assert.equal(refused.isError, true);
+		assert.match(refused.content[0].text, /fromFile .*: cannot read it \(not a regular file\)\. Nothing was changed\./);
+		assert.deepEqual(foldAlignments(sessionManager.getBranch()).docs.map((d) => [d.id, d.rev]), before, "a refused call is never state");
+		hostPi.events.emit("remote:session", { version: 1, target: "box" });
+		script.push({ tool: "align", args: { ops: [{ op: "create", fromFile: planFile }] } }, { text: "Hm." });
+		await session.prompt("import it again");
+		assert.match(alignResults().at(-1).message.content[0].text, /target "box", and fromFile reads this machine's disk/);
+	} finally {
+		rmSync(planFile, { force: true });
+	}
 	console.log("align-turn: ok");
 } finally {
 	session.dispose();

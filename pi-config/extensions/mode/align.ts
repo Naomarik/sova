@@ -422,7 +422,10 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 			try {
 				json = JSON.parse(raw);
 			} catch (error) {
-				throw new AlignError(`fromFile ${path}: not valid JSON (${error instanceof Error ? error.message : String(error)})`);
+				// Only where it broke, never the parser's quote of the file's first bytes: fromFile may
+				// have been pointed at something that isn't an alignment at all.
+				const at = /position (\d+)/.exec(error instanceof Error ? error.message : "")?.[1];
+				throw new AlignError(`fromFile ${path}: not valid JSON${at ? ` (near position ${at})` : ""}`);
 			}
 			parsed = parseDocInput(json, `fromFile ${path}`);
 		} else {
@@ -504,6 +507,11 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 					targets = ids.map((id) => findQuestion(d, id, where));
 					for (const q of targets) need(!q.dropped, `${where}: ${q.id} is dropped; reopen it first`);
 				}
+				// Naming a question twice is one mistake, not two acceptances; naming a decided one would
+				// replace the user's own answer with the recommendation, silently.
+				const dup = targets.find((q, i) => targets.indexOf(q) !== i);
+				need(dup === undefined, `${where}: ${dup?.id} is named twice`);
+				for (const q of targets) need(!q.decision, `${where}: ${q.id} is already decided ("${q.decision?.text}"); reopen it first to replace that`);
 				for (const q of targets) q.decision = { text: q.recommendation.choice, by: "accepted-recommendation", at: env.now };
 				changes.push({ kind: "accepted", qs: targets.map((q) => q.id) });
 				break;
@@ -757,9 +765,19 @@ export function normalizeAlignDocument(v: unknown): AlignDocument | undefined {
 			createdAt: v.createdAt,
 			updatedAt: v.updatedAt,
 		};
+		// A dropped document says why, and only a dropped one does (status open clears it).
+		if ((v.phase === "dropped") !== (v.droppedWhy !== undefined)) return undefined;
 		if (v.droppedWhy !== undefined) {
 			if (!nonEmpty(v.droppedWhy)) return undefined;
 			doc.droppedWhy = v.droppedWhy;
+		}
+		// The invariants the ops rely on for "ids are never reused": each id is unique in its kind
+		// and no higher than that kind's counter, which the next add continues from.
+		const kinds: [keyof AlignDocument["next"], readonly { id: string }[]][] = [["f", findings], ["a", approach], ["x", rejected], ["q", questions]];
+		for (const [kind, items] of kinds) {
+			const numbers = items.map((item) => (itemKind(item.id) === kind ? Number(item.id.slice(1)) : Number.NaN));
+			if (numbers.some((k) => !Number.isInteger(k) || k < 1 || k > doc.next[kind])) return undefined;
+			if (new Set(numbers).size !== numbers.length) return undefined;
 		}
 		return doc;
 	} catch {
@@ -973,28 +991,57 @@ export function widgetText(docs: readonly AlignDocument[], keyHint: string): str
 const FENCED = /```[\s\S]*?```/g;
 /** The spec minor mode's closing line ("Also changes: none"): not part of what the reply asks. */
 const SPEC_TRAILER = /\n\s*Also changes:[^\n]*\s*$/i;
-/** Words that ask the user to decide a design question or approve a plan. */
-const DECISION_ASK =
-	/\b(open questions?|questions for you|decisions? (?:for you|needed|to make)|need(?:s)? (?:your|a) (?:decision|call|answer)|should i (?:go ahead|proceed|start|build|implement)|shall i (?:go ahead|proceed|start)|(?:ok|okay) to (?:go ahead|proceed|start)|want me to (?:go ahead|proceed|start|build|implement)|which (?:one |option |approach )?(?:do|would) you (?:prefer|want|like|pick|choose)|your call|(?:take|with) my (?:suggested answers|recommendations?|recs)|go with (?:my|these|the) (?:recs|recommendations?|defaults?|answers?))\b/i;
-/** A leftover alignment block in the old markdown shape. */
-const MARKDOWN_ALIGNMENT = /^\s*(?:#{1,4}\s+|\*\*)alignment\b/im;
+/** Words that label what follows as the user's to decide. */
+const LABEL_ASK = /\b(?:open questions?|questions for you|decisions? (?:for you|needed|to make)|need(?:s)? (?:your|a) (?:decision|call|answer))\b/i;
+/** Asking for a go-ahead on a plan, or for the agent's recommendations to stand. */
+const APPROVAL_ASK =
+	/\b(?:should i (?:go ahead|proceed|start|build|implement)|shall i (?:go ahead|proceed|start)|(?:ok|okay) to (?:go ahead|proceed|start)|want me to (?:go ahead|proceed|start|build|implement)|(?:take|with) my (?:suggested answers|recommendations?|recs)|go with (?:my|these|the) (?:recs|recommendations?|defaults?|answers?))\b/i;
+/** Asking the user to pick between options. */
+const CHOICE_ASK = /\b(?:which (?:one |option |approach )?(?:do|would) you (?:prefer|want|like|pick|choose)|your call)\b/i;
+/** A bare go-ahead as the whole closing ask: "Go?", "OK?", "Sound good?". */
+const BARE_GO = /^(?:\*\*)?(?:go|ok(?:ay)?|good to go|sounds? good|proceed)\b[^\n]*\?/i;
+/** A confirmation to run something, not a design decision: the nudge would only be exempted. */
+const RUN_CONFIRM = /\b(?:merge|merging|push|release|restart|deploy|commit|rebase|publish)\b/i;
+/** A leftover alignment block in the old markdown shape: its `## Alignment: <title>` anchor, colon and all. */
+const MARKDOWN_ALIGNMENT = /^\s*#{1,4}\s+alignment:\s*\S/im;
 const LIST_ITEM = /^\s*(?:\d+[.)]|[-*•])\s+\S/;
+
+/** What the nudge knows about the run beyond its reply. */
+export interface PlanContext {
+	/** The user's prompt that started the run was itself a question: options offered back answer it. */
+	userAsked?: boolean;
+}
+
+/** The sentences of a paragraph that ask (end in "?"). */
+function questionsOf(paragraph: string): string[] {
+	return paragraph.split(/(?<=[.!?])\s+/).filter((x) => /\?\s*[*_)\]"'`]*\s*$/.test(x));
+}
+
+/**
+ * Does one of these questions put a decision to the user? A merge-style confirmation does not, nor a
+ * choice that answers the user's own question; words outside the questions don't count.
+ */
+function decisionAsk(paragraph: string, context: PlanContext): boolean {
+	return questionsOf(paragraph).some(
+		(q) => !RUN_CONFIRM.test(q) && (LABEL_ASK.test(q) || APPROVAL_ASK.test(q) || (!context.userAsked && CHOICE_ASK.test(q))),
+	);
+}
 
 /**
  * A short line that labels what follows as the user's to decide ("**Questions for you:**", "Open
- * questions"), then a list with two or more questions: wherever it sits, since a reply can close on
- * a statement ("I'll record this once tools work.") after asking.
+ * questions"), then a list with two or more questions that aren't run confirmations: wherever it
+ * sits, since a reply can close on a statement ("I'll record this once tools work.") after asking.
  */
 function questionList(body: string): boolean {
 	const lines = body.split("\n");
 	for (let i = 0; i < lines.length; i++) {
 		const label = lines[i]!.trim();
-		if (label.length > 80 || LIST_ITEM.test(label) || !DECISION_ASK.test(label)) continue;
+		if (label.length > 80 || LIST_ITEM.test(label) || !LABEL_ASK.test(label)) continue;
 		let asks = 0;
 		for (const line of lines.slice(i + 1)) {
 			if (line.trim() === "") continue;
 			if (LIST_ITEM.test(line)) {
-				if (line.includes("?")) asks++;
+				if (line.includes("?") && !RUN_CONFIRM.test(line)) asks++;
 			} else if (!/^\s/.test(line)) break;
 		}
 		if (asks >= 2) return true;
@@ -1004,30 +1051,36 @@ function questionList(body: string): boolean {
 
 /**
  * Why a final reply reads like a plan that asks the user to decide, written in prose instead of
- * the tool — or null when it doesn't: an old markdown alignment block; a last paragraph that ends
- * in a question and either asks for a decision itself or follows a list of two or more items, with
- * decision words anywhere; or, wherever it sits, a labelled list of questions (questionList). Code
- * fences and the spec mode's "Also changes" line are ignored. Calibrated offline against two real
- * sessions (align.test.ts pins the shapes): it catches "…open questions, with my suggested
- * answers … Should I go ahead with those answers?" and leaves "Lanes B–F are still running." and
- * "Want me to merge it?" alone.
+ * the tool — or null when it doesn't:
+ * - an old markdown alignment block (`## Alignment: <title>`; a heading or bold line that merely
+ *   mentions alignment is not one);
+ * - a last paragraph that ends in a question putting a decision to the user: labelled ("open
+ *   questions"), a go-ahead ("should I go ahead", "take my recommendations") or a choice ("which do
+ *   you prefer", unless the user's own prompt asked a question and the options answer it) — never a
+ *   merge, push or restart confirmation;
+ * - a list of two or more items with such words anywhere, closed by a go-ahead ask ("Go?", or one
+ *   of the above);
+ * - or, wherever it sits, a labelled list of questions (questionList).
+ * Code fences and the spec mode's "Also changes" line are ignored. Calibrated offline against real
+ * sessions (align.test.ts pins the shapes, false positives included).
  */
-export function planSignal(reply: string): "markdown-alignment" | "question-list" | "asks-decision" | "list-then-decision" | null {
+export function planSignal(reply: string, context: PlanContext = {}): "markdown-alignment" | "question-list" | "asks-decision" | "list-then-decision" | null {
 	if (typeof reply !== "string") return null;
 	const body = reply.replace(FENCED, " ").replace(SPEC_TRAILER, "").trim();
 	if (MARKDOWN_ALIGNMENT.test(body)) return "markdown-alignment";
 	const paragraphs = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
 	const last = paragraphs[paragraphs.length - 1] ?? "";
 	if (/\?\s*[*_)\]"'`]*\s*$/.test(last)) {
-		if (DECISION_ASK.test(last)) return "asks-decision";
+		if (decisionAsk(last, context)) return "asks-decision";
 		const items = body.split("\n").filter((l) => LIST_ITEM.test(l)).length;
-		if (items >= 2 && DECISION_ASK.test(body)) return "list-then-decision";
+		const anyDecisionWords = LABEL_ASK.test(body) || APPROVAL_ASK.test(body) || CHOICE_ASK.test(body);
+		if (items >= 2 && anyDecisionWords && BARE_GO.test(last) && !questionsOf(last).some((q) => RUN_CONFIRM.test(q))) return "list-then-decision";
 	}
 	return questionList(body) ? "question-list" : null;
 }
 
 /** planSignal as a yes/no: the settle nudge's trigger. */
-export const looksLikeUncapturedPlan = (reply: string): boolean => planSignal(reply) !== null;
+export const looksLikeUncapturedPlan = (reply: string, context: PlanContext = {}): boolean => planSignal(reply, context) !== null;
 
 // ── Legacy: an older session's align-doc entries (read-only) ────────────────
 

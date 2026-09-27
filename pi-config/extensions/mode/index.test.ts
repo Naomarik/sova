@@ -249,7 +249,13 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.doesNotMatch(align, /\[ \]/);
 	// The bridge hands the planning worker's result over as a file, in the tool's schema.
 	assert.match(DELEGATE_ALIGN_BRIDGE, /Workers have no align tool/);
-	assert.match(DELEGATE_ALIGN_BRIDGE, /create \+ fromFile/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /create \{fromFile: that same absolute path\}/);
+	// The planner's one write is named, absolute and outside the repo, and the delegate block's
+	// no-edit rule names that same exception, so the two never contradict each other.
+	assert.match(DELEGATE_ALIGN_BRIDGE, /one permitted write is the alignment JSON/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /absolute path outside the repository that you name in its prompt/);
+	assert.match(buildDelegatePrompt([]), /must not edit files[^\n]*The one exception is a planning worker's alignment JSON \(align on\), written outside the repository\./);
+	assert.match(align, /absolute path outside the repository/);
 	assert.ok(DELEGATE_ALIGN_BRIDGE.includes(ALIGN_FILE_SCHEMA), "the bridge quotes the one file schema");
 	assert.match(DELEGATE_ALIGN_BRIDGE, /status is implementing/);
 });

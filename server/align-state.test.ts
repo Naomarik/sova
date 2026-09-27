@@ -150,6 +150,78 @@ describe("readAlignScan: the file's open alignments, cheaply", () => {
   });
 });
 
+describe("readAlignScan: incremental while the file grows", () => {
+  const line = (e: unknown) => `${JSON.stringify(e)}\n`;
+  const fresh = async (path: string) => (await readAlignScan(path, readFileSync(path).length, null)).summary;
+
+  test("each growth parses only the new lines, reuses the kept entries, and equals a full read", async () => {
+    const a = result(created, "u1");
+    const path = session("incremental", [a]);
+    let scan = await readAlignScan(path, readFileSync(path).length, null);
+    const kept = scan.entries;
+    assert.deepEqual(kept?.map((e) => e.type), ["session", "message", "message"], "header, user prompt, align result: kept compact");
+    const b = result(second, a.id);
+    const c = result(answered, b.id);
+    // A line written in two parts: the half-written one is left for the next read.
+    const half = line(b).slice(0, 40);
+    appendFileSync(path, half);
+    scan = await readAlignScan(path, readFileSync(path).length, scan);
+    assert.equal(scan.entries, kept, "the same list, appended to, never rebuilt");
+    assert.equal(scan.size, readFileSync(path).length - half.length, "the read stops at the last complete line");
+    assert.deepEqual(scan.summary, await fresh(path));
+    appendFileSync(path, line(b).slice(40) + line(c));
+    scan = await readAlignScan(path, readFileSync(path).length, scan);
+    assert.equal(scan.entries, kept);
+    assert.deepEqual(scan.summary, await fresh(path), "incremental equals a full fold");
+    assert.deepEqual(scan.summary, { openDocs: 2, openQuestions: 2, questionDocs: 2, lead: { id: "al_1", title: "Export" } });
+  });
+
+  test("a rewrite that moves the line boundary is read again from the start", async () => {
+    const a = result(created, "u1");
+    const path = session("rewrite", [a]);
+    const scan = await readAlignScan(path, readFileSync(path).length, null);
+    // Same bytes shifted by one: the last read's end is no longer a line start.
+    writeFileSync(path, ` ${readFileSync(path, "utf8")}`);
+    const again = await readAlignScan(path, readFileSync(path).length, scan);
+    assert.notEqual(again.entries, scan.entries, "rebuilt");
+    assert.deepEqual(again.summary, await fresh(path));
+  });
+});
+
+describe("SessionSummary.align: only while the session waits on the user, with align on", () => {
+  const line = (e: unknown) => `${JSON.stringify(e)}\n`;
+  const user = (id: string, parentId: string, content: string) => ({ type: "message", id, parentId, message: { role: "user", content } });
+  const mode = (id: string, parentId: string, minorModes: string[]) => ({ type: "custom", id, parentId, customType: "mode", data: { mode: "normal", active: { version: 1, mode: "normal", strict: false, minorModes } } });
+  const summaryOf = async (path: string) => (await readAlignScan(path, readFileSync(path).length, null)).summary;
+
+  test("the user speaking again after the last align result ends the wait; a new result resumes it", async () => {
+    const a = result(created, "u1");
+    const path = session("moved-on", [a]);
+    assert.equal((await summaryOf(path))?.openQuestions, 2, "waiting on q1, q2");
+    appendFileSync(path, line(user("u2", a.id, "never mind, fix the login bug")));
+    assert.equal(await summaryOf(path), undefined, "moved on: out of Needs you, the mark and push");
+    const b = result(answered, "u2");
+    appendFileSync(path, line(b));
+    assert.equal((await summaryOf(path))?.openQuestions, 1, "an answer recorded after it: waiting on q2 again");
+  });
+
+  test("a wake nudge or a partner's link message is not the user speaking", async () => {
+    const a = result(created, "u1");
+    const path = session("wake", [a, user("w1", a.id, "[wake_nudge n1] Scheduled wakeup fired (set 3m ago).\nReason: check")]);
+    assert.equal((await summaryOf(path))?.openQuestions, 2);
+  });
+
+  test("align off on the branch: nothing can answer them, so nothing counts; on again, it does", async () => {
+    const a = result(created, "u1");
+    const path = session("align-off", [mode("m0", "u1", ["align"]), { ...a, parentId: "m0" }]);
+    assert.equal((await summaryOf(path))?.openQuestions, 2);
+    appendFileSync(path, line(mode("m1", a.id, [])));
+    assert.equal(await summaryOf(path), undefined, "align off");
+    appendFileSync(path, line(mode("m2", "m1", ["align", "spec"])));
+    assert.equal((await summaryOf(path))?.openQuestions, 2, "align back on");
+  });
+});
+
 describe("SessionSummary.align", () => {
   test("present while an alignment is open, from the file alone; gone once every alignment is done or dropped", async () => {
     const a = result(created, "u1");

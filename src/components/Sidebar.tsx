@@ -535,7 +535,7 @@ function SessionRow(props: {
           {/* A never-sent session kept in the list by its stored draft: line 2 says so, in the place
               a summary would take, so the row is as tall as its neighbours. The pencil is
               decorative; the hidden word is what the row's accessible name says. */}
-          {/* In Needs you, line 2 is why the session is there ("Asks you: …"), in place of the
+          {/* In Needs you, line 2 is why the session is there ("2 open questions in al_3 …"), in place of the
               draft preview or the gist: that sentence is the region's reason to exist. */}
           <Show when={props.detail}>
             {(d) => (

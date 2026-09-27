@@ -3212,13 +3212,19 @@ export interface SessionAlign {
   lead?: { id: string; title: string };
 }
 
-// Declaration merge: the two overlays SessionSummary gains (listSessions sets them from the
-// stores, never from the (mtime,size) cache). Absent = not classified, feature off, or an older server.
+// Declaration merge: what SessionSummary gains beyond its core fields. `signals`, `workerSignals`
+// and `tags` are overlays listSessions sets from the stores, never from the (mtime,size) cache;
+// `align` is read from the file itself and cached with the summary. Absent = not classified,
+// feature off, nothing waiting, or an older server.
 export interface SessionSummary {
-  /** The session's open alignments (§chat.alignment/session-mark), folded from its file's `align`
-      tool results along the active branch (server/align-state.ts), deterministic, no model.
-      Present only while an alignment is open (not done or dropped). `questionDocs` = the open
-      alignments that have open questions; `lead` = the last-touched of those, for the wording. */
+  /** The session's open alignments while it waits on the user (§chat.alignment/session-mark), folded
+      from its file's `align` tool results along the active branch (server/align-state.ts, read
+      incrementally), deterministic, no model. Present only while an alignment is open (not done
+      or dropped), align is on (the newest `mode` entry on the branch), and the newest align result
+      that changed a document comes after the user's last prompt (a wake nudge or link message is
+      not one): once the user has moved on, the questions stay on the card and the chip only.
+      `questionDocs` = the open alignments that have open questions; `lead` = the last-touched of
+      those, for the wording. */
   align?: SessionAlign;
   signals?: SessionSignals;
   /** Worker checks of this session's subagents: how many look stuck; details are in the attention

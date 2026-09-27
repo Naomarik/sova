@@ -164,8 +164,11 @@ reused, so "q3" means one question for the document's life.
 
 One call applies a batch of ops to one document, atomically (one bad op fails
 the call, with the reason, and changes nothing): `create` (inline, or
-`fromFile` — a JSON file a planning worker wrote, validated strictly), `add`,
-`edit`, `remove`, `decide`, `accept` (the recommendation becomes the decision),
+`fromFile` — a JSON file a planning worker wrote at an absolute path outside the
+repository, validated strictly; only a regular file up to 256 KB, and refused in a
+remote session, whose files live on the target: create inline there), `add`,
+`edit`, `remove`, `decide`, `accept` (the recommendation becomes the decision; never
+over a question already decided, which must be reopened first),
 `reopen`, `drop` (a question, or the whole document), `status` (`implementing`,
 `done`, back to `open`), `exempt` (alone: a work request needs no alignment)
 and `get`. The result is a compact echo of what is still open.
@@ -191,10 +194,14 @@ recs"), and the agent records it with `decide`/`accept`.
   the system prompt: a prompt change restarts a Claude Code session's CLI.
 - **No gate; one nudge** — nothing blocks edits or spawns while a question is
   open. A run that is about to settle with no align call, whose final reply
-  reads like a plan asking the user to decide (`planSignal`: it ends in a
-  question that asks for a decision, or lists questions under a label such as
+  reads like a plan asking the user to decide (`planSignal`: an old
+  `## Alignment: <title>` block; a closing question that asks for a decision or a
+  go-ahead, never a merge, push or restart confirmation, and not options offered
+  back to a user who asked a question; or questions listed under a label such as
   "Questions for you:"), gets one hidden
-  `align-nudge` and one more request; never twice in a run.
+  `align-nudge` and one more request; never twice in a run. Only a successful
+  align call that changed a document or recorded an exemption counts as recorded:
+  a refused call or a bare `get` does not.
 - **Widget** — one line above the editor while align is on and an alignment is
   open: `◇ align · al_3 2/7 open · al_2 implementing · alt+a view`.
 - **Tool row** — the call as one dim line (`◇ align al_3 · decide q3 · → implementing`),

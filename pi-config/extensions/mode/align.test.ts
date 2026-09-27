@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+import { ALIGN_FILE_MAX_BYTES, readAlignFile } from "./align-file.ts";
 import {
 	ALIGN_ENTRY_TYPE,
 	ALIGN_TOOL,
@@ -121,6 +126,34 @@ test("create fromFile: the same document from JSON, strictly validated, with the
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", fromFile: "array.json" }] }, env), /must be a JSON object/);
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", fromFile: "missing.json" }] }, env), /^fromFile missing\.json: cannot read it \(ENOENT/);
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", fromFile: "plan.json", title: "both" }] }, env), /either fromFile or the document's fields/);
+	// A parse error says where, never what: no quote of the file's first bytes.
+	files["secret.txt"] = "SECRET_TOKEN=abc123";
+	assert.throws(
+		() => applyAlignCall([], { ops: [{ op: "create", fromFile: "secret.txt" }] }, env),
+		(error: Error) => /^fromFile secret\.txt: not valid JSON/.test(error.message) && !/SECRET|abc123/.test(error.message),
+	);
+});
+
+test("readAlignFile: regular files up to the cap, relative to the cwd or absolute; never a pipe, a device or a remote session's path", () => {
+	const dir = mkdtempSync(join(tmpdir(), "align-file-"));
+	try {
+		writeFileSync(join(dir, "plan.json"), "{}");
+		assert.equal(readAlignFile(dir, "plan.json"), "{}", "relative to the cwd");
+		assert.equal(readAlignFile("/nowhere", join(dir, "plan.json")), "{}", "an absolute path as is");
+		writeFileSync(join(dir, "big.json"), "x".repeat(ALIGN_FILE_MAX_BYTES + 1));
+		assert.throws(() => readAlignFile(dir, "big.json"), /is too large for an alignment \(the limit is 256 KB\)/);
+		writeFileSync(join(dir, "edge.json"), "x".repeat(ALIGN_FILE_MAX_BYTES));
+		assert.equal(readAlignFile(dir, "edge.json").length, ALIGN_FILE_MAX_BYTES, "exactly the cap is fine");
+		assert.throws(() => readAlignFile(dir, "/dev/zero"), /not a regular file/, "a device never grows memory");
+		assert.throws(() => readAlignFile(dir, "."), /not a regular file|EISDIR/);
+		// A FIFO with no writer: opened non-blocking and refused at once, never hanging the process.
+		if (spawnSync("mkfifo", [join(dir, "pipe")]).status === 0) assert.throws(() => readAlignFile(dir, "pipe"), /not a regular file/);
+		assert.throws(() => readAlignFile(dir, "missing.json"), /ENOENT/);
+		// A remote session's tools run on its target: the local disk is the wrong machine.
+		assert.throws(() => readAlignFile(dir, "plan.json", "box"), /target "box", and fromFile reads this machine's disk; create the alignment inline/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("ids are never reused: add after remove continues the count; a question is dropped, never removed", () => {
@@ -173,6 +206,10 @@ test("answers: decide records the user's words, accept takes the recommendation,
 	assert.deepEqual(doc.questions[1]!.decision, { text: "plain JSONL", by: "accepted-recommendation", at: NOW });
 	assert.equal(openText(doc), "1 of 3 open");
 	assert.equal(alignStatus(doc), "aligning");
+	// accept never replaces what the user said, and one id named twice is refused, not doubled.
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "accept", q: "q1" }] }, env), /q1 is already decided \("collapsed, like the web"\); reopen it first/);
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "accept", q: ["q3", "q3"] }] }, env), /q3 is named twice/);
+	assert.deepEqual(run([{ ops: [{ op: "accept", q: "open" }] }], docs).docs[0]!.questions[0]!.decision?.by, "user", "accept open leaves decided questions alone");
 
 	const dropped = run([{ ops: [{ op: "drop", q: "q3", why: "out of scope" }] }], docs).docs[0]!;
 	assert.equal(alignStatus(dropped), "confirmed", "every live question decided: confirmed, with no explicit op");
@@ -281,9 +318,19 @@ test("details round-trip through JSON and normalizeAlignDetails; the stored shap
 		{ ...stored, doc: { ...stored.doc, rev: 0 } },
 		{ ...stored, doc: { ...stored.doc, questions: [{ ...stored.doc!.questions[0], decision: { text: "x", by: "robot", at: NOW } }] } },
 		{ ...stored, exempt: { why: "" } },
+		// The invariants ids depend on: unique per kind, never past the counter, dropped iff why.
+		{ ...stored, doc: { ...stored.doc, questions: [stored.doc!.questions[0], { ...stored.doc!.questions[1], id: "q1" }, stored.doc!.questions[2]] } },
+		{ ...stored, doc: { ...stored.doc, next: { ...stored.doc!.next, q: 2 } } },
+		{ ...stored, doc: { ...stored.doc, findings: [{ id: "f0", text: "zero" }] } },
+		{ ...stored, doc: { ...stored.doc, findings: [{ id: "fx1", text: "not an id" }] } },
+		{ ...stored, doc: { ...stored.doc, phase: "dropped" } },
+		{ ...stored, doc: { ...stored.doc, droppedWhy: "why, while open" } },
 	]) {
 		assert.equal(normalizeAlignDetails(bad), undefined, JSON.stringify(bad).slice(0, 80));
 	}
+	// A stored snapshot whose ids ran past its counter would make the next add reuse one.
+	const dropped = run([{ ops: [{ op: "drop", why: "moved on" }] }], [last.details.doc!]).last.details;
+	assert.deepEqual(normalizeAlignDetails(JSON.parse(JSON.stringify(dropped))), dropped, "a dropped document with its why is valid");
 });
 
 test("counts, the hidden note and the widget cover open documents only", () => {
@@ -385,6 +432,20 @@ test("planSignal: catches a plan that asks the user to decide, and leaves report
 	assert.equal(planSignal("The fix is on `feat/x`, 3 commits, tests pass.\n\nWant me to merge it?"), null);
 	assert.equal(planSignal("Merged. The open questions from before are recorded in al_2.\n\nAnything else?"), null, "decision words above, but no list and no asking end");
 	assert.equal(planSignal("```\nShould I go ahead?\n```\nDone."), null, "code fences are ignored");
+
+	// False positives from the review, pinned: none of these asks the user to decide a design.
+	assert.equal(planSignal("Fixed it.\n\n**Alignment card**: the chip now shows counts.\n\nAll tests pass."), null, "a bold line that mentions alignment");
+	assert.equal(planSignal("## Alignment fixes shipped\n\n- a\n- b\n\nDone."), null, "a heading that mentions alignment, with no colon and title");
+	assert.equal(planSignal("## Alignment: Export\n\nx"), "markdown-alignment", "the old anchor itself still counts");
+	assert.equal(planSignal("Tests pass.\n\n- a\n- b\n\nShould I proceed with the merge?"), null, "a merge confirmation");
+	assert.equal(planSignal("Built on `feat/x`.\n\nShould I go ahead and push it?"), null, "a push confirmation");
+	assert.equal(planSignal("I looked at the open questions in the issue tracker:\n- q1\n- q2\n\nAnything else you need?"), null, "decision words and a list, closed by an ordinary question");
+	assert.equal(planSignal("Partly true.\n\n- the guard\n- the restart\n\nNeither is covered by the open questions. Should I steer the worker to check it?"), null, "a steer question after a list");
+	const options = "The two options are:\n- A: a flag\n- B: a subcommand\n\nWhich do you prefer?";
+	assert.equal(planSignal(options, { userAsked: true }), null, "options answering the user's own question");
+	assert.equal(planSignal(options), "asks-decision", "the same choice, when the user asked for work, is a decision");
+	assert.equal(planSignal("**Decisions for you:**\n1. Should I merge `feat/x`?\n2. Should I restart the server?\n\nFull report in the cache."), null, "a list of run confirmations");
+	assert.equal(planSignal("Questions for you:\n1. Merge now?\n2. Keep UTC or local dates?\n3. Streaks too?\n\nI'll wait."), "question-list", "run confirmations don't count, design questions do");
 	assert.equal(planSignal(""), null);
 	assert.equal(planSignal(undefined as unknown as string), null);
 });

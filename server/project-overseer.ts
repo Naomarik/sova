@@ -43,7 +43,7 @@ import { canonicalPath } from "./paths";
 import { listDecisions, onReconcileEvent, promoteDecisions, reconcileProject } from "./reconcile";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
-import { cleanupSessions, getSessionSummary, indexedSessionPaths, listSessions } from "./sessions-index";
+import { getSessionSummary, indexedSessionPaths, listSessions } from "./sessions-index";
 import { setArchived } from "./archived-sessions";
 import { readView } from "./share/hub";
 import { normalizeEntries, readActiveBranch } from "./transcript";
@@ -155,16 +155,10 @@ onOrgAttached((orgId, dir) => {
   }
 });
 
-/** Delete conversations that fell off the history (>20), through the cleanup "paths" mode. */
+/** Archive conversations past the history's 20; they stay in the workspace repo, like every
+    workspace file (Clean Up never deletes one, §app.session-list/cleanup-org-guard). */
 async function dropHistory(ids: string[]): Promise<void> {
-  const paths: string[] = [];
-  for (const id of ids) {
-    const p = await pathOfId(id);
-    if (!p) continue;
-    setArchived(id, true);
-    paths.push(p);
-  }
-  if (paths.length) await cleanupSessions({ mode: "paths", paths, dryRun: false }).catch(() => {});
+  for (const id of ids) if (await pathOfId(id)) setArchived(id, true);
 }
 
 const ensuring = new Map<string, Promise<{ id: string; path: string }>>();

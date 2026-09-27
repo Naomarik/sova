@@ -5248,6 +5248,7 @@
       ],
       "code": [
         "server/owner-page.ts",
+        "server/owner-page-built.test.ts",
         "shared/owner.ts",
         "src/share/owner-view.tsx",
         "src/share/thread.tsx",

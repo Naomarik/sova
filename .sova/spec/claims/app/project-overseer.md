@@ -137,7 +137,8 @@ composer has no mode switch.
   conversation ("Back to the overseer"), and the read-only line "An earlier conversation. Read only."
   It has no level, Run Now, ⋯ or status strip.
 - **Phone** (below 480px): line 1 keeps back, the title, the state chip, ⋯ and Session details; the
-  meta line keeps only the project (the org and the watch word go; ⋯ says Stop or Start Watching).
+  meta line keeps only the project (the org and the watch word go; ⋯ says Stop or Start Watching),
+  on a line of its own under line 1, lined up with the title, ending in "…" when it doesn't fit.
 
 ## §app.project-overseer/autonomy-levels — What it may do on its own
 
@@ -214,6 +215,11 @@ composer has no mode switch.
   open, and the limit is {max} at once." (or coding sessions running) + "One finishing is a reason
   to look again; don't promise when." The prompt says never to promise a look "next time" unless
   a tool result says when it comes, and lists every limit in force.
+- **Promotions count what was promoted.** `sova_promote` checks every id it is given against what
+  is left before it promotes anything: a request over it is refused whole and takes nothing. Then
+  only the decisions it promoted count against the allowance; an id it refused (unknown, not
+  drafted, in a conflict, outside its author's area) takes nothing, and a call that promotes none
+  takes nothing.
 - **The page** (the project's Overseer card) has a **Limits** section: every limit above, each
   allowance and the budget with an `Unlimited` checkbox that disables its field (a blank field is
   never Unlimited), the at-once limits without one, and the pace; one form, **Save Limits** (one

@@ -1475,7 +1475,8 @@ export interface SandboxApplyResult {
   sandbox?: SandboxInfo;
 }
 
-/** WS /ws/chat?path= — full-duplex chat for webapp-owned sessions. */
+/** WS /ws/chat?path= — full-duplex chat for webapp-owned sessions. `&tail=1` asks for the transcript
+    newest rows first (`hello.older`, then `history`); without it every message is as it always was. */
 export type ChatClientMessage =
   /** `clientId` is the SENDER'S OWN id for this send, chosen before the round trip. When the send
       is held in the outgoing queue it becomes that item's `QueueItem.id`, so the client can key
@@ -1629,7 +1630,15 @@ export type ChatServerMessage =
       thinking = the session's active thinking level (one of off…max), clamped to its model. */
   /** `isCompacting` = a compaction (manual or pi's automatic one) is running as this is sent, so a
       client that connects mid-compaction shows it; absent from servers that predate it. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null }
+  /** `older` (only to a client that asked with `?tail=1`): `items` is the branch's newest whole
+      entries, and this many rows come before them; they follow as `history` messages right after
+      the messages that follow every hello (below), before anything else. Absent or 0: `items` is
+      the whole branch, as for every client that didn't ask. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number }
+  /** The older rows of a `hello` with `older` (see HistoryMessage). After attach they come after
+      `links`; after a rewind, regenerate or compaction, after the requester's `rewound`,
+      `regenerated` or `compacted` (and a compaction's `queue`). */
+  | HistoryMessage
   /** Raw pi SDK agent event passthrough. Shapes documented in pi docs/rpc.md "Events":
       message_update (assistantMessageEvent: text_delta | thinking_delta | toolcall_start/delta/end),
       tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ... */
@@ -1751,6 +1760,7 @@ export type ChatServerMessage =
   | { type: "error"; message: string; code?: "busy" | "recent" | "reloaded" | "config" | "refused" | "internal"; clientId?: string };
 
 /** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes.
+    `&tail=1` cuts the snapshot as `/ws/chat` cuts its hello (`older`, then `history`).
     Also accepts `?claude=<uuid>` instead of `?path=`: a claude-code worker's own Claude Code
     session (WorkerInfo.sessionId), found under ~/.claude/projects and normalized into the same
     rows. Same `snapshot`/`append`/`error` messages; an unknown id closes with 4404 like a bad path.
@@ -1763,8 +1773,20 @@ export type ChatServerMessage =
     is known for pi files (the reply's own model); a Claude Code file doesn't name its variant, so
     it is null there and the client takes WorkerInfo.contextWindow. Absent from older servers. */
 export type WatchContext = ContextInfo | "compacted" | null;
+/** Rows that come before a tail-first `hello` or `snapshot` (`older` > 0), newest chunk first,
+    each chunk about 256 KB of JSON: prepend each to the list. `left` = rows still to come after
+    this one; 0 = the list is whole. Sent only to a client that asked with `?tail=1`, in one step
+    with its hello or snapshot, so nothing else comes between the chunks. */
+export interface HistoryMessage {
+  type: "history";
+  items: TranscriptItem[];
+  left: number;
+}
+/** `snapshot.older`: as `hello.older` — only with `?tail=1`; the rows follow as `history`, before
+    any `append`. A snapshot sent again (the file was rewritten) is cut the same way. */
 export type WatchServerMessage =
-  | { type: "snapshot"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext }
+  | { type: "snapshot"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext; older?: number }
+  | HistoryMessage
   | { type: "append"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext } // new JSONL rows since snapshot, as they appear
   | { type: "error"; message: string };
 

@@ -36,6 +36,7 @@ import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./wor
 import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
+import { cutTail, type HistoryPart } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
@@ -277,6 +278,34 @@ function asConfigError(err: unknown, cwd: string): ConfigError | null {
 /** Minimal client interface so ws.ts owns the socket details. */
 export interface ChatClient {
   send(msg: ChatServerMessage): void;
+  /** The same message already serialized (server/ws.ts): a hello or history made once for every
+      client that gets it. Without it, `send`. */
+  sendRaw?(json: string): void;
+  /** Asked for newest rows first (`/ws/chat?tail=1`): its hellos are cut (server/tail-hello.ts). */
+  tail?: boolean;
+}
+
+/** `msg` to one client, serialized at most once however many clients get it (`raw`). */
+function deliver(client: ChatClient, msg: ChatServerMessage, raw: () => string): void {
+  if (client.sendRaw) client.sendRaw(raw());
+  else client.send(msg);
+}
+
+/** A hello cut for tail clients: the hello they get, and the history that follows it. */
+interface CutHello {
+  hello: ChatServerMessage;
+  history: HistoryPart[];
+}
+
+function cutHello(hello: Extract<ChatServerMessage, { type: "hello" }>): CutHello {
+  const cut = cutTail(hello.items);
+  return { hello: cut.older > 0 ? { ...hello, items: cut.items, older: cut.older } : hello, history: cut.history };
+}
+
+/** A cut hello's history to the tail clients that got that hello and are still here. */
+function sendHistory(cut: CutHello | null, clients: readonly ChatClient[], still: (c: ChatClient) => boolean): void {
+  if (!cut) return;
+  for (const c of clients) if (still(c)) for (const part of cut.history) deliver(c, part.msg, () => part.raw);
 }
 
 let modelRuntimePromise: Promise<ModelRuntime> | null = null;
@@ -1642,7 +1671,7 @@ class ChatSession {
     }
   }
 
-  hello(): ChatServerMessage {
+  hello(): Extract<ChatServerMessage, { type: "hello" }> {
     const session = this.session;
     const branch = session.sessionManager.getBranch();
     return {
@@ -1658,7 +1687,11 @@ class ChatSession {
 
   attach(client: ChatClient): void {
     this.clients.add(client);
-    client.send(this.hello());
+    const hello = this.hello();
+    // A tail client's older rows go last, after the state its first paint needs, and in this same
+    // synchronous step, so no event, append or other hello can come between them.
+    const cut = client.tail ? cutHello(hello) : null;
+    client.send(cut ? cut.hello : hello);
     client.send(this.commands());
     // The queue goes out on EVERY attach, empty or not: a reconnect resets the pane's live rows to
     // nothing, so a client that is told nothing cannot tell "no queue" from "not told yet" and
@@ -1669,6 +1702,7 @@ class ChatSession {
     const snap = this.workersSnapshot();
     if (snap) client.send(snap);
     pushLinks(this, client);
+    sendHistory(cut, [client], (c) => this.clients.has(c));
   }
 
   detach(client: ChatClient): void {
@@ -2192,7 +2226,7 @@ class ChatSession {
         setImmediate(() => {
           if (this.disposed) return;
           try {
-            this.refreshAfterCompaction();
+            this.refreshAfterCompaction()();
           } catch (err) {
             console.error("[chat] refresh after compaction failed", err);
           }
@@ -2202,7 +2236,7 @@ class ChatSession {
       }
       if (event.type === "agent_settled" && this.refreshAtSettle) {
         this.refreshAtSettle = false;
-        this.refreshAfterCompaction();
+        this.refreshAfterCompaction()();
       }
     } catch (err) {
       console.error("[chat] refresh after compaction failed", err);
@@ -2212,10 +2246,11 @@ class ChatSession {
 
   /** afterBranchMove, then the queue snapshot: that hello reset every client's pending rows, and the
       snapshot is what rebuilds them (as on attach). */
-  private refreshAfterCompaction(): void {
-    this.afterBranchMove();
-    if (this.disposed) return;
+  private refreshAfterCompaction(): () => void {
+    const history = this.afterBranchMove();
+    if (this.disposed) return history;
     this.broadcast({ type: "queue", items: this.queue.snapshot() });
+    return history;
   }
 
   /** The `steer` case of handle(), whose failures `fail` reports to the sender. */
@@ -2278,9 +2313,10 @@ class ChatSession {
     if (!outcome.ok) {
       client.send({ type: "compact_refused", id, reason: outcome.reason, message: outcome.message });
     } else {
-      this.refreshAfterCompaction();
+      const history = this.refreshAfterCompaction();
       if (this.disposed) return;
       client.send({ type: "compacted", id, entryId: outcome.entryId, tokensBefore: outcome.tokensBefore });
+      history();
     }
     this.queue.onSdkEvent();
     this.releaseLinks(false);
@@ -2305,9 +2341,10 @@ class ChatSession {
       client.send({ type: "rewind_refused", id, entryId, reason: outcome.reason, message: outcome.message });
       return;
     }
-    this.afterBranchMove();
+    const history = this.afterBranchMove();
     if (this.disposed) return;
     client.send({ type: "rewound", id, entryId, editorText: outcome.editorText });
+    history();
   }
 
   /**
@@ -2341,9 +2378,10 @@ class ChatSession {
       beforeMarker: () => this.flushDeferredAppends(),
     });
     if (!outcome.ok) return refuse(outcome.reason, outcome.message);
-    this.afterBranchMove();
+    const history = this.afterBranchMove();
     if (this.disposed) return;
     client.send({ type: "regenerated", id, entryId, userEntryId: target.userId });
+    history();
     // The branch is now at the point before the user message, so the session is idle and this
     // starts a turn rather than queueing. Its failure reports into this session's pane, where
     // every other turn failure already does.
@@ -2354,11 +2392,24 @@ class ChatSession {
   /** The refresh no SDK event does after the leaf moved: a fresh hello (branch-based, so transcript
       and context fill follow the new leaf), the workers snapshot, and this chat's mode re-resolved
       from the new branch as bind() does. Shared by rewind, regenerate and compact so they can never
-      drift into telling clients different things about the same move. */
-  private afterBranchMove(): void {
+      drift into telling clients different things about the same move.
+      Returns the older rows' send for tail clients (server/tail-hello.ts): the caller runs it right
+      after the requester's own ack, still in the same step, so the requester's composer text never
+      waits behind a long history and nothing else comes between the chunks. */
+  private afterBranchMove(): () => void {
     if (!this.foreignWrite) markOwned(this.path); // the marker (or compaction) entry is our write
-    if (this.disposed) return;
-    this.broadcast(this.hello());
+    if (this.disposed) return () => {};
+    const hello = this.hello();
+    let cut: CutHello | null = null;
+    let raw: string | null = null;
+    const tails: ChatClient[] = [];
+    for (const c of this.clients) {
+      if (c.tail) {
+        cut ??= cutHello(hello);
+        tails.push(c);
+        c.send(cut.hello);
+      } else deliver(c, hello, () => (raw ??= JSON.stringify(hello)));
+    }
     // Every client's hello handler clears its worker list, and pushWorkers only sends on change,
     // so an unchanged set would stay blank: re-send it now (attach() does the same after hello).
     const workers = this.workersSnapshot();
@@ -2370,6 +2421,7 @@ class ChatSession {
     this.broadcast(this.modeMessage());
     this.sendSandbox((m) => this.broadcast(m)); // the extension re-restores on session_tree too
     pushLinks(this); // after every hello, as attach() does
+    return () => sendHistory(cut, tails, (c) => this.clients.has(c));
   }
 
   broadcast(msg: ChatServerMessage): void {

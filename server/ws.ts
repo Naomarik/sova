@@ -25,8 +25,18 @@ function sendJson(ws: WebSocket, msg: ChatServerMessage | WatchServerMessage | S
   }
 }
 
-async function handleChat(ws: WebSocket, path: string, force: boolean): Promise<void> {
-  const client: ChatClient = { send: (msg) => sendJson(ws, msg) };
+/** A message already serialized: made once for every client that gets it. */
+function sendRaw(ws: WebSocket, json: string): void {
+  if (ws.readyState !== ws.OPEN) return;
+  try {
+    ws.send(json);
+  } catch (err) {
+    console.error("[ws] send failed", err);
+  }
+}
+
+async function handleChat(ws: WebSocket, path: string, force: boolean, tail: boolean): Promise<void> {
+  const client: ChatClient = { send: (msg) => sendJson(ws, msg), sendRaw: (json) => sendRaw(ws, json), ...(tail ? { tail } : {}) };
   // Buffer messages that arrive while the runtime is still opening.
   const early: ChatClientMessage[] = [];
   let chat: Awaited<ReturnType<typeof acquireChat>> | null = null;
@@ -74,10 +84,17 @@ async function handleChat(ws: WebSocket, path: string, force: boolean): Promise<
   for (const msg of early.splice(0)) chat.handle(client, msg);
 }
 
-function handleWatch(ws: WebSocket, path: string, normalize?: Normalize, tally?: UsageTally, format: Format = "pi"): void {
+function handleWatch(ws: WebSocket, path: string, cut: boolean, normalize?: Normalize, tally?: UsageTally, format: Format = "pi"): void {
   // pi replies name their model, so the fill carries its window; the runtime is resolved first.
   let resolve: WindowResolver = () => null;
-  const tail = new SessionTail(path, (msg) => sendJson(ws, msg), normalize, tally, contextTally(format, (ref) => resolve(ref)));
+  const tail = new SessionTail(
+    path,
+    (msg) => sendJson(ws, msg),
+    normalize,
+    tally,
+    contextTally(format, (ref) => resolve(ref)),
+    cut ? (json) => sendRaw(ws, json) : undefined,
+  );
   // A claude-code worker's own file has no Sova session id: nothing to stamp.
   const id = normalize ? "" : idOf(path);
   if (id) {
@@ -126,6 +143,8 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
       handleFeed(ws);
       return;
     }
+    // ?tail=1: the transcript newest rows first (server/tail-hello.ts); anything else, as it always was.
+    const tail = url.searchParams.get("tail") === "1";
     // /ws/watch?claude=<uuid>: a claude-code worker's own session file, in CC's own format.
     const claudeId = route === "/ws/watch" ? url.searchParams.get("claude") : null;
     if (claudeId) {
@@ -135,7 +154,7 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
         ws.close(4404, "bad path");
         return;
       }
-      handleWatch(ws, file, normalizeClaudeText, claudeUsageTally(), "claude");
+      handleWatch(ws, file, tail, normalizeClaudeText, claudeUsageTally(), "claude");
       return;
     }
     const path = resolveSessionPath(url.searchParams.get("path"));
@@ -146,12 +165,12 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
       return;
     }
     if (route === "/ws/chat") {
-      handleChat(ws, path, url.searchParams.get("force") === "1").catch((err) => {
+      handleChat(ws, path, url.searchParams.get("force") === "1", tail).catch((err) => {
         console.error("[ws/chat]", err);
         ws.close(4500, "internal");
       });
     } else {
-      handleWatch(ws, path);
+      handleWatch(ws, path, tail);
     }
   });
 }

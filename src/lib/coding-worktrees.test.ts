@@ -21,7 +21,7 @@ const wt = (over: Partial<CodingWorktree> = {}): CodingWorktree => ({
   running: false,
   createdAt: "2026-09-27T10:00:00Z",
   ...over,
-});
+}) as CodingWorktree;
 
 test("mode keys round-trip; Automatic is null", () => {
   for (const k of CODING_MODE_KEYS) assert.equal(codingModeKey(codingModeOf(k)), k);
@@ -43,6 +43,8 @@ test("gestures: which are offered", () => {
   // Its folder deleted by hand: the branch can still be merged.
   assert.equal(offersMerge(wt({ state: "missing" })), true);
   assert.equal(offersMerge(wt({ state: "missing", merged: true })), false);
+  // Its branch deleted: nothing left to merge.
+  assert.equal(offersMerge(wt({ state: "removed", branchGone: true })), false);
   assert.equal(offersRemove(wt()), true);
   assert.equal(offersRemove(wt({ state: "merged", merged: true })), true);
   assert.equal(offersRemove(wt({ state: "removed" })), false);

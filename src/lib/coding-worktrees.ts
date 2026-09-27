@@ -30,7 +30,7 @@ export const isDelegate = (key: CodingModeKey): boolean => key.startsWith("deleg
 
 // ---- coding sessions and their worktrees ------------------------------------------------------------
 
-type Row = Pick<CodingWorktree, "state" | "path" | "running" | "workers" | "merged">;
+type Row = Pick<CodingWorktree, "state" | "path" | "running" | "workers" | "merged" | "branchGone">;
 
 /** Why a gesture can't run now (the disabled reason), or null when it can. */
 export type Gate = string | null;
@@ -43,7 +43,7 @@ function busyGate(w: Row): Gate {
 }
 
 /** Merge Branch is offered on a branch not yet in its target: open, or its folder gone (removed or missing) before a merge. */
-export const offersMerge = (w: Row): boolean => (w.state === "open" || w.state === "removed" || w.state === "missing") && !w.merged;
+export const offersMerge = (w: Row): boolean => (w.state === "open" || w.state === "removed" || w.state === "missing") && !w.merged && !w.branchGone;
 /** Remove Worktree is offered while the worktree folder is there. */
 export const offersRemove = (w: Row): boolean => w.state === "open" || w.state === "merged";
 

@@ -393,7 +393,8 @@
       "requires": [
         "§app.worker-restore/resume",
         "§app.subagents-pane/context-fill",
-        "§chat.context-window/last-reply"
+        "§chat.context-window/last-reply",
+        "§chat.context-window/sidebar-ring"
       ],
       "code": [
         "src/components/ConnectionBanner.tsx",
@@ -571,7 +572,9 @@
       "code": [
         "src/components/ContextRing.tsx",
         "src/components/Sidebar.tsx",
-        "src/components/SubagentPane.tsx"
+        "src/components/SubagentPane.tsx",
+        "src/components/ContextGauge.tsx",
+        "src/design/base.css"
       ]
     },
     "§chat.context-window/states": {

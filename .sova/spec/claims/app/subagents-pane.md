@@ -308,9 +308,10 @@ webapp never writes to it (CLAUDE.md: no file locking).
 ```html
 <div class="subagents-view">
   <header class="subagents-view-head">
-    <h3 class="subagents-view-title">designer</h3>
+    <div class="subagents-view-name"><h3 class="subagents-view-title">designer</h3> <span class="subagents-view-wid text-mono text-muted">ag_03</span></div>
     <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
-    <p class="subagents-view-meta meta-line"><span class="text-mono">ag_03</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> anthropic</span> <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5"><span class="meta-line-sep" aria-hidden="true">·</span> opus-5</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> effort <span class="text-mono">medium</span></span> <span title="The modes this worker was given when it started."><span class="meta-line-sep" aria-hidden="true">·</span> mode <span class="text-mono">spec</span></span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41"><span class="meta-line-sep" aria-hidden="true">·</span> 23.7k tokens</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> <span class="context-readout"><span class="context-gauge" title="{the sentence}"><span class="context-label" aria-hidden="true">Context</span> <span class="context-value" aria-hidden="true">64k / 1M · 6%</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></span></p>
+    <span class="chip chip-count" title="The modes this worker was given when it started.">spec</span>   <!-- only when it was given modes -->
+    <p class="subagents-view-meta meta-line"><span class="text-mono meta-line-shrink" title="anthropic · anthropic/claude-opus-5">opus-5</span> <span class="text-mono" title="effort medium"><span class="meta-line-sep" aria-hidden="true">·</span> medium</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41"><span class="meta-line-sep" aria-hidden="true">·</span> 23.7k tok</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> <span class="context-readout"><span class="context-compact" title="{the sentence}"><span class="context-ring" title="{the sentence}">…</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></span></p>
   </header>
   <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
     <div class="subagents-banner stack-2">…banners, or nothing…</div>
@@ -322,19 +323,25 @@ webapp never writes to it (CLAUDE.md: no file locking).
 
 - **Sub-header.** `.subagents-view-head` names the worker on surface above the scroll region, so
   it never scrolls away (sticky by construction, not by `position: sticky`). The title is body
-  semibold, then the same status chip as the row, then a meta line: the id in mono, then the
-  provider, then the model, then **the effort** (`effort {level}`, the level in mono; a worker
-  that reports none shows nothing here), then **the modes it was given** at its start
-  (§chat.mode-menu/workers: `mode {name}`, or `modes {a}, {b}` for several, the names in mono; a
-  worker given none, or recorded by an older pi-config, shows nothing here), then the worker's
-  tokens, and last the **context readout**
+  semibold, with **the worker id** right beside it, quieter (`.subagents-view-wid`: mono, caption
+  size, muted ink); the title truncates (two lines at most) before the id or the chips go anywhere
+  odd. Then the same status chip as the row (then its team and badge chips, when it has
+  them), then **the modes it was given** at its start as one more quiet `chip chip-count` on that
+  row (§chat.mode-menu/workers: the names, comma-joined, e.g. `spec`; `title` "The modes this
+  worker was given when it started."; a worker given none, or recorded by an older pi-config,
+  shows no chip), then a meta line of four short facts, so it holds one row at a normal pane
+  width: **the model** leads, bare and in mono, the only fact that clips
+  (`.meta-line-shrink`); its `title` carries the route that serves it and the full id
+  (`{provider} · {model id}`, e.g. "claude code · claude-haiku-4-5-20251001"). Then **the
+  effort**, as the bare level in mono (`low`, `title` "effort low"; a worker that reports none
+  shows nothing here), then the worker's tokens as `{n} tok` (the usage breakdown in its `title`),
+  and last the **context readout**
   (§app.subagents-pane/context-fill): the gauge trails the facts that name the worker and what it
   has spent. **The effort leads the count**: what a worker is thinking at is a fact about
   the worker, where the count beside it is a running total that changes under the reader. **A
   separator belongs to the fact it introduces**: each `·` is inside its own fact's element, not a
   sibling before it, so a wrapped line starts with its own dot and no wrap can strand one. The
-  model fact's dot is shown only when a provider precedes it: a worker whose provider can't be
-  derived opens the line on its model, undotted. The
+  model opens the line, undotted. The
   token number here is the **open transcript's own**
   total, counted from the file as it is tailed (`/ws/watch` sends it with every `snapshot` and
   `append`), so it ticks while you watch instead of waiting for the next worker snapshot; it
@@ -344,15 +351,17 @@ webapp never writes to it (CLAUDE.md: no file locking).
   isn't on screen. There, the back button leads the head, and title, chips and meta sit beside
   it in `.subagents-view-id`.
 - **Context readout.** Last in the meta line, after the tokens, the meta line carries the worker's
-  context fill (§app.subagents-pane/context-fill) as the chat head says it
-  (§chat/context-window): "Context 64k / 1M · 6%", plain text, the same format, steps, glyph at
-  ≥95% and sentence (`title`, and a visually hidden copy for AT), "Context compacted" after a
-  compaction, "Context 64k" when the window is unknown, and nothing before the first reply. Like
+  context fill (§app.subagents-pane/context-fill) in **compact form**, so the meta line spends as
+  little width as it can: the worker row's ring (§chat.context-window/sidebar-ring, the
+  same component, steps and hues) followed by the percent ("6%", hued at the same steps), with
+  the full sentence (`contextSentence`, the chat head's) as the `title` and a visually hidden
+  copy for AT. Where the ring has no shape to draw, the chat head's words stay
+  (§chat/context-window): "Context compacted" after a compaction, "Context 64k" when the window
+  is unknown; nothing before the first reply. Like
   the tokens it is the **open transcript's own** value, recomputed on every `snapshot` and
   `append`, and falls back to the row's. It isn't in a `.session-head`, so the head's width
-  steps don't apply; it collapses to the percent ("6%") when the pane itself is under 480px, and
-  never disappears on a phone. The meta line wraps to a second line rather than clip the facts at
-  its end, and because each dot belongs to the fact it introduces, a wrapped line begins with that
+  steps don't apply, and it never disappears on a phone. Where even the short line doesn't fit,
+  the meta line wraps to a second line rather than clip the facts at its end, and because each dot belongs to the fact it introduces, a wrapped line begins with that
   fact's own `·` rather than leaving a dot stranded at the end of the line above.
 - **Thread.** The same §chat/transcript rows, capped at the transcript column (`--measure` + `--space-9`) and
   centred, 16px side padding. Auto-follow and Jump to Latest behave exactly as §chat.transcript/live-watch.

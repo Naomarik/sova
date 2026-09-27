@@ -16,8 +16,10 @@ too, so it never rests on hue alone.
 
 **A ring is a bar**, and the rule above says the context readout is never one. Two list rows get
 one anyway: the session row (§app/session-list, line 3) and the subagents pane's worker row
-(§app.subagents-pane/worker-rows, line 1). This is the exception, stated once, with what buys it,
-and it covers exactly those two:
+(§app.subagents-pane/worker-rows, line 1). The subagents pane's view head borrows the same ring,
+always followed by the percent in words (§app.subagents-pane/transcript-view), so it is not a
+ring standing alone. This is the exception, stated once, with what buys it, and it covers exactly
+those:
 
 - **It is list-scale, where text is not affordable.** The head has 56px and a full line to spend;
   a row's meta line has 250px already holding a timestamp and a model id, and 279 of them scroll

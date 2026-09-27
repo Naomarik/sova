@@ -247,7 +247,8 @@ does not (aligning is a conversation with the user, which a worker doesn't have)
   spawn (§app.worker-restore/resume), not the ones it first started with.
 - **The card says so.** What a worker was given is recorded with it (its live record and its
   durable record) and shown on its view head (§app.subagents-pane/transcript-view) as
-  `mode {name}`, the name in mono, after the effort. A worker given none, and one recorded by an
+  a quiet chip on its title row reading the mode names (`spec`; several comma-joined), beside
+  its status chip. A worker given none, and one recorded by an
   older pi-config, shows nothing.
 
 The parent learns nothing new: the mode extension publishes the parent's worker modes and the

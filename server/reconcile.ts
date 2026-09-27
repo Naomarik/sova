@@ -793,6 +793,7 @@ function startConflictBaton(d: ReconcileDeps, c: Conflict, byId: Map<string, Dec
   // No link is minted here (nobody could be shown it): Needs-you asks the operator to send one.
   const created = d.startBaton({ ...batonFor(c, a, b, area), ...choice, ...(owner ? { owner } : {}), mintLink: false });
   c.batonSessionId = created.sessionId;
+  // Its path is derived from the id on each read (readConflicts), never stored in the repo.
   c.batonPath = created.path;
 }
 

@@ -111,7 +111,7 @@ export interface Conflict {
   selfAsserted?: boolean;
   /** The baton session asking `routedTo` to settle it. */
   batonSessionId?: string;
-  /** That session's file on this host, for #/s/<path>. */
+  /** That session's file on this host, for #/s/<path>: derived from the id on each read, never stored. */
   batonPath?: string;
   state: "open" | "resolved";
   /** The DecisionRow that settled it (a new decision, or the side the operator kept). */

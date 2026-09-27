@@ -113,6 +113,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   and there is no read-only mode yet. Copy the sessions you need into the hermetic `.agent`, or view them through the live server.
 - Hermetic gaps: 4810 by default (one server per port; `SOVA_PORT` for a second), and a symlinked `node_modules` can break `pnpm run` in a worktree.
 - `pnpm run typecheck` — must pass. `pnpm run build` — must pass.
+- `pnpm run prices:update` — regenerate the checked-in price seed `shared/model-prices/seed.json` from models.dev and print
+  the changes and any unpriced model (`--from <api.json>` offline, `--check` writes nothing). Aliases are hand-kept in
+  `aliases.json` there. Servers refresh their own copy (`<state root>/model-prices.json`) every 3 days; `SOVA_PRICES_FETCH=off` stops that.
 - `pnpm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`). They're ESM TypeScript with
   extensionless imports, so they run under `tsx --test`; plain `node --test <file>` fails with
   ERR_MODULE_NOT_FOUND.

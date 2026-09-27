@@ -19,7 +19,12 @@ confined. Spec: `§chat/sandbox` (draft `sandbox-feature`).
 | Event bus | `sandbox:state` (`SandboxStateEvent`: `on`, `extensionPath`, `enforcement`, `claudeSettingsJson?`, `claudePermissionMode?`, `claudeRefusal?`) on `session_start`, every change, and in answer to `sandbox:discover`. `on` is false under a remote target. Claude Code workers under on get `claudeSettingsJson` (the CLI's sandbox for Bash plus `Read`/`Edit` permission rules for the file tools, `tools.ts` `claudeSettingsFor`) and must run with `--permission-mode dontAsk`, never `bypassPermissions`, which skips the rules (`plan/PROBE.md`). `claudeRefusal` is set only when the sandbox is unavailable, or partial without `acceptPartial`. |
 
 `state.ts` and `policy.ts` import node builtins only (and each other), so Sova's server may import
-them like the mode trio.
+them like the mode trio. So does `session-policy.ts` (with `backend.ts`, `backends/*` and `env.ts`,
+all builtins only): `resolveSessionPolicy({agentDir, cwd, sessionId, worktreeRoots?, parent?})` is the
+one resolution of a session's policy (platform defaults, git-protected paths, shadowed caches, the
+session tmp `sessionTmpDir(id)`, tracked worktrees with their `.agent` read-only). `snapshot()`
+calls it before the proxy and the probe, and Sova's server calls it (`server/link-sandbox.ts`) to
+refuse a linked-session file transfer the session's own tools could not make.
 
 ## Off is pi as it is
 

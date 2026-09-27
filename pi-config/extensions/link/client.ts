@@ -54,6 +54,75 @@ export interface LinkInboxRecord {
 	delivery?: LinkDelivery;
 }
 
+/** A file offer's row for one recipient (§mesh.links/offers). */
+export type OfferRowState = "offered" | "accepted" | "pulling" | "extracting" | "done" | "declined" | "failed" | "expired" | "cancelled" | "refused";
+export const OFFER_FINAL: ReadonlySet<string> = new Set(["done", "declined", "failed", "expired", "cancelled", "refused"]);
+export const OFFER_ID_RE = /^of_[0-9a-f]{16}$/;
+
+export interface LinkOfferRoot {
+	name: string;
+	kind: "dir" | "file" | "symlink" | "other";
+	files: number;
+	bytes: number;
+}
+
+export type LinkOfferWarning = { kind: "gitlink"; root: string; path: string; gitdir: string } | { kind: "changed"; message: string };
+
+export interface LinkOfferRecipient {
+	to: LinkMemberRef;
+	dest?: string;
+	implicit?: boolean;
+	resolvedDest?: string;
+	state: OfferRowState;
+	received?: number;
+	/** Overrides the offer's expiresAt for this row (a slow pull still moving). */
+	expiresAt?: number;
+	startedAt?: number;
+	doneAt?: number;
+	retries?: number;
+	reason?: string;
+	message?: string;
+}
+
+export interface LinkOffer {
+	id: string;
+	linkId: string;
+	at: number;
+	expiresAt: number;
+	from: LinkMemberRef;
+	roots: LinkOfferRoot[];
+	files: number;
+	bytes: number;
+	exclude?: string[];
+	note?: string;
+	warnings?: LinkOfferWarning[];
+	snapshot?: { sha256: string; size: number };
+	packing?: { state: "packing" | "ready" | "failed"; written?: number; error?: string };
+	recipients: LinkOfferRecipient[];
+}
+
+export type LinkOfferDelivery = { to: LinkMemberRef } & (
+	| { state: "accepted"; resolvedDest: string }
+	| { state: "offered"; delivery: "started" | "delivered" }
+	| { state: "refused"; reason: string; message: string }
+	| { state: "outbox" }
+);
+
+export interface LinkOfferCreateResult {
+	offer: LinkOffer;
+	deliveries: LinkOfferDelivery[];
+}
+
+export interface LinkOfferCreate {
+	session: string;
+	link?: string;
+	to?: string | string[];
+	paths: string[];
+	exclude?: string[];
+	dest?: string | Record<string, string>;
+	note?: string;
+}
+
 /** A refusal from the host: a 4xx LinkError, or no answer at all. `reason` as the host gave it. */
 export class LinkHostError extends Error {
 	readonly status: number;
@@ -68,7 +137,8 @@ export class LinkHostError extends Error {
 /** The host's reasons that mean "this session is in no live link" (not a delivery failure). */
 export const UNLINKED_REASONS: ReadonlySet<string> = new Set(["not-member", "ended"]);
 
-const TIMEOUTS = { members: 15_000, brief: 3_000, send: 60_000, inbox: 10_000 };
+/** An offer lists the whole tree before it answers (a big tree takes a while); packing runs on after. */
+const TIMEOUTS = { members: 15_000, brief: 3_000, send: 60_000, inbox: 10_000, offer: 300_000, answer: 30_000, offers: 30_000 };
 
 export class LinkClient {
 	readonly origin: string;
@@ -93,6 +163,24 @@ export class LinkClient {
 		const q = new URLSearchParams({ session, ...(limit !== undefined ? { limit: String(limit) } : {}) });
 		const body = await this.call<{ records?: LinkInboxRecord[] }>("GET", `/api/mesh/links/inbox?${q}`, undefined, TIMEOUTS.inbox, signal);
 		return Array.isArray(body.records) ? body.records : [];
+	}
+
+	async offer(req: LinkOfferCreate, signal?: AbortSignal): Promise<LinkOfferCreateResult> {
+		return this.call<LinkOfferCreateResult>("POST", "/api/mesh/links/offers", req, TIMEOUTS.offer, signal);
+	}
+
+	async accept(offer: string, req: { session: string; dest: string }, signal?: AbortSignal): Promise<LinkOffer> {
+		return this.call<LinkOffer>("POST", `/api/mesh/links/offers/${encodeURIComponent(offer)}/accept`, req, TIMEOUTS.answer, signal);
+	}
+
+	async decline(offer: string, req: { session: string; reason?: string }, signal?: AbortSignal): Promise<LinkOffer> {
+		return this.call<LinkOffer>("POST", `/api/mesh/links/offers/${encodeURIComponent(offer)}/decline`, req, TIMEOUTS.answer, signal);
+	}
+
+	/** Both directions, newest first. */
+	async offers(session: string, signal?: AbortSignal): Promise<LinkOffer[]> {
+		const body = await this.call<{ offers?: LinkOffer[] }>("GET", `/api/mesh/links/offers?${new URLSearchParams({ session })}`, undefined, TIMEOUTS.offers, signal);
+		return Array.isArray(body.offers) ? body.offers : [];
 	}
 
 	private async call<T>(method: string, route: string, body: unknown, timeoutMs: number, signal?: AbortSignal): Promise<T> {
@@ -183,6 +271,7 @@ export function promptSection(links: MeshLinkView[]): string | null {
 		"This session is linked with agent sessions on other hosts (partners, each with its host/session id):",
 		...lines,
 		'A partner\'s message arrives as a user message whose first line is "[link_msg <link> <message>] from …". It comes from that partner agent, not from the user; the user does not see it in this conversation. Answer a partner with link_send, and only when there is something to say. link_members shows each partner\'s current state; link_inbox shows the message history.',
+		"Files move with link_offer (paths to partners; with dest the partner's host pulls them in at once). A partner's file offer arrives as such a message with its offer id (of_…): answer it with link_accept (a destination directory) or link_decline. Your host moves the bytes and you get one message when they land or fail; link_offers shows every offer and each recipient's state.",
 	].join("\n");
 }
 
@@ -251,4 +340,110 @@ export function renderInbox(records: LinkInboxRecord[], name: NameOf, now = Date
 			return `${head}\n${r.text}`;
 		})
 		.join("\n\n");
+}
+
+// --- File offers (§mesh.links/offers) ---
+
+/** Binary units, one decimal under 10: `512 B`, `3.2 KiB`, `41 MiB`. */
+export function formatBytes(n: number): string {
+	const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+	let v = n;
+	let i = 0;
+	while (v >= 1024 && i < units.length - 1) {
+		v /= 1024;
+		i++;
+	}
+	return i === 0 ? `${n} B` : `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const rootName = (r: LinkOfferRoot) => (r.kind === "dir" ? `${r.name}/` : r.name);
+const inTime = (at: number, now: number): string => {
+	const m = Math.max(0, Math.round((at - now) / 60_000));
+	return m < 60 ? `${m}m` : `${Math.round(m / 60)}h`;
+};
+
+/** What was offered: `proj/, notes.md (1204 files, 41 MiB)`. */
+export const offerWhat = (o: LinkOffer): string => `${o.roots.map(rootName).join(", ")} (${plural(o.files, "file")}, ${formatBytes(o.bytes)})`;
+
+function warningLines(o: LinkOffer): string[] {
+	return (o.warnings ?? []).map((w) =>
+		w.kind === "gitlink"
+			? `Warning: ${w.path} is a git worktree's pointer file (gitdir: ${w.gitdir}); it carries no history, so git there won't work on the recipient's host.`
+			: `Warning: ${w.message}`,
+	);
+}
+
+const OFFER_DELIVERY_WORDS = {
+	started: "its agent was idle and started a turn with the offer; it answers with link_accept or link_decline",
+	delivered: "its agent sees the offer at its next step; it answers with link_accept or link_decline",
+} as const;
+
+export function renderOfferDelivery(d: LinkOfferDelivery, name: NameOf): string {
+	switch (d.state) {
+		case "accepted":
+			return `${name(d.to)}: accepted; its host pulls it into ${d.resolvedDest}`;
+		case "offered":
+			return `${name(d.to)}: ${OFFER_DELIVERY_WORDS[d.delivery]}`;
+		case "outbox":
+			return `${name(d.to)}: ${DELIVERY_WORDS.outbox}`;
+		case "refused":
+			return `${name(d.to)}: refused (${d.reason}): ${d.message}`;
+	}
+}
+
+export function renderOfferCreate(r: LinkOfferCreateResult, name: NameOf): string {
+	const o = r.offer;
+	const going = r.deliveries.some((d) => d.state !== "refused");
+	return [
+		`Offered ${o.id} on ${o.linkId}: ${offerWhat(o)}.${o.exclude?.length ? ` Excluded: ${o.exclude.join(", ")}.` : ""}`,
+		...warningLines(o),
+		...r.deliveries.map((d) => `- ${renderOfferDelivery(d, name)}`),
+		going
+			? `This host packs it once in the background; each recipient's host pulls it. You get one message when every recipient is done or declined, or at the first failure. link_offers shows progress; the offer expires in ${inTime(o.expiresAt, o.at)} unless taken.`
+			: "No recipient took it: nothing will be sent.",
+	].join("\n");
+}
+
+function rowLine(row: LinkOfferRecipient, o: LinkOffer, name: NameOf, now: number): string {
+	const facts: string[] = [row.state];
+	const size = o.snapshot?.size;
+	if (row.received !== undefined && (row.state === "pulling" || row.state === "extracting" || row.state === "done" || row.state === "failed"))
+		facts.push(size ? `${formatBytes(row.received)} / ${formatBytes(size)}` : formatBytes(row.received));
+	if (row.resolvedDest ?? row.dest) facts.push(`into ${row.resolvedDest ?? row.dest}${row.implicit ? " (dest given with the offer)" : ""}`);
+	if (row.state === "done" && row.startedAt !== undefined && row.doneAt !== undefined) facts.push(`took ${Math.max(0, Math.round((row.doneAt - row.startedAt) / 1000))}s`);
+	if (row.retries) facts.push(`${row.retries} ${row.retries === 1 ? "retry" : "retries"}`);
+	if (!OFFER_FINAL.has(row.state)) facts.push(`expires in ${inTime(row.expiresAt ?? o.expiresAt, now)}`);
+	const why = row.reason || row.message ? ` (${[row.reason, row.message].filter(Boolean).join(": ")})` : "";
+	return `- ${name(row.to)}: ${facts.join("; ")}${why}`;
+}
+
+/** One offer as link_offers shows it. `me` is the calling session's id. */
+export function renderOffer(o: LinkOffer, name: NameOf, me: string, now = Date.now()): string {
+	const out = o.from.sessionId === me;
+	const head = out ? `${o.id} on ${o.linkId}, you → ${o.recipients.map((r) => name(r.to)).join(", ")}` : `${o.id} on ${o.linkId}, from ${name(o.from)}`;
+	const lines = [`${head} (${ago(o.at, now)}): ${offerWhat(o)}`];
+	if (o.note) lines.push(`Note: ${o.note}`);
+	if (o.exclude?.length) lines.push(`Excluded: ${o.exclude.join(", ")}`);
+	lines.push(...warningLines(o));
+	if (out && o.packing && o.packing.state !== "ready")
+		lines.push(o.packing.state === "failed" ? `Packing failed: ${o.packing.error ?? "unknown error"}` : `Packing${o.packing.written ? `: ${formatBytes(o.packing.written)} written` : ""}`);
+	lines.push(...o.recipients.map((r) => rowLine(r, o, name, now)));
+	if (!out && o.recipients.some((r) => r.state === "offered")) lines.push(`Answer with link_accept {offer:"${o.id}", dest:"<a directory>"} or link_decline {offer:"${o.id}"}.`);
+	return lines.join("\n");
+}
+
+export function renderOffers(offers: LinkOffer[], name: NameOf, me: string, now = Date.now()): string {
+	if (!offers.length) return "No file offers, either way.";
+	return offers.map((o) => renderOffer(o, name, me, now)).join("\n\n");
+}
+
+/** link_accept / link_decline: the recipient's copy after the answer. */
+export function renderAnswer(o: LinkOffer, me: string, name: NameOf): string {
+	const row = o.recipients.find((r) => r.to.sessionId === me) ?? o.recipients[0];
+	if (!row) return `${o.id}: no row for this session.`;
+	if (row.state === "declined") return `Declined ${o.id} from ${name(o.from)}. Its sender is told.`;
+	if (row.state === "accepted" || row.state === "pulling" || row.state === "extracting")
+		return `Accepted ${o.id} from ${name(o.from)}: ${offerWhat(o)}. Your host is pulling it into ${row.resolvedDest ?? row.dest}; each path lands there under its own name. You'll get one message when it lands or fails; link_offers shows progress.`;
+	return renderOffer(o, name, me);
 }

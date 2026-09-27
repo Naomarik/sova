@@ -1,8 +1,9 @@
 /**
  * link: the tools of a session linked with sessions on other Sova mesh hosts (§mesh.links/tools).
  *
- * `link_members`, `link_send` and `link_inbox` are registered at load in EVERY session, with a fixed
- * schema, whether or not the session is linked: a claude-code session reaches them through its
+ * `link_members`, `link_send`, `link_inbox` and the file tools `link_offer`, `link_accept`,
+ * `link_decline` and `link_offers` are registered at load in EVERY session, with a fixed schema,
+ * whether or not the session is linked: a claude-code session reaches them through its
  * provider's `mcp__sova__` bridge, and a tool set that changed when a link was made would change
  * that session's tools mid-conversation. Each tool refuses with a sentence when the session is in
  * no link.
@@ -25,9 +26,13 @@ import {
 	nameFrom,
 	NOT_HOSTED,
 	NOT_LINKED,
+	OFFER_ID_RE,
 	promptSection,
+	renderAnswer,
 	renderInbox,
 	renderMembers,
+	renderOfferCreate,
+	renderOffers,
 	renderSend,
 	sectionKey,
 	UNLINKED_REASONS,
@@ -134,6 +139,145 @@ export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = 
 					if (!lastView.length) return text(NOT_LINKED);
 				}
 				return text(renderInbox(records, nameFrom(lastView)), { records });
+			} catch (e) {
+				return refusal(e);
+			}
+		},
+	});
+
+	const badOffer = (offer: string) => (OFFER_ID_RE.test(offer) ? undefined : text(`"${offer}" is not an offer id (of_ and 16 hex digits); link_offers lists them.`));
+	/** Names from the last members view, fetched once when there is none yet. */
+	const names = async (c: LinkClient, session: string, signal?: AbortSignal) => {
+		if (!lastView.length) lastView = await c.members(session, { brief: true, signal }).catch(() => []);
+		return nameFrom(lastView);
+	};
+
+	pi.registerTool({
+		name: "link_offer",
+		label: "Link offer",
+		description:
+			"Offer files or directories to partner sessions of this session's link; your host lists them, packs them once and each partner's host pulls them. `paths`: files or directories on this host, relative to your cwd, `~/…` or absolute; each travels under its own name, so two with the same name are refused. `dest`: a DIRECTORY on the partner's host; each path lands at dest/<its name> (`cp -r a b dest/`), parents are created, existing files are overwritten. Relative dest is under the partner's cwd, `~` its home. Name dest when you know where it goes: the partner's host then pulls at once, with no turn of its agent, and wakes it once when the files land. Without dest the partner's agent gets the offer as a message and answers with link_accept or link_decline (24 h). `dest` may also map partners (as `to` names them) to their own directory. No default excludes: node_modules, build output and caches go unless you `exclude` them (a pattern without / matches any path component, e.g. node_modules or *.log; with / it matches from the offered name, e.g. proj/dist). Symlinks travel as links, never followed. A git worktree's .git is a pointer file with no history; the result warns about it. The result lists files and bytes per partner's answer; you get one message when every partner is done or declined, or at the first failure.",
+		promptSnippet: "Send files or directories to linked partner sessions on other hosts",
+		parameters: Type.Object(
+			{
+				paths: Type.Array(Type.String(), { minItems: 1, description: "Files or directories on this host: relative to your cwd, ~/…, or absolute. Each lands at dest/<its name>." }),
+				to: Type.Optional(
+					Type.Union([Type.String(), Type.Array(Type.String())], {
+						description: 'A partner as link_members names it (host/session id), or by host label, session id or title; several; or "all". Optional with one partner.',
+					}),
+				),
+				dest: Type.Optional(
+					Type.Union([Type.String(), Type.Record(Type.String(), Type.String())], {
+						description:
+							"A directory on the partner's host (relative = under its cwd, ~ = its home); each path lands at dest/<its name>. Or an object mapping each partner, as `to` names it, to its own directory. Given: the partner's host takes the files at once. Omitted: the partner's agent answers with link_accept or link_decline.",
+					}),
+				),
+				exclude: Type.Optional(Type.Array(Type.String(), { description: "Patterns to leave out: without / any path component (node_modules, *.log); with / from the offered name (proj/dist). *, ?, **, [...]." })),
+				note: Type.Optional(Type.String({ description: "A line for the partner: what this is and what to do with it." })),
+				link: Type.Optional(Type.String({ description: "The link id (lk_…); only when this session is in more than one link." })),
+			},
+			{ additionalProperties: false },
+		),
+		async execute(_id, params, signal, _update, ctx) {
+			const c = host();
+			if (!c) return text(NOT_HOSTED);
+			const paths = params.paths.filter((p) => p.trim());
+			if (!paths.length) return text("Nothing to offer: name at least one path.");
+			try {
+				const session = sessionOf(ctx);
+				const r = await c.offer(
+					{
+						session,
+						paths,
+						...(params.to !== undefined ? { to: params.to } : {}),
+						...(params.dest !== undefined ? { dest: params.dest } : {}),
+						...(params.exclude?.length ? { exclude: params.exclude } : {}),
+						...(params.note?.trim() ? { note: params.note.trim() } : {}),
+						...(params.link ? { link: params.link } : {}),
+					},
+					signal,
+				);
+				return text(renderOfferCreate(r, await names(c, session, signal)), r);
+			} catch (e) {
+				return refusal(e);
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "link_accept",
+		label: "Link accept",
+		description:
+			"Accept a partner's file offer (of_…, from its message or link_offers). `dest`: a DIRECTORY on this host; each offered path lands at dest/<its name>, parents are created and existing files are overwritten. Relative dest is under your cwd, ~ your home. Your host pulls it with no further action; you get one message when it lands or fails.",
+		promptSnippet: "Take a linked partner's file offer into a directory on this host",
+		parameters: Type.Object(
+			{
+				offer: Type.String({ description: "The offer id (of_…)." }),
+				dest: Type.String({ description: "A directory on this host; each offered path lands at dest/<its name>." }),
+			},
+			{ additionalProperties: false },
+		),
+		async execute(_id, params, signal, _update, ctx) {
+			const c = host();
+			if (!c) return text(NOT_HOSTED);
+			const bad = badOffer(params.offer);
+			if (bad) return bad;
+			if (!params.dest.trim()) return text("Name a destination directory (dest).");
+			try {
+				const session = sessionOf(ctx);
+				const o = await c.accept(params.offer, { session, dest: params.dest }, signal);
+				return text(renderAnswer(o, session, await names(c, session, signal)), { offer: o });
+			} catch (e) {
+				return refusal(e);
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "link_decline",
+		label: "Link decline",
+		description: "Decline a partner's file offer (of_…). Nothing is sent; the partner is told, with your reason if you give one.",
+		promptSnippet: "Turn down a linked partner's file offer",
+		parameters: Type.Object(
+			{
+				offer: Type.String({ description: "The offer id (of_…)." }),
+				reason: Type.Optional(Type.String({ description: "Why, for the partner." })),
+			},
+			{ additionalProperties: false },
+		),
+		async execute(_id, params, signal, _update, ctx) {
+			const c = host();
+			if (!c) return text(NOT_HOSTED);
+			const bad = badOffer(params.offer);
+			if (bad) return bad;
+			try {
+				const session = sessionOf(ctx);
+				const o = await c.decline(params.offer, { session, ...(params.reason?.trim() ? { reason: params.reason.trim() } : {}) }, signal);
+				return text(renderAnswer(o, session, await names(c, session, signal)), { offer: o });
+			} catch (e) {
+				return refusal(e);
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "link_offers",
+		label: "Link offers",
+		description:
+			"This session's file offers, both directions, newest first: what was offered (names, files, bytes, note, warnings) and per recipient its state (offered, accepted, pulling with bytes so far, extracting, done, declined, failed, expired, cancelled, refused), destination and reason.",
+		promptSnippet: "Show the file offers exchanged with linked partner sessions and their progress",
+		parameters: Type.Object({}, { additionalProperties: false }),
+		async execute(_id, _params, signal, _update, ctx) {
+			const c = host();
+			if (!c) return text(NOT_HOSTED);
+			try {
+				const session = sessionOf(ctx);
+				const offers = await c.offers(session, signal);
+				if (!offers.length) {
+					lastView = await c.members(session, { brief: true, signal });
+					if (!lastView.length) return text(NOT_LINKED);
+				}
+				return text(renderOffers(offers, await names(c, session, signal), session), { offers });
 			} catch (e) {
 				return refusal(e);
 			}

@@ -611,6 +611,26 @@ is virtualized.
   following), while its `hello` or snapshot is on the way, then reconciles them as above. Any
   other open lands at the end. A reload keeps nothing.
 
+## §chat.transcript/compressed-transfer — A transcript travels compressed
+
+A transcript crosses the network compressed whenever the browser can take it that way, so a long
+session opens on a phone over a slow link in a fraction of the time. Nothing on screen changes:
+the rows, the `hello` and the snapshot are the same, and a client that doesn't ask gets exactly
+what it did before.
+
+- **Sockets.** The chat and watch sockets (`/ws/chat`, `/ws/watch`) accept `permessage-deflate`
+  when the browser offers it, and compress each message of 1 KB or more on its own (no context
+  carried between messages, either way); smaller ones, the streaming deltas, go as they are. A
+  client that doesn't offer it gets uncompressed frames.
+- **REST.** Every `/api/` response of a compressible type (JSON, text) is gzip- or
+  deflate-encoded when the request's `Accept-Encoding` allows it, and says so with
+  `Content-Encoding` and `Vary: Accept-Encoding`; without it, the response is unencoded. Images,
+  event streams, partial content and anything already encoded pass as they are.
+- **Every client alike.** Loopback is not exempt: a phone reaches the server through a local
+  reverse proxy, so it arrives from loopback too.
+- **Not covered.** The built app's static files, extension sockets and routes (`/ext/`), a
+  peer's sessions (`/peer/`) and the share listener are sent as before.
+
 ## §chat.transcript/own-writes-across-restart — The server's own writes survive a restart
 
 A session file that changed recently, from a process Sova can't identify and that no TUI claims,

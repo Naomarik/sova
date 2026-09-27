@@ -98,7 +98,14 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `pi-config/extensions/worktrees/state.ts` (builtins only: the `worktrees` entry, its fold, the
   merge card's details) and `git.ts` (builtins only: the extension's own "is this branch merged"
   probe, git by argv; `server/git-diff.ts` imports it too, for `mergedReviewBase`, the review
-  base of an already merged branch, which show-changes' `git.ts` shares), `server/transcript.ts` and `server/align-state.ts` import
+  base of an already merged branch, which show-changes' `git.ts` shares), `server/sandbox-state.ts` and `server/link-sandbox.ts` import
+  `pi-config/extensions/sandbox/state.ts` (builtins only: the `sandbox` entry and its restore),
+  `server/link-sandbox.ts` also imports `sandbox/session-policy.ts` and `policy.ts` (builtins only,
+  with their siblings `backend.ts`, `backends/*` and `env.ts`: `resolveSessionPolicy`, the one
+  resolution of a session's sandbox policy from its agent dir, cwd, session id and tracked
+  worktrees, which the extension's `snapshot()` also calls, and `readDenial`/`writeDenial`/
+  `hiddenBelow`, so a linked session's file transfer is refused exactly where that session's own
+  tools would be), `server/transcript.ts` and `server/align-state.ts` import
   `pi-config/extensions/mode/align.ts` (builtins only: the `align` tool's details shape, its strict
   check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
   the session list's `SessionSummary.align` read what the extension writes, with its own code),

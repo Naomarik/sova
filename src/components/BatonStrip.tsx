@@ -2,7 +2,7 @@ import { createEffect, createResource, createSignal, For, on, Show } from "solid
 import { MESSAGES_CAP, OPERATOR, type BatonInfo, type OfferLink, type ProposedPerson } from "../../shared/baton";
 import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, approvePerson, batonLink, closeBaton, declinePerson, extendBaton, getBaton, handBaton, inviteeLink, offerBaton, revokeBatonLink, takeBaton, withdrawOffer } from "../lib/api";
-import { linksStale, liveOffer, proposedAreasLine, whereLine, wrapupLine } from "../lib/baton-strip";
+import { linkReplaced, linksStale, liveOffer, proposedAreasLine, whereLine, wrapupLine } from "../lib/baton-strip";
 import { requestListRefresh } from "../lib/list-refresh";
 import { confirmActivate } from "../lib/confirm-step";
 import { useMinuteNow } from "../lib/minute-clock";
@@ -110,7 +110,7 @@ export function BatonStrip(props: {
                   void act(async () => {
                     const r = await batonLink(sid());
                     const holder = i().session.holder!;
-                    showLinks([{ personId: holder, name: nameOf(i(), holder), link: r.link }], r.n);
+                    showLinks([{ personId: holder, name: nameOf(i(), holder), link: r.link, ...(r.at ? { at: r.at } : {}) }], r.n);
                   }, "New link ready below.")
                 }
               >
@@ -181,7 +181,7 @@ export function BatonStrip(props: {
                       onClick={() =>
                         void act(async () => {
                           const r = await inviteeLink(sid(), p.id);
-                          showLinks([{ personId: p.id, name: p.name, link: r.link }], r.n);
+                          showLinks([{ personId: p.id, name: p.name, link: r.link, ...(r.at ? { at: r.at } : {}) }], r.n);
                         }, `New link for ${p.name} ready below.`)
                       }
                     >
@@ -272,7 +272,7 @@ export function BatonStrip(props: {
           <Show when={links()}>
             {(l) => (
               <div class="baton-strip-link">
-                <LinksBanner links={l()} onDismiss={() => setShown(null)} />
+                <LinksBanner links={l()} replaced={(link) => linkReplaced(link, info.latest)} onDismiss={() => setShown(null)} />
               </div>
             )}
           </Show>
@@ -383,7 +383,7 @@ function HandOnForm(props: {
       if (to().length === 1) {
         const who = to()[0]!;
         const r = await handBaton(sid, who, question().trim(), briefing().trim() || undefined);
-        props.onDone(r.link ? [{ personId: who, name: nameOf(who), link: r.link }] : [], `Handed to ${nameOf(who)}.`, r.info, [who]);
+        props.onDone(r.link ? [{ personId: who, name: nameOf(who), link: r.link, ...(r.at ? { at: r.at } : {}) }] : [], `Handed to ${nameOf(who)}.`, r.info, [who]);
       } else {
         const r = await offerBaton(sid, to(), question().trim(), briefing().trim() || undefined);
         props.onDone(r.links, `Offered to ${to().length} people. The first to answer takes it.`, r.info, to());

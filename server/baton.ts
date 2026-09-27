@@ -738,6 +738,18 @@ export const liveLinkCount = (row: BatonSession): number => {
   return current ? liveLinks(row.sessionId, current.n).length : 0;
 };
 
+/** personId → when their newest live link of the current round was minted: the open offer's links
+    while one is out, else the current hand-off's. */
+export function linkTimes(row: BatonSession): Record<string, string> {
+  const last = row.handoffs[row.handoffs.length - 1];
+  const offer = currentOffer(row);
+  const n = offer && offer.state === "open" && last?.offerId === offer.id ? offer.n : last?.n;
+  const out: Record<string, string> = {};
+  if (n === undefined) return out;
+  for (const l of liveLinks(row.sessionId, n)) if (!out[l.personId] || Date.parse(l.createdAt) > Date.parse(out[l.personId]!)) out[l.personId] = l.createdAt;
+  return out;
+}
+
 // ---- the session list and the digest ---------------------------------------------------------------------------
 
 /** `SessionSummary.baton` for a listed file, or undefined when it is not a baton session. */
@@ -758,6 +770,10 @@ export function batonSummaryField(path: string): BatonSummaryField | undefined {
     ...(row.state === "needs-you" && last && last.to === OPERATOR
       ? { needsYou: { from: nameOf(row.orgId, last.from), question: last.question, since: Date.parse(last.at) || 0 } }
       : {}),
+    ...(() => {
+      const newest = Object.values(linkTimes(row)).sort().at(-1);
+      return newest ? { linkAt: newest } : {};
+    })(),
     // A person holds it through a hand-off nobody has a link for yet: the operator must send one.
     ...(row.state === "open" && last && row.holder !== null && row.holder !== OPERATOR && last.to === row.holder && liveLinks(row.sessionId, last.n).length === 0
       ? { sendLink: { to: nameOf(row.orgId, row.holder), question: last.question, since: Date.parse(last.at) || 0 } }

@@ -84,6 +84,27 @@ describe("baton sessions", async () => {
     assert.ok(!history.includes(c.token!) && !history.includes(links.hashToken(c.token!)), "neither the token nor its hash is ever committed");
   });
 
+  test("a Get Link elsewhere moves the link's mint time the strip and the list see; the route answers it", async () => {
+    const { batonInfo, registerOrgRoutes } = await import("./org-routes");
+    const { Hono } = await import("hono");
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Replaced", goal: "g" });
+    const row = () => baton.batonById(c.sessionId)!.row;
+    const first = batonInfo(row()).linkAt[tony.id];
+    assert.equal(first, links.findLink(c.token!)!.createdAt, "the link the session started with");
+    assert.equal(baton.batonSummaryField(c.path)?.linkAt, first);
+    await new Promise((r) => setTimeout(r, 5));
+    const app = new Hono();
+    registerOrgRoutes(app);
+    const res = (await (await app.request(`/api/baton/${c.sessionId}/link`)).json()) as { link: string; n: number; at: string };
+    const token = res.link.split("/h/")[1]!;
+    assert.equal(res.at, links.findLink(token)!.createdAt, "Get Link answers its mint time");
+    assert.equal(batonInfo(row()).linkAt[tony.id], res.at, "moved to the new link");
+    assert.ok(Date.parse(res.at) > Date.parse(first!));
+    assert.equal(baton.batonSummaryField(c.path)?.linkAt, res.at, "so the list's field moves and a strip reads again");
+    baton.revokeCurrent(c.sessionId);
+    assert.deepEqual(batonInfo(row()).linkAt, {}, "a link turned off is no newer link");
+  });
+
   test("the state machine: holder writes, the baton moves, old links read, the operator's answer clears Needs you, done ends writing", () => {
     const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Payroll", goal: "g" });
     const sid = c.sessionId;

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
 import { attentionChanged } from "./attention-memo";
 import { readConflicts } from "./decisions";
-import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf } from "./baton";
+import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, linkTimes, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf } from "./baton";
 import { moveBaton, offerBaton, scheduleWrapup } from "./baton-loadout";
 import { readBatonSettings, writeBatonSettings } from "./baton-settings";
 import { BusyError } from "./chat-manager";
@@ -37,7 +37,7 @@ import { refreshShare } from "./share/hub";
 import { shareInfo } from "./share/listener";
 import { nudgeMarks } from "./session-feed";
 import { personPage, previewAs } from "./person-page";
-import { linksOfOrg, revokePersonLinks } from "./baton-links";
+import { findLink, linksOfOrg, revokePersonLinks } from "./baton-links";
 import { lastVisits } from "./visits";
 import { commitAll, setRemote } from "./workspace-git";
 
@@ -89,6 +89,7 @@ export function batonInfo(row: BatonSession): BatonInfo {
     names: namesOf(row.orgId),
     active: roster.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, role: p.role })),
     liveLinks: liveLinkCount(row),
+    linkAt: linkTimes(row),
     share: shareInfo(),
     offer,
     proposed: roster
@@ -115,8 +116,14 @@ const infoOf = (sid: string): BatonInfo => {
   return batonInfo(hit.row);
 };
 
+/** When a link just minted was minted (its record's own time, so it compares with BatonInfo.linkAt). */
+const mintedAt = (token: string): { at?: string } => {
+  const at = findLink(token)?.createdAt;
+  return at ? { at } : {};
+};
+
 const offerLinks = (orgId: string, links: { personId: string; token: string }[]): OfferLink[] =>
-  links.map((l) => ({ personId: l.personId, name: nameOf(orgId, l.personId), link: linkUrl(l.token) }));
+  links.map((l) => ({ personId: l.personId, name: nameOf(orgId, l.personId), link: linkUrl(l.token), ...mintedAt(l.token) }));
 
 /** The newest of some ISO times and epoch ms ("" when none parses). */
 export function latestTime(times: readonly (string | number | undefined)[]): string {
@@ -463,7 +470,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle((c) => {
       const person = c.req.query("person");
       const { token, n } = rotateLink(p(c, "sid"), person || undefined);
-      return c.json({ link: linkUrl(token), n, ...linkWarning() });
+      return c.json({ link: linkUrl(token), n, ...mintedAt(token), ...linkWarning() });
     }),
   );
   app.post(
@@ -536,7 +543,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const briefing = typeof b.briefing === "string" ? b.briefing.trim().slice(0, 4000) : "";
       await moveBaton(sid, to, question, briefing, { interrupt: true });
       const { token } = rotateLink(sid);
-      return c.json({ info: infoOf(sid), link: linkUrl(token), ...linkWarning() });
+      return c.json({ info: infoOf(sid), link: linkUrl(token), ...mintedAt(token), ...linkWarning() });
     }),
   );
 }

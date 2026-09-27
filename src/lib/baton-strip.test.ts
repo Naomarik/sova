@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BatonInfo, BatonSummaryField } from "../../shared/baton";
-import { batonComposerGate, leaseMinutes, linksStale, liveOffer, namesList, proposedAreasLine, whereLine, wrapupLine } from "./baton-strip";
+import { batonComposerGate, leaseMinutes, linkReplaced, linksStale, liveOffer, namesList, proposedAreasLine, whereLine, wrapupLine } from "./baton-strip";
 
 const NOW = Date.parse("2026-09-26T12:00:00Z");
 const info = (session: Partial<BatonInfo["session"]>, offer: BatonInfo["offer"] = null): Pick<BatonInfo, "offer" | "session" | "names"> => ({
@@ -100,4 +100,14 @@ test("the operator's composer is read-only whenever someone else has the baton, 
   assert.deepEqual(batonComposerGate(field({ offer: { state: "held", invited: 3, holder: "Ana" } }), false)?.text, "Ana took the offer and is answering. Withdraw it to write.");
   assert.deepEqual(batonComposerGate(field({ state: "done", holder: null }), true), { ended: true, text: "This hand-off session is done." });
   assert.equal(batonComposerGate(undefined, undefined), null, "not a baton session");
+});
+
+test("a shown link reads as replaced only once a newer link of the same person exists", () => {
+  const shown = { personId: "p_1", name: "Tony", link: "/h/x", at: "2026-09-27T10:00:00.000Z" };
+  assert.equal(linkReplaced(shown, { linkAt: { p_1: "2026-09-27T10:00:00.000Z" } }), false, "itself");
+  assert.equal(linkReplaced(shown, { linkAt: { p_1: "2026-09-27T10:00:05.000Z" } }), true, "another tab's Get Link");
+  assert.equal(linkReplaced(shown, { linkAt: { p_2: "2026-09-27T10:00:05.000Z" } }), false, "another invitee's new link is not this one's");
+  assert.equal(linkReplaced(shown, { linkAt: {} }), false, "turned off, not replaced");
+  assert.equal(linkReplaced({ ...shown, at: undefined }, { linkAt: { p_1: "2026-09-27T10:00:05.000Z" } }), false, "no mint time known: never guessed");
+  assert.equal(linkReplaced(shown, undefined), false);
 });

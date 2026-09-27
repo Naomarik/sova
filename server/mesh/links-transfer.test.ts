@@ -564,6 +564,19 @@ describe("Pulls", () => {
     assert.throws(() => statSync(partFile(rcvRoot, offerId)));
   });
 
+  test("a pre-scan that refuses without reading leaves no stream behind", async () => {
+    const s = sender();
+    const j = job({
+      prescan: async () => {
+        throw new TransferError("not-writable", "the sandbox is on but unresolvable");
+      },
+    });
+    assert.equal((await refusal(pulls(s.fetchTar).pull(j))).reason, "not-writable");
+    // An unhandled stream error would surface on the next ticks and fail the run.
+    await new Promise((ok) => setTimeout(ok, 50));
+    assert.throws(() => statSync(partFile(rcvRoot, offerId)));
+  });
+
   test("cancel stops a waiting pull and deletes its .part", async () => {
     let p!: Pulls;
     const s = sender(() => {

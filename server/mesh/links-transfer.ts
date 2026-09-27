@@ -702,7 +702,19 @@ export class Pulls {
           try {
             this.check(job.offerId);
             job.onExtracting?.();
-            if (job.prescan) await job.prescan(tarMembers(createReadStream(part).pipe(createZstdDecompress())));
+            if (job.prescan) {
+              // Both streams are closed whatever the pre-scan does (it may refuse before reading).
+              const src = createReadStream(part);
+              const z = createZstdDecompress();
+              src.on("error", (e) => z.destroy(e));
+              z.on("error", () => undefined); // surfaced to the reader through its iterator
+              try {
+                await job.prescan(tarMembers(src.pipe(z)));
+              } finally {
+                src.destroy();
+                z.destroy();
+              }
+            }
             this.check(job.offerId);
             await extract(part, job.resolvedDest);
           } finally {

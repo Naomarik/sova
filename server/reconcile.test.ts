@@ -587,6 +587,31 @@ describe("decisions → conflicts → draft → promotion", async () => {
     }
   });
 
+  test("the run a resolution starts by itself opens its settle sessions on the project's gathering model too", async () => {
+    const pos = await import("./project-overseer-store");
+    const { emitBatonEvent } = await import("./baton-events");
+    const p = pos.projectOverseerPaths(org.id, project.id);
+    pos.writePoSettings(p, { ...pos.readPoSettings(p), gatheringModel: "prov/gather", gatheringThinking: "low" });
+    const stop = reconcile.watchResolutions(10);
+    try {
+      const settle = reconcile.listDecisions(org.id, project.id).conflicts.find((k) => k.batonSessionId)!;
+      say(f1, maria.id, "w", { area: "window cleaning", statement: "Windows are cleaned every 14 days.", quote: "14 days" });
+      say(f2, tony.id, "w", { area: "window cleaning", statement: "Windows are cleaned every 40 days.", quote: "40 days" });
+      emitBatonEvent({ type: "decision", orgId: org.id, projectId: project.id, sessionId: settle.batonSessionId!, entryId: "x" });
+      let c;
+      for (let i = 0; i < 100 && !c; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+        const now = reconcile.listDecisions(org.id, project.id);
+        c = now.running ? undefined : now.conflicts.find((k) => k.areaKey === "window-cleaning" && k.batonSessionId);
+      }
+      assert.ok(c, "the watcher's run found and routed it");
+      const row = baton.batonById(c!.batonSessionId!)!.row;
+      assert.deepEqual([row.model, row.thinking], ["prov/gather", "low"]);
+    } finally {
+      stop();
+    }
+  });
+
   test("settling a routed conflict by hand closes its session, so its Needs-you item goes", async () => {
     say(f1, maria.id, "k", { area: "coffee", statement: "Coffee is free for 3 days a week.", quote: "3 days" });
     say(f2, tony.id, "k", { area: "coffee", statement: "Coffee is free for 5 days a week.", quote: "5 days" });

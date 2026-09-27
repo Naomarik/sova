@@ -1,4 +1,4 @@
-import { type AttentionDigest, OVERSEER_BRIEF_PREFIX, type SovaConfirmDetails, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
+import { type AttentionDigest, OVERSEER_BRIEF_PREFIX, type SovaConfirmDetails, type SovaConfirmItem, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
 import { isObj, str } from "./message";
 import { openSettings, SETTINGS_TABS, type SettingsSection, type SettingsTab } from "./settings-nav";
 
@@ -48,7 +48,36 @@ export function confirmDetails(details: unknown): SovaConfirmDetails | null {
     return [{ label: str(o.label)!, reply: str(o.reply), tone: o.tone === "danger" ? ("danger" as const) : undefined }];
   });
   if (options.length === 0) return null;
-  return { title, detail: str(details.detail), options };
+  const items = Array.isArray(details.items) ? details.items.flatMap(confirmItem) : [];
+  return { title, detail: str(details.detail), options, ...(items.length ? { items } : {}) };
+}
+
+/** One card item, tolerant: a row without its kind's id and name is dropped, bad optional fields go. */
+function confirmItem(v: unknown): SovaConfirmItem[] {
+  if (!isObj(v)) return [];
+  const id = str(v.id)?.trim();
+  if (!id) return [];
+  if (v.kind === "session") {
+    const workers = typeof v.workers === "number" && Number.isFinite(v.workers) && v.workers > 0 ? Math.floor(v.workers) : undefined;
+    const at = str(v.lastActiveAt);
+    return [
+      {
+        kind: "session",
+        id,
+        title: str(v.title)?.trim() || id,
+        ...(str(v.project)?.trim() ? { project: str(v.project)!.trim() } : {}),
+        ...(at && Number.isFinite(Date.parse(at)) ? { lastActiveAt: at } : {}),
+        ...(str(v.summary)?.trim() ? { summary: str(v.summary)!.trim() } : {}),
+        ...(workers ? { workers } : {}),
+      },
+    ];
+  }
+  if (v.kind === "idea") return [{ kind: "idea", id, title: str(v.title)?.trim() ?? "" }];
+  if (v.kind === "todo") {
+    const text = str(v.text)?.trim();
+    return text ? [{ kind: "todo", id, text }] : [];
+  }
+  return [];
 }
 
 /** The text a confirm option sends. */

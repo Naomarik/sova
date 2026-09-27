@@ -186,3 +186,31 @@ test("the head's menus say when the digest's cap dropped act or decide items", (
     drafts: { rows: [], cut: false },
   });
 });
+
+test("confirm details: items parse tolerantly; a card without them has no items at all", () => {
+  const at = "2026-09-20T10:00:00.000Z";
+  const d = confirmDetails({
+    title: "Archive?",
+    options: ["Yes"],
+    items: [
+      { kind: "session", id: "s1", title: "Parser", project: "sova", lastActiveAt: at, summary: "Fixed", workers: 2 },
+      { kind: "session", id: "s2", lastActiveAt: "not a time", workers: -1, project: "  " },
+      { kind: "idea", id: "§sova/x", title: "X" },
+      { kind: "todo", id: "td_aaaaaaaa", text: "Do it" },
+      { kind: "todo", id: "td_bbbbbbbb" },
+      { kind: "group", id: "g1" },
+      { kind: "session", title: "no id" },
+      "s3",
+      null,
+    ],
+  });
+  assert.deepEqual(d?.items, [
+    { kind: "session", id: "s1", title: "Parser", project: "sova", lastActiveAt: at, summary: "Fixed", workers: 2 },
+    { kind: "session", id: "s2", title: "s2" },
+    { kind: "idea", id: "§sova/x", title: "X" },
+    { kind: "todo", id: "td_aaaaaaaa", text: "Do it" },
+  ]);
+  const old = confirmDetails({ title: "Go?", options: ["Yes"] });
+  assert.ok(old && !("items" in old), "an old card parses as before");
+  assert.ok(!("items" in confirmDetails({ title: "Go?", options: ["Yes"], items: "s1" })!), "items that aren't a list are ignored");
+});

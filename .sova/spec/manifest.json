@@ -5078,7 +5078,7 @@
     "§mesh.links/tools": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "pi-config/extensions/link/index.ts",
         "pi-config/extensions/link/client.ts",

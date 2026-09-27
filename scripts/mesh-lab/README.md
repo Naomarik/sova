@@ -203,6 +203,36 @@ The harnesses:
   `/peer/<A's id for C>/ws/watch`. With C missing from A's peers.json, the view says "isn't
   reachable from here". With C's Sova stopped, the row shows Offline, the view says "Host offline"
   and the thread stays. Screenshots go to `~/.cache/mesh-links-lab-*.png`.
+- **m6-links-transfer** (needs `lab up --hosts 5`, the playwright skill's node_modules and a Chromium;
+  takes the LOCK; spends a few short glm-5.3 turns, mostly the wakes; runs about an hour, most of it
+  the throttled 2 GiB pull; leaves a,b,c paired, d and e unpaired and on the built code, no qdisc and
+  no sandbox, and deletes every tree it made): file offers and transfers (§mesh.links/offers,
+  /transfer) through the `offer`/`accept`/`decline`/`offers`/`waitOffer`/`makeTree`/`treeHash`
+  helpers of `links-lib.mjs`. Trees are made inside the containers only, and each side's tree is
+  compared by one hash of every member and file.
+  - With `dest`, a's repo of 5 000 files lands on b with no b turn before it: one wake on b, one on a,
+    the spool and `.part` gone, and `git log` works on b.
+  - Without `dest`, the offer message reaches b's agent. It is answered by the local accept, by b's
+    glm agent calling link_accept (else the API), and by a decline that carries its reason. An
+    unanswered offer expires on both copies under `SOVA_LINK_OFFER_TTL_MS` (set through `lab sova-env`).
+  - One offer to b and c with a dest map, while c's Sova is stopped, packs one spool. c's copy goes
+    through a's outbox, both pull the same sha, and a is woken exactly once.
+  - A 2 GiB tree plus 50 000 files is pulled at 40 mbit (`tc tbf` on a's `tailscale0`) through a
+    `--reject` partition, a restart of b and a restart of a. The `.part` never shrinks, fewer than
+    1.15 × the spool's bytes leave a's `tailscale0`, and the hashes match.
+  - The sandbox: b on refuses a dest outside its writable roots (`not-writable`) at the offer, and a
+    `.git/hooks` member either there or in the pre-scan, with nothing extracted. a on refuses `~/.ssh`
+    and a path its project `.sova/sandbox.json` hides (`hidden`), and `exclude` lets the rest go.
+  - A worktree's `.git` file warns in the result and in b's wake; the main checkout doesn't.
+  - The state root, the sessions dir, and their parent with a colliding root name are refused
+    `protected`; the parent with another name lands.
+  - e swapped to 740461a (phase-1 links) is `refused old-build`, final and never held, while
+    link_send to it still starts a turn.
+  - d as a phone-style host (identity by address) receives into `~/projects` and sends back to a.
+  - In a real browser, b's row in a's Agents tab shows the "Receiving x / y" chip while b pulls,
+    and the chip goes when the row is final. The thread's offer row names the root and the note and
+    shows b's line done with its dest. Screenshots go to
+    `~/.cache/mesh-links-transfer-lab-*.png`.
 
 Front-door Caddyfile essentials, the template for the real one: `lb_policy first`,
 `health_uri /api/health` with 1 s interval/timeout, `lb_try_duration 5s`, `flush_interval -1`,

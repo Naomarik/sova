@@ -8,7 +8,7 @@
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { laptopFetch, readAgentFile, STATE, waitFor, writeAgentFile } from "./lib.mjs";
+import { exec, laptopFetch, readAgentFile, sh, STATE, waitFor, writeAgentFile } from "./lib.mjs";
 
 export const MODEL = "zai/glm-5.3";
 const LINKS_FILE = "sova/mesh-links.json";
@@ -126,6 +126,71 @@ export function linksFile(host) {
 /** Replace (or, with null, reset to empty) a host's mesh-links.json. Sova reads it once: restart after. */
 export function writeLinksFile(host, file) {
   writeAgentFile(host, LINKS_FILE, `${JSON.stringify(file ?? { version: 1, links: [] }, null, 2)}\n`);
+}
+
+// ---- file offers (§mesh.links/offers, /transfer) -----------------------------------------------------
+
+/** link_offer as the extension calls it: body = LinkOfferCreate. → { status, json: LinkOfferCreateResult | LinkError } */
+export const offer = (host, body) => api(host, "/api/mesh/links/offers", { method: "POST", body, timeoutMs: 5 * 60000 });
+
+/** link_accept on the recipient's host. → { status, json: LinkOffer | LinkError } */
+export const accept = (host, sessionId, offerId, dest) =>
+  api(host, `/api/mesh/links/offers/${offerId}/accept`, { method: "POST", body: { session: sessionId, dest }, timeoutMs: 30000 });
+
+/** link_decline on the recipient's host. → { status, json: LinkOffer | LinkError } */
+export const decline = (host, sessionId, offerId, reason) =>
+  api(host, `/api/mesh/links/offers/${offerId}/decline`, { method: "POST", body: { session: sessionId, ...(reason ? { reason } : {}) }, timeoutMs: 30000 });
+
+/** link_offers: every offer the session's host holds for it (the sender's copy has every row). → LinkOffer[] */
+export async function offers(host, sessionId) {
+  return ok(await api(host, `/api/mesh/links/offers?session=${encodeURIComponent(sessionId)}`, { timeoutMs: 30000 }), `${host}: offers ${sessionId}`).offers;
+}
+
+/** One recipient's row of an offer, by its session id. */
+export const rowOf = (o, sessionId) => o?.recipients?.find((r) => r.to.sessionId === sessionId);
+
+/** Wait until `pred(offer)` holds for the offer as `host` holds it for the session; returns the offer. */
+export const waitOffer = (host, sessionId, offerId, pred, { timeoutMs = 120000, intervalMs = 1000, what } = {}) =>
+  waitFor(
+    async () => {
+      const o = (await offers(host, sessionId)).find((x) => x.id === offerId);
+      return o && pred(o) ? o : null;
+    },
+    { timeoutMs, intervalMs, what: what ?? `${host}/${sessionId} offer ${offerId}` },
+  );
+
+/**
+ * A tree at `dir` on `host` (replaced if present), made inside the container:
+ *   files: N small text files spread over 100 × 7 directories;
+ *   blobs/blobMiB: that many files of random bytes (incompressible);
+ *   extra: { "rel/path": "text" }; symlinks: { "rel/name": "target" };
+ *   git: a repository with one commit of all of it.
+ */
+export function makeTree(host, dir, { files = 0, blobs = 0, blobMiB = 0, extra = {}, symlinks = {}, git = false } = {}) {
+  const script = `const fs=require("fs"),p=require("path"),cp=require("child_process");
+const [dir,spec]=[process.argv[1],JSON.parse(process.argv[2])];
+fs.rmSync(dir,{recursive:true,force:true});fs.mkdirSync(dir,{recursive:true});
+for(let i=0;i<spec.files;i++){const d=p.join(dir,"d"+(i%100),"s"+(i%7));fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p.join(d,"f"+i+".txt"),("file "+i+"\\n").repeat(1+(i%20)));}
+for(let i=0;i<spec.blobs;i++)cp.execFileSync("sh",["-c",'head -c "$1" /dev/urandom > "$2"',"-",String(spec.blobMiB*1048576),p.join(dir,"blob"+i+".bin")]);
+for(const[k,v]of Object.entries(spec.extra)){fs.mkdirSync(p.dirname(p.join(dir,k)),{recursive:true});fs.writeFileSync(p.join(dir,k),v);}
+for(const[k,v]of Object.entries(spec.symlinks)){fs.mkdirSync(p.dirname(p.join(dir,k)),{recursive:true});fs.symlinkSync(v,p.join(dir,k));}
+if(spec.git)cp.execSync("git init -q && git add -A && git -c user.name=lab -c user.email=lab@mesh.lab commit -qm tree",{cwd:dir});`;
+  const r = exec(host, ["node", "-e", script, dir, JSON.stringify({ files, blobs, blobMiB, extra, symlinks, git })], { timeoutMs: 20 * 60000 });
+  if (r.code !== 0) throw new Error(`makeTree ${host}:${dir}: ${r.err || r.out}`);
+}
+
+/**
+ * One hash of a tree on `host`: every member's type and path (a symlink's target, a file's size),
+ * then every regular file's sha256, all in C order. Equal hashes = the same tree, byte for byte.
+ */
+export function treeHash(host, dir) {
+  const r = sh(
+    host,
+    `cd "${dir}" && { find . -mindepth 1 \\( -type l -printf 'l %p -> %l\\n' \\) -o \\( -type d -printf 'd %p\\n' \\) -o \\( -type f -printf 'f %p %s\\n' \\) -o -printf '? %p\\n' | LC_ALL=C sort; find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum; } | sha256sum | cut -d' ' -f1`,
+    { timeoutMs: 20 * 60000 },
+  );
+  if (r.code !== 0 || !/^[0-9a-f]{64}$/.test(r.out)) throw new Error(`treeHash ${host}:${dir}: ${r.err || r.out}`);
+  return r.out;
 }
 
 // ---- the lab lock (one mutating runner at a time) --------------------------------------------------

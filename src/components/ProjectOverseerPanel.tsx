@@ -420,12 +420,13 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
     try {
       props.onInfo(await fn());
       setErrors(({ [w.sessionId]: _, ...rest }) => rest);
-      setConfirming(null);
       toast(done);
       announce(done);
     } catch (x) {
       setErrors((e) => ({ ...e, [w.sessionId]: errText(x) }));
     } finally {
+      // Done or refused, the confirmation has had its answer; a refusal stays under the row.
+      setConfirming(null);
       setWorking(null);
     }
   };
@@ -461,7 +462,7 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
                     </Show>
                   </span>
                   <Show when={row.state === "root" && row.inRoot}>{(why) => <span class="list-meta">In the project root: {why()}</span>}</Show>
-                  <Show when={row.state === "merged" || (row.merged && row.mergedAt && row.state !== "removed")}>
+                  <Show when={row.state === "merged" || row.mergedAt}>
                     <span class="list-meta">
                       Merged into <span class="orgs-mono">{row.target}</span>
                       <Show when={row.mergedAt}>{(at) => <> <time title={at()}>{relativeTime(at())}</time></>}</Show>

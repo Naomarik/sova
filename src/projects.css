@@ -77,6 +77,9 @@
 
 /* Coding worktrees: a row wraps its confirmation under itself. */
 .project-worktree { flex-wrap: wrap; }
+/* Narrow: the buttons wrap under the words rather than squeezing them. */
+.orgs-row.project-worktree .list-main { flex: 1 1 18rem; }
 .project-worktree-path { white-space: normal; overflow-wrap: anywhere; }
-.project-worktree-actions { flex: none; flex-wrap: wrap; }
+.project-worktree-actions { flex: none; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.project-worktree-note .button-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .project-worktree-note { flex-basis: 100%; margin: 0; }

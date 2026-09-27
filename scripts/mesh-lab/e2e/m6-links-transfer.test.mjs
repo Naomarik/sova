@@ -635,12 +635,16 @@ describe("10. the Agents tab: transfer chip and offer rows", () => {
     assert.equal(r.status, 200, refusal(r));
     const of = r.json.offer.id;
     // The chip speaks for the row's member: b is receiving.
-    const chip = await waitFor(async () => /Receiving [\d.]+ \S+ \/ [\d.]+ \S+/.exec(await row.first().innerText())?.[0], { timeoutMs: 120000, intervalMs: 1000, what: "the chip: Receiving x / y" });
+    const chipEl = row.first().locator(".link-transfer-chip");
+    const chip = await waitFor(
+      async () => (await chipEl.count()) && (await chipEl.getAttribute("data-transfer-state")) === "pulling" && /^Receiving [\d.,]+ \S+ \/ [\d.,]+ \S+$/.exec((await chipEl.innerText()).trim())?.[0],
+      { timeoutMs: 120000, intervalMs: 1000, what: "the chip: Receiving x / y (pulling)" },
+    );
     console.log(`# chip: ${chip}`);
     await shot("receiving");
     sh("a", "tc qdisc del dev tailscale0 root 2>/dev/null || true");
     await waitOffer("a", s.a.id, of, allFinal, { timeoutMs: 5 * 60000 });
-    await waitFor(async () => !/Sending|Receiving|Unpacking|Waiting for an answer/.test(await row.first().innerText()), { timeoutMs: 30000, what: "the chip gone once final" });
+    await waitFor(async () => (await row.first().locator(".link-transfer-chip").count()) === 0, { timeoutMs: 30000, what: "the chip gone once final" });
 
     await row.first().click();
     const status = page.locator(`.link-thread .link-offer[data-offer="${of}"]`);
@@ -651,6 +655,7 @@ describe("10. the Agents tab: transfer chip and offer rows", () => {
     await line.and(page.locator('[data-state="done"]')).waitFor({ timeout: 30000 });
     assert.equal(await line.count(), 1, "one line: b's");
     assert.match(await line.locator(".link-offer-dest").innerText(), /\/root\/shown-in/);
+    assert.match(await line.innerText(), /Landed/);
     await shot("thread");
     await waitIdle("b", s.b.id).catch(() => {});
     await unlink("a", id);

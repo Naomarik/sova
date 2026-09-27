@@ -11,6 +11,7 @@ import { stakeholderView } from "../lib/stakeholder";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { OwnerProjectCard } from "./OwnerProjectCard";
+import { ProjectCostCard } from "./ProjectCostCard";
 import { ProjectOverseerPanel } from "./ProjectOverseerPanel";
 import { Banner, Chip } from "./ui";
 import "../orgs.css";
@@ -37,6 +38,8 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
   // The overseer acts on the same data (it reconciles and promotes): read it while it works, and
   // once more when its run ends, so what it did shows without a refresh.
   const [overseerBusy, setOverseerBusy] = createSignal(false);
+  // Refresh Project recounts the cost too.
+  const [costTick, setCostTick] = createSignal(0);
   const running = createMemo(() => !!info()?.running || overseerBusy());
   createEffect(
     on(running, (r, was) => {
@@ -97,6 +100,7 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       onRefresh={() => {
         void refetch();
         void refetchOrg();
+        setCostTick((n) => n + 1);
       }}
       error={error() ?? (info.error ? errText(info.error) : org.error ? errText(org.error) : null)}
       errorTitle="Couldn't update this project."
@@ -104,6 +108,7 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       titleRef={props.titleRef}
     >
       <Show when={org()}>{(o) => <ProjectOverseerPanel org={o()} projectId={props.projectId} onBusy={setOverseerBusy} />}</Show>
+      <ProjectCostCard orgId={props.orgId} projectId={props.projectId} tick={costTick()} />
       {/* Only while the org has an owner (§app.owner-page/controls). */}
       <Show when={org()?.ownerPage?.person && project()}>
         <OwnerProjectCard org={org()!} project={project()!} onOrg={mutateOrg} />

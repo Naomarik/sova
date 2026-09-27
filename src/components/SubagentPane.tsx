@@ -873,12 +873,10 @@ function WorkerTranscript(props: {
           </Show>
         </div>
       </section>
-      <Show when={away() !== null}>
-        <button type="button" class="button jump-latest subagents-jump" onClick={resume}>
-          <Icon name="chevron-down" small />
-          {newCount() > 0 ? `Jump to Latest · ${newCount()} new` : "Jump to Latest"}
-        </button>
-      </Show>
+      <button type="button" class="button jump-latest subagents-jump" data-shown={away() !== null ? "" : undefined} onClick={resume}>
+        <Icon name="chevron-down" small />
+        {newCount() > 0 ? `Jump to Latest · ${newCount()} new` : "Jump to Latest"}
+      </button>
     </Show>
   );
 }

@@ -1049,12 +1049,12 @@ export function ThreadScroller(props: {
           </div>
         </div>
       </section>
-      <Show when={away() !== null}>
-        <button type="button" class="button jump-latest" onClick={resumeFollowing}>
-          <Icon name="chevron-down" small />
-          {newCount() > 0 ? `Jump to Latest · ${newCount()} new` : "Jump to Latest"}
-        </button>
-      </Show>
+      {/* Always mounted, shown by attribute: inserting it relaid out the whole transcript at the
+          first scroll up (base.css `.jump-latest`). */}
+      <button type="button" class="button jump-latest" data-shown={away() !== null ? "" : undefined} onClick={resumeFollowing}>
+        <Icon name="chevron-down" small />
+        {newCount() > 0 ? `Jump to Latest · ${newCount()} new` : "Jump to Latest"}
+      </button>
     </div>
   );
 }

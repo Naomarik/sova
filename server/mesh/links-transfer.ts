@@ -527,9 +527,11 @@ export function checkDest(o: { resolvedDest: string; rootNames: readonly string[
   if (o.sandbox) {
     const why = o.sandbox.writeDenial(dest, { creating: !exists });
     if (why) throw new TransferError("not-writable", `${dest} is not writable for this session in its sandbox (${why}).`);
+    // A root already at dest is only written into: the pre-scan decides member by member. A new
+    // one is created, so it must not hold a path the sandbox protects.
     for (const n of o.rootNames) {
       const at = join(dest, n);
-      const w = o.sandbox.writeDenial(at, { creating: true });
+      const w = o.sandbox.writeDenial(at, { creating: !existsPath(at) });
       if (w) throw new TransferError("not-writable", `${at} is not writable for this session in its sandbox (${w}).`);
     }
   }
@@ -849,6 +851,15 @@ export class Pulls {
     } finally {
       this.cancelled.delete(job.offerId);
     }
+  }
+}
+
+function existsPath(p: string): boolean {
+  try {
+    lstatSync(p);
+    return true;
+  } catch {
+    return false;
   }
 }
 

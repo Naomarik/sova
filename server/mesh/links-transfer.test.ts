@@ -26,6 +26,8 @@ import {
   spoolFile,
   TransferError,
 } from "./links-transfer";
+import { type ResolvedPolicy, writeDenial } from "../../pi-config/extensions/sandbox/policy.ts";
+import { prescan } from "../link-sandbox";
 import { tarMembers } from "./tar-list";
 
 const tmp = mkdtempSync(join(tmpdir(), "sova-links-transfer-test-"));
@@ -372,6 +374,65 @@ describe("resolveDest and checkDest", () => {
     // A tracked worktree is one more writable root.
     const tree = join(tmp, "rcv", "tree");
     assert.deepEqual(checkDest({ resolvedDest: tree, rootNames: ["p"], protectedRoots, sandbox: writable([cwd, tree]) }), { scan: true });
+  });
+
+  describe("with the sandbox's own write rule: an existing root is decided by the pre-scan", () => {
+    const dest = join(tmp, "rcv", "cwd", "into");
+    const policy = {
+      hidden: [] as string[],
+      writable: [cwd],
+      readOnlyWithinWritable: [join(dest, "pj", "locked"), join(dest, "fresh", ".git", "hooks")],
+    };
+    const sb = { writeDenial: (c: string, o?: { creating?: boolean }) => writeDenial(policy, c, o) };
+    const sendRoot = join(tmp, "locked-sender");
+    const rcvRoot = join(tmp, "locked-receiver");
+    const spools = new Spools({ root: () => sendRoot, ...quiet });
+    before(() => {
+      makeTree(join(dest, "pj", "locked"), { "keep.txt": "keep" });
+      makeTree(join(tmp, "locked-src", "a"), { pj: { "new.txt": "new" } });
+      makeTree(join(tmp, "locked-src", "b"), { pj: { "new.txt": "new", locked: { x: "x" } } });
+    });
+    /** Offer `pj` from `src`, pull it into dest with the real pre-scan when checkDest asks for one. */
+    async function offerAndPull(src: string, offerId: string) {
+      const { scan } = checkDest({ resolvedDest: dest, rootNames: ["pj"], protectedRoots, sandbox: sb });
+      const listing = await listOffer({ cwd: src, home, paths: ["pj"], sandbox: null });
+      const snap = await spools.pack(offerId, listing);
+      const pulls = new Pulls({
+        root: () => rcvRoot,
+        ...quiet,
+        fetchTar: async ({ headers }) => serveTar({ file: spools.file(offerId), ...snap, range: headers.Range, ifRange: headers["If-Range"] }),
+      });
+      return pulls.pull({
+        offerId,
+        linkId: "lk_0000000000000001",
+        from: "node-a",
+        resolvedDest: dest,
+        rootNames: ["pj"],
+        prescan: scan
+          ? async (members) => {
+              const d = await prescan(members, { dest, roots: ["pj"], sandbox: { on: true, policy: policy as unknown as ResolvedPolicy }, protectedRoots });
+              if (d) throw new TransferError(d.reason, d.message);
+            }
+          : undefined,
+      });
+    }
+
+    test("an archive that leaves the read-only path alone is accepted and lands", async () => {
+      await offerAndPull(join(tmp, "locked-src", "a"), "of_2000000000000001");
+      assert.equal(readFileSync(join(dest, "pj", "new.txt"), "utf8"), "new");
+      assert.equal(readFileSync(join(dest, "pj", "locked", "keep.txt"), "utf8"), "keep");
+    });
+    test("an archive with a member in it passes the offer, then the pre-scan refuses naming it", async () => {
+      const e = await refusal(offerAndPull(join(tmp, "locked-src", "b"), "of_2000000000000002"));
+      assert.equal(e.reason, "not-writable");
+      assert.match(e.message, /pj\/locked/);
+      assert.throws(() => statSync(join(dest, "pj", "locked", "x")), "nothing extracted");
+    });
+    test("a root not there yet that would hold a protected path is still refused at the offer", async () => {
+      const e = await refusal(() => checkDest({ resolvedDest: dest, rootNames: ["fresh"], protectedRoots, sandbox: sb }));
+      assert.equal(e.reason, "not-writable");
+      assert.match(e.message, /fresh/);
+    });
   });
 });
 

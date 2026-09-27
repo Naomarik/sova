@@ -52,7 +52,7 @@ export interface ProjectOverseerMarkerData {
  * - L0 propose: read, keep notes, file ideas (gaps), ask with a confirm card.
  * - L1 gather: + start gathering sessions and offers to roster people, run the reconciler.
  * - L2 reconcile: + promote non-conflicting decisions into the project's spec, approve or decline referrals.
- * - L3 build: + start and prompt coding sessions in the project, within the caps and the token budget.
+ * - L3 build: + start and prompt coding sessions in the project, within the caps.
  */
 export type Autonomy = "L0" | "L1" | "L2" | "L3";
 export const AUTONOMY_LEVELS: readonly Autonomy[] = ["L0", "L1", "L2", "L3"];
@@ -62,7 +62,7 @@ export const AUTONOMY_MEANING: Record<Autonomy, string> = {
   L0: "Propose: reads, files gaps as ideas, asks you before anything else.",
   L1: "Gather: may also start gathering sessions with people on the roster.",
   L2: "Reconcile: may also promote agreed decisions into the spec and approve referrals.",
-  L3: "Build: may also start coding sessions in the project, within the token budget.",
+  L3: "Build: may also start coding sessions in the project, within its limits.",
 };
 
 /** A limit that may be Unlimited: `null` (§app.project-overseer/limits). */
@@ -102,10 +102,8 @@ export const DEFAULT_PO_CAPS: ProjectOverseerCaps = {
   gatheringsOpen: 5,
   codingRunning: 2,
 };
-export const DEFAULT_TOKEN_BUDGET = 2_000_000;
 /** Allowances: whole numbers from 0 to this, or Unlimited. */
 export const ALLOWANCE_MAX = 1000;
-export const BUDGET_MAX = 1_000_000_000;
 /** The at-once limits' maximums: never Unlimited. */
 export const AT_ONCE_MAX = { gatheringsOpen: 20, codingRunning: 10 } as const;
 export type AtOnceKey = keyof typeof AT_ONCE_MAX;
@@ -142,9 +140,6 @@ export function capProblem(k: keyof ProjectOverseerCaps, v: unknown): string | n
   }
   return v === null || (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= ALLOWANCE_MAX) ? null : `${PO_CAP_LABEL[k]} must be a whole number from 0 to ${ALLOWANCE_MAX}, or Unlimited.`;
 }
-export function budgetProblem(v: unknown): string | null {
-  return v === null || (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= BUDGET_MAX) ? null : "Coding token budget must be a whole number from 0 to 1,000,000,000, or Unlimited.";
-}
 
 /** Pace (§app.project-overseer/limits): minutes between looks on its own, and the soon look's delay. */
 export const DEFAULT_WATCH_GAP_MIN = 10;
@@ -159,12 +154,12 @@ export const soonProblem = (v: unknown): string | null =>
 
 /**
  * Something a refusal held for later (host-local, in the watch memo): `key` is `day:<kind>`,
- * `message:<kind>`, `budget` or `looks`; `retryAt` (ISO) is when the watch loop turns it into a
+ * `message:<kind>` or `looks`; `retryAt` (ISO) is when the watch loop turns it into a
  * reason to look, null = when the operator raises the limit.
  */
 export interface HeldItem {
   key: string;
-  /** What it counts ("gathering sessions started", "coding tokens", "looks"). */
+  /** What it counts ("gathering sessions started", "looks"). */
   what: string;
   /** The refusal's sentence. */
   why: string;
@@ -202,8 +197,6 @@ export interface ProjectOverseerSettings {
   gatheringModel: string | null;
   gatheringThinking: string | null;
   caps: ProjectOverseerCaps;
-  /** Tokens (input + output + cache) its coding sessions may spend in total; L3 refuses beyond it. null = Unlimited. */
-  tokenBudget: number | null;
   /** It looks on its own at most every this many minutes (1–1440). */
   watchGapMin: number;
   /** A reason to look soon starts a look this many seconds after it (30–3600); null = Off. */
@@ -213,7 +206,7 @@ export interface ProjectOverseerSettings {
   extraSystemPrompt: string;
 }
 
-export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "tokenBudget" | "watchGapMin" | "soonLookSec" | "watch" | "extraSystemPrompt">> & {
+export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "watchGapMin" | "soonLookSec" | "watch" | "extraSystemPrompt">> & {
   caps?: Partial<ProjectOverseerCaps>;
 };
 
@@ -253,10 +246,6 @@ export interface ProjectOverseerInfo {
   /** Replies newer than the operator last looked. */
   unread: number;
   usage: {
-    /** Tokens its coding sessions have spent (sum of their lifetime totals). */
-    codingTokens: number;
-    /** null = Unlimited. */
-    tokenBudget: number | null;
     /** What each allowance has used: the operator's last message's, and today's on its own. */
     allowance: { message: AllowanceUse; today: AllowanceUse };
     /** What refusals held for later (§app.project-overseer/limits). */

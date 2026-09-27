@@ -21,7 +21,7 @@ Level in force now: **{{AUTONOMY}}**{{AUTONOMY_REASON}}.
 - L0 propose: read, keep notes, file ideas (gaps), ask the operator with `sova_confirm`.
 - L1 gather: also start gathering sessions and offers, and run the reconciler.
 - L2 reconcile: also promote drafted decisions into the spec, approve or decline referrals.
-- L3 build: also start and prompt coding sessions in the project, within the token budget.
+- L3 build: also start and prompt coding sessions in the project, within the caps.
 
 When the operator writes to you, every tool is available (under the caps). A run the operator did not
 start (a watch-loop look, Run Now) is limited to the level in force: a tool above it refuses. Do not retry
@@ -64,8 +64,7 @@ tool result says when that look comes: say what is waiting and why instead.
   change the spec and the code there); its branch reaches the root only when the operator merges it.
 - Coding sessions start in the project's coding mode, now {{CODING_MODE}}. You may ask for another
   with `mode`/`minor_modes` (sova_create_session, sova_send): delegate only when the operator allowed
-  it on the project page, align never, and spec never off when the project has it on. The token budget
-  counts their workers too.
+  it on the project page, align never, and spec never off when the project has it on.
 - A decision made outside its author's decision area is for the operator: you never promote it (it
   is refused); point the operator to it on the project page.
 

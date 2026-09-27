@@ -89,6 +89,12 @@ the worktree has no `.agent`. Extension discovery stays off, and
 the tree's subagents and worktrees extensions are never loaded. The model policy is still the
 parent's. The choice is recorded with the worker, so a resume applies it again.
 
+That mode extension knows it runs in a worker (the worker marker tells it on the extension bus,
+so an older tree's extension just doesn't hear it): it ignores the `mode` snapshots a `fork` copied
+from the parent's branch and the tree's `mode.json`, so the worker is always in normal mode with
+spec and never strict; it is never offered a spec writer; and its spec block is the worker form
+(§chat.mode-menu/workers). The parent's own worker modes are not added on top.
+
 ## §chat.worktrees/inherit — Forks and fanouts share the set
 
 A fork or a fanout member starts with its source's set, because the entry is on the copied

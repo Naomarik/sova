@@ -310,7 +310,7 @@ webapp never writes to it (CLAUDE.md: no file locking).
   <header class="subagents-view-head">
     <h3 class="subagents-view-title">designer</h3>
     <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
-    <p class="subagents-view-meta meta-line"><span class="text-mono">ag_03</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> anthropic</span> <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5"><span class="meta-line-sep" aria-hidden="true">·</span> opus-5</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> effort <span class="text-mono">medium</span></span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41"><span class="meta-line-sep" aria-hidden="true">·</span> 23.7k tokens</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> <span class="context-readout"><span class="context-gauge" title="{the sentence}"><span class="context-label" aria-hidden="true">Context</span> <span class="context-value" aria-hidden="true">64k / 1M · 6%</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></span></p>
+    <p class="subagents-view-meta meta-line"><span class="text-mono">ag_03</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> anthropic</span> <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5"><span class="meta-line-sep" aria-hidden="true">·</span> opus-5</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> effort <span class="text-mono">medium</span></span> <span title="The modes this worker was given when it started."><span class="meta-line-sep" aria-hidden="true">·</span> mode <span class="text-mono">spec</span></span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41"><span class="meta-line-sep" aria-hidden="true">·</span> 23.7k tokens</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> <span class="context-readout"><span class="context-gauge" title="{the sentence}"><span class="context-label" aria-hidden="true">Context</span> <span class="context-value" aria-hidden="true">64k / 1M · 6%</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></span></p>
   </header>
   <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
     <div class="subagents-banner stack-2">…banners, or nothing…</div>
@@ -324,7 +324,10 @@ webapp never writes to it (CLAUDE.md: no file locking).
   it never scrolls away (sticky by construction, not by `position: sticky`). The title is body
   semibold, then the same status chip as the row, then a meta line: the id in mono, then the
   provider, then the model, then **the effort** (`effort {level}`, the level in mono; a worker
-  that reports none shows nothing here), then the worker's tokens, and last the **context readout**
+  that reports none shows nothing here), then **the modes it was given** at its start
+  (§chat.mode-menu/workers: `mode {name}`, or `modes {a}, {b}` for several, the names in mono; a
+  worker given none, or recorded by an older pi-config, shows nothing here), then the worker's
+  tokens, and last the **context readout**
   (§app.subagents-pane/context-fill): the gauge trails the facts that name the worker and what it
   has spent. **The effort leads the count**: what a worker is thinking at is a fact about
   the worker, where the count beside it is a running total that changes under the reader. **A

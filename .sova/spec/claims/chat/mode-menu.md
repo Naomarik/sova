@@ -220,6 +220,42 @@ Observable: in a chat with a mode on, a turn started by a worker settling that c
 no `mode: null` system entry after its tool result, and the bridge does not restart on it; the
 prompt the provider receives is byte-identical to the previous user turn's.
 
+## §chat.mode-menu/workers — What a chat's workers get of its modes
+
+A worker is not a chat: it has no mode menu, and its parent's major mode never reaches it
+(workers spawn no workers, so Delegate has nothing to route there). Each **minor mode declares
+whether it reaches workers** (`MINOR_WORKER` in `pi-config/extensions/mode/minor.ts`, a record
+over every minor mode, so a new one cannot be added without deciding): `spec` does, `align`
+does not (aligning is a conversation with the user, which a worker doesn't have).
+
+- **What a worker gets.** While the parent chat has spec on, every worker it starts — pi or
+  Claude Code, plain, remote, sandboxed, hosted, or a team member — gets the spec block
+  (`spec-mode.md`, byte for byte) at the end of its system prompt, after its agent type, its
+  brief and any remote instructions, followed by a short **worker note**: the brief is its
+  go-ahead; it works in the draft its brief names (or says which it started); it doesn't promote,
+  commit or record `--commit` evidence unless the brief says so — the parent promotes; and flags
+  go as one question in its final report. Nothing else of the parent's mode reaches it: no
+  Delegate block, no align block, no Delegate+align bridge, and never the spec-writer paragraph
+  (a worker can't spawn one). With spec off the worker's prompt carries nothing from the mode.
+- **Not everyone.** A team's monitor (it has no tools) gets no spec block. A worker on its
+  worktree's own agent dir (§chat.worktrees/worktree-config) gets none from the parent either: its
+  tree's own mode extension gives it spec, always on, in its worker form (the same block and note,
+  no writer paragraph).
+- **A snapshot, taken at spawn.** The worker gets the modes the parent has when it starts; a
+  later switch in the chat doesn't reach a running worker (§chat.mode-menu/how-a-switch-reaches-the-chat:
+  there is no reload). A resumed worker takes the parent's **current** worker modes, exactly as at
+  spawn (§app.worker-restore/resume), not the ones it first started with.
+- **The card says so.** What a worker was given is recorded with it (its live record and its
+  durable record) and shown on its view head (§app.subagents-pane/transcript-view) as
+  `mode {name}`, the name in mono, after the effort. A worker given none, and one recorded by an
+  older pi-config, shows nothing.
+
+The parent learns nothing new: the mode extension publishes the parent's worker modes and the
+worker prompt on the extension bus (`mode:worker`), the way the sandbox publishes its state
+(§chat.sandbox/workers), and the subagents extension appends that text at spawn without
+interpreting it. A parent without the mode extension publishes nothing, and its workers get
+nothing.
+
 ## §chat.mode-menu/states — States
 
 | State | Shows |

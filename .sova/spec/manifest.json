@@ -5148,6 +5148,46 @@
         "shared/protocol.ts",
         "server/mesh/links.test.ts"
       ]
+    },
+    "§chat.mode-menu/workers": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§chat.sandbox/workers",
+        "§chat.worktrees/worktree-config",
+        "§app.worker-restore/resume",
+        "§app.subagents-pane/transcript-view"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/events.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/worker-mark.ts",
+        "pi-config/extensions/subagents/registry.ts",
+        "pi-config/extensions/subagents/worker-transcript.ts",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/sessions/schema.ts",
+        "pi-config/extensions/sessions/workers.ts",
+        "pi-config/extensions/sessions/index.ts",
+        "pi-config/extensions/sessions/public/SCHEMA.md",
+        "shared/protocol.ts",
+        "server/insights.ts",
+        "server/worker-restore.ts",
+        "src/components/SubagentPane.tsx",
+        "pi-config/extensions/mode/index.test.ts",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/restore.test.ts",
+        "pi-config/extensions/subagents/worker-transcript.test.ts",
+        "pi-config/extensions/sessions/test.mjs",
+        "server/insights-workers.test.ts",
+        "server/insights-restored.test.ts"
+      ]
     }
   },
   "boundary": {

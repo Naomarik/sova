@@ -15,9 +15,9 @@ import {
 	refreshClaudeModels,
 	registerProviderIfEnabled,
 	STATIC_MODELS,
-	contextWindowFor,
 	toProviderModel,
 } from "./index.ts";
+import { claudeContextWindow } from "../context-window.ts";
 
 // Registration is deliberately once-per-process; clear that marker per test.
 beforeEach(() => {
@@ -113,17 +113,38 @@ test("registration happens once per process, and is never undone", () => {
 	assert.deepEqual(state.unregistered, []);
 });
 
-test("static models are zero cost, cache-free, and sized by the [1m] suffix", () => {
+test("static models are zero cost, cache-free, and sized by the shared window rule", () => {
 	for (const model of STATIC_MODELS) {
 		assert.deepEqual(model.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 		assert.equal(model.promptCache, undefined, "promptCache would turn on cache warming pi cannot address");
 		assert.deepEqual(model.input, ["text", "image"]);
-		assert.equal(model.contextWindow, model.id.endsWith("[1m]") ? 1_000_000 : 200_000);
+		assert.equal(model.contextWindow, claudeContextWindow(model.id));
 		assert.ok(model.maxTokens > 0);
 	}
-	assert.equal(contextWindowFor("opus[1m]"), 1_000_000);
-	assert.equal(contextWindowFor("sonnet"), 200_000);
-	assert.equal(contextWindowFor("claude-fable-5-1"), 200_000);
+	assert.equal(STATIC_MODELS.find((m) => m.id === "haiku")?.contextWindow, 200_000);
+	assert.equal(STATIC_MODELS.find((m) => m.id === "opus[1m]")?.contextWindow, 1_000_000);
+});
+
+test("discovered models: natively 1M ids are 1M bare, resolvedModel decides an alias, and the [1m] forms are added back", async () => {
+	const discovered = [
+		{ id: "default", name: "Default", resolvedModel: "claude-opus-5-5" },
+		{ id: "opus", name: "Opus 5.5", resolvedModel: "claude-opus-5-5", efforts: ["low", "max"] },
+		{ id: "claude-fable-5-1", name: "Fable 5.1", resolvedModel: "claude-fable-5-1", efforts: ["high"] },
+		{ id: "best", name: "Best", resolvedModel: "claude-fable-5-1" },
+		{ id: "haiku", name: "Haiku 4.5", resolvedModel: "claude-haiku-4-5-20251001" },
+		{ id: "claude-sonnet-4-6", name: "Sonnet 4.6", resolvedModel: "claude-sonnet-4-6" },
+	];
+	const models = await refreshClaudeModels({ allowNetwork: true, signal: new AbortController().signal }, async () => discovered);
+	assert.deepEqual(models.map((m) => [m.id, m.name, m.contextWindow]), [
+		["opus", "Opus 5.5", 1_000_000],
+		["opus[1m]", "Opus 5.5 (1M context)", 1_000_000],
+		["claude-fable-5-1", "Fable 5.1", 1_000_000],
+		["claude-fable-5-1[1m]", "Fable 5.1 (1M context)", 1_000_000],
+		["best", "Best", 1_000_000],
+		["haiku", "Haiku 4.5", 200_000],
+		["claude-sonnet-4-6", "Sonnet 4.6", 200_000],
+	]);
+	assert.deepEqual(models.find((m) => m.id === "opus[1m]")?.thinkingLevelMap, models.find((m) => m.id === "opus")?.thinkingLevelMap, "the variant keeps the base's efforts");
 });
 
 test("thinking levels follow the CLI's effort list", () => {

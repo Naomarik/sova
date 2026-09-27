@@ -44,8 +44,8 @@ export const handoffPath = (agentDir: string, sessionKey: string, teamId: string
 
 // ── Context column ─────────────────────────────────────────────────────────
 
-/** The Claude Code provider's window rule (claude-code/provider/index.ts contextWindowFor). */
-export const claudeContextWindow = (model: string): number => (model.endsWith("[1m]") ? 1_000_000 : 200_000);
+/** The Claude Code window rule, claude-code's own (builtins-only, like the transcript adapter this extension already imports). */
+export { claudeContextWindow } from "../claude-code/context-window.ts";
 
 const compact = (n: number): string =>
 	n >= 1_000_000 ? `${Number((n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0))}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(Math.round(n));

@@ -590,8 +590,9 @@ for that call with a warning line in the result; the extension never writes the 
   `session_start`, and a paused team's monitor that rejoins (re-adopted, or `agent_resume`) is
   sent the resume check at once, since its nudges are gone.
 - **Context column.** `team_roster` and `team_list` show `context 123k/200k (61%)` per live
-  member: the runner's `contextTokens` over the spawned model's window (claude-code: `[1m]` →
-  1M, else 200k; pi: the registry), rounded down.
+  member: the runner's `contextTokens` over the spawned model's window (claude-code: the
+  extension's `claudeContextWindow` — 1M for `[1m]` or a natively 1M model, else 200k; pi: the
+  registry), rounded down.
 - **Handovers.** Notes live in `<agent dir>/sova/teams/<parent session id>/<team_id>/handoffs/<role>.md`
   (team IDs restart in every session, so the session id keeps two sessions' `team_01` apart; a
   session without an id uses `unsaved-<pid>-<time>`), named in each worker's and the coordinator's

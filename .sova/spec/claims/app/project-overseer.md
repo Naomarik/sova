@@ -234,8 +234,9 @@ tool cards as they happen.
   worktree).
 - **Told to commit.** Such a session's first prompt ends with a paragraph Sova adds: "You work in
   your own git worktree on the branch {branch}. Commit your work on this branch before you end
-  your turn: uncommitted changes can't be merged." A session run in the project root (no
-  worktree) gets no such paragraph.
+  your turn: uncommitted changes can't be merged. Before you end your turn, also merge {target}
+  into your branch and resolve any conflicts." A session run in the project root (no worktree)
+  gets no such paragraph.
 - **Names.** Branch `sova/<name>`, worktree `<parent of the repo's top level>/.worktrees/<repo
   folder name>-<name>`, outside the project root, as the `worktree` tool places its own
   (§chat.worktrees/tool). `<name>` is a slug of the session's title (the item's title, or the
@@ -252,8 +253,9 @@ tool cards as they happen.
   worktree could not be made ({git's first line}).".
 - **Recorded with the session.** The session's `started.json` row (kind `coding` or
   `operator-coding`) carries `worktree: {branch, base, target, path}` (`base` the commit it was
-  cut from, `target` the branch it merges into) and its later `merged: {at, commit}` or
-  `removed: at`, or `inRoot` (the reason it runs in the root). A worktree folder deleted by hand shows as missing ("Worktree folder missing");
+  cut from, `target` the branch it merges into) and its later `merged: {at, commit}` (the last
+  Merge Branch: history, not the branch's state) or `removed: at`, or `inRoot` (the reason it runs
+  in the root). A worktree folder deleted by hand shows as missing ("Worktree folder missing");
   its branch can still be merged. The tool result and the Start coding session answer name the branch and the path.
   `path` is this host's, like the row's session path: on a host where it doesn't exist the row
   shows the branch only, and no gesture acts on it ("On another host: its worktree is there.").
@@ -272,7 +274,14 @@ tool cards as they happen.
   possible, else a merge commit ("Merge sova/<name>: <title>"). A conflict is aborted and reported,
   changing nothing. It is refused while the session is working or has workers running, while the
   worktree has uncommitted changes (they would be left out of the merge), and when the branch has
-  no commits beyond `target`. After it the row says "Merged into <target>" with the time. A merge
+  no commits beyond `target`. After it the row says "Merged into <target>" with the time.
+- **Merged is read from git.** Whether a row's branch is merged is decided from git on every read
+  of the page, by the worktrees extension's own probe (§chat.worktrees/tool): merged when the
+  branch has commits beyond its base and none that `target` lacks. The recorded merge decides only
+  when the branch no longer exists (deleted with its worktree, or by hand) or git can't be read. So
+  a branch merged once that gains commits (the session was sent more work) is not merged: its row
+  offers Merge Branch again and says "{n} new commits since the last merge into <target>" with the
+  last merge's time; merging it again brings back "Merged into <target>". A merge
   refused for the worktree or the branch (uncommitted changes, a conflict, nothing to merge, a
   branch gone, git's own failure) is also a reason for the overseer to look
   (§app.project-overseer/watch-loop), so it can tell the session to commit or fix it; a refusal

@@ -531,3 +531,14 @@ html, body, #root { height: 100%; }
 .worktree-merge-title { min-width: 0; overflow-wrap: anywhere; color: var(--color-ink); }
 .worktree-merge-numbers,
 .worktree-merge-path { margin: 0; overflow-wrap: anywhere; }
+
+/* A single thread image whose header gave its size (lib/image-size, ImageStrip), until it loads:
+   the box has its final size before the image has any. --thumb-w is the image's width under the
+   240px height cap; the li's own max-width (base.css) still caps it at 320px and the column, and
+   the image fills the li at its own ratio, which is where base.css lays it out once loaded (the
+   class then goes, so the loaded image is drawn by base.css alone; the two layouts can differ in
+   width by a 1/64px layout unit). The button is told to fill the li: a button shrinks to its
+   content even as a block, and an unloaded image has none. */
+.message-images-single > li.thumb-sized { width: calc(var(--thumb-w) + 2 * var(--stroke-thin)); }
+.message-images-single > li.thumb-sized .thumb { width: 100%; }
+.message-images-single > li.thumb-sized .thumb img { width: 100%; aspect-ratio: var(--thumb-ratio); }

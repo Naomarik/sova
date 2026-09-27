@@ -94,7 +94,9 @@ The tools call the existing REST routes in-process, so every guard those routes 
 (TUI-live refusal, archived refusal, the model policy; for archive and set-session, the mid-turn and
 working-subagent refusals) applies unchanged, and their refusal sentences come back as the tool's
 error. Sessions are addressed by id, bare or in any form the tools print it (`sova://s/<id>`,
-`s/<id>`, a `[title](sova://s/<id>)` link). No tool passes `force`.
+`s/<id>`, a `[title](sova://s/<id>)` link). No tool passes `force`. A call that names a peer (`host`) goes
+to that host over the peer hop (§mesh.peers/listener), never through the page's proxy, so this
+host's sender secret never leaves it. The peer's own routes and refusals apply.
 
 - **Read** (no side effects): the attention digest; list sessions (compact rows); one session's
   detail, whose summary topics read newest first, as the insight strip lists them
@@ -103,8 +105,15 @@ error. Sessions are addressed by id, bare or in any form the tools print it (`so
   untrusted content from another session, read with Sova's own parser so a TUI-live file is never
   opened for writing); list groups, targets, models and folders; the ideas backlog (`sova_ideas`: its table of contents,
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the
-  user's todos (`sova_todos`: open, done or all; §app.overseer/todos).
-- **Act:** create a session in any folder or remote target, with an optional first prompt, model,
+  user's todos (`sova_todos`: open, done or all; §app.overseer/todos); the links this host knows
+  (`sova_links`, §app.overseer/links-tools).
+- **The transcript read reaches peers.** `sova_read_session` takes an optional `host`: with a
+  peer's id it reads that peer's session by id (§mesh.links/by-id), with the same bounds and
+  untrusted wrapping. The peer renders the slice with its own parser and redacts it with its own
+  secrets before it leaves, and this host redacts it again. A peer that is down or skewed is a
+  refusal naming the host, never an empty transcript.
+- **Act:** create a session in any folder, on a remote target, or on a mesh peer (`host`,
+  §app.overseer/links-tools), with an optional first prompt, model,
   mode and minor modes (`minor_modes`, e.g. `["spec"]`); the mode and minor modes are set before the
   first prompt is sent, so its first turn already runs in them, and written into the session as its
   `mode` entry even when they equal the default, so a later change to the default never moves it
@@ -116,7 +125,8 @@ error. Sessions are addressed by id, bare or in any form the tools print it (`so
   model or mode; answer a hosted session's pending extension dialog; standing notes; navigate;
   confirm; the ideas backlog (`sova_idea`: file, grow, update, link and rename ideas, launch and
   message an idea's explorer); the user's todos (`sova_todo`: add, tick, untick, edit, remove, clear the
-  done ones).
+  done ones); link sessions across hosts and end a link (`sova_link`, `sova_unlink`,
+  §app.overseer/links-tools).
 - **Sending (`sova_send`) is typing in that session's composer.** Idle, with subagents working or
   not, the message starts a turn. Mid-turn it is **queued as a follow-up** behind the running turn
   by default: a queued row in that session, "Queued", which the user can remove
@@ -211,7 +221,7 @@ error. Sessions are addressed by id, bare or in any form the tools print it (`so
   In an
   unattended turn every acting tool refuses without doing anything: create, send, archive and
   unarchive, rename and set model/thinking/mode (`sova_set_session`), group operations,
-  answering a dialog, every `sova_idea` operation (filing, changing, linking or renaming an idea,
+  answering a dialog, linking and unlinking (`sova_link`, `sova_unlink`), every `sova_idea` operation (filing, changing, linking or renaming an idea,
   launching or messaging an explorer), and every `sova_todo` operation, ticking included. Still allowed: every read, `sova_note`, `sova_confirm`, `sova_navigate`
   (which never moves a tab in such a turn), and `read`/`grep`/`find`/`ls`. The refusal tells the
   model to stop and raise a `sova_confirm` card instead; the user's click starts a turn in which it
@@ -245,8 +255,9 @@ dangerous enough to ask.
 ## §app.overseer/caps — Limits and the audit log
 
 - **Per user turn:** at most 5 sessions created, 10 prompts sent to other sessions, 50 archive
-  operations, 2 explorers launched (§app.overseer/explorer). **At once:** at most 5 Overseer-started
-  sessions running. All five are configurable in Settings → Overseer.
+  operations, 2 explorers launched (§app.overseer/explorer), 3 links made
+  (§app.overseer/links-tools). **At once:** at most 5 Overseer-started sessions running. All six
+  are configurable in Settings → Overseer.
 - **A user turn** starts when a message the user sent from the UI (typed, a quick action, a
   confirm-card click, a steer, or a regenerate) enters the Overseer's context. It is recognised by
   identity, not by its text: the chat runtime hands such a message to the SDK marked as the user's,
@@ -257,7 +268,7 @@ dangerous enough to ask.
   text as something the user sent. Each send counts once: a message queued from inside the run it
   started (a wake-up set during it) is not the user's. A user message the runtime holds back until
   the previous run has fully settled is not recognised and opens a read-only turn (it fails closed).
-  Only a user turn (or `/clear`) resets the four per-turn counters. A brief, a fired `wake_nudge`,
+  Only a user turn (or `/clear`) resets the five per-turn counters. A brief, a fired `wake_nudge`,
   an extension's message that starts a run and any other server-started run are unattended
   (§app.overseer/tools): read-only, on the budget of the user message before them, never a renewed
   one. The
@@ -269,12 +280,41 @@ dangerous enough to ask.
   already counts (one the Overseer started and that is running now, or prompted within those 15 s)
   takes no new slot, and a send into any other session, running or idle, makes it count from then
   on, so it needs a free slot. A call reserves its slot before it does any work, so parallel calls
-  in one message cannot all pass the check.
+  in one message cannot all pass the check. A session the Overseer created on a peer with a first
+  prompt counts while that peer reports it busy, and for 15 s after the prompt, as a local one does.
 - Over a cap, the tool refuses with a message telling the model to stop and ask with `sova_confirm`
   or explain, and not to schedule a wake-up to carry on. Nothing partial happens past the cap.
 - Every act tool call appends one line to `overseer-actions.jsonl`: time, Overseer id, tool call id,
   tool, arguments, outcome and error. The arguments and the error are redacted before the line is
   written (§app.overseer/tools), so the log never holds a secret value.
+
+## §app.overseer/links-tools — Linking sessions across hosts
+
+Three tools let the Overseer make and end links between sessions on different hosts
+(§mesh/links). The Overseer is never a member of a link.
+
+- **`sova_link {members: [{host?, session}, …]}`** (an act) links two or more sessions, each by
+  its host (a peer id; this host when left out) and session id. A peer's member is resolved on its
+  own host by id (§mesh.links/by-id). It refuses, naming the member, a TUI-live session, an archived
+  one, a worker's session, the Overseer's own, a baton session, a project overseer's session, any
+  other organization's session (§app.session-list/organizations), a session on a host that is down or skewed, and a second member on the same host as another. There
+  is **no confirmation card**: linking changes no session and sends nothing, so it is not
+  destructive. Like every act it is refused in an unattended turn (§app.overseer/tools), counts
+  against a per-turn cap of 3 links (§app.overseer/caps), and is written to the action log. The
+  transcript shows the call as a card naming the members and their hosts.
+- **`sova_unlink {link}`** (an act) ends a link on every member host (§mesh.links/record).
+- **`sova_links {}`** (a read) lists every link this host knows, with each member's host, state
+  and last activity, ended links included and marked.
+- **Creating a member on a peer.** `sova_create_session` takes an optional `host`; with a peer's id
+  it creates the session on that peer, with the same caps and refusals. Title and first prompt go
+  through the peer's own routes; a group can't be given with `host` (groups are per host); model,
+  thinking, mode and minor modes are set through the peer's configure route
+  (§mesh.links/configure) before the first prompt is sent, and a configure that fails sends no
+  prompt, as on this host. A mode or minor modes it sets end up in the peer's session as the same
+  `mode` entry a create on this host writes, even when they equal that host's default. That first prompt is not Overseer-marked (§app.overseer/sent-marker).
+- Its peer calls never carry this host's sender secret.
+- To say something to a member, the Overseer uses `sova_send` to a local member like any session; it never
+  sends into a link.
 
 ## §app.overseer/sent-marker — Prompts the Overseer sent
 
@@ -298,6 +338,8 @@ dangerous enough to ask.
   whatever header it sends.
 - **Rewind and Regenerate work exactly as on any user row**: the marker changes nothing about
   the row's actions.
+- **Never across hosts.** A first prompt the Overseer sends to a session it created on a peer is
+  not marked: the marker is vouched for by this host's sender secret, which never leaves it.
 
 ## §app.overseer/dialog-answers — Answering other sessions' dialogs
 

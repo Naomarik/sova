@@ -217,6 +217,15 @@ a machine event fired the turn, not the person. Same `.toolcard` shell as tool-c
 - **AT.** No author line, and the accessible name never says "You": the native `<summary>`'s own
   text ("Wake nudge n1 …") is what's announced.
 
+**link.** A link message from a linked session on another host (§mesh.links/delivery): under the
+hood a real `role:"user"` message tagged `[link_msg <link> <message>]` (`shared/link-message.ts`),
+classified by that tag on reload and on the live path alike. It renders **nothing** in the thread
+(no row, no pill, never "You") and is not counted among hidden rows. It is a turn start (the
+"calls after the last user message" scan and turn boundaries treat it as one) but never an input:
+not in the composer's "N inputs", the Timeline's Inputs Only view or the rewind targets, and
+regenerating a reply to it is refused. The session list never titles a session from one. Its text
+is shown only in the Agents tab (§mesh.links/agents-pane).
+
 **info.** Compaction, labels, branch summaries and other short machine notes. Model changes,
 thinking-level changes and the mode extension's markers are the exception: they render
 **nothing** in the thread — they are settings history, not conversation. That history stays where
@@ -447,6 +456,7 @@ removal. The five reasons:
   undo the gesture the user just made. The requester's `queue_removed` ack only settles the
   request; the `text` on it names what left, it is not an instruction to restore it.
 - **cleared** — Stop drained it; the row goes and `queue_cleared` returns the text, as it always did.
+  A link message is never a queued row, and Stop never returns one (§mesh.links/delivery).
 - **failed** — the hand-off was refused (a terminal took the file, a foreign writer, the model
   turned off in Settings); the row goes and the text comes back where it was typed.
 - **dropped** — an extension `input` handler handled the message instead of queueing it (the

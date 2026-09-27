@@ -868,12 +868,13 @@
     "§chat.transcript/a-queued-message": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/queue.ts",
         "src/lib/live.ts",
         "src/components/Thread.tsx",
-        "src/lib/live.test.ts"
+        "src/lib/live.test.ts",
+        "server/chat-manager.ts"
       ]
     },
     "§chat.transcript/accessibility": {
@@ -974,7 +975,10 @@
       "code": [
         "server/transcript.ts",
         "src/lib/change-rows.ts",
-        "src/components/Thread.tsx"
+        "src/components/Thread.tsx",
+        "shared/link-message.ts",
+        "src/lib/turn.ts",
+        "src/lib/live.ts"
       ]
     },
     "§chat/composer": {
@@ -2438,7 +2442,11 @@
         "server/overseer-store.ts",
         "server/overseer-redact.ts",
         "server/overseer.ts",
-        "server/overseer-tools.test.ts"
+        "server/overseer-tools.test.ts",
+        "shared/protocol.ts",
+        "src/lib/overseer-draft.ts",
+        "src/lib/overseer-draft.test.ts",
+        "server/overseer-store.test.ts"
       ],
       "requires": []
     },
@@ -2658,11 +2666,14 @@
         "shared/protocol.ts",
         "server/overseer-markers.test.ts",
         "server/overseer-todo-tools.ts",
-        "server/overseer-tools.test.ts"
+        "server/overseer-tools.test.ts",
+        "server/overseer-link-tools.ts"
       ],
       "requires": [
         "§app.overseer/caps",
-        "§chat.model-menu/saved-default"
+        "§chat.model-menu/saved-default",
+        "§mesh.links/by-id",
+        "§mesh.peers/listener"
       ]
     },
     "§app.settings-dialog/overseer": {
@@ -4897,6 +4908,220 @@
         "src/lib/push.ts",
         "server/web-push.test.ts",
         "server/push.test.ts"
+      ]
+    },
+    "§app.overseer/links-tools": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-link-tools.ts",
+        "server/overseer-link-tools.test.ts",
+        "server/overseer-tools.ts",
+        "server/overseer.ts",
+        "server/overseer-prompt.md",
+        "server/overseer-store.ts",
+        "shared/protocol.ts",
+        "src/components/OverseerCards.tsx",
+        "src/components/Thread.tsx",
+        "server/mesh/links-routes.ts",
+        "server/mesh/proxy.ts",
+        "server/overseer-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools",
+        "§app.overseer/caps",
+        "§mesh.links/record",
+        "§mesh.links/by-id",
+        "§mesh.links/configure",
+        "§mesh.peers/listener",
+        "§app/baton",
+        "§app/project-overseer",
+        "§app.overseer/sent-marker"
+      ]
+    },
+    "§mesh.links/agents-pane": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/SubagentPane.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/api.ts",
+        "src/design/base.css",
+        "server/insights.ts",
+        "server/mesh/links.ts",
+        "server/mesh/links-routes.ts",
+        "server/chat-manager.ts",
+        "shared/protocol.ts",
+        "src/components/LinkedAgents.tsx",
+        "src/components/SessionPane.tsx",
+        "src/lib/links.ts",
+        "src/lib/links.test.ts",
+        "src/lib/links-live.ts",
+        "shared/mesh-links.ts",
+        "server/link-delivery.ts"
+      ],
+      "requires": [
+        "§mesh.links/delivery",
+        "§mesh.links/by-id",
+        "§mesh.remote-sessions/proxy",
+        "§mesh.peers/health",
+        "§app.subagents-pane/worker-rows",
+        "§app.subagents-pane/transcript-view",
+        "§app.subagents-pane/body-list-transcript"
+      ]
+    },
+    "§mesh.links/by-id": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/index.ts",
+        "shared/protocol.ts"
+      ],
+      "requires": [
+        "§mesh.peers/off",
+        "§mesh.remote-sessions/proxy"
+      ]
+    },
+    "§mesh.links/configure": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/index.ts",
+        "shared/protocol.ts",
+        "server/sessions-configure.ts",
+        "server/sessions-configure.test.ts",
+        "shared/mesh-links.ts",
+        "server/sessions-configure-pin.test.ts"
+      ],
+      "requires": [
+        "§mesh.peers/listener",
+        "§chat.model-menu/saved-default",
+        "§chat/mode-menu"
+      ]
+    },
+    "§mesh.links/delivery": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/links.ts",
+        "server/mesh/links.test.ts",
+        "server/mesh/links-routes.ts",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "shared/link-message.ts",
+        "shared/mesh-links.ts",
+        "server/link-delivery.ts",
+        "server/link-delivery.test.ts"
+      ],
+      "requires": [
+        "§mesh.links/record",
+        "§mesh.peers/listener",
+        "§mesh.peers/address-identity",
+        "§mesh.peers/hello",
+        "§mesh/remote-sessions",
+        "§chat.transcript/a-queued-message",
+        "§chat/model-menu",
+        "§app/baton",
+        "§app/project-overseer"
+      ]
+    },
+    "§mesh.links/record": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/links.ts",
+        "server/mesh/links.test.ts",
+        "server/mesh/links-routes.ts",
+        "server/index.ts",
+        "server/sessions-index.ts",
+        "shared/mesh-links.ts"
+      ],
+      "requires": [
+        "§mesh.peers/off",
+        "§mesh.peers/allowlist",
+        "§mesh.peers/listener",
+        "§mesh.peers/health",
+        "§mesh.peers/address-identity"
+      ]
+    },
+    "§mesh.links/tools": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "pi-config/extensions/link/index.ts",
+        "pi-config/extensions/link/client.ts",
+        "pi-config/extensions/link/README.md",
+        "pi-config/README.md",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "server/mesh/links-routes.ts",
+        "pi-config/extensions/link/client.test.ts",
+        "pi-config/extensions/link/index.test.ts",
+        "pi-config/extensions/link/tests/run.mjs",
+        "pi-config/extensions/link/tests/runtime.mjs",
+        "server/mesh/links.ts",
+        "server/link-delivery.ts",
+        "server/project-coding-runtime.test.ts"
+      ],
+      "requires": [
+        "§mesh.links/record",
+        "§mesh.links/delivery"
+      ]
+    },
+    "§mesh.links/transcript": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/link-message.ts",
+        "server/transcript.ts",
+        "server/chat-manager.ts",
+        "server/sessions-index.ts",
+        "server/attention-signals.ts",
+        "server/session-tags.ts",
+        "src/components/Thread.tsx",
+        "src/lib/turn.ts",
+        "src/lib/inputs.ts",
+        "src/lib/timeline.ts",
+        "src/lib/input-count.ts",
+        "shared/protocol.ts",
+        "src/lib/live.ts",
+        "src/lib/message-actions.ts",
+        "src/lib/message-count.ts",
+        "src/components/WatchView.tsx",
+        "server/link-delivery.test.ts",
+        "src/lib/input-count.test.ts",
+        "src/lib/inputs.test.ts",
+        "src/lib/message-actions.test.ts",
+        "src/lib/timeline.test.ts",
+        "src/lib/live.test.ts"
+      ],
+      "requires": [
+        "§mesh.links/delivery",
+        "§chat.transcript/transcript-items",
+        "§chat.transcript/a-queued-message",
+        "§app.decisions/attention-signals",
+        "§app.decisions/session-tags"
+      ]
+    },
+    "§mesh/links": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/links.ts",
+        "server/mesh/links-routes.ts",
+        "shared/mesh-links.ts",
+        "shared/link-message.ts",
+        "shared/protocol.ts",
+        "server/mesh/links.test.ts"
       ]
     }
   },

@@ -1039,11 +1039,12 @@ export class MeshLinks {
     const allFinal = offer.recipients.every((r) => OFFER_FINAL.has(r.state));
     const failure = !!row && (row.state === "failed" || (row.state === "refused" && afterAccept));
     if (!allFinal && !failure) return;
+    // Decided on the stored copy: `offer` may be an older one.
+    let first = false;
     const woke = this.transfers.update(offer.id, (o) => {
-      if (o.wokeSender) return;
-      o.wokeSender = true;
+      if (!o.wokeSender) o.wokeSender = first = true;
     });
-    if (!woke) return;
+    if (!woke || !first) return;
     void this.wakeSender(woke, trigger, allFinal ? "finished" : "failed");
   }
 

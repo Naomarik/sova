@@ -9,7 +9,7 @@
 // recipient row and a recipient's copy with its own row only. Bytes moving update `received` in
 // memory, persisted at most every 5 s; a state change is written at once.
 import { randomBytes } from "node:crypto";
-import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type LinkMemberRef, type LinkOffer, type LinkOfferRecipient, OFFER_FINAL, OFFER_ID_RE, type OfferRefusal, type OfferRowState } from "../../shared/mesh-links";
 import { type LinkSandbox, linkSandbox, needsPrescan } from "../link-sandbox";
@@ -278,10 +278,13 @@ export class LinkTransfers {
           const reason: OfferRefusal = err instanceof TransferError ? err.reason : "internal";
           const message = err instanceof Error ? err.message : String(err);
           spools.remove(offer.id);
+          const was = this.get(offer.id);
+          // Withdrawn because every row ended (declined, refused, expired, cancelled): nothing failed.
+          const withdrawn = !!was && !open(was);
           const o = this.update(offer.id, (x) => {
-            x.packing = { state: "failed", error: message };
+            x.packing = { state: "failed", error: withdrawn ? "withdrawn: every recipient is done with it" : message };
           });
-          if (o) this.deps.changed(o, { kind: "pack-failed", reason, message });
+          if (o && !withdrawn) this.deps.changed(o, { kind: "pack-failed", reason, message });
         },
       );
   }
@@ -302,7 +305,7 @@ export class LinkTransfers {
     if (!o.snapshot) return json(503, { state: "packing", written: o.packing?.written ?? 0 }, { "Retry-After": "5" });
     const file = this.spools!.file(o.id);
     const st = this.spools!.status(o.id);
-    if (!st || st.state !== "ready") return json(410, { error: "The offer's spool is gone.", reason: "internal" });
+    if (!st || st.state !== "ready" || !existsSync(file)) return json(410, { error: "The offer's spool is gone.", reason: "internal" });
     if (row.state === "accepted") {
       row.state = "pulling";
       row.startedAt = this.now();

@@ -199,12 +199,14 @@ and the jump is right there when you want them.
 
 ### Chapters, and whose clock they use
 
-A chapter's time is **the anchored message's**, not the summarizer's. The summary was written
+A chapter's time is **the anchored message's**, not the summarizer's. The anchor is the first
+message of the section of the conversation the topic's latest update claimed
+(§app.insights/summary-sections), so topics one summary run updated sit at different places. The summary was written
 whenever the summarizer happened to run — often minutes or hours after the conversation it
 describes, sometimes in a batch with five others — so placing a topic at the summary's time puts
-it in the wrong part of its own session. The outline strip can afford that (§app/insights: its
-`.outline-topic-time` *is* the summary's own time, and it sits in a list that never claims to be
-an axis); an axis can't.
+it in the wrong part of its own session. The outline strip shows each topic at the end of its
+own section (§app.insights/insight-strip), and at the summary's own time only for a topic with no
+section; the axis places a chapter at the start, where Jump lands.
 
 **When the anchor can't be resolved, the row says so.** The anchor is compacted off the branch,
 or the entry id is null, and there is no message left to take a time from. The row falls back to

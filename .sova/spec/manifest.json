@@ -4818,6 +4818,31 @@
       "kind": "note",
       "authority": "accepted",
       "evidence": "reviewed"
+    },
+    "§app.insights/summary-sections": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "pi-config/extensions/topic-outline/claims.ts",
+        "pi-config/extensions/topic-outline/state.ts",
+        "pi-config/extensions/topic-outline/summarizers/chain.ts",
+        "pi-config/extensions/topic-outline/types.ts",
+        "pi-config/extensions/topic-outline/index.ts",
+        "pi-config/extensions/topic-outline/config.ts",
+        "pi-config/extensions/topic-outline/outline.test.ts",
+        "server/insights.ts",
+        "shared/protocol.ts",
+        "shared/outline-order.ts",
+        "src/components/InsightStrip.tsx",
+        "server/overseer-tools.ts",
+        "src/lib/outline-order.test.ts",
+        "server/insights-rewinds.test.ts",
+        "server/overseer-tools.test.ts"
+      ],
+      "requires": [
+        "§app.insights/insight-strip"
+      ]
     }
   },
   "boundary": {

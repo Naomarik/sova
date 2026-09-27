@@ -28,6 +28,9 @@ export interface StubScenario {
   pauseMs?: number;
   /** Hold the response this long before its first byte (a model slow to answer). */
   holdMs?: number;
+  /** The call's whole arguments (JSON text), sent at once and finished: a scripted tool call rather
+      than a runaway one (`payload`, `perDelta` and `limit` are then unused). */
+  args?: string;
 }
 export interface StubStats {
   requests: number;
@@ -66,6 +69,15 @@ export async function startStreamStub(initial: StubScenario, port = 0): Promise<
   const runaway = (res: ServerResponse, st: StubStats, sc: StubScenario) => {
     st.startedAt = Date.now();
     res.on("close", () => (st.closedAt ??= Date.now()));
+    if (sc.args !== undefined) {
+      res.write(chunk({ role: "assistant", content: null, tool_calls: [{ index: 0, id: "call_stub", type: "function", function: { name: sc.tool ?? "write_profile_updates", arguments: "" } }] }));
+      res.write(argChunk(sc.args));
+      res.write(chunk({}, "tool_calls"));
+      res.end("data: [DONE]\n\n");
+      st.argChars = sc.args.length;
+      st.finished = true;
+      return;
+    }
     res.write(chunk({ role: "assistant", content: null, tool_calls: [{ index: 0, id: "call_stub", type: "function", function: { name: sc.tool ?? "write_profile_updates", arguments: PREFIX } }] }));
     const piece = argChunk(fill(sc.payload, sc.perDelta));
     const pump = () => {

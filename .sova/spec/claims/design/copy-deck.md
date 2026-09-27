@@ -672,7 +672,6 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Mode select (beside the coding sessions' model and thinking) | label `Coding sessions' mode` · options `Automatic` · `normal` · `normal · spec` · `delegate` · `delegate · spec` — the mode ids in lower case, as the mode menu shows them (§chat/mode-menu) |
 | …its hint (`.field-hint`) | "Every coding session this project starts runs in it, yours included. One started now: {codingModeNow}." — `{codingModeNow}` in mono, `normal` or `normal · spec` · for a `delegate` option, a second sentence: "Their workers' tokens count against the budget." |
 | …saved (toast) | "Coding sessions run {mode}." · Automatic: "Coding sessions' mode: Automatic." |
-| Budget hint (replaces the old one) | "Spent {tokens} of {budget}, workers included. At L3 it starts no coding session beyond it." |
 | List heading | `Coding sessions` — replaces "Sessions it started" for coding rows; gathering sessions and offers keep their own list |
 | Row | the title (a link on this host) · meta: "Started by the overseer" or "Started by you" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
 | Above the list, when the project can't have worktrees | "Coding sessions run in the project root: {reason}" — `{reason}` one of "it isn't a Git repository." · "the repository has no commits yet." · "its checkout is on a detached HEAD." |
@@ -684,6 +683,24 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Start Coding Session (toast) | "Coding session started on sova/{name}." · in the root: "Coding session started in the project root." · mode not set (`.field-error`): "Started, but not prompted: its mode could not be set. Open it and send the message yourself." · no worktree (`.field-error`): "No session was started: its worktree could not be made ({git's first line})." |
 | Promote (Decisions tab, after a promotion) | "Promoted {n}. Committed {short sha} on {branch}." · skipped: the reason as §app.requirements/promotion-commit words it ("Not committed: …") · no Git: no second sentence |
 | Overseer tool refusals (the model reads them; the activity list shows them) | "Delegate is off for this project's coding sessions; the operator can allow it on the project page." · "Align needs someone to answer its questions, and nobody answers a coding session's." · "Spec is on for this project's coding sessions; only the operator can turn it off on the project page." · "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: only spec is allowed." · "Its worktree was removed, so it has no folder to work in." |
+
+## §design.copy-deck/project-limits — Project page · limits and pace (§app.project-overseer/limits)
+
+| Where | Copy |
+|---|---|
+| Section | legend `Limits` · hint "Past a limit it stops and tells you. Your own Start Coding Session and Send to Person aren't counted." |
+| Groups | `Each message you send` · `On its own, each day`, hint "Resets at midnight on this host." · `At once`, hint "These never go Unlimited: they are what stops a burst." · `Coding token budget` · `Pace` |
+| Allowance fields | `Gathering sessions started` · `Decisions promoted` · `Coding sessions started` · `Prompts to coding sessions` · per day also `Looks` · each with a checkbox `Unlimited` |
+| At-once fields | `Gathering sessions open` (0–20) · `Coding sessions running` (0–10) · no Unlimited |
+| Budget hint | "Spent {tokens} by sessions it started, workers included." · Unlimited: "Spent {tokens} by sessions it started, workers included. No limit." |
+| Pace | `Looks at most every` [`2 min` · `5 min` · `10 min` · `30 min` · `1 hour`] · `After a session finishes, it looks within` [`30 s` · `1 min` · `2 min` · `5 min` · `Off`] |
+| Buttons | `Save Limits` (secondary, like the other saves on the card) · `Reset Limits` (ghost: the defaults into the form, not saved) · saved (toast): "Limits saved." |
+| Problems (`.field-error`, before sending; the server's 400 says the same) | "{Label} must be a whole number from 0 to 1000, or Unlimited." · "Coding token budget must be a whole number from 0 to 1,000,000,000, or Unlimited." · "Gathering sessions open must be a whole number from 0 to 20." · "Coding sessions running must be a whole number from 0 to 10." · server only: "Coding sessions running can't be Unlimited: it's what stops a burst." |
+| Watch hint (built from the pace) | "When a session finishes, a conflict appears, or you promote, it looks on its own: within {soon} for the important ones, otherwise at most every {gap}." · soon Off: "When a session finishes, a conflict appears, or you promote, it looks on its own at most every {gap}." |
+| Readout (under the status line; only kinds used) | "Today on its own: {n} of {max} gathering sessions, {n} coding sessions (no limit)." · "Your last message: {n} of {max} prompts to coding sessions." |
+| Waiting (one line each) | "Waiting until midnight: today's {max} {what} are used." · looks: "Waiting until midnight: today's {max} looks are used." · "Waiting for you: the coding token budget is spent ({spent} of {budget})." |
+| Refusals (activity list; the operator's sentence only) | "Today's allowance is used: {n} of {max} {what} on its own. It looks again at midnight." · "This message's allowance is used: {n} of {max} {what} per message you send." · "The coding token budget is spent ({spent} of {budget}). It starts no coding session until you raise it." · "{n} of its gathering sessions are open, and the limit is {max} at once." · "{n} of its coding sessions are running, and the limit is {max} at once." |
+| Reasons it gets back (the model reads them; "Waiting to look at:" shows them) | "Today's allowance is back: it may start {what} again (refused {time})." · "Today's looks are back (refused {time})." · "The operator's last message reached its limit on {what}; it may go on within today's allowance." · "You raised the limit on {what}." |
 
 ## §design.copy-deck/project-stakeholder — Project page · main stakeholder, thinking, activity (§app.organizations/stakeholder, §app.project-overseer/identity)
 

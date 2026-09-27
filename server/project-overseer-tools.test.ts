@@ -1,7 +1,7 @@
 // Run: pnpm exec tsx --test server/project-overseer-tools.test.ts. The autonomy rule and the
 // tools against a fake host; files in a throwaway dir (PI_CODING_AGENT_DIR too). No model is called.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -12,7 +12,8 @@ import type { SessionSummary } from "../shared/protocol";
 const root = mkdtempSync(join(tmpdir(), "sova-po-tools-"));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 const { projectOverseerTools, PoLimits, TOOL_NEEDS, autonomyRefusal, underRoot } = await import("./project-overseer-tools");
-const { defaultPoSettings, effectiveAutonomy, projectOverseerPaths, EMPTY_ROSTER_REASON } = await import("./project-overseer-store");
+const { defaultPoSettings, effectiveAutonomy, projectOverseerPaths, EMPTY_ROSTER_REASON, nextMidnight } = await import("./project-overseer-store");
+type HeldInput = import("./project-overseer-tools").HeldInput;
 const { AUTONOMY_LEVELS } = await import("../shared/project-overseer");
 const { baseCodingMode, codingModeChoice } = await import("./project-coding-mode");
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -32,8 +33,10 @@ const person = (id: string, name: string, status: Person["status"] = "active"): 
 });
 
 let n = 0;
-function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]; tokens?: number; settings?: Partial<ProjectOverseerSettings>; hasSpec?: boolean } = {}) {
+function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]; tokens?: number; settings?: Partial<ProjectOverseerSettings>; hasSpec?: boolean; now?: () => Date; open?: number } = {}) {
   const calls: string[] = [];
+  /** What the refusals held for a later look, by key (the host keeps one per key). */
+  const held = new Map<string, HeldInput>();
   /** The mode each create/send reached the host with (a send without one records null). */
   const modes: (ProjectCodingMode | null)[] = [];
   const dir = join(root, `ws${n++}`);
@@ -60,7 +63,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     effective: () => effectiveAutonomy(settings, roster),
     attended: () => state.attended,
     overseerId: () => "po-1",
-    batons: () => [],
+    batons: () => Array.from({ length: opts.open ?? 0 }, (_, i) => ({ sessionId: `open-${i}`, owner: { overseerOf: "prj_bbbbbbbb" }, state: "open" }) as never),
     batonView: async () => null,
     decisions: async () => ({ decisions: [], conflicts: [], spec: { specRoot: "", exists: false, frozen: false, draft: null, promoted: 0, drafted: 0 }, lastRun: null, running: false, names: {} }),
     reconcile: async () => {
@@ -100,19 +103,20 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     coding: () => [],
     startedCoding: () => new Map([["in-tree", { removed: false }], ["gone-tree", { removed: true }]]),
     codingTokens: async () => opts.tokens ?? 0,
+    hold: (h: HeldInput) => void held.set(h.key, h),
     postOwnerUpdate: async (input: { text: string; attended: boolean }) => {
       calls.push("owner-update");
       return { update: { id: "u_1", at: "", text: input.text, by: input.attended ? ("operator" as const) : ("overseer" as const) }, owner: "Alperen" };
     },
   };
-  const limits = new PoLimits();
+  const limits = new PoLimits(undefined, opts.now);
   const tools = projectOverseerTools(host, limits, () => ({ redact: (t: string) => t, redactDeep: <T>(v: T) => v }) as never);
   const run = async (name: string, params: Record<string, unknown> = {}) => {
     const t = tools.find((x) => x.name === name);
     assert.ok(t, name);
     return t.execute("call-1", params, undefined, undefined, undefined as never);
   };
-  return { host, tools, run, calls, modes, limits, paths, state };
+  return { host, tools, run, calls, modes, limits, paths, state, held, settings };
 }
 
 /** A call per tool that does something when allowed (each the tool's "act" form). */
@@ -273,7 +277,7 @@ describe("scope, caps and budget", () => {
   test("per-turn caps refuse without reaching the host, and a spent token budget stops L3", async () => {
     const f = fake({ attended: true, settings: { caps: { ...defaultPoSettings().caps, createPerTurn: 1 } } });
     await f.run("sova_create_session", { prompt: "one" });
-    await assert.rejects(() => f.run("sova_create_session", { prompt: "two" }), /Limit reached: at most 1 coding sessions started/);
+    await assert.rejects(() => f.run("sova_create_session", { prompt: "two" }), /This message's allowance is used: 1 of 1 coding sessions started per message you send\./);
     const g = fake({ attended: true, tokens: 5_000_000 });
     await assert.rejects(() => g.run("sova_create_session", { prompt: "p" }), /token budget is spent/);
     await assert.rejects(() => g.run("sova_send", { session: "in-root", text: "p" }), /token budget is spent/);
@@ -394,5 +398,106 @@ describe("sova_confirm items (the shared tool)", () => {
     assert.match((out.content[0] as { text: string }).text, /- \[Inside\]\(sova:\/\/s\/in-root\) \(in-root\)/);
     await assert.rejects(f.run("sova_confirm", { title: "?", options: [{ label: "Go" }], items: { sessions: ["in-root", "outside", "global"] } }), /sessions: outside, global/);
     await assert.rejects(f.run("sova_confirm", { title: "?", options: [{ label: "Go" }], items: { sessions: ["po-self"] } }), /po-self is your own conversation/);
+  });
+});
+
+describe("two allowances: each message you send, and on its own each day", () => {
+  const caps = (c: Partial<ProjectOverseerSettings["caps"]>) => ({ caps: { ...defaultPoSettings().caps, ...c } });
+  const gather = ACTS.sova_start_gathering!;
+
+  test("the operator's turns take the message allowance, runs on its own the day's; neither refills the other", async () => {
+    const f = fake({ attended: true, settings: caps({ gatherPerTurn: 1, gatherPerDay: 1 }) });
+    await f.run("sova_start_gathering", gather);
+    await assert.rejects(() => f.run("sova_start_gathering", gather), /This message's allowance is used: 1 of 1 gathering sessions started per message you send\./);
+    f.state.attended = false;
+    await f.run("sova_start_gathering", gather);
+    await assert.rejects(() => f.run("sova_start_gathering", gather), /Today's allowance is used: 1 of 1 gathering sessions started on its own\. It looks again at midnight\./);
+    // The operator's next message resets only its own allowance.
+    f.limits.reset();
+    await assert.rejects(() => f.run("sova_start_gathering", gather), /Today's allowance is used/);
+    f.state.attended = true;
+    await f.run("sova_start_gathering", gather);
+    assert.deepEqual([f.limits.count("gather", true), f.limits.count("gather", false)], [1, 1]);
+    assert.equal(f.calls.filter((c) => c.startsWith("gather:")).length, 3);
+  });
+
+  test("the default allowances on its own let a story start 4 gathering sessions with no operator message", async () => {
+    const f = fake();
+    for (let i = 0; i < 4; i++) await f.run("sova_start_gathering", gather);
+    assert.equal(f.calls.filter((c) => c.startsWith("gather:")).length, 4);
+    assert.equal(defaultPoSettings().caps.gatherPerDay, 6);
+  });
+
+  test("Unlimited (null) never refuses; the at-once limits and the budget still do", async () => {
+    const f = fake({ settings: { ...caps({ promotePerDay: null, gatherPerDay: null, gatheringsOpen: 2 }), tokenBudget: null }, tokens: 10 ** 12, autonomy: "L3" });
+    const ids = Array.from({ length: 1500 }, (_, i) => `s:${i}`);
+    await f.run("sova_promote", { ids });
+    await f.run("sova_create_session", { prompt: "a null budget never refuses" });
+    const g = fake({ settings: caps({ gatherPerDay: null, gatheringsOpen: 2 }), open: 2 });
+    await assert.rejects(() => g.run("sova_start_gathering", gather), /2 of its gathering sessions are open, and the limit is 2 at once\./);
+    assert.equal(g.held.size, 0, "an at-once refusal holds nothing: a session finishing is already a reason");
+  });
+
+  test("the activity log has the operator's sentence only; the model also gets the tail", async () => {
+    const f = fake({ settings: caps({ gatherPerDay: 0 }) });
+    const err = await f.run("sova_start_gathering", gather).then(() => null, (e: Error) => e);
+    assert.match(err?.message ?? "", /Today's allowance is used: 0 of 0 gathering sessions started on its own\. It looks again at midnight\. Nothing starts before then\. Tell the operator what is waiting; don't promise an earlier look\./);
+    const last = readFileSync(f.paths.actions, "utf8").trim().split("\n").map((l) => JSON.parse(l)).at(-1);
+    assert.equal(last.outcome, "refused");
+    assert.equal(last.error, "Today's allowance is used: 0 of 0 gathering sessions started on its own. It looks again at midnight.");
+  });
+
+  test("a refusal holds one item per limit, with when to retry", async () => {
+    const now = new Date(2026, 8, 27, 14, 11);
+    const f = fake({ settings: { ...caps({ gatherPerDay: 1 }), tokenBudget: 100 }, tokens: 100, now: () => now, autonomy: "L3" });
+    await f.run("sova_start_gathering", gather);
+    await assert.rejects(() => f.run("sova_start_gathering", gather));
+    await assert.rejects(() => f.run("sova_start_gathering", gather));
+    const day = f.held.get("day:gather");
+    assert.equal(day?.retryAt, nextMidnight(now).toISOString());
+    assert.equal(day?.retryAt, new Date(2026, 8, 28).toISOString());
+    await assert.rejects(() => f.run("sova_create_session", { prompt: "p" }), /The coding token budget is spent \(100 of 100\)\. It starts no coding session until you raise it\./);
+    assert.equal(f.held.get("budget")?.retryAt, null, "only the operator raising it");
+    f.state.attended = true;
+    f.settings.caps.createPerTurn = 0;
+    f.settings.tokenBudget = null;
+    await assert.rejects(() => f.run("sova_create_session", { prompt: "p" }), /This message's allowance is used/);
+    assert.equal(f.held.get("message:create")?.retryAt, now.toISOString(), "a later look of its own may go on");
+    assert.deepEqual([...f.held.keys()].sort(), ["budget", "day:gather", "message:create"]);
+  });
+
+  test("the day's allowance resets at local midnight", async () => {
+    let now = new Date(2026, 8, 27, 23, 59);
+    const f = fake({ settings: caps({ gatherPerDay: 1 }), now: () => now });
+    await f.run("sova_start_gathering", gather);
+    await assert.rejects(() => f.run("sova_start_gathering", gather));
+    now = new Date(2026, 8, 28, 0, 0);
+    await f.run("sova_start_gathering", gather);
+    assert.equal(f.limits.count("gather", false), 1);
+  });
+
+  test("the counters file: v1 is the message allowance; v2 keeps both, the day's by its key", () => {
+    const dir = join(root, "turns");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "turn.json");
+    writeFileSync(file, JSON.stringify({ version: 1, used: { gather: 2, promote: 0, create: 1, prompt: 0 } }));
+    const now = new Date(2026, 8, 27, 12);
+    const a = new PoLimits(file, () => now);
+    assert.deepEqual([a.count("gather", true), a.count("create", true), a.count("gather", false)], [2, 1, 0]);
+    assert.equal(a.take("gather", false, { ...defaultPoSettings().caps }), null);
+    const b = new PoLimits(file, () => now);
+    assert.deepEqual([b.count("gather", true), b.count("gather", false)], [2, 1]);
+    const tomorrow = new PoLimits(file, () => new Date(2026, 8, 28, 1));
+    assert.equal(tomorrow.count("gather", false), 0, "another day's counts are not today's");
+  });
+
+  test("sova_project reports both allowances, the looks, the budget and what is held", async () => {
+    const f = fake({ settings: { ...caps({ gatherPerDay: null }), tokenBudget: null } });
+    await f.run("sova_start_gathering", gather);
+    const out = JSON.stringify(await f.run("sova_project"));
+    assert.match(out, /Today on your own: 1 gathering sessions started \(no limit\)/);
+    assert.match(out, /This operator message: 0 of 3 gathering sessions started/);
+    assert.match(out, /Coding tokens: 0 \(no limit\)/);
+    assert.match(out, /Looks on your own: at most 12 a day/);
   });
 });

@@ -12,7 +12,7 @@
  *   <workspace>/projects/<projectId>/overseer/actions.jsonl  every act, refused or not (OverseerAction)
  *   <workspace>/projects/<projectId>/overseer/ideas/         ideas (the Overseer's ideas store; gaps are tagged "gap")
  *   <workspace>/projects/<projectId>/overseer/todos.json     the operator's to-do items (the Overseer's todos store)
- * Host-local (never committed): per-turn counters and the watch loop's memo, under the state root.
+ * Host-local (never committed): the counters (each message's and each day's) and the watch loop's memo (held items too), under the state root.
  *
  * Operator routes (main listener only):
  * GET    /api/orgs/:id/projects/:pid/overseer               -> ProjectOverseerInfo (exists: false before the first open)
@@ -65,16 +65,115 @@ export const AUTONOMY_MEANING: Record<Autonomy, string> = {
   L3: "Build: may also start coding sessions in the project, within the token budget.",
 };
 
-/** Per operator message (a watch-loop run shares the budget of the last one), except the `*Open`/`*Running` limits (at once). */
+/** A limit that may be Unlimited: `null` (§app.project-overseer/limits). */
+export type Allowance = number | null;
+
+/**
+ * The project overseer's limits (§app.project-overseer/limits). `*PerTurn`: per message the
+ * operator sends (their turns); `*PerDay`: on its own (every run the operator did not start), per
+ * local day on this host; `unattendedPerDay`: looks on its own per day. Each may be Unlimited
+ * (null). `gatheringsOpen`/`codingRunning`: at once, in every turn, never Unlimited: they are what
+ * stops a burst.
+ */
 export interface ProjectOverseerCaps {
-  gatherPerTurn: number; // default 3: gathering sessions or offers started
-  gatheringsOpen: number; // default 5: its gathering sessions open (not done/closed) at once
-  promotePerTurn: number; // default 20: decisions promoted
-  createPerTurn: number; // default 2: coding sessions started
-  promptsPerTurn: number; // default 5: prompts sent to coding sessions
-  codingRunning: number; // default 2: its coding sessions running at once
-  unattendedPerDay: number; // default 12: watch-loop runs per day
+  gatherPerTurn: Allowance; // default 3: gathering sessions or offers started
+  promotePerTurn: Allowance; // default 20: decisions promoted
+  createPerTurn: Allowance; // default 2: coding sessions started
+  promptsPerTurn: Allowance; // default 5: prompts sent to coding sessions
+  gatherPerDay: Allowance; // default 6
+  promotePerDay: Allowance; // default 60
+  createPerDay: Allowance; // default 4
+  promptsPerDay: Allowance; // default 12
+  unattendedPerDay: Allowance; // default 12: watch-loop runs per day
+  gatheringsOpen: number; // default 5 (0–20): its gathering sessions open (not done/closed) at once
+  codingRunning: number; // default 2 (0–10): its coding sessions running at once
 }
+
+export const DEFAULT_PO_CAPS: ProjectOverseerCaps = {
+  gatherPerTurn: 3,
+  promotePerTurn: 20,
+  createPerTurn: 2,
+  promptsPerTurn: 5,
+  gatherPerDay: 6,
+  promotePerDay: 60,
+  createPerDay: 4,
+  promptsPerDay: 12,
+  unattendedPerDay: 12,
+  gatheringsOpen: 5,
+  codingRunning: 2,
+};
+export const DEFAULT_TOKEN_BUDGET = 2_000_000;
+/** Allowances: whole numbers from 0 to this, or Unlimited. */
+export const ALLOWANCE_MAX = 1000;
+export const BUDGET_MAX = 1_000_000_000;
+/** The at-once limits' maximums: never Unlimited. */
+export const AT_ONCE_MAX = { gatheringsOpen: 20, codingRunning: 10 } as const;
+export type AtOnceKey = keyof typeof AT_ONCE_MAX;
+export const isAtOnce = (k: keyof ProjectOverseerCaps): k is AtOnceKey => k in AT_ONCE_MAX;
+
+/** What an allowance counts. */
+export type PoLimitKind = "gather" | "promote" | "create" | "prompt";
+export const PO_LIMIT_KINDS: readonly PoLimitKind[] = ["gather", "promote", "create", "prompt"];
+export const PER_TURN: Record<PoLimitKind, keyof ProjectOverseerCaps> = { gather: "gatherPerTurn", promote: "promotePerTurn", create: "createPerTurn", prompt: "promptsPerTurn" };
+export const PER_DAY: Record<PoLimitKind, keyof ProjectOverseerCaps> = { gather: "gatherPerDay", promote: "promotePerDay", create: "createPerDay", prompt: "promptsPerDay" };
+/** What each kind counts, in a sentence ("3 of 6 gathering sessions started"). */
+export const LIMIT_WHAT: Record<PoLimitKind, string> = { gather: "gathering sessions started", promote: "decisions promoted", create: "coding sessions started", prompt: "prompts to coding sessions" };
+
+/** Each limit's field label on the project page; the server's 400 sentences use the same words. */
+export const PO_CAP_LABEL: Record<keyof ProjectOverseerCaps, string> = {
+  gatherPerTurn: "Gathering sessions started (each message you send)",
+  promotePerTurn: "Decisions promoted (each message you send)",
+  createPerTurn: "Coding sessions started (each message you send)",
+  promptsPerTurn: "Prompts to coding sessions (each message you send)",
+  gatherPerDay: "Gathering sessions started (on its own, each day)",
+  promotePerDay: "Decisions promoted (on its own, each day)",
+  createPerDay: "Coding sessions started (on its own, each day)",
+  promptsPerDay: "Prompts to coding sessions (on its own, each day)",
+  unattendedPerDay: "Looks (on its own, each day)",
+  gatheringsOpen: "Gathering sessions open",
+  codingRunning: "Coding sessions running",
+};
+
+/** Why a limit's value can't be saved, as the page and the server say it, or null. Pure. */
+export function capProblem(k: keyof ProjectOverseerCaps, v: unknown): string | null {
+  if (isAtOnce(k)) {
+    if (v === null) return `${PO_CAP_LABEL[k]} can't be Unlimited: it's what stops a burst.`;
+    return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= AT_ONCE_MAX[k] ? null : `${PO_CAP_LABEL[k]} must be a whole number from 0 to ${AT_ONCE_MAX[k]}.`;
+  }
+  return v === null || (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= ALLOWANCE_MAX) ? null : `${PO_CAP_LABEL[k]} must be a whole number from 0 to ${ALLOWANCE_MAX}, or Unlimited.`;
+}
+export function budgetProblem(v: unknown): string | null {
+  return v === null || (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= BUDGET_MAX) ? null : "Coding token budget must be a whole number from 0 to 1,000,000,000, or Unlimited.";
+}
+
+/** Pace (§app.project-overseer/limits): minutes between looks on its own, and the soon look's delay. */
+export const DEFAULT_WATCH_GAP_MIN = 10;
+export const DEFAULT_SOON_LOOK_SEC = 60;
+export const GAP_CHOICES = [2, 5, 10, 30, 60] as const;
+/** null = Off. */
+export const SOON_CHOICES = [30, 60, 120, 300, null] as const;
+export const gapProblem = (v: unknown): string | null =>
+  typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 1440 ? null : "Looks at most every must be a whole number of minutes from 1 to 1440.";
+export const soonProblem = (v: unknown): string | null =>
+  v === null || (typeof v === "number" && Number.isInteger(v) && v >= 30 && v <= 3600) ? null : "The soon look must be a whole number of seconds from 30 to 3600, or Off.";
+
+/**
+ * Something a refusal held for later (host-local, in the watch memo): `key` is `day:<kind>`,
+ * `message:<kind>`, `budget` or `looks`; `retryAt` (ISO) is when the watch loop turns it into a
+ * reason to look, null = when the operator raises the limit.
+ */
+export interface HeldItem {
+  key: string;
+  /** What it counts ("gathering sessions started", "coding tokens", "looks"). */
+  what: string;
+  /** The refusal's sentence. */
+  why: string;
+  since: string;
+  retryAt: string | null;
+}
+
+/** Used and the limit (null = Unlimited), per kind. */
+export type AllowanceUse = Record<PoLimitKind, { used: number; max: Allowance }>;
 
 /** The mode a coding session the project starts runs in (the mode extension's major mode and minor
     modes). `align` is never allowed: nobody answers a coding session's alignment questions. */
@@ -103,14 +202,18 @@ export interface ProjectOverseerSettings {
   gatheringModel: string | null;
   gatheringThinking: string | null;
   caps: ProjectOverseerCaps;
-  /** Tokens (input + output + cache) its coding sessions may spend in total; L3 refuses beyond it. */
-  tokenBudget: number;
+  /** Tokens (input + output + cache) its coding sessions may spend in total; L3 refuses beyond it. null = Unlimited. */
+  tokenBudget: number | null;
+  /** It looks on its own at most every this many minutes (1–1440). */
+  watchGapMin: number;
+  /** A reason to look soon starts a look this many seconds after it (30–3600); null = Off. */
+  soonLookSec: number | null;
   /** The watch loop runs for this project. */
   watch: boolean;
   extraSystemPrompt: string;
 }
 
-export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "tokenBudget" | "watch" | "extraSystemPrompt">> & {
+export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "tokenBudget" | "watchGapMin" | "soonLookSec" | "watch" | "extraSystemPrompt">> & {
   caps?: Partial<ProjectOverseerCaps>;
 };
 
@@ -152,7 +255,12 @@ export interface ProjectOverseerInfo {
   usage: {
     /** Tokens its coding sessions have spent (sum of their lifetime totals). */
     codingTokens: number;
-    tokenBudget: number;
+    /** null = Unlimited. */
+    tokenBudget: number | null;
+    /** What each allowance has used: the operator's last message's, and today's on its own. */
+    allowance: { message: AllowanceUse; today: AllowanceUse };
+    /** What refusals held for later (§app.project-overseer/limits). */
+    held: HeldItem[];
     unattendedToday: number;
     lastWatchAt: string | null;
     /** Why the watch loop wants to look, not yet looked at. */

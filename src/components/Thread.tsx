@@ -8,7 +8,8 @@ import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
-import { entryIdOf, JUMP_EVENT, registerRows, registerTranscript } from "../lib/jump";
+import { ensureRendered, entryIdOf, JUMP_EVENT, registerRows, registerTranscript } from "../lib/jump";
+import type { ScrollSpot } from "../lib/transcript-cache";
 import { carriedStart, chunkStart, FIRST_CHUNK, initialStart, nextChunk, rowEstimate, rowIndexFor } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
@@ -934,6 +935,10 @@ export function ThreadScroller(props: {
   busy?: boolean;
   /** The session shown here: what a jump from the outline, Skills or Timeline looks up. */
   path?: string;
+  /** Where to open, for rows kept from the last visit (lib/transcript-cache); the end otherwise. */
+  restore?: ScrollSpot | null;
+  /** Told where the transcript was when it goes away, and whenever a scroll comes to rest. */
+  onSpot?(spot: ScrollSpot): void;
 }) {
   const paneId = usePaneId();
   let el!: HTMLElement;
@@ -998,6 +1003,11 @@ export function ThreadScroller(props: {
   // still "following") must not pull it back down.
   const resized = typeof ResizeObserver === "function" ? new ResizeObserver(() => lastGap <= 2 && settle()) : null;
   onCleanup(() => resized?.disconnect());
+  // The view itself changing height (the composer's status row appearing, a keyboard) never moves
+  // a scroll under way, so while following it always goes back to the end. A scroll event can read
+  // the new, shorter view before this runs, so it can't wait for `lastGap`.
+  const viewResized = typeof ResizeObserver === "function" ? new ResizeObserver(() => follow && !toggled && toBottom()) : null;
+  onCleanup(() => viewResized?.disconnect());
   const api: ScrollerApi = {
     root: () => el,
     prepend(build) {
@@ -1014,6 +1024,51 @@ export function ThreadScroller(props: {
     jumping: () => performance.now() < jumpingUntil,
   };
   createEffect(on(() => props.resume, resumeFollowing, { defer: true }));
+
+  /**
+   * Where the view is: following, or the first row whose drawn part reaches into the view and how
+   * far its top is below the view's top. Rows that draw nothing (`display: none`) are skipped.
+   */
+  const spot = (): ScrollSpot | null => {
+    if (!el?.isConnected) return null;
+    if (follow) return { follow: true };
+    const top = el.getBoundingClientRect().top;
+    for (const entry of el.querySelectorAll<HTMLElement>(".thread > .entry")) {
+      const row = entry.firstElementChild;
+      if (!row || entry.getClientRects().length === 0) continue;
+      const box = row.getBoundingClientRect();
+      if (box.bottom > top) return { follow: false, rowId: entry.dataset.entry ?? "", offset: box.top - top };
+    }
+    return null;
+  };
+  let spotTimer: ReturnType<typeof setTimeout> | undefined;
+  const reportSpot = () => {
+    const s = spot();
+    if (s) props.onSpot?.(s);
+  };
+  onCleanup(() => {
+    clearTimeout(spotTimer);
+    reportSpot();
+  });
+  /** Opens where `props.restore` says: on its row, at its offset, not following. False when that
+      row isn't in this transcript anymore (the caller goes to the end instead). */
+  const restoreSpot = (): boolean => {
+    const r = props.restore;
+    if (!r || r.follow || !r.rowId) return false;
+    const place = () => {
+      const row = ensureRendered(r.rowId, el);
+      if (!row) return false;
+      el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - r.offset;
+      lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      return true;
+    };
+    if (!place()) return false;
+    follow = false;
+    setAway(props.count);
+    // The rows around it are drawn at their real heights in the next frame: place it again then.
+    requestAnimationFrame(() => requestAnimationFrame(place));
+    return true;
+  };
 
   const newCount = () => {
     const a = away();
@@ -1034,8 +1089,7 @@ export function ThreadScroller(props: {
           // A jump (lib/jump) takes the view away from the bottom: stop following, as a scroll up would.
           node.addEventListener("click", onClick, true);
           node.addEventListener("toggle", markToggle, true);
-          // The view itself shrinks too (the composer's status row appearing): a view at the end stays there.
-          resized?.observe(node);
+          viewResized?.observe(node);
           node.addEventListener(JUMP_EVENT, () => {
             jumpingUntil = performance.now() + JUMP_SETTLE_MS;
             if (!follow) return;
@@ -1047,9 +1101,13 @@ export function ThreadScroller(props: {
             registerTranscript(path, node);
             onCleanup(() => registerTranscript(path, null));
           }
-          queueMicrotask(toBottom);
+          queueMicrotask(() => restoreSpot() || toBottom());
         }}
-        onScroll={onScroll}
+        onScroll={() => {
+          onScroll();
+          clearTimeout(spotTimer);
+          spotTimer = setTimeout(reportSpot, 150);
+        }}
       >
         <Show when={banner()}>
           <div class="transcript-banner">{banner()}</div>

@@ -4,6 +4,8 @@ import { createFork, fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
 import { landExplainJump } from "../lib/jump";
+import { hostOf, sessionViewKey } from "../lib/mesh";
+import { cachedTranscript, cacheItems, cacheSpot, reconcileItems } from "../lib/transcript-cache";
 import { copyText, hideThinking, hideTools, setSessionContext, toast } from "../lib/ui-state";
 import { openCreated, stageFork } from "../lib/fork-stage";
 import { usePaneAnnounce } from "../lib/pane-scope";
@@ -60,7 +62,11 @@ export function WatchView(props: {
   onCreated?(session: SessionSummary): void;
 }) {
   const announce = usePaneAnnounce();
-  const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
+  // Rows kept from the last visit paint at once; the snapshot reconciles them (lib/transcript-cache).
+  const cacheKey = sessionViewKey(hostOf(props.path), props.path);
+  const cached = cachedTranscript(cacheKey);
+  const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
+  createEffect(on(items, (list) => list && cacheItems(cacheKey, list)));
   // "Open in Session" from an Explanations card: land on that explanation's row once the snapshot
   // is here. Only a jump waiting for this session is claimed, and only once.
   createEffect(on(items, (list) => list && landExplainJump({ path: props.path, sessionId: props.sessionId }, list, toast)));
@@ -161,7 +167,7 @@ export function WatchView(props: {
       switch (msg.type) {
         case "snapshot": // may repeat if the file is rewritten: always replace
           setError(null);
-          setItems(msg.items);
+          setItems((prev) => reconcileItems(prev, msg.items));
           setLastUpdate(new Date().toISOString());
           break;
         case "append":
@@ -181,6 +187,8 @@ export function WatchView(props: {
     <>
       <ThreadScroller
         path={props.path}
+        restore={cached?.spot}
+        onSpot={(spot) => cacheSpot(cacheKey, spot)}
         count={visibleCount(items() ?? [], { tools: hideTools(props.path), thinking: hideThinking(props.path) })}
         busy={!items()}
         banner={

@@ -40,7 +40,8 @@ import {
 import { appendItems } from "../lib/explain";
 import { isObj, str } from "../lib/message";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
-import { HOST_MOVE_GRACE_MS, hostOf, mayBeHostMove, meshOn, recheckHost } from "../lib/mesh";
+import { HOST_MOVE_GRACE_MS, hostOf, mayBeHostMove, meshOn, recheckHost, sessionViewKey } from "../lib/mesh";
+import { cachedTranscript, cacheItems, cacheSpot, reconcileItems } from "../lib/transcript-cache";
 import { openFailureView } from "../lib/open-failure";
 import {
   closeRemoteStatus,
@@ -226,7 +227,12 @@ export function ChatView(props: {
    */
   const turnWord = (member: string, alone: string) => (scope.id ? member : alone);
 
-  const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
+  // Switching back paints the rows kept from the last visit at once, where they were scrolled to;
+  // the hello then reconciles them (lib/transcript-cache).
+  const cacheKey = sessionViewKey(hostOf(props.path), props.path);
+  const cached = cachedTranscript(cacheKey);
+  const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
+  createEffect(on(items, (list) => list && cacheItems(cacheKey, list)));
   // "Open in Session" from an Explanations card: once the transcript is here (hello), land on that
   // explanation's row. Only a jump waiting for this session is claimed, and only once.
   createEffect(on(items, (list) => list && landExplainJump({ path: props.path, sessionId: props.summary?.()?.id }, list, toast)));
@@ -347,7 +353,9 @@ export function ChatView(props: {
       const next = await fetchTranscriptWithContext(props.path);
       setSessionContext(props.path, contextStateFor(next.context, next.items)); // authoritative after each turn
       batch(() => {
-        setItems(next.items);
+        // Rows whose entry didn't change keep their DOM (open cards, focus): the turn's own rows
+        // are the only new ones.
+        setItems((prev) => reconcileItems(prev, next.items));
         setLive(reconcile(emptyLive()));
         setCommandRows([]); // local only; the persisted entries now tell the story
       });
@@ -489,7 +497,7 @@ export function ChatView(props: {
           statusAsker.hello();
           owner.reset();
           batch(() => {
-            setItems(msg.items);
+            setItems((prev) => reconcileItems(prev, msg.items));
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
             setCompacting(!!msg.isCompacting);
@@ -1344,6 +1352,8 @@ export function ChatView(props: {
       </Show>
       <ThreadScroller
         path={props.path}
+        restore={cached?.spot}
+        onSpot={(spot) => cacheSpot(cacheKey, spot)}
         count={visibleCount(items() ?? [], { tools: hideTools(props.path), thinking: hideThinking(props.path) }) + live.entries.length}
         resume={resume()}
         busy={!items()}

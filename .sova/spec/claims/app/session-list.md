@@ -1335,6 +1335,21 @@ transcript is gone.
 - **Which folder.** The server's own mapping from a session path to its attached organization
   decides membership. Ordinary sessions, and a folder no longer attached, follow the usual rules.
 
+## §app.session-list/archive-org-guard — Archiving never deletes organization sessions
+
+Archiving an empty husk (a session nothing was ever sent in, with no stored draft) deletes its
+file, since the list never shows a husk and an archive mark on it could never render. A session
+file inside an attached organization's workspace `sessions/` is the exception: `POST
+/api/sessions/archive` never deletes one. A fresh baton still waiting on its first link is a husk
+by shape, and `baton.json` and project-overseer state name those files, so deleting one leaves a
+record whose transcript is gone.
+
+- **Archived instead.** Such a session is archived like any other: it gets the archive mark and
+  its runtime is closed, and its file, its web origin, draft, title, tags, attachments and group
+  stay as they were.
+- **Which folder.** The same mapping as §app.session-list/cleanup-org-guard decides membership.
+  Ordinary husks, and a folder no longer attached, are still deleted on archive.
+
 ## §app.session-list/search — Search
 
 - **Matching.** Case-insensitive substring match on `title`, `cwd`, `model`, and the session's

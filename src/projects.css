@@ -67,7 +67,6 @@
 .project-limits-legend { float: left; width: 100%; padding: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .project-limits-hint { margin: 0; }
 .project-limit-unlimited { justify-content: flex-start; }
-.project-limit-budget { max-width: 22rem; }
 .project-limits-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .project-waiting { color: var(--status-warn); }
 .project-item { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) 0; }

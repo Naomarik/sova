@@ -25,6 +25,7 @@ import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-sto
 import { dropSessionTags, tagsFor } from "./session-tags";
 import { batonSummaryField } from "./baton";
 import { projectOverseerOfPath } from "./project-overseer-store";
+import { orgOfSessionPath } from "./orgs";
 
 /** `baton` for a baton session's file (§app/baton), `projectOverseer` for a project overseer's
     (§app/project-overseer), else nothing. */
@@ -984,7 +985,7 @@ export interface CleanupResult {
  * the route and the archive gesture apply), so a path outside the sessions dir is refused. The
  * rest is refused with the reason in `refused` too: an unarchived session (archive it first), a
  * file that's gone, and a file whose header doesn't parse — never delete what can't be read as
- * a pi session.
+ * a pi session. Every mode leaves an attached org's workspace sessions alone (refused, in paths mode).
  */
 export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResult> {
   const targets = req.mode === "paths" ? req.paths : await listSessionFiles();
@@ -1001,6 +1002,13 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     const path = req.mode === "paths" ? resolveSessionPath(target) : target;
     if (!path) {
       refusals.push({ path: target, reason: "Not a session file under the pi sessions dir." });
+      continue;
+    }
+    // An attached org's workspace sessions (batons, project-overseer conversations) belong to the
+    // org: baton.json and overseer state name them, so no mode ever deletes one. Silent in the
+    // bulk modes, like the Overseer's files, so the dry run's count is what the real run deletes.
+    if (orgOfSessionPath(path)) {
+      if (req.mode === "paths") refusals.push({ path, reason: "Belongs to an organization's workspace — Clean Up never deletes it." });
       continue;
     }
     let st;

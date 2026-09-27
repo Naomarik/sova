@@ -114,6 +114,9 @@ export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autono
   caps?: Partial<ProjectOverseerCaps>;
 };
 
+/** How the last unattended run went; `started` means it is running now. */
+export type LastRunOutcome = "started" | "finished" | "stopped" | "cut-off" | "skipped";
+
 export interface ProjectOverseerInfo {
   orgId: string;
   projectId: string;
@@ -138,8 +141,10 @@ export interface ProjectOverseerInfo {
       is L0 until the operator sets its level here. Null or absent: not paused. */
   paused?: string | null;
   busy: boolean;
-  /** The last watch-loop run (null: never). `outcome` "skipped" carries why (busy, daily cap). */
-  lastRun: { at: string; reasons: string[]; outcome: "started" | "skipped"; detail?: string } | null;
+  /** The last watch-loop run (null: never). `started`: running now; then `finished`, `stopped`
+      (why: the guard's trip, the model's error, "Stopped."), `cut-off` (the server stopped during
+      it), or `skipped` (why: busy, daily cap). */
+  lastRun: { at: string; reasons: string[]; outcome: LastRunOutcome; detail?: string } | null;
   /** Sessions it started, newest first. */
   started: StartedSession[];
   /** Replies newer than the operator last looked. */

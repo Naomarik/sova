@@ -21,7 +21,8 @@ import {
 import type { SessionSummary, TokenUsage } from "../shared/protocol";
 import { onBatonEvent } from "./baton-events";
 import { allBatons, batonById, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
-import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, registerSpecialLoadout, setOpeningChoice } from "./chat-manager";
+import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, registerSpecialLoadout, setOpeningChoice, type ChatSession } from "./chat-manager";
+import { PROCESS_START, shuttingDown } from "./wrapup-recovery";
 import { getSessionInsight } from "./insights";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
@@ -1000,21 +1001,87 @@ export async function lookNow(orgId: string, projectId: string, force = false): 
   }
   const eff = effectiveAutonomy(settings, readRoster(orgId), overseerPausedSince(orgId, projectId));
   const reasons = memo.pending;
+  const at = new Date().toISOString();
   try {
     const po = await acquireChat(path!);
     po.assertModelAllowed();
     const openTodos = readTodos(p.todos).todos.filter((t) => !t.done).length;
-    const { turn } = po.acceptPrompt(watchText(reasons, eff.autonomy, openTodos), undefined, "server");
-    void turn.catch((err) => po.reportTurnFailure(err));
+    const from = po.session.sessionManager.getBranch().length;
+    const { queued, turn } = po.acceptPrompt(watchText(reasons, eff.autonomy, openTodos), undefined, "server");
+    const end = (err?: unknown) => recordRunEnd(p, at, runEnd(po, from, err));
+    if (queued) {
+      // Held behind a start or a compaction: it runs as the next turn, which ends at the next settle.
+      const off = onAgentSettled((settledPath) => {
+        if (canonicalPath(settledPath) !== canonicalPath(path!)) return;
+        off();
+        end();
+      });
+    } else
+      void turn.then(
+        () => end(),
+        (err) => {
+          po.reportTurnFailure(err);
+          end(err);
+        },
+      );
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     memo.lastRun = { at: new Date().toISOString(), reasons, outcome: "skipped", detail };
     writeMemo(p, memo);
     return { started: false, why: detail };
   }
-  const now = new Date();
-  writeMemo(p, { ...memo, pending: [], soonAt: null, lastRunAt: now.toISOString(), lastRun: { at: now.toISOString(), reasons, outcome: "started" }, perDay: { ...memo.perDay, [today]: (memo.perDay[today] ?? 0) + 1 } });
+  writeMemo(p, { ...memo, pending: [], soonAt: null, lastRunAt: at, lastRun: { at, reasons, outcome: "started" }, perDay: { ...memo.perDay, [today]: (memo.perDay[today] ?? 0) + 1 } });
   return { started: true };
+}
+
+export const CUT_OFF_DETAIL = "The server restarted during the run.";
+
+/** How an unattended run ended, from its own part of the branch (entries past `from`). */
+function runEnd(chat: ChatSession, from: number, err?: unknown): { outcome: "finished" | "stopped" | "cut-off"; detail?: string } {
+  const mine = chat.session.sessionManager.getBranch().slice(from);
+  const last = [...mine].reverse().find((e) => e.type === "message" && e.message.role === "assistant") as { message: { stopReason?: string; errorMessage?: string } } | undefined;
+  const stop = last?.message.stopReason;
+  const failed = !last || stop === "error" || stop === "aborted" || err !== undefined;
+  if (!failed) return { outcome: "finished" };
+  if (chat.lastStreamTrip) return { outcome: "stopped", detail: chat.lastStreamTrip.detail };
+  if (shuttingDown()) return { outcome: "cut-off", detail: CUT_OFF_DETAIL };
+  if (stop === "aborted") return { outcome: "stopped", detail: "Stopped." };
+  if (stop === "error") return { outcome: "stopped", detail: last?.message.errorMessage || "The model failed." };
+  if (err !== undefined) return { outcome: "stopped", detail: err instanceof Error ? err.message : String(err) };
+  return { outcome: "stopped", detail: "The run ended without an answer." };
+}
+
+/** Record how the run started at `at` ended, unless a later run (or a skip) took its place. */
+function recordRunEnd(p: ProjectOverseerPaths, at: string, end: { outcome: "finished" | "stopped" | "cut-off"; detail?: string }): void {
+  try {
+    const m = readMemo(p);
+    if (m.lastRun?.at !== at || m.lastRun.outcome !== "started") return;
+    const { detail: _old, ...run } = m.lastRun;
+    writeMemo(p, { ...m, lastRun: { ...run, outcome: end.outcome, ...(end.detail ? { detail: end.detail } : {}) } });
+  } catch (err) {
+    console.warn("[project-overseer] run end not recorded:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** A run still `started` from before this process: nothing runs it now (one server per state dir). */
+export function sweepCutOffRuns(processStart = PROCESS_START): void {
+  for (const o of readIndex().orgs) {
+    let projects;
+    try {
+      projects = readProjects(o.id);
+    } catch {
+      continue;
+    }
+    for (const pr of projects) {
+      try {
+        const p = projectOverseerPaths(o.id, pr.id);
+        const run = readMemo(p).lastRun;
+        if (run?.outcome === "started" && !(Date.parse(run.at) >= processStart)) recordRunEnd(p, run.at, { outcome: "cut-off", detail: CUT_OFF_DETAIL });
+      } catch {
+        // not a store id shape
+      }
+    }
+  }
 }
 
 /**
@@ -1087,6 +1154,7 @@ let started = false;
 export function startProjectOverseerLoop(): void {
   if (started) return;
   started = true;
+  sweepCutOffRuns();
   onBatonEvent((e) => {
     // A decision recorded mid-session is not a reason on its own: the session's end is, and it
     // comes with its decisions (a settle session's answer reaches the reconciler, whose events are).

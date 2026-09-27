@@ -16,6 +16,17 @@ import { BATON_RUN_WALL_MS } from "./stream-guard";
  */
 
 export const PROCESS_START = Date.now();
+
+let stopping = false;
+/** The server is shutting down (index.ts, before it aborts the turns): a turn that stops now was
+    cut off by the shutdown, not stopped for a reason of its own. */
+export function markShutdown(): void {
+  stopping = true;
+}
+export const shuttingDown = (): boolean => stopping;
+export function clearShutdownForTest(): void {
+  stopping = false;
+}
 /** Past the guard's wall clock, with room for the turn's own start and end. */
 export const STALE_AFTER_MS = BATON_RUN_WALL_MS + 60_000;
 

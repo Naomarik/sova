@@ -9,7 +9,7 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
-import { startWrapupRecovery } from "./wrapup-recovery";
+import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
@@ -1168,6 +1168,8 @@ async function shutdown() {
   // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
   (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
   // Stop every turn first: a turn still streaming keeps the CPU busy through every await below.
+  // Marked first, so a run that records how it ended says the shutdown cut it off.
+  markShutdown();
   for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
   usagePoller.stop();
   stopMesh();

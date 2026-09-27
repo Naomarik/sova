@@ -30,6 +30,7 @@ const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { setStreamCapsForTest } = await import("./stream-guard");
 const { registerWrapupRoutes } = await import("./wrapup-routes");
+const recovery = await import("./wrapup-recovery");
 
 after(async () => {
   setStreamCapsForTest(null);
@@ -217,6 +218,89 @@ describe("the stream guard against a runaway stream (real provider path, local s
       assert.equal(again.status, 409, "a wrap-up that didn't fail is not retried");
       assert.match(((await again.json()) as { error: string }).error, /Only a wrap-up that stopped/);
       assert.equal((await app.request(`/api/baton/nope/wrapup/retry`, { method: "POST" })).status, 404);
+    });
+  });
+
+  describe("a wrap-up cut off by a stop, not the guard", async () => {
+    const org = await orgs.createOrg({ name: "Cut", dir: join(root, "ws-cut") });
+    mkdirSync(join(root, "cproj"), { recursive: true });
+    const project = orgs.addProject(org.id, { name: "P", root: join(root, "cproj") });
+    const tony = orgs.addPerson(org.id, { name: "Tony", role: "IT" });
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server", model: "stub/runaway" });
+    const app = new Hono();
+    registerWrapupRoutes(app);
+    const row = () => baton.batonById(c.sessionId)!.row;
+    /** Resolve once the wrap-up's request reached the stub. */
+    const requested = async () => {
+      for (let i = 0; i < 400 && stub.stats.requests === 0; i++) await new Promise((r) => setTimeout(r, 10));
+      assert.equal(stub.stats.requests, 1, "the wrap-up's request reached the model");
+    };
+    const settledRow = async () => {
+      for (let i = 0; i < 400 && row().wrapup?.state === "running"; i++) await new Promise((r) => setTimeout(r, 10));
+      return row().wrapup;
+    };
+
+    before(async () => {
+      // The session's own last turn ended with goal_done: an earlier assistant message whose stop
+      // is an ordinary tool call, which a wrap-up that wrote nothing must not be read as.
+      const entries = readFileSync(c.path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+      const at = new Date().toISOString();
+      appendFileSync(
+        c.path,
+        `${JSON.stringify({ type: "message", id: "cu1", parentId: entries.at(-1).id, timestamp: at, message: { role: "user", content: [{ type: "text", text: "The server is on AWS." }], timestamp: Date.now() } })}\n` +
+          `${JSON.stringify({ type: "custom", id: "cm1", parentId: "cu1", timestamp: at, customType: BATON_SENT_ENTRY, data: { v: 1, targetId: "cu1", by: tony.id } })}\n` +
+          `${JSON.stringify({ type: "message", id: "ca1", parentId: "cm1", timestamp: at, message: { role: "assistant", content: [{ type: "toolCall", id: "g1", name: "goal_done", arguments: {} }], api: "openai-completions", provider: "stub", model: "runaway", usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "toolUse", timestamp: Date.now() } })}\n`,
+      );
+      (await import("./write-guard")).markOwned(c.path);
+      baton.markDone(c.sessionId, new Date());
+      const chat = await acquireChat(c.path);
+      await chat.setModelRef("stub/runaway");
+    });
+    after(() => recovery.clearShutdownForTest());
+
+    test("a graceful shutdown during the wrap-up records it failed, saying so; Retry then runs it again", async () => {
+      // The model hasn't answered yet: the stop leaves the turn no assistant message at all.
+      stub.reset({ payload: "letters", perDelta: 16, holdMs: 5000 });
+      const run = wrap.runWrapup(c.sessionId, BATON_TOOLS);
+      await requested();
+      assert.equal(row().wrapup?.state, "running");
+      // What index.ts's shutdown does: mark, abort every streaming turn, dispose every runtime.
+      recovery.markShutdown();
+      (await acquireChat(c.path)).session.abort().catch(() => {});
+      await disposeAllChats();
+      const info = await run;
+      recovery.clearShutdownForTest();
+      assert.equal(info?.state, "failed");
+      assert.equal(info?.error, "The server shut down during the wrap-up.");
+      assert.equal(row().wrapup?.state, "failed");
+
+      stub.reset({ payload: "letters", perDelta: 16, pauseMs: 20 });
+      const res = await app.request(`/api/baton/${c.sessionId}/wrapup/retry`, { method: "POST" });
+      assert.equal(res.status, 200);
+      await requested();
+      const again = await app.request(`/api/baton/${c.sessionId}/wrapup/retry`, { method: "POST" });
+      assert.equal(again.status, 409);
+      assert.equal(((await again.json()) as { error: string }).error, "The wrap-up is already running.");
+
+      // Stopped with no shutdown (Stop, Take back): failed too, never done.
+      await (await acquireChat(c.path)).session.abort();
+      const w = await settledRow();
+      assert.equal(w?.state, "failed");
+      assert.notEqual(w?.error, "The server shut down during the wrap-up.");
+      assert.ok(w?.error, "it names a reason");
+    });
+
+    test("a shutdown mid-stream: the partial answer is not an answer either", async () => {
+      stub.reset({ payload: "letters", perDelta: 16, pauseMs: 20 });
+      const res = await app.request(`/api/baton/${c.sessionId}/wrapup/retry`, { method: "POST" });
+      assert.equal(res.status, 200);
+      for (let i = 0; i < 400 && stub.stats.startedAt === null; i++) await new Promise((r) => setTimeout(r, 10));
+      recovery.markShutdown();
+      await (await acquireChat(c.path)).session.abort();
+      const w = await settledRow();
+      recovery.clearShutdownForTest();
+      assert.equal(w?.state, "failed");
+      assert.equal(w?.error, "The server shut down during the wrap-up.");
     });
   });
 });

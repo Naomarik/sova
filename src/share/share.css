@@ -52,6 +52,7 @@ body { margin: 0; background: var(--color-bg); color: var(--color-ink); }
 .share-md { overflow-wrap: anywhere; }
 .share-md > :first-child { margin-top: 0; }
 .share-md > :last-child { margin-bottom: 0; }
+.share-cutoff { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .share-md a,
 .share-text a { color: var(--color-accent); }
 

@@ -1,5 +1,5 @@
 import { createEffect, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
-import { SHARE_TEXT_MAX, type BatonView, type BatonViewItem, type ShareServerMessage } from "../../shared/baton";
+import { SHARE_TEXT_MAX, type BatonView, type BatonViewItem, type GoneWhy, type ShareServerMessage } from "../../shared/baton";
 import { linkSegments } from "../lib/share-linkify";
 import { renderShareMarkdown } from "./markdown";
 import { visitTab } from "./visit-tab";
@@ -22,6 +22,13 @@ const VISIT = visitTab(storage());
 
 type Problem = { title: string; body: string };
 const GONE: Problem = { title: "This link is no longer active.", body: "The conversation was closed or the link was turned off. Ask the person who sent it for a new one." };
+/** The only two reasons a dead link names (the server sends no other): anything more, such as
+    "they left the organization", would tell whoever holds a forwarded link. */
+const GONE_WHY: Record<GoneWhy, Problem> = {
+  expired: { title: "This link has expired.", body: "Links last 14 days. Ask the person who sent it for a new one." },
+  withdrawn: { title: "This question went to someone else.", body: "Nothing more is needed from you." },
+};
+const gone = (why: unknown): Problem => (typeof why === "string" && Object.hasOwn(GONE_WHY, why) ? GONE_WHY[why as GoneWhy] : GONE);
 const UNKNOWN: Problem = { title: "This link doesn't open a conversation.", body: "Check that you copied the whole link, or ask the person who sent it for a new one." };
 
 const othersWord = (n: number) => (n === 1 ? "1 other person" : `${n} other people`);
@@ -66,6 +73,9 @@ function Item(props: { item: BatonViewItem }) {
           <article class="share-msg share-msg-reply" aria-label="Facilitator">
             <span class="share-who">Facilitator</span>
             <Reply text={r().text} />
+            <Show when={r().cutOff}>
+              <p class="share-cutoff">This reply was cut off.</p>
+            </Show>
           </article>
         )}
       </Match>
@@ -143,7 +153,7 @@ export function ShareApp() {
     if (!TOKEN) return;
     const res = await fetch(`/api/h/${TOKEN}?v=${VISIT}`, { cache: "no-store" }).catch(() => null);
     if (!res) return;
-    if (res.status === 410) return setProblem(GONE);
+    if (res.status === 410) return setProblem(gone(((await res.json().catch(() => ({}))) as { why?: unknown }).why));
     if (res.status === 404) return setProblem(UNKNOWN);
     if (res.ok) apply((await res.json()) as BatonView);
   };
@@ -166,11 +176,12 @@ export function ShareApp() {
       }
       if (msg.type === "view") apply(msg.view);
       else if (msg.type === "streaming") setStreaming(msg.text);
-      else if (msg.type === "error" && msg.code === "gone") setProblem(GONE);
+      else if (msg.type === "error" && msg.code === "gone") setProblem(gone(msg.why));
     };
     ws.onclose = (e) => {
       if (socket !== ws || stopped) return;
-      if (e.code === 4410) return setProblem(GONE);
+      // The `gone` frame before this close carried the reason; keep it.
+      if (e.code === 4410) return setProblem((p) => p ?? GONE);
       if (e.code === 4000) return setElsewhere(true);
       retry = setTimeout(() => {
         void load();
@@ -202,7 +213,7 @@ export function ShareApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
       });
-      if (res.status === 410) return setProblem(GONE);
+      if (res.status === 410) return setProblem(gone(((await res.json().catch(() => ({}))) as { why?: unknown }).why));
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         setSendError(body.error ?? "Your message didn't go through. Try again.");
@@ -229,6 +240,7 @@ export function ShareApp() {
     if (v.viewer?.reason === "budget") return "This conversation has reached its message limit.";
     if (v.viewer?.reason === "taken") return "Someone else is answering right now. If they stop, it opens to you again here.";
     if (v.viewer?.reason === "withdrawn") return "This question went to someone else. Nothing more is needed from you.";
+    if (v.viewer?.reason === "newer-link") return "You have a newer link to this conversation. Use that one to write.";
     return v.holder ? `Waiting on ${v.holder}.` : "Waiting.";
   };
 

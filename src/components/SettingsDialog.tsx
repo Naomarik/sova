@@ -62,6 +62,7 @@ import { DelegateSettingsSection } from "./DelegateSettings";
 import { MeshSettingsSection } from "./MeshSettings";
 import { SpecSettingsSection } from "./SpecSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
+import { PushSettingsSection } from "./PushSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { BatonSettingsSection } from "./BatonSettings";
 import { TeamSettingsSection } from "./TeamSettings";
@@ -235,6 +236,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "overseer"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-overseer" aria-labelledby="settings-tab-overseer">
               <OverseerSettingsSection />
+              <PushSettingsSection />
             </div>
           </Show>
           {/* Mounted only while its tab is, like Modes: it asks the same backend discovery. */}

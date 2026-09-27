@@ -1,7 +1,8 @@
-// sova service worker: offline app shell + runtime cache for static files.
+// sova service worker: offline app shell + runtime cache for static files, and phone
+// notifications (Web Push: server/push.ts sends, this shows).
 // Hand-rolled, no build step. Bump CACHE to drop every cached response on the next activate.
 // Only this app's own `sova-` caches are deleted; anything else on the origin is left alone.
-const CACHE = "sova-v1";
+const CACHE = "sova-v2";
 
 // Live data is never cached: REST under /api, WebSockets under /ws*. Nor is anything an
 // extension serves (/ext/: its UI, its API, its sockets) or the design CSS extensions link
@@ -102,3 +103,78 @@ async function staleWhileRevalidate(event, req) {
   }
   return refresh;
 }
+
+// ---- phone notifications ----------------------------------------------------------------------
+// Every push shows a notification, whatever it carries: iOS revokes a subscription whose pushes
+// show nothing, so all filtering happens on the server, never here.
+
+const safeHash = (h) => (typeof h === "string" && h.startsWith("#/") ? h : "#/");
+
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = {};
+  }
+  const title = typeof data.title === "string" && data.title ? data.title : "Sova";
+  const options = {
+    body: typeof data.body === "string" ? data.body : "A session needs you.",
+    tag: typeof data.tag === "string" && data.tag ? data.tag : "sova",
+    icon: "/icons/pwa-192.png",
+    badge: "/icons/badge-96.png",
+    timestamp: typeof data.ts === "number" ? data.ts : Date.now(),
+    data: { hash: safeHash(data.hash) },
+  };
+  const jobs = [self.registration.showNotification(title, options)];
+  // The app badge: how many sessions need you now (absent on a test: left alone).
+  if (typeof data.count === "number" && self.navigator.setAppBadge) {
+    jobs.push((data.count > 0 ? self.navigator.setAppBadge(data.count) : self.navigator.clearAppBadge()).catch(() => {}));
+  }
+  event.waitUntil(Promise.all(jobs));
+});
+
+// A tap: focus an open Sova window and tell it where to go (src/sw-register.ts sets the hash, no
+// reload); with none open, open one there.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const hash = safeHash(event.notification.data && event.notification.data.hash);
+  event.waitUntil(
+    (async () => {
+      const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const win = wins.find((c) => new URL(c.url).origin === self.location.origin);
+      if (win) {
+        await win.focus().catch(() => {});
+        win.postMessage({ type: "sova:open", hash });
+        return;
+      }
+      await self.clients.openWindow("/" + hash);
+    })(),
+  );
+});
+
+// The browser renewed or dropped the subscription on its own (not every browser fires this; the
+// app also re-syncs on each load): subscribe again with the same key and tell the server, which
+// carries the old device's label over.
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    (async () => {
+      const old = event.oldSubscription;
+      let sub = event.newSubscription;
+      if (!sub) {
+        let key = old && old.options ? old.options.applicationServerKey : null;
+        if (!key) {
+          const res = await fetch("/api/push", { cache: "no-store" });
+          if (!res.ok) return;
+          key = (await res.json()).publicKey;
+        }
+        sub = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      }
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ subscription: sub.toJSON(), resync: true, ...(old ? { replaces: old.endpoint } : {}) }),
+      });
+    })().catch(() => {}),
+  );
+});

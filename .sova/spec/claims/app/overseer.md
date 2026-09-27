@@ -168,7 +168,8 @@ error. Sessions are addressed by id, bare or in any form the tools print it (`so
   secret cut short at either end (a truncated transcript row, `sk-…`) is redacted from 16 of its
   characters on. The values are kept in memory, re-read only when a file's mtime, size or inode (or
   the environment) changes, and never logged or sent anywhere.
-  The Jev key file (§app.decisions/key) is one of these sources. Secrets no file names are
+  The Jev key file (§app.decisions/key) and the private half of the Web Push signing key
+  (`secrets/vapid.json`, §app/notifications) are among these sources. Secrets no file names are
   also recognised by their shape and replaced: PEM private-key blocks (to their END line, or the
   end of a cut text), `sk-…` keys (16+ characters with a digit), GitHub `ghp_`/`gho_`/`ghu_`/
   `ghs_`/`ghr_` and `github_pat_` tokens, AWS `AKIA`/`ASIA` key ids, Slack `xox?-` tokens, JWTs,

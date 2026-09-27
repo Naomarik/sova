@@ -5394,3 +5394,19 @@ button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offse
 /* Backfill: the scope buttons, then a progress line in figures ("Tagged 40 of 147 · 2 failed"). */
 .decisions-backfill { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .decisions-backfill-progress { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); font-variant-numeric: tabular-nums; }
+
+/* Settings → Overseer → Phone Notifications. This device: a chip (dot and word) and the fact,
+   then its one action. Devices: one row each, the label over its facts, Remove at the end. */
+.push-settings { margin-top: var(--space-5); }
+.push-this-device { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.push-status { margin: 0; display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-2); }
+.push-devices { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.push-device { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.push-device-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.push-device-name { color: var(--color-ink); font-weight: var(--fw-medium); }
+.push-device-fact { font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.push-device-error { color: var(--status-error); }
+.push-kinds { display: flex; flex-direction: column; gap: var(--space-1); }
+.push-kinds .toggle { justify-content: flex-start; align-self: flex-start; width: fit-content; }
+.push-quiet { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.push-quiet > .field { min-width: 8rem; }

@@ -996,7 +996,7 @@ const pendingRuns = new Map<string, ReturnType<typeof setTimeout>>();
 /**
  * A decision recorded in a conflict's baton session settles it (or, once settled, is compared and
  * folded) without waiting for the next Reconcile: run the project's reconciler shortly after
- * (debounced; one run per project). Other
+ * (debounced; one run per project), its new settle sessions owned as that session is. Other
  * decisions wait for the operator or the project overseer. Idempotent; returns the stop.
  */
 export function watchResolutions(delayMs = 2000): () => void {
@@ -1011,13 +1011,16 @@ export function watchResolutions(delayMs = 2000): () => void {
       return;
     }
     if (!open.length) return;
+    // Its settle sessions take the owner of the session that started it: in a project the
+    // overseer runs, they stay the overseer's.
+    const owner = batonById(e.sessionId)?.row.owner;
     const key = `${e.orgId}/${e.projectId}`;
     clearTimeout(pendingRuns.get(key));
     pendingRuns.set(
       key,
       setTimeout(() => {
         pendingRuns.delete(key);
-        reconcileProject(e.orgId, e.projectId, { auto: true }).catch((err) => console.warn(`[reconcile] ${key}: ${err instanceof Error ? err.message : String(err)}`));
+        reconcileProject(e.orgId, e.projectId, { auto: true, ...(owner ? { owner } : {}) }).catch((err) => console.warn(`[reconcile] ${key}: ${err instanceof Error ? err.message : String(err)}`));
       }, delayMs),
     );
   });

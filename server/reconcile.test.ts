@@ -612,6 +612,32 @@ describe("decisions → conflicts → draft → promotion", async () => {
     }
   });
 
+  test("the run a resolution starts by itself gives its settle sessions the owner of the session that started it", async () => {
+    const { emitBatonEvent } = await import("./baton-events");
+    const overseer = { overseerOf: project.id };
+    say(f1, maria.id, "s", { area: "snow clearing", statement: "Snow is cleared within 2 days.", quote: "2 days" });
+    say(f2, tony.id, "s", { area: "snow clearing", statement: "Snow is cleared within 6 days.", quote: "6 days" });
+    const info = await reconcile.reconcileProject(org.id, project.id, { owner: overseer });
+    const trigger = info.conflicts.find((k) => k.state === "open" && k.areaKey === "snow-clearing")!;
+    assert.deepEqual(baton.batonById(trigger.batonSessionId!)!.row.owner, overseer, "the overseer's reconcile opened it");
+    const stop = reconcile.watchResolutions(10);
+    try {
+      say(f1, maria.id, "g", { area: "gritting", statement: "Paths are gritted every 3 days.", quote: "3 days" });
+      say(f2, tony.id, "g", { area: "gritting", statement: "Paths are gritted every 8 days.", quote: "8 days" });
+      emitBatonEvent({ type: "decision", orgId: org.id, projectId: project.id, sessionId: trigger.batonSessionId!, entryId: "x" });
+      let c;
+      for (let i = 0; i < 100 && !c; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+        const now = reconcile.listDecisions(org.id, project.id);
+        c = now.running ? undefined : now.conflicts.find((k) => k.areaKey === "gritting" && k.batonSessionId);
+      }
+      assert.ok(c, "the watcher's run found and routed it");
+      assert.deepEqual(baton.batonById(c!.batonSessionId!)!.row.owner, overseer, "still the overseer's, not the operator's");
+    } finally {
+      stop();
+    }
+  });
+
   test("settling a routed conflict by hand closes its session, so its Needs-you item goes", async () => {
     say(f1, maria.id, "k", { area: "coffee", statement: "Coffee is free for 3 days a week.", quote: "3 days" });
     say(f2, tony.id, "k", { area: "coffee", statement: "Coffee is free for 5 days a week.", quote: "5 days" });

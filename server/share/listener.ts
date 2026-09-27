@@ -7,7 +7,7 @@ import { TOKEN_RE } from "../baton-links";
 import { refuse } from "../extensions";
 import { addWatcher, viewForToken } from "./hub";
 import { socketClosed, socketOpened } from "../visits";
-import { createShareApp, logVisit } from "./routes";
+import { createShareApp, logVisit, PAGE_CSP } from "./routes";
 
 /**
  * The share listener (§app.baton/share-listener): the ONE port an organization's home host exposes
@@ -75,6 +75,25 @@ export class RateLimiter {
   }
 }
 
+const PAGE_SHELL = new RegExp(`^/h/${TOKEN}$`);
+/** A phone past the address limit reloading its link gets a page, not raw JSON. Static: no token,
+    no names. */
+const TOO_MANY_PAGE =
+  '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Too many requests</title></head>' +
+  '<body style="font-family: system-ui, sans-serif; max-width: 32rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5"><p>Too many requests from this network. Wait a minute, then reload.</p></body></html>';
+
+function tooMany(res: import("node:http").ServerResponse, page: boolean): void {
+  if (!page) return json(res, 429, { error: "Too many requests" });
+  res.writeHead(429, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Security-Policy": PAGE_CSP,
+    "Retry-After": "60",
+    "Cache-Control": "no-store",
+    "Referrer-Policy": "no-referrer",
+  });
+  res.end(TOO_MANY_PAGE);
+}
+
 function json(res: import("node:http").ServerResponse, status: number, body: object): void {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
   res.end(JSON.stringify(body));
@@ -111,7 +130,7 @@ export function createShareServer(timeouts: { headersMs?: number; requestMs?: nu
       return;
     }
     if (perAddress.limited(clientAddress(req))) {
-      json(res, 429, { error: "Too many requests" });
+      tooMany(res, PAGE_SHELL.test(url.pathname));
       return;
     }
     if (req.method === "POST") {
@@ -144,7 +163,7 @@ export function createShareServer(timeouts: { headersMs?: number; requestMs?: nu
     }
     const access = linkAccess(token);
     if (!access.ok) {
-      refuse(socket, access.status, { error: access.status === 410 ? "This link is no longer active." : "Unknown link." });
+      refuse(socket, access.status, { error: access.status === 410 ? "This link is no longer active." : "Unknown link.", ...(access.why ? { why: access.why } : {}) });
       return;
     }
     const sessionId = access.row.sessionId;

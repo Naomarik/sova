@@ -2679,7 +2679,8 @@
         "server/overseer.ts",
         "src/components/WorkerSlotRow.tsx",
         "src/lib/delegate-form.ts",
-        "server/overseer-store.ts"
+        "server/overseer-store.ts",
+        "src/components/PushSettings.tsx"
       ],
       "requires": []
     },
@@ -3495,7 +3496,9 @@
         "src/lib/settings-save-all.test.ts",
         "src/app.css",
         "src/lib/baton-settings-draft.ts",
-        "src/components/BatonSettings.tsx"
+        "src/components/BatonSettings.tsx",
+        "src/lib/push-draft.ts",
+        "src/components/PushSettings.tsx"
       ]
     },
     "§design.copy-deck/settings-experimental": {
@@ -3612,7 +3615,9 @@
         "server/baton-prompt.md",
         "server/chat-manager.ts",
         "server/queue.ts",
-        "server/queue.test.ts"
+        "server/queue.test.ts",
+        "server/baton-recount.ts",
+        "server/index.ts"
       ],
       "requires": [
         "§app.baton/links"
@@ -3638,7 +3643,11 @@
         "shared/baton.ts",
         "server/person-page.ts",
         "src/components/PersonPage.tsx",
-        "src/lib/api.ts"
+        "src/lib/api.ts",
+        "server/share/routes.ts",
+        "server/share/listener.ts",
+        "src/share/ShareApp.tsx",
+        "server/baton-handoff.test.ts"
       ]
     },
     "§app.baton/needs-you": {
@@ -3660,7 +3669,8 @@
         "server/chat-manager.ts",
         "src/lib/needs-you.ts",
         "server/baton-offers.test.ts",
-        "src/lib/org-region.ts"
+        "src/lib/org-region.ts",
+        "server/baton-links.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest"
@@ -3718,7 +3728,9 @@
         "server/baton.ts",
         "server/baton-handoff.test.ts",
         "src/lib/share-linkify.ts",
-        "src/lib/share-linkify.test.ts"
+        "src/lib/share-linkify.test.ts",
+        "server/person-page.ts",
+        "src/components/PersonPage.tsx"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -4842,6 +4854,74 @@
       ],
       "requires": [
         "§app.insights/insight-strip"
+      ]
+    },
+    "§app.notifications/delivery": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/push.ts",
+        "server/overseer.ts",
+        "server/attention.ts",
+        "server/web-push.ts",
+        "server/push-store.ts",
+        "public/sw.js",
+        "src/sw-register.ts",
+        "src/App.tsx",
+        "src/lib/push.ts",
+        "public/icons/badge-96.png",
+        "scripts/pwa-icons.sh",
+        "server/push.test.ts",
+        "server/web-push.test.ts",
+        "src/lib/push.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/attention-digest",
+        "§app.overseer/tools"
+      ]
+    },
+    "§app.notifications/settings": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/PushSettings.tsx",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/push.ts",
+        "src/lib/push-draft.ts",
+        "src/lib/api.ts",
+        "src/design/base.css",
+        "shared/push.ts",
+        "shared/protocol.ts",
+        "server/push-store.ts",
+        "server/push-routes.ts",
+        "server/index.ts",
+        "public/sw.js",
+        "src/lib/push-draft.test.ts",
+        "src/lib/push.test.ts",
+        "server/push.test.ts"
+      ],
+      "requires": [
+        "§app.settings-dialog/save-bar",
+        "§app.notifications/delivery"
+      ]
+    },
+    "§app/notifications": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/web-push.ts",
+        "server/push-store.ts",
+        "server/push.ts",
+        "server/push-routes.ts",
+        "server/overseer-redact.ts",
+        "shared/protocol.ts",
+        "public/sw.js",
+        "src/lib/push.ts",
+        "server/web-push.test.ts",
+        "server/push.test.ts"
       ]
     }
   },

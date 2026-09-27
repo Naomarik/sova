@@ -155,11 +155,24 @@ describe("the share message route", () => {
     assert.throws(() => chat.specialEntry!.clientSend!(c.path, { images: 0 }), /Extend it to write/);
     assert.throws(() => baton.extendBudget(c.sessionId, 0), /from 1 to/);
     assert.throws(() => baton.extendBudget(c.sessionId, 2.5), /whole number/);
-    assert.throws(() => baton.extendBudget(c.sessionId, MESSAGES_CAP), /at most/);
+    assert.throws(() => baton.extendBudget(c.sessionId, MESSAGES_CAP), (e: { status?: number; message: string }) => /at most/.test(e.message) && e.status === 400);
     assert.equal(baton.extendBudget(c.sessionId, 5).budget.messagesMax, 6);
     assert.equal(chat.specialEntry!.clientSend!(c.path, { images: 0 }).by, OPERATOR);
     baton.closeBaton(c.sessionId);
     assert.throws(() => baton.extendBudget(c.sessionId, 5), /closed/);
+  });
+
+  test("Extend past the cap is a 400 on the route, like any bad `by`", async () => {
+    const c = start(tony.id, { messagesMax: 1 });
+    const app = new Hono();
+    registerOrgRoutes(app);
+    const extend = (by: number) => app.request(`/api/baton/${c.sessionId}/extend`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ by }) });
+    assert.equal((await extend(MESSAGES_CAP - 1)).status, 200);
+    assert.equal(rowOf(c.sessionId).budget.messagesMax, MESSAGES_CAP);
+    const over = await extend(1);
+    assert.equal(over.status, 400);
+    assert.match(((await over.json()) as { error: string }).error, /at most/);
+    baton.closeBaton(c.sessionId);
   });
 
   test("the per-token window forgets tokens with nothing recent", () => {

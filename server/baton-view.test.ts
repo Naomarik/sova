@@ -139,3 +139,36 @@ test("a message is found by its timestamp and text, in branch order, and matched
   const none = [{ role: "user", content: "not on the branch", timestamp: 9 }];
   assert.equal(labelAuthors(none, authorNotes(branch, names, null)), none, "nothing labelled: the same array");
 });
+
+test("a reply that stopped before it finished shows its first 4,000 characters, marked cut off; a finished one is whole", () => {
+  const long = "word ".repeat(60_000); // 300 K
+  const branch = (stopReason?: string, text = long) => [
+    custom("c1", BATON_HANDOFF_ENTRY, { v: 1, n: 1, from: "operator", to: "p_t", question: "Q?" }),
+    { type: "message", id: "a1", message: { role: "assistant", content: [{ type: "text", text }], ...(stopReason ? { stopReason } : {}) } },
+  ];
+  const reply = (b: unknown[]) => batonView({ row: { publicTitle: "P", state: "open", holder: "p_t" }, branch: b as never, names, viewer: "p_t", redact: (t) => t }).items.find((i) => i.kind === "reply");
+  for (const stop of ["error", "aborted"]) {
+    const r = reply(branch(stop));
+    assert.ok(r && r.kind === "reply");
+    assert.ok(r.text.length <= 4000, `${stop}: ${r.text.length} characters`);
+    assert.ok(r.text.length > 3900);
+    assert.equal(r.cutOff, true);
+  }
+  const whole = reply(branch("stop"));
+  assert.ok(whole && whole.kind === "reply");
+  assert.equal(whole.text, long.trim());
+  assert.equal(whole.cutOff, undefined);
+  // Stopped with nothing written: nothing shown, as before.
+  assert.equal(reply(branch("aborted", "")), undefined);
+});
+
+test("the limit's hand-off to the operator shows people that the limit was reached; the operator's view keeps the instruction", async () => {
+  const { LIMIT_QUESTION } = await import("../shared/baton");
+  const b = [custom("c1", BATON_HANDOFF_ENTRY, { v: 1, n: 2, from: "p_t", to: "operator", question: LIMIT_QUESTION })];
+  const q = (viewer?: string) => {
+    const h = batonView({ row: { publicTitle: "P", state: "needs-you", holder: "operator" }, branch: b as never, names, ...(viewer ? { viewer } : {}), redact: (t) => t }).items[0];
+    return h?.kind === "handoff" ? h.question : null;
+  };
+  assert.equal(q("p_t"), "This conversation reached its message limit.");
+  assert.equal(q(), LIMIT_QUESTION);
+});

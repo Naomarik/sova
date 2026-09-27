@@ -18,6 +18,7 @@ import {
   type BatonSession,
   type BatonStartInput,
   type BatonSummaryField,
+  type GoneWhy,
   type Handoff,
   type Offer,
   type PersonRef,
@@ -25,12 +26,13 @@ import {
   type WrapupInfo,
 } from "../shared/baton";
 import type { Person } from "../shared/orgs";
-import { liveLinks, mintLink, revokeLinks, type LinkRecord, linkDead, findLink } from "./baton-links";
+import { deadWhy, liveLinks, mintLink, revokeLinks, type LinkRecord, linkDead, findLink } from "./baton-links";
 import { emitBatonEvent } from "./baton-events";
 import { readBatonSettings } from "./baton-settings";
 import { onOrgAttached, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, readOrg, readProjects, readRoster, setOpenBatonCounter, shortId } from "./orgs";
 import { canonicalPath } from "./paths";
 import { markSeen } from "./seen";
+import { nudgeMarks } from "./session-feed";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
 import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
@@ -69,6 +71,8 @@ function writeRows(dir: string, rows: BatonSession[]): void {
   const tmp = `${batonFile(dir)}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify({ version: 1, sessions: rows }, null, 2)}\n`);
   renameSync(tmp, batonFile(dir));
+  // Needs you is read off these rows: the session list re-diffs now, not at its next tick.
+  nudgeMarks();
 }
 
 /** Every baton row of every attached org. */
@@ -294,11 +298,23 @@ export function heldOffer(row: Pick<BatonSession, "offers">, offerId: string, pe
   return !!o && (o.holder === personId || !!o.heldBy?.includes(personId));
 }
 
+/**
+ * Where a person's view of this session stops (§app.baton/outsider-view), whichever of their links
+ * they read it through: at the newest offer to them that they never held — its hand-off `n` —
+ * unless the baton came to them directly after it. undefined: they see the whole conversation.
+ */
+export function outsiderCut(row: Pick<BatonSession, "offers" | "handoffs">, personId: string): number | undefined {
+  const offer = [...(row.offers ?? [])].reverse().find((o) => o.to.includes(personId));
+  if (!offer || heldOffer(row, offer.id, personId)) return undefined;
+  const direct = [...row.handoffs].reverse().find((h) => h.to === personId);
+  return direct && direct.n > offer.n ? undefined : offer.n;
+}
+
 /** A withdrawn offer's links stop working (410) for every invitee who never held it; anyone who
     did keeps reading, like any earlier holder. */
 function revokeWithdrawn(row: BatonSession, offer: Offer | undefined): void {
   if (!offer) return;
-  revokeLinks((l) => l.sessionId === row.sessionId && l.offerId === offer.id && !heldOffer(row, offer.id, l.personId));
+  revokeLinks((l) => l.sessionId === row.sessionId && l.offerId === offer.id && !heldOffer(row, offer.id, l.personId), Date.now(), "withdrawn");
 }
 
 /**
@@ -585,9 +601,24 @@ export function extendBudget(sessionId: string, by: unknown): BatonSession {
   return update(sessionId, (r) => {
     if (r.state === "done" || r.state === "closed") throw new OrgError(`This session is ${r.state}.`, 409);
     const next = r.budget.messagesMax + n;
-    if (next > MESSAGES_CAP) throw new OrgError(`A conversation's limit is at most ${MESSAGES_CAP} messages (it is ${r.budget.messagesMax} now).`, 409);
+    if (next > MESSAGES_CAP) throw new OrgError(`A conversation's limit is at most ${MESSAGES_CAP} messages (it is ${r.budget.messagesMax} now).`, 400);
     r.budget.messagesMax = next;
   });
+}
+
+/**
+ * Lower a session's message count to `used` (server/baton-recount.ts: messages a kill lost), only
+ * while it still reads `expected` — a message counted since the caller looked stays counted. Never
+ * raises it. Returns whether it changed.
+ */
+export function setBudgetUsed(sessionId: string, used: number, expected: number): boolean {
+  let changed = false;
+  update(sessionId, (r) => {
+    if (r.budget.messagesUsed !== expected || used >= expected || used < 0) return;
+    r.budget.messagesUsed = used;
+    changed = true;
+  });
+  return changed;
 }
 
 /** A reply ended: the holder's lease renews from now (the later of their message and the reply). */
@@ -670,7 +701,7 @@ export function startOffer(
 
 export type LinkAccess =
   | { ok: true; link: LinkRecord; row: BatonSession; dir: string; canWrite: boolean; reason?: ViewerReason }
-  | { ok: false; status: 404 | 410 };
+  | { ok: false; status: 404 | 410; why?: GoneWhy };
 
 /** What a presented token may do (§app.baton/links). */
 export function linkAccess(token: string, now = Date.now()): LinkAccess {
@@ -684,10 +715,14 @@ export function linkAccess(token: string, now = Date.now()): LinkAccess {
 }
 
 /** What a link may do on its session's row, with no token: 410 when it is turned off, expired or
-    the session is closed; else whether it writes now, and why not. linkAccess, and the person page's
-    link states. */
-export function accessOf(link: LinkRecord, row: BatonSession, now = Date.now()): { ok: true; canWrite: boolean; reason?: ViewerReason } | { ok: false; status: 410 } {
-  if (linkDead(link, now) || row.state === "closed") return { ok: false, status: 410 };
+    the session is closed (with `why` only for an expired link or a withdrawn offer's); else whether
+    it writes now, and why not. linkAccess, and the person page's link states. */
+export function accessOf(link: LinkRecord, row: BatonSession, now = Date.now()): { ok: true; canWrite: boolean; reason?: ViewerReason } | { ok: false; status: 410; why?: GoneWhy } {
+  if (linkDead(link, now)) {
+    const why = deadWhy(link, now);
+    return { ok: false, status: 410, ...(why ? { why } : {}) };
+  }
+  if (row.state === "closed") return { ok: false, status: 410 };
   const current = row.handoffs[row.handoffs.length - 1];
   let reason: ViewerReason | undefined;
   const offer = link.offerId ? row.offers?.find((o) => o.id === link.offerId) : undefined;
@@ -698,6 +733,8 @@ export function accessOf(link: LinkRecord, row: BatonSession, now = Date.now()):
     const lapsed = offer.state === "held" && !!offer.leaseUntil && Date.parse(offer.leaseUntil) <= now && !replyInFlight(row.sessionId);
     if (offer.state === "held" && offer.holder !== link.personId && !lapsed) reason = "taken";
   } else if (link.offerId && !heldOffer(row, link.offerId, link.personId)) reason = "withdrawn";
+  // They hold it, through a newer link: this one only reads, and the page points them to that one.
+  else if (row.holder === link.personId && current?.n !== link.n) reason = "newer-link";
   else if (!current || current.n !== link.n || row.holder !== link.personId) reason = row.holder === OPERATOR ? "needs-operator" : "moved-on";
   // At the limit the page says so, also once the baton has gone to the operator because of it.
   if (budgetSpent(row) && (!reason || reason === "needs-operator" || reason === "moved-on")) reason = "budget";

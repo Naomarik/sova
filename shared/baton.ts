@@ -325,7 +325,9 @@ export type BatonViewItem =
   /** `by`: the sender's person id in the operator's and the overseer's views; on a share page never
       an id — "you" (the viewer), "operator", or "person-<n>" numbered within that view. */
   | { kind: "message"; id: string; by: PersonRef; name: string; text: string; at?: string }
-  | { kind: "reply"; id: string; text: string; at?: string }
+  /** `cutOff`: the reply stopped before it finished (the stream guard, a shutdown, Take back, Stop);
+      its text is at most CUT_REPLY_MAX characters. */
+  | { kind: "reply"; id: string; text: string; at?: string; cutOff?: true }
   | { kind: "handoff"; id: string; n: number; from: string; to: string; question: string; briefing?: string }
   | { kind: "decision"; id: string; by: string; area: string; statement: string }
   | { kind: "done"; id: string; summary: string }
@@ -335,8 +337,14 @@ export type BatonViewItem =
   | { kind: "offer"; id: string; n: number; from: string; to: string[]; invited: number; question: string; briefing?: string };
 
 /** Why a link can't write now. "taken": another invitee of the same offer holds its lease (the page
-    names nobody); "withdrawn": the offer is over. */
-export type ViewerReason = "moved-on" | "done" | "needs-operator" | "budget" | "taken" | "withdrawn";
+    names nobody); "withdrawn": the offer is over; "newer-link": the viewer holds the baton, through a
+    newer link of theirs. */
+export type ViewerReason = "moved-on" | "done" | "needs-operator" | "budget" | "taken" | "withdrawn" | "newer-link";
+
+/** Why a link answers 410, when the page may say it: it expired, or its offer went to someone else.
+    Every other dead link (closed, turned off, its person left) says nothing more: a forwarded link
+    must not reveal it. */
+export type GoneWhy = "expired" | "withdrawn";
 
 export interface BatonView {
   publicTitle: string;
@@ -352,6 +360,13 @@ export type ShareServerMessage =
   | { type: "view"; view: BatonView }
   /** The reply being written, text only, so far. Cleared by the next `view`. */
   | { type: "streaming"; text: string }
-  | { type: "error"; code: string; message: string };
+  | { type: "error"; code: string; message: string; why?: GoneWhy };
 
 export const SHARE_TEXT_MAX = 4000;
+/** A reply that stopped before it finished shows at most this much on a share page, marked cut off. */
+export const CUT_REPLY_MAX = SHARE_TEXT_MAX;
+
+/** The Needs-you question when the limit sends the baton to the operator (the operator's own). */
+export const LIMIT_QUESTION = "The message limit is reached. Extend it to go on, or close the session.";
+/** What the people in the conversation read on that hand-off instead. */
+export const LIMIT_REACHED_FOR_PEOPLE = "This conversation reached its message limit.";

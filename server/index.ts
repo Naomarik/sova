@@ -10,6 +10,7 @@ import { bodyLimit } from "hono/body-limit";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
+import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
@@ -86,6 +87,7 @@ import { AttentionSignals } from "./attention-signals";
 import { configureSessionFeed, nudgeMarks, publishFeed } from "./session-feed";
 import { onTagsChanged } from "./session-tags";
 import { startSessionTags, tagRoutes } from "./tags-backfill";
+import { pushRoutes } from "./push-routes";
 import { readLiveRecords } from "./live";
 import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
@@ -614,6 +616,8 @@ app.post("/api/settings/decisions/probe", async (c) => c.json(await probeDecisio
 
 // Session tags (server/tags-backfill.ts): manual tags, and the backfill job of Settings → Decisions.
 app.route("/api/sessions/tags", tagRoutes);
+// Phone notifications (Web Push): state, devices, settings, Send Test (server/push-routes.ts).
+app.route("/api/push", pushRoutes);
 
 // Settings → Summaries: which model writes the sidebar's summary line. The file is the
 // topic-outline extension's; the TUI and every runtime read it once per session, at session start,
@@ -1107,6 +1111,8 @@ const workspaceCommits = new WorkspaceCommitter(attachedWorkspaces);
 workspaceCommits.start();
 // A wrap-up row left "running" by an earlier process, or older than any run can be, is recorded failed.
 startWrapupRecovery();
+// Messages a crash or kill lost stop counting against their session's limit.
+startBudgetRecount();
 
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
 // The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);

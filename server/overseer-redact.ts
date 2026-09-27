@@ -38,8 +38,14 @@ export function secretSources(home = homedir(), agentDir = getAgentDir()): Secre
     // Sova's own Jev key (Settings → Decisions, server/decide-secret.ts): the whole file is the key.
     { path: join(home, ".pi", "agent", "sova", "secrets", "jev-key"), pick: textValue, text: true as const },
     { path: join(agentDir, "sova", "secrets", "jev-key"), pick: textValue, text: true as const },
+    // Sova's Web Push signing key (server/push-store.ts): the private half only; the public one is on the wire anyway.
+    { path: join(home, ".pi", "agent", "sova", "secrets", "vapid.json"), pick: vapidPrivate },
+    { path: join(agentDir, "sova", "secrets", "vapid.json"), pick: vapidPrivate },
   ].filter((s, i, list) => list.findIndex((o) => o.path === s.path) === i);
 }
+
+/** `secrets/vapid.json`: its `privateKey`. */
+export const vapidPrivate = (json: unknown): string[] => stringLeaves((json as { privateKey?: unknown } | null)?.privateKey);
 
 /** Keys whose values describe a credential rather than being one (pi's `type`, Claude Code's `scopes`, `rateLimitTier`…). */
 const NOT_SECRET_KEYS = new Set(["type", "provider", "scopes", "subscriptionType", "rateLimitTier", "baseUrl", "api"]);

@@ -2,7 +2,7 @@
 // written, people who leave, and an earlier holder invited to a new offer. A throwaway
 // PI_CODING_AGENT_DIR and workspace in the OS temp dir; the model is a stub that can hold its reply.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -19,6 +19,8 @@ const loadout = await import("./baton-loadout");
 const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-manager");
 const { offerOutsider, viewForToken } = await import("./share/hub");
 const { registerOrgRoutes } = await import("./org-routes");
+const { createShareApp } = await import("./share/routes");
+const { stateRoot } = await import("./state-root");
 
 after(async () => {
   await disposeAllChats();
@@ -232,9 +234,45 @@ describe("an earlier holder invited to a new offer", () => {
     assert.equal(view.viewer!.reason, "taken");
     // Maria held it, Tony did not: withdrawn, his offer link is dead; his first hand-off's still reads.
     await loadout.moveBaton(c.sessionId, OPERATOR, "(offer withdrawn)");
-    assert.deepEqual(baton.linkAccess(tonyOffer), { ok: false, status: 410 });
+    assert.deepEqual(baton.linkAccess(tonyOffer), { ok: false, status: 410, why: "withdrawn" });
     assert.equal(baton.linkAccess(c.token!).ok, true);
     assert.equal(baton.linkAccess(out.links.find((l) => l.personId === maria.id)!.token).ok, true);
+  });
+
+  test("his older link, from an earlier hand-off, is cut at the offer the same way until the baton comes to him directly", async () => {
+    const tony = person("To Old Link");
+    const maria = person("Ma Holds");
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Old link", goal: "g" });
+    baton.noteMessage(c.sessionId, tony.id);
+    await loadout.moveBaton(c.sessionId, OPERATOR, "(taken back)");
+    await loadout.offerBaton(c.sessionId, [tony.id, maria.id], "Next?");
+    baton.noteMessage(c.sessionId, maria.id);
+    assert.equal(offerOutsider(c.token!), true, "his first hand-off's link gets no streaming text");
+    const view = await viewForToken(c.token!);
+    assert.ok(!("status" in view));
+    assert.equal(view.holder, null, "not told who holds it");
+    assert.equal(view.items.at(-1)!.kind, "offer", "sees up to the card");
+    // Handed to him directly after the offer: that old link reads the whole conversation again.
+    await loadout.moveBaton(c.sessionId, tony.id, "Your turn again?");
+    assert.equal(offerOutsider(c.token!), false);
+    const again = await viewForToken(c.token!);
+    assert.ok(!("status" in again));
+    assert.equal(again.items.at(-1)!.kind, "handoff");
+    assert.equal(again.holder, "To Old Link");
+    assert.ok(again.items.findIndex((i) => i.kind === "offer") < again.items.length - 1, "past the offer's card");
+  });
+
+  test("the holder's older link, while a newer one of theirs holds the baton, says to use the newer one", async () => {
+    const tony = person("To Newer");
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Newer link", goal: "g" });
+    await loadout.moveBaton(c.sessionId, OPERATOR, "(taken back)");
+    const res = await post(`/api/baton/${c.sessionId}/handoff`, { to: tony.id, question: "Back to you" });
+    assert.equal(res.status, 200);
+    assert.equal(baton.batonById(c.sessionId)!.row.holder, tony.id);
+    const a = baton.linkAccess(c.token!);
+    assert.ok(a.ok);
+    assert.equal(a.canWrite, false);
+    assert.equal(a.reason, "newer-link");
   });
 });
 
@@ -409,5 +447,48 @@ describe("the model reads who wrote each message", () => {
     const earlier = (seen[1] as { role: string; content: { text?: string }[] }[]).filter((m) => m.role === "user").map((m) => m.content.map((b) => b.text ?? "").join(""));
     assert.deepEqual(users.slice(0, earlier.length), earlier, "a later turn doesn't change an earlier message's label");
     assert.doesNotMatch(users.join("\n"), new RegExp(`${kim.id}|${lee.id}|operator"|Staff`), "no id, no role in the labels");
+  });
+});
+
+describe("a dead link says why only when it expired or its question went to someone else", () => {
+  const share = createShareApp();
+  const gone = async (token: string) => {
+    const res = await share.request(`/api/h/${token}`);
+    return { status: res.status, body: (await res.json()) as { code: string; why?: string } };
+  };
+
+  test("expired: why \"expired\"; withdrawn: why \"withdrawn\"; turned off, closed or its person left: no reason", async () => {
+    const ex = person("Ex Pired");
+    const e = baton.createBaton({ orgId: org.id, projectId: project.id, to: ex.id, publicTitle: "Expired", goal: "g" });
+    const file = join(stateRoot(), "baton-links.json");
+    const raw = JSON.parse(readFileSync(file, "utf8")) as { links: { sessionId: string; expiresAt: string }[] };
+    for (const l of raw.links) if (l.sessionId === e.sessionId) l.expiresAt = new Date(Date.now() - 1000).toISOString();
+    writeFileSync(file, JSON.stringify(raw));
+    assert.deepEqual(baton.linkAccess(e.token!), { ok: false, status: 410, why: "expired" });
+    assert.deepEqual(await gone(e.token!), { status: 410, body: { error: "This link is no longer active.", code: "gone", why: "expired" } });
+
+    const a = person("Wi Holder");
+    const b = person("Wi Never");
+    const w = baton.createBaton({ orgId: org.id, projectId: project.id, to: [a.id, b.id], publicTitle: "Withdrawn", goal: "g" });
+    const never = w.links!.find((l) => l.personId === b.id)!.token;
+    baton.noteMessage(w.sessionId, a.id);
+    await loadout.moveBaton(w.sessionId, OPERATOR, "(offer withdrawn)");
+    assert.equal((await gone(never)).body.why, "withdrawn");
+
+    const off = person("Tu Rnedoff");
+    const t = baton.createBaton({ orgId: org.id, projectId: project.id, to: off.id, publicTitle: "Off", goal: "g" });
+    baton.revokeCurrent(t.sessionId);
+    assert.deepEqual(await gone(t.token!), { status: 410, body: { error: "This link is no longer active.", code: "gone" } });
+
+    const cl = person("Cl Osed");
+    const k = baton.createBaton({ orgId: org.id, projectId: project.id, to: cl.id, publicTitle: "Closed", goal: "g" });
+    baton.closeBaton(k.sessionId);
+    assert.equal((await gone(k.token!)).body.why, undefined);
+
+    const lf = person("Le Ft");
+    const l = baton.createBaton({ orgId: org.id, projectId: project.id, to: lf.id, publicTitle: "Left", goal: "g" });
+    orgs.applyChange(org.id, lf.id, { status: "left" }, { kind: "operator" });
+    await until(() => !baton.linkAccess(l.token!).ok);
+    assert.deepEqual(await gone(l.token!), { status: 410, body: { error: "This link is no longer active.", code: "gone" } });
   });
 });

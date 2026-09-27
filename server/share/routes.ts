@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { Hono } from "hono";
-import { SHARE_TEXT_MAX } from "../../shared/baton";
+import { SHARE_TEXT_MAX, type GoneWhy } from "../../shared/baton";
 import { BudgetSpent, linkAccess, noteMessage, sessionPathOf, undoNote } from "../baton";
 import { findLink, tokenTag } from "../baton-links";
 import { budgetStop, recordNoted } from "../baton-loadout";
@@ -56,7 +56,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
 };
-const PAGE_CSP =
+export const PAGE_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 
 const MIME: Record<string, string> = {
@@ -68,7 +68,9 @@ const MIME: Record<string, string> = {
   ".png": "image/png",
 };
 
-const refusal = (code: string, message: string) => ({ error: message, code });
+const refusal = (code: string, message: string, why?: GoneWhy) => ({ error: message, code, ...(why ? { why } : {}) });
+/** A dead or unknown link's answer: 410 says only whether it expired or its offer went elsewhere. */
+const deadLink = (status: 404 | 410, why?: GoneWhy) => (status === 410 ? refusal("gone", "This link is no longer active.", why) : refusal("not-found", "Unknown link."));
 
 export function createShareApp(): Hono {
   const app = new Hono();
@@ -108,7 +110,7 @@ export function createShareApp(): Hono {
           const link = findLink(token);
           if (link) recordRefused(link, ua);
         });
-      return c.json(view.status === 410 ? refusal("gone", "This link is no longer active.") : refusal("not-found", "Unknown link."), view.status);
+      return c.json(deadLink(view.status, view.why), view.status);
     }
     logVisit(token, "open", () => {
       const link = findLink(token);
@@ -120,7 +122,7 @@ export function createShareApp(): Hono {
   app.post("/api/h/:token/message", async (c) => {
     const token = c.req.param("token");
     const access = linkAccess(token);
-    if (!access.ok) return c.json(access.status === 410 ? refusal("gone", "This link is no longer active.") : refusal("not-found", "Unknown link."), access.status);
+    if (!access.ok) return c.json(deadLink(access.status, access.why), access.status);
     let body: unknown;
     try {
       body = await c.req.json();

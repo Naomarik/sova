@@ -150,7 +150,7 @@ describe("offers and leases", () => {
     assert.equal(row.offerId, undefined);
     assert.equal(row.offers![0]!.state, "withdrawn");
     assert.equal(row.handoffs.at(-1)!.from, tony.id);
-    assert.deepEqual(baton.linkAccess(tokenOf(carlos.id), now), { ok: false, status: 410 }, "never held it");
+    assert.deepEqual(baton.linkAccess(tokenOf(carlos.id), now), { ok: false, status: 410, why: "withdrawn" }, "never held it");
     const t = baton.linkAccess(tokenOf(tony.id), now);
     assert.equal(t.ok && t.reason, "needs-operator");
     const m = baton.linkAccess(tokenOf(maria.id), now);
@@ -168,7 +168,7 @@ describe("offers and leases", () => {
     assert.equal((baton.linkAccess(again.token) as { canWrite: boolean }).canWrite, true);
     baton.handTo(c.sessionId, OPERATOR, "(taken back)", "", new Date());
     assert.equal(baton.batonById(c.sessionId)!.row.handoffs.at(-1)!.from, POOL);
-    assert.deepEqual(baton.linkAccess(again.token), { ok: false, status: 410 }, "Carlos never held it");
+    assert.deepEqual(baton.linkAccess(again.token), { ok: false, status: 410, why: "withdrawn" }, "Carlos never held it");
   });
 });
 

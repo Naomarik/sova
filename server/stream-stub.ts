@@ -24,6 +24,10 @@ export interface StubScenario {
   limit?: number;
   /** The tool the call names. */
   tool?: string;
+  /** A pause after each batch of 16 events: a slow stream rather than a flood. */
+  pauseMs?: number;
+  /** Hold the response this long before its first byte (a model slow to answer). */
+  holdMs?: number;
 }
 export interface StubStats {
   requests: number;
@@ -80,6 +84,7 @@ export async function startStreamStub(initial: StubScenario, port = 0): Promise<
           st.argChars += sc.perDelta;
         }
         if (!res.write(batch)) return void res.once("drain", pump);
+        if (sc.pauseMs) return void setTimeout(pump, sc.pauseMs);
       }
     };
     pump();
@@ -95,7 +100,8 @@ export async function startStreamStub(initial: StubScenario, port = 0): Promise<
       const st = stats;
       st.requests++;
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-      if (st.requests === 1) return runaway(res, st, scenario);
+      const sc = scenario;
+      if (st.requests === 1) return sc.holdMs ? void setTimeout(() => !res.destroyed && runaway(res, st, sc), sc.holdMs) : runaway(res, st, sc);
       res.write(chunk({ role: "assistant", content: "Done." }));
       res.write(chunk({}, "stop"));
       res.end("data: [DONE]\n\n");

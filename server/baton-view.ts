@@ -5,6 +5,9 @@ import {
   BATON_OFFER_ENTRY,
   BATON_SENT_ENTRY,
   BATON_WRAPUP_ENTRY,
+  CUT_REPLY_MAX,
+  LIMIT_QUESTION,
+  LIMIT_REACHED_FOR_PEOPLE,
   OPERATOR,
   type BatonSession,
   type BatonView,
@@ -168,6 +171,13 @@ export interface ViewInput {
   untilOffer?: number;
 }
 
+/** At most `max` characters, never ending in half a surrogate pair. */
+function cutReply(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const code = text.charCodeAt(max - 1);
+  return text.slice(0, code >= 0xd800 && code <= 0xdbff ? max - 1 : max).trimEnd();
+}
+
 export function batonView(input: ViewInput): BatonView {
   const { branch, names, viewer, redact } = input;
   const said = (t: string) => (input.said ?? ((x: string) => x))(redact(t));
@@ -189,7 +199,12 @@ export function batonView(input: ViewInput): BatonView {
         items.push({ kind: "message", id, by: sender, name: sender ? name(sender) : "Someone", text: redact(text), ...(at ? { at } : {}) });
       } else if (role === "assistant") {
         const text = textOf(e.message.content).trim();
-        if (text) items.push({ kind: "reply", id, text: said(text), ...(at ? { at } : {}) });
+        if (!text) continue;
+        // Stopped before it finished (the stream guard, a shutdown, Take back, Stop): its start
+        // only, marked, never a runaway's whole text on someone's phone.
+        const stop = e.message.stopReason;
+        if (stop === "error" || stop === "aborted") items.push({ kind: "reply", id, text: cutReply(said(text), CUT_REPLY_MAX), cutOff: true, ...(at ? { at } : {}) });
+        else items.push({ kind: "reply", id, text: said(text), ...(at ? { at } : {}) });
       }
       continue;
     }
@@ -197,13 +212,15 @@ export function batonView(input: ViewInput): BatonView {
     const d = e.data ?? {};
     if (e.customType === BATON_HANDOFF_ENTRY && typeof d.n === "number") {
       const addressee = viewer === undefined || viewer === d.to;
+      // The limit's hand-off tells the operator what to do; the people only that the limit was reached.
+      const question = viewer !== undefined && d.to === OPERATOR && d.question === LIMIT_QUESTION ? LIMIT_REACHED_FOR_PEOPLE : said(String(d.question ?? ""));
       items.push({
         kind: "handoff",
         id,
         n: d.n,
         from: name(d.from),
         to: name(d.to),
-        question: said(String(d.question ?? "")),
+        question,
         ...(addressee && typeof d.briefing === "string" && d.briefing.trim() ? { briefing: said(d.briefing) } : {}),
       });
     } else if (e.customType === BATON_OFFER_ENTRY && typeof d.n === "number" && Array.isArray(d.to)) {

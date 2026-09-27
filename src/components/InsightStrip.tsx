@@ -1,6 +1,6 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { ExplanationInfo, OutlineTopic, SessionOutline } from "../../shared/protocol";
-import { newestTopics } from "../../shared/outline-order";
+import { newestTopics, topicTime } from "../../shared/outline-order";
 import { newestFirst } from "../lib/explain";
 import { explanationsHref } from "../lib/insights";
 import { findEntryRow, jumpToEntry, transcriptRoot } from "../lib/jump";
@@ -24,7 +24,8 @@ function Topic(props: { topic: OutlineTopic; now: number; open: boolean; path: s
     // Gone since the strip opened (compacted away): the button goes rather than scrolling nowhere.
     if (!props.topic.entryId || !jumpToEntry(props.topic.entryId, props.path)) setTarget(false);
   };
-  const at = () => new Date(props.topic.at).toISOString();
+  // The topic's own section, not the summarizer's clock (topicTime falls back to it).
+  const at = () => new Date(topicTime(props.topic)).toISOString();
   return (
     <li class="outline-topic">
       <div class="outline-topic-head">
@@ -36,7 +37,7 @@ function Topic(props: { topic: OutlineTopic; now: number; open: boolean; path: s
           </Show>
           {props.topic.heading}
         </span>
-        <Show when={props.topic.at > 0}>
+        <Show when={topicTime(props.topic) > 0}>
           {/* Delta, not a clock: the same formatter the session rows use, fed the strip's shared `now`. */}
           <span class="outline-topic-time" title={`${stampTime(at(), props.now)} · ${at()}`}>
             {relativeTime(at(), props.now)}

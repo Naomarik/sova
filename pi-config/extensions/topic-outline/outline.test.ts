@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { buildPrompt, clampText, extractJsonObject, parseSummarizerJson, SummarizerChain } from "./summarizers/chain.ts";
 import { SummarizerError, type SummarizeInput, type SummarizerResult } from "./types.ts";
 import { fingerprintKey, fingerprintOf, isMarkedMessage, locateMarker, locateMarkerRow, markerOrdinalIndex, markerRows, sameFingerprint, stripAnsi } from "./anchors.ts";
-import { NowLine, OutlineStore, applyUpdates, earliestUserRequest, extractDelta, lastMessageEntryId } from "./state.ts";
+import { NowLine, OutlineStore, applyUpdates, earliestUserRequest, extractDelta, extractLookback, lastMessageEntryId, topicTime } from "./state.ts";
+import { claimOf, claimsCompatible } from "./claims.ts";
 import { HEADLESS_FLAG, shouldRunOutline } from "./policy.ts";
 
 const input = (over: Partial<SummarizeInput> = {}): SummarizeInput => ({
@@ -26,7 +27,8 @@ test("buildPrompt carries the anchor request and asks overall to lead with the s
   assert.ok(prompt.includes("SESSION ANCHOR"));
   assert.ok(prompt.includes("make Sova themable: palette and fonts"));
   // The anchor is stated before the messages it anchors, so a truncated tail never loses it.
-  assert.ok(prompt.indexOf("SESSION ANCHOR") < prompt.indexOf("NEW MESSAGES:"));
+  // (lastIndexOf: the worked example shows a "NEW MESSAGES:" block of its own, above the real one.)
+  assert.ok(prompt.indexOf("SESSION ANCHOR") < prompt.lastIndexOf("NEW MESSAGES:"));
   // The anchor is offered, never asserted: it can be a mid-session message on an older session.
   assert.ok(prompt.includes("it may be a mid-session message"));
   assert.ok(prompt.includes("when they disagree, the topics win"));
@@ -53,6 +55,24 @@ test("buildPrompt states the rules the outline's prose depends on", () => {
   assert.ok(prompt.includes("Only facts the messages state"));
   // Storage has one summary per topic: the old "visit" wording asked for something it can't hold.
   assert.ok(!/visit/i.test(prompt));
+  // One section per topic, each fact once, a passing mention stays with the ask it answers.
+  assert.ok(prompt.includes("Each message belongs to exactly one topic"));
+  assert.ok(prompt.includes("Never repeat a fact in two topics"));
+  assert.ok(prompt.includes("belongs to the range of the ask it answers"));
+  // A next step is named as a bad bullet, word for word.
+  assert.ok(prompt.includes('Bad bullet: "The rerun goes ahead once the last fix branch is merged."'));
+  assert.ok(prompt.includes("1-3 bullets per topic, each at most 70 characters"));
+});
+
+test("buildPrompt shows the lookback before the new messages, marked context only, and only when there is one", () => {
+  const without = buildPrompt(input());
+  assert.ok(!without.includes("EARLIER MESSAGES (already summarized"));
+  const prompt = buildPrompt(input({ lookbackLines: ["[p1] USER: rerun the tests", "[p2] ASSISTANT: Rerunning."] }));
+  const head = prompt.indexOf("EARLIER MESSAGES (already summarized, context only");
+  assert.ok(head > 0);
+  assert.ok(head < prompt.indexOf("[p1] USER: rerun the tests"));
+  assert.ok(prompt.indexOf("[p2] ASSISTANT: Rerunning.") < prompt.lastIndexOf("NEW MESSAGES:"));
+  assert.ok(prompt.lastIndexOf("NEW MESSAGES:") < prompt.indexOf("[m1] USER: fix auth"));
 });
 
 test("buildPrompt's worked example obeys its own rules and parses", () => {
@@ -65,19 +85,35 @@ test("buildPrompt's worked example obeys its own rules and parses", () => {
     json += lines[i];
     if (lines[i].endsWith("]}")) break;
   }
-  const example = JSON.parse(json) as { now: string; overall: string; topicUpdates: { kind: string; heading: string; summary: string[] }[] };
+  const example = JSON.parse(json) as { now: string; overall: string; topicUpdates: { kind: string; heading: string; from: string; to: string; summary: string[] }[] };
   assert.ok(example.now.length <= 60);
   assert.ok(!/^\w+ing\b/.test(example.now));
   assert.ok(example.overall.split(" ").length <= 8);
   for (const update of example.topicUpdates) {
     assert.ok(update.heading.split(" ").length <= 4, update.heading);
     assert.ok(!/\b(blocked|fixed|done|pending|waiting)\b/i.test(update.heading), update.heading);
-    assert.ok(update.summary.length >= 1 && update.summary.length <= 2, update.heading);
+    assert.ok(update.summary.length >= 1 && update.summary.length <= 3, update.heading);
     for (const bullet of update.summary) assert.ok(bullet.length <= 70, bullet);
   }
-  // The parser takes it as written (anchors are the example's own refs).
-  const parsed = parseSummarizerJson(json, new Set(["m14", "m16", "m18", "m20"]));
+  // Its refs are the example transcript's own new messages, and never a lookback ref.
+  const exampleRefs = new Set(lines.filter(l => /^\[m\d+\]/.test(l)).map(l => /^\[(m\d+)\]/.exec(l)![1]));
+  assert.ok(lines.some(l => l.startsWith("[p1] ")), "the example shows a lookback");
+  // No fact is said twice, and the ranges split the new messages without overlap.
+  const bullets = example.topicUpdates.flatMap(update => update.summary);
+  assert.equal(new Set(bullets).size, bullets.length);
+  const claims = example.topicUpdates.map(update => claimOf(update.from, update.to)!);
+  assert.ok(claims.every(Boolean) && claims.length >= 2);
+  for (let i = 0; i < claims.length; i++) for (let j = i + 1; j < claims.length; j++) assert.ok(claimsCompatible(claims[i], claims[j]));
+  // The parser takes it as written, and applyUpdates accepts every claim.
+  const parsed = parseSummarizerJson(json, exampleRefs);
   assert.equal(parsed.topicUpdates.length, example.topicUpdates.length);
+  const anchors = new Map([...exampleRefs].map(ref => [ref, { entryId: ref, role: "assistant" as const, fingerprint: "" }]));
+  const topics = [
+    { id: "t1", heading: "Merge blocked", anchor: anchors.get("m1")!, summary: ["x"], at: 1 },
+    { id: "t2", heading: "Workers after a restart", anchor: anchors.get("m1")!, summary: ["y"], at: 1 },
+  ];
+  const applied = applyUpdates(topics, parsed.topicUpdates, anchors, { maxTopics: 40, maxBullets: 3 });
+  assert.deepEqual(applied.map(topic => topic.range?.from.entryId), ["m1", "m3"]);
 });
 
 test("clampText ends an over-long text on a word boundary with an ellipsis", () => {
@@ -413,6 +449,11 @@ test("summary broadcast includes per-topic detail: newest first, capped, control
   assert.equal(store.broadcast("s", "summary")?.topics?.length, 8);
 });
 
+test("config keeps up to 3 bullets per topic by default", async () => {
+  const { DEFAULT_CONFIG } = await import("./config.ts");
+  assert.equal(DEFAULT_CONFIG.limits.maxBullets, 3);
+});
+
 test("config shareLastHeading defaults on and honors an explicit false", async () => {
   const { mkdtempSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -527,4 +568,157 @@ test("shouldRunOutline: the TUI always runs; other modes only with the headless 
     assert.equal(shouldRunOutline({ mode, headless: "true" }), false, `${mode} flag string`);
     assert.equal(shouldRunOutline({ mode, headless: true }), true, `${mode} with flag`);
   }
+});
+
+// ---- Claims: one section of transcript per topic ----------------------------------------------
+
+const claimAnchors = (n: number) => new Map(Array.from({ length: n }, (_, i) => [`m${i + 1}`, {
+  entryId: `e${i + 1}`, role: (i % 2 ? "assistant" : "user") as "user" | "assistant", timestamp: 1_000 * (i + 1), fingerprint: "",
+}]));
+const LIMITS = { maxTopics: 40, maxBullets: 3 };
+const upd = (heading: string, from: string, to: string, over: Record<string, unknown> = {}) =>
+  ({ kind: "new" as const, heading, from, to, summary: [heading], ...over });
+
+test("claims: an update overlapping one accepted earlier in the run is dropped; first wins", () => {
+  const out = applyUpdates([], [upd("A", "m1", "m5"), upd("B", "m3", "m8"), upd("C", "m6", "m8")], claimAnchors(8), LIMITS);
+  assert.deepEqual(out.map(topic => topic.heading), ["A", "C"]);
+  // Same single message claimed twice (the real bug: every topic anchored on the last reply).
+  const same = applyUpdates([], [upd("A", "m8", "m8"), upd("B", "m8", "m8"), upd("C", "m1", "m8")], claimAnchors(8), LIMITS);
+  assert.deepEqual(same.map(topic => topic.heading), ["A"]);
+  // A range nested inside an earlier one is an overlap too, even a one-message range on its end.
+  const nested = applyUpdates([], [upd("A", "m1", "m8"), upd("B", "m8", "m8")], claimAnchors(8), LIMITS);
+  assert.deepEqual(nested.map(topic => topic.heading), ["A"]);
+});
+
+test("claims: neighbours may share exactly one boundary message, each keeping one of its own", () => {
+  const out = applyUpdates([], [upd("A", "m1", "m4"), upd("B", "m4", "m8")], claimAnchors(8), LIMITS);
+  assert.deepEqual(out.map(topic => topic.heading), ["A", "B"]);
+  // Order of the model's list doesn't matter for a legal share.
+  const reversed = applyUpdates([], [upd("B", "m4", "m8"), upd("A", "m1", "m4")], claimAnchors(8), LIMITS);
+  assert.deepEqual(reversed.map(topic => topic.heading), ["B", "A"]);
+  // Two shared messages is an overlap.
+  const two = applyUpdates([], [upd("A", "m1", "m5"), upd("B", "m4", "m8")], claimAnchors(8), LIMITS);
+  assert.deepEqual(two.map(topic => topic.heading), ["A"]);
+  assert.equal(claimsCompatible({ from: 1, to: 4 }, { from: 4, to: 8 }), true);
+  assert.equal(claimsCompatible({ from: 4, to: 4 }, { from: 4, to: 8 }), false);
+  assert.equal(claimsCompatible({ from: 1, to: 3 }, { from: 5, to: 8 }), true);
+});
+
+test("claims: lookback refs, unknown refs and backwards ranges are refused by the parser and by applyUpdates", () => {
+  const refs = new Set(["m1", "m2", "m3"]);
+  const raw = JSON.stringify({ now: "n", overall: "o", topicUpdates: [
+    { kind: "new", heading: "Lookback start", from: "p2", to: "m2", summary: ["x"] },
+    { kind: "new", heading: "Lookback only", from: "p1", to: "p2", summary: ["x"] },
+    { kind: "new", heading: "Lookback anchor", anchor: "p1", summary: ["x"] },
+    { kind: "new", heading: "Backwards", from: "m3", to: "m1", summary: ["x"] },
+    { kind: "new", heading: "Unknown end", from: "m1", to: "m9", summary: ["x"] },
+    { kind: "new", heading: "Good", from: "m1", to: "m3", summary: ["y"] },
+  ] });
+  assert.deepEqual(parseSummarizerJson(raw, refs).topicUpdates.map(update => update.heading), ["Good"]);
+  // Even with the parser bypassed (and a p ref wrongly in validRefs), applyUpdates claims no lookback.
+  const leaky = parseSummarizerJson(raw, new Set([...refs, "p1", "p2"]));
+  const anchors = claimAnchors(3);
+  anchors.set("p1", { entryId: "old1", role: "user", timestamp: 1, fingerprint: "" });
+  anchors.set("p2", { entryId: "old2", role: "assistant", timestamp: 2, fingerprint: "" });
+  assert.deepEqual(applyUpdates([], leaky.topicUpdates, anchors, LIMITS).map(topic => topic.heading), ["Good"]);
+});
+
+test("claims: the old single-anchor output still works, as a one-message range", () => {
+  const raw = JSON.stringify({ now: "n", overall: "o", topicUpdates: [
+    { kind: "new", heading: "Old form", anchor: "m2", summary: ["x"] },
+    { kind: "new", heading: "Clashes with it", anchor: "m2", summary: ["y"] },
+    { kind: "new", heading: "Only from", from: "m3", summary: ["z"] },
+  ] });
+  const parsed = parseSummarizerJson(raw, new Set(["m1", "m2", "m3"]));
+  assert.deepEqual(parsed.topicUpdates.map(update => [update.from, update.to]), [["m2", "m2"], ["m2", "m2"], ["m3", "m3"]]);
+  const out = applyUpdates([], parsed.topicUpdates, claimAnchors(3), LIMITS);
+  assert.deepEqual(out.map(topic => topic.heading), ["Old form", "Only from"]);
+  assert.equal(out[0].anchor.entryId, "e2");
+  assert.deepEqual([out[0].range?.from.entryId, out[0].range?.to.entryId], ["e2", "e2"]);
+  // A result built by hand in the old shape (anchor only, no parser) applies too.
+  const direct = applyUpdates([], [{ kind: "new", heading: "Hand-built", anchor: "m1", summary: ["x"] }], claimAnchors(3), LIMITS);
+  assert.equal(direct[0].range?.to.entryId, "e1");
+});
+
+test("claims: a topic jumps to the start of its range and takes its time from the range's end", () => {
+  const topics = [{ id: "t1", heading: "Rerun", anchor: { entryId: "e0", role: "user" as const, fingerprint: "" }, summary: ["old"], at: 5 }];
+  const out = applyUpdates(topics, [
+    { kind: "update", topicId: "t1", heading: "Rerun", from: "m1", to: "m3", summary: ["a"] },
+    upd("Restart", "m4", "m6"),
+  ], claimAnchors(6), LIMITS);
+  assert.equal(out[0].anchor.entryId, "e1", "Jump lands on the first message of the topic's own section");
+  assert.equal(out[0].range?.to.entryId, "e3");
+  // One run, two topics, two different times: each is its own section's end.
+  assert.equal(topicTime(out[0]), 3_000);
+  assert.equal(topicTime(out[1]), 6_000);
+  assert.ok(out[0].at > 6_000 && out[1].at > 6_000, "at stays the summarizer's clock, not the section's");
+  // A topic without a range (older snapshot) falls back to `at`.
+  assert.equal(topicTime(topics[0]), 5);
+});
+
+test("claims: range ends move inward to messages a row can mark; a range with none is dropped", () => {
+  // m1 and m3 are tool traffic (no anchor); m2 is the only anchorable message in m1..m3.
+  const anchors = new Map([["m2", { entryId: "e2", role: "assistant" as const, timestamp: 2, fingerprint: "" }],
+    ["m5", { entryId: "e5", role: "user" as const, timestamp: 5, fingerprint: "" }]]);
+  const out = applyUpdates([], [upd("A", "m1", "m3"), upd("B", "m4", "m4"), upd("C", "m4", "m6")], anchors, LIMITS);
+  assert.deepEqual(out.map(topic => [topic.heading, topic.range?.from.entryId, topic.range?.to.entryId]), [["A", "e2", "e2"], ["C", "e5", "e5"]]);
+});
+
+test("extractLookback hands over the last few messages before the offset, text only, oldest first, capped", () => {
+  const msg = (id: string, role: string, text: string, extra: Record<string, unknown> = {}) =>
+    ({ id, type: "message", message: { role, content: [{ type: "text", text }], ...extra } });
+  const entries = [
+    msg("u1", "user", "first ask"),
+    msg("a1", "assistant", "first reply"),
+    msg("u2", "user", "second ask"),
+    { id: "a2", type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "bash", arguments: { command: "secret" } }] } },
+    msg("r2", "toolResult", "tool output"),
+    msg("a3", "assistant", "second reply"),
+    msg("u3", "user", "third ask"),
+    msg("a4", "assistant", "after the offset"),
+  ];
+  assert.deepEqual(extractLookback(entries, "u3"), [
+    "[p1] ASSISTANT: first reply", "[p2] USER: second ask", "[p3] ASSISTANT: second reply", "[p4] USER: third ask",
+  ]);
+  assert.deepEqual(extractLookback(entries, undefined), []);
+  assert.deepEqual(extractLookback(entries, "missing"), []);
+  // Long messages are clipped and the oldest go first once the total passes ~2000 characters.
+  const long = [msg("x0", "assistant", "a".repeat(3000)), msg("x1", "user", "b".repeat(3000)),
+    msg("x2", "assistant", "c".repeat(3000)), msg("x3", "user", "d".repeat(3000))];
+  const lines = extractLookback(long, "x3");
+  assert.ok(lines.join("").length <= 2_100, String(lines.join("").length));
+  assert.ok(lines.at(-1)!.includes("ddd"), "the newest message is always kept");
+  assert.ok(!lines.some(line => line.includes("aaa")), "the oldest goes first");
+  // Lookback refs are not delta refs: nothing the delta offers can be claimed with them.
+  const delta = extractDelta(entries, "u3");
+  assert.deepEqual(delta.map(message => message.ref), ["m1"]);
+});
+
+test("a snapshot with ranges round-trips; one from before ranges still loads; a broken range is dropped, not the topic", () => {
+  const store = new OutlineStore();
+  store.apply({ now: "n", overall: "o", topicUpdates: [upd("A", "m1", "m2"), upd("B", "m3", "m4")] }, claimAnchors(4), "e4", LIMITS);
+  const restored = new OutlineStore();
+  restored.restore([{ id: "s", type: "custom", customType: "topic-outline", data: store.snapshot() }]);
+  assert.deepEqual(restored.topics.map(topic => [topic.anchor.entryId, topic.range?.to.entryId]), [["e1", "e2"], ["e3", "e4"]]);
+  // lastHeading follows the section that moved last, not the order the run wrote them in.
+  assert.equal(restored.lastHeading, "B");
+  const old = new OutlineStore();
+  old.restore([{ id: "s", type: "custom", customType: "topic-outline", data: {
+    version: 2, now: "n", overall: "o", topicCounter: 2, generatedAt: 1, state: "stale",
+    topics: [
+      { id: "t1", heading: "Old", anchor: { entryId: "e1", role: "user", fingerprint: "" }, summary: ["x"], at: 10 },
+      { id: "t2", heading: "Broken range", anchor: { entryId: "e2", role: "user", fingerprint: "" }, range: { from: "nope" }, summary: ["y"], at: 20 },
+    ],
+  } }]);
+  assert.equal(old.topics.length, 2);
+  assert.equal(old.topics[0].range, undefined);
+  assert.equal("range" in old.topics[1], false);
+  assert.equal(topicTime(old.topics[1]), 20);
+});
+
+test("a manual # topic claims its own message as its range", () => {
+  const store = new OutlineStore();
+  const topic = store.addManualTopic("Mine", { entryId: "e7", role: "user", timestamp: 7_000, fingerprint: "mine" });
+  assert.equal(topic.range?.from.entryId, "e7");
+  assert.equal(topicTime(topic), 7_000);
 });

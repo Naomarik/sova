@@ -257,4 +257,19 @@ describe("sova_session's Topics line", () => {
     );
     assert.equal(line, "Topics (newest first): Model names (1m ago); Merge (1m ago); Sandbox menu (2h ago); Invented by the overlay");
   });
+
+  test("topics one summarizer run updated each show their own section's age, not the run's", async () => {
+    const { topicsLine } = await import("./overseer-tools");
+    const now = Date.parse("2026-09-27T12:41:35Z");
+    const run = now;
+    const line = topicsLine(
+      [
+        { heading: "Rerun", at: run, sectionAt: now - 3 * 60_000 },
+        { heading: "Restart", at: run, sectionAt: now - 60_000 },
+        { heading: "Cleanup", at: now - 60 * 60_000 },
+      ],
+      now,
+    );
+    assert.equal(line, "Topics (newest first): Restart (1m ago); Rerun (3m ago); Cleanup (1h ago)");
+  });
 });

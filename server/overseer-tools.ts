@@ -17,7 +17,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
-import { newestTopics } from "../shared/outline-order";
+import { newestTopics, topicTime } from "../shared/outline-order";
 import { OVERSEER_BRIEF_PREFIX } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { whereOf } from "./attention";
@@ -411,11 +411,12 @@ function cut(s: string, max: number): string {
 }
 
 /** The summary's topics for `sova_session`: newest first (the web strip's order), each heading with
-    how long ago it was last updated, e.g. `Topics (newest first): Merge (1m ago); Sandbox menu (2h ago)`.
+    how long ago its own section of the conversation ended (topicTime), e.g. `Topics (newest first): Merge (1m ago); Sandbox menu (2h ago)`.
     A topic with no time (one the live overlay invented) shows its heading alone. */
-export function topicsLine(topics: readonly { heading: string; at: number }[], now: number): string {
-  const item = (t: { heading: string; at: number }) => {
-    const ago = t.at > 0 ? relativeTime(t.at, now) : "";
+export function topicsLine(topics: readonly { heading: string; at: number; sectionAt?: number }[], now: number): string {
+  const item = (t: { heading: string; at: number; sectionAt?: number }) => {
+    const time = topicTime(t);
+    const ago = time > 0 ? relativeTime(time, now) : "";
     return ago ? `${cut(t.heading, 60)} (${ago})` : cut(t.heading, 60);
   };
   return `Topics (newest first): ${newestTopics(topics).map(item).join("; ")}`;

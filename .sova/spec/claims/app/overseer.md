@@ -100,7 +100,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
 
 - **Read** (no side effects): the attention digest; list sessions (compact rows); one session's
   detail, whose summary topics read newest first, as the insight strip lists them
-  (§app.insights/insight-strip), each heading with how long ago it was last updated
+  (§app.insights/insight-strip), each heading with how long ago its own section of the conversation ended
+  (§app.insights/summary-sections; how long ago the summary last wrote it, for a topic without one)
   (`Topics (newest first): Merge (1m ago); Sandbox menu (2h ago)`); a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
   untrusted content from another session, read with Sova's own parser so a TUI-live file is never
   opened for writing); list groups, targets, models and folders; the ideas backlog (`sova_ideas`: its table of contents,

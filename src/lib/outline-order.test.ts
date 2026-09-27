@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { newestTopics } from "../../shared/outline-order";
+import { newestTopics, topicTime } from "../../shared/outline-order";
 
 const t = (id: string, at: number) => ({ id, at });
 
@@ -21,4 +21,24 @@ test("newestTopics leaves the stored list untouched", () => {
   newestTopics(topics);
   assert.deepEqual(topics.map((x) => x.id), ["t1", "t2"]);
   assert.deepEqual(newestTopics([]), []);
+});
+
+test("newestTopics sorts by each topic's own section, so topics from one summarizer run come apart", () => {
+  // One run wrote all three (same `at`), each claiming its own section of the conversation.
+  const run = 900;
+  const topics = [
+    { id: "t1", at: run, sectionAt: 300 },
+    { id: "t2", at: run, sectionAt: 500 },
+    { id: "t3", at: run, sectionAt: 400 },
+  ];
+  assert.deepEqual(newestTopics(topics).map((x) => x.id), ["t2", "t3", "t1"]);
+});
+
+test("topicTime falls back to `at` when a topic has no section (older snapshots, overlay topics)", () => {
+  assert.equal(topicTime({ at: 700 }), 700);
+  assert.equal(topicTime({ at: 700, sectionAt: 0 }), 700);
+  assert.equal(topicTime({ at: 700, sectionAt: 250 }), 250);
+  // Mixed: an old topic (summary clock) and a new one (section clock) sort on one axis; a tie keeps the later topic first.
+  const mixed = [{ id: "old", at: 400 }, { id: "new", at: 900, sectionAt: 400 }, { id: "newest", at: 900, sectionAt: 600 }];
+  assert.deepEqual(newestTopics(mixed).map((x) => x.id), ["newest", "new", "old"]);
 });

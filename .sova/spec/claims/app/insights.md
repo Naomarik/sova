@@ -724,19 +724,22 @@ which draws them on the session's axis; the strip keeps no history of its own.
 - **Topic details.** Each topic is an `li.outline-topic`: a static `.outline-topic-head` row (the
   heading, then the time at the end), then its `.outline-bullets`, then Jump. The head row is
   not a control — no pointer cursor, no hover underline. `.outline-hash` appears only on
-  `manual` topics. The time is `at` in mono
-  24-hour format, with the date prefix when the day isn't today (§chat/transcript timestamps). **That time is
-  the summary's own** — when the summarizer last wrote the topic, not when the conversation it
-  describes happened. §chat/timeline's axis can't use it, and replaces it with the anchored
-  message's time, falling back to this one, flagged, when the anchor is gone.
-- **Newest first.** Topics run newest first, by when each was last updated (that same time); ties
-  keep the later topic first. A topic the conversation returns to rises to the top. Only the
-  display is sorted: the outline keeps its topics in the order they were created.
+  `manual` topics. The time is in mono 24-hour format, with the date prefix when the day isn't today
+  (§chat/transcript timestamps). **It is the topic's own section's time** — `sectionAt`, the last
+  message of the stretch of conversation the topic's latest update claimed
+  (§app.insights/summary-sections) — so topics one summarizer run updated each show their own time.
+  A topic without a section (a snapshot from before sections, or one the live overlay invented)
+  shows `at`, the summary's own time: when the summarizer last wrote it.
+- **Newest first.** Topics run newest first, by that same time; ties keep the later topic first. A
+  topic the conversation returns to rises to the top. Only the display is sorted: the outline keeps
+  its topics in the order they were created.
 - **`updating` / `drafting`.** Put a `.live-dot` after `.outline-label` (a summarizer is running
   now), and the state line reads "Updating".
 - **Jump to Message.**
   - It scrolls the transcript item whose entry id equals `entryId` into view, then stops
-    auto-follow, so Jump to Latest appears (§chat/transcript).
+    auto-follow, so Jump to Latest appears (§chat/transcript). `entryId` is the first message of the
+    topic's own section (§app.insights/summary-sections), so no two topics a run updated jump to the
+    same place.
   - Leave it out when `entryId` is null or the item isn't rendered (it was compacted away). That
     is decided each time the strip opens, and when a topic arrives while it's open; a Jump that
     finds its item gone since then removes itself instead of scrolling nowhere. A topic without
@@ -744,6 +747,41 @@ which draws them on the session's axis; the strip keeps no history of its own.
 - **Refetching.** Refetch after a watch `append` or chat `agent_settled`, debounced. Update in
   place.
 - **Folded width.** `.outline-body` caps at 50vh instead of `--outline-max` (40vh).
+
+## §app.insights/summary-sections — One section of the conversation per topic
+
+The per-session summary (the pi-config `topic-outline` extension) is written in runs. Between runs,
+the offset (`basisLeafId`) keeps a run from summarizing messages an earlier run already did. Within
+a run, **each section of the transcript is claimed by exactly one topic**, and a topic's Jump and
+time come from its own section.
+
+- **Claims.** Each topic update names the range of the run's new messages it covers, first and
+  last (`from`/`to`). Within one run no two accepted ranges cover the same messages, except that two
+  neighbours may share the one message where one ends and the next begins, as long as each keeps a
+  message of its own. Ranges are taken in the model's order: one that overlaps a range already
+  accepted in the run is dropped, whole, and so is one that runs backwards or names a message the
+  run wasn't given. This is enforced in code, not only asked for in the prompt.
+- **Lookback, for context only.** A run also reads the last 4 messages before its offset (user and
+  final assistant text, at most about 2,000 characters in all, the oldest dropped first), marked
+  already summarized, because the previous run may have cut a thread halfway. It never claims them:
+  a range touching one is refused.
+- **One fact, one topic.** The prompt asks the model to split the new messages into consecutive
+  ranges, one per topic; never to repeat a fact in two topics; and to keep a report that mentions
+  other threads in passing in the range of the ask it answers. Topics carry 1–3 bullets of
+  outcomes; a next step ("The rerun goes ahead once the last fix branch is merged.") is not one.
+- **Stored on the topic.** The snapshot keeps the claimed range on the topic (`range: {from, to}`,
+  each an anchor with its entry id and timestamp) beside `anchor`, which becomes the range's
+  start. Both are additive: a snapshot from before ranges loads as it did, everywhere it is read
+  (the extension, its terminal panel, Sova's decoder), and a malformed range is ignored, not its
+  topic. A model that answers in the older single-`anchor` form still works, as a one-message range.
+- **Jump.** A topic's Jump (§app.insights/insight-strip) lands on the first message of its latest
+  section, so two topics one run updated never jump to the same place. When that message is tool
+  traffic no row marks, the range's ends move inward to the nearest message that has a row.
+- **Time.** A topic's time is the last message of its latest section (`sectionAt`), not the run's
+  clock, so topics one run updated show different times. It orders the strip's topics
+  (§app.insights/insight-strip) and the Overseer's `Topics (newest first)` line
+  (§app.overseer/tools). Without a section, a topic falls back to `at`, when the summarizer last
+  wrote it.
 
 ## §app.insights/compaction-row — Compaction row
 

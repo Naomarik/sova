@@ -357,7 +357,7 @@ export function batonTools(sessionId: string, append: AppendEntry): ToolDefiniti
       name: "goal_done",
       label: "Goal done",
       description: "The goal is met and the answers are checked. Give a short summary of what was established. Ends the conversation.",
-      parameters: obj({ summary: str("What was established, in a few sentences.") }, ["summary"]) as any,
+      parameters: obj({ summary: str("What was established, in a few sentences. Everyone in the conversation sees it: say it in your own words (never the goal's), and name people by name only, never by role or job title.") }, ["summary"]) as any,
       async execute(_id, params: any) {
         const summary = clip(params.summary, BRIEFING_MAX);
         if (!summary) throw new Error("Give a summary of what was established.");

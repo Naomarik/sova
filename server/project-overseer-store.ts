@@ -138,8 +138,48 @@ export function writePoSettings(p: ProjectOverseerPaths, s: ProjectOverseerSetti
   return s;
 }
 
-/** A PATCH: strict (the first problem is the answer, as a sentence), then merged and written. */
-export function patchPoSettings(p: ProjectOverseerPaths, body: unknown): ProjectOverseerSettings {
+/** pi's thinking ladder, lowest first (pi-ai's EXTENDED_THINKING_LEVELS). */
+const LADDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/** The level pi runs a model at when asked for `level` (pi-ai's clampThinkingLevel, over the
+    model's offered levels): itself when offered, else the next offered one up, else the next down. Pure. */
+export function clampLevel(level: string, offered: string[]): string {
+  if (offered.includes(level)) return level;
+  const i = LADDER.indexOf(level);
+  if (i === -1) return offered[0] ?? "off";
+  for (let j = i; j < LADDER.length; j++) if (offered.includes(LADDER[j]!)) return LADDER[j]!;
+  for (let j = i - 1; j >= 0; j--) if (offered.includes(LADDER[j]!)) return LADDER[j]!;
+  return offered[0] ?? "off";
+}
+
+/** The three model/thinking pairs of the settings, each with the model it runs on. */
+const PAIRS = [
+  { thinking: "thinking", model: (s: ProjectOverseerSettings, d: string | null) => s.model ?? d },
+  { thinking: "codingThinking", model: (s: ProjectOverseerSettings, d: string | null) => s.codingModel ?? s.model ?? d },
+  { thinking: "gatheringThinking", model: (s: ProjectOverseerSettings, d: string | null) => s.gatheringModel ?? s.model ?? d },
+] as const;
+
+/**
+ * Every stored thinking level the model it runs on offers (§app.project-overseer/identity): one
+ * the PATCH names itself is refused with the levels offered; one a model change left behind is
+ * brought to the level pi would run it at, and saved. A model not in `models` (unknown here, e.g.
+ * a provider switched off) is not judged. Mutates `next`.
+ */
+export function fitThinking(next: ProjectOverseerSettings, patch: ProjectOverseerPatch, models: { ref: string; thinkingLevels: string[] }[], defaultModel: string | null): void {
+  for (const pair of PAIRS) {
+    const level = next[pair.thinking];
+    const ref = pair.model(next, defaultModel);
+    if (!level || !ref) continue;
+    const offered = models.find((m) => m.ref === ref)?.thinkingLevels;
+    if (!offered?.length || offered.includes(level)) continue;
+    if (patch[pair.thinking] !== undefined) throw new OrgError(`${ref} offers thinking ${offered.join(", ")}.`);
+    next[pair.thinking] = clampLevel(level, offered);
+  }
+}
+
+/** A PATCH: strict (the first problem is the answer, as a sentence), then merged and written.
+    `check` runs on the merged settings before anything is written (a throw writes nothing). */
+export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: (next: ProjectOverseerSettings, patch: ProjectOverseerPatch) => void): ProjectOverseerSettings {
   if (!isObj(body)) throw new OrgError("Expected a JSON object body");
   const patch = body as ProjectOverseerPatch;
   const next = readPoSettings(p);
@@ -180,6 +220,7 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown): Project
       next.caps[k as keyof ProjectOverseerCaps] = v;
     }
   }
+  check?.(next, patch);
   return writePoSettings(p, next);
 }
 
@@ -224,16 +265,21 @@ export interface WatchMemo {
   lastRun: { at: string; reasons: string[]; outcome: "started" | "skipped"; detail?: string } | null;
   /** Unattended runs per local day, `YYYY-MM-DD` → count (the last few days only). */
   perDay: Record<string, number>;
+  /** ISO time a look is due regardless of the 10-minute gap: set by an event that should be seen
+      soon (a gathering session done, a coding session's turn over, the operator's promotion), about
+      a minute after the first such event since the last look. Null: none waiting. */
+  soonAt: string | null;
 }
 
 export function readMemo(p: ProjectOverseerPaths): WatchMemo {
   const raw = readJson(p.memo);
-  const m: WatchMemo = { version: 1, pending: [], lastRunAt: null, lastRun: null, perDay: {} };
+  const m: WatchMemo = { version: 1, pending: [], lastRunAt: null, lastRun: null, perDay: {}, soonAt: null };
   if (!isObj(raw)) return m;
   if (Array.isArray(raw.pending)) m.pending = raw.pending.filter((x): x is string => typeof x === "string").slice(-50);
   if (typeof raw.lastRunAt === "string") m.lastRunAt = raw.lastRunAt;
   if (isObj(raw.lastRun) && typeof raw.lastRun.at === "string") m.lastRun = raw.lastRun as WatchMemo["lastRun"];
   if (isObj(raw.perDay)) for (const [k, v] of Object.entries(raw.perDay)) if (typeof v === "number") m.perDay[k] = v;
+  if (typeof raw.soonAt === "string") m.soonAt = raw.soonAt;
   return m;
 }
 
@@ -241,8 +287,8 @@ export function writeMemo(p: ProjectOverseerPaths, m: WatchMemo): void {
   // The first write of the memo also moves a legacy `started` list out of it into the repo.
   migrateStarted(p);
   const days = Object.keys(m.perDay).sort().slice(-7);
-  const { version, pending, lastRunAt, lastRun } = m;
-  writeAtomic(p.memo, `${JSON.stringify({ version, pending, lastRunAt, lastRun, perDay: Object.fromEntries(days.map((d) => [d, m.perDay[d]])) }, null, 2)}\n`);
+  const { version, pending, lastRunAt, lastRun, soonAt } = m;
+  writeAtomic(p.memo, `${JSON.stringify({ version, pending, lastRunAt, lastRun, perDay: Object.fromEntries(days.map((d) => [d, m.perDay[d]])), soonAt }, null, 2)}\n`);
 }
 
 // ---- the sessions it started (in the repo) ----------------------------------------------------------

@@ -114,6 +114,22 @@ export interface OrgProject {
   createdAt: string;
   /** Slice 3: the project's spec is frozen (only the reconciler's promotion writes claims/). */
   spec?: { frozen: boolean };
+  /** The project's main stakeholder (a roster person's id; absent or null: none). They decide every
+      area of the project no one else on the roster decides. Set only by the operator. */
+  stakeholder?: string | null;
+  /** Each change of `stakeholder`, oldest first (at most 50). */
+  stakeholderHistory?: StakeholderChange[];
+  /** Set when the main stakeholder left the org (so the project has none); removed when the
+      operator sets the stakeholder again (to someone or to none). Needs you asks for a new one. */
+  stakeholderCleared?: { personId: string; name: string; at: string };
+}
+
+/** One change of a project's main stakeholder: the operator set it (`operator`), or the person left (`left`). */
+export interface StakeholderChange {
+  at: string;
+  from: string | null;
+  to: string | null;
+  why: "operator" | "left";
 }
 
 /** `org.json` in the workspace repo. */
@@ -162,6 +178,8 @@ export interface OrgNeedsYou {
   /** Open decision conflicts routed to the operator with no baton session asking about them yet
       (one that has a session counts once, as that session's reply). */
   conflicts: number;
+  /** Projects whose main stakeholder left the org, so the operator must pick a new one (absent: an older server). */
+  stakeholders?: number;
 }
 
 /** One baton session of the org, for its page. */
@@ -366,6 +384,8 @@ export interface PersonPage {
   lastOpenedAt?: string;
   /** Their profile history, newest first (as GET …/history). */
   history: ProfileChange[];
+  /** The projects they are the main stakeholder of (absent: an older server). */
+  stakeholderOf?: { projectId: string; name: string }[];
 }
 
 export interface OrgsInfo {

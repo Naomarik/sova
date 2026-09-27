@@ -423,6 +423,18 @@ function argSummary(raw: unknown, toolCallId?: string): string {
   return first ? cut(first, 60) : "";
 }
 
+/**
+ * A session reference as the tools themselves print it, reduced to its id: a bare id, `s/<id>`,
+ * `sova://s/<id>` or the markdown link `[title](sova://s/<id>)`. Anything else comes back as is
+ * (and matches no session). Pure.
+ */
+export function sessionRef(raw: unknown): string {
+  let t = typeof raw === "string" ? raw.trim() : "";
+  const link = /^\[[^\]]*\]\(([^)\s]+)\)$/.exec(t);
+  if (link) t = link[1]!;
+  return t.replace(/^sova:\/\/s\//, "").replace(/^s\//, "");
+}
+
 /** A bounded, untrusted-marked slice of a transcript (sova_read_session). */
 export function renderTranscript(
   items: TranscriptItem[],
@@ -520,7 +532,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
 
   /** Resolve a session reference, refusing the Overseer's own files. */
   async function resolve(ref: unknown): Promise<SessionSummary> {
-    const raw = typeof ref === "string" ? ref.trim().replace(/^sova:\/\/s\//, "") : "";
+    const raw = sessionRef(ref);
     if (!raw) throw new Refusal("Name the session by its id (from sova_list_sessions or sova_attention).");
     const s = await host.session(raw);
     if (!s) throw new Refusal(`No session with id ${raw}. List sessions again; it may have been deleted.`);

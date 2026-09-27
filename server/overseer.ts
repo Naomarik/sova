@@ -16,6 +16,7 @@ import {
 } from "../shared/protocol";
 import { setArchived } from "./archived-sessions";
 import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./attention";
+import { stakeholderAttention } from "./orgs";
 import {
   acquireChat,
   BusyError,
@@ -334,7 +335,7 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
         ...(s.signals || s.workerSignals ? { signalText: signalTextOf(s.id, nowMs) } : {}),
       };
     });
-    return buildDigest(rows, Date.now(), homedir());
+    return buildDigest(rows, Date.now(), homedir(), stakeholderAttention());
   })();
   digestMemo = { at: now, value };
   value.catch(() => {

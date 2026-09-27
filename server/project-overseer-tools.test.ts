@@ -213,7 +213,7 @@ describe("scope, caps and budget", () => {
   test("coding sessions stay inside the project root; sends only to its sessions", async () => {
     const f = fake({ attended: true });
     await assert.rejects(() => f.run("sova_create_session", { prompt: "p", folder: "/proj-evil" }), /outside the project root/);
-    await assert.rejects(() => f.run("sova_send", { session: "outside", text: "hi" }), /No coding session outside/);
+    await assert.rejects(() => f.run("sova_send", { session: "outside", text: "hi" }), /No coding session "outside" in this project/);
     await f.run("sova_create_session", { prompt: "p", folder: "/proj/app" });
     await f.run("sova_send", { session: "in-root", text: "hi" });
     assert.deepEqual(f.calls, ["create:/proj/app", "send:/s/in-root.jsonl"]);
@@ -284,6 +284,27 @@ describe("scope, caps and budget", () => {
     await assert.rejects(() => f.run("sova_promote", { ids: ["o:1"] }), /o:1 \(outside Ana Ruiz's decision area \(invoicing\): only the operator promotes it\)/);
     const log = readFileSync(f.paths.actions, "utf8").trim().split("\n").map((l) => JSON.parse(l));
     assert.equal(log.at(-1).outcome, "refused", "nothing promoted is a refusal, not an ok");
+    // Each case's own log line: some refused is partial (with what), all promoted is ok.
+    assert.deepEqual([log[0].outcome, log[0].error], ["partial", "2 refused: c:2 (in an open conflict); nope (not a drafted decision of this project (sova_decisions state drafted lists them; run sova_reconcile first))"]);
+    await f.run("sova_promote", { ids: ["s:2"] });
+    const last = readFileSync(f.paths.actions, "utf8").trim().split("\n").map((l) => JSON.parse(l)).at(-1);
+    assert.deepEqual([last.outcome, last.error], ["ok", undefined]);
+    assert.doesNotMatch(JSON.stringify(out), /"partial"/, "the model never sees the log's field");
+  });
+
+  test("session ids in every form the tools print reach the same session; anything else is refused", async () => {
+    const f = fake({ attended: true });
+    for (const ref of ["in-root", "s/in-root", "sova://s/in-root", "[Inside](sova://s/in-root)", "  sova://s/in-root  "]) await f.run("sova_send", { session: ref, text: "hi" });
+    assert.deepEqual(f.calls, Array(5).fill("send:/s/in-root.jsonl"));
+    await assert.rejects(() => f.run("sova_send", { session: "x/in-root", text: "hi" }), { message: 'No coding session "x/in-root" in this project: pass an id sova_list_sessions lists.' });
+  });
+
+  test("the goal and the done summary ask for people by name only (the session's model may repeat them)", () => {
+    const f = fake();
+    for (const name of ["sova_start_gathering", "sova_offer"]) {
+      const goal = (f.tools.find((t) => t.name === name)!.parameters as any).properties.goal.description;
+      assert.match(goal, /by name only, never by role or job title/, name);
+    }
   });
 
   test("ideas: gaps are §gap/<name> and always carry the gap tag", async () => {

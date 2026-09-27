@@ -142,10 +142,11 @@ interface Waiting {
  * session is already that session's reply). `rows` are the org's baton rows.
  */
 function waitingIn(orgId: string, dir: string, rows: readonly BatonSession[]): Waiting {
-  const w: Waiting = { needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0 }, batons: new Map(), projectConflicts: {} };
+  const w: Waiting = { needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0 }, batons: new Map(), projectConflicts: {} };
   try {
     w.needsYou.proposals = readRoster(orgId).filter((p) => p.status === "proposed").length;
     for (const project of readProjects(orgId)) {
+      if (project.stakeholderCleared) w.needsYou.stakeholders = (w.needsYou.stakeholders ?? 0) + 1;
       const n = readConflicts(orgId, project.id).filter((c) => c.state === "open" && c.routedTo === OPERATOR && !c.batonSessionId).length;
       if (n) w.projectConflicts[project.id] = n;
       w.needsYou.conflicts += n;
@@ -403,7 +404,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       const b = await body(c);
-      patchProject(id, p(c, "pid"), { name: b.name, root: b.root, ...(b.spec !== undefined ? { spec: b.spec } : {}) });
+      patchProject(id, p(c, "pid"), { name: b.name, root: b.root, ...(b.spec !== undefined ? { spec: b.spec } : {}), ...(b.stakeholder !== undefined ? { stakeholder: b.stakeholder } : {}) });
       return c.json(await orgPage(id));
     }),
   );

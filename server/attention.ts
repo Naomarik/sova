@@ -136,9 +136,12 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
  * `items` ≤30. `badge` counts SESSIONS, not items, and each session once, at its most urgent tier:
  * a session with a dialog and an error is one "needs you", not two.
  */
-export function buildDigest(rows: AttentionRow[], now = Date.now(), home?: string): AttentionDigest & { badge: { act: number; decide: number } } {
+export function buildDigest(rows: AttentionRow[], now = Date.now(), home?: string, extra: AttentionItem[] = []): AttentionDigest & { badge: { act: number; decide: number } } {
   const badge = { act: 0, decide: 0 };
-  const all: AttentionItem[] = [];
+  // Items of no session (an org project's missing main stakeholder): each counts once in the badge.
+  const all: AttentionItem[] = [...extra];
+  for (const it of extra) if (it.tier === "act") badge.act++;
+  else if (it.tier === "decide") badge.decide++;
   for (const r of rows) {
     const items = sessionItems(r, now, home);
     if (items.some((i) => i.tier === "act")) badge.act++;

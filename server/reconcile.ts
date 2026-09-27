@@ -19,6 +19,7 @@ import {
 import type { Person } from "../shared/orgs";
 import { batonById, closeBaton, createBaton, namesOf } from "./baton";
 import { commitSpec, specSnapshot } from "./project-worktrees";
+import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 import { onBatonEvent } from "./baton-events";
 import { DecisionError, type DecisionProvider, type Question } from "./decide";
 import { isExcluded } from "./decide-settings";
@@ -187,18 +188,33 @@ function upToDate(d: DecisionRow, byId: Map<string, DecisionRow>, current: Recor
  * current spec still says what it should; else it is `drafted` again: re-promotable), compared
  * clean with its whole area by a successful run (`drafted`), else `pending`.
  */
-/** Whether the author may decide the row's area: the operator, or an active person whose
-    operator-set `decides` covers it (a self-asserted say does not count). */
-export function authorOwnsArea(orgId: string, roster: Person[], d: Pick<DecisionRow, "by" | "areaKey">, trusted = decidesTrusted): boolean {
-  if (d.by === OPERATOR) return true;
-  const p = roster.find((x) => x.id === d.by && x.status === "active");
-  return !!p && p.decides.some((x) => areaKeyOf(x) === d.areaKey) && trusted(orgId, p, d.areaKey);
+/**
+ * Who may decide an area of a project: the active people whose `decides` names it (explicit
+ * owners), else the project's main stakeholder while they are active (they own every area no one
+ * else on the roster decides), else nobody (the operator). Pure over the roster.
+ */
+export function ownersOf(roster: Person[], areaKey: string, stakeholder?: string | null): { owners: Person[]; via: "decides" | "stakeholder" | null } {
+  const explicit = roster.filter((p) => p.status === "active" && p.decides.some((x) => areaKeyOf(x) === areaKey));
+  if (explicit.length) return { owners: explicit, via: "decides" };
+  const main = stakeholder ? roster.find((p) => p.id === stakeholder && p.status === "active") : undefined;
+  return main ? { owners: [main], via: "stakeholder" } : { owners: [], via: null };
 }
 
-function settleStates(store: DecisionStore, conflicts: Conflict[], root?: string, orgId?: string): void {
+/** Whether the author may decide the row's area: the operator; an active person whose operator-set
+    `decides` covers it (a self-asserted say does not count); or, in an area no one on the roster
+    decides, the project's main stakeholder. */
+export function authorOwnsArea(orgId: string, roster: Person[], d: Pick<DecisionRow, "by" | "areaKey">, trusted = decidesTrusted, stakeholder?: string | null): boolean {
+  if (d.by === OPERATOR) return true;
+  const { owners, via } = ownersOf(roster, d.areaKey, stakeholder);
+  const p = owners.find((x) => x.id === d.by);
+  if (!p) return false;
+  return via === "stakeholder" || trusted(orgId, p, d.areaKey);
+}
+
+function settleStates(store: DecisionStore, conflicts: Conflict[], root?: string, orgId?: string, stakeholder?: string | null): void {
   if (orgId) {
     const roster = readRoster(orgId);
-    for (const d of store.decisions) d.authorOwnsArea = authorOwnsArea(orgId, roster, d);
+    for (const d of store.decisions) d.authorOwnsArea = authorOwnsArea(orgId, roster, d, decidesTrusted, stakeholder);
   }
   const live = store.decisions.filter((d) => !d.supersededBy);
   const byId = new Map(store.decisions.map((d) => [d.id, d]));
@@ -293,7 +309,8 @@ function info(orgId: string, projectId: string, store: DecisionStore, conflicts:
 export function listDecisions(orgId: string, projectId: string): DecisionsInfo {
   const { store } = syncDecisions(orgId, projectId);
   const conflicts = readConflicts(orgId, projectId);
-  settleStates(store, conflicts, projectOf(orgId, projectId).root, orgId);
+  const project = projectOf(orgId, projectId);
+  settleStates(store, conflicts, project.root, orgId, project.stakeholder);
   return info(orgId, projectId, store, conflicts);
 }
 
@@ -485,10 +502,15 @@ export function decidesTrusted(orgId: string, person: Person, areaKey: string): 
   return true;
 }
 
-/** Who settles a conflict in `areaKey`: the owner of the area other than the authors when there is one. Pure over the roster. */
-export function routeConflict(orgId: string, roster: Person[], areaKey: string, area: string, authors: string[], trusted = decidesTrusted): Route {
-  const owners = roster.filter((p) => p.status === "active" && p.decides.some((x) => areaKeyOf(x) === areaKey));
+/**
+ * Who settles a conflict in `areaKey`: the area's owner other than the authors when there is one;
+ * in an area no one on the roster decides, the project's main stakeholder (even when they wrote a
+ * side: one person contradicting themselves); else the operator. Pure over the roster.
+ */
+export function routeConflict(orgId: string, roster: Person[], areaKey: string, area: string, authors: string[], trusted = decidesTrusted, stakeholder?: string | null): Route {
+  const { owners, via } = ownersOf(roster, areaKey, stakeholder);
   if (!owners.length) return { to: OPERATOR, reason: `Nobody on the roster decides ${area}.` };
+  if (via === "stakeholder") return { to: owners[0]!.id, reason: `${owners[0]!.name} is this project's main stakeholder.` };
   const pick = owners.find((p) => !authors.includes(p.id)) ?? owners[0]!;
   if (!trusted(orgId, pick, areaKey)) return { to: OPERATOR, reason: `${pick.name}'s say over ${area} was not set by ${operatorName()} (self-asserted).`, selfAsserted: true };
   return { to: pick.id, reason: `${pick.name} decides ${area}.` };
@@ -521,6 +543,26 @@ export interface ReconcileOptions {
   /** Started by Sova itself (a routed conflict's answer): with the switch off it is skipped and
       recorded in lastRun.error instead of refused. */
   auto?: boolean;
+  /** The settle sessions' model and thinking (the project overseer passes its gathering choice);
+      default: the project's gathering model (settleChoice). */
+  model?: string;
+  thinking?: string;
+}
+
+/**
+ * The model and thinking of a settle session (the person talks to it, like any gathering
+ * session): the project's `gatheringModel`/`gatheringThinking`, else the overseer's own setting,
+ * else nothing (the new-session default). For every settle session, the operator's included.
+ */
+export function settleChoice(orgId: string, projectId: string): { model?: string; thinking?: string } {
+  try {
+    const s = readPoSettings(projectOverseerPaths(orgId, projectId));
+    const model = s.gatheringModel ?? s.model;
+    const thinking = s.gatheringThinking ?? s.thinking;
+    return { ...(model ? { model } : {}), ...(thinking ? { thinking } : {}) };
+  } catch {
+    return {};
+  }
 }
 
 type Outcome = "a" | "b" | "both" | "neither";
@@ -600,7 +642,7 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
     const run = { at: now.toISOString(), compared: 0, found: 0 } as NonNullable<DecisionStore["lastRun"]>;
     const newConflicts: string[] = [];
     const resolved: string[] = [];
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     try {
       if (d.excluded(project.root)) throw new DecisionError("unavailable", "This project's folder is excluded in Settings → Decisions.");
       const provider = d.provider();
@@ -620,11 +662,11 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
         applyOutcome(c, a, b, r, outcome, now, restates);
         resolved.push(c.id);
       }
-      settleStates(store, conflicts, project.root, orgId);
+      settleStates(store, conflicts, project.root, orgId, project.stakeholder);
 
       // 3. Areas.
       await fileAreas(provider, store, dedupe);
-      settleStates(store, conflicts, project.root, orgId);
+      settleStates(store, conflicts, project.root, orgId, project.stakeholder);
 
       // 4. Pairs.
       const inConflict = new Set(conflicts.map((c) => pairKey(c.a, c.b)));
@@ -653,7 +695,7 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
             if ((vs[k]?.same ?? 0) >= CONFLICT_P) fold(x, y, byId);
             else markChecked(x, y);
           });
-          settleStates(store, conflicts, project.root, orgId);
+          settleStates(store, conflicts, project.root, orgId, project.stakeholder);
         }
         const group = store.decisions.filter((x) => !x.supersededBy && x.areaKey === areaKey).sort((x, y) => x.at.localeCompare(y.at));
         const pairs: [DecisionRow, DecisionRow][] = [];
@@ -686,7 +728,7 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
             if (p < CONFLICT_P) markChecked(x, y);
             continue;
           }
-          const route = routeConflict(orgId, roster, areaKey, area, [x.by, y.by]);
+          const route = routeConflict(orgId, roster, areaKey, area, [x.by, y.by], decidesTrusted, project.stakeholder);
           const c: Conflict = {
             id: shortId("cf_"),
             orgId,
@@ -705,7 +747,7 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
           inConflict.add(pairKey(x.id, y.id));
           newConflicts.push(c.id);
           run.found++;
-          settleStates(store, conflicts, project.root, orgId);
+          settleStates(store, conflicts, project.root, orgId, project.stakeholder);
         }
       }
       // Every live decision has now been filed and compared (or is in a conflict).
@@ -713,14 +755,14 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
     } catch (err) {
       run.error = err instanceof Error ? err.message : String(err);
     }
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
 
     // Route the new conflicts (a failure here leaves the conflict open, routable by hand).
     if (opts.route !== false)
       for (const id of newConflicts) {
         const c = conflicts.find((x) => x.id === id)!;
         try {
-          startConflictBaton(d, c, byId, opts.owner);
+          startConflictBaton(d, c, byId, opts.owner, opts.model || opts.thinking ? { ...(opts.model ? { model: opts.model } : {}), ...(opts.thinking ? { thinking: opts.thinking } : {}) } : undefined);
         } catch (err) {
           run.error = `${run.error ? `${run.error}; ` : ""}routing ${c.id}: ${err instanceof Error ? err.message : String(err)}`;
         }
@@ -742,13 +784,13 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
   });
 }
 
-function startConflictBaton(d: ReconcileDeps, c: Conflict, byId: Map<string, DecisionRow>, owner?: BatonOwner): void {
+function startConflictBaton(d: ReconcileDeps, c: Conflict, byId: Map<string, DecisionRow>, owner?: BatonOwner, choice: { model?: string; thinking?: string } = settleChoice(c.orgId, c.projectId)): void {
   const a = byId.get(c.a);
   const b = byId.get(c.b);
   if (!a || !b) throw new OrgError("The conflict's decisions are gone", 409);
   const area = a.area;
   // No link is minted here (nobody could be shown it): Needs-you asks the operator to send one.
-  const created = d.startBaton({ ...batonFor(c, a, b, area), ...(owner ? { owner } : {}), mintLink: false });
+  const created = d.startBaton({ ...batonFor(c, a, b, area), ...choice, ...(owner ? { owner } : {}), mintLink: false });
   c.batonSessionId = created.sessionId;
   c.batonPath = created.path;
 }
@@ -787,7 +829,7 @@ export function draftProject(orgId: string, projectId: string): Promise<Decision
     const project = projectOf(orgId, projectId);
     const { store } = syncDecisions(orgId, projectId);
     const conflicts = readConflicts(orgId, projectId);
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     assignRecordIds(project.root, store);
     writeDecisionStore(orgId, projectId, store);
     const ids = await refreshDraft(orgId, projectId, store);
@@ -821,7 +863,7 @@ export function routeConflictNow(orgId: string, projectId: string, conflictId: s
     const old = previous ? batonById(previous)?.row : undefined;
     if (old && old.state !== "closed") await d.endBaton(old.sessionId);
     writeConflicts(orgId, projectId, conflicts);
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     return info(orgId, projectId, store, conflicts);
   });
 }
@@ -851,7 +893,7 @@ export function resolveConflict(orgId: string, projectId: string, conflictId: st
     // Settled by hand: the session still asking someone about it is over, and so is its Needs-you item.
     const asking = c.batonSessionId ? batonById(c.batonSessionId)?.row : undefined;
     if (asking && asking.state !== "closed") await d.endBaton(asking.sessionId);
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     assignRecordIds(project.root, store);
     writeDecisionStore(orgId, projectId, store);
     writeConflicts(orgId, projectId, conflicts);
@@ -890,7 +932,7 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
     const project = projectOf(orgId, projectId);
     const { store } = syncDecisions(orgId, projectId);
     const conflicts = readConflicts(orgId, projectId);
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     assignRecordIds(project.root, store);
     const refused: PromoteResult["refused"] = [];
     const rows: DecisionRow[] = [];
@@ -925,10 +967,10 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
         promoted = [];
       }
     }
-    settleStates(store, conflicts, project.root, orgId);
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     writeDecisionStore(orgId, projectId, store);
     await refreshDraft(orgId, projectId, store).catch(() => []);
-    emit({ type: "promoted", orgId, projectId, ids: promoted });
+    emit({ type: "promoted", orgId, projectId, ids: promoted, by: opts.by });
     return { info: info(orgId, projectId, store, conflicts), promoted, refused, ...(draft ? { draft } : {}), ...(commit ? { commit } : {}) };
   });
 }

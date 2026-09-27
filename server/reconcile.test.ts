@@ -170,6 +170,28 @@ describe("routing", () => {
     assert.equal(r.to, OPERATOR);
     assert.equal(r.selfAsserted, true);
   });
+  test("the main stakeholder: every area no one on the roster decides, even their own contradiction; never over an explicit owner", () => {
+    const roster = [person("alp", ["website"]), person("bob", ["invoicing"])];
+    const r = reconcile.routeConflict("o", roster, "page-copy", "page copy", ["alp", "alp"], trusted, "alp");
+    assert.deepEqual(r, { to: "alp", reason: "ALP is this project's main stakeholder." });
+    assert.equal(reconcile.routeConflict("o", roster, "invoicing", "Invoicing", ["alp"], trusted, "alp").to, "bob", "Bob decides invoicing by name");
+    // A self-asserted explicit owner still goes to the operator, never quietly to the stakeholder.
+    assert.equal(reconcile.routeConflict("o", roster, "invoicing", "Invoicing", [], () => false, "alp").to, OPERATOR);
+    // A stakeholder who left is none.
+    assert.equal(reconcile.routeConflict("o", [person("alp", [], "left")], "page-copy", "page copy", [], trusted, "alp").to, OPERATOR);
+    assert.equal(reconcile.routeConflict("o", roster, "page-copy", "page copy", [], trusted, null).reason, "Nobody on the roster decides page copy.");
+  });
+  test("authorOwnsArea: the operator always; an explicit owner with an operator-set say; the stakeholder only where no one decides by name", () => {
+    const roster = [person("alp", ["website"]), person("bob", ["invoicing"])];
+    const owns = (by: string, areaKey: string, stakeholder: string | null, t = trusted) => reconcile.authorOwnsArea("o", roster, { by, areaKey }, t, stakeholder);
+    assert.equal(owns("alp", "page-copy", "alp"), true);
+    assert.equal(owns("alp", "page-copy", null), false, "without the stakeholder it is out of area");
+    assert.equal(owns("alp", "invoicing", "alp"), false, "Bob's area stays Bob's");
+    assert.equal(owns("bob", "page-copy", "alp"), false);
+    assert.equal(owns("bob", "invoicing", "alp", () => false), false, "self-asserted");
+    assert.equal(owns(OPERATOR, "anything", null), true);
+    assert.equal(reconcile.authorOwnsArea("o", [person("alp", [], "left")], { by: "alp", areaKey: "page-copy" }, trusted, "alp"), false, "left: none");
+  });
 });
 
 // ---- end to end over a real workspace and a spec-only client project ---------------------------------------------------
@@ -529,6 +551,40 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.deepEqual(bulk.refused.map((x) => x.id), [outArea]);
     const explicit = await reconcile.promoteDecisions(org.id, project.id, [outArea]);
     assert.deepEqual(explicit.promoted, [outArea], "the operator naming it promotes it");
+  });
+
+  test("the main stakeholder: the overseer promotes their free-form areas; their own contradiction routes to them, on the project's gathering model", async () => {
+    const pos = await import("./project-overseer-store");
+    const p = pos.projectOverseerPaths(org.id, project.id);
+    pos.writePoSettings(p, { ...pos.readPoSettings(p), gatheringModel: "prov/gather", gatheringThinking: "low" });
+    try {
+      const lunch = `${s1.sessionId}:${say(f1, maria.id, "l", { area: "lunch breaks", statement: "Lunch is an hour.", quote: "an hour" }).markerId}`;
+      let info = await reconcile.reconcileProject(org.id, project.id, { route: false });
+      assert.equal(info.decisions.find((d) => d.id === lunch)!.authorOwnsArea, false, "no stakeholder yet: out of area");
+      orgs.patchProject(org.id, project.id, { stakeholder: maria.id });
+      info = reconcile.listDecisions(org.id, project.id);
+      assert.equal(info.decisions.find((d) => d.id === lunch)!.authorOwnsArea, true, "nobody decides lunch breaks by name: Maria does");
+      assert.deepEqual((await reconcile.promoteDecisions(org.id, project.id, [lunch], { by: "overseer" })).promoted, [lunch], "the overseer promotes it");
+      // Tony's hosting stays Tony's.
+      const hostingByMaria = `${s1.sessionId}:${say(f1, maria.id, "h", { area: "hosting", statement: "Logs are kept 9 days.", quote: "nine days" }).markerId}`;
+      info = await reconcile.reconcileProject(org.id, project.id, { route: false });
+      assert.equal(info.decisions.find((d) => d.id === hostingByMaria)!.authorOwnsArea, false);
+      // Maria contradicts herself in an area nobody decides by name: routed to her, as the stakeholder.
+      say(f1, maria.id, "a", { area: "visitor badges", statement: "Badges last 2 days.", quote: "2 days" });
+      say(f1, maria.id, "b", { area: "visitor badges", statement: "Badges last 7 days.", quote: "7 days" });
+      info = await reconcile.reconcileProject(org.id, project.id);
+      const c = info.conflicts.find((k) => k.state === "open" && k.areaKey === "visitor-badges")!;
+      assert.ok(c, JSON.stringify(info.conflicts.map((k) => k.areaKey)));
+      assert.deepEqual([c.routedTo, c.routeReason], [maria.id, "Maria Lopez is this project's main stakeholder."]);
+      const row = baton.batonById(c.batonSessionId!)!.row;
+      assert.deepEqual([row.model, row.thinking], ["prov/gather", "low"], "the settle session opens on the gathering model");
+      // Re-routed by the operator: the same model.
+      info = await reconcile.routeConflictNow(org.id, project.id, c.id, tony.id);
+      const again = baton.batonById(info.conflicts.find((k) => k.id === c.id)!.batonSessionId!)!.row;
+      assert.deepEqual([again.model, again.thinking], ["prov/gather", "low"]);
+    } finally {
+      orgs.patchProject(org.id, project.id, { stakeholder: null });
+    }
   });
 
   test("settling a routed conflict by hand closes its session, so its Needs-you item goes", async () => {

@@ -6,7 +6,7 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readF
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
-import { PROJECT_OVERSEER_ENTRY } from "../shared/project-overseer";
+import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerSettings } from "../shared/project-overseer";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-")));
 const agentDir = join(root, "agent");
@@ -250,6 +250,37 @@ describe("its gathering sessions, as the person sees them", async () => {
     assert.deepEqual(store.readMemo(p).pending, ["A decision was recorded in \"Payment terms\".", "2 decisions are drafted and promotable."]);
   });
 
+  test("its coding sessions' finished turns are reasons to look soon; the operator's never are", () => {
+    const p = store.projectOverseerPaths(org.id, project.id);
+    const now = Date.parse("2026-09-27T10:00:00Z");
+    store.writeMemo(p, { ...store.readMemo(p), pending: [], soonAt: null });
+    const mine = join(root, "coding-mine.jsonl");
+    const theirs = join(root, "coding-theirs.jsonl");
+    for (const f of [mine, theirs]) writeFileSync(f, "{}\n");
+    store.noteStarted(p, "S-MINE-1", "coding", new Date(now), mine);
+    store.noteStarted(p, "S-THEIRS-1", "operator-coding", new Date(now), theirs);
+    po.noteCodingSettled(theirs, now);
+    po.noteCodingSettled(join(root, "unknown.jsonl"), now);
+    assert.deepEqual(store.readMemo(p).pending, [], "the operator's own session and an unknown file: nothing");
+    po.noteCodingSettled(mine, now);
+    po.noteCodingSettled(mine, now + 30_000);
+    const m = store.readMemo(p);
+    assert.equal(m.pending.length, 1, "one reason, however many turns");
+    assert.match(m.pending[0]!, /S-MINE-1/, "names the session (its id while it has no title)");
+    assert.equal(m.soonAt, new Date(now + po.WATCH_SOON_MS).toISOString(), "a look a minute after the first, not pushed back by the second");
+    store.writeMemo(p, { ...store.readMemo(p), pending: [], soonAt: null });
+  });
+
+  test("the prompt names the project's main stakeholder while they are active", () => {
+    orgs.patchProject(org.id, project.id, { stakeholder: tony.id });
+    try {
+      assert.match(po.renderProjectOverseerPrompt(org.id, project.id, []), /Main stakeholder: Tony: decides every area of this project that no one else on the roster decides\./);
+    } finally {
+      orgs.patchProject(org.id, project.id, { stakeholder: null });
+    }
+    assert.doesNotMatch(po.renderProjectOverseerPrompt(org.id, project.id, []), /Main stakeholder/);
+  });
+
   test("Send to person… requires the public title and question: never taken from the item", async () => {
     const p = store.projectOverseerPaths(org.id, project.id);
     const { addTodo, readTodos } = await import("./overseer-todos");
@@ -386,9 +417,52 @@ describe("the watch loop's decision", () => {
     assert.equal(po.watchDecision({ ...base, force: true, today: 12 }).run, false);
     assert.equal(po.watchDecision({ ...base, force: true, idle: false }).run, false);
   });
+  test("an event wanting a look soon lets it run once its time comes, whatever the gap; never over the other rules", () => {
+    const soonAt = base.now - 1;
+    const recent = { ...base, lastRunAt: base.now - 60_000 };
+    assert.equal(po.watchDecision(recent).run, false, "inside the gap");
+    assert.equal(po.watchDecision({ ...recent, soonAt }).run, true, "due: the gap is skipped");
+    assert.equal(po.watchDecision({ ...recent, soonAt: base.now + 1 }).run, false, "not yet due");
+    for (const k of [{ today: 12 }, { watch: false }, { idle: false }, { pending: [] as string[] }]) assert.equal(po.watchDecision({ ...recent, soonAt, ...k }).run, false, JSON.stringify(k));
+  });
   test("the watch message says it is automatic and names the level", () => {
     const t = po.watchText(["A decision was recorded in \"Invoicing\"."], "L1");
     assert.ok(t.startsWith(po.WATCH_PREFIX));
     assert.match(t, /within your autonomy \(L1\)/);
+  });
+});
+
+describe("thinking levels a model doesn't offer", () => {
+  const models = [
+    { ref: "zai/glm-5.3", thinkingLevels: ["low", "high", "max"] },
+    { ref: "p/basic", thinkingLevels: ["off"] },
+  ];
+  const settings = (over: Partial<ProjectOverseerSettings>) => ({ ...store.defaultPoSettings(), ...over });
+  test("pi's clamp: the level itself, else the next offered up, else the next down", () => {
+    assert.equal(store.clampLevel("medium", ["low", "high", "max"]), "high");
+    assert.equal(store.clampLevel("max", ["low", "medium"]), "medium");
+    assert.equal(store.clampLevel("low", ["low", "high"]), "low");
+    assert.equal(store.clampLevel("bogus", ["low"]), "low");
+  });
+  test("a level the patch names is refused with the levels offered; one a model change left behind is moved and kept", () => {
+    assert.throws(() => store.fitThinking(settings({ model: "zai/glm-5.3", thinking: "medium" }), { thinking: "medium" }, models, null), { message: "zai/glm-5.3 offers thinking low, high, max." });
+    // Coding and gathering pairs fall back to the overseer's model.
+    assert.throws(() => store.fitThinking(settings({ model: "zai/glm-5.3", codingThinking: "minimal" }), { codingThinking: "minimal" }, models, null), /zai\/glm-5\.3 offers/);
+    const moved = settings({ model: "zai/glm-5.3", thinking: "medium", gatheringModel: "p/basic", gatheringThinking: "low" });
+    store.fitThinking(moved, { model: "zai/glm-5.3", gatheringModel: "p/basic" }, models, null);
+    assert.deepEqual([moved.thinking, moved.gatheringThinking], ["high", "off"]);
+    // A model this host can't list is not judged; the default model stands in for an unset one.
+    const unknown = settings({ model: "x/unlisted", thinking: "medium" });
+    store.fitThinking(unknown, { thinking: "medium" }, models, null);
+    assert.equal(unknown.thinking, "medium");
+    assert.throws(() => store.fitThinking(settings({ thinking: "medium" }), { thinking: "medium" }, models, "zai/glm-5.3"), /offers thinking/);
+  });
+  test("a refused PATCH writes nothing", () => {
+    const dir = join(root, "ws-think");
+    const p = store.projectOverseerPaths("org_aaaaaaaa", "prj_bbbbbbbb", dir);
+    store.writePoSettings(p, settings({ model: "zai/glm-5.3", thinking: "high" }));
+    const before = readFileSync(p.settings, "utf8");
+    assert.throws(() => store.patchPoSettings(p, { thinking: "medium" }, (next, patch) => store.fitThinking(next, patch, models, null)), /offers thinking/);
+    assert.equal(readFileSync(p.settings, "utf8"), before);
   });
 });

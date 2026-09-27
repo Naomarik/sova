@@ -178,6 +178,12 @@ describe("a project's coding sessions", async () => {
     }
   });
 
+  test("a loadout that loads no extension is handed no extension flag (no \"Unknown option\" line)", async () => {
+    const { extensionFlagsFor } = await import("./chat-manager");
+    assert.deepEqual([...extensionFlagsFor(plainRoot, false, true, true)], [], "the project overseer and baton sessions: none, even with the Claude Code switch on");
+    assert.deepEqual([...extensionFlagsFor(plainRoot, false, false, true).keys()], ["claude-code-provider"], "an ordinary session keeps them");
+  });
+
   test("gathering sessions stay mode-less, whatever the project's coding mode and the default", async () => {
     const p = store.projectOverseerPaths(org.id, project.id);
     store.patchPoSettings(p, { codingMode: { mode: "delegate", minorModes: ["spec"] } });

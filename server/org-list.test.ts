@@ -46,7 +46,7 @@ describe("GET /api/orgs: needsYou and lastActivityAt", async () => {
 
   test("a fresh org waits on nothing and was last active when created (or its first roster write)", async () => {
     const q = (await list()).find((o) => o.id === quiet.id)!;
-    assert.deepEqual(q.needsYou, { replies: 0, links: 0, proposals: 0, conflicts: 0 });
+    assert.deepEqual(q.needsYou, { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0 });
     assert.ok(q.lastActivityAt && Date.parse(q.lastActivityAt) >= Date.parse(quiet.createdAt));
   });
 
@@ -57,9 +57,9 @@ describe("GET /api/orgs: needsYou and lastActivityAt", async () => {
     orgs.addPerson(busy.id, { name: "Bob Ref", status: "proposed", role: "Accountant", contact: { phone: "+1 555 010 0199" }, referral: { why: "Does the books", referredBy: "operator" } });
     const all = await list();
     const b = all.find((o) => o.id === busy.id)!;
-    assert.deepEqual(b.needsYou, { replies: 1, links: 1, proposals: 1, conflicts: 0 });
+    assert.deepEqual(b.needsYou, { replies: 1, links: 1, proposals: 1, conflicts: 0, stakeholders: 0 });
     assert.equal(b.openBatons, 3);
-    assert.deepEqual(all.find((o) => o.id === quiet.id)!.needsYou, { replies: 0, links: 0, proposals: 0, conflicts: 0 }, "another org's items stay there");
+    assert.deepEqual(all.find((o) => o.id === quiet.id)!.needsYou, { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0 }, "another org's items stay there");
   });
 
   test("a closed session no longer counts, and activity moves forward", async () => {
@@ -81,11 +81,25 @@ describe("GET /api/orgs: needsYou and lastActivityAt", async () => {
 
   test("GET /api/orgs/:id: needsYou, each baton's waiting, projectConflicts", async () => {
     const d = (await (await app.request(`/api/orgs/${busy.id}`)).json()) as OrgDetail;
-    assert.deepEqual(d.needsYou, { replies: 0, links: 1, proposals: 1, conflicts: 1 });
+    assert.deepEqual(d.needsYou, { replies: 0, links: 1, proposals: 1, conflicts: 1, stakeholders: 0 });
     const by = Object.fromEntries(d.batons.map((r) => [r.publicTitle, r.waiting]));
     assert.deepEqual(by, { "No link": "link", Linked: undefined, Mine: undefined });
     assert.deepEqual(d.projectConflicts, { [project.id]: 1 });
     const q = (await (await app.request(`/api/orgs/${quiet.id}`)).json()) as OrgDetail;
     assert.deepEqual(q.projectConflicts, {});
   });
+});
+
+test("a project whose main stakeholder left counts once in its org's needsYou, until the operator saves the select", async () => {
+  const org = await orgs.createOrg({ name: "Left", dir: join(root, "ws-left") });
+  mkdirSync(join(root, "proj-left"));
+  const pr = orgs.addProject(org.id, { name: "Site", root: join(root, "proj-left") });
+  const alp = orgs.addPerson(org.id, { name: "Alperen", role: "Owner" });
+  orgs.patchProject(org.id, pr.id, { stakeholder: alp.id });
+  const count = async () => (await list()).find((o) => o.id === org.id)!.needsYou?.stakeholders;
+  assert.equal(await count(), 0);
+  orgs.applyChange(org.id, alp.id, { status: "left" }, { kind: "operator" });
+  assert.equal(await count(), 1);
+  orgs.patchProject(org.id, pr.id, { stakeholder: null });
+  assert.equal(await count(), 0);
 });

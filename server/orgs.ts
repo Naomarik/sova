@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import type { AttentionItem } from "../shared/protocol";
 import {
   PERSON_ITEM_MAX,
   PERSON_LIST_MAX,
@@ -23,6 +24,7 @@ import {
   type ProfileChange,
   type ProfileField,
   type NamedChange,
+  type StakeholderChange,
 } from "../shared/orgs";
 import { setExtraSessionRoots } from "./paths";
 import { stateRoot } from "./state-root";
@@ -427,8 +429,13 @@ export function cleanField(field: ProfileField, v: unknown): unknown {
       if (t && !/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(t)) throw new OrgError("language must be a BCP-47 tag such as es-CO");
       return t;
     }
-    case "decides":
-      return list(v, "decides");
+    case "decides": {
+      const out = list(v, "decides");
+      // An area key keeps letters only: "*" or "2024" would silently mean the area "general".
+      const bad = out.find((x) => !/[a-z]/.test(x.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()));
+      if (bad !== undefined) throw new OrgError(`“${bad}” names no decision area: use words, like “website”.`);
+      return out;
+    }
     case "skills":
       return list(v, "skills");
     case "competence": {
@@ -595,6 +602,8 @@ export function applyChange(
   appendFileSync(historyFile(dir), `${lines.join("\n")}\n`);
   const nextPeople = creating ? [...people, next] : people.map((p) => (p.id === next.id ? next : p));
   writeJson(rosterFile(dir), { version: 1, people: nextPeople });
+  // A main stakeholder who left no longer decides anything: their projects have none until the operator picks one.
+  if (!creating && current.status !== "left" && next.status === "left") clearStakeholder(dir, next);
   if (!creating && current.status !== "left" && next.status === "left")
     for (const fn of leftHooks) {
       try {
@@ -634,10 +643,61 @@ const emptyOf = (f: ProfileField): unknown => (f === "decides" || f === "skills"
 
 // ---- prompt partition and redaction (§app.organizations/privacy) ------------------------------------------
 
+/**
+ * The attention items of org projects whose main stakeholder left (§app.organizations/stakeholder):
+ * decide tier, kind `project-stakeholder`, linked to the project page, listed in the Organizations
+ * region's Needs you. One per project, until the operator saves its select.
+ */
+export function stakeholderAttention(): AttentionItem[] {
+  const out: AttentionItem[] = [];
+  for (const o of readIndex().orgs) {
+    let projects: OrgProject[];
+    let orgName = "";
+    try {
+      projects = readProjectsFile(o.dir);
+      orgName = readOrgFile(o.dir)?.name ?? "";
+    } catch {
+      continue;
+    }
+    for (const p of projects) {
+      const c = p.stakeholderCleared;
+      if (!c) continue;
+      out.push({
+        id: `project-stakeholder:${p.id}`,
+        path: "",
+        title: p.name,
+        where: orgName,
+        tier: "decide",
+        kind: "project-stakeholder",
+        since: Date.parse(c.at) || 0,
+        detail: `Pick a main stakeholder for ${p.name}: ${c.name} left the organization.`,
+        href: `#/orgs/${encodeURIComponent(o.id)}/projects/${encodeURIComponent(p.id)}`,
+        org: { orgId: o.id, orgName, projectId: p.id, projectName: p.name },
+      });
+    }
+  }
+  return out;
+}
+
+/** A project's main stakeholder's id, or null (none, or an unknown project). */
+export function stakeholderOf(orgId: string, projectId: string): string | null {
+  try {
+    return readProjects(orgId).find((p) => p.id === projectId)?.stakeholder ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** A non-holder as the model may know them: name, role, decision areas. Never contact. */
 export function participantLine(p: Person): string {
   const decides = p.decides.length ? `; decides: ${p.decides.join(", ")}` : "";
   return `- ${p.name} (id ${p.id})${p.role ? ` — ${p.role}` : ""}${decides}`;
+}
+
+/** The project overseer's line about the project's main stakeholder (while active), or null. */
+export function stakeholderLine(project: Pick<OrgProject, "stakeholder">, roster: Person[]): string | null {
+  const p = project.stakeholder ? roster.find((x) => x.id === project.stakeholder && x.status === "active") : undefined;
+  return p ? `Main stakeholder: ${p.name}: decides every area of this project that no one else on the roster decides.` : null;
 }
 
 /** The holder's private steering data, fenced. Never contact. */
@@ -713,7 +773,31 @@ export function addProject(orgId: string, input: { name: unknown; root: unknown 
   return project;
 }
 
-export function patchProject(orgId: string, projectId: string, patch: { name?: unknown; root?: unknown; spec?: unknown }): OrgProject {
+/** Most stakeholder changes kept per project. */
+const STAKEHOLDER_HISTORY_MAX = 50;
+
+function noteStakeholder(p: OrgProject, to: string | null, why: StakeholderChange["why"], at = new Date().toISOString()): void {
+  const from = p.stakeholder ?? null;
+  if (from === to) return;
+  p.stakeholder = to;
+  p.stakeholderHistory = [...(p.stakeholderHistory ?? []), { at, from, to, why }].slice(-STAKEHOLDER_HISTORY_MAX);
+}
+
+/** `person` left the org: every project they were the main stakeholder of has none now, and says why. */
+function clearStakeholder(dir: string, person: Person): void {
+  const projects = readProjectsFile(dir);
+  const at = new Date().toISOString();
+  let changed = false;
+  for (const p of projects) {
+    if (p.stakeholder !== person.id) continue;
+    noteStakeholder(p, null, "left", at);
+    p.stakeholderCleared = { personId: person.id, name: person.name, at };
+    changed = true;
+  }
+  if (changed) writeJson(projectsFile(dir), { version: 1, projects });
+}
+
+export function patchProject(orgId: string, projectId: string, patch: { name?: unknown; root?: unknown; spec?: unknown; stakeholder?: unknown }): OrgProject {
   const dir = orgDir(orgId);
   const projects = readProjectsFile(dir);
   const p = projects.find((x) => x.id === projectId);
@@ -728,6 +812,16 @@ export function patchProject(orgId: string, projectId: string, patch: { name?: u
     const frozen = (patch.spec as { frozen?: unknown } | null)?.frozen;
     if (typeof frozen !== "boolean") throw new OrgError("spec must be { frozen: boolean }");
     p.spec = { frozen };
+  }
+  if (patch.stakeholder !== undefined) {
+    const to = patch.stakeholder;
+    if (to !== null) {
+      const person = typeof to === "string" ? readRosterFile(dir).people.find((x) => x.id === to) : undefined;
+      if (!person || person.status !== "active") throw new OrgError("Only an active person on the roster can be a project's main stakeholder.");
+    }
+    noteStakeholder(p, (to as string | null) ?? null, "operator");
+    // The operator has answered: whatever it says now, the "pick one" item is done.
+    delete p.stakeholderCleared;
   }
   writeJson(projectsFile(dir), { version: 1, projects });
   return p;

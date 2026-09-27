@@ -187,6 +187,8 @@ export interface ReconcileEvent {
   projectId: string;
   /** DecisionRow ids, or Conflict ids for conflict/resolved. */
   ids: string[];
+  /** promoted: who asked (the operator by id or in bulk, or the project overseer). */
+  by?: "operator-explicit" | "bulk" | "overseer";
 }
 
 /** Settings → Decisions "Reconcile decisions" when the settings file doesn't say. */

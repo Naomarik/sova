@@ -21,14 +21,15 @@ import {
 import type { SessionSummary, TokenUsage } from "../shared/protocol";
 import { onBatonEvent } from "./baton-events";
 import { allBatons, batonById, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
-import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, registerSpecialLoadout } from "./chat-manager";
+import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, registerSpecialLoadout, setOpeningChoice } from "./chat-manager";
 import { getSessionInsight } from "./insights";
+import { listModels } from "./models";
 import { workingSubagents } from "./live";
 import { mergeMode } from "./mode-state";
 import { baseCodingMode, codingModeChoice, describeCodingMode, type ModeRequest } from "./project-coding-mode";
 import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, WorktreeRefusal } from "./project-worktrees";
 import { piUsageTally } from "./transcript-usage";
-import { decidePerson, onOrgAttached, orgDir, orgOfSessionPath, overseerPausedSince, resumeOverseer, OrgError, participantLine, readIndex, readOrg, readProjects, readRoster, operatorName } from "./orgs";
+import { decidePerson, onOrgAttached, orgDir, orgOfSessionPath, overseerPausedSince, resumeOverseer, OrgError, participantLine, readIndex, readOrg, readProjects, readRoster, operatorName, stakeholderLine } from "./orgs";
 import { appRequest, pathOfId, promptSession, toolCatalogue } from "./overseer";
 import { RootConfinement } from "./overseer-deny";
 import { overseerFileTools } from "./overseer-file-tools";
@@ -51,6 +52,7 @@ import { markOwned } from "./write-guard";
 import {
   dayKey,
   effectiveAutonomy,
+  fitThinking,
   isPoId,
   noteStarted,
   patchPoSettings,
@@ -382,7 +384,9 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
 export async function patchProjectOverseer(orgId: string, projectId: string, body: unknown): Promise<ProjectOverseerInfo> {
   projectOf(orgId, projectId);
   const p = projectOverseerPaths(orgId, projectId);
-  const s = patchPoSettings(p, body);
+  // A thinking level the model doesn't offer: refused when the patch names it, else brought to pi's level and saved.
+  const models = await listModels().catch(() => []);
+  const s = patchPoSettings(p, body, (next, patch) => fitThinking(next, patch, models, loadDefaults().model ?? null));
   // Setting the level on this host (any level, the same one too) ends the pause an attach put on it.
   if ((body as { autonomy?: unknown }).autonomy !== undefined) resumeOverseer(orgId, projectId);
   const st = readPoState(p);
@@ -421,7 +425,7 @@ export function renderProjectOverseerPrompt(orgId: string, projectId: string, to
     CAPS: `per operator message ${c.gatherPerTurn} gathering sessions, ${c.promotePerTurn} promotions, ${c.createPerTurn} coding sessions, ${c.promptsPerTurn} prompts to them; at once ${c.gatheringsOpen} open gatherings, ${c.codingRunning} coding sessions running; ${settings.tokenBudget} coding tokens in total`,
     ROOT: project.root,
     CODING_MODE: `${describeCodingMode(baseCodingMode(settings.codingMode, project.root))}${settings.codingMode ? " (the operator's setting)" : " (Automatic)"}`,
-    ROSTER: active.length ? active.map(participantLine).join("\n") : "(nobody yet: ask the operator to add people)",
+    ROSTER: active.length ? [...active.map(participantLine), stakeholderLine(project, roster) ?? ""].filter(Boolean).join("\n") : "(nobody yet: ask the operator to add people)",
     IDEAS: r.redact(promptToc(readManifest(p.ideas), readPoState(p)?.current ?? "")),
     TODOS: r.redact(promptOpenTodos(readTodos(p.todos))),
     NOTES: notes ? r.redact(notes.slice(0, 4000)) : "(none yet)",
@@ -452,7 +456,8 @@ function toolHost(rt: Rt): PoToolHost {
       return hit ? readView(hit.row, hit.dir) : null;
     },
     decisions: async () => listDecisions(orgId, projectId),
-    reconcile: () => reconcileProject(orgId, projectId, { owner: { overseerOf: projectId } }),
+    // Its settle sessions get the model people talk to: its gathering choice, as its gathering sessions do.
+    reconcile: async () => reconcileProject(orgId, projectId, { owner: { overseerOf: projectId }, ...(await gatheringChoice(orgId, projectId, {})) }),
     // Never an out-of-area decision (the author does not own the area): refused here, in any turn; only the operator promotes one, explicitly.
     promote: (ids) => promoteDecisions(orgId, projectId, ids, { by: "overseer" }),
     async startGathering(input) {
@@ -611,8 +616,16 @@ async function startCodingSession(
   const title = input.title?.trim() ? cleanSessionTitle(input.title) : null;
   if (title) setSessionTitle(json.id, title);
   const choice = codingChoice(input, settings, await overseerRunning(orgId, projectId));
-  if (choice.model) await (await acquireChat(json.path)).setModelRef(choice.model);
-  if (choice.thinking) (await acquireChat(json.path)).setThinking(choice.thinking);
+  // Opened on its model and thinking from the start (its file never records the default first);
+  // set again only when the open didn't take them (a model without auth, an unknown level).
+  setOpeningChoice(json.path, choice);
+  const chat = await acquireChat(json.path);
+  const cur = chat.session.model ? `${chat.session.model.provider}/${chat.session.model.id}` : null;
+  // (The open already clamped the thinking to the model's levels, as a later setThinking would.)
+  if (choice.model && choice.model !== cur) {
+    await chat.setModelRef(choice.model);
+    if (choice.thinking) chat.setThinking(choice.thinking);
+  }
   const made: StartedCoding = {
     sessionId: json.id,
     path: json.path,
@@ -890,6 +903,8 @@ export async function codeItem(orgId: string, projectId: string, body: ItemCodeI
 
 export const WATCH_TICK_MS = 20_000;
 export const WATCH_MIN_GAP_MS = 10 * 60_000;
+/** An event that should be seen soon starts a look this long after it (bypassing the 10-minute gap). */
+export const WATCH_SOON_MS = 60_000;
 export const WATCH_PREFIX = "[project watch]";
 
 /** Whether to start an unattended look now. Pure, for the tests. */
@@ -903,13 +918,16 @@ export function watchDecision(input: {
   today: number;
   perDay: number;
   force?: boolean;
+  /** When an event asked for a look soon (ms; 0 = none): due from then on, whatever the gap. */
+  soonAt?: number;
 }): { run: boolean; why?: string } {
   if (!input.exists) return { run: false, why: "no conversation yet" };
   if (!input.idle) return { run: false, why: "busy" };
   if (!input.force) {
     if (!input.watch) return { run: false, why: "watching is off" };
     if (!input.pending.length) return { run: false, why: "nothing new" };
-    if (input.now - input.lastRunAt < WATCH_MIN_GAP_MS) return { run: false, why: "too soon" };
+    const soon = !!input.soonAt && input.now >= input.soonAt;
+    if (!soon && input.now - input.lastRunAt < WATCH_MIN_GAP_MS) return { run: false, why: "too soon" };
   }
   if (input.today >= input.perDay) return { run: false, why: `the daily limit of ${input.perDay} unattended runs is reached` };
   return { run: true };
@@ -934,7 +952,7 @@ export function watchText(reasons: string[], autonomy: string, openTodos = 0): s
  * its own sova_reconcile/sova_promote acts, not news to it. (The gatherings it starts emit
  * hand-off/offer events, which are never reasons.)
  */
-export function noteReason(orgId: string, projectId: string, reason: string, own = false): void {
+export function noteReason(orgId: string, projectId: string, reason: string, own = false, soon = false, now = Date.now()): void {
   try {
     const p = projectOverseerPaths(orgId, projectId);
     if (!readPoState(p)) return;
@@ -942,6 +960,8 @@ export function noteReason(orgId: string, projectId: string, reason: string, own
     if (own && rt?.session?.isStreaming) return;
     const m = readMemo(p);
     if (!m.pending.includes(reason)) m.pending.push(reason);
+    // The first such event since the last look sets when; later ones don't push it back.
+    if (soon && !m.soonAt) m.soonAt = new Date(now + WATCH_SOON_MS).toISOString();
     writeMemo(p, m);
   } catch {
     // an org detached meanwhile: nothing to note
@@ -968,6 +988,7 @@ export async function lookNow(orgId: string, projectId: string, force = false): 
     today: memo.perDay[today] ?? 0,
     perDay: settings.caps.unattendedPerDay,
     force,
+    soonAt: memo.soonAt ? Date.parse(memo.soonAt) : 0,
   });
   if (!d.run) {
     // Only a refusal worth showing is recorded (not the ticker's everyday "nothing new").
@@ -992,8 +1013,49 @@ export async function lookNow(orgId: string, projectId: string, force = false): 
     return { started: false, why: detail };
   }
   const now = new Date();
-  writeMemo(p, { ...memo, pending: [], lastRunAt: now.toISOString(), lastRun: { at: now.toISOString(), reasons, outcome: "started" }, perDay: { ...memo.perDay, [today]: (memo.perDay[today] ?? 0) + 1 } });
+  writeMemo(p, { ...memo, pending: [], soonAt: null, lastRunAt: now.toISOString(), lastRun: { at: now.toISOString(), reasons, outcome: "started" }, perDay: { ...memo.perDay, [today]: (memo.perDay[today] ?? 0) + 1 } });
   return { started: true };
+}
+
+/**
+ * A hosted session finished a turn: when it is one of the coding sessions a project overseer
+ * started (kind "coding", never the operator's "operator-coding"), a reason to look soon.
+ */
+export function noteCodingSettled(path: string, now = Date.now()): void {
+  const want = canonicalPath(path);
+  for (const o of readIndex().orgs) {
+    let projects;
+    try {
+      projects = readProjects(o.id);
+    } catch {
+      continue;
+    }
+    for (const pr of projects) {
+      try {
+        const p = projectOverseerPaths(o.id, pr.id);
+        const row = readStarted(p).find((r) => r.kind === "coding" && r.path && canonicalPath(r.path) === want);
+        if (!row) continue;
+        const title = readSessionTitles()[row.sessionId] || row.sessionId;
+        const failed = lastTurnFailed(path);
+        noteReason(o.id, pr.id, `The coding session "${title}" ${failed ? "stopped with an error" : "finished its turn"}.`, false, true, now);
+        return;
+      } catch {
+        // not a store id shape
+      }
+    }
+  }
+}
+
+/** Whether the held chat's last assistant message ended in an error or an abort. */
+function lastTurnFailed(path: string): boolean {
+  const chat = heldChat(path);
+  if (!chat) return false;
+  const branch = chat.session.sessionManager.getBranch();
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const e = branch[i] as { type: string; message?: { role?: string; stopReason?: string } };
+    if (e.type === "message" && e.message?.role === "assistant") return e.message.stopReason === "error" || e.message.stopReason === "aborted";
+  }
+  return false;
 }
 
 async function tick(): Promise<void> {
@@ -1026,8 +1088,9 @@ export function startProjectOverseerLoop(): void {
   if (started) return;
   started = true;
   onBatonEvent((e) => {
-    if (e.type === "decision") noteReason(e.orgId, e.projectId, `A decision was recorded in "${batonTitle(e.sessionId)}".`);
-    else if (e.type === "done") noteReason(e.orgId, e.projectId, `The gathering session "${batonTitle(e.sessionId)}" reached its goal.`);
+    // A decision recorded mid-session is not a reason on its own: the session's end is, and it
+    // comes with its decisions (a settle session's answer reaches the reconciler, whose events are).
+    if (e.type === "done") noteReason(e.orgId, e.projectId, `The gathering session "${batonTitle(e.sessionId)}" reached its goal.`, false, true);
     else if (e.type === "closed") noteReason(e.orgId, e.projectId, `The gathering session "${batonTitle(e.sessionId)}" was closed.`);
     else if (e.type === "proposal") noteReason(e.orgId, e.projectId, `Someone was referred in "${batonTitle(e.sessionId)}" (a proposed roster person).`);
   });
@@ -1035,9 +1098,13 @@ export function startProjectOverseerLoop(): void {
     const n = e.ids.length;
     if (e.type === "conflict") noteReason(e.orgId, e.projectId, `${n} new conflict${n === 1 ? "" : "s"} between decisions.`, true);
     else if (e.type === "resolved") noteReason(e.orgId, e.projectId, `${n} conflict${n === 1 ? " was" : "s were"} resolved.`, true);
+    // The operator's promotion is news (a look soon: what it promoted may be ready to build); its own is not.
+    else if (e.type === "promoted" && e.by !== "overseer" && n) noteReason(e.orgId, e.projectId, `The operator promoted ${n} decision${n === 1 ? "" : "s"} into the spec.`, false, true);
     else if (e.type === "promoted") noteReason(e.orgId, e.projectId, `${n} decision${n === 1 ? " was" : "s were"} promoted into the spec.`, true);
     else if (e.type === "drafted") noteReason(e.orgId, e.projectId, `${n} decision${n === 1 ? " is" : "s are"} drafted and promotable.`, true);
   });
+  // A coding session it started finished a turn (the operator's own never wake it).
+  onAgentSettled((path) => noteCodingSettled(path));
   let ticking = false;
   const timer = setInterval(() => {
     if (ticking) return;

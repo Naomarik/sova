@@ -35,7 +35,7 @@ once), **lease** (an offer's lock on its first taker).
   public title, with ` · <holder>` after the title. Open, a strip above its transcript shows org, project,
   holder, state and message count — and the public title, only when the session head above shows a
   different one (a renamed session): otherwise it would say the title twice — and Get Link / Turn Off Link / Take Back / Close
-  Session; the strip never shows a profile. Each strip action re-reads the session list at once,
+  Session, and, while the org has an owner, Hide From / Show To the owner (§app.owner-page/conversations); the strip never shows a profile. Each strip action re-reads the session list at once,
   so the ` · <holder>` suffix moves without waiting for the list's next poll.
 - **Loadout.** No pi-config extension, skill, prompt template or context file is loaded; the only
   extension is Sova's inline baton extension. The SDK tool list is exactly `hand_to`, `goal_done`,
@@ -298,7 +298,9 @@ once), **lease** (an offer's lock on its first taker).
   listener otherwise). It serves only: `GET /h/<token>` (the share page), `GET /h/assets/*` (the
   share page's own build, never the operator app's), `GET /api/h/<token>` (the filtered view and
   state), `POST /api/h/<token>/message {text}` and the WebSocket `/ws/h?token=`, the page's
-  visit id riding along as `?v=` on the view and the socket (§app.baton/visits). Every other path
+  visit id riding along as `?v=` on the view and the socket (§app.baton/visits); and, for the owner
+  page, only `GET /i/<token>`, `GET /api/i/<token>` and its `/p/<q_handle>` and `/c/<k_handle>`
+  (§app.owner-page/page). Every other path
   answers 404 before any routing; the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
   `/ext/*` are unreachable on it. The main listener never serves the share page.
 - Limits: request bodies over 16 KB (or without a length) are refused (413); a request's headers
@@ -358,6 +360,8 @@ once), **lease** (an offer's lock on its first taker).
     person left): someone tried a turned-off link; at most one per link each 10 minutes;
   - `{kind:"capped", id, at, personId, via, sessionId, n, offerId?}` — the link reached its cap
     (below).
+  An owner link's lines (§app.owner-page/link) carry `via:"owner"` and no `sessionId`, `n` or
+  `offerId`; they follow every rule here.
   An unknown token (404) records nothing: there is no person to record it against.
 - **Never recorded**: the token, its hash or any part of either, an IP address or anything
   derived from one, the raw user agent, cookies or headers, and anything the person wrote. The

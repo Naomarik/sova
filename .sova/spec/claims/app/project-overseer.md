@@ -102,7 +102,8 @@ tool cards as they happen.
   operator to promote explicitly by id on the project page. Reconcile is on by default, so
   `sova_reconcile` runs unless the operator turned it off in Settings → Decisions.
 - L0: `sova_note`, `sova_confirm`, `sova_idea`. L1: `sova_start_gathering` (one active roster
-  person, or the operator), `sova_offer` (two or more), `sova_reconcile`. L2: `sova_promote`,
+  person, or the operator), `sova_offer` (two or more), `sova_reconcile`,
+  `sova_owner_update` (an update on the owner page, §app.owner-page/updates). L2: `sova_promote`,
   `sova_roster` approve/decline (history records the overseer as the writer). L3:
   `sova_create_session` (the root or a folder inside it, with a first prompt, an optional `mode` and
   `minor_modes`; in its own worktree, §app.project-overseer/coding-worktrees), `sova_send` (its

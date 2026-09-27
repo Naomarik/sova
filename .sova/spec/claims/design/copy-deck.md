@@ -702,3 +702,93 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Thinking refused (project page, `.field-error` under the select) | "{model} offers thinking {levels}." — levels comma-separated, as the model lists them |
 | Thinking moved after a model change (toast, after the model's own) | "Thinking is now {level}: {model} doesn't offer {old}." |
 | Activity chip for a partial act | `Partly` (warn: dot and word) beside `Done` · `Refused` · `Failed` · line: "{tool words}: partly ({n} refused: {id} ({reason}); …)" |
+
+## §design.copy-deck/owner-page — Owner page (§app/owner-page)
+
+The owner is not technical: short sentences, everyday words, full words for time. `{first}` is a
+person's first name, `{op}` the operator's first name, `{org}` the org's name, `{project}` a
+project's name. Times on the owner page: "just now", "{n} minutes ago", "{n} hours ago",
+"yesterday", "{n} days ago", then "Mar 4" (and "Mar 4, 2025" in another year); singular "1 minute
+ago", "1 hour ago"; the exact date and time as the element's title. Every count has its singular.
+
+**Owner page (what the owner reads)**
+
+| Where | Copy |
+|---|---|
+| Browser tab title | `{org}` |
+| Greeting | "Hi {first}. Here's how your projects are going." |
+| Read-only line | "You can read everything here. Nothing you do on this page changes anything." |
+| Freshness | "Updated just now" · "Updated {time}" |
+| Waiting on you, heading | "Waiting on you" |
+| …line | "1 question is waiting for your answer." / "{n} questions are waiting for your answer." |
+| …row | "{conversation title}" · "{project} · asked {time}" |
+| …hint | "Answer it using the link {op} sent you for it." |
+| Projects, heading | "Your projects" |
+| Project card, counts | "Talked to {n} people · {n} decisions · {n} pieces of work finished" — singulars "1 person", "1 decision", "1 piece of work" |
+| …no updates yet | "No updates yet." |
+| Projects, none | "There are no projects on this page yet. When {op} starts one, it will show up here." |
+| Project status chips | `Waiting on you` (warn) · `Asking questions` (info) · `Building` (info) · `Quiet` (neutral) |
+| Back links | "← All projects" · "← {project}" |
+| Updates, heading | "Updates" |
+| …none | "{n} conversations so far. No updates yet." |
+| …show all | `Show All {n} Updates` |
+| Who we've talked to, heading | "Who we've talked to" |
+| …row | "{name}" · "{n} conversations · last wrote {time}" / "{n} conversations · hasn't replied yet" |
+| …none | "Nobody has been asked anything yet." |
+| What's been decided, heading | "What's been decided" |
+| …row meta | "{name}, {date}" · disclosure "In {first}'s words" |
+| …status chips | `Agreed` (success) · `Noted` (neutral) · `Needs a choice` (warn) |
+| …none | "{n} conversations so far. Nothing has been decided yet." |
+| …show all | `Show All {n} Decisions` |
+| Different answers | "{A} and {B} gave different answers about {topic}. We've asked {C} to choose." · to the owner: "…We've asked you to choose." · to the operator: "…{op} will choose." |
+| What's been built, heading | "What's been built" |
+| …counts | "{n} pieces of work finished · {n} in progress" |
+| …none | "Nothing has been built yet." |
+| Conversations, heading | "Conversations" |
+| …row | "{conversation title}" · "Started {time} · {n} messages" |
+| …status chips | `Waiting on you` (warn) · `Waiting on {first}` (info) · `With {op}` (info) · `Asked {n} people` (info) · `Finished` (success) · `Ended` (neutral) |
+| …none | "No conversations yet." |
+| …show all | `Show All {n} Conversations` |
+| Conversation, line | "You can read this conversation. You can't write here." |
+| …when it's the owner's turn | "It's your turn in this conversation. Answer it using the link {op} sent you." |
+| Footer | "Only people with this link can open this page. If someone else gets it, tell {op} and they'll turn it off." |
+| Link expired (410) | "This link has expired." / "These links last 90 days. Ask the person who sent it for a new one." |
+| Link no longer active (410) | "This link is no longer active." / "Ask the person who sent it for a new one." |
+| Unknown link (404) | "This link doesn't open anything." / "Check that you copied all of it." |
+| A project or conversation not on the page (404) | "This isn't on your page." / "Go back to all your projects to see what is." · "← All projects" |
+| Couldn't load | "We couldn't load this page. Your link still works. Try again in a minute." · `Try Again` |
+| Too many requests | "Too many requests from this network. Wait a minute, then reload." |
+
+Never on the owner page, in any form: baton, hand-off, holder, offer, lease, overseer, agent,
+model, AI, promote, promoted, draft, drafted, reconcile, conflict, stakeholder, worktree, branch,
+merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
+
+**Operator side**
+
+| Where | Copy |
+|---|---|
+| People tab, card title | "Owner" |
+| …hint | "The owner follows every project on one page: the overseer's updates, who was asked, what was decided, and each conversation. They can read it, not change it." |
+| …select | label `Owner` · options `None`, then active people by name |
+| …saved (toast) | "{name} is the owner now." · None: "This organization has no owner now." |
+| …refused (`.field-error`) | "Only an active person on the roster can be the owner." |
+| …latest change | "Set by you {relative time}." |
+| …cleared (warn banner) | "{name} left the organization, so it has no owner now. Their owner link stopped working." |
+| …link line | "Owner link made {relative time} · expires {relative time} · opened {n} times" · none: "No owner link yet." · newest turned off or replaced: "The owner link is turned off." · under 14 days (warn): "Owner link expires {relative time}." · expired: "The owner link expired {relative time}." |
+| …buttons | `Get Owner Link` (secondary) · `Preview Owner Page` (secondary) · `Turn Off Owner Link` (destructive, outlined, apart) |
+| Get Owner Link, while one is live (confirm) | "{first}'s current link stops working at once. The new one works from now." · `Get Owner Link` · `Cancel` |
+| Get Owner Link, no owner | "Pick an owner first." |
+| Turn Off, confirm | "{first}'s owner page stops opening at once. The conversations and updates stay." · `Turn Off Owner Link` · `Cancel` |
+| Link shown once | the baton strip's Copy Link pattern; `linkWarning` when no share address is known |
+| Preview modal title | "{org}, as {first} sees it" |
+| …line | "Read only. Nothing you do here reaches {first}, and no visit is recorded." |
+| Project page card title | "Owner Page" |
+| …switch | "Show this project on {first}'s page" |
+| …updates log heading | "Updates for {first}" |
+| …log row meta | "Posted by the overseer {relative time}" · "Posted when you asked {relative time}" · taken down: "Taken down {relative time}" |
+| …none | "The overseer hasn't posted an update yet. It posts when a conversation finishes, something is agreed, or a piece of work is finished, at most once a day." |
+| …Take Down | `Take Down` (destructive, outlined) · confirm: "{first} stops seeing this update. It stays in this list and in the workspace history." · `Take Down` · `Cancel` |
+| …switch saved (toast) | "{project} shows on {first}'s page." · "{project} is off {first}'s page." |
+| Baton strip | `Hide From {first}` / `Show To {first}` · while hidden: "Hidden from {first}'s owner page." · toasts "Hidden from {first}'s owner page." / "Shown on {first}'s owner page." |
+| Person page | chip `Owner` beside the status · link row title "The owner page", state `Can read` / `Turned off` / `Expired` · visit row "Opened the owner page · {device} · {relative time}" |
+| Overseer tool refusals (the model reads them; the activity list shows them) | "Nothing new since the last update: post one when a conversation finishes, a decision is agreed, or a coding session finishes or is merged." · "An update was posted {relative time}: at most one a day." · "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words." · "This update repeats private text (a conversation's goal or briefing, the operator's instructions, or a person's profile or contact). Updates are for the client: write it again in your own words." · "An update is at most 2,000 characters." · "This organization has no owner, so there is no page to post to." |

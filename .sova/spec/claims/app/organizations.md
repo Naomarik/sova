@@ -76,7 +76,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   - **Sessions**: the hand-off sessions list, and the start form behind a `Start a Hand-off
     Session` button (closed by default; `Cancel` closes it; a started session closes it). With no
     project yet it says to add one on the Projects tab, linked.
-  - **People**: the roster, proposed people included, then Recent Profile Changes under it. A
+  - **People**: the Owner card (§app.owner-page/controls), then the roster, proposed people
+    included, then Recent Profile Changes under it. A
     person's head is their name and status chip, the role · language line under them, and the
     actions (Approve and Decline for a proposed person, Start a Session for an active one, Edit),
     each named with the person ("Approve Sam Okafor"); the actions wrap under the name as one
@@ -152,7 +153,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   org and project pages.
 - **Head.** Their name is the page's one title (the page head's `h1`, as on the project page),
   with their status chip beside it (`Active`, `Proposed`, `Left`: dot and word; the name alone is
-  the heading's accessible name), and the meta line `Organizations · {org name} · People`, each a
+  the heading's accessible name) and, for the org's owner, an `Owner` chip (§app.owner-page/controls), and the meta line `Organizations · {org name} · People`, each a
   link (the list, the org page, its People tab). The first card holds the role · language line. Then the same actions as
   their People card, each named with the person: Approve and Decline (proposed), Start a Session
   (active; it opens the org's start form aimed at them), Edit (the card's form, in place).
@@ -215,7 +216,12 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     Their sessions, messages and visits stay." With no link: "No links for {name} on this host."
     and, when their visits name links minted elsewhere, "Links sent from another host don't open
     here."
-  - **Visits**, newest first, one row per visit (§app.baton/visits): `Opened {session title}`,
+  - **Owner links** (for the org's owner, §app.owner-page/link), newest first, under their own
+    heading after their links: `The owner page`, its state (`Can read`, `Turned off`, `Expired`),
+    `sent {relative time}`, `expires {relative time}` while it can open, `{n} visits`, and on the
+    live one `Turn Off Owner Link`. `Turn Off All` never touches them.
+  - **Visits**, newest first, one row per visit (§app.baton/visits): `Opened {session title}`
+    (`Opened the owner page` for a visit through an owner link),
     the device family, `for about {duration}` once it lasted a minute or more, and the relative
     time, the exact stamp in mono as its title (`2026-09-27 14:06`); a visit whose newest record
     is from a link minted on another host adds `link from another host`. Rows never counted as
@@ -259,14 +265,16 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
 ## §app.organizations/workspace-repo — What the workspace repo holds, and what it never holds
 
 - It is the org's **whole portable state** (§app.organizations/portability). Files:
-  - `org.json` (id, name, slug), `roster.json`, `roster-history.jsonl`, `projects.json`;
+  - `org.json` (id, name, slug, and the org's owner with its history, §app.owner-page/owner), `roster.json`, `roster-history.jsonl`, `projects.json`;
   - `about.md` and `org-history.jsonl`: the org's About text and its history (§app.organizations/about);
   - `baton.json`, the baton registry: each session's holder, participants, hand-offs, offers and
-    their leases, message budget, model and wrap-up state — never a link;
+    their leases, message budget, model and wrap-up state, and whether each is hidden from the
+    org's owner (§app.owner-page/conversations) — never a link;
   - `sessions/*.jsonl`: every baton session transcript and every project overseer conversation
     (current and history), written there directly by pi (`SessionManager.create(cwd, sessionDir)`);
   - per project, `projects/<projectId>/`: `decisions.json` (the decision index, its last reconcile
-    run and last promotion), `conflicts.json`, and the overseer's `overseer/` — `overseer.json`
+    run and last promotion), `conflicts.json`, `updates.jsonl` (the updates the overseer posted to
+    the owner page, and the ones taken down, §app.owner-page/updates), and the overseer's `overseer/` — `overseer.json`
     (autonomy, models, the coding sessions' mode, caps, token budget, watch, extra instructions), `state.json` (current
     conversation and history), `notes.md`, `actions.jsonl`, `ideas/`, `todos.json` and
     `started.json` (the sessions it started, with what each of its coding sessions spent when last
@@ -281,8 +289,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   org's `sessions/` is accepted wherever a session path is (nothing nested, nothing else in the
   repo), and the session list reads those dirs beside the sessions dir. The sidebar lists them only
   in its Organizations region (§app.organizations/org-sessions).
-- **Never in the repo**: link tokens and their hashes (host-local, `<stateRoot>/baton-links.json`,
-  mode 0600; links are minted again after a restore), credentials and auth, and Sova's own
+- **Never in the repo**: link tokens and their hashes (host-local, `<stateRoot>/baton-links.json`
+  and, for owner links, `<stateRoot>/person-links.json`, both mode 0600; links are minted again after a restore), credentials and auth, and Sova's own
   settings (Settings → Decisions, new-session defaults, the model policy).
 - **Host-local, by design** — a restore starts these fresh or derives them again: this host's
   attach index `<stateRoot>/orgs.json` (where each repo lives here, which overseers an attach
@@ -324,8 +332,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   project overseer with its conversations, settings, notes, actions, ideas, to-dos and the
   sessions it started. Nothing is read from the old host.
 - **Links must be re-issued.** No link is in the repo, so every old link answers 404 on the new
-  host; the operator sends new ones (Get Link, or Needs you's "Send <name> their link"). The attach
-  form says so. A person's page lists no links until new ones are sent; their old visits still
+  host; the operator sends new ones (Get Link, or Needs you's "Send <name> their link"), the owner
+  link included (the owner itself travels, in `org.json`). The attach form says so. A person's page lists no links until new ones are sent; their old visits still
   show, marked `link from another host`, and new visits append to the same log.
 - **Project overseers start paused at L0.** The attach records every project of the org as paused
   in this host's index. While paused, the level in force is L0 ("Paused at L0: this organization
@@ -419,7 +427,9 @@ Organizations region's own Needs you, never the global one.
   there shows "(left the organization)", not the limit question, and the strip still offers
   Extend (§app.baton/goal-and-loadout); an open offer whose pool includes them is withdrawn
   to the operator ("(<name> left the organization; offer withdrawn)"). An offer someone else holds
-  carries on; if its lease lapses they can't claim it, and no new link is minted for them.
+  carries on; if its lease lapses they can't claim it, and no new link is minted for them. When they
+  are the org's owner, the owner is cleared and their owner link stops working
+  (§app.owner-page/owner).
 
 ## §app.organizations/history-and-revert — Per-field history
 
@@ -447,7 +457,8 @@ Organizations region's own Needs you, never the global one.
   `overseer`. No other status write is allowed to it, and none to the wrap-up.
 - A project's main stakeholder (§app.organizations/stakeholder) is the operator's alone: it is
   written only through the project PATCH, which no autonomous writer has, and cleared by Sova only
-  when that person leaves.
+  when that person leaves. The org's owner (§app.owner-page/owner) is the same: written only through
+  `PUT /api/orgs/:id/owner`, cleared by Sova only when that person leaves.
 
 ## §app.organizations/privacy — Profiles stay private
 
@@ -471,7 +482,7 @@ Organizations region's own Needs you, never the global one.
   whole word, from what the model wrote (a goal may carry it), unless the title or someone in the
   conversation used it.
 - Profiles appear only on the org's own pages (the org page and a person's page), never in a baton
-  session pane.
+  session pane. The owner page shows people by name only (§app.owner-page/never).
 
 ## §app.organizations/referrals — People not on the roster
 
@@ -558,6 +569,8 @@ Organizations region's own Needs you, never the global one.
   overseer reads its root (§app.project-overseer/identity).
 - A project may name its **main stakeholder**, `stakeholder` (a person id, or absent or `null`:
   none), §app.organizations/stakeholder.
+- A project may be switched off the org owner's page, `ownerHidden: true` (absent: shown),
+  §app.owner-page/conversations.
 - This is the minimal registry baton sessions need; a host-wide Projects registry may absorb it
   later, keyed by the same ids and `orgId`.
 
@@ -644,11 +657,12 @@ Organizations region's own Needs you, never the global one.
 - **Who never sees it.** Hand-off sessions of every kind (gathering, offer, Send to person…, a
   conflict's settle session: their model's system prompt and messages), their wrap-ups, the
   reconciler's decide calls, coding sessions (the overseer's and the operator's), the global
-  Overseer, share pages and every `/h/` and share-listener response, the session list and the
+  Overseer, share pages, the owner page and every `/h/`, `/i/` and share-listener response, the session list and the
   attention digest (`SessionSummary.org`, `AttentionItem.org`, so nothing crosses the mesh) and
   workspace commit messages (which name `about.md` by path only). The guarantee is structural:
-  `about.md` has one reader in the server, called only by the org detail (the operator's own page)
-  and the project overseer's prompt. A test fails when any other server file reads it, and a marker
+  `about.md` has one reader in the server, called only by the org detail (the operator's own page),
+  the project overseer's prompt, and the overseer's owner-update check, which only answers whether
+  a text repeats it (§app.owner-page/updates). A test fails when any other server file reads it, and a marker
   test runs each surface above and finds the text only in the project overseer's prompt. Share
   pages carry no extra redaction for it.
 - **It travels with the repo.** `about.md` and `org-history.jsonl` are ordinary workspace files: a

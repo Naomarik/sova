@@ -1,5 +1,5 @@
 import { batch, createEffect, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
-import type { SessionSummary, TranscriptItem, WatchServerMessage } from "../../shared/protocol";
+import type { SessionSummary, TranscriptItem, WatchContext, WatchServerMessage } from "../../shared/protocol";
 import { createFork, fetchTranscriptWithContext, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
@@ -90,15 +90,24 @@ export function WatchView(props: {
   const [error, setError] = createSignal<string | null>(null);
   const [lastUpdate, setLastUpdate] = createSignal<string | null>(null);
 
-  // Context fill: the model's window comes once from the transcript response; the fill itself
-  // follows the watched items (last assistant usage on the branch; a compaction after it → null).
+  // Context fill: the model's window comes from the snapshot's own context (pi files name the
+  // reply's model); the fill itself follows the watched items (last assistant usage on the branch;
+  // a compaction after it → null). Only a snapshot that names no window (no reply yet, compacted,
+  // an unknown model, a server that predates it) asks the transcript response for one, once: that
+  // download is the whole transcript again.
   const [contextWindow, setContextWindow] = createSignal<number | null | undefined>(undefined);
-  void fetchTranscriptWithContext(props.path)
-    .then((r) => {
-      setContextWindow(r.context?.window ?? null);
-      if (!items()) setSessionContext(props.path, contextStateFor(r.context, r.items));
-    })
-    .catch(() => setContextWindow(null)); // the meter just stays without a window
+  let askedWindow = false;
+  const askWindow = () => {
+    if (askedWindow) return;
+    askedWindow = true;
+    void fetchTranscriptWithContext(props.path)
+      .then((r) => {
+        if (!contextWindow()) setContextWindow(r.context?.window ?? null);
+        if (!items()) setSessionContext(props.path, contextStateFor(r.context, r.items));
+      })
+      .catch(() => contextWindow() === undefined && setContextWindow(null)); // the meter just stays without a window
+  };
+  const windowOf = (ctx: WatchContext | undefined) => (ctx && ctx !== "compacted" ? ctx.window : null);
   createEffect(() => {
     const list = items();
     const window = contextWindow();
@@ -186,6 +195,9 @@ export function WatchView(props: {
           // May repeat if the file is rewritten: always replace. Newest rows first: older rows
           // may follow as `history` (lib/tail-hello).
           setError(null);
+          const w = windowOf(msg.context);
+          if (w) setContextWindow(w);
+          else askWindow();
           const next = helloItems(items(), msg.items, msg.older);
           batch(() => {
             setItems(next.items);
@@ -215,12 +227,15 @@ export function WatchView(props: {
           });
           break;
         }
-        case "append":
+        case "append": {
+          const w = windowOf(msg.context);
+          if (w && !contextWindow()) setContextWindow(w);
           setItems((prev) => [...(prev ?? []), ...msg.items]);
           setLastUpdate(new Date().toISOString());
           noteAppended(msg.items.length);
           props.onAppend?.();
           break;
+        }
         case "error":
           setError(msg.message);
           break;

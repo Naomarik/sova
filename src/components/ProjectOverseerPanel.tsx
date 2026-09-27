@@ -470,6 +470,9 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
                   <Show when={row.state === "removed"}>
                     <span class="list-meta">Worktree removed</span>
                   </Show>
+                  <Show when={row.state === "missing"}>
+                    <span class="list-meta">Worktree folder missing</span>
+                  </Show>
                 </span>
                 <Show when={offersMerge(row) || offersRemove(row)}>
                   <div class="button-row project-worktree-actions">

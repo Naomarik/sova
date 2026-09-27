@@ -40,6 +40,9 @@ test("gestures: which are offered", () => {
   assert.equal(offersMerge(wt({ state: "removed" })), true);
   assert.equal(offersMerge(wt({ state: "removed", merged: true })), false);
   assert.equal(offersMerge(wt({ state: "root", branch: null })), false);
+  // Its folder deleted by hand: the branch can still be merged.
+  assert.equal(offersMerge(wt({ state: "missing" })), true);
+  assert.equal(offersMerge(wt({ state: "missing", merged: true })), false);
   assert.equal(offersRemove(wt()), true);
   assert.equal(offersRemove(wt({ state: "merged", merged: true })), true);
   assert.equal(offersRemove(wt({ state: "removed" })), false);

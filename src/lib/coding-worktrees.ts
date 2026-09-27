@@ -42,8 +42,8 @@ function busyGate(w: Row): Gate {
   return null;
 }
 
-/** Merge Branch is offered on a branch not yet in its target: open, or removed before a merge. */
-export const offersMerge = (w: Row): boolean => (w.state === "open" || w.state === "removed") && !w.merged;
+/** Merge Branch is offered on a branch not yet in its target: open, or its folder gone (removed or missing) before a merge. */
+export const offersMerge = (w: Row): boolean => (w.state === "open" || w.state === "removed" || w.state === "missing") && !w.merged;
 /** Remove Worktree is offered while the worktree folder is there. */
 export const offersRemove = (w: Row): boolean => w.state === "open" || w.state === "merged";
 

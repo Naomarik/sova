@@ -1915,7 +1915,8 @@ export interface WorkerInfo {
       transcript isn't a local file this server can read. Never 0 for unknown. */
   context?: ContextInfo | "compacted";
   /** The worker's context window, from the model it was spawned with (claude-code: 1M for a
-      `[1m]` variant, else 200k; pi: the model's catalog window). Absent when unknown. */
+      `[1m]` variant or a natively 1M model, else 200k; pi: the model's catalog window). Absent
+      when unknown. */
   contextWindow?: number;
 }
 export interface TeamMember {

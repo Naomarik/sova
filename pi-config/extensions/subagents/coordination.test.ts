@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as path from "node:path";
 import {
+	claudeContextWindow,
 	NUDGE_MAX_DELAY_MS,
 	NUDGE_MIN_DELAY_MS,
 	contextPct,
@@ -52,6 +53,11 @@ test("a wrap-up event's detail: percent of the window, else the tokens, else unk
 	assert.equal(contextShare(26_000, 1_000_000), "context 2% of 1M");
 	assert.equal(contextShare(64_000, undefined), "context 64k tokens (window unknown)");
 	assert.equal(contextShare(undefined, 200_000), "context unknown");
+});
+
+test("a claude-code member's window is claude-code's own rule: [1m] or natively 1M, else 200k", () => {
+	for (const id of ["opus[1m]", "opus", "claude-opus-5-5", "claude-fable-5-1", "sonnet"]) assert.equal(claudeContextWindow(id), 1_000_000, id);
+	for (const id of ["haiku", "claude-sonnet-4-6", "claude-opus-4-6", ""]) assert.equal(claudeContextWindow(id), 200_000, id);
 });
 
 test("the context column: tokens over the window, whole percent rounded down; unknowns say so", () => {

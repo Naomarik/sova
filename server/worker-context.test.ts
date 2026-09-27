@@ -10,8 +10,8 @@ import type { WorkerInfo } from "../shared/protocol";
 import { claudeContextOf, summarizeClaudeEntries } from "../pi-config/extensions/claude-code/transcript-adapter.ts";
 import { piContextOf, summarizePiEntries } from "../pi-config/extensions/subagents/adapters/pi.ts";
 import { contextForBranch, messageContextTokens } from "./transcript";
+import { claudeContextWindow } from "../pi-config/extensions/claude-code/context-window.ts";
 import {
-  claudeCodeContextWindow,
   claudeSpawnModel,
   claudeSpawnModels,
   contextTally,
@@ -51,24 +51,24 @@ const ccReply = (id: string, input: number, extra: Record<string, unknown> = {},
 const ccCompact = { type: "system", subtype: "compact_boundary", uuid: "cb" };
 
 describe("the claude-code window rule", () => {
-  test("is the extension's own rule: [1m] is 1M, anything else 200k", () => {
-    // The extension's provider module pulls the CLI bridge and pi-ai, so it can't be imported here;
-    // its contextWindowFor body is run as written instead. A rename or reshape fails this loudly.
-    const src = readFileSync(new URL("../pi-config/extensions/claude-code/provider/index.ts", import.meta.url), "utf8");
-    const m = /export function contextWindowFor\(id: string\): number \{([\s\S]*?)\n\}/.exec(src);
-    assert.ok(m, "contextWindowFor(id: string): number is still in provider/index.ts");
-    const extension = new Function("id", m[1]!) as (id: string) => number;
-    for (const id of ["opus[1m]", "claude-opus-5-5[1m]", "sonnet[1m]", "opus", "claude-opus-5-5", "haiku", "opus[1M]", "[1m]opus", ""]) {
-      assert.equal(claudeCodeContextWindow(id), extension(id), id);
+  test("is the extension's own rule (context-window.ts): [1m] or a natively 1M model is 1M, else 200k", () => {
+    const resolve = () => null;
+    const cc = (model: string) => workerWindow({ backend: "claude-code", model }, resolve);
+    for (const id of ["opus[1m]", "claude-opus-4-6[1m]", "opus", "claude-opus-5-5", "claude-fable-5-1", "sonnet", "claude-sonnet-5"]) {
+      assert.equal(cc(id), 1_000_000, id);
+      assert.equal(cc(id), claudeContextWindow(id), id);
     }
-    assert.equal(claudeCodeContextWindow("claude-opus-5-5[1m]"), 1_000_000);
-    assert.equal(claudeCodeContextWindow("claude-opus-5-5"), 200_000);
+    for (const id of ["haiku", "claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-6", "opus[1M]"]) {
+      assert.equal(cc(id), 200_000, id);
+      assert.equal(cc(id), claudeContextWindow(id), id);
+    }
   });
 
   test("a claude-code worker's window follows its spawn model; a pi worker's asks the resolver", () => {
     const resolve = (ref: string) => (ref === "zai/glm-5.3" ? 128_000 : null);
     assert.equal(workerWindow({ backend: "claude-code", model: "claude-opus-5-5[1m]" }, resolve), 1_000_000);
-    assert.equal(workerWindow({ backend: "claude-code", model: "claude-opus-5-5" }, resolve, "claude-opus-5-5[1m]"), 1_000_000, "spawn model wins over the row's bare id");
+    assert.equal(workerWindow({ backend: "claude-code", model: "claude-opus-4-6" }, resolve), 200_000, "a model not natively 1M…");
+    assert.equal(workerWindow({ backend: "claude-code", model: "claude-opus-4-6" }, resolve, "claude-opus-4-6[1m]"), 1_000_000, "…so the spawn model wins over the row's bare id");
     assert.equal(workerWindow({ backend: "claude-code" }, resolve), null, "no model: unknown, not 200k");
     assert.equal(workerWindow({ backend: "pi", model: "zai/glm-5.3" }, resolve), 128_000);
     assert.equal(workerWindow({ backend: "pi", model: "who/knows" }, resolve), null);
@@ -214,10 +214,10 @@ describe("withWorkerContext", () => {
     const base = { name: "x", status: "running" as const, working: true };
     const [p, c, none, kept] = withWorkerContext([
       { ...base, id: "pi", backend: "pi", model: "zai/glm-5.1" },
-      { ...base, id: "cc", backend: "claude-code", model: "claude-opus-5-5" },
+      { ...base, id: "cc", backend: "claude-code", model: "claude-opus-4-6" },
       { ...base, id: "none", backend: "pi", model: "zai/glm-5.3" },
       { ...base, id: "kept", backend: "pi", context: "compacted" as const },
-    ], reader, resolve, (id) => (id === "cc" ? "claude-opus-5-5[1m]" : undefined));
+    ], reader, resolve, (id) => (id === "cc" ? "claude-opus-4-6[1m]" : undefined));
     assert.equal(p!.contextWindow, 64_000, "its spawn model's window");
     assert.deepEqual(p!.context, { tokens: 1010 + 10, window: 128_000 }, "the reply ran on glm-5.3");
     assert.equal(c!.contextWindow, 1_000_000, "the [1m] spawn model, not the row's bare id");

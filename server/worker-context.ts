@@ -13,6 +13,7 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { isAbsolute, sep } from "node:path";
 import type { ContextInfo, WatchContext, WorkerInfo } from "../shared/protocol";
+import { claudeContextWindow } from "../pi-config/extensions/claude-code/context-window.ts";
 import { claudeContextOf } from "../pi-config/extensions/claude-code/transcript-adapter.ts";
 import { piContextOf } from "../pi-config/extensions/subagents/adapters/pi.ts";
 import { readWorkerManifests, type WorkerManifest } from "../pi-config/extensions/subagents/worker-transcript.ts";
@@ -25,20 +26,10 @@ import { activeBranch, parseLines } from "./transcript";
 export type WindowResolver = (ref: string) => number | null;
 
 /**
- * The Claude Code provider's window rule: a `[1m]`-suffixed CLI alias is the 1M-context variant,
- * anything else 200k. The extension's own copy is contextWindowFor in
- * pi-config/extensions/claude-code/provider/index.ts, which the server cannot import (it pulls the
- * CLI bridge); server/worker-context.test.ts pins the two together.
- */
-export function claudeCodeContextWindow(model: string): number {
-  return model.endsWith("[1m]") ? 1_000_000 : 200_000;
-}
-
-/**
  * The model a claude-code worker was SPAWNED with, which is what names its window: the manifest's
  * spec model, else the biggest row of its last usage snapshot (the runner keys those by the spawn
  * id, `[1m]` kept). Never the transcript's model — Claude Code writes the bare id there, so a
- * `[1m]` worker would read as 200k.
+ * `[1m]` worker of a model that is not natively 1M would read as 200k.
  */
 export function claudeSpawnModel(m: Pick<WorkerManifest, "spec" | "usageSnapshot">): string | undefined {
   if (m.spec?.model) return m.spec.model;
@@ -66,7 +57,8 @@ export function claudeSpawnModels(entries: readonly unknown[]): (id: string) => 
 export function workerWindow(w: Pick<WorkerInfo, "backend" | "model">, resolve: WindowResolver, spawnModel?: string): number | null {
   const model = spawnModel ?? w.model;
   if (!model) return null;
-  return w.backend === "claude-code" ? claudeCodeContextWindow(model) : resolve(model);
+  // claude-code: the extension's own window rule (context-window.ts): `[1m]` or a natively 1M model.
+  return w.backend === "claude-code" ? claudeContextWindow(model) : resolve(model);
 }
 
 /** One transcript's fill as its tail says: tokens and the reply's own model (pi: "provider/id";

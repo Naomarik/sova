@@ -25,6 +25,7 @@ import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-sto
 import { dropSessionTags, tagsFor } from "./session-tags";
 import { batonSummaryField } from "./baton";
 import { projectOverseerOfPath } from "./project-overseer-store";
+import { orgOfSessionPath } from "./orgs";
 
 /** `baton` for a baton session's file (§app/baton), `projectOverseer` for a project overseer's
     (§app/project-overseer), else nothing. */
@@ -877,7 +878,8 @@ export type ArchiveResult =
 
 /**
  * POST /api/sessions/archive: set or clear the manual archive mark of a web-spawned session.
- * Only Sova's own id list changes; the session file is never touched. Archiving a session
+ * Only Sova's own id list changes; the session file is never touched, except that an empty husk
+ * outside any attached org's workspace is deleted (below). Archiving a session
  * that's live in a TUI is refused (it would stay on top anyway), and so is one that's mid-turn or
  * has subagents working (archiving closes its runtime, which would kill them); unarchiving always
  * works.
@@ -904,7 +906,9 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   // skips it), so archiving one deletes the file outright instead of marking an id whose row can
   // never render: same bookkeeping the cleanup "husks" mode does per file. A husk WITH a stored
   // draft is a new session the user is writing in, not an abandoned stub — it archives normally.
-  if (archived) {
+  // So does an attached org's workspace session: a fresh baton waiting on its first link is a
+  // husk by shape, and baton.json and overseer state name the file, so it is never deleted here.
+  if (archived && !orgOfSessionPath(s.path)) {
     const st = await stat(s.path).catch(() => null);
     if (st && (await isZeroInput(s.path, st.size))) {
       if (!draftCounts(readDrafts()[s.id])) {
@@ -984,7 +988,7 @@ export interface CleanupResult {
  * the route and the archive gesture apply), so a path outside the sessions dir is refused. The
  * rest is refused with the reason in `refused` too: an unarchived session (archive it first), a
  * file that's gone, and a file whose header doesn't parse — never delete what can't be read as
- * a pi session.
+ * a pi session. Every mode leaves an attached org's workspace sessions alone (refused, in paths mode).
  */
 export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResult> {
   const targets = req.mode === "paths" ? req.paths : await listSessionFiles();
@@ -1001,6 +1005,13 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     const path = req.mode === "paths" ? resolveSessionPath(target) : target;
     if (!path) {
       refusals.push({ path: target, reason: "Not a session file under the pi sessions dir." });
+      continue;
+    }
+    // An attached org's workspace sessions (batons, project-overseer conversations) belong to the
+    // org: baton.json and overseer state name them, so no mode ever deletes one. Silent in the
+    // bulk modes, like the Overseer's files, so the dry run's count is what the real run deletes.
+    if (orgOfSessionPath(path)) {
+      if (req.mode === "paths") refusals.push({ path, reason: "Belongs to an organization's workspace — Clean Up never deletes it." });
       continue;
     }
     let st;

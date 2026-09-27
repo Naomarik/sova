@@ -5,6 +5,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { BACKEND_DIALOG_EVENT, registerBackend, type BackendRegistration, type BackendSpec, type BackendModel } from "../subagents/contracts.ts";
 import { ClaudeRunner, MAX_CLAUDE_INPUT_CHARS, type ClaudePermissionDecision, type ClaudePermissionRequest, type ClaudeSpawnOptions } from "./runner.ts";
 import { parseClaudePolicy, validateClaudeEffort, validateClaudeModel, validateClaudeTools } from "./policy.ts";
+import { withLongContextVariants } from "./context-window.ts";
 import { discoverClaudeModels } from "./models.ts";
 import { PermissionQueue } from "./permissions.ts";
 import { registerClaudeCodeProvider } from "./provider/index.ts";
@@ -70,12 +71,13 @@ export function registerClaudeCode(pi: ExtensionAPI): void {
 			signal?.addEventListener("abort", abort, { once: true });
 			discoveries.add(controller);
 			try {
-				const models = await discoverClaudeModels(controller.signal, {
+				// The CLI's list may omit the `[1m]` forms it still accepts; the rule adds them back.
+				const models = withLongContextVariants(await discoverClaudeModels(controller.signal, {
 					trackClosure: (closed) => {
 						discoveryClosures.add(closed);
 						void closed.then(() => discoveryClosures.delete(closed));
 					},
-				});
+				}));
 				controller.signal.throwIfAborted();
 				modelCache = { at: Date.now(), models };
 				return structuredClone(models);

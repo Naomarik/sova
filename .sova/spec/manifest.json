@@ -144,7 +144,10 @@
     "§app.session-list/archive-cleanup": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "server/sessions-index.ts"
+      ]
     },
     "§app.session-list/content-rules": {
       "kind": "behavior",
@@ -246,7 +249,11 @@
         "§app.settings-dialog/models"
       ],
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "reviewed",
+      "code": [
+        "server/delegate.ts",
+        "src/lib/delegate-form.ts"
+      ]
     },
     "§app.settings-dialog/one-height": {
       "kind": "behavior",
@@ -2370,7 +2377,10 @@
         "src/lib/workers.ts",
         "pi-config/extensions/subagents/worker-transcript.ts",
         "pi-config/extensions/subagents/adapters/pi.ts",
-        "pi-config/extensions/claude-code/transcript-adapter.ts"
+        "pi-config/extensions/claude-code/transcript-adapter.ts",
+        "pi-config/extensions/claude-code/context-window.ts",
+        "server/worker-context.test.ts",
+        "server/insights-restored.test.ts"
       ],
       "requires": [
         "§chat.context-window/last-reply",
@@ -3230,7 +3240,8 @@
         "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
-        "pi-config/extensions/subagents/README.md"
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/claude-code/context-window.ts"
       ]
     },
     "§teams.defaults/routing": {
@@ -4464,6 +4475,50 @@
         "src/lib/spend.test.ts",
         "src/components/AgentsView.tsx",
         "src/App.tsx"
+      ]
+    },
+    "§app.settings-dialog/claude-long-context-offered": {
+      "kind": "behavior",
+      "requires": [
+        "§app.settings-dialog/modes",
+        "§app.settings-dialog/claude-long-context-listed"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/delegate.ts",
+        "server/delegate.test.ts",
+        "pi-config/extensions/claude-code/context-window.ts",
+        "pi-config/extensions/claude-code/context-window.test.ts",
+        "pi-config/extensions/claude-code/tests/fixtures/long-context-lists.json",
+        "pi-config/extensions/claude-code/index.ts",
+        "pi-config/extensions/claude-code/provider/index.ts"
+      ]
+    },
+    "§app.session-list/cleanup-org-guard": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/archive-cleanup",
+        "§app.organizations/workspace-repo"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sessions-index.ts",
+        "server/cleanup-org-guard.test.ts"
+      ]
+    },
+    "§app.session-list/archive-org-guard": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/cleanup-org-guard",
+        "§app.organizations/workspace-repo"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sessions-index.ts",
+        "server/archive-org-guard.test.ts"
       ]
     }
   },

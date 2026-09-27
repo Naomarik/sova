@@ -13,7 +13,6 @@ import {
   delegateOptions,
   resetClaudeCache,
   saveDelegateSettings,
-  withRecent1m,
   workerDenial,
   type DelegateSources,
 } from "./delegate";
@@ -126,21 +125,19 @@ describe("GET /api/settings/delegate/options", () => {
     resetClaudeCache();
   });
 
-  test("[1m] ids seen within 30 minutes stay listed when the CLI's list flips to the shape without them", async () => {
+  test("the list gains the [1m] forms the CLI omits, by the extension's own rule (the shared fixture agent_models and the chat picker are tested against)", async () => {
+    type Case = { name: string; input: ClaudeModel[]; expected: [string, string, string[]?][] };
+    const fixture = new URL("../pi-config/extensions/claude-code/tests/fixtures/long-context-lists.json", import.meta.url);
+    const { cases } = JSON.parse(readFileSync(fixture, "utf8")) as { cases: Case[] };
+    assert.ok(cases.length >= 3);
+    for (const c of cases) {
+      resetClaudeCache();
+      const listed = await cachedClaudeModels(async () => structuredClone(c.input));
+      assert.deepEqual(listed.map((m) => (m.efforts ? [m.id, m.name, m.efforts] : [m.id, m.name])), c.expected, c.name);
+    }
     resetClaudeCache();
-    const withOnes: ClaudeModel[] = [{ id: "opus[1m]", name: "Opus", efforts: ALL_CLAUDE }, { id: "sonnet", name: "Sonnet" }];
-    const without: ClaudeModel[] = [{ id: "opus", name: "Opus" }, { id: "sonnet", name: "Sonnet" }];
-    const t0 = 1_000_000;
-    assert.deepEqual(withRecent1m(withOnes, t0), withOnes, "nothing invented");
-    assert.deepEqual(withRecent1m(without, t0 + 5 * 60_000), [...without, withOnes[0]!], "the omitted [1m] id is carried, efforts as last reported");
-    assert.deepEqual(withRecent1m(without, t0 + 31 * 60_000), without, "after 30 minutes without a sighting it drops out");
-    assert.deepEqual(withRecent1m(without, t0 + 40 * 60_000), without, "and stays out");
-    resetClaudeCache();
-    let shape = withOnes;
-    const discover = async () => shape;
-    assert.ok((await cachedClaudeModels(discover)).some((m) => m.id === "opus[1m]"));
-    resetClaudeCache();
-    assert.ok(!(await cachedClaudeModels(async () => without)).some((m) => m.id === "opus[1m]"), "reset forgets the sightings too");
+    const once = await cachedClaudeModels(async () => [{ id: "opus", name: "Opus" }]);
+    assert.ok(once.some((m) => m.id === "opus[1m]"), "no earlier sighting needed: a fresh server lists it at once");
     resetClaudeCache();
   });
 });

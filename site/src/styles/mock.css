@@ -271,5 +271,88 @@
   .phones .phone + .phone { display: none; }
 }
 
+/* ---- BATON (organizations). The operator's transcript, and the shared page on a phone. ---- */
+
+/* The visual column is the container, so a mock can re-lay itself out by the room it gets. */
+.feature-visual { container: visual / inline-size; }
+.baton { position: relative; padding: 0 clamp(120px, 16vw, 200px) 72px 0; }
+/* The phone overlaps the frame's right edge, so the thread keeps clear of it. */
+.baton-desk .m-thread { padding: 16px 92px 20px 18px; gap: 10px; }
+.b-said { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 88%; }
+.b-said .m-msg-user { max-width: none; }
+.b-who, .s-who { font-size: 10.5px; font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.b-hand { max-width: 92%; }
+.b-hand .m-confirm-head { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.b-role { font-weight: var(--fw-regular); }
+.b-hand-body { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; }
+.b-q { font-size: 12.5px; font-weight: var(--fw-medium); }
+.b-brief { font-size: 11.5px; color: var(--color-ink-2); }
+.b-brief .m-muted { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; margin-right: 6px; }
+.b-noted { align-self: flex-start; font-size: 10px; padding: 2px 8px; gap: 6px; }
+.b-noted { background: var(--status-success-bg); border-color: transparent; }
+
+.baton-phone { position: absolute; right: 0; bottom: 0; width: clamp(220px, 24vw, 272px); }
+.baton-phone .phone-screen { height: 480px; }
+.s-head { padding: 10px 16px 12px; border-bottom: var(--stroke-thin) solid var(--color-border); }
+.s-title { font-size: 16px; font-weight: var(--fw-semibold); letter-spacing: -.015em; }
+.s-status { margin-top: 2px; font-size: 12px; color: var(--color-accent); font-weight: var(--fw-medium); }
+.s-thread { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; flex: 1; min-height: 0; overflow: hidden; }
+.s-msg { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border-radius: var(--r-md); background: var(--color-surface); border: var(--stroke-thin) solid var(--color-border); font-size: 12px; line-height: 1.45; }
+.s-msg-reply { background: transparent; border-color: transparent; padding: 0 2px; }
+.s-composer { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 14px; border-top: var(--stroke-thin) solid var(--color-border); background: var(--color-surface); }
+.s-input { height: 58px; padding: 8px 10px; border-radius: var(--r-md); border: var(--stroke-icon) solid var(--color-accent); box-shadow: 0 0 0 3px var(--color-accent-tint); background: var(--color-bg); color: var(--color-ink-muted); font-size: 12px; }
+.s-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--color-ink-muted); line-height: 1.35; }
+.s-foot > span:first-child span { display: block; white-space: nowrap; }
+.s-foot .m-btn { height: 28px; font-size: 11.5px; }
+@container visual (max-width: 560px) {
+  .baton { padding: 0; }
+  .baton-desk .m-thread { padding-right: 16px; padding-bottom: 60px; }
+  .baton-phone { position: relative; width: min(272px, 82%); margin: -48px 0 0 auto; }
+  .baton-phone .phone-screen { height: 440px; }
+}
+
+/* ---- MESH. One sidebar across hosts, beside the Mesh page's Hosts and Sync cards. ---------- */
+
+.meshmock { display: grid; grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr); gap: 16px; align-items: start; }
+.meshmock-page { margin-top: 48px; }
+.meshmock-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.mm-new { position: relative; z-index: 1; margin: -36px 12px 0 28px; }
+.mm-new .m-modal-head { font-size: 14px; padding: 10px 14px; }
+.mm-new .m-modal-body { padding: 12px 14px 14px; }
+.mm-select { display: flex; flex-direction: column; padding: 4px; border-radius: var(--r-md); border: var(--stroke-icon) solid var(--color-border-strong); background: var(--color-bg); box-shadow: var(--shadow-2); }
+.mm-opt { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
+.mm-opt .icon { margin-left: auto; color: var(--color-accent); }
+.mm-opt-on { background: var(--color-accent-tint); }
+.mm-opt-off { color: var(--color-ink-muted); opacity: .6; }
+/* The workspace hides its sidebar in a narrow frame; here the sidebar is the whole frame. */
+.meshmock .m-side { display: flex; border-right: 0; padding-bottom: 44px; }
+.m-tag {
+  flex: none; margin-left: auto;
+  padding: 0 6px; border-radius: var(--r-xs);
+  border: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-sunken);
+  font-family: var(--font-mono); font-size: 10px; font-weight: var(--fw-regular); line-height: 16px;
+  color: var(--color-ink-2);
+}
+.mm-filter { display: flex; gap: 4px; padding: 0 12px 10px; overflow: hidden; }
+.mm-filter span { padding: 2px 9px; border-radius: var(--r-full); border: var(--stroke-thin) solid var(--color-border); font-family: var(--font-mono); font-size: 10.5px; color: var(--color-ink-muted); white-space: nowrap; }
+.mm-filter .on { background: var(--color-accent-tint); border-color: transparent; color: var(--color-ink); }
+.mm-page { display: flex; flex-direction: column; gap: 12px; padding: 14px; background: var(--color-sunken); }
+.mm-card { border-radius: var(--r-lg); border: var(--stroke-thin) solid var(--color-border); background: var(--color-surface); overflow: hidden; }
+.mm-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; font-weight: var(--fw-semibold); font-size: 13px; border-bottom: var(--stroke-thin) solid var(--color-border); }
+.mm-btn-sm { height: 26px; padding: 0 8px; font-size: 11px; gap: 5px; }
+.mm-host { display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; }
+.mm-host + .mm-host { border-top: var(--stroke-thin) solid var(--color-border); }
+.mm-host > .icon { margin-top: 2px; }
+.mm-host .chip { font-size: 10px; padding: 1px 8px; gap: 6px; line-height: 1.5; }
+.mm-host-main { flex: 1; min-width: 0; }
+.mm-host-name { font-weight: var(--fw-medium); font-size: 12.5px; }
+.mm-host-meta { font-size: 11px; color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mm-host-why { margin-top: 3px; font-size: 11px; color: var(--status-warn); line-height: 1.4; }
+@container visual (max-width: 620px) {
+  .meshmock { grid-template-columns: minmax(0, 1fr); }
+  .meshmock-page { margin: -24px 0 0 24px; }
+}
+
 /* ---- REDUCED MOTION: the live dot holds still. -------------------------------- */
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }

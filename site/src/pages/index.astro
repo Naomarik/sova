@@ -11,6 +11,8 @@ import Watch from "../components/mocks/Watch.astro";
 import Workers from "../components/mocks/Workers.astro";
 import Overseer from "../components/mocks/Overseer.astro";
 import Phones from "../components/mocks/Phones.astro";
+import Baton from "../components/mocks/Baton.astro";
+import Mesh from "../components/mocks/Mesh.astro";
 import { themes } from "../data/themes";
 import * as site from "../data/site";
 
@@ -56,16 +58,59 @@ const cards = [
     limit: "Only if you say yes, or pass <code>--service</code>. No <code>sudo</code>.",
   },
 ];
+
+const orgCards = [
+  {
+    icon: "file", title: "Decisions with provenance",
+    body: "Each decision keeps who said it, where, when, and in their words. Sova compares the decisions on each topic and sends any contradiction to the person who decides that area. You then promote the settled ones into the project's own spec.",
+    limit: "No model writes the spec. Promotion is a fixed writer, a few decisions at a time, and only when you choose.",
+  },
+  {
+    icon: "eye", title: "A project overseer",
+    body: "One session per project that watches for new decisions, spots who hasn't been asked, and acts at the level you grant: propose, gather, reconcile, or build. Build starts coding sessions, each in its own worktree.",
+    limit: "Starts at gather. Limits per message, per day and at once, plus a token budget, are enforced by the tools, not the prompt.",
+  },
+  {
+    icon: "chat", title: "A page for the owner",
+    body: "Pick the client's owner and send one link. They read how each project is going, in everyday words: updates at real milestones, who was asked, what was decided, what was built.",
+    limit: "Read only. Never shows goals, profiles, code, models or costs. The link lasts 90 days.",
+  },
+  {
+    icon: "folder", title: "The whole organization is one repo",
+    body: "Roster, projects, conversations, decisions and the overseer's notes live in a plain git repo. Clone it onto another Sova host and attach it.",
+    limit: "Links don't travel, so you send new ones. On the new host, overseers start paused.",
+  },
+];
+
+const meshCards = [
+  {
+    icon: "refresh", title: "A front door that fails over",
+    body: "The Mesh page writes a Caddy config that sends you to the first healthy host in your order, and back when it recovers.",
+    limit: "You run it behind <code>tailscale serve</code>, never Funnel. A reply in progress can fail during a switch.",
+  },
+  {
+    icon: "network", title: "Linked sessions",
+    body: "Ask the Overseer to link sessions on different hosts, so they can message each other. Their traffic shows in the Agents tab, not the transcript.",
+    limit: "One session per host in a link, and messages only. Sending files between them: <span class=\"chip chip-soon\">Coming soon</span>",
+  },
+  {
+    icon: "terminal", title: "A phone as a host",
+    body: "Sova can run in Termux on an Android phone, and join the mesh like any other host. Its uninstaller removes exactly what the install added.",
+    limit: "Experimental, and it needs setup; a guide is coming. Android with Termux only. Other phones use Sova in the browser.",
+  },
+];
 ---
 <Base
   title="Sova · Run AI sessions side by side"
-  description="Sova is an open-source browser interface for the pi coding agent. Send one prompt to several models, compare their approaches, and branch the conversation worth pursuing."
+  description="Sova is an open-source browser workspace for AI coding sessions. Run models side by side, bring in the people who know the answers, and use every machine you own from one page."
 >
   <header class="nav">
     <div class="wrap nav-inner">
       <a class="brand" href="#top" aria-label="Sova, back to top"><Mark size={24} />sova</a>
       <nav class="nav-links" aria-label="Page">
         <a href="#features">Features</a>
+        <a class="nav-link-extra" href="#orgs">Organizations</a>
+        <a class="nav-link-extra" href="#mesh">Mesh</a>
         <a href="#how">How It Works</a>
         <a href="#source">Open Source</a>
       </nav>
@@ -88,13 +133,14 @@ const cards = [
             <Icon name="arrow-right" size={14} />
           </a>
           <h1 class="h-hero"><span>Run AI sessions <span class="grad">side by side.</span></span> <span class="quiet">Stop juggling terminals.</span></h1>
-          <p class="lead">Send one prompt to several models, compare their approaches, and branch the conversation worth pursuing. Sova gives your <a href={site.pi}>pi</a> coding agent a browser interface, from a full desktop workspace to your phone, using the sessions you already have.</p>
+          <p class="lead">Send one prompt to several models, compare their approaches, and branch the conversation worth pursuing. Sova runs your AI sessions in the browser, from a full desktop workspace to your phone, with the sessions you already have.</p>
           <div class="hero-actions">
             <InstallBlock id="install-hero" />
-            <p class="hero-note">Then run <code>sova</code> and open <code>http://127.0.0.1:4800</code>. Needs Git, Node.js ≥22.19, and pnpm (or npx).</p>
+            <p class="hero-note">Then run <code>sova</code> and open <code>http://127.0.0.1:4800</code>. Needs Git, Node.js ≥22.19, and pnpm (or npx). Sova runs on the <a href={site.pi}>pi</a> coding agent, and the install brings its own copy.</p>
             <div class="hero-links">
               <a class="button button-ghost" href={site.installScript}><Icon name="file" size={16} />Read the Install Script</a>
               <a class="button button-ghost" href={site.gettingStarted}><Icon name="arrow-right" size={16} />Getting Started</a>
+              <a class="button button-ghost" href="#orgs"><Icon name="network" size={16} />Organizations and Mesh</a>
             </div>
           </div>
         </div>
@@ -105,7 +151,7 @@ const cards = [
           <dl class="facts">
             <div class="fact"><dt class="fact-label">Your sessions, read in place</dt><dd class="fact-value">~/.pi/agent</dd></div>
             <div class="fact"><dt class="fact-label">Loopback by default</dt><dd class="fact-value">127.0.0.1:4800</dd></div>
-            <div class="fact"><dt class="fact-label">1 JSON file each</dt><dd class="fact-value">{themes.length} themes</dd></div>
+            <div class="fact"><dt class="fact-label">Several machines, one list</dt><dd class="fact-value">Mesh</dd></div>
             <div class="fact"><dt class="fact-label">Read it, fork it</dt><dd class="fact-value">Apache-2.0</dd></div>
           </dl>
         </div>
@@ -118,7 +164,7 @@ const cards = [
         <div class="section-head">
           <span class="eyebrow">What you get</span>
           <h2 class="h-section" id="features-title">More work, less window switching.</h2>
-          <p class="lead">Sova is for people who already run pi: sessions on disk, a provider login, opinions about their terminal. It adds a second window, and keeps your setup yours.</p>
+          <p class="lead">Sova is for people who already run AI coding sessions and have opinions about their terminal. It adds a second window, and keeps your setup yours.</p>
         </div>
 
         <article class="feature">
@@ -205,6 +251,81 @@ const cards = [
       </div>
     </section>
 
+    <!-- ORGANIZATIONS -->
+    <section class="section section-alt" id="orgs" aria-labelledby="orgs-title">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">Organizations <span class="chip chip-accent">Preview</span></span>
+          <h2 class="h-section" id="orgs-title">Ask the people who know. Keep what they decide.</h2>
+          <p class="lead">An organization is a client or a team you work with: its people, its projects, and one git repo that holds all of it. Sova asks each person through their own link, one at a time, and keeps every answer with who gave it and in which words.</p>
+        </div>
+
+        <article class="feature">
+          <div class="feature-copy">
+            <span class="eyebrow">Baton sessions</span>
+            <h3 class="h-feature">One conversation, handed from person to person.</h3>
+            <div class="prose">
+              <p>Start a conversation with a goal only you can see. The model talks to whoever holds the baton. When they don't know, it hands the baton to someone on the roster with a question and a short briefing, and Sova makes that person a link.</p>
+              <p>They see the conversation and nothing else: no tool calls, no goal, no other sessions. Every message carries its sender's name.</p>
+            </div>
+            <ul class="points">
+              <li><Icon name="check" size={16} />Decisions are recorded as they're made, with the speaker's own words.</li>
+              <li><Icon name="check" size={16} />Profiles learn each person's language and skills from their own words. The page people see never shows a profile.</li>
+            </ul>
+            <p class="limit"><Icon name="info" size={18} /><span>People outside your tailnet open their link through Sova's share listener, which is off by default and sits behind an HTTPS reverse proxy you run. <strong>It needs setup; a guide is coming.</strong> Each link is shown once.</span></p>
+          </div>
+          <div class="feature-visual"><Baton /></div>
+        </article>
+
+        <ul class="cards cards-fit cards-follow">
+          {orgCards.map((c) => (
+            <li class="fcard">
+              <span class="fcard-icon"><Icon name={c.icon} size={20} /></span>
+              <h3>{c.title}</h3>
+              <p set:html={c.body} />
+              <p class="fcard-limit" set:html={c.limit} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+
+    <!-- MESH -->
+    <section class="section" id="mesh" aria-labelledby="mesh-title">
+      <div class="wrap">
+        <div class="section-head">
+          <span class="eyebrow">Mesh <span class="chip chip-accent">Preview · Needs Tailscale</span></span>
+          <h2 class="h-section" id="mesh-title">All your machines, one sidebar.</h2>
+          <p class="lead">Run Sova on a laptop, a server and an Android phone on your tailnet, and use them all from any one page. A session runs on the host you pick, and you drive it from wherever you are.</p>
+        </div>
+
+        <article class="feature feature-flip">
+          <div class="feature-copy">
+            <span class="eyebrow">Several hosts</span>
+            <h3 class="h-feature">Start it on the server. Check it from the couch.</h3>
+            <div class="prose">
+              <p>Every host's sessions appear in one list, labelled by host and filterable. New Session asks which host. An organization on another host opens there, with its pages and its overseer.</p>
+              <p>Settings, themes, extensions and logins can be kept in step, each behind its own switch. With logins on, they're copied to every host. Two different logins for the same provider are shown as a conflict for you to settle, never overwritten.</p>
+            </div>
+            <p class="limit"><Icon name="info" size={18} /><span>Sova has no login: your tailnet is the gate, and any device that reaches one host can use them all. <strong>Every host in a mesh must be reachable by the same devices, and run the same Sova build.</strong> <a href={site.meshDoc}>docs/mesh.md</a> covers the setup.</span></p>
+          </div>
+          <div class="feature-visual"><Mesh /></div>
+        </article>
+
+        <ul class="cards cards-fit cards-follow">
+          {meshCards.map((c) => (
+            <li class="fcard">
+              <span class="fcard-icon"><Icon name={c.icon} size={20} /></span>
+              <h3>{c.title}</h3>
+              <p set:html={c.body} />
+              <p class="fcard-limit" set:html={c.limit} />
+            </li>
+          ))}
+        </ul>
+        <p class="hero-note cards-note">With no peer added, nothing changes: no extra port, no Tailscale calls, no requests to other machines.</p>
+      </div>
+    </section>
+
     <!-- MORE -->
     <section class="section section-alt" aria-labelledby="more-title">
       <div class="wrap">
@@ -254,8 +375,8 @@ const cards = [
       <div class="wrap">
         <div class="section-head">
           <span class="eyebrow">How it works</span>
-          <h2 class="h-section" id="how-title">One process, next to pi.</h2>
-          <p class="lead">Sova is a Node server with the pi SDK embedded, plus a web app. It reads the same agent directory as your terminal: the same sessions, the same login, the same extensions.</p>
+          <h2 class="h-section" id="how-title">One process, next to your terminal.</h2>
+          <p class="lead">Sova is a Node server with its coding agent embedded, plus a web app. It reads the same agent directory as the agent in your terminal: the same sessions, the same login, the same extensions.</p>
         </div>
         <div class="arch">
           <div class="arch-node">
@@ -294,7 +415,7 @@ const cards = [
           <p class="lead">Sova shares a directory with a process you trust, so here's the whole list.</p>
           <ul class="not-list" aria-label="What Sova is not">
             <li>Not a hosted service. It runs on your machine.</li>
-            <li>Not a multi-user product. 1 person, 1 machine.</li>
+            <li>Not a team app. One person runs it; the people you ask see only the conversation you share.</li>
             <li>Not a replacement for pi's TUI. It's a second window.</li>
           </ul>
         </div>
@@ -304,9 +425,11 @@ const cards = [
           <div class="touch"><dt>Settings</dt><dd>None of pi's own configuration. It writes <code>~/.pi/agent/sova/settings.json</code> once, to switch on Claude Code models, and only if the file doesn't exist.</dd></div>
           <div class="touch"><dt>Login service</dt><dd>Only if you ask for one.</dd></div>
           <div class="touch"><dt>Your sessions</dt><dd>Read in place. A session open in a terminal is read-only here.</dd></div>
-          <div class="touch"><dt>Sova's state</dt><dd>Groups, drafts, archive, and themes, in <code>~/.pi/agent/sova/</code>.</dd></div>
+          <div class="touch"><dt>Sova's state</dt><dd>Groups, drafts, archive, and themes, in <code>~/.pi/agent/sova/</code>, and each organization's workspace repo.</dd></div>
           <div class="touch"><dt>Network</dt><dd>Model requests go to your configured provider. Tools and extensions may use the network.</dd></div>
           <div class="touch"><dt>Access</dt><dd>Single user, loopback by default, <strong>no built-in authentication</strong>. Anyone who can reach an unprotected Sova can read files and run commands as you.</dd></div>
+          <div class="touch"><dt>Share listener</dt><dd>Off unless you set it. It serves only shared conversations and the owner page; every other path answers 404.</dd></div>
+          <div class="touch"><dt>Mesh</dt><dd>Off until you add a peer. Then a second port on your tailnet address only. With login sync on, your provider logins are copied to every host.</dd></div>
           <div class="touch"><dt>Re-running</dt><dd>Installs the same pinned release and changes nothing when it's already there.</dd></div>
         </dl>
       </div>
@@ -338,7 +461,7 @@ const cards = [
       <div class="wrap">
         <div class="section-head">
           <h2 class="h-section" id="closing-title">Try it on the sessions you already have.</h2>
-          <p class="lead">Existing sessions are readable as soon as it starts. To chat, it uses your pi provider login.</p>
+          <p class="lead">Existing sessions are readable as soon as it starts. To chat, it uses the provider login you already have, or you log in once from the bundled CLI.</p>
         </div>
         <div class="closing-install">
           <InstallBlock id="install-closing" />

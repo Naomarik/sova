@@ -10,6 +10,7 @@ export const license = `${repo}/blob/master/LICENSE`;
 export const contributing = `${repo}/blob/master/CONTRIBUTING.md`;
 export const gettingStarted = `${repo}/blob/master/docs/getting-started.md`;
 export const customization = `${repo}/blob/master/docs/customization.md`;
+export const meshDoc = `${repo}/blob/master/docs/mesh.md`;
 export const piConfig = `${repo}/tree/master/pi-config`;
 export const pi = "https://pi.dev";
 

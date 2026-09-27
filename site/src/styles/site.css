@@ -98,6 +98,8 @@ p code, li code, td code, dd code {
 .theme-toggle .icon-moon { display: none; }
 :root[data-theme="light"] .theme-toggle .icon-moon { display: inline-block; }
 :root[data-theme="light"] .theme-toggle .icon-sun { display: none; }
+/* The two newer sections get nav links only where the bar has room for them. */
+@media (max-width: 1099px) { .nav-links .nav-link-extra { display: none; } }
 @media (max-width: 767px) {
   .nav-links, .nav .chip { display: none; }
   .nav-gh .nav-gh-label { display: none; }
@@ -324,6 +326,14 @@ p code, li code, td code, dd code {
 .fcard h3 { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); letter-spacing: var(--ls-heading-s); margin-top: var(--space-1); }
 .fcard p { font-size: 14.5px; line-height: 1.55; color: var(--color-ink-2); }
 .fcard .fcard-limit { font-size: var(--fs-caption); color: var(--color-ink-muted); margin-top: auto; padding-top: var(--space-2); border-top: var(--stroke-thin) dashed var(--color-border); }
+
+/* Organizations and Mesh: cards under a feature, stretched to fill the row, and a note under them. */
+.cards-fit { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+.cards-follow { margin-top: clamp(56px, 7vw, 96px); }
+.cards-note { margin-top: var(--space-5); text-align: center; }
+.eyebrow .chip { font-size: 10px; padding: 1px 8px; letter-spacing: .06em; }
+.fcard .chip { font-size: 10px; padding: 0 7px; line-height: 1.7; vertical-align: 1px; }
+.chip-soon { color: var(--status-warn); border-color: currentColor; background: transparent; }
 
 /* ---- THEMES. Each swatch is a tiny app, painted with that theme's own colors. -- */
 

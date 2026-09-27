@@ -1,6 +1,7 @@
 ---
 // A product frame: the app's surfaces in a card, with a sunken strip that names what it shows.
 // Every frame is a CSS mock-up, hidden from assistive tech; `caption` says in words what it shows.
+// A frame inside a larger figure leaves `caption` empty, and the figure says it instead.
 import Mark from "./Mark.astro";
 
 interface Props { path: string; caption: string; class?: string; strip?: boolean }
@@ -16,5 +17,5 @@ const { path, caption, class: cls = "", strip = true } = Astro.props;
     )}
     <div class="frame-body"><slot /></div>
   </div>
-  <figcaption class="visually-hidden">{caption}</figcaption>
+  {caption && <figcaption class="visually-hidden">{caption}</figcaption>}
 </figure>

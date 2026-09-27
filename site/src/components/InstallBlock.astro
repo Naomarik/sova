@@ -1,0 +1,19 @@
+---
+// The install command with a copy button. The button is the section's one primary action.
+import Icon from "./Icon.astro";
+import { installCommand } from "../data/site";
+
+interface Props { id: string }
+const { id } = Astro.props;
+---
+<div class="install">
+  <div class="install-cmd">
+    <span class="install-prompt" aria-hidden="true">$</span>
+    <code id={id} class="install-code">{installCommand}</code>
+  </div>
+  <button type="button" class="button button-primary install-copy" data-copy={id}>
+    <Icon name="copy" size={18} class="install-icon-copy" />
+    <Icon name="check" size={18} class="install-icon-done" />
+    <span class="install-label" data-idle="Copy Command" data-done="Copied">Copy Command</span>
+  </button>
+</div>

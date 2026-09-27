@@ -1,0 +1,17 @@
+{
+  "name": "sova-site",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "dev": "astro dev --port 4340",
+    "build": "astro build",
+    "preview": "astro preview --port 4340"
+  },
+  "dependencies": {
+    "astro": "7.3.5"
+  }
+}

@@ -220,9 +220,12 @@ The harnesses:
   - A 2 GiB tree plus 50 000 files is pulled at 40 mbit (`tc tbf` on a's `tailscale0`) through a
     `--reject` partition, a restart of b and a restart of a. The `.part` never shrinks, fewer than
     1.15 × the spool's bytes leave a's `tailscale0`, and the hashes match.
-  - The sandbox: b on refuses a dest outside its writable roots (`not-writable`) at the offer, and a
-    `.git/hooks` member either there or in the pre-scan, with nothing extracted. a on refuses `~/.ssh`
-    and a path its project `.sova/sandbox.json` hides (`hidden`), and `exclude` lets the rest go.
+  - The sandbox, with b on:
+    - b refuses at the offer (`not-writable`) a dest outside its writable roots, and a root named `.git`.
+    - b's pre-scan refuses a member that b's project `.sova/sandbox.json` makes read-only below a
+      writable root, after the download and with nothing extracted.
+  - The sandbox, with a on: a refuses `~/.ssh` and a path its project `.sova/sandbox.json` hides
+    (`hidden`), and `exclude` lets the rest go.
   - A worktree's `.git` file warns in the result and in b's wake; the main checkout doesn't.
   - The state root, the sessions dir, and their parent with a colliding root name are refused
     `protected`; the parent with another name lands.

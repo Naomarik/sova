@@ -54,12 +54,20 @@ const rm = (n, ...paths) => sh(n, `rm -rf ${paths.map((p) => `"${p}"`).join(" ")
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** The session's link rows (kind "link") whose text names `needle`. */
 const linkRows = async (host, path, needle) => (await transcript(host, path)).filter((i) => i.kind === "link" && (!needle || (i.link?.text ?? i.text).includes(needle)));
+/** The transcript without its `info` rows (the model and thinking that configure wrote): what a turn adds. */
+const turnRows = async (host, path) => (await transcript(host, path)).filter((i) => i.kind !== "info");
 const sandbox = (host, s, on) => api(host, `/api/sandbox?path=${encodeURIComponent(s.path)}`, { method: "POST", body: { on }, timeoutMs: 60000 });
-/** Hold a session again (its runtime opened) after its host's Sova restarted: local acts need it. */
-const hold = async (host, s) => {
-  const r = await api(host, "/api/sessions/configure", { method: "POST", body: { path: s.path, model: MODEL }, timeoutMs: 60000 });
-  assert.equal(r.status, 200, `${host}: hold ${s.id}: ${r.text}`);
-};
+/** Hold a session again (its runtime opened) after its host's Sova restarted: local acts need it.
+    The busy rule may refuse it for a few seconds after the last write (a wake's turn): retried. */
+const hold = (host, s) =>
+  waitFor(
+    async () => {
+      const r = await api(host, "/api/sessions/configure", { method: "POST", body: { path: s.path, model: MODEL }, timeoutMs: 60000 });
+      if (r.status !== 200) throw new Error(`${host}: hold ${s.id}: ${r.status} ${r.text}`);
+      return true;
+    },
+    { timeoutMs: 90000, intervalMs: 3000, what: `${host} holds ${s.id}` },
+  );
 const allFinal = (o) => o.recipients.every((r) => FINAL.has(r.state));
 const refusal = (r) => `${r.status} ${JSON.stringify(r.json)}`;
 
@@ -125,7 +133,7 @@ describe("1. two hosts, dest given: implicit accept", () => {
     let early = null;
     await waitFor(
       async () => {
-        const items = await transcript("b", s.b.path);
+        const items = await turnRows("b", s.b.path);
         const st = rowOf((await offers("b", s.b.id)).find((x) => x.id === of), s.b.id)?.state;
         if (items.length && st !== "done") early = { st, items };
         return early || st === "done";
@@ -141,7 +149,7 @@ describe("1. two hosts, dest given: implicit accept", () => {
     }, { what: "b's wake" });
     assert.equal(bRows.length, 1, "one wake on b");
     assert.match(bRows[0].link?.text ?? bRows[0].text, /landed/);
-    assert.equal((await transcript("b", s.b.path))[0].kind, "link", "b's first row is the wake");
+    assert.equal((await turnRows("b", s.b.path))[0].kind, "link", "b's first row is the wake");
     const bIn = await inbox("b", s.b.id);
     assert.ok(bIn.some((x) => x.offer?.id === of && x.offer.event === "landed"), JSON.stringify(bIn));
     const bCopy = (await offers("b", s.b.id)).find((x) => x.id === of);
@@ -241,23 +249,23 @@ describe("2. two hosts, no dest: the recipient answers", () => {
     }
     try {
       await waitUp("a", "b");
-      await hold("a", L.s.a);
-      const r = await offer("a", { session: L.s.a.id, paths: ["small"], note: HANDS_OFF });
+      // Fresh sessions: the busy rule keeps refusing to reopen a session the previous process wrote.
+      const E = await linked(["a", "b"]);
+      const r = await offer("a", { session: E.s.a.id, paths: ["small"], note: HANDS_OFF });
       assert.equal(r.status, 200, refusal(r));
       const of = r.json.offer.id;
       assert.ok(r.json.offer.expiresAt - r.json.offer.at <= SHORT_TTL_MS + 1000, `the TTL override applies: ${r.json.offer.expiresAt - r.json.offer.at} ms`);
-      await waitOffer("a", L.s.a.id, of, (x) => rowOf(x, L.s.b.id).state === "expired", { timeoutMs: SHORT_TTL_MS + 5 * 60000, intervalMs: 3000, what: "expired on a" });
-      await waitOffer("b", L.s.b.id, of, (x) => rowOf(x, L.s.b.id).state === "expired", { timeoutMs: 5 * 60000, intervalMs: 3000, what: "expired on b" });
+      await waitOffer("a", E.s.a.id, of, (x) => rowOf(x, E.s.b.id).state === "expired", { timeoutMs: SHORT_TTL_MS + 5 * 60000, intervalMs: 3000, what: "expired on a" });
+      await waitOffer("b", E.s.b.id, of, (x) => rowOf(x, E.s.b.id).state === "expired", { timeoutMs: 5 * 60000, intervalMs: 3000, what: "expired on b" });
       await waitFor(() => spool("a", of).length === 0, { timeoutMs: 5 * 60000, what: "a's spool deleted at expiry" });
+      await waitIdle("b", E.s.b.id).catch(() => {});
     } finally {
       for (const h of ["a", "b"]) {
         lab("sova-env", h, "--clear");
         chaos.sovaRestart(h);
       }
       await waitUp("a", "b");
-      await hold("a", L.s.a);
     }
-    await waitIdle("b", L.s.b.id).catch(() => {});
   });
 });
 
@@ -268,24 +276,27 @@ describe("3. three hosts: one offer, packed once, a result per recipient", () =>
     trees.push(["b", "/root/multi-b"], ["c", "/root/multi-c"]);
     chaos.sovaStop("c");
     let r;
+    let of;
     try {
       r = await offer("a", { session: s.a.id, paths: ["multi"], to: "all", dest: { b: "/root/multi-b", c: "/root/multi-c" } });
       assert.equal(r.status, 200, refusal(r));
+      of = r.json.offer.id;
       const byTo = Object.fromEntries(r.json.deliveries.map((d) => [d.to.sessionId, d.state]));
       assert.deepEqual(byTo, { [s.b.id]: "accepted", [s.c.id]: "outbox" }, JSON.stringify(r.json.deliveries));
-      assert.ok(outboxOf("a").some((l) => l.includes(r.json.offer.id)), "c's offer held in a's outbox");
+      assert.ok(outboxOf("a").some((l) => l.includes(of)), "c's offer held in a's outbox");
+      await waitOffer("a", s.a.id, of, (o) => rowOf(o, s.b.id).state === "done", { timeoutMs: 180000, what: "b done" });
+      // One spool for both recipients, kept while c still has to pull from it.
+      assert.equal(spool("a", of).length, 1, `one spool: ${spool("a", of).join(" ")}`);
+      assert.equal(rowOf((await offers("a", s.a.id)).find((x) => x.id === of), s.c.id).state, "accepted", "c's row waits");
     } finally {
       chaos.sovaStart("c");
     }
-    const of = r.json.offer.id;
-    await waitOffer("a", s.a.id, of, (o) => rowOf(o, s.b.id).state === "done", { timeoutMs: 180000, what: "b done" });
-    // One spool for both recipients, while c still has to pull from it.
-    assert.equal(spool("a", of).length, 1, `one spool: ${spool("a", of).join(" ")}`);
     const o = await waitOffer("a", s.a.id, of, allFinal, { timeoutMs: 5 * 60000, what: "every row final" });
     assert.deepEqual(o.recipients.map((x) => [x.to.sessionId, x.state, x.resolvedDest]), [
       [s.b.id, "done", "/root/multi-b"],
       [s.c.id, "done", "/root/multi-c"],
     ]);
+    await hold("c", s.c); // c's Sova restarted: its session must be held to list its offers
     const shaB = (await offers("b", s.b.id)).find((x) => x.id === of).snapshot.sha256;
     const shaC = (await offers("c", s.c.id)).find((x) => x.id === of).snapshot.sha256;
     assert.equal(shaB, o.snapshot.sha256);
@@ -385,13 +396,14 @@ describe("5. the sandbox binds the server", () => {
     L = await linked(["a", "b"]);
     tree("a", `${CWD}/sbx`, { files: 20, extra: { "secret/key.txt": "hidden\n", "open.txt": "open\n" } });
     tree("a", `${CWD}/gitdir-src/.git`, { extra: { "hooks/post-commit": "#!/bin/sh\necho planted\n", "HEAD": "ref: refs/heads/master\n" } });
+    tree("a", `${CWD}/scan-src/pj`, { extra: { "open.txt": "open\n", "locked/planted.txt": "planted\n" } });
     sh("a", "mkdir -p /root/.ssh && echo x > /root/.ssh/lab-key");
   });
   after(async () => {
     await sandbox("a", L.s.a, false).catch(() => {});
     await sandbox("b", L.s.b, false).catch(() => {});
     rm("a", `${CWD}/.sova/sandbox.json`, "/root/.ssh/lab-key");
-    rm("b", `${CWD}/sbx-in`, "/srv/landing");
+    rm("b", `${CWD}/sbx-in`, "/srv/landing", `${CWD}/.sova/sandbox.json`, `${CWD}/pre`);
   });
 
   test("receiver on: a dest outside its writable roots is refused not-writable; under its cwd lands", async () => {
@@ -408,18 +420,29 @@ describe("5. the sandbox binds the server", () => {
     await waitIdle("b", L.s.b.id).catch(() => {});
   });
 
-  test("receiver on: the pre-scan refuses a member under the read-only .git/hooks, nothing extracted", async () => {
+  test("receiver on: a `.git` root is refused not-writable at the offer (the top-level check)", async () => {
     const r = await offer("a", { session: L.s.a.id, paths: ["gitdir-src/.git"], dest: "." });
     assert.equal(r.status, 200, refusal(r));
+    assert.deepEqual(r.json.deliveries.map((d) => [d.state, d.reason]), [["refused", "not-writable"]], JSON.stringify(r.json.deliveries));
+    assert.match(r.json.deliveries[0].message, /\.git/);
+    assert.equal(sh("b", `test -e ${CWD}/.git/hooks/post-commit`).code, 1, "nothing extracted");
+  });
+
+  test("receiver on: the pre-scan refuses a member under a read-only path below the root, nothing extracted", async () => {
+    // b's project file makes pre/pj/locked read-only: the root pj itself stays writable, so only
+    // the pre-scan of the downloaded archive can see it.
+    writeFileOn("b", `${CWD}/.sova/sandbox.json`, JSON.stringify({ readOnlyWithinWritable: ["pre/pj/locked"] }));
+    const r = await offer("a", { session: L.s.a.id, paths: ["scan-src/pj"], dest: "pre" });
+    assert.equal(r.status, 200, refusal(r));
+    assert.deepEqual(r.json.deliveries.map((d) => d.state), ["accepted"], `passes the top-level check: ${JSON.stringify(r.json.deliveries)}`);
     const of = r.json.offer.id;
-    // Refused either at the offer (the top-level check) or by the pre-scan after the download.
     const o = await waitOffer("a", L.s.a.id, of, (x) => FINAL.has(rowOf(x, L.s.b.id).state), { timeoutMs: 180000, what: "b's row final" });
     const row = rowOf(o, L.s.b.id);
-    console.log(`# refused ${r.json.deliveries[0].state === "refused" ? "at the offer" : "by the pre-scan"}: ${row.message}`);
     assert.deepEqual([row.state, row.reason], ["refused", "not-writable"], JSON.stringify(row));
-    assert.match(row.message ?? "", /\.git\/hooks/);
-    assert.equal(sh("b", `test -e ${CWD}/.git/hooks/post-commit`).code, 1, "nothing extracted");
+    assert.match(row.message ?? "", /pj\/locked/);
+    assert.equal(sh("b", `test -e ${CWD}/pre/pj`).code, 1, "nothing extracted");
     assert.deepEqual(filesIn("b", "incoming").filter((f) => f.startsWith(of)), [], "the .part deleted");
+    rm("b", `${CWD}/.sova/sandbox.json`);
     await sandbox("b", L.s.b, false);
     await waitIdle("b", L.s.b.id).catch(() => {});
   });
@@ -655,7 +678,7 @@ describe("10. the Agents tab: transfer chip and offer rows", () => {
     await line.and(page.locator('[data-state="done"]')).waitFor({ timeout: 30000 });
     assert.equal(await line.count(), 1, "one line: b's");
     assert.match(await line.locator(".link-offer-dest").innerText(), /\/root\/shown-in/);
-    assert.match(await line.innerText(), /Landed/);
+    assert.match(await line.innerText(), /landed/i); // the chip is uppercased by CSS
     await shot("thread");
     await waitIdle("b", s.b.id).catch(() => {});
     await unlink("a", id);

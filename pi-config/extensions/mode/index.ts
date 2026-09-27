@@ -10,9 +10,11 @@
  * text.
  *
  * Minor modes (minor.ts) are extra prompt biases on top of either major mode;
- * "align" makes the agent agree on what to build before building it, and its
- * "## Alignment:" blocks are captured (align.ts) into a session custom entry,
- * shown in a one-line widget, and readable in an overlay viewer (align-ui.ts).
+ * "align" makes the agent agree on what to build before building it, and record each
+ * agreement with the `align` tool (align-tool.ts), in the loadout only while align is on.
+ * The tool results' snapshots are the state, folded along the branch (align.ts); a hidden
+ * note on each user prompt lists what is open, a settling run that planned in prose gets one
+ * nudge, and the TUI shows a widget and an overlay viewer (align-ui.ts).
  *
  * Surface: a "Mode" category in the ctrl+p command palette (palette.ts, registered
  * through command-palette/contracts.ts; bare /mode opens it), scriptable /mode
@@ -43,17 +45,25 @@ import { dirname, join, resolve } from "node:path";
 import { registerPaletteCategory, requestPaletteOpen } from "../command-palette/contracts.ts";
 import {
 	ALIGN_ENTRY_TYPE,
+	ALIGN_NUDGE_MESSAGE,
+	ALIGN_NUDGE_TEXT,
+	ALIGN_STATE_MESSAGE,
+	ALIGN_TOOL,
 	ALIGN_WIDGET_KEY,
-	looksLikeAlignBlock,
-	nextDoc,
-	parseAlignBlock,
-	restoreAlignDoc,
-	sameBlock,
-	statusLabelText,
-	summarize,
-	type AlignDoc,
-	type AlignEntryData,
+	alignCounts,
+	alignStateNote,
+	docLine,
+	foldAlignments,
+	legacyLine,
+	looksLikeUncapturedPlan,
+	openDocsOf,
+	toMarkdown,
+	widgetText,
+	type AlignDocument,
+	type LegacyAlignDoc,
+	type LegacyAlignEntryData,
 } from "./align.ts";
+import { registerAlignTool } from "./align-tool.ts";
 import { ALIGN_OVERLAY_OPTIONS, alignWidget, createAlignViewer, type AlignViewer } from "./align-ui.ts";
 import { policyDenial, readPolicy } from "../subagents/policy.ts";
 import { DELEGATE_FILE_NAME, DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateKey, delegateReader, type DelegateBackend } from "./delegate.ts";
@@ -132,10 +142,18 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	let toolsSnapshot: string[] | undefined;
 	/** Serializes concurrent probes so a rapid toggle cannot apply a stale result. */
 	let probeGeneration = 0;
-	/** The accumulated alignment doc of this session (align minor mode); null until the agent emits a block. */
-	let alignDoc: AlignDoc | null = null;
-	/** The open overlay viewer, refreshed live on capture; undefined when closed. */
+	/** This branch's alignments (align minor mode), folded from the align tool's results. */
+	let alignDocs: AlignDocument[] = [];
+	/** An older session's markdown alignment doc (align-doc entry), read-only. */
+	let legacyAlign: LegacyAlignDoc | null = null;
+	/** This run (until it settles): align calls made, the last reply's text, and whether it was nudged. */
+	let runAlignCalls = 0;
+	let lastReplyText = "";
+	let nudged = false;
+	/** The open overlay viewer, refreshed live on each align call; undefined when closed. */
 	let liveViewer: AlignViewer | undefined;
+	/** The latest context seen, for refreshing the widget from the tool (which has no UI of its own). */
+	let lastCtx: ExtensionContext | undefined;
 	let viewerOpen = false;
 	const viewerShortcut = config.viewerShortcut ?? DEFAULT_ALIGN_VIEWER_SHORTCUT;
 	/** The viewer key is skipped when it would shadow the mode or align toggle; reported once at session start. */
@@ -329,7 +347,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		if (minor === "spec") recomputeRoutes();
 		syncHostSection();
 		renderStatus(ctx);
-		if (minor === "align") syncAlignWidget(ctx);
+		if (minor === "align") {
+			syncAlignTool();
+			syncAlignWidget(ctx);
+		}
 		ctx.ui.notify(`Minor mode: ${minor} ${on ? "on" : "off"}`, "info");
 		// Spec on probes its writer's backends (and announces a writer that can't run); off, and
 		// outside delegate, there is nothing left to probe.
@@ -395,6 +416,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		// A restore can land on a different strict flag than the tools currently reflect.
 		if (active.mode === "delegate" && active.strict) applyStrictTools();
 		else restoreTools();
+		syncAlignTool();
 		recomputeRoutes();
 		syncHostSection();
 		renderStatus(ctx);
@@ -402,88 +424,77 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		else dropProbe();
 	}
 
-	// ── Alignment doc (align minor mode) ─────────────────────────────────────────
+	// ── Alignments (align minor mode) ─────────────────────────────────────────────
 
-	/** Widget above the editor while align is on and a doc exists; cleared otherwise. Best-effort. */
+	/**
+	 * The align tool is in the loadout exactly while align is on. The strict snapshot (the loadout
+	 * before strict hid edit/write) follows too, so leaving strict doesn't bring back a stale set.
+	 */
+	function syncAlignTool(): void {
+		try {
+			const want = hasMinor(active, "align");
+			const fix = (tools: string[]) => (want ? (tools.includes(ALIGN_TOOL) ? tools : [...tools, ALIGN_TOOL]) : tools.filter((t) => t !== ALIGN_TOOL));
+			const current = pi.getActiveTools();
+			const next = fix(current);
+			if (next.length !== current.length) pi.setActiveTools(next);
+			if (toolsSnapshot !== undefined) toolsSnapshot = fix(toolsSnapshot);
+		} catch {
+			// Before the session exists there is no loadout to change; session_start syncs it.
+		}
+	}
+
+	/** Widget above the editor while align is on and an alignment is open; cleared otherwise. Best-effort. */
 	function syncAlignWidget(ctx: ExtensionContext): void {
 		if (!ctx.hasUI) return;
 		try {
-			if (!hasMinor(active, "align") || alignDoc === null) {
+			if (!hasMinor(active, "align") || openDocsOf(alignDocs).length === 0) {
 				ctx.ui.setWidget(ALIGN_WIDGET_KEY, undefined);
 				return;
 			}
-			const doc = alignDoc;
-			ctx.ui.setWidget(ALIGN_WIDGET_KEY, (_tui, theme) => alignWidget(theme, () => summarize(doc), viewerKeyHint));
+			ctx.ui.setWidget(ALIGN_WIDGET_KEY, (_tui, theme) =>
+				alignWidget(theme, () => ({ text: widgetText(alignDocs, viewerKeyHint), open: alignCounts(alignDocs).open > 0 })),
+			);
 		} catch {
 			// Alignment UI is best-effort; never take the session down.
 		}
 	}
 
-	function persistAlignDoc(): void {
-		try {
-			pi.appendEntry<AlignEntryData>(ALIGN_ENTRY_TYPE, { version: 1, doc: alignDoc });
-		} catch {
-			// A failed append loses one revision, nothing else.
-		}
+	function refreshAlignViews(ctx: ExtensionContext): void {
+		liveViewer?.setState({ docs: alignDocs, legacy: legacyAlign });
+		syncAlignWidget(ctx);
 	}
 
 	function restoreAlign(ctx: ExtensionContext): void {
 		try {
-			alignDoc = restoreAlignDoc(ctx.sessionManager.getBranch());
+			const fold = foldAlignments(ctx.sessionManager.getBranch());
+			alignDocs = fold.docs;
+			legacyAlign = fold.legacy;
 		} catch {
-			alignDoc = null;
+			alignDocs = [];
+			legacyAlign = null;
 		}
-		liveViewer?.setDoc(alignDoc);
-		syncAlignWidget(ctx);
+		refreshAlignViews(ctx);
 	}
 
 	function alignSummaryLine(): string {
-		if (alignDoc === null) return "(none)";
-		const summary = summarize(alignDoc);
-		const settled = summary.total > 0 ? ` · ${summary.settled}/${summary.total} settled` : "";
-		return `v${summary.revision} · ${statusLabelText(summary.status)}${settled} · ${summary.lines} lines`;
+		const open = openDocsOf(alignDocs);
+		if (open.length > 0) return open.map(docLine).join("; ");
+		if (alignDocs.length > 0) return `none open (${alignDocs.length} finished)`;
+		return legacyAlign ? `older doc, read-only: ${legacyLine(legacyAlign)}` : "(none)";
 	}
 
-	/**
-	 * Capture the assistant's alignment block from a finished turn while align is on.
-	 * A message that looks like an alignment doc but does not parse gets a warning
-	 * instead of silently leaving the doc unchanged.
-	 */
-	function captureAlign(message: unknown, ctx: ExtensionContext): void {
-		if (!hasMinor(active, "align")) return;
-		const m = message as { role?: string; content?: unknown; stopReason?: string } | undefined;
-		if (!m || m.role !== "assistant" || !Array.isArray(m.content)) return;
-		if (m.stopReason === "error" || m.stopReason === "aborted") return;
-		const text = m.content
-			.filter((block): block is { type: "text"; text: string } => typeof block?.text === "string" && block.type === "text")
-			.map((block) => block.text)
-			.join("\n");
-		const parsed = parseAlignBlock(text);
-		if (parsed === undefined) {
-			if (looksLikeAlignBlock(text)) {
-				try {
-					ctx.ui.notify("align: block looked like an alignment doc but was not captured — headings must be ##/### or **bold**", "warning");
-				} catch {
-					// The warning is best-effort.
-				}
-			}
-			return;
-		}
-		if (sameBlock(alignDoc, parsed.markdown)) return;
-		alignDoc = nextDoc(alignDoc, parsed, new Date().toISOString());
-		persistAlignDoc();
-		liveViewer?.setDoc(alignDoc);
-		syncAlignWidget(ctx);
-	}
+	/** Open alignments first, then the finished ones. */
+	const viewOrder = (): AlignDocument[] => [...openDocsOf(alignDocs), ...alignDocs.filter((d) => !openDocsOf(alignDocs).includes(d))];
 
 	async function openAlignViewer(ctx: ExtensionContext): Promise<void> {
 		if (!ctx.hasUI) return;
-		if (alignDoc === null) {
-			ctx.ui.notify("No alignment doc yet (turn align on and ask for work)", "info");
+		if (alignDocs.length === 0 && legacyAlign === null) {
+			ctx.ui.notify("No alignments yet (turn align on and ask for work)", "info");
 			return;
 		}
 		if (ctx.mode !== "tui") {
-			ctx.ui.notify(`align doc: ${alignSummaryLine()}\n\n${alignDoc.markdown}`, "info");
+			const text = alignDocs.length > 0 ? viewOrder().map(toMarkdown).join("\n\n---\n\n") : (legacyAlign?.markdown ?? "");
+			ctx.ui.notify(`alignments: ${alignSummaryLine()}\n\n${text}`, "info");
 			return;
 		}
 		if (viewerOpen) return;
@@ -494,7 +505,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 					liveViewer = createAlignViewer({
 						theme,
 						markdownTheme: getMarkdownTheme(),
-						getDoc: () => alignDoc,
+						getState: () => ({ docs: alignDocs, legacy: legacyAlign }),
 						height: () => Math.max(5, tui.terminal.rows - 4),
 						requestRender: () => tui.requestRender(),
 						close: () => done(undefined),
@@ -512,20 +523,32 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		}
 	}
 
+	/** Every open alignment (else every one; else an older session's doc) as markdown, to `.pi/align.md` or `arg`. */
 	function exportAlign(arg: string, ctx: ExtensionContext): void {
-		if (alignDoc === null) {
-			ctx.ui.notify("No alignment doc to export", "warning");
+		const open = openDocsOf(alignDocs);
+		const docs = open.length > 0 ? open : alignDocs;
+		const text = docs.length > 0 ? docs.map(toMarkdown).join("\n\n---\n\n") : legacyAlign?.markdown;
+		if (text === undefined) {
+			ctx.ui.notify("No alignments to export", "warning");
 			return;
 		}
 		const target = resolve(ctx.cwd, arg === "" ? join(CONFIG_DIR_NAME, "align.md") : arg);
 		try {
 			mkdirSync(dirname(target), { recursive: true });
-			writeFileSync(target, `${alignDoc.markdown}\n`);
-			ctx.ui.notify(`Alignment doc written to ${target}`, "info");
+			writeFileSync(target, `${text}\n`);
+			ctx.ui.notify(`Alignments written to ${target}`, "info");
 		} catch (error) {
 			ctx.ui.notify(`Could not write ${target}: ${error instanceof Error ? error.message : String(error)}`, "warning");
 		}
 	}
+
+	registerAlignTool(pi, {
+		docs: () => alignDocs,
+		changed: (doc) => {
+			alignDocs = [...alignDocs.filter((d) => d.id !== doc.id), doc];
+			if (lastCtx) refreshAlignViews(lastCtx);
+		},
+	});
 
 	/** One line per profile: the configured tuple(s) and, in delegate, what is actually in use. */
 	function routingLines(): string[] {
@@ -576,7 +599,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			`strict: ${active.strict ? "on" : "off"}`,
 			`minor: ${active.minorModes.length > 0 ? active.minorModes.join(", ") : "(none)"}`,
 			`shortcut: ${fileDefault.shortcut ?? DEFAULT_MODE_SHORTCUT}`,
-			`align doc: ${alignSummaryLine()}`,
+			`alignments: ${alignSummaryLine()}`,
 			`state file: ${STATE_FILE}`,
 		];
 	}
@@ -598,9 +621,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			}),
 	});
 
-	const ALIGN_ARGS = ["status", "clear", "export", "on", "off"];
+	const ALIGN_ARGS = ["status", "export", "on", "off"];
 	pi.registerCommand("align", {
-		description: "Open the alignment-doc viewer; or: status | clear | export [path] | on | off",
+		description: "Open the alignments viewer; or: status | export [path] | on | off",
 		getArgumentCompletions: (argumentPrefix) => {
 			const items = ALIGN_ARGS.filter((value) => value.startsWith(argumentPrefix.trim())).map((value) => ({ value, label: value }));
 			return items.length > 0 ? items : null;
@@ -614,15 +637,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				return;
 			}
 			if (arg === "status") {
-				ctx.ui.notify(`align doc: ${alignSummaryLine()}`, "info");
-				return;
-			}
-			if (arg === "clear") {
-				alignDoc = null;
-				persistAlignDoc();
-				liveViewer?.setDoc(null);
-				syncAlignWidget(ctx);
-				ctx.ui.notify("Alignment doc cleared", "info");
+				ctx.ui.notify(`alignments: ${alignSummaryLine()}`, "info");
 				return;
 			}
 			if (arg === "on" || arg === "off") {
@@ -634,7 +649,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				exportAlign(exportArg[1]?.trim() ?? "", ctx);
 				return;
 			}
-			ctx.ui.notify(`Unknown argument "${arg}". Usage: /align [status|clear|export [path]|on|off]`, "warning");
+			ctx.ui.notify(`Unknown argument "${arg}". Usage: /align [status|export [path]|on|off]`, "warning");
 		},
 	});
 
@@ -726,18 +741,46 @@ export default function modeExtension(pi: ExtensionAPI): void {
 
 	if (!viewerShortcutClash) {
 		pi.registerShortcut(viewerShortcut as KeyId, {
-			description: "Open the alignment-doc viewer",
+			description: "Open the alignments viewer",
 			handler: async (ctx) => openAlignViewer(ctx),
 		});
 	}
 
-	// Capture the alignment block from each finished assistant turn while align is on.
+	// What this run did, for the settle nudge: whether it called align, and its last reply's text.
 	pi.on("turn_end", async (event, ctx) => {
-		try {
-			captureAlign(event.message, ctx);
-		} catch {
-			// Capture is best-effort.
-		}
+		lastCtx = ctx;
+		const m = event.message as { role?: string; content?: unknown } | undefined;
+		if (!m || m.role !== "assistant" || !Array.isArray(m.content)) return;
+		const blocks = m.content as { type?: string; name?: string; text?: string }[];
+		if (blocks.some((b) => b?.type === "toolCall" && b.name === ALIGN_TOOL)) runAlignCalls++;
+		const text = blocks
+			.filter((b) => b?.type === "text" && typeof b.text === "string")
+			.map((b) => b.text)
+			.join("\n");
+		if (text.trim() !== "") lastReplyText = text;
+	});
+
+	/**
+	 * One nudge per run: a run about to settle with align on, no align call, and a final reply that
+	 * reads like a plan asking the user to decide gets a hidden message and one more request.
+	 */
+	pi.on("agent_before_settle", async (event) => {
+		if (!hasMinor(active, "align") || nudged || runAlignCalls > 0 || event.outcome !== "completed") return;
+		if (!looksLikeUncapturedPlan(lastReplyText)) return;
+		nudged = true;
+		return {
+			entries: [
+				...event.entries,
+				{ type: "custom_message" as const, customType: ALIGN_NUDGE_MESSAGE, display: false, content: ALIGN_NUDGE_TEXT },
+			],
+			continue: true,
+		};
+	});
+
+	pi.on("agent_settled", async () => {
+		runAlignCalls = 0;
+		lastReplyText = "";
+		nudged = false;
 	});
 
 	// Branch navigation (/tree, /fork) changes which mode and which doc are current.
@@ -747,7 +790,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", async () => {
-		alignDoc = null;
+		alignDocs = [];
+		legacyAlign = null;
 		liveViewer = undefined;
 		viewerOpen = false;
 	});
@@ -779,13 +823,17 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		// The same block into the base options, so a later request of this run, or a run an
 		// extension's message starts, is built with it too (see hostPromptOptions).
 		syncHostSection(block);
+		// The open alignments ride the user's prompt as a hidden message, never the system prompt:
+		// a prompt change restarts a Claude Code session's CLI.
+		const note = hasMinor(active, "align") ? alignStateNote(alignDocs) : undefined;
+		const message = note ? { message: { customType: ALIGN_STATE_MESSAGE, content: note, display: false } } : {};
 		const sections = (event.systemPromptOptions as { sections?: Record<string, string> } | undefined)?.sections;
 		if (sections) {
 			applyModeSection(sections, block);
-			return;
+			return note ? message : undefined;
 		}
-		if (block === undefined) return;
-		return { systemPrompt: `${event.systemPrompt}\n\n${block}` };
+		if (block === undefined) return note ? message : undefined;
+		return { systemPrompt: `${event.systemPrompt}\n\n${block}`, ...message };
 	});
 
 	// Every run, whoever started it, and after pi may have rebuilt its base options (a tool
@@ -793,6 +841,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	pi.on("agent_start", async () => syncHostSection());
 
 	pi.on("session_start", async (event, ctx) => {
+		lastCtx = ctx;
 		restoreActiveState(event?.reason, ctx);
 		restoreAlign(ctx);
 		if (viewerShortcutClash && ctx.hasUI) {
@@ -814,12 +863,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		return new Text(theme.fg("dim", `── mode → ${mode} ──`), 0, 0);
 	});
 
-	// One dim marker per captured revision; the doc itself lives in the viewer.
-	pi.registerEntryRenderer<AlignEntryData>(ALIGN_ENTRY_TYPE, (entry, _options, theme) => {
+	// An older session's markdown alignment doc: one dim marker per revision, read-only.
+	pi.registerEntryRenderer<LegacyAlignEntryData>(ALIGN_ENTRY_TYPE, (entry, _options, theme) => {
 		const doc = entry.data?.doc;
 		if (!doc) return new Text(theme.fg("dim", "── alignment cleared ──"), 0, 0);
-		const summary = summarize(doc);
-		const settled = summary.total > 0 ? ` · ${summary.settled}/${summary.total} settled` : "";
-		return new Text(theme.fg("dim", `── alignment v${summary.revision} · ${statusLabelText(summary.status)}${settled} ──`), 0, 0);
+		return new Text(theme.fg("dim", `── alignment ${legacyLine(doc)} ──`), 0, 0);
 	});
 }

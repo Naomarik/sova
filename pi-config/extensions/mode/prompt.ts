@@ -1,5 +1,6 @@
 /** The delegate system-prompt text, prompt composition, and status labels. Pure functions: unit-testable. */
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateDefaults, type DelegateProfileId, type WorkerChoice } from "./delegate.ts";
+import { ALIGN_FILE_SCHEMA } from "./align.ts";
 import { buildMinorPrompt, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import type { Mode, ModeState } from "./state.ts";
@@ -59,9 +60,10 @@ export function buildDelegatePrompt(routes: readonly ProfileRoute[]): string {
 
 /**
  * Appended to the delegate block while align is also on. Without it the delegate block's "delegate all
- * else" wins: the orchestrator spawns an implementation worker before any alignment block is emitted.
+ * else" wins: the orchestrator spawns an implementation worker before any alignment is recorded, or
+ * relays a planning worker's report as a freeform plan.
  */
-export const DELEGATE_ALIGN_BRIDGE = `The align minor mode is on and takes precedence over delegation: for any ask that needs alignment, spawn at most a non-editing Planning & specs worker to investigate (never the Investigation profile for this — it is design work), emit the alignment block yourself, and spawn no implementation worker until the user has confirmed.`;
+export const DELEGATE_ALIGN_BRIDGE = `The align minor mode is on and takes precedence over delegation: for any ask that needs alignment, spawn at most a non-editing Planning & specs worker to investigate (never the Investigation profile for this — it is design work). Workers have no align tool: tell the planning worker to write its result as an alignment JSON file at a path you choose (${ALIGN_FILE_SCHEMA}), then import it with align create + fromFile — never relay or retype its plan as reply text. Spawn no implementation worker until the user has confirmed and the alignment's status is implementing, and give implementation workers the decided questions (align get).`;
 
 /**
  * Appended to the spec block while a spec writer is set (spec.ts, mode-spec.json), under either major

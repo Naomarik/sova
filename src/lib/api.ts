@@ -48,6 +48,12 @@ import type {
   MeshLogins,
   MeshPeerEntry,
   MeshSessions,
+  PushDevice,
+  PushInfo,
+  PushSettings,
+  PushSettingsInfo,
+  PushSubscribeRequest,
+  PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
@@ -244,6 +250,21 @@ export const getOverseerSettings = () => request<OverseerSettingsInfo>("/api/set
 /** Replace the Overseer's settings; model and thinking apply at once while it is idle. */
 export const putOverseerSettings = (settings: OverseerSettings) =>
   request<OverseerSaveResult>("/api/settings/overseer", { method: "PUT", body: JSON.stringify(settings) });
+
+// ---- phone notifications (Web Push; shared/protocol.ts) ----------------------------------------------
+
+const JSON_HEADERS = { "content-type": "application/json" };
+
+/** The server's public key, the devices (never their endpoints) and the settings. */
+export const getPushInfo = () => request<PushInfo>("/api/push");
+export const putPushSettings = (settings: PushSettings) =>
+  request<PushSettingsInfo>("/api/push/settings", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(settings) });
+/** Add or refresh this browser's subscription. A `resync` of a removed device answers 410. */
+export const postPushSubscription = (body: PushSubscribeRequest) =>
+  request<PushDevice>("/api/push/subscribe", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) });
+export const deletePushSubscription = (which: { endpoint: string } | { id: string }) =>
+  request<{ removed: boolean }>("/api/push/subscribe", { method: "DELETE", headers: JSON_HEADERS, body: JSON.stringify(which) });
+export const sendPushTest = () => request<PushTestResult>("/api/push/test", { method: "POST", headers: JSON_HEADERS, body: "{}" });
 
 /** Every theme the app can find — the ones it ships and the ones in the user's folder — rescanned
     per request. Never fails on an unreadable folder: that comes back as `error` with the built-ins

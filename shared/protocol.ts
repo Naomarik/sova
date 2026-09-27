@@ -2573,6 +2573,89 @@ export interface SovaTodoDetails {
 /** Marks an Overseer turn was started by proactivity (server-sent "Brief me"). The prompt text of
     such a turn starts with this prefix, so the transcript renders it as a machine row, not "You". */
 export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
+
+// ---------------------------------------------------------------------------
+// Web Push: phone notifications for blockers (server/push*.ts, server/web-push.ts). Not the
+// sessions feed's "push" of marks (/ws/watch?feed=sessions). Every response is no-store, and no
+// response ever carries a device's endpoint or keys back out.
+//
+// GET    /api/push             -> PushInfo
+// PUT    /api/push/settings    body PushSettings -> PushSettingsInfo (400 invalid, the reason as a sentence)
+// POST   /api/push/subscribe   body PushSubscribeRequest -> PushDevice (400 invalid subscription;
+//                              410 a re-sync of a device that was removed: the browser drops it)
+// DELETE /api/push/subscribe   body { endpoint } | { id } -> { removed: boolean }
+// POST   /api/push/test        body { id? } -> PushTestResult (409 no contact address saved;
+//                              404 no device)
+
+/** The act-tier kinds a phone notification can be about (server/attention.ts). */
+export type PushKind = "needs-input" | "asks-you" | "error" | "looping" | "baton-needs-you" | "worker-error";
+export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "asks-you", "error", "looping", "baton-needs-you", "worker-error"];
+
+/** `<stateRoot>/push.json`. */
+export interface PushSettings {
+  version: 1;
+  /** Off: nothing is sent to any device (Send Test still works). */
+  enabled: boolean;
+  /** The VAPID `sub`: `mailto:…` or `https://…`. Required before anything is sent; no default. */
+  contact: string | null;
+  kinds: Record<PushKind, boolean>;
+  /** Server-local time, "HH:MM" 24-hour; the range may cross midnight; start ≠ end. */
+  quietHours: { enabled: boolean; start: string; end: string };
+}
+
+export interface PushSettingsInfo {
+  settings: PushSettings;
+  defaults: PushSettings;
+  file: string;
+}
+
+/** One subscribed device, as the wire shows it: never its endpoint or keys. */
+export interface PushDevice {
+  /** A hash of the endpoint (hex): what Remove and Send Test name. The browser computes the same
+      from its own subscription to find "this device". */
+  id: string;
+  label: string;
+  /** The push service's host (fcm.googleapis.com, web.push.apple.com, …). */
+  service: string;
+  createdAt: number;
+  lastOkAt?: number;
+  lastError?: string;
+  lastErrorAt?: number;
+}
+
+export interface PushInfo extends PushSettingsInfo {
+  /** The server's VAPID public key (base64url, 65-byte point): the browser's applicationServerKey. */
+  publicKey: string;
+  devices: PushDevice[];
+}
+
+export interface PushSubscribeRequest {
+  /** PushSubscription.toJSON(). */
+  subscription: { endpoint: string; keys: { p256dh: string; auth: string } };
+  label?: string;
+  /** The app's load-time re-sync, not an Enable: refused (410) for a device that was removed. */
+  resync?: boolean;
+  /** The endpoint this one renews (the service worker's pushsubscriptionchange): its label and age carry over. */
+  replaces?: string;
+}
+
+export interface PushTestResult {
+  results: { id: string; label: string; ok: boolean; removed?: boolean; error?: string }[];
+}
+
+/** What the service worker receives (JSON in the encrypted payload). */
+export interface PushPayload {
+  v: 1;
+  title: string;
+  body: string;
+  /** Replaces an earlier notification with the same tag: `sova:<sessionId>`, `sova:several`, `sova:test`. */
+  tag: string;
+  /** Where a tap goes: `#/sid/<id>` or `#/overseer`. */
+  hash: string;
+  /** Sessions that need you now, for the app badge; absent (Send Test) leaves the badge alone. */
+  count?: number;
+  ts: number;
+}
 /** GET /api/extensions: one entry per valid manifest record (`<state root>/extensions.json`, or
     SOVA_EXTENSIONS_FILE), in manifest order. `status` is a 1.5 s GET `<api>/api/health` (2xx =
     "ok"), cached 10 s per extension; `error` says why a "down" one is down. ext-contract-v1.2. */

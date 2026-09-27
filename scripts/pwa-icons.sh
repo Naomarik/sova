@@ -3,7 +3,8 @@
 # "any" icons are /favicon.svg (white Sova mark on the Indigo dusk gradient, rounded) scaled
 # up. Maskable and apple-touch icons are the full-bleed Indigo dusk gradient (#4A43D8 → #1E1A5C,
 # top-left to bottom-right) with the white mark centered well inside the 80% safe zone
-# (mark ≈ 52% of the width).
+# (mark ≈ 52% of the width). The notification badge (Android's status bar) is the mark alone,
+# white on transparent: the system tints it and reads only its alpha.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 out=public/icons
@@ -21,3 +22,9 @@ for s in 192 512; do
   rsvg-convert -w "$s" -h "$s" "$tmp/full.svg" -o "$out/pwa-$s-maskable.png"
 done
 rsvg-convert -w 180 -h 180 "$tmp/full.svg" -o "$out/apple-touch-icon.png"
+
+# Badge: 96×96, the mark scaled 2.5 (≈70 px wide) and centred: translate = 48 − 16 × 2.5.
+cat > "$tmp/badge.svg" <<'SVG'
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96"><g transform="translate(8 8) scale(2.5)" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7L12 25L20 7L28 25M15.6 17H24.4"/></g></svg>
+SVG
+rsvg-convert -w 96 -h 96 "$tmp/badge.svg" -o "$out/badge-96.png"

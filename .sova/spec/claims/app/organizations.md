@@ -301,8 +301,12 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   - `holder.json`, the host that holds the org, or its release (§app.organizations/holder);
   - `about.md` and `org-history.jsonl`: the org's About text and its history (§app.organizations/about);
   - `baton.json`, the baton registry: each session's holder, participants, hand-offs, offers and
-    their leases, message budget, model and wrap-up state, and whether each is hidden from the
-    org's owner (§app.owner-page/conversations) — never a link;
+    their leases, message budget, model and wrap-up state, whether each is hidden from the
+    org's owner (§app.owner-page/conversations), when someone it was sent to first wrote
+    (`wroteAt`), and for a settle session the conflict it settles (`conflict: {id, area}`) — never a
+    link. Rows from before `wroteAt` and `conflict` existed get them at startup and at each attach:
+    `wroteAt` from the transcript's first message by someone it was sent to, `conflict` from the
+    conflict that names the session;
   - `sessions/*.jsonl`: every baton session transcript and every project overseer conversation
     (current and history), written there directly by pi (`SessionManager.create(cwd, sessionDir)`);
   - per project, `projects/<projectId>/`: `decisions.json` (the decision index, its last reconcile
@@ -415,9 +419,19 @@ apply the same rule, as the Overseer's flag does (§app.overseer/identity-and-cl
 - **`kind`**: a baton whose row has offers is an `offer`, any other baton a `gathering`; a file with
   THAT org's project-overseer marker is an `overseer` conversation, even one `state.json` no longer
   lists (pushed past the history cap); anything else in the workspace is `other`, with no project.
-- **`finished`**: a hand-off `done` or `closed`, or an overseer conversation that isn't the current one
+- **`finished`**: a hand-off `done` or `closed`; an overseer conversation that isn't the current one
   (the sidebar lists such a conversation nowhere: its overseer's History opens it,
-  §app.project-overseer/page).
+  §app.project-overseer/page); or a coding session whose worktree branch is **merged** into its
+  target per git (the same answer as the project page's, §app.project-overseer/coding-worktrees:
+  git's while the branch exists and can be read, else the recorded merge or the branch's removal).
+  The listing reads git for it at most every 30 s per session, in the background: until git has
+  answered once it says what `started.json` recorded, and a Merge Branch updates it at once.
+- **What the list says of a baton session**, beside its holder and state (`SessionSummary.baton`,
+  shared/baton.ts): `written` once someone it was sent to has sent a message (the operator, for one
+  sent to the operator), from the registry row's `wroteAt`; `opened` once a person (not a link
+  previewer or a scanner) opened one of its links, from the visit log (§app.baton/visits); and
+  `settle: { area }` for a **settle session**, one started to settle a conflict
+  (§app.requirements/routing), with the conflict's area.
 - A project removed from `projects.json` keeps its `started.json`, so its coding sessions stay
   organizational, with no `projectName`.
 - Names come from `org.json` and `projects.json`; a project no longer listed leaves `projectName` unset.

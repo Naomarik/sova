@@ -42,11 +42,15 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Org page link (org head) | wordless `arrow-right` · `aria-label` and `title`: Open the {org} page |
 | Project label | {project}, then its count · `title`: the project root (from its overseer's folder), else {project} · Unknown project · Other |
 | Project overseer eye (project heading, §app.session-list/organizations) | wordless `eye`, one mark at most: Busy's pulsing dot · the turn-error mark · the unread dot · `aria-label` and `title`: Open the {project} overseer, + " · working" / " · last turn failed" / " · new reply" |
-| Finished list | Finished {n} · `title`: "Hand-offs that reached their goal or were closed, and sessions you archived." |
+| Project groups (in order, each only with rows) | `Conversations` {n} · `title`: "Gathering sessions and offers sent to people." · `Conflicts to settle` {n} · `title`: "Sessions asking someone to settle two decisions that disagree." · `Builds` {n} · `title`: "Coding sessions this project started." |
+| States (Conversations, Conflicts to settle) | `Not started` {n} · `In progress` {n} · `Done` {n} (collapsed) |
+| Done (every group) | Done {n} · `title`: Conversations and Conflicts: "Done or closed, and the ones you archived." · Builds: "Merged, and the ones you archived." |
+| Not started row, line 2 | "Link not sent yet" · "Not opened yet" · "Opened, no reply yet" · none while you hold it |
+| Settle row, line 2 | "In conflict: {area}" · not started: "In conflict: {area} · {hint}" |
 | Organizations spine door | wordless `building` over {n} · `aria-label` and `title`: Organizations · {n} sessions (1: "1 session"), + " · {k} waiting on you" while k ≥ 1 |
-| Org archive toasts | "Archived. Find it in {project}, under Finished." · "Moved back to {project}." · no project: "Archived. Find it in {org}, under Finished." · "Moved back to {org}." · a project with no name left: {project} = "its project" |
+| Org archive toasts | "Archived. Find it in {project}, under Done." · "Moved back to {project}." · no project: "Archived. Find it in {org}, under Done." · "Moved back to {org}." · a project with no name left: {project} = "its project" |
 | Org group refusal (drop, Move into group reason, server 400) | Organization sessions stay with their project. |
-| Select mode, org rows | Move to group: "Skipped 1: an organization session stays with its project." · "Skipped {n}: organization sessions stay with their project." · Archive: "{n} went to its project's Finished list." (n > 1: "{n} went to their projects' Finished lists.") |
+| Select mode, org rows | Move to group: "Skipped 1: an organization session stays with its project." · "Skipped {n}: organization sessions stay with their project." · Archive: "{n} went to its project's Done list." (n > 1: "{n} went to their projects' Done lists.") |
 | Archive date sections | Today · Yesterday · Last 7 days · Last 30 days · Older (each with its count) |
 | Groups region head (§app.session-list/groups) | Groups · {n} where n = **groups** · searching: Groups · {matching groups} of {all groups} |
 | New group button (the `+` on the Groups region head) | wordless `+` · `aria-label` and `title`: New group |

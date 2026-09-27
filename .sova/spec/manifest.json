@@ -4022,7 +4022,10 @@
         "src/components/Sidebar.tsx",
         "server/project-updates.ts",
         "server/person-links.ts",
-        "server/org-holder.ts"
+        "server/org-holder.ts",
+        "server/baton-marks.ts",
+        "server/baton-progress.test.ts",
+        "shared/baton.ts"
       ]
     },
     "§app.organizations/wrap-up": {
@@ -4275,7 +4278,9 @@
         "server/sessions-index.ts",
         "server/reconcile.test.ts",
         "shared/decisions.ts",
-        "server/project-overseer.ts"
+        "server/project-overseer.ts",
+        "server/baton.ts",
+        "shared/baton.ts"
       ],
       "requires": [
         "§app/baton",
@@ -4727,7 +4732,13 @@
         "server/index.ts",
         "shared/protocol.ts",
         "src/lib/org-region.ts",
-        "src/lib/org-region.test.ts"
+        "src/lib/org-region.test.ts",
+        "server/build-merged.ts",
+        "server/build-merged.test.ts",
+        "server/baton.ts",
+        "server/visits.ts",
+        "shared/baton.ts",
+        "server/baton-progress.test.ts"
       ]
     },
     "§app.session-list/ordinary-surfaces": {

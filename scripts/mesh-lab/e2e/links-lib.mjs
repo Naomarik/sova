@@ -6,7 +6,7 @@
 //
 // Model turns use zai/glm-5.3 only (the one key the lab carries).
 
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { laptopFetch, readAgentFile, STATE, waitFor, writeAgentFile } from "./lib.mjs";
 
@@ -132,7 +132,7 @@ export function writeLinksFile(host, file) {
 
 const LOCK = join(STATE, "LOCK");
 
-/** Take the lab lock for `role`, waiting while someone else holds it. */
+/** Take the lab lock for `role`, waiting while someone else holds it (already `role`'s: taken). */
 export async function takeLock(role, { timeoutMs = 30 * 60000 } = {}) {
   await waitFor(
     () => {
@@ -141,7 +141,11 @@ export async function takeLock(role, { timeoutMs = 30 * 60000 } = {}) {
         writeFileSync(join(LOCK, "owner"), `${role}\n`);
         return true;
       } catch {
-        return false;
+        try {
+          return readFileSync(join(LOCK, "owner"), "utf8").trim() === role;
+        } catch {
+          return false;
+        }
       }
     },
     { timeoutMs, intervalMs: 5000, what: "the lab LOCK" },

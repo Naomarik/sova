@@ -182,7 +182,7 @@ writeFileSync(
   }),
 );
 // A milestone update whose text (as a model might) echoes a profile phrase: the page's filter blanks it.
-appendUpdate(org.id, pa.id, { text: `Opening hours are agreed. ${M.voice}.`, milestone: "decided", by: "overseer" });
+appendUpdate(org.id, pa.id, { text: `Opening hours are agreed. ${M.voice}.`, run: "auto" });
 // Kim opened her own link: her visit is hers alone.
 visits.recordOpen(links.findLink(kimToken)!, { userAgent: "Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0" });
 

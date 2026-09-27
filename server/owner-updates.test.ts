@@ -5,7 +5,7 @@
 // overseer's notes, a goal, a profile or a contact. A throwaway PI_CODING_AGENT_DIR (with this
 // tree's pi-config extensions linked in) in the OS temp dir, deleted after; no model is called.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
@@ -26,6 +26,7 @@ const store = await import("./project-overseer-store");
 const { writeNotes } = await import("./overseer-store");
 const { registerOrgRoutes } = await import("./org-routes");
 const { disposeAllChats } = await import("./chat-manager");
+const { TOOL_NEEDS } = await import("./project-overseer-tools");
 const { settled } = await import("./workspace-git");
 
 after(async () => {
@@ -46,24 +47,29 @@ const app = new Hono();
 registerOrgRoutes(app);
 
 describe("the updates store", () => {
-  test("append, fold newest first, withdraw (stays in the file), refusals", async () => {
-    const a = updates.appendUpdate(org.id, pb.id, { text: "  First.  ", milestone: "decided", by: "overseer" }, Date.parse("2026-09-01T10:00:00Z"));
-    const b = updates.appendUpdate(org.id, pb.id, { text: "Second.", milestone: "built", by: "overseer" }, Date.parse("2026-09-02T10:00:00Z"));
+  test("append, fold newest first, take down (stays in the file), refusals", async () => {
+    const a = updates.appendUpdate(org.id, pb.id, { text: "  First.  ", run: "auto" }, Date.parse("2026-09-01T10:00:00Z"));
+    const b = updates.appendUpdate(org.id, pb.id, { text: "Second.", run: "operator" }, Date.parse("2026-09-02T10:00:00Z"));
     assert.equal(a.text, "First.");
-    assert.deepEqual(updates.readUpdates(org.id, pb.id).map((u) => u.id), [b.id, a.id]);
-    assert.throws(() => updates.appendUpdate(org.id, pb.id, { text: " ", milestone: "decided", by: "overseer" }), /Write the update first/);
-    assert.throws(() => updates.appendUpdate(org.id, pb.id, { text: "x".repeat(1201), milestone: "decided", by: "overseer" }), /at most 1200/);
-    assert.throws(() => updates.appendUpdate(org.id, pb.id, { text: "ok", milestone: "shipped", by: "overseer" }), /milestone must be one of/);
+    assert.deepEqual(updates.readUpdates(org.id, pb.id).map((u) => [u.id, u.by]), [
+      [b.id, "operator"],
+      [a.id, "overseer"],
+    ]);
+    assert.throws(() => updates.appendUpdate(org.id, pb.id, { text: " ", run: "auto" }), /Write the update first/);
+    assert.throws(() => updates.appendUpdate(org.id, pb.id, { text: "x".repeat(2001), run: "auto" }), /^OrgError: An update is at most 2,000 characters\.$|An update is at most 2,000 characters\./);
+    updates.appendUpdate(org.id, pb.id, { text: "x".repeat(2000), run: "auto" }, Date.parse("2026-08-01T10:00:00Z"));
     const r = await app.request(`/api/orgs/${org.id}/projects/${pb.id}/updates/${a.id}/withdraw`, { method: "POST" });
     assert.equal(r.status, 200);
     const after = (await r.json()) as ProjectUpdate[];
     assert.ok(after.find((u) => u.id === a.id)!.withdrawnAt);
-    assert.deepEqual(updates.publishedUpdates(org.id, pb.id).map((u) => u.id), [b.id]);
+    assert.deepEqual(updates.publishedUpdates(org.id, pb.id).map((u) => u.id).slice(0, 1), [b.id]);
+    assert.ok(!updates.publishedUpdates(org.id, pb.id).some((u) => u.id === a.id));
     assert.equal((await app.request(`/api/orgs/${org.id}/projects/${pb.id}/updates/${a.id}/withdraw`, { method: "POST" })).status, 409);
     assert.equal((await app.request(`/api/orgs/${org.id}/projects/prj_nope0000/updates`)).status, 404);
     const file = readFileSync(join(orgs.orgDir(org.id), "projects", pb.id, "updates.jsonl"), "utf8");
     assert.match(file, /"kind":"withdraw"/);
-    assert.match(file, /First\./, "a withdrawn post stays in the workspace history");
+    assert.match(file, /"by":\{"kind":"overseer","run":"operator"\}/);
+    assert.match(file, /First\./, "a taken-down post stays in the workspace history");
   });
 
   test("path segments are never anything but an id", () => {
@@ -72,38 +78,58 @@ describe("the updates store", () => {
 });
 
 describe("sova_owner_update, as the project overseer's runtime builds it", async () => {
-  orgs.setOrgOwner(org.id, alp.id);
-  orgs.patchOrg(org.id, { about: "They are selling the academy next spring and must not hear of it." });
+  const tool = () => po.toolsForTest(org.id, pa.id).find((t) => t.name === "sova_owner_update")!;
+  const run = (text: string) => tool().execute("t1", { text } as never, undefined, undefined, undefined as never);
   await po.ensureProjectOverseer(org.id, pa.id);
-  writeNotes("Kim tends to overpromise on delivery dates, check with Bob.\n", store.projectOverseerPaths(org.id, pa.id).notes);
-  baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours", goal: "Find out whether Kim will accept weekend shifts quietly", mintLink: false });
-  const run = (params: Record<string, unknown>) => po.toolsForTest(org.id, pa.id).find((t) => t.name === "sova_owner_update")!.execute("t1", params as never, undefined, undefined, undefined as never);
+  await po.patchProjectOverseer(org.id, pa.id, { autonomy: "L1" });
 
-  test("each private source refuses the post, named, never quoted", async () => {
-    for (const [text, what] of [
-      ["Good news: they are selling the academy next spring.", "About this organization"],
-      ["Note that Kim tends to overpromise on delivery dates.", "your notes"],
-      ["We wanted to find out whether Kim will accept weekend shifts.", "a conversation's goal or briefing"],
-      ["Kim is warm and patient, likes examples.", "a person's profile"],
-      ["Write to kim.lee@example.test for details.", "a person's contact details"],
+  test("L1; with no owner it refuses: there is no page to post to", async () => {
+    assert.equal(TOOL_NEEDS.sova_owner_update, "L1");
+    await assert.rejects(() => run("Hello."), /^Error: This organization has no owner, so there is no page to post to\.$/);
+  });
+
+  test("each private source refuses the post, never quoted", async () => {
+    orgs.setOrgOwner(org.id, alp.id);
+    orgs.patchOrg(org.id, { about: "They are selling the academy next spring and must not hear of it." });
+    writeNotes("Kim tends to overpromise on delivery dates, check with Bob.\n", store.projectOverseerPaths(org.id, pa.id).notes);
+    baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours", goal: "Find out whether Kim will accept weekend shifts quietly", mintLink: false });
+    const PRIVATE = "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words.";
+    for (const [text, why] of [
+      ["Good news: they are selling the academy next spring.", PRIVATE],
+      ["Note that Kim tends to overpromise on delivery dates.", PRIVATE],
+      ["We wanted to find out whether Kim will accept weekend shifts.", /repeats private text/],
+      ["Kim is warm and patient, likes examples.", /repeats private text/],
+      ["Write to kim.lee@example.test for details.", /repeats private text/],
     ] as const) {
-      await assert.rejects(() => run({ milestone: "decided", text }), (err: Error) => err.message.includes(`repeats ${what}`) && !err.message.includes(text), text);
+      await assert.rejects(() => run(text), (err: Error) => (typeof why === "string" ? err.message === why : why.test(err.message)) && !err.message.includes(text.slice(0, 30)), text);
     }
+    await assert.rejects(() => run("x".repeat(2001)), /^Error: An update is at most 2,000 characters\.$/);
     assert.equal(updates.readUpdates(org.id, pa.id).length, 0, "nothing was posted");
   });
 
-  test("a milestone posts (unattended); a second the same day is refused; requested is refused unattended", async () => {
+  test("unattended: nothing new refuses; a finished conversation is a milestone; then 24 hours", async () => {
     assert.equal(po.attendedForTest(org.id, pa.id), false);
-    await assert.rejects(() => run({ milestone: "requested", text: "Hello." }), /only for a post the operator asked for/);
-    const out = await run({ milestone: "decided", text: "The opening hours are agreed: 9 to 6, closed Mondays. See https://demo.example.test" });
+    const NOTHING = "Nothing new since the last update: post one when a conversation finishes, a decision is agreed, or a coding session finishes or is merged.";
+    await assert.rejects(() => run("The opening hours are agreed."), (e: Error) => e.message === NOTHING);
+    const s = baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours", goal: "g", mintLink: false });
+    baton.setHiddenFromOwner(s.sessionId, true);
+    baton.markDone(s.sessionId);
+    await assert.rejects(() => run("The opening hours are agreed."), (e: Error) => e.message === NOTHING, "a hidden conversation is no milestone");
+    const t = baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours 2", goal: "g", mintLink: false });
+    baton.markDone(t.sessionId);
+    const out = await run("The opening hours are agreed: 9 to 6, closed Mondays. See https://demo.example.test");
     assert.match(JSON.stringify(out.content), /Posted to Alperen Kaya's owner page/);
-    await assert.rejects(() => run({ milestone: "built", text: "The booking page is built." }), /already went out today/);
-    const log = updates.readUpdates(org.id, pa.id);
-    assert.deepEqual(log.map((u) => [u.milestone, u.by]), [["decided", "overseer"]]);
-    // Logged on the project page's activity list too.
+    await assert.rejects(() => run("More news."), /^Error: An update was posted less than an hour ago: at most one a day\.$/);
+    // Were that post a day old, the conversation that finished after it would allow the next one.
+    const file = join(orgs.orgDir(org.id), "projects", pa.id, "updates.jsonl");
+    writeFileSync(file, readFileSync(file, "utf8").replace(/"at":"[^"]+"/, `"at":"${new Date(Date.now() - 25 * 3_600_000).toISOString()}"`));
+    await run("Parking is sorted too.");
+    await assert.rejects(() => run("More news."), /at most one a day/);
+    assert.deepEqual(updates.readUpdates(org.id, pa.id).map((u) => u.by), ["overseer", "overseer"]);
     const actions = readFileSync(store.projectOverseerPaths(org.id, pa.id).actions, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((a) => a.tool === "sova_owner_update");
-    assert.deepEqual(actions.map((a) => a.outcome), ["refused", "refused", "refused", "refused", "refused", "refused", "ok", "refused"]);
-    assert.equal(actions.find((a) => a.outcome === "ok").note, "Posted an owner update (decided)");
+    assert.equal(actions.filter((a) => a.outcome === "ok").length, 2);
+    assert.equal(actions.find((a) => a.outcome === "ok").note, "Posted an owner update");
+    assert.ok(actions.some((a) => a.outcome === "refused" && a.error === NOTHING), "refusals are in the activity list");
   });
 
   test("its prompt carries the rule and the tool", () => {

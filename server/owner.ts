@@ -21,7 +21,7 @@ export function setOwner(orgId: string, personId: unknown): void {
 /** Get Owner Link: a new link for the owner now; every older one stops working. */
 export function mintOwnerLinkFor(orgId: string, now = Date.now()): PersonLinkRecord & { token: string } {
   const owner = ownerOf(orgId);
-  if (!owner) throw new OrgError("Pick an owner first.", 409);
+  if (!owner) throw new OrgError("Pick an owner first.", 400);
   const { token, record } = mintOwnerLink(orgId, owner.id, now);
   return { ...record, token };
 }

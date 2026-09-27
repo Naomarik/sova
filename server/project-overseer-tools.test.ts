@@ -100,9 +100,9 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     coding: () => [],
     startedCoding: () => new Map([["in-tree", { removed: false }], ["gone-tree", { removed: true }]]),
     codingTokens: async () => opts.tokens ?? 0,
-    postOwnerUpdate: async (input: { text: string; milestone: string; attended: boolean }) => {
-      calls.push(`owner-update:${input.milestone}`);
-      return { update: { id: "u_1", at: "", text: input.text, milestone: input.milestone as never, by: "overseer" as const }, owner: "Alperen" };
+    postOwnerUpdate: async (input: { text: string; attended: boolean }) => {
+      calls.push("owner-update");
+      return { update: { id: "u_1", at: "", text: input.text, by: input.attended ? ("operator" as const) : ("overseer" as const) }, owner: "Alperen" };
     },
   };
   const limits = new PoLimits();
@@ -126,7 +126,7 @@ const ACTS: Record<string, Record<string, unknown>> = {
   sova_todo: { op: "add", text: "Ask about VAT" },
   sova_idea: { op: "add", id: "§gap/vat", title: "Nobody decided VAT" },
   sova_note: { op: "append", text: "remember" },
-  sova_owner_update: { milestone: "decided", text: "The opening hours are agreed." },
+  sova_owner_update: { text: "The opening hours are agreed." },
 };
 
 describe("the autonomy table", () => {

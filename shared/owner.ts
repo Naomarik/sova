@@ -35,12 +35,8 @@ import type { BatonView } from "./baton";
 /** A project's chip, derived, never typed: the first that applies. */
 export type OwnerStatus = "waiting-on-you" | "asking" | "building" | "quiet";
 
-/** What a milestone update marks. `requested`: the operator asked the overseer to post it. */
-export type OwnerMilestone = "questions-answered" | "decided" | "built" | "merged" | "requested";
-export const OWNER_MILESTONES: readonly OwnerMilestone[] = ["questions-answered", "decided", "built", "merged", "requested"];
-
 /** The most characters of one update. */
-export const OWNER_UPDATE_MAX = 1200;
+export const OWNER_UPDATE_MAX = 2000;
 /** How long an owner link lasts from minting (absolute; no renewal). */
 export const OWNER_LINK_DAYS = 90;
 
@@ -50,13 +46,11 @@ export interface OwnerName {
   first: string;
 }
 
-/** One milestone update ("news"). `by`: the operator's name (the project's overseer posts for them). */
+/** One update the project overseer posted (not taken down). Shown with its time only. */
 export interface OwnerNews {
   id: string;
   at: string;
   text: string;
-  milestone: OwnerMilestone;
-  by: string;
 }
 
 /** A conversation that waits on the owner. */
@@ -202,12 +196,12 @@ export interface OwnerLinkResult {
   linkWarning?: string;
 }
 
-/** One update in the project page's log (every post, withdrawn ones included). */
+/** One update in the project page's log (every post, taken-down ones included). `by`: "overseer",
+    posted on its own; "operator", posted in the operator's own turn (they asked). */
 export interface ProjectUpdate {
   id: string;
   at: string;
   text: string;
-  milestone: OwnerMilestone;
   by: "overseer" | "operator";
   withdrawnAt?: string;
 }

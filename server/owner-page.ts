@@ -252,8 +252,6 @@ function newsOf(ctx: Ctx, projectId: string): OwnerNews[] {
     at: u.at,
     // The project overseer wrote it: the model's filter, as its replies get.
     text: ctx.r.said(ctx.r.redact(u.text)),
-    milestone: u.milestone,
-    by: ctx.operator.name,
   }));
 }
 

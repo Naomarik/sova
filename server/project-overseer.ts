@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -38,7 +38,7 @@ import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { readNotes, rotateState } from "./overseer-store";
-import { appendUpdate, postedToday } from "./project-updates";
+import { appendUpdate, cleanUpdateText, lastUpdate } from "./project-updates";
 import { promptOpenTodos, readTodos, updateTodo } from "./overseer-todos";
 import { UserTurns } from "./overseer-tools";
 import { canonicalPath } from "./paths";
@@ -520,22 +520,68 @@ function toolHost(rt: Rt): PoToolHost {
     startedCoding: () => new Map(readStarted(paths).filter((r) => r.kind === "coding" || r.kind === "operator-coding").map((r) => [r.sessionId, { removed: !!r.removed }])),
     codingTokens: () => codingTokens(paths),
     async postOwnerUpdate(input) {
-      const leak = ownerUpdateLeak(orgId, projectId, input.text);
-      if (leak) throw new Error(`Not posted: it repeats ${leak}, which the owner must never read. Rewrite it in your own plain words.`);
-      const today = postedToday(orgId, projectId);
-      if (today && !input.attended) throw new Error(`Not posted: an update already went out today (${today.at}). At most one per project per day; post the next milestone tomorrow.`);
-      const update = appendUpdate(orgId, projectId, { text: input.text, milestone: input.milestone, by: "overseer" });
       const owner = readRoster(orgId).find((x) => x.id === readOrg(orgId).owner && x.status === "active");
-      return { update, owner: owner?.name ?? null };
+      if (!owner) throw new Error("This organization has no owner, so there is no page to post to.");
+      const text = cleanUpdateText(input.text);
+      const leak = ownerUpdateLeak(orgId, projectId, text);
+      if (leak) throw new Error(leak);
+      if (!input.attended) {
+        const last = lastUpdate(orgId, projectId);
+        const now = Date.now();
+        if (last && now - Date.parse(last.at) < OWNER_UPDATE_EVERY_MS) throw new Error(`An update was posted ${hoursAgo(last.at, now)}: at most one a day.`);
+        if (!(await milestoneSince(orgId, projectId, last ? Date.parse(last.at) : 0)))
+          throw new Error("Nothing new since the last update: post one when a conversation finishes, a decision is agreed, or a coding session finishes or is merged.");
+      }
+      const update = appendUpdate(orgId, projectId, { text, run: input.attended ? "operator" : "auto" });
+      return { update, owner: owner.name };
     },
   };
 }
 
 /** The shortest repeated run that counts as copying private text into an owner update. */
 export const OWNER_UPDATE_REPEAT = 24;
+/** At most one owner update per project in this long, in runs the operator did not start. */
+export const OWNER_UPDATE_EVERY_MS = 24 * 3_600_000;
+
+const hoursAgo = (at: string, now: number): string => {
+  const h = Math.floor((now - Date.parse(at)) / 3_600_000);
+  return h < 1 ? "less than an hour ago" : h === 1 ? "1 hour ago" : `${h} hours ago`;
+};
 
 /**
- * What private text an owner update repeats, by name, or null (§app.owner-page/news). An update is
+ * A real milestone of the project since `since` (ms), for an update in a run the operator did not
+ * start (§app.owner-page/updates): a conversation shown on the owner page finished, a decision was
+ * agreed (promoted), or a coding session of the project was merged, or finished (not working now,
+ * its file last written after `since`).
+ */
+export async function milestoneSince(orgId: string, projectId: string, since: number): Promise<boolean> {
+  const after = (t: string | undefined) => !!t && Date.parse(t) > since;
+  const project = projectOf(orgId, projectId);
+  const shown = projectBatons(orgId, projectId).filter((b) => !b.hiddenFromOwner && !project.ownerHidden);
+  if (shown.some((b) => b.state === "done" && after(b.closedAt))) return true;
+  const shownIds = new Set(shown.map((b) => b.sessionId));
+  try {
+    if (listDecisions(orgId, projectId).decisions.some((d) => d.state === "promoted" && shownIds.has(d.sessionId) && after(d.promotedAt))) return true;
+  } catch {
+    // an index that can't sync: no decision counts
+  }
+  const known = indexedSessionPaths();
+  for (const r of readStarted(projectOverseerPaths(orgId, projectId))) {
+    if (r.kind !== "coding" && r.kind !== "operator-coding") continue;
+    if (after(r.merged?.at)) return true;
+    const path = known.get(r.sessionId) ?? r.path;
+    if (!path || !existsSync(path) || isSessionBusy(path)) continue;
+    try {
+      if (statSync(path).mtimeMs > since) return true;
+    } catch {
+      // gone
+    }
+  }
+  return false;
+}
+
+/**
+ * The refusal for an owner update that repeats private text, or null (§app.owner-page/updates). An update is
  * written by this project's overseer, whose prompt holds the org's About text, its notes and the
  * operator's instructions: any run of OWNER_UPDATE_REPEAT characters from those, from a
  * conversation's goal or a hand-off briefing, or from a person's profile, and any contact value,
@@ -552,15 +598,15 @@ export function ownerUpdateLeak(orgId: string, projectId: string, text: string):
   const paths = projectOverseerPaths(orgId, projectId);
   const roster = readRoster(orgId);
   const batons = projectBatons(orgId, projectId);
+  const PRIVATE = "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words.";
+  const OTHER = "This update repeats private text (a conversation's goal or briefing, the operator's instructions, or a person's profile or contact). Updates are for the client: write it again in your own words.";
   const sources: [string, string[]][] = [
-    ["About this organization", [readOrgAbout(orgId)]],
-    ["your notes", [readNotes(paths.notes)]],
-    ["the operator's instructions", [readPoSettings(paths).extraSystemPrompt]],
-    ["a conversation's goal or briefing", batons.flatMap((b) => [b.goal, ...b.handoffs.map((h) => h.briefing), ...(b.offers ?? []).map((o) => o.briefing)])],
-    ["a person's profile", roster.flatMap((x) => [x.voice, x.role, ...x.skills, x.referral?.why ?? ""])],
+    [PRIVATE, [readOrgAbout(orgId), readNotes(paths.notes)]],
+    [OTHER, [readPoSettings(paths).extraSystemPrompt, ...batons.flatMap((b) => [b.goal, ...b.handoffs.map((h) => h.briefing), ...(b.offers ?? []).map((o) => o.briefing)])]],
+    [OTHER, roster.flatMap((x) => [x.voice, x.role, ...x.skills, x.referral?.why ?? ""])],
   ];
   for (const [what, texts] of sources) if (texts.some((t) => t && repeats(t))) return what;
-  for (const x of roster) for (const v of Object.values(x.contact ?? {})) if (typeof v === "string" && v.trim().length >= 5 && hay.includes(norm(v))) return "a person's contact details";
+  for (const x of roster) for (const v of Object.values(x.contact ?? {})) if (typeof v === "string" && v.trim().length >= 5 && hay.includes(norm(v))) return OTHER;
   return null;
 }
 

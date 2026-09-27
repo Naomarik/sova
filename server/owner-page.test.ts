@@ -361,11 +361,15 @@ describe("the share listener's /i/ (§app.owner-page/link)", () => {
     const off = await share(`/api/i/${token}`);
     assert.equal(off.status, 410);
     assert.deepEqual(JSON.parse(off.text), { error: "This link is no longer active.", code: "gone" });
+    assert.equal((await call<{ error: string }>("PUT", `/api/orgs/${org.id}/owner`, { personId: null })).status, 200);
+    const none = await call<{ error: string }>("GET", `/api/orgs/${org.id}/owner/link`);
+    assert.deepEqual([none.status, none.body.error], [400, "Pick an owner first."]);
+    await call("PUT", `/api/orgs/${org.id}/owner`, { personId: alp.id });
     const { token: old } = plinks.mintOwnerLink(org.id, alp.id, Date.now() - 91 * 86_400_000);
     const expired = await share(`/api/i/${old}`);
-    assert.deepEqual([expired.status, JSON.parse(expired.text)], [410, { error: "This link is no longer active.", code: "gone", why: "expired" }]);
+    assert.deepEqual([expired.status, JSON.parse(expired.text)], [410, { error: "This link has expired.", code: "gone", why: "expired" }]);
     const unknown = await share(`/api/i/${"B".repeat(43)}`);
-    assert.deepEqual([unknown.status, JSON.parse(unknown.text)], [404, { error: "Unknown link.", code: "not-found" }]);
+    assert.deepEqual([unknown.status, JSON.parse(unknown.text)], [404, { error: "This link doesn't open anything.", code: "not-found" }]);
     for (const t of [off.text, expired.text, unknown.text]) assert.ok(!t.includes("Gate") && !t.includes("Alperen"));
   });
 

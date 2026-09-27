@@ -225,7 +225,9 @@ export function createShareApp(): Hono {
     if (!access.ok) {
       const dead = access.link;
       if (access.status === 410 && dead) logVisit(token, "refused", () => recordRefused(ownerVisit(dead), ua));
-      return c.json(deadLink(access.status, access.why), access.status);
+      // §app.owner-page/link: only an expiry is named; no org or person, ever.
+      if (access.status === 404) return c.json(refusal("not-found", "This link doesn't open anything."), 404);
+      return c.json(access.why === "expired" ? refusal("gone", "This link has expired.", "expired") : refusal("gone", "This link is no longer active."), 410);
     }
     let view;
     try {

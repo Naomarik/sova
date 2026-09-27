@@ -18,6 +18,8 @@ const orgs = await import("./orgs");
 const baton = await import("./baton");
 await import("./baton-loadout"); // registers the baton kind (its loadout and its cwd), as the server does
 const links = await import("./baton-links");
+const visits = await import("./visits");
+const { personPage } = await import("./person-page");
 const po = await import("./project-overseer");
 const store = await import("./project-overseer-store");
 const { acquireChat, cwdOverride, disposeAllChats } = await import("./chat-manager");
@@ -103,6 +105,9 @@ describe("clone + attach = the whole organization", async () => {
   store.noteStarted(pA, c1.sessionId, "gathering");
   await po.patchProjectOverseer(a.id, project.id, { autonomy: "L2" });
   const tokens = [c1.token!, again.token];
+  // Tony opened his link once (§app.baton/visits): the log is in the repo and moves with it.
+  const UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Mobile/15E148 Safari/604.1";
+  visits.recordOpen(links.findLink(again.token)!, { tab: "T".repeat(22), userAgent: UA });
 
   // Committed as the hourly commit would, then cloned elsewhere; this host forgets the original.
   assert.equal((await commitAll(aDir, "test commit")).committed, true);
@@ -124,7 +129,7 @@ describe("clone + attach = the whole organization", async () => {
 
   test("the repo holds every file of the org's state", () => {
     const files = git(bDir, "ls-files").split("\n");
-    const want = ["org.json", "roster.json", "roster-history.jsonl", "projects.json", "baton.json", `sessions/${c1.path.split("/").pop()}`];
+    const want = ["org.json", "roster.json", "roster-history.jsonl", "projects.json", "baton.json", "visits.jsonl", `sessions/${c1.path.split("/").pop()}`];
     for (const f of want) assert.ok(files.includes(f), f);
     for (const f of ["overseer.json", "state.json", "started.json"]) assert.ok(files.includes(`projects/${project.id}/overseer/${f}`), f);
     assert.ok(files.some((f) => f.startsWith("sessions/") && f.endsWith(`_${overseer.id}.jsonl`)), "the overseer's transcript");
@@ -199,6 +204,15 @@ describe("clone + attach = the whole organization", async () => {
       assert.ok(!history.includes(links.hashToken(t)), "hash");
     }
     assert.ok(!git(bDir, "ls-files").includes("baton-links"));
+    assert.ok(!history.includes(UA) && !history.includes("Mozilla"), "no user agent");
+  });
+
+  test("the visit log moved: the person's page on the new host shows the visit", () => {
+    const page = personPage(b.id, tony.id);
+    assert.deepEqual(
+      page.visits.map((v) => [v.kind, v.device, v.publicTitle]),
+      [["visit", "Safari · iPhone", "Payroll day"]],
+    );
     assert.ok(existsSync(join(stateRoot(), "baton-links.json")), "the links live on the host");
   });
 });

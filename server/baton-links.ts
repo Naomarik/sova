@@ -100,3 +100,26 @@ export function revokeLinks(match: (l: LinkRecord) => boolean, now = Date.now())
 export function liveLinks(sessionId: string, n: number, now = Date.now()): LinkRecord[] {
   return read().filter((l) => l.sessionId === sessionId && l.n === n && !linkDead(l, now));
 }
+
+/** Every link of an org on this host (live or not), in minting order. */
+export function linksOfOrg(orgId: string): LinkRecord[] {
+  return read().filter((l) => l.orgId === orgId);
+}
+
+/** Every link of a person in an org on this host (live or not), in minting order. */
+export function linksOfPerson(orgId: string, personId: string): LinkRecord[] {
+  return linksOfOrg(orgId).filter((l) => l.personId === personId);
+}
+
+/** Turn off every live link of a person in an org, or only those of one hand-off (`only`). Returns
+    the sessions whose links changed. */
+export function revokePersonLinks(orgId: string, personId: string, only?: { sessionId: string; n: number }, now = Date.now()): string[] {
+  const sessions = new Set<string>();
+  revokeLinks((l) => {
+    if (l.orgId !== orgId || l.personId !== personId || linkDead(l, now)) return false;
+    if (only && (l.sessionId !== only.sessionId || l.n !== only.n)) return false;
+    sessions.add(l.sessionId);
+    return true;
+  }, now);
+  return [...sessions];
+}

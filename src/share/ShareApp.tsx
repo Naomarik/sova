@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { SHARE_TEXT_MAX, type BatonView, type BatonViewItem, type ShareServerMessage } from "../../shared/baton";
 import { renderShareMarkdown } from "./markdown";
+import { visitTab } from "./visit-tab";
 
 /**
  * The share page (§app.baton/outsider-view): one conversation, as the person holding this link may
@@ -8,6 +9,15 @@ import { renderShareMarkdown } from "./markdown";
  */
 
 const TOKEN = /^\/h\/([A-Za-z0-9_-]{43})\/?$/.exec(location.pathname)?.[1] ?? null;
+/** This tab's visit id (§app.baton/visits): a reload or a reconnect continues the same visit. */
+const storage = (): Storage | null => {
+  try {
+    return sessionStorage;
+  } catch {
+    return null;
+  }
+};
+const VISIT = visitTab(storage());
 
 type Problem = { title: string; body: string };
 const GONE: Problem = { title: "This link is no longer active.", body: "The conversation was closed or the link was turned off. Ask the person who sent it for a new one." };
@@ -111,7 +121,7 @@ export function ShareApp() {
 
   const load = async () => {
     if (!TOKEN) return;
-    const res = await fetch(`/api/h/${TOKEN}`, { cache: "no-store" }).catch(() => null);
+    const res = await fetch(`/api/h/${TOKEN}?v=${VISIT}`, { cache: "no-store" }).catch(() => null);
     if (!res) return;
     if (res.status === 410) return setProblem(GONE);
     if (res.status === 404) return setProblem(UNKNOWN);
@@ -124,7 +134,7 @@ export function ShareApp() {
   let stopped = false;
   const connect = () => {
     if (!TOKEN || stopped) return;
-    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/h?token=${TOKEN}`);
+    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/h?token=${TOKEN}&v=${VISIT}`);
     socket = ws;
     ws.onopen = () => (backoff = 2000);
     ws.onmessage = (e) => {

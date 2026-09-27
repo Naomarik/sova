@@ -678,8 +678,16 @@ export function linkAccess(token: string, now = Date.now()): LinkAccess {
   if (!link) return { ok: false, status: 404 };
   const hit = batonById(link.sessionId);
   if (!hit) return { ok: false, status: 404 };
-  if (linkDead(link, now) || hit.row.state === "closed") return { ok: false, status: 410 };
-  const row = hit.row;
+  const a = accessOf(link, hit.row, now);
+  if (!a.ok) return a;
+  return { ok: true, link, row: hit.row, dir: hit.dir, canWrite: a.canWrite, ...(a.reason ? { reason: a.reason } : {}) };
+}
+
+/** What a link may do on its session's row, with no token: 410 when it is turned off, expired or
+    the session is closed; else whether it writes now, and why not. linkAccess, and the person page's
+    link states. */
+export function accessOf(link: LinkRecord, row: BatonSession, now = Date.now()): { ok: true; canWrite: boolean; reason?: ViewerReason } | { ok: false; status: 410 } {
+  if (linkDead(link, now) || row.state === "closed") return { ok: false, status: 410 };
   const current = row.handoffs[row.handoffs.length - 1];
   let reason: ViewerReason | undefined;
   const offer = link.offerId ? row.offers?.find((o) => o.id === link.offerId) : undefined;
@@ -693,7 +701,7 @@ export function linkAccess(token: string, now = Date.now()): LinkAccess {
   else if (!current || current.n !== link.n || row.holder !== link.personId) reason = row.holder === OPERATOR ? "needs-operator" : "moved-on";
   // At the limit the page says so, also once the baton has gone to the operator because of it.
   if (budgetSpent(row) && (!reason || reason === "needs-operator" || reason === "moved-on")) reason = "budget";
-  return { ok: true, link, row, dir: hit.dir, canWrite: !reason, ...(reason ? { reason } : {}) };
+  return { ok: true, canWrite: !reason, ...(reason ? { reason } : {}) };
 }
 
 /** A fresh link for the current hand-off (the host keeps no token to show again); older links of

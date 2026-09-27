@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ORG_TABS, orgHref, orgsRouteFromHash, orgTabHref, projectHref, projectOverseerHref, startForHref } from "./orgs-route";
+import { ORG_TABS, orgHref, orgsRouteFromHash, orgTabHref, personHref, projectHref, projectOverseerHref, startForHref } from "./orgs-route";
 
 test("the list, one org, a start, a project and its overseer", () => {
   assert.deepEqual(orgsRouteFromHash("#/orgs"), { kind: "list" });
@@ -9,6 +9,12 @@ test("the list, one org, a start, a project and its overseer", () => {
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/start/p_x1"), { kind: "org", id: "org_ab12", start: "p_x1" });
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/projects/prj_1"), { kind: "project", id: "org_ab12", projectId: "prj_1" });
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/projects/prj_1/overseer"), { kind: "overseer", id: "org_ab12", projectId: "prj_1" });
+});
+
+test("one person's page; the bare People tab stays a tab", () => {
+  assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/people/p_x1"), { kind: "person", id: "org_ab12", personId: "p_x1" });
+  assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/people/p_x1/"), { kind: "person", id: "org_ab12", personId: "p_x1" });
+  assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/people"), { kind: "org", id: "org_ab12", tab: "people" });
 });
 
 test("a tab: sessions, people, projects, workspace; the bare org is Sessions by default (no tab key)", () => {
@@ -33,6 +39,9 @@ test("anything else is not this route", () => {
     "#/orgs/org_1/Workspace",
     "#/orgs/org_1/projects/a b",
     "#/orgs/org_1/projects/p/overseer/x",
+    "#/orgs/org_1/people/a b",
+    "#/orgs/a b/people/p_1",
+    "#/orgs/org_1/people/p_1/x",
     "#/s/orgs",
   ])
     assert.equal(orgsRouteFromHash(h), null, h);
@@ -43,6 +52,7 @@ test("hrefs round-trip", () => {
   assert.deepEqual(orgsRouteFromHash(startForHref("org_x", "p_1")), { kind: "org", id: "org_x", start: "p_1" });
   assert.deepEqual(orgsRouteFromHash(projectHref("org_x", "j1")), { kind: "project", id: "org_x", projectId: "j1" });
   assert.deepEqual(orgsRouteFromHash(projectOverseerHref("org_x", "j1")), { kind: "overseer", id: "org_x", projectId: "j1" });
+  assert.deepEqual(orgsRouteFromHash(personHref("org_x", "p_1")), { kind: "person", id: "org_x", personId: "p_1" });
 });
 
 test("a remembered parent is read once, and only for the same org and person", async () => {

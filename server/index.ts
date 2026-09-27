@@ -16,6 +16,7 @@ import { attachedWorkspaces } from "./orgs";
 import { WorkspaceCommitter } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
 import { startShareListener, stopShareListener } from "./share/listener";
+import { flushOpenVisits } from "./visits";
 import { disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { stateRoot } from "./state-root";
@@ -1168,6 +1169,12 @@ async function shutdown() {
   stopMesh();
   stopShareListener();
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
+  // Every visit with an open share socket is seen now, so the commit below carries it.
+  try {
+    flushOpenVisits();
+  } catch (err) {
+    console.warn(`[server] visit flush failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
   // After the runtimes' last writes: whatever changed in a workspace repo since its last commit.
   workspaceCommits.stop();
   await Promise.race([workspaceCommits.flush("shutdown").catch(() => []), new Promise((r) => setTimeout(r, 10_000))]);

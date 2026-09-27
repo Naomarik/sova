@@ -36,6 +36,9 @@ import { resolveSessionPath } from "./paths";
 import { refreshShare } from "./share/hub";
 import { shareInfo } from "./share/listener";
 import { nudgeMarks } from "./session-feed";
+import { personPage, previewAs } from "./person-page";
+import { linksOfOrg, revokePersonLinks } from "./baton-links";
+import { lastVisits } from "./visits";
 import { commitAll, setRemote } from "./workspace-git";
 
 /**
@@ -209,7 +212,21 @@ export async function orgPage(orgId: string): Promise<OrgDetail> {
       return why ? { ...b, waiting: why } : b;
     }),
     projectConflicts: w.projectConflicts,
+    ...lastOpenedOf(orgId),
   };
+}
+
+/** The People cards' "Last opened" (§app.baton/visits): never fails the page. */
+function lastOpenedOf(orgId: string): { lastOpened?: Record<string, { at?: string; minted: boolean }> } {
+  try {
+    const at = lastVisits(orgId);
+    const minted = new Set(linksOfOrg(orgId).map((l) => l.personId));
+    const out: Record<string, { at?: string; minted: boolean }> = {};
+    for (const pid of new Set([...Object.keys(at), ...minted])) out[pid] = { ...(at[pid] ? { at: at[pid] } : {}), minted: minted.has(pid) };
+    return Object.keys(out).length ? { lastOpened: out } : {};
+  } catch {
+    return {};
+  }
 }
 
 /** A route param ("" when absent: every lookup then answers 404). */
@@ -333,6 +350,29 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle((c) => {
       const limit = Number(c.req.query("limit") ?? 50);
       return c.json(recentChanges(p(c, "id"), Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 50));
+    }),
+  );
+  app.get(
+    "/api/orgs/:id/people/:pid",
+    handle((c) => c.json(personPage(p(c, "id"), p(c, "pid")))),
+  );
+  app.get(
+    "/api/orgs/:id/people/:pid/preview",
+    handle(async (c) => c.json(await previewAs(p(c, "id"), p(c, "pid"), c.req.query("session") ?? ""))),
+  );
+  app.post(
+    "/api/orgs/:id/people/:pid/links/revoke",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const pid = p(c, "pid");
+      if (!readRoster(id).some((x) => x.id === pid)) throw new OrgError("Unknown person", 404);
+      const b = await body(c).catch(() => ({}) as Record<string, unknown>);
+      const one = b.sessionId !== undefined || b.n !== undefined;
+      if (one && (typeof b.sessionId !== "string" || !Number.isInteger(b.n))) throw new OrgError("Give both sessionId and n, or neither");
+      const changed = revokePersonLinks(id, pid, one ? { sessionId: b.sessionId as string, n: b.n as number } : undefined);
+      if (one && !changed.length) throw new OrgError("That link isn't open.", 409);
+      for (const sid of changed) refreshShare(sid);
+      return c.json(personPage(id, pid));
     }),
   );
   app.get(

@@ -6,7 +6,8 @@ import { linkAccess } from "../baton";
 import { TOKEN_RE } from "../baton-links";
 import { refuse } from "../extensions";
 import { addWatcher, viewForToken } from "./hub";
-import { createShareApp } from "./routes";
+import { socketClosed, socketOpened } from "../visits";
+import { createShareApp, logVisit } from "./routes";
 
 /**
  * The share listener (§app.baton/share-listener): the ONE port an organization's home host exposes
@@ -154,6 +155,11 @@ export function createShareServer(timeouts: { headersMs?: number; requestMs?: nu
       // without a listener the error would escape as an uncaughtException.
       ws.on("error", (err) => console.warn(`[share] socket error: ${err.message}`));
       addWatcher(sessionId, ws, token);
+      // A socket continues the tab's visit (never starts one); its close is the visit's last seen.
+      logVisit(token, "socket", () => {
+        const visit = socketOpened(access.link, { tab: url.searchParams.get("v"), userAgent: req.headers["user-agent"] });
+        if (visit) ws.on("close", () => logVisit(token, "socket close", () => socketClosed(visit)));
+      });
       void viewForToken(token).then((view) => {
         if (!("status" in view) && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "view", view }));
       });

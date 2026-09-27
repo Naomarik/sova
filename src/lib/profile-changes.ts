@@ -2,7 +2,17 @@
 // grouped so one act (adding a person, one wrap-up, one referral) reads as one row, each value in
 // words. Pure, for tsx --test.
 
-import type { NamedChange, ProfileChange } from "../../shared/orgs";
+import type { NamedChange, PersonStatus, ProfileChange } from "../../shared/orgs";
+
+/** Who wrote a profile change, in words. */
+export const WRITER: Record<ProfileChange["by"]["kind"], string> = { operator: "you", wrapup: "wrap-up", referral: "referral", overseer: "overseer" };
+
+/** A person's status chip: dot and word. */
+export const STATUS_CHIP: Record<PersonStatus, { word: string; tone?: "success" | "warn" }> = {
+  active: { word: "Active", tone: "success" },
+  proposed: { word: "Proposed", tone: "warn" },
+  left: { word: "Left" },
+};
 
 /** A profile value as one line: lists joined, contact and competence spelled out, empty as a dash. */
 export function valueText(field: ProfileChange["field"], v: unknown): string {

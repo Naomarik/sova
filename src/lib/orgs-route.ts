@@ -3,7 +3,8 @@
 // projects, workspace; §app.organizations/org-page), `#/orgs/<id>/start/<person id>` on Sessions
 // with the start form open and aimed at that person (spawn-for-person, §app.organizations/referrals),
 // `#/orgs/<id>/projects/<project id>` is one project (its decisions, §app/requirements) and `…/overseer` is that project's overseer
-// (§app/project-overseer). Ids are the server's (`org_…`, `p_…`, uuid session ids): plain
+// (§app/project-overseer), and `#/orgs/<id>/people/<person id>` is one person's page
+// (§app.organizations/person-page). Ids are the server's (`org_…`, `p_…`, uuid session ids): plain
 // characters that never need encoding, so anything else in the hash is not this route.
 
 const ID_RE = /^[A-Za-z0-9_-]+$/;
@@ -16,6 +17,7 @@ export type OrgsRoute =
   /** No tab = Sessions; `start` implies Sessions. */
   | { kind: "org"; id: string; start?: string; tab?: OrgTab }
   | { kind: "project"; id: string; projectId: string }
+  | { kind: "person"; id: string; personId: string }
   | { kind: "overseer"; id: string; projectId: string };
 
 export const ORGS_HREF = "#/orgs";
@@ -24,6 +26,8 @@ export function orgsRouteFromHash(hash: string): OrgsRoute | null {
   if (hash === ORGS_HREF || hash === `${ORGS_HREF}/`) return { kind: "list" };
   const t = /^#\/orgs\/([^/]+)\/(sessions|people|projects|workspace)\/?$/.exec(hash);
   if (t) return ID_RE.test(t[1]!) ? { kind: "org", id: t[1]!, tab: t[2] as OrgTab } : null;
+  const pp = /^#\/orgs\/([^/]+)\/people\/([^/]+)\/?$/.exec(hash);
+  if (pp) return ID_RE.test(pp[1]!) && ID_RE.test(pp[2]!) ? { kind: "person", id: pp[1]!, personId: pp[2]! } : null;
   const m = /^#\/orgs\/([^/]+)(?:\/(start|projects)\/([^/]+)(\/overseer)?)?\/?$/.exec(hash);
   if (!m || !ID_RE.test(m[1]!)) return null;
   const id = m[1]!;
@@ -44,6 +48,8 @@ export const orgTabHref = (id: string, tab: OrgTab): string => `${orgHref(id)}/$
 /** The org page with its start form aimed at one person. */
 export const startForHref = (orgId: string, personId: string): string => `${ORGS_HREF}/${orgId}/start/${personId}`;
 export const projectHref = (orgId: string, projectId: string): string => `${ORGS_HREF}/${orgId}/projects/${projectId}`;
+/** One person's page. */
+export const personHref = (orgId: string, personId: string): string => `${ORGS_HREF}/${orgId}/people/${personId}`;
 export const projectOverseerHref = (orgId: string, projectId: string): string => `${projectHref(orgId, projectId)}/overseer`;
 
 // "Start a session for Bob" from a baton session: the start form records that session as the new

@@ -636,7 +636,7 @@ export function App() {
   const orgsPage = createMemo(() => {
     const r = orgsRoute();
     if (!r) return null;
-    return r.kind === "list" ? "list" : r.kind === "org" ? `org:${r.id}` : `${r.kind}:${r.id}:${"sessionId" in r ? r.sessionId : r.projectId}`;
+    return r.kind === "list" ? "list" : r.kind === "org" ? `org:${r.id}` : r.kind === "person" ? `person:${r.id}:${r.personId}` : `${r.kind}:${r.id}:${r.projectId}`;
   });
   createEffect(on(orgsPage, (page) => page && folded() && queueMicrotask(() => orgsTitleEl?.focus()), { defer: true }));
   createEffect(on(extId, (id) => id && folded() && queueMicrotask(() => extTitleEl?.focus()), { defer: true }));

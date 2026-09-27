@@ -724,88 +724,88 @@ export class Pulls {
         };
         try {
           attempt: {
-          this.check(job.offerId);
-          const headers: Record<string, string> = {};
-          if (have > 0 && snap) {
-            headers.Range = `bytes=${have}-`;
-            headers["If-Range"] = `"${snap.sha256}"`;
-          }
-          arm();
-          let res: Response;
-          try {
-            res = await this.deps.fetchTar({ offerId: job.offerId, linkId: job.linkId, senderNodeId: job.from, path, headers, signal: ctl.signal });
-          } catch (err) {
             this.check(job.offerId);
-            if (ctl.signal.aborted) retries++;
-            else {
-              outcome = "down";
-              this.log(`pull ${job.offerId}: sender unreachable (${(err as Error).message}); waiting`);
+            const headers: Record<string, string> = {};
+            if (have > 0 && snap) {
+              headers.Range = `bytes=${have}-`;
+              headers["If-Range"] = `"${snap.sha256}"`;
             }
-            break attempt;
-          }
-          if (res.status === 503) {
-            await res.body?.cancel();
-            retryAfter = Math.min(this.t.maxBackoffMs, Math.max(1_000, (Number(res.headers.get("Retry-After")) || 0) * 1000, backoff));
-            backoff = Math.min(this.t.maxBackoffMs, backoff * 2);
-            outcome = "packing";
-            break attempt;
-          }
-          if (res.status === 403 && forbidden < this.t.forbiddenRetries) {
-            await res.body?.cancel();
-            forbidden++;
-            outcome = "forbidden";
-            break attempt;
-          }
-          if (res.status === 416) {
-            await res.body?.cancel();
-            rmSync(part, { force: true });
-            if (restarted) throw new TransferError("internal", "The sender refused every range of the spool.");
-            restarted = true;
-            break attempt;
-          }
-          if (res.status >= 500) {
-            await res.body?.cancel();
-            outcome = "down";
-            break attempt;
-          }
-          if (res.status !== 200 && res.status !== 206) {
-            const body = (await res.json().catch(() => null)) as { error?: unknown; reason?: unknown } | null;
-            const why = typeof body?.error === "string" ? body.error : `answered ${res.status}`;
-            const reason = typeof body?.reason === "string" ? (body.reason as OfferRefusal) : "internal";
-            throw new TransferError(reason, `The sender won't serve ${job.offerId} (${res.status}): ${why}`);
-          }
-          forbidden = 0;
-          backoff = 5_000;
-          const etag = /^"?([0-9a-f]{64})"?$/.exec(res.headers.get("ETag") ?? "")?.[1];
-          const total = res.status === 206 ? Number(/\/(\d+)$/.exec(res.headers.get("Content-Range") ?? "")?.[1]) : Number(res.headers.get("Content-Length"));
-          if (!etag || !Number.isFinite(total)) throw new TransferError("internal", "The sender's answer names no spool hash or size.");
-          const append = res.status === 206 && have > 0 && snap?.sha256 === etag;
-          if (!snap || snap.sha256 !== etag || snap.size !== total) {
-            snap = { sha256: etag, size: total };
-            job.onSnapshot?.(snap);
-          }
-          const fh = await open(part, append ? "a" : "w", 0o600);
-          let received = append ? have : 0;
-          try {
-            for await (const chunk of Readable.fromWeb(res.body as import("node:stream/web").ReadableStream<Uint8Array>)) {
-              arm();
-              await fh.write(chunk as Buffer);
-              received += (chunk as Buffer).length;
-              job.onProgress?.({ received, retries, lastByteAt: this.now() });
+            arm();
+            let res: Response;
+            try {
+              res = await this.deps.fetchTar({ offerId: job.offerId, linkId: job.linkId, senderNodeId: job.from, path, headers, signal: ctl.signal });
+            } catch (err) {
+              this.check(job.offerId);
+              if (ctl.signal.aborted) retries++;
+              else {
+                outcome = "down";
+                this.log(`pull ${job.offerId}: sender unreachable (${(err as Error).message}); waiting`);
+              }
+              break attempt;
             }
-          } catch (err) {
-            this.check(job.offerId);
-            const code = (err as NodeJS.ErrnoException).code;
-            if (code === "ENOSPC" || code === "EDQUOT") {
-              await fh.close().catch(() => undefined);
+            if (res.status === 503) {
+              await res.body?.cancel();
+              retryAfter = Math.min(this.t.maxBackoffMs, Math.max(1_000, (Number(res.headers.get("Retry-After")) || 0) * 1000, backoff));
+              backoff = Math.min(this.t.maxBackoffMs, backoff * 2);
+              outcome = "packing";
+              break attempt;
+            }
+            if (res.status === 403 && forbidden < this.t.forbiddenRetries) {
+              await res.body?.cancel();
+              forbidden++;
+              outcome = "forbidden";
+              break attempt;
+            }
+            if (res.status === 416) {
+              await res.body?.cancel();
               rmSync(part, { force: true });
-              throw new TransferError("no-space", `No room on this host for ${mib(snap.size)} of ${job.offerId}; nothing was extracted.`);
+              if (restarted) throw new TransferError("internal", "The sender refused every range of the spool.");
+              restarted = true;
+              break attempt;
             }
-            retries++;
-            this.log(`pull ${job.offerId}: cut at ${mib(received)} (${(err as Error).message}); resuming`);
-          } finally {
-            await fh.close().catch(() => undefined);
-          }
+            if (res.status >= 500) {
+              await res.body?.cancel();
+              outcome = "down";
+              break attempt;
+            }
+            if (res.status !== 200 && res.status !== 206) {
+              const body = (await res.json().catch(() => null)) as { error?: unknown; reason?: unknown } | null;
+              const why = typeof body?.error === "string" ? body.error : `answered ${res.status}`;
+              const reason = typeof body?.reason === "string" ? (body.reason as OfferRefusal) : "internal";
+              throw new TransferError(reason, `The sender won't serve ${job.offerId} (${res.status}): ${why}`);
+            }
+            forbidden = 0;
+            backoff = 5_000;
+            const etag = /^"?([0-9a-f]{64})"?$/.exec(res.headers.get("ETag") ?? "")?.[1];
+            const total = res.status === 206 ? Number(/\/(\d+)$/.exec(res.headers.get("Content-Range") ?? "")?.[1]) : Number(res.headers.get("Content-Length"));
+            if (!etag || !Number.isFinite(total)) throw new TransferError("internal", "The sender's answer names no spool hash or size.");
+            const append = res.status === 206 && have > 0 && snap?.sha256 === etag;
+            if (!snap || snap.sha256 !== etag || snap.size !== total) {
+              snap = { sha256: etag, size: total };
+              job.onSnapshot?.(snap);
+            }
+            const fh = await open(part, append ? "a" : "w", 0o600);
+            let received = append ? have : 0;
+            try {
+              for await (const chunk of Readable.fromWeb(res.body as import("node:stream/web").ReadableStream<Uint8Array>)) {
+                arm();
+                await fh.write(chunk as Buffer);
+                received += (chunk as Buffer).length;
+                job.onProgress?.({ received, retries, lastByteAt: this.now() });
+              }
+            } catch (err) {
+              this.check(job.offerId);
+              const code = (err as NodeJS.ErrnoException).code;
+              if (code === "ENOSPC" || code === "EDQUOT") {
+                await fh.close().catch(() => undefined);
+                rmSync(part, { force: true });
+                throw new TransferError("no-space", `No room on this host for ${mib(snap.size)} of ${job.offerId}; nothing was extracted.`);
+              }
+              retries++;
+              this.log(`pull ${job.offerId}: cut at ${mib(received)} (${(err as Error).message}); resuming`);
+            } finally {
+              await fh.close().catch(() => undefined);
+            }
           }
         } finally {
           clearTimeout(idle);

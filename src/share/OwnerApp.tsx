@@ -30,8 +30,12 @@ async function load(r: OwnerRoute): Promise<OwnerAnswer> {
     const body = (await res.json().catch(() => ({}))) as { why?: unknown };
     throw new OwnerLoadError(body.why === "expired" ? "expired" : "gone");
   }
-  // A handle that isn't on the page answers like an unknown one; only the home answer says the link is unknown.
-  if (res.status === 404) throw new OwnerLoadError(r.kind === "home" ? "unknown" : "missing");
+  // "missing": a project or conversation that isn't on the page (hidden and never-existed answer
+  // alike); anything else is the link itself.
+  if (res.status === 404) {
+    const body = (await res.json().catch(() => ({}))) as { code?: unknown };
+    throw new OwnerLoadError(body.code === "missing" && r.kind !== "home" ? "missing" : "unknown");
+  }
   if (res.status === 429) throw new OwnerLoadError("busy");
   if (!res.ok) throw new OwnerLoadError("failed");
   return (await res.json()) as OwnerAnswer;

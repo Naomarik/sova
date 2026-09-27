@@ -7,7 +7,7 @@
 // own transcript kind, never a title, never tag evidence, never "asks you", never regenerated, and
 // Stop never hands it to the composer.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -27,7 +27,7 @@ const { acquireChat, disposeAllChats, resolveRegenerate } = await import("./chat
 const { deliverLinkMessage, heldSessionPath } = await import("./link-delivery");
 const { canonicalPath } = await import("./paths");
 const { normalizeEntry } = await import("./transcript");
-const { getSessionSummary, onSessionArchived, archiveSession } = await import("./sessions-index");
+const { getSessionSummary, onSessionArchived, archiveSession, cleanupSessions, idOf, isZeroInput, listSessions } = await import("./sessions-index");
 const { readTailTurn } = await import("./session-tags");
 const { turnQuestions, turnFacts } = await import("./attention-signals");
 const { setArchived } = await import("./archived-sessions");
@@ -335,5 +335,68 @@ describe("onSessionArchived", () => {
     } finally {
       off();
     }
+  });
+});
+
+describe("a session whose only user messages are link messages is never an empty husk", () => {
+  /** Header, two partner messages and the member's replies: real work, and no title of its own.
+      Written an hour ago, so neither the list's nor cleanup's "just written" rule is what keeps it. */
+  function linkOnly(): string {
+    const path = sessionFile([
+      msg("l1", null, "user", linkText("first partner note")),
+      msg("a1", "l1", "assistant", "answered the partner"),
+      msg("l2", "a1", "user", linkText("second partner note")),
+      msg("a2", "l2", "assistant", "answered again"),
+    ]);
+    const old = new Date(Date.now() - 3_600_000);
+    utimesSync(path, old, old);
+    return path;
+  }
+  /** The control: a header-only file IS a husk, so each test below can tell the two apart. */
+  function husk(): string {
+    const path = sessionFile([]);
+    const old = new Date(Date.now() - 3_600_000);
+    utimesSync(path, old, old);
+    return path;
+  }
+
+  test("isZeroInput: false for it, true for a header-only file", async () => {
+    const l = linkOnly();
+    const h = husk();
+    assert.equal(await isZeroInput(l, statSync(l).size), false);
+    assert.equal(await isZeroInput(h, statSync(h).size), true);
+    assert.equal((await getSessionSummary(l))?.title, "Untitled", "still never titled by a partner");
+  });
+
+  test("the session list shows it; a husk stays hidden", async () => {
+    const l = linkOnly();
+    const h = husk();
+    const listed = new Set((await listSessions()).map((s) => s.path));
+    assert.ok(listed.has(l), "the link-only session is listed on its own host");
+    assert.ok(!listed.has(h), "an empty husk is still hidden");
+  });
+
+  test("archiving it keeps the file (a husk's archive deletes it)", async () => {
+    const l = linkOnly();
+    const h = husk();
+    for (const p of [l, h]) addWebSession((await getSessionSummary(p))!.id);
+    const r = await archiveSession(l, true);
+    assert.equal(r.ok, true);
+    assert.equal(existsSync(l), true, "the file survives archiving");
+    assert.equal(r.ok && r.summary.archived, true);
+    const rh = await archiveSession(h, true);
+    assert.equal(rh.ok, true);
+    assert.equal(existsSync(h), false, "the control: a husk is deleted outright");
+  });
+
+  test("husk cleanup never picks it; it picks a husk", async () => {
+    const l = linkOnly();
+    const h = husk();
+    // Cleanup names a file by its filename's id (idOf), which these fixtures don't share with the header.
+    const lid = idOf(l);
+    const hid = idOf(h);
+    const r = await cleanupSessions({ mode: "husks", dryRun: true });
+    assert.ok(!r.deletedIds.includes(lid), "the link-only session is not a husk candidate");
+    assert.ok(r.deletedIds.includes(hid), "the control husk is");
   });
 });

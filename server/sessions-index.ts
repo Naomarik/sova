@@ -447,12 +447,16 @@ export async function readTailReply(path: string, size: number): Promise<LastRep
  * Reads 16KB chunks and stops as soon as the first user message is seen (cap 256KB).
  * The model here is only the fallback for when readTailModel finds none near EOF.
  */
-async function readHead(path: string): Promise<{ header: any; title: string | null; model: string | null; overseer: boolean } | null> {
+/** `input`: the head holds a user message of any kind. A wake nudge or a partner's link message
+    never titles a session, but it is still something written in it: a session whose only user
+    messages are link messages has real turns and is never an empty husk. */
+async function readHead(path: string): Promise<{ header: any; title: string | null; model: string | null; overseer: boolean; input: boolean } | null> {
   const fh = await open(path, "r");
   try {
     // The Overseer marker is written right after the header, before any user message, so the
     // head read (which stops at the first user message) always sees it.
     let overseer = false;
+    let input = false;
     let header: any = null;
     let title: string | null = null;
     let model: string | null = null;
@@ -485,12 +489,13 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
         if (e.type === "message") {
           const msg = e.message ?? {};
           if (!model && msg.role === "assistant" && msg.provider && msg.model) model = `${msg.provider}/${msg.model}`;
+          if (msg.role === "user") input = true;
           if (msg.role === "user" && title === null && !notTitle(userText(msg.content))) title = oneLine(userText(msg.content));
         }
-        if (title !== null && model) return { header, title, model, overseer };
+        if (title !== null && model) return { header, title, model, overseer, input };
       }
       // Stop at the first user message even without a model: model_change precedes it.
-      if (title !== null) return { header, title, model, overseer };
+      if (title !== null) return { header, title, model, overseer, input };
     }
     if (pending.trim() && title === null) {
       if (pos < MAX_HEAD) {
@@ -498,17 +503,20 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
         try {
           const e = JSON.parse(pending);
           if (!header && e?.type === "session") header = e;
-          else if (header && e?.type === "message" && e.message?.role === "user" && !notTitle(userText(e.message.content)))
-            title = oneLine(userText(e.message.content));
+          else if (header && e?.type === "message" && e.message?.role === "user") {
+            input = true;
+            if (!notTitle(userText(e.message.content))) title = oneLine(userText(e.message.content));
+          }
         } catch {
           // partial line: ignore
         }
       } else if (header) {
         const t = titleFromPartial(pending);
+        if (t !== null) input = true;
         if (t !== null && !notTitle(t)) title = oneLine(t);
       }
     }
-    return header ? { header, title, model, overseer } : null;
+    return header ? { header, title, model, overseer, input } : null;
   } finally {
     await fh.close();
   }
@@ -973,14 +981,15 @@ export function idOf(path: string): string {
 }
 
 /**
- * True when the file is an empty husk: all of it was read and it holds no user message
- * (readHead stops at the first one). Never guessed from a head-capped read of a big file,
+ * True when the file is an empty husk: all of it was read and it holds no user message of any
+ * kind (readHead stops at the first titling one). A link or wake message counts: it never
+ * titles the session, but the session is not empty. Never guessed from a head-capped read of a big file,
  * so a session whose first user message sits beyond MAX_HEAD is never treated as empty.
  */
 export async function isZeroInput(path: string, size: number): Promise<boolean> {
   if (size > MAX_HEAD) return false;
   const head = await readHead(path);
-  return head !== null && head.title === null;
+  return head !== null && !head.input;
 }
 
 export type CleanupRequest =

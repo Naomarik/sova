@@ -249,24 +249,27 @@ function SpecCard(props: CardProps & { onSpec(spec: DecisionsInfo["spec"]): void
         <h2 class="orgs-h2" id="project-spec">
           Requirements
         </h2>
-        <button
-          type="button"
-          class="button button-sm"
-          aria-disabled={props.busy || props.info.running ? "true" : undefined}
-          title="Compare every pending decision with the rest of its area, route any conflict, and draft the clean ones."
-          onClick={() => void props.act("reconcile", () => reconcileProject(props.orgId, props.projectId), "Reconciled.")}
-        >
-          {props.busy === "reconcile" || props.info.running ? "Reconciling" : "Reconcile Now"}
-        </button>
-        <button
-          type="button"
-          class="button button-sm button-ghost"
-          aria-disabled={props.busy ? "true" : undefined}
-          title="Rewrite the project's draft from the decisions as they stand."
-          onClick={() => void props.act("draft", () => redraftProject(props.orgId, props.projectId), "Draft rewritten.")}
-        >
-          Rewrite Draft
-        </button>
+        {/* One group: narrow, both buttons wrap below the heading together. */}
+        <div class="cluster">
+          <button
+            type="button"
+            class="button button-sm"
+            aria-disabled={props.busy || props.info.running ? "true" : undefined}
+            title="Compare every pending decision with the rest of its area, route any conflict, and draft the clean ones."
+            onClick={() => void props.act("reconcile", () => reconcileProject(props.orgId, props.projectId), "Reconciled.")}
+          >
+            {props.busy === "reconcile" || props.info.running ? "Reconciling" : "Reconcile Now"}
+          </button>
+          <button
+            type="button"
+            class="button button-sm button-ghost"
+            aria-disabled={props.busy ? "true" : undefined}
+            title="Rewrite the project's draft from the decisions as they stand."
+            onClick={() => void props.act("draft", () => redraftProject(props.orgId, props.projectId), "Draft rewritten.")}
+          >
+            Rewrite Draft
+          </button>
+        </div>
       </div>
       {props.children}
       <p class="orgs-line">{decisionsLine(props.info)}</p>

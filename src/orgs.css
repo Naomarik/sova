@@ -7,6 +7,9 @@
 .card.orgs-section { max-width: 880px; }
 .orgs-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .orgs-head > :first-child { flex: 1; min-width: 0; }
+/* A heading may wrap between words but never shrinks below its longest one: its buttons wrap
+   below it instead of cutting it off. */
+.orgs-head > .orgs-h2:first-child { min-width: min-content; }
 .orgs-h2 { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .orgs-h3 { margin: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .orgs-empty { margin: 0; color: var(--color-ink-muted); }

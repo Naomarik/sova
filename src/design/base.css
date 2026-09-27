@@ -367,6 +367,7 @@ i.icon {
 
 .banner {
   display: flex;
+  flex-wrap: wrap; /* narrow: the action drops below the words rather than squeezing them */
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
@@ -375,7 +376,7 @@ i.icon {
   background: var(--color-surface);
   font-size: var(--fs-body);
 }
-.banner-main  { flex: 1; min-width: 0; }
+.banner-main  { flex: 1 1 12rem; min-width: 0; }
 .banner-title { font-weight: var(--fw-semibold); margin: 0 0 var(--space-1); color: var(--color-ink); }
 .banner-body  { margin: 0; color: var(--color-ink-2); }
 .banner-icon  { flex: none; margin-top: 1px; }

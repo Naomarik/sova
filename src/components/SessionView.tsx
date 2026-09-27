@@ -218,7 +218,9 @@ export function SessionView(props: {
           <Show when={hostOf(path)}>
             {(h) => (
               <>
-                <span title={`This session lives on ${hostLabel(h())}`}>on {hostLabel(h())}</span>
+                <span class="session-head-host" title={`This session lives on ${hostLabel(h())}`}>
+                  on {hostLabel(h())}
+                </span>
                 <span aria-hidden="true">·</span>
               </>
             )}

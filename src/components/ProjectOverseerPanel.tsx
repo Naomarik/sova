@@ -22,6 +22,7 @@ import {
 } from "../lib/api";
 import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, folderNote, isDelegate, mergeGate, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
 import { relativeTime, tildePath } from "../lib/format";
+import { hostLabel, orgHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll } from "../lib/poll";
 import { actionLine, gapArea, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, openIdeas, operatorIdeaId, pendingLine, STARTED_KIND, tokens } from "../lib/project-overseer-view";
@@ -56,6 +57,8 @@ export function ProjectOverseerPanel(props: {
 }) {
   const o = () => props.org.id;
   const p = () => props.projectId;
+  /** The peer the org is attached on (null: this host): its models, and the host its words name. */
+  const host = () => orgHostOf(o());
   const info = createPoll(() => getProjectOverseer(o(), p()), POLL_MS);
   const actions = createPoll(() => projectOverseerActions(o(), p(), 30), POLL_MS);
   const ideas = createPoll(() => projectOverseerIdeas(o(), p()), POLL_MS * 3);
@@ -121,13 +124,13 @@ export function ProjectOverseerPanel(props: {
         {(i) => (
           <>
             <StatusLine info={i()} />
-            {/* Attached here from a clone (a restore or a move): nothing runs on its own until the operator says so on this host. */}
+            {/* Attached on the org's host from a clone (a restore or a move): nothing runs on its own until the operator says so there. */}
             <Show when={i().paused}>
               {(since) => (
                 <Banner
                   tone="warn"
-                  title="Paused at L0 on this host"
-                  body={`This organization was attached here ${relativeTime(since())}. Until you set its level, the overseer only proposes and its watch loop waits.`}
+                  title={`Paused at L0 on ${host() ? hostLabel(host()!) : "this host"}`}
+                  body={`This organization was attached ${host() ? `on ${hostLabel(host()!)}` : "here"} ${relativeTime(since())}. Until you set its level, the overseer only proposes and its watch loop waits.`}
                   action={
                     <button type="button" class="button button-sm" aria-disabled={busy() ? "true" : undefined} onClick={() => setAutonomy(i().settings.autonomy)}>
                       Resume at {i().settings.autonomy}
@@ -153,11 +156,12 @@ export function ProjectOverseerPanel(props: {
               </p>
               <SessionModel
                 info={i()}
+                host={host()}
                 kind="gathering"
                 label="Gathering sessions"
                 save={async (patch) => info.set(await patchProjectOverseer(o(), p(), patch))}
               />
-              <SessionModel info={i()} kind="coding" label="Coding sessions" save={async (patch) => info.set(await patchProjectOverseer(o(), p(), patch))}>
+              <SessionModel info={i()} host={host()} kind="coding" label="Coding sessions" save={async (patch) => info.set(await patchProjectOverseer(o(), p(), patch))}>
                 <CodingMode info={i()} onSave={(key) => run(() => patchProjectOverseer(o(), p(), { codingMode: codingModeOf(key) }), key === "auto" ? "Coding sessions' mode: Automatic." : `Coding sessions run ${codingModeLabel(key)}.`)} />
               </SessionModel>
               <TokenBudget info={i()} onSave={(n) => void run(() => patchProjectOverseer(o(), p(), { tokenBudget: n }), "Budget saved.")} />
@@ -261,7 +265,7 @@ const SAME = "";
  * doesn't offer is refused under the select (§app.project-overseer/identity); a model change that
  * leaves the saved level unsupported moves it to the level pi would run, and says so.
  */
-function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "coding"; label: string; save(patch: ProjectOverseerPatch): Promise<void>; children?: JSX.Element }) {
+function SessionModel(props: { info: ProjectOverseerInfo; host: string | null; kind: "gathering" | "coding"; label: string; save(patch: ProjectOverseerPatch): Promise<void>; children?: JSX.Element }) {
   const [err, setErr] = createSignal<string | null>(null);
   const [saving, setSaving] = createSignal(false);
   /** One save: its toast, or its refusal under the fields with the select back on what is saved. */
@@ -282,7 +286,8 @@ function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "c
       setSaving(false);
     }
   };
-  const [models] = createResource(() => listModels());
+  // The org's host's models (its keys, favorites and policy), as its session pane lists them.
+  const [models] = createResource(() => ({ host: props.host }), ({ host }) => listModels(host));
   const modelKey = (): "codingModel" | "gatheringModel" => (props.kind === "coding" ? "codingModel" : "gatheringModel");
   const thinkingKey = (): "codingThinking" | "gatheringThinking" => (props.kind === "coding" ? "codingThinking" : "gatheringThinking");
   const model = () => props.info.settings[modelKey()] ?? null;

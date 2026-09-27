@@ -783,6 +783,14 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		nudged = false;
 	});
 
+	// A compaction summarizes the align results away, and the next run may be one no user prompt
+	// starts (a worker's report), which gets no note: write the exact open state once, hidden, right
+	// after the summary, where every later request reads it.
+	pi.on("session_compact", async () => {
+		const note = hasMinor(active, "align") ? alignStateNote(alignDocs, true) : undefined;
+		if (note) pi.sendMessage({ customType: ALIGN_STATE_MESSAGE, content: note, display: false });
+	});
+
 	// Branch navigation (/tree, /fork) changes which mode and which doc are current.
 	pi.on("session_tree", async (_event, ctx) => {
 		restoreActiveState("tree", ctx);

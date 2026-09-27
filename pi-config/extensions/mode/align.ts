@@ -170,10 +170,14 @@ function need(ok: boolean, message: string): asserts ok {
 	if (!ok) throw new AlignError(message);
 }
 
+/** Field names models reach for from other tools (pi's edit takes newText), and the one meant. */
+const MEANT: Record<string, string> = { newText: "text", new_text: "text", answer: "decision", reason: "why", question: "ask" };
+
 function onlyKeys(value: Record<string, unknown>, allowed: readonly string[], where: string): void {
 	for (const key of Object.keys(value)) {
 		if (value[key] === undefined) continue;
-		need(allowed.includes(key), `${where}: unknown field "${key}" (allowed: ${allowed.join(", ")})`);
+		const meant = MEANT[key] !== undefined && allowed.includes(MEANT[key]) ? ` (did you mean "${MEANT[key]}"?)` : "";
+		need(allowed.includes(key), `${where}: unknown field "${key}"${meant} (allowed: ${allowed.join(", ")})`);
 	}
 }
 
@@ -392,7 +396,7 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 		const why = oneLine(text(ops[0]!.why, "ops[0] (exempt): why"));
 		return {
 			details: { v: 1, changes: [], line: "", exempt: { why } },
-			text: [`Recorded: no alignment needed — ${why}.`, ...otherDocsLine(docs, undefined)].join("\n"),
+			text: [`Recorded: no alignment needed — ${/[.!?]$/.test(why) ? why : `${why}.`}`, ...otherDocsLine(docs, undefined)].join("\n"),
 		};
 	}
 
@@ -857,17 +861,26 @@ function echoLines(docs: readonly AlignDocument[], id: string, line: string): st
 
 /**
  * The hidden note on a user prompt: every open alignment and its open questions, so an answer by
- * id lands on the right question. undefined when nothing is open.
+ * id lands on the right question. undefined when nothing is open. `afterCompaction` is the note
+ * written once right after a compaction, when the summary may have lost the tool results: it also
+ * lists each open alignment's decided and dropped questions, which implementation still needs.
  */
-export function alignStateNote(docs: readonly AlignDocument[]): string | undefined {
+export function alignStateNote(docs: readonly AlignDocument[], afterCompaction = false): string | undefined {
 	const open = openDocsOf(docs);
 	if (open.length === 0) return undefined;
 	const lines = [
-		"[align] Open alignments on this branch. If the user's message answers any of these questions, record it with the align tool (decide with their words, accept for \"your recommendation\"), in one call per alignment; ids are stable.",
+		afterCompaction
+			? "[align] The context was just compacted. The open alignments on this branch, exactly as recorded (the summary above may describe them loosely; recommendations are not decisions until decided or accepted); ids are stable."
+			: "[align] Open alignments on this branch. If the user's message answers any of these questions, record it with the align tool (decide with their words, accept for \"your recommendation\"), in one call per alignment; ids are stable.",
 	];
 	for (const doc of open) {
 		lines.push(`${docLine(doc)}`);
-		for (const q of openQuestionsOf(doc)) lines.push(`  ${q.id} ${q.topic}: ${oneLine(q.ask)} (rec: ${q.recommendation.choice})`);
+		for (const q of doc.questions) {
+			const state = questionState(q);
+			if (state === "open") lines.push(`  ${q.id} ${q.topic}: ${oneLine(q.ask)} (rec: ${q.recommendation.choice})`);
+			else if (afterCompaction && state === "decided") lines.push(`  ${q.id} ${q.topic}: decided — ${oneLine(q.decision!.text)}`);
+			else if (afterCompaction) lines.push(`  ${q.id} ${q.topic}: dropped — ${oneLine(q.dropped!.why)}`);
+		}
 		if (alignStatus(doc) === "implementing") lines.push("  (implementing: set status done when the work is finished and verified)");
 	}
 	return lines.join("\n");
@@ -968,26 +981,49 @@ const MARKDOWN_ALIGNMENT = /^\s*(?:#{1,4}\s+|\*\*)alignment\b/im;
 const LIST_ITEM = /^\s*(?:\d+[.)]|[-*•])\s+\S/;
 
 /**
+ * A short line that labels what follows as the user's to decide ("**Questions for you:**", "Open
+ * questions"), then a list with two or more questions: wherever it sits, since a reply can close on
+ * a statement ("I'll record this once tools work.") after asking.
+ */
+function questionList(body: string): boolean {
+	const lines = body.split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		const label = lines[i]!.trim();
+		if (label.length > 80 || LIST_ITEM.test(label) || !DECISION_ASK.test(label)) continue;
+		let asks = 0;
+		for (const line of lines.slice(i + 1)) {
+			if (line.trim() === "") continue;
+			if (LIST_ITEM.test(line)) {
+				if (line.includes("?")) asks++;
+			} else if (!/^\s/.test(line)) break;
+		}
+		if (asks >= 2) return true;
+	}
+	return false;
+}
+
+/**
  * Why a final reply reads like a plan that asks the user to decide, written in prose instead of
- * the tool — or null when it doesn't. Only the reply's END counts as asking: its last paragraph
- * must end in a question. Then: an old markdown alignment block; decision-asking words in that
- * last paragraph; or a list of two or more items above it, with decision words anywhere. Code
+ * the tool — or null when it doesn't: an old markdown alignment block; a last paragraph that ends
+ * in a question and either asks for a decision itself or follows a list of two or more items, with
+ * decision words anywhere; or, wherever it sits, a labelled list of questions (questionList). Code
  * fences and the spec mode's "Also changes" line are ignored. Calibrated offline against two real
  * sessions (align.test.ts pins the shapes): it catches "…open questions, with my suggested
  * answers … Should I go ahead with those answers?" and leaves "Lanes B–F are still running." and
  * "Want me to merge it?" alone.
  */
-export function planSignal(reply: string): "markdown-alignment" | "asks-decision" | "list-then-decision" | null {
+export function planSignal(reply: string): "markdown-alignment" | "question-list" | "asks-decision" | "list-then-decision" | null {
 	if (typeof reply !== "string") return null;
 	const body = reply.replace(FENCED, " ").replace(SPEC_TRAILER, "").trim();
 	if (MARKDOWN_ALIGNMENT.test(body)) return "markdown-alignment";
 	const paragraphs = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
 	const last = paragraphs[paragraphs.length - 1] ?? "";
-	if (!/\?\s*[*_)\]"'`]*\s*$/.test(last)) return null;
-	if (DECISION_ASK.test(last)) return "asks-decision";
-	const items = body.split("\n").filter((l) => LIST_ITEM.test(l)).length;
-	if (items >= 2 && DECISION_ASK.test(body)) return "list-then-decision";
-	return null;
+	if (/\?\s*[*_)\]"'`]*\s*$/.test(last)) {
+		if (DECISION_ASK.test(last)) return "asks-decision";
+		const items = body.split("\n").filter((l) => LIST_ITEM.test(l)).length;
+		if (items >= 2 && DECISION_ASK.test(body)) return "list-then-decision";
+	}
+	return questionList(body) ? "question-list" : null;
 }
 
 /** planSignal as a yes/no: the settle nudge's trigger. */

@@ -184,11 +184,16 @@ recs"), and the agent records it with `decide`/`accept`.
 - **What the model sees** — the tool's description and guidelines (in pi's
   tools section, so they survive a dropped mode section), the align prompt
   block, and a hidden `align-state` message on each user prompt listing the
-  open alignments and their open questions. Nothing about alignments goes into
+  open alignments and their open questions. A compaction writes one more, right
+  after its summary, that also lists their decided and dropped questions: a run
+  no user prompt starts (a worker's report) gets no per-prompt note, and the
+  summary may state the alignments loosely. Nothing about alignments goes into
   the system prompt: a prompt change restarts a Claude Code session's CLI.
 - **No gate; one nudge** — nothing blocks edits or spawns while a question is
   open. A run that is about to settle with no align call, whose final reply
-  reads like a plan asking the user to decide (`planSignal`), gets one hidden
+  reads like a plan asking the user to decide (`planSignal`: it ends in a
+  question that asks for a decision, or lists questions under a label such as
+  "Questions for you:"), gets one hidden
   `align-nudge` and one more request; never twice in a run.
 - **Widget** — one line above the editor while align is on and an alignment is
   open: `◇ align · al_3 2/7 open · al_2 implementing · alt+a view`.
@@ -433,5 +438,5 @@ node --test spec.test.ts      # the spec writer file: parsing, persistence, per-
 node --test align.test.ts     # alignments: ops, strict input and fromFile, fold, echo, note, nudge heuristic, legacy entries
 node tests/smoke.mjs          # real index.ts against a fake pi host, no model requests
 node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
-node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden note and the settle nudge
+node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
 ```

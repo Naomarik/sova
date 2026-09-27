@@ -119,6 +119,24 @@ try {
 	const { foldAlignments } = await import("../align.ts");
 	const fold = foldAlignments(sessionManager.getBranch());
 	assert.deepEqual(fold.docs.map((d) => [d.id, d.rev, d.questions[0].decision?.by]), [["al_1", 2, "accepted-recommendation"]]);
+
+	// A compaction writes the exact open state once, hidden, after the summary: a run no user prompt
+	// starts (a worker's report) still reads it, decisions included.
+	script.push({ text: "## Goal\nExport." });
+	settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
+	await session.compact();
+	const branch = sessionManager.getBranch();
+	const at = branch.findIndex((e) => e.type === "compaction");
+	assert.ok(at >= 0, "compacted");
+	const after = branch.slice(at + 1).filter((e) => e.type === "custom_message" && e.customType === "align-state");
+	assert.equal(after.length, 1, "one note after the compaction");
+	assert.equal(after[0].display, false, "hidden from the transcript");
+	const wakeAt = requests.length;
+	script.push({ text: "Noted the report." });
+	await session.sendCustomMessage({ customType: "worker-report", content: "worker finished", display: true }, { triggerTurn: true });
+	assert.equal(requests.length, wakeAt + 1, "the report started one run");
+	assert.match(seen(requests[wakeAt]), /\[align\] The context was just compacted/, "the report's run read the note");
+	assert.match(seen(requests[wakeAt]), /q1 Format: decided — JSONL/, "with the decision, which the summary never had");
 	console.log("align-turn: ok");
 } finally {
 	session.dispose();

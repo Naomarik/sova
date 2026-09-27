@@ -94,6 +94,9 @@ test("create: strict — every question needs a recommendation, unknown fields a
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", title: " ", summary: "s" }] }, env), /title must be a non-empty string/);
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", title: "t" }] }, env), /summary must be a non-empty string/);
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "decide", q: "q1", decision: "x", topic: "nope" }] }, env), /ops\[0\] \(decide\): unknown field "topic"/);
+	// pi's own edit tool takes newText; the align edit op's field is text, and the error says so.
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "edit", id: "a1", newText: "x" }] }, env), /ops\[0\] \(edit\): unknown field "newText" \(did you mean "text"\?\)/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", title: "t", summary: "s", questions: [{ ...Q("x"), answer: "no" }] }] }, env), /unknown field "answer" \(allowed/, "no hint where the meant field isn't allowed either");
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "frobnicate" }] }, env), /ops\[0\]\.op must be one of/);
 	throwsAlign(() => applyAlignCall([], { ops: [] }, env), /non-empty array/);
 	throwsAlign(() => applyAlignCall([], { ops: [Q("a")] }, env), /ops\[0\]\.op must be one of/);
@@ -223,6 +226,9 @@ test("targets: one open doc is the default; with several, doc is required; an un
 test("exempt stands alone and touches nothing; get reads without a snapshot", () => {
 	const ex = applyAlignCall([], { ops: [{ op: "exempt", why: "a question about the code, no change" }] }, env);
 	assert.deepEqual(ex.details, { v: 1, changes: [], line: "", exempt: { why: "a question about the code, no change" } });
+	assert.match(ex.text, /^Recorded: no alignment needed — a question about the code, no change\.$/m);
+	const dotted = applyAlignCall([], { ops: [{ op: "exempt", why: "Just a command run." }] }, env);
+	assert.match(dotted.text, /— Just a command run\.$/m, "a reason that ends a sentence gets no second period");
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "exempt", why: "x" }, { op: "get" }] }, env), /exempt stands alone/);
 	const { docs } = run([{ ops: [CREATE] }]);
 	const got = applyAlignCall(docs, { ops: [{ op: "get" }] }, env);
@@ -296,6 +302,13 @@ test("counts, the hidden note and the widget cover open documents only", () => {
 	assert.match(note, /^al_3 "Third" · aligning · 1 of 2 open$/m);
 	assert.doesNotMatch(note, /al_2/, "a finished alignment is not in the note");
 	assert.equal(alignStateNote(docs.filter((d) => d.id === "al_2")), undefined);
+	// A user prompt's note lists only what is open; the one after a compaction adds what was decided.
+	assert.doesNotMatch(note, /q1 One/, "a decided question is not in a prompt's note");
+	const compacted = alignStateNote(docs, true)!;
+	assert.match(compacted, /^\[align\] The context was just compacted/);
+	assert.match(compacted, /recommendations are not decisions/);
+	assert.match(compacted, /^al_3 "Third" · aligning · 1 of 2 open\n {2}q1 One: decided — no\n {2}q2 Two: Two\? \(rec: /m);
+	assert.doesNotMatch(compacted, /al_2/, "a finished alignment is not in it either");
 	assert.equal(widgetText(docs, "alt+a"), "◇ align · al_1 3/3 open · al_3 1/2 open · alt+a view");
 });
 
@@ -328,8 +341,12 @@ test("toMarkdown: every section and every question's parts", () => {
 // (a delegate · align · spec session with 114 final replies, and the freeform-plan session). There
 // it fired on every markdown alignment block, on the freeform plans ("…take my recommendations on
 // 1–6?", "Should I go ahead with those answers?", "Which do you want: …?"), and on one of ~80 other
-// replies; status reports, lane reports and merge questions stayed quiet. The shapes below are
-// written for this test, after those replies.
+// replies; status reports, lane reports and merge questions stayed quiet. A live glm run then
+// closed a prose plan on a statement after its "Questions for you:" list, which that rule missed;
+// the labelled-list rule added for it changes nothing in those two sessions and adds 29 of ~3,200
+// final replies across 222 others, nearly all prose plans asking for decisions (the rest: lists of
+// merge or follow-up questions, which the nudge text sends to exempt). The shapes below are written
+// for this test, after those replies.
 test("planSignal: catches a plan that asks the user to decide, and leaves reports and plain questions alone", () => {
 	const freeform = [
 		"The planning worker is done, and nothing has been changed yet. The full plan is in `~/.cache/x/PLAN.md`.",
@@ -345,6 +362,24 @@ test("planSignal: catches a plan that asks the user to decide, and leaves report
 	assert.equal(planSignal("## Alignment: Export\n### Findings\nx\n### Open questions\n- [ ] **1. Zip:** yes?"), "markdown-alignment");
 	assert.equal(planSignal("Options:\n- **Daily 6** — simple\n- **3 per run** — bursty\n\nWhich do you want: the daily 6 or 3 per run?"), "asks-decision");
 	assert.equal(planSignal("Here is the plan, and its open questions are in the doc:\n1. Add the route\n2. Stream it\n\nGo?"), "list-then-decision");
+
+	// A labelled list of questions counts wherever it sits: a reply may close on a statement.
+	const closesOnStatement = [
+		"Sketch for weekly goals:",
+		"- Count completions per week",
+		"- Show progress per habit",
+		"",
+		"Questions for you:",
+		"",
+		"1. **Week start** — Monday or Sunday?",
+		"2. **Data shape** — a separate section, or a field on each habit?",
+		"",
+		"Once the tool runner is stable I'll record this as an alignment.",
+	].join("\n");
+	assert.equal(planSignal(closesOnStatement), "question-list");
+	assert.equal(planSignal(closesOnStatement.replace("2. **Data shape** — a separate section, or a field on each habit?", "2. **Data shape** — a separate section.")), null, "one question under the label is not a list of them");
+	assert.equal(planSignal(closesOnStatement.replace("Questions for you:", "Things I checked:")), null, "questions without a label that hands them to the user");
+	assert.equal(planSignal("**Open questions:**\n1. Zip or tar?\n\nMore context here.\n\n2. Cap at 400?\n\nDone."), null, "a paragraph between ends the list");
 
 	assert.equal(planSignal("Lane E is finished. It found 2 bugs:\n- the guard\n- the restart\n\nLanes B, C and D are still running."), null);
 	assert.equal(planSignal("The fix is on `feat/x`, 3 commits, tests pass.\n\nWant me to merge it?"), null);

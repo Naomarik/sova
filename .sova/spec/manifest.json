@@ -33,7 +33,8 @@
         "src/components/SessionView.tsx",
         "src/lib/insights.ts",
         "shared/outline-order.ts",
-        "src/lib/outline-order.test.ts"
+        "src/lib/outline-order.test.ts",
+        "src/lib/jump.ts"
       ]
     },
     "§app.insights/placement": {
@@ -978,7 +979,8 @@
         "src/components/Thread.tsx",
         "shared/link-message.ts",
         "src/lib/turn.ts",
-        "src/lib/live.ts"
+        "src/lib/live.ts",
+        "src/components/ToolCard.tsx"
       ]
     },
     "§chat/composer": {
@@ -5162,6 +5164,31 @@
         "shared/link-message.ts",
         "shared/protocol.ts",
         "server/mesh/links.test.ts"
+      ]
+    },
+    "§chat.transcript/rendering": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/live-watch",
+        "§chat.timeline/jumping",
+        "§chat.transcript/message-actions"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/tail-render.ts",
+        "src/lib/tail-render.test.ts",
+        "src/lib/transcript-cache.ts",
+        "src/lib/transcript-cache.test.ts",
+        "src/lib/jump.ts",
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/WatchView.tsx",
+        "src/components/InsightStrip.tsx",
+        "src/components/GroupView.tsx",
+        "src/components/SubagentPane.tsx",
+        "src/app.css",
+        "src/design/base.css"
       ]
     }
   },

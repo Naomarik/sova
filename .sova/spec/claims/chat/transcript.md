@@ -140,7 +140,7 @@ at the tool-call's position. A result with no matching call gets its own card wi
       <span class="toolcard-arg">npm run typecheck</span>
       <span class="chip chip-success"><i class="chip-dot"></i>Done</span>
     </summary>
-    <div class="toolcard-body">
+    <div class="toolcard-body">                                 <!-- built the first time the card is opened -->
       <div class="toolcard-section">
         <div class="toolcard-section-label">Arguments</div>
         <pre>{JSON.stringify(args, null, 2)}</pre>
@@ -175,6 +175,9 @@ at the tool-call's position. A result with no matching call gets its own card wi
   turns are never hidden, since the record of what ran is the trust mechanism. Images the tool
   returned are always visible too, under the summary row, open or closed
   (§chat.images/thread-thumbnails); collapsing hides only Arguments and Output.
+- **Built on first open.** Arguments and Output, with their highlighting, are built the first time
+  the card is opened and kept after, as a report's body is. A running call's body follows its
+  output from then on. So `Ctrl+F` finds a tool's arguments and output only in cards opened once.
 
 **wake.** A fired wake-nudge (pi-config's `wake_nudge` tool): under the hood a real `role:"user"`
 message tagged `[wake_nudge n1] …` (shared/wake.ts `parseWakeNudge`), but it never reads as "You" —
@@ -561,6 +564,47 @@ the server more CPU with every piece it streams, until nothing else on it answer
   The connection dropped." Body: "What's shown is up to `14:06`. Reconnecting…" When it
   reconnects, the banner goes away. The snapshot replaces the list, and scroll position is
   kept if the user wasn't following.
+
+## §chat.transcript/rendering — Opening and switching a long transcript
+
+A transcript opens on its newest rows, and every row is in the page once it has settled: nothing
+is virtualized.
+
+- **Newest rows first.** The last 60 rows are built with the transcript itself (the chat's
+  `hello`, the watch view's snapshot), so the first frame after it lands shows the end of the
+  session, however long it is. The older rows are then built above them while the browser is
+  idle, a chunk at a time, each chunk sized to stay under a frame, until every row is built. The
+  view doesn't move while they're added: it keeps its distance from the end, which at the bottom
+  is the bottom. Rows added above aren't new content: they don't scroll a following view and
+  don't count in Jump to Latest's "N new".
+- **Nothing is virtualized.** A built row stays in the page, so `Ctrl+F`, screen readers and
+  text selection reach the whole transcript once the fill completes (a few hundred milliseconds
+  for an 800-row session). A row off screen is skipped by layout and paint
+  (`content-visibility: auto`), at a height estimated from its text until it is first drawn. A
+  row being pointed at, focused or revealed (§chat.transcript/message-actions) is always drawn
+  whole.
+- **Jumps build their target first.** Whether an entry can be jumped to is asked of the rows the
+  thread renders, not of what is built. Every jump builds the rows down from its target if the
+  fill hasn't reached it, then scrolls and tints as before (§chat.timeline/jumping): a Timeline
+  input row, the outline's Jump to Message, the Skills tab, Open in Session, Align to Fork, and a
+  switch back (below). "Isn't in the transcript" still means the thread has no row for the entry.
+  Rows never drawn have estimated heights, so a long jump that doesn't land in the middle aims
+  again once the scroll has rested, at most twice.
+- **Opening a disclosure keeps the view.** Opening or closing a tool card, thinking, a report or
+  the hidden-rows disclosure never scrolls the transcript, even while following. Following is
+  re-read from where the view now is, so Jump to Latest appears if the end has gone out of view.
+  While following, the transcript also returns to the end when the view gets shorter (the
+  composer's status row appearing) or a row below changes height with no new content (an image
+  decoding).
+- **Refetches keep rows.** A new `hello`, a turn-end reload or a new snapshot replaces the list,
+  but every row whose entry renders the same keeps its element. Open cards, focus and a revealed
+  action strip survive the end of a turn, a reconnect and a rewind; only changed and new rows
+  are built.
+- **Switching back.** The last 3 sessions opened in the tab keep their rows and where they were
+  scrolled: at the end while following, else the row at the top of the view and its offset.
+  Switching back to one shows those rows at once, where they were (with Jump to Latest when not
+  following), while its `hello` or snapshot is on the way, then reconciles them as above. Any
+  other open lands at the end. A reload keeps nothing.
 
 ## §chat.transcript/own-writes-across-restart — The server's own writes survive a restart
 

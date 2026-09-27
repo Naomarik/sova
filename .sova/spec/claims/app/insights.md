@@ -740,9 +740,11 @@ which draws them on the session's axis; the strip keeps no history of its own.
     auto-follow, so Jump to Latest appears (§chat/transcript). `entryId` is the first message of the
     topic's own section (§app.insights/summary-sections), so no two topics a run updated jump to the
     same place.
-  - Leave it out when `entryId` is null or the item isn't rendered (it was compacted away). That
-    is decided each time the strip opens, and when a topic arrives while it's open; a Jump that
-    finds its item gone since then removes itself instead of scrolling nowhere. A topic without
+  - Leave it out when `entryId` is null or the transcript has no row for it (it was compacted
+    away). That is asked of the rows the transcript renders, so a row it hasn't built yet still
+    offers Jump, which builds it (§chat.transcript/rendering). It is decided each time the strip
+    opens, and when a topic arrives while it's open; a Jump that finds its item gone since then
+    removes itself instead of scrolling nowhere. A topic without
     Jump still shows its heading, time and bullets.
 - **Refetching.** Refetch after a watch `append` or chat `agent_settled`, debounced. Update in
   place.

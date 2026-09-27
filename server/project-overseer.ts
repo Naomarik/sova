@@ -307,7 +307,9 @@ async function codingWorktrees(p: ProjectOverseerPaths, root: string): Promise<C
       base: r.worktree.base,
       target: r.worktree.target,
       state: r.removed ? "removed" : w.state,
-      merged: w.merged,
+      // Merged by Merge Branch, by hand (git sees it), or removed with its branch (only ever a merged one).
+      merged: w.merged || !!r.merged || !!r.branchDeleted,
+      ...(!w.branch ? { branchGone: true } : {}),
       ...(r.merged ? { mergedAt: r.merged.at } : {}),
       ...(r.removed ? { removedAt: r.removed } : {}),
       ahead: w.ahead,
@@ -675,8 +677,8 @@ export async function removeCodingWorktree(orgId: string, projectId: string, ses
   if (r.removed) throw new OrgError("Its worktree was already removed.", 409);
   const path = refuseBusy(r);
   try {
-    await removeWorktree(r.worktree, project.root);
-    markStarted(p, r.sessionId, { removed: new Date().toISOString() });
+    const out = await removeWorktree(r.worktree, project.root);
+    markStarted(p, r.sessionId, { removed: new Date().toISOString(), ...(out.branchDeleted ? { branchDeleted: true } : {}) });
   } catch (err) {
     if (err instanceof WorktreeRefusal) throw new OrgError(err.message, 409);
     throw err;

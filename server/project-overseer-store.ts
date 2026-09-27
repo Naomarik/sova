@@ -266,6 +266,8 @@ export interface StartedRow {
   merged?: { at: string; commit: string };
   /** When the operator's Remove Worktree ran (ISO). */
   removed?: string;
+  /** Remove Worktree deleted the branch too, which it does only for a merged one. */
+  branchDeleted?: boolean;
   /** Why a coding session runs in the root itself (a tail: "it isn't a Git repository."). */
   inRoot?: string;
 }
@@ -292,6 +294,7 @@ function parseStarted(v: unknown): StartedRow[] {
       ...(parseWorktree(s.worktree) ? { worktree: parseWorktree(s.worktree) } : {}),
       ...(isObj(s.merged) && typeof s.merged.at === "string" && typeof s.merged.commit === "string" ? { merged: { at: s.merged.at, commit: s.merged.commit } } : {}),
       ...(typeof s.removed === "string" && s.removed ? { removed: s.removed } : {}),
+      ...(s.branchDeleted === true ? { branchDeleted: true } : {}),
       ...(typeof s.inRoot === "string" && s.inRoot ? { inRoot: s.inRoot } : {}),
     }))
     .slice(-STARTED_MAX);
@@ -353,7 +356,7 @@ export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: St
 }
 
 /** Record the operator's merge or removal on a coding session's row; false when the row or its worktree is unknown. */
-export function markStarted(p: ProjectOverseerPaths, sessionId: string, patch: Pick<StartedRow, "merged" | "removed">): boolean {
+export function markStarted(p: ProjectOverseerPaths, sessionId: string, patch: Pick<StartedRow, "merged" | "removed" | "branchDeleted">): boolean {
   const rows = readStarted(p);
   const r = rows.find((x) => x.sessionId === sessionId);
   if (!r?.worktree) return false;

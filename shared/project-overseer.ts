@@ -192,8 +192,10 @@ export interface CodingWorktree {
   /** open: its folder is here, not merged; merged: its branch is in target (by Merge Branch or by hand);
       removed: Remove Worktree ran; missing: its folder is gone otherwise; root: it runs in the project root. */
   state: "open" | "merged" | "removed" | "missing" | "root";
-  /** The branch's commits are all in target (and it has some). */
+  /** Its work is in target: merged by Merge Branch or by hand, or removed with its branch (only a merged one is). */
   merged: boolean;
+  /** True when the branch no longer exists (deleted with a merged worktree, or by hand): nothing left to merge. Absent otherwise. */
+  branchGone?: boolean;
   mergedAt?: string;
   removedAt?: string;
   /** Commits on the branch beyond base. */

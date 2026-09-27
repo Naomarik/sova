@@ -123,6 +123,8 @@ export interface WorktreeReading {
   /** open | merged | missing (removed is the record's, not git's). */
   state: "open" | "merged" | "missing";
   merged: boolean;
+  /** The branch still exists in the repository. */
+  branch: boolean;
   ahead: number;
   dirty: boolean;
   worktree: string | null;
@@ -134,14 +136,15 @@ export async function readWorktree(w: WorktreeRecord, root: string, git: Git = r
   const here = existsSync(w.path);
   const cwd = here ? w.path : root;
   try {
-    if (!existsSync(cwd)) return { state: "missing", merged: false, ahead: 0, dirty: false, worktree: null };
+    if (!existsSync(cwd)) return { state: "missing", merged: false, branch: false, ahead: 0, dirty: false, worktree: null };
+    const branch = (await branchSha(git, cwd, w.branch)) !== null;
     const n = await git(["rev-list", "--count", `${w.base}..refs/heads/${w.branch}`], cwd);
     const ahead = n.code === 0 ? Number(n.stdout.trim()) || 0 : 0;
     const merged = await mergedInto(git, cwd, w);
     const dirty = here ? (await uncommitted(git, w.path)).length > 0 : false;
-    return { state: !here ? "missing" : merged ? "merged" : "open", merged, ahead, dirty, worktree: here ? w.path : null };
+    return { state: !here ? "missing" : merged ? "merged" : "open", merged, branch, ahead, dirty, worktree: here ? w.path : null };
   } catch (err) {
-    return { state: here ? "open" : "missing", merged: false, ahead: 0, dirty: false, worktree: here ? w.path : null, error: err instanceof Error ? err.message : String(err) };
+    return { state: here ? "open" : "missing", merged: false, branch: true, ahead: 0, dirty: false, worktree: here ? w.path : null, error: err instanceof Error ? err.message : String(err) };
   }
 }
 

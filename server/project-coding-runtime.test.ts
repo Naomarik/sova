@@ -123,7 +123,7 @@ describe("a project's coding sessions", async () => {
     info = await po.removeCodingWorktree(org.id, project.id, started.sessionId);
     assert.equal(existsSync(w.path), false);
     assert.equal(git(client, "branch", "--list", w.branch), "", "a merged branch goes with it");
-    assert.deepEqual([rowOf()?.state, !!rowOf()?.removedAt], ["removed", true]);
+    assert.deepEqual([rowOf()?.state, !!rowOf()?.removedAt, rowOf()?.merged, rowOf()?.branchGone], ["removed", true, true, true], "removed with its branch: still merged, nothing left to merge");
     const row = store.readStarted(p).find((r) => r.sessionId === started!.sessionId)!;
     assert.ok(row.removed && row.merged?.commit, JSON.stringify(row));
     await assert.rejects(po.removeCodingWorktree(org.id, project.id, started.sessionId), /already removed/);

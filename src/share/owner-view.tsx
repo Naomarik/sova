@@ -309,7 +309,7 @@ function HomeView(props: { home: OwnerHome; now: number; link: Link; preview?: b
                   </Show>
                   <span class="owner-meta">{factsLine(p)}</span>
                   <Show when={p.lastActivityAt}>
-                    <span class="owner-meta">Last activity {plainDate(p.lastActivityAt, props.now)}</span>
+                    <span class="owner-meta">Last activity {plainAgo(p.lastActivityAt, props.now)}</span>
                   </Show>
                 </a>
               </li>
@@ -395,7 +395,7 @@ function ProjectView(props: { project: OwnerProject; now: number; link: Link }) 
           <ChipWord chip={projectChip(p().status)} />
         </div>
         <p class="owner-meta">
-          <Show when={p().lastActivityAt}>Last activity {plainDate(p().lastActivityAt, props.now)} · </Show>Updated <Ago at={p().updatedAt} now={props.now} />
+          <Show when={p().lastActivityAt}>Last activity {plainAgo(p().lastActivityAt, props.now)} · </Show>Updated <Ago at={p().updatedAt} now={props.now} />
         </p>
       </header>
 

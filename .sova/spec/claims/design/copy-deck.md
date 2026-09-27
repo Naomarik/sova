@@ -684,3 +684,21 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Start Coding Session (toast) | "Coding session started on sova/{name}." · in the root: "Coding session started in the project root." · mode not set (`.field-error`): "Started, but not prompted: its mode could not be set. Open it and send the message yourself." · no worktree (`.field-error`): "No session was started: its worktree could not be made ({git's first line})." |
 | Promote (Decisions tab, after a promotion) | "Promoted {n}. Committed {short sha} on {branch}." · skipped: the reason as §app.requirements/promotion-commit words it ("Not committed: …") · no Git: no second sentence |
 | Overseer tool refusals (the model reads them; the activity list shows them) | "Delegate is off for this project's coding sessions; the operator can allow it on the project page." · "Align needs someone to answer its questions, and nobody answers a coding session's." · "Spec is on for this project's coding sessions; only the operator can turn it off on the project page." · "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: only spec is allowed." · "Its worktree was removed, so it has no folder to work in." |
+
+## §design.copy-deck/project-stakeholder — Project page · main stakeholder, thinking, activity (§app.organizations/stakeholder, §app.project-overseer/identity)
+
+| Where | Copy |
+|---|---|
+| Stakeholder select (the project page's decisions area, above the decisions) | label `Main stakeholder` · options `None`, then the org's active people by name · hint (`.field-hint`): "Decides every area of this project that no one on the roster decides by name." |
+| …saved (toast) | "{name} is this project's main stakeholder." · None: "This project has no main stakeholder." |
+| …latest change (under the hint) | "Set by you {relative time}." · "Cleared {relative time}: {name} left the organization." |
+| …refused (`.field-error`) | "Only an active person on the roster can be a project's main stakeholder." |
+| Cleared banner (warn, while nobody is picked) | "{name} was this project's main stakeholder until they left the organization {relative time}. Pick someone else, or choose None." |
+| Suggestion (info line, no stakeholder, exactly 1 active person) | "{name} is the only person on the roster. Make them this project's main stakeholder?" · button `Make Main Stakeholder` (secondary) |
+| Needs you item | "Pick a main stakeholder for {project}: {name} left the organization." · org card kind: `{n} stakeholder to pick` / `{n} stakeholders to pick` |
+| Person page fact | "Main stakeholder of {project}, {project}" — each a link to its project page |
+| Conflict's reason (conflicts card) | "{name} is this project's main stakeholder." |
+| Decides refused (roster form, `.field-error`) | "“{entry}” names no decision area: use words, like “website”." |
+| Thinking refused (project page, `.field-error` under the select) | "{model} offers thinking {levels}." — levels comma-separated, as the model lists them |
+| Thinking moved after a model change (toast, after the model's own) | "Thinking is now {level}: {model} doesn't offer {old}." |
+| Activity chip for a partial act | `Partly` (warn: dot and word) beside `Done` · `Refused` · `Failed` · line: "{tool words}: partly ({n} refused: {id} ({reason}); …)" |

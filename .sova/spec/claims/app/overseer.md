@@ -93,7 +93,8 @@ are atomic tmp+rename.
 The tools call the existing REST routes in-process, so every guard those routes have already
 (TUI-live refusal, archived refusal, the model policy; for archive and set-session, the mid-turn and
 working-subagent refusals) applies unchanged, and their refusal sentences come back as the tool's
-error. Sessions are addressed by id. No tool passes `force`.
+error. Sessions are addressed by id, bare or in any form the tools print it (`sova://s/<id>`,
+`s/<id>`, a `[title](sova://s/<id>)` link). No tool passes `force`.
 
 - **Read** (no side effects): the attention digest; list sessions (compact rows); one session's
   detail, whose summary topics read newest first, as the insight strip lists them

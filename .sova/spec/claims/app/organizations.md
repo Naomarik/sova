@@ -49,19 +49,20 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   the exact stamp in its title.
 - **Needs you.** When anything in the org waits on the operator the card carries a warn chip,
   `Needs you · {n}` (dot and word, never hue alone), a warn border, and a line naming each kind
-  that waits: `{n} reply/replies · {n} link(s) to send · {n} person/people to approve`, zero kinds
-  left out. It counts the same items the attention list raises (§app.baton/needs-you): baton
+  that waits: `{n} reply/replies · {n} link(s) to send · {n} person/people to approve · {n}
+  stakeholder(s) to pick`, zero kinds left out. It counts the same items the attention list raises (§app.baton/needs-you): baton
   sessions the operator holds and hasn't answered (state `needs-you`); open baton sessions whose
   holder, or an open offer's invitee, has no live link (the operator must send one); and roster
   people with status `proposed`, waiting for Approve or Decline — every proposed person, whether or
   not a session proposed them; and open decision conflicts the reconciler routed to the operator
   that no baton session asks about yet (`{n} conflict(s) to settle`; one with a session is already
-  counted once, as that session's reply).
+  counted once, as that session's reply); and projects whose main stakeholder left
+  (§app.organizations/stakeholder).
 - **Last activity** is the newest of: the org's creation, its newest roster change, each baton
   row's creation, last hand-off, close and offer activity, and the last write of each open baton
   session's file.
 - **The server computes both** on `GET /api/orgs` only: each `OrgSummary` gains optional
-  `needsYou: {replies, links, proposals, conflicts}` and `lastActivityAt` (ISO). Absent (an older server),
+  `needsYou: {replies, links, proposals, conflicts, stakeholders}` and `lastActivityAt` (ISO). Absent (an older server),
   the card shows no Needs-you highlight and no activity line. `shared/protocol.ts` is unchanged.
 - **Zero orgs:** in place of the grid, one card: "Create your first organization", the line
   "Each organization keeps its roster, projects and hand-off sessions in its own git repo.", and a
@@ -156,7 +157,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   - **Proposed**: an info banner with the referral, "{referrer} proposed {name} {when} in
     {session title}: {why}", and, when they have decision areas, the card's "Decides: … —
     approving {name} approves …" line.
-- **Profile.** In that first card, the People card's facts: Decides, Skills, Competence (per skill, `level {n} of 5 · {n}
+- **Profile.** In that first card, the People card's facts: Decides (then, when they are one, "Main
+  stakeholder of {project}, {project}", each a link to its project page), Skills, Competence (per skill, `level {n} of 5 · {n}
   sessions`), Voice, Contact, Referred. Contact shows here and on the card, nowhere else
   (§app.organizations/privacy).
 - **Sessions** (`Sessions · {n}`; card headings are Title Case, like the org page's `Recent
@@ -389,7 +391,9 @@ Organizations region's own Needs you, never the global one.
   `skills`, `competence` (per skill: level 1–5 and the number of sessions observed), `language`
   (BCP-47) and `voice` (how to talk to them).
 - Caps: `name` ≤ 80, `role` and `voice` ≤ 300 characters; `decides` and `skills` ≤ 12 items of
-  ≤ 40 characters each. Over a cap is refused (400), never cut.
+  ≤ 40 characters each. Over a cap is refused (400), never cut. A `decides` entry with no letter
+  (`*`, `-`, `2024`: area keys keep letters only) names no area and is refused: "“{entry}” names no decision area: use words, like
+  “website”." (it would otherwise mean the area `general`).
 - **A proposed person must carry referral details**: a name, at least one contact channel, a role,
   why they were referred, and who referred them (`referral: {why, referredBy}`). A proposed person
   missing any of them is refused, on create and on every later change. Proposed people are not
@@ -431,6 +435,9 @@ Organizations region's own Needs you, never the global one.
 - One exception, and only through approve/decline: the project overseer (`overseer`) may settle a
   referral, setting a **proposed** person's `status` to active or left; the history line says
   `overseer`. No other status write is allowed to it, and none to the wrap-up.
+- A project's main stakeholder (§app.organizations/stakeholder) is the operator's alone: it is
+  written only through the project PATCH, which no autonomous writer has, and cleared by Sova only
+  when that person leaves.
 
 ## §app.organizations/privacy — Profiles stay private
 
@@ -536,8 +543,42 @@ Organizations region's own Needs you, never the global one.
   `PATCH /api/orgs/:id/projects/:pid`). A root (at its realpath) may not be an attached org's
   workspace, sit inside one or hold one, nor sit inside Sova's state folder (400): the project
   overseer reads its root (§app.project-overseer/identity).
+- A project may name its **main stakeholder**, `stakeholder` (a person id, or absent or `null`:
+  none), §app.organizations/stakeholder.
 - This is the minimal registry baton sessions need; a host-wide Projects registry may absorb it
   later, keyed by the same ids and `orgId`.
+
+## §app.organizations/stakeholder — A project's main stakeholder
+
+- **What it is.** One active roster person per project who decides every area of that project that
+  no active roster person decides by name (§app.requirements/routing): promotion (their decisions
+  there are in their area, §app.requirements/promotion) and conflicts there go to them. An area
+  someone decides by name stays theirs. It is stored on the project (`projects.json`
+  `stakeholder`), so a person can be the main stakeholder of one project and not another, and it
+  travels with the workspace repo.
+- **Setting it.** The project page's **Main stakeholder** select (None, then the org's active
+  people by name) sends `PATCH /api/orgs/:id/projects/:pid {stakeholder}` (a person id, or `null`).
+  Only an active person of the org is accepted; a proposed, left or unknown one is refused (400,
+  "Only an active person on the roster can be a project's main stakeholder."). It can be changed at
+  any time; a change applies from the next promotion or conflict, and never re-routes a conflict
+  already routed.
+- **When they leave.** When the person becomes `left` (an edit or a revert), every project naming
+  them has its stakeholder cleared at once. Until the operator picks someone or chooses None, the
+  project page says why, and the attention digest has a decide-tier item for the project
+  (`project-stakeholder`, listed in the Organizations region's Needs you): "Pick a main
+  stakeholder for {project}: {name} left the organization." A save of the select clears it.
+- **History.** Each change is kept on the project in `projects.json`, `stakeholderHistory`
+  (`{at, from, to, why}`, oldest first, the last 50; `why` `operator`, or `left` when Sova cleared
+  it because the person left), and a clearing also leaves `stakeholderCleared` (`{personId, name,
+  at}`) until the operator saves the select. Under the select the page shows the latest: "Set by you
+  {time}." or "Cleared {time}: {name} left the organization."
+- **Suggested, never automatic.** A project with no main stakeholder and exactly one active
+  person on the roster shows "{name} is the only person on the roster. Make them this project's
+  main stakeholder?" with **Make Main Stakeholder**; nothing is set until the operator presses it.
+- **Seen elsewhere.** The person page names the projects they are main stakeholder of
+  (§app.organizations/person-page); the project overseer's prompt, `sova_project` and `sova_roster`
+  name them (§app.project-overseer/identity, /tools), and its gaps go to them before the operator
+  (§app.project-overseer/gaps).
 
 ## §app.organizations/decisions — Why it is shaped this way
 

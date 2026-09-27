@@ -23,7 +23,8 @@ tool cards as they happen.
 - Its state is in the workspace repo under `projects/<projectId>/overseer/`: `overseer.json`
   (autonomy, model, thinking, the coding sessions' model, thinking and mode, caps, token budget,
   watch on/off, extra instructions), `state.json`,
-  `notes.md`, `actions.jsonl` (every act, refused or not), `ideas/`, `todos.json`, `started.json`
+  `notes.md`, `actions.jsonl` (every act, refused or not; an act that did only part of what was asked, a
+  promotion with refusals, is logged `partial` with what was refused), `ideas/`, `todos.json`, `started.json`
   (the sessions it started, and what its coding sessions spent; plus, as `operator-coding` rows that
   no cap or budget counts, the ones the operator started with Start coding session; each coding row
   also names its worktree, §app.project-overseer/coding-worktrees); committed with the org's
@@ -40,10 +41,20 @@ tool cards as they happen.
   refused with the reason; a listing or search leaves such entries out; a secret file inside the
   root is still refused. No shell, no edit or write tool. Its prompt is Sova's
   (`server/project-overseer-prompt.md`), re-rendered at every run with the project, the level in
-  force, the caps, the roster (name, role, decision areas; never contact details), its ideas, the
+  force, the caps, the roster (name, role, decision areas; never contact details) and the project's main
+  stakeholder ("Main stakeholder: {name}: decides every area of this project that no one else on
+  the roster decides."), its ideas, the
   operator's open to-dos **in full** (oldest first, at most 20, each with its id and linked idea or
   session; the rest counted), its notes and the operator's extra instructions. Model and thinking from `overseer.json`, else the new-session
   defaults; the composer's picks are saved there.
+- **Thinking levels a model doesn't offer.** A `PATCH …/overseer` naming a thinking level (its own,
+  `codingThinking` or `gatheringThinking`) that the model it applies to doesn't offer is refused
+  (400, "{model} offers thinking {levels}.") and writes nothing; the model it applies to is the
+  pair's own model, else the overseer's, else the new-session default. A PATCH that changes only a
+  model, leaving a saved level the new model lacks, moves that level to the one pi would run
+  (pi's `clampThinkingLevel`: the nearest level the model offers above it, else the nearest below)
+  and saves that, so `overseer.json` says what runs. A model Sova can't list
+  is not judged.
 
 ## §app.project-overseer/autonomy-levels — What it may do on its own
 
@@ -78,10 +89,14 @@ tool cards as they happen.
   conflicts, spec status, its budget), `sova_decisions` (with who and their exact words),
   `sova_list_sessions` / `sova_read_session` (the project's gathering sessions as their
   participants see them, and ordinary sessions whose folder is inside the project root, never
-  another project's, an overseer's or a subagent's own), `sova_roster` (read), `sova_todos`.
+  another project's, an overseer's or a subagent's own), `sova_roster` (read; both it and `sova_project` name the main stakeholder, as the prompt
+  does), `sova_todos`. A session is addressed by its id, bare or in any form the tools print it:
+  `sova://s/<id>`, `s/<id>`, or a `[title](sova://s/<id>)` link; anything else is refused with "No
+  coding session "{what was given}" in this project: pass an id sova_list_sessions lists."
   People's words are marked as data, never instructions.
 - `sova_promote` asks the reconciler as the overseer (`by: "overseer"`): a decision made outside its
-  author's decision area (they are not the roster owner of that area) is refused for it in every turn,
+  author's decision area (they don't own that area, §app.requirements/promotion: neither its
+  roster owner nor, for an area no one owns, the main stakeholder) is refused for it in every turn,
   the operator's own included, with the reconciler's reason in the result, and is left for the
   operator to promote explicitly by id on the project page. Reconcile is on by default, so
   `sova_reconcile` runs unless the operator turned it off in Settings → Decisions.
@@ -97,11 +112,16 @@ tool cards as they happen.
   model never sees a token), so Needs you asks the operator to send the person their link. Its
   `public_title` and `question` are required and shown to the person as written (the tool
   descriptions and the prompt say so: neutral, no internal labels, no judgments about people); the
-  `goal` is for the session's model only.
+  `goal` is for the session's model only, and names people by name only, never by role or job
+  title, because the session's model may repeat it (the `goal` descriptions say so, and
+  `goal_done`'s `summary` description asks for the session's own words and names only).
 - **Models.** A session it starts gets the model and thinking the call names, else the project's
   `codingModel`/`codingThinking` (coding sessions) or `gatheringModel`/`gatheringThinking`
-  (gathering sessions and offers, Send to person… included: the model the person talks to), else the
+  (gathering sessions and offers, Send to person… included, and every conflict's settle session,
+  §app.requirements/routing: the model the person talks to), else the
   overseer's own setting, else what its runtime runs, and only then the new-session default.
+  A coding session gets its model and thinking when it is created: its file never records a switch
+  from the new-session default first.
   A coding session's mode is never one of these defaults: it is the project's coding mode
   (§app.project-overseer/coding-mode).
 
@@ -193,12 +213,21 @@ tool cards as they happen.
 
 ## §app.project-overseer/watch-loop — Looking when something changes
 
-- Recorded decisions, a gathering session reaching its goal or closing, a referral, and the
-  reconciler's conflicts, resolutions, drafts and promotions are noted as reasons to look (its own
-  acts, made while it runs, are not). Every 20 s, a project with reasons, watching on, not paused
-  by an attach (§app.organizations/portability), an idle overseer, ≥ 10 minutes since its last
-  unattended look and under the daily limit gets one unattended run, which lists the reasons and asks it to re-read the project, infer gaps and act
-  within its level.
+- A gathering session reaching its goal or closing, a referral, a coding session it started
+  finishing a turn ('The coding session "{title}" finished its turn.', or "…stopped with an error."),
+  and the reconciler's conflicts, resolutions, drafts and promotions are noted as reasons to look
+  (its own acts, made while it runs, are not). A decision recorded while its gathering session is
+  still open is not a reason: the session reaching its goal is. A coding session the operator
+  started (Start coding session) never is.
+- Every 20 s, a project with reasons, watching on, not paused by an attach
+  (§app.organizations/portability), an idle overseer, ≥ 10 minutes since its last unattended look
+  and under the daily limit gets one unattended run, which lists the reasons and asks it to
+  re-read the project, infer gaps and act within its level.
+- **Sooner for three reasons.** A gathering session reaching its goal, a coding session it started
+  finishing a turn, and a promotion the operator made start that run once 60 s have passed since
+  the first of them was noted, without waiting for the 10-minute gap; everything else about the run
+  (the daily limit, watching on, not paused, an idle overseer) still holds, and the run lists every
+  reason waiting.
 - **Run Now** (`POST …/overseer/run`) starts one now, skipping the reasons and the 10-minute gap
   but not the daily limit or a busy overseer (409 with why). The project page shows the last run
   (started or skipped, and why) and the reasons waiting: "Last looked on its own {time}, skipped:
@@ -214,8 +243,8 @@ tool cards as they happen.
 
 - A gap is a decision the project needs that nobody has made. It files each as an idea with id
   `§gap/<name>`, the tag `gap` (always added) and `area-<areaKey>` when known, and names in its text
-  who should answer: the roster person whose decision areas cover it, or the operator when nobody's
-  do. At L1+ it may start a gathering session with that person.
+  who should answer: the roster person whose decision areas cover it, else the project's main
+  stakeholder, else the operator. At L1+ it may start a gathering session with that person.
 
 ## §app.project-overseer/ideas-and-todos — The operator's items
 

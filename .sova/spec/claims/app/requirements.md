@@ -105,16 +105,29 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 
 ## §app.requirements/routing — Who settles a conflict
 
-- To the active roster person whose `decides` covers the area (same key), preferring one who wrote
-  neither side; with no such person, to the operator.
+- **Who owns an area.** The active roster people whose `decides` has the area's key own it. When
+  no active person has it, the project's main stakeholder (§app.organizations/stakeholder) owns
+  it; with no stakeholder either, nobody does.
+- A conflict goes to the area's owner, preferring one who wrote neither side; to the main
+  stakeholder when they own it, even when they wrote one side or both (a person who contradicts
+  their own earlier decision settles it); with no owner, to the operator. Any two live decisions of
+  one area are compared, whoever wrote them, one author's included. The conflict's reason says
+  which: "{name} decides {area}.", "{name} is this project's main stakeholder.", "Nobody on the
+  roster decides {area}."
 - **Operator-set say.** A `decides` entry counts only when the operator set it: the change that
   introduced it (per `roster-history.jsonl`) is the operator's, or a referral's for a person the
   operator approved afterwards (approval is the review step; a project overseer's approval does
   not count). Any other say is **self-asserted**: the conflict goes to the operator instead and is
-  marked so, and a person cannot talk themselves into deciding.
+  marked so, and a person cannot talk themselves into deciding. It never falls to the main
+  stakeholder instead: an area someone claims to own is not an area no one owns.
 - Routing starts a baton session (§app/baton) to that person, owned by the operator or the project
-  overseer, whose goal carries both statements with their authors and quotes and whose first
-  question names both, each with its author. Routed to the operator, the baton is held by the
+  overseer, on the project's gathering model and thinking (`gatheringModel`/`gatheringThinking`,
+  else the overseer's own setting, else the new-session default; the overseer's own reconcile
+  also falls back to what its runtime runs, as in §app.project-overseer/tools "Models"), whoever
+  routed it: the overseer's
+  reconcile, the operator's Reconcile or re-route, or the run the server starts by itself when a decision
+  is recorded in a conflict's settle session (§app.requirements/reconciler "When"). Its goal carries both statements with their authors and quotes, and its
+  first question names both, each with its author. Routed to the operator, the baton is held by the
   operator from the start, so it is a Needs-you item; routed to a person, no link is minted at
   start (nobody could be shown it) and Needs-you asks the operator to send one. A fresh baton is
   listed and in Needs-you before anyone has written in it.
@@ -134,7 +147,8 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 - The operator selects drafted decisions (or a project overseer allowed to promote does);
   anything else is refused with its reason.
 - **Out of area.** A decision whose author may not decide its area (`authorOwnsArea` false: not
-  the operator, and no operator-set say over the area, as in §app.requirements/routing) is promoted
+  the operator, not an owner of the area as §app.requirements/routing defines one, with an
+  operator-set say, and not the main stakeholder of an area no one owns) is promoted
   only when the operator names it: `promote {ids}` by id. **Select All Ready** (`bulk: true`) and
   a project overseer's promotion refuse it with "outside <name>'s decision area: promote it
   explicitly by id", and promote the rest. A promotion builds a fresh draft holding exactly the

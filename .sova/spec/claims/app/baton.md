@@ -227,6 +227,12 @@ once), **lease** (an offer's lock on its first taker).
   by `you`. The filter runs on the server; the page receives nothing else.
 - Live: the page receives the filtered view again after every change and, while the model writes,
   only the reply's text so far — never raw events.
+- **Links.** An explicit `http://` or `https://` address in any text the page shows (messages,
+  the people's own included, hand-off and offer questions and briefings, decision statements, the
+  done summary, the sending echo) is a link that opens in a new tab (`target="_blank"`,
+  `rel="noopener noreferrer nofollow"`). The page builds it as DOM nodes, never as HTML, so the
+  text stays escaped. No other scheme is linked, nor an address without one (`www.x.com`, an
+  e-mail address). The model's replies render as markdown, whose links open the same way.
 - Text only, both ways: images are refused on the share route, and the operator's composer
   refuses a send with images in a baton session ("A hand-off session is text only: images can't be
   sent.", code `refused`); a message starting with `/` is refused; ≤ 4000 characters.

@@ -3708,7 +3708,9 @@
         "shared/baton.ts",
         "server/share-message.test.ts",
         "server/baton.ts",
-        "server/baton-handoff.test.ts"
+        "server/baton-handoff.test.ts",
+        "src/lib/share-linkify.ts",
+        "src/lib/share-linkify.test.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -3753,7 +3755,8 @@
       "code": [
         "server/orgs.ts",
         "server/orgs.test.ts",
-        "server/baton-offers.test.ts"
+        "server/baton-offers.test.ts",
+        "server/org-routes.ts"
       ],
       "requires": [
         "§app.organizations/roster"
@@ -3778,7 +3781,7 @@
     "§app.organizations/org-cards": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "shared/orgs.ts",
         "server/org-routes.ts",
@@ -3786,7 +3789,10 @@
         "src/components/OrgsView.tsx",
         "src/lib/org-cards.ts",
         "src/lib/org-cards.test.ts",
-        "src/orgs.css"
+        "src/orgs.css",
+        "server/orgs.ts",
+        "src/lib/org-tabs.ts",
+        "src/lib/org-tabs.test.ts"
       ],
       "requires": [
         "§app.organizations/registry",
@@ -4014,7 +4020,8 @@
         "server/project-overseer-tools.ts",
         "server/project-overseer-prompt.md",
         "shared/project-overseer.ts",
-        "server/project-overseer-tools.test.ts"
+        "server/project-overseer-tools.test.ts",
+        "server/project-overseer.ts"
       ]
     },
     "§app.project-overseer/ideas-and-todos": {
@@ -4051,7 +4058,12 @@
         "server/project-overseer.test.ts",
         "server/overseer-deny.ts",
         "server/overseer-file-tools.test.ts",
-        "server/orgs.ts"
+        "server/orgs.ts",
+        "server/project-overseer-tools.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/lib/project-overseer-view.ts",
+        "src/lib/project-overseer-view.test.ts",
+        "shared/protocol.ts"
       ],
       "requires": [
         "§app.overseer/hosting",
@@ -4067,7 +4079,10 @@
         "server/project-overseer.ts",
         "server/project-overseer-tools.test.ts",
         "server/project-coding-mode.ts",
-        "server/project-overseer-prompt.md"
+        "server/project-overseer-prompt.md",
+        "server/baton-loadout.ts",
+        "server/chat-manager.ts",
+        "server/project-coding-runtime.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -4179,7 +4194,9 @@
       "code": [
         "server/reconcile.ts",
         "server/sessions-index.ts",
-        "server/reconcile.test.ts"
+        "server/reconcile.test.ts",
+        "shared/decisions.ts",
+        "server/project-overseer.ts"
       ],
       "requires": [
         "§app/baton",
@@ -4743,6 +4760,39 @@
       ]
     },
     "§design.copy-deck/project-coding": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§app.organizations/stakeholder": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.requirements/routing",
+        "§app.organizations/roster"
+      ],
+      "code": [
+        "server/orgs.ts",
+        "server/orgs.test.ts",
+        "server/org-routes.ts",
+        "server/org-list.test.ts",
+        "server/attention.ts",
+        "server/person-page.ts",
+        "shared/orgs.ts",
+        "shared/protocol.ts",
+        "src/components/ProjectPage.tsx",
+        "src/components/PersonPage.tsx",
+        "src/components/Sidebar.tsx",
+        "src/lib/stakeholder.ts",
+        "src/lib/stakeholder.test.ts",
+        "src/lib/org-region.ts",
+        "src/lib/org-region.test.ts",
+        "src/lib/api.ts",
+        "src/projects.css"
+      ]
+    },
+    "§design.copy-deck/project-stakeholder": {
       "kind": "note",
       "authority": "accepted",
       "evidence": "reviewed"

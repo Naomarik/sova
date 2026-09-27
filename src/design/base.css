@@ -4813,6 +4813,8 @@ button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offse
 /* A separator belongs to the fact it introduces, so a wrap can never strand it; the gap that
    used to separate them is now inside the fact. */
 .subagents-view-meta .meta-line-sep { margin-right: var(--space-1); }
+/* The context readout sits at the line's right edge, under the status chip. */
+.subagents-view-context { margin-left: auto; padding-left: var(--space-2); }
 
 /* The view head's context readout, compact: the list's ring and the percent ("◔ 6%"), the full
    sentence in the title, so the meta line holds one row at a normal pane width. Without a window

@@ -472,12 +472,11 @@ export function SubagentPane(props: {
                         </span>
                       )}
                     </Show>
-                    {/* How full its own context is, as the chat head says it — the gauge trails
-                        the facts that name the worker and what it has spent. */}
+                    {/* How full its own context is, as the chat head says it — pushed to the
+                        line's right edge, under the status chip, so it takes no dot. */}
                     <Show when={contextOf(w())}>
                       {(c) => (
-                        <span>
-                          <MetaSep />
+                        <span class="subagents-view-context">
                           <ContextReadout state={c()} />
                         </span>
                       )}

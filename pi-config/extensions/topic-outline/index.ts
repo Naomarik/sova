@@ -31,6 +31,7 @@ import {
   earliestUserRequest,
   existingOutlineJson,
   extractDelta,
+  extractLookback,
   lastMessageEntryId,
   type DeltaMessage,
 } from "./state.ts";
@@ -284,6 +285,8 @@ export default function topicOutline(pi: ExtensionAPI): void {
       const { result } = await rt.chain.run({
         existingOutline: existingOutlineJson(rt.store.topics),
         newLines: delta.map(message => message.line),
+        // Context only: the previous run may have cut a thread halfway. Its p refs are not in validRefs.
+        lookbackLines: extractLookback(entries, rt.store.basisLeafId),
         validRefs,
         purpose: rt.store.purpose,
         signal: runActive.signal,

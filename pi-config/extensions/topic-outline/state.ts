@@ -5,6 +5,7 @@
  */
 
 import { fingerprintOf, isMarkedMessage, normalize, stripAnsi, textOf } from "./anchors.ts";
+import { claimFits, claimOf, lookbackRef, refOrdinal, type Claim } from "./claims.ts";
 import type {
   Anchor,
   OutlineBroadcast,
@@ -13,6 +14,7 @@ import type {
   OutlineStateName,
   SummarizerResult,
   Topic,
+  TopicRange,
 } from "./types.ts";
 
 const CUSTOM_TYPE = "topic-outline";
@@ -59,6 +61,11 @@ function boundedLine(value: string, max: number): string {
 
 /** The anchor request, clipped, as handed to the summarizer. */
 const PURPOSE_CHARS = 400;
+
+/** The lookback before a run's offset: this many conversational messages, at most this many
+ *  characters in all (older ones go first). */
+const LOOKBACK_MESSAGES = 4;
+const LOOKBACK_CHARS = 2_000;
 
 /** Limits for the "summary"-mode per-topic detail sent to /sessions. */
 const DETAIL_TOPICS = 6;
@@ -141,6 +148,43 @@ export function extractDelta(entries: EntryLike[], basisLeafId?: string): DeltaM
 }
 
 /**
+ * The last few conversational messages at or before `basisLeafId`: what the previous run already
+ * summarized, handed to the next one as context only, so a thread the offset cut halfway still
+ * reads whole. Refs are p1..pN (oldest first), a form no claim accepts. User text and final
+ * assistant text only: tool traffic is noise here. Newest messages are kept first; the oldest
+ * go when the total passes LOOKBACK_CHARS. Empty when there is no basis (the first run).
+ */
+export function extractLookback(entries: EntryLike[], basisLeafId: string | undefined): string[] {
+  if (!basisLeafId) return [];
+  const ordered = entries.filter(entry => entry.type === "message" && entry.message?.role);
+  const end = ordered.findIndex(entry => entry.id === basisLeafId);
+  if (end < 0) return [];
+  const picked: { role: string; text: string }[] = [];
+  let used = 0;
+  for (let i = end; i >= 0 && picked.length < LOOKBACK_MESSAGES; i--) {
+    const message = ordered[i].message as NonNullable<EntryLike["message"]>;
+    let role: string;
+    let text: string;
+    if (message.role === "user") {
+      role = "USER";
+      text = textOf(message);
+    } else if (message.role === "assistant") {
+      const blocks = Array.isArray(message.content) ? message.content : [];
+      role = "ASSISTANT";
+      text = blocks.filter(block => block?.type === "text" && typeof block.text === "string")
+        .map(block => block.text as string).join("\n");
+    } else continue;
+    if (!text.trim()) continue;
+    const room = LOOKBACK_CHARS - used;
+    if (room < 80) break;
+    const body = clip(text, Math.min(800, room));
+    used += body.length;
+    picked.unshift({ role, text: body });
+  }
+  return picked.map((item, index) => `[${lookbackRef(index + 1)}] ${item.role}: ${item.text}`);
+}
+
+/**
  * The earliest user request still on the branch: the first user message in the entries handed in,
  * which is the session's opening request unless a compaction has already dropped it. It is NOT
  * read from the delta — a session whose outline started before this existed has a delta beginning
@@ -174,6 +218,37 @@ export function existingOutlineJson(topics: Topic[]): string {
   })));
 }
 
+/** The refs an update claims: its from/to, or the older single anchor as both ends. */
+function claimedRefs(update: SummarizerResult["topicUpdates"][number]): { from: string; to: string } | undefined {
+  const from = update.from ?? update.anchor;
+  const to = update.to ?? update.from ?? update.anchor;
+  return from && to ? { from, to } : undefined;
+}
+
+/** The anchorable messages inside a claim: the first becomes `range.from`, the last `range.to`. A
+ *  claim may start or end on a tool call, which no row marks; its ends move inward to the nearest
+ *  message that has one. */
+function rangeFor(claim: Claim, anchors: Map<string, Anchor>): TopicRange | undefined {
+  let from: Anchor | undefined;
+  let to: Anchor | undefined;
+  let fromAt = Infinity;
+  let toAt = -Infinity;
+  for (const [ref, anchor] of anchors) {
+    const n = refOrdinal(ref);
+    if (n === undefined || n < claim.from || n > claim.to) continue;
+    if (n < fromAt) { fromAt = n; from = anchor; }
+    if (n > toAt) { toAt = n; to = anchor; }
+  }
+  return from && to ? { from, to } : undefined;
+}
+
+/**
+ * Apply one run's topic updates. Each update claims a range of the run's new messages; the claims
+ * are taken in the model's order and one that overlaps a claim already accepted this run is
+ * dropped (neighbours may share one boundary message: see claims.ts). A claim on anything but a
+ * new message (a lookback ref, an unknown ref, a backwards range) is dropped too, as is one with no
+ * anchorable message inside it. An accepted update jumps to the start of its range.
+ */
 export function applyUpdates(
   topics: Topic[],
   updates: SummarizerResult["topicUpdates"],
@@ -181,9 +256,13 @@ export function applyUpdates(
   limits: OutlineConfig["limits"],
 ): Topic[] {
   let next = [...topics];
+  const accepted: Claim[] = [];
   for (const update of updates) {
-    const anchor = anchors.get(update.anchor);
-    if (!anchor) continue;
+    const refs = claimedRefs(update);
+    const claim = refs && claimOf(refs.from, refs.to);
+    if (!claim || !claimFits(claim, accepted)) continue;
+    const range = rangeFor(claim, anchors);
+    if (!range) continue;
     if (update.kind === "update") {
       const topic = next.find(item => item.id === update.topicId) ??
         next.find(item => item.heading.toLowerCase() === update.heading.toLowerCase());
@@ -195,7 +274,8 @@ export function applyUpdates(
         ? {
           ...topic,
           heading: topic.manual ? topic.heading : update.heading,
-          anchor,
+          anchor: range.from,
+          range,
           summary: update.summary.slice(0, limits.maxBullets),
           at: Date.now(),
         }
@@ -204,14 +284,25 @@ export function applyUpdates(
       next.push({
         id: `t-new:${update.heading}`, // placeholder, id assigned by caller
         heading: update.heading,
-        anchor,
+        anchor: range.from,
+        range,
         summary: update.summary.slice(0, limits.maxBullets),
         at: Date.now(),
       });
     }
+    accepted.push(claim);
   }
   return next.length > limits.maxTopics ? next.slice(next.length - limits.maxTopics) : next;
 }
+
+/** When a topic's conversation last moved: the end of its latest range, else (older snapshots,
+ *  unstamped messages) when the summarizer last wrote it. */
+export function topicTime(topic: Topic): number {
+  return topic.range?.to.timestamp ?? topic.at ?? 0;
+}
+
+const isAnchor = (value: unknown): value is Anchor =>
+  !!value && typeof value === "object" && typeof (value as Anchor).entryId === "string";
 
 export class OutlineStore {
   topics: Topic[] = [];
@@ -228,12 +319,12 @@ export class OutlineStore {
 
   /**
    * The heading /sessions shows: the latest user `#` heading, else the heading of the
-   * most recently created/updated topic, else "".
+   * topic whose section of the conversation ended last (topicTime), else "".
    */
   get lastHeading(): string {
     if (this.lastManualHeading) return this.lastManualHeading;
     let latest: Topic | undefined;
-    for (const topic of this.topics) if (!latest || (topic.at ?? 0) >= (latest.at ?? 0)) latest = topic;
+    for (const topic of this.topics) if (!latest || topicTime(topic) >= topicTime(latest)) latest = topic;
     return latest?.heading ?? "";
   }
 
@@ -246,7 +337,11 @@ export class OutlineStore {
       if (data?.version !== 2 || !Array.isArray(data.topics)) break;
       this.topics = data.topics.filter((topic): topic is Topic =>
         !!topic && typeof topic.id === "string" && typeof topic.heading === "string" &&
-        Array.isArray(topic.summary) && !!topic.anchor && typeof topic.anchor === "object");
+        Array.isArray(topic.summary) && !!topic.anchor && typeof topic.anchor === "object")
+        // A range is optional (older snapshots have none); a malformed one is dropped, not the topic.
+        .map(topic => topic.range === undefined || (isAnchor(topic.range?.from) && isAnchor(topic.range?.to))
+          ? topic
+          : (({ range: _range, ...rest }) => rest)(topic));
       this.now = typeof data.now === "string" ? data.now : "";
       this.overall = typeof data.overall === "string" ? data.overall : "";
       this.basisLeafId = typeof data.basisLeafId === "string" ? data.basisLeafId : undefined;
@@ -319,7 +414,7 @@ export class OutlineStore {
 
   /** Create an instant topic from a `#`-headed user message (no model call). */
   addManualTopic(heading: string, anchor: Anchor): Topic {
-    const topic: Topic = { id: `t${++this.topicCounter}`, heading, anchor, summary: [], at: Date.now(), manual: true };
+    const topic: Topic = { id: `t${++this.topicCounter}`, heading, anchor, range: { from: anchor, to: anchor }, summary: [], at: Date.now(), manual: true };
     this.topics = [...this.topics, topic];
     if (this.topics.length > 40) this.topics = this.topics.slice(-40);
     if (this.state === "none") this.state = "stale";
@@ -332,10 +427,10 @@ export class OutlineStore {
     this.lastManualHeading = heading;
   }
 
-  /** Most recently created/updated topics, newest first (later position wins ties). */
+  /** Topics whose conversation moved most recently, newest first (later position wins ties). */
   private recentTopics(limit: number): Topic[] {
     return this.topics.map((topic, index) => ({ topic, index }))
-      .sort((a, b) => (b.topic.at ?? 0) - (a.topic.at ?? 0) || b.index - a.index)
+      .sort((a, b) => topicTime(b.topic) - topicTime(a.topic) || b.index - a.index)
       .slice(0, limit)
       .map(item => item.topic);
   }

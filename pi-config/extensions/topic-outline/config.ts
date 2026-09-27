@@ -15,7 +15,7 @@ export const DEFAULT_CONFIG: OutlineConfig = {
   shareWithSessions: "now-only",
   shareLastHeading: true,
   claudeBin: join(homedir(), ".local/bin/claude"),
-  limits: { maxTopics: 40, maxBullets: 2 },
+  limits: { maxTopics: 40, maxBullets: 3 },
 };
 
 function readJson(path: string): Record<string, unknown> | undefined {

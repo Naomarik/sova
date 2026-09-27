@@ -476,6 +476,8 @@ function decodeOutline(data: unknown): SessionOutline | null {
       // The anchor's own clock, kept apart from `at` (the summarizer's). Optional, so a snapshot
       // from an older extension simply has neither.
       ...(isRec(t.anchor) && num(t.anchor.timestamp) ? { anchorAt: num(t.anchor.timestamp)! } : {}),
+      // The end of the topic's claimed section. Optional twice over: older snapshots have no range.
+      ...(isRec(t.range) && isRec(t.range.to) && num(t.range.to.timestamp) ? { sectionAt: num(t.range.to.timestamp)! } : {}),
     });
   }
   return {

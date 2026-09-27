@@ -9,11 +9,23 @@ export interface Anchor {
   fingerprint: string;
 }
 
+/** The stretch of transcript a topic update claimed: its first and last message. */
+export interface TopicRange {
+  from: Anchor;
+  to: Anchor;
+}
+
 export interface Topic {
   id: string;
   heading: string;
+  /** Where Jump lands: the start of the topic's latest range (older snapshots: the message the
+   *  topic was started or last advanced at). */
   anchor: Anchor;
+  /** The section of transcript the topic's latest update claimed. Absent in older snapshots, and on
+   *  topics no run has claimed for since. */
+  range?: TopicRange;
   summary: string[];
+  /** When the summarizer last wrote the topic (its own clock). */
   at: number;
   /** True when created instantly from a `#`-prefixed user message. */
   manual?: boolean;
@@ -50,8 +62,11 @@ export interface SummarizerResult {
     heading: string;
     /** Existing topic id (t1, t2…) for kind "update"; omitted for "new". */
     topicId?: string;
-    /** New-message ref like "m12". */
-    anchor: string;
+    /** The claimed range: new-message refs like "m12", from ≤ to. */
+    from?: string;
+    to?: string;
+    /** The older single-ref form, read as from = to = anchor when the range is absent. */
+    anchor?: string;
     summary: string[];
   }[];
 }
@@ -97,7 +112,9 @@ export interface SummarizeInput {
   existingOutline: string;
   /** New lines since the last run: "[m12] USER: ..." etc. */
   newLines: string[];
-  /** refs (m12) that may appear in the result's anchor fields. */
+  /** Messages just before the offset ("[p1] USER: ..."): already summarized, context only. */
+  lookbackLines?: string[];
+  /** refs (m12) that may appear in the result's from/to (or anchor) fields. Never lookback refs. */
   validRefs: Set<string>;
   /** The earliest user request still on the branch, clipped: the anchor for "overall".
    *  Empty when the branch holds no user text (or the session predates this field). */

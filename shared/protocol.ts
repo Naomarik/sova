@@ -2000,6 +2000,11 @@ export interface OutlineTopic {
       branch. Absent from older servers, and on topics the live overlay invented (it has headings
       only), which is when the timeline falls back to the summary's own time and says so. */
   anchorAt?: number;
+  /** When the topic's own section of the conversation ends (ms): the last message of the range its
+      latest update claimed. Topics updated in one summarizer run share `at` but not this. The strip
+      and the Overseer show and sort by it (`topicTime`, shared/outline-order.ts), falling back to
+      `at` when absent: snapshots from before ranges, and topics the live overlay invented. */
+  sectionAt?: number;
 }
 export interface SessionOutline {
   now: string; overall: string; lastHeading: string | null;

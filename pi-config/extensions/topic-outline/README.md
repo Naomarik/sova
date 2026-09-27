@@ -11,8 +11,8 @@ and it can scroll the fullscreen transcript directly to the message that started
   (`Running: edit · auth.ts`, `Needs input`, `Error: …`, `Idle 3m`). No model involved.
 - **Alt+O / `/outline`** — right-side overlay panel:
   - the instant Now line plus the latest model-generated one-liner (with its age),
-  - topic headings with 1–2 bullets each,
-  - **Enter** scrolls the main transcript to the topic's original message (fullscreen mode)
+  - topic headings with 1–3 bullets each,
+  - **Enter** scrolls the main transcript to the start of the topic's own section (fullscreen mode)
     or opens a read-only peek panel (regular mode / message compacted away / other branch),
   - `r` forces a refresh, `q`/Esc closes.
 - **`/outline rebuild`** — force a summarization run, **`/outline status`** — show state.
@@ -43,6 +43,33 @@ anchor is offered, not asserted: on a session whose outline predates this field 
 mid-session message, so the prompt says the existing topics win when the two disagree, and a genuine
 change of goal rewrites `overall`.
 
+### One section per topic
+
+Between runs, `basisLeafId` (the offset) keeps a run from summarizing the same messages twice.
+Within a run, **claims** do: every topic update names the range of new messages it covers
+(`"from":"m3","to":"m9"`), and each section of the transcript belongs to exactly one topic.
+
+- **Lookback.** Each run also sees the last 4 conversational messages before its offset (user text
+  and final assistant text, oldest first, at most ~2,000 characters in all, the oldest dropped
+  first), under `EARLIER MESSAGES`, marked already summarized and context only. The previous run may
+  have cut a thread halfway; the lookback lets the model read the new messages as its continuation.
+  Lookback refs are `p1…p4`, a form no claim accepts: the run claims only messages after its offset.
+- **Claims are enforced in code** (`claims.ts`, applied in `applyUpdates`), in the model's output
+  order, first wins: a range that overlaps one already accepted in the run is dropped. Two
+  neighbours may share exactly one boundary message (where one ends and the next begins), as long as
+  each keeps a message of its own; a one-message range on another's end is an overlap. A range that
+  touches a lookback ref, names an unknown ref or runs backwards is refused by the parser.
+- **Stored on the topic** as `range: {from, to}` (two anchors: entry id, role, timestamp,
+  fingerprint), beside `anchor`, which is now the range's start: Jump lands on the first message of
+  the topic's own section. A range end on tool traffic (no row marks it) moves inward to the nearest
+  message that has one; a range with no such message is dropped. `#` topics claim their own message.
+- **Time.** A topic's time is the end of its latest range (`topicTime`): topics one run updates show
+  different times, each its own section's. `at` stays the summarizer's clock, the fallback for
+  topics without a range. `lastHeading` and the `summary`-mode `detail` order use the same time.
+- **Old output and old snapshots.** A model that sends the older single `anchor` still works: it is
+  read as `from = to = anchor`. Snapshots without `range` load as before (the extension, the panel,
+  and Sova's decoder); a malformed `range` is dropped, not its topic.
+
 ### What a summary says
 
 The prompt (`summarizers/chain.ts`, `buildPrompt`) holds the model to these rules:
@@ -52,10 +79,14 @@ The prompt (`summarizers/chain.ts`, `buildPrompt`) holds the model to these rule
   updating an existing topic to starting a new one.
 - **A heading names the subject** in 1–4 plain words, never its status, so it stays true while the
   work moves on.
-- **Bullets are outcomes**: 1–2 per topic, at most 70 characters, one fact each, in plain words.
+- **Each message belongs to one topic**: the model splits the new messages into consecutive ranges,
+  one per topic, never repeats a fact in two topics, and puts a report that mentions other threads
+  in passing in the range of the ask it answers.
+- **Bullets are outcomes**: 1–3 per topic, at most 70 characters, one fact each, in plain words.
   What was decided, done or found — never the steps taken, check times, commit hashes, file or
   function names, worker ids or internal names you didn't type yourself. Open items, to-dos and
-  next steps are left out: the chat is ongoing, and the outline records what came of things. Only
+  next steps are left out ("The rerun goes ahead once the last fix branch is merged." is the prompt's
+  own bad example): the chat is ongoing, and the outline records what came of things. Only
   facts the messages state; nothing inferred.
 - **`now`** is where things stand, at most 60 characters; **`overall`** names the subject in at
   most 8 words.
@@ -65,7 +96,7 @@ replace the stored ones, so the prompt tells it to resend the earlier facts that
 heading replaces the stored heading too, so a heading can follow its topic (an old status-heading
 heals the next time its topic is touched). A heading you typed with `#` is kept. The parser is a
 safety net above the prompt's limits: a bullet over 120 characters ends on a word with `…`, and
-`limits.maxBullets` (default 2) caps the bullets kept per topic.
+`limits.maxBullets` (default 3) caps the bullets kept per topic.
 
 Failures (missing binary, non-zero exit, timeout, model errors, rate limits, invalid
 JSON) fall through the chain with growing per-backend backoff (1m → 5m → 15m). If
@@ -86,7 +117,7 @@ for trusted projects):
   "shareWithSessions": "now-only",
   "shareLastHeading": true,
   "claudeBin": "~/.local/bin/claude",
-  "limits": { "maxTopics": 40, "maxBullets": 2 }
+  "limits": { "maxTopics": 40, "maxBullets": 3 }
 }
 ```
 
@@ -99,7 +130,7 @@ for trusted projects):
 - `shareLastHeading` (default `true`, ignored when `shareWithSessions` is `off`): also
   send `lastHeading` so each `/sessions` row shows ` · # <heading>`. `lastHeading` is the
   most recent `#` heading you typed (a repeated heading counts); if you never typed one,
-  the most recently created/updated topic's heading; empty when there are no topics.
+  the heading of the topic whose section of the conversation ended last; empty when there are no topics.
   Capped at 80 characters. This is short **user-authored** text crossing your own local
   sessions via Intercom — an explicit, opt-out exception to the sessions extension's
   "no raw user prompts" rule. Set `false` to keep it local.
@@ -109,7 +140,7 @@ for trusted projects):
 Snapshots travel with the session file as `topic-outline` custom entries
 (`pi.appendEntry`) — they are never sent to the model, invisible in the transcript,
 follow branch switches (`/tree`), and restore on resume. `lastHeading`/`lastManualHeading`/`purpose`
-were added within snapshot version 2; older snapshots restore with them empty. Ephemeral sessions keep the
+and each topic's `range` were added within snapshot version 2; older snapshots restore with them empty. Ephemeral sessions keep the
 outline in memory only.
 
 ## Known limitations

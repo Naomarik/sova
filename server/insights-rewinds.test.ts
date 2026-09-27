@@ -45,6 +45,12 @@ function session(): string {
           topics: [
             { id: "t1", heading: "Anchored", summary: ["a bullet"], at: 1789949520000, manual: false, anchor: { entryId: "u1", role: "user", timestamp: 1789948860000, fingerprint: "" } },
             { id: "t2", heading: "No stamp", summary: [], at: 1789949520000, manual: false, anchor: { entryId: "gone", role: "user", fingerprint: "" } },
+            {
+              id: "t3", heading: "Claimed", summary: ["b"], at: 1789949520000, manual: false,
+              anchor: { entryId: "u1", role: "user", timestamp: 1789948860000, fingerprint: "" },
+              range: { from: { entryId: "u1", role: "user", timestamp: 1789948860000, fingerprint: "" }, to: { entryId: "a1", role: "assistant", timestamp: 1789948920000, fingerprint: "" } },
+            },
+            { id: "t4", heading: "Broken range", summary: [], at: 1789949520000, manual: false, anchor: { entryId: "u1", role: "user", fingerprint: "" }, range: { to: "nope" } },
           ],
         },
       }) +
@@ -62,6 +68,17 @@ test("a topic carries the anchor's own clock beside the summarizer's, and omits 
   assert.equal(withStamp.anchorAt, 1789948860000, "anchor.timestamp → anchorAt, not the summarizer's `at`");
   assert.notEqual(withStamp.anchorAt, withStamp.at);
   assert.equal(without.anchorAt, undefined, "an anchor with no stamp leaves the field out rather than zeroing it");
+});
+
+test("a claimed range gives the topic its section's end as sectionAt; a snapshot without one still decodes", async () => {
+  const topics = (await getSessionInsight(session())).outline!.topics;
+  const [old, , claimed, broken] = topics;
+  assert.equal(claimed!.sectionAt, 1789948920000, "range.to.timestamp → sectionAt");
+  assert.equal(claimed!.entryId, "u1", "Jump still reads the anchor: the start of the section");
+  assert.equal(claimed!.anchorAt, 1789948860000);
+  assert.equal(old!.sectionAt, undefined, "no range → no sectionAt, and the topic is still there");
+  assert.equal("sectionAt" in broken!, false, "a malformed range is ignored, not the topic");
+  assert.equal(topics.length, 4);
 });
 
 test("rewinds come off the branch's invisible markers, oldest first, with the payload flattened", async () => {

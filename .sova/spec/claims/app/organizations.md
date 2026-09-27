@@ -9,8 +9,9 @@ is not a roster person; the operator's display name is host-local.
 Orgs open as a page, `#/orgs` (the list) and `#/orgs/<id>` (one org), with a back link to the
 landing page like Usage and Agents. The entry point is the landing page's Organizations card, its
 last section (§chat.transcript/landing-page): totals across every org, the most recently active
-orgs as links, and a link to `#/orgs`, shown whether or not any org exists; the sidebar has no
-Organizations row, at any width or in the collapsed spine. `#/orgs` is
+orgs as links, and a link to `#/orgs`, shown whether or not any org exists. The sidebar has no
+navigation row for orgs; it lists their sessions in its Organizations region, each org's head linking
+to its page (§app.session-list/organizations). `#/orgs` is
 a grid of organization cards (§app.organizations/org-cards); an org's page has four tabs, each in
 the URL (§app.organizations/org-page); each roster person has a page of their own,
 `#/orgs/<id>/people/<pid>` (§app.organizations/person-page).
@@ -261,14 +262,16 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     (autonomy, models, caps, token budget, watch, extra instructions), `state.json` (current
     conversation and history), `notes.md`, `actions.jsonl`, `ideas/`, `todos.json` and
     `started.json` (the sessions it started, with what each of its coding sessions spent when last
-    counted);
+    counted, and the coding sessions the operator started with Start coding session, as
+    `operator-coding` rows);
   - `visits.jsonl`, the visit log: each time a roster person opened one of their links, and each
     link preview and turned-off-link attempt (§app.baton/visits) — never a token, a token's hash,
     an IP address or a raw user agent.
   JSONL files are only ever appended to. A `.gitignore` excludes temp files (`*.tmp`, `*.lock`).
-- Sova lists and opens those transcripts like any session: a `.jsonl` directly inside an attached
+- Sova opens those transcripts like any session: a `.jsonl` directly inside an attached
   org's `sessions/` is accepted wherever a session path is (nothing nested, nothing else in the
-  repo), and the session list reads those dirs beside the sessions dir.
+  repo), and the session list reads those dirs beside the sessions dir. The sidebar lists them only
+  in its Organizations region (§app.organizations/org-sessions).
 - **Never in the repo**: link tokens and their hashes (host-local, `<stateRoot>/baton-links.json`,
   mode 0600; links are minted again after a restore), credentials and auth, and Sova's own
   settings (Settings → Decisions, new-session defaults, the model policy).
@@ -329,11 +332,54 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
 - **Working directories come from this host.** A session file's header keeps the cwd of the host
   that created it; the header is never rewritten. A baton session opens in the org's workspace dir
   here, and a project overseer in its project's root as `projects.json` says now (after a move, the
-  operator edits the project's folder); the session list groups them under those same dirs.
+  operator edits the project's folder).
 - The coding sessions an overseer started are ordinary sessions on the host that ran them: on
   another host they are listed "(not on this host)", and the token budget counts what they had
   spent when last counted.
 - Two hosts attaching the same org is still not detected (§app.organizations/registry).
+
+## §app.organizations/org-sessions — Which sessions are organizational
+
+A session is **organizational** when an org's own records make it one — never by its folder. The
+session list marks it with `SessionSummary.org` (`{ orgId, orgName, projectId?, projectName?, kind,
+finished? }`, `kind` one of `gathering`, `offer`, `overseer`, `coding`, `other` — an unregistered
+workspace file), and the sidebar lists it only
+in the Organizations region (§app.session-list/organizations). The list's flag and the org's own records
+apply the same rule, as the Overseer's flag does (§app.overseer/identity-and-clear).
+
+- **Every file in an attached org's workspace `sessions/`** — a hand-off or gathering session, an
+  offer, the project overseer's current and cleared conversations, and any unregistered file there.
+  The path decides (its parent is `<attached org dir>/sessions`); the baton registry and the project
+  overseer's `state.json` give the project, the kind and `finished`.
+- **Coding sessions the org's project started**: a session whose id is a row of some attached org's
+  `projects/<pid>/overseer/started.json` with kind `coding` (the project overseer's `sova_create_session`)
+  or `operator-coding` (**Start coding session** on the project page, which now records its session there).
+  The overseer's token budget and concurrency caps still count `coding` rows only.
+- **`kind`**: a baton whose row has offers is an `offer`, any other baton a `gathering`; a file with
+  THAT org's project-overseer marker is an `overseer` conversation, even one `state.json` no longer
+  lists (pushed past the history cap); anything else in the workspace is `other`, with no project.
+- **`finished`**: a hand-off `done` or `closed`, or an overseer conversation that isn't the current one.
+- A project removed from `projects.json` keeps its `started.json`, so its coding sessions stay
+  organizational, with no `projectName`.
+- Names come from `org.json` and `projects.json`; a project no longer listed leaves `projectName` unset.
+
+**Not organizational**, and listed as today:
+- sessions the operator opens by hand in a project folder — a project root may be their everyday repo;
+- sessions the main Overseer starts in a project folder;
+- forks and copies of an org session, which live in the sessions dir (a copy or a fork is an ordinary
+  session, §app.project-overseer/identity);
+- coding sessions **Start coding session** made before `operator-coding` rows existed (no backfill: an
+  item can link any session, so a link doesn't prove the org started it), and any whose row fell off
+  `started.json`'s 200-row cap;
+- every session of an org that isn't attached on this host (detached or moved).
+
+**The digest keeps them.** The attention digest (§app.overseer/attention-digest) still lists an org
+session's items, and each carries the same org and project names (`AttentionItem.org`), so the
+Overseer's badge, briefs and `sova_attention` still count them while the sidebar lists them in the
+Organizations region's own Needs you, never the global one.
+
+**Groups refuse them.** `POST /api/session-groups/assign` answers 400 for an org session with
+"Organization sessions stay with their project."; an assignment made before is kept but not drawn.
 
 ## §app.organizations/roster — People and their profiles
 

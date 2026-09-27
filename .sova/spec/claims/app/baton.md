@@ -31,8 +31,8 @@ once), **lease** (an offer's lock on its first taker).
   one, §app.baton/needs-you). A request body's `owner` and `mintLink` are ignored.
 - It is a webapp-owned session whose file lives in the org's workspace repo (`sessions/`), whose
   cwd is that repo, and whose file carries an invisible `sova-baton` marker `{v:1, orgId,
-  projectId}`. It is listed in the sidebar like any web session, under its public title, with
-  ` · <holder>` after the title. Open, a strip above its transcript shows org, project,
+  projectId}`. It is listed in the sidebar's Organizations region (§app.session-list/organizations), under its
+  public title, with ` · <holder>` after the title. Open, a strip above its transcript shows org, project,
   holder, state and message count — and the public title, only when the session head above shows a
   different one (a renamed session): otherwise it would say the title twice — and Get Link / Turn Off Link / Take Back / Close
   Session; the strip never shows a profile. Each strip action re-reads the session list at once,
@@ -363,7 +363,7 @@ once), **lease** (an offer's lock on its first taker).
 - When the baton is handed to the operator (by `hand_to`, by Take back, or at the budget limit)
   the session **needs the operator**: an act-tier attention item `baton-needs-you`, "<from> → you:
   <question>" (≤ 200 characters), in the digest (§app.overseer/attention-digest) and so the
-  sidebar's Needs you region. The operator's reply clears it.
+  Organizations region's Needs you (§app.session-list/organizations), never the global one. The operator's reply clears it.
 - When a person holds the baton through a hand-off with no live link, the same item says "Send
   <name> their link: <question>"; getting the link clears it.
 - An open offer whose invitees don't all have a live link (started in-process with `mintLink:
@@ -371,7 +371,7 @@ once), **lease** (an offer's lock on its first taker).
   every invitee has one.
 - A person proposed from the session and still waiting (§app.organizations/referrals) is a
   decide-tier item `roster-proposal`, "Approve Bob Smith (IT lead) proposed by Tony Reyes?", listed
-  in Needs you. Approving or declining clears it at once (the session list is re-diffed; a baton
+  in the Organizations region's Needs you. Approving or declining clears it at once (the session list is re-diffed; a baton
   row's state is part of what the list compares).
 - Baton sessions are not classified by attention signals (§app.decisions/attention-signals).
 - A composer send the session refuses (someone else holds the baton, it is done, the budget is

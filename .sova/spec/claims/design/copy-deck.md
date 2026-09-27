@@ -33,6 +33,19 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Overseer entry button (eye) | wordless · badge: {unread}, "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
+| Organizations region head (§app.session-list/organizations) | Organizations · {n} · searching: Organizations · {hits} of {total} · `title`: "Hand-offs, project overseers, and the coding sessions they started, by organization and project." |
+| Organizations waiting chip (region head, warn, dot and word, while k ≥ 1) | {k} waiting · `title`: "{k} sessions waiting on you." (1: "1 session waiting on you.") |
+| Organizations working dot (collapsed region head or org) | Busy's dot, wordless, pulsing · `title`: "An agent is working in one of these sessions" · hidden: ", an agent is working here" |
+| Organizations Needs you label | Needs you, then its count · `title`: "The {k} organization sessions waiting on you, newest first." (1: "The 1 organization session waiting on you.") |
+| Organizations Needs you row | line 2: the digest's sentence, else "{from} → you: {question}" · "Send {to} their link: {question}" · "Approve {name} ({role}) proposed by {by}?" · `title`: every sentence, newest first · line 3: {time} · {org} · {project} (no project: {time} · {org}) |
+| Org section head | {org}, wordless warn dot with hidden ", {k} waiting on you", then its count · `title`: "{n} sessions in {org}." + " {k} waiting on you." when k ≥ 1 |
+| Org page link (org head) | wordless `arrow-right` · `aria-label` and `title`: Open the {org} page |
+| Project label | {project}, then its count · `title`: the project root (from its overseer's folder), else {project} · Unknown project · Other |
+| Finished list | Finished {n} · `title`: "Hand-offs that reached their goal or were closed, cleared overseer conversations, and sessions you archived." |
+| Organizations spine door | wordless `building` over {n} · `aria-label` and `title`: Organizations · {n} sessions (1: "1 session"), + " · {k} waiting on you" while k ≥ 1 |
+| Org archive toasts | "Archived. Find it in {project}, under Finished." · "Moved back to {project}." · no project: "Archived. Find it in {org}, under Finished." · "Moved back to {org}." · a project with no name left: {project} = "its project" |
+| Org group refusal (drop, Move into group reason, server 400) | Organization sessions stay with their project. |
+| Select mode, org rows | Move to group: "Skipped 1: an organization session stays with its project." · "Skipped {n}: organization sessions stay with their project." · Archive: "{n} went to its project's Finished list." (n > 1: "{n} went to their projects' Finished lists.") |
 | Archive date sections | Today · Yesterday · Last 7 days · Last 30 days · Older (each with its count) |
 | Groups region head (§app.session-list/groups) | Groups · {n} where n = **groups** · searching: Groups · {matching groups} of {all groups} |
 | New group button (the `+` on the Groups region head) | wordless `+` · `aria-label` and `title`: New group |

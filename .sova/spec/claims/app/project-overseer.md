@@ -18,12 +18,13 @@ tool cards as they happen.
   `sova-project-overseer` marker `{v:1, orgId, projectId}`, and its cwd is the **project root**.
   It is that project's overseer only when the marker is present, the file is in THAT org's
   workspace, and the project's `state.json` knows its id; a copy or a fork is an ordinary session.
-  The session list marks it (`projectOverseer`); nothing (the Overseer's prompt route included)
+  The session list marks it (`projectOverseer`, and `org`, §app.organizations/org-sessions); nothing (the Overseer's prompt route included)
   writes a message into it but the operator's own composer.
 - Its state is in the workspace repo under `projects/<projectId>/overseer/`: `overseer.json`
   (autonomy, model, thinking, caps, token budget, watch on/off, extra instructions), `state.json`,
   `notes.md`, `actions.jsonl` (every act, refused or not), `ideas/`, `todos.json`, `started.json`
-  (the sessions it started, and what its coding sessions spent); committed with the org's
+  (the sessions it started, and what its coding sessions spent; plus, as `operator-coding` rows that
+  no cap or budget counts, the ones the operator started with Start coding session); committed with the org's
   workspace commits (§app.organizations/workspace-repo). Only the per-turn counters and the watch
   loop's timing are host-local.
 - **Loadout.** No pi-config extension, skill or prompt template loads (no mode; a mode switch is

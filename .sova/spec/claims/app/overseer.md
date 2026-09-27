@@ -36,11 +36,13 @@ are atomic tmp+rename.
 - **Route.** `#/overseer` is the identity. The app resolves it through `GET /api/overseer` and
   mounts the normal chat view on that path, keyed on the path, so a rotation remounts it cleanly.
   The view's head reads "Overseer" (no cwd).
-- **Hidden everywhere else.** `SessionSummary.overseer` is set by that rule. No Overseer file,
-  current or historical, appears in any sidebar region, search, Recent, the spine, the cleanup
-  count or a group's candidates. Its folder (`<stateRoot>/overseer/`) is never offered as a recent
-  folder (`GET /api/cwds`, the New Session dialog's Recent folders, `sova_list_folders`), even if
-  some other session was once started there.
+- **Hidden everywhere else.** `SessionSummary.overseer` is set by that rule. An Overseer file,
+  current or historical, is a special session (§app.session-list/ordinary-surfaces, the one list of
+  what that means, shared with organization sessions): it appears on no ordinary surface — no
+  sidebar region, Recent, the spine, the cleanup count or a group's candidates — and, unlike an
+  organization session, in no search and no region of its own. Its folder (`<stateRoot>/overseer/`)
+  is never offered as a recent folder (`GET /api/cwds`, the New Session dialog's Recent folders,
+  `sova_list_folders`), even if some other session was once started there.
 - **`/clear`.** A bare `/clear` is a local command recognised **only** in the Overseer's composer
   (elsewhere it is an ordinary message). It and the head's **Clear** action call
   `POST /api/overseer/clear`, which never refuses: it stops a running turn, disposes the runtime,

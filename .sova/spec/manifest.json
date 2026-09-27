@@ -117,7 +117,7 @@
     "§app.session-list/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -144,9 +144,10 @@
     "§app.session-list/archive-cleanup": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
-        "server/sessions-index.ts"
+        "server/sessions-index.ts",
+        "src/components/Sidebar.tsx"
       ]
     },
     "§app.session-list/content-rules": {
@@ -169,7 +170,10 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/components/Groups.tsx",
+        "src/components/Sidebar.tsx",
+        "server/index.ts"
       ]
     },
     "§app.session-list/recent": {
@@ -177,7 +181,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/lib/recent.ts"
+        "src/lib/recent.ts",
+        "src/lib/recent.test.ts"
       ]
     },
     "§app.session-list/regions-top-and-archive": {
@@ -192,7 +197,8 @@
         "src/lib/storage-keys.ts",
         "src/lib/regions.ts",
         "src/lib/recent.ts",
-        "server/sessions-index.ts"
+        "server/sessions-index.ts",
+        "src/lib/regions.test.ts"
       ]
     },
     "§app.session-list/search": {
@@ -201,13 +207,19 @@
       "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
-        "src/lib/signals.ts"
+        "src/lib/signals.ts",
+        "src/lib/org-region.ts"
       ]
     },
     "§app.session-list/selecting-several-sessions": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified",
+      "code": [
+        "src/lib/session-selection.ts",
+        "src/lib/session-selection.test.ts",
+        "src/components/SelectionToolbar.tsx"
+      ]
     },
     "§app.session-list/states": {
       "kind": "behavior",
@@ -876,7 +888,7 @@
     "§chat.transcript/landing-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/App.tsx",
         "src/components/ExtensionView.tsx",
@@ -1106,7 +1118,12 @@
     "§design.copy-deck/sidebar": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "verified",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/lib/drag-archive.ts",
+        "src/lib/session-selection.ts"
+      ]
     },
     "§design.copy-deck/slash-commands": {
       "kind": "note",
@@ -2483,7 +2500,7 @@
     "§app.overseer/identity-and-clear": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer.ts",
         "server/overseer-store.ts",
@@ -3125,7 +3142,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
@@ -3632,7 +3649,8 @@
         "server/session-feed.test.ts",
         "server/chat-manager.ts",
         "src/lib/needs-you.ts",
-        "server/baton-offers.test.ts"
+        "server/baton-offers.test.ts",
+        "src/lib/org-region.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest"
@@ -3821,7 +3839,8 @@
         "src/components/ProjectOverseerStrip.tsx",
         "server/org-portable.test.ts",
         "server/visits.ts",
-        "server/person-page.ts"
+        "server/person-page.ts",
+        "src/lib/org-region.ts"
       ],
       "requires": [
         "§app.organizations/workspace-repo",
@@ -3927,7 +3946,8 @@
         "server/project-overseer.ts",
         "server/project-overseer-store.ts",
         "server/org-portable.test.ts",
-        "server/visits.ts"
+        "server/visits.ts",
+        "src/components/Sidebar.tsx"
       ]
     },
     "§app.organizations/wrap-up": {
@@ -4213,7 +4233,8 @@
         "src/lib/api.ts",
         "src/App.tsx",
         "src/lib/org-cards.ts",
-        "src/components/PersonPage.tsx"
+        "src/components/PersonPage.tsx",
+        "src/components/Sidebar.tsx"
       ]
     },
     "§app/project-overseer": {
@@ -4589,6 +4610,61 @@
         "src/lib/orgs-route.ts",
         "src/components/InsightsPage.tsx",
         "server/person-page.test.ts"
+      ]
+    },
+    "§app.organizations/org-sessions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/org-sessions.ts",
+        "server/org-sessions.test.ts",
+        "server/sessions-index.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-store.ts",
+        "server/attention.ts",
+        "server/index.ts",
+        "shared/protocol.ts"
+      ]
+    },
+    "§app.session-list/ordinary-surfaces": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/regions.ts",
+        "src/lib/regions.test.ts",
+        "src/lib/recent.ts",
+        "src/lib/recent.test.ts",
+        "src/lib/home-sessions.ts",
+        "src/lib/home-sessions.test.ts",
+        "src/components/FanoutDialog.tsx",
+        "src/components/Groups.tsx",
+        "src/components/SelectionToolbar.tsx",
+        "src/lib/session-selection.ts",
+        "src/lib/session-selection.test.ts",
+        "src/components/Sidebar.tsx"
+      ]
+    },
+    "§app.session-list/organizations": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-list/ordinary-surfaces",
+        "§app.organizations/org-sessions"
+      ],
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/lib/org-region.ts",
+        "src/lib/org-region.test.ts",
+        "src/lib/drag-archive.ts",
+        "src/lib/drag-archive.test.ts",
+        "src/lib/session-actions.ts",
+        "src/app.css",
+        "src/design/base.css",
+        "src/components/ui.tsx",
+        "public/icons/building.svg"
       ]
     }
   },

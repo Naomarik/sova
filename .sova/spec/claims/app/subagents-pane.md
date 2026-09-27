@@ -311,7 +311,7 @@ webapp never writes to it (CLAUDE.md: no file locking).
     <div class="subagents-view-name"><h3 class="subagents-view-title">designer</h3> <span class="subagents-view-wid text-mono text-muted">ag_03</span></div>
     <span class="chip chip-count" title="The modes this worker was given when it started.">spec</span>   <!-- only when it was given modes -->
     <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
-    <p class="subagents-view-meta meta-line"><span class="text-mono meta-line-shrink" title="anthropic · anthropic/claude-opus-5">opus-5</span> <span class="text-mono" title="effort medium"><span class="meta-line-sep" aria-hidden="true">·</span> medium</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41"><span class="meta-line-sep" aria-hidden="true">·</span> 23.7k tok</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> <span class="context-readout"><span class="context-compact" title="{the sentence}"><span class="context-ring" title="{the sentence}">…</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></span></p>
+    <p class="subagents-view-meta meta-line"><span class="text-mono meta-line-shrink" title="anthropic · anthropic/claude-opus-5">opus-5</span> <span class="text-mono" title="effort medium"><span class="meta-line-sep" aria-hidden="true">·</span> medium</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41"><span class="meta-line-sep" aria-hidden="true">·</span> 23.7k tok</span> <span class="subagents-view-context"><span class="context-readout"><span class="context-compact" title="{the sentence}"><span class="context-ring" title="{the sentence}">…</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></span></p>
   </header>
   <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
     <div class="subagents-banner stack-2">…banners, or nothing…</div>
@@ -336,8 +336,8 @@ webapp never writes to it (CLAUDE.md: no file locking).
   effort**, as the bare level in mono (`low`, `title` "effort low"; a worker that reports none
   shows nothing here), then the worker's tokens as `{n} tok` (the usage breakdown in its `title`),
   and last the **context readout**
-  (§app.subagents-pane/context-fill): the gauge trails the facts that name the worker and what it
-  has spent. **The effort leads the count**: what a worker is thinking at is a fact about
+  (§app.subagents-pane/context-fill), pushed to the line's right edge, under the status chip, with
+  no `·` before it: the gauge trails the facts that name the worker and what it has spent. **The effort leads the count**: what a worker is thinking at is a fact about
   the worker, where the count beside it is a running total that changes under the reader. **A
   separator belongs to the fact it introduces**: each `·` is inside its own fact's element, not a
   sibling before it, so a wrapped line starts with its own dot and no wrap can strand one. The

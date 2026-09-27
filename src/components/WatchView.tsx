@@ -5,7 +5,7 @@ import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
 import { landExplainJump } from "../lib/jump";
 import { hostOf, sessionViewKey } from "../lib/mesh";
-import { cachedTranscript, cacheItems, cacheSpot, reconcileItems } from "../lib/transcript-cache";
+import { cachedTranscript, cacheItems, cacheSpot, reconcileItems, transcripts } from "../lib/transcript-cache";
 import { copyText, hideThinking, hideTools, setSessionContext, toast } from "../lib/ui-state";
 import { openCreated, stageFork } from "../lib/fork-stage";
 import { usePaneAnnounce } from "../lib/pane-scope";
@@ -65,6 +65,7 @@ export function WatchView(props: {
   // Rows kept from the last visit paint at once; the snapshot reconciles them (lib/transcript-cache).
   const cacheKey = sessionViewKey(hostOf(props.path), props.path);
   const cached = cachedTranscript(cacheKey);
+  onCleanup(transcripts.show(cacheKey));
   const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
   createEffect(on(items, (list) => list && cacheItems(cacheKey, list)));
   // "Open in Session" from an Explanations card: land on that explanation's row once the snapshot

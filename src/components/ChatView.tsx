@@ -40,7 +40,7 @@ import { appendItems } from "../lib/explain";
 import { isObj, str } from "../lib/message";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
 import { HOST_MOVE_GRACE_MS, hostOf, mayBeHostMove, meshOn, recheckHost, sessionViewKey } from "../lib/mesh";
-import { cachedTranscript, cacheItems, cacheSpot, reconcileItems } from "../lib/transcript-cache";
+import { cachedTranscript, cacheItems, cacheSpot, reconcileItems, transcripts } from "../lib/transcript-cache";
 import { openFailureView } from "../lib/open-failure";
 import {
   closeRemoteStatus,
@@ -232,6 +232,7 @@ export function ChatView(props: {
   // the hello then reconciles them (lib/transcript-cache).
   const cacheKey = sessionViewKey(hostOf(props.path), props.path);
   const cached = cachedTranscript(cacheKey);
+  onCleanup(transcripts.show(cacheKey));
   const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
   createEffect(on(items, (list) => list && cacheItems(cacheKey, list)));
   // "Open in Session" from an Explanations card: once the transcript is here (hello), land on that

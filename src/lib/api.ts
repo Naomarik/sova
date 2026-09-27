@@ -656,6 +656,28 @@ export const fetchTranscriptWithContext = (path: string) =>
     context: r.context ?? null,
   }));
 
+/**
+ * The transcript for keeping in memory (lib/recent-preload): the same read-only GET, with its size
+ * (the body's length, else the JSON's characters) for the memory budget. `fits` sees the
+ * announced length before the body comes: when it says no, the download stops there and the
+ * answer is just the size.
+ */
+export async function fetchTranscriptForCache(
+  path: string,
+  fits: (size: number) => boolean,
+): Promise<{ items: TranscriptItem[]; size: number } | { tooBig: number }> {
+  const aborter = new AbortController();
+  const res = await fetch(routeUrl(`/api/transcript?path=${encodeURIComponent(path)}`), { signal: aborter.signal });
+  if (!res.ok) throw new ApiError(`${res.status} ${res.statusText}`, res.status);
+  const announced = Number(res.headers.get("content-length")) || 0;
+  if (announced && !fits(announced)) {
+    aborter.abort();
+    return { tooBig: announced };
+  }
+  const text = await res.text();
+  return { items: noteAttachmentsHost(path, (JSON.parse(text) as { items: TranscriptItem[] }).items), size: announced || text.length };
+}
+
 /** The composer draft stored for a session; `text: null` when there is none. The server has
     already dropped attachments whose file is gone. */
 export const fetchDraft = (path: string) =>

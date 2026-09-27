@@ -7,6 +7,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { compress } from "hono/compress";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
@@ -113,6 +114,14 @@ process.on("uncaughtException", (err) => console.error("[uncaughtException]", er
 process.on("unhandledRejection", (err) => console.error("[unhandledRejection]", err));
 
 const app = new Hono();
+
+// gzip/deflate for the JSON API (a transcript is MBs), when the client asks for it. Registered
+// first so it wraps every /api route. hono/compress skips what must pass as is: responses that
+// already carry a Content-Encoding, 206s, HEAD, Cache-Control: no-transform, and types it doesn't
+// deem compressible (images, text/event-stream). Its 1 KB threshold reads Content-Length, which
+// c.json doesn't set, so small JSON is gzipped too (~20 bytes more). The static app, /ext and
+// /peer aren't under it.
+app.use("/api/*", compress());
 
 app.onError((err, c) => {
   console.error("[api]", err);

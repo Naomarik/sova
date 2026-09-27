@@ -213,6 +213,24 @@ describe("the record (§mesh.links/record)", () => {
     assert.equal(A.links.all().length, 0);
   });
 
+  test("an organization's session is refused, on this host or a peer", async () => {
+    const org = { orgId: "o1", orgName: "Org", kind: "coding" as const };
+    B.sessions.set("sb", summary("sb", { org }));
+    let r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.reason, "special");
+    assert.equal(r.json.member, 1);
+    assert.match(r.json.error, /organization/);
+    B.sessions.set("sb", summary("sb"));
+    A.sessions.set("sa", summary("sa", { org: { ...org, kind: "other" } }));
+    r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.reason, "special");
+    assert.equal(r.json.member, 0);
+    assert.equal(A.links.all().length, 0);
+    assert.equal(B.links.all().length, 0);
+  });
+
   test("a host that is down, or runs a build without links, can't be linked", async () => {
     B.up = false;
     let r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "b", session: "sb" }] });

@@ -28,7 +28,7 @@ export function heldSessionPath(sessionId: string): string | null {
  * a session whose runtime isn't loaded is reopened first; idle → "started", busy or compacting →
  * "delivered". Refused, with the reason, for a session gone from disk, archived, open in a TUI,
  * written by another process recently (the busy rule), on a model the policy turned off, or an
- * Overseer, project-overseer or baton session — the same refusals as a prompt from the page.
+ * Overseer, project-overseer, baton or other organization session.
  */
 export async function deliverLinkMessage(path: string, framed: string): Promise<PeerLinkMessageResult> {
   try {
@@ -38,6 +38,7 @@ export async function deliverLinkMessage(path: string, framed: string): Promise<
     if (s.overseer) return refused("special", "That is the Overseer's own conversation.");
     if (projectOverseerOfPath(path)) return refused("special", "That is a project overseer's own conversation.");
     if (s.baton) return refused("special", "That is a baton session: only its participants write in it.");
+    if (s.org) return refused("special", "That is an organization's session.");
     if (s.workerSession) return refused("special", "That is a worker's session.");
     if (s.archived) return refused("archived", "That session is archived.");
     if (s.live) return refused("tui-live", `It is open in a terminal (pid ${s.live.pid}), so its host must not write to it.`);

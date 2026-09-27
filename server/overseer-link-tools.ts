@@ -8,7 +8,7 @@ import type { ToolCall } from "./overseer-idea-tools";
  * start, no confirm card, since a link changes no session and sends nothing), and `sova_links` lists
  * every link this host knows (a read). All three call this host's link store (server/mesh/links.ts
  * `meshLinks`) in-process, the same code the `/api/mesh/links` routes run, so the refusals (a
- * TUI-live, archived, worker, Overseer, baton or project-overseer member, a host that is down or
+ * TUI-live, archived, worker, Overseer, baton, project-overseer or other organization member, a host that is down or
  * skewed, two members on one host) are its own, worded by it and naming the member, and every peer
  * hop is its too: the Overseer never talks to a peer here.
  * The Overseer is never a member, and never sends into a link.
@@ -88,7 +88,7 @@ export function linkTools(d: LinkToolDeps): Tool[] {
       name: "sova_link",
       label: "Link sessions",
       description:
-        "Link two or more sessions on different mesh hosts, so their agents can message each other (link_send, link_inbox, link_members in those sessions). Each member is a session id and its host (a peer id from the Mesh page; leave host out for this host), one member per host. Refused for a terminal-owned, archived, subagent, baton or project-overseer session, your own, a host that is down or on another protocol, and two sessions on one host. Linking changes no session and sends nothing. Counts against the per-turn link cap. You are never a member, and you never send into a link: to tell a local member something, sova_send it.",
+        "Link two or more sessions on different mesh hosts, so their agents can message each other (link_send, link_inbox, link_members in those sessions). Each member is a session id and its host (a peer id from the Mesh page; leave host out for this host), one member per host. Refused for a terminal-owned, archived, subagent, baton, project-overseer or other organization session, your own, a host that is down or on another protocol, and two sessions on one host. Linking changes no session and sends nothing. Counts against the per-turn link cap. You are never a member, and you never send into a link: to tell a local member something, sova_send it.",
       promptSnippet: "link sessions on different mesh hosts (one per host) so their agents can message each other",
       parameters: obj(
         {

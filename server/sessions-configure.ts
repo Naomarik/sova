@@ -12,7 +12,8 @@ import { getSessionSummary } from "./sessions-index";
 // modes set over REST, opening its runtime here if it isn't loaded. The same code sova_set_session
 // runs in-process, as a route a peer reaches on the peer listener (the Overseer configuring a
 // session it created there). It changes that session only: every setter is called without `save`,
-// so the saved default new sessions start from never moves.
+// so the saved default new sessions start from never moves. A mode it sets is pinned with the
+// session's own `mode` entry, as the Overseer's local tools pin one.
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
@@ -83,6 +84,9 @@ export async function configureSession(body: unknown): Promise<ConfigureOutcome>
     }
     if (req.thinking) done.push(`thinking ${chat.setThinking(req.thinking)}`);
     const mode = patch ? await chat.switchMode(patch) : null;
+    // Pinned, as sova_create_session and sova_set_session pin a local session: a mode equal to
+    // the default still gets its entry, so it never follows a later change of mode.json.
+    if (patch && !chat.pinMode()) throw new Error("Switched, but its mode entry was not written, so it may follow a later default");
     const m = chat.session.model;
     const result: SessionConfigureResult = {
       ok: true,

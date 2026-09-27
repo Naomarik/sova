@@ -103,7 +103,7 @@ export type LinkRefusal =
   | "tui-live" // open in a TUI: never written to
   | "busy" // another writer touched the file recently, or a foreign line (the busy rule)
   | "model-off" // the member's model is off by the model policy (the message would be swallowed)
-  | "special" // an Overseer, project-overseer or baton session
+  | "special" // an Overseer, project-overseer, baton or other organization session
   | "unreachable" // the member's host is not in this host's peers.json
   | "old-build" // the member's host answered 404: a build without links
   | "mesh-off"

@@ -11,6 +11,7 @@ import {
   SIGNAL_CLASS,
   SIGNAL_ICON,
   SIGNAL_PRECEDENCE,
+  signalTitle,
   signalWords,
   tagSearchText,
   tagStatusWord,
@@ -25,17 +26,34 @@ const row = (over: Partial<SessionSummary> = {}): SessionSummary =>
   ({ id: "a", path: "/s/a.jsonl", cwd: "/w", title: "T", createdAt: "", lastActiveAt: "", ...over }) as SessionSummary;
 const open = { selected: null, busy: false };
 
+const align = (openQuestions: number, questionDocs = 1) => ({ openDocs: 2, openQuestions, questionDocs, lead: { id: "al_3", title: "Autonomy" } });
+
 test("the mark is the most urgent kind the server sent, never one it didn't", () => {
   assert.equal(rowNeedsYou(row(), open), null);
   assert.equal(rowNeedsYou(row({ signals: sig([]) }), open), null, "a classified turn with no kinds shows nothing");
-  assert.deepEqual(rowNeedsYou(row({ signals: sig(["looping", "asks-you"]) }), open), { kind: "asks-you", worker: false });
+  assert.deepEqual(rowNeedsYou(row({ signals: sig(["looping"]) }), open), { kind: "looping", worker: false });
   // Raw answers far past any threshold don't make a mark: the kinds are the server's word.
-  const raw = { ...sig([]), asksUser: 0.99, stuck: { score: 2, confidence: 1 } };
+  const raw = { ...sig([]), stuck: { score: 2, confidence: 1 } };
   assert.equal(rowNeedsYou(row({ signals: raw }), open), null);
 });
 
+test("open alignment questions come first, carry the counts, and a visit never clears them", () => {
+  const s = row({ align: align(3), signals: sig(["looping"], 100), workerSignals: { stuck: 1 } });
+  assert.deepEqual(rowNeedsYou(s, open), { kind: "questions", worker: false, align: align(3) });
+  assert.deepEqual(rowNeedsYou({ ...s, seenAt: 500 }, open)?.kind, "questions", "a fact of the file, not news");
+  assert.equal(rowNeedsYou(s, { selected: s.path, busy: false }), null, "never on the open session");
+  assert.equal(rowNeedsYou(s, { selected: null, busy: true }), null, "never while this tab runs a turn there");
+  assert.deepEqual(rowNeedsYou(row({ align: { openDocs: 1, openQuestions: 0, questionDocs: 0 } }), open), null, "open but asking nothing: no mark");
+  const m = rowNeedsYou(s, open)!;
+  assert.equal(signalWords(m), "3 open questions. ");
+  assert.equal(signalTitle(m), "3 open questions in al_3 Autonomy");
+  assert.equal(signalTitle({ kind: "questions", worker: false, align: align(1, 1) }), "1 open question in al_3 Autonomy");
+  assert.equal(signalTitle({ kind: "questions", worker: false, align: align(4, 2) }), "4 open questions in 2 alignments");
+  assert.equal(signalWords({ kind: "questions", worker: false, align: align(1) }), "1 open question. ");
+});
+
 test("hidden on the open session, while this tab runs a turn, and once seen after the turn", () => {
-  const s = row({ signals: sig(["asks-you"], 100) });
+  const s = row({ signals: sig(["looping"], 100) });
   assert.equal(rowNeedsYou(s, { selected: s.path, busy: false }), null);
   assert.equal(rowNeedsYou(s, { selected: null, busy: true }), null);
   assert.equal(rowNeedsYou({ ...s, seenAt: 100 }, open), null);
@@ -46,12 +64,10 @@ test("hidden on the open session, while this tab runs a turn, and once seen afte
 test("subagent counts mark the parent row, below the session's own kind of the same urgency", () => {
   assert.deepEqual(rowNeedsYou(row({ workerSignals: { stuck: 1 } }), open), { kind: "looping", worker: true });
   assert.equal(rowNeedsYou(row({ workerSignals: { stuck: 0 } }), open), null);
-  // The session's own asks-you outranks a stuck worker (precedence is by kind first) …
-  assert.deepEqual(rowNeedsYou(row({ signals: sig(["asks-you"]), workerSignals: { stuck: 1 } }), open), { kind: "asks-you", worker: false });
-  // … and at the same kind, the session's own wins over a worker's.
+  // At the same kind, the session's own wins over a worker's.
   assert.deepEqual(rowNeedsYou(row({ signals: sig(["looping"]), workerSignals: { stuck: 1 } }), open), { kind: "looping", worker: false });
   // Seen hides the session's own signal, not its workers' (the server sends those only while they apply).
-  assert.deepEqual(rowNeedsYou(row({ signals: sig(["asks-you"], 5), seenAt: 9, workerSignals: { stuck: 1 } }), open), { kind: "looping", worker: true });
+  assert.deepEqual(rowNeedsYou(row({ signals: sig(["looping"], 5), seenAt: 9, workerSignals: { stuck: 1 } }), open), { kind: "looping", worker: true });
 });
 
 test("line 1 leads with ONE state mark: the turn error in the unread dot's place, else the dot", () => {
@@ -70,13 +86,13 @@ test("the turn-error tooltip says the fact, then pi's message when there is one"
 });
 
 test("every kind has its own glyph, class and words", () => {
-  assert.deepEqual([...SIGNAL_PRECEDENCE].sort(), ["asks-you", "looping"]);
+  assert.deepEqual([...SIGNAL_PRECEDENCE], ["questions", "looping"]);
   const icons = SIGNAL_PRECEDENCE.map((k) => SIGNAL_ICON[k]);
   const classes = SIGNAL_PRECEDENCE.map((k) => SIGNAL_CLASS[k]);
   const words = SIGNAL_PRECEDENCE.flatMap((k) => [signalWords({ kind: k, worker: false }), signalWords({ kind: k, worker: true })]);
   assert.equal(new Set(icons).size, SIGNAL_PRECEDENCE.length);
   assert.equal(new Set(classes).size, SIGNAL_PRECEDENCE.length);
-  // A worker only ever speaks for "looping", so its words are one sentence; the session's differ per kind.
+  // A worker only ever speaks for "looping"; open questions are the session's own, whatever the flag.
   assert.equal(new Set(words).size, 3, "worker and session words differ except where one never applies");
   for (const w of words) assert.match(w, /\. $/, "hidden words end a sentence before the title");
 });
@@ -104,7 +120,7 @@ test("line 3's title names what is tagged, and nothing when nothing is", () => {
 });
 
 test("the feed: nothing applies before a full snapshot; then it is the whole truth for this host", () => {
-  const listed = row({ signals: sig(["asks-you"]), tags: { status: "done" } });
+  const listed = row({ signals: sig(["looping"]), tags: { status: "done" } });
   assert.equal(overlaid(listed, EMPTY_OVERLAY), listed, "no snapshot yet: the list's own fields");
   const full = applyMarks(EMPTY_OVERLAY, { full: true, sessions: [] });
   const bare = overlaid(listed, full);
@@ -114,7 +130,7 @@ test("the feed: nothing applies before a full snapshot; then it is the whole tru
 });
 
 test("the feed: deltas set, clear with null, and leave absent fields alone", () => {
-  let o = applyMarks(EMPTY_OVERLAY, { full: true, sessions: [{ id: "a", path: "/s/a.jsonl", signals: sig(["asks-you"]), tags: { status: "done" } }] });
+  let o = applyMarks(EMPTY_OVERLAY, { full: true, sessions: [{ id: "a", path: "/s/a.jsonl", signals: sig(["looping"]), tags: { status: "done" } }] });
   o = applyMarks(o, { sessions: [{ id: "a", path: "/s/a.jsonl", signals: null }] });
   const s = overlaid(row(), o);
   assert.equal(s.signals, undefined);

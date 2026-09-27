@@ -56,7 +56,7 @@ export function readOrCreateVapid(file = vapidFile()): VapidKeys {
 
 export const DEFAULT_KINDS: Record<PushKind, boolean> = {
   "needs-input": true,
-  "asks-you": true,
+  "open-questions": true,
   error: true,
   looping: true,
   "baton-needs-you": true,

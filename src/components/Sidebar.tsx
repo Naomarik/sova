@@ -504,13 +504,21 @@ function SessionRow(props: {
                 <span class="visually-hidden">New activity. </span>
               </Match>
             </Switch>
-            {/* What the last finished turn says about you (Settings → Decisions): one mark, the most
-                urgent kind, its shape and word per kind. Gone once you've seen the session. */}
+            {/* What the session waits on you for: its open alignment questions (a count, until they are
+                answered), else what the last finished turn says (Settings → Decisions, gone once you've
+                seen the session). One mark, the most urgent kind, its shape and word per kind. */}
             <Show when={needsYou()}>
               {(m) => (
                 <>
                   <span class="session-signal-wrap" title={signalTitle(m())}>
                     <Icon name={SIGNAL_ICON[m().kind]} small class={SIGNAL_CLASS[m().kind]} />
+                    <Show when={m().kind === "questions" && m().align}>
+                      {(a) => (
+                        <span class="session-signal-count text-num" aria-hidden="true">
+                          {a().openQuestions}
+                        </span>
+                      )}
+                    </Show>
                   </span>
                   <span class="visually-hidden">{signalWords(m())}</span>
                 </>

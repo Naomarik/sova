@@ -27,6 +27,7 @@ import { parseWakeNudge } from "../shared/wake";
 import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, parseTeamMessage, previewLine, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
 import { mergeInfoOf, WORKTREE_MERGE_MESSAGE } from "./worktrees-state";
+import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
 
 // We parse JSONL ourselves instead of using SessionManager.open(): open() is not
 // read-only (it appends "\n" to a trailing partial line and rewrites the file when
@@ -200,6 +201,15 @@ function normalizeMessage(entry: Entry, id: string, state?: { model?: string }):
       return out;
     }
     case "toolResult": {
+      // An align call that changed an alignment, or recorded an exemption (§chat.alignment/card):
+      // its checked details are the row. A failed call, a `get` or unreadable details stay a plain
+      // tool result, inside their call's card.
+      const align = m.toolName === "align" ? alignResultOf(entry) : undefined;
+      if (align && (align.doc || align.exempt)) {
+        const it = item(id, "align", entry, contentText(m.content, false), m.toolCallId);
+        it.align = align;
+        return [it];
+      }
       const text = contentText(m.content, false);
       return [withPaths(item(id, "tool-result", entry, truncate(text, RESULT_TEXT_MAX), m.toolCallId, contentImages(m.content)), text)];
     }

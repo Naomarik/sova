@@ -1,6 +1,5 @@
 import { open, stat } from "node:fs/promises";
 import type { DecisionSettings, SessionSummary, WorkerInfo } from "../shared/protocol";
-import { isLinkMessage } from "../shared/link-message";
 import type { WorkerTranscriptAdapters, WorkerTranscriptItem, WorkerTranscriptRef, WorkerTranscriptSummary } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import { DecisionError, type DecisionProvider, type DecisionResult, type JsonObject, type Question } from "./decide";
 import { maySend, terminalSession } from "./decide-settings";
@@ -13,6 +12,11 @@ import { activeBranch, parseLines } from "./transcript";
  * session, and subagent workers that run long, are classified through the decision seam
  * (server/decide.ts — this module never knows which provider answers) and the raw answers stored
  * in signals.json (server/signals-store.ts, which also owns the thresholds and the list overlay).
+ *
+ * The one question for a main session is whether a LONG turn went in circles (`stuck`). Whether a
+ * reply asks the user something is not a model's guess any more: a session waits on the user when
+ * its alignments have open questions (SessionSummary.align, server/align-state.ts), a fact of its
+ * file. A shorter turn asks nothing, makes no model call, and drops the turn before it.
  *
  * Triggers:
  *  - a hosted chat's `agent_settled` (`turnSettled`, wired in index.ts from chat-manager);
@@ -196,23 +200,6 @@ function recentTools(tools: readonly ToolCallFact[]): JsonObject[] {
   return tools.slice(-CAP.tools).map((t) => ({ tool: t.name, summary: head(squash(t.result || t.args), CAP.tool) }));
 }
 
-export const SENTENCE_MAX = 160;
-
-/**
- * The sentence a digest item quotes: of the reply's last three sentences, the last one that asks
- * (ends in "?"), else the very last. Whitespace-collapsed, capped at SENTENCE_MAX.
- */
-export function lastSentence(text: string): string {
-  const flat = squash(text.replace(/```[\s\S]*?```/g, " "));
-  if (!flat) return "";
-  // A sentence ends at . ! ? (and any closing quote or bracket) followed by whitespace or the end:
-  // the dot in `notes.md`, `v1.2` or `e.g` is not an end.
-  const parts = flat.split(/(?<=[.!?]+["'`)\]]*)\s+/).map((p) => p.trim()).filter(Boolean);
-  const recent = parts.slice(-3);
-  const pick = [...recent].reverse().find((p) => p.endsWith("?")) ?? recent[recent.length - 1] ?? "";
-  return head(pick, SENTENCE_MAX);
-}
-
 /** The state of one main-session turn, capped. The caller redacts it. */
 export function turnState(title: string, f: TurnFacts): JsonObject {
   return {
@@ -255,16 +242,6 @@ export function workerState(w: Pick<WorkerInfo, "name" | "status" | "startedAt" 
 
 // ---- questions (ids are the store's contract) ----------------------------------------------------
 
-export const ASKS_USER: Question = {
-  type: "boolean",
-  instructions:
-    "Does `assistant_last` end by asking the user a question, or for a decision, an approval or information it needs before it can continue?",
-  criteria: {
-    true: "It waits on the user: a question, a choice to make, a confirmation, or something missing only the user can give.",
-    false: "It reports what it did or found, or carries on by itself. A closing courtesy such as 'let me know if you want more' is not waiting.",
-  },
-};
-
 export const STUCK: Question = {
   type: "score",
   instructions:
@@ -272,12 +249,11 @@ export const STUCK: Question = {
   levels: ["making progress", "some repetition", "clearly looping or stuck"],
 };
 
-/** A main session's questions: the stuck one only for a long turn (fewer tokens otherwise). A turn
-    a partner's link message opened never asks whether it asks the user: its question is to the
-    partner, so it never puts the session in Needs you (§mesh.links/transcript). */
+/** A main session's questions: the stuck one, only for a long turn. A shorter turn has none, so it
+    makes no model call. */
 export function turnQuestions(f: TurnFacts): Record<string, Question> {
   const long = f.durationMs >= LONG_TURN_MS || f.tools.length >= LONG_TURN_TOOLS;
-  return { ...(isLinkMessage(f.lastUser) ? {} : { asks_user: ASKS_USER }), ...(long ? { stuck: STUCK } : {}) };
+  return long ? { stuck: STUCK } : {};
 }
 
 // ---- eligibility (pure) --------------------------------------------------------------------------
@@ -451,8 +427,8 @@ export class AttentionSignals {
     }
     if (!stored && now - facts.replyAt > FRESH_MS) return false;
     const questions = turnQuestions(facts);
-    // A short turn a link message opened has nothing to ask: no model call, and like an errored
-    // turn it replaces the turn before it, so an older "asks you" does not stay on the row.
+    // A short turn has nothing to ask: no model call, and like an errored turn it replaces the turn
+    // before it, so an older "looping" does not stay on the row.
     if (!Object.keys(questions).length) {
       this.forgetBefore(s.id, facts.replyAt);
       return false;
@@ -463,19 +439,15 @@ export class AttentionSignals {
     // The feature or the session's eligibility may have changed while the call ran: then drop it.
     if (exclusionReason(s, this.d.settings(), this.d.held(s.path), this.d.home)) return true;
     const f = facts;
-    const detail = this.d.redact(lastSentence(f.assistantLast || f.error || ""));
     updateSignals((data) => {
-      data.sessions[s.id] = {
-        turnId: f.turnId, replyAt: f.replyAt, at: this.now(), provider: result.provider, model: result.model, answers: result.answers,
-        ...(detail ? { detail } : {}),
-      };
+      data.sessions[s.id] = { turnId: f.turnId, replyAt: f.replyAt, at: this.now(), provider: result.provider, model: result.model, answers: result.answers };
     }, this.file());
     this.d.changed();
     return true;
   }
 
   /**
-   * A turn that stopped with an error (or a short link-opened one) is not classified; the stored
+   * A turn that stopped with an error (or a short one) is not classified; the stored
    * answers of the turn before it are dropped, since a newer turn replaces them and they would otherwise mark the row still.
    */
   private forgetBefore(id: string, replyAt: number): void {

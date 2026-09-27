@@ -52,7 +52,7 @@ function summary(path: string, over: Partial<SessionSummary> = {}): SessionSumma
 
 const on = (over: Partial<DecisionSettings> = {}): DecisionSettings => ({ ...decisionDefaults(), features: { attention: true, tags: false }, ...over });
 
-const ANSWERS = { asks_user: { p: 0.92 }, stuck: { probabilities: [0.9, 0.1, 0] } };
+const ANSWERS = { stuck: { probabilities: [0, 0.1, 0.9] } };
 
 function harness(over: Partial<import("./attention-signals").SignalsDeps> = {}, reply: any = ANSWERS) {
   const provider = createFakeProvider({ reply });
@@ -90,10 +90,10 @@ function harness(over: Partial<import("./attention-signals").SignalsDeps> = {}, 
   };
 }
 
-/** A finished turn: a question at the end, two tool calls, one failed. */
-function finishedTurn(t = NOW - 60_000): E[] {
+/** A finished LONG turn (6 minutes: the stuck question applies): a question at the end, two tool calls, one failed. */
+function finishedTurn(t = NOW - 60_000, took = 6 * 60_000): E[] {
   return [
-    user("u1", null, "make the build pass", t - 120_000),
+    user("u1", null, "make the build pass", t - took),
     assistant("a1", "u1", t - 100_000, [{ type: "text", text: "Looking." }, call("c1", "bash", { command: "pnpm build" })], "toolUse"),
     toolResult("r1", "a1", "c1", "error TS2322 in src/x.ts", true),
     assistant("a2", "r1", t - 80_000, [call("c2", "read", { path: "src/x.ts" })], "toolUse"),
@@ -107,7 +107,7 @@ describe("turnFacts: the last finished turn of a branch", () => {
     const f = sig.turnFacts(finishedTurn())!;
     assert.equal(f.turnId, "a3");
     assert.equal(f.replyAt, NOW - 60_000);
-    assert.equal(f.durationMs, 120_000);
+    assert.equal(f.durationMs, 6 * 60_000);
     assert.equal(f.lastUser, "make the build pass");
     assert.match(f.assistantLast, /Should I widen it/);
     assert.deepEqual(f.tools.map((t) => [t.name, t.ok]), [["bash", false], ["read", true]]);
@@ -151,7 +151,7 @@ describe("failure is a fact of the file, never a question", () => {
   test("no question asks whether the work failed, for a turn or a worker", () => {
     const f = sig.turnFacts(finishedTurn())!;
     const all = { ...sig.turnQuestions({ ...f, durationMs: sig.LONG_TURN_MS }) };
-    assert.deepEqual(Object.keys(all), ["asks_user", "stuck"]);
+    assert.deepEqual(Object.keys(all), ["stuck"]);
     assert.doesNotMatch(JSON.stringify(all), /fail/i);
     assert.equal((sig as any).OUTCOME, undefined);
     assert.equal((sig as any).WORK_FAILED, undefined);
@@ -163,12 +163,12 @@ describe("failure is a fact of the file, never a question", () => {
     const path = file(turn);
     assert.equal(await h.s.classifySession(summary(path), true), true);
     const id = summary(path).id;
-    assert.deepEqual(store.toWire(h.stored().sessions[id]!).kinds, ["asks-you"]);
+    assert.deepEqual(store.toWire(h.stored().sessions[id]!).kinds, ["looping"]);
     writeFileSync(path, readFileSync(path, "utf8") + [user("u9", "a3", "widen it", NOW - 5000), assistant("a9", "u9", NOW - 1000, [], "error", { errorMessage: "529 overloaded" })].map((e) => JSON.stringify(e)).join("\n") + "\n");
     const told = h.changed();
     assert.equal(await h.s.classifySession(summary(path), true), false);
     assert.equal(h.provider.calls.length, 1, "no call for the errored turn");
-    assert.equal(h.stored().sessions[id], undefined, "the previous turn's asks-you is gone");
+    assert.equal(h.stored().sessions[id], undefined, "the previous turn's looping is gone");
     assert.equal(h.changed(), told + 1, "and the feed was told");
   });
 
@@ -180,24 +180,6 @@ describe("failure is a fact of the file, never a question", () => {
     assert.equal(await h.s.classifySession(summary(path), false), false);
     assert.equal(h.provider.calls.length, 0);
     assert.deepEqual(h.stored().sessions, {});
-  });
-});
-
-describe("lastSentence: what the digest quotes", () => {
-  test("D2: a dot inside a file name, version or path is not a sentence end", () => {
-    assert.equal(sig.lastSentence("I can write it. Should I name the file notes.md or todo.md?"), "Should I name the file notes.md or todo.md?");
-    assert.equal(sig.lastSentence("The file `/nonexistent/definitely-missing.txt` does not exist."), "The file `/nonexistent/definitely-missing.txt` does not exist.");
-    assert.equal(sig.lastSentence("Bumped to v1.2.3. Ship it?"), "Ship it?");
-    assert.equal(sig.lastSentence('It said "done." Then it stopped.'), "Then it stopped.");
-  });
-
-  test("the last asking sentence among the last three, else the last; code blocks skipped; capped", () => {
-    assert.equal(sig.lastSentence("I found two loaders. Which one should I rename? I can also merge them."), "Which one should I rename?");
-    assert.equal(sig.lastSentence("Done. Tests pass."), "Tests pass.");
-    assert.equal(sig.lastSentence("Is this a question? One. Two. Three."), "Three.");
-    assert.equal(sig.lastSentence("Run this.\n```\nwhy? no.\n```\nThen report back"), "Then report back");
-    assert.equal(sig.lastSentence(""), "");
-    assert.equal(sig.lastSentence(`${"w ".repeat(200)}?`).length, sig.SENTENCE_MAX);
   });
 });
 
@@ -214,10 +196,13 @@ describe("state and questions", () => {
     assert.ok(JSON.stringify(st).length < 8000);
   });
 
-  test("the stuck question is asked only of a long turn", () => {
-    const f = sig.turnFacts(finishedTurn())!;
-    assert.deepEqual(Object.keys(sig.turnQuestions(f)), ["asks_user"]);
-    assert.deepEqual(Object.keys(sig.turnQuestions({ ...f, durationMs: sig.LONG_TURN_MS })), ["asks_user", "stuck"]);
+  test("the stuck question is asked only of a long turn; nothing asks whether a reply asks the user", () => {
+    const f = sig.turnFacts(finishedTurn(NOW - 60_000, 60_000))!;
+    assert.deepEqual(Object.keys(sig.turnQuestions(f)), [], "a short turn has no question at all");
+    assert.deepEqual(Object.keys(sig.turnQuestions({ ...f, durationMs: sig.LONG_TURN_MS })), ["stuck"]);
+    assert.deepEqual(Object.keys(sig.turnQuestions({ ...f, tools: Array.from({ length: sig.LONG_TURN_TOOLS }, () => f.tools[0]!) })), ["stuck"]);
+    assert.equal((sig as any).ASKS_USER, undefined);
+    assert.equal((sig as any).lastSentence, undefined);
   });
 });
 
@@ -265,20 +250,32 @@ describe("AttentionSignals: classify each finished turn once", () => {
     assert.equal(h.provider.calls.length, 1);
     const req = h.provider.calls[0]!;
     assert.equal(req.purpose, "attention");
-    assert.deepEqual(Object.keys(req.questions), ["asks_user"]);
+    assert.deepEqual(Object.keys(req.questions), ["stuck"]);
     const id = summary(path).id;
     const t = h.stored().sessions[id]!;
     assert.equal(t.turnId, "a3");
     assert.equal(t.replyAt, NOW - 60_000);
-    assert.equal(t.answers.asks_user?.type, "boolean");
-    assert.deepEqual(store.toWire(t).kinds, ["asks-you"]);
-    assert.equal(t.detail, "Should I widen it to number | string, or change the caller?");
-    assert.equal((store.toWire(t) as any).detail, undefined); // local only: never on the wire
+    assert.equal(t.answers.stuck?.type, "score");
+    assert.deepEqual(store.toWire(t).kinds, ["looping"]);
+    assert.equal((t as any).detail, undefined, "no reply sentence is kept: nothing words an asks-you item");
     assert.equal(h.changed(), 1);
     assert.deepEqual(readFileSync(path), bytes);
     // Same turn again: no second call.
     assert.equal(await h.s.classifySession(summary(path), true), false);
     assert.equal(h.provider.calls.length, 1);
+  });
+
+  test("a short turn makes no model call, and drops the turn before it", async () => {
+    const h = harness();
+    const path = file(finishedTurn());
+    assert.equal(await h.s.classifySession(summary(path), true), true);
+    const id = summary(path).id;
+    writeFileSync(path, readFileSync(path, "utf8") + [user("u9", "a3", "and the docs?", NOW - 5000), assistant("a9", "u9", NOW - 1000, [{ type: "text", text: "Which docs do you mean: the README or the spec?" }])].map((e) => JSON.stringify(e)).join("\n") + "\n");
+    const told = h.changed();
+    assert.equal(await h.s.classifySession(summary(path), true), false);
+    assert.equal(h.provider.calls.length, 1, "a question to the user is not a model's call to make");
+    assert.equal(h.stored().sessions[id], undefined, "the long turn's mark is replaced by the short turn");
+    assert.equal(h.changed(), told + 1);
   });
 
   test("a new turn replaces the stored one; the list's reply time gates the ticker path cheaply", async () => {
@@ -290,7 +287,7 @@ describe("AttentionSignals: classify each finished turn once", () => {
     h.replyAt.set(path, NOW - 60_000);
     assert.equal(await h.s.classifySession(summary(path), false), false);
     // A new reply.
-    writeFileSync(path, readFileSync(path, "utf8") + [user("u9", "a3", "widen it", NOW - 5000), assistant("a9", "u9", NOW - 1000, [{ type: "text", text: "Done: widened." }])].map((e) => JSON.stringify(e)).join("\n") + "\n");
+    writeFileSync(path, readFileSync(path, "utf8") + [user("u9", "a3", "widen it", NOW - 7 * 60_000), assistant("a9", "u9", NOW - 1000, [{ type: "text", text: "Done: widened." }])].map((e) => JSON.stringify(e)).join("\n") + "\n");
     h.replyAt.set(path, NOW - 1000);
     assert.equal(await h.s.classifySession(summary(path), false), true);
     assert.equal(h.stored().sessions[summary(path).id]!.turnId, "a9");

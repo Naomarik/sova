@@ -21,8 +21,9 @@ import { PathAttachment, PathText } from "./PathAttachment";
 import { ReportRow } from "./ReportRow";
 import { TeamMessageCard } from "./TeamMessageCard";
 import { AlignCard } from "./AlignCard";
+import { AlignRow } from "./AlignDocCard";
 import { ExplainCard } from "./ExplainCard";
-import { alignOf, latestAlignId } from "../lib/align";
+import { alignOf, alignRowFromDetails, latestAlignId, newestAlignRows } from "../lib/align";
 import { explainOf } from "../lib/explain";
 import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
@@ -413,6 +414,9 @@ export function HistoryItems(props: {
   actions?: MessageActionsProvider;
   /** Build every row at once, even inside a transcript (the hidden-rows disclosure's own list). */
   whole?: boolean;
+  /** Alignments this streaming run already changed: their settled cards read as revision rows
+      until the refetch brings the new revision (§chat.alignment/card). */
+  liveAlignIds?: ReadonlySet<string>;
 }) {
   /**
    * The items the thread may render: the settings-change rows are dropped before anything else,
@@ -446,6 +450,11 @@ export function HistoryItems(props: {
     : item.kind === "tool-result" ? [item.toolCallId && calls().has(item.toolCallId) ? undefined : item.images, "tool"]
     : [undefined, "user"];
   const latestAlign = createMemo(() => latestAlignId(props.items));
+  /** The newest revision of each alignment renders as the card; the rest as one line each. */
+  const newestAligns = createMemo(() => newestAlignRows(props.items));
+  const alignNewest = (item: TranscriptItem) => newestAligns().has(item.id) && !(item.align?.doc && props.liveAlignIds?.has(item.align.doc.id));
+  /** Calls whose result is an alignment row: the row is the card, so the call draws nothing. */
+  const alignCalls = createMemo(() => new Set(props.items.flatMap((it) => (it.kind === "align" && it.toolCallId ? [it.toolCallId] : []))));
   /** User rows a baton participant sent: target id → their ref, in any order (§app.baton/attribution). */
   const batonSent = createMemo(() => {
     const by = new Map<string, string>();
@@ -613,6 +622,8 @@ export function HistoryItems(props: {
               <Match when={item.kind === "thinking"}>
                 <Thinking text={item.text ?? ""} />
               </Match>
+              <Match when={item.kind === "align" && item.align}>{(row) => <AlignRow row={row()} newest={alignNewest(item)} />}</Match>
+              <Match when={item.kind === "tool-call" && item.toolCallId && alignCalls().has(item.toolCallId)}>{null}</Match>
               <Match when={item.kind === "report" && item.report && alignOf(item.report)}>
                 {(align) => (
                   <Show when={item.id === latestAlign()} fallback={<span class="align-superseded" hidden />}>
@@ -762,7 +773,10 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
           };
           const confirm = () => (b().name === "sova_confirm" && status() !== "error" ? confirmDetails(tool()?.details) ?? confirmDetails(b().args) : null);
           const linked = () => ((b().name === "sova_link" || b().name === "sova_unlink") && status() === "done" ? linkDetails(tool()?.details) : null);
+          /** An align result that changed an alignment: its card, as soon as the result lands. */
+          const aligned = () => (b().name === "align" && status() === "done" ? alignRowFromDetails(tool()?.details) : undefined);
           return (
+            <Show when={!aligned()} fallback={<div class="entry-live-align" data-align-live={aligned()?.doc?.id}><AlignRow row={aligned()!} newest /></div>}>
             <Show
               when={confirm()}
               fallback={
@@ -785,6 +799,7 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
               }
             >
               {(details) => <ConfirmCard details={details()} answered={false} choice={null} pending={props.live.running} />}
+            </Show>
             </Show>
           );
         }}

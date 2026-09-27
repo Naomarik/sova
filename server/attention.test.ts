@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { SessionSummary } from "../shared/protocol";
-import { type AttentionRow, blockerKey, buildDigest, DIGEST_MAX, sessionItems, STALE_MS, whereOf, workerErrorTime } from "./attention";
+import { type AttentionRow, blockerKey, buildDigest, DIGEST_MAX, openQuestionsText, sessionItems, STALE_MS, whereOf, workerErrorTime } from "./attention";
 import { workerErrorTimesOf } from "./live";
 
 const NOW = Date.parse("2026-09-25T12:00:00.000Z");
@@ -209,12 +209,34 @@ describe("attention: the digest", () => {
   });
 });
 
-describe("attention: decision signals (the list carries them only while unseen and idle)", () => {
-  const signals = (kinds: ("asks-you" | "looping")[]) => ({ at: NOW - 5000, turnId: "t", provider: "jev" as const, kinds });
+describe("attention: open alignment questions (§chat.alignment/session-mark)", () => {
+  const align = (openQuestions: number, questionDocs = 1) => ({ openDocs: questionDocs + 1, openQuestions, questionDocs, lead: { id: "al_3", title: "Autonomy settings" } });
 
-  test("asks-you is act; a main session's looping is decide; each dated by the classification", () => {
-    const items = sessionItems(row(summary("s", { signals: signals(["asks-you", "looping"]) })), NOW);
-    assert.deepEqual(items.map((i) => `${i.tier}:${i.kind}`), ["act:asks-you", "decide:looping"]);
+  test("an idle session with open questions is act, dated by its last reply, worded by its lead alignment", () => {
+    const items = sessionItems(row(summary("s", { align: align(3) }), { lastReplyAt: NOW - 7000 }), NOW);
+    assert.deepEqual(items.map((i) => `${i.tier}:${i.kind}:${i.detail}`), ["act:open-questions:3 open questions in al_3 Autonomy settings"]);
+    assert.equal(items[0]!.since, NOW - 7000);
+    assert.equal(openQuestionsText(align(1)), "1 open question in al_3 Autonomy settings");
+    assert.equal(openQuestionsText(align(5, 2)), "5 open questions in 2 alignments");
+  });
+
+  test("never while it runs, never archived, never without an open question; no signal or feature needed", () => {
+    assert.deepEqual(kinds(row(summary("s", { align: align(2), busy: true }))), ["fyi:working"]);
+    assert.deepEqual(kinds(row(summary("s", { align: align(2), activity: { state: "working" } }))), ["fyi:working"]);
+    assert.deepEqual(kinds(row(summary("s", { align: align(2), archived: true }))), []);
+    assert.deepEqual(kinds(row(summary("s", { align: { openDocs: 1, openQuestions: 0, questionDocs: 0 } }))), []);
+    const d = buildDigest([row(summary("a", { align: align(2) }))], NOW);
+    assert.deepEqual(d.badge, { act: 1, decide: 0 });
+    assert.equal(blockerKey(d.items[0]!), "a:open-questions");
+  });
+});
+
+describe("attention: decision signals (the list carries them only while unseen and idle)", () => {
+  const signals = (kinds: "looping"[]) => ({ at: NOW - 5000, turnId: "t", provider: "jev" as const, kinds });
+
+  test("a main session's looping is decide, dated by the classification", () => {
+    const items = sessionItems(row(summary("s", { signals: signals(["looping"]) })), NOW);
+    assert.deepEqual(items.map((i) => `${i.tier}:${i.kind}`), ["decide:looping"]);
     assert.ok(items.every((i) => i.since === NOW - 5000));
   });
 
@@ -224,26 +246,24 @@ describe("attention: decision signals (the list carries them only while unseen a
     assert.equal(items[0]!.detail, "2 subagents look stuck. The last turn looks like it went in circles too.");
   });
 
-  test("details quote the stored sentence and name stuck workers; fixed fallbacks without them", () => {
-    const text = { sentence: "Should I merge them first?", stuckWorkers: ["builder"] };
+  test("details name stuck workers; fixed fallbacks without them", () => {
+    const text = { stuckWorkers: ["builder"] };
     const detail = (s: SessionSummary, t?: AttentionRow["signalText"]) =>
       sessionItems(row(s, t ? { signalText: t } : {}), NOW).map((i) => `${i.tier}:${i.kind}:${i.detail}`);
-    assert.deepEqual(detail(summary("a", { signals: signals(["asks-you"]) }), text), ["act:asks-you:Asks you: Should I merge them first?"]);
-    assert.deepEqual(detail(summary("a", { signals: signals(["asks-you"]) })), ["act:asks-you:The last reply asks you something."]);
     assert.deepEqual(detail(summary("l", { signals: signals(["looping"]) })), ["decide:looping:The last turn looks like it went in circles."]);
     assert.deepEqual(detail(summary("w", { workerSignals: { stuck: 1 } }), text), ["act:looping:A subagent looks stuck: builder."]);
     assert.deepEqual(detail(summary("w", { workerSignals: { stuck: 2 } }), { stuckWorkers: ["a", "b"] }), ["act:looping:Subagents look stuck: a, b."]);
   });
 
-  test("no kinds, no items; an empty kinds list is not a mark; the badge counts a signalled session as needs-you", () => {
+  test("no kinds, no items; an empty kinds list is not a mark; the badge counts a stuck subagent as needs-you", () => {
     assert.deepEqual(kinds(row(summary("s", { signals: signals([]) }))), []);
-    const d = buildDigest([row(summary("a", { signals: signals(["asks-you"]), unread: true }))], NOW);
+    const d = buildDigest([row(summary("a", { workerSignals: { stuck: 1 }, unread: true }))], NOW);
     assert.deepEqual(d.badge, { act: 1, decide: 0 });
-    assert.equal(blockerKey(d.items[0]!), "a:asks-you");
+    assert.equal(blockerKey(d.items[0]!), "a:looping");
   });
 
   test("Overseer and worker sessions never carry items, signals or not", () => {
-    assert.deepEqual(kinds(row(summary("o", { overseer: true, signals: signals(["asks-you"]) }))), []);
+    assert.deepEqual(kinds(row(summary("o", { overseer: true, signals: signals(["looping"]) }))), []);
     assert.deepEqual(kinds(row(summary("w", { workerSession: true, workerSignals: { stuck: 1 } }))), []);
   });
 });

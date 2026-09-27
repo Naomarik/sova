@@ -30,6 +30,7 @@
  *                                               their link shows it; no token, no visit; 404 when the session isn't theirs)
  * POST   /api/orgs/:id/people/:pid/links/revoke body { sessionId?, n? } -> PersonPage (both: turns off that one
  *                                               link of theirs; neither: every live /h/ link of theirs on this host)
+ * The org's owner and the Owner page's operator routes: see shared/owner.ts.
  */
 
 import type { BatonView } from "./baton";
@@ -124,6 +125,8 @@ export interface OrgProject {
   /** Set when the main stakeholder left the org (so the project has none); removed when the
       operator sets the stakeholder again (to someone or to none). Needs you asks for a new one. */
   stakeholderCleared?: { personId: string; name: string; at: string };
+  /** The operator switched this project off the owner's page (§app.owner-page/chats). Absent: shown. */
+  ownerHidden?: boolean;
 }
 
 /** One change of a project's main stakeholder: the operator set it (`operator`), or the person left (`left`). */
@@ -140,6 +143,32 @@ export interface Org {
   name: string;
   slug: string;
   createdAt: string;
+  /** The org's owner (§app.owner-page/owner): an active roster person's id; absent or null: none.
+      Set only by the operator; cleared when they leave. Reads the Owner page; decides nothing. */
+  owner?: string | null;
+  /** Each change of `owner`, oldest first (at most 50). */
+  ownerHistory?: OwnerChange[];
+  /** Set when the owner left the org (so it has none); removed when the operator sets it again. */
+  ownerCleared?: { personId: string; name: string; at: string };
+}
+
+/** One change of the org's owner: the operator set it, or the person left. */
+export interface OwnerChange {
+  at: string;
+  from: string | null;
+  to: string | null;
+  why: "operator" | "left";
+}
+
+/** The owner card on the People tab (OrgDetail.ownerPage). No token, no hash. */
+export interface OwnerPageInfo {
+  /** The owner now, or null. */
+  person: NamedRef | null;
+  /** Their newest owner link on this host: live, expired, or off (turned off, replaced); null: none yet. */
+  link: { state: "live" | "expired" | "off"; createdAt: string; expiresAt: string } | null;
+  /** Visits to the Owner page by a person (not scanners or previews), all time. */
+  opened: number;
+  lastOpenedAt?: string;
 }
 
 /** The most characters of the org's About text (`about.md`, §app.organizations/about). */
@@ -197,6 +226,8 @@ export interface OrgNeedsYou {
   conflicts: number;
   /** Projects whose main stakeholder left the org, so the operator must pick a new one (absent: an older server). */
   stakeholders?: number;
+  /** 1 when the org has an owner whose owner link expired or has under 7 days left, with no newer one. */
+  ownerLink?: number;
 }
 
 /** One baton session of the org, for its page. */
@@ -237,6 +268,8 @@ export interface OrgDetail extends OrgSummary {
       `at`: the start of their newest visit (link previews, scanners and turned-off attempts don't
       count); `minted`: a link was ever minted for them on this host. People with neither are absent. */
   lastOpened?: Record<string, { at?: string; minted: boolean }>;
+  /** From the org routes: the owner card (absent: an older server). */
+  ownerPage?: OwnerPageInfo;
 }
 
 // ---- a person's page (§app.organizations/person-page) -------------------------------------------------
@@ -369,6 +402,8 @@ export interface VisitRow {
   kind: "visit" | "preview" | "refused" | "capped";
   at: string;
   lastSeenAt?: string;
+  /** "owner": the Owner page ("Opened the owner page"; sessionId "", n 0). Absent: a hand-off link. */
+  via?: "owner";
   sessionId: string;
   /** The session's public title ("" when the row is gone). */
   publicTitle: string;
@@ -408,6 +443,10 @@ export interface PersonPage {
   history: ProfileChange[];
   /** The projects they are the main stakeholder of (absent: an older server). */
   stakeholderOf?: { projectId: string; name: string }[];
+  /** They are the org's owner (the `Owner` chip). */
+  owner?: boolean;
+  /** Their owner links on this host, newest first (no token, no hash). */
+  ownerLinks?: { createdAt: string; expiresAt: string; revokedAt?: string; state: "live" | "expired" | "off"; visits: number; lastVisitAt?: string }[];
 }
 
 export interface OrgsInfo {

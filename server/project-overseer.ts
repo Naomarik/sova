@@ -38,6 +38,7 @@ import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { readNotes, rotateState } from "./overseer-store";
+import { appendUpdate, postedToday } from "./project-updates";
 import { promptOpenTodos, readTodos, updateTodo } from "./overseer-todos";
 import { UserTurns } from "./overseer-tools";
 import { canonicalPath } from "./paths";
@@ -518,7 +519,49 @@ function toolHost(rt: Rt): PoToolHost {
     coding: () => codingOf(paths),
     startedCoding: () => new Map(readStarted(paths).filter((r) => r.kind === "coding" || r.kind === "operator-coding").map((r) => [r.sessionId, { removed: !!r.removed }])),
     codingTokens: () => codingTokens(paths),
+    async postOwnerUpdate(input) {
+      const leak = ownerUpdateLeak(orgId, projectId, input.text);
+      if (leak) throw new Error(`Not posted: it repeats ${leak}, which the owner must never read. Rewrite it in your own plain words.`);
+      const today = postedToday(orgId, projectId);
+      if (today && !input.attended) throw new Error(`Not posted: an update already went out today (${today.at}). At most one per project per day; post the next milestone tomorrow.`);
+      const update = appendUpdate(orgId, projectId, { text: input.text, milestone: input.milestone, by: "overseer" });
+      const owner = readRoster(orgId).find((x) => x.id === readOrg(orgId).owner && x.status === "active");
+      return { update, owner: owner?.name ?? null };
+    },
   };
+}
+
+/** The shortest repeated run that counts as copying private text into an owner update. */
+export const OWNER_UPDATE_REPEAT = 24;
+
+/**
+ * What private text an owner update repeats, by name, or null (§app.owner-page/news). An update is
+ * written by this project's overseer, whose prompt holds the org's About text, its notes and the
+ * operator's instructions: any run of OWNER_UPDATE_REPEAT characters from those, from a
+ * conversation's goal or a hand-off briefing, or from a person's profile, and any contact value,
+ * refuses the post. The About text is read here to be kept OUT of the update, never to write it.
+ */
+export function ownerUpdateLeak(orgId: string, projectId: string, text: string): string | null {
+  const norm = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+  const hay = norm(text);
+  const repeats = (secret: string): boolean => {
+    const s = norm(secret);
+    for (let i = 0; i + OWNER_UPDATE_REPEAT <= s.length; i++) if (hay.includes(s.slice(i, i + OWNER_UPDATE_REPEAT))) return true;
+    return false;
+  };
+  const paths = projectOverseerPaths(orgId, projectId);
+  const roster = readRoster(orgId);
+  const batons = projectBatons(orgId, projectId);
+  const sources: [string, string[]][] = [
+    ["About this organization", [readOrgAbout(orgId)]],
+    ["your notes", [readNotes(paths.notes)]],
+    ["the operator's instructions", [readPoSettings(paths).extraSystemPrompt]],
+    ["a conversation's goal or briefing", batons.flatMap((b) => [b.goal, ...b.handoffs.map((h) => h.briefing), ...(b.offers ?? []).map((o) => o.briefing)])],
+    ["a person's profile", roster.flatMap((x) => [x.voice, x.role, ...x.skills, x.referral?.why ?? ""])],
+  ];
+  for (const [what, texts] of sources) if (texts.some((t) => t && repeats(t))) return what;
+  for (const x of roster) for (const v of Object.values(x.contact ?? {})) if (typeof v === "string" && v.trim().length >= 5 && hay.includes(norm(v))) return "a person's contact details";
+  return null;
 }
 
 /**

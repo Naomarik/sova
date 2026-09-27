@@ -10,6 +10,8 @@ import { operatorName, orgDir, OrgError, readHistory, readOrg, readProjects, rea
 import { listDecisions } from "./reconcile";
 import { opaqueSenders, readView } from "./share/hub";
 import { readVisits } from "./visits";
+import { ownerLinksOfPerson } from "./owner";
+import { ownerLinksOf } from "./person-links";
 
 /**
  * A person's page (§app.organizations/person-page): everything the org knows about one roster
@@ -287,18 +289,20 @@ export function personLinks(ctx: Ctx, pid: string, visits: (VisitRow & { offerId
 export function personVisits(ctx: Ctx, pid: string): (VisitRow & { offerId?: string })[] {
   const titles = new Map(ctx.rows.map((r) => [r.sessionId, r.publicTitle]));
   const links = linksOfPerson(ctx.orgId, pid);
+  const ownerGens = new Set(ownerLinksOf(ctx.orgId).filter((l) => l.personId === pid).map((l) => l.gen));
   return readVisits(ctx.orgId, pid).map((v) => ({
     id: v.id,
     kind: v.kind,
     at: v.at,
     ...(v.lastSeenAt ? { lastSeenAt: v.lastSeenAt } : {}),
+    ...(v.via === "owner" ? { via: "owner" as const } : {}),
     sessionId: v.sessionId,
     publicTitle: titles.get(v.sessionId) ?? "",
     n: v.n,
     ...(v.offerId ? { offerId: v.offerId } : {}),
     device: v.device,
     ...(v.bot ? { bot: true } : {}),
-    ...(links.some((l) => sameLink(l, v)) ? {} : { otherHost: true }),
+    ...((v.via === "owner" ? v.gen !== undefined && ownerGens.has(v.gen) : links.some((l) => sameLink(l, v))) ? {} : { otherHost: true }),
   }));
 }
 
@@ -329,6 +333,8 @@ export function personPage(orgId: string, pid: string, now = Date.now()): Person
     stakeholderOf: readProjects(orgId)
       .filter((p) => p.stakeholder === pid)
       .map((p) => ({ projectId: p.id, name: p.name })),
+    owner: readOrg(orgId).owner === pid && person.status === "active",
+    ownerLinks: ownerLinksOfPerson(orgId, pid, now),
   };
 }
 

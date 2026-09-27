@@ -334,12 +334,21 @@ describe("the About text has one reader in the server", () => {
     assert.deepEqual(using(/\borgPage\b/), ["org-routes.ts"]);
   });
 
-  test("in the project overseer, only the prompt's render reads it", () => {
+  test("in the project overseer, only the prompt's render reads it, and the owner-update guard (to keep it out)", () => {
     const text = sources.find((s) => s.file === "project-overseer.ts")!.text;
     const calls = [...text.matchAll(/\breadOrgAbout\(/g)].map((m) => m.index!);
-    assert.equal(calls.length, 1, "one call");
-    const render = text.indexOf("export function renderProjectOverseerPrompt(");
-    const next = text.indexOf("\n// ----", render);
-    assert.ok(calls[0]! > render && calls[0]! < next, "inside renderProjectOverseerPrompt");
+    assert.equal(calls.length, 2, "two calls");
+    const within = (at: number, head: string) => {
+      const start = text.indexOf(head);
+      const end = text.indexOf("\n}\n", start);
+      return start >= 0 && at > start && at < end;
+    };
+    assert.ok(within(calls[0]!, "export function renderProjectOverseerPrompt(") || within(calls[0]!, "export function ownerUpdateLeak("));
+    assert.ok(within(calls[1]!, "export function ownerUpdateLeak(") || within(calls[1]!, "export function renderProjectOverseerPrompt("));
+    assert.ok(within(calls[0]!, "export function renderProjectOverseerPrompt(") !== within(calls[1]!, "export function renderProjectOverseerPrompt("), "one in each");
+    // The guard only answers which source a text repeats: it returns a label, never the text.
+    const guard = text.slice(text.indexOf("export function ownerUpdateLeak("), text.indexOf("\n}\n", text.indexOf("export function ownerUpdateLeak(")));
+    assert.match(guard, /: string \| null \{/);
+    for (const r of guard.matchAll(/return ([^;]+);/g)) assert.match(r[1]!, /^(null|what|true|false|"[^"]*")$/, `returns ${r[1]}`);
   });
 });

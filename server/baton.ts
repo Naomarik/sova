@@ -857,3 +857,11 @@ export function setWrapup(sessionId: string, info: WrapupInfo): void {
 export function clearWrapup(sessionId: string): void {
   update(sessionId, (r) => void delete r.wrapup);
 }
+
+/** Hide a conversation from the org owner's page, or show it again (§app.owner-page/chats; the operator's strip). */
+export function setHiddenFromOwner(sessionId: string, hidden: boolean): BatonSession {
+  return update(sessionId, (r) => {
+    if (hidden) r.hiddenFromOwner = true;
+    else delete r.hiddenFromOwner;
+  });
+}

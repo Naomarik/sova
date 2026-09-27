@@ -4,6 +4,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { BatonSession, BatonView } from "../shared/baton";
 import type { DecisionsInfo, PromoteResult } from "../shared/decisions";
 import type { OrgProject, Person } from "../shared/orgs";
+import { OWNER_MILESTONES, OWNER_UPDATE_MAX, type OwnerMilestone, type ProjectUpdate } from "../shared/owner";
 import { GAP_TAG, type Autonomy, type ProjectCodingMode, type ProjectOverseerCaps, type ProjectOverseerSettings } from "../shared/project-overseer";
 import type { IdeaStatus, SessionSummary, TranscriptItem } from "../shared/protocol";
 import { confirmTool } from "./overseer-confirm";
@@ -71,6 +72,10 @@ export interface PoToolHost {
   coding(): { sessionId: string; path: string | null; running: boolean }[];
   /** Tokens those sessions have spent. */
   codingTokens(): Promise<number>;
+  /** Post a milestone update to the org owner's page (§app.owner-page/news). The host refuses (with
+      a reason for the model) text that repeats private text, and a second post the same day unless
+      the operator asked (`attended`). `owner`: the owner's name, or null while the org has none. */
+  postOwnerUpdate(input: { text: string; milestone: OwnerMilestone; attended: boolean }): Promise<{ update: ProjectUpdate; owner: string | null }>;
 }
 
 // ---- per-turn counters -------------------------------------------------------------------------
@@ -140,6 +145,7 @@ export const TOOL_NEEDS: Record<string, Need> = {
   sova_note: "L0",
   sova_confirm: "L0",
   sova_idea: "L0",
+  sova_owner_update: "L0",
   sova_start_gathering: "L1",
   sova_offer: "L1",
   sova_reconcile: "L1",
@@ -577,6 +583,38 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
           if (err instanceof IdeaError) throw new Refusal(err.message);
           throw err;
         }
+      }),
+    },
+    {
+      name: "sova_owner_update",
+      label: "Owner update",
+      description:
+        "Post a short update to the organization owner's page: a non-technical client reads it, as written. Only at a real milestone of this project (a round of questions finished, something was decided, a piece of work was built, or merged), at most one per project per day; milestone \"requested\" only when the operator asks you in their own message. " +
+        "Plain, short, friendly words about what changed for them. Never names of tools, branches, files, sessions, models or ids, never costs or tokens, never judgments about people, and never anything from \"About this organization\", your notes, a session's goal or a person's profile (the post is refused if it repeats them).",
+      promptSnippet: "post a milestone update to the organization owner's page (client-facing; at most one a day)",
+      parameters: obj(
+        {
+          milestone: str("What happened: questions-answered | decided | built | merged | requested (the operator asked for this post).", { enum: [...OWNER_MILESTONES] }),
+          text: str(`The update, at most ${OWNER_UPDATE_MAX} characters, shown to the owner verbatim. A demo address the operator gave you may go in it.`),
+        },
+        ["milestone", "text"],
+      ),
+      execute: act("sova_owner_update", async (q) => {
+        const milestone = q.milestone as OwnerMilestone;
+        if (!OWNER_MILESTONES.includes(milestone)) throw new Refusal(`milestone is one of ${OWNER_MILESTONES.join(", ")}.`);
+        const attended = host.attended();
+        if (milestone === "requested" && !attended) throw new Refusal('"requested" is only for a post the operator asked for in their own message. Name the milestone this update marks.');
+        const body = typeof q.text === "string" ? q.text.trim() : "";
+        if (!body) throw new Refusal("Write the update first.");
+        if (body.length > OWNER_UPDATE_MAX) throw new Refusal(`An update is at most ${OWNER_UPDATE_MAX} characters (this one is ${body.length}). Shorten it.`);
+        let made;
+        try {
+          made = await host.postOwnerUpdate({ text: body, milestone, attended });
+        } catch (err) {
+          throw new Refusal(err instanceof Error ? err.message : String(err));
+        }
+        const who = made.owner ? `${made.owner}'s owner page` : "the owner page (no owner is set yet: it shows once the operator picks one)";
+        return { content: text(`Posted to ${who}.`), details: { id: made.update.id, milestone, note: `Posted an owner update (${milestone})` } };
       }),
     },
     // ---- L1 --------------------------------------------------------------------------------------

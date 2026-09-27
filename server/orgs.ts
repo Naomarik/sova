@@ -26,6 +26,7 @@ import {
   type ProfileChange,
   type ProfileField,
   type NamedChange,
+  type OwnerChange,
   type StakeholderChange,
 } from "../shared/orgs";
 import { setExtraSessionRoots } from "./paths";
@@ -230,11 +231,17 @@ const projectsFile = (dir: string) => join(dir, "projects.json");
 function readOrgFile(dir: string): Org | null {
   const raw = readJson(orgFile(dir));
   if (!isObj(raw) || typeof raw.id !== "string" || typeof raw.name !== "string") return null;
+  const cleared = raw.ownerCleared;
   return {
     id: raw.id,
     name: raw.name,
     slug: typeof raw.slug === "string" ? raw.slug : slugOf(raw.name),
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : "",
+    ...(typeof raw.owner === "string" && raw.owner ? { owner: raw.owner } : {}),
+    ...(Array.isArray(raw.ownerHistory) ? { ownerHistory: raw.ownerHistory.filter((c): c is OwnerChange => isObj(c) && typeof c.at === "string") } : {}),
+    ...(isObj(cleared) && typeof cleared.personId === "string" && typeof cleared.name === "string" && typeof cleared.at === "string"
+      ? { ownerCleared: { personId: cleared.personId, name: cleared.name, at: cleared.at } }
+      : {}),
   };
 }
 
@@ -685,6 +692,8 @@ export function applyChange(
   writeJson(rosterFile(dir), { version: 1, people: nextPeople });
   // A main stakeholder who left no longer decides anything: their projects have none until the operator picks one.
   if (!creating && current.status !== "left" && next.status === "left") clearStakeholder(dir, next);
+  // The org's owner who left reads nothing any more: the org has none until the operator picks one.
+  if (!creating && current.status !== "left" && next.status === "left") clearOwner(dir, next);
   if (!creating && current.status !== "left" && next.status === "left")
     for (const fn of leftHooks) {
       try {
@@ -878,7 +887,7 @@ function clearStakeholder(dir: string, person: Person): void {
   if (changed) writeJson(projectsFile(dir), { version: 1, projects });
 }
 
-export function patchProject(orgId: string, projectId: string, patch: { name?: unknown; root?: unknown; spec?: unknown; stakeholder?: unknown }): OrgProject {
+export function patchProject(orgId: string, projectId: string, patch: { name?: unknown; root?: unknown; spec?: unknown; stakeholder?: unknown; ownerHidden?: unknown }): OrgProject {
   const dir = orgDir(orgId);
   const projects = readProjectsFile(dir);
   const p = projects.find((x) => x.id === projectId);
@@ -904,8 +913,64 @@ export function patchProject(orgId: string, projectId: string, patch: { name?: u
     // The operator has answered: whatever it says now, the "pick one" item is done.
     delete p.stakeholderCleared;
   }
+  if (patch.ownerHidden !== undefined) {
+    if (typeof patch.ownerHidden !== "boolean") throw new OrgError("ownerHidden must be true or false");
+    if (patch.ownerHidden) p.ownerHidden = true;
+    else delete p.ownerHidden;
+  }
   writeJson(projectsFile(dir), { version: 1, projects });
   return p;
+}
+
+// ---- the org's owner (§app.owner-page/owner) ------------------------------------------------------------------
+
+/** Most owner changes kept per org. */
+const OWNER_HISTORY_MAX = 50;
+
+function noteOwner(org: Org, to: string | null, why: OwnerChange["why"], at = new Date().toISOString()): boolean {
+  const from = org.owner ?? null;
+  if (from === to) return false;
+  if (to) org.owner = to;
+  else delete org.owner;
+  org.ownerHistory = [...(org.ownerHistory ?? []), { at, from, to, why }].slice(-OWNER_HISTORY_MAX);
+  return true;
+}
+
+/** `person` left the org: when they were its owner, it has none now, and says why. */
+function clearOwner(dir: string, person: Person): void {
+  const org = readOrgFile(dir);
+  if (!org || org.owner !== person.id) return;
+  const at = new Date().toISOString();
+  noteOwner(org, null, "left", at);
+  org.ownerCleared = { personId: person.id, name: person.name, at };
+  writeOrgFile(dir, org);
+}
+
+/** The org's owner now: an active roster person, or null. */
+export function ownerOf(orgId: string): Person | null {
+  const org = readOrg(orgId);
+  if (!org.owner) return null;
+  const p = readRoster(orgId).find((x) => x.id === org.owner);
+  return p && p.status === "active" ? p : null;
+}
+
+/** THE writer of the owner: the operator only (§app.organizations/field-authority). Only an active
+    roster person, or null (none). Returns the previous owner's id. */
+export function setOrgOwner(orgId: string, personId: unknown): { from: string | null; to: string | null } {
+  const dir = orgDir(orgId);
+  const org = readOrg(orgId);
+  if (personId !== null) {
+    const person = typeof personId === "string" ? readRosterFile(dir).people.find((x) => x.id === personId) : undefined;
+    if (!person || person.status !== "active") throw new OrgError("Only an active person on the roster can be the owner.");
+  }
+  const from = org.owner ?? null;
+  const to = (personId as string | null) ?? null;
+  const changed = noteOwner(org, to, "operator");
+  // The operator has answered: whatever it says now, "pick one" is done.
+  const hadCleared = !!org.ownerCleared;
+  delete org.ownerCleared;
+  if (changed || hadCleared) writeOrgFile(dir, org);
+  return { from, to };
 }
 
 // ---- read models for the routes -------------------------------------------------------------------------

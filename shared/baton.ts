@@ -206,6 +206,8 @@ export interface BatonSession {
   thinking?: string;
   createdAt: string;
   closedAt?: string;
+  /** The operator hid it from the org owner's page (§app.owner-page/chats). Absent: shown. */
+  hiddenFromOwner?: boolean;
 }
 
 export interface BatonStartInput {
@@ -300,6 +302,8 @@ export interface BatonInfo {
   offer: OfferInfo | null;
   proposed: ProposedPerson[];
   wrapup: WrapupInfo | null;
+  /** The org's owner, for the strip's Hide From {first} (`session.hiddenFromOwner`); null: none. */
+  owner?: { name: string } | null;
 }
 
 export interface BatonSummaryField {

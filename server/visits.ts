@@ -35,15 +35,21 @@ export const VISITS_PER_DAY = 20;
 /** The page's per-tab id: 16 random bytes, base64url. Anything else is ignored (no tab). */
 export const TAB_RE = /^[A-Za-z0-9_-]{22}$/;
 
-export type Via = "handoff";
+/** handoff: a hand-off link (/h/); owner: the org's Owner page (/i/, §app.owner-page/link). */
+export type Via = "handoff" | "owner";
 
+/** A hand-off link's key carries its session and hand-off; an owner link's, its generation. */
 interface LinkKey {
   personId: string;
   via: Via;
-  sessionId: string;
-  n: number;
+  sessionId?: string;
+  n?: number;
   offerId?: string;
+  gen?: number;
 }
+
+/** What a visit is recorded against: a hand-off link's record, or an owner link's. */
+export type VisitLink = Pick<LinkRecord, "orgId" | "sessionId" | "n" | "personId" | "offerId"> | { orgId: string; personId: string; via: "owner"; gen: number };
 
 export type VisitLine =
   | (LinkKey & { kind: "visit"; id: string; at: string; tab?: string; device: string; bot?: true })
@@ -160,7 +166,7 @@ interface OrgLog {
 
 const logs = new Map<string, OrgLog>();
 
-const keyOf = (k: LinkKey): string => `${k.via}|${k.sessionId}|${k.n}|${k.personId}|${k.offerId ?? ""}`;
+const keyOf = (k: LinkKey): string => `${k.via}|${k.sessionId ?? ""}|${k.n ?? ""}|${k.personId}|${k.offerId ?? ""}|${k.gen ?? ""}`;
 const dayOf = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -251,13 +257,16 @@ function append(orgId: string, log: OrgLog, line: VisitLine): void {
 
 const newId = (): string => `v_${randomBytes(6).toString("base64url")}`;
 
-const linkKeyOf = (link: Pick<LinkRecord, "sessionId" | "n" | "personId" | "offerId">): LinkKey => ({
-  personId: link.personId,
-  via: "handoff",
-  sessionId: link.sessionId,
-  n: link.n,
-  ...(link.offerId ? { offerId: link.offerId } : {}),
-});
+const linkKeyOf = (link: VisitLink): LinkKey =>
+  "via" in link
+    ? { personId: link.personId, via: "owner", gen: link.gen }
+    : {
+        personId: link.personId,
+        via: "handoff",
+        sessionId: link.sessionId,
+        n: link.n,
+        ...(link.offerId ? { offerId: link.offerId } : {}),
+      };
 
 const iso = (ms: number): string => new Date(ms).toISOString();
 
@@ -300,7 +309,7 @@ const tabOf = (t: string | null | undefined): string | undefined => (t && TAB_RE
  * `GET /api/h/<token>` answered 200: start a visit, or continue one. Returns the visit id, or null
  * when nothing was recorded (a previewer, or the day's cap).
  */
-export function recordOpen(link: LinkRecord, input: OpenInput = {}): string | null {
+export function recordOpen(link: VisitLink, input: OpenInput = {}): string | null {
   const now = input.now ?? Date.now();
   const dev = classify(input.userAgent);
   const k = linkKeyOf(link);
@@ -341,7 +350,7 @@ function recordPreviewIn(orgId: string, log: OrgLog, k: LinkKey, dev: Device, no
 
 /** The static shell was fetched: a `preview` line when the user agent is a known link previewer,
     nothing otherwise (a browser's shell fetch proves nothing; its API call is the visit). */
-export function recordShellFetch(link: LinkRecord, userAgent: string | null | undefined, now = Date.now()): boolean {
+export function recordShellFetch(link: VisitLink, userAgent: string | null | undefined, now = Date.now()): boolean {
   const dev = classify(userAgent);
   if (dev.kind !== "preview") return false;
   recordPreviewIn(link.orgId, logOf(link.orgId), linkKeyOf(link), dev, now);
@@ -349,7 +358,7 @@ export function recordShellFetch(link: LinkRecord, userAgent: string | null | un
 }
 
 /** Someone opened a link that no longer works (410): once per link per window. */
-export function recordRefused(link: LinkRecord, userAgent?: string | null, now = Date.now()): boolean {
+export function recordRefused(link: VisitLink, userAgent?: string | null, now = Date.now()): boolean {
   const dev = classify(userAgent);
   if (dev.kind === "preview") return false;
   const k = linkKeyOf(link);
@@ -423,9 +432,13 @@ export interface FoldedVisit {
   kind: "visit" | "preview" | "refused" | "capped";
   at: string;
   lastSeenAt?: string;
+  /** "" and 0 for an Owner page visit (`via` "owner"). */
   sessionId: string;
   n: number;
   offerId?: string;
+  via?: "owner";
+  /** An Owner page visit: the owner link's generation. */
+  gen?: number;
   device: string;
   bot?: boolean;
 }
@@ -436,7 +449,7 @@ export function readVisits(orgId: string, personId: string): FoldedVisit[] {
   const out: FoldedVisit[] = [];
   for (const l of log.lines) {
     if (l.kind === "seen" || l.personId !== personId) continue;
-    const base = { id: l.id, kind: l.kind, at: l.at, sessionId: l.sessionId, n: l.n, ...(l.offerId ? { offerId: l.offerId } : {}) };
+    const base = { id: l.id, kind: l.kind, at: l.at, sessionId: l.sessionId ?? "", n: l.n ?? 0, ...(l.offerId ? { offerId: l.offerId } : {}), ...(l.via === "owner" ? { via: "owner" as const, ...(typeof l.gen === "number" ? { gen: l.gen } : {}) } : {}) };
     if (l.kind === "visit") {
       const v = log.visits.get(l.id);
       const last = v ? Math.max(v.lastSeen, v.lastWritten) : 0;

@@ -31,7 +31,7 @@ test("kinds read in the scope's order, whatever their size, only those with a co
 
 test("who started it: one line, only starters with a cost, in a fixed order; none at all is no line", () => {
   const sova = "sova" as CostStarter; // the spec's third starter, said when the wire carries it
-  assert.equal(
+  assert.deepEqual(
     starterParts([
       { by: sova, usd: 0.36 },
       { by: "operator", usd: 4.02 },

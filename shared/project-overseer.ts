@@ -305,11 +305,15 @@ export interface CodingWorktree {
   /** open: its folder is here, not merged; merged: its branch is in target (by Merge Branch or by hand);
       removed: Remove Worktree ran; missing: its folder is gone otherwise; root: it runs in the project root. */
   state: "open" | "merged" | "removed" | "missing" | "root";
-  /** Its work is in target: merged by Merge Branch or by hand, or removed with its branch (only a merged one is). */
+  /** Its work is in target, read from git (merged by Merge Branch or by hand); when the branch is gone
+      or git can't be read, the recorded merge or removal with its branch (only a merged one is). */
   merged: boolean;
   /** True when the branch no longer exists (deleted with a merged worktree, or by hand): nothing left to merge. Absent otherwise. */
   branchGone?: boolean;
+  /** The last Merge Branch (history: a branch merged once may have new commits since). */
   mergedAt?: string;
+  /** Merged before and not merged now: its commits that target lacks. Absent otherwise. */
+  newSinceMerge?: number;
   removedAt?: string;
   /** Commits on the branch beyond base. */
   ahead: number;

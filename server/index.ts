@@ -10,6 +10,7 @@ import { bodyLimit } from "hono/body-limit";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
+import { startBatonMarksBackfill } from "./baton-marks";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
@@ -1165,6 +1166,7 @@ workspaceCommits.start();
 startWrapupRecovery();
 // Messages a crash or kill lost stop counting against their session's limit.
 startBudgetRecount();
+startBatonMarksBackfill();
 
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
 // The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);

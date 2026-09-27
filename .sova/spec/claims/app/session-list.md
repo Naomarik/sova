@@ -1000,9 +1000,9 @@ the count, `Cancel`, and the actions.
   last — the one-session menu's own rows (§app.session-list/groups), in a menu that says how many it will move.
   Organization sessions are skipped and said once: "Skipped 1: an organization session stays with
   its project." / "Skipped {n}: organization sessions stay with their project."
-- **Archive**, on organization sessions, moves them to their project's Finished list
+- **Archive**, on organization sessions, moves them to their group's Done list in their project
   (§app.session-list/organizations), and the run's sentence says so: "Archived 2 sessions. 1 went to
-  its project's Finished list." ({n} > 1: "{n} went to their projects' Finished lists.")
+  its project's Done list." ({n} > 1: "{n} went to their projects' Done lists.")
 - **Archive** points one way for the whole selection. All archived → `Unarchive`. None archived →
   `Archive`. **A mix is a disabled control** that says what it found ("2 of these 3 are archived
   and the rest aren't. Select one kind, or the other."): guessing which half was meant is how a
@@ -1230,12 +1230,15 @@ draws once — org sessions included, the Overseer's never — so the number alw
 The organizations' sessions, in one region of their own: the **last region before the Archive**, so
 the pane reads Needs you → Recent → Groups → Live & web → **Organizations** → Archive. It is the only
 place in the pane that lists an organization session (§app.session-list/ordinary-surfaces): hand-offs
-and gathering sessions, offers, each project's overseer with its cleared conversations, and the coding
-sessions a project started. Shape: its own **Needs you** list first, then **organization → project →
-rows**, each project with a collapsed **Finished** list.
+and gathering sessions, offers, and the coding sessions a project started; each project's current
+overseer is not a row but an **eye on its project's heading**, and its cleared conversations are in
+no region (they are in the overseer's own History, §app.project-overseer/page). Shape: its own
+**Needs you** list first, then **organization → project**, each project's rows in three groups:
+**Conversations** and **Conflicts to settle** (each split Not started / In progress / Done) and
+**Builds** (running or waiting, then Done), every Done collapsed.
 
 ```html
-<!-- Omitted entirely when it has 0 rows (with a query: 0 hits), like the Archive. -->
+<!-- Omitted entirely when it has no row and no eye (with a query: 0 hits), like the Archive. -->
 <details class="sidebar-region sidebar-orgs" aria-labelledby="r-orgs" open>
   <!-- The Needs you head's pattern: the <summary> toggles, the <h2> is what the outline reads. -->
   <summary class="sidebar-orgs-summary">
@@ -1271,15 +1274,41 @@ rows**, each project with a collapsed **Finished** list.
          aria-label="Open the Mamluk Arabia page" title="Open the Mamluk Arabia page">…arrow-right…</a>
     </summary>
     <!-- one per project, by name; Other last -->
-    <h4 class="list-group-label org-project-label" title="~/webapps/rakiba-site">Rakiba site <span class="text-num">7</span></h4>
-    <ul class="list">…the current project overseer first, then rows by lastActiveAt, newest first…</ul>
-    <!-- collapsed, memory only; omitted when empty -->
-    <details class="archive-date org-finished">
-      <summary class="list-group-label archive-date-label"
-               title="Hand-offs that reached their goal or were closed, cleared overseer conversations, and sessions you archived.">
-        <svg class="icon icon-sm icon-twist" aria-hidden="true">…</svg> Finished <span class="text-num">4</span></summary>
+    <!-- the sticky project heading: the h4 is the outline's name, the eye sits beside it -->
+    <div class="org-project-head">
+      <h4 class="list-group-label org-project-label" title="~/webapps/rakiba-site">Rakiba site <span class="text-num">6</span></h4>
+      <!-- only while the project has a current overseer; hung into the right gutter -->
+      <a class="button button-icon button-ghost org-overseer" href="#/s/<its path>"
+         aria-label="Open the Rakiba site overseer · working" title="Open the Rakiba site overseer · working"
+         aria-current="page"><!-- only while its conversation is open -->
+        …eye…
+        <!-- at most one mark: Busy's pulsing dot (working), else the turn-error mark, else the unread dot -->
+      </a>
+    </div>
+    <!-- the project's groups, in this order; a group with no row is omitted -->
+    <section class="org-group" aria-labelledby="…">
+      <h5 class="org-group-label" title="Gathering sessions and offers sent to people.">Conversations <span class="text-num">5</span></h5>
+      <!-- each state only while it has rows; rows by lastActiveAt, newest first -->
+      <h6 class="org-state-label">Not started <span class="text-num">1</span></h6>
+      <ul class="list">…rows; line 2 is the hint: "Link not sent yet" / "Not opened yet" / "Opened, no reply yet"…</ul>
+      <h6 class="org-state-label">In progress <span class="text-num">2</span></h6>
       <ul class="list">…</ul>
-    </details>
+      <!-- collapsed, memory only -->
+      <details class="archive-date org-done">
+        <summary class="list-group-label archive-date-label" title="Done or closed, and the ones you archived.">
+          <svg class="icon icon-sm icon-twist" aria-hidden="true">…</svg> Done <span class="text-num">2</span></summary>
+        <ul class="list">…</ul>
+      </details>
+    </section>
+    <section class="org-group">
+      <h5 class="org-group-label" title="Sessions asking someone to settle two decisions that disagree.">Conflicts to settle <span class="text-num">1</span></h5>
+      …the same three states; each row's line 2 names what is in conflict: "In conflict: invoicing"…
+    </section>
+    <section class="org-group">
+      <h5 class="org-group-label" title="Coding sessions this project started.">Builds <span class="text-num">3</span></h5>
+      <ul class="list">…running or waiting…</ul>
+      <details class="archive-date org-done">…Done: merged (per git) or archived…</details>
+    </section>
   </details>
 </details>
 ```
@@ -1287,7 +1316,7 @@ rows**, each project with a collapsed **Finished** list.
 - **Which sessions.** Every search hit with `SessionSummary.org` (§app.organizations/org-sessions) — the
   same hit list every region reads, after the host filter and the query. `org` wins over every other
   field: a TUI-live org coding session, a web one, an archived one all live here and nowhere else in
-  the pane. Rows are the unchanged `SessionRow` — rail (a TUI word included), unread dot, turn-error
+  the pane — except a cleared overseer conversation, which no region lists. Rows are the unchanged `SessionRow` — rail (a TUI word included), unread dot, turn-error
   mark, needs-you mark, baton holder suffix, context ring — and open `#/s/<path>`.
 - **Its Needs you.** The region's first block, above the organizations: every org session **waiting on
   the operator**, one row per session, labelled with its place. A session waits on you when it isn't
@@ -1312,16 +1341,48 @@ rows**, each project with a collapsed **Finished** list.
   `title` is the project root, `~`-shortened, read from the project overseer's folder when the region
   holds one; otherwise the project's name (the list carries no project root). At
   folded width only project labels stick; org summaries don't, so two sticky levels don't eat the screen.
-- **Order inside a project.** The **current project overseer is pinned first** — it is the project's
-  hub — then rows by `lastActiveAt`, newest first, ties on `createdAt` then `id`
+- **Order inside a project.** Rows by `lastActiveAt`, newest first, ties on `createdAt` then `id`
   (`src/lib/session-order.ts`'s activity comparator): the question here is who replied.
-- **Finished**, a collapsed tail per project (memory only, like the Archive's date sections), holds the
-  project's finished sessions (`org.finished`: a hand-off `done` or `closed`, a cleared overseer
-  conversation) and any org session the operator archived. Omitted when empty.
-- **Counts are sessions.** The region head counts every row it holds once, Finished included (a Needs
-  you row is not counted twice); while searching it reads "· {hits} of {total}". Each org's count stays
-  visible open or closed, like a folder's in Live & web; each project counts all its rows, Finished
-  included, and Finished counts its own.
+- **The project overseer's eye.** The project's current overseer (`org.kind` `overseer`, not
+  finished) is never a row: it is a 44px ghost **eye** link at the end of its project's heading, hung
+  into the right gutter like the org link, opening `#/s/<its path>` (a plain link: nothing is
+  written). A project with no overseer yet has no eye; its project page's Start Overseer is the way
+  in. The eye reads only the session list, so nothing more is fetched, and carries at most one mark,
+  in this order: **working** (the row's Busy: Busy's pulsing dot, the one sanctioned animation),
+  **last turn failed** (the row's turn-error mark), **new reply** (the row's unread dot). Its name
+  says the same: "Open the {project} overseer", plus " · working", " · last turn failed" or " · new
+  reply". While its conversation is open the eye is tinted selected with `aria-current="page"`, like
+  the global Overseer's eye on `#/overseer`, and shows no failed or new-reply mark (you are looking at
+  it). Level and pause are not shown here: they are its chat head's (§app.project-overseer/page).
+  Should a project ever list two current overseers, the newest is the eye and the other stays a row.
+- **The project's groups**, in this order, each omitted while it has no row (a project with only an
+  overseer is its heading and eye):
+  - **Conversations**: its gathering sessions and offers (`org.kind` `gathering`/`offer`) that are not
+    settle sessions.
+  - **Conflicts to settle**: its settle sessions (`baton.settle`, §app.organizations/org-sessions),
+    whoever started them — the operator's Reconcile or re-route, a project overseer's reconcile, or
+    the run Sova starts itself after a resolution. Each row's line 2 names what is in conflict:
+    "In conflict: {area}".
+  - **Builds**: its coding sessions (`org.kind` `coding`: the overseer's and Start Coding Session's).
+  - A workspace file no project claims (`other`) is a plain row under its project ("Other"), with no
+    group.
+- **The three states** of a conversation or a settle session, each a label with its count, shown only
+  while it has rows: **Not started** — nobody it was sent to has written yet (`baton.written` absent),
+  even if a link was opened; **In progress** — someone has written and it isn't done or closed;
+  **Done** — `done` or `closed` (`org.finished`), or archived. A Not started row's line 2 is a hint:
+  "Link not sent yet" (no live link), "Opened, no reply yet" (a person opened a link, `baton.opened`),
+  else "Not opened yet"; one the operator holds (Needs you says it) has none. On a settle row the hint
+  follows the conflict: "In conflict: {area} · Opened, no reply yet".
+- **Builds** list the running and waiting ones (the row's own rail says which); a build **merged**
+  (per git, `org.finished`) or archived is in the group's Done.
+- **Done** is a collapsed tail in each group (memory only, like the Archive's date sections), omitted
+  when empty; it replaces the old per-project Finished list. A **cleared overseer conversation** (an
+  `overseer` session that is finished) is listed nowhere in the pane: its overseer's History opens it.
+- **Counts are sessions.** The region head counts every row it holds once, Done included (a Needs
+  you row is not counted twice); while searching it reads "· {hits} of {total}". The eye is not a row
+  and is not counted, and neither is a cleared overseer conversation. Each org's count stays visible
+  open or closed, like a folder's in Live & web; each project counts all its rows, Done included, and
+  each group, state and Done counts its own.
 - **Nothing waits unseen.** While any org session waits on you, the region head carries a warn chip —
   dot and word, "{k} waiting" — open or collapsed, and so does the spine door (below). Each org summary
   carries a wordless warn dot with its hidden clause (", {k} waiting on you") and the count in its
@@ -1329,34 +1390,38 @@ rows**, each project with a collapsed **Finished** list.
   agent works in any of its sessions (the folder head's mark, §app.session-list/content-rules).
 - **Open by default; a collapse is remembered for the tab** in `sessionStorage["sova:orgs-open"]`
   through `writeKey`, `"0"` collapsed and anything else open (the Needs you pattern). Orgs open by
-  default and Finished stays closed, both in memory only. **Forced open**, without changing the stored
-  choice: while a search is on (with every org and Finished that holds a hit); and while the selected
-  session (from the URL) is inside — then its org and, if needed, its Finished are forced open too, so
-  its `aria-current` row is visible (the Archive's case 2: it doesn't close under the operator while
-  they're on that session).
+  default and every Done stays closed, both in memory only. **Forced open**, without changing the stored
+  choice: while a search is on (with every org and Done that holds a hit); and while the selected
+  session (from the URL) is inside — then its org and, if needed, its Done are forced open too, so
+  its `aria-current` row, or its project's `aria-current` eye, is visible (the Archive's case 2: it
+  doesn't close under the operator while they're on that session).
 - **The org link.** Each org summary ends with a 44px ghost icon link to `#/orgs/<id>`, hung into the
   right gutter like a group's `⋯`; it stops its own click and keydown so it doesn't also toggle the org.
   Names truncate with an ellipsis, the full name in `title`.
 - **Archiving.** Org sessions are web sessions, so the session head's Archive button and the drag out of
   the pane still work (§app.session-list/regions-top-and-archive "Archiving"). The row moves to its
-  project's **Finished**, never to the Archive; Unarchive moves it back. A workspace file is never
+  group's **Done** in its project, never to the Archive; Unarchive moves it back. A workspace file is never
   deleted by archiving, even empty (§app.session-list/archive-org-guard); an org coding session
   nothing was ever sent in is a husk like any other and is deleted. Toasts: "Archived. Find it in
-  {project}, under Finished." and "Moved back to {project}." (no project: "Archived. Find it in {org},
-  under Finished." / "Moved back to {org}."; a project with no name left: "its project").
+  {project}, under Done." and "Moved back to {project}." (no project: "Archived. Find it in {org},
+  under Done." / "Moved back to {org}."; a project with no name left: "its project").
 - **Never grouped.** An org session can't be put in a group (§app.session-list/groups).
 - **Search** matches an org row on the org's name, the project's name and the baton holder's name, on
-  top of the usual fields, so "rakiba" or a person's name finds it (§app.session-list/search).
+  top of the usual fields, and a settle session on its conflict's area, so "rakiba", a person's name
+  or "invoicing" finds it (§app.session-list/search). A
+  search that hits a project's current overseer and nothing else there shows that project's heading
+  and eye with no rows.
 - **The spine** carries a door for the region, shown exactly when the region is on screen: the
   `building` icon over the region head's count, named "Organizations · {n} sessions" in its `title`
   and `aria-label`, plus " · {k} waiting on you" and a warn dot at its corner while any org session
   waits (§app.session-list/spine). Pressing it expands the pane, scrolls the region into view and
   focuses its `<summary>`; the stored open state is left alone.
 - **Accessibility.** The region head is the Needs you region's form, a `<summary>` wrapping the `h2`
-  the outline reads; org heads and Finished are `<summary>` with plain spans (headings inside a
+  the outline reads; org heads and Done are `<summary>` with plain spans (headings inside a
   summary are exposed inconsistently — the Archive's rule); the Needs you label is an `h3`, project
-  labels `h4`. The warn and working dots carry hidden words. Enter or Space toggles; the org link is a
-  real link with a name.
+  labels `h4`, group labels `h5` and state labels `h6`, and a project's eye is a real link beside its `h4`, never inside it. The warn and
+  working dots carry hidden words. Enter or Space toggles; the org link and the eye are real links
+  with a name.
 
 ## §app.session-list/archive-by-date — Archive by date
 

@@ -10,7 +10,7 @@ import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, registerRows, registerTranscript } from "../lib/jump";
 import type { ScrollSpot } from "../lib/transcript-cache";
-import { carriedStart, chunkStart, FIRST_CHUNK, initialStart, nextChunk, rowEstimate, rowIndexFor } from "../lib/tail-render";
+import { carriedStart, chunkStart, FIRST_CHUNK, type ImagesAt, initialStart, nextChunk, rowEstimate, rowIndexFor } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { isChangeRow } from "../lib/change-rows";
@@ -438,6 +438,13 @@ export function HistoryItems(props: {
     for (const it of props.items) if (it.kind === "tool-call" && it.toolCallId) ids.add(it.toolCallId);
     return ids;
   });
+  /** The images a row draws, for its height estimate: a user row's own (a brief row draws none), a
+      tool call's result's, an orphan result's own; a paired result draws nothing. */
+  const shownImages = (item: TranscriptItem): [string[] | undefined, ImagesAt] =>
+    item.kind === "user" ? [isBriefText(item.text) ? undefined : item.images, "user"]
+    : item.kind === "tool-call" ? [item.toolCallId ? results().get(item.toolCallId)?.images : undefined, "tool"]
+    : item.kind === "tool-result" ? [item.toolCallId && calls().has(item.toolCallId) ? undefined : item.images, "tool"]
+    : [undefined, "user"];
   const latestAlign = createMemo(() => latestAlignId(props.items));
   /** User rows a baton participant sent: target id → their ref, in any order (§app.baton/attribution). */
   const batonSent = createMemo(() => {
@@ -561,7 +568,7 @@ export function HistoryItems(props: {
           ) : (
           // The row's box: the outline strip finds an entry's row by it (Jump to Message), and the
           // estimate is its height until it is first drawn (content-visibility, app.css).
-          <div class="entry" data-entry={item.id} style={{ "--entry-est": rowEstimate(item) }}>
+          <div class="entry" data-entry={item.id} style={{ "--entry-est": rowEstimate(item, ...shownImages(item)) }}>
             <Switch fallback={<Unknown raw={item.raw} />}>
               <Match when={item.kind === "user" && isBriefText(item.text)}>
                 <BriefRow text={item.text ?? ""} time={timestampOf(item.raw)} />

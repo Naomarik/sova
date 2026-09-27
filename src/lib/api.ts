@@ -961,6 +961,8 @@ export const openProjectOverseer = (orgId: string, projectId: string) => request
 export const patchProjectOverseer = (orgId: string, projectId: string, patch: ProjectOverseerPatch) =>
   request<ProjectOverseerInfo>(overseerBase(orgId, projectId), jsonInit("PATCH", patch));
 export const runProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/run`, jsonInit("POST"));
+/** A new conversation; the current one moves to its read-only history. */
+export const clearProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/clear`, jsonInit("POST"));
 export const projectOverseerActions = (orgId: string, projectId: string, limit = 30) =>
   request<OverseerAction[]>(`${overseerBase(orgId, projectId)}/actions?limit=${limit}`);
 export const projectOverseerIdeas = (orgId: string, projectId: string) => request<OverseerIdeasInfo>(`${overseerBase(orgId, projectId)}/ideas`);

@@ -2003,8 +2003,10 @@ a.group-option { color: inherit; text-decoration: none; }
    system. The mono treatment belongs to the pickers `.mode-option-id` was borrowed from. */
 .action-menu .mode-option-id { font-family: var(--font-body); font-size: var(--fs-body); }
 /* Menu rows, not picker rows: the row is a label beside its icon, and the icon keeps the
-   design system's --space-2 from it at every row height. */
-.action-menu .mode-option { gap: var(--space-2); padding: var(--space-1) var(--space-3); }
+   design system's --space-2 from it at every row height. Icon and label sit on the row's centre
+   line: the picker's top alignment left a 16px icon above a 20px label line, and a one-line label
+   above the middle of its min-height row. */
+.action-menu .mode-option { align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-3); }
 .action-menu .mode-option .icon { flex: none; color: var(--color-ink-muted); }
 .action-menu .mode-option[aria-disabled="true"] { cursor: not-allowed; }
 /* The panel is the model menu's column flex with overflow hidden, so rows used to SHRINK to their

@@ -42,6 +42,15 @@ function busyGate(w: Row): Gate {
   return null;
 }
 
+/** The merge line's words before its target (the caller adds the target and the last merge's time), or null:
+    merged; merged before, with commits since (git, not the record, says it is merged). */
+export function mergeNote(w: Pick<CodingWorktree, "state" | "merged" | "mergedAt" | "newSinceMerge">): string | null {
+  if (w.merged) return w.state === "merged" || w.mergedAt ? "Merged into" : null;
+  const n = w.newSinceMerge ?? 0;
+  if (!w.mergedAt || n < 1) return null;
+  return `${n} new commit${n === 1 ? "" : "s"} since the last merge into`;
+}
+
 /** Merge Branch is offered on a branch not yet in its target: open, or its folder gone (removed or missing) before a merge. */
 export const offersMerge = (w: Row): boolean => (w.state === "open" || w.state === "removed" || w.state === "missing") && !w.merged && !w.branchGone;
 /** Remove Worktree is offered while the worktree folder is there. */

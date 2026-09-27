@@ -304,6 +304,10 @@ describe("decisions → conflicts → draft → promotion", async () => {
     const row = baton.batonById(c.batonSessionId!)!.row;
     assert.equal(row.holder, carlos.id);
     assert.equal(baton.batonSummaryField(c.batonPath!)?.sendLink?.to, "Carlos Gate", "Needs-you: send Carlos his link");
+    // A settle session: its row names the conflict, and the list says what is in conflict.
+    assert.deepEqual(row.conflict, { id: c.id, area: "Invoicing" });
+    assert.deepEqual(baton.batonSummaryField(c.batonPath!)?.settle, { area: "Invoicing" });
+    assert.equal(baton.batonSummaryField(f1)?.settle, undefined, "an ordinary gathering session is none");
     assert.match(row.goal, /Clients get 30 days\./);
     assert.match(row.goal, /No, billing is 60 days\./);
     assert.equal(info.decisions.find((d) => d.id === d60)!.state, "conflict");
@@ -426,6 +430,9 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.equal(baton.batonById(again.batonSessionId!)!.row.holder, carlos.id);
     assert.equal(baton.batonById(first)!.row.state, "closed");
     assert.deepEqual(ended, [first]);
+    // Both are settle sessions of the same conflict: the closed one keeps its mark (a Done row, still a conflict's).
+    assert.deepEqual(baton.batonById(first)!.row.conflict, { id: c.id, area: "payroll export" });
+    assert.deepEqual(baton.batonById(again.batonSessionId!)!.row.conflict, { id: c.id, area: "payroll export" });
     await assert.rejects(reconcile.routeConflictNow(org.id, project.id, c.id, "p_nobody"), /active person/);
   });
 
@@ -633,6 +640,8 @@ describe("decisions → conflicts → draft → promotion", async () => {
       }
       assert.ok(c, "the watcher's run found and routed it");
       assert.deepEqual(baton.batonById(c!.batonSessionId!)!.row.owner, overseer, "still the overseer's, not the operator's");
+      // The automatic post-resolution session is a settle session like any other.
+      assert.deepEqual(baton.batonById(c!.batonSessionId!)!.row.conflict, { id: c!.id, area: "gritting" });
     } finally {
       stop();
     }

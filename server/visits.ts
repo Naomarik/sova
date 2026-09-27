@@ -467,6 +467,24 @@ export function lastVisits(orgId: string): Record<string, string> {
   return out;
 }
 
+/** Per folded log, the sessions a person opened a link of, and how many lines that was read from. */
+const openedBy = new WeakMap<OrgLog, { lines: number; ids: Set<string> }>();
+
+/**
+ * The baton sessions of an org that a person (never a link previewer or a scanner) opened a hand-off
+ * link of: the session list's `opened` (§app.organizations/org-sessions). Read off the folded log,
+ * again only when it has grown.
+ */
+export function openedSessions(orgId: string): ReadonlySet<string> {
+  const log = logOf(orgId);
+  const had = openedBy.get(log);
+  if (had && had.lines === log.lines.length) return had.ids;
+  const ids = new Set<string>();
+  for (const l of log.lines) if (l.kind === "visit" && !l.bot && l.via !== "owner" && l.sessionId) ids.add(l.sessionId);
+  openedBy.set(log, { lines: log.lines.length, ids });
+  return ids;
+}
+
 /** Forget every folded log (tests: a fresh process). */
 export function resetVisitState(): void {
   logs.clear();

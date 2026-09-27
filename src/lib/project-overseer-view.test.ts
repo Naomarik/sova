@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { IdeaRecord } from "../../shared/protocol";
 import { IDEA_ID_RE } from "../../shared/protocol";
-import { actionLine, allowanceLine, gapArea, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, tokens, toolWords, waitingLines, watchHint } from "./project-overseer-view";
-import { DEFAULT_PO_CAPS } from "../../shared/project-overseer";
+import { actionLine, allowanceLine, gapArea, headState, historyTitle, itemSendInput, lastRunLine, lastRunTail, levelName, startedWords, statusLines, waitingToLook, limitsProblem, openIdeas, operatorIdeaId, pendingLine, tokens, toolWords, waitingLines, watchHint } from "./project-overseer-view";
+import { AUTONOMY_MEANING, DEFAULT_PO_CAPS, type Autonomy } from "../../shared/project-overseer";
 
 const idea = (id: string, status: IdeaRecord["status"], tags: string[] = []): IdeaRecord => ({
   id,
@@ -150,4 +150,76 @@ test("what it waits for, one line per held item; the message allowance's isn't s
     2_000_000,
   );
   assert.deepEqual(lines, ["Waiting until midnight: today's 6 gathering sessions are used.", "Waiting until midnight: today's 12 looks are used.", "Waiting for you: the coding token budget is spent (2.0M of 2.0M)."]);
+});
+
+// ---- the chat head (§app.project-overseer/page) ----
+
+const headInfo = (o: { chosen?: Autonomy; effective?: Autonomy; reason?: string; paused?: string | null } = {}) => ({
+  settings: { autonomy: o.chosen ?? "L1" },
+  effective: { autonomy: o.effective ?? o.chosen ?? "L1", ...(o.reason ? { reason: o.reason } : {}) },
+  paused: o.paused ?? null,
+});
+
+test("the head's state chip: Working while its turn runs, else L0 in force while forced, else none", () => {
+  const idle = headState(headInfo(), false);
+  const working = headState(headInfo({ effective: "L0", reason: "Paused." , paused: "2026-09-01" }), true);
+  const forced = headState(headInfo({ chosen: "L2", effective: "L0", reason: "The roster has no active people yet." }), false);
+  const paused = headState(headInfo({ chosen: "L0", paused: "2026-09-01", reason: "Paused at L0." }), false);
+  const chosenL0 = headState(headInfo({ chosen: "L0" }), false);
+  assert.equal(idle, null);
+  assert.equal(chosenL0, null, "L0 by choice is not a warning");
+  assert.deepEqual([working?.tone, working?.text], ["accent", "Working"], "working wins over forced");
+  assert.deepEqual([forced?.tone, forced?.text, forced?.title], ["warn", "L0 in force", "The roster has no active people yet."]);
+  assert.equal(paused?.tone, "warn", "a pause is shown even with L0 chosen");
+  assert.notEqual(working?.text, forced?.text);
+});
+
+test("the level button names the level, its meaning and, only while forced, what is in force", () => {
+  const plain = levelName(headInfo({ chosen: "L2" }));
+  const forced = levelName(headInfo({ chosen: "L2", effective: "L0", reason: "x" }));
+  assert.ok(plain.includes("L2") && plain.includes(AUTONOMY_MEANING.L2), plain);
+  assert.ok(!plain.includes("In force"), plain);
+  assert.ok(forced.startsWith(plain.replace(/ Change level\.$/, "")) && forced.includes("In force now: L0."), forced);
+  assert.match(plain, /Change level\.$/);
+});
+
+test("status line 1: the last run in the project page's words, then how many reasons wait; never a time for the next look", () => {
+  const run = { at: "t", reasons: ["The session finished."], outcome: "finished" as const };
+  assert.equal(lastRunLine(null, ""), "It hasn't looked on its own yet.");
+  assert.equal(lastRunLine(run, "31m ago"), "Last looked on its own 31m ago, after the session finished.");
+  assert.equal(waitingToLook(0), "");
+  assert.equal(waitingToLook(1), "Waiting to look at 1 thing.");
+  assert.equal(waitingToLook(3), "Waiting to look at 3 things.");
+});
+
+test("status strip: at most 3 lines, each only with something to say; a pause leads with its reason and a Resume", () => {
+  const usage = (o: { pending?: string[]; used?: number; held?: boolean } = {}) => ({
+    pending: o.pending ?? [],
+    allowance: { today: { ...Object.fromEntries(["gather", "promote", "create", "prompt"].map((k) => [k, { used: 0, max: 6 }])), gather: { used: o.used ?? 0, max: 6 } } },
+    held: o.held ? [{ key: "day:gather" }] : [],
+    codingTokens: 0,
+  });
+  const base = { ...headInfo(), settings: { autonomy: "L1" as Autonomy, caps: DEFAULT_PO_CAPS, tokenBudget: null }, lastRun: null };
+  const quiet = statusLines({ ...base, usage: usage() } as never, "");
+  assert.deepEqual(quiet, { lines: ["It hasn't looked on its own yet."], resume: null, pendingTitle: "" });
+  const busy = statusLines({ ...base, usage: usage({ pending: ["A.", "B."], used: 2, held: true }) } as never, "");
+  assert.equal(busy.lines.length, 3);
+  assert.equal(busy.lines[0], "It hasn't looked on its own yet. Waiting to look at 2 things.");
+  assert.equal(busy.pendingTitle, "A. B.");
+  assert.match(busy.lines[1]!, /^Today on its own: 2 of 6 gathering sessions/);
+  assert.match(busy.lines[2]!, /^Waiting until midnight/);
+  const paused = statusLines({ ...base, ...headInfo({ chosen: "L2", effective: "L0", reason: "Paused at L0: attached here.", paused: "2026-09-01" }), settings: { ...base.settings, autonomy: "L2" }, usage: usage({ pending: ["A."], used: 2, held: true }) } as never, "");
+  assert.equal(paused.lines.length, 3, "still at most 3 lines");
+  assert.equal(paused.lines[0], "Paused at L0: attached here.");
+  assert.equal(paused.resume, "L2", "Resume at the chosen level");
+  const roster = statusLines({ ...base, ...headInfo({ chosen: "L2", effective: "L0", reason: "The roster has no active people yet." }), settings: { ...base.settings, autonomy: "L2" }, usage: usage() } as never, "");
+  assert.equal(roster.lines[0], "The roster has no active people yet.");
+  assert.equal(roster.resume, null, "a level change can't fix an empty roster");
+});
+
+test("history rows and started rows", () => {
+  assert.equal(historyTitle("Untitled"), "No messages");
+  assert.equal(historyTitle("Overseer · Rakiba site"), "Overseer · Rakiba site");
+  assert.equal(startedWords({ kind: "gathering", state: "open" }), "Gathering · open");
+  assert.equal(startedWords({ kind: "coding", state: "working" }), "Coding · working");
 });

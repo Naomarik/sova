@@ -562,7 +562,9 @@ export function HistoryItems(props: {
           if (arriving) return;
           const now = [...waiters];
           waiters.clear();
-          for (const fn of now) fn();
+          // Outside this effect: a waiter's jump builds rows (`ensure`), and a build started from
+          // inside a reactive update reaches the DOM only after it, too late for the jump to find them.
+          if (now.length) queueMicrotask(() => now.forEach((fn) => fn()));
         },
       ),
     );

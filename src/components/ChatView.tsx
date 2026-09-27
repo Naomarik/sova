@@ -516,7 +516,10 @@ export function ChatView(props: {
             const next = helloItems(items(), msg.items, msg.older);
             setItems(next.items);
             setArriving(next.arriving);
-            setWhole(!next.arriving);
+            // Rows kept above the hello's first row are that row's ancestors, entries that never
+            // change: a list that was whole stays whole while the same rows arrive again (a
+            // rewind, a reconnect), so its counts and Fan Out don't blink.
+            setWhole(!next.arriving || (next.arriving.mode === "buffer" && whole()));
             setNewFrom(msg.items[0]?.id ?? null);
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));

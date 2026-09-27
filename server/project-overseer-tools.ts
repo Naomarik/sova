@@ -257,6 +257,9 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
     return { coding, batons: host.batons() };
   }
 
+  /** This project overseer's own conversation: by id, or by its marker for this project. */
+  const isOwn = (s: SessionSummary) => s.id === host.overseerId() || (s.projectOverseer?.projectId === host.project().id && s.projectOverseer?.orgId === host.project().orgId);
+
   const names = () => {
     const out: Record<string, string> = {};
     for (const x of host.roster()) out[x.id] = x.name;
@@ -502,12 +505,16 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
         // The sessions it may read: the project's coding sessions and its gathering sessions.
         session: async (ref) => {
           const id = sessionRef(ref);
+          // Its own conversation is out of scope; found here only so the refusal can say why.
+          const own = (await host.sessions()).find((x) => x.id === id && isOwn(x));
+          if (own) return own;
           const { coding, batons } = await scoped();
           const s = coding.find((x) => x.id === id);
           if (s) return s;
           if (!batons.some((b) => b.sessionId === id)) return null;
           return (await host.sessions()).find((x) => x.id === id) ?? null;
         },
+        isSelf: isOwn,
         idea: (ref) => {
           const m = readManifest(p.ideas);
           const id = resolveIdeaId(ref, m);

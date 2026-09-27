@@ -2442,11 +2442,16 @@ export interface SovaConfirmDetails {
 }
 
 /** One thing a confirm card is about. A session row: its folder's short name (`project`), last
-    activity (ISO), a one-line summary when it has one, and how many subagents were working. */
+    activity (ISO), a one-line summary when it has one, and how many subagents were working.
+    `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
+    sentences, `CONFIRM_NOTE_MAX` characters). */
 export type SovaConfirmItem =
-  | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number }
-  | { kind: "idea"; id: string; title: string }
-  | { kind: "todo"; id: string; text: string };
+  | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; note?: string }
+  | { kind: "idea"; id: string; title: string; note?: string }
+  | { kind: "todo"; id: string; text: string; note?: string };
+
+/** The longest note one confirm item may carry. */
+export const CONFIRM_NOTE_MAX = 220;
 
 // --- The Overseer's ideas backlog: spec-shaped (manifest + one .md per idea, § ids), its own
 // small reader and link graph. Nothing is deleted; `dropped` is terminal. ---

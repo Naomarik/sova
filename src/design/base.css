@@ -5364,8 +5364,8 @@ a.subagent-row { text-decoration: none; }
 .overseer-confirm-answer .icon { color: var(--status-success); }
 .overseer-confirm-hint { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 /* What the card is about: one compact row per session, idea or todo, the
-   first 8 shown. A session row is its title link, then muted "project · 3d ago",
-   a warn chip while it has subagents working, and its summary on one muted line. */
+   first 8 shown. A session row is its summary (else title) as a link, then muted
+   "project · 3d ago" and a warn chip while it has subagents working; the note under it. */
 .overseer-confirm-detail + .overseer-confirm-items { padding-top: 0; }
 .overseer-confirm-items { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
 .overseer-confirm-list { list-style: none; margin: 0; padding: 0; align-self: stretch; }
@@ -5378,18 +5378,23 @@ a.subagent-row { text-decoration: none; }
   padding: var(--space-1) 0;
   border-top: var(--stroke-thin) solid var(--color-border);
 }
+/* Straight under the head (no detail), the head's border already divides. */
+.card-head + .overseer-confirm-items .overseer-confirm-item:first-child { border-top: none; }
 .overseer-confirm-item-line { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: var(--space-2); row-gap: var(--space-1); min-width: 0; }
 .overseer-confirm-item-line .chip { align-self: center; }
 .overseer-confirm-item-name { min-width: 0; overflow-wrap: anywhere; }
 .overseer-confirm-item-meta { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); white-space: nowrap; }
 .overseer-confirm-idea-id { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
-.overseer-confirm-item-summary {
-  font-size: var(--fs-caption);
-  line-height: var(--lh-caption);
-  color: var(--color-ink-muted);
+/* The Overseer's note: what the item is and why the card acts on it. Body ink,
+   not muted — it is the reason to read the row; two lines, then clamped. */
+.overseer-confirm-item-note {
+  color: var(--color-ink);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 .overseer-confirm-more { margin-inline-start: calc(-1 * var(--space-3)); gap: var(--space-1); }
 

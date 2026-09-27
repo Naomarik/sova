@@ -388,5 +388,6 @@ describe("sova_confirm items (the shared tool)", () => {
     assert.match((out.content[0] as { text: string }).text, /^Shown to the operator under your reply/);
     assert.match((out.content[0] as { text: string }).text, /- \[Inside\]\(sova:\/\/s\/in-root\) \(in-root\)/);
     await assert.rejects(f.run("sova_confirm", { title: "?", options: [{ label: "Go" }], items: { sessions: ["in-root", "outside", "global"] } }), /sessions: outside, global/);
+    await assert.rejects(f.run("sova_confirm", { title: "?", options: [{ label: "Go" }], items: { sessions: ["po-self"] } }), /po-self is your own conversation/);
   });
 });

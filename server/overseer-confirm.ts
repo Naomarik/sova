@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { SessionSummary, SovaConfirmDetails, SovaConfirmItem } from "../shared/protocol";
+import { CONFIRM_NOTE_MAX, type SessionSummary, type SovaConfirmDetails, type SovaConfirmItem } from "../shared/protocol";
 
 /**
  * `sova_confirm`, shared by the Overseer and the project overseer: an inline card with a question
@@ -20,6 +20,8 @@ export const CONFIRM_ITEMS_MAX = 50;
 export interface ConfirmLookup {
   /** A session reference in any form the tools print it (a bare id, `s/<id>`, `sova://s/<id>`, a markdown link). */
   session(ref: string): Promise<SessionSummary | null>;
+  /** The asking overseer's own conversation: never an item. */
+  isSelf(s: SessionSummary): boolean;
   idea(ref: string): { id: string; title: string } | null;
   todo(ref: string): { id: string; text: string } | null;
 }
@@ -37,7 +39,23 @@ const cut = (s: string, max: number) => {
   const t = s.replace(/\s+/g, " ").trim();
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 };
-const ids = (v: unknown): string[] => [...new Set((Array.isArray(v) ? v : []).filter((x): x is string => typeof x === "string").map((x) => x.trim()).filter(Boolean))];
+const ITEM_KINDS = ["sessions", "ideas", "todos"];
+const ITEMS_EXAMPLE = '{"sessions": [{"id": "<session id>", "note": "What it is. Why it fits."}], "todos": [{"id": "td_…", "note": "…"}]}';
+
+/** One requested item: its id as the model wrote it, and its note (whitespace collapsed). */
+type Wanted = { ref: string; note?: string };
+/** A list of ids, each a bare string or `{id, note}`; the first mention of an id wins. */
+function wanted(v: unknown): Wanted[] {
+  const out = new Map<string, Wanted>();
+  for (const x of Array.isArray(v) ? v : []) {
+    const ref = (typeof x === "string" ? x : x && typeof x === "object" && typeof (x as { id?: unknown }).id === "string" ? (x as { id: string }).id : "").trim();
+    if (!ref || out.has(ref)) continue;
+    const raw = x && typeof x === "object" ? (x as { note?: unknown }).note : undefined;
+    const note = typeof raw === "string" ? raw.replace(/\s+/g, " ").trim() : "";
+    out.set(ref, note ? { ref, note } : { ref });
+  }
+  return [...out.values()];
+}
 const link = (s: { id: string; title: string }) => `[${s.title.replace(/[[\]]/g, "")}](sova://s/${s.id})`;
 
 /** A session's card row: the snapshot the card shows. */
@@ -55,46 +73,58 @@ export function sessionItem(s: SessionSummary): SovaConfirmItem {
   };
 }
 
-/** Resolve `items` to card rows, refusing unknown ids (all of them, named) and more than the cap. */
+/** Resolve `items` to card rows, refusing (all at once, each named) unknown ids, the overseer's own
+    conversation and over-long notes, and more than the cap. */
 export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, refusal: (m: string) => Error): Promise<SovaConfirmItem[]> {
   if (raw === undefined || raw === null) return [];
-  if (typeof raw !== "object" || Array.isArray(raw)) throw refusal("items is an object: { sessions?: [ids], ideas?: [ids], todos?: [ids] }.");
+  if (typeof raw !== "object" || Array.isArray(raw)) throw refusal("items is an object: { sessions?: [...], ideas?: [...], todos?: [...] }, each entry an id or { id, note }.");
   const r = raw as Record<string, unknown>;
-  const want = { sessions: ids(r.sessions), ideas: ids(r.ideas), todos: ids(r.todos) };
+  const stray = Object.keys(r).filter((k) => !ITEM_KINDS.includes(k));
+  if (stray.length)
+    throw refusal(`No card was shown. items takes only sessions, ideas and todos, each a list; this one has ${stray.join(", ")}. Put each entry in its list, e.g. ${ITEMS_EXAMPLE}.`);
+  const want = { sessions: wanted(r.sessions), ideas: wanted(r.ideas), todos: wanted(r.todos) };
   const total = want.sessions.length + want.ideas.length + want.todos.length;
   if (total > CONFIRM_ITEMS_MAX) throw refusal(`A card lists at most ${CONFIRM_ITEMS_MAX} items; this one has ${total}. Split it, or ask about the first ${CONFIRM_ITEMS_MAX}.`);
   const out: SovaConfirmItem[] = [];
   const unknown = { sessions: [] as string[], ideas: [] as string[], todos: [] as string[] };
+  const self: string[] = [];
+  const long: string[] = [];
   const seen = new Set<string>();
-  for (const ref of want.sessions) {
-    const s = await lookup.session(ref);
-    if (!s) unknown.sessions.push(ref);
+  const noted = <T extends SovaConfirmItem>(item: T, w: Wanted): T => {
+    if (w.note && w.note.length > CONFIRM_NOTE_MAX) long.push(`${w.ref} (${w.note.length})`);
+    return w.note ? { ...item, note: w.note } : item;
+  };
+  for (const w of want.sessions) {
+    const s = await lookup.session(w.ref);
+    if (!s) unknown.sessions.push(w.ref);
+    else if (lookup.isSelf(s)) self.push(w.ref);
     else if (!seen.has(s.id)) {
       seen.add(s.id);
-      out.push(sessionItem(s));
+      out.push(noted(sessionItem(s), w));
     }
   }
-  for (const ref of want.ideas) {
-    const i = lookup.idea(ref);
-    if (!i) unknown.ideas.push(ref);
+  for (const w of want.ideas) {
+    const i = lookup.idea(w.ref);
+    if (!i) unknown.ideas.push(w.ref);
     else if (!seen.has(i.id)) {
       seen.add(i.id);
-      out.push({ kind: "idea", id: i.id, title: cut(i.title, 120) });
+      out.push(noted({ kind: "idea", id: i.id, title: cut(i.title, 120) }, w));
     }
   }
-  for (const ref of want.todos) {
-    const t = lookup.todo(ref);
-    if (!t) unknown.todos.push(ref);
+  for (const w of want.todos) {
+    const t = lookup.todo(w.ref);
+    if (!t) unknown.todos.push(w.ref);
     else if (!seen.has(t.id)) {
       seen.add(t.id);
-      out.push({ kind: "todo", id: t.id, text: cut(t.text, 200) });
+      out.push(noted({ kind: "todo", id: t.id, text: cut(t.text, 200) }, w));
     }
   }
+  const problems: string[] = [];
   const missing = (Object.entries(unknown) as [string, string[]][]).filter(([, v]) => v.length).map(([k, v]) => `${k}: ${v.join(", ")}`);
-  if (missing.length)
-    throw refusal(
-      `No card was shown: these ids match nothing (${missing.join("; ")}). List them again (sova_list_sessions, sova_ideas, sova_todos) and use the ids exactly as printed.`,
-    );
+  if (missing.length) problems.push(`These ids match nothing (${missing.join("; ")}). List them again (sova_list_sessions, sova_ideas, sova_todos) and use the ids exactly as printed.`);
+  if (self.length) problems.push(`${self.join(", ")} is your own conversation; a card never lists it. Leave it out.`);
+  if (long.length) problems.push(`A note is at most ${CONFIRM_NOTE_MAX} characters (two short sentences); these are longer: ${long.join(", ")}. Shorten them.`);
+  if (problems.length) throw refusal(`No card was shown. ${problems.join(" ")}`);
   return out;
 }
 
@@ -106,15 +136,23 @@ export function confirmResult(items: SovaConfirmItem[], audience: "user" | "oper
   const sessions = items.filter((i) => i.kind === "session");
   const ideas = items.filter((i) => i.kind === "idea");
   const todos = items.filter((i) => i.kind === "todo");
-  if (sessions.length) lines.push("Sessions:", ...sessions.map((s) => `- ${link(s)} (${s.id})`));
-  if (ideas.length) lines.push("Ideas:", ...ideas.map((i) => `- ${i.id} — ${i.title}`));
-  if (todos.length) lines.push("Todos:", ...todos.map((t) => `- ${t.id} · ${t.text}`));
+  const note = (i: SovaConfirmItem) => (i.note ? ` — ${i.note}` : "");
+  if (sessions.length) lines.push("Sessions:", ...sessions.map((s) => `- ${link(s)} (${s.id})${note(s)}`));
+  if (ideas.length) lines.push("Ideas:", ...ideas.map((i) => `- ${i.id} — ${i.title}${note(i)}`));
+  if (todos.length) lines.push("Todos:", ...todos.map((t) => `- ${t.id} · ${t.text}${note(t)}`));
   return lines.join("\n");
 }
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object", properties, required, additionalProperties: false });
 const str = (description: string, extra: Record<string, unknown> = {}) => ({ type: "string", description, ...extra });
-const idList = (description: string) => ({ type: "array", items: { type: "string" }, description });
+const NOTE_DESC =
+  `What the item is, then why the action fits it: at most 2 short sentences, ${CONFIRM_NOTE_MAX} characters, plain text. ` +
+  'E.g. "Push notifications for Overseer briefs. Merged to master yesterday, nothing running."';
+const idList = (description: string) => ({
+  type: "array",
+  items: { anyOf: [{ type: "string" }, { type: "object", properties: { id: { type: "string" }, note: { type: "string", description: NOTE_DESC } }, required: ["id"], additionalProperties: false }] },
+  description: `${description} Each entry is { id, note } (a bare id still works).`,
+});
 
 export function confirmTool(d: ConfirmToolDeps): Tool {
   const who = d.audience;
@@ -124,7 +162,8 @@ export function confirmTool(d: ConfirmToolDeps): Tool {
     description:
       `Show the ${who} an inline card with a question and buttons, under the reply you wrote. Use it when a request is ambiguous or an action is dangerous or large. ` +
       `Write your reply first (what you found, and why you ask), then call this LAST: the card ends your turn, and the ${who}'s choice arrives as their next message (the option's reply text, or its label). ` +
-      `A card about specific things (archive, tick, send, …) lists every one of them in items, so the ${who} sees exactly what the buttons act on.`,
+      `A card about specific things (archive, tick, send, …) lists every one of them in items, so the ${who} sees exactly what the buttons act on, ` +
+      `and gives each one a note: what it is, then why the action fits it, in at most 2 short sentences (e.g. "Push notifications for Overseer briefs. Merged to master yesterday, nothing running.").`,
     promptSnippet: `ask the ${who} with inline buttons, as the last call of your reply`,
     parameters: obj(
       {
@@ -144,13 +183,16 @@ export function confirmTool(d: ConfirmToolDeps): Tool {
             ["label"],
           ),
         },
+        // Not closed: a misplaced key reaches execute, whose refusal says where it goes (pi's own
+        // "schema is false" does not).
         items: {
-          ...obj({
+          type: "object",
+          properties: {
             sessions: idList("Session ids (or sova://s/<id> links)."),
             ideas: idList("Idea ids (§ns/name)."),
             todos: idList("Todo ids (td_…)."),
-          }),
-          description: `Every session, idea or todo the question is about, at most ${CONFIRM_ITEMS_MAX}. Required when the card acts on specific things (archive, tick, send, …). The card lists them.`,
+          },
+          description: `Every session, idea or todo the question is about, at most ${CONFIRM_ITEMS_MAX}. Required when the card acts on specific things (archive, tick, send, …); then give every item a note. The card lists them. Shape: ${ITEMS_EXAMPLE}.`,
         },
       },
       ["title", "options"],

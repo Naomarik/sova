@@ -214,3 +214,21 @@ test("confirm details: items parse tolerantly; a card without them has no items 
   assert.ok(old && !("items" in old), "an old card parses as before");
   assert.ok(!("items" in confirmDetails({ title: "Go?", options: ["Yes"], items: "s1" })!), "items that aren't a list are ignored");
 });
+
+test("confirm details: an item's note parses on every kind, blank or non-string notes are dropped", () => {
+  const d = confirmDetails({
+    title: "Archive?",
+    options: ["Yes"],
+    items: [
+      { kind: "session", id: "s1", title: "Parser", summary: "Parser fix", note: "Parser fix.  Merged,\n nothing running." },
+      { kind: "idea", id: "§sova/x", title: "X", note: "  " },
+      { kind: "todo", id: "td_aaaaaaaa", text: "Do it", note: 42 },
+      { kind: "todo", id: "td_bbbbbbbb", text: "Other", note: "Covered by s1." },
+    ],
+  });
+  assert.deepEqual(
+    d?.items?.map((i) => i.note),
+    ["Parser fix. Merged, nothing running.", undefined, undefined, "Covered by s1."],
+  );
+  assert.ok(!("note" in d!.items![1]!) && !("note" in d!.items![2]!));
+});

@@ -1303,6 +1303,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           const id = sessionRef(ref);
           return id ? host.session(id) : null;
         },
+        // Any Overseer conversation, the current one or an older one: all are its own.
+        isSelf: (s) => !!s.overseer || s.id === host.overseerId(),
         idea: (ref) => {
           const m = readManifest();
           const id = resolveIdeaId(ref, m);

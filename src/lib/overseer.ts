@@ -57,6 +57,8 @@ function confirmItem(v: unknown): SovaConfirmItem[] {
   if (!isObj(v)) return [];
   const id = str(v.id)?.trim();
   if (!id) return [];
+  const text = str(v.note)?.replace(/\s+/g, " ").trim();
+  const note = text ? { note: text } : {};
   if (v.kind === "session") {
     const workers = typeof v.workers === "number" && Number.isFinite(v.workers) && v.workers > 0 ? Math.floor(v.workers) : undefined;
     const at = str(v.lastActiveAt);
@@ -69,13 +71,14 @@ function confirmItem(v: unknown): SovaConfirmItem[] {
         ...(at && Number.isFinite(Date.parse(at)) ? { lastActiveAt: at } : {}),
         ...(str(v.summary)?.trim() ? { summary: str(v.summary)!.trim() } : {}),
         ...(workers ? { workers } : {}),
+        ...note,
       },
     ];
   }
-  if (v.kind === "idea") return [{ kind: "idea", id, title: str(v.title)?.trim() ?? "" }];
+  if (v.kind === "idea") return [{ kind: "idea", id, title: str(v.title)?.trim() ?? "", ...note }];
   if (v.kind === "todo") {
     const text = str(v.text)?.trim();
-    return text ? [{ kind: "todo", id, text }] : [];
+    return text ? [{ kind: "todo", id, text, ...note }] : [];
   }
   return [];
 }

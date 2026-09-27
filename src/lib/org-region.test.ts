@@ -7,6 +7,7 @@ import {
   NO_PROJECT,
   orgCount,
   orgNeedsYouRows,
+  orgProjectItems,
   orgPlaceLabel,
   orgSearchText,
   orgSectionOpen,
@@ -105,4 +106,14 @@ test("open state: the region opens by default and remembers a collapse; forced o
   assert.equal(orgSectionOpen({ chosen: false, searching: false, holdsSelected: true }), true);
   assert.equal(finishedOpen({ chosen: undefined, searching: false, holdsSelected: false }), false, "Finished starts closed");
   assert.equal(finishedOpen({ chosen: false, searching: false, holdsSelected: true }), true);
+});
+
+test("orgProjectItems: projects to pick a main stakeholder for, newest first, narrowed by a search", () => {
+  const it = (id: string, since: number, title: string, kind = "project-stakeholder") =>
+    ({ id, path: "", title, where: "Acme", tier: "decide", kind, since, href: `#/orgs/o/projects/${id}`, detail: `Pick a main stakeholder for ${title}: Cy left the organization.` }) as AttentionItem;
+  const digest = { items: [it("a", 1, "Portal"), it("b", 5, "Site"), it("c", 9, "Other", "roster-proposal")] };
+  assert.deepEqual(orgProjectItems(digest).map((x) => x.id), ["b", "a"]);
+  assert.deepEqual(orgProjectItems(digest, "port").map((x) => x.id), ["a"]);
+  assert.deepEqual(orgProjectItems(digest, "acme").map((x) => x.id), ["b", "a"]);
+  assert.deepEqual(orgProjectItems(undefined), []);
 });

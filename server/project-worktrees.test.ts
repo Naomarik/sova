@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
+import { LOCAL_ONLY_IGNORE } from "./spec-draft-writer";
 import { commitSpec, cutWorktree, DETACHED, gitRootOf, mergeBack, NO_COMMITS, NOT_GIT, readWorktree, removeWorktree, specSnapshot, worktreeSlug, type GitRoot } from "./project-worktrees";
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), "sova-pwt-")));
@@ -164,6 +165,24 @@ describe("the promotion commit", () => {
     assert.equal(git(root, "log", "-1", "--format=%s"), "Promote 1 decision: invoicing — Tony approves.");
     // (trimmed: README.md's leading status space goes)
     assert.equal(git(root, "status", "--porcelain"), "M README.md\nA  notes.txt");
+  });
+
+  test("Sova's own .gitignore, added before the promotion by drafting, is committed with it; someone else's is not", async () => {
+    const root = repo();
+    writeFileSync(join(root, ".sova", "spec", ".gitignore"), LOCAL_ONLY_IGNORE);
+    const snap = await specSnapshot(root);
+    writeFileSync(join(root, ".sova", "spec", "manifest.json"), '{"claims":1}\n');
+    const c = await commitSpec(snap!, "m");
+    assert.ok(c && "sha" in c);
+    assert.deepEqual(c.files, [".sova/spec/.gitignore", ".sova/spec/manifest.json"]);
+
+    const other = repo();
+    writeFileSync(join(other, ".sova", "spec", ".gitignore"), "mine/\n");
+    const snap2 = await specSnapshot(other);
+    writeFileSync(join(other, ".sova", "spec", "manifest.json"), '{"claims":1}\n');
+    const c2 = await commitSpec(snap2!, "m");
+    assert.ok(c2 && "sha" in c2);
+    assert.deepEqual(c2.files, [".sova/spec/manifest.json"]);
   });
 
   test("a file the promotion changed that already had changes: skipped, nothing committed", async () => {

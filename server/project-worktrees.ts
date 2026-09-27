@@ -4,6 +4,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { PromoteCommit } from "../shared/decisions";
 import { type Git, runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
+import { LOCAL_ONLY_IGNORE } from "./spec-draft-writer";
 
 /**
  * The project's coding sessions each run in their own git worktree and branch of the client
@@ -105,7 +106,7 @@ async function mergedInto(git: Git, cwd: string, w: WorktreeRecord): Promise<boo
 
 /** The worktree's uncommitted files (tracked changes and untracked files). */
 async function uncommitted(git: Git, dir: string): Promise<string[]> {
-  const st = await git(["status", "--porcelain=v1", "-z", "--untracked-files=normal"], dir);
+  const st = await git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], dir);
   if (st.code !== 0) throw new WorktreeRefusal(firstLine(st.stderr || st.stdout));
   const out: string[] = [];
   const parts = st.stdout.split("\0");
@@ -207,21 +208,29 @@ export async function removeWorktree(w: WorktreeRecord, root: string, git: Git =
 
 const SPEC_DIR = join(".sova", "spec");
 
-/** The root's `.sova/spec/` files that differ from HEAD (tracked or untracked, never ignored), top-level relative. */
-async function specChanges(git: Git, top: string, specRel: string): Promise<Set<string>> {
+/** The root's `.sova/spec/` files that differ from HEAD (tracked or untracked, never ignored), top-level relative, with git's XY code. */
+async function specChanges(git: Git, top: string, specRel: string): Promise<Map<string, string>> {
   const r = await git(["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", specRel], top);
   if (r.code !== 0) throw new WorktreeRefusal(firstLine(r.stderr || r.stdout));
-  const out = new Set<string>();
+  const out = new Map<string, string>();
   const parts = r.stdout.split("\0");
   for (let i = 0; i < parts.length; i++) {
     const e = parts[i];
     if (!e || e.length < 4) continue;
-    out.add(e.slice(3));
+    out.set(e.slice(3), e.slice(0, 2));
     // A rename or copy carries its source as the next field.
-    if (e[0] === "R" || e[0] === "C") out.add(parts[++i] ?? "");
+    if (e[0] === "R" || e[0] === "C") out.set(parts[++i] ?? "", e.slice(0, 2));
   }
   out.delete("");
   return out;
+}
+
+function readText(file: string): string | null {
+  try {
+    return readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
 }
 
 function contentHash(file: string): string {
@@ -242,6 +251,8 @@ export interface SpecSnapshot {
   blocked?: string;
   /** Files differing from HEAD before the promotion (top-level relative), with a hash of their content then. */
   before: Map<string, string>;
+  /** Sova's own `.gitignore`, untracked and as Sova wrote it before the promotion (drafting adds it): committed with it. */
+  ownIgnore?: string;
 }
 
 /** Before a promotion: the root's repository and its `.sova/spec/` changes so far. Null: the root isn't in a Git work tree. */
@@ -258,7 +269,10 @@ export async function specSnapshot(root: string, git: Git = runGit): Promise<Spe
   else if (!snap.branch) snap.blocked = "Not committed: the project root's checkout is on a detached HEAD.";
   else
     try {
-      for (const f of await specChanges(git, top, specRel)) snap.before.set(f, contentHash(join(top, f)));
+      for (const [f, xy] of await specChanges(git, top, specRel)) {
+        snap.before.set(f, contentHash(join(top, f)));
+        if (xy === "??" && f === `${specRel}/.gitignore` && readText(join(top, f)) === LOCAL_ONLY_IGNORE) snap.ownIgnore = f;
+      }
     } catch (err) {
       snap.blocked = `Not committed: ${err instanceof Error ? err.message : String(err)}`;
     }
@@ -274,7 +288,7 @@ export async function specSnapshot(root: string, git: Git = runGit): Promise<Spe
  */
 export async function commitSpec(snap: SpecSnapshot, message: string, git: Git = runGit): Promise<PromoteCommit | undefined> {
   if (snap.blocked) return { skipped: snap.blocked };
-  let after: Set<string>;
+  let after: Map<string, string>;
   try {
     after = await specChanges(git, snap.top, snap.specRel);
   } catch (err) {
@@ -287,7 +301,7 @@ export async function commitSpec(snap: SpecSnapshot, message: string, git: Git =
     const shown = relative(snap.root, join(snap.top, theirs[0]!)).split(sep).join("/");
     return { skipped: `Not committed: ${shown} had changes Sova didn't make. Commit or discard them, and later promotions are committed again.` };
   }
-  const files = [...after].filter((f) => !snap.before.has(f)).sort();
+  const files = [...after.keys()].filter((f) => !snap.before.has(f) || f === snap.ownIgnore).sort();
   if (!files.length) return undefined;
   const add = await git(["add", "--", ...files], snap.top);
   if (add.code !== 0) return { skipped: `Not committed: ${firstLine(add.stderr || add.stdout)}` };

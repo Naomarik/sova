@@ -80,4 +80,6 @@ test("the promotion commit's message names every promoted decision: area — sta
   const items = many.replace(/^Promote 13 decisions: /, "").replace(/ and 3 more\.$/, "").split("; ");
   assert.equal(items.length, 10);
   assert.ok(items.every((x) => x.length <= 72));
+  // A cut last item ends the line with its ellipsis, not "…."
+  assert.match(promotionMessage([{ statement: "y".repeat(100), area: "Login" }]), /y…$/);
 });

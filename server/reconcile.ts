@@ -939,7 +939,8 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
 export function promotionMessage(rows: Pick<DecisionRow, "statement" | "area">[]): string {
   const items = rows.slice(0, 10).map((r) => clipText(`${r.area.toLowerCase()} — ${r.statement.replace(/\s+/g, " ").trim().replace(/[.;]+$/, "")}`, 72));
   const more = rows.length > 10 ? ` and ${rows.length - 10} more` : "";
-  return `Promote ${rows.length} decision${rows.length === 1 ? "" : "s"}: ${items.join("; ")}${more}.`;
+  const line = `Promote ${rows.length} decision${rows.length === 1 ? "" : "s"}: ${items.join("; ")}${more}`;
+  return /[.…]$/.test(line) ? line : `${line}.`;
 }
 
 // ---- resolutions as they happen -----------------------------------------------------------------------------

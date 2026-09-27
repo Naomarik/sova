@@ -179,7 +179,7 @@ export function ProjectOverseerPanel(props: {
                 <CodingMode info={i()} onSave={(key) => run(() => patchProjectOverseer(o(), p(), { codingMode: codingModeOf(key) }), key === "auto" ? "Coding sessions' mode: Automatic." : `Coding sessions run ${codingModeLabel(key)}.`)} />
               </SessionModel>
             </div>
-            <Limits info={i()} save={(patch) => run(() => patchProjectOverseer(o(), p(), patch), "Limits saved.")} />
+            <Limits info={i()} host={host()} save={(patch) => run(() => patchProjectOverseer(o(), p(), patch), "Limits saved.")} />
             <Started info={i()} />
             <CodingSessions info={i()} merge={(w) => mergeCodingWorktree(o(), p(), w.sessionId)} remove={(w) => removeCodingWorktree(o(), p(), w.sessionId)} onInfo={info.set} />
           </>
@@ -379,9 +379,10 @@ interface LimitsDraft {
   soonLookSec: number | null;
 }
 const limitsOf = (s: ProjectOverseerInfo["settings"]): LimitsDraft => ({ caps: { ...s.caps }, tokenBudget: s.tokenBudget, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec });
-const LIMIT_GROUPS: { legend: string; hint?: string; keys: (keyof ProjectOverseerCaps)[] }[] = [
+// A hint that names a host takes the org's host (a peer's day ends at its own midnight).
+const LIMIT_GROUPS: { legend: string; hint?: string | ((host: string) => string); keys: (keyof ProjectOverseerCaps)[] }[] = [
   { legend: "Each message you send", keys: ["gatherPerTurn", "promotePerTurn", "createPerTurn", "promptsPerTurn"] },
-  { legend: "On its own, each day", hint: "Resets at midnight on this host.", keys: ["gatherPerDay", "promotePerDay", "createPerDay", "promptsPerDay", "unattendedPerDay"] },
+  { legend: "On its own, each day", hint: (host) => `Resets at midnight on ${host}.`, keys: ["gatherPerDay", "promotePerDay", "createPerDay", "promptsPerDay", "unattendedPerDay"] },
   { legend: "At once", hint: "These never go Unlimited: they are what stops a burst.", keys: ["gatheringsOpen", "codingRunning"] },
 ];
 /** A field's own label (its group's legend says which allowance). */
@@ -405,7 +406,7 @@ const numberOf = (v: string): number => (v.trim() === "" ? Number.NaN : Number(v
  * own, at once, the coding token budget and the pace. One form, one PATCH. Unlimited is a checkbox
  * beside the field, never a blank field; the at-once limits have none.
  */
-function Limits(props: { info: ProjectOverseerInfo; save(patch: ProjectOverseerPatch): Promise<boolean> }) {
+function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(patch: ProjectOverseerPatch): Promise<boolean> }) {
   const saved = createMemo(() => JSON.stringify(limitsOf(props.info.settings)));
   const [draft, setDraft] = createSignal<LimitsDraft>(limitsOf(props.info.settings));
   // A save here or elsewhere brings the form to what is saved.
@@ -447,7 +448,10 @@ function Limits(props: { info: ProjectOverseerInfo; save(patch: ProjectOverseerP
           <fieldset class="project-limits-group">
             <legend class="project-limits-legend">{g.legend}</legend>
             <Show when={g.hint}>
-              <p class="field-hint project-limits-hint">{g.hint}</p>
+              {(h) => {
+                const hint = h();
+                return <p class="field-hint project-limits-hint">{typeof hint === "string" ? hint : hint(props.host ? hostLabel(props.host) : "this host")}</p>;
+              }}
             </Show>
             <div class="overseer-caps">
               <For each={g.keys}>

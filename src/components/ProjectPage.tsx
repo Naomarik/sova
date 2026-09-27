@@ -1,11 +1,12 @@
-import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
 import type { Conflict, DecisionRow, DecisionsInfo, PromoteResult } from "../../shared/decisions";
-import type { OrgDetail } from "../../shared/orgs";
-import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, redraftProject, resolveConflict, routeConflict, setSpecFrozen } from "../lib/api";
+import type { OrgDetail, OrgProject } from "../../shared/orgs";
+import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, redraftProject, resolveConflict, routeConflict, setProjectStakeholder, setSpecFrozen } from "../lib/api";
 import { areaGroups, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
 import { promotionCommitLine } from "../lib/coding-worktrees";
 import { relativeTime } from "../lib/format";
 import { orgTabHref } from "../lib/orgs-route";
+import { stakeholderView } from "../lib/stakeholder";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { ProjectOverseerPanel } from "./ProjectOverseerPanel";
@@ -24,7 +25,7 @@ const RUNNING_POLL_MS = 3000;
  * the project's own spec, one decision at a time.
  */
 export function ProjectPage(props: { orgId: string; projectId: string; titleRef(el: HTMLHeadingElement): void }) {
-  const [org, { refetch: refetchOrg }] = createResource(() => props.orgId, getOrg);
+  const [org, { refetch: refetchOrg, mutate: mutateOrg }] = createResource(() => props.orgId, getOrg);
   const key = () => ({ o: props.orgId, p: props.projectId });
   const [info, { refetch, mutate }] = createResource(key, (k) => getDecisions(k.o, k.p));
   const [error, setError] = createSignal<string | null>(null);
@@ -104,7 +105,19 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       <Show when={info()}>
         {(i) => (
           <>
-            <SpecCard info={i()} orgId={props.orgId} projectId={props.projectId} busy={busy()} act={act} onSpec={(spec) => mutate({ ...i(), spec })} />
+            <SpecCard info={i()} orgId={props.orgId} projectId={props.projectId} busy={busy()} act={act} onSpec={(spec) => mutate({ ...i(), spec })}>
+              <Show when={org() && project()}>
+                <Stakeholder
+                  org={org()!}
+                  project={project()!}
+                  onSet={async (id) => {
+                    mutateOrg(await setProjectStakeholder(props.orgId, props.projectId, id));
+                    // Who owns which area changed: the decisions' "outside their area" marks follow.
+                    void refetch();
+                  }}
+                />
+              </Show>
+            </SpecCard>
             <ConflictsCard info={i()} org={org()} orgId={props.orgId} projectId={props.projectId} busy={busy()} act={act} />
             <DecisionsCard info={i()} orgId={props.orgId} projectId={props.projectId} busy={busy()} act={act} />
           </>
@@ -123,9 +136,99 @@ interface CardProps {
   act: Act;
 }
 
+// ---- the project's main stakeholder (§app.organizations/projects) ---------------------------------------
+
+const NONE = "";
+
+/**
+ * Who decides every area of this project that no one else on the roster decides by name
+ * (§app.organizations/stakeholder). The operator picks and changes it here; a stakeholder who
+ * leaves the org is cleared, and the page says so until someone (or None) is chosen.
+ */
+function Stakeholder(props: { org: OrgDetail; project: OrgProject; onSet(id: string | null): Promise<void> }) {
+  const v = createMemo(() => stakeholderView(props.project, props.org.roster));
+  const [saving, setSaving] = createSignal(false);
+  const [err, setErr] = createSignal<string | null>(null);
+  let select: HTMLSelectElement | undefined;
+  const nameOf = (id: string) => props.org.roster.find((p) => p.id === id)?.name ?? id;
+  const set = async (id: string | null) => {
+    if (saving()) return;
+    setSaving(true);
+    try {
+      await props.onSet(id);
+      setErr(null);
+      const done = id ? `${nameOf(id)} is this project's main stakeholder.` : "This project has no main stakeholder.";
+      toast(done);
+      announce(done);
+    } catch (x) {
+      setErr(errText(x));
+      if (select) select.value = v().current?.id ?? NONE;
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div class="project-stakeholder">
+      <Show when={v().cleared}>
+        {(c) => <Banner tone="warn" title={`${c().name} was this project's main stakeholder until they left the organization ${relativeTime(c().at)}. Pick someone else, or choose None.`} />}
+      </Show>
+      <Show when={v().suggestion}>
+        {(p) => (
+          <Banner
+            tone="info"
+            title={`${p().name} is the only person on the roster. Make them this project's main stakeholder?`}
+            action={
+              <button type="button" class="button button-sm" aria-disabled={saving() ? "true" : undefined} onClick={() => void set(p().id)}>
+                Make Main Stakeholder
+              </button>
+            }
+          />
+        )}
+      </Show>
+      <label class="field project-stakeholder-field">
+        <span class="field-label">Main stakeholder</span>
+        <select ref={select} class="select" aria-describedby="project-stakeholder-hint" disabled={saving()} onChange={(e) => void set(e.currentTarget.value || null)}>
+          <option value={NONE} selected={!v().current}>
+            None
+          </option>
+          <For each={v().options}>
+            {(p) => (
+              <option value={p.id} selected={p.id === v().current?.id}>
+                {p.name}
+              </option>
+            )}
+          </For>
+        </select>
+        <span class="field-hint" id="project-stakeholder-hint">
+          Decides every area of this project that no one on the roster decides by name.
+        </span>
+        <Show when={v().latest}>
+          {(l) => {
+            const x = l();
+            return (
+              <span class="field-hint">
+                {x.why === "left" ? (
+                  <>
+                    Cleared <time title={x.at}>{relativeTime(x.at)}</time>: {x.name} left the organization.
+                  </>
+                ) : (
+                  <>
+                    Set by you <time title={x.at}>{relativeTime(x.at)}</time>.
+                  </>
+                )}
+              </span>
+            );
+          }}
+        </Show>
+        <Show when={err()}>{(e) => <span class="field-error">{e()}</span>}</Show>
+      </label>
+    </div>
+  );
+}
+
 // ---- the project's spec: frozen, counts, the reconciler's last run -----------------------------------
 
-function SpecCard(props: CardProps & { onSpec(spec: DecisionsInfo["spec"]): void }) {
+function SpecCard(props: CardProps & { onSpec(spec: DecisionsInfo["spec"]): void; children?: JSX.Element }) {
   const s = () => props.info.spec;
   const run = () => props.info.lastRun;
   const [freezing, setFreezing] = createSignal(false);
@@ -165,6 +268,7 @@ function SpecCard(props: CardProps & { onSpec(spec: DecisionsInfo["spec"]): void
           Rewrite Draft
         </button>
       </div>
+      {props.children}
       <p class="orgs-line">{decisionsLine(props.info)}</p>
       <p class="orgs-line project-spec-line">
         <Show when={s().exists} fallback="No spec in this project yet. The first promotion starts one.">

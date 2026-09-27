@@ -21,12 +21,12 @@ export const STARTED_KIND: Record<StartedSession["kind"], string> = { gathering:
 /** A tool name as the activity list says it: `sova_start_gathering` → "start gathering". */
 export const toolWords = (tool: string): string => tool.replace(/^sova_/, "").replace(/_/g, " ");
 
-/** One act, as a line: what it did, and for a refusal or failure, why. */
+/** One act, as a line: what it did, and for a refusal, a failure or an act done only in part (a promotion with refusals), why. */
 export function actionLine(a: Pick<OverseerAction, "tool" | "outcome" | "error">): string {
   const what = toolWords(a.tool);
   if (a.outcome === "ok") return what;
   const why = a.error?.trim().replace(/\.$/, "");
-  return `${what}: ${a.outcome === "refused" ? "refused" : "failed"}${why ? ` (${why})` : ""}`;
+  return `${what}: ${a.outcome === "partial" ? "partly" : a.outcome === "refused" ? "refused" : "failed"}${why ? ` (${why})` : ""}`;
 }
 
 /**

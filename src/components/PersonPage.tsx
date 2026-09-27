@@ -295,6 +295,19 @@ function Head(props: { data: PersonPageData; act: Act; editing: boolean; onEdit(
           <dt>Decides</dt>
           <dd>{p().decides.join(", ")}</dd>
         </Show>
+        <Show when={props.data.stakeholderOf?.length}>
+          <dt>Main stakeholder of</dt>
+          <dd>
+            <For each={props.data.stakeholderOf}>
+              {(x, i) => (
+                <>
+                  {i() ? ", " : ""}
+                  <a href={projectHref(orgId(), x.projectId)}>{x.name}</a>
+                </>
+              )}
+            </For>
+          </dd>
+        </Show>
         <Show when={p().skills.length}>
           <dt>Skills</dt>
           <dd>{p().skills.join(", ")}</dd>

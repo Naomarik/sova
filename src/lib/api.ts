@@ -843,6 +843,9 @@ export const revokePersonLinks = (id: string, pid: string, one?: { sessionId: st
 export const previewAsPerson = (id: string, pid: string, sid: string) =>
   request<PersonPreview>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/preview?session=${encodeURIComponent(sid)}`);
 export const addOrgProject = (id: string, name: string, root: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects`, jsonInit("POST", { name, root }));
+/** Set or clear a project's main stakeholder (a roster person's id, or null for none). */
+export const setProjectStakeholder = (id: string, pid: string, stakeholder: string | null) =>
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}`, jsonInit("PATCH", { stakeholder }));
 
 export const startBaton = (input: BatonStartInput) => request<BatonStartResult>("/api/baton", jsonInit("POST", input));
 export const getBaton = (path: string) => request<BatonInfo>(`/api/baton?path=${encodeURIComponent(path)}`);

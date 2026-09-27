@@ -155,10 +155,10 @@ export function ProjectOverseerPanel(props: {
                 info={i()}
                 kind="gathering"
                 label="Gathering sessions"
-                onSave={(patch, done) => void run(() => patchProjectOverseer(o(), p(), patch), done)}
+                save={async (patch) => info.set(await patchProjectOverseer(o(), p(), patch))}
               />
-              <SessionModel info={i()} kind="coding" label="Coding sessions" onSave={(patch, done) => void run(() => patchProjectOverseer(o(), p(), patch), done)}>
-                <CodingMode info={i()} onSave={(key) => void run(() => patchProjectOverseer(o(), p(), { codingMode: codingModeOf(key) }), key === "auto" ? "Coding sessions' mode: Automatic." : `Coding sessions run ${codingModeLabel(key)}.`)} />
+              <SessionModel info={i()} kind="coding" label="Coding sessions" save={async (patch) => info.set(await patchProjectOverseer(o(), p(), patch))}>
+                <CodingMode info={i()} onSave={(key) => run(() => patchProjectOverseer(o(), p(), { codingMode: codingModeOf(key) }), key === "auto" ? "Coding sessions' mode: Automatic." : `Coding sessions run ${codingModeLabel(key)}.`)} />
               </SessionModel>
               <TokenBudget info={i()} onSave={(n) => void run(() => patchProjectOverseer(o(), p(), { tokenBudget: n }), "Budget saved.")} />
             </div>
@@ -257,9 +257,31 @@ const SAME = "";
 
 /**
  * The model and thinking level of the sessions it starts: gathering (the model a roster person
- * talks to) or coding (L3). Empty = the overseer's own (null in the settings).
+ * talks to) or coding (L3). Empty = the overseer's own (null in the settings). A level the model
+ * doesn't offer is refused under the select (§app.project-overseer/identity); a model change that
+ * leaves the saved level unsupported moves it to the level pi would run, and says so.
  */
-function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "coding"; label: string; onSave(patch: ProjectOverseerPatch, done: string): void; children?: JSX.Element }) {
+function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "coding"; label: string; save(patch: ProjectOverseerPatch): Promise<void>; children?: JSX.Element }) {
+  const [err, setErr] = createSignal<string | null>(null);
+  const [saving, setSaving] = createSignal(false);
+  /** One save: its toast, or its refusal under the fields with the select back on what is saved. */
+  const save = async (patch: ProjectOverseerPatch, done: string, el: HTMLSelectElement, saved: () => string | null): Promise<boolean> => {
+    if (saving()) return false;
+    setSaving(true);
+    try {
+      await props.save(patch);
+      setErr(null);
+      toast(done);
+      announce(done);
+      return true;
+    } catch (x) {
+      setErr(errText(x));
+      el.value = saved() ?? SAME;
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
   const [models] = createResource(() => listModels());
   const modelKey = (): "codingModel" | "gatheringModel" => (props.kind === "coding" ? "codingModel" : "gatheringModel");
   const thinkingKey = (): "codingThinking" | "gatheringThinking" => (props.kind === "coding" ? "codingThinking" : "gatheringThinking");
@@ -284,10 +306,19 @@ function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "c
         <span class="field-label">{props.label}</span>
         <select
           class="select"
-          onChange={(e) => {
-            const v = e.currentTarget.value;
+          onChange={async (e) => {
+            const el = e.currentTarget;
+            const v = el.value;
+            const before = thinking();
             const patch: ProjectOverseerPatch = v === SAME ? { [modelKey()]: null, [thinkingKey()]: null } : { [modelKey()]: v };
-            props.onSave(patch, v === SAME ? `${noun()} use the overseer's model.` : `${noun()} use ${v}.`);
+            if (!(await save(patch, v === SAME ? `${noun()} use the overseer's model.` : `${noun()} use ${v}.`, el, model))) return;
+            // The server moved a level the new model doesn't offer to the one pi would run: said after the model's own toast.
+            const after = thinking();
+            if (v !== SAME && before && after && after !== before) {
+              const words = `Thinking is now ${after}: ${v} doesn't offer ${before}.`;
+              toast(words);
+              announce(words);
+            }
           }}
         >
           <option value={SAME} selected={!model()}>
@@ -302,7 +333,7 @@ function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "c
           class="select"
           onChange={(e) => {
             const v = e.currentTarget.value;
-            props.onSave({ [thinkingKey()]: v === SAME ? null : v }, v === SAME ? `${noun()}: thinking same as the overseer.` : `${noun()}: thinking ${v}.`);
+            void save({ [thinkingKey()]: v === SAME ? null : v }, v === SAME ? `${noun()}: thinking same as the overseer.` : `${noun()}: thinking ${v}.`, e.currentTarget, thinking);
           }}
         >
           <option value={SAME} selected={!thinking()}>
@@ -310,6 +341,7 @@ function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "c
           </option>
           <For each={levels()}>{(l) => <option value={l} selected={l === thinking()}>{l}</option>}</For>
         </select>
+        <Show when={err()}>{(e) => <span class="field-error">{e()}</span>}</Show>
       </label>
       {props.children}
     </div>
@@ -349,13 +381,20 @@ function TokenBudget(props: { info: ProjectOverseerInfo; onSave(n: number): void
  * Automatic follows the project: spec on when it has one. Delegate is the operator's opt-in; the
  * overseer may ask for it only when chosen here.
  */
-function CodingMode(props: { info: ProjectOverseerInfo; onSave(key: CodingModeKey): void }) {
+function CodingMode(props: { info: ProjectOverseerInfo; onSave(key: CodingModeKey): Promise<boolean> }) {
   const key = () => codingModeKey(props.info.settings.codingMode ?? null);
   const now = () => props.info.codingModeNow;
   return (
     <label class="field">
       <span class="field-label">Coding sessions' mode</span>
-      <select class="select" aria-describedby="project-coding-mode-hint" onChange={(e) => props.onSave(e.currentTarget.value as CodingModeKey)}>
+      <select
+        class="select"
+        aria-describedby="project-coding-mode-hint"
+        onChange={async (e) => {
+          const el = e.currentTarget;
+          if (!(await props.onSave(el.value as CodingModeKey))) el.value = key();
+        }}
+      >
         <For each={CODING_MODE_KEYS}>
           {(k) => (
             <option value={k} selected={k === key()}>
@@ -542,7 +581,12 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
 }
 
 function Activity(props: { actions: OverseerAction[] | undefined; error: string | null }) {
-  const OUTCOME = { ok: { word: "Done", tone: "success" as const }, refused: { word: "Refused", tone: "warn" as const }, error: { word: "Failed", tone: "error" as const } };
+  const OUTCOME = {
+    ok: { word: "Done", tone: "success" as const },
+    partial: { word: "Partly", tone: "warn" as const },
+    refused: { word: "Refused", tone: "warn" as const },
+    error: { word: "Failed", tone: "error" as const },
+  };
   return (
     <details class="orgs-history orgs-history-section" open>
       <summary>Activity{props.actions ? ` · ${props.actions.length}` : ""}</summary>

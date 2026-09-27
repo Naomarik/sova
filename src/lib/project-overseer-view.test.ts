@@ -30,6 +30,7 @@ test("an act reads as words; a refusal carries its reason", () => {
   assert.equal(toolWords("sova_start_gathering"), "start gathering");
   assert.equal(actionLine({ tool: "sova_promote", outcome: "ok" }), "promote");
   assert.equal(actionLine({ tool: "sova_promote", outcome: "refused", error: "Autonomy L1 doesn't promote." }), "promote: refused (Autonomy L1 doesn't promote)");
+  assert.equal(actionLine({ tool: "sova_promote", outcome: "partial", error: "2 refused: d1 (outside Bo's decision area); d2 (in a conflict)." }), "promote: partly (2 refused: d1 (outside Bo's decision area); d2 (in a conflict))");
   assert.equal(actionLine({ tool: "sova_offer", outcome: "error" }), "offer: failed");
 });
 

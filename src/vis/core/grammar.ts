@@ -191,7 +191,7 @@ export function divider(line: Line): string | null {
   return m ? text(m[1]!, line.n) : null;
 }
 
-/** Split on unescaped `|`, trim each field, drop one pair of surrounding quotes. */
+/** Split on unescaped `|`, trim each field; a field that is ONE quoted string loses its quotes. */
 export function fields(line: Line): string[] {
   const parts: string[] = [];
   let cur = "";
@@ -208,7 +208,8 @@ export function fields(line: Line): string[] {
   parts.push(cur);
   return parts.map((p) => {
     const t = p.trim();
-    return text(t.length >= 2 && t.startsWith('"') && t.endsWith('"') ? unquote(t.slice(1, -1)) : t, line.n);
+    const q = /^"((?:[^"\\]|\\.)*)"$/.exec(t);
+    return text(q ? unquote(q[1]!) : t, line.n);
   });
 }
 

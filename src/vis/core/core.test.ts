@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { linearScale, logScale, niceStep, shortNumber } from "./scale";
 import { wrap } from "./text";
-import { commaList, setting } from "./grammar";
+import { commaList, fields, setting } from "./grammar";
 
 test("wrap breaks at words, then at path separators, and ellipsizes past maxLines", () => {
   const w = (s: string) => s.length; // 1px per char
@@ -42,4 +42,9 @@ test("wrap never strands a one- or two-character tail of a split word", () => {
     assert.ok(lines.every((l) => l.length > 2), `${w}: ${JSON.stringify(lines)}`);
     assert.equal(lines.join("").replace(/\s/g, ""), "GET/callback?code=…");
   }
+});
+
+test("fields unquote only a field that is one whole quoted string", () => {
+  const line = (text: string) => ({ n: 1, raw: text, text });
+  assert.deepEqual(fields(line('"a \\| b" | "React" vs "Vue" | "x", "y"')), ["a | b", '"React" vs "Vue"', '"x", "y"']);
 });

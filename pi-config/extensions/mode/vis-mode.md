@@ -133,19 +133,43 @@ mark "Keeps original commits" "why rebase needs a force-push"
 ```
 
 ## code
-<!-- stub -->
-<!-- owner: code member. The parser is done (kinds/code/parse.ts); write View.tsx (numbered gutter, the marked lines' badges, highlight with lib/markdown's `highlight`), then drop the stub marker here and `stub: true` in registry.ts. Emphasis target: line number or range, as displayed. -->
-An annotated snippet: settings and `mark` lines, a line with just `---`, then the code verbatim. Lines are numbered from `start:` (default 1).
+<!-- owner: code member. kinds/code: View.tsx (hljs via lib/markdown, sticky numbered gutter, badges), lines.ts. Emphasis target: line number or range, as displayed. -->
+A snippet with lines to point at: the bug, the line that matters, what each part does. Use a plain code fence when nothing is marked. Settings and `mark` lines, a line with just `---`, then the code verbatim (at most 60 lines: show the part that matters).
 ```vis code
 title: The off-by-one
 lang: ts
-mark 2 "<= reads one past the end"
+start: 12
+mark 13 error "<= reads one past the end"
+mark 14 "adds undefined, so total is NaN"
 ---
 for (let i = 0;
   i <= items.length;
   i++) total += items[i];
 ```
+- `lang:` a fence word (ts, py, rust, sql, …). `start:` the first line's number, so the numbers match the file.
+- `mark` a line number or a range like `20-23`, as displayed; a range's note goes on its first line. Marks come before `---`: everything after it is code.
 
 ## html / svg
-<!-- owner: free-form member. Emphasis: not applicable. -->
-Only when none of the kinds above fits — usually something the reader should play with. `vis html` is a small self-contained HTML document (inline `<style>` and `<script>`); `vis svg` is one `<svg>` with a `viewBox`. Start with `title:` / `caption:` lines. Colours come from the theme's CSS variables: `var(--color-ink)`, `--color-ink-muted`, `--color-surface`, `--color-sunken`, `--color-border`, `--color-accent`, `--status-success|warn|error|info`. Fit a 360px-wide phone. The limits in § Shared: free-form limits apply: 8 KB, no network, nothing moves until a click.
+<!-- owner: code member (free-form). kinds/frame: srcdoc.ts (CSP, tokens, base CSS, height, motion gate, script-failure flag), View.tsx; fuller examples in kinds/frame/examples/ (tested). Emphasis: not applicable. -->
+Only when none of the kinds above fits — usually something the reader should play with (a Step button through an algorithm, a slider on a parameter), or a drawing no kind covers. `vis html` is a fragment (inline `<style>` and `<script>`, no `<html>`/`<head>`); `vis svg` is one `<svg>` with a `viewBox` and no `width`, drawn at its natural size and shrunk to fit. Start with `title:` / `caption:` lines.
+```vis html
+title: Bubble sort, one comparison at a time
+caption: Press Step: the larger of each pair moves right.
+<style>#bars{display:flex;gap:4px;align-items:end;height:80px}#bars div{flex:1;background:var(--color-accent-tint);border:1.5px solid var(--color-accent);border-radius:4px}#bars .cmp{background:var(--status-warn-bg);border-color:var(--status-warn)}</style>
+<div id="bars"></div>
+<p><button id="step">Step</button> <span id="msg"></span></p>
+<script>
+var v=[5,2,8,1,9,3],i=0,bars=document.getElementById("bars");
+function draw(){bars.innerHTML=v.map(function(x,k){return '<div class="'+(k===i||k===i+1?'cmp':'')+'" style="height:'+x*10+'%"></div>'}).join("")}
+document.getElementById("step").onclick=function(){
+  var swap=v[i]>v[i+1];if(swap){var t=v[i];v[i]=v[i+1];v[i+1]=t}
+  document.getElementById("msg").textContent=swap?"Swapped.":"In order.";
+  i=(i+1)%(v.length-1);draw();
+};
+draw();
+</script>
+```
+- Colours only from the theme, so light and dark both work: `var(--color-ink)`, `--color-ink-2`, `--color-ink-muted`, `--color-surface`, `--color-sunken`, `--color-border`, `--color-border-strong`, `--color-accent`, `--color-accent-tint`, `--status-success|warn|error|info` and each with `-bg`. Buttons, inputs and selects are already styled; the body has padding.
+- Fit a 360px-wide phone (flex-wrap, grid with `fr`); keep it under about 500px tall.
+- Nothing moves until the reader clicks or presses a key in it: give motion a Play or Step button (in SVG, `begin="play.click"` on the animations, with a `<g id="play" role="button">`). No `setTimeout` loops.
+- It runs sandboxed: no network, no storage, no `alert`, no form submits. Handle clicks with `onclick`.

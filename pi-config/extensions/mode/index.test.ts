@@ -254,7 +254,10 @@ test("vis: vis-mode.md verbatim minus its owner comments, composed last", () => 
 	const vis = buildMinorPrompt("vis");
 	assert.match(vis, /^# Minor mode: vis\n/);
 	assert.doesNotMatch(vis, /<!--|owner:/, "owner notes never reach the model");
-	assert.doesNotMatch(vis, /^## (gitgraph|code)$/m, "a stub kind is never taught");
+	// A stub kind is never taught: whichever sections the guide itself marks as stubs.
+	const guide = readFileSync(new URL("./vis-mode.md", import.meta.url), "utf8");
+	for (const [, h] of guide.matchAll(/^## (.+)\n<!-- stub -->/gm)) assert.doesNotMatch(vis, new RegExp(`^## ${h}$`, "m"), `stub ${h} is never taught`);
+	assert.match(vis, /^## code$/m);
 	assert.match(vis, /^## Shared: emphasis$/m);
 	assert.equal(visPrompt("# A\n\n## x\n<!-- stub -->\nhidden\n\n## y\n<!-- note -->\nshown\n"), "# A\n\n## y\nshown");
 	assert.match(vis, /```vis flow\n/);

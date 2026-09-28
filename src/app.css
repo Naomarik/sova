@@ -46,6 +46,12 @@ html, body, #root { height: 100%; }
 @supports (width: round(1.5px, 1px)) {
   .entry { contain-intrinsic-block-size: auto round(var(--entry-est, 120px), 1px); }
 }
+/* And its real height too, once drawn: text lines (22.475px) and image boxes (their aspect ratio)
+   come out fractional, scroll anchoring moves the view only by whole pixels, and what it leaves
+   over adds up, row by row, into the view stepping a pixel while rows above are first drawn. */
+@supports (height: calc-size(auto, round(up, size, 1px))) {
+  .entry { height: calc-size(auto, round(up, size, 1px)); }
+}
 .entry:empty { display: none; }
 .entry:focus-within,
 .entry[data-actions-revealed] { content-visibility: visible; contain: layout paint style; }

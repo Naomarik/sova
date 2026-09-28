@@ -166,6 +166,11 @@ export function appliesAfter(plan: ReturnType<typeof modeApplyPlan>, streaming: 
  * is `state`. The extension appends an entry only on a change, so a session whose mode equals the
  * default would otherwise follow every later change of mode.json; Sova writes this one itself for
  * the sessions it starts with a mode (a project's coding sessions, the Overseer's sova_create_session).
+ * It never carries the extension's additive `head` (the minor modes the prompt was built with,
+ * `restoreHead` in state.ts), and needs none: it is written only after the extension's own `/mode`
+ * handler applied the same state (ChatSession.pinMode), so restoreHead skips it and reads the head
+ * from the extension's entries; a session pinned before its first prompt builds its head from the
+ * pinned modes.
  */
 export function pinEntryFor(branch: BranchEntries, state: Pick<ModeState, "mode" | "strict" | "minorModes">): { customType: string; data: { mode: ModeState["mode"]; active: ReturnType<typeof activeOf> } } | null {
   const want = activeOf(state);

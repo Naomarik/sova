@@ -12,6 +12,7 @@ import { delegateDefaults, type DelegateSettings } from "./delegate.ts";
 import {
 	applyModeSection,
 	buildDelegatePrompt,
+	buildModeNote,
 	buildSpecWriterPrompt,
 	composePrompt,
 	DEFAULT_ROUTES,
@@ -30,12 +31,14 @@ import {
 	isMode,
 	loadState,
 	MODE_DESCRIPTIONS,
+	MODE_NOTE_TYPE,
 	MODES,
 	normalizeActive,
 	normalizeState,
 	parseMode,
 	parseShortcut,
 	restoreActive,
+	restoreHead,
 	saveState,
 	toggleMode,
 	withMinor,
@@ -789,4 +792,58 @@ test("composePrompt takes a ModeActive, so the per-session state drives the turn
 	assert.ok(block.indexOf("# Mode: delegate") < block.indexOf(DELEGATE_ALIGN_BRIDGE), "delegate block, then the align bridge");
 	assert.match(block, /# Minor mode: align/);
 	assert.equal(composePrompt({ version: 1, mode: "normal", strict: true, minorModes: [] } satisfies ModeActive, ALL_OK), undefined);
+});
+
+test("composePrompt: minor blocks follow the head's set, the delegate bridge the active align", () => {
+	const active = { mode: "normal" as const, strict: false, minorModes: ["vis"] as MinorMode[] };
+	assert.equal(composePrompt(active, DEFAULT_ROUTES, null, ["spec"]), buildMinorPrompt("spec"), "the head's blocks, not the active ones");
+	assert.equal(composePrompt(active, DEFAULT_ROUTES, null, []), undefined);
+	assert.equal(composePrompt(active, DEFAULT_ROUTES), buildMinorPrompt("vis"), "no head: the active set, as before");
+	const delegate = { mode: "delegate" as const, strict: false, minorModes: ["align"] as MinorMode[] };
+	const block = composePrompt(delegate, DEFAULT_ROUTES, null, [])!;
+	assert.ok(block.endsWith(DELEGATE_ALIGN_BRIDGE), "align on (a tool-set change anyway): the bridge is in");
+	assert.doesNotMatch(block, /# Minor mode: align/, "the align block itself is the head's business");
+});
+
+test("buildModeNote: whole guide on first turning on, a pointer after, a line for off", () => {
+	const none = { head: [] as MinorMode[], guides: [] as MinorMode[] };
+	assert.equal(buildModeNote(["vis"], ["vis"], none), undefined, "nothing changed");
+	const on = buildModeNote([], ["vis"], none)!;
+	assert.deepEqual(on.guides, ["vis"]);
+	assert.equal(on.text, `Mode change: the user turned the vis minor mode on. Its instructions follow and apply from now on, as if they were part of your system prompt.\n\n${buildMinorPrompt("vis")}`);
+	const back = buildModeNote([], ["vis"], { head: [], guides: ["vis"] })!;
+	assert.deepEqual(back.guides, []);
+	assert.match(back.text, /turned the vis minor mode back on\. Its instructions \(the "# Minor mode: vis" block given earlier in this conversation\) apply again/);
+	const inHead = buildModeNote([], ["vis"], { head: ["vis"], guides: [] })!;
+	assert.match(inHead.text, /block in your system prompt\) apply again/);
+	const off = buildModeNote(["vis", "spec"], ["align"], { head: ["spec"], guides: ["vis"] })!;
+	const parts = off.text.split("\n\nMode change: ");
+	assert.equal(parts.length, 3, "one part per switched mode");
+	assert.match(parts[0], /^Mode change: the user turned the spec minor mode off\. Its instructions \(the "# Minor mode: spec" block in your system prompt\) no longer apply/);
+	assert.match(parts[1], /^the user turned the vis minor mode off\. .*given earlier in this conversation/);
+	assert.ok(parts[2].startsWith("the user turned the align minor mode on") && parts[2].endsWith(buildMinorPrompt("align")), "offs first, then ons");
+	const writer = routeWriter({ version: 1, writer: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null } }, {}, () => null)!;
+	assert.ok(buildModeNote([], ["spec"], none, writer)!.text.endsWith(`${buildMinorPrompt("spec")}\n\n${buildSpecWriterPrompt(writer)}`), "spec carries its writer paragraph, as in the prompt");
+});
+
+test("restoreHead: the newest recorded head, the newest note, and nothing across a compaction", () => {
+	const pin = (minorModes: MinorMode[], head?: MinorMode[]) => ({ type: "custom", customType: "mode", data: { mode: "normal", active: { version: 1, mode: "normal", strict: false, minorModes }, ...(head ? { head } : {}) } });
+	const note = (minorModes: MinorMode[], guides: MinorMode[]) => ({ type: "custom_message", customType: MODE_NOTE_TYPE, details: { v: 1, minorModes, guides } });
+	assert.deepEqual(restoreHead([]), { head: undefined, told: undefined, guides: [] }, "never sent: the head follows the active set");
+	assert.deepEqual(restoreHead([pin(["vis"])]), { head: undefined, told: undefined, guides: [] }, "a Sova pin carries no head");
+	assert.deepEqual(restoreHead([pin(["vis"], [])]), { head: [], told: [], guides: [] }, "recorded, not told yet");
+	assert.deepEqual(
+		restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([]), note([], [])]),
+		{ head: [], told: [], guides: ["vis"] },
+		"an entry equal to its head carries none; the older one still names it, and every guide since counts",
+	);
+	assert.deepEqual(restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([])]), { head: [], told: ["vis"], guides: ["vis"] }, "a switch not told yet: told is the last note's");
+	assert.deepEqual(
+		restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), { type: "compaction" }, pin(["spec", "vis"], ["vis"])]),
+		{ head: ["vis"], told: ["vis"], guides: [] },
+		"notes before a compaction don't count",
+	);
+	assert.deepEqual(restoreHead([pin(["vis"], []), { type: "compaction" }]).head, undefined, "a compaction rebuilds the head from the active set");
+	assert.deepEqual(restoreHead([pin(["vis"], []), { type: "custom_message", customType: MODE_NOTE_TYPE, details: { v: 2 } }]).told, [], "an unknown note is skipped");
+	assert.doesNotThrow(() => restoreHead(null as never));
 });

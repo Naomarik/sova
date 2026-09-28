@@ -264,6 +264,19 @@ test("refresh: a failed fetch keeps the last good table and logs one line", asyn
   assert.equal(h.book.priceUsage({ provider: "anthropic", model: "claude-opus-5-5" }, use({ input: M }), Date.now()).status, "priced");
 });
 
+test("refresh: no host cache fetches at the first check even when the seed is fresh; a fresh cache doesn't", async () => {
+  const fresh = mergeFetched(EMPTY_TABLE, normalizeModelsDev(api(), aliases), "2026-09-27T23:00:00.000Z").table;
+  const none = harness({ seed: fresh });
+  none.book.start();
+  await none.fire();
+  assert.deepEqual(none.fetches, [MODELS_DEV_URL]);
+  assert.ok(existsSync(none.cachePath));
+  const has = harness({ seed: fresh, cache: fresh });
+  has.book.start();
+  await has.fire();
+  assert.deepEqual(has.fetches, []);
+});
+
 test("refresh: SOVA_PRICES_FETCH=off (enabled: false) never fetches, not even forced", async () => {
   const h = harness({ enabled: false });
   h.book.start();

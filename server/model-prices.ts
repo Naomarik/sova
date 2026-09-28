@@ -20,7 +20,8 @@ import { stateRoot } from "./state-root";
  * The host's price table (§app.project-costs/pricing): models.dev prices, kept host-local in
  * `<state root>/model-prices.json` and refreshed in the background when older than 3 days. The
  * checked-in seed (`shared/model-prices/seed.json`, `pnpm run prices:update`) is the fallback
- * and the floor: a host with no cache, or a cache older than the seed, prices from the seed.
+ * and the floor: a host with no cache, or a cache older than the seed, prices from the seed. A
+ * host with no cache fetches at its first check, however fresh the seed.
  * A failed fetch keeps the last good table and logs one line. `SOVA_PRICES_FETCH=off` never
  * fetches (hermetic tests), so prices then come from the seed or an existing cache.
  */
@@ -99,6 +100,8 @@ export function createPriceBook(opts: PriceBookOptions = {}): PriceBook {
 
   let current: PriceTable = seed;
   const cache = readCache(cachePath);
+  /** No usable host cache yet: fetch at the first check, however fresh the seed is. */
+  let cached = cache !== null;
   if (cache) {
     current = ms(cache.fetchedAt) >= ms(seed.fetchedAt) ? cache : mergeFetched(cache, currentOf(seed), seed.fetchedAt!).table;
   }
@@ -106,7 +109,7 @@ export function createPriceBook(opts: PriceBookOptions = {}): PriceBook {
   let inFlight: Promise<boolean> | null = null;
   const refresh = (force = false): Promise<boolean> => {
     if (!enabled) return Promise.resolve(false);
-    if (!force && now() - ms(current.fetchedAt) < STALE_MS) return Promise.resolve(false);
+    if (!force && cached && now() - ms(current.fetchedAt) < STALE_MS) return Promise.resolve(false);
     inFlight ??= (async () => {
       try {
         const res = await doFetch(MODELS_DEV_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
@@ -115,6 +118,7 @@ export function createPriceBook(opts: PriceBookOptions = {}): PriceBook {
         const { table, report } = mergeFetched(current, fetched, new Date(now()).toISOString());
         writeAtomic(cachePath, table);
         current = table;
+        cached = true;
         if (report.changed.length) log(`prices changed for ${report.changed.join(", ")}`);
         return true;
       } catch (err) {

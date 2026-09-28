@@ -1,0 +1,191 @@
+/* Shared `vis` styles: the figure shell every kind sits in, the markdown placeholder states, the
+   tone variables, and the SVG primitives more than one kind draws with. A kind's own look lives in
+   kinds/<kind>/<kind>.css, imported by its View. Tokens only (tokens.css): no raw colours. */
+
+/* ---- Figure shell ------------------------------------------------------------------------ */
+.vis {
+  margin: 0 0 var(--space-3);
+  max-width: 100%;
+  min-width: 0;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  overflow: hidden;
+  container: vis / inline-size;
+}
+.vis-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-sm);
+  padding: 0 var(--space-1) 0 var(--space-3);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.vis-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-heading-s);
+  color: var(--color-ink);
+  padding-block: var(--space-1);
+  overflow-wrap: anywhere;
+}
+.vis-eyebrow {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+.vis-action { flex: none; }
+.vis-body { padding: var(--space-3); }
+.vis-body[hidden] { display: none; }
+.vis-reserve { display: block; }
+.vis-kind-html .vis-body, .vis-kind-svg .vis-body { padding: 0; }
+.md .vis-source {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-sunken);
+  color: var(--color-ink);
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+  max-height: 420px;
+  /* The source is the syntax: `->` must read as typed, never as a ligature arrow. */
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+}
+.vis-caption {
+  padding: 0 var(--space-3) var(--space-3);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
+/* At phone width the head keeps the title and trades the button words for their icons. */
+@container vis (max-width: 420px) {
+  .vis-action { font-size: 0; gap: 0; min-width: var(--control-sm); justify-content: center; }
+  .vis-body { padding: var(--space-2); }
+}
+
+/* ---- Placeholder states in markdown ------------------------------------------------------ */
+.md-vis { margin: 0 0 var(--space-3); min-width: 0; }
+/* A drawing never serves as the scroll anchor: when one straddling the top of the view grows (a
+   frame reporting its height, a font re-layout), the browser anchors on the text after it instead,
+   so what the reader is looking at stays put. */
+.md-vis, .md-vis-pending { overflow-anchor: none; }
+.md-vis > .vis { margin: 0; }
+.md-vis-pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  margin: 0 0 var(--space-3);
+  border: var(--stroke-thin) dashed var(--color-border-strong);
+  border-radius: var(--r-md);
+  color: var(--color-ink-muted);
+  font-size: var(--fs-caption);
+}
+.md .md-vis-pending-line { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
+.md-vis-pending-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--color-accent);
+  animation: vis-pulse 1.2s var(--ease-standard) infinite alternate;
+}
+@keyframes vis-pulse { from { opacity: 1; } to { opacity: .35; } }
+.md-vis-pending-count { font-family: var(--font-mono); }
+.md .md-vis-error {
+  margin: calc(var(--space-2) * -1) 0 var(--space-3);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+/* The error line teaches syntax and the failed block is syntax: `->` must never become an arrow. */
+.md .md-vis-error, .md-vis-source pre, .vis-caption code, .vis-notes code {
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+}
+
+/* ---- Tones: one set of variables every kind reads ---------------------------------------- */
+/* --vis-fill (a shape's background), --vis-stroke (its outline), --vis-ink (its text). */
+.vis, .vis-tone-none {
+  --vis-fill: var(--color-sunken);
+  --vis-stroke: var(--color-border-strong);
+  --vis-ink: var(--color-ink);
+}
+.vis-tone-accent { --vis-fill: var(--color-accent-tint); --vis-stroke: var(--color-accent); --vis-ink: var(--color-ink); }
+.vis-tone-ok     { --vis-fill: var(--status-success-bg); --vis-stroke: var(--status-success); --vis-ink: var(--color-ink); }
+.vis-tone-warn   { --vis-fill: var(--status-warn-bg); --vis-stroke: var(--status-warn); --vis-ink: var(--color-ink); }
+.vis-tone-error  { --vis-fill: var(--status-error-bg); --vis-stroke: var(--status-error); --vis-ink: var(--color-ink); }
+.vis-tone-info   { --vis-fill: var(--status-info-bg); --vis-stroke: var(--status-info); --vis-ink: var(--color-ink); }
+.vis-tone-muted  { --vis-fill: transparent; --vis-stroke: var(--color-border-strong); --vis-ink: var(--color-ink-muted); }
+
+/* ---- SVG primitives (svg.tsx) ------------------------------------------------------------ */
+.vis-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.vis-scroll:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: var(--r-xs); }
+.vis-svg { display: block; height: auto; margin: 0 auto; font-family: var(--font-body); overflow: visible; }
+.vis-svg text { fill: var(--color-ink-2); }
+.vis-edge { fill: none; stroke: var(--color-ink-muted); stroke-width: 1.5; }
+.vis-dashed { stroke-dasharray: 5 4; }
+.vis-arrowhead { fill: var(--color-ink-muted); }
+.vis-arrowhead-open { fill: none; stroke: var(--color-ink-muted); stroke-width: 1.5; stroke-linejoin: round; }
+.vis-edge-label rect { fill: var(--color-surface); }
+.vis-edge-label text { fill: var(--color-ink-2); }
+
+/* ---- Emphasis (core/emphasis.ts, emphasis.tsx): one look for "look here" in every kind -------- */
+/* A marked item: its tone's colours, a heavier outline. SVG shapes and HTML rows alike. */
+/* Specific enough to beat a kind's own `.vis-<k>-node > rect` rule, whose CSS chunk loads later. */
+.vis-svg .vis-em > :is(rect, polygon, circle, path:not(.vis-cap)) { stroke-width: 2.5; }
+.vis-em:is(li, tr, div, span, p) { background: var(--vis-fill); box-shadow: inset 3px 0 0 var(--vis-stroke); border-radius: var(--r-xs); }
+.vis-em-badge {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  margin-right: var(--space-1);
+  border-radius: var(--r-full);
+  background: var(--vis-stroke, var(--color-accent));
+  color: var(--color-on-accent);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.vis-em-badge-svg circle { fill: var(--vis-stroke); }
+.vis-svg .vis-em-badge-svg text { fill: var(--color-on-accent); font-weight: var(--fw-semibold); }
+/* base.css's `.md ul/ol` indent and `.md li + li` spacing are for prose lists, not a drawing's rows. */
+.md .vis :where(ul, ol) { margin: 0; padding: 0; }
+.md .vis li + li { margin-top: 0; }
+.vis .vis-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-3);
+  list-style: none;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.vis-notes li { display: flex; align-items: baseline; gap: var(--space-1); }
+.vis-notes li > .vis-em-badge { transform: translateY(3px); }
+
+/* ---- Step-through (stepper.tsx) and not-drawn-yet kinds (StubView.tsx) ----------------------- */
+.vis-stepper { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin-bottom: var(--space-2); }
+.vis-stepper-count { font-size: var(--fs-caption); color: var(--color-ink-muted); font-variant-numeric: tabular-nums; padding: 0 var(--space-2); }
+.vis-stepper-short { display: none; }
+/* At phone width the count shortens to "9/10" so the whole row, Show All included, stays on one line. */
+@container vis (max-width: 420px) {
+  .vis-stepper { gap: 0; }
+  .vis-stepper-count { padding: 0 var(--space-1); }
+  .vis-stepper-long { display: none; }
+  .vis-stepper-short { display: inline; }
+}
+.vis-future { opacity: .18; }
+.vis-stub { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }

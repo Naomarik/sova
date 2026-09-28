@@ -1,0 +1,51 @@
+title: Binary search, one probe at a time
+caption: Each probe halves the range still in play; 15 items take at most 4.
+
+<style>
+.row{display:grid;grid-template-columns:repeat(15,1fr);gap:3px;margin:8px 0 4px}
+.c{display:grid;place-items:center;height:34px;border-radius:6px;background:var(--color-sunken);border:1.5px solid var(--color-border);font:600 12px/1 "JetBrains Mono",monospace;color:var(--color-ink)}
+.c.out{opacity:.3}
+.c.mid{background:var(--color-accent-tint);border-color:var(--color-accent)}
+.c.hit{background:var(--status-success-bg);border-color:var(--status-success)}
+.tags{display:grid;grid-template-columns:repeat(15,1fr);gap:3px;height:16px;font:11px/16px "JetBrains Mono",monospace;color:var(--color-ink-muted);text-align:center}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+#msg{min-height:1.5em;margin:8px 0 0;color:var(--color-ink-2)}
+</style>
+<div class="bar">
+  <label>Find <select id="t"></select></label>
+  <button id="step">Step</button>
+  <button id="reset">Reset</button>
+</div>
+<div class="row" id="row"></div>
+<div class="tags" id="tags"></div>
+<p id="msg">Press Step to probe the middle.</p>
+<script>
+var a=[2,5,8,12,16,23,38,42,56,61,72,79,85,91,99],lo,hi,mid,done,n;
+var row=document.getElementById("row"),tags=document.getElementById("tags"),msg=document.getElementById("msg"),t=document.getElementById("t");
+a.forEach(function(v){var o=document.createElement("option");o.textContent=v;t.appendChild(o)});
+t.value="72";
+function reset(){lo=0;hi=a.length-1;mid=-1;done=false;n=0;msg.textContent="Press Step to probe the middle.";draw()}
+function draw(){
+  row.innerHTML="";tags.innerHTML="";
+  a.forEach(function(v,i){
+    var c=document.createElement("div");c.className="c";c.textContent=v;
+    if(i<lo||i>hi)c.classList.add("out");
+    if(i===mid)c.classList.add(done?"hit":"mid");
+    row.appendChild(c);
+    var g=document.createElement("div");
+    g.textContent=[i===lo&&!done?"lo":"",i===mid?"mid":"",i===hi&&!done?"hi":""].filter(Boolean).join("/");
+    tags.appendChild(g);
+  });
+}
+document.getElementById("step").onclick=function(){
+  if(done||lo>hi)return;
+  var x=Number(t.value);n++;mid=(lo+hi)>>1;
+  if(a[mid]===x){done=true;msg.textContent="Probe "+n+": a["+mid+"] = "+x+". Found.";}
+  else if(a[mid]<x){msg.textContent="Probe "+n+": "+a[mid]+" < "+x+", so drop the left half.";draw();lo=mid+1;setTimeout(function(){mid=-1;draw()},450);return}
+  else{msg.textContent="Probe "+n+": "+a[mid]+" > "+x+", so drop the right half.";draw();hi=mid-1;setTimeout(function(){mid=-1;draw()},450);return}
+  draw();
+};
+document.getElementById("reset").onclick=reset;
+t.onchange=reset;
+reset();
+</script>

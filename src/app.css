@@ -64,15 +64,24 @@ html, body, #root { height: 100%; }
 /* As wide as a message can be: the transcript reads its width for `--entry-cols-measured`. */
 .entry-measure { max-width: min(100%, var(--measure)); height: 0; }
 /* The top of a transcript with older rows still to fetch (Thread `older-edge`): a line's height
-   held while there are any, so its text appearing (a slow fetch) never moves the view. */
+   held while there are any, so its indicator appearing (a slow fetch) never moves the view. It
+   sticks to the top of the view, over the rows, so a jump fetching from the end shows it too; it
+   takes no pointer and is never a scroll anchor. The indicator is the skeleton sweep, the loop
+   that means work is happening, as a short bar. */
 .older-edge {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   min-height: calc(var(--fs-caption) * 2);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--fs-caption);
-  color: var(--color-ink-muted);
+  pointer-events: none;
+  overflow-anchor: none;
 }
+/* On the strong line colour, not the skeleton's sunken one: it sits over text, and a state
+   indicator needs 3:1 against what's behind it. */
+.older-edge-bar { display: block; width: calc(var(--space-4) * 6); height: var(--space-1); border-radius: var(--r-full); background-color: var(--color-border-strong); }
 
 /* Archive date sections: each a <details> whose summary is
    the eyebrow label (twist, name, count), collapsed by default; a rule between sections. */

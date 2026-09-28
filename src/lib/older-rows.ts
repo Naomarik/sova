@@ -79,7 +79,7 @@ export function lastInput(list: readonly TranscriptItem[], older: Older): string
 
 // ---- Fetching --------------------------------------------------------------------------------
 
-/** A fetch slower than this shows the top edge's loading line. */
+/** A fetch slower than this shows the top edge's loading indicator. */
 export const SLOW_MS = 400;
 /** Chunk size for a background prefetch (a browser on this machine): fewer, larger requests. */
 export const PREFETCH_CHARS = 1024 * 1024;
@@ -95,7 +95,7 @@ export interface LoaderDeps {
   apply(items: TranscriptItem[], older: Older): void;
   /** The branch moved under the list (or rows didn't add up): start again from a fresh tail. */
   moved(): void;
-  /** A scroll-up fetch has been pending SLOW_MS (true), or is over (false). */
+  /** A fetch (scrolling up, a jump's range) has been pending SLOW_MS (true), or is over (false). */
   slow?(on: boolean): void;
   /** Runs `fn` when the browser is idle (the prefetch's pace). */
   idle?(fn: () => void): void;
@@ -200,7 +200,13 @@ export class OlderLoader {
       if (older.left <= 0) return "missing";
       const before = list[0]!.id;
       const ask = "explain" in target ? { before, explain: target.explain } : { before, from: target.entry };
-      return this.land(gen, before, await this.d.fetch(ask, leafOf(list)));
+      const timer = setTimeout(() => gen === this.gen && this.d.slow?.(true), this.slowMs);
+      try {
+        return this.land(gen, before, await this.d.fetch(ask, leafOf(list)));
+      } finally {
+        clearTimeout(timer);
+        if (gen === this.gen && !this.pendingMore) this.d.slow?.(false);
+      }
     });
   }
 

@@ -188,6 +188,15 @@ test("slow: said only when a scroll-up fetch outlasts the threshold, and unsaid 
   assert.deepEqual(slow.slow, [true, false]);
 });
 
+test("slow: a jump's range fetch shows the same indicator, only when slow", async () => {
+  const quick = harness({ slowMs: 50, delay: 1 });
+  assert.equal(await quick.loader.to({ entry: "r3" }), "here");
+  assert.deepEqual(quick.slow, [false]);
+  const slow = harness({ slowMs: 5, delay: 30 });
+  assert.equal(await slow.loader.to({ entry: "r3" }), "here");
+  assert.deepEqual(slow.slow, [true, false]);
+});
+
 test("prefetch: every older row, large chunks, until the list reaches the top", async () => {
   const h = harness();
   await h.loader.prefetch(1_000_000);

@@ -147,7 +147,7 @@ export function SessionTimeline(props: {
     const missing = () => toast("That message isn't in the transcript on screen.");
     if (!entryId) return missing();
     // A jump that waits for older rows still closes the drawer: the thread is where it lands.
-    if (jumpWhenArrived(entryId, props.path, toast, missing) === "missing") return;
+    if (jumpWhenArrived(entryId, props.path, missing) === "missing") return;
     if (isDrawer()) props.onClose();
   };
 

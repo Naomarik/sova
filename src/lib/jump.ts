@@ -159,21 +159,17 @@ export function jumpToEntry(entryId: string, path?: string | null): boolean {
   return true;
 }
 
-/** Said when a jump has waited this long for the older rows it needs. */
-export const LOADING_OLDER = "Loading older messages…";
-export const LOADING_OLDER_MS = 500;
-
 /** The jump waiting for older rows, if any: a newer jump replaces it. */
 let waitingJump: (() => void) | null = null;
 
 /**
  * `jumpToEntry`, except that a row not there while the transcript may have older rows it doesn't
  * hold isn't "not there" yet: the rows down to it are fetched in one request, then the jump lands
- * (or, the branch having no such row, calls `missing`). If the fetch passes LOADING_OLDER_MS, `say`
- * tells the user. A newer jump, from anywhere, drops a waiting one. A new hello meanwhile (a
- * rewind, a reconnect) asks again, once.
+ * (or, the branch having no such row, calls `missing`). A slow fetch shows at the transcript's top
+ * edge (lib/older-rows `slow`), as a scroll-up fetch does; nothing is said. A newer jump, from
+ * anywhere, drops a waiting one. A new hello meanwhile (a rewind, a reconnect) asks again, once.
  */
-export function jumpWhenArrived(entryId: string, path: string | null | undefined, say: (text: string) => void, missing: () => void): "jumped" | "waiting" | "missing" {
+export function jumpWhenArrived(entryId: string, path: string | null | undefined, missing: () => void): "jumped" | "waiting" | "missing" {
   waitingJump?.();
   waitingJump = null;
   if (jumpToEntry(entryId, path)) return "jumped";
@@ -183,10 +179,8 @@ export function jumpWhenArrived(entryId: string, path: string | null | undefined
     return "missing";
   }
   let over = false;
-  const timer = window.setTimeout(() => !over && say(LOADING_OLDER), LOADING_OLDER_MS);
   const done = () => {
     over = true;
-    clearTimeout(timer);
   };
   waitingJump = done;
   const settle = (r: "here" | "missing" | "stale", again: boolean) => {
@@ -312,8 +306,6 @@ export function claimExplainJump(
   return row ? { kind: "jump", rowId: row.id } : { kind: "missing" };
 }
 
-/** The request the loading toast was said for, so it is said once. */
-let loadingSaidFor: PendingExplainJump | null = null;
 /** The request whose row is being fetched, so it is fetched once. */
 let loadingFor: PendingExplainJump | null = null;
 
@@ -324,8 +316,8 @@ export const EXPLAIN_OFF_BRANCH = "That explanation isn't on this branch of the 
  * A session view's side of "Open in Session": each time its transcript (re)loads, claim a jump
  * waiting for this session and land on the row once it has rendered (two frames: the rows, then
  * the transcript's own first scroll to the bottom). `say` reports a row that isn't there, which
- * only a `whole` transcript can know; while it isn't, the request waits, and a wait past
- * LOADING_OLDER_MS is said once. With `load` (the view knows what's above its rows, lib/older-rows),
+ * only a `whole` transcript can know; while it isn't, the request waits (a slow fetch shows at the
+ * transcript's top edge, lib/older-rows `slow`; nothing is said). With `load` (the view knows what's above its rows, lib/older-rows),
  * a row that isn't here is fetched, in one request, once: the list then holds it and this runs
  * again with it, or the branch has no such row and that is said.
  */
@@ -339,10 +331,6 @@ export function landExplainJump(
   const claim = claimExplainJump(view, items, Date.now(), whole);
   const p = pending;
   if (!claim && !whole && p && forView(p, view)) {
-    if (loadingSaidFor !== p) {
-      loadingSaidFor = p;
-      setTimeout(() => pending === p && say(LOADING_OLDER), LOADING_OLDER_MS);
-    }
     if (load && loadingFor !== p) {
       loadingFor = p;
       void load({ explain: p.explainId }).then((r) => {

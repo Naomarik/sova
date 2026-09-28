@@ -8,7 +8,7 @@ import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
-import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, LOADING_OLDER, registerRows, registerTranscript } from "../lib/jump";
+import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript } from "../lib/jump";
 import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
 import { carriedStart, chunkStart, FIRST_CHUNK, type ImagesAt, initialStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
@@ -600,12 +600,16 @@ export function HistoryItems(props: {
 
   return (
     <>
-      {/* Held while there are older rows to fetch, so its line appearing never moves the view; the
-          line shows only when a fetch is slow. It goes with the fill's last build, not before:
-          that build keeps the view where it is (ScrollerApi.prepend), its going included. */}
+      {/* Held while there are older rows to fetch, so its indicator appearing never moves the view;
+          the indicator (no text; its name is for screen readers) shows only while a fetch is slow,
+          a scroll-up chunk or a jump's range, and sticks to the top of the view so a jump from the
+          end sees it too. It goes with the fill's last build, not before: that build keeps the view
+          where it is (ScrollerApi.prepend), its going included. */}
       <Show when={scroller && props.older && ((props.older.left() ?? 0) > 0 || start() > 0)}>
         <div class="older-edge" role="status">
-          <Show when={props.older!.slow()}>{LOADING_OLDER}</Show>
+          <Show when={props.older!.slow()}>
+            <span class="older-edge-bar skeleton" role="img" aria-label="Loading older messages" />
+          </Show>
         </div>
       </Show>
       <For each={built()}>

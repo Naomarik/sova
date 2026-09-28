@@ -186,6 +186,8 @@ export const priceUsage = (ref: ModelRef, usage: TokenUsage, at: number | string
 export const resolvePriceRef = (ref: ModelRef, at: number | string): Resolved => shared().resolvePriceRef(ref, at);
 /** Where the prices come from and when, for "Prices as of …". */
 export const pricesInfo = () => shared().info();
+/** models.dev's display name for a price key (e.g. "Claude Opus 5.5"), when it lists one. */
+export const modelName = (key: string): string | undefined => shared().table().models[key]?.name;
 /** Call once at server start: a background refresh when stale, then a check every 6 hours. */
 export const startPriceRefresh = () => shared().start();
 

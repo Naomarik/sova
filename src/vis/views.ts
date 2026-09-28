@@ -8,5 +8,6 @@ export { default as frame } from "./kinds/frame/View";
 export { default as layers } from "./kinds/layers/View";
 export { default as matrix } from "./kinds/matrix/View";
 export { default as sequence } from "./kinds/sequence/View";
+export { default as steps } from "./kinds/steps/View";
 export { default as timeline } from "./kinds/timeline/View";
 export { default as tree } from "./kinds/tree/View";

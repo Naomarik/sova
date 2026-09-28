@@ -11,6 +11,7 @@
 
 import { canvasMeasure, wrap, type Measure } from "../../core/text";
 import type { ChartSpec } from "./parse";
+import { partsHeight } from "./parts";
 import { linearAxis, logAxis, tickCount, valueLabel, type Axis } from "./scale";
 
 export const FONT = { tick: 11, cat: 11, hcat: 12, value: 11, point: 11 };
@@ -408,6 +409,7 @@ export function legendBreaks(spec: ChartSpec, width: number, measure: Measure = 
  * measure is (canvas in the browser).
  */
 export function estimateHeight(spec: ChartSpec, width: number, measure: Measure = canvasMeasure): number {
+  if (spec.type === "parts") return partsHeight(spec, width);
   const W = chartWidth(width);
   let h = layoutChart(spec, W, measure).H * Math.min(1, width / W);
   if (spec.series.length > 1) {

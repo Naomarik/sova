@@ -5,54 +5,81 @@ import { canvasMeasure } from "../../core/text";
 import { emClass, SvgEmBadge } from "../../emphasis";
 import { Lines, SvgScroll, useMarkerId } from "../../svg";
 import type { ViewProps } from "../../types";
-import { FLOW_FONT, fitFlow, layoutFlow, type PlacedFlowNode } from "./layout";
+import { htmlMeasure } from "../tree/measure";
+import { FLOW_FONT, fitFlow, layoutFlow, type FlowLayout, type PlacedFlowNode } from "./layout";
 import type { FlowSpec } from "./parse";
+import { layoutSections, naturalSections } from "./sections";
 import { fontsLoaded, useWidth } from "./width";
 import "./flow.css";
 
 /**
  * `vis flow` / `vis state`: boxes and arrows, laid out by ./layout. A drawing that would have to
  * scroll in its pane (a phone) is laid out again to fit (fitFlow); ./layout's estimateHeight is
- * the height this draws at, for the shell's reserved box.
+ * the height this draws at, for the shell's reserved box. A flow with `== sections ==` draws one
+ * drawing per panel, side by side or stacked (./sections).
  */
 export default function FlowView(props: ViewProps<FlowSpec>) {
   const [width, measure] = useWidth();
-  const natural = createMemo(() => (fontsLoaded(), layoutFlow(props.spec, canvasMeasure)));
-  const layout = createMemo(() => fitFlow(props.spec, canvasMeasure, width(), natural()));
   const em = createMemo(() => emphasisMap(props.spec));
-  const arrow = useMarkerId();
-  return (
-    <div ref={measure}>
-      <SvgScroll width={layout().width} height={layout().height} label={props.label}>
-        <defs>
-          <marker id={arrow} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,1 L9,5 L0,9 z" class="vis-arrowhead" />
-          </marker>
-        </defs>
-        <g class="vis-edges">
-          <For each={layout().edges}>
-            {(e) => (
-              <path
-                d={e.path}
-                class="vis-edge"
-                classList={{ "vis-dashed": e.dashed }}
-                marker-end={`url(#${arrow})`}
-                marker-start={e.both ? `url(#${arrow})` : undefined}
-              />
-            )}
-          </For>
-        </g>
-        <For each={layout().edges.filter((e) => e.label)}>
-          {(e) => (
-            <g class="vis-edge-label">
-              <rect x={e.label!.x - e.label!.w / 2} y={e.label!.y - e.label!.h / 2} width={e.label!.w} height={e.label!.h} rx="4" />
-              <Lines lines={e.label!.lines} x={e.label!.x} y={e.label!.y} size={FLOW_FONT.edge} lh={15} />
-            </g>
+  // A spec never gains or loses sections while mounted (a new fence is a new drawing).
+  if (props.spec.sections) {
+    const natural = createMemo(() => (fontsLoaded(), naturalSections(props.spec, canvasMeasure)));
+    const panels = createMemo(() => layoutSections(props.spec, width(), canvasMeasure, htmlMeasure, natural()));
+    return (
+      <div ref={measure} class="vis-flow-sections" classList={{ "vis-flow-sections-row": panels().row }}>
+        <For each={panels().panels}>
+          {(p) => (
+            <section class="vis-flow-section" style={panels().row ? { width: `${p.width}px` } : undefined}>
+              <h4 class="vis-flow-section-head">{p.label}</h4>
+              <FlowDrawing layout={p.layout} em={em()} label={`${props.label}: ${p.label}`} />
+            </section>
           )}
         </For>
-        <For each={layout().nodes}>{(n) => <Node n={n} em={em().get(n.id)} />}</For>
-      </SvgScroll>
+      </div>
+    );
+  }
+  const natural = createMemo(() => (fontsLoaded(), layoutFlow(props.spec, canvasMeasure)));
+  const layout = createMemo(() => fitFlow(props.spec, canvasMeasure, width(), natural()));
+  return (
+    <div ref={measure}>
+      <FlowDrawing layout={layout()} em={em()} label={props.label} />
     </div>
+  );
+}
+
+/** One laid-out graph: edges, their labels, then the nodes on top. */
+function FlowDrawing(props: { layout: FlowLayout; em: Map<string, Emphasis>; label: string }) {
+  const arrow = useMarkerId();
+  return (
+    <SvgScroll width={props.layout.width} height={props.layout.height} label={props.label}>
+      <defs>
+        <marker id={arrow} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" class="vis-arrowhead" />
+        </marker>
+      </defs>
+      <g class="vis-edges">
+        <For each={props.layout.edges}>
+          {(e) => (
+            <path
+              d={e.path}
+              class="vis-edge"
+              classList={{ "vis-dashed": e.dashed }}
+              marker-end={`url(#${arrow})`}
+              marker-start={e.both ? `url(#${arrow})` : undefined}
+            />
+          )}
+        </For>
+      </g>
+      <For each={props.layout.edges.filter((e) => e.label)}>
+        {(e) => (
+          <g class="vis-edge-label">
+            <rect x={e.label!.x - e.label!.w / 2} y={e.label!.y - e.label!.h / 2} width={e.label!.w} height={e.label!.h} rx="4" />
+            <Lines lines={e.label!.lines} x={e.label!.x} y={e.label!.y} size={FLOW_FONT.edge} lh={15} />
+          </g>
+        )}
+      </For>
+      <For each={props.layout.nodes}>{(n) => <Node n={n} em={props.em.get(n.id)} />}</For>
+    </SvgScroll>
   );
 }
 

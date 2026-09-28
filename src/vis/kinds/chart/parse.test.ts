@@ -27,7 +27,7 @@ test("chart: series, gaps, tones, log scale, percent", () => {
   assert.match(err("chart", "a 1,000").message, /thousands commas/);
   assert.match(err("chart", "series: a, b\nx 1").message, /1 values; expected 2/);
   assert.match(err("chart", "scale: log\nx 0").message, /above 0/);
-  assert.match(err("chart", "type: pie\nx 1").message, /bar, stacked, line, scatter \(no pie or donut/);
+  assert.match(err("chart", "type: pie\nx 1").message, /bar, stacked, line, scatter, parts \(no pie or donut: use parts/);
   assert.equal(parseVis("bar", "x 1").ok, false, "no shorthand kinds: chart is the one fence");
 });
 

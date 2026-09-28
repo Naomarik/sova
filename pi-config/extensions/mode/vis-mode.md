@@ -45,8 +45,15 @@ done -> web "yes"
 mark sdk "one writer per session file"
 ```
 - `node <id> "Label" ["second line"] [shape] [tone]`; shapes: `box` (default) `round` `store` `decision` `circle`. Undeclared ids become boxes labelled with the id.
-- Edges: `a -> b`, dashed `a --> b`, both ways `a <-> b`; a label goes in quotes after the target; chains: `a -> b "x" -> c`.
+- Edges: `a -> b`, dashed `a --> b`, both ways `a <-> b`; a label goes in quotes after the target; chains: `a -> b "x" -> c`; a tone after a target colours that node (its own label goes on its `node` line).
 - `dir: down` (default) or `dir: right` (drawn down on a phone). Prefer under 12 nodes and short labels. `mark` a node by id.
+- Two small flows side by side (before/after, A vs B): `== Label ==` lines start panels, each laid out alone; edges stay inside a panel, ids unique across panels.
+```vis flow
+== Merge ==
+m1 -> m2 -> merged
+== Rebase ==
+r1 -> r2
+```
 
 ## sequence
 <!-- owner: process member. Step-through walks messages (a divider goes with the next, a note with the one before), so "Step 2" is what `mark 2` names. Emphasis targets: actor id or label, message number. -->
@@ -112,6 +119,16 @@ mark "Bubble sort" warn "quadratic"
 ```
 - A row: a label (quote it if it has spaces), one number per series (`-` for none), then an optional tone (single series only). Negatives and `12%` are fine; no thousands commas. At most 40 rows, 6 series.
 - Scatter rows are `label x y [tone]`, with no `series:`.
+- `type: parts`: one bar split into its rows, for a whole and its parts (a request vs the context window, a share of a limit); `of:` a capacity draws the unused rest.
+```vis chart
+type: parts
+unit: tokens
+of: 200000
+"System prompt" 9000 muted
+"Earlier turns (cached)" 60000 info
+"New input" 6000
+mark "New input" "only this part is uncached"
+```
 - `mark` a row (a point) by its label.
 
 ## timeline
@@ -124,9 +141,19 @@ mark React "components as functions of state"
 ```
 - `mark` a row by its when or its label.
 
+## steps
+<!-- owner: data member. kinds/steps: HTML rows of chips, a status mark per row, lanes as heads; the label folds above its chain on a phone. Emphasis target: row label (key = item index). -->
+Scenarios or journeys as chains, each with a status: `"Label" [tone] | step -> step -> …`, a step being a word or a "quoted label"; `== lane ==` groups rows. No ids. `mark` a row by its label.
+```vis steps
+== Asking people ==
+"Simple question" ok | You -> "Maria gets a link" -> "decision recorded"
+"Tony vs Bob" warn | "$5k vs $10k" -> "Tony settles"
+mark "Tony vs Bob" "settle step not run yet"
+```
+
 ## matrix
 <!-- owner: data member. Emphasis target: row label (key = index) or column name (key = c<index>). -->
-Options against criteria. `columns: A, B`, then `criterion | cell | cell`; a cell is `yes`, `no`, `partial` (optionally followed by a "note"), or short text. At most 6 columns.
+Options against criteria; also capabilities by level or role (a matrix, not a flow). `columns: A, B`, then `criterion | cell | cell`; a cell is `yes`, `no`, `partial` (optionally followed by a "note"), or short text. At most 6 columns.
 ```vis matrix
 columns: Merge, Rebase
 Keeps original commits | yes | no "new SHAs"

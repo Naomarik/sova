@@ -16,6 +16,7 @@
 import type { Tone } from "../../core/grammar";
 import { canvasMeasure, estimateWidth, wrap, widest, type Measure } from "../../core/text";
 import type { FlowSpec, Shape } from "./parse";
+import { sectionsHeight } from "./sections";
 
 export const FLOW_FONT = { label: 13, note: 11.5, edge: 11.5 } as const;
 const LINE = { label: 17, note: 15, edge: 15 };
@@ -500,5 +501,6 @@ export function fitFlow(spec: FlowSpec, measure: Measure, width: number, natural
  * View uses. (A drawing that still has to scroll may add a desktop scrollbar's height.)
  */
 export function estimateHeight(spec: FlowSpec, width: number): number {
+  if (spec.sections) return sectionsHeight(spec, width);
   return scrolledHeight(fitFlow(spec, canvasMeasure, width), width);
 }

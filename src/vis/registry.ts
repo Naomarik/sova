@@ -23,6 +23,8 @@ import { estimateHeight as matrixHeight } from "./kinds/matrix/height";
 import { parseMatrix } from "./kinds/matrix/parse";
 import { estimateHeight as sequenceHeight } from "./kinds/sequence/layout";
 import { parseSequence } from "./kinds/sequence/parse";
+import { estimateHeight as stepsHeight } from "./kinds/steps/height";
+import { parseSteps } from "./kinds/steps/parse";
 import { estimateHeight as timelineHeight } from "./kinds/timeline/height";
 import { parseTimeline } from "./kinds/timeline/parse";
 import { estimateHeight as treeHeight } from "./kinds/tree/height";
@@ -67,6 +69,7 @@ export const KINDS: Record<string, KindEntry> = {
   tree: kind(parseTree, view("tree"), "Tree", { size: (spec, width) => treeHeight(spec, width) }),
   chart: kind(parseChart, view("chart"), "Chart", { size: (spec, width) => chartHeight(spec, width) }),
   timeline: kind(parseTimeline, view("timeline"), "Timeline", { size: (spec, width) => timelineHeight(spec, width) }),
+  steps: kind(parseSteps, view("steps"), "Steps", { size: (spec, width) => stepsHeight(spec, width) }),
   matrix: kind(parseMatrix, view("matrix"), "Matrix", { size: (spec, width) => matrixHeight(spec, width) }),
   code: kind(parseCode, view("code"), "Code", { size: codeHeight }),
   html: kind(parseHtml, view("frame"), "Interactive", { framed: true, size: frameHeight }),

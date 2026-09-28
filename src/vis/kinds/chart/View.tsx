@@ -6,15 +6,19 @@ import { fontsLoaded, Lines } from "../../svg";
 import type { ViewProps } from "../../types";
 import { axisTitle as titleOf, chartWidth, FONT, layoutChart, legendBreaks, type Bar } from "./layout";
 import type { ChartSpec } from "./parse";
+import PartsView from "./Parts";
 import "./chart.css";
 
 /**
  * `vis chart`: bars (grouped or stacked, upright or sideways), lines and scatter, laid out by
  * layout.ts at the width the figure has. Colours are CSS classes (`vis-chart-s<n>` per series, a
  * tone class per row), so a theme switch needs no re-render. Series never rely on hue alone: lines
- * add a dash and a marker shape, and the legend names every series.
+ * add a dash and a marker shape, and the legend names every series. `type: parts` is its own HTML
+ * View (Parts.tsx).
  */
 export default function ChartView(props: ViewProps<ChartSpec>) {
+  // A spec never changes type while mounted (a new fence is a new drawing).
+  if (props.spec.type === "parts") return <PartsView {...props} />;
   let box!: HTMLDivElement;
   // The first layout happens in onMount, before the browser paints: the box is in the page by then.
   const [width, setWidth] = createSignal(560);

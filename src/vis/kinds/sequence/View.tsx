@@ -164,6 +164,8 @@ export default function SequenceView(props: ViewProps<SequenceSpec>) {
 
 /** An arrowhead marker: solid for a call, open for a reply; a tone's colour for a marked message. */
 function Head(props: { id: string; open?: boolean; tone?: string }) {
+  // Markers scale with their line's stroke: a marked message's 2.5 line would otherwise get heads 5/3 the size.
+  const size = () => ((props.open ? 8 : 7) * (props.tone ? 1.5 / 2.5 : 1)).toFixed(2);
   return (
     <marker
       id={props.id}
@@ -171,8 +173,8 @@ function Head(props: { id: string; open?: boolean; tone?: string }) {
       viewBox="0 0 10 10"
       refX="9.5"
       refY="5"
-      markerWidth={props.open ? "8" : "7"}
-      markerHeight={props.open ? "8" : "7"}
+      markerWidth={String(size())}
+      markerHeight={String(size())}
       orient="auto-start-reverse"
     >
       {props.open ? <path d="M1,1 L9,5 L1,9" class="vis-arrowhead-open" /> : <path d="M0,1 L9,5 L0,9 z" class="vis-arrowhead" />}

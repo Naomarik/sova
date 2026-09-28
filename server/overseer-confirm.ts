@@ -171,6 +171,20 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
   return out;
 }
 
+/** Whether a card may gate an act that reaches people or ends something (§app.overseer/org-people-facing):
+    only the global Overseer's (the one that resolves people and projects), when it lists a person, a
+    project or a gathering session. A click on it opens the only turn that act runs in; typed text never does. */
+export async function clickOnlyCard(items: SovaConfirmItem[], lookup: ConfirmLookup): Promise<boolean> {
+  if (!lookup.person || !lookup.project) return false;
+  if (items.some((i) => i.kind === "person" || i.kind === "project")) return true;
+  for (const i of items) {
+    if (i.kind !== "session") continue;
+    const s = await lookup.session(i.id);
+    if (s?.baton || s?.org?.kind === "gathering" || s?.org?.kind === "offer") return true;
+  }
+  return false;
+}
+
 /** The tool result's text: the card's items again, with exact ids, so the answering turn acts on exactly these. */
 export function confirmResult(items: SovaConfirmItem[], audience: "user" | "operator"): string {
   const head = `Shown to the ${audience} under your reply. The card ends your turn; their pick arrives as their next message.`;
@@ -269,6 +283,7 @@ export function confirmTool(d: ConfirmToolDeps): Tool {
         ...(p.detail ? { detail: cut(String(p.detail), 600) } : {}),
         options,
         ...(items.length ? { items } : {}),
+        ...((await clickOnlyCard(items, d.lookup)) ? { clickOnly: true as const } : {}),
       };
       return { content: [{ type: "text", text: confirmResult(items, who) }], details, terminate: true };
     }),

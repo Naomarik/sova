@@ -49,7 +49,7 @@ export function confirmDetails(details: unknown): SovaConfirmDetails | null {
   });
   if (options.length === 0) return null;
   const items = Array.isArray(details.items) ? details.items.flatMap(confirmItem) : [];
-  return { title, detail: str(details.detail), options, ...(items.length ? { items } : {}) };
+  return { title, detail: str(details.detail), options, ...(items.length ? { items } : {}), ...(details.clickOnly === true ? { clickOnly: true as const } : {}) };
 }
 
 /** One card item, tolerant: a row without its kind's id and name is dropped, bad optional fields go. */

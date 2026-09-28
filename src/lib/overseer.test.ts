@@ -217,6 +217,12 @@ test("confirm details: items parse tolerantly; a card without them has no items 
   assert.ok(!("items" in confirmDetails({ title: "Go?", options: ["Yes"], items: "s1" })!), "items that aren't a list are ignored");
 });
 
+test("confirm details: clickOnly parses only as true; an ordinary card has none", () => {
+  assert.equal(confirmDetails({ title: "Close?", options: ["Close"], clickOnly: true })?.clickOnly, true);
+  assert.ok(!("clickOnly" in confirmDetails({ title: "Go?", options: ["Yes"] })!), "an ordinary card keeps its hint");
+  assert.ok(!("clickOnly" in confirmDetails({ title: "Go?", options: ["Yes"], clickOnly: "yes" })!));
+});
+
 test("confirm details: an item's note parses on every kind, blank or non-string notes are dropped", () => {
   const d = confirmDetails({
     title: "Archive?",

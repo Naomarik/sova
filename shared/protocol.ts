@@ -2596,6 +2596,10 @@ export interface SovaConfirmDetails {
   detail?: string;
   options: { label: string; reply?: string; tone?: "default" | "danger" }[];
   items?: SovaConfirmItem[];
+  /** The global Overseer's card listing a person, a project or a gathering session: it may gate an
+      act that reaches people or ends something, which only a click on it approves, never typed text
+      (§app.overseer/org-people-facing). The card drops its "Or type your answer." hint. Safe by absence. */
+  clickOnly?: true;
 }
 
 /** One thing a confirm card is about. A session row: its folder's short name (`project`), last

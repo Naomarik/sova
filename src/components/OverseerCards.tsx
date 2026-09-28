@@ -27,6 +27,7 @@ export const useOverseerThread = () => useContext(OverseerThreadContext);
  * `sova_confirm`, drawn as the question it asks. Its buttons send the choice as the user's next
  * message. Once any later user message exists the card is answered: the buttons go and the
  * choice is said, so a reload or a restart shows the same thing, because it lives in the transcript.
+ * A click-only card (`clickOnly`) has no "Or type your answer." hint: typed text can't approve what it gates.
  */
 export function ConfirmCard(props: { details: SovaConfirmDetails; answered: boolean; choice: string | null; pending?: boolean; card?: string }) {
   const thread = useOverseerThread();
@@ -74,7 +75,7 @@ export function ConfirmCard(props: { details: SovaConfirmDetails; answered: bool
               </button>
             )}
           </For>
-          <Show when={thread && !props.pending}>
+          <Show when={thread && !props.pending && !props.details.clickOnly}>
             <span class="overseer-confirm-hint">Or type your answer.</span>
           </Show>
         </Show>

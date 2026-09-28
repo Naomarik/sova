@@ -527,6 +527,20 @@ describe("the confirm card: people and projects, and the click that opens a conf
     assert.match(confirm.confirmResult(rows, "user"), /Projects:\n- Portal \(prj_[a-z0-9]+\) in Cardco \(org_[a-z0-9]+\) — Its site\.\nPeople:\n- Lee Chan \(p_[a-z0-9]+, active\) in Cardco/);
   });
 
+  test("a card that may gate a people-facing act is click-only; an ordinary card, or a project overseer's, is not", async () => {
+    const summaries: Record<string, any> = { plain: { id: "plain", title: "Tidy" }, bat: { id: "bat", title: "Ask Lee", baton: {} }, off: { id: "off", title: "Offer", org: { orgId: org.id, orgName: "Cardco", kind: "offer" } } };
+    const withSessions = { ...lookup, session: async (ref: string) => summaries[ref] ?? null };
+    const card = async (items: unknown, l: any = withSessions) => confirm.clickOnlyCard(await confirm.resolveConfirmItems(items, l, refusal), l);
+    assert.equal(await card({ people: [{ org: org.id, id: lee.id }] }), true);
+    assert.equal(await card({ projects: [{ org: org.id, id: project.id }] }), true);
+    assert.equal(await card({ sessions: ["bat"] }), true, "a gathering session: close, take, hand off");
+    assert.equal(await card({ sessions: ["plain", "off"] }), true, "an offer among ordinary sessions");
+    assert.equal(await card({ sessions: ["plain"] }), false, "archiving an ordinary session: typing still answers");
+    assert.equal(await card(undefined), false);
+    const po = { ...withSessions, person: undefined, project: undefined };
+    assert.equal(await card({ sessions: ["bat"] }, po), false, "a project overseer's card gates nothing");
+  });
+
   test("the card's items count only when the run's opening message is the click on it", () => {
     const details = { title: "Start?", options: [{ label: "Start", reply: "Start the session with Lee." }, { label: "Cancel" }], items: [{ kind: "person", id: lee.id, orgId: org.id, name: "Lee Chan", orgName: "Cardco", status: "active" }] };
     const branch = (...more: unknown[]) => [

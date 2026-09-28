@@ -107,7 +107,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   opened for writing); list groups, targets, models and folders; the ideas backlog (`sova_ideas`: its table of contents,
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the
   user's todos (`sova_todos`: open, done or all; §app.overseer/todos); the links this host knows
-  (`sova_links`, §app.overseer/links-tools).
+  (`sova_links`, §app.overseer/links-tools); this host's organizations, their projects and project
+  overseers, and one roster person (`sova_orgs`, `sova_org_project`, `sova_org_person`,
+  §app.overseer/org-reads), never a contact or a link (§app.overseer/org-projection).
 - **The transcript read reaches peers.** `sova_read_session` takes an optional `host`: with a
   peer's id it reads that peer's session by id (§mesh.links/by-id), with the same bounds and
   untrusted wrapping. The peer renders the slice with its own parser and redacts it with its own
@@ -127,7 +129,10 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   confirm; the ideas backlog (`sova_idea`: file, grow, update, link and rename ideas, launch and
   message an idea's explorer); the user's todos (`sova_todo`: add, tick, untick, edit, remove, clear the
   done ones); link sessions across hosts and end a link (`sova_link`, `sova_unlink`,
-  §app.overseer/links-tools).
+  §app.overseer/links-tools); this host's organizations: orgs, projects, rosters, owners and
+  decisions (`sova_org`, `sova_org_project`, `sova_roster`, `sova_owner`, `sova_project_decisions`,
+  §app.overseer/org-writes), gathering sessions (`sova_gather`, §app.overseer/org-people-facing) and
+  project overseers (`sova_project_overseer`, §app.overseer/org-project-overseers).
 - **Sending (`sova_send`) is typing in that session's composer.** Idle, with subagents working or
   not, the message starts a turn. Mid-turn it is **queued as a follow-up** behind the running turn
   by default: a queued row in that session, "Queued", which the user can remove
@@ -165,6 +170,15 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   (`~`, `~/.pi`) leaves them out of its results, uncounted. The list is kept in one place in the
   server, and the Overseer's prompt names every entry. Only the Overseer's tools are guarded; every
   other session keeps pi's own.
+- **Organizations: through their tools only.** The same four tools never reach an attached org's
+  workspace directory, any file in it (the roster and its history with every contact, the About
+  text, the baton transcripts, the overseers' state), nor the host's link stores
+  (`<stateRoot>/baton-links.json`, `<stateRoot>/person-links.json`). The workspaces are the ones
+  attached when the call runs, checked as written and at their realpath like the secret files, so
+  a symlink or a copy's parent can't reach one. A path inside one is refused with "That folder is
+  an organization's workspace; read it with sova_orgs and sova_read_session."; the link stores are
+  refused as credentials; a search or listing from a parent leaves them out, uncounted. The
+  prompt says so.
 - **Secret values are redacted everywhere the Overseer reads or writes.** Where the file rules
   can't reach (a key copied into an ordinary file, a token a session printed into its transcript),
   every occurrence of a known secret value becomes `[redacted]`. The values are read by the server
@@ -223,7 +237,10 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   unattended turn every acting tool refuses without doing anything: create, send, archive and
   unarchive, rename and set model/thinking/mode (`sova_set_session`), group operations,
   answering a dialog, linking and unlinking (`sova_link`, `sova_unlink`), every `sova_idea` operation (filing, changing, linking or renaming an idea,
-  launching or messaging an explorer), and every `sova_todo` operation, ticking included. Still allowed: every read, `sova_note`, `sova_confirm`, `sova_navigate`
+  launching or messaging an explorer), every `sova_todo` operation, ticking included, and every
+  organization act (`sova_org`, `sova_org_project`, `sova_roster`, `sova_owner`,
+  `sova_project_decisions`, `sova_gather`, `sova_project_overseer`, a message to a project overseer
+  included). Still allowed: every read, `sova_note`, `sova_confirm`, `sova_navigate`
   (which never moves a tab in such a turn), and `read`/`grep`/`find`/`ls`. The refusal tells the
   model to stop and raise a `sova_confirm` card instead; the user's click starts a turn in which it
   may act, within the caps. The Overseer's prompt states the rule. Sessions the Overseer creates
@@ -254,29 +271,37 @@ session's final report. Ticking marks it done."), and every option's `reply` say
 does to which items ("Archive the 13 sessions listed and tick td_dbd3f3f5; leave §sova/tidy-sweeps
 open."), never just its label. These too are the prompt's and the tool description's.
 
-- **Items.** `items` is `{sessions?, ideas?, todos?}`, each a list whose entries are an id or
-  `{id, note}` (a bare id is still valid). Sessions are addressed in
+- **Items.** `items` is `{sessions?, ideas?, todos?, people?, projects?}`, each a list whose
+  entries are an id or `{id, note}` (a bare id is still valid); a person or a project also names
+  its org, `{org, id, note?}`, by id or exact name, as the org tools take them
+  (§app.overseer/org-tools). Sessions are addressed in
   any form the tools print them (§app.overseer/tools), and any session on this host will do (a
   card only points at it: TUI-live or archived is fine); ideas by their § id (a former id resolves
   to the idea it was renamed to); todos by their `td_` id. The server resolves every id when the card
   is raised. An id that matches nothing refuses the whole card, and the refusal names every such id
-  by kind; so does a card with more than 50 ids. The same thing named twice shows once.
+  by kind; so does a card with more than 50 ids. The same thing named twice shows once. A person
+  or project of an org not attached here matches nothing.
 - **Refusals.** Each of these refuses the whole card, and one refusal names every case at once: an
   id that matches nothing; the asking overseer's own conversation (any Overseer file; for a project
   overseer, its own); a note over 220 characters (whitespace collapsed), named with its item and
-  length. Before any of that, a key in `items` other than the three lists refuses on its own, with
+  length. Before any of that, a key in `items` other than the five lists refuses on its own, with
   an example of where an entry goes.
 - **A snapshot.** The resolved rows are stored in the card (`SovaConfirmDetails.items`), so the card
   shows what the Overseer asked about then, whatever changes later. A session row carries its
   title, its folder's short name, its last activity, its one-line summary when it has one, and how
-  many subagents were working in it; every row carries its note when it was given one.
+  many subagents were working in it; a person row their name, status and org; a project row its
+  name and org; every row carries its note when it was given one. Never a contact or a link
+  (§app.overseer/org-projection).
 - **The result repeats them.** The tool result lists the items again with their exact ids, sessions
   as `[title](sova://s/<id>)`, each followed by ` — <note>` when it has one, so the turn that
   answers the card acts on exactly those.
 - The chat renders that tool call as a **confirm card** in the thread: title, detail, the items, and
   one button per option.
   - The items sit between the detail and the buttons, one compact row each: ideas, then todos, then
-    sessions. A session row is an in-app link (resolved like a session link,
+    projects, then people, then sessions. A project row is an in-app link to its project page,
+    reading the project's name and, after it, the org's; a person row an in-app link to their page
+    (§app.organizations/person-page), reading their name, then the org and their status chip when
+    it isn't `Active`. A session row is an in-app link (resolved like a session link,
     §app.overseer/links) whose text is the session's summary, or its title when it has none (the
     title is the first prompt, which rarely names the work); then its folder and how long ago it was
     active ("sova · 3d ago"), and a warning chip ("2 subagents working") when it had working
@@ -284,15 +309,19 @@ open."), never just its label. These too are the prompt's and the tool descripti
     A todo row is its text.
   - Under each row, its note in body text (not muted), up to 2 lines and then clamped; a row
     without a note has nothing under it.
-  - Ideas and todos always show: a card's effect on them (ticking a todo, closing an idea) is never
-    behind a toggle. Only sessions collapse: past 8 sessions the card shows the first 8 and a **Show
+  - Ideas, todos, projects and people always show: a card's effect on them (ticking a todo,
+    closing an idea, a person's links stopping) is never behind a toggle. Only sessions collapse: past 8 sessions the card shows the first 8 and a **Show
     all N sessions** toggle (Show fewer, open), so the rows it reveals are only ever sessions; a card
     with 9 sessions shows all 9, since hiding one row saves nothing.
   - A card without items (every card from before they existed) renders exactly as before.
 - **Hide tool calls never folds it.** The card is the Overseer's question, not its working, so
   "Hide tool calls" leaves it (and its result) in the thread, like the link card
   (§app.overseer/links-tools).
-- A click sends the option's reply as the next user message.
+- A click sends the option's reply as the next user message. While the card can be answered,
+  "Or type your answer." follows the buttons, since a typed message answers it too. A card that
+  may gate an act that reaches people or ends something, the global Overseer's card listing a
+  person, a project or a gathering session (`SovaConfirmDetails.clickOnly`), has no such hint:
+  only its click approves that act (§app.overseer/org-people-facing).
 - Its title, detail, options and items never hold a secret value: the arguments are redacted before
   the card is built, so a card shows `[redacted]` in its place (§app.overseer/tools).
 - Once any later user message exists, the card shows as answered (the chosen option marked when the
@@ -306,8 +335,16 @@ open."), never just its label. These too are the prompt's and the tool descripti
 
 - **Per user turn:** at most 5 sessions created, 10 prompts sent to other sessions, 50 archive
   operations, 2 explorers launched (§app.overseer/explorer), 3 links made
-  (§app.overseer/links-tools). **At once:** at most 5 Overseer-started sessions running. All six
-  are configurable in Settings → Overseer.
+  (§app.overseer/links-tools), 20 organization writes (`orgWritesPerTurn`) and 3 gathering
+  sessions or offers started (`gatherPerTurn`). **At once:** at most 5 Overseer-started sessions
+  running. All eight are configurable in Settings → Overseer; a settings file without the two new
+  ones reads them as their defaults.
+- **What the organization caps count.** A gathering session or an offer started (`sova_gather`
+  `start` and `offer`) takes one of the gathering cap. Every other organization act takes one org
+  write, whatever it changes (a promotion of several decisions is one), except a message to a
+  project overseer, which takes one prompt (§app.overseer/org-project-overseers), and a coding
+  session it starts as a project's, which takes one session created and a running slot. A refusal
+  takes nothing.
 - **A user turn** starts when a message the user sent from the UI (typed, a quick action, a
   confirm-card click, a steer, or a regenerate) enters the Overseer's context. It is recognised by
   identity, not by its text: the chat runtime hands such a message to the SDK marked as the user's,
@@ -318,7 +355,7 @@ open."), never just its label. These too are the prompt's and the tool descripti
   text as something the user sent. Each send counts once: a message queued from inside the run it
   started (a wake-up set during it) is not the user's. A user message the runtime holds back until
   the previous run has fully settled is not recognised and opens a read-only turn (it fails closed).
-  Only a user turn (or `/clear`) resets the five per-turn counters. A brief, a fired `wake_nudge`,
+  Only a user turn (or `/clear`) resets the seven per-turn counters. A brief, a fired `wake_nudge`,
   an extension's message that starts a run and any other server-started run are unattended
   (§app.overseer/tools): read-only, on the budget of the user message before them, never a renewed
   one. The
@@ -382,8 +419,12 @@ Three tools let the Overseer make and end links between sessions on different ho
 - **One mechanism, two senders.** Baton sessions attribute every user message the same way, with
   their own `sova-baton-sent` marker (§app.baton/attribution); the pending-mark list, the queue
   hand-off rule and the settle sweep are shared, and each marker is written only for its own sender.
-- **Only the Overseer can tag.** `POST /api/sessions/prompt` marks a prompt as the Overseer's only
-  when the request carries the server's sender secret: random, made at server start, held in memory
+- **A project overseer's conversation too.** The one route that writes into a project overseer's
+  conversation, the Overseer's message route (§app.overseer/org-project-overseers), marks every
+  message it hands in the same way, with the same `sova-overseer-sent` entry, the same queued-row
+  word and the same tag.
+- **Only the Overseer can tag.** `POST /api/sessions/prompt` and that route mark a prompt as the
+  Overseer's only when the request carries the server's sender secret: random, made at server start, held in memory
   only, never written to disk or sent to a client, and carried only by the Overseer's own in-process
   tool calls. Any other caller (a worker with `bash`, a script) gets an ordinary, untagged prompt,
   whatever header it sends.
@@ -772,3 +813,232 @@ button.
   turn, so a todo the Overseer adds mid-turn appears within one read. Every write answers with the
   whole list, which the panel shows as it is.
 - Its foot names the file it is stored in.
+
+## §app.overseer/org-tools — Organizations: what the Overseer sees and runs
+
+The Overseer sees and runs this host's organizations (§app/organizations) for the user: their
+projects, rosters, gathering sessions, decisions and project overseers (§app/project-overseer).
+It does so through its own `sova_*` tools, one read and one act per kind of thing, never through
+the files: the workspace repos are closed to its file tools (§app.overseer/tools).
+
+- **This host's orgs only.** Only orgs attached here (§app.organizations/registry). No org tool
+  takes a `host`: a peer's orgs are never listed, read or changed, and a peer never reaches this
+  host's org tools.
+- **Reads:** `sova_orgs` (every org, or one), `sova_org_project` (one project and its overseer),
+  `sova_org_person` (one roster person), §app.overseer/org-reads. What they carry is one
+  projection, §app.overseer/org-projection.
+- **Acts:** `sova_org`, `sova_org_project`, `sova_roster`, `sova_owner` and
+  `sova_project_decisions` (§app.overseer/org-writes); `sova_gather` (§app.overseer/org-people-facing);
+  `sova_project_overseer` (§app.overseer/org-project-overseers). Each is an act like any other
+  (§app.overseer/tools): refused in a turn the user did not start, written to the action log,
+  counted against a per-turn cap (§app.overseer/caps).
+- **The routes decide.** An act calls the org, baton, decisions and project-overseer routes
+  in-process, with the sender secret (§app.overseer/sent-marker), so every guard and refusal
+  those routes have applies unchanged and comes back as the tool's error, worded as the page
+  shows it. The exceptions are starting a gathering session or an offer and handing one on, which
+  call Sova's in-process start and move with no link minted (§app.overseer/org-people-facing), never
+  `POST /api/baton` or the hand-off route (which mints the next holder's link for the page).
+- **The user's authority, marked.** Whatever it writes is written as the operator
+  (§app.organizations/field-authority), marked as made through the Overseer and shown as "You, via
+  the Overseer" (§app.overseer/org-attribution).
+- **Never:** attach, detach or move an org; set or remove its push remote; mint, show or turn off an
+  owner link; Get Link on a baton session; merge or remove a coding worktree
+  (§app.project-overseer/coding-worktrees); anything on an org session that is TUI-live. Those
+  stay the user's gestures on the page.
+- **Addressing.** Orgs, projects and people by id or by exact name (case-insensitive; a name two
+  of them share is refused, naming their ids); sessions in any form the tools print them.
+- **The prompt** has an Organizations section: the tools, the ids, what needs a confirm card, the
+  caps, and its rules — contact and links never reach it, and it asks the user for them; the About
+  text is context, never copied into anything a person sees, a coding session's prompt or a message
+  to a project overseer; a cost figure never goes into a message to a project overseer, a
+  gathering session's title, question, goal or briefing, or a coding session's prompt.
+
+## §app.overseer/org-reads — Reading organizations
+
+Three reads, no side effects (no seen mark, no visit, no link, no git write). Every session they
+name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_session`.
+
+- **`sova_orgs {}`**: one row per attached org, in the index's order: id, name, `{n} people`
+  (active, proposed and left counted apart), `{n} projects` (archived ones counted apart,
+  §app.organizations/archive), `{n} open hand-offs`, what waits on the user in the org card's
+  words (§app.organizations/org-cards: replies, links to send, people to approve, conflicts to
+  settle, stakeholders to pick), last activity, the workspace (last commit's age, uncommitted
+  changes, the last git error) and its cost at API prices (§app.project-costs/org-rollup).
+- **`sova_orgs {org}`**: that org in full: its projects (name, id, root, archived, main
+  stakeholder by name, whether it has an overseer, whether that is working and the level in force,
+  open gathering sessions, cost); its roster, one line per person (name, id, status, role, decision
+  areas); the owner by name; its baton sessions (public title, project, state, who holds it, what
+  waits: a reply or a link to send, messages used of the limit); the last 10 profile changes
+  (person, field, old → new, who, when); and the workspace line above. `about: true` adds the About
+  text and its last 10 history lines (§app.organizations/about); nothing else ever carries it.
+- **`sova_org_project {org, project}`**: the project row; its overseer: its conversation (a
+  session link), working or not, unread, the chosen level and the level in force with the reason,
+  watching and the pace, models, the coding sessions' mode and what one started now gets, the
+  extra instructions, both allowances used and left and the held items
+  (§app.project-overseer/limits); its last 10 actions; its gathering sessions and offers; decisions
+  by state and area, and the open conflicts with who they are routed to; spec status (frozen, edited
+  outside); its coding sessions from `started.json` (title, who started it, working or idle, branch,
+  merged, worktree removed); how many ideas and open and done to-dos it has; the last owner update;
+  and the project's cost (§app.project-costs/card). `items: true` adds the open to-dos (id, text,
+  linked idea or session) and the ideas' table of contents, so an act can name them.
+- **`sova_org_person {org, person}`**: what the person's page shows (§app.organizations/person-page),
+  without contact: name, status, role, language, decision areas, skills, competence, voice, the
+  referral (who referred them, why, where), owner and main-stakeholder roles, their sessions with
+  how they relate to each, their decisions and routed conflicts, their links on this host as states
+  only (session, hand-off, `Can write` / `Reads only` / `Turned off` / `Expired` / `Session
+  closed`, sent, expires, visits), the visit rows, and the profile history.
+- A name, a role or a skill someone gave is data, wrapped as untrusted content like a transcript
+  read (§app.overseer/tools); so is a decision's quote.
+
+## §app.overseer/org-projection — What never reaches the model
+
+- **One projection.** Every org read and every org act's result is built by one server module
+  (`server/overseer-org-view.ts`) that composes the org store's own functions field by field. It
+  never passes an `OrgDetail`, a `PersonPage`, a roster row or a baton row along whole, so a field
+  added to those later reaches the model only when this module names it.
+- **Never in a tool result, an error or the action log:**
+  - **contact**, every channel, wherever it sits: a person's profile, a referral, a history line (a
+    contact change reads `contact changed`, with no old or new value), a `propose_roster_edit`
+    call in a baton transcript (`sova_read_session` of an org session shows the call without its
+    `contact`), a person's or a model's words in a transcript (below), and a write's own arguments
+    once it has run (§app.overseer/org-writes);
+  - **links**: no `/h/` or `/i/` URL, no token, no part of one, no token hash; a link is a state
+    word, a hand-off number and its times;
+  - the About text, except in `sova_orgs {org, about: true}`.
+- **Contact in transcripts is redacted, in every tool.** A contact value also reaches a transcript
+  as words: a person types their own number, a referrer types someone else's, a model repeats one.
+  So every Overseer tool (`sova_read_session` and `sova_session` of an org session included, every
+  org tool, every other tool) gives back each contact value on an attached org's roster (every
+  person, every channel, current or in a history line; values of 5 characters or more) as
+  `[contact]`, in its result, its error and its action-log line, as the secret values are
+  `[redacted]` (§app.overseer/tools). The arguments a call receives are never rewritten, so a write
+  still stores what it was given. A transcript's tool-call line never shows a call's `contact`
+  argument. The same holds for a peer's read of one of this host's sessions (§mesh.links/by-id).
+  Treat `[contact]` like `[redacted]`: final. A value no roster holds (one a person typed and nobody
+  saved) is not known, so not redacted.
+- **Secrets are still redacted** over everything, as for every tool (§app.overseer/tools).
+- **Checked by test.** A marker test plants a contact value, a link token and an About text in a
+  hermetic org, drives every org read and act, and `sova_read_session` and `sova_session` on its
+  baton sessions (one whose person typed the contact value into their message), and finds none of
+  them in any result, error or action-log line, except the About text in that one read.
+
+## §app.overseer/org-writes — Changing organizations
+
+Every op is an act (§app.overseer/org-tools), attended only, counted as one org write
+(§app.overseer/caps) unless it says otherwise, and answers with what changed in the page's words.
+
+- **`sova_org {op}`**: `create {name}` (in the default workspaces folder; no other folder),
+  `rename {org, name}`, `about {org, text}` (a blank text removes it) and `revert_about {org, at}`
+  (§app.organizations/about), `commit {org}` (Commit Now, §app.organizations/workspace-repo). The
+  result of `about` names the text's length, never the text.
+- **`sova_org_project {op}`**: `add {org, name, root}`, `edit {org, project, name?, root?,
+  stakeholder?, owner_hidden?}` (a stakeholder by id or name, or `none`), `archive {org, project}`
+  and `unarchive {org, project}` (§app.organizations/archive; archive asks first,
+  §app.overseer/org-people-facing).
+- **`sova_roster {op}`**: `add {org, name, role?, decides?, skills?, language?, voice?, contact?}`
+  (an active person), `edit {org, person, …fields}` (never `status`), `approve` and `decline {org,
+  person}` for a proposed person, `leave {org, person}` (status `left`: every link of theirs stops
+  at once, §app.organizations/roster, so it asks first), and `revert {org, person, at}`
+  (§app.organizations/history-and-revert; a revert that would set `left` asks first, as `leave`
+  does). **Contact is write-only**: `add` and `edit` take it, the result says only "contact set" or
+  "contact cleared", and the action log records the call with `contact` replaced by `[contact]`.
+  (The user gave the value in their own message, which the conversation keeps as they wrote it.)
+- **`sova_owner {op: "set", org, person | null}`** sets the org's owner (§app.owner-page/owner).
+- **`sova_project_decisions {op, org, project}`**: `reconcile`, `promote {ids}`, `resolve
+  {conflict, …}`, `route {conflict, to}` and `freeze {frozen}` (§app/requirements), through the
+  project's decisions routes. `promote` refuses a decision outside its author's area, as a project
+  overseer's promotion does (§app.requirements/promotion): only the user promotes one, by id on the
+  project page. One call is one org write, whatever it promotes.
+- **Refused, as the routes refuse:** an unknown or ambiguous org, project or person; a field over
+  its cap; a write a person's status forbids. Nothing partial happens past a refusal.
+
+## §app.overseer/org-attribution — "You, via the Overseer"
+
+- **The mark.** Every org, baton, decisions and project-overseer route reads the sender secret
+  (§app.overseer/sent-marker). A write it makes for a request carrying it is recorded as the
+  operator's with `via: "overseer"` and the Overseer's id: the roster history's `by: {kind:
+  "operator", via: "overseer", overseerId}`, the About history's `by`, the project's
+  `stakeholderHistory` and the org's `ownerHistory` lines (`why: "operator"`, `via`), the project's
+  `archived` record (§app.organizations/archive), a baton row it started (`startedVia`), and the
+  `started.json` row of a coding session it started (§app.overseer/org-project-overseers). A
+  request without the secret records no `via`, whatever its body says.
+- **Operator authority.** `via` changes nothing about what the write may do: field authority,
+  refusals and routing read the kind, `operator` (§app.organizations/field-authority). A decision
+  area the Overseer gives someone is operator-set (§app.requirements/routing), and a person it
+  approves is approved by the operator.
+- **Shown as "You, via the Overseer"** wherever the page names who made a change: a person's
+  Profile Changes and the org's Recent Profile Changes (`you, via the Overseer` where the writer
+  reads `you`), the About card's History rows, the main stakeholder's and the owner's latest-change
+  lines ("Set by you, via the Overseer {time}."), a coding session's row ("Started by you, via the
+  Overseer"), and the archived project's banner. Copy: §design.copy-deck/overseer-orgs.
+- **Reverting** a line made via the Overseer is an ordinary revert: it records whoever reverts it.
+
+## §app.overseer/org-people-facing — Acts that reach people ask first
+
+- **`sova_gather {op}`**: `start {org, project, to, public_title, question, goal, briefing?,
+  model?, thinking?, messages_max?}` (`to`: a person, `operator`, or two or more people for an
+  offer at start), `offer {session, to[], question?, briefing?}`, `handoff {session, to, question,
+  briefing?}`, `take {session}` (Take Back), `close {session}`, `extend {session, by}` and
+  `revoke_link {session, person?}`. The rules of §app.baton/goal-and-loadout,
+  /offers-and-leases and /links apply as on the page; the tool descriptions carry the project
+  overseer's wording rules for `public_title`, `question` and `goal`
+  (§app.project-overseer/tools).
+- **No link is ever minted for the model.** `start` and `offer` start in-process with no link
+  (`mintLink: false`), owned by the operator; the session then needs the user to send each person
+  their link (§app.baton/needs-you), and the result says so: "No link was made: Needs you asks you
+  to send {name} their link." A hand-off moves the baton in-process and mints none either (the
+  page's hand-off route mints one for the operator to copy). No op gets, shows or re-mints a link.
+- **Behind a confirm card, enforced.** These ops act on people or end something, and run only in a
+  turn the user opened by clicking an option of a confirm card (§app.overseer/confirm) whose
+  items list every person, project and session the call acts on: `sova_gather` `start`, `offer`,
+  `handoff`, `take`, `close` and `revoke_link`; `sova_roster` `leave`, and a `revert` that sets
+  `left`; `sova_project_overseer` `clear`; `sova_org_project` `archive`. Anywhere else (a typed
+  "yes", a card that didn't list the target, a later turn) the op refuses without doing anything:
+  "This reaches people or ends something: ask with sova_confirm, listing {what} in its items, and
+  act in the turn the user's click starts." `extend`, `decline`, `unarchive` and every other op
+  need no card. So the card itself never invites a typed answer: a global Overseer card listing a
+  person, a project or a gathering session drops its "Or type your answer." hint
+  (§app.overseer/confirm).
+- **Counted.** `start` and `offer` count against the gathering cap; the other `sova_gather` ops
+  are org writes (§app.overseer/caps).
+
+## §app.overseer/org-project-overseers — Running project overseers
+
+`sova_project_overseer {op, org, project, …}`; every op is an act, attended only.
+
+- **`start`** creates the project's overseer, as the project page's Start Overseer does
+  (§app.project-overseer/identity). **`settings {…}`** changes what the Overseer card sets (level,
+  models and thinking, the coding sessions' mode, the limits and the pace, watching, the extra
+  instructions): one PATCH, refused whole as the page's is. **`run_now`** is Run Now
+  (§app.project-overseer/watch-loop). **`clear`** is its Clear, behind a confirm card
+  (§app.overseer/org-people-facing). **`idea`** and **`todo`** add, edit, tick, untick and
+  remove the project's ideas and to-dos, as the project page does
+  (§app.project-overseer/ideas-and-todos). Each counts as one org write.
+- **`message {text}`: the one sanctioned route into a project overseer's conversation**
+  (§app.project-overseer/identity). `POST /api/orgs/:id/projects/:pid/overseer/message {text}`
+  accepts only a request carrying the sender secret; any other caller gets 403 ("Only the Overseer
+  sends here. Write in the overseer's own composer."). `sova_send` and `POST /api/sessions/prompt`
+  still refuse the overseer's conversation (409). The text goes into its current conversation:
+  idle, it starts a turn; mid-turn it is queued as a follow-up behind the running turn, a queued
+  row reading **Overseer**. A text starting with `/` is refused ("Send words; use op clear to
+  clear it."), as is a project with no overseer yet and an archived project
+  (§app.organizations/archive). It is marked as the
+  Overseer's in the overseer's file (§app.overseer/sent-marker), so its row carries the
+  **Overseer** tag (§app.project-overseer/page); to the overseer's model it is the operator's
+  message, in plain text.
+- **Attended, as if the user typed it.** The overseer's run that message opens is the operator's
+  (§app.project-overseer/autonomy-levels): its level doesn't bind, and it uses — and resets, as an
+  operator message does — the per-message allowance, "each message you send"
+  (§app.project-overseer/limits). What bounds repeats is the Overseer's own prompt cap: each
+  message counts as one prompt to another session, and as a `sova_send` does against running at once
+  (§app.overseer/caps).
+- **Coding sessions.** A project's coding sessions are ordinary sessions: `sova_list_sessions`,
+  `sova_session`, `sova_read_session` and `sova_send` reach them as before. **`code {prompt?,
+  title?, item?, model?, thinking?}`** starts one as the project's, the same way the project page's
+  Start Coding Session does: its own worktree (§app.project-overseer/coding-worktrees), the
+  project's coding mode (§app.project-overseer/coding-mode), an `operator-coding` row in
+  `started.json` marked `via: "overseer"`. `item` (a to-do or idea id) links it and gives the
+  prompt when none is given; without an item, `prompt` and `title` are required. It counts against
+  the Overseer's per-turn sessions created and running at once, like any session it starts, and
+  never against the project overseer's limits. The result names the session, its branch and its
+  path.

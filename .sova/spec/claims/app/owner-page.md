@@ -20,21 +20,25 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 
 - **Stored on the org**, in the workspace repo, so it travels (§app.organizations/portability):
   `org.json` `owner` (a person id, or absent or `null`: none), `ownerHistory` (`{at, from, to,
-  why}`, oldest first, the last 50; `why` is `operator`, or `left` when Sova cleared it because the
-  person left) and, after a clearing, `ownerCleared` (`{personId, name, at}`) until the operator
+  why, via?}`, oldest first, the last 50; `why` is `operator`, or `left` when Sova cleared it because the
+  person left; `via: "overseer"` when the global Overseer set it for the operator) and, after a clearing, `ownerCleared` (`{personId, name, at}`) until the operator
   saves the select again.
 - **Only an active roster person.** `PUT /api/orgs/:id/owner {personId | null}` (main listener
   only) accepts an active person of that org or `null`. A proposed, left or unknown person is
   refused (400, "Only an active person on the roster can be the owner.") and nothing is written.
   Saving the same person again writes nothing.
 - **The operator's alone.** No model, wrap-up, referral or project overseer has a tool or a route
-  that sets it (§app.organizations/field-authority).
+  that sets it (§app.organizations/field-authority), with one exception acting for the operator:
+  the global Overseer's `sova_owner`, only in a turn the operator started, through the same route
+  and recorded in `ownerHistory` with `via: "overseer"` (§app.overseer/org-attribution). No model
+  mints, shows or turns off an owner link.
 - **Changing the owner** turns off the previous owner's owner link at once (§app.owner-page/link).
 - **When they leave** (their status becomes `left`, by an edit or a revert): the owner is cleared
   (`why: "left"`, `ownerCleared` kept), their owner link stops working at once, and the People
   tab's owner card says so until the operator picks someone or chooses None.
-- **Not a decider.** Being the owner changes no routing, no promotion and no prompt: no model is
-  told who the owner is. The owner may also be a project's main stakeholder; that is a separate
+- **Not a decider.** Being the owner changes no routing, no promotion and no prompt: no model that
+  routes, decides or talks to people is told who the owner is. The global Overseer's org reads name
+  them, for the operator (§app.overseer/org-reads). The owner may also be a project's main stakeholder; that is a separate
   choice on each project page.
 - **Still an ordinary person.** Their own `/h/` links to conversations they are asked in keep
   working as before (§app.baton/links); the owner page adds reading, it replaces nothing.
@@ -215,7 +219,8 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 
 - **People tab: an Owner card**, above the roster (§app.organizations/org-page): what the owner
   can see, in one sentence; a select (None, then the org's active people by name); the latest
-  change ("Set by you {time}." or, after a clearing, the person who left); the link's state (when
+  change ("Set by you {time}.", "Set by you, via the Overseer {time}." or, after a clearing, the
+  person who left); the link's state (when
   it was made, when it expires, how many times it was opened, the expiry warned once under 14 days
   are left); `Get Owner Link` (with a confirm while a live one exists), `Preview Owner Page`, and
   `Turn Off Owner Link` set apart as destructive. A new link is shown once, with Copy Link, as on

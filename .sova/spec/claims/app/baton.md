@@ -28,7 +28,10 @@ once), **lease** (an offer's lock on its first taker).
   parent's. `briefing` is the first hand-off's briefing, for its addressee.
 - In-process callers (the project overseer, the reconciler) may also set `owner: {overseerOf:
   projectId}` and `mintLink: false` (no link minted: the session then asks the operator to send
-  one, §app.baton/needs-you). A request body's `owner` and `mintLink` are ignored.
+  one, §app.baton/needs-you). The global Overseer's `sova_gather` starts in-process too, always
+  with `mintLink: false` and no `owner` (the session is the operator's), and its row records
+  `startedVia: "overseer"` (§app.overseer/org-people-facing). A request body's `owner`, `mintLink`
+  and `startedVia` are ignored.
 - It is a webapp-owned session whose file lives in the org's workspace repo (`sessions/`), whose
   cwd is that repo, and whose file carries an invisible `sova-baton` marker `{v:1, orgId,
   projectId}`. It is listed in the sidebar's Organizations region (§app.session-list/organizations), under its

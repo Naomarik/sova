@@ -685,7 +685,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | …its hint (`.field-hint`) | "Every coding session this project starts runs in it, yours included. One started now: {codingModeNow}." — `{codingModeNow}` in mono, `normal` or `normal · spec` |
 | …saved (toast) | "Coding sessions run {mode}." · Automatic: "Coding sessions' mode: Automatic." |
 | List heading | `Coding sessions` — replaces "Sessions it started" for coding rows; gathering sessions and offers keep their own list |
-| Row | the title (a link on this host) · meta: "Started by the overseer" or "Started by you" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
+| Row | the title (a link on this host) · meta: "Started by the overseer", "Started by you" or "Started by you, via the Overseer" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
 | Above the list, when the project can't have worktrees | "Coding sessions run in the project root: {reason}" — `{reason}` one of "it isn't a Git repository." · "the repository has no commits yet." · "its checkout is on a detached HEAD." |
 | …a row in the root | "In the project root: {reason}" — no branch, no buttons |
 | …after | "Merged into `{target}` {relative time}" · "Worktree removed" · "Worktree folder missing" · merged before, with commits since: "{n} new commits since the last merge into `{target}` {relative time}" (1: "1 new commit since…"), and Merge Branch again |
@@ -737,7 +737,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Stakeholder select (the project page's decisions area, above the decisions) | label `Main stakeholder` · options `None`, then the org's active people by name · hint (`.field-hint`): "Decides every area of this project that no one on the roster decides by name." |
 | …saved (toast) | "{name} is this project's main stakeholder." · None: "This project has no main stakeholder." |
-| …latest change (under the hint) | "Set by you {relative time}." · "Cleared {relative time}: {name} left the organization." |
+| …latest change (under the hint) | "Set by you {relative time}." · "Set by you, via the Overseer {relative time}." · "Cleared {relative time}: {name} left the organization." |
 | …refused (`.field-error`) | "Only an active person on the roster can be a project's main stakeholder." |
 | Cleared banner (warn, while nobody is picked) | "{name} was this project's main stakeholder until they left the organization {relative time}. Pick someone else, or choose None." |
 | Suggestion (info line, no stakeholder, exactly 1 active person) | "{name} is the only person on the roster. Make them this project's main stakeholder?" · button `Make Main Stakeholder` (secondary) |
@@ -766,6 +766,22 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Status strip, line 1 | "Last looked on its own {time}{tail}." or "It hasn't looked on its own yet." + " Waiting to look at {n} things." (1: "1 thing"; `title`: the reasons) · paused by an attach: the reason, then `Resume at {level}` · empty roster: the reason |
 | Status strip, lines 2–3 | the project page's readout ("Today on its own: …") and waiting sentences (§design.copy-deck/project-limits) · below 480px: `Details` toggles them |
 | Read-only line (earlier conversation) | "An earlier conversation. Read only." |
+
+## §design.copy-deck/overseer-orgs — The Overseer in organizations (§app.overseer/org-tools, §app.organizations/archive)
+
+| Where | Copy |
+|---|---|
+| Writer, wherever a change names who made it | `you, via the Overseer` (Profile Changes, Recent Profile Changes) · About History row: "by you, via the Overseer" · latest-change lines: "Set by you, via the Overseer {relative time}." · coding row: "Started by you, via the Overseer" |
+| Row tag and queued row, in a project overseer's thread | `Overseer` — the tag and word of §app.overseer/sent-marker |
+| Confirm card rows | project: `{project}` then `{org}` (muted) · person: `{name}` then `{org}` (muted) and, unless active, the status chip (`Proposed`, `Left`) |
+| Extra instructions (project's Overseer card) | label `Extra instructions` · hint "Added last to this overseer's prompt, after the organization's About text, and they win over it. It reads them at its next run." · counter `{n} / 8,000` · `Save` (secondary) · `Cancel` (ghost) · saved (toast): "Extra instructions saved." · blank: "Extra instructions removed." · refused (`.field-error`): "Extra instructions can be at most 8,000 characters." |
+| Archive (project page head) | `Archive Project` (destructive, outlined) · confirm: "{project} leaves the Projects list and its overseer stops looking. Nothing is deleted; Unarchive brings it back." · buttons `Archive Project` · `Cancel` · done (toast): "{project} archived." |
+| …refused (`.field-error`, the server's words) | "Stop these first: {list}." — items joined with "; ": "{n} gathering session open ({titles})" / "{n} gathering sessions open (…)" · "{n} coding session running (…)" / "{n} coding sessions running (…)" · "its overseer is working" |
+| Archived banner (info) | "{project} was archived {relative time}. Its overseer is paused and nothing new starts here. Nothing was deleted." · via: "{project} was archived by you, via the Overseer {relative time}. …" · button `Unarchive` (secondary) · done (toast): "{project} is back." |
+| Archived, disabled reason | "Archived" (Start Overseer, Run Now, Start Coding Session, Send to Person…) |
+| Archived, refused (server) | "{project} is archived. Unarchive it first." · the overseer: "{project} is archived. Unarchive it to use its overseer." |
+| Projects tab | disclosure `Archived Projects ({n})` (collapsed; absent with none) · row: the project link · "archived {relative time}" · `Unarchive` (ghost) · every project archived, in place of "No projects yet…": "The 1 project here is archived. Unarchive one below, or add a project." / "All {n} projects here are archived. Unarchive one below, or add a project." |
+| Overseer tool refusals and notes (the model reads them; the action log keeps the refusals) | "This reaches people or ends something: ask with sova_confirm, listing {what} in its items, and act in the turn the user's click starts." · "Only the Overseer sends here. Write in the overseer's own composer." (403) · "Send words; use op clear to clear it." · "That folder is an organization's workspace; read it with sova_orgs and sova_read_session." · "No link was made: Needs you asks you to send {name} their link." |
 
 ## §design.copy-deck/owner-page — Owner page (§app/owner-page)
 

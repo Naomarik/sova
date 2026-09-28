@@ -1111,11 +1111,20 @@ app.all("/design/*", (c) => c.text("Not found", 404));
 // open directly. Registered before the static/SPA handlers below so those never shadow it; the
 // query string is passed through untouched (the page reads ?theme= itself). The id must be a
 // plain store dir name — anything with a slash, a ".." or nothing at all is a 404, not a read.
+/** The CSP every served explanation page gets (§app.insights/explanations-page). */
+const EXPLAIN_PAGE_CSP = "sandbox allow-scripts";
 app.get("/explain/:id", async (c) => {
   const id = c.req.param("id");
   const html = isExplanationId(id) ? await readExplanationPage(id) : null;
   if (html === null) return c.text("Explanation not found", 404);
-  return c.body(html, 200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-cache" });
+  return c.body(html, 200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "private, no-cache",
+    // The page is model-written HTML on Sova's own origin. `sandbox` without allow-same-origin
+    // gives it an opaque origin, so its scripts can't read Sova's storage or call /api with the
+    // user's session; allow-scripts keeps the one inline ?theme= script (ExplainTiles.tsx).
+    "Content-Security-Policy": EXPLAIN_PAGE_CSP,
+  });
 });
 
 // Anything else under /explain (bare "/explain", a nested path, an encoded slash that didn't

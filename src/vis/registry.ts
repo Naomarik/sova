@@ -16,11 +16,13 @@ import { estimateHeight as flowHeight } from "./kinds/flow/layout";
 import { parseFlow, parseState } from "./kinds/flow/parse";
 import { estimateHeight as frameHeight } from "./kinds/frame/height";
 import { parseHtml, parseSvg } from "./kinds/frame/parse";
+import { estimateHeight as layersHeight } from "./kinds/layers/height";
 import { parseLayers } from "./kinds/layers/parse";
 import { parseMatrix } from "./kinds/matrix/parse";
 import { estimateHeight as sequenceHeight } from "./kinds/sequence/layout";
 import { parseSequence } from "./kinds/sequence/parse";
 import { parseTimeline } from "./kinds/timeline/parse";
+import { estimateHeight as treeHeight } from "./kinds/tree/height";
 import { parseTree } from "./kinds/tree/parse";
 
 export interface KindEntry<S extends VisBase = VisBase> {
@@ -58,8 +60,8 @@ export const KINDS: Record<string, KindEntry> = {
   flow: kind(parseFlow, view("flow"), "Diagram", { size: flowHeight }),
   sequence: kind(parseSequence, view("sequence"), "Sequence", { size: sequenceHeight }),
   state: kind(parseState, view("flow"), "State machine", { size: flowHeight }),
-  layers: kind(parseLayers, view("layers"), "Layers"),
-  tree: kind(parseTree, view("tree"), "Tree"),
+  layers: kind(parseLayers, view("layers"), "Layers", { size: (spec, width) => layersHeight(spec, width) }),
+  tree: kind(parseTree, view("tree"), "Tree", { size: (spec, width) => treeHeight(spec, width) }),
   chart: kind(parseChart, view("chart"), "Chart"),
   timeline: kind(parseTimeline, view("timeline"), "Timeline"),
   matrix: kind(parseMatrix, view("matrix"), "Matrix"),

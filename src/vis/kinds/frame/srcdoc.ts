@@ -108,7 +108,7 @@ export function buildSrcdoc(kind: "html" | "svg", source: string, id: string, to
     `<!doctype html><html><head><meta charset="utf-8">` +
     `<meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">` +
     `<meta name="viewport" content="width=device-width,initial-scale=1">` +
-    `<style id="sova-tokens">${tokens}</style><style>${BASE_CSS}${kind === "svg" ? ".sova-svg{display:flex;justify-content:center}.sova-svg>svg{width:100%}" : ""}</style>` +
+    `<style id="sova-tokens">${tokens}</style><style>${BASE_CSS}${kind === "svg" ? ".sova-svg{display:flex;justify-content:center}.sova-svg>svg:not([width]){width:100%}" : ""}</style>` +
     `<style id="sova-motion">*,*::before,*::after{animation-play-state:paused!important}</style>` +
     `<script>${MOTION_GATE}${reporter(id)}</script></head><body>${body}</body></html>`
   );

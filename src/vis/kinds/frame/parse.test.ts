@@ -35,6 +35,8 @@ test("srcdoc: CSP and the motion gate come before the model's document, which go
   assert.ok(csp > 0 && csp < gate && gate < hold && hold < model, "policy, paused CSS and held timers precede the model's script");
   assert.match(doc, /default-src 'none'/);
   assert.doesNotMatch(FRAME_CSP, /allow-same-origin|https?:/);
+  // An svg's own width attribute is its natural size: only a width-less svg is stretched to fit.
+  assert.match(buildSrcdoc("svg", "<svg/>", "id2", ""), /\.sova-svg>svg:not\(\[width\]\)\{width:100%\}/);
 });
 
 // The guide's free-form examples (examples/*): each parses, fits the budget with room to spare,

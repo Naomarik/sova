@@ -35,7 +35,7 @@ import {
 import { announce, home, setGroupComposerActive, toast } from "../lib/ui-state";
 import { cwdLabel } from "../lib/remote-session";
 import { failureLines, partialClosing, partialTitle } from "../lib/fanout";
-import { ensureRendered, transcriptRoot, whenRowsArrive } from "../lib/jump";
+import { ensureRendered, JUMP_EVENT, transcriptRoot, whenRowsArrive } from "../lib/jump";
 import { clearPartial, pendingPartial } from "./FanoutDialog";
 import { sessionWorking, type UsageTotalView } from "../lib/workers";
 import type { PaneInsight, TabId } from "./SessionPane";
@@ -352,9 +352,27 @@ export function GroupView(props: {
     const row = ensureRendered(seed.leafId, root);
     // Not there while the pane's older rows are still arriving (lib/tail-hello): not missing yet,
     // it aligns once they have.
-    if (!row) return whenRowsArrive(root, () => void scrollToMarker(path)) ? "waiting" : false;
+    if (!row) return whenRowsArrive(root, () => alignArrived(path)) ? "waiting" : false;
+    // As every jump does: the pane stops following first, so rows still being built below (the
+    // ones this just built, or older rows landing) can't pull it back to the end mid-scroll.
+    root?.dispatchEvent(new Event(JUMP_EVENT));
     row.scrollIntoView({ block: "start", behavior: reduceMotion() ? "auto" : "smooth" });
     return true;
+  };
+  /**
+   * A pane whose rows just arrived: none of the rows the scroll passes has been drawn, so their
+   * heights are estimates and the first aim falls short. Aim again once the scroll has rested,
+   * at most twice, as a jump does (lib/jump `recenter`).
+   */
+  const alignArrived = (path: string, left = 2) => {
+    if (!scrollToMarker(path) || left <= 0) return;
+    setTimeout(() => {
+      const seed = props.group.seed;
+      const root = transcriptRoot(path);
+      const row = seed && root ? ensureRendered(seed.leafId, root) : null;
+      if (!row || !root) return;
+      if (Math.abs(row.getBoundingClientRect().top - root.getBoundingClientRect().top) > 24) alignArrived(path, left - 1);
+    }, 700);
   };
   const alignToFork = () => {
     const seed = props.group.seed;

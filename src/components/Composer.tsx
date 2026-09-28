@@ -150,6 +150,11 @@ export function Composer(props: {
   onAbort(): void;
   /** Queued text a Stop handed back; each new object goes ahead of the draft (TUI Esc order). */
   restored?: { text: string } | null;
+  /** Recommendations ticked on an alignment card (§chat.alignment/card), staged for the next send:
+      the row names them, and `compose` puts their line ahead of the typed text in one message. */
+  picks?: { label: string; compose(text: string): string; clear(): void } | null;
+  /** Whether the draft holds anything to send (text or an attachment), as it changes. */
+  onDraft?(has: boolean): void;
 }) {
   const [text, setText] = createSignal(drafts.get(props.path) ?? "");
   const localOpts = () => ({ clear: !!props.onClear, mode: !!props.onMode });
@@ -239,7 +244,8 @@ export function Composer(props: {
     [props.running ? "Steer the current turn…" : "",
       keyHint() && !props.readOnly ? "Enter sends, Shift+Enter adds a line" : ""]
       .filter(Boolean).join(" ");
-  const canSend = () => !disabled() && uploading() === 0 && (text().trim().length > 0 || images().length > 0);
+  const canSend = () => !disabled() && uploading() === 0 && (text().trim().length > 0 || images().length > 0 || !!props.picks);
+  createEffect(() => props.onDraft?.(text().trim().length > 0 || images().length > 0));
 
   // ---- Model indicator: this session's model and thinking level, and
   // the second trigger for the flyout that changes them. -----------------------------------
@@ -632,7 +638,7 @@ export function Composer(props: {
     if (!canSend()) return;
     // "/agents" is ours: it opens the subagents pane instead of reaching a runtime whose own
     // monitor is TUI-only. With images attached it's a message like any other.
-    if (localCommand(text()) === "subagents" && props.onShowWorkers && images().length === 0) {
+    if (!props.picks && localCommand(text()) === "subagents" && props.onShowWorkers && images().length === 0) {
       if (!props.workersOpen) props.onShowWorkers();
       setDraft("");
       input.value = "";
@@ -643,7 +649,7 @@ export function Composer(props: {
     // "/tree" is ours as well: pi's is a TUI built-in, so it would reach the model as literal
     // text. Here it opens the Timeline on your own messages, where each row rewinds to before
     // that message.
-    if (localCommand(text()) === "tree" && props.onShowTimeline && images().length === 0) {
+    if (!props.picks && localCommand(text()) === "tree" && props.onShowTimeline && images().length === 0) {
       props.onShowTimeline(true);
       setDraft("");
       input.value = "";
@@ -653,7 +659,7 @@ export function Composer(props: {
     }
     // "/timeline" is ours in the same way: pi has no such built-in, so it would reach the model as
     // literal text. Here it opens the Timeline tab, the session's one time axis.
-    if (localCommand(text()) === "timeline" && props.onShowTimeline && images().length === 0) {
+    if (!props.picks && localCommand(text()) === "timeline" && props.onShowTimeline && images().length === 0) {
       props.onShowTimeline();
       setDraft("");
       input.value = "";
@@ -663,7 +669,7 @@ export function Composer(props: {
     }
     // "/new" is ours too: a fresh session in this folder, and this one archived. Nothing
     // reaches the runtime, so no "Ran" row. The draft stays if no session was made.
-    if (localCommand(text()) === "new" && props.onNewSession && images().length === 0) {
+    if (!props.picks && localCommand(text()) === "new" && props.onNewSession && images().length === 0) {
       if (startingNew) return;
       startingNew = true;
       const cwd = await props.onNewSession().finally(() => (startingNew = false));
@@ -676,7 +682,7 @@ export function Composer(props: {
     }
     // "/clear" in the Overseer: a new conversation. Nothing reaches the runtime; the old one stays
     // in the Overseer's history.
-    if (localCommand(text(), localOpts()) === "clear" && props.onClear && images().length === 0) {
+    if (!props.picks && localCommand(text(), localOpts()) === "clear" && props.onClear && images().length === 0) {
       if (startingNew) return;
       startingNew = true;
       const cleared = await props.onClear().finally(() => (startingNew = false));
@@ -689,7 +695,7 @@ export function Composer(props: {
     }
     // "/mode" in the Overseer: it is always in normal mode, so a switch is answered here and
     // nothing reaches the runtime. With images too: they stay in the draft.
-    if (localCommand(text(), localOpts()) === "mode" && props.onMode) {
+    if (!props.picks && localCommand(text(), localOpts()) === "mode" && props.onMode) {
       props.onMode();
       setDraft("");
       input.value = "";
@@ -700,8 +706,10 @@ export function Composer(props: {
     // optimistic row takes each file's own name, as the transcript will once it's refetched.
     const pending = draftAttachments(props.path);
     const attachments = pending.map((a) => ({ ...a, name: a.path.slice(a.path.lastIndexOf("/") + 1) }));
-    if (props.onSend(withImagePaths(text().trim(), pending), props.running, attachments)) {
+    const picks = props.picks;
+    if (props.onSend(withImagePaths(picks ? picks.compose(text().trim()) : text().trim(), pending), props.running, attachments)) {
       touched = true;
+      picks?.clear();
       setText("");
       clearDraft(props.path);
       rows.clear();
@@ -841,6 +849,19 @@ export function Composer(props: {
         </Show>
         {runStatus()}
 
+        <Show when={props.picks}>
+          {(p) => (
+            <div class="align-picks" role="group" aria-label="Staged recommendations">
+              <Icon name="check" small />
+              <span class="align-picks-text" title={`Taking your recommendation: ${p().label}`}>
+                Taking your recommendation: <span class="text-mono">{p().label}</span>
+              </span>
+              <button type="button" class="button button-icon button-ghost" aria-label="Clear Picks" title="Clear Picks" onClick={() => p().clear()}>
+                <Icon name="close" small />
+              </button>
+            </div>
+          )}
+        </Show>
         <Show when={images().length > 0 || rejected().length > 0}>
           <ul class="attachments" aria-label="Attachments" ref={list}>
             <For each={images()}>

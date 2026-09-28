@@ -20,6 +20,8 @@ import type { FlowSpec, Shape } from "./parse";
 export const FLOW_FONT = { label: 13, note: 11.5, edge: 11.5 } as const;
 const LINE = { label: 17, note: 15, edge: 15 };
 const RANK_GAP = 18;
+/** An edge label wraps rather than loses its end: in a state machine it is the event's name. */
+const EDGE_LINES = 4;
 /** Spacing and wrap widths by level: 0 roomy; 1 and 2 for a pane the roomier drawing would overflow (a phone). */
 const SPACING = [
   { padX: 14, padY: 9, maxText: 168, maxEdgeText: 140, nodeGap: 28, virtualGap: 12, margin: 12, minW: 64 },
@@ -172,18 +174,43 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
   };
   spec.nodes.forEach((_, i) => add(i, rank[i]!, right ? boxes[i]!.h : boxes[i]!.w, right ? boxes[i]!.w : boxes[i]!.h));
   const labelBoxes = new Map<number, { w: number; h: number; lines: string[] }>();
-  const chains: Chain[] = dag.map((ed) => {
-    const label = spec.edges[ed.e]!.label;
-    let lb: { w: number; h: number; lines: string[] } | null = null;
-    if (label) {
-      const lines = wrap(label, MAX_EDGE_TEXT, 2, FLOW_FONT.edge, measure);
-      lb = { w: widest(lines, FLOW_FONT.edge, measure) + 10, h: lines.length * LINE.edge + 4, lines };
+  const edgeLabel = (label: string | undefined) => {
+    if (!label) return null;
+    // Never narrower than the longest word: a word split mid-way reads as two.
+    const longest = Math.max(0, ...label.split(/\s+/).map((w) => measure(w, FLOW_FONT.edge)));
+    const lines = wrap(label, Math.max(MAX_EDGE_TEXT, Math.min(160, longest + 1)), EDGE_LINES, FLOW_FONT.edge, measure);
+    return { w: widest(lines, FLOW_FONT.edge, measure) + 10, h: lines.length * LINE.edge + 4, lines };
+  };
+  const labels = dag.map((ed) => edgeLabel(spec.edges[ed.e]!.label));
+  // Each label rides one odd rank its edge crosses. Short edges have one choice; a long edge takes
+  // the least crowded of its odd ranks (nearest the middle on a tie), so labels spread out instead
+  // of lining up across the busiest rank.
+  const labelRank = new Array<number>(dag.length).fill(-1);
+  {
+    const load = new Map<number, number>();
+    const order = dag.map((_, i) => i).sort((a, b) => rank[dag[a]!.v]! - rank[dag[a]!.u]! - (rank[dag[b]!.v]! - rank[dag[b]!.u]!) || a - b);
+    for (const i of order) {
+      const lb = labels[i];
+      if (!lb) continue;
+      const ru = rank[dag[i]!.u]!;
+      const rv = rank[dag[i]!.v]!;
+      const mid = (ru + rv) / 2;
+      let best = -1;
+      for (let r = ru + 1; r < rv; r += 2) {
+        const cost = (load.get(r) ?? 0) * 1000 + Math.abs(r - mid);
+        const bestCost = best < 0 ? Infinity : (load.get(best) ?? 0) * 1000 + Math.abs(best - mid);
+        if (cost < bestCost) best = r;
+      }
+      labelRank[i] = best;
+      load.set(best, (load.get(best) ?? 0) + (right ? lb.h : lb.w));
     }
+  }
+  const chains: Chain[] = dag.map((ed, di) => {
+    const lb = labels[di]!;
     const keys = [ed.u];
     const ru = rank[ed.u]!;
     const rv = rank[ed.v]!;
-    // The label rides the odd rank nearest the middle of the edge.
-    const mid = ru + 1 + 2 * Math.floor((rv - ru - 2) / 4);
+    const mid = labelRank[di]!;
     let labelKey: number | null = null;
     for (let r = ru + 1; r < rv; r++) {
       const isLabel = lb !== null && r === mid;
@@ -208,7 +235,7 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
     const label = spec.edges[e]!.label;
     let extra = 26;
     if (label) {
-      const lines = wrap(label, MAX_EDGE_TEXT, 2, FLOW_FONT.edge, measure);
+      const lines = wrap(label, MAX_EDGE_TEXT, EDGE_LINES, FLOW_FONT.edge, measure);
       const lb = { w: widest(lines, FLOW_FONT.edge, measure) + 10, h: lines.length * LINE.edge + 4, lines };
       loopLabels.set(e, lb);
       extra += (right ? lb.h : lb.w) + 4;

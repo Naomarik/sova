@@ -29,7 +29,7 @@ export default function StepsView(props: ViewProps<StepsSpec>) {
               <span class="vis-steps-head">
                 <span class={`vis-steps-status vis-tone-${it.tone ?? "none"}`} classList={{ "vis-steps-status-plain": !it.tone || !ICON[it.tone] }} role={it.tone ? "img" : undefined} aria-label={it.tone}>
                   <Show when={it.tone && ICON[it.tone]}>
-                    <span class="icon icon-sm" style={{ "--icon": `url(${visIcon(ICON[it.tone!]!)})` }} aria-hidden="true" />
+                    <span class="icon icon-sm" style={{ "--icon": `url("${visIcon(ICON[it.tone!]!)}")` }} aria-hidden="true" />
                   </Show>
                 </span>
                 <span class="vis-steps-label">
@@ -42,7 +42,7 @@ export default function StepsView(props: ViewProps<StepsSpec>) {
                   {(step, k) => (
                     <li>
                       <Show when={k() > 0}>
-                        <span class="vis-steps-arrow icon" style={{ "--icon": `url(${visIcon("arrow-right")})` }} aria-hidden="true" />
+                        <span class="vis-steps-arrow icon" style={{ "--icon": `url("${visIcon("arrow-right")}")` }} aria-hidden="true" />
                       </Show>
                       <span class="vis-steps-chip" classList={{ "vis-mono": looksLikePath(step) }}>{step}</span>
                     </li>

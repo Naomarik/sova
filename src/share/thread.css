@@ -38,3 +38,5 @@
 .share-md .md-vis-pending-line { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
 .share-md .md-vis:last-child, .share-md .md-vis-pending:last-child { margin-bottom: 0; }
 .share-vis-broken { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* A reply with a drawing takes the column's width, so the drawing isn't squeezed to its prose. */
+.share-msg-reply:has(.md-vis) { align-self: stretch; }

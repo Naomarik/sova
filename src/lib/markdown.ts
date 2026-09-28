@@ -24,6 +24,7 @@ import nix from "highlight.js/lib/languages/nix";
 import powershell from "highlight.js/lib/languages/powershell";
 import protobuf from "highlight.js/lib/languages/protobuf";
 import scala from "highlight.js/lib/languages/scala";
+import { unclosedFence } from "./fences";
 
 // Languages models often emit that `common` lacks. Everything else stays plain text.
 hljs.registerLanguage("clojure", clojure);
@@ -321,21 +322,6 @@ md.core.ruler.after("inline", "task-lists", (state) => {
   }
 });
 
-/** Opening fence lines (``` or ~~~, up to 3 spaces indent) that never got closed. */
-function unclosedFence(text: string): { index: number; marker: string } | null {
-  let open: { marker: string; index: number } | null = null;
-  let count = 0;
-  for (const line of text.split("\n")) {
-    const m = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-    if (!m) continue;
-    if (!open) {
-      open = { marker: m[1]!, index: count++ };
-    } else if (m[1]![0] === open.marker[0] && m[1]!.length >= open.marker.length && line.trim() === m[1]) {
-      open = null;
-    }
-  }
-  return open;
-}
 
 export interface RenderedMarkdown {
   html: string;

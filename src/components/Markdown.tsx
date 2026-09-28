@@ -1,10 +1,12 @@
 import { createEffect, createSignal, on, onCleanup } from "solid-js";
 import type { TmpAttachment } from "../../shared/protocol";
-import { renderMarkdown, type RenderedMarkdown } from "../lib/markdown";
+import { renderMarkdown, type RenderedMarkdown, type RenderedVisual } from "../lib/markdown";
 import { activatePathChip } from "../lib/path-attachments";
 import { sessionIndexVersion } from "../lib/session-links";
 import { announce, openLightbox } from "../lib/ui-state";
+import { render } from "solid-js/web";
 import { createMarkdownPatcher } from "../vis/hydrate";
+import { Visual } from "../vis/Visual";
 
 /**
  * An assistant-text body rendered as markdown. The HTML comes only from
@@ -40,10 +42,10 @@ export function Markdown(props: { text: string; streaming?: boolean; attachments
     ),
   );
   let el!: HTMLDivElement;
-  let patcher: ReturnType<typeof createMarkdownPatcher> | undefined;
+  let patcher: ReturnType<typeof createMarkdownPatcher<RenderedVisual>> | undefined;
   createEffect(() => {
     const r = rendered();
-    patcher ??= createMarkdownPatcher(el);
+    patcher ??= createMarkdownPatcher(el, (ph, v) => render(() => <Visual kind={v.kind} spec={v.spec} fence={v.fence} body={v.body} />, ph));
     patcher.patch(r);
   });
   onCleanup(() => patcher?.dispose());

@@ -1,6 +1,3 @@
-import { render } from "solid-js/web";
-import type { RenderedMarkdown } from "../lib/markdown";
-import { Visual } from "./Visual";
 
 interface Mounted {
   key: string;
@@ -13,12 +10,13 @@ type MoveBefore = (node: Node, child: Node | null) => void;
  * Keeps a markdown body's DOM in step with its rendered HTML, one top-level block at a time: a
  * block whose HTML is unchanged is left alone, so while a reply streams (re-rendered every frame)
  * the paragraphs above the cursor — and the drawings mounted in them — stay put. Each
- * `.md-vis[data-vis]` placeholder gets a <Visual> mounted into it. When a changed block still holds
+ * `.md-vis[data-vis]` placeholder gets a drawing mounted into it by `mount` (the chat's <Visual>, or
+ * the share page's figure). When a changed block still holds
  * a drawing with the same key (a vis fence inside a list that is still growing), the drawing moves
  * across instead of being rebuilt — with `moveBefore` where the browser has it, so an interactive
  * frame keeps its state.
  */
-export function createMarkdownPatcher(el: HTMLElement) {
+export function createMarkdownPatcher<V>(el: HTMLElement, mount: (placeholder: HTMLElement, v: V) => () => void) {
   let sources: string[] = [];
   const mounted = new Map<HTMLElement, Mounted>();
 
@@ -40,7 +38,7 @@ export function createMarkdownPatcher(el: HTMLElement) {
     }
   };
 
-  function patch(r: RenderedMarkdown) {
+  function patch(r: { html: string; visuals: V[] }) {
     const tpl = document.createElement("template");
     tpl.innerHTML = r.html;
     const next = [...tpl.content.childNodes];
@@ -73,7 +71,7 @@ export function createMarkdownPatcher(el: HTMLElement) {
       if (mounted.has(ph)) continue;
       const v = r.visuals[Number(ph.dataset.vis)];
       if (!v) continue;
-      mounted.set(ph, { key: ph.dataset.visKey ?? "", dispose: render(() => <Visual kind={v.kind} spec={v.spec} fence={v.fence} body={v.body} />, ph) });
+      mounted.set(ph, { key: ph.dataset.visKey ?? "", dispose: mount(ph, v) });
     }
   }
 

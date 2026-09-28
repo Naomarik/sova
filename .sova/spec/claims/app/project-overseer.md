@@ -285,7 +285,8 @@ user row.
 - L0: `sova_note`, `sova_confirm`, `sova_idea`. L1: `sova_start_gathering` (one active roster
   person, or the operator), `sova_offer` (two or more), `sova_reconcile`,
   `sova_owner_update` (an update on the owner page, §app.owner-page/updates),
-  `sova_close_gathering`. L2: `sova_promote`,
+  `sova_close_gathering`; `sova_start_gathering` and `sova_offer` take an optional `abilities`
+  within the project's ceiling (§app.baton/abilities). L2: `sova_promote`,
   `sova_roster` approve/decline (history records the overseer as the writer). L3:
   `sova_create_session` (the root or a folder inside it, with a first prompt, an optional `mode` and
   `minor_modes`; in its own worktree, §app.project-overseer/coding-worktrees), `sova_send` (its
@@ -359,7 +360,8 @@ user row.
   applies from the session's next turn, and the result says so. A terminal-owned session is
   refused, as today.
 - `strict` is never set or offered; a session keeps the strict flag it started with.
-- A gathering session is unchanged: it loads no extensions, so it has no mode (§app/baton).
+- A gathering session loads no extensions, so it has no mode; what it can do is the project's
+  gathering abilities (§app.baton/abilities).
 
 ## §app.project-overseer/coding-worktrees — Each coding session in its own worktree
 

@@ -700,6 +700,19 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Promote (Decisions tab, after a promotion) | "Promoted {n}. Committed {short sha} on {branch}." · skipped: the reason as §app.requirements/promotion-commit words it ("Not committed: …") · no Git: no second sentence |
 | Overseer tool refusals (the model reads them; the activity list shows them) | "Delegate is off for this project's coding sessions; the operator can allow it on the project page." · "Align needs someone to answer its questions, and nobody answers a coding session's." · "Spec is on for this project's coding sessions; only the operator can turn it off on the project page." · "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: only spec is allowed." · "Its worktree was removed, so it has no folder to work in." |
 
+## §design.copy-deck/gathering-abilities — What a gathering session can do (§app.baton/abilities, §app.baton/read-link)
+
+| Where | Copy |
+|---|---|
+| Project page, under the gathering sessions' model | label `Gathering sessions can` · options `Automatic` · `Draw` · `Draw and read links` · `Read links` · `Neither` |
+| …its hint (`.field-hint`) | "Every gathering session this project starts gets this, unless its start says otherwise. One started now: {now}." — `{now}` one of "draw", "draw, read links", "read links", "nothing extra" |
+| …saved (toast) | "Gathering sessions: {option}." — e.g. "Gathering sessions: Draw and read links." |
+| Start a Session form | `It can:` · checkboxes `Draw` · `Read links`, checked as the project's set |
+| Baton strip | `It can:` · checkboxes `Draw` · `Read links` · saved (toast): "Drawing on from its next reply." · "Drawing off from its next reply." · "Reading links on from its next reply." · "Reading links off from its next reply." · refused: the server's words |
+| Share and owner pages, a drawing that can't be drawn there | "A drawing couldn't be shown here." (muted, one line, never the source) |
+| Overseer tool refusal (the model reads it) | "Reading links is off for this project's gathering sessions; the operator can allow it on the project page." |
+| `read_link` refusals (the model reads them) | "Only a link someone wrote in this conversation can be opened." · "That address can't be opened from here." · "Not a text page: {content type}." · "This conversation has already read 10 links." · "The page didn't answer in time." · "The page answered {status}." |
+
 ## §design.copy-deck/project-limits — Project page · limits and pace (§app.project-overseer/limits)
 
 | Where | Copy |

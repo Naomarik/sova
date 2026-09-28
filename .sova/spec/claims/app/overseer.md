@@ -976,8 +976,8 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
 ## §app.overseer/org-people-facing — Acts that reach people ask first
 
 - **`sova_gather {op}`**: `start {org, project, to, public_title, question, goal, briefing?,
-  model?, thinking?, messages_max?}` (`to`: a person, `operator`, or two or more people for an
-  offer at start), `offer {session, to[], question?, briefing?}`, `handoff {session, to, question,
+  model?, thinking?, messages_max?, abilities?}` (`to`: a person, `operator`, or two or more people
+  for an offer at start; `abilities` within the project's ceiling, §app.baton/abilities), `offer {session, to[], question?, briefing?}`, `handoff {session, to, question,
   briefing?}`, `take {session}` (Take Back), `close {session}`, `extend {session, by}` and
   `revoke_link {session, person?}`. The rules of §app.baton/goal-and-loadout,
   /offers-and-leases and /links apply as on the page; the tool descriptions carry the project

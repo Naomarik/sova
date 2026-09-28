@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { BatonSession, BatonView } from "../shared/baton";
+import type { BatonSession, BatonView, GatheringAbilities } from "../shared/baton";
 import type { DecisionRow, DecisionsInfo, PromoteResult } from "../shared/decisions";
 import type { OrgProject, Person } from "../shared/orgs";
 import type { ProjectUpdate } from "../shared/owner";
@@ -14,6 +14,7 @@ import { logAction, NOTES_MAX, readNotes, writeNotes } from "./overseer-store";
 import { addTodo, readTodos, removeTodo, TodoError, updateTodo } from "./overseer-todos";
 import { renderTranscript, sessionRef } from "./overseer-tools";
 import { participantLine, stakeholderLine } from "./orgs";
+import { ABILITIES_PARAM } from "./gathering-abilities";
 import { describeCodingMode, type ModeRequest } from "./project-coding-mode";
 import { dayKey, levelAtLeast, nextMidnight, type ProjectOverseerPaths } from "./project-overseer-store";
 
@@ -51,7 +52,10 @@ export interface PoToolHost {
   reconcile(): Promise<DecisionsInfo>;
   promote(ids: string[]): Promise<PromoteResult>;
   /** Start a gathering session (one person) or an offer (≥ 2), owned by this overseer. */
-  startGathering(input: { to: string | string[]; publicTitle: string; goal: string; question: string; model?: string; thinking?: string }): Promise<{ sessionId: string; path: string; invited: string[] }>;
+  startGathering(input: { to: string | string[]; publicTitle: string; goal: string; question: string; model?: string; thinking?: string; abilities: GatheringAbilities }): Promise<{ sessionId: string; path: string; invited: string[] }>;
+  /** What a gathering session gets for the `abilities` arg (the project's set, under the
+      operator's ceiling, §app.baton/abilities), or the refusal. Pure: nothing is created or counted. */
+  gatheringAbilities(arg: unknown): GatheringAbilities | { error: string };
   /** Close one of this project's gathering sessions, as the operator's Close does. */
   closeGathering(sessionId: string): Promise<void>;
   /** Approve (active) or decline (left) a proposed person. */
@@ -419,12 +423,14 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
       if (person.status !== "active") throw new Refusal(`${person.name} is ${person.status === "proposed" ? "proposed but not approved yet" : "no longer on the roster"}.`);
       to.push(person.id);
     }
+    const abilities = host.gatheringAbilities(p0.abilities);
+    if ("error" in abilities) throw new Refusal(abilities.error);
     const open = await openGatherings();
     const cap = host.settings().caps.gatheringsOpen;
     if (open >= cap) throw new Refusal(`${open} of its gathering sessions are open, and the limit is ${cap} at once.`, "One reaching its goal or being closed is a reason to look again; don't promise when.");
     take("gather");
     const choice = { ...(typeof p0.model === "string" && p0.model.trim() ? { model: p0.model.trim() } : {}), ...(typeof p0.thinking === "string" && p0.thinking.trim() ? { thinking: p0.thinking.trim() } : {}) };
-    const made = await host.startGathering({ to: many ? to : to[0]!, publicTitle, goal, question, ...choice });
+    const made = await host.startGathering({ to: many ? to : to[0]!, publicTitle, goal, question, ...choice, abilities });
     const who = made.invited.join(", ");
     return {
       content: text(
@@ -743,6 +749,7 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
           goal: str(`What must be established, for the session's model: the gap, what is known, what to ask. ${GOAL_RULES}`),
           model: str('Optional model ref "provider/model" the person talks to (default: the project\'s gathering model, else yours).'),
           question: str(`The first question to put to them. ${"Shown to the person VERBATIM: neutral wording only, no internal labels (\"gap\", idea or area ids), no judgments about people."}`),
+          abilities: ABILITIES_PARAM,
         },
         ["person", "public_title", "goal", "question"],
       ),
@@ -760,6 +767,7 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
           goal: str(`What must be established, for the session's model only. ${GOAL_RULES}`),
           model: str('Optional model ref "provider/model" (default: the project\'s gathering model, else yours).'),
           question: str(`The first question. ${"Shown to the person VERBATIM: neutral wording only, no internal labels (\"gap\", idea or area ids), no judgments about people."}`),
+          abilities: ABILITIES_PARAM,
         },
         ["people", "public_title", "goal", "question"],
       ),

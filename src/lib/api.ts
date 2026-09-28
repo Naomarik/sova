@@ -61,7 +61,7 @@ import type {
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
-import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, OfferLink } from "../../shared/baton";
+import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
@@ -981,6 +981,8 @@ export const takeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${en
 export const closeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/close`, jsonInit("POST"));
 /** Raise the session's message limit by `by` (the operator, at the limit). */
 export const extendBaton = (sid: string, by: number) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/extend`, jsonInit("POST", { by }));
+/** What a gathering session can do, from its next reply (§app.baton/abilities). */
+export const setBatonAbilities = (sid: string, abilities: Partial<GatheringAbilities>) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/abilities`, jsonInit("POST", abilities));
 /** The host's defaults for new hand-off sessions (Settings → Organizations). */
 export const getBatonSettings = () => request<BatonSettings>("/api/baton/settings");
 export const putBatonSettings = (settings: BatonSettings) => request<BatonSettings>("/api/baton/settings", jsonInit("PUT", settings));

@@ -3731,7 +3731,10 @@
         "src/orgs.css",
         "server/baton-handoff.test.ts",
         "server/baton-guards.test.ts",
-        "server/share/hub.ts"
+        "server/share/hub.ts",
+        "server/baton-abilities.test.ts",
+        "server/baton-vis-guide.ts",
+        "server/baton-read-link.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -3870,7 +3873,12 @@
         "src/lib/share-linkify.ts",
         "src/lib/share-linkify.test.ts",
         "server/person-page.ts",
-        "src/components/PersonPage.tsx"
+        "src/components/PersonPage.tsx",
+        "src/share/vis.tsx",
+        "src/share/thread.tsx",
+        "src/share/thread.css",
+        "src/vis/share-markdown.test.ts",
+        "src/vis/share-views.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -6269,7 +6277,13 @@
         "src/vis/svg.tsx",
         "src/vis/types.ts",
         "src/vis/views.ts",
-        "src/vis/vis.css"
+        "src/vis/vis.css",
+        "src/vis/Figure.tsx",
+        "src/vis/icons.ts",
+        "src/lib/fences.ts",
+        "src/vis/share-views.ts",
+        "src/share/vis.tsx",
+        "src/vis/share-markdown.test.ts"
       ]
     },
     "§chat.mode-menu/minor-toggle-keeps-prompt": {
@@ -6701,6 +6715,61 @@
       "code": [
         "src/components/ChangesViewer.tsx"
       ]
+    },
+    "§app.baton/abilities": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§app.baton/goal-and-loadout",
+        "§app.baton/outsider-view",
+        "§chat.markdown/visuals"
+      ],
+      "code": [
+        "server/gathering-abilities.ts",
+        "shared/baton.ts",
+        "shared/project-overseer.ts",
+        "server/baton-vis-guide.ts",
+        "server/baton-abilities.test.ts",
+        "server/baton-loadout.ts",
+        "server/baton-prompt.md",
+        "server/baton.ts",
+        "server/org-routes.ts",
+        "server/project-overseer-store.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-tools.ts",
+        "server/project-overseer-tools.test.ts",
+        "server/overseer-org-tools.ts",
+        "src/lib/gathering-abilities.ts",
+        "src/lib/gathering-abilities.test.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/components/OrgsView.tsx",
+        "src/components/BatonStrip.tsx",
+        "src/lib/api.ts",
+        "src/orgs.css",
+        "src/vis/guide.test.ts",
+        "server/overseer-org-tools.test.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§app.baton/read-link": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§app.baton/abilities",
+        "§app.baton/goal-and-loadout"
+      ],
+      "code": [
+        "server/baton-read-link.ts",
+        "server/baton-abilities.test.ts",
+        "server/baton-loadout.ts",
+        "server/baton-prompt.md"
+      ],
+      "evidence": "verified"
+    },
+    "§design.copy-deck/gathering-abilities": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified"
     }
   },
   "boundary": {

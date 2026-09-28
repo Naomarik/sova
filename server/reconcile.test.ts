@@ -554,6 +554,15 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, true);
     writeFileSync(md, bytes);
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, false);
+    // A builder recording evidence writes the spec too: frozen means only promotion does.
+    const mf = join(client, ".sova", "spec", "manifest.json");
+    const mbytes = readFileSync(mf, "utf8");
+    const m = JSON.parse(mbytes);
+    const rid = Object.keys(m.claims).find((k) => k.startsWith("§requirements.invoicing/"))!;
+    m.claims[rid].evidence = "verified";
+    writeFileSync(mf, JSON.stringify(m));
+    assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, true);
+    writeFileSync(mf, mbytes);
     reconcile.setFrozen(org.id, project.id, false);
     writeFileSync(md, `${bytes}\nA hand edit.\n`);
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, undefined);

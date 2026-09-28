@@ -768,6 +768,8 @@ function decodeWorker(w: unknown, hosted: boolean): WorkerInfo | null {
   if (w.outcome === "success" || w.outcome === "error" || w.outcome === "aborted") out.outcome = w.outcome;
   const usage = decodeUsage(w.usage);
   if (usage) out.usage = usage;
+  // Top-level beside usage (the record's size trim drops usage first); absent stays unknown.
+  if (typeof w.turns === "number" && Number.isSafeInteger(w.turns) && w.turns >= 0) out.turns = w.turns;
   // Restored workers (subagents extension): where their number came from, and since when. The
   // record's "none" is the wire's "unavailable": no number, and the pane must not read 0.
   const source = w.usageSource === "none" ? "unavailable" : w.usageSource;

@@ -361,6 +361,9 @@ export type WorkerManifestRecord = Partial<Omit<WorkerManifest, "v" | "workerId"
 export interface FoldedWorkerManifest extends WorkerManifest {
 	/** Some record of this worker is on the active branch (only when activeEntryIds was given). */
 	onActiveBranch?: boolean;
+	/** ms: the earliest record's time — its first spawn (`at` is the newest record's). Absent when
+	    no record carries a time (legacy records without one). */
+	firstAt?: number;
 }
 
 export interface WorkerManifestFold {
@@ -469,6 +472,8 @@ export function readWorkerManifests(entries: readonly unknown[], options: { acti
 		if (!record) continue;
 		const previous = manifests.get(record.workerId);
 		const next: FoldedWorkerManifest = mergeManifest(previous, record);
+		const first = Math.min(previous?.firstAt ?? Infinity, record.at > 0 ? record.at : Infinity);
+		if (first !== Infinity) next.firstAt = first;
 		if (options.activeEntryIds) {
 			const here = typeof e.id === "string" && options.activeEntryIds.has(e.id);
 			next.onActiveBranch = (previous?.onActiveBranch ?? false) || here;

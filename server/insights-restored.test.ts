@@ -142,6 +142,31 @@ test("usage comes from each transcript through the protocol; a snapshot says as 
   assert.equal(subagentRows.find((m) => m.model === pi.model)!.asOf, undefined);
 });
 
+test("restored turns come from the transcript or the snapshot; started is the transcript's start, else the first record", async () => {
+  const workers = byId((await getSessionInsight(owner())).workers);
+  assert.equal(workers.get("ag_01")!.turns, 1, "one assistant reply in its pi transcript");
+  assert.equal(workers.get("ag_02")!.turns, 1, "one Claude message, however many lines carry it");
+  assert.ok(!("turns" in workers.get("ag_03")!), "unreadable and unreported: unknown, never 0");
+  assert.ok(!("turns" in workers.get("ag_04")!), "a snapshot that never counted turns says nothing");
+  assert.equal(workers.get("ag_01")!.startedAt, T0 + 60_000, "the pi transcript's header time");
+
+  // No transcript: the FIRST record's time is its spawn; the newest record's is only its last word.
+  const path = canonicalPath(join(sessionsDir, "2026-09-24T11-00-00-000Z_owner-first.jsonl"));
+  writeFileSync(path, jsonl(
+    { type: "session", version: 3, id: "owner-first", timestamp: iso(0), cwd: "/tmp/restored-test" },
+    { type: "message", id: "e1", parentId: null, timestamp: iso(0), message: { role: "user", content: [{ type: "text", text: "hi" }] } },
+    manifest("f1", "e1", { workerId: "ag_07", backend: "future-backend", name: "later", status: "running", at: T0 + 60_000 }),
+    manifest("f2", "f1", {
+      workerId: "ag_07", backend: "future-backend", status: "waiting", at: T0 + 30 * 60_000,
+      usageSnapshot: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, turns: 3, byModel: [], source: "snapshot", asOf: T0 + 30 * 60_000 },
+    }),
+  ));
+  const later = byId((await getSessionInsight(path)).workers).get("ag_07")!;
+  assert.equal(later.startedAt, T0 + 60_000);
+  assert.equal(later.lastActivity, T0 + 30 * 60_000);
+  assert.equal(later.turns, 3, "the snapshot's count");
+});
+
 test("the lifetime Σ covers every branch and every readable worker, and names the snapshot time", async () => {
   const insight = await getSessionInsight(owner());
   const total = insight.usageTotal!;

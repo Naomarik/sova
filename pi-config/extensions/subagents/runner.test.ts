@@ -340,6 +340,18 @@ test("resume without an absolute session file fails without spawning and without
 	}
 });
 
+test("a resumed worker keeps the first spawn it carries as its start; a fresh one starts now", async () => {
+	const before = Date.now();
+	const resumed = makeRunner({ resume: { sessionFile: "/tmp/w.jsonl", startedAt: 1_234 } });
+	const fresh = makeRunner({});
+	const bare = makeRunner({ resume: { sessionFile: "/tmp/w.jsonl" } });
+	try {
+		assert.equal(resumed.runner.startedAt, 1_234);
+		assert.ok(fresh.runner.startedAt >= before);
+		assert.ok(bare.runner.startedAt >= before, "a resume without a recorded start falls back to now");
+	} finally { await fin(resumed); await fin(fresh); await fin(bare); }
+});
+
 test("a resumed worker that dies before it is ready emits no completion", async () => {
 	const h = makeRunner({ resume: { sessionFile: "/tmp/w.jsonl" } });
 	await flush();

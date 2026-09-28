@@ -79,7 +79,7 @@ const fake: DecisionProvider = {
         answers[qid] = { type: "choice", choice, probabilities: { [choice]: 1 }, confidence: 1 };
       }
     }
-    return { answers, provider: "jev", model: "fake", latencyMs: 1 };
+    return { answers, provider: "jev", model: "fake", latencyMs: 1, usage: { inputTokens: 10, outputTokens: 2 } };
   },
 };
 
@@ -126,6 +126,15 @@ function say(file: string, by: string, text: string, decision?: { area: string; 
 const specManifest = (root: string) => JSON.parse(readFileSync(join(root, ".sova", "spec", "manifest.json"), "utf8"));
 
 // ---- pure parts ----------------------------------------------------------------------------------------------
+
+describe("usage refs of decide answers", () => {
+  test("pi splits its ref (the answering model wins), Claude Code prices by the resolved id, else its alias; Jev as itself", () => {
+    assert.deepEqual(reconcile.usageRefOf({ provider: "pi", model: "zai/glm-5.3" }), { provider: "zai", model: "glm-5.3" });
+    assert.deepEqual(reconcile.usageRefOf({ provider: "claude-code", model: "haiku", usage: { inputTokens: 1, outputTokens: 1, model: "claude-haiku-4-5-20251001" } }), { provider: "claude", model: "claude-haiku-4-5-20251001" });
+    assert.deepEqual(reconcile.usageRefOf({ provider: "claude-code", model: "haiku" }), { provider: "claude-code-cli", model: "haiku" });
+    assert.deepEqual(reconcile.usageRefOf({ provider: "jev", model: "jev-1.13.0" }), { provider: "jev", model: "jev-1.13.0" });
+  });
+});
 
 describe("slugs and rendering", () => {
   test("spec slugs are letters and hyphens only, accents folded, cut at a word", () => {
@@ -624,7 +633,13 @@ describe("decisions → conflicts → draft → promotion", async () => {
     const overseer = { overseerOf: project.id };
     say(f1, maria.id, "s", { area: "snow clearing", statement: "Snow is cleared within 2 days.", quote: "2 days" });
     say(f2, tony.id, "s", { area: "snow clearing", statement: "Snow is cleared within 6 days.", quote: "6 days" });
+    const ledger = await import("./project-costs-ledger");
+    const lp = ledger.ledgerPaths(org.id, project.id);
+    const rowsBefore = ledger.readUsageLedger(lp);
+    assert.ok(rowsBefore.length > 0 && rowsBefore.every((r) => r.by === "operator" && r.provider === "jev" && r.input === 10), "every answer so far is in usage.jsonl");
     const info = await reconcile.reconcileProject(org.id, project.id, { owner: overseer });
+    const added = ledger.readUsageLedger(lp).slice(rowsBefore.length);
+    assert.ok(added.length > 0 && added.every((r) => r.by === "overseer"), "the overseer's run is its own");
     const trigger = info.conflicts.find((k) => k.state === "open" && k.areaKey === "snow-clearing")!;
     assert.deepEqual(baton.batonById(trigger.batonSessionId!)!.row.owner, overseer, "the overseer's reconcile opened it");
     const stop = reconcile.watchResolutions(10);

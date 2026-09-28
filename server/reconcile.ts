@@ -22,7 +22,9 @@ import { batonById, closeBaton, createBaton, namesOf } from "./baton";
 import { commitSpec, specSnapshot } from "./project-worktrees";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 import { onBatonEvent } from "./baton-events";
-import { DecisionError, type DecisionProvider, type Question } from "./decide";
+import type { CostStarter } from "../shared/costs";
+import { DecisionError, type DecisionProvider, type DecisionResult, type Question } from "./decide";
+import { appendUsage, ledgerPaths } from "./project-costs-ledger";
 import { isExcluded } from "./decide-settings";
 import {
   areaKeyOf,
@@ -624,6 +626,48 @@ function applyOutcome(c: Conflict, a: DecisionRow, b: DecisionRow, resolver: Dec
   c.resolvedAt = now.toISOString();
 }
 
+/** The usage ref a decide answer is priced by: pi's own "provider/model"; Claude Code's resolved id
+    (else its alias, which the price table maps); Jev as itself (it has no public price). Pure. */
+export function usageRefOf(r: Pick<DecisionResult, "provider" | "model" | "usage">): { provider: string; model: string } {
+  if (r.provider === "claude-code") return r.usage?.model ? { provider: "claude", model: r.usage.model } : { provider: "claude-code-cli", model: r.model };
+  if (r.provider === "pi") {
+    const slash = r.model.indexOf("/");
+    if (slash > 0) return { provider: r.model.slice(0, slash), model: r.usage?.model ?? r.model.slice(slash + 1) };
+  }
+  return { provider: r.provider, model: r.model };
+}
+
+/** The provider, with every answer's usage appended to the project's usage.jsonl
+    (§app.project-costs/ledger). A failed answer reports none, so it records nothing. */
+function recordingUsage(inner: DecisionProvider, orgId: string, projectId: string, by: CostStarter, now: () => Date): DecisionProvider {
+  return {
+    id: inner.id,
+    label: inner.label,
+    async decide(req) {
+      const r = await inner.decide(req);
+      const u = r.usage;
+      if (u && u.inputTokens + u.outputTokens + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) > 0) {
+        try {
+          appendUsage(ledgerPaths(orgId, projectId), {
+            at: now().toISOString(),
+            kind: "reconcile",
+            by,
+            ...usageRefOf(r),
+            input: u.inputTokens,
+            output: u.outputTokens,
+            cacheRead: u.cacheRead ?? 0,
+            cacheWrite: u.cacheWrite ?? 0,
+            ...(u.cacheWrite1h ? { cacheWrite1h: u.cacheWrite1h } : {}),
+          });
+        } catch (err) {
+          console.warn(`[reconcile] usage not recorded: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      return r;
+    },
+  };
+}
+
 /** POST …/reconcile, and the project overseer's sova_reconcile. */
 export function reconcileProject(orgId: string, projectId: string, opts: ReconcileOptions = {}): Promise<DecisionsInfo> {
   return exclusive(orgId, projectId, async () => {
@@ -646,8 +690,9 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
     settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     try {
       if (d.excluded(project.root)) throw new DecisionError("unavailable", "This project's folder is excluded in Settings → Decisions.");
-      const provider = d.provider();
-      if (!provider) throw new DecisionError("unavailable", "No decision provider is ready (Settings → Decisions).");
+      const chain = d.provider();
+      if (!chain) throw new DecisionError("unavailable", "No decision provider is ready (Settings → Decisions).");
+      const provider = recordingUsage(chain, orgId, projectId, typeof opts.owner === "object" && opts.owner.overseerOf === projectId ? "overseer" : "operator", d.now);
       const dedupe = `reconcile:${projectId}`;
 
       // 2. Resolutions: the first decision recorded in an open conflict's baton session.

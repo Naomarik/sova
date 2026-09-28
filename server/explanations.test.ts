@@ -315,6 +315,27 @@ describe("transcript: explain-doc rows", () => {
   });
 });
 
+describe("transcript: interrupted explain-doc entries", () => {
+  test("an interrupted run with a page is a linkable row: status interrupted, note, no report error", () => {
+    const rows = normalizeEntries([explainEntry({ ...info(), status: "interrupted", note: "Interrupted: may be unfinished." } as never, "e1")]);
+    assert.equal(rows[0]?.report?.explain?.status, "interrupted");
+    assert.equal(rows[0]?.report?.explain?.note, "Interrupted: may be unfinished.");
+    assert.equal(rows[0]?.report?.error, undefined);
+  });
+  test("an interrupted run without a page carries its error on the row, like any failed run", () => {
+    const rows = normalizeEntries([explainEntry({ ...info(), summary: "", status: "interrupted", error: "Interrupted before the page." } as never, "e1")]);
+    assert.equal(rows[0]?.report?.explain?.status, "interrupted");
+    assert.equal(rows[0]?.report?.error, "Interrupted before the page.");
+  });
+  test("the interrupted entry supersedes its running entry (same id, newest wins)", () => {
+    const rows = normalizeEntries([
+      explainEntry({ ...info(), summary: "", status: "running" } as never, "e1"),
+      { ...explainEntry({ ...info(), status: "interrupted", note: "n" } as never, "e2"), parentId: "e1" },
+    ]);
+    assert.deepEqual(rows.map((r) => r.report?.explain?.status), ["interrupted"]);
+  });
+});
+
 describe("transcript: running explain-doc entries", () => {
   const running = (over: Partial<ExplanationInfo> = {}) => ({ ...info(over), summary: "", model: "zai/glm-5.3", status: "running" });
   const chain = (...entries: ReturnType<typeof explainEntry>[]) =>

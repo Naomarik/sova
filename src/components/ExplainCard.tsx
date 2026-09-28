@@ -1,6 +1,6 @@
 import { Match, Show, Switch } from "solid-js";
 import type { ExplanationInfo } from "../../shared/protocol";
-import { explainHref, explainModel, explainState } from "../lib/explain";
+import { explainHref, explainInterrupted, explainModel, explainState } from "../lib/explain";
 import { capTitle } from "../lib/workers";
 import { Chip, Icon } from "./ui";
 import "../explain.css";
@@ -20,6 +20,10 @@ import "../explain.css";
  * - noted (`note`) — the page is complete and good, but the run then errored or was aborted (a
  *   worker killed right after writing, say). The page is the deliverable, so the link stays and
  *   the note sits under the row as a muted advisory — not a failure.
+ *
+ * An interrupted run (`status: "interrupted"`: a restart or /reload stopped it) is one of the last
+ * two: noted when its page was written anyway, failed when not. It carries an Interrupted chip in
+ * place of Failed, and its row reads "Explain" rather than "Explained" when there is no page.
  */
 export function ExplainCard(props: { explain: ExplanationInfo }) {
   const state = () => explainState(props.explain);
@@ -29,6 +33,8 @@ export function ExplainCard(props: { explain: ExplanationInfo }) {
     return model ? `${running() ? "Explaining with" : "Explained by"} ${model}` : undefined;
   };
   const running = () => state() === "running";
+  const interrupted = () => explainInterrupted(props.explain);
+  const label = () => (running() ? "Explaining" : interrupted() && state() === "failed" ? "Explain" : "Explained");
   const row = () => (
     <>
       <Show when={running()} fallback={<Icon name="chevron-right" small />}>
@@ -36,8 +42,11 @@ export function ExplainCard(props: { explain: ExplanationInfo }) {
           <span class="live-dot" />
         </span>
       </Show>
-      <span class="report-from">{running() ? "Explaining" : "Explained"}</span>
-      <Show when={state() === "failed"}>
+      <span class="report-from">{label()}</span>
+      <Show when={interrupted()}>
+        <Chip tone="warn">Interrupted</Chip>
+      </Show>
+      <Show when={!interrupted() && state() === "failed"}>
         <Chip tone="error">Failed</Chip>
       </Show>
       <Show when={props.explain.topic}>
@@ -59,7 +68,7 @@ export function ExplainCard(props: { explain: ExplanationInfo }) {
           <div class="disclosure-summary report-summary explain-card-summary explain-card-failed" title={capTitle(modelTitle())}>
             {row()}
           </div>
-          <p class="report-error">{props.explain.error}</p>
+          <p class={interrupted() ? "report-meta explain-card-note" : "report-error"}>{props.explain.error}</p>
         </Match>
         <Match when={true}>
           {/* The row stays one line: the producing model lives in the tooltip, not in the preview. */}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ExplanationInfo, TranscriptItem } from "../../shared/protocol";
-import { appendItems, explainCaption, explainState, newestFirst } from "./explain";
+import { appendItems, explainCaption, explainInterrupted, explainState, newestFirst } from "./explain";
 
 const at = (id: string, createdAt: string): ExplanationInfo => ({
   id,
@@ -30,6 +30,16 @@ test("explainState: a running entry reads as running, whatever else it carries",
   const base = at("x", "2026-09-20T00:00:00Z");
   assert.equal(explainState({ ...base, status: "running" }), "running");
   assert.equal(explainState({ ...base, status: "running", error: "No page.", note: "Aborted." }), "running");
+});
+
+test("an interrupted run is linked only if its page was written: its state is still noted or failed", () => {
+  const base = at("x", "2026-09-20T00:00:00Z");
+  const paged = { ...base, status: "interrupted" as const, note: "Interrupted: the page may be unfinished." };
+  const blank = { ...base, status: "interrupted" as const, error: "Interrupted before the page was written." };
+  assert.equal(explainState(paged), "noted");
+  assert.equal(explainState(blank), "failed");
+  assert.equal(explainInterrupted(paged) && explainInterrupted(blank), true);
+  assert.equal(explainInterrupted(base) || explainInterrupted({ ...base, status: "running" }), false);
 });
 
 const row = (id: string): TranscriptItem => ({ id, kind: "info", text: id, raw: null });

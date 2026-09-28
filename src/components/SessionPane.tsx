@@ -2,7 +2,7 @@ import { createEffect, createSignal, For, Match, on, onCleanup, onMount, Show, S
 import type { ExplanationInfo, SessionInsight, SessionSkillOffer, SessionSkillUse, SessionSummary, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { fetchTranscript } from "../lib/api";
 import { formatTokens } from "../lib/context";
-import { explainCaption, explainHref, explainState, newestFirst } from "../lib/explain";
+import { explainCaption, explainHref, explainInterrupted, explainState, newestFirst } from "../lib/explain";
 import { relativeTime } from "../lib/format";
 import { absoluteTime } from "../lib/spend";
 import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state";
@@ -373,7 +373,9 @@ function ExplainRow(props: { item: ExplanationInfo; now: number }) {
         fallback={
           <div class="list-row explain-row">
             {body()}
-            <Chip tone="error">Failed</Chip>
+            <Show when={explainInterrupted(props.item)} fallback={<Chip tone="error">Failed</Chip>}>
+              <Chip tone="warn">Interrupted</Chip>
+            </Show>
           </div>
         }
       >

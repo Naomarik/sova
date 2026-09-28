@@ -457,3 +457,24 @@ test("a git that never answers can't hold the request open, and its late answer 
   if (!retry.ok) return;
   assert.deepEqual(retry.index, { files: ["real.ts"], truncated: false }, "the ghost never reached the cache");
 });
+
+test("once the deadline's timer has fired, the answer is a 504 even if the clock reads a moment short of it", async () => {
+  // Timers and Date.now() are different clocks: a timer can fire a millisecond before now() reaches
+  // the deadline. A clock that never moves makes that moment last: git's race is lost to the timer,
+  // and the instant walk that follows must not turn it into a listing, or reach the cache.
+  const root = fakeRoot();
+  const frozen = () => 1_000_000;
+  const r = await listProjectFiles(root, {
+    remoteOf: () => null,
+    isDirectory: async () => true,
+    budgetMs: 30,
+    now: frozen,
+    exec: () => new Promise(() => {}),
+    listDir: async () => [{ name: "walked.ts", dir: false }],
+  });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.status, 504);
+  const retry = await listProjectFiles(root, { ...synthetic, now: frozen, listDir: async () => [{ name: "real.ts", dir: false }] });
+  assert.equal(retry.ok, true);
+  if (retry.ok) assert.deepEqual(retry.index.files, ["real.ts"], "the walked listing was not cached");
+});

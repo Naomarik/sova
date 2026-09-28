@@ -21,6 +21,10 @@ import { classify, recordOpen, recordRefused, recordShellFetch, type VisitLink }
 
 /** The share page's own build (vite build --mode share). Never the operator app's dist/. */
 export const SHARE_DIST = resolve(import.meta.dirname, "..", "..", "dist-share");
+/** Where the share page is served from: SHARE_DIST unless SOVA_SHARE_DIST names another build
+    (tests serve a stub page, so they don't depend on this checkout having built it). Read per
+    request. */
+const shareDist = (): string => process.env.SOVA_SHARE_DIST || SHARE_DIST;
 
 export const MESSAGES_PER_MINUTE = 10;
 const perToken = new Map<string, number[]>();
@@ -97,13 +101,13 @@ export function createShareApp(): Hono {
 
   app.get("/h/assets/:name", (c) => {
     const name = c.req.param("name");
-    const file = join(SHARE_DIST, "assets", name);
+    const file = join(shareDist(), "assets", name);
     if (!/^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(name) || !existsSync(file)) return c.json({ error: "Not found" }, 404);
     return c.body(readFileSync(file), 200, { "Content-Type": MIME[extname(name)] ?? "application/octet-stream" });
   });
 
   app.get("/h/:token", (c) => {
-    const index = join(SHARE_DIST, "index.html");
+    const index = join(shareDist(), "index.html");
     if (!existsSync(index)) return c.text("The share page is not built on this host.", 503);
     // The shell never looks at the token (no validity oracle), except for a known link previewer's
     // fetch, which the person's page lists as "Link preview by <service>" (§app.baton/visits).
@@ -205,7 +209,7 @@ export function createShareApp(): Hono {
   const ownerVisit = (l: { orgId: string; personId: string; gen: number }): VisitLink => ({ orgId: l.orgId, personId: l.personId, via: "owner", gen: l.gen });
 
   app.get("/i/:token", (c) => {
-    const index = join(SHARE_DIST, "index.html");
+    const index = join(shareDist(), "index.html");
     if (!existsSync(index)) return c.text("The share page is not built on this host.", 503);
     // As /h/: the shell never looks at the token, except to log a known link previewer's fetch.
     const ua = c.req.header("user-agent");

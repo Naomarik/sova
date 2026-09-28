@@ -7,12 +7,13 @@
 // an experimental provider nobody asked for. The write path is re-read + merge, like
 // web-sessions.ts, so a key another writer added is not lost.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-web-settings-"));
+after(() => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the module below computes its path
 const FILE = join(agentDir, "sova", "settings.json");
 

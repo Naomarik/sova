@@ -16,6 +16,8 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-chatcfg-test-"));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-chatcfg--");
 mkdirSync(sessionsDir, { recursive: true });

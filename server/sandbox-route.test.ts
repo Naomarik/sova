@@ -15,7 +15,11 @@ import type { ChatServerMessage } from "../shared/protocol";
 const absent = process.env.PI_SANDBOX_ROUTE_ABSENT === "1";
 const here = dirname(fileURLToPath(import.meta.url));
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-sandbox-route-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
 const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sova-sandbox-route-cwd-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(cwd, { recursive: true, force: true }));
 mkdirSync(join(dir, "extensions"), { recursive: true });
 if (!absent) symlinkSync(resolve(here, "../pi-config/extensions/sandbox"), join(dir, "extensions", "sandbox"));
 process.env.PI_CODING_AGENT_DIR = dir;

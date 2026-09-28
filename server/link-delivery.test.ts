@@ -15,6 +15,8 @@ import { formatLinkMessage, parseLinkMessage } from "../shared/link-message";
 import type { ChatServerMessage } from "../shared/protocol";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-link-delivery-test-"));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before chat-manager computes its paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-linkdelivery--");
 const liveDir = join(agentDir, "sessions", "live");

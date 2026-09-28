@@ -12,6 +12,8 @@ import type { Person } from "../shared/orgs";
 import type { SessionSummary } from "../shared/protocol";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-offers-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 mkdirSync(join(root, "agent", "sessions"), { recursive: true });
 
@@ -34,6 +36,15 @@ const maria = orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
 const carlos = orgs.addPerson(org.id, { name: "Carlos", role: "CEO" });
 const events: { type: string; sessionId: string }[] = [];
 onBatonEvent((e) => events.push({ type: e.type, sessionId: e.sessionId }));
+
+/** Polls until `cond` holds: waits on the event itself, not on a guess at how long it takes. */
+async function waitFor(cond: () => boolean, ms = 10_000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) throw new Error("timed out waiting");
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
 
 const entriesOf = (path: string) =>
   readFileSync(path, "utf8")
@@ -519,7 +530,9 @@ describe("regressions from the slice-2 verification", async () => {
     });
     await new Promise((r) => ws.on("open", r));
     ws.send(JSON.stringify({ type: "prompt", text: "let me in" }));
-    await new Promise((r) => setTimeout(r, 150));
+    // The server reads frames in order: its pong means the prompt was already handled.
+    await new Promise((r) => (ws.once("pong", r), ws.ping()));
+    await waitFor(() => views.length > 0);
     assert.deepEqual(views[0], { name: "Maria Lopez", canWrite: false, reason: "taken" }, "on connect: taken");
     const row = baton.batonById(c.sessionId)!.row;
     assert.equal(row.holder, tony.id, "a socket message claims nothing");
@@ -527,7 +540,7 @@ describe("regressions from the slice-2 verification", async () => {
     await tickLeases(t0 + LEASE_IDLE_MS - 1);
     assert.equal(baton.batonById(c.sessionId)!.row.holder, tony.id, "not before the lease ends");
     await tickLeases(t0 + LEASE_IDLE_MS + 1);
-    await new Promise((r) => setTimeout(r, 200));
+    await waitFor(() => views.at(-1)?.canWrite === true);
     ws.close();
     assert.equal(baton.batonById(c.sessionId)!.row.holder, null, "back in the pool");
     assert.deepEqual(views.at(-1), { name: "Maria Lopez", canWrite: true }, "Maria's page was told she may write");

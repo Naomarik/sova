@@ -692,7 +692,7 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
       if (d.excluded(project.root)) throw new DecisionError("unavailable", "This project's folder is excluded in Settings → Decisions.");
       const chain = d.provider();
       if (!chain) throw new DecisionError("unavailable", "No decision provider is ready (Settings → Decisions).");
-      const provider = recordingUsage(chain, orgId, projectId, typeof opts.owner === "object" && opts.owner.overseerOf === projectId ? "overseer" : "operator", d.now);
+      const provider = recordingUsage(chain, orgId, projectId, opts.auto ? "sova" : typeof opts.owner === "object" && opts.owner.overseerOf === projectId ? "overseer" : "operator", d.now);
       const dedupe = `reconcile:${projectId}`;
 
       // 2. Resolutions: the first decision recorded in an open conflict's baton session.

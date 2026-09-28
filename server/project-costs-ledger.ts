@@ -76,7 +76,7 @@ export function readUsageLedger(p: LedgerPaths): UsageRow[] {
     out.push({
       at: s(r.at),
       kind: "reconcile",
-      by: r.by === "overseer" ? "overseer" : "operator",
+      by: r.by === "overseer" || r.by === "sova" ? r.by : "operator",
       provider: s(r.provider),
       model: s(r.model),
       input: n(r.input),
@@ -174,7 +174,7 @@ export function readCostLedger(p: LedgerPaths): CostLedger {
       sessionId: s(v.sessionId),
       title: s(v.title),
       kind: v.kind,
-      by: v.by === "overseer" ? "overseer" : "operator",
+      by: v.by === "overseer" || v.by === "sova" ? v.by : "operator",
       countedAt: s(v.countedAt),
       buckets: v.buckets.map(parseBucket).filter((b): b is CostBucket => b !== null),
     };

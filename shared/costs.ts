@@ -7,8 +7,9 @@ export type CostKind = "overseer" | "gathering" | "settle" | "wrapup" | "coding-
 export const COST_KINDS: readonly CostKind[] = ["overseer", "gathering", "settle", "wrapup", "coding-overseer", "coding-operator", "workers", "reconcile"];
 
 /** Who started it: the project's overseer (its conversations and what it started, with their
-    workers and wrap-ups), or the operator (their own batons, Start coding session, their workers). */
-export type CostStarter = "overseer" | "operator";
+    workers and wrap-ups), the operator (their own batons, Start coding session, Reconcile Now, their
+    workers), or Sova on its own (the reconciler's automatic runs). */
+export type CostStarter = "overseer" | "operator" | "sova";
 
 /** Tokens by kind. `cacheWrite` is both TTLs (5-minute and 1-hour writes); `cacheWrite1h` is the
     1-hour part of it, for the curious. */

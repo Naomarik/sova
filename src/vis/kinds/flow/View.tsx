@@ -5,45 +5,68 @@ import { canvasMeasure } from "../../core/text";
 import { emClass, SvgEmBadge } from "../../emphasis";
 import { Lines, SvgScroll, useMarkerId } from "../../svg";
 import type { ViewProps } from "../../types";
-import { FLOW_FONT, layoutFlow, type PlacedFlowNode } from "./layout";
+import { FLOW_FONT, layoutFlow, type FlowLayout, type PlacedFlowNode } from "./layout";
 import type { FlowSpec } from "./parse";
+import { useWidth } from "./width";
 import "./flow.css";
 
-/** `vis flow` / `vis state`: boxes and arrows, laid out by lib/vis/flow-layout. */
+/**
+ * `vis flow` / `vis state`: boxes and arrows, laid out by ./layout. A drawing that would have to
+ * scroll in its pane (a phone) is laid out again to fit: a `dir: right` one downwards first, then
+ * compact (tighter gaps and wraps); if nothing fits, the narrowest one scrolls.
+ */
 export default function FlowView(props: ViewProps<FlowSpec>) {
-  const layout = createMemo(() => layoutFlow(props.spec, canvasMeasure));
+  const [width, measure] = useWidth();
+  const natural = createMemo(() => layoutFlow(props.spec, canvasMeasure));
+  // SvgScroll shrinks a drawing to 80% before it scrolls.
+  const fits = (l: FlowLayout) => l.width * 0.8 <= width();
+  const tooWide = createMemo(() => width() > 0 && !fits(natural()));
+  const layout = createMemo(() => {
+    if (!tooWide()) return natural();
+    const down = { ...props.spec, dir: "down" as const };
+    const tries = props.spec.dir === "right" ? [() => layoutFlow(down, canvasMeasure), () => layoutFlow(down, canvasMeasure, true)] : [() => layoutFlow(props.spec, canvasMeasure, true)];
+    let best = natural();
+    for (const t of tries) {
+      const l = t();
+      if (fits(l)) return l;
+      if (l.width < best.width) best = l;
+    }
+    return best;
+  });
   const em = createMemo(() => emphasisMap(props.spec));
   const arrow = useMarkerId();
   return (
-    <SvgScroll width={layout().width} height={layout().height} label={props.label}>
-      <defs>
-        <marker id={arrow} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-          <path d="M0,1 L9,5 L0,9 z" class="vis-arrowhead" />
-        </marker>
-      </defs>
-      <g class="vis-edges">
-        <For each={layout().edges}>
+    <div ref={measure}>
+      <SvgScroll width={layout().width} height={layout().height} label={props.label}>
+        <defs>
+          <marker id={arrow} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,1 L9,5 L0,9 z" class="vis-arrowhead" />
+          </marker>
+        </defs>
+        <g class="vis-edges">
+          <For each={layout().edges}>
+            {(e) => (
+              <path
+                d={e.path}
+                class="vis-edge"
+                classList={{ "vis-dashed": e.dashed }}
+                marker-end={`url(#${arrow})`}
+                marker-start={e.both ? `url(#${arrow})` : undefined}
+              />
+            )}
+          </For>
+        </g>
+        <For each={layout().edges.filter((e) => e.label)}>
           {(e) => (
-            <path
-              d={e.path}
-              class="vis-edge"
-              classList={{ "vis-dashed": e.dashed }}
-              marker-end={`url(#${arrow})`}
-              marker-start={e.both ? `url(#${arrow})` : undefined}
-            />
+            <g class="vis-edge-label">
+              <rect x={e.label!.x - e.label!.w / 2} y={e.label!.y - e.label!.h / 2} width={e.label!.w} height={e.label!.h} rx="4" />
+              <Lines lines={e.label!.lines} x={e.label!.x} y={e.label!.y} size={FLOW_FONT.edge} lh={15} />
+            </g>
           )}
         </For>
-      </g>
-      <For each={layout().edges.filter((e) => e.label)}>
-        {(e) => (
-          <g class="vis-edge-label">
-            <rect x={e.label!.x - e.label!.w / 2} y={e.label!.y - e.label!.h / 2} width={e.label!.w} height={e.label!.h} rx="4" />
-            <Lines lines={e.label!.lines} x={e.label!.x} y={e.label!.y} size={FLOW_FONT.edge} lh={15} />
-          </g>
-        )}
-      </For>
-      <For each={layout().nodes}>{(n) => <Node n={n} em={em().get(n.id)} />}</For>
-    </SvgScroll>
+        <For each={layout().nodes}>{(n) => <Node n={n} em={em().get(n.id)} />}</For>
+      </SvgScroll>
+    </div>
   );
 }
 

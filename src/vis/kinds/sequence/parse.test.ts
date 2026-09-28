@@ -32,3 +32,24 @@ c -> c "verify cert"`,
   assert.match(err("sequence", "a -> b\na <-> b").message, /a -> b or a --> b/);
   assert.match(err("sequence", "a -> a").message, /at least 2 actors/);
 });
+
+test("sequence: mark an actor by id or label, a message by its number", () => {
+  const s = ok<SequenceSpec>(
+    "sequence",
+    `c -> s "SYN"
+== TLS ==
+s --> c "SYN-ACK"
+note c "ok"
+c -> s "ACK"
+mark 2 warn "commits here"
+mark s
+mark "c" muted`,
+  );
+  assert.deepEqual(s.emphasis, [
+    { key: "step:2", tone: "warn", note: "commits here", n: 1 },
+    { key: "actor:s", tone: "accent" },
+    { key: "actor:c", tone: "muted" },
+  ]);
+  assert.match(err("sequence", 'a -> b "x"\nmark 2').message, /no actor or message number 2/);
+  assert.match(err("sequence", 'a -> b "x"\nmark zed').message, /no actor or message number zed/);
+});

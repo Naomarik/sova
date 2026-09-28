@@ -1,10 +1,28 @@
-/* `vis sequence` — DRAFT, not yet verified in a browser. Owner: the sequence member. */
+/* `vis sequence`: actor heads and lifelines, messages, notes, dividers; emphasis and the step-through's current step. */
 .vis-actor > rect { fill: var(--vis-fill); stroke: var(--vis-stroke); stroke-width: 1.5; }
 .vis-svg .vis-actor text { fill: var(--vis-ink); font-weight: var(--fw-medium); }
 .vis-lifeline { stroke: var(--color-border-strong); stroke-width: 1; stroke-dasharray: 3 4; }
+.vis-actor.vis-em > .vis-lifeline { stroke: var(--vis-stroke); stroke-width: 1.5; }
 .vis-svg .vis-msg-label { fill: var(--color-ink-2); }
 .vis-note rect { fill: var(--status-warn-bg); stroke: var(--status-warn); stroke-width: 1; }
 .vis-svg .vis-note text { fill: var(--color-ink); }
 .vis-divider line { stroke: var(--color-border); stroke-width: 1; }
 .vis-divider rect { fill: var(--color-sunken); stroke: var(--color-border); }
 .vis-svg .vis-divider text { fill: var(--color-ink-muted); }
+
+/* A marked message: its tone's band behind it, the arrow in the tone's colour and weight. */
+.vis-em > rect.vis-seq-band { fill: var(--vis-fill); stroke: none; }
+.vis-em > .vis-msg-line { stroke: var(--vis-stroke); stroke-width: 2.5; }
+.vis-seq-head-em .vis-arrowhead { fill: var(--vis-stroke); }
+.vis-seq-head-em .vis-arrowhead-open { stroke: var(--vis-stroke); }
+.vis-svg .vis-em > .vis-msg-label { fill: var(--vis-ink); font-weight: var(--fw-medium); }
+
+/* Stepping: the current message reads in full ink and weight; later ones are dimmed (vis.css). */
+.vis-seq-current > .vis-msg-line { stroke: var(--color-ink); stroke-width: 2; }
+.vis-svg .vis-seq-current > .vis-msg-label { fill: var(--color-ink); font-weight: var(--fw-semibold); }
+.vis-seq-row { transition: opacity var(--dur-fast) var(--ease-standard); }
+@media (prefers-reduced-motion: reduce) { .vis-seq-row { transition: none; } }
+
+/* A label crossing a lifeline knocks it out, in whatever it sits on. */
+.vis-svg .vis-msg-label { paint-order: stroke; stroke: var(--color-surface); stroke-width: 4px; stroke-linejoin: round; }
+.vis-svg .vis-em > .vis-msg-label { stroke: var(--vis-fill); }

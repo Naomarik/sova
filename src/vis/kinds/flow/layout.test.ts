@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { layoutFlow, type FlowLayout } from "./layout";
-import { parseFlow, type FlowSpec } from "./parse";
+import { widest } from "../../core/text";
+import { FLOW_FONT, layoutFlow, type FlowLayout } from "./layout";
+import { parseFlow, parseState, type FlowSpec } from "./parse";
 
 const flow = (body: string): FlowSpec => parseFlow(body);
 const byId = (l: FlowLayout, id: string) => l.nodes.find((n) => n.id === id)!;
@@ -52,4 +53,41 @@ test("a crossing that ordering can remove is removed", () => {
 test("deterministic", () => {
   const body = "a -> b\na -> c\nb -> d\nc -> d\nd -> a";
   assert.deepEqual(layoutFlow(flow(body)), layoutFlow(flow(body)));
+});
+
+test("a decision diamond holds its text box: tw/w + th/h <= 1", () => {
+  for (const label of ["Ok?", "Reply streamed?", "Is the cache warm and the lock free?"]) {
+    const l = layoutFlow(flow(`node d "${label}" decision\na -> d`));
+    const d = byId(l, "d");
+    const tw = widest(d.lines, FLOW_FONT.label);
+    const th = d.lines.length * 17;
+    assert.ok(tw / d.w + th / d.h <= 1, `${label}: ${tw}x${th} in ${d.w}x${d.h}`);
+    assert.ok(d.w < 2 * tw + 16 || tw < 40, "narrower than the old 2x rule");
+  }
+});
+
+test("an end state sinks to the last rank; a start stays on top", () => {
+  const l = layoutFlow(parseState("node s0 start\nnode done end\ns0 -> a -> b -> c -> d\na -> done"));
+  const ys = l.nodes.map((n) => n.y);
+  assert.equal(byId(l, "done").y, Math.max(...ys));
+  assert.equal(byId(l, "s0").y, Math.min(...ys));
+});
+
+test("compact is narrower and still overlap-free and in bounds", () => {
+  const spec = flow(`node gw "API gateway"
+gw -> auth "verify"
+gw -> users
+gw -> orders
+gw -> search "query"
+gw -> billing
+auth -> db
+orders -> queue
+billing -> queue`);
+  const roomy = layoutFlow(spec);
+  const tight = layoutFlow(spec, undefined, true);
+  assert.ok(tight.width < roomy.width, `${tight.width} < ${roomy.width}`);
+  const boxes = [...tight.nodes, ...tight.edges.flatMap((e) => (e.label ? [e.label] : []))];
+  for (let i = 0; i < boxes.length; i++)
+    for (let j = i + 1; j < boxes.length; j++) assert.ok(!overlap(boxes[i]!, boxes[j]!));
+  for (const b of boxes) assert.ok(b.x - b.w / 2 >= 0 && b.x + b.w / 2 <= tight.width);
 });

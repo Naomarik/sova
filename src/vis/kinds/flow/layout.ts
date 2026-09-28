@@ -19,13 +19,10 @@ import type { FlowSpec, Shape } from "./parse";
 
 export const FLOW_FONT = { label: 13, note: 11.5, edge: 11.5 } as const;
 const LINE = { label: 17, note: 15, edge: 15 };
-const PAD = { x: 14, y: 9 };
-const MAX_TEXT = 168;
-const MAX_EDGE_TEXT = 140;
 const RANK_GAP = 18;
-const NODE_GAP = 28;
-const VIRTUAL_GAP = 12;
-const MARGIN = 12;
+/** Spacing and wrap widths; `compact` is for a pane the natural drawing would overflow (a phone). */
+const ROOMY = { padX: 14, padY: 9, maxText: 168, maxEdgeText: 140, nodeGap: 28, virtualGap: 12, margin: 12, minW: 64 };
+const COMPACT = { padX: 10, padY: 8, maxText: 120, maxEdgeText: 100, nodeGap: 14, virtualGap: 6, margin: 6, minW: 48 };
 
 export interface PlacedFlowNode {
   id: string;
@@ -78,24 +75,26 @@ interface Chain {
   labelKey: number | null;
 }
 
-export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth): FlowLayout {
+export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, compact = false): FlowLayout {
+  const { padX, padY, maxText: MAX_TEXT, maxEdgeText: MAX_EDGE_TEXT, nodeGap: NODE_GAP, virtualGap: VIRTUAL_GAP, margin: MARGIN, minW } = compact ? COMPACT : ROOMY;
   const right = spec.dir === "right";
   const index = new Map(spec.nodes.map((n, i) => [n.id, i]));
 
   // ---- boxes -------------------------------------------------------------------------------
   const boxes = spec.nodes.map((n) => {
     const tiny = n.shape === "start" || n.shape === "end";
-    const maxText = n.shape === "decision" ? 120 : MAX_TEXT;
+    const maxText = n.shape === "decision" ? (compact ? 96 : 120) : MAX_TEXT;
     const lines = tiny ? [] : wrap(n.label, maxText, 3, FLOW_FONT.label, measure);
     const noteLines = tiny || !n.note ? [] : wrap(n.note, maxText, 2, FLOW_FONT.note, measure);
     const tw = Math.max(widest(lines, FLOW_FONT.label, measure), widest(noteLines, FLOW_FONT.note, measure));
     const th = lines.length * LINE.label + noteLines.length * LINE.note;
-    let w = Math.max(64, tw + 2 * PAD.x);
-    let h = th + 2 * PAD.y;
+    let w = Math.max(minW, tw + 2 * padX);
+    let h = th + 2 * padY;
     if (tiny) w = h = n.shape === "start" ? 18 : 22;
     else if (n.shape === "decision") {
-      w = Math.max(88, 2 * tw + 16);
-      h = Math.max(48, 2 * th + 10);
+      // The text box fits inside the diamond when tw/w + th/h <= 1: a taller diamond is a narrower one.
+      h = Math.max(48, 2.2 * th + 8);
+      w = Math.max(88, tw / (1 - th / h) + 18);
     } else if (n.shape === "circle") w = h = Math.max(w, h, 56);
     else if (n.shape === "store") h += 10;
     return { w, h, lines, noteLines };
@@ -151,6 +150,11 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth): Fl
     }
     const min = Math.min(...rank);
     for (let u = 0; u < rank.length; u++) rank[u]! -= min;
+    // An end state (a sink drawn as the exit dot) sits on the last rank, under everything else.
+    const last = Math.max(...rank);
+    spec.nodes.forEach((n, u) => {
+      if (n.shape === "end" && !dag.some((ed) => ed.u === u)) rank[u] = last;
+    });
   }
 
   // ---- layout graph with virtual nodes -----------------------------------------------------

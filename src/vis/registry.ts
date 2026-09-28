@@ -51,7 +51,7 @@ export const KINDS: Record<string, KindEntry> = {
   chart: kind(parseChart, () => import("./kinds/chart/View"), "Chart"),
   timeline: kind(parseTimeline, () => import("./kinds/timeline/View"), "Timeline"),
   matrix: kind(parseMatrix, () => import("./kinds/matrix/View"), "Matrix"),
-  code: kind(parseCode, stubView, "Code", { stub: true }),
+  code: kind(parseCode, () => import("./kinds/code/View"), "Code"),
   html: kind(parseHtml, () => import("./kinds/frame/View"), "Interactive", { framed: true }),
   svg: kind(parseSvg, () => import("./kinds/frame/View"), "Drawing", { framed: true }),
 };

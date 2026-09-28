@@ -244,11 +244,39 @@ next prompt without `/reload`.
 
 How those instructions reach the model depends on the host. On pi >= 0.86 the
 handler writes the blocks into `systemPromptOptions.sections.mode`, which pi
-diffs against the section the model already has: a toggle costs one small
-mid-conversation patch instead of a whole new prompt, so the cached prefix
-survives, and switching back to normal deletes the section so the instructions
-stop applying. On older hosts without sections (pi < 0.86) there are no
-sections, and the blocks stay a whole-prompt append as before.
+diffs against the section the model already has, and switching back to normal
+deletes the section so the instructions stop applying. On older hosts without
+sections (pi < 0.86) there are no sections, and the blocks stay a whole-prompt
+append as before.
+
+A changed section is a cheap tail patch only on models that take
+mid-conversation system messages (`compat.supportsMidConvoSystemMessages`:
+Opus on pi's anthropic provider, gpt-5.4+, kimi-k3, …). Everywhere else pi
+folds it into a new head, and the claude-code provider restarts its CLI and
+re-sends the whole history uncached. So a **minor-mode toggle never changes the
+section**: its minor blocks are the **head**'s, the minor modes the first run
+after the session's start (or its last compaction) was built with. The switch
+reaches the model instead as a hidden `mode-note` custom message
+(`display: false`) at the next run, one path for every provider: beside the
+user's prompt (`sendMessage(…, {deliverAs: "nextTurn"})` in
+`before_agent_start`), or steered in ahead of the first request of a run an
+extension's message starts (`agent_start`). Turning a mode on carries its whole
+block, the text the head would have had, unless that block is already in
+context (in the head, or in an earlier note since the last compaction), when
+the note points back to it; turning one off says its instructions no longer
+apply. A run already under way keeps its mode to its end.
+
+The head is persisted additively in the `mode` entry: a switch records `head`
+only while it differs from that entry's `active.minorModes`, and each note's
+`details` (`{v: 1, minorModes, guides}`) records what the model has been told,
+so a reopened session rebuilds the head it started with and replays its notes
+(`restoreHead` in `state.ts`). A compaction loses the cached prefix anyway: the
+next run rebuilds the head from the modes active then, and notes the compaction
+kept in its recent tail are dropped from requests (`context`) once it has. A
+major-mode switch, a Delegate or spec-writer routing change, and align in
+delegate (whose bridge paragraph follows the active align) still change the
+section; align also changes the tool set (its `align` tool), which breaks the
+prefix on every provider and restarts the claude-code CLI regardless.
 
 The prompt is the same whoever started the turn. pi runs `before_agent_start`
 only for a turn the user's prompt starts; a turn an extension's message starts
@@ -458,5 +486,6 @@ node --test spec.test.ts      # the spec writer file: parsing, persistence, per-
 node --test align.test.ts     # alignments: ops, strict input and import, hints, fold, echo, note, nudge heuristic, legacy entries
 node tests/smoke.mjs          # real index.ts against a fake pi host, no model requests
 node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
+node tests/note-turn.mjs      # real pi session + scripted provider: a minor toggle keeps the head; notes, reopen, compaction
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
 ```

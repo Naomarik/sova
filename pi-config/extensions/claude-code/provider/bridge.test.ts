@@ -1460,6 +1460,52 @@ test("a system prompt differing only in its untagged lead-in restarts the child:
 	await bridge.disposeAll();
 });
 
+/**
+ * A minor-mode toggle, both ways pi could deliver it, through stream.ts (collapse, lead-in strip,
+ * turnMeta): as the mode extension's hidden note (a custom message, a user message to the provider)
+ * the collapsed prompt is unchanged and the child carries on; as a patch of the `mode` section, the
+ * way it was delivered before, the collapsed prompt changes and the child restarts with the whole
+ * history folded, uncached.
+ */
+test("a minor-mode toggle sent as a note keeps the child; the same toggle as a mode-section patch restarts it", { timeout: 8000 }, async () => {
+	const [initial] = normalizeContext({ systemPrompt: "", tools, messages: [] }).messages;
+	const head = { ...initial, content: "", sections: { preamble: "You are pi.", cwd: "<cwd>\n/x\n</cwd>", mode: "<mode>\n# Minor mode: spec\n</mode>" } } as Message;
+	const reply = (text: string) => ({ role: "assistant", content: [{ type: "text", text }], api: "claude-code-cli", provider: "claude-code-cli", model: "sonnet", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: 2 }) as Message;
+	const turn = async (bridge: SessionBridge, messages: Message[]) => {
+		const events: AssistantMessageEvent[] = [];
+		for await (const event of streamClaudeCode(bridge, piModel(), { messages }, { sessionId: "pi-session-1" })) events.push(event);
+		assert.equal(events.at(-1)!.type, "done");
+	};
+	const answer = async (children: FakeClaude[], n: number, text: string, fresh: boolean) => {
+		const cli = await child(children, n);
+		if (fresh) {
+			await cli.waitFor((f) => f.request?.subtype === "initialize");
+			await cli.handshake();
+		}
+		await cli.waitFor((f) => f.type === "user" && JSON.stringify(f.message.content).includes(text));
+		for (const frame of finalTextFrames("ok")) cli.emitFrame(frame as Record<string, unknown>);
+	};
+	const first = [head, user("one"), reply("ok")];
+	const note = "Mode change: the user turned the vis minor mode on. Its instructions follow";
+
+	const kept = harness();
+	await Promise.all([turn(kept.bridge, [head, user("one")]), answer(kept.children, 1, "one", true)]);
+	await Promise.all([turn(kept.bridge, [...first, user("two"), user(`${note}\n\n# Minor mode: vis`)]), answer(kept.children, 1, note, false)]);
+	assert.equal(kept.children.length, 1, "a note is an append: the same child, its prompt cache intact");
+	const sent = kept.children[0]!.sent.filter((f) => f.type === "user").at(-1)!;
+	assert.equal(sent.message.content[0].text, `two\n\n${note}\n\n# Minor mode: vis`, "the prompt and the note reach the CLI as one user message");
+	await kept.bridge.disposeAll();
+
+	const patched = harness();
+	const patch = { role: "system", content: "", sections: { mode: "<mode>\n# Minor mode: spec\n\n# Minor mode: vis\n</mode>" }, timestamp: 3 } as Message;
+	await Promise.all([turn(patched.bridge, [head, user("one")]), answer(patched.children, 1, "one", true)]);
+	await Promise.all([turn(patched.bridge, [...first, patch, user("two")]), answer(patched.children, 2, "two", true)]);
+	assert.equal(patched.children.length, 2, "a changed mode section changes the collapsed prompt: the child restarts");
+	const init = patched.children[1]!.sent.find((f) => f.request?.subtype === "initialize")!;
+	assert.match(init.request.systemPrompt.join(""), /# Minor mode: vis/, "the new child's system prompt carries the patched section");
+	await patched.bridge.disposeAll();
+});
+
 // ---------------------------------------------------------------------------
 // Compaction
 // ---------------------------------------------------------------------------

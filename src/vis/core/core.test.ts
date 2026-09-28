@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { linearScale, logScale, niceStep, shortNumber } from "./scale";
 import { wrap } from "./text";
+import { commaList, setting } from "./grammar";
 
 test("wrap breaks at words, then at path separators, and ellipsizes past maxLines", () => {
   const w = (s: string) => s.length; // 1px per char
@@ -24,4 +25,13 @@ test("scales: nice steps, zero included, decades for log", () => {
   assert.equal(shortNumber(138175), "138k");
   assert.equal(shortNumber(0.0042), "0.0042");
   assert.equal(shortNumber(2_500_000), "2.5M");
+});
+
+test("a setting unquotes one quoted string, and leaves a quoted list as written", () => {
+  const line = (text: string) => ({ n: 1, raw: text, text });
+  assert.deepEqual(setting(line('title: "Say \\"hi\\""')), { key: "title", value: 'Say "hi"', raw: '"Say \\"hi\\""' });
+  const list = setting(line('series: "A b", C, "D e"'))!;
+  assert.equal(list.value, '"A b", C, "D e"');
+  assert.deepEqual(commaList(list.raw, 1), ["A b", "C", "D e"]);
+  assert.deepEqual(commaList(setting(line('series: "A, b"'))!.raw, 1), ["A, b"]);
 });

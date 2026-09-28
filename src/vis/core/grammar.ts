@@ -67,22 +67,23 @@ export function lines(body: string): Line[] {
   return out;
 }
 
-/** `key: value` when `key` is a lowercase word; the value loses one pair of surrounding quotes. */
-export function setting(line: Line): { key: string; value: string } | null {
+/** `key: value` when `key` is a lowercase word. `value` is unquoted when it is one quoted string; `raw` is as written (for lists). */
+export function setting(line: Line): { key: string; value: string; raw: string } | null {
   const m = /^([a-z]+):(?:\s+(.*))?$/.exec(line.text);
   if (!m) return null;
-  let value = (m[2] ?? "").trim();
-  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) value = unquote(value.slice(1, -1));
-  return { key: m[1]!, value };
+  const raw = (m[2] ?? "").trim();
+  // Unquote only a value that is ONE quoted string: `"A b", C, "D e"` is a list, left as written.
+  const q = /^"((?:[^"\\]|\\.)*)"$/.exec(raw);
+  return { key: m[1]!, value: q ? unquote(q[1]!) : raw, raw };
 }
 
 /**
  * Consume the settings a kind allows, in any order, wherever they appear. Returns the rest.
  * An unknown `word:` line is an error naming the ones that exist.
  */
-export function takeSettings(ls: Line[], allowed: readonly string[], base: VisBase): { rest: Line[]; values: Map<string, { value: string; n: number }> } {
+export function takeSettings(ls: Line[], allowed: readonly string[], base: VisBase): { rest: Line[]; values: Map<string, { value: string; raw: string; n: number }> } {
   const all = ["title", "caption", ...allowed];
-  const values = new Map<string, { value: string; n: number }>();
+  const values = new Map<string, { value: string; raw: string; n: number }>();
   const rest: Line[] = [];
   for (const line of ls) {
     const s = setting(line);
@@ -93,7 +94,7 @@ export function takeSettings(ls: Line[], allowed: readonly string[], base: VisBa
     if (!all.includes(s.key)) fail(line.n, `unknown setting "${s.key}:" (this kind takes ${all.map((k) => `${k}:`).join(" ")})`);
     if (values.has(s.key)) fail(line.n, `"${s.key}:" is set twice`);
     if (s.value === "") fail(line.n, `"${s.key}:" needs a value`);
-    values.set(s.key, { value: s.value, n: line.n });
+    values.set(s.key, { value: s.value, raw: s.raw, n: line.n });
   }
   const title = values.get("title");
   const caption = values.get("caption");

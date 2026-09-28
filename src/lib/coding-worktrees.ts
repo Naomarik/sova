@@ -26,7 +26,6 @@ export function codingModeOf(key: CodingModeKey): ProjectCodingMode | null {
 
 export const codingModeLabel = (key: CodingModeKey): string => (key === "auto" ? "Automatic" : modeWords(codingModeOf(key)!));
 
-
 // ---- coding sessions and their worktrees ------------------------------------------------------------
 
 type Row = Pick<CodingWorktree, "state" | "path" | "running" | "workers" | "merged" | "branchGone">;

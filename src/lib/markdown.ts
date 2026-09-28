@@ -239,15 +239,15 @@ md.renderer.rules.table_open = () => '<div class="md-table-wrap"><table>\n';
 md.renderer.rules.table_close = () => "</table></div>\n";
 
 // ---- Code blocks: head with language + Copy Code, highlight when known ------------------
-const renderCode = (source: string, info: string, env: RenderEnv, plain: boolean) => {
-  const label = info.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+const renderCode = (source: string, info: string, env: RenderEnv, plain: boolean, head?: string, extra = "") => {
+  const label = head ?? info.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
   const lang = resolveLanguage(label);
   const index = env.codes.push(source) - 1;
   const known = !plain && highlightable(lang);
   const body = known ? hljs.highlight(source, { language: lang, ignoreIllegals: true }).value : esc(source);
   const cls = known ? ` class="hljs language-${esc(lang)}"` : "";
   return (
-    `<div class="md-code"><div class="md-code-head">` +
+    `<div class="md-code${extra}"><div class="md-code-head">` +
     `<span class="md-code-lang">${esc(label || "text")}</span>` +
     `<button class="button button-sm button-ghost md-code-copy" type="button" data-code-index="${index}">` +
     `<span class="icon icon-sm" style="--icon: url(/icons/copy.svg)" aria-hidden="true"></span>` +
@@ -284,7 +284,7 @@ const renderVis = (t: { content: string; info: string; markup: string }, kind: s
   const r = parseCached(kind, t.content);
   if (!r.ok) {
     const where = r.line > 0 ? `line ${r.line}: ` : "";
-    return renderCode(t.content, t.info, env, true) + `<p class="md-vis-error">Couldn't draw this ${esc(kind ? `vis ${kind}` : "vis")} block (${esc(where + r.message)}), so here is its source.</p>\n`;
+    return renderCode(t.content, t.info, env, true, kind ? `vis ${kind}` : "vis", " md-vis-source") + `<p class="md-vis-error">Couldn't draw this ${esc(kind ? `vis ${kind}` : "vis")} block (${esc(where + r.message)}), so here is its source.</p>\n`;
   }
   const fence = `${t.markup}${t.info}\n${t.content}${t.markup}`;
   const i = env.visuals.push({ kind, spec: r.spec, fence, body: t.content }) - 1;

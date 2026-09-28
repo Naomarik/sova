@@ -97,6 +97,11 @@
   font-size: var(--fs-caption);
   color: var(--color-ink-muted);
 }
+/* The error line teaches syntax and the failed block is syntax: `->` must never become an arrow. */
+.md .md-vis-error, .md-vis-source pre, .vis-caption code, .vis-notes code {
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+}
 
 /* ---- Tones: one set of variables every kind reads ---------------------------------------- */
 /* --vis-fill (a shape's background), --vis-stroke (its outline), --vis-ink (its text). */

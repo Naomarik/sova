@@ -21,6 +21,11 @@ function viewFor(kind: string): Component<ViewProps<VisBase>> {
   return view;
 }
 
+/** Prose from a fence (a caption, a note): `backticks` become inline code, the rest stays text. */
+function Prose(props: { text: string }) {
+  return <For each={props.text.split(/`([^`\n]+)`/)}>{(part, i) => (i() % 2 ? <code>{part}</code> : part)}</For>;
+}
+
 /**
  * One `vis` fence, drawn: a figure with its title (or the kind's eyebrow), a Source toggle and Copy
  * (the fence as written), the kind's View, the numbered notes of its `mark` lines, and the caption.
@@ -69,14 +74,18 @@ export function Visual(props: { kind: string; spec: VisBase; fence: string; body
             {(n) => (
               <li class={`vis-tone-${n.tone}`}>
                 <EmBadge e={{ key: "", tone: n.tone, n: n.n, note: n.note }} />
-                <span>{n.note}</span>
+                <span>
+                  <Prose text={n.note} />
+                </span>
               </li>
             )}
           </For>
         </ol>
       </Show>
       <Show when={s.caption}>
-        <figcaption class="vis-caption">{s.caption}</figcaption>
+        <figcaption class="vis-caption">
+          <Prose text={s.caption!} />
+        </figcaption>
       </Show>
     </figure>
   );

@@ -86,6 +86,7 @@ export function parseChart(body: string): ChartSpec {
   }
   if (spec.rows.length === 0) fail(0, 'nothing to draw: add rows like "Quicksort" 120');
   if (spec.rows.length > MAX_ROWS) fail(0, `${spec.rows.length} rows; at most ${MAX_ROWS}`);
+  if (spec.type === "stacked" && spec.scale === "log") fail(values.get("scale")!.n, "stacked bars can't use scale: log (the segments' lengths would lie); use grouped bars");
   if (spec.type === "stacked" && spec.rows.some((r) => r.values.some((v) => v !== null && v < 0))) fail(0, "stacked bars need values of 0 or more");
   applyMarks(spec, marks, byIdOrLabel(spec.rows.map((r, i) => ({ key: String(i), label: r.label }))), "row");
   return spec;

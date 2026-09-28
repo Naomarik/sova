@@ -21,3 +21,13 @@ test("matrix: marks with optional notes, text cells, column count checked", () =
   assert.match(err("matrix", "columns: A, B\nx | yes").message, /1 cells; expected 2/);
   assert.match(err("matrix", "x | yes").message, /columns:/);
 });
+
+test("matrix: mark a row by its label, or a column by its name", () => {
+  const s = ok<MatrixSpec>("matrix", 'columns: Merge, Rebase\nLinear history | no | yes\nmark "Linear history" "the point"\nmark Rebase info');
+  assert.deepEqual(s.emphasis, [
+    { key: "0", tone: "accent", note: "the point", n: 1 },
+    { key: "c1", tone: "info" },
+  ]);
+  assert.match(err("matrix", "columns: A, B\nx | yes | no\nmark C").message, /no row or column C/);
+  assert.deepEqual(s.rows[0]!.cells, [{ mark: "no" }, { mark: "yes" }]);
+});

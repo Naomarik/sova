@@ -44,3 +44,8 @@ test("chart: mark a row by its label; the note is numbered", () => {
   assert.deepEqual(s.emphasis, [{ key: "1", tone: "warn", note: "quadratic", n: 1 }]);
   assert.match(err("chart", 'a 1\nmark "b"').message, /no row "b"/);
 });
+
+test("chart: stacked bars refuse a log scale; quoted series names keep their spaces", () => {
+  assert.match(err("chart", "type: stacked\nscale: log\nseries: a, b\nx 1 2").message, /stacked bars can't use scale: log/);
+  assert.deepEqual(ok<ChartSpec>("chart", 'series: "Merge sort", Quicksort, "Insertion sort"\nx 1 2 3').series, ["Merge sort", "Quicksort", "Insertion sort"]);
+});

@@ -24,3 +24,13 @@ test("timeline: rows, optional note and tone, sections", () => {
   ]);
   assert.match(err("timeline", "2013 React").message, /when \| label/);
 });
+
+test("timeline: mark a row by its when or its label; sections can't be marked", () => {
+  assert.match(err("timeline", '2013 | React\n09:04 | Error rate climbs\nmark 09:04\nmark "Error rate climbs"').message, /marked twice/);
+  assert.match(err("timeline", '== 2010s ==\n2013 | React\nmark "2010s"').message, /no row "2010s"/);
+  const t = ok<TimelineSpec>("timeline", "== 2010s ==\n2013 | React\n09:04 | Error rate climbs\nmark 2013 \"first\"\nmark 09:04 error");
+  assert.deepEqual(t.emphasis, [
+    { key: "1", tone: "accent", note: "first", n: 1 },
+    { key: "2", tone: "error" },
+  ]);
+});

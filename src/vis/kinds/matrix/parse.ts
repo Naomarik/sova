@@ -1,4 +1,7 @@
-/** `vis matrix`: `columns:` then `label | cell | cell` rows; cells are yes/no/partial marks or text. */
+/**
+ * `vis matrix`: `columns:` then `label | cell | cell` rows; cells are yes/no/partial marks or text.
+ * `mark` names a row by its label, or a column by its name.
+ */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
 import { commaList, fail, fields, lines, takeSettings, unquote, type VisBase } from "../../core/grammar";
@@ -47,6 +50,9 @@ export function parseMatrix(body: string): MatrixSpec {
   }
   if (spec.rows.length === 0) fail(0, "nothing to draw: add rows like Label | yes | no");
   if (spec.rows.length > MAX_ROWS) fail(0, `${spec.rows.length} rows; at most ${MAX_ROWS}`);
-  applyMarks(spec, marks, byIdOrLabel(spec.rows.map((r, i) => ({ key: String(i), label: r.label }))), "row");
+  // A mark names a row (key: its index) or, failing that, a column (key: `c<index>`).
+  const byRow = byIdOrLabel(spec.rows.map((r, i) => ({ key: String(i), label: r.label })));
+  const byColumn = byIdOrLabel(spec.columns.map((c, i) => ({ key: `c${i}`, label: c })));
+  applyMarks(spec, marks, (t) => byRow(t) ?? byColumn(t), "row or column");
   return spec;
 }

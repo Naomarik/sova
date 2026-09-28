@@ -108,7 +108,7 @@ export function manifestConflict(view: GitView | undefined): string | undefined 
 /** What to do about a conflicted manifest: the sanctioned command, spelled out. */
 export function manifestConflictNote(top: string, manifest: string, core: string): string {
 	const root = join(top, dirname(dirname(dirname(manifest))) === "." ? "" : dirname(dirname(dirname(manifest))));
-	return `${DIGEST_TAG} ${manifest} is in conflict: run \`node "${join(core, "sova-spec-draft.mjs")}" merge-manifest --root ${root} --write --json\` first, then stage it; on a refusal (manifest-conflict) re-apply one side in a new draft. Never take a side with git checkout or git show.`;
+	return `${DIGEST_TAG} ${manifest} is in conflict: run \`node "${join(core, "sova-spec-draft.mjs")}" merge-manifest --root ${root} --write --json\` first, then stage it. If it refuses (manifest-conflict): take master's manifest and matching claims (git checkout master -- …), re-apply the branch's spec changes in a new draft, and promote. Never take a side before merge-manifest has run.`;
 }
 
 /** Paths out of `git status --porcelain -z`: a rename's entry carries its source as a second field. */

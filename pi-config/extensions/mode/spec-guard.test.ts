@@ -323,7 +323,7 @@ test("a manifest.json in a Git conflict: the census says to run merge-manifest, 
 		assert.notEqual(git("merge", "side").status, 0, "the merge conflicts");
 		const first = await censusStep(state, { cwd: repo, toolName: "bash", input: { command: "git merge side" } }, CORE);
 		assert.match(first.result.text ?? "", /\.sova\/spec\/manifest\.json is in conflict: run `node ".*sova-spec-draft\.mjs" merge-manifest --root .* --write --json` first/);
-		assert.match(first.result.text ?? "", /Never take a side with git checkout or git show/);
+		assert.match(first.result.text ?? "", /If it refuses \(manifest-conflict\): take master's manifest and matching claims \(git checkout master -- …\), re-apply the branch's spec changes in a new draft, and promote\. Never take a side before merge-manifest has run\./);
 		state = first.state;
 		assert.equal((await censusStep(state, { cwd: repo, toolName: "read", input: {} }, CORE)).result.text, undefined, "said once per conflict");
 		const turn = await treeTurn(tree!, CORE);

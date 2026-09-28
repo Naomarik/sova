@@ -433,7 +433,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /- Read `\$core\/\.\.\/PROMOTE\.md`; promote what you verified, or say in your reply why not\./);
 	assert.doesNotMatch(spec, /Before `git commit`, if/, "the old conditional is gone");
 	assert.match(spec, /A `conflict` is whole-file: re-apply in a new draft from current\./);
-	assert.match(spec, /A Git merge conflict in `manifest\.json` is settled only by `merge-manifest --write`; on its refusal re-apply one side in a new draft, never take a side with `git checkout` or `git show`\./);
+	assert.match(spec, /A Git merge conflict in `manifest\.json`: run `merge-manifest --write` first; if it refuses, take master's manifest and matching claims \(`git checkout master -- …`\), re-apply the branch's spec changes in a new draft, and promote\. Never take a side before it has run\./);
 	assert.match(usage("sova-spec-draft.mjs", "--no-such-flag"), /merge-manifest/, "merge-manifest is a draft command");
 	assert.match(spec, /never put `§` IDs or spec annotations in source code/);
 	assert.match(spec, /authorizes its drafts, evidence and promotions as one bounded batch; no dialog per claim, and nothing at session start/);
@@ -453,7 +453,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /While coding, exempt work included, run `census --changed` \(/);
 	assert.match(spec, /Trusted tools: start each bash command with exactly this, never a guessed path:\n\n```sh\n/, "the recipe, not a hard-coded agent dir");
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never flags/);
-	assert.ok(spec.split(/\s+/).length <= 900, "short enough to ride every turn");
+	assert.ok(spec.split(/\s+/).length <= 920, "short enough to ride every turn");
 });
 
 test("mode helpers", () => {

@@ -46,6 +46,9 @@ import {
   undoNote,
 } from "./baton";
 import { revokeLinks } from "./baton-links";
+import { ownerAreaChoices, pickOwnerArea } from "./decisions";
+import { OWNER_AREA_NONE } from "../shared/decisions";
+import type { Person } from "../shared/orgs";
 import { emitBatonEvent } from "./baton-events";
 import { handoffChosen } from "./baton-guards";
 import { authorNotes, labelAuthors, streamingText } from "./baton-view";
@@ -102,11 +105,31 @@ export function renderBatonPrompt(sessionId: string, template = readFileSync(PRO
     HOLDER_ROLE: holder?.role ? `, ${holder.role}` : "",
     STEERING: holder ? holderSteering(holder) : "",
     PEOPLE: others.length ? others.map(participantLine).join("\n") : "(nobody else on the roster yet)",
+    OWNERS: ownersBlock(roster, holder?.id),
     FORMER: former.length
       ? `\n# People who have left the organization\n\nNever hand to them or propose them as new people. If someone names one of them, say they have left and ask who covers their area now.\n\n${former.map((p) => `- ${p.name}${p.role ? ` — was ${p.role}` : ""}`).join("\n")}\n`
       : "",
   };
   return template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => values[k] ?? "");
+}
+
+/** The private "who decides what" list (§app.requirements/owner-area): every active person, the
+    holder included, with their job title and decision areas. Only for picking an owner area. */
+function ownersBlock(roster: readonly Person[], holderId: string | undefined): string {
+  const lines = roster
+    .filter((p) => p.status === "active")
+    .map((p) => `- ${p.name}${p.id === holderId ? " (the person you are talking to)" : ""}${p.role ? ` — ${p.role}` : ""}: ${p.decides.length ? p.decides.join(", ") : "(no decision areas)"}`);
+  return lines.length ? lines.join("\n") : "(nobody on the roster yet)";
+}
+
+/** record_decision's `ownerArea` parameter: the roster's owner areas as they are now, and "none". */
+export function ownerAreaSchema(roster: readonly Person[]) {
+  const choices = ownerAreaChoices(roster);
+  return {
+    type: "string",
+    enum: [...choices, OWNER_AREA_NONE],
+    description: `Who decides it: the one decision area from "Who decides what" that covers it, exactly as written there, or "${OWNER_AREA_NONE}" when none does.`,
+  };
 }
 
 /**
@@ -313,6 +336,66 @@ type AppendEntry = (customType: string, data: unknown) => void;
 
 /** The three tools, bound to one session. `append` is the extension's own appendEntry. */
 export function batonTools(sessionId: string, append: AppendEntry): ToolDefinition<any, any>[] {
+  const hit = batonById(sessionId);
+  const roster = hit ? readRoster(hit.row.orgId) : [];
+  const [handTo, goalDone, ...rest] = conversationTools(sessionId, append);
+  return [handTo!, goalDone!, recordDecisionTool(sessionId, append, roster), ...rest];
+}
+
+/** record_decision, its owner areas listed as the roster has them now (the call itself always
+    checks the roster as it is then). */
+export function recordDecisionTool(sessionId: string, append: AppendEntry, roster: readonly Person[]): ToolDefinition<any, any> {
+  return {
+    name: "record_decision",
+    label: "Record decision",
+    description: "Record a decision the person you are talking to just stated, with their exact words. The conversation carries on.",
+    parameters: obj(
+      {
+        area: str('The topic of the decision, a few words ("invoicing", "bank access").'),
+        ownerArea: ownerAreaSchema(roster),
+        statement: str("The decision in one sentence."),
+        quote: str("Their exact words."),
+      },
+      ["area", "ownerArea", "statement", "quote"],
+    ) as any,
+    // Before pi's schema check: a case or spacing variant becomes the roster's spelling, and an
+    // unknown value is refused with every choice named (the enum's own error names none).
+    prepareArguments(args: unknown) {
+      const hit = batonById(sessionId);
+      if (!hit || typeof args !== "object" || args === null) return args as any;
+      const owner = pickOwnerArea(readRoster(hit.row.orgId), (args as { ownerArea?: unknown }).ownerArea);
+      if (!owner.ok) throw new Error(owner.error);
+      return { ...(args as object), ownerArea: owner.ownerArea } as any;
+    },
+    async execute(_id, params: any, _signal, _update, ctx) {
+      const hit = batonById(sessionId);
+      if (!hit) throw new Error("This conversation is no longer registered.");
+      const area = clip(params.area, 60);
+      const statement = clip(params.statement, 500);
+      const quote = clip(params.quote, 1000);
+      if (!area || !statement || !quote) throw new Error("Give the area, the statement and their exact words.");
+      const owner = pickOwnerArea(readRoster(hit.row.orgId), params.ownerArea);
+      if (!owner.ok) throw new Error(owner.error);
+      append(BATON_DECISION_ENTRY, { v: 1, area, ownerArea: owner.ownerArea, statement, quote, by: hit.row.holder ?? OPERATOR } satisfies BatonDecisionData);
+      const leaf = ctx?.sessionManager?.getLeafId?.();
+      const entry = leaf ? (ctx.sessionManager.getEntry(leaf) as { type?: string; customType?: string } | undefined) : undefined;
+      emitBatonEvent({
+        type: "decision",
+        orgId: hit.row.orgId,
+        projectId: hit.row.projectId,
+        sessionId,
+        ...(leaf && entry?.type === "custom" && entry.customType === BATON_DECISION_ENTRY ? { entryId: leaf } : {}),
+      });
+      refreshShare(sessionId);
+      // pi ends the run only when EVERY tool of the batch terminates: when this call rides with a
+      // hand_to or goal_done, it must agree, or the model writes one more reply after the turn ended.
+      return { ...say("Recorded."), ...(batchEndsTurn(ctx?.sessionManager) ? { terminate: true } : {}) };
+    },
+  };
+}
+
+/** hand_to, goal_done and propose_roster_edit. */
+function conversationTools(sessionId: string, append: AppendEntry): ToolDefinition<any, any>[] {
   return [
     {
       name: "hand_to",
@@ -366,41 +449,6 @@ export function batonTools(sessionId: string, append: AppendEntry): ToolDefiniti
         append(BATON_DONE_ENTRY, { v: 1, summary } satisfies BatonDoneData);
         refreshShare(sessionId);
         return { ...say("Recorded as done. The conversation is over."), terminate: true };
-      },
-    },
-    {
-      name: "record_decision",
-      label: "Record decision",
-      description: "Record a decision the person you are talking to just stated, with their exact words. The conversation carries on.",
-      parameters: obj(
-        {
-          area: str('The decision area, a few words ("invoicing", "bank access").'),
-          statement: str("The decision in one sentence."),
-          quote: str("Their exact words."),
-        },
-        ["area", "statement", "quote"],
-      ) as any,
-      async execute(_id, params: any, _signal, _update, ctx) {
-        const hit = batonById(sessionId);
-        if (!hit) throw new Error("This conversation is no longer registered.");
-        const area = clip(params.area, 60);
-        const statement = clip(params.statement, 500);
-        const quote = clip(params.quote, 1000);
-        if (!area || !statement || !quote) throw new Error("Give the area, the statement and their exact words.");
-        append(BATON_DECISION_ENTRY, { v: 1, area, statement, quote, by: hit.row.holder ?? OPERATOR } satisfies BatonDecisionData);
-        const leaf = ctx?.sessionManager?.getLeafId?.();
-        const entry = leaf ? (ctx.sessionManager.getEntry(leaf) as { type?: string; customType?: string } | undefined) : undefined;
-        emitBatonEvent({
-          type: "decision",
-          orgId: hit.row.orgId,
-          projectId: hit.row.projectId,
-          sessionId,
-          ...(leaf && entry?.type === "custom" && entry.customType === BATON_DECISION_ENTRY ? { entryId: leaf } : {}),
-        });
-        refreshShare(sessionId);
-        // pi ends the run only when EVERY tool of the batch terminates: when this call rides with a
-        // hand_to or goal_done, it must agree, or the model writes one more reply after the turn ended.
-        return { ...say("Recorded."), ...(batchEndsTurn(ctx?.sessionManager) ? { terminate: true } : {}) };
       },
     },
     {
@@ -573,8 +621,22 @@ registerSpecialLoadout({
           {
             name: "sova-baton",
             factory: (pi) => {
-              for (const t of batonTools(sessionId, (type, data) => pi.appendEntry(type, data))) pi.registerTool(t);
+              const append: AppendEntry = (type, data) => pi.appendEntry(type, data);
+              for (const t of batonTools(sessionId, append)) pi.registerTool(t);
+              let offered = JSON.stringify(ownerAreaSchema(readRoster(hit.row.orgId)).enum);
               pi.on("before_agent_start", (event) => {
+                // The owner areas follow the roster: a change reaches the schema at the next run
+                // (§app.requirements/owner-area). Re-registering refreshes the tool registry, which
+                // re-activates every allowed tool, so the conversation's own set is restored.
+                if (!wrapupActive(sessionId)) {
+                  const roster = readRoster(hit.row.orgId);
+                  const now = JSON.stringify(ownerAreaSchema(roster).enum);
+                  if (now !== offered) {
+                    offered = now;
+                    pi.registerTool(recordDecisionTool(sessionId, append, roster));
+                    pi.setActiveTools([...BATON_TOOLS]);
+                  }
+                }
                 const o = event.systemPromptOptions;
                 o.customPrompt = wrapupActive(sessionId) ? WRAPUP_SYSTEM : renderBatonPrompt(sessionId);
                 o.appendSystemPrompt = "";

@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type AgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { OPERATOR, type BatonSession } from "../shared/baton";
@@ -25,19 +24,17 @@ import {
 } from "../shared/project-overseer";
 import { ORG_ABOUT_MAX } from "../shared/orgs";
 import { clockTime } from "../pi-config/extensions/stamp/format.ts";
-import type { SessionSummary, TokenUsage } from "../shared/protocol";
+import type { SessionSummary } from "../shared/protocol";
 import { type BatonEvent, onBatonEvent } from "./baton-events";
 import { allBatons, batonById, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
 import { noteBuildMerged } from "./build-merged";
 import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, registerSpecialLoadout, setOpeningChoice, type ChatSession } from "./chat-manager";
 import { PROCESS_START, shuttingDown } from "./wrapup-recovery";
-import { getSessionInsight } from "./insights";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
 import { mergeMode } from "./mode-state";
 import { baseCodingMode, codingModeChoice, describeCodingMode, type ModeRequest } from "./project-coding-mode";
 import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, WorktreeRefusal } from "./project-worktrees";
-import { piUsageTally } from "./transcript-usage";
 import { decidePerson, onOrgAttached, orgDir, orgOfSessionPath, overseerPausedSince, resumeOverseer, OrgError, participantLine, readIndex, readOrg, readOrgAbout, readProjects, readRoster, operatorName, stakeholderLine } from "./orgs";
 import { appRequest, pathOfId, promptSession, toolCatalogue } from "./overseer";
 import { RootConfinement } from "./overseer-deny";
@@ -75,7 +72,6 @@ import {
   readPoSettings,
   type WatchMemo,
   readStarted,
-  recordTokens,
   readPoState,
   sessionIdOfFile,
   type StartedRow,
@@ -248,48 +244,14 @@ function batonPath(b: BatonSession): string | null {
 const projectBatons = (orgId: string, projectId: string): BatonSession[] => allBatons().filter((b) => b.orgId === orgId && b.projectId === projectId);
 const ownedBy = (b: BatonSession, projectId: string) => typeof b.owner === "object" && b.owner.overseerOf === projectId;
 
-function codingOf(p: ProjectOverseerPaths): { sessionId: string; path: string | null; running: boolean; createdAt: string; tokens?: number; title?: string }[] {
+function codingOf(p: ProjectOverseerPaths): { sessionId: string; path: string | null; running: boolean; createdAt: string; title?: string }[] {
   const known = indexedSessionPaths();
   return readStarted(p)
     .filter((s) => s.kind === "coding")
     .map((s) => {
       const path = known.get(s.sessionId) ?? (s.path && existsSync(s.path) ? s.path : null);
-      return { sessionId: s.sessionId, path, running: path ? isSessionBusy(path) || workingSubagents(path) > 0 : false, createdAt: s.createdAt, tokens: s.tokens, title: s.title };
+      return { sessionId: s.sessionId, path, running: path ? isSessionBusy(path) || workingSubagents(path) > 0 : false, createdAt: s.createdAt, title: s.title };
     });
-}
-
-const tokenMemo = new Map<string, { at: number; value: number }>();
-async function codingTokens(p: ProjectOverseerPaths): Promise<number> {
-  const k = keyOf(p.orgId, p.projectId);
-  const hit = tokenMemo.get(k);
-  if (hit && Date.now() - hit.at < 15_000) return hit.value;
-  let total = 0;
-  const counted = new Map<string, number>();
-  for (const c of codingOf(p)) {
-    // Not on this host (the org moved): what it had spent when last counted, from started.json.
-    if (!c.path) {
-      total += c.tokens ?? 0;
-      continue;
-    }
-    // From the file (every assistant message's usage, deduplicated), not a live record: a
-    // session that is not running still counts what it spent.
-    const text = await readFile(c.path, "utf8").catch(() => "");
-    // Its workers too (delegate, a spec writer): their lifetime total, live or restored.
-    const workers = await getSessionInsight(c.path).then((i) => i.usageTotal, () => undefined);
-    const spent = sessionSpend(piUsageTally()(text, "snapshot"), workers);
-    counted.set(c.sessionId, spent);
-    total += spent;
-  }
-  // Kept in the repo, so the budget still counts these on a host without the files.
-  if (counted.size) recordTokens(p, counted);
-  tokenMemo.set(k, { at: Date.now(), value: total });
-  return total;
-}
-
-/** A coding session's spend: its own usage plus its workers' lifetime total. Pure, for the tests. */
-export function sessionSpend(own: TokenUsage, workers?: TokenUsage): number {
-  const sum = (u: TokenUsage) => u.input + u.output + u.cacheRead + u.cacheWrite;
-  return sum(own) + (workers ? sum(workers) : 0);
 }
 
 /** Every coding session the project started (both kinds), with its worktree or why it runs in the root, newest first. */
@@ -397,8 +359,6 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
     started,
     unread: exists && path && !isViewing(st!.current) ? await unreadReplies(path, readSeen()[st!.current]) : 0,
     usage: {
-      codingTokens: await codingTokens(p),
-      tokenBudget: settings.tokenBudget,
       allowance: rtOf(orgId, projectId).limits.use(settings.caps),
       held: memo.held,
       unattendedToday: memo.perDay[dayKey(new Date(clock()))] ?? 0,
@@ -474,15 +434,14 @@ export function renderProjectOverseerPrompt(orgId: string, projectId: string, to
 }
 
 /** Every limit in force, for the prompt's {{CAPS}}; Unlimited reads "no limit". Pure. */
-export function limitsText(s: Pick<ProjectOverseerSettings, "caps" | "tokenBudget" | "watchGapMin" | "soonLookSec">): string {
+export function limitsText(s: Pick<ProjectOverseerSettings, "caps" | "watchGapMin" | "soonLookSec">): string {
   const c = s.caps;
   const n = (v: number | null) => (v === null ? "no limit" : String(v));
   return (
     `each message the operator sends: gathering sessions ${n(c.gatherPerTurn)}, promotions ${n(c.promotePerTurn)}, coding sessions ${n(c.createPerTurn)}, prompts to them ${n(c.promptsPerTurn)}; ` +
     `on your own each day: gathering sessions ${n(c.gatherPerDay)}, promotions ${n(c.promotePerDay)}, coding sessions ${n(c.createPerDay)}, prompts to them ${n(c.promptsPerDay)}, looks ${n(c.unattendedPerDay)} (these reset at local midnight); ` +
     `looks on your own at most one every ${s.watchGapMin} min${s.soonLookSec === null ? "" : `, or ${s.soonLookSec} s after something that should be seen soon`}; ` +
-    `at once: ${c.gatheringsOpen} open gathering sessions, ${c.codingRunning} coding sessions running; ` +
-    `coding tokens ${s.tokenBudget === null ? "no limit" : `${s.tokenBudget} in total`}`
+    `at once: ${c.gatheringsOpen} open gathering sessions, ${c.codingRunning} coding sessions running`
   );
 }
 
@@ -564,7 +523,6 @@ function toolHost(rt: Rt): PoToolHost {
     },
     coding: () => codingOf(paths),
     startedCoding: () => new Map(readStarted(paths).filter((r) => r.kind === "coding" || r.kind === "operator-coding").map((r) => [r.sessionId, { removed: !!r.removed }])),
-    codingTokens: () => codingTokens(paths),
     hold: (item) => writeMemo(paths, holdItem(readMemo(paths), { ...item, since: new Date(clock()).toISOString() })),
     held: () => readMemo(paths).held,
     async postOwnerUpdate(input) {
@@ -728,7 +686,7 @@ export const NOT_PROMPTED = "Started, but not prompted: its mode could not be se
  * A new ordinary coding session for the project (sova_create_session, Start coding session): in its
  * own git worktree and branch cut from the root's HEAD when the root is in git (else in the root,
  * with the reason recorded), created through the same route the browser uses, recorded in
- * started.json at once (so it is listed and budgeted even when its prompt fails), titled, with
+ * started.json at once (so it is listed and counted against its caps even when its prompt fails), titled, with
  * model and thinking, then its mode set and pinned, and only then its first prompt. A mode that
  * could not be set sends no prompt.
  */
@@ -1046,7 +1004,7 @@ export async function codeItem(orgId: string, projectId: string, body: ItemCodeI
   const p = projectOverseerPaths(orgId, projectId);
   const item = itemOf(p, body);
   // Recorded at once as organizational (server/org-sessions.ts), under its own kind so the
-  // overseer's budget and caps, which read only "coding", never count the operator's sessions.
+  // overseer's caps, which read only "coding", never count the operator's sessions.
   const made = await startCodingSession(orgId, projectId, {
     prompt: body.prompt?.trim() || item.text,
     title: item.title.slice(0, 80),
@@ -1146,7 +1104,7 @@ const DO: Record<PoLimitKind, string> = { gather: "start gathering sessions", pr
 /**
  * Held items whose time has come become reasons to look (§app.project-overseer/limits): a day's
  * allowance or the looks at midnight (soon, unless Off), the message allowance's at once (at the
- * normal pace). The budget's waits for the operator (releaseRaised).
+ * normal pace). One with no retry time waits for the operator to raise its limit (releaseRaised).
  */
 export function releaseHeld(orgId: string, projectId: string, now = clock()): void {
   const p = projectOverseerPaths(orgId, projectId);
@@ -1174,7 +1132,6 @@ function releaseRaised(orgId: string, projectId: string, before: ProjectOverseer
     if (raised(before.caps[PER_TURN[k]], after.caps[PER_TURN[k]])) keys.set(`message:${k}`, LIMIT_WHAT[k]);
   }
   if (raised(before.caps.unattendedPerDay, after.caps.unattendedPerDay)) keys.set("looks", "looks");
-  if (raised(before.tokenBudget, after.tokenBudget)) keys.set("budget", "coding tokens");
   const p = projectOverseerPaths(orgId, projectId);
   let m = readMemo(p);
   const freed = m.held.filter((h) => keys.has(h.key));

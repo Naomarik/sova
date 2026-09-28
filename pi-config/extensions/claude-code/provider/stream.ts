@@ -162,6 +162,9 @@ export function streamClaudeCode(
 			output.usage.output = usage.output;
 			output.usage.cacheRead = usage.cacheRead;
 			output.usage.cacheWrite = usage.cacheWrite;
+			// The 1-hour part, when this usage splits it; a later usage without the split keeps it.
+			if (usage.cacheWrite1h !== undefined) output.usage.cacheWrite1h = Math.min(usage.cacheWrite1h, usage.cacheWrite);
+			else if (output.usage.cacheWrite1h !== undefined) output.usage.cacheWrite1h = Math.min(output.usage.cacheWrite1h, usage.cacheWrite);
 			output.usage.totalTokens = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 			// Zero-cost model: a subscription CLI turn has no per-token list price here.
 			output.usage.cost = calculateCost(model, output.usage);
@@ -281,6 +284,7 @@ export function streamClaudeCode(
 			}
 			if (frame.type === "assistant") {
 				applyUsage(frame.usage);
+				if (frame.model) output.responseModel = frame.model;
 				// With --include-partial-messages the whole-message frame repeats
 				// what the stream already delivered; only use it as a fallback.
 				if (!sawStreamedContent) replayAssistant(frame);
@@ -330,6 +334,8 @@ export function streamClaudeCode(
 					const open = blocks.find((block) => block.index !== undefined);
 					if (open) throw new ClaudeProtocolError(`Claude started a new message while content block ${open.index} was open`);
 					applyUsage(event.usage);
+					// The model that answered: the pi model id is only the CLI alias (`opus[1m]`).
+					if (event.model) output.responseModel = event.model;
 					return;
 				}
 				case "content_block_start": {

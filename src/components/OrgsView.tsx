@@ -12,6 +12,7 @@ import {
   createOrg,
   getOrg,
   getOrgs,
+  getOrgCosts,
   openProjectOverseer,
   patchOrg,
   patchPerson,
@@ -23,6 +24,7 @@ import {
   getBatonSettings,
 } from "../lib/api";
 import { commitNowWords } from "../lib/commit-now";
+import { usd } from "../lib/costs";
 import { duration, relativeTime, stampTime } from "../lib/format";
 import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
 import { proposedAreasLine } from "../lib/baton-strip";
@@ -1060,11 +1062,22 @@ function AboutCard(props: { org: OrgDetail; act: Act }) {
 function ProjectsSection(props: { org: OrgDetail; act: Act }) {
   const [name, setName] = createSignal("");
   const [root, setRoot] = createSignal("");
+  // Each project's cost at API prices (§app/project-costs/org-rollup); the list stands without it.
+  const orgId = createMemo(() => props.org.id);
+  const [costs] = createResource(orgId, (id) => getOrgCosts(id).catch(() => null));
+  const costOf = (pid: string) => costs()?.projects.find((c) => c.projectId === pid);
   return (
     <section class="card orgs-section" aria-labelledby="orgs-projects">
       <h2 class="orgs-h2" id="orgs-projects">
         Projects
       </h2>
+      <Show when={props.org.projectList.length > 0 && costs()}>
+        {(c) => (
+          <p class="orgs-line orgs-projects-cost">
+            All projects: <span class="cost-figure">{usd(c().totalUsd)}</span> at API prices.
+          </p>
+        )}
+      </Show>
       <Show when={props.org.projectList.length} fallback={<p class="orgs-empty">No projects yet. A project is a folder that hand-off sessions and its overseer work in.</p>}>
         <ul class="list orgs-project-list">
           <For each={props.org.projectList}>
@@ -1079,6 +1092,11 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
                       {p.root}
                     </span>
                   </span>
+                  <Show when={costOf(p.id)}>
+                    {(c) => (
+                      <span class="cost-figure text-muted orgs-project-cost">{usd(c().totalUsd)}</span>
+                    )}
+                  </Show>
                   <Icon name="chevron-right" class="orgs-row-go" />
                 </a>
               </li>

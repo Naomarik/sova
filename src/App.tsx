@@ -37,6 +37,7 @@ import { OrgsView } from "./components/OrgsView";
 import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
 import { createThenArchive, dropArchived, newSessionCwd } from "./lib/new-session";
 import { cwdLabel } from "./lib/remote-session";
+import { startRecentPreload } from "./lib/recent-preload";
 import { createPoll } from "./lib/poll";
 import { homeFromSessionPath } from "./lib/format";
 import { reconcileTheme } from "./lib/theme";
@@ -254,6 +255,8 @@ export function App() {
     const extra = [...created.values()].filter((s) => !listed.has(s.path));
     return extra.length ? [...l, ...extra] : l;
   });
+  // Recent's sessions stay in memory, fetched in the background, so opening one paints at once.
+  startRecentPreload(sidebarSessions);
 
   redirectLegacyInsights();
   /** `#/overview`: the overview as a phone's own page (§app.shell/overview); wide, it is the

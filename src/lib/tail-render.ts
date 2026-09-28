@@ -51,24 +51,48 @@ export function rowIndexFor(ids: readonly (string | null)[], entryId: string): n
 }
 
 /**
- * Where the window starts in a new row list: at the row it started at before (appends and
- * reconciled refetches keep everything already built), at 0 when everything was built, and at
- * the tail when that row is gone (a rewind, or hiding the kind of row it was).
+ * The id that holds the window's start at row `i`: that row's own, at index 0 too. Holding "none"
+ * there would mean "everything is built", and rows that arrive later above it (older rows fetched
+ * on demand, lib/older-rows) would then be built all at once, in one long task per chunk, outside the
+ * scroll anchoring; held by id, they land above the window and the idle fill builds them.
  */
-export function carriedStart(firstId: string | null, indexOfId: (id: string) => number, n: number): number {
+export const windowId = (ids: readonly { id: string }[], i: number): string | null => ids[i]?.id ?? null;
+
+/**
+ * Where the window starts in a new row list: at the row it started at before (appends and
+ * reconciled refetches keep everything already built; rows that arrive above it are left to the
+ * fill), at 0 when there was no row to hold it by, and, when that row is gone (a rewind, or hiding
+ * the kind of row it was), at 0 again if everything was built (`prev`), else at the tail.
+ */
+export function carriedStart(firstId: string | null, indexOfId: (id: string) => number, n: number, prev?: number): number {
   if (firstId === null) return 0;
   const i = indexOfId(firstId);
-  return i >= 0 ? i : initialStart(n);
+  return i >= 0 ? i : prev === 0 ? 0 : initialStart(n);
 }
 
-/** Lines `text` wraps to at `cols` characters, counting each hard line at least once. */
-export function wrapLines(text: string, cols: number): number {
-  let lines = 0;
-  for (const line of text.split("\n")) lines += Math.max(1, Math.ceil(line.length / cols));
-  return lines;
+/** What a message's text is made of, for its estimate: its prose lines and their characters (in
+    plain text, `pre`, a blank line is a line too; in markdown it is only a paragraph break), the
+    lines inside code fences (which scroll, never wrap), the fenced blocks and the table rows. */
+export interface TextShape { lines: number; chars: number; code: number; fences: number; table: number }
+
+export function textShape(text: string, pre = false): TextShape {
+  const shape: TextShape = { lines: 0, chars: 0, code: 0, fences: 0, table: 0 };
+  let inCode = false;
+  for (const line of text.split("\n")) {
+    if (!pre && /^\s*```/.test(line)) {
+      if (!inCode) shape.fences++;
+      inCode = !inCode;
+    } else if (inCode) shape.code++;
+    else if (!pre && /^\s*\|/.test(line)) shape.table++;
+    else if (pre || line.trim() !== "") {
+      shape.lines++;
+      shape.chars += line.length;
+    }
+  }
+  return shape;
 }
 
-/** A row's lines are capped here: a very long message still gets a tall estimate, not a huge one. */
+/** A row's wrapped lines are capped here: a very long message still gets a tall estimate, not a huge one. */
 const MAX_EST_LINES = 200;
 
 /** Where a row's images sit, which decides the chrome around the strip: a user row's gap above it,
@@ -105,23 +129,43 @@ export function imagesEstimate(images: readonly string[] | undefined, at: Images
   return [chrome + tileRows(n, TILES_WIDE), chrome + tileRows(n, TILES_NARROW)];
 }
 
+/** Characters a message line holds at a message width of `px`: less the bubble's padding, 7px a
+    character, both fitted to real rows. The transcript sets it as `--entry-cols` (Thread). */
+export const lineCols = (px: number): number => Math.max(10, Math.round((px - 50) / 7));
+
+/**
+ * Wrapped lines, as a CSS expression: each prose line is `perLine` of a line (short ones don't
+ * wrap), plus its characters over the characters a line holds at the width the transcript has
+ * (`--entry-cols`). The constants are fitted to the rows' real heights at 1440 and 390px wide.
+ */
+const wrapped = (s: TextShape, perLine: number) =>
+  `min(${MAX_EST_LINES}, ${+(perLine * s.lines).toFixed(2)} + ${s.chars} / var(--entry-cols, 110)) * var(--entry-line, 22.5px)`;
+
+/** A compaction draws as a folded disclosure, not as its summary's text (Thread `Compaction`). */
+const isCompaction = (raw: unknown) => typeof raw === "object" && raw !== null && (raw as { type?: unknown }).type === "compaction";
+
 /**
  * A row's height until it is first drawn (`content-visibility: auto` skips rows off screen, and a
- * skipped row is laid out at this size): a fixed part for its chrome plus its text's wrapped lines,
- * which app.css turns into pixels for the width the transcript has, plus the images the row shows
- * (`images`, `at` where they sit: a tool call's are its result's). Only the scrollbar and a long
- * jump's first aim depend on it; a drawn row remembers its real height.
+ * skipped row is laid out at this size): a fixed part for its chrome, measured per kind (a
+ * collapsed tool card, a folded disclosure or compaction), plus its text's wrapped lines, which app.css turns
+ * into pixels for the width the transcript has, plus the images the row shows (`images`, `at`
+ * where they sit: a tool call's are its result's). Only the scrollbar and a long jump's first aim
+ * depend on it; a drawn row remembers its real height. A row that draws nothing (a paired tool
+ * result) takes no space whatever its estimate (`.entry:empty`).
  */
-export function rowEstimate(item: { kind: string; text?: string }, images?: readonly string[], at: ImagesAt = "user"): string {
+export function rowEstimate(item: { kind: string; text?: string; raw?: unknown }, images?: readonly string[], at: ImagesAt = "user"): string {
   const text = item.text ?? "";
-  const [base, lines] =
-    item.kind === "assistant-text" ? [24, wrapLines(text, 80)]
-    : item.kind === "user" ? [48, wrapLines(text, 64)]
-    : item.kind === "tool-call" || item.kind === "tool-result" || item.kind === "thinking" ? [40, 0]
-    : item.kind === "report" ? [64, 0]
-    : item.kind === "info" ? [8, 1]
-    : [48, 1];
-  const est = `${base}px + ${Math.min(lines, MAX_EST_LINES)} * var(--entry-line-est, 23px)`;
+  let est: string;
+  if (item.kind === "assistant-text") {
+    const s = textShape(text);
+    est = `${99 + 19 * s.code + 93 * s.fences + 67 * s.table}px + ${wrapped(s, 0.8)}`;
+  } else if (item.kind === "user") est = `97px + ${wrapped(textShape(text, true), 0.7)}`;
+  else if (item.kind === "info" && isCompaction(item.raw)) est = "36px";
+  else if (item.kind === "info") est = `-4px + ${wrapped(textShape(text, true), 1)}`;
+  else if (item.kind === "tool-call" || item.kind === "tool-result" || item.kind === "wake") est = "46px";
+  else if (item.kind === "thinking" || item.kind === "report") est = "36px";
+  else if (item.kind === "worktree-merge") est = "93px + var(--entry-narrow, 0) * 39px";
+  else est = "70px";
   const [wide, narrow] = imagesEstimate(images, at);
   if (wide === 0) return `calc(${est})`;
   return `calc(${est} + ${wide}px${narrow === wide ? "" : ` + var(--entry-narrow, 0) * ${narrow - wide}px`})`;

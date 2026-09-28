@@ -26,9 +26,10 @@ export interface HiddenSplit {
   thinking: number;
 }
 
-/** Tools the thread renders as Overseer cards (a question with buttons, a link card) rather than tool
-    cards: "Hide tool calls" never folds them, since they are the message, not its working. */
-export const CARD_TOOLS: ReadonlySet<string> = new Set(["sova_confirm", "sova_link", "sova_unlink"]);
+/** Tools the thread renders as cards (the Overseer's question with buttons and link card, an
+    alignment) rather than tool cards: "Hide tool calls" never folds them, since they are the
+    message, not its working. */
+export const CARD_TOOLS: ReadonlySet<string> = new Set(["sova_confirm", "sova_link", "sova_unlink", "align"]);
 
 /** Ids of the calls that render as cards (their paired results go with them). */
 const cardCallIds = (items: TranscriptItem[]) =>

@@ -67,7 +67,6 @@
 .project-limits-legend { float: left; width: 100%; padding: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .project-limits-hint { margin: 0; }
 .project-limit-unlimited { justify-content: flex-start; }
-.project-limit-budget { max-width: 22rem; }
 .project-limits-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .project-waiting { color: var(--status-warn); }
 .project-item { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) 0; }
@@ -96,3 +95,63 @@
 /* The main stakeholder, at the top of the Requirements card: its banners above the select. */
 .project-stakeholder { display: flex; flex-direction: column; gap: var(--space-2); }
 .project-stakeholder-field { max-width: 28rem; }
+.project-decision { flex-wrap: wrap; }
+/* Its own row under the decision, lined up with the statement: never squeezed by the chips. */
+.project-owner-area { flex-basis: 100%; padding-left: calc(var(--tap-min) + var(--space-3)); }
+.project-owner-area .select-wrap { max-width: 18rem; }
+
+
+/* The Cost card (§app.project-costs/card). Money is mono with tabular digits and never wraps, so a
+   column of dollars lines up. The headline is the card's one large figure. */
+.cost-figure { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cost-headline { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); margin: 0; }
+.cost-headline .cost-figure { font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.cost-headline-unit { color: var(--color-ink-muted); }
+.cost-lede, .cost-note { margin: 0; color: var(--color-ink-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.cost-notes { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+/* Wrapper: `md md-table-wrap cost-table-wrap`, table `cost-table` (the Usage tab's .md table look).
+   A token cell holds its dollars over its token count; `.cost-tokens` is the muted second line. */
+.cost-table-wrap { margin: 0; }
+.cost-table td .cost-tokens { display: block; color: var(--color-ink-muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.cost-table td .cost-unpriced { color: var(--color-ink-muted); }
+/* A row's name is its header cell, but reads as a cell: no header fill, medium weight, and it wraps. */
+.md .cost-table tbody th[scope="row"] { background: none; font-weight: var(--fw-medium); white-space: normal; }
+.md .cost-table tbody tr:last-child th { border-bottom: 0; }
+.cost-table tfoot th, .cost-table tfoot td { background: var(--color-sunken); font-weight: var(--fw-semibold); border-bottom: 0; }
+.cost-table tfoot td .cost-tokens { font-weight: var(--fw-regular); }
+/* Top sessions: title (link or plain) with kind · who under it, cost at the right. */
+.cost-sessions { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.cost-session { display: flex; align-items: baseline; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
+.cost-session:last-child { border-bottom: 0; }
+.cost-session-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.cost-session-meta { display: block; color: var(--color-ink-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+/* Under 560px of page the model table stacks (.cost-table-stack; the kinds table's 2 columns
+   fit): one block per model, its name on the first line, then one line per figure, labelled by
+   its column's name (the cell's data-label). */
+@container insights (max-width: 559px) {
+  .cost-table-stack,
+  .cost-table-stack tbody,
+  .cost-table-stack tfoot { display: block; }
+  .cost-table-stack thead { display: none; }
+  .cost-table-stack tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: var(--stroke-thin) solid var(--color-border);
+  }
+  .cost-table-stack tbody tr:last-child { border-bottom: 0; }
+  .cost-table-stack tfoot tr { border-top: var(--stroke-thin) solid var(--color-border); border-bottom: 0; background: var(--color-sunken); }
+  .md .cost-table-stack th,
+  .md .cost-table-stack td { display: block; padding: 0; border: 0; background: none; }
+  .cost-table-stack th[scope="row"] { grid-column: 1 / -1; }
+  .md .cost-table-stack td[data-label] { display: flex; justify-content: flex-end; align-items: baseline; gap: var(--space-2); text-align: right; }
+  .cost-table-stack td[data-label]::before {
+    content: attr(data-label);
+    margin-right: auto;
+    font-family: var(--font-body);
+    font-weight: var(--fw-regular);
+    color: var(--color-ink-muted);
+  }
+  .cost-table-stack td .cost-tokens { display: inline-block; min-width: 4ch; text-align: right; }
+}

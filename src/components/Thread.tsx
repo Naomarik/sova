@@ -8,9 +8,10 @@ import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
-import { ensureRendered, entryIdOf, JUMP_EVENT, registerRows, registerTranscript } from "../lib/jump";
+import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript } from "../lib/jump";
+import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
-import { carriedStart, chunkStart, FIRST_CHUNK, type ImagesAt, initialStart, nextChunk, rowEstimate, rowIndexFor } from "../lib/tail-render";
+import { carriedStart, chunkStart, FIRST_CHUNK, type ImagesAt, initialStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { isChangeRow } from "../lib/change-rows";
@@ -21,8 +22,9 @@ import { PathAttachment, PathText } from "./PathAttachment";
 import { ReportRow } from "./ReportRow";
 import { TeamMessageCard } from "./TeamMessageCard";
 import { AlignCard } from "./AlignCard";
+import { AlignRow } from "./AlignDocCard";
 import { ExplainCard } from "./ExplainCard";
-import { alignOf, latestAlignId } from "../lib/align";
+import { alignOf, alignRowFromDetails, latestAlignId, newestAlignRows } from "../lib/align";
 import { explainOf } from "../lib/explain";
 import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
@@ -32,7 +34,7 @@ import { Banner, Chip, Icon } from "./ui";
 import { BriefRow, ConfirmCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow } from "./OverseerCards";
 import { confirmAnswer, confirmDetails, detailsOf, isBriefText } from "../lib/overseer";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
-import { type MessageStrip, stripLabel, stripsByRow } from "../lib/message-actions";
+import { type MessageStrip, sameStrip, stripLabel, stripsByRow } from "../lib/message-actions";
 
 /**
  * What a view hangs under each delivered message. The thread decides
@@ -413,6 +415,12 @@ export function HistoryItems(props: {
   actions?: MessageActionsProvider;
   /** Build every row at once, even inside a transcript (the hidden-rows disclosure's own list). */
   whole?: boolean;
+  /** Rows above the list that the view doesn't hold yet (lib/older-rows): fetched as the reader
+      nears the top, or down to a jump's target. */
+  older?: OlderRowsApi;
+  /** Alignments this streaming run already changed: their settled cards read as revision rows
+      until the refetch brings the new revision (§chat.alignment/card). */
+  liveAlignIds?: ReadonlySet<string>;
 }) {
   /**
    * The items the thread may render: the settings-change rows are dropped before anything else,
@@ -422,7 +430,11 @@ export function HistoryItems(props: {
   // A baton wrap-up's turn reads profiles: folded behind its card unless asked for (lib/wrapup-rows).
   const [showWrapup, setShowWrapup] = createSignal(false);
   const wrapupRows = createMemo(() => (showWrapup() ? new Set<string>() : wrapupRowIds(props.items)));
-  const renderable = createMemo(() => props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id)));
+  /** Calls whose result is an alignment row: the row is the card, so the call has no row at all. */
+  const alignCalls = createMemo(() => new Set(props.items.flatMap((it) => (it.kind === "align" && it.toolCallId ? [it.toolCallId] : []))));
+  const renderable = createMemo(() =>
+    props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id) && !(it.kind === "tool-call" && it.toolCallId && alignCalls().has(it.toolCallId))),
+  );
   const split = createMemo(() =>
     props.hideTools || props.hideThinking ? splitHidden(renderable(), { tools: !!props.hideTools, thinking: !!props.hideThinking }) : null,
   );
@@ -446,6 +458,10 @@ export function HistoryItems(props: {
     : item.kind === "tool-result" ? [item.toolCallId && calls().has(item.toolCallId) ? undefined : item.images, "tool"]
     : [undefined, "user"];
   const latestAlign = createMemo(() => latestAlignId(props.items));
+  /** The newest revision of each alignment renders as the card; the rest as one line each. */
+  const newestAligns = createMemo(() => newestAlignRows(props.items));
+  const alignNewest = (item: TranscriptItem) => newestAligns().has(item.id) && !(item.align?.doc && props.liveAlignIds?.has(item.align.doc.id));
+
   /** User rows a baton participant sent: target id → their ref, in any order (§app.baton/attribution). */
   const batonSent = createMemo(() => {
     const by = new Map<string, string>();
@@ -513,9 +529,17 @@ export function HistoryItems(props: {
     rows().forEach((r, i) => at.set(r.id, i));
     return at;
   });
-  const idAt = (i: number) => (i <= 0 ? null : (rows()[i]?.id ?? null));
+  const idAt = (i: number) => windowId(rows(), i);
   const [firstId, setFirstId] = createSignal<string | null>(scroller ? idAt(initialStart(rows().length)) : null);
-  const start = createMemo(() => (scroller ? carriedStart(firstId(), (id) => rowAt().get(id) ?? -1, rows().length) : 0));
+  const start = createMemo<number>((prev) => (scroller ? carriedStart(firstId(), (id) => rowAt().get(id) ?? -1, rows().length, prev) : 0), 0);
+  // The window is held by a row that is on the list: once its row is gone (or there was none, an
+  // empty list), it is held again by the row it starts at now, so rows that arrive above later
+  // (lib/older-rows) go to the fill instead of being built at once.
+  if (scroller)
+    createEffect(() => {
+      const id = firstId();
+      if (rows().length > 0 && (id === null || !rowAt().has(id))) setFirstId(idAt(start()));
+    });
   const built = createMemo(() => (start() === 0 ? rows() : rows().slice(start())));
   const indexOf = scroller ? createMemo(() => new Map(rows().map((r, i) => [r, i] as const))) : null;
   if (scroller) {
@@ -543,6 +567,32 @@ export function HistoryItems(props: {
     };
     createEffect(() => start() > 0 && schedule());
     onCleanup(() => cancel?.());
+    // Older rows not held yet: once every row held is built and the view is within
+    // NEAR_TOP_VIEWS viewports of the top, the next chunk is fetched; it lands above the window,
+    // where the fill builds it with the view held still, as any row not built yet.
+    if (props.older) {
+      const older = props.older;
+      let later: ReturnType<typeof setTimeout> | undefined;
+      const check = () => {
+        const left = older.left();
+        if (left === null || left <= 0 || start() > 0 || root.scrollTop >= NEAR_TOP_VIEWS * root.clientHeight) return;
+        // A jump's smooth scroll is under way (it may have landed near the top): rows landing above
+        // now would cut it short, as the fill knows too. Look again once it's over.
+        if (scroller.jumping()) {
+          clearTimeout(later);
+          later = setTimeout(check, 300);
+          return;
+        }
+        older.more();
+      };
+      root.addEventListener("scroll", check, { passive: true });
+      onCleanup(() => {
+        clearTimeout(later);
+        root.removeEventListener("scroll", check);
+      });
+      // After a change to what's held or built, when the frame has settled (a short list sits at the top).
+      createEffect(on([start, () => older.left(), () => rows().length], () => requestAnimationFrame(check)));
+    }
     registerRows(root, {
       has: (entryId) => rowIndexFor(ids(), entryId) >= 0,
       ensure: (entryId) => {
@@ -551,15 +601,36 @@ export function HistoryItems(props: {
         if (i < start()) buildFrom(i);
         return true;
       },
+      older: () => {
+        const left = props.older?.left();
+        return left === null || (left ?? 0) > 0;
+      },
+      load: (target) => props.older?.load(target) ?? Promise.resolve("missing" as const),
     });
     onCleanup(() => registerRows(root, null));
   }
 
   return (
     <>
+      {/* Held while there are older rows to fetch, so its indicator appearing never moves the view;
+          the indicator (no text; its name is for screen readers) shows only while a fetch is slow,
+          a scroll-up chunk or a jump's range, and sticks to the top of the view so a jump from the
+          end sees it too. It goes with the fill's last build, not before: that build keeps the view
+          where it is (ScrollerApi.prepend), its going included. */}
+      <Show when={scroller && props.older && ((props.older.left() ?? 0) > 0 || start() > 0)}>
+        <div class="older-edge" role="status">
+          <Show when={props.older!.slow()}>
+            <span class="older-edge-bar skeleton" role="img" aria-label="Loading older messages" />
+          </Show>
+        </div>
+      </Show>
       <For each={built()}>
         {(item, local) => {
           const index = indexOf ? () => indexOf().get(item) ?? local() : local;
+          // The strip every list change rebuilds, kept while it offers the same thing: rows
+          // arriving above (a tail-first hello's history), an append or a turn-end reload would
+          // otherwise rebuild the buttons of every message on the page.
+          const strip = createMemo(() => strips().get(index()), undefined, { equals: sameStrip });
           return (
           // A link message is a partner's, shown only in the Agents tab (§mesh.links/transcript):
           // no row at all here, not even the wrapper. It still counts as a turn start (above).
@@ -613,6 +684,7 @@ export function HistoryItems(props: {
               <Match when={item.kind === "thinking"}>
                 <Thinking text={item.text ?? ""} />
               </Match>
+              <Match when={item.kind === "align" && item.align}>{(row) => <AlignRow row={row()} newest={alignNewest(item)} />}</Match>
               <Match when={item.kind === "report" && item.report && alignOf(item.report)}>
                 {(align) => (
                   <Show when={item.id === latestAlign()} fallback={<span class="align-superseded" hidden />}>
@@ -710,7 +782,7 @@ export function HistoryItems(props: {
               </Match>
             </Switch>
             {/* Under the bubble, once per entry (see `strips`). */}
-            <Show when={strips().get(index())}>
+            <Show when={strip()}>
               {(strip) => (
                 <MessageActions
                   label={stripLabel(strip().role)}
@@ -762,7 +834,10 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
           };
           const confirm = () => (b().name === "sova_confirm" && status() !== "error" ? confirmDetails(tool()?.details) ?? confirmDetails(b().args) : null);
           const linked = () => ((b().name === "sova_link" || b().name === "sova_unlink") && status() === "done" ? linkDetails(tool()?.details) : null);
+          /** An align result that changed an alignment: its card, as soon as the result lands. */
+          const aligned = () => (b().name === "align" && status() === "done" ? alignRowFromDetails(tool()?.details) : undefined);
           return (
+            <Show when={!aligned()} fallback={<div class="entry-live-align" data-align-live={aligned()?.doc?.id}><AlignRow row={aligned()!} newest /></div>}>
             <Show
               when={confirm()}
               fallback={
@@ -785,6 +860,7 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
               }
             >
               {(details) => <ConfirmCard details={details()} answered={false} choice={null} pending={props.live.running} />}
+            </Show>
             </Show>
           );
         }}
@@ -901,6 +977,21 @@ export function LiveEntries(props: {
   );
 }
 
+/** A view's rows above its list (lib/older-rows), as its thread reads them. */
+export interface OlderRowsApi {
+  /** How many; null until the view's hello or snapshot says. */
+  left(): number | null;
+  /** The next chunk above, unless one is on its way. */
+  more(): void;
+  /** The rows down to a jump's target, in one request. */
+  load(target: RowTarget): Promise<"here" | "missing" | "stale">;
+  /** A scroll-up fetch is taking long enough to say so. */
+  slow(): boolean;
+}
+
+/** Within this many viewports of the top of the rows held, the next older chunk is fetched. */
+const NEAR_TOP_VIEWS = 2;
+
 /** What a transcript offers the rows inside it (tail-first rendering, lib/tail-render). */
 interface ScrollerApi {
   /** The transcript element: jumps find its rows through it (lib/jump `registerRows`). */
@@ -912,6 +1003,8 @@ interface ScrollerApi {
   jumping(): boolean;
 }
 const ScrollerContext = createContext<ScrollerApi | null>(null);
+/** The characters a message line held in the last transcript measured (`--entry-cols-measured`). */
+let lastCols = 0;
 
 /** Runs `fn` once the browser is idle (at the latest after a short wait); returns a cancel. */
 function whenIdle(fn: () => void): () => void {
@@ -927,6 +1020,8 @@ function whenIdle(fn: () => void): () => void {
 const FOLLOW_PX = 80;
 /** How long a jump's smooth scroll may take before a scroll near the bottom means following again. */
 const JUMP_SETTLE_MS = 1000;
+/** A jump's scroll is over once no scroll event has come for this long. */
+const JUMP_QUIET_MS = 150;
 
 /**
  * The transcript scroll region. Follows new content while the user is near the bottom; scrolling
@@ -968,8 +1063,29 @@ export function ThreadScroller(props: {
   /** Until then a jump's own smooth scroll is under way: its first frames are still near the
       bottom, and must not read as the user coming back to follow it. */
   let jumpingUntil = 0;
+  /** A jump's scroll hasn't come to rest yet: a long smooth scroll outlasts JUMP_SETTLE_MS, and rows
+      built above meanwhile would leave it short of its target. Over at `scrollend`, or once no
+      scroll has come for JUMP_QUIET_MS (which also covers a jump that didn't need to scroll). */
+  let jumpScrolling = false;
+  let jumpQuiet: ReturnType<typeof setTimeout> | undefined;
+  const jumpScrolled = () => {
+    clearTimeout(jumpQuiet);
+    jumpQuiet = setTimeout(() => (jumpScrolling = false), JUMP_QUIET_MS);
+  };
+  onCleanup(() => clearTimeout(jumpQuiet));
+  /** The view's width at the last scroll event. */
+  let scrolledWidth = 0;
   const onScroll = () => {
+    if (jumpScrolling) jumpScrolled();
     lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // The view narrowing or widening reflows the rows, and scroll anchoring's correction can come
+    // before `viewResized` and `measured` put a following view back at the end: not scrolling away.
+    const width = el.clientWidth;
+    if (width !== scrolledWidth) {
+      const first = scrolledWidth === 0;
+      scrolledWidth = width;
+      if (!first && follow) return;
+    }
     const near = lastGap < FOLLOW_PX;
     if (near && performance.now() < jumpingUntil) return;
     if (near === follow) return;
@@ -1015,6 +1131,23 @@ export function ThreadScroller(props: {
   // the new, shorter view before this runs, so it can't wait for `lastGap`.
   const viewResized = typeof ResizeObserver === "function" ? new ResizeObserver(() => follow && !toggled && toBottom()) : null;
   onCleanup(() => viewResized?.disconnect());
+  // The characters a message line holds, for the rows' estimates (lib/tail-render `lineCols`), from
+  // a probe as wide as a message: set only when it changes, since every row reads it. A new
+  // transcript starts from the last one's, so a switch at the same width lays its rows out once.
+  // The rows not yet drawn change height with it, after `viewResized` has put a following view
+  // back at the end, so it goes back there again; scroll anchoring keeps any other view in place.
+  let cols = lastCols;
+  const measured =
+    typeof ResizeObserver === "function"
+      ? new ResizeObserver(([entry]) => {
+          const width = entry?.contentRect.width ?? 0;
+          if (width <= 0 || lineCols(width) === cols) return;
+          cols = lastCols = lineCols(width);
+          el.style.setProperty("--entry-cols-measured", String(cols));
+          if (follow && !toggled) toBottom();
+        })
+      : null;
+  onCleanup(() => measured?.disconnect());
   const api: ScrollerApi = {
     root: () => el,
     prepend(build) {
@@ -1028,7 +1161,7 @@ export function ThreadScroller(props: {
       const want = el.scrollHeight - fromEnd;
       if (Math.abs(el.scrollTop - want) >= 1) el.scrollTop = want;
     },
-    jumping: () => performance.now() < jumpingUntil,
+    jumping: () => performance.now() < jumpingUntil || jumpScrolling,
   };
   createEffect(on(() => props.resume, resumeFollowing, { defer: true }));
 
@@ -1069,12 +1202,25 @@ export function ThreadScroller(props: {
       lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
       return true;
     };
-    if (!place()) return false;
-    follow = false;
-    setAway(props.count);
-    // The rows around it are drawn at their real heights in the next frame: place it again then.
-    requestAnimationFrame(() => requestAnimationFrame(place));
-    return true;
+    const settleThere = () => {
+      follow = false;
+      setAway(props.count);
+      // The rows around it are drawn at their real heights in the next frame: place it again then.
+      requestAnimationFrame(() => requestAnimationFrame(place));
+    };
+    if (place()) {
+      settleThere();
+      return true;
+    }
+    // A row the list doesn't hold (kept rows dropped by the hello): fetched down to it
+    // (lib/older-rows), and placed then, unless the view has been moved from the end meanwhile.
+    const load = loadRow(el, { entry: r.rowId });
+    if (load)
+      void load.then((x) => {
+        if (x !== "here" || !follow || lastGap > 2) return;
+        queueMicrotask(() => place() && settleThere());
+      });
+    return false;
   };
 
   const newCount = () => {
@@ -1092,13 +1238,17 @@ export function ThreadScroller(props: {
         tabindex="0"
         ref={(node) => {
           el = node;
+          if (cols) node.style.setProperty("--entry-cols-measured", String(cols));
           observer.observe(node, { childList: true, subtree: true, characterData: true });
           // A jump (lib/jump) takes the view away from the bottom: stop following, as a scroll up would.
           node.addEventListener("click", onClick, true);
           node.addEventListener("toggle", markToggle, true);
           viewResized?.observe(node);
+          node.addEventListener("scrollend", () => (jumpScrolling = false));
           node.addEventListener(JUMP_EVENT, () => {
             jumpingUntil = performance.now() + JUMP_SETTLE_MS;
+            jumpScrolling = true;
+            jumpScrolled();
             if (!follow) return;
             follow = false;
             setAway(props.count);
@@ -1123,6 +1273,7 @@ export function ThreadScroller(props: {
           <div class="thread" ref={(thread) => resized?.observe(thread)}>
             <ScrollerContext.Provider value={api}>{props.children}</ScrollerContext.Provider>
           </div>
+          <div class="entry-measure" aria-hidden="true" ref={(probe) => measured?.observe(probe)} />
         </div>
       </section>
       {/* Always mounted, shown by attribute: inserting it relaid out the whole transcript at the

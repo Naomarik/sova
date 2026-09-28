@@ -1,6 +1,6 @@
 // The sidebar's "Needs you" region: the sessions the attention digest puts in its act tier
-// (server/attention.ts — a dialog open, an errored turn, a subagent error, or a decision signal
-// that asks you something or is stuck), said once more above Recent.
+// (server/attention.ts — a dialog open, an errored turn, a subagent error, open alignment questions
+// waiting on you, or a decision signal that it is stuck), said once more above Recent.
 //
 // One decide-tier kind lists too: a roster proposal (§app.organizations/referrals) waits on the
 // operator's Approve or Decline and on nothing else, so it is a thing to act on here.
@@ -20,7 +20,7 @@ export const NEEDS_YOU_KEY = "sova:needs-you-open";
 /** One session in the region: its row, and the digest's sentence that replaces the row's line 2. */
 export interface NeedsYouRow {
   session: SessionSummary;
-  /** The newest act item's detail ("Asks you: …", "Waiting on a dialog."); null when it has none. */
+  /** The newest act item's detail ("2 open questions in al_3 …", "Waiting on a dialog."); null when it has none. */
   detail: string | null;
   /** Every act item's detail for this session, newest first, for the line's tooltip. */
   details: string[];

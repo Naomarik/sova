@@ -101,6 +101,16 @@ describe("decisions routes", async () => {
     assert.equal(on.json.lastRun.error, undefined);
   });
 
+  test("PATCH …/decisions/:did {ownerArea}: a string is required; an unknown decision is 404, another project's too; the choices come with the list", async () => {
+    orgs.addPerson(a.id, { name: "Ana", role: "Lead", decides: ["website"] });
+    const base = `/api/orgs/${a.id}/projects/${pa.id}`;
+    assert.equal((await call("PATCH", `${base}/decisions/x:y`, { ownerArea: 5 })).status, 400);
+    assert.equal((await call("PATCH", `${base}/decisions/x:y`, {})).status, 400);
+    assert.equal((await call("PATCH", `${base}/decisions/x:y`, { ownerArea: "none" })).status, 404);
+    assert.equal((await call("PATCH", `/api/orgs/${a.id}/projects/${pb.id}/decisions/x:y`, { ownerArea: "none" })).status, 404);
+    assert.deepEqual((await call("GET", `${base}/decisions`)).json.ownerAreas, ["website"]);
+  });
+
   test("frozen round-trips through the project", async () => {
     const r = await call("PATCH", `/api/orgs/${a.id}/projects/${pa.id}/spec`, { frozen: true });
     assert.equal(r.status, 200);

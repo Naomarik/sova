@@ -207,18 +207,25 @@ one team session, 22 restarts of up to 220K tokens each.
 The rule is kept by the mode extension, not the bridge (the bridge cannot change a running CLI's
 prompt, and must not guess which prompt changes are benign): it also keeps its block in pi's base
 options, so a turn built without `before_agent_start` reads the same prompt. Those options are
-reachable only through a command context (`ctx.getSystemPromptOptions`): the `/mode` and
-`/align` handlers adopt the getter — Sova calls `/mode` at every chat open
-(§chat.mode-menu/how-a-switch-reaches-the-chat), so every Sova chat has it before its first turn
-— and from then on every switch, every `before_agent_start` and every run start (`agent_start`,
-after pi may have rebuilt the base on a tool change) writes the current block there, or deletes
-it when no mode block applies. A getter whose extension runner was replaced is dropped, never
-retried. A terminal session driven only by the shortcut or the palette, with no `/mode` yet,
-keeps the old behaviour until one runs.
+reachable only through a command context (`ctx.getSystemPromptOptions`): every `/mode` and
+`/align` call adopts the getter. Every time Sova opens a chat (`bind()`, a first open and every
+reopen, including after a server restart) it runs the extension's own handler with
+**`/mode sync`**, an argument that switches nothing, writes no entry, shows no notice and leaves
+the status alone: it only adopts the getter and puts the session's already-restored mode block
+into the base. So every Sova chat has it before its first turn, whether or not it is ever
+switched — a chat whose mode is pinned and never touched in this runtime included — and from then
+on every switch, every `before_agent_start` and every run start (`agent_start`, after pi may have
+rebuilt the base on a tool change) writes the current block there, or deletes it when no mode
+block applies. Nothing is written, so it runs on a terminal-live or foreign-written session too.
+A getter whose extension runner was replaced is dropped, never retried. A terminal session driven
+only by the shortcut or the palette, with no `/mode` or `/align` yet, keeps the old behaviour
+until one runs (`/mode sync` there fixes it too).
 
 Observable: in a chat with a mode on, a turn started by a worker settling that calls a tool has
 no `mode: null` system entry after its tool result, and the bridge does not restart on it; the
-prompt the provider receives is byte-identical to the previous user turn's.
+prompt the provider receives is byte-identical to the previous user turn's. With the mode
+unchanged, the session carries one `mode` section for its whole life: no system entry patches it,
+on the first turn, on later turns, or after the chat is reopened.
 
 ## §chat.mode-menu/states — States
 

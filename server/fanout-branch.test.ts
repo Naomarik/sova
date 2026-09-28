@@ -15,6 +15,8 @@ import { after, test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-branch-test-"));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const sessionsDir = join(agentDir, "sessions", "--tmp-branch--");
 mkdirSync(sessionsDir, { recursive: true });
@@ -94,15 +96,19 @@ const parse = (path: string) => readFileSync(path, "utf8").trim().split("\n").ma
 
 test("realFanoutDeps.fresh writes the PLANNED model into the file, and a reopened manager sees it", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "sova-branch-fresh-"));
-  const path = await realFanoutDeps.fresh(workdir, member("zai", "glm-5.3"));
-  const entries = parse(path);
-  const changes = entries.filter((e) => e.type === "model_change");
-  assert.equal(changes.length, 1, "exactly the member's own model change");
-  assert.equal(`${changes[0]!.provider}/${changes[0]!.modelId}`, "zai/glm-5.3");
-  // What acquireChat opens: the model must survive a fresh read of the file, not just the
-  // writing manager's memory. This is the assertion that was false before the write-order fix.
-  const reopened = SessionManager.open(path);
-  assert.deepEqual(reopened.buildSessionContext().model, { provider: "zai", modelId: "glm-5.3" });
+  try {
+    const path = await realFanoutDeps.fresh(workdir, member("zai", "glm-5.3"));
+    const entries = parse(path);
+    const changes = entries.filter((e) => e.type === "model_change");
+    assert.equal(changes.length, 1, "exactly the member's own model change");
+    assert.equal(`${changes[0]!.provider}/${changes[0]!.modelId}`, "zai/glm-5.3");
+    // What acquireChat opens: the model must survive a fresh read of the file, not just the
+    // writing manager's memory. This is the assertion that was false before the write-order fix.
+    const reopened = SessionManager.open(path);
+    assert.deepEqual(reopened.buildSessionContext().model, { provider: "zai", modelId: "glm-5.3" });
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
 });
 
 test("realFanoutDeps.fork writes the planned model OVER the source's, and the marker rides both paths", async () => {
@@ -125,11 +131,15 @@ test("realFanoutDeps.fork writes the planned model OVER the source's, and the ma
 
 test("a fresh member's file carries the fanout-member marker from birth", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "sova-branch-marker-"));
-  const path = await realFanoutDeps.fresh(workdir, member("zai", "glm-5.3"));
-  const reopened = SessionManager.open(path);
-  assert.ok(isFanoutMember(reopened), "the marker survives the reopen a later runtime does");
-  assert.ok(
-    parse(path).some((e) => e.type === "custom" && e.customType === "sova-fanout-member"),
-    "as bytes on disk, so it holds across restarts — not an in-memory flag",
-  );
+  try {
+    const path = await realFanoutDeps.fresh(workdir, member("zai", "glm-5.3"));
+    const reopened = SessionManager.open(path);
+    assert.ok(isFanoutMember(reopened), "the marker survives the reopen a later runtime does");
+    assert.ok(
+      parse(path).some((e) => e.type === "custom" && e.customType === "sova-fanout-member"),
+      "as bytes on disk, so it holds across restarts — not an in-memory flag",
+    );
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
 });

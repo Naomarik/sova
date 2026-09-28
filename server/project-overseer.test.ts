@@ -9,6 +9,8 @@ import { after, describe, test } from "node:test";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerSettings } from "../shared/project-overseer";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
@@ -127,7 +129,19 @@ describe("a project overseer", async () => {
   test("PATCH is strict", async () => {
     await assert.rejects(() => po.patchProjectOverseer(org.id, project.id, { autonomy: "L9" }), /autonomy must be one of/);
     await assert.rejects(() => po.patchProjectOverseer(org.id, project.id, { caps: { nope: 1 } }), /Unknown cap/);
-    await assert.rejects(() => po.patchProjectOverseer(org.id, project.id, { tokenBudget: -1 }), /Coding token budget must be a whole number from 0 to 1,000,000,000, or Unlimited\./);
+  });
+
+  test("the removed token budget: an old file's is ignored and dropped at the next save; a stale PATCH's is ignored", async () => {
+    const p = store.projectOverseerPaths(org.id, project.id);
+    const raw = JSON.parse(readFileSync(p.settings, "utf8"));
+    writeFileSync(p.settings, JSON.stringify({ ...raw, tokenBudget: 5 }));
+    assert.ok(!("tokenBudget" in store.readPoSettings(p)));
+    const info = await po.patchProjectOverseer(org.id, project.id, { tokenBudget: 7, watchGapMin: 11 } as never);
+    assert.ok(!("tokenBudget" in info.settings));
+    assert.ok(!("tokenBudget" in info.usage));
+    const saved = JSON.parse(readFileSync(p.settings, "utf8"));
+    assert.equal(saved.watchGapMin, 11);
+    assert.ok(!("tokenBudget" in saved), "dropped on the save");
   });
 
   test("with an active person on the roster the setting is in force", async () => {
@@ -432,24 +446,23 @@ describe("the store", () => {
     assert.throws(() => store.projectOverseerPaths("../o", "prj_x", "/ws"), /Unknown project/);
   });
   test("a hand-edited settings file never breaks it: bad fields fall back", () => {
-    const s = store.parsePoSettings({ autonomy: "L7", caps: { gatherPerTurn: -3, createPerTurn: 4 }, tokenBudget: "lots", watch: "yes" });
+    const s = store.parsePoSettings({ autonomy: "L7", caps: { gatherPerTurn: -3, createPerTurn: 4 }, watch: "yes" });
     assert.equal(s.autonomy, "L1");
     assert.equal(s.caps.gatherPerTurn, store.DEFAULT_PO_CAPS.gatherPerTurn);
     assert.equal(s.caps.createPerTurn, 4);
-    assert.equal(s.tokenBudget, store.DEFAULT_TOKEN_BUDGET);
     assert.equal(s.watch, true);
   });
 });
 
 describe("limits: Unlimited, at once, pace (§app.project-overseer/limits)", () => {
   test("an old file without the new keys reads the defaults", () => {
-    const s = store.parsePoSettings({ autonomy: "L3", caps: { gatherPerTurn: 3 }, tokenBudget: 2_000_000 });
+    const s = store.parsePoSettings({ autonomy: "L3", caps: { gatherPerTurn: 3 } });
     assert.deepEqual([s.caps.gatherPerDay, s.caps.promotePerDay, s.caps.createPerDay, s.caps.promptsPerDay, s.caps.unattendedPerDay], [6, 60, 4, 12, 12]);
     assert.deepEqual([s.watchGapMin, s.soonLookSec], [10, 60]);
   });
   test("the file: null is Unlimited where allowed; at once never (the default), and above its maximum it is the maximum", () => {
-    const s = store.parsePoSettings({ caps: { gatherPerDay: null, unattendedPerDay: null, gatherPerTurn: null, gatheringsOpen: null, codingRunning: 50 }, tokenBudget: null, soonLookSec: null, watchGapMin: 0 });
-    assert.deepEqual([s.caps.gatherPerDay, s.caps.unattendedPerDay, s.caps.gatherPerTurn, s.tokenBudget, s.soonLookSec], [null, null, null, null, null]);
+    const s = store.parsePoSettings({ caps: { gatherPerDay: null, unattendedPerDay: null, gatherPerTurn: null, gatheringsOpen: null, codingRunning: 50 }, soonLookSec: null, watchGapMin: 0 });
+    assert.deepEqual([s.caps.gatherPerDay, s.caps.unattendedPerDay, s.caps.gatherPerTurn, s.soonLookSec], [null, null, null, null]);
     assert.equal(s.caps.gatheringsOpen, store.DEFAULT_PO_CAPS.gatheringsOpen);
     assert.equal(s.caps.codingRunning, 10);
     assert.equal(s.watchGapMin, 10, "below the floor: the default");
@@ -465,10 +478,9 @@ describe("limits through PATCH, held items and their retry", async () => {
   const p = store.projectOverseerPaths(org.id, project.id);
 
   test("Unlimited is accepted where allowed and saved as null; at once never, with the sentence", async () => {
-    const info = await po.patchProjectOverseer(org.id, project.id, { caps: { gatherPerDay: null, unattendedPerDay: null }, tokenBudget: null, soonLookSec: null, watchGapMin: 5 });
-    assert.deepEqual([info.settings.caps.gatherPerDay, info.settings.caps.unattendedPerDay, info.settings.tokenBudget, info.settings.soonLookSec, info.settings.watchGapMin], [null, null, null, null, 5]);
+    const info = await po.patchProjectOverseer(org.id, project.id, { caps: { gatherPerDay: null, unattendedPerDay: null }, soonLookSec: null, watchGapMin: 5 });
+    assert.deepEqual([info.settings.caps.gatherPerDay, info.settings.caps.unattendedPerDay, info.settings.soonLookSec, info.settings.watchGapMin], [null, null, null, 5]);
     assert.equal(JSON.parse(readFileSync(p.settings, "utf8")).caps.gatherPerDay, null);
-    assert.equal(info.usage.tokenBudget, null);
     const refusals: [unknown, RegExp][] = [
       [{ caps: { codingRunning: null } }, /^Coding sessions running can't be Unlimited: it's what stops a burst\.$/],
       [{ caps: { gatheringsOpen: null } }, /^Gathering sessions open can't be Unlimited: it's what stops a burst\.$/],
@@ -504,7 +516,7 @@ describe("limits through PATCH, held items and their retry", async () => {
       soonAt: null,
       held: [
         { key: "day:gather", what: "gathering sessions started", why: "Today's allowance is used: 6 of 6 gathering sessions started on its own.", since: refusedAt.toISOString(), retryAt: midnight.toISOString() },
-        { key: "budget", what: "coding tokens", why: "The coding token budget is spent.", since: refusedAt.toISOString(), retryAt: null },
+        { key: "message:create", what: "coding sessions started", why: "The message's allowance is used.", since: refusedAt.toISOString(), retryAt: null },
       ],
     });
     po.releaseHeld(org.id, project.id, midnight.getTime() - 1);
@@ -513,7 +525,7 @@ describe("limits through PATCH, held items and their retry", async () => {
     const m = store.readMemo(p);
     assert.deepEqual(m.pending, ["Today's allowance is back: it may start gathering sessions again (refused 2:11 PM)."]);
     assert.equal(m.soonAt, new Date(midnight.getTime() + 60_000).toISOString());
-    assert.deepEqual(m.held.map((h) => h.key), ["budget"], "the budget waits for the operator");
+    assert.deepEqual(m.held.map((h) => h.key), ["message:create"], "a null retry waits for the operator");
     store.writeMemo(p, { ...m, pending: [], soonAt: null, held: [{ key: "message:prompt", what: "prompts to coding sessions", why: "x", since: refusedAt.toISOString(), retryAt: refusedAt.toISOString() }] });
     po.releaseHeld(org.id, project.id, refusedAt.getTime() + 20_000);
     const m2 = store.readMemo(p);
@@ -528,19 +540,30 @@ describe("limits through PATCH, held items and their retry", async () => {
       pending: [],
       held: [
         { key: "day:create", what: "coding sessions started", why: "x", since, retryAt: store.nextMidnight(new Date()).toISOString() },
-        { key: "budget", what: "coding tokens", why: "x", since, retryAt: null },
+        { key: "message:prompt", what: "prompts to coding sessions", why: "x", since, retryAt: null },
       ],
     });
-    await po.patchProjectOverseer(org.id, project.id, { caps: { createPerDay: 2 }, tokenBudget: 5 });
+    await po.patchProjectOverseer(org.id, project.id, { caps: { createPerDay: 2, promptsPerTurn: 4 } });
     assert.equal(store.readMemo(p).held.length, 2, "lowered: nothing released");
     await po.patchProjectOverseer(org.id, project.id, { caps: { createPerDay: 3 } });
     let m = store.readMemo(p);
-    assert.deepEqual(m.held.map((h) => h.key), ["budget"]);
+    assert.deepEqual(m.held.map((h) => h.key), ["message:prompt"]);
     assert.ok(m.pending.includes("You raised the limit on coding sessions started."), JSON.stringify(m.pending));
-    await po.patchProjectOverseer(org.id, project.id, { tokenBudget: null });
+    await po.patchProjectOverseer(org.id, project.id, { caps: { promptsPerTurn: null } });
     m = store.readMemo(p);
     assert.deepEqual(m.held, []);
-    assert.ok(m.pending.includes("You raised the limit on coding tokens."));
+    assert.ok(m.pending.includes("You raised the limit on prompts to coding sessions."));
+  });
+
+  test("a held budget item left in watch.json is dropped on read and on the next write", () => {
+    const raw = JSON.parse(readFileSync(p.memo, "utf8"));
+    const since = new Date().toISOString();
+    writeFileSync(p.memo, JSON.stringify({ ...raw, held: [{ key: "budget", what: "coding tokens", why: "The coding token budget is spent.", since, retryAt: null }, { key: "looks", what: "looks", why: "y", since, retryAt: null }] }));
+    const m = store.readMemo(p);
+    assert.deepEqual(m.held.map((h) => h.key), ["looks"]);
+    store.writeMemo(p, m);
+    assert.ok(!readFileSync(p.memo, "utf8").includes('"budget"'));
+    store.writeMemo(p, { ...m, held: [] });
   });
 
   test("a look past the looks per day is held until midnight, and shown", async () => {
@@ -560,10 +583,10 @@ describe("limits through PATCH, held items and their retry", async () => {
   });
 
   test("the prompt lists every limit, Unlimited ones as no limit, and forbids promising a look nobody scheduled", async () => {
-    await po.patchProjectOverseer(org.id, project.id, { caps: { gatherPerDay: null }, tokenBudget: null });
+    await po.patchProjectOverseer(org.id, project.id, { caps: { gatherPerDay: null } });
     const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
     assert.match(prompt, /on your own each day: gathering sessions no limit, /);
-    assert.match(prompt, /coding tokens no limit/);
+    assert.doesNotMatch(prompt, /coding tokens|token budget/);
     assert.match(prompt, /Never say you'll do something "on your next look"/);
   });
 });

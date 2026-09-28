@@ -17,6 +17,8 @@ import { after, before, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-runtime-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 // The Overseer loads the user's extensions and prompt templates. This one rewrites a message with
 // images the way vision-delegate does for a text-only model: the text that enters the context is

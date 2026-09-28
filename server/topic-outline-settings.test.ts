@@ -10,9 +10,10 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, test } from "node:test";
+import { after, beforeEach, test } from "node:test";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-topic-outline-settings-"));
+after(() => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the module below computes its path
 const FILE = join(agentDir, "topic-outline.json");
 

@@ -8,7 +8,7 @@ const base: PushSettings = {
   version: 1,
   enabled: true,
   contact: null,
-  kinds: { "needs-input": true, "asks-you": true, error: true, looping: true, "baton-needs-you": true, "worker-error": false },
+  kinds: { "needs-input": true, "open-questions": true, error: true, looping: true, "baton-needs-you": true, "worker-error": false },
   quietHours: { enabled: false, start: "22:00", end: "07:00" },
 };
 

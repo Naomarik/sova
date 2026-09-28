@@ -9,6 +9,8 @@ import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-portable-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
@@ -85,8 +87,9 @@ describe("the overseer's started list moves from the host-local memo into the re
     assert.deepEqual(store.readStarted(p).map((s) => s.sessionId), ["s-gather", "s-code", "s-later"]);
   });
 
-  test("a coding session's spend is kept, so the budget still counts it where the file is missing", () => {
-    store.recordTokens(p, new Map([["s-code", 1234]]));
+  test("a legacy tokens count on a row still reads (the cost shows it as unpriced where the file is missing)", () => {
+    const raw = JSON.parse(readFileSync(p.started, "utf8"));
+    writeFileSync(p.started, JSON.stringify({ ...raw, sessions: raw.sessions.map((s: { sessionId: string }) => (s.sessionId === "s-code" ? { ...s, tokens: 1234 } : s)) }));
     assert.equal(store.readStarted(p).find((s) => s.sessionId === "s-code")?.tokens, 1234);
   });
 });

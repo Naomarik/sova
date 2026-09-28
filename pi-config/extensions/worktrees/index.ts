@@ -19,7 +19,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { createWorktree, defaultTarget, forkPoint, GitError, type Git, inspectWorktree, mergeStats, mergeWorktree, type MergeProbe, probeMerge, runGit } from "./git.ts";
+import { createWorktree, defaultTarget, forkPoint, GitError, type Git, inspectWorktree, landedStats, mergeWorktree, type MergeProbe, probeMerge, runGit } from "./git.ts";
 import {
 	activeTrees,
 	canonical,
@@ -171,9 +171,9 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 			const p = await probeMerge(git, t, was.target).catch(() => undefined);
 			if (!p?.merged) continue;
 			try {
-				const stats = await mergeStats(git, t.path, was.targetSha, p.targetSha, p.branchSha);
-				markMerged(t, { target: p.target, sha: p.targetSha, how: "detected" });
-				card({ path: t.path, branch: t.branch, target: p.target, sha: p.targetSha, ...stats, how: "detected" });
+				const { sha, ...stats } = await landedStats(git, t.path, was.targetSha, p.targetSha, p.branchSha);
+				markMerged(t, { target: p.target, sha, how: "detected" });
+				card({ path: t.path, branch: t.branch, target: p.target, sha, ...stats, how: "detected" });
 			} catch {
 				// Best-effort: an unreadable merge is still shown as merged by the pane's own check.
 			}

@@ -393,7 +393,7 @@ Sova that aren't archived.
 - **State.** One per row, on its rail (a colored left edge) and in a chip with a dot and the
   word: **Needs you** when the session waits on input or has an extension dialog open; else
   **Working** when its turn runs or any of its workers works; else **Needs you** when its last
-  turn failed or stopped on an error, or its decision marks (unseen asks-you or looping, a stuck
+  turn failed or stopped on an error, or it has open alignment questions, or its decision marks (unseen looping, a stuck
   subagent) say so; else **Idle**, or **Archived** for an archived session nothing runs in. The
   chip's `title` says why a row needs you, and the open row says it in a line.
 - **Sort.** Working first, then Needs you, then the rest; within each, last active first.
@@ -600,16 +600,21 @@ fetched except the lookups below.
   - Not found: the plain text "Session no longer on disk", and no link.
   - The two links are siblings, never one inside the other; the card itself is not a target.
     Each link has the focus ring; the card's border lifts on hover over its page link.
-- **Open in Session lands on the explanation.** The link opens the session, and once its
-  transcript has loaded (the chat's `hello`, or the watch view's snapshot) the transcript scrolls
+- **Open in Session lands on the explanation.** The link opens the session, and once the
+  explanation's row is in the transcript (with the chat's `hello` or the watch view's snapshot,
+  or fetched down to it in one request when it's older than the rows they carry,
+  §chat.transcript/rendering) the transcript scrolls
   the explanation's own row (the report row whose explanation id matches) into the middle and
   tints it, the transcript's usual jump (§app.insights/insight-strip, Jump to Message), and, like
   every jump, stops the transcript following the bottom, so Jump to Latest appears and rows still
   rendering can't pull the view back down. It works whether or not the session's runtime was
   already open, and it happens once: the request is dropped after
-  it lands, after it fails, or after 60s unclaimed. When the loaded transcript has no such row (the
-  explanation's entry is not on the branch on screen, e.g. after a rewind), the session stays open
-  and a toast says "That explanation isn't on this branch of the session."
+  it lands, after it fails, or 60s after it was made if it still hasn't, the fetch of older rows
+  included. While that fetch is on its way it waits, with no toast: a slow fetch shows the
+  transcript's top-edge bar (§chat.transcript/rendering). When the branch has no such row (the explanation's entry is not on
+  the branch on screen, e.g. after a rewind: the list reaches the top without it, or the server
+  finds none), the session stays open and a toast says "That explanation isn't on this branch of
+  the session." Rows kept from the last visit never count as the whole transcript.
 - **Empty.** With no explanation at all, the grid's place holds one `.empty`: "0 explanations
   yet." and "Run `/explain` in a session and its page shows up here." When the filters leave
   nothing: "{n} explanation(s) in all. None match these filters." and "Choose All sessions or
@@ -744,7 +749,9 @@ which draws them on the session's axis; the strip keeps no history of its own.
     same place.
   - Leave it out when `entryId` is null or the transcript has no row for it (it was compacted
     away). That is asked of the rows the transcript renders, so a row it hasn't built yet still
-    offers Jump, which builds it (§chat.transcript/rendering). It is decided each time the strip
+    offers Jump, which builds it (§chat.transcript/rendering). While the transcript has older rows
+    it hasn't fetched it is offered too, and the Jump fetches them down to the row
+    (§chat.transcript/rendering); it removes itself if the branch has no such row. It is decided each time the strip
     opens, and when a topic arrives while it's open; a Jump that finds its item gone since then
     removes itself instead of scrolling nowhere. A topic without
     Jump still shows its heading, time and bullets.

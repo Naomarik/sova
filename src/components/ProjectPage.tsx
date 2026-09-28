@@ -1,7 +1,7 @@
-import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
-import type { Conflict, DecisionRow, DecisionsInfo, PromoteResult } from "../../shared/decisions";
+import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { OWNER_AREA_NONE, type Conflict, type DecisionRow, type DecisionsInfo, type PromoteResult } from "../../shared/decisions";
 import type { OrgDetail, OrgProject } from "../../shared/orgs";
-import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, redraftProject, resolveConflict, routeConflict, setProjectStakeholder, setSpecFrozen } from "../lib/api";
+import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, redraftProject, resolveConflict, routeConflict, setOwnerArea, setProjectStakeholder, setSpecFrozen } from "../lib/api";
 import { alsoCarriesLine, areaGroups, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
 import { promotionCommitLine } from "../lib/coding-worktrees";
 import { relativeTime } from "../lib/format";
@@ -11,6 +11,7 @@ import { stakeholderView } from "../lib/stakeholder";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { OwnerProjectCard } from "./OwnerProjectCard";
+import { ProjectCostCard } from "./ProjectCostCard";
 import { ProjectOverseerPanel } from "./ProjectOverseerPanel";
 import { Banner, Chip } from "./ui";
 import "../orgs.css";
@@ -37,6 +38,8 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
   // The overseer acts on the same data (it reconciles and promotes): read it while it works, and
   // once more when its run ends, so what it did shows without a refresh.
   const [overseerBusy, setOverseerBusy] = createSignal(false);
+  // Refresh Project recounts the cost too.
+  const [costTick, setCostTick] = createSignal(0);
   const running = createMemo(() => !!info()?.running || overseerBusy());
   createEffect(
     on(running, (r, was) => {
@@ -97,6 +100,7 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       onRefresh={() => {
         void refetch();
         void refetchOrg();
+        setCostTick((n) => n + 1);
       }}
       error={error() ?? (info.error ? errText(info.error) : org.error ? errText(org.error) : null)}
       errorTitle="Couldn't update this project."
@@ -104,6 +108,9 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       titleRef={props.titleRef}
     >
       <Show when={org()}>{(o) => <ProjectOverseerPanel org={o()} projectId={props.projectId} onBusy={setOverseerBusy} />}</Show>
+      <Show when={`${props.orgId}/${props.projectId}`} keyed>
+        <ProjectCostCard orgId={props.orgId} projectId={props.projectId} tick={costTick()} />
+      </Show>
       {/* Only while the org has an owner (§app.owner-page/controls). */}
       <Show when={org()?.ownerPage?.person && project()}>
         <OwnerProjectCard org={org()!} project={project()!} onOrg={mutateOrg} />
@@ -506,6 +513,62 @@ function Provenance(props: { orgId: string; row: DecisionRow }) {
   );
 }
 
+/** Who decides a decision (§app.requirements/owner-area): the operator changes it here, and the
+    server re-routes a conflict it is in. */
+function OwnerAreaField(props: CardProps & { row: DecisionRow }) {
+  const id = createUniqueId();
+  let select: HTMLSelectElement | undefined;
+  const current = () => props.row.ownerArea ?? "";
+  // A roster area removed since it was picked still shows as picked.
+  const choices = createMemo(() => {
+    const all = props.info.ownerAreas;
+    const cur = props.row.ownerArea;
+    return cur && cur !== OWNER_AREA_NONE && !all.includes(cur) ? [...all, cur] : all;
+  });
+  const last = () => props.row.ownerAreaHistory?.at(-1);
+  const set = async (value: string) => {
+    const label = value === OWNER_AREA_NONE ? "None" : value;
+    const ok = await props.act("owner-area", () => setOwnerArea(props.orgId, props.projectId, props.row.id, value), `Owner area set to ${label}.`);
+    if (!ok && select) select.value = current();
+  };
+  return (
+    <div class="field project-owner-area">
+      <label class="field-label" for={id}>
+        Owner area
+      </label>
+      <div class="select-wrap">
+        <select ref={select} id={id} class="select" disabled={!!props.busy} onChange={(e) => void set(e.currentTarget.value)}>
+          <Show when={!props.row.ownerArea}>
+            <option value="" selected disabled>
+              Not set
+            </option>
+          </Show>
+          <option value={OWNER_AREA_NONE} selected={props.row.ownerArea === OWNER_AREA_NONE}>
+            None
+          </option>
+          <For each={choices()}>
+            {(a) => (
+              <option value={a} selected={a === props.row.ownerArea}>
+                {a}
+              </option>
+            )}
+          </For>
+        </select>
+        <span class="select-caret" aria-hidden="true">
+          ▾
+        </span>
+      </div>
+      <Show when={last()}>
+        {(l) => (
+          <span class="field-hint">
+            Changed by {l().name} <time title={l().at}>{relativeTime(l().at)}</time>.
+          </span>
+        )}
+      </Show>
+    </div>
+  );
+}
+
 // ---- decisions by area, with piecemeal promotion -----------------------------------------------------
 
 function DecisionsCard(props: CardProps) {
@@ -608,11 +671,14 @@ function DecisionsCard(props: CardProps) {
                           {DECISION_STATE[d.state].word}
                         </Chip>
                         <Show when={outsideTheirArea(d)}>
-                          <Chip tone="warn" title={`${d.name} doesn't decide ${d.area}. Select All Ready leaves it out; tick it to promote it anyway.`}>
+                          <Chip tone="warn" title={`${d.name} doesn't decide ${d.ownerArea && d.ownerArea !== OWNER_AREA_NONE ? d.ownerArea : d.area}. Select All Ready leaves it out; tick it to promote it anyway.`}>
                             Outside their area
                           </Chip>
                         </Show>
                       </div>
+                      <Show when={d.state !== "superseded"}>
+                        <OwnerAreaField {...props} row={d} />
+                      </Show>
                     </li>
                   )}
                 </For>

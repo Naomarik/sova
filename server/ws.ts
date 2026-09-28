@@ -3,6 +3,7 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { ChatClientMessage, ChatServerMessage, SessionFeedMessage, WatchServerMessage } from "../shared/protocol";
+import { isDirectLocal } from "./compression";
 import { acquireChat, BusyError, ConfigError, type ChatClient } from "./chat-manager";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
@@ -25,8 +26,28 @@ function sendJson(ws: WebSocket, msg: ChatServerMessage | WatchServerMessage | S
   }
 }
 
-async function handleChat(ws: WebSocket, path: string, force: boolean): Promise<void> {
-  const client: ChatClient = { send: (msg) => sendJson(ws, msg) };
+/** A message already serialized: made once for every client that gets it. */
+function sendRaw(ws: WebSocket, json: string): void {
+  if (ws.readyState !== ws.OPEN) return;
+  try {
+    ws.send(json);
+  } catch (err) {
+    console.error("[ws] send failed", err);
+  }
+}
+
+/** What a client asked of the transcript: all of it (legacy), newest rows first with the rest
+    pushed (`?tail=1`), or newest rows alone, the rest fetched over REST (`?tail=rest`, with
+    `prefetch` for a browser on this machine connecting directly: it may as well fetch it all). */
+type TailAsk = { tail: false } | { tail: true; pull: false } | { tail: true; pull: true; prefetch: boolean };
+
+async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk): Promise<void> {
+  const client: ChatClient = {
+    send: (msg) => sendJson(ws, msg),
+    sendRaw: (json) => sendRaw(ws, json),
+    ...(ask.tail ? { tail: true } : {}),
+    ...(ask.tail && ask.pull ? { pull: { prefetch: ask.prefetch } } : {}),
+  };
   // Buffer messages that arrive while the runtime is still opening.
   const early: ChatClientMessage[] = [];
   let chat: Awaited<ReturnType<typeof acquireChat>> | null = null;
@@ -74,10 +95,18 @@ async function handleChat(ws: WebSocket, path: string, force: boolean): Promise<
   for (const msg of early.splice(0)) chat.handle(client, msg);
 }
 
-function handleWatch(ws: WebSocket, path: string, normalize?: Normalize, tally?: UsageTally, format: Format = "pi"): void {
+function handleWatch(ws: WebSocket, path: string, ask: TailAsk, normalize?: Normalize, tally?: UsageTally, format: Format = "pi"): void {
   // pi replies name their model, so the fill carries its window; the runtime is resolved first.
   let resolve: WindowResolver = () => null;
-  const tail = new SessionTail(path, (msg) => sendJson(ws, msg), normalize, tally, contextTally(format, (ref) => resolve(ref)));
+  const tail = new SessionTail(
+    path,
+    (msg) => sendJson(ws, msg),
+    normalize,
+    tally,
+    contextTally(format, (ref) => resolve(ref)),
+    ask.tail && !ask.pull ? (json) => sendRaw(ws, json) : undefined,
+    ask.tail && ask.pull ? { prefetch: ask.prefetch } : undefined,
+  );
   // A claude-code worker's own file has no Sova session id: nothing to stamp.
   const id = normalize ? "" : idOf(path);
   if (id) {
@@ -109,7 +138,21 @@ function handleFeed(ws: WebSocket): void {
   ws.on("message", () => {}); // read-only: ignore anything the client sends
 }
 
-const wss = new WebSocketServer({ noServer: true });
+// permessage-deflate, for a browser that offers it: a session's hello is one JSON frame of the
+// whole transcript (MBs for a large one), sent to phones over the tailnet. Frames under 1 KB (the
+// streaming deltas) go uncompressed. No context takeover either way, so a connection holds no
+// window between messages; ws creates its zlib streams lazily, so a socket that only ever sends
+// small frames holds none at all. Level 1: the ratio on a hello is within a few percent of level 6
+// at a fraction of the CPU (numbers in the commit message).
+const wss = new WebSocketServer({
+  noServer: true,
+  perMessageDeflate: {
+    threshold: 1024,
+    serverNoContextTakeover: true,
+    clientNoContextTakeover: true,
+    zlibDeflateOptions: { level: 1 },
+  },
+});
 
 /** Sova's own sockets, /ws/chat and /ws/watch; anything else is dropped. Also the peer
     listener's upgrade handler (server/mesh/listener.ts). */
@@ -120,12 +163,19 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
     socket.destroy();
     return;
   }
+  // A browser on this machine, not through a proxy: decline permessage-deflate (server/compression.ts).
+  const direct = isDirectLocal(req);
+  if (direct) delete req.headers["sec-websocket-extensions"];
   wss.handleUpgrade(req, socket, head, (ws) => {
     // /ws/watch?feed=sessions: no session at all, the list's pushed overlays.
     if (route === "/ws/watch" && url.searchParams.get("feed") === "sessions") {
       handleFeed(ws);
       return;
     }
+    // ?tail=1: the transcript newest rows first (server/tail-hello.ts); ?tail=rest: newest rows
+    // alone (server/transcript-rows.ts); anything else, as it always was.
+    const t = url.searchParams.get("tail");
+    const tail: TailAsk = t === "1" ? { tail: true, pull: false } : t === "rest" ? { tail: true, pull: true, prefetch: direct } : { tail: false };
     // /ws/watch?claude=<uuid>: a claude-code worker's own session file, in CC's own format.
     const claudeId = route === "/ws/watch" ? url.searchParams.get("claude") : null;
     if (claudeId) {
@@ -135,7 +185,8 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
         ws.close(4404, "bad path");
         return;
       }
-      handleWatch(ws, file, normalizeClaudeText, claudeUsageTally(), "claude");
+      // REST serves pi session files only: a Claude Code file's older rows are pushed, as with ?tail=1.
+      handleWatch(ws, file, tail.tail ? { tail: true, pull: false } : tail, normalizeClaudeText, claudeUsageTally(), "claude");
       return;
     }
     const path = resolveSessionPath(url.searchParams.get("path"));
@@ -146,12 +197,12 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
       return;
     }
     if (route === "/ws/chat") {
-      handleChat(ws, path, url.searchParams.get("force") === "1").catch((err) => {
+      handleChat(ws, path, url.searchParams.get("force") === "1", tail).catch((err) => {
         console.error("[ws/chat]", err);
         ws.close(4500, "internal");
       });
     } else {
-      handleWatch(ws, path);
+      handleWatch(ws, path, tail);
     }
   });
 }

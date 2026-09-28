@@ -8,6 +8,8 @@ import { join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-decide-settings-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 process.env.HOME = join(root, "home"); // the redactor reads credential files under HOME: never the real ones
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 delete process.env.SOVA_JEV_KEY;

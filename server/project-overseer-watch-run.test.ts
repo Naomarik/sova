@@ -13,6 +13,8 @@ import { clockTime } from "../pi-config/extensions/stamp/format.ts";
 for (const k of Object.keys(process.env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete process.env[k];
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-run-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });

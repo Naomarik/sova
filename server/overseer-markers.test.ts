@@ -8,6 +8,8 @@ import { after, describe, test } from "node:test";
 import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY, type ChatServerMessage } from "../shared/protocol";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-markers-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const sessionsDir = join(agentDir, "sessions", "--tmp-overseer--");
 mkdirSync(sessionsDir, { recursive: true });

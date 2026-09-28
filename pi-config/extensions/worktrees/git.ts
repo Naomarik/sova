@@ -139,18 +139,39 @@ export async function forkPoint(git: Git, cwd: string, branch: string, target: s
 	return r.code === 0 ? r.stdout.trim() || undefined : undefined;
 }
 
-/** Numbers of a merge that moved `target` from `before` to `after` by bringing in `branchSha`. */
-export async function mergeStats(git: Git, cwd: string, before: string, after: string, branchSha: string): Promise<{ commits: number; added: number; removed: number; fastForward: boolean }> {
-	const commits = Number(await must(git, ["rev-list", "--count", `${before}..${branchSha}`], cwd)) || 0;
+/** Lines added and removed over `git diff --numstat <range...>`. */
+async function lineCounts(git: Git, cwd: string, range: string[]): Promise<{ added: number; removed: number }> {
 	let added = 0;
 	let removed = 0;
-	for (const line of (await must(git, ["diff", "--numstat", before, after], cwd)).split("\n")) {
+	for (const line of (await must(git, ["diff", "--numstat", ...range], cwd)).split("\n")) {
 		const [a, r] = line.split("\t");
 		// Binary files read "-\t-": no line counts.
 		if (a && /^\d+$/.test(a)) added += Number(a);
 		if (r && /^\d+$/.test(r)) removed += Number(r);
 	}
-	return { commits, added, removed, fastForward: after === branchSha };
+	return { added, removed };
+}
+
+/** Numbers of a merge that moved `target` from `before` to `after` by bringing in `branchSha`. */
+export async function mergeStats(git: Git, cwd: string, before: string, after: string, branchSha: string): Promise<{ commits: number; added: number; removed: number; fastForward: boolean }> {
+	const commits = Number(await must(git, ["rev-list", "--count", `${before}..${branchSha}`], cwd)) || 0;
+	return { commits, ...(await lineCounts(git, cwd, [before, after])), fastForward: after === branchSha };
+}
+
+/**
+ * A merge seen after a run, where `target` moved from `before` to `after` and now contains
+ * `branchSha`, perhaps together with other branches. `sha` is the landing commit: the first commit
+ * on the target's first-parent history since `before` that contains the branch (`after` if none
+ * does); the branch tip itself means the target fast-forwarded through it. The numbers are the
+ * branch's own: its commits beyond `before`, and its change against their merge base.
+ */
+export async function landedStats(git: Git, cwd: string, before: string, after: string, branchSha: string): Promise<{ sha: string; commits: number; added: number; removed: number; fastForward: boolean }> {
+	const lines = (out: string) => out.split("\n").filter(Boolean);
+	const firstParent = lines(await must(git, ["rev-list", "--first-parent", "--reverse", `${before}..${after}`], cwd));
+	const containing = new Set([branchSha, ...lines(await must(git, ["rev-list", "--ancestry-path", `${branchSha}..${after}`], cwd))]);
+	const sha = firstParent.find((c) => containing.has(c)) ?? after;
+	const commits = Number(await must(git, ["rev-list", "--count", `${before}..${branchSha}`], cwd)) || 0;
+	return { sha, commits, ...(await lineCounts(git, cwd, [`${before}...${branchSha}`])), fastForward: sha === branchSha };
 }
 
 export interface MergeRequest {

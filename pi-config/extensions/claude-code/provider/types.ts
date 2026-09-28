@@ -28,6 +28,8 @@ export interface ClaudeUsage {
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
+	/** The 1-hour part of `cacheWrite`, when the usage splits cache writes by TTL (`cache_creation`). */
+	cacheWrite1h?: number;
 }
 
 export type ClaudeContentBlockStart =
@@ -44,7 +46,8 @@ export type ClaudeContentDelta =
 
 /** Anthropic passthrough events, carried by the CLI inside `stream_event` frames. */
 export type ClaudeStreamEvent =
-	| { type: "message_start"; usage?: ClaudeUsage }
+	/** `model`: the id that answered (`claude-opus-5-5`), not the alias the turn asked for. */
+	| { type: "message_start"; usage?: ClaudeUsage; model?: string }
 	| { type: "content_block_start"; index: number; block: ClaudeContentBlockStart }
 	| { type: "content_block_delta"; index: number; delta: ClaudeContentDelta }
 	| { type: "content_block_stop"; index: number }
@@ -56,7 +59,7 @@ export type ClaudeFrame =
 	| { type: "init"; sessionId?: string }
 	| { type: "stream"; event: ClaudeStreamEvent }
 	/** Whole-message `assistant` frame; only used to backfill blocks partial streaming missed. */
-	| { type: "assistant"; blocks: ClaudeAssistantBlock[]; stopReason?: string; usage?: ClaudeUsage }
+	| { type: "assistant"; blocks: ClaudeAssistantBlock[]; stopReason?: string; usage?: ClaudeUsage; model?: string }
 	/** Terminal frame for the turn. `aborted` covers every `aborted*` terminal reason. */
 	| { type: "result"; outcome: "success" | "error" | "aborted"; message?: string; usage?: ClaudeUsage };
 
@@ -135,13 +138,17 @@ function index(value: unknown, what: string): number {
 }
 function usage(value: unknown): ClaudeUsage | undefined {
 	if (!record(value)) return undefined;
+	const split = record(value.cache_creation) && typeof value.cache_creation.ephemeral_1h_input_tokens === "number" ? count(value.cache_creation.ephemeral_1h_input_tokens) : undefined;
 	return {
 		input: count(value.input_tokens),
 		output: count(value.output_tokens),
 		cacheRead: count(value.cache_read_input_tokens),
 		cacheWrite: count(value.cache_creation_input_tokens),
+		...(split === undefined ? {} : { cacheWrite1h: split }),
 	};
 }
+const modelOf = (message: unknown): string | undefined =>
+	record(message) && typeof message.model === "string" && message.model && message.model !== "<synthetic>" ? message.model : undefined;
 
 function blockStart(value: unknown): ClaudeContentBlockStart {
 	const block = requireRecord(value, "content_block_start block");
@@ -184,7 +191,7 @@ function streamEvent(value: unknown): ClaudeStreamEvent | undefined {
 	const event = requireRecord(value, "stream_event event");
 	switch (event.type) {
 		case "message_start":
-			return { type: "message_start", usage: usage(record(event.message) ? event.message.usage : undefined) };
+			return { type: "message_start", usage: usage(record(event.message) ? event.message.usage : undefined), ...(modelOf(event.message) ? { model: modelOf(event.message) } : {}) };
 		case "content_block_start":
 			return { type: "content_block_start", index: index(event.index, "content_block_start"), block: blockStart(event.content_block) };
 		case "content_block_delta":
@@ -253,6 +260,7 @@ export function parseClaudeFrame(value: unknown): ClaudeFrame | undefined {
 				blocks: assistantBlocks(message.content),
 				stopReason: typeof message.stop_reason === "string" ? message.stop_reason : undefined,
 				usage: usage(message.usage),
+				...(modelOf(message) ? { model: modelOf(message) } : {}),
 			};
 		}
 		case "result": {

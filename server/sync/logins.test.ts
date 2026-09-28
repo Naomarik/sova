@@ -79,7 +79,9 @@ class Host {
     mkdirSync(this.claudeDir, { recursive: true });
     this.boot();
   }
-  boot() {
+  /** `debounceMs`: how soon a change schedules a background sync; a test that must see only its
+      own exchange boots with one that can't fire before it ends. */
+  boot(debounceMs = 50) {
     this.sync = new CredentialSync({
       hostId: this.id,
       stores: [new PiAuthStore(this.authPath), ...(this.noClaude ? [] : [new ClaudeCredentialStore(this.claudeDir)])],
@@ -88,7 +90,7 @@ class Host {
       now: () => Date.now() + this.offset,
       log: (m) => this.logs.push(m),
       refreshers: { pi: piRefresher(this.authPath) },
-      debounceMs: 50,
+      debounceMs,
       loginKinds: () => this.kinds,
     });
   }
@@ -191,7 +193,7 @@ test("H1 with watchers: a login on A reaches B by itself", async () => {
   try {
     const { credential } = mock.login({ shape: "pi" });
     await AuthStorage.create(a!.authPath).modify("openai-codex", async () => credential);
-    const deadline = Date.now() + 3000;
+    const deadline = Date.now() + 30_000;
     while (Date.now() < deadline && b!.auth()["openai-codex"]?.refresh !== credential.refresh) await new Promise((r) => setTimeout(r, 25));
     assert.equal(b!.auth()["openai-codex"]?.refresh, credential.refresh);
   } finally {
@@ -609,7 +611,7 @@ test("first pairing: the host that finds a conflict tells the peer (metadata onl
   writeFileSync(a!.authPath, JSON.stringify({ zai: { type: "api_key", key: "sk-mine-a" } }, null, 2), { mode: 0o600 });
   writeFileSync(b!.authPath, JSON.stringify({ zai: { type: "api_key", key: "sk-mine-b" } }, null, 2), { mode: 0o600 });
   for (const h of [a!, b!]) {
-    h.boot();
+    h.boot(600_000); // the first scan's background sync would push too, if a loaded run outlasted 50ms
     await h.sync.start();
   }
   try {

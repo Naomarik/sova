@@ -321,3 +321,86 @@ describe("/ws/watch?tail=rest", () => {
     assert.equal(snap.prefetch, true);
   });
 });
+
+const { timelineRows, inputTurns, GAP_MS } = await import("../src/lib/timeline");
+const { inputRows } = await import("../src/lib/inputs");
+const { timelineEntries } = await import("../src/lib/spend");
+const { contextFromItems } = await import("../src/lib/context");
+
+describe("view=light", () => {
+  const PNG = `iVBORw0KGgo${"A".repeat(200_000)}`;
+  /** Every kind the session pane reads: inputs (one with an image), a spawn and its result, a
+      worker's report, a compaction, model/thinking/mode changes, replies with usage. */
+  function paneSession(): string {
+    const path = canonicalPath(join(sessionsDir, "2026-09-28T00-00-00-000Z_light.jsonl"));
+    const lines: unknown[] = [header("light")];
+    let parent: string | null = null;
+    let n = 0;
+    const push = (e: Record<string, unknown>) => {
+      const t = new Date(Date.parse(T) + n++ * 60_000).toISOString();
+      lines.push({ ...e, parentId: parent, timestamp: t });
+      parent = e.id as string;
+    };
+    push({ type: "model_change", id: "mc", provider: "anthropic", modelId: "m1" });
+    push({ type: "thinking_level_change", id: "tl", thinkingLevel: "high" });
+    for (let i = 0; i < 12; i++) {
+      const content: unknown[] = [{ type: "text", text: `ask ${i}\nsecond line ${"q".repeat(3000)}` }];
+      if (i === 2) content.push({ type: "image", data: PNG, mimeType: "image/png" });
+      push({ type: "message", id: `u${i}`, message: { role: "user", content, timestamp: 0 } });
+      if (i === 4) {
+        push({ type: "message", id: `s${i}`, message: { role: "assistant", content: [{ type: "toolCall", id: "sp", name: "agent_spawn", arguments: { name: "scout", task: "t".repeat(5000) } }], stopReason: "toolUse", timestamp: 0 } });
+        push({ type: "message", id: `sr${i}`, message: { role: "toolResult", toolCallId: "sp", toolName: "agent_spawn", content: [{ type: "text", text: "spawned ".repeat(500) }], isError: false, timestamp: 0 } });
+        push({ type: "custom_message", id: "rep", customType: "subagent-complete", content: `### ag_01 (scout) — done · task success\n${"found ".repeat(800)}`, display: true });
+      }
+      if (i === 6) push({ type: "compaction", id: "cp", summary: `summary ${"s".repeat(4000)}`, firstKeptEntryId: "u5", tokensBefore: 123456 });
+      if (i === 8) push({ type: "model_change", id: "mc2", provider: "anthropic", modelId: "m2" });
+      if (i === 9) push({ type: "custom", id: "md", customType: "mode", data: { mode: "plan", active: { mode: "plan" } } });
+      push({ type: "message", id: `c${i}`, message: { role: "assistant", content: [{ type: "toolCall", id: `t${i}`, name: "write", arguments: { path: "/x", content: "w".repeat(8000) } }], stopReason: "toolUse", timestamp: 0 } });
+      push({ type: "message", id: `r${i}`, message: { role: "toolResult", toolCallId: `t${i}`, toolName: "write", content: [{ type: "text", text: "ok ".repeat(2000) }], isError: false, timestamp: 0 } });
+      push({
+        type: "message",
+        id: `a${i}`,
+        message: { role: "assistant", content: [{ type: "thinking", thinking: "h".repeat(3000) }, { type: "text", text: `answer ${i} ${"a".repeat(6000)}` }], provider: "anthropic", model: "m", api: "anthropic-messages", stopReason: "stop", usage: { input: 1000 + i, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 1010 + i }, timestamp: 0 },
+      });
+    }
+    writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    return path;
+  }
+  const path = paneSession();
+  const get = async (q: string) => {
+    const r = await app.request(`/api/transcript?path=${encodeURIComponent(path)}${q}`);
+    assert.equal(r.status, 200);
+    const text = await r.text();
+    return { text, body: JSON.parse(text) as { items: TranscriptItem[]; context: unknown } };
+  };
+
+  test("the pane reads the same timeline, turns, changes and fill from light rows as from the whole branch", async () => {
+    const whole = await get("");
+    const light = await get("&view=light");
+    const w = whole.body.items, l = light.body.items;
+    assert.deepEqual(l.map((it) => [it.id, it.kind]), w.map((it) => [it.id, it.kind]), "every row, in order");
+    // Sanity: the fixture has what it claims, so the equalities below compare something.
+    const rows = timelineRows(w, null, [], GAP_MS, {});
+    for (const k of ["compaction", "spawn", "retire", "change"]) assert.ok(rows.some((r) => r.marker === k), `a ${k} marker`);
+    assert.ok(inputTurns(w).some((t) => t.images === 1 && t.replies > 0 && t.tools > 0));
+    assert.deepEqual(timelineRows(l, null, [], GAP_MS, {}), rows);
+    assert.deepEqual(timelineRows(l, null, [], GAP_MS, { inputsOnly: true }), timelineRows(w, null, [], GAP_MS, { inputsOnly: true }));
+    assert.deepEqual(inputTurns(l), inputTurns(w));
+    assert.deepEqual(inputRows(l), inputRows(w));
+    assert.deepEqual(timelineEntries(l), timelineEntries(w));
+    assert.deepEqual(contextFromItems(l, 1000), contextFromItems(w, 1000));
+    assert.deepEqual(contextFromItems(l.slice(0, l.findIndex((it) => it.id === "cp") + 1), 1000), "compacted");
+    assert.deepEqual(light.body.context, whole.body.context);
+  });
+
+  test("light rows carry no reply text, tool output or image bytes", async () => {
+    const whole = await get("");
+    const light = await get("&view=light");
+    assert.ok(light.text.length * 10 < whole.text.length, `${light.text.length} vs ${whole.text.length}`);
+    assert.ok(!light.text.includes("AAAAAAAAAA"), "no image bytes");
+    for (const [what, s] of <[string, string][]>[["reply", "aaaaaaaaaa"], ["thinking", "hhhhhhhhhh"], ["output", "ok ok ok"], ["report body", "found found"], ["write content", "wwwwwwwwww"], ["spawn task", "tttttttttt"]])
+      assert.ok(!light.text.includes(s), `no ${what}: ${light.body.items.filter((it) => JSON.stringify(it).includes(s)).map((it) => it.id).join(",")}`);
+    const img = light.body.items.find((it) => it.id === "u2");
+    assert.deepEqual(img?.images, [""], "an image stays, without its bytes");
+  });
+});

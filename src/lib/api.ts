@@ -647,8 +647,10 @@ function noteAttachmentsHost(path: string, items: TranscriptItem[]): TranscriptI
   return items;
 }
 
-export const fetchTranscript = (path: string) =>
-  request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}`).then((r) => noteAttachmentsHost(path, r.items));
+/** The whole branch with each row light (`view=light`): what the session pane reads of every row,
+    without the replies' text, tools' output and image bytes that only the thread draws. */
+export const fetchTranscriptLight = (path: string) =>
+  request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}&view=light`).then((r) => noteAttachmentsHost(path, r.items));
 
 /** The transcript plus its context-window fill (null when unknown or stale). */
 export const fetchTranscriptWithContext = (path: string) =>

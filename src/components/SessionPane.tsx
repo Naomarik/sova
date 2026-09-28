@@ -1,6 +1,6 @@
 import { createEffect, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import type { ExplanationInfo, SessionInsight, SessionSkillOffer, SessionSkillUse, SessionSummary, TranscriptItem, WorkerInfo } from "../../shared/protocol";
-import { fetchTranscript } from "../lib/api";
+import { fetchTranscriptLight } from "../lib/api";
 import { formatTokens } from "../lib/context";
 import { explainCaption, explainHref, explainState, newestFirst } from "../lib/explain";
 import { relativeTime } from "../lib/format";
@@ -81,14 +81,16 @@ export function SessionPane(props: {
   onTab?(tab: TabId | null): void;
 }) {
   // The transcript, read once for the whole pane: the Session tab and the Timeline both want
-  // the same rows, and a fetch per tab meant a refetch on every tab switch. It reloads when the
+  // the same rows, and a fetch per tab meant a refetch on every tab switch. Light rows (no reply
+  // text, tool output or image bytes): the pane reads every row but draws none of that, and a jump
+  // from the Timeline mustn't wait behind the whole transcript downloading. It reloads when the
   // session's file moved (App's debounced insight reload) and after a rewind, whoever started it.
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   let run = 0;
   const loadItems = async () => {
     const mine = ++run;
     try {
-      const next = await fetchTranscript(props.path);
+      const next = await fetchTranscriptLight(props.path);
       if (mine === run) setItems(next);
     } catch {
       // The rows on screen stay; the next change to the file retries.

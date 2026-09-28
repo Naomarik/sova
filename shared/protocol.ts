@@ -1809,6 +1809,9 @@ export interface OlderSummary {
  *   entry's row (or the explanation's report row) up to that row, for a jump; the range starts
  *   earlier when that row is a tool result (its call comes with it) or inside a baton wrap-up;
  * - `from=…` alone: from that row to the end (a view refreshing the rows it holds).
+ * `view=light` instead: the whole branch as `{ items, context }`, each row without what only the
+ * thread draws (a reply's text, a tool's output, image bytes, a report's body, the raw entry's
+ * content), for the session pane: every row stays, in order, with its kind, time and counts.
  * `leaf=<entry id>` is the last entry the client's list renders: an id the file holds that is no
  * longer on the active branch (a rewind) answers 409 `{ code: "moved" }`, as does a `before` row
  * that isn't in the list; the client then starts again from a fresh tail. A `from`/`explain`

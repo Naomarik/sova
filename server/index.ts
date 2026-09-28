@@ -9,7 +9,7 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { compress } from "hono/compress";
 import { isDirectLocal } from "./compression";
-import { asksForRows, type RowsQuery, transcriptRows } from "./transcript-rows";
+import { asksForRows, type RowsQuery, transcriptLight, transcriptRows } from "./transcript-rows";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
@@ -756,6 +756,10 @@ app.get("/api/transcript", async (c) => {
     leaf: c.req.query("leaf") || undefined,
     chars: Number(c.req.query("chars")) || undefined,
   };
+  if (c.req.query("view") === "light") {
+    const body = await transcriptLight(path, (branch) => resolveContext(contextForBranch(branch)));
+    return c.body(body, 200, { "Content-Type": "application/json; charset=UTF-8" });
+  }
   if (asksForRows(q)) {
     const r = await transcriptRows(path, q, (branch) => resolveContext(contextForBranch(branch)));
     if (r.status !== 200) return c.json({ error: r.error, code: r.code }, r.status);

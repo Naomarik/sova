@@ -132,5 +132,62 @@ export async function transcriptRows(
   return { status: 200, body: `{"items":[${rows.json.slice(from, end).join(",")}],"older":${from},"olderSummary":${summary}${ctx}}` };
 }
 
+// ---- The light view: `view=light` ----------------------------------------------------------------
+
+/** Rows whose text a pane reads: an input's preview and title, a change row's "Model: x", a tool
+    call's name. Every other row's text is only drawn by the thread. */
+const LIGHT_TEXT = new Set<TranscriptItem["kind"]>(["user", "wake", "info", "tool-call"]);
+/** A tool call's arguments are kept only as their short strings (a spawn's name). */
+const LIGHT_ARG_CHARS = 200;
+/** A custom entry's data is kept when this small (a mode entry), else dropped. */
+const LIGHT_DATA_CHARS = 2000;
+
+const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
+
+function lightRaw(raw: unknown, it: TranscriptItem): unknown {
+  if (!isRecord(raw)) return raw;
+  const out: Record<string, unknown> = {};
+  for (const k of ["type", "id", "parentId", "timestamp", "customType", "tokensBefore"]) if (raw[k] !== undefined) out[k] = raw[k];
+  if (typeof raw.summary === "string") out.summary = raw.summary.slice(0, 400);
+  if (raw.data !== undefined && JSON.stringify(raw.data).length <= LIGHT_DATA_CHARS) out.data = raw.data;
+  const m = raw.message;
+  if (isRecord(m)) {
+    const msg: Record<string, unknown> = {};
+    for (const k of ["role", "usage", "stopReason", "provider", "model", "customType", "toolCallId", "toolName", "isError"]) if (m[k] !== undefined) msg[k] = m[k];
+    if (it.kind === "tool-call" && Array.isArray(m.content)) {
+      const call = m.content.find((c) => isRecord(c) && c.type === "toolCall" && c.id === it.toolCallId);
+      if (isRecord(call)) {
+        const args = isRecord(call.arguments)
+          ? Object.fromEntries(Object.entries(call.arguments).filter(([, v]) => typeof v === "string" && v.length <= LIGHT_ARG_CHARS))
+          : undefined;
+        msg.content = [{ type: "toolCall", id: call.id, name: call.name, arguments: args }];
+      }
+    }
+    out.message = msg;
+  }
+  return out;
+}
+
+/**
+ * A row as the session pane reads it (the Session tab's changes and fill, the Timeline's inputs,
+ * turns, markers and chapters), without what only the thread draws: a reply's text, a tool's
+ * output, image bytes (each image stays, as ""), a report's body and preview, the raw entry's
+ * content. Every row stays, in order, so a turn's reply and tool counts and its time are the same
+ * as on the whole branch.
+ */
+export function lightRow(it: TranscriptItem): TranscriptItem {
+  const out: TranscriptItem = { ...it, raw: lightRaw(it.raw, it) };
+  if (!LIGHT_TEXT.has(it.kind)) delete out.text;
+  if (it.images) out.images = it.images.map(() => "");
+  if (it.report) out.report = { ...it.report, body: "", preview: "" };
+  return out;
+}
+
+/** The whole branch, each row light (`view=light`), with the fill: `{ items, context }`. */
+export async function transcriptLight(path: string, context: (branch: Entry[]) => Promise<ContextInfo | null>): Promise<string> {
+  const rows = await rowsOf(path);
+  return JSON.stringify({ items: rows.items.map(lightRow), context: await context(rows.branch) });
+}
+
 /** Forget every parsed file (tests). */
 export const clearRowsCache = (): void => cache.clear();

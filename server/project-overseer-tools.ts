@@ -400,8 +400,8 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
     {
       name: "sova_project",
       label: "Project",
-      description: "The project at a glance: your autonomy, the roster (name, role, decision areas), gathering sessions, decisions by state, open conflicts, the spec, your limits (this message's and today's allowances, looks, at once, tokens) and what is held for a later look.",
-      promptSnippet: "the project at a glance (roster, gatherings, decisions, conflicts, spec, budget)",
+      description: "The project at a glance: your autonomy, the roster (name, role, decision areas), gathering sessions, decisions by state, open conflicts, the spec, your limits (this message's and today's allowances, looks, at once) and what is held for a later look.",
+      promptSnippet: "the project at a glance (roster, gatherings, decisions, conflicts, spec, limits)",
       parameters: obj({}),
       execute: read(async () => {
         const project = host.project();

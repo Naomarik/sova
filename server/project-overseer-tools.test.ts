@@ -507,6 +507,7 @@ describe("two allowances: each message you send, and on its own each day", () =>
     assert.match(out, /Today on your own: 1 gathering sessions started \(no limit\)/);
     assert.match(out, /This operator message: 0 of 3 gathering sessions started/);
     assert.doesNotMatch(out, /Coding tokens|token budget|\$\d|cost/i);
+    for (const t of f.tools) assert.doesNotMatch(`${t.description} ${t.promptSnippet ?? ""}`, /\btokens?\b|budget|\$\d/i, t.name);
     assert.match(out, /Looks on your own: at most 12 a day/);
   });
 });

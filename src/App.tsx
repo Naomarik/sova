@@ -47,7 +47,7 @@ import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
 import { closeSettings, openSettings, settingsOpenAt } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
-import { activeTab, home, setActiveTab, setHome, toast } from "./lib/ui-state";
+import { activeTab, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
 import { sessionWorking, type UsageTotalView } from "./lib/workers";
 import { sourceBlocked } from "./lib/fanout";
@@ -691,6 +691,8 @@ export function App() {
       onHash();
     });
   };
+  setAdopter(adoptCreated);
+  onCleanup(() => setAdopter(null));
 
   /**
    * An Archive/Unarchive landed (the chat's own gesture, the pane's). An archived

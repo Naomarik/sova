@@ -20,6 +20,7 @@ import {
   ApiError,
   codeProjectItem,
   getProjectOverseer,
+  getSessionSummaryById,
   listModels,
   mergeCodingWorktree,
   openProjectOverseer,
@@ -39,7 +40,7 @@ import { hostLabel, orgHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll } from "../lib/poll";
 import { actionLine, allowanceLine, gapArea, gapWords, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
-import { announce, home, toast } from "../lib/ui-state";
+import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon } from "./ui";
 
@@ -644,7 +645,9 @@ function CodingSessions(props: {
       }
       setStartError(null);
       toast(r.worktree ? `Coding session started on ${r.worktree.branch}.` : "Coding session started in the project root.");
-      location.hash = sessionHref(r.path);
+      // Empty until the operator writes, so the list hides it: the app adopts it, as New Session's.
+      const s = await getSessionSummaryById(r.sessionId).catch(() => null);
+      if (!s || !adoptSession(s)) location.hash = sessionHref(r.path);
     } catch (x) {
       setStartError(unchangedError(errText(x), "No session was started."));
     } finally {
@@ -692,7 +695,7 @@ function CodingSessions(props: {
                 <span class="list-main">
                   <Show when={row.path} fallback={<span class="list-title">{row.title || UNTITLED_CODING}</span>}>
                     {(path) => (
-                      <a class="list-title" href={sessionHref(path())}>
+                      <a class="list-title" href={sessionHref(path())} onClick={(e) => !row.title && openUntitled(e, row.sessionId)}>
                         {row.title || UNTITLED_CODING}
                       </a>
                     )}
@@ -787,6 +790,17 @@ function CodingSessions(props: {
 
 /** A coding session nobody has written in yet (New Coding Session, before its first message). */
 const UNTITLED_CODING = "Untitled coding session";
+
+/** Opens an untitled coding session: the list hides an empty one, so the app adopts it (else the plain link). */
+function openUntitled(e: MouseEvent, sessionId: string): void {
+  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  const href = (e.currentTarget as HTMLAnchorElement).getAttribute("href") ?? "";
+  void getSessionSummaryById(sessionId).then(
+    (s) => adoptSession(s) || (location.hash = href),
+    () => (location.hash = href),
+  );
+}
 
 function Activity(props: { actions: OverseerAction[] | undefined; error: string | null }) {
   const OUTCOME = {

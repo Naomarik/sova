@@ -8,7 +8,8 @@ the operator), and the operator promotes the reconciled ones into the project's 
 a few at a time.
 
 Vocabulary: **decision** (one `record_decision` call), **area** (what a decision is about:
-"payroll export"), **conflict** (two live decisions of one area that contradict), **promotion**
+"payroll export"), **owner area** (which of the roster's decision areas decides it, or `none`:
+§app.requirements/owner-area), **conflict** (two live decisions of one area that contradict), **promotion**
 (a reconciled decision becoming current documentation of the client project).
 
 It lives on the project, under `/api/orgs/:id/projects/:pid/` (the route list is in
@@ -19,7 +20,8 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 ## §app.requirements/decisions — The decision index
 
 - The source is the transcripts: every `sova-baton-decision` entry of the project's baton
-  sessions (`{area, statement, quote, by}`), read with Sova's own line parser. The index adds only
+  sessions (`{area, ownerArea, statement, quote, by}`; `ownerArea` is absent from entries recorded
+  before owner areas), read with Sova's own line parser. The index adds only
   what the reconciler decided about each one and lives in the org's workspace repo at
   `projects/<projectId>/decisions.json` (conflicts beside it in `conflicts.json`), committed with the
   org's workspace commits. Listing the decisions syncs the index first; syncing never drops a row.
@@ -108,13 +110,18 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 
 - **Who owns an area.** The active roster people whose `decides` has the area's key own it. When
   no active person has it, the project's main stakeholder (§app.organizations/stakeholder) owns
-  it; with no stakeholder either, nobody does.
+  it; with no stakeholder either, nobody does. The area is the decision's owner area
+  (§app.requirements/owner-area); `none` is owned by the main stakeholder, else nobody. A decision
+  recorded before owner areas has none, and its topic area's key is matched instead, exactly as
+  before.
 - A conflict goes to the area's owner, preferring one who wrote neither side; to the main
   stakeholder when they own it, even when they wrote one side or both (a person who contradicts
   their own earlier decision settles it); with no owner, to the operator. Any two live decisions of
-  one area are compared, whoever wrote them, one author's included. The conflict's reason says
-  which: "{name} decides {area}.", "{name} is this project's main stakeholder.", "Nobody on the
-  roster decides {area}."
+  one area are compared, whoever wrote them, one author's included. A conflict is routed by the
+  owner area its sides name; when they name two different ones, it goes to the operator. The
+  conflict's reason says which: "{name} decides {area}.", "{name} is this project's main
+  stakeholder.", "Nobody on the roster decides {area}.", "The two decisions name different owner
+  areas: {area} and {area}."
 - **Operator-set say.** A `decides` entry counts only when the operator set it: the change that
   introduced it (per `roster-history.jsonl`) is the operator's, or a referral's for a person the
   operator approved afterwards (approval is the review step; a project overseer's approval does
@@ -129,13 +136,56 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   also falls back to what its runtime runs, as in §app.project-overseer/tools "Models"), whoever
   routed it: the overseer's
   reconcile, the operator's Reconcile or re-route, or the run the server starts by itself when a decision
-  is recorded in a conflict's settle session (§app.requirements/reconciler "When"). Its goal carries both statements with their authors and quotes, and its
+  is recorded in a conflict's settle session (§app.requirements/reconciler "When"). Its goal carries both statements with their authors and quotes, and the
+  area and owner area to record the answer under (the owner area the sides name, else the model picks one), and its
   first question names both, each with its author. Routed to the operator, the baton is held by the
   operator from the start, so it is a Needs-you item; routed to a person, no link is minted at
   start (nobody could be shown it) and Needs-you asks the operator to send one. A fresh baton is
   listed and in Needs-you before anyone has written in it.
 - The operator can re-route an open conflict to anyone active (or themselves); the earlier session
   is closed, so two people are never asked the same thing.
+
+## §app.requirements/owner-area — Who decides a decision: its owner area
+
+- **Two fields.** A decision's `area` is its topic, in the words it was recorded with ("site
+  structure / pages"): it files the decision in the spec (`§requirements/<areaKey>`), and
+  contradictions are looked for within it, as before. Its **owner area** (`ownerArea`) says who
+  decides it: one of the roster's decision areas, as the roster spells it ("website"), or `none`.
+  Authority reads only the owner area: `authorOwnsArea`, promotion's out-of-area rule and conflict
+  routing (§app.requirements/routing, /promotion).
+- **Picked when it is recorded.** `record_decision` requires it (§app.baton/hand-off). The choices
+  are the decision areas of the roster's active people, plus `none`; the tool's schema lists them,
+  refreshed at the start of a run whenever the roster changed them. The call is checked against
+  the roster as it is then: another value is refused, and the refusal names every choice
+  (`"site" is not an owner area. Use one of: "website", "branding" or "none".`). A choice with the
+  same area key as a roster area (it differs only in case, spacing or punctuation) is that area, and is stored as the roster
+  spells it. The model sees the choices, with every active person's name and job title
+  (§app.baton/goal-and-loadout).
+- **`none`**: no decision area on the roster covers it. The project's main stakeholder decides it
+  (§app.organizations/stakeholder), else nobody: the operator.
+- **Older decisions.** A decision recorded before owner areas has no `ownerArea` and keeps today's
+  rule: its topic area's key is matched against the roster's `decides`. Nothing is backfilled.
+- **A conflict's owner area** is the one its sides name (one side's, when only the other was
+  recorded before owner areas), kept on the conflict as `ownerArea`. Two different owner areas
+  route it to the operator; no owner area at all routes it by its topic area, as before. A
+  settle session's goal names the owner area to record the answer under, and a decision the
+  operator states to settle a conflict takes it.
+- **The operator changes it.** In the project page's Decisions list, each live decision has an
+  **Owner area** select: the roster's decision areas and **None**, and **Not set** for a decision
+  recorded before owner areas, until someone picks one. A change sends `PATCH
+  …/decisions/:did {ownerArea}` (a roster decision area or `none`, else 400 naming the choices; a
+  superseded decision is refused, 409). The index row keeps the new `ownerArea` and appends
+  `{at, by, name, from, to}` to `ownerAreaHistory` (`by` is `operator`; `from` is null for a
+  decision that had none), and under the select the page says "Changed by {name} {time}.". The
+  decision's `authorOwnsArea` and state are recomputed at once. When it is a side of an open
+  conflict, that conflict is routed again by its new owner area; when that sends it to someone
+  else, the settle session already asking is closed and a new one starts, as a re-route does, and
+  the reason is the new route's.
+- **Never shown to people.** The owner area is the operator's: the share page never shows it
+  (§app.baton/outsider-view shows a decision's topic area and statement), and the model is told
+  never to show the list or tell anyone which areas or job title a person has.
+- `DecisionsInfo.ownerAreas` carries the choices for the page; each `DecisionRow` carries its
+  `ownerArea` (absent: recorded before owner areas).
 
 ## §app.requirements/frozen-spec — Frozen
 
@@ -149,9 +199,10 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 
 - The operator selects drafted decisions (or a project overseer allowed to promote does);
   anything else is refused with its reason.
-- **Out of area.** A decision whose author may not decide its area (`authorOwnsArea` false: not
-  the operator, not an owner of the area as §app.requirements/routing defines one, with an
-  operator-set say, and not the main stakeholder of an area no one owns) is promoted
+- **Out of area.** A decision whose author may not decide it (`authorOwnsArea` false: not
+  the operator, not an owner of its owner area, or of its topic area for a decision recorded before
+  owner areas, as §app.requirements/routing defines one, with an operator-set say, and not the
+  main stakeholder of an area no one owns or of a decision whose owner area is `none`) is promoted
   only when the operator names it: `promote {ids}` by id. **Select All Ready** (`bulk: true`) and
   a project overseer's promotion refuse it with "outside <name>'s decision area: promote it
   explicitly by id", and promote the rest. A promotion builds a fresh draft holding exactly the

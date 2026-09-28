@@ -3617,7 +3617,7 @@
     "§app.baton/goal-and-loadout": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/baton.ts",
         "server/baton-loadout.ts",
@@ -5903,6 +5903,34 @@
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/mode/align.ts",
         "pi-config/extensions/mode/index.ts"
+      ]
+    },
+    "§app.requirements/owner-area": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.requirements/routing",
+        "§app.requirements/promotion",
+        "§app.baton/hand-off",
+        "§app.organizations/roster",
+        "§app.organizations/stakeholder"
+      ],
+      "code": [
+        "shared/decisions.ts",
+        "shared/baton.ts",
+        "server/decisions.ts",
+        "server/reconcile.ts",
+        "server/decisions-routes.ts",
+        "server/baton-loadout.ts",
+        "server/baton-prompt.md",
+        "src/components/ProjectPage.tsx",
+        "src/lib/api.ts",
+        "src/projects.css",
+        "server/baton-owner-area.test.ts",
+        "server/reconcile.test.ts",
+        "server/decisions-routes.test.ts",
+        "server/baton-handoff.test.ts"
       ]
     }
   },

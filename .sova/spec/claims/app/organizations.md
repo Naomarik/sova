@@ -462,7 +462,8 @@ Organizations region's own Needs you, never the global one.
 - A person has `id` (`p_` + 8 characters), `name`, `status` (`active`, `proposed` or `left`),
   `contact` (`email`, `phone`, `whatsapp`, `other`; any subset), `role`, `decides` (decision areas),
   `skills`, `competence` (per skill: level 1–5 and the number of sessions observed), `language`
-  (BCP-47) and `voice` (how to talk to them).
+  (BCP-47) and `voice` (how to talk to them). The active people's `decides` entries are the owner
+  areas a recorded decision picks from (§app.requirements/owner-area).
 - Caps: `name` ≤ 80, `role` and `voice` ≤ 300 characters; `decides` and `skills` ≤ 12 items of
   ≤ 40 characters each. Over a cap is refused (400), never cut. A `decides` entry with no letter
   (`*`, `-`, `2024`: area keys keep letters only) names no area and is refused: "“{entry}” names no decision area: use words, like
@@ -632,7 +633,8 @@ Organizations region's own Needs you, never the global one.
 ## §app.organizations/stakeholder — A project's main stakeholder
 
 - **What it is.** One active roster person per project who decides every area of that project that
-  no active roster person decides by name (§app.requirements/routing): promotion (their decisions
+  no active roster person decides by name, and every decision whose owner area is `none`
+  (§app.requirements/routing, /owner-area): promotion (their decisions
   there are in their area, §app.requirements/promotion) and conflicts there go to them. An area
   someone decides by name stays theirs. It is stored on the project (`projects.json`
   `stakeholder`), so a person can be the main stakeholder of one project and not another, and it

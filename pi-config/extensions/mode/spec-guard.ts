@@ -518,17 +518,80 @@ export function commandRoot(command: string): string | undefined {
 
 /**
  * The foreign § the current spec at `root` changed from `base` to `head` (the work tree without it):
- * `sova-spec.mjs foreign`. undefined when it can't say (no tool, a bad rev, no spec).
+ * `sova-spec.mjs foreign`; with `spec` (a draft's `spec/` dir, relative to the root) the draft is the head.
+ * undefined when it can't say (no tool, a bad rev, no spec).
  */
-export async function foreignBetween(root: string, base: string, head: string | undefined, core: string, io: SpecIO = localIO, signal?: AbortSignal): Promise<string[] | undefined> {
+export async function foreignBetween(
+	root: string,
+	base: string,
+	head: string | undefined,
+	core: string,
+	io: SpecIO = localIO,
+	signal?: AbortSignal,
+	spec?: string,
+): Promise<string[] | undefined> {
 	const tool = join(core, "sova-spec.mjs");
 	if (!(await io.exists(tool))) return undefined;
-	const args = [tool, "foreign", "--base", base, ...(head ? ["--head", head] : []), "--root", root, "--json"];
+	const args = [tool, "foreign", "--base", base, ...(head ? ["--head", head] : spec ? ["--spec", spec] : []), "--root", root, "--json"];
 	const r = await io.exec("node", args, { cwd: root, timeout: TOOL_TIMEOUT_MS, signal });
 	try {
 		const out = JSON.parse(r.stdout) as { exit?: unknown; foreign?: unknown };
 		if (out.exit === 2 || !Array.isArray(out.foreign)) return undefined;
 		return out.foreign.filter((id): id is string => typeof id === "string");
+	} catch {
+		return undefined;
+	}
+}
+
+/** Newest mtime under a directory, 0 when empty or unreadable. */
+async function newest(dir: string, io: SpecIO): Promise<number> {
+	let names: string[];
+	try {
+		names = await io.readDir(dir);
+	} catch {
+		return (await io.mtime(dir)) ?? 0;
+	}
+	let max = 0;
+	for (const name of names) max = Math.max(max, await newest(join(dir, name), io));
+	return max;
+}
+
+/**
+ * Each draft's newest `spec/` file mtime. Drafts are ignored by Git (.sova/spec/.gitignore), so a
+ * git-status look never shows them: two stamps taken around a run tell which drafts it edited.
+ */
+export async function draftStamps(root: string, io: SpecIO = localIO): Promise<Record<string, number>> {
+	const stamps: Record<string, number> = {};
+	let names: string[];
+	try {
+		names = await io.readDir(join(root, SPEC_REL, "drafts"));
+	} catch {
+		return stamps;
+	}
+	for (const name of names) {
+		const spec = join(root, SPEC_REL, "drafts", name, "spec");
+		if (await io.exists(spec)) stamps[name] = await newest(spec, io);
+	}
+	return stamps;
+}
+
+/** Drafts new or edited between two stamps. */
+export function draftsTouched(before: Record<string, number> | undefined, after: Record<string, number>): string[] {
+	return Object.keys(after)
+		.filter((name) => before?.[name] !== after[name])
+		.sort();
+}
+
+/**
+ * The foreign § a draft changes against the commit it was made from (draft.json `base.commit`, so what
+ * current changed since isn't counted). undefined when the draft or its base can't be read.
+ */
+export async function draftForeign(root: string, name: string, core: string, io: SpecIO = localIO, signal?: AbortSignal): Promise<string[] | undefined> {
+	try {
+		const draft = JSON.parse(await io.readFile(join(root, SPEC_REL, "drafts", name, "draft.json"))) as { base?: { commit?: unknown } };
+		const base = draft.base?.commit;
+		if (typeof base !== "string" || !base) return undefined;
+		return await foreignBetween(root, base, undefined, core, io, signal, `${SPEC_REL}/drafts/${name}/spec`);
 	} catch {
 		return undefined;
 	}

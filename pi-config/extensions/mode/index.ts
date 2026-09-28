@@ -84,6 +84,9 @@ import {
 	checkAlsoChanges,
 	commandRoot,
 	describeProblem,
+	draftForeign,
+	draftStamps,
+	draftsTouched,
 	findSpecRoot,
 	foreignBetween,
 	gitCommits,
@@ -951,6 +954,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	/** What this run did, for the line check. */
 	let specRun: {
 		start?: GitView;
+		/** Each draft's newest spec/ mtime at the run's start (drafts are ignored by Git). */
+		drafts?: Record<string, number>;
 		changed: boolean;
 		merged: boolean;
 		promoted: boolean;
@@ -1009,12 +1014,16 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		if (text) return { content: [...event.content, { type: "text" as const, text }] };
 	});
 
-	/** The foreign § this run landed, from Git: merges (worktrees), the session's tree and each promoted root. */
-	async function specRunForeign(cwd: string): Promise<string[]> {
+	/**
+	 * The foreign § this run landed, from Git: merges (worktrees), the session's tree and each promoted
+	 * root; plus those each draft the run edited changes against its own base.
+	 */
+	async function specRunForeign(cwd: string, drafts: readonly string[]): Promise<string[]> {
 		const ids = new Set(specRun.mergeForeign);
 		const bases = new Map(specRun.roots);
 		const root = await findSpecRoot(cwd);
 		if (root && specRun.start?.head && !bases.has(root)) bases.set(root, specRun.start.head);
+		if (root) for (const name of drafts) for (const id of (await draftForeign(root, name, SPEC_CORE)) ?? []) ids.add(id);
 		// Against the work tree: a promotion not committed yet lands all the same.
 		for (const [dir, base] of bases) for (const id of (await foreignBetween(dir, base, undefined, SPEC_CORE)) ?? []) ids.add(id);
 		return [...ids].sort();
@@ -1024,8 +1033,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		if (!specOn() || process.env.PI_SPEC_CHECK === "0" || event.outcome !== "completed") return;
 		try {
 			const end = await gitView(ctx.cwd);
-			if (!specRun.changed && !viewChanged(specRun.start, end)) return;
-			const foreign = await specRunForeign(ctx.cwd);
+			const root = await findSpecRoot(ctx.cwd);
+			const drafts = root ? draftsTouched(specRun.drafts, await draftStamps(root)) : [];
+			if (!specRun.changed && !viewChanged(specRun.start, end) && !drafts.length) return;
+			const foreign = await specRunForeign(ctx.cwd, drafts);
 			const check = checkAlsoChanges(lastReplyText, { required: true, foreign });
 			if (check.ok) return;
 			const blocking = specRun.merged || specRun.promoted;
@@ -1112,6 +1123,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			resetSpecRun();
 			if (hasMinor(active, "spec") && remoteTarget === undefined) {
 				specRun.start = await gitView(ctx.cwd);
+				const root = await findSpecRoot(ctx.cwd);
+				if (root) specRun.drafts = await draftStamps(root);
 				if (process.env.PI_SPEC_CENSUS_HOOK !== "0") await specCensus.prime(ctx.cwd);
 			}
 			fixHead();

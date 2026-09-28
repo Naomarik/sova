@@ -13,6 +13,9 @@ import {
 	coreDir,
 	DIGEST_TAG,
 	digest,
+	draftForeign,
+	draftStamps,
+	draftsTouched,
 	draftsCreated,
 	foreignBetween,
 	gitCommits,
@@ -178,6 +181,7 @@ test("CensusHook on a real Git tree: bash-style writes are caught by the git del
 		put(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell.\n");
 		put("src/App.tsx", "1\n");
 		put("README.md", "r\n");
+		put(".sova/spec/.gitignore", "/drafts/\n");
 		git("init", "-q");
 		git("add", "-A");
 		git("commit", "-qm", "base");
@@ -202,6 +206,18 @@ test("CensusHook on a real Git tree: bash-style writes are caught by the git del
 		put("src/later.ts", "y\n");
 		git("add", "-A");
 		git("commit", "-qm", "more");
+		// A draft (ignored by Git): its edits show only in the stamps; draftForeign names the foreign § it edits.
+		const draft = spawnSync(process.execPath, [join(CORE, "sova-spec-draft.mjs"), "new", "feat", "--root", project, "--write", "--json"], { encoding: "utf8" });
+		assert.equal(draft.status, 0, draft.stdout + draft.stderr);
+		const before = await draftStamps(project);
+		assert.deepEqual(Object.keys(before), ["feat"]);
+		assert.deepEqual(await draftForeign(project, "feat", CORE), [], "a fresh copy changes nothing");
+		await new Promise((r) => setTimeout(r, 20));
+		put(".sova/spec/drafts/feat/spec/claims/app/shell.md", "# §app/shell\n\nShell, now blue.\n");
+		assert.deepEqual(draftsTouched(before, await draftStamps(project)), ["feat"]);
+		assert.deepEqual(draftsTouched(before, before), []);
+		assert.deepEqual(await draftForeign(project, "feat", CORE), ["§app/shell"]);
+		assert.equal(await draftForeign(project, "missing", CORE), undefined);
 		const committed = await after();
 		assert.ok(committed.text?.includes("src/later.ts"), `a file created and committed in one call still counts: ${JSON.stringify(committed)}`);
 	} finally {

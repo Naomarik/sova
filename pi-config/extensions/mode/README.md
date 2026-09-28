@@ -165,7 +165,10 @@ writer**).
     event, or the tree differing from the run's start), the last line is
     checked against the foreign § computed from Git: the worktrees merge
     event's list, plus `sova-spec.mjs foreign --base <HEAD at the run's start>`
-    for the session's tree and for each root a `promote --write` named. A run
+    for the session's tree and for each root a `promote --write` named, plus
+    `foreign --spec <draft>` against its `base.commit` for each draft the run
+    edited (drafts are ignored by Git, so their `spec/` mtimes are stamped at
+    the run's start; a draft edit alone makes the line required). A run
     that merged with the worktree tool or ran `promote --write` gets one
     hidden `spec-check` message naming the list and one more request, never a
     second; any other run gets a warning. A line `Spec check override: <why>`

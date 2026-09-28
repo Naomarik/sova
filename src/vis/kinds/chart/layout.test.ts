@@ -21,6 +21,8 @@ const SAMPLES: Record<string, string> = {
   lineOne: "type: line\nW1 1200\nW2 1350\nW3 1310\nW4 1580\nW5 1720\nW6 1690\nW7 2010\nW8 2240\nmark W7 ok \"launch\"",
   many: `type: line\n${Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, "0")}:00 ${10 + Math.sin(h / 4) * 6}`).join("\n")}\nmark 14:00 "peak"`,
   scatter: 'type: scatter\n"tiny" 0.5 40\n"small" 3 85\n"medium" 8 140\n"large" 34 390\n"xl" 70 820\n"xl-quant" 70 460\nmark "xl-quant" ok "quantised"',
+  web: "type: line\nseries: web, phone\nW1 120 80\nW2 130 110\nW3 135 140\nW4 140 190\nW5 150 230\nmark W4 \"phone passes web\"",
+  editor: 'type: scatter\n"home" 120 300\n"settings" 80 220\n"chat" 300 700\n"editor" 450 1600\n"login" 40 150\nmark editor error "monaco"',
   scatterLog: 'type: scatter\nscale: log\n"n=10" 10 33\n"n=100" 100 664\n"n=1k" 1000 9966\n"n=10k" 10000 132877\nmark "n=10k" "n log n"',
 };
 const WIDTHS = [260, 330, 560, 720];
@@ -110,4 +112,14 @@ test("chart layout: a mark gets a band (a ring for points) and a badge; stacks a
 
 test("chart layout: same input, same picture", () => {
   for (const body of Object.values(SAMPLES)) assert.deepEqual(JSON.stringify(layoutChart(chart(body), 480, estimateWidth)), JSON.stringify(layoutChart(chart(body), 480, estimateWidth)));
+});
+
+test("chart layout: a marked line row rings every series; a scatter keeps headroom above its highest point", () => {
+  const g = layoutChart(chart(SAMPLES.web!), 330, estimateWidth);
+  assert.deepEqual(g.rings.map((r) => r.row), [3, 3]);
+  const b = g.badges[0]!;
+  assert.ok(b.y + 9 <= g.plot.y0, "the badge sits above the plot, off the lines");
+  const s = layoutChart(chart(SAMPLES.editor!), 560, estimateWidth);
+  const top = Math.min(...s.points.map((p) => p.y));
+  assert.ok(top - s.plot.y0 >= 8, `highest point ${top - s.plot.y0}px below the frame`);
 });

@@ -113,7 +113,8 @@ function layoutColumns(spec: ChartSpec, W: number, measure: Measure, mode: "colu
   const n = stacked ? 1 : seriesCount(spec);
   const rows = spec.rows.length;
   const plotH = Math.round(Math.min(240, Math.max(140, W * 0.42)));
-  const top = 18 + (marks.size ? 4 : 0);
+  // Room above the plot for value labels, and for badges where a line chart puts them.
+  const top = 18 + (marks.size ? 4 : 0) + (mode === "line" && seriesCount(spec) > 1 && [...marks.values()].some((e) => e.n) ? 6 : 0);
   // Tick labels decide the left margin, so measure them on a provisional axis first.
   const probe = valueAxis(spec, top + plotH, top, stacked, mode === "column");
   const left = Math.ceil(Math.max(...probe.ticks.map((t) => measure(probe.fmt(t), FONT.tick)))) + 10;
@@ -170,8 +171,15 @@ function layoutColumns(spec: ChartSpec, W: number, measure: Measure, mode: "colu
         const text = valueLabel(sum(row.values));
         if (valueFits(text)) out.values.push({ row: i, x: cx(i), y: topY - 7, text, anchor: "middle" });
       }
+      // The badge sits right of the row's top value label (or of the bars), clear of both.
       const e = marks.get(i);
-      if (e?.n) out.badges.push({ row: i, x: Math.min(W - BADGE_R, cx(i) + (bw * n) / 2 + 2), y: Math.max(BADGE_R, Math.min(topY, zero) - 14) });
+      if (e?.n) {
+        const labels = out.values.filter((v) => v.row === i && !v.inside).map((v) => textBox(v, measure));
+        const right = Math.max(cx(i) + (bw * n) / 2, ...labels.map((b) => b.x + b.w));
+        const y = Math.max(BADGE_R, Math.min(topY, zero) - (labels.length ? 7 : 12));
+        const x = right + 3 + BADGE_R;
+        out.badges.push(x <= W - BADGE_R ? { row: i, x, y } : { row: i, x: Math.min(W - BADGE_R, cx(i) + (bw * n) / 2), y: Math.max(BADGE_R, y - 18) });
+      }
     });
   } else {
     // Lines: a path per series, broken at gaps; single series label their points when they fit.
@@ -200,17 +208,19 @@ function layoutColumns(spec: ChartSpec, W: number, measure: Measure, mode: "colu
       const labelled = nSeries === 1 && (labelAll || !!e);
       // A ring pushes its point's label up; the badge sits right of the label, or of the ring.
       if (labelled) out.values.push({ row: p.row, x: p.x, y: p.y - (e ? 16 : 11), text, anchor: "middle" });
-      if (e && (nSeries === 1 || p.series === firstSeriesAt(spec, p.row))) {
-        out.rings.push({ row: p.row, x: p.x, y: p.y });
+      if (e) out.rings.push({ row: p.row, x: p.x, y: p.y });
+      // One series: the badge follows its point's label. Several: it goes to the band's top corner, off the lines.
+      if (e?.n && nSeries === 1) {
         const bx = labelled ? p.x + measure(text, FONT.value) / 2 + 4 + BADGE_R : p.x + 13;
-        if (e.n) out.badges.push({ row: p.row, x: Math.min(W - BADGE_R, bx), y: Math.max(BADGE_R, labelled ? p.y - 16 : p.y - 13) });
+        out.badges.push({ row: p.row, x: Math.min(W - BADGE_R, bx), y: Math.max(BADGE_R, labelled ? p.y - 16 : p.y - 13) });
       }
     }
+    if (nSeries > 1)
+      for (const b of out.bands) if (marks.get(b.row)?.n) out.badges.push({ row: b.row, x: Math.min(W - BADGE_R, b.x + b.w / 2 + 12), y: y0 - 13 });
   }
   return out;
 }
 
-const firstSeriesAt = (spec: ChartSpec, row: number) => spec.rows[row]!.values.findIndex((v) => v !== null);
 
 function layoutHBars(spec: ChartSpec, W: number, measure: Measure): ChartLayout {
   const out = emptyLayout(W, "hbar");
@@ -322,11 +332,12 @@ function layoutScatter(spec: ChartSpec, W: number, measure: Measure): ChartLayou
     const text = spec.rows[p.row]!.label;
     const w = measure(text, FONT.point);
     const h = 13;
+    const gap = marks.has(p.row) ? 12 : 7; // clear of a mark's ring
     const tries: [number, number, "start" | "end" | "middle"][] = [
-      [p.x + 7, p.y, "start"],
-      [p.x - 7, p.y, "end"],
-      [p.x, p.y - 12, "middle"],
-      [p.x, p.y + 12, "middle"],
+      [p.x + gap, p.y, "start"],
+      [p.x - gap, p.y, "end"],
+      [p.x, p.y - gap - 5, "middle"],
+      [p.x, p.y + gap + 5, "middle"],
     ];
     for (const [tx, ty, anchor] of tries) {
       const box: Rect = { x: anchor === "start" ? tx : anchor === "end" ? tx - w : tx - w / 2, y: ty - h / 2, w, h };

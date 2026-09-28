@@ -108,6 +108,7 @@
 .align-q-summary > .align-q-topic,
 .align-q-summary > .align-q-outcome { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .align-q-outcome { color: var(--color-ink); }
+.align-q-summary > .align-q-end { display: inline-flex; align-items: center; margin-left: auto; padding-left: var(--space-2); }
 /* The topic names the question: the outcome gives up more of the line. */
 .align-q-summary > .align-q-outcome { flex-shrink: 2; }
 .align-q-fold[open] > .align-q-summary { flex-wrap: wrap; }

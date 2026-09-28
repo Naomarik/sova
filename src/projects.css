@@ -110,8 +110,8 @@
 .cost-table-wrap { margin: 0; }
 .cost-table td .cost-tokens { display: block; color: var(--color-ink-muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .cost-table td .cost-unpriced { color: var(--color-ink-muted); }
-/* A row's name is its header cell, but reads as a cell: no header fill, regular weight, and it wraps. */
-.md .cost-table tbody th[scope="row"] { background: none; font-weight: var(--fw-regular); white-space: normal; }
+/* A row's name is its header cell, but reads as a cell: no header fill, medium weight, and it wraps. */
+.md .cost-table tbody th[scope="row"] { background: none; font-weight: var(--fw-medium); white-space: normal; }
 .md .cost-table tbody tr:last-child th { border-bottom: 0; }
 .cost-table tfoot th, .cost-table tfoot td { background: var(--color-sunken); font-weight: var(--fw-semibold); border-bottom: 0; }
 .cost-table tfoot td .cost-tokens { font-weight: var(--fw-regular); }
@@ -149,5 +149,5 @@
     font-weight: var(--fw-regular);
     color: var(--color-ink-muted);
   }
-  .cost-table-stack td .cost-tokens { display: inline; }
+  .cost-table-stack td .cost-tokens { display: inline; min-width: 4ch; text-align: right; }
 }

@@ -13,6 +13,7 @@ import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
 import { startBatonMarksBackfill } from "./baton-marks";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
+import { registerProjectCostRoutes } from "./project-costs-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
 import { WorkspaceCommitter } from "./workspace-commits";
@@ -192,6 +193,7 @@ app.post("/api/sessions/connect", async (c) => {
 registerOrgRoutes(app);
 registerWrapupRoutes(app);
 registerProjectOverseerRoutes(app);
+registerProjectCostRoutes(app);
 // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
 registerDecisionRoutes(app);
 

@@ -92,3 +92,27 @@ billing -> queue`);
     for (let j = i + 1; j < boxes.length; j++) assert.ok(!overlap(boxes[i]!, boxes[j]!));
   for (const b of boxes) assert.ok(b.x - b.w / 2 >= 0 && b.x + b.w / 2 <= tight.width);
 });
+
+test("edge labels wrap, never truncate, and a long edge's label leaves the busiest rank", () => {
+  const spec = parseState(`node s0 start
+s0 -> queued "enqueue"
+queued -> running "claimed (lease)"
+running -> done "ok"
+running -> retry "retryable error / lease expired"
+retry -> queued "run_at reached"
+running -> dead "fatal error / attempts exhausted"
+queued -> cancelled "cancel"
+retry -> cancelled "cancel"
+running -> cancelled "cancel acknowledged"`);
+  for (const level of [0, 1, 2]) {
+    const l = layoutFlow(spec, undefined, level);
+    for (const e of l.edges) if (e.label) assert.ok(!e.label.lines.join(" ").includes("…"), `level ${level}: ${e.label.lines.join(" / ")}`);
+    const words = l.edges.flatMap((e) => e.label?.lines ?? []).join(" ");
+    assert.match(words, /acknowledged/, "a word is never split");
+  }
+  // queued -> cancelled spans three ranks; its label sits apart from running's four.
+  const l = layoutFlow(spec);
+  const ys = (text: string) => l.edges.find((e) => e.label?.lines.join(" ") === text)!.label!.y;
+  const cancelYs = l.edges.filter((e) => e.label?.lines.join(" ") === "cancel").map((e) => e.label!.y);
+  assert.ok(cancelYs.every((y) => y !== ys("ok")), "neither cancel label crowds running's rank");
+});

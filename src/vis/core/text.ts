@@ -28,6 +28,10 @@ let canvasCtx: CanvasRenderingContext2D | null | undefined;
 const memo = new Map<string, number>();
 
 /** Canvas measure in the app's fonts, memoized; falls back to the estimate off-DOM. */
+// Widths measured before Inter or JetBrains Mono arrive are the fallback font's: forget them once
+// a font finishes loading, so estimates and drawings made after that use the real metrics.
+if (typeof document !== "undefined" && document.fonts) document.fonts.addEventListener("loadingdone", () => memo.clear());
+
 export const canvasMeasure: Measure = (text, px, mono = false) => {
   const key = `${mono ? "m" : "s"}${px}|${text}`;
   const hit = memo.get(key);

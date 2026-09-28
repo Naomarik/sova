@@ -9,6 +9,7 @@
 import type { Component } from "solid-js";
 import type { VisBase } from "./core/grammar";
 import type { ViewProps } from "./types";
+import { estimateHeight as chartHeight } from "./kinds/chart/layout";
 import { parseChart } from "./kinds/chart/parse";
 import { estimateHeight as codeHeight } from "./kinds/code/layout";
 import { parseCode } from "./kinds/code/parse";
@@ -18,9 +19,11 @@ import { estimateHeight as frameHeight } from "./kinds/frame/height";
 import { parseHtml, parseSvg } from "./kinds/frame/parse";
 import { estimateHeight as layersHeight } from "./kinds/layers/height";
 import { parseLayers } from "./kinds/layers/parse";
+import { estimateHeight as matrixHeight } from "./kinds/matrix/height";
 import { parseMatrix } from "./kinds/matrix/parse";
 import { estimateHeight as sequenceHeight } from "./kinds/sequence/layout";
 import { parseSequence } from "./kinds/sequence/parse";
+import { estimateHeight as timelineHeight } from "./kinds/timeline/height";
 import { parseTimeline } from "./kinds/timeline/parse";
 import { estimateHeight as treeHeight } from "./kinds/tree/height";
 import { parseTree } from "./kinds/tree/parse";
@@ -62,9 +65,9 @@ export const KINDS: Record<string, KindEntry> = {
   state: kind(parseState, view("flow"), "State machine", { size: flowHeight }),
   layers: kind(parseLayers, view("layers"), "Layers", { size: (spec, width) => layersHeight(spec, width) }),
   tree: kind(parseTree, view("tree"), "Tree", { size: (spec, width) => treeHeight(spec, width) }),
-  chart: kind(parseChart, view("chart"), "Chart"),
-  timeline: kind(parseTimeline, view("timeline"), "Timeline"),
-  matrix: kind(parseMatrix, view("matrix"), "Matrix"),
+  chart: kind(parseChart, view("chart"), "Chart", { size: (spec, width) => chartHeight(spec, width) }),
+  timeline: kind(parseTimeline, view("timeline"), "Timeline", { size: (spec, width) => timelineHeight(spec, width) }),
+  matrix: kind(parseMatrix, view("matrix"), "Matrix", { size: (spec, width) => matrixHeight(spec, width) }),
   code: kind(parseCode, view("code"), "Code", { size: codeHeight }),
   html: kind(parseHtml, view("frame"), "Interactive", { framed: true, size: frameHeight }),
   svg: kind(parseSvg, view("frame"), "Drawing", { framed: true, size: frameHeight }),

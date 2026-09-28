@@ -1,3 +1,4 @@
+import { KINDS } from "./registry";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseVis, visKindWord } from "./parse";
@@ -27,4 +28,8 @@ test("every registered kind parses through the entry, and none throws on junk", 
     const r = parseVis(kind, "\u0000 ] [ -> \" |||");
     assert.equal(typeof r.ok, "boolean", kind);
   }
+});
+
+test("every kind reserves its drawing's height before its View loads", () => {
+  for (const [word, entry] of Object.entries(KINDS)) assert.equal(typeof entry.size, "function", `${word} has no size estimate`);
 });

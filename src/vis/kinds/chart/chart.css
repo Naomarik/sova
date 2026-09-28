@@ -33,4 +33,5 @@
 .vis-chart-band { fill: var(--vis-fill); }
 .vis-svg .vis-chart-cat.vis-em .vis-tick { fill: var(--color-ink); font-weight: var(--fw-semibold); }
 .vis-chart-em .vis-chart-fill { stroke: var(--color-ink); stroke-width: 1.5; }
+.vis-chart-leader { stroke: var(--color-ink-muted); stroke-width: 1; }
 .vis-chart-ring { fill: var(--vis-fill); stroke: var(--vis-stroke); stroke-width: 2; }

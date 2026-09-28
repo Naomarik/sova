@@ -123,3 +123,12 @@ test("chart layout: a marked line row rings every series; a scatter keeps headro
   const top = Math.min(...s.points.map((p) => p.y));
   assert.ok(top - s.plot.y0 >= 8, `highest point ${top - s.plot.y0}px below the frame`);
 });
+
+test("chart layout: a small scatter labels every point on a phone, clear of the rings", () => {
+  for (const W of [300, 314, 330, 560]) {
+    const g = layoutChart(chart(SAMPLES.editor!), W, estimateWidth);
+    assert.deepEqual(g.values.map((v) => v.row).sort(), [0, 1, 2, 3, 4], `all five labelled at ${W}`);
+    for (const r of g.rings)
+      for (const v of g.values) assert.ok(!overlaps({ x: r.x - 10, y: r.y - 10, w: 20, h: 20 }, textBox(v, estimateWidth)), `"${v.text}" touches a ring at ${W}`);
+  }
+});

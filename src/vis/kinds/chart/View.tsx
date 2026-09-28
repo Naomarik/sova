@@ -132,6 +132,7 @@ export default function ChartView(props: ViewProps<ChartSpec>) {
             </g>
           )}
         </For>
+        <For each={g().leaders}>{(l) => <line class="vis-chart-leader" x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />}</For>
         <For each={g().rings}>{(r) => <circle class={`vis-chart-ring ${emClass(em().get(String(r.row)))}`} cx={r.x} cy={r.y} r="8" />}</For>
         <For each={g().points}>
           {(p) => (

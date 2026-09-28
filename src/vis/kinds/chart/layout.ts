@@ -42,6 +42,8 @@ export interface ChartLayout {
   paths: { series: number; d: string }[];
   points: Point[];
   rings: { row: number; x: number; y: number }[];
+  /** Thin lines from a scatter point to a label that had to sit further out. */
+  leaders: { x1: number; y1: number; x2: number; y2: number }[];
   badges: Badge[];
 }
 
@@ -83,7 +85,7 @@ export function textBox(v: ValueText, measure: Measure): Rect {
 }
 
 function emptyLayout(W: number, mode: ChartMode): ChartLayout {
-  return { W, H: 0, mode, plot: { x0: 0, y0: 0, x1: 0, y1: 0 }, yTicks: [], xTicks: [], cats: [], bands: [], bars: [], values: [], paths: [], points: [], rings: [], badges: [] };
+  return { W, H: 0, mode, plot: { x0: 0, y0: 0, x1: 0, y1: 0 }, yTicks: [], xTicks: [], cats: [], bands: [], bars: [], values: [], paths: [], points: [], rings: [], leaders: [], badges: [] };
 }
 
 /** The value axis for bars and lines: stacks by their totals, log when asked (never for stacks). */
@@ -318,36 +320,51 @@ function layoutScatter(spec: ChartSpec, W: number, measure: Measure): ChartLayou
     out.rings.push({ row: p.row, x: p.x, y: p.y });
     if (e.n) out.badges.push({ row: p.row, x: Math.min(W - BADGE_R, p.x + 11), y: Math.max(BADGE_R, p.y - 12) });
   }
-  // Labels: marked points first, then in order; each tries right, left, above, below of its point
-  // and is dropped if every side would hit another label, a point, or the frame.
+  // Labels: marked points first, then in order. Each tries the four sides of its point, then the
+  // diagonals, then the same a step further out (joined to its point by a leader line), and is
+  // dropped only when all of those would hit a label, a point, a ring, a tick label or the frame.
   const taken: Rect[] = [
     ...out.points.map((p) => ({ x: p.x - 4, y: p.y - 4, w: 8, h: 8 })),
+    ...out.rings.map((r) => ({ x: r.x - 10, y: r.y - 10, w: 20, h: 20 })),
     ...out.badges.map((b) => ({ x: b.x - BADGE_R, y: b.y - BADGE_R, w: BADGE_R * 2, h: BADGE_R * 2 })),
+    ...out.yTicks.filter((t) => t.label).map((t) => ({ x: 0, y: t.pos - 7, w: left - 4, h: 14 })),
   ];
   const order = [...out.points].sort((a, b) => (marks.has(a.row) ? 0 : 1) - (marks.has(b.row) ? 0 : 1) || a.row - b.row);
-  const budget = marks.size + Math.max(0, 16 - marks.size);
   let placed = 0;
   for (const p of order) {
-    if (placed >= budget) break;
+    if (placed >= MAX_POINT_LABELS) break;
     const text = spec.rows[p.row]!.label;
     const w = measure(text, FONT.point);
     const h = 13;
-    const gap = marks.has(p.row) ? 14 : 7; // clear of a mark's ring (r 8 + stroke) by about 5px
-    const tries: [number, number, "start" | "end" | "middle"][] = [
-      [p.x + gap, p.y, "start"],
-      [p.x - gap, p.y, "end"],
-      [p.x, p.y - gap - 5, "middle"],
-      [p.x, p.y + gap + 5, "middle"],
-    ];
-    for (const [tx, ty, anchor] of tries) {
+    const near = marks.has(p.row) ? 15 : 7; // clear of a mark's ring (r 8 + stroke) by about 5px
+    for (const [tx, ty, anchor, far] of labelSpots(p.x, p.y, near)) {
       const box: Rect = { x: anchor === "start" ? tx : anchor === "end" ? tx - w : tx - w / 2, y: ty - h / 2, w, h };
       if (box.x < out.plot.x0 + 2 || box.x + box.w > W || box.y < 0 || box.y + box.h > out.plot.y1 - 2) continue;
       if (taken.some((t) => overlaps(t, box))) continue;
       taken.push(box);
       out.values.push({ row: p.row, x: tx, y: ty, text, anchor });
+      if (far) {
+        // From the point's edge to the label's nearest edge.
+        const ex = anchor === "start" ? box.x - 2 : anchor === "end" ? box.x + box.w + 2 : tx;
+        const ey = anchor === "middle" ? (ty < p.y ? box.y + box.h + 1 : box.y - 1) : ty;
+        const d = Math.hypot(ex - p.x, ey - p.y) || 1;
+        out.leaders.push({ x1: p.x + ((ex - p.x) / d) * 5, y1: p.y + ((ey - p.y) / d) * 5, x2: ex, y2: ey });
+      }
       placed++;
       break;
     }
+  }
+  return out;
+}
+
+const MAX_POINT_LABELS = 16;
+
+/** Where a point's label may go, nearest first: [x, y, anchor, needs a leader line]. */
+function labelSpots(x: number, y: number, near: number): [number, number, "start" | "end" | "middle", boolean][] {
+  const out: [number, number, "start" | "end" | "middle", boolean][] = [];
+  for (const [d, far] of [[near, false], [near + 16, true], [near + 34, true]] as const) {
+    out.push([x + d, y, "start", far], [x - d, y, "end", far], [x, y - d - 5, "middle", far], [x, y + d + 5, "middle", far]);
+    out.push([x + d * 0.8, y - d * 0.8 - 3, "start", far], [x + d * 0.8, y + d * 0.8 + 3, "start", far], [x - d * 0.8, y - d * 0.8 - 3, "end", far], [x - d * 0.8, y + d * 0.8 + 3, "end", far]);
   }
   return out;
 }

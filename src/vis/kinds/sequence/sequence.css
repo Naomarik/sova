@@ -1,0 +1,10 @@
+/* `vis sequence` — DRAFT, not yet verified in a browser. Owner: the sequence member. */
+.vis-actor > rect { fill: var(--vis-fill); stroke: var(--vis-stroke); stroke-width: 1.5; }
+.vis-svg .vis-actor text { fill: var(--vis-ink); font-weight: var(--fw-medium); }
+.vis-lifeline { stroke: var(--color-border-strong); stroke-width: 1; stroke-dasharray: 3 4; }
+.vis-svg .vis-msg-label { fill: var(--color-ink-2); }
+.vis-note rect { fill: var(--status-warn-bg); stroke: var(--status-warn); stroke-width: 1; }
+.vis-svg .vis-note text { fill: var(--color-ink); }
+.vis-divider line { stroke: var(--color-border); stroke-width: 1; }
+.vis-divider rect { fill: var(--color-sunken); stroke: var(--color-border); }
+.vis-svg .vis-divider text { fill: var(--color-ink-muted); }

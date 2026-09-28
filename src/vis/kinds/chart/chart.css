@@ -1,0 +1,11 @@
+/* `vis chart` — DRAFT, not yet verified in a browser. Owner: the chart member. */
+.vis-chart { min-width: 0; }
+.vis-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0 0 var(--space-2); padding: 0; list-style: none; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.vis-legend li { display: inline-flex; align-items: center; gap: var(--space-1); }
+.vis-axis-title { font-size: var(--fs-micro); color: var(--color-ink-muted); margin-bottom: var(--space-1); }
+.vis-axis-x { text-align: center; margin: var(--space-1) 0 0; }
+.vis-grid line { stroke: var(--color-border); stroke-width: 1; }
+.vis-grid .vis-grid-zero { stroke: var(--color-border-strong); }
+.vis-svg .vis-grid text, .vis-svg .vis-tick { fill: var(--color-ink-muted); font-variant-numeric: tabular-nums; }
+.vis-svg .vis-hbar-label { fill: var(--color-ink-2); }
+.vis-svg .vis-value { fill: var(--color-ink-2); font-variant-numeric: tabular-nums; }

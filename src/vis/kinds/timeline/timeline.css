@@ -1,0 +1,9 @@
+/* `vis timeline` — DRAFT, not yet verified in a browser. Owner: the timeline member. */
+.vis-timeline { list-style: none; margin: 0; padding: 0; }
+.vis-timeline-row { display: grid; grid-template-columns: minmax(3.5em, max-content) 12px 1fr; gap: var(--space-2); align-items: baseline; padding: var(--space-1) 0; }
+.vis-timeline-when { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); text-align: right; }
+.vis-timeline-dot { width: 10px; height: 10px; border-radius: var(--r-full); background: var(--vis-fill); border: 1.5px solid var(--vis-stroke); align-self: center; }
+.vis-timeline-text { display: flex; flex-direction: column; min-width: 0; }
+.vis-timeline-label { font-weight: var(--fw-medium); color: var(--vis-ink); }
+.vis-timeline-note { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.vis-timeline-section { font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); padding: var(--space-2) 0 var(--space-1); }

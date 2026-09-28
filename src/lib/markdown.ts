@@ -9,6 +9,8 @@ import type { TmpAttachment } from "../../shared/protocol";
 import { findTmpImagePaths } from "../../shared/tmp-paths";
 import { chipHtml } from "./path-attachments";
 import { groupLinkIndex, resolveAppLink, sessionIndex } from "./session-links";
+import type { VisBase } from "../vis/core/grammar";
+import { parseVis, visKindWord, type ParseResult } from "../vis/parse";
 import clojure from "highlight.js/lib/languages/clojure";
 import cmake from "highlight.js/lib/languages/cmake";
 import dart from "highlight.js/lib/languages/dart";
@@ -130,6 +132,19 @@ interface RenderEnv {
   linkStack: LinkKind[];
   /** The row's /tmp image paths (TranscriptItem.attachments), shown as chips in prose. */
   paths?: Map<string, TmpAttachment>;
+  /** Parsed `vis` fences, by the index in their placeholder's data-vis. */
+  visuals: RenderedVisual[];
+}
+
+/** A `vis` fence that parsed: what the Markdown component mounts into `<div data-vis=i>`. */
+export interface RenderedVisual {
+  /** The fence's kind word (a key of vis/registry.ts KINDS). */
+  kind: string;
+  spec: VisBase;
+  /** The fence as written, for Copy. */
+  fence: string;
+  /** Its body, for Source. */
+  body: string;
 }
 
 /** An external link, an in-app one (same tab, no external note), or nothing. */
@@ -240,11 +255,50 @@ const renderCode = (source: string, info: string, env: RenderEnv, plain: boolean
     `<pre><code${cls}>${body}</code></pre></div>\n`
   );
 };
+// ---- Visuals: `vis <kind>` fences ---------------------------------------------------------
+// A closed fence that parses becomes a placeholder the Markdown component mounts a drawing into;
+// one that doesn't is the ordinary code block plus one line saying why. A fence still open
+// mid-stream is a quiet "Drawing" line: half a diagram is never drawn.
+const visCache = new Map<string, ParseResult>();
+/** FNV-1a, hex: a placeholder's identity. */
+function hash(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(16);
+}
+function parseCached(kind: string, body: string): ParseResult {
+  const key = `${kind}\0${body}`;
+  let r = visCache.get(key);
+  if (!r) {
+    r = parseVis(kind, body);
+    if (visCache.size > 200) visCache.clear();
+    visCache.set(key, r);
+  }
+  return r;
+}
+const renderVis = (t: { content: string; info: string; markup: string }, kind: string, env: RenderEnv, open: boolean) => {
+  if (open) {
+    const lines = t.content.split("\n").length - 1;
+    return `<p class="md-vis-pending"><span class="md-vis-pending-dot" aria-hidden="true"></span>Drawing ${esc(kind || "a visual")}… <span class="md-vis-pending-count">${lines} ${lines === 1 ? "line" : "lines"}</span></p>\n`;
+  }
+  const r = parseCached(kind, t.content);
+  if (!r.ok) {
+    const where = r.line > 0 ? `line ${r.line}: ` : "";
+    return renderCode(t.content, t.info, env, true) + `<p class="md-vis-error">Couldn't draw this ${esc(kind ? `vis ${kind}` : "vis")} block (${esc(where + r.message)}), so here is its source.</p>\n`;
+  }
+  const fence = `${t.markup}${t.info}\n${t.content}${t.markup}`;
+  const i = env.visuals.push({ kind, spec: r.spec, fence, body: t.content }) - 1;
+  // The key changes with the content, so a re-render never keeps a drawing of an older text.
+  return `<div class="md-vis" data-vis="${i}" data-vis-key="${hash(fence)}"></div>\n`;
+};
+
 let fenceCounter = 0;
 md.renderer.rules.fence = (tokens, idx, _opts, e) => {
   const env = e as unknown as RenderEnv;
   const t = tokens[idx]!;
   const n = fenceCounter++;
+  const kind = visKindWord(t.info);
+  if (kind !== null) return renderVis(t, kind, env, env.openFence === n);
   return renderCode(t.content, t.info, env, env.openFence === n);
 };
 md.renderer.rules.code_block = (tokens, idx, _opts, e) => renderCode(tokens[idx]!.content, "", e as unknown as RenderEnv, true);
@@ -285,6 +339,8 @@ export interface RenderedMarkdown {
   html: string;
   /** Raw source of each code block, in order, for Copy Code. */
   codes: string[];
+  /** Parsed `vis` fences, by placeholder index. */
+  visuals: RenderedVisual[];
 }
 
 /**
@@ -292,7 +348,7 @@ export interface RenderedMarkdown {
  * block (a closing fence is appended for rendering only) and stays unhighlighted until it closes.
  */
 export function renderMarkdown(text: string, streaming = false, attachments?: TmpAttachment[]): RenderedMarkdown {
-  const env: RenderEnv = { codes: [], openFence: null, linkStack: [] };
+  const env: RenderEnv = { codes: [], openFence: null, linkStack: [], visuals: [] };
   if (attachments?.length) env.paths = new Map(attachments.map((a) => [a.path, a]));
   let source = text;
   const open = streaming ? unclosedFence(text) : null;
@@ -301,5 +357,5 @@ export function renderMarkdown(text: string, streaming = false, attachments?: Tm
     env.openFence = open.index;
   }
   fenceCounter = 0;
-  return { html: md.render(source, env), codes: env.codes };
+  return { html: md.render(source, env), codes: env.codes, visuals: env.visuals };
 }

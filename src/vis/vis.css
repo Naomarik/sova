@@ -1,0 +1,122 @@
+/* Shared `vis` styles: the figure shell every kind sits in, the markdown placeholder states, the
+   tone variables, and the SVG primitives more than one kind draws with. A kind's own look lives in
+   kinds/<kind>/<kind>.css, imported by its View. Tokens only (tokens.css): no raw colours. */
+
+/* ---- Figure shell ------------------------------------------------------------------------ */
+.vis {
+  margin: 0 0 var(--space-3);
+  max-width: 100%;
+  min-width: 0;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  overflow: hidden;
+  container: vis / inline-size;
+}
+.vis-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-sm);
+  padding: 0 var(--space-1) 0 var(--space-3);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.vis-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vis-eyebrow {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+.vis-action { flex: none; }
+.vis-body { padding: var(--space-3); }
+.vis-body[hidden] { display: none; }
+.vis-kind-html .vis-body, .vis-kind-svg .vis-body { padding: 0; }
+.md .vis-source {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-sunken);
+  color: var(--color-ink);
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+  max-height: 420px;
+}
+.vis-caption {
+  padding: 0 var(--space-3) var(--space-3);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
+/* At phone width the head keeps the title and trades the button words for their icons. */
+@container vis (max-width: 420px) {
+  .vis-action { font-size: 0; gap: 0; min-width: var(--control-sm); justify-content: center; }
+  .vis-body { padding: var(--space-2); }
+}
+
+/* ---- Placeholder states in markdown ------------------------------------------------------ */
+.md-vis { margin: 0 0 var(--space-3); min-width: 0; }
+.md-vis > .vis { margin: 0; }
+.md-vis-pending {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--stroke-thin) dashed var(--color-border-strong);
+  border-radius: var(--r-md);
+  color: var(--color-ink-muted);
+  font-size: var(--fs-caption);
+}
+.md-vis-pending-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--color-accent);
+  animation: vis-pulse 1.2s var(--ease-standard) infinite alternate;
+}
+@keyframes vis-pulse { from { opacity: 1; } to { opacity: .35; } }
+.md-vis-pending-count { font-family: var(--font-mono); margin-left: auto; }
+.md .md-vis-error {
+  margin: calc(var(--space-2) * -1) 0 var(--space-3);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
+
+/* ---- Tones: one set of variables every kind reads ---------------------------------------- */
+/* --vis-fill (a shape's background), --vis-stroke (its outline), --vis-ink (its text). */
+.vis, .vis-tone-none {
+  --vis-fill: var(--color-sunken);
+  --vis-stroke: var(--color-border-strong);
+  --vis-ink: var(--color-ink);
+}
+.vis-tone-accent { --vis-fill: var(--color-accent-tint); --vis-stroke: var(--color-accent); --vis-ink: var(--color-ink); }
+.vis-tone-ok     { --vis-fill: var(--status-success-bg); --vis-stroke: var(--status-success); --vis-ink: var(--color-ink); }
+.vis-tone-warn   { --vis-fill: var(--status-warn-bg); --vis-stroke: var(--status-warn); --vis-ink: var(--color-ink); }
+.vis-tone-error  { --vis-fill: var(--status-error-bg); --vis-stroke: var(--status-error); --vis-ink: var(--color-ink); }
+.vis-tone-info   { --vis-fill: var(--status-info-bg); --vis-stroke: var(--status-info); --vis-ink: var(--color-ink); }
+.vis-tone-muted  { --vis-fill: transparent; --vis-stroke: var(--color-border-strong); --vis-ink: var(--color-ink-muted); }
+
+/* ---- SVG primitives (svg.tsx) ------------------------------------------------------------ */
+.vis-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.vis-scroll:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: var(--r-xs); }
+.vis-svg { display: block; height: auto; margin: 0 auto; font-family: var(--font-body); overflow: visible; }
+.vis-svg text { fill: var(--color-ink-2); }
+.vis-edge { fill: none; stroke: var(--color-ink-muted); stroke-width: 1.5; }
+.vis-dashed { stroke-dasharray: 5 4; }
+.vis-arrowhead { fill: var(--color-ink-muted); }
+.vis-arrowhead-open { fill: none; stroke: var(--color-ink-muted); stroke-width: 1.5; stroke-linejoin: round; }
+.vis-edge-label rect { fill: var(--color-surface); }
+.vis-edge-label text { fill: var(--color-ink-2); }

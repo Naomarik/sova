@@ -1,0 +1,23 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { parseVis } from "../../parse";
+import type { CompareSpec } from "./parse";
+
+const ok = <T>(kind: string, body: string): T => {
+  const r = parseVis(kind, body);
+  if (!r.ok) assert.fail(`line ${r.line}: ${r.message}`);
+  return r.spec as T;
+};
+const err = (kind: string, body: string) => {
+  const r = parseVis(kind, body);
+  assert.equal(r.ok, false, `expected an error for:\n${body}`);
+  return r as { ok: false; line: number; message: string };
+};
+
+test("compare: marks with optional notes, text cells, column count checked", () => {
+  const s = ok<CompareSpec>("compare", 'columns: Merge, Rebase\nLinear history | no | yes\nRewrites commits | no | yes "new SHAs"\nWhen | shared branches | -');
+  assert.deepEqual(s.rows[1]!.cells, [{ mark: "no" }, { mark: "yes", text: "new SHAs" }]);
+  assert.deepEqual(s.rows[2]!.cells, [{ text: "shared branches" }, {}]);
+  assert.match(err("compare", "columns: A, B\nx | yes").message, /1 cells; expected 2/);
+  assert.match(err("compare", "x | yes").message, /columns:/);
+});

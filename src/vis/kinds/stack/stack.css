@@ -1,0 +1,8 @@
+/* `vis stack` — DRAFT, not yet verified in a browser. Owner: the stack member. */
+.vis-stack { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.vis-stack-layer { display: grid; grid-template-columns: minmax(6em, 9em) 1fr; gap: var(--space-2); padding: var(--space-2); border: 1.5px solid var(--vis-stroke); border-radius: var(--r-sm); background: var(--vis-fill); }
+.vis-stack-label { font-weight: var(--fw-semibold); color: var(--vis-ink); }
+.vis-stack-items { display: flex; flex-wrap: wrap; gap: var(--space-1); list-style: none; margin: 0; padding: 0; }
+.vis-stack-items li { padding: 2px var(--space-2); border-radius: var(--r-xs); background: var(--color-surface); border: var(--stroke-thin) solid var(--color-border); font-size: var(--fs-caption); }
+.vis-stack-note { display: block; margin-top: var(--space-1); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+@container vis (max-width: 420px) { .vis-stack-layer { grid-template-columns: 1fr; } }

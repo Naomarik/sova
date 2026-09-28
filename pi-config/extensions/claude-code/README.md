@@ -209,6 +209,26 @@ Protocol behavior is version-sensitive; live probes used Claude Code 2.1.276 and
 2.1.277.
 See [docs/protocol-probes.md](docs/protocol-probes.md).
 
+## Spec hooks
+
+`spec-hooks.ts` is the worker half of the spec guard (`mode/spec-guard.ts`). The subagents spawn
+path installs it for code-writing workers of a spec-on session, as `hooks` in the one `--settings`
+JSON (`withClaudeSettings` merges into the sandbox's settings; flag settings, hooks included, apply
+under `--setting-sources ""`, probed with CLI 2.1.282). Each hook is `node spec-hooks.ts
+<turn|post|stop> --core <spec/core> --state <dir>`, a fresh process per event with plain-JSON state
+per Claude session:
+
+- `UserPromptSubmit`: the turn's baseline (`git status`, HEAD).
+- `PostToolUse` (every tool, Bash included): the shared census step on a git-status delta; its
+  `[spec census]` digest comes back as `additionalContext`. A `promote --write` (its `alsoChanges`)
+  or a `git merge` that moves HEAD (`sova-spec.mjs foreign` over it) records the turn's foreign §.
+- `Stop`: after a promote or merge, the last line must name every computed foreign § (or carry the
+  override line); the reply is sent back up to twice. Otherwise a warning, sent back once: a
+  writing turn without the exact `Also changes:` line, a non-writing turn with one, or a named §
+  the census never saw touched.
+
+A hook that fails prints nothing and exits 0.
+
 ## Claude Code as pi models (experimental provider)
 
 The same extension can also expose the installed Claude Code CLI as ordinary pi

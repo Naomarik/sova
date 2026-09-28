@@ -95,6 +95,10 @@ import {
 	type RemoteSessionEvent,
 } from "../remote/workers.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
+import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
+import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.ts";
+import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
+import { workerSpecBrief, writesCode } from "./spec-brief.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
 
 const MAX_LIVE = 12;
@@ -273,6 +277,10 @@ const listedExtensions = (worker: Worker): string[] => worker.extensions.filter(
  * run under the current runtime, which executes .ts files directly.
  */
 export const MEMBER_MCP = path.join(SELF_DIR, "member-mcp.ts");
+/** The trusted spec tools (pi-config/extensions/spec/core/) a spec-on worker's brief and hooks name. */
+export const SPEC_CORE_DIR = realpathOr(path.join(SELF_DIR, "..", "spec", "core"));
+/** Under the agent dir: the claude-code spec hooks' per-session state and event log. */
+export const SPEC_HOOK_STATE = "spec-hooks";
 /**
  * The remote extension (a sibling directory, never under SELF_DIR). A pi worker of a remote
  * session loads it with `-e` and `--target <name>`, so its bash/read/write/edit/ls/find/grep run
@@ -597,6 +605,15 @@ export function registerSubagents(
 		sandboxState = e;
 	});
 	pi.events?.emit(SANDBOX_DISCOVER_EVENT, { version: 1 });
+	// The session's active modes (pi-config's mode extension, announced on every change): while spec
+	// is on, a code-writing worker gets the worker spec brief, and a claude-code one the spec hooks.
+	let specOn = false;
+	const unregisterModeListener = pi.events?.on(MODE_STATE_EVENT, (data: unknown) => {
+		const e = data as ModeStateEvent | undefined;
+		if (!e || e.version !== 1 || !Array.isArray(e.minorModes)) return;
+		specOn = e.minorModes.includes("spec");
+	});
+	pi.events?.emit(MODE_DISCOVER_EVENT, { version: 1 });
 	const remoteSessionFor = (ctx: ExtensionContext): RemoteSessionEvent | undefined => remoteSession ?? remoteOfPlaceholder(ctx.cwd);
 	/** One line in agent_spawn/agent_list output: the proof that this session's workers run on the target (absent in a local session). */
 	const remoteNotice = (ctx: ExtensionContext): string => {
@@ -1147,6 +1164,17 @@ export function registerSubagents(
 						env: { MCP_TOOL_TIMEOUT: String(REMOTE_MCP_TOOL_TIMEOUT_MS) },
 					};
 				}
+				// Spec on: a code-writing Claude worker gets the brief, plus the hooks that run census after
+				// each tool call and check its reply's last line (claude-code/spec-hooks.ts). Remote workers'
+				// files are on the target, out of the local tools' reach.
+				if (specOn && !remote && backendId === "claude-code" && writesCode(prepared.tools ?? spec.tools ?? DEFAULT_CLAUDE_TOOLS)) {
+					const settingsJson = (prepared as { settingsJson?: string }).settingsJson;
+					prepared = {
+						...prepared,
+						systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, workerSpecBrief(SPEC_CORE_DIR)].filter(Boolean).join("\n\n"),
+						settingsJson: withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir: path.join(agentDir(), SPEC_HOOK_STATE) })),
+					} as typeof prepared;
+				}
 				return { spec, cwd, model: spec.model, tools: remote ? [] : spec.tools, systemPrompt: spec.systemPrompt,
 					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp };
 			}
@@ -1208,7 +1236,7 @@ export function registerSubagents(
 				tools,
 				extensions,
 				forkSession,
-				systemPrompt: [definition?.systemPrompt, spec.systemPrompt].filter(Boolean).join("\n\n") || undefined,
+				systemPrompt: [definition?.systemPrompt, spec.systemPrompt, specOn && !remote && !treeConfig && writesCode(tools) ? workerSpecBrief(SPEC_CORE_DIR) : undefined].filter(Boolean).join("\n\n") || undefined,
 				flags: piFlags,
 				remoteMcp: undefined,
 				treeConfig,
@@ -3428,6 +3456,7 @@ export function registerSubagents(
 		unregisterBackendListener?.();
 		unregisterRemoteListener?.();
 		unregisterSandboxListener?.();
+		unregisterModeListener?.();
 		unregisterDialogListener?.();
 		backends.clear();
 		activeCtx = undefined;

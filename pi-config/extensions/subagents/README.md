@@ -284,6 +284,22 @@ The session is recognised from the remote extension's `remote:session` event on 
 from the placeholder cwd (`<agentDir>/sova/targets/<name>/<far path>`). See the remote
 extension's README ("Workers").
 
+## Spec mode
+
+While the spawning session has the `spec` minor mode on (the mode extension announces its active
+modes as `mode:state` on `pi.events`; `mode:discover` asks), every worker that can change code
+(pi: `bash`, `edit` or `write`; Claude Code: `Bash`, `Edit`, `Write`, `MultiEdit`,
+`NotebookEdit`) gets the **worker spec brief** appended to its system prompt: `spec-brief.ts`,
+whole sentences quoted from `mode/spec-mode.md` by anchor, with `$core` pinned to this pi-config's
+`spec/core`. `spec-brief.test.ts` pins the generated text, so a change to a carried rule in
+spec-mode.md fails there until the brief is reviewed. Ad hoc workers and team members alike;
+remote workers and `useWorktreeConfig` workers (which load the spec mode itself) do not get it.
+
+Claude Code workers also get the spec hooks (`../claude-code/spec-hooks.ts`) in their `--settings`,
+merged over the sandbox's: a census digest after any tool call that changes `git status`, and a
+check of the reply's `Also changes:` line at Stop. State and a log of what the hooks said live in
+`<agentDir>/spec-hooks/<claude session id>.json` / `.log.jsonl`.
+
 ## Model policy
 
 `~/.pi/agent/model-policy.json` (version 1) decides which models and providers

@@ -5,10 +5,13 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import * as os from "node:os";
-import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
+import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, SPEC_CORE_DIR, SPEC_HOOK_STATE, MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
 import { CLAUDE_PROVIDER_FLAG } from "../claude-code/provider/index.ts";
 import { placeholderDir } from "../remote/argv.ts";
 import { REMOTE_MCP_ENV, REMOTE_MCP_SERVER_NAME, REMOTE_SESSION_EVENT, decodeRemoteMcpIdentity } from "../remote/workers.ts";
+import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT } from "../mode/state.ts";
+import { SPEC_HOOK_SCRIPT } from "../claude-code/spec-hooks.ts";
+import { workerSpecBrief } from "./spec-brief.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
 import { CLAUDE_CODE_PROVIDER_FLAG, SubagentRunner } from "./runner.ts";
 import { MEMBER_ENV, awaitResponse, decodeMemberContext, memberPaths, memberToolNames, readInbox, requestId, writeRequest, type MailboxRequest } from "./mailbox.ts";
@@ -3652,4 +3655,60 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
 		fs.rmSync(root, { recursive: true, force: true });
 	}
+});
+
+const SPEC_ON = { version: 1, mode: "normal", strict: false, minorModes: ["spec"] };
+const SPEC_OFF = { version: 1, mode: "normal", strict: false, minorModes: [] };
+
+test("spec on: every code-writing worker (pi, claude-code, team member) gets the worker spec brief; claude-code also the spec hooks, merged over the sandbox's settings", async () => {
+	const bus = eventBus();
+	let asked = 0;
+	bus.on(MODE_DISCOVER_EVENT, (data: any) => { if (data?.version === 1) asked++; });
+	const h = harness(bus);
+	const created: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	const brief = workerSpecBrief(SPEC_CORE_DIR);
+	try {
+		assert.equal(asked, 1, "the mode state is asked for at load");
+		await h.call("agent_spawn", { prompt: "pi task" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
+		assert.equal(h.workers[0].systemPrompt, undefined, "spec off: no brief");
+		assert.ok(!("settingsJson" in created[0]), "spec off: no hooks");
+
+		h.bus.emit(MODE_STATE_EVENT, SPEC_ON);
+		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "Be terse." });
+		assert.equal(h.workers[1].systemPrompt, `Be terse.\n\n${brief}`);
+		await h.call("agent_spawn", { prompt: "reader", tools: ["read", "grep"] });
+		assert.equal(h.workers[2].systemPrompt, undefined, "a worker that cannot write gets no brief");
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "Own words." });
+		const claude = created[1];
+		assert.equal(claude.systemPrompt, `Own words.\n\n${brief}`);
+		const hooks = JSON.parse(claude.settingsJson).hooks;
+		assert.deepEqual(Object.keys(hooks).sort(), ["PostToolUse", "Stop", "UserPromptSubmit"]);
+		const post = hooks.PostToolUse[0];
+		assert.equal(post.matcher, "*", "after ANY tool, Bash included");
+		assert.ok(post.hooks[0].command.includes(SPEC_HOOK_SCRIPT) && post.hooks[0].command.includes(" post --core "));
+		assert.ok(post.hooks[0].command.includes(path.join(NO_AGENT_DIR, SPEC_HOOK_STATE)), "state under the agent dir");
+		await h.call("agent_spawn", { prompt: "claude reader", backend: "claude-code", tools: ["Read"] });
+		assert.ok(!("settingsJson" in created[2]) && created[2].systemPrompt === undefined, "a read-only claude worker gets neither");
+
+		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
+		const merged = JSON.parse(created[3].settingsJson);
+		assert.deepEqual(merged.sandbox, { enabled: true }, "the sandbox's settings stay");
+		assert.ok(merged.hooks.Stop, "and the hooks join them");
+		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
+
+		await h.call("team_create", { name: "T", objective: "o", members: [
+			{ role: "a", prompt: "p", backend: "claude-code", model: "sonnet" },
+			{ role: "b", prompt: "p", backend: "pi" },
+		] });
+		assert.ok(created[4].systemPrompt.endsWith(brief) && JSON.parse(created[4].settingsJson).hooks, "a claude member");
+		assert.ok(h.workers.at(-1).systemPrompt.endsWith(brief), "a pi member");
+
+		h.bus.emit(MODE_STATE_EVENT, { ...SPEC_ON, version: 2 });
+		h.bus.emit(MODE_STATE_EVENT, SPEC_OFF);
+		await h.call("agent_spawn", { prompt: "pi task" });
+		assert.equal(h.workers.at(-1).systemPrompt, undefined, "spec switched off: no brief again");
+	} finally { await h.close(); }
 });

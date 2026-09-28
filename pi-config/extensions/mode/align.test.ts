@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ALIGN_FILE_MAX_BYTES, readAlignFile } from "./align-file.ts";
 import {
 	ALIGN_ENTRY_TYPE,
+	ALIGN_OP_FIELDS,
+	ALIGN_OPS,
 	ALIGN_TOOL,
 	AlignError,
 	alignCounts,
@@ -29,6 +31,7 @@ import {
 	type AlignDetails,
 	type AlignDocument,
 	type AlignEnv,
+	type AlignOpName,
 } from "./align.ts";
 
 const NOW = "2026-09-28T10:00:00.000Z";
@@ -97,41 +100,125 @@ test("create: strict — every question needs a recommendation, unknown fields a
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", title: "t", summary: "s", questions: [{ topic: "x", ask: "y" }] }] }, env), /questions\[0\]\.recommendation must be an object/);
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", title: "t", summary: "s", questions: [{ ...Q("x"), answer: "no" }] }] }, env), /unknown field "answer"/);
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", title: " ", summary: "s" }] }, env), /title must be a non-empty string/);
-	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", title: "t" }] }, env), /summary must be a non-empty string/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", title: "t" }] }, env), /ops\[0\] \(create\): summary is required/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", title: "t", summary: "" }] }, env), /summary must be a non-empty string/);
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "decide", q: "q1", decision: "x", topic: "nope" }] }, env), /ops\[0\] \(decide\): unknown field "topic"/);
-	// pi's own edit tool takes newText; the align edit op's field is text, and the error says so.
-	throwsAlign(() => applyAlignCall([], { ops: [{ op: "edit", id: "a1", newText: "x" }] }, env), /ops\[0\] \(edit\): unknown field "newText" \(did you mean "text"\?\)/);
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", title: "t", summary: "s", questions: [{ ...Q("x"), answer: "no" }] }] }, env), /unknown field "answer" \(allowed/, "no hint where the meant field isn't allowed either");
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "frobnicate" }] }, env), /ops\[0\]\.op must be one of/);
 	throwsAlign(() => applyAlignCall([], { ops: [] }, env), /non-empty array/);
 	throwsAlign(() => applyAlignCall([], { ops: [Q("a")] }, env), /ops\[0\]\.op must be one of/);
 });
 
-test("create fromFile: the same document from JSON, strictly validated, with the file named in every error", () => {
-	files["plan.json"] = JSON.stringify({ title: "From a worker", summary: "Planned elsewhere.", approach: ["one"], questions: [Q("Scope")] });
-	const { last } = run([{ ops: [{ op: "create", fromFile: "plan.json" }] }]);
+test("import: the same document from a JSON file at an absolute path, strictly validated, with the file named in every error", () => {
+	files["/plans/plan.json"] = JSON.stringify({ title: "From a worker", summary: "Planned elsewhere.", approach: ["one"], questions: [Q("Scope")] });
+	const { last } = run([{ ops: [{ op: "import", path: "/plans/plan.json" }] }]);
 	assert.equal(last.details.doc!.title, "From a worker");
-	assert.deepEqual(last.details.changes, [{ kind: "created", fromFile: true }]);
+	assert.deepEqual(last.details.changes, [{ kind: "created", fromFile: true }], "the stored change keeps its name");
 	assert.equal(last.details.line, "created from file");
+	files["~/plans/home.json"] = files["/plans/plan.json"]!;
+	assert.equal(run([{ ops: [{ op: "import", path: "~/plans/home.json" }] }]).last.details.doc!.title, "From a worker", "~/ counts as absolute");
 
-	files["bad.json"] = "{ title: nope";
-	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", fromFile: "bad.json" }] }, env), /^fromFile bad\.json: not valid JSON/);
-	files["extra.json"] = JSON.stringify({ title: "t", summary: "s", status: "aligning" });
-	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", fromFile: "extra.json" }] }, env), /^fromFile extra\.json: unknown field "status"/);
-	files["types.json"] = JSON.stringify({ title: "t", summary: "s", findings: "one string" });
-	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", fromFile: "types.json" }] }, env), /^fromFile types\.json: findings must be an array/);
-	files["deep.json"] = JSON.stringify({ title: "t", summary: "s", questions: [Q("a"), { ...Q("b"), options: [{ label: "x" }] }] });
-	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", fromFile: "deep.json" }] }, env), /questions\[1\]\.options\[0\]\.tradeoff must be a non-empty string/);
-	files["array.json"] = "[]";
-	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", fromFile: "array.json" }] }, env), /must be a JSON object/);
-	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", fromFile: "missing.json" }] }, env), /^fromFile missing\.json: cannot read it \(ENOENT/);
-	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", fromFile: "plan.json", title: "both" }] }, env), /either fromFile or the document's fields/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "import", path: "plan.json" }] }, env), /ops\[0\] \(import\): path must be absolute \(e\.g\. "\/tmp\/align-plan\.json"\), not "plan\.json"/);
+	files["/p/bad.json"] = "{ title: nope";
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "import", path: "/p/bad.json" }] }, env), /^import \/p\/bad\.json: not valid JSON/);
+	files["/p/extra.json"] = JSON.stringify({ title: "t", summary: "s", status: "aligning" });
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "import", path: "/p/extra.json" }] }, env), /^import \/p\/extra\.json: unknown field "status"/);
+	files["/p/types.json"] = JSON.stringify({ title: "t", summary: "s", findings: "one string" });
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "import", path: "/p/types.json" }] }, env), /^import \/p\/types\.json: findings must be an array/);
+	files["/p/deep.json"] = JSON.stringify({ title: "t", summary: "s", questions: [Q("a"), { ...Q("b"), options: [{ label: "x" }] }] });
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "import", path: "/p/deep.json" }] }, env), /questions\[1\]\.options\[0\]\.tradeoff must be a non-empty string/);
+	files["/p/array.json"] = "[]";
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "import", path: "/p/array.json" }] }, env), /must be a JSON object/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "import", path: "/p/missing.json" }] }, env), /^import \/p\/missing\.json: cannot read it \(ENOENT/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "import", path: "/plans/plan.json", title: "both" }] }, env), /ops\[0\] \(import\): unknown field "title" \(allowed: op, path\)/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "create", title: "t", summary: "s" }, { op: "import", path: "/plans/plan.json" }] }, env), /create or import must be the first op, once per call/);
 	// A parse error says where, never what: no quote of the file's first bytes.
-	files["secret.txt"] = "SECRET_TOKEN=abc123";
+	files["/p/secret.txt"] = "SECRET_TOKEN=abc123";
 	assert.throws(
-		() => applyAlignCall([], { ops: [{ op: "create", fromFile: "secret.txt" }] }, env),
-		(error: Error) => /^fromFile secret\.txt: not valid JSON/.test(error.message) && !/SECRET|abc123/.test(error.message),
+		() => applyAlignCall([], { ops: [{ op: "import", path: "/p/secret.txt" }] }, env),
+		(error: Error) => /^import \/p\/secret\.txt: not valid JSON/.test(error.message) && !/SECRET|abc123/.test(error.message),
 	);
+});
+
+test("hints: the names models reached for in the eval point at the op or field meant", () => {
+	const { docs } = run([{ ops: [CREATE] }]);
+	const hint = (call: unknown, message: RegExp, start = docs) => throwsAlign(() => applyAlignCall(start, call, env), message);
+	// Fields borrowed from pi's edit, the older shape, or a sibling op.
+	hint({ ops: [{ op: "edit", id: "a1", newText: "x" }] }, /ops\[0\] \(edit\): unknown field "newText" \(did you mean "text"\?\)/);
+	hint({ ops: [{ op: "edit", id: "a1", replacement: "x" }] }, /unknown field "replacement" \(did you mean "text"\?\)/);
+	hint({ ops: [{ op: "import", file: "/plans/plan.json" }] }, /ops\[0\] \(import\): unknown field "file" \(did you mean "path"\?\)/, []);
+	hint({ ops: [{ op: "drop_question", q: "q1", why: "later" }] }, /\(drop_question\): unknown field "why" \(did you mean "reason"\?\)/);
+	hint({ ops: [{ op: "drop_alignment", why: "later" }] }, /\(drop_alignment\): unknown field "why" \(did you mean "reason"\?\)/);
+	hint({ ops: [{ op: "exempt", why: "trivial" }] }, /\(exempt\): unknown field "why" \(did you mean "reason"\?\)/, []);
+	hint({ ops: [{ op: "edit_rejected", id: "x1", reason: "slow" }] }, /\(edit_rejected\): unknown field "reason" \(did you mean "why"\?\)/);
+	hint({ ops: [{ op: "accept", q: ["q1"] }] }, /\(accept\): unknown field "q" \(did you mean "qs"\?\)/);
+	hint({ ops: [{ op: "edit_question", id: "q1", ask: "x" }] }, /\(edit_question\): unknown field "id" \(did you mean "q"\?\)/);
+	hint({ ops: [{ op: "status", status: "implementing" }] }, /\(status\): unknown field "status" \(did you mean "to"\?\)/);
+	// Op names.
+	hint({ ops: [{ op: "delete", ids: ["f1"] }] }, /ops\[0\]\.op "delete" is not an op: use \{op: "remove", ids: \[\.\.\.\]\}/);
+	hint({ ops: [{ op: "add_question", questions: [Q("x")] }] }, /ops\[0\]\.op "add_question" is not an op: use \{op: "add", questions: \[\.\.\.\]\}/);
+	hint({ ops: [{ op: "drop", q: "q1", why: "x" }] }, /ops\[0\]\.op "drop" is not an op: use drop_question \{q, reason\} for one question, or drop_alignment \{reason\}/);
+	// The older shapes of ops that kept their name.
+	hint({ ops: [{ op: "create", fromFile: "/plans/plan.json" }] }, /ops\[0\] \(create\): a file is imported with \{op: "import", path: "\/absolute\/path\.json"\}/, []);
+	hint({ ops: [{ op: "accept", q: "open" }] }, /ops\[0\] \(accept\): every open question is accepted with \{op: "accept_all"\}/);
+	hint({ ops: [{ op: "edit", id: "q2", ask: "x" }] }, /ops\[0\] \(edit\): a question is changed with \{op: "edit_question", q: "q2"/);
+	hint({ ops: [{ op: "edit", id: "x1", why: "x" }] }, /ops\[0\] \(edit\): a rejected alternative is changed with \{op: "edit_rejected", id: "x1"/);
+	hint({ ops: [{ op: "edit", title: "x" }] }, /ops\[0\] \(edit\): the title and summary are changed with \{op: "edit_doc"/);
+	// No wrapper.
+	hint({ op: "decide", q: "q1", decision: "yes" }, /^wrap ops in \{ops: \[\.\.\.\]\}/);
+	hint([{ op: "decide", q: "q1", decision: "yes" }], /^wrap ops in \{ops: \[\.\.\.\]\}/);
+	// Required fields are named when missing.
+	hint({ ops: [{ op: "edit", id: "a1" }] }, /ops\[0\] \(edit\): text is required/);
+	hint({ ops: [{ op: "drop_question", q: "q1" }] }, /ops\[0\] \(drop_question\): reason is required/);
+	hint({ ops: [{ op: "accept", qs: "q1" }] }, /ops\[0\] \(accept\): qs must be an array/);
+	hint({ ops: [{ op: "decide", q: ["q1"], decision: "x" }] }, /ops\[0\] \(decide\): q must be one question id like "q3"/);
+});
+
+test("\"1 yes, 2 your rec\": decide one, accept the other, the third stays open and blocks implementing", () => {
+	const { docs, last } = run([{ ops: [CREATE] }, { ops: [{ op: "decide", q: "q1", decision: "yes" }, { op: "accept", qs: ["q2"] }] }]);
+	assert.equal(last.details.line, "q1 decided · q2 accepted");
+	assert.deepEqual(docs[0]!.questions.map((q) => q.decision?.by ?? "open"), ["user", "accepted-recommendation", "open"]);
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "status", to: "implementing" }] }, env), /still has 1 open question \(q3\): only once the user has answered it/);
+	// "go": a plain go-ahead takes the recommendation for what is left.
+	const going = run([{ ops: [{ op: "accept_all" }, { op: "status", to: "implementing" }] }], docs).last.details;
+	assert.equal(going.line, "q3 accepted · → implementing");
+});
+
+test("ALIGN_OP_FIELDS is what applyAlignCall enforces: each op's minimal call applies, and each required field is required", () => {
+	const minimal: Record<AlignOpName, Record<string, unknown>> = {
+		create: { title: "t", summary: "s" },
+		import: { path: "/plans/plan.json" },
+		add: { findings: ["x"] },
+		edit: { id: "a1", text: "x" },
+		edit_question: { q: "q1", ask: "x" },
+		edit_rejected: { id: "x1", why: "x" },
+		edit_doc: { title: "x" },
+		remove: { ids: ["f1"] },
+		decide: { q: "q1", decision: "x" },
+		accept: { qs: ["q1"] },
+		accept_all: {},
+		reopen: { q: "q1" },
+		drop_question: { q: "q1", reason: "x" },
+		drop_alignment: { reason: "x" },
+		status: { to: "done" },
+		exempt: { reason: "x" },
+		get: {},
+	};
+	assert.deepEqual(Object.keys(minimal).sort(), [...ALIGN_OPS].sort());
+	files["/plans/plan.json"] = JSON.stringify({ title: "t", summary: "s" });
+	// A start where each op applies: q1 decided (reopen), q2 open, everything else open.
+	const start = run([{ ops: [CREATE] }, { ops: [{ op: "decide", q: "q1", decision: "yes" }] }]).docs;
+	const startFor = (op: AlignOpName) => (op === "reopen" ? start : op === "status" ? run([{ ops: [{ op: "accept_all" }] }], start).docs : op === "decide" || op === "accept" || op === "edit_question" || op === "drop_question" ? run([{ ops: [{ op: "reopen", q: "q1" }] }], start).docs : start);
+	for (const op of ALIGN_OPS) {
+		const docs = op === "create" || op === "import" || op === "exempt" ? [] : startFor(op);
+		applyAlignCall(docs, { ops: [{ op, ...minimal[op] }] }, env);
+		const { required, optional } = ALIGN_OP_FIELDS[op];
+		assert.deepEqual([...required, ...optional].filter((k) => !(k in minimal[op]) && required.includes(k)), [], `${op}: the minimal call has every required field`);
+		for (const key of required) {
+			const { [key]: _gone, ...rest } = minimal[op];
+			throwsAlign(() => applyAlignCall(docs, { ops: [{ op, ...rest }] }, env), new RegExp(`\\(${op}\\): ${key} is required`));
+		}
+	}
 });
 
 test("readAlignFile: regular files up to the cap, relative to the cwd or absolute; never a pipe, a device or a remote session's path", () => {
@@ -150,7 +237,7 @@ test("readAlignFile: regular files up to the cap, relative to the cwd or absolut
 		if (spawnSync("mkfifo", [join(dir, "pipe")]).status === 0) assert.throws(() => readAlignFile(dir, "pipe"), /not a regular file/);
 		assert.throws(() => readAlignFile(dir, "missing.json"), /ENOENT/);
 		// A remote session's tools run on its target: the local disk is the wrong machine.
-		assert.throws(() => readAlignFile(dir, "plan.json", "box"), /target "box", and fromFile reads this machine's disk; create the alignment inline/);
+		assert.throws(() => readAlignFile(dir, "plan.json", "box"), /target "box", and import reads this machine's disk; use create instead/);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -169,20 +256,20 @@ test("ids are never reused: add after remove continues the count; a question is 
 	assert.equal(doc.rev, 3);
 	assert.deepEqual(last.details.changes, [{ kind: "added", ids: ["f3", "x2", "q4"] }]);
 	assert.equal(last.details.line, "+f3 +x2 +q4");
-	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "remove", ids: ["q1"] }] }, env), /q1 can't be removed .*drop a question instead/);
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "remove", ids: ["q1"] }] }, env), /q1 can't be removed .*a question takes drop_question/);
 	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "remove", ids: ["f2"] }] }, env), /al_1 has no f2/);
 });
 
-test("edit: each item kind takes its own fields; the document's title and summary without an id", () => {
+test("edit, edit_question, edit_rejected, edit_doc: each target takes its own fields", () => {
 	const { docs, last } = run([
 		{ ops: [CREATE] },
 		{
 			ops: [
-				{ op: "edit", id: "q2", ask: "Which format?", context: "Readers vary.", recommendation: { choice: "markdown", why: "humans read it" } },
-				{ op: "edit", id: "q1", context: "" },
+				{ op: "edit_question", q: "q2", ask: "Which format?", context: "Readers vary.", recommendation: { choice: "markdown", why: "humans read it" } },
+				{ op: "edit_question", q: "q1", context: "" },
 				{ op: "edit", id: "a1", text: "Add GET /api/export." },
-				{ op: "edit", id: "x1", why: "4 MB in the browser" },
-				{ op: "edit", title: "Export a session" },
+				{ op: "edit_rejected", id: "x1", why: "4 MB in the browser" },
+				{ op: "edit_doc", title: "Export a session" },
 			],
 		},
 	]);
@@ -194,24 +281,26 @@ test("edit: each item kind takes its own fields; the document's title and summar
 	assert.equal(doc.rejected[0]!.why, "4 MB in the browser");
 	assert.equal(doc.title, "Export a session");
 	assert.equal(last.details.line, "q2 edited · q1 edited · a1 edited · x1 edited · title edited");
-	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "edit", id: "f1", topic: "x" }] }, env), /f1 takes text, not topic/);
-	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "edit", id: "q9", ask: "x" }] }, env), /al_1 has no question q9/);
-	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "edit", ask: "x" }] }, env), /the document \(no id\) takes title, summary, not ask/);
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "edit", id: "f1", topic: "x" }] }, env), /ops\[0\] \(edit\): unknown field "topic" \(allowed: op, id, text\)/);
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "edit_question", q: "q9", ask: "x" }] }, env), /al_1 has no question q9/);
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "edit_question", q: "q1" }] }, env), /give at least one of topic, ask, context, options, recommendation/);
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "edit", id: "a9", text: "x" }] }, env), /al_1 has no a9/);
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "edit_doc", ask: "x" }] }, env), /ops\[0\] \(edit_doc\): unknown field "ask"/);
 });
 
 test("answers: decide records the user's words, accept takes the recommendation, reopen and drop; status follows the data", () => {
-	const { docs } = run([{ ops: [CREATE] }, { ops: [{ op: "decide", q: "q1", decision: "collapsed, like the web" }, { op: "accept", q: ["q2"] }] }]);
+	const { docs } = run([{ ops: [CREATE] }, { ops: [{ op: "decide", q: "q1", decision: "collapsed, like the web" }, { op: "accept", qs: ["q2"] }] }]);
 	const doc = docs[0]!;
 	assert.deepEqual(doc.questions[0]!.decision, { text: "collapsed, like the web", by: "user", at: NOW });
 	assert.deepEqual(doc.questions[1]!.decision, { text: "plain JSONL", by: "accepted-recommendation", at: NOW });
 	assert.equal(openText(doc), "1 of 3 open");
 	assert.equal(alignStatus(doc), "aligning");
 	// accept never replaces what the user said, and one id named twice is refused, not doubled.
-	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "accept", q: "q1" }] }, env), /q1 is already decided \("collapsed, like the web"\); reopen it first/);
-	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "accept", q: ["q3", "q3"] }] }, env), /q3 is named twice/);
-	assert.deepEqual(run([{ ops: [{ op: "accept", q: "open" }] }], docs).docs[0]!.questions[0]!.decision?.by, "user", "accept open leaves decided questions alone");
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "accept", qs: ["q1"] }] }, env), /q1 is already decided \("collapsed, like the web"\); reopen it first/);
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "accept", qs: ["q3", "q3"] }] }, env), /q3 is named twice/);
+	assert.deepEqual(run([{ ops: [{ op: "accept_all" }] }], docs).docs[0]!.questions[0]!.decision?.by, "user", "accept_all leaves decided questions alone");
 
-	const dropped = run([{ ops: [{ op: "drop", q: "q3", why: "out of scope" }] }], docs).docs[0]!;
+	const dropped = run([{ ops: [{ op: "drop_question", q: "q3", reason: "out of scope" }] }], docs).docs[0]!;
 	assert.equal(alignStatus(dropped), "confirmed", "every live question decided: confirmed, with no explicit op");
 	assert.equal(openText(dropped), "all 2 decided");
 	throwsAlign(() => applyAlignCall([dropped], { ops: [{ op: "decide", q: "q3", decision: "x" }] }, env), /q3 is dropped; reopen it first/);
@@ -222,20 +311,20 @@ test("answers: decide records the user's words, accept takes the recommendation,
 	throwsAlign(() => applyAlignCall([reopened], { ops: [{ op: "reopen", q: "q1" }] }, env), /q1 is already open/);
 });
 
-test("lifecycle: implementing and done need no open questions; accept open + status in one call is the 'your recs' path", () => {
+test("lifecycle: implementing and done need no open questions; accept_all + status in one call is the 'your recs' path", () => {
 	const { docs } = run([{ ops: [CREATE] }]);
 	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "status", to: "implementing" }] }, env), /still has 3 open questions \(q1, q2, q3\)/);
-	const { docs: going, last } = run([{ ops: [{ op: "accept", q: "open" }, { op: "status", to: "implementing" }] }], docs);
+	const { docs: going, last } = run([{ ops: [{ op: "accept_all" }, { op: "status", to: "implementing" }] }], docs);
 	assert.equal(alignStatus(going[0]!), "implementing");
 	assert.equal(last.details.line, "q1, q2, q3 accepted · → implementing");
-	throwsAlign(() => applyAlignCall(going, { ops: [{ op: "accept", q: "open" }] }, env), /no open questions to accept/);
+	throwsAlign(() => applyAlignCall(going, { ops: [{ op: "accept_all" }] }, env), /no open questions to accept/);
 	const done = run([{ ops: [{ op: "status", to: "done" }] }], going).docs[0]!;
 	assert.equal(alignStatus(done), "done");
 	// A finished document takes nothing but a move back to open.
 	throwsAlign(() => applyAlignCall([done], { doc: "al_1", ops: [{ op: "add", findings: ["late"] }] }, env), /al_1 is done; move it back/);
 	const back = run([{ doc: "al_1", ops: [{ op: "status", to: "open" }, { op: "add", findings: ["late"] }] }], [done]).docs[0]!;
 	assert.equal(alignStatus(back), "confirmed");
-	const gone = run([{ ops: [{ op: "drop", why: "user changed course" }] }], [back]).docs[0]!;
+	const gone = run([{ ops: [{ op: "drop_alignment", reason: "user changed course" }] }], [back]).docs[0]!;
 	assert.equal(alignStatus(gone), "dropped");
 	assert.equal(gone.droppedWhy, "user changed course");
 });
@@ -251,7 +340,7 @@ test("targets: one open doc is the default; with several, doc is required; an un
 	const { docs } = run([{ ops: [CREATE] }, { ops: [{ ...CREATE, title: "Second concern" }] }]);
 	assert.deepEqual(docs.map((d) => d.id), ["al_1", "al_2"]);
 	assert.equal(nextDocId(docs), "al_3");
-	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "accept", q: "open" }] }, env), /doc is required while several are open \(al_1 "Session export", al_2 "Second concern"\)/);
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "accept_all" }] }, env), /doc is required while several are open \(al_1 "Session export", al_2 "Second concern"\)/);
 	throwsAlign(() => applyAlignCall(docs, { doc: "al_9", ops: [{ op: "get" }] }, env), /No alignment al_9 on this branch/);
 	throwsAlign(() => applyAlignCall([], { ops: [{ op: "add", findings: ["x"] }] }, env), /No open alignment to change: create one first/);
 	const { last } = run([{ doc: "al_1", ops: [{ op: "decide", q: "q1", decision: "full" }] }], docs);
@@ -261,12 +350,12 @@ test("targets: one open doc is the default; with several, doc is required; an un
 });
 
 test("exempt stands alone and touches nothing; get reads without a snapshot", () => {
-	const ex = applyAlignCall([], { ops: [{ op: "exempt", why: "a question about the code, no change" }] }, env);
+	const ex = applyAlignCall([], { ops: [{ op: "exempt", reason: "a question about the code, no change" }] }, env);
 	assert.deepEqual(ex.details, { v: 1, changes: [], line: "", exempt: { why: "a question about the code, no change" } });
 	assert.match(ex.text, /^Recorded: no alignment needed — a question about the code, no change\.$/m);
-	const dotted = applyAlignCall([], { ops: [{ op: "exempt", why: "Just a command run." }] }, env);
+	const dotted = applyAlignCall([], { ops: [{ op: "exempt", reason: "Just a command run." }] }, env);
 	assert.match(dotted.text, /— Just a command run\.$/m, "a reason that ends a sentence gets no second period");
-	throwsAlign(() => applyAlignCall([], { ops: [{ op: "exempt", why: "x" }, { op: "get" }] }, env), /exempt stands alone/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "exempt", reason: "x" }, { op: "get" }] }, env), /exempt stands alone/);
 	const { docs } = run([{ ops: [CREATE] }]);
 	const got = applyAlignCall(docs, { ops: [{ op: "get" }] }, env);
 	assert.equal(got.details.doc, undefined, "no change, no snapshot: a get is never state");
@@ -284,7 +373,7 @@ const toolResult = (id: string, details: unknown, isError = false) => ({
 test("fold: newest snapshot per id in touch order; errors, other tools and malformed details are never state", () => {
 	const a = run([{ ops: [CREATE] }]).last.details;
 	const b = run([{ ops: [{ ...CREATE, title: "B" }] }], [a.doc!]).last.details;
-	const a2 = run([{ doc: "al_1", ops: [{ op: "accept", q: "open" }] }], [a.doc!, b.doc!]).last.details;
+	const a2 = run([{ doc: "al_1", ops: [{ op: "accept_all" }] }], [a.doc!, b.doc!]).last.details;
 	const entries = [
 		{ type: "session", id: "h" },
 		toolResult("1", JSON.parse(JSON.stringify(a))),
@@ -304,8 +393,29 @@ test("fold: newest snapshot per id in touch order; errors, other tools and malfo
 	assert.deepEqual(foldAlignments(null as unknown as unknown[]), { docs: [], legacy: null });
 });
 
+test("fold: a session written with the old op names (create + fromFile, accept \"open\", drop, edit of a question, exempt {why}) folds from its results, never its args", () => {
+	// Written by align.ts as of 9eb0af2, before the op rename; the args are the old shapes.
+	const entries = readFileSync(new URL("./tests/align-old-ops.jsonl", import.meta.url), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+	const args = entries.filter((e) => e.message.role === "assistant").flatMap((e) => e.message.content[0].arguments.ops.map((o: { op: string }) => o.op));
+	assert.ok(args.includes("drop") && entries.some((e) => e.message.content[0]?.arguments?.ops?.[0]?.fromFile), "the fixture really is the old format");
+	const { docs } = foldAlignments(entries);
+	assert.deepEqual(docs.map((d) => [d.id, d.title, alignStatus(d), d.rev]), [["al_1", "Old import", "implementing", 3], ["al_2", "Old second", "dropped", 2]]);
+	const [imported, dropped] = docs;
+	assert.deepEqual(imported!.questions.map((q) => [q.id, q.decision?.by ?? (q.dropped ? `dropped: ${q.dropped.why}` : "open")]), [
+		["q1", "accepted-recommendation"],
+		["q2", "dropped: out of scope"],
+		["q3", "accepted-recommendation"],
+	]);
+	assert.equal(imported!.questions[2]!.ask, "Call it export or dump?");
+	assert.equal(dropped!.droppedWhy, "user changed course");
+	// New ops continue from the old state.
+	const done = applyAlignCall(docs, { doc: "al_1", ops: [{ op: "status", to: "done" }] }, env).details.doc!;
+	assert.equal(done.rev, 4);
+	assert.equal(alignStatus(done), "done");
+});
+
 test("details round-trip through JSON and normalizeAlignDetails; the stored shape is checked field by field", () => {
-	const { last } = run([{ ops: [CREATE] }, { ops: [{ op: "decide", q: "q1", decision: "full" }, { op: "drop", q: "q3", why: "later" }] }]);
+	const { last } = run([{ ops: [CREATE] }, { ops: [{ op: "decide", q: "q1", decision: "full" }, { op: "drop_question", q: "q3", reason: "later" }] }]);
 	const stored = JSON.parse(JSON.stringify(last.details)) as AlignDetails;
 	assert.deepEqual(normalizeAlignDetails(stored), last.details);
 	for (const bad of [
@@ -329,7 +439,7 @@ test("details round-trip through JSON and normalizeAlignDetails; the stored shap
 		assert.equal(normalizeAlignDetails(bad), undefined, JSON.stringify(bad).slice(0, 80));
 	}
 	// A stored snapshot whose ids ran past its counter would make the next add reuse one.
-	const dropped = run([{ ops: [{ op: "drop", why: "moved on" }] }], [last.details.doc!]).last.details;
+	const dropped = run([{ ops: [{ op: "drop_alignment", reason: "moved on" }] }], [last.details.doc!]).last.details;
 	assert.deepEqual(normalizeAlignDetails(JSON.parse(JSON.stringify(dropped))), dropped, "a dropped document with its why is valid");
 });
 
@@ -337,7 +447,7 @@ test("counts, the hidden note and the widget cover open documents only", () => {
 	const { docs } = run([
 		{ ops: [CREATE] },
 		{ ops: [{ ...CREATE, title: "Second", questions: [Q("Only")] }] },
-		{ doc: "al_2", ops: [{ op: "accept", q: "open" }, { op: "status", to: "done" }] },
+		{ doc: "al_2", ops: [{ op: "accept_all" }, { op: "status", to: "done" }] },
 		{ ops: [{ ...CREATE, title: "Third", questions: [Q("One"), Q("Two")] }] },
 		{ doc: "al_3", ops: [{ op: "decide", q: "q1", decision: "no" }] },
 	]);

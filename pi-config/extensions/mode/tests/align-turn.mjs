@@ -100,7 +100,7 @@ try {
 	assert.match(seen(requests[1]), /al_1 \\"Export\\" · aligning · 1 of 1 open/, "the model read the echo");
 
 	// The next user prompt carries the hidden note; the system prompt carries no alignment.
-	script.push({ tool: "align", args: { ops: [{ op: "accept", q: "open" }] } }, { text: "Recorded." });
+	script.push({ tool: "align", args: { ops: [{ op: "accept_all" }] } }, { text: "Recorded." });
 	await session.prompt("your recs");
 	const noteReq = requests[2];
 	assert.match(seen(noteReq), /\[align\] Open alignments on this branch/, "the note reached the model");
@@ -141,28 +141,35 @@ try {
 	assert.match(seen(requests[wakeAt]), /\[align\] The context was just compacted/, "the report's run read the note");
 	assert.match(seen(requests[wakeAt]), /q1 Format: decided — JSONL/, "with the decision, which the summary never had");
 
-	// The execute wrapper: fromFile at an absolute path imports; a refused call says nothing changed
-	// and changes nothing; in a remote session fromFile is refused before any read.
+	// The execute wrapper: import at an absolute path imports; a refused call says nothing changed
+	// and changes nothing; in a remote session import is refused before any read.
 	const planFile = path.join(scratchRoot, `align-turn-plan-${process.pid}.json`);
 	writeFileSync(planFile, JSON.stringify({ title: "From a worker", summary: "Planned elsewhere.", questions: [{ topic: "Cap", ask: "400?", recommendation: { choice: "yes", why: "enough" } }] }));
 	const alignResults = () => sessionManager.getBranch().filter((e) => e.type === "message" && e.message.role === "toolResult" && e.message.toolName === "align");
 	try {
-		script.push({ tool: "align", args: { ops: [{ op: "create", fromFile: planFile }] } }, { text: "Imported." });
+		script.push({ tool: "align", args: { ops: [{ op: "import", path: planFile }] } }, { text: "Imported." });
 		await session.prompt("import the plan");
 		const imported = alignResults().at(-1).message;
 		assert.equal(imported.isError, false);
 		assert.equal(imported.details.doc.title, "From a worker");
 		const before = foldAlignments(sessionManager.getBranch()).docs.map((d) => [d.id, d.rev]);
-		script.push({ tool: "align", args: { ops: [{ op: "create", fromFile: scratchRoot }] } }, { text: "Hm." });
+		script.push({ tool: "align", args: { ops: [{ op: "import", path: scratchRoot }] } }, { text: "Hm." });
 		await session.prompt("import the folder");
 		const refused = alignResults().at(-1).message;
 		assert.equal(refused.isError, true);
-		assert.match(refused.content[0].text, /fromFile .*: cannot read it \(not a regular file\)\. Nothing was changed\./);
+		assert.match(refused.content[0].text, /^import .*: cannot read it \(not a regular file\)\. Nothing was changed\./);
 		assert.deepEqual(foldAlignments(sessionManager.getBranch()).docs.map((d) => [d.id, d.rev]), before, "a refused call is never state");
+		// A call missing a required field never reaches execute: pi's own check of the schema refuses it.
+		script.push({ tool: "align", args: { doc: "al_2", ops: [{ op: "edit", id: "a1" }] } }, { text: "Hm." });
+		await session.prompt("edit it");
+		const invalid = alignResults().at(-1).message;
+		assert.equal(invalid.isError, true);
+		assert.match(invalid.content[0].text, /Validation failed for tool "align"/);
+		assert.deepEqual(foldAlignments(sessionManager.getBranch()).docs.map((d) => [d.id, d.rev]), before);
 		hostPi.events.emit("remote:session", { version: 1, target: "box" });
-		script.push({ tool: "align", args: { ops: [{ op: "create", fromFile: planFile }] } }, { text: "Hm." });
+		script.push({ tool: "align", args: { ops: [{ op: "import", path: planFile }] } }, { text: "Hm." });
 		await session.prompt("import it again");
-		assert.match(alignResults().at(-1).message.content[0].text, /target "box", and fromFile reads this machine's disk/);
+		assert.match(alignResults().at(-1).message.content[0].text, /target "box", and import reads this machine's disk/);
 	} finally {
 		rmSync(planFile, { force: true });
 	}

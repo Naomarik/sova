@@ -551,7 +551,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	/**
 	 * The session's target while its tools run remotely: the remote extension announces it on
 	 * `pi.events` (remote/workers.ts REMOTE_SESSION_EVENT) and re-announces on request, so load order
-	 * never matters. align fromFile reads the local disk and is refused while this is set.
+	 * never matters. align import reads the local disk and is refused while this is set.
 	 */
 	let remoteTarget: string | undefined;
 	pi.events?.on(REMOTE_SESSION_EVENT, (data: unknown) => {

@@ -239,25 +239,38 @@ export function alignWidget(theme: Theme, getLine: () => { text: string; open: b
 // ── The tool row ─────────────────────────────────────────────────────────────
 
 function opWord(op: Record<string, unknown>): string {
-	const q = op.q;
+	const q = op.q ?? op.qs;
 	const qs = Array.isArray(q) ? q.join(",") : typeof q === "string" ? q : "";
 	switch (op.op) {
 		case "create":
-			return op.fromFile !== undefined ? `create from ${String(op.fromFile)}` : `create "${String(op.title ?? "")}"`;
+			// An older session's call imported with create + fromFile.
+			return op.fromFile !== undefined ? `import ${String(op.fromFile)}` : `create "${String(op.title ?? "")}"`;
+		case "import":
+			return `import ${String(op.path ?? "")}`;
 		case "status":
 			return `→ ${String(op.to ?? "?")}`;
 		case "edit":
+		case "edit_rejected":
 			return `edit ${typeof op.id === "string" ? op.id : "title"}`;
+		case "edit_question":
+			return `edit ${qs}`;
+		case "edit_doc":
+			return `edit ${["title", "summary"].filter((k) => op[k] !== undefined).join(",") || "title"}`;
 		case "remove":
 			return `remove ${Array.isArray(op.ids) ? op.ids.join(",") : ""}`;
+		case "accept_all":
+			return "accept all";
+		case "drop_question":
+			return `drop ${qs}`;
 		case "drop":
+		case "drop_alignment":
 			return qs ? `drop ${qs}` : "drop";
 		default:
 			return qs ? `${String(op.op)} ${qs}` : String(op.op ?? "?");
 	}
 }
 
-/** One dim line: "◇ align al_3 · decide q3 · accept open · → implementing". */
+/** One dim line: "◇ align al_3 · decide q3 · accept all · → implementing". */
 export function renderAlignCall(args: unknown, theme: Theme): Component {
 	const a = (args ?? {}) as { doc?: unknown; ops?: unknown };
 	const ops = Array.isArray(a.ops) ? a.ops.filter((o): o is Record<string, unknown> => typeof o === "object" && o !== null) : [];

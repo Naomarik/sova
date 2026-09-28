@@ -435,6 +435,50 @@ const alignTool = registeredTools.get("align");
 assert.ok(alignTool, "the align tool is registered");
 assert.equal(alignTool.executionMode, "sequential", "calls share state: one at a time");
 assert.ok(alignTool.promptGuidelines.some((g) => /never as reply text/.test(g)), "the guideline survives a dropped mode section");
+
+// The schema: one branch per op, its fields exactly the ones applyAlignCall takes, the required ones
+// required, so pi's own argument check refuses a call missing one before execute runs.
+{
+	const { validateToolArguments } = await jiti.import("@earendil-works/pi-ai");
+	const { ALIGN_OPS, ALIGN_OP_FIELDS } = await jiti.import(pathToFileURL(path.resolve(new URL("../align.ts", import.meta.url).pathname)).href);
+	const branches = alignTool.parameters.properties.ops.items.anyOf;
+	assert.deepEqual(branches.map((b) => b.properties.op.const), [...ALIGN_OPS], "one branch per op, in order");
+	const minimal = {
+		create: { title: "t", summary: "s" },
+		import: { path: "/tmp/plan.json" },
+		add: { findings: ["x"] },
+		edit: { id: "a1", text: "x" },
+		edit_question: { q: "q1", ask: "x" },
+		edit_rejected: { id: "x1", why: "x" },
+		edit_doc: { title: "x" },
+		remove: { ids: ["f1"] },
+		decide: { q: "q1", decision: "x" },
+		accept: { qs: ["q1"] },
+		accept_all: {},
+		reopen: { q: "q1" },
+		drop_question: { q: "q1", reason: "x" },
+		drop_alignment: { reason: "x" },
+		status: { to: "done" },
+		exempt: { reason: "x" },
+		get: {},
+	};
+	const check = (ops) => validateToolArguments(alignTool, { type: "toolCall", id: "v", name: "align", arguments: { ops } });
+	for (const branch of branches) {
+		const op = branch.properties.op.const;
+		const { required, optional } = ALIGN_OP_FIELDS[op];
+		assert.deepEqual([...branch.required].sort(), ["op", ...required].sort(), `${op}: required fields`);
+		assert.deepEqual(Object.keys(branch.properties).sort(), ["op", ...required, ...optional].sort(), `${op}: fields`);
+		assert.equal(branch.additionalProperties, false, `${op}: nothing else`);
+		check([{ op, ...minimal[op] }]);
+		for (const key of required) {
+			const { [key]: _gone, ...rest } = minimal[op];
+			assert.throws(() => check([{ op, ...rest }]), /Validation failed for tool "align"/, `${op} without ${key}`);
+		}
+	}
+	assert.throws(() => check([{ op: "edit", id: "a1", newText: "x" }]), /Validation failed/, "an unknown field fails at the schema");
+	assert.throws(() => check([{ op: "accept", qs: [] }]), /Validation failed/, "accept names at least one question");
+	assert.throws(() => check([{ op: "edit_question", q: "q1" }]), /Validation failed/, "edit_question changes at least one field");
+}
 const resultEntry = (id, result, isError = false) => ({
 	type: "message",
 	id,
@@ -499,9 +543,9 @@ assert.doesNotMatch(sectionsNote.mode, /Widget refresh/);
 await callAlign({ ops: [{ op: "decide", q: "q1", decision: "above, like the status" }] });
 const second = await callAlign({ ops: [{ op: "create", title: "Second concern", summary: "Another thing.", questions: [{ topic: "Scope", ask: "All of it?", recommendation: { choice: "yes", why: "simpler" } }] }] });
 assert.equal(second.details.doc.id, "al_2");
-await assert.rejects(alignTool.execute("x", { ops: [{ op: "accept", q: "open" }] }, undefined, undefined, ctx), /doc is required while several are open/);
+await assert.rejects(alignTool.execute("x", { ops: [{ op: "accept_all" }] }, undefined, undefined, ctx), /doc is required while several are open/);
 assert.match(store.widgets.get(ALIGN_WIDGET)(fakeTui, ctx.ui.theme).render(120).join(""), /al_1 1\/2 open · al_2 1\/1 open/);
-const going = await callAlign({ doc: "al_1", ops: [{ op: "accept", q: "open" }, { op: "status", to: "implementing" }] });
+const going = await callAlign({ doc: "al_1", ops: [{ op: "accept", qs: ["q2"] }, { op: "status", to: "implementing" }] });
 assert.equal(going.details.line, "q2 accepted · → implementing");
 
 // Widget lines never exceed the width
@@ -512,8 +556,13 @@ for (const width of [20, 40, 120]) {
 }
 
 // The TUI renderers: one dim call line, a compact result card.
-const callLine = alignTool.renderCall({ doc: "al_1", ops: [{ op: "accept", q: "open" }, { op: "status", to: "implementing" }] }, ctx.ui.theme).render(100).join("");
-assert.match(callLine, /◇ align al_1 · accept open · → implementing/);
+const callLine = alignTool.renderCall({ doc: "al_1", ops: [{ op: "accept_all" }, { op: "accept", qs: ["q1", "q3"] }, { op: "drop_question", q: "q4", reason: "x" }, { op: "status", to: "implementing" }] }, ctx.ui.theme).render(200).join("");
+assert.match(callLine, /◇ align al_1 · accept all · accept q1,q3 · drop q4 · → implementing/);
+const importLine = alignTool.renderCall({ ops: [{ op: "import", path: "/tmp/p.json" }] }, ctx.ui.theme).render(100).join("");
+assert.match(importLine, /◇ align · import \/tmp\/p\.json/);
+// An older session's call rows still read.
+const oldLine = alignTool.renderCall({ ops: [{ op: "create", fromFile: "/tmp/p.json" }, { op: "accept", q: "open" }, { op: "drop", why: "x" }] }, ctx.ui.theme).render(100).join("");
+assert.match(oldLine, /◇ align · import \/tmp\/p\.json · accept open · drop/);
 const card = alignTool.renderResult(going, { expanded: false, isPartial: false }, ctx.ui.theme).render(200).join("\n");
 assert.match(card, /al_1 Widget refresh/);
 assert.match(card, /implementing · all 2 decided · v3 · q2 accepted · → implementing/);

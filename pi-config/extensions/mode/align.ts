@@ -22,7 +22,7 @@ export const ALIGN_STATE_MESSAGE = "align-state";
 export const ALIGN_NUDGE_MESSAGE = "align-nudge";
 /** What the settle nudge tells the agent (hidden from the transcript). */
 export const ALIGN_NUDGE_TEXT =
-	"[align] Your last reply reads like a plan or asks the user to decide, and nothing was recorded with the align tool this run. Record it now: align create (or ops on the open alignment), each question with its recommendation, then reply with one short sentence pointing at it. If it isn't a design decision (a status report, a merge or run confirmation), call align exempt with why and stop.";
+	"[align] Your last reply reads like a plan or asks the user to decide, and nothing was recorded with the align tool this run. Record it now: align create (or ops on the open alignment), each question with its recommendation, then reply with one short sentence pointing at it. If it isn't a design decision (a status report, a merge or run confirmation), call align exempt with a reason and stop.";
 /** Version of the tool result's `details`. */
 export const ALIGN_DETAILS_VERSION = 1;
 
@@ -94,6 +94,7 @@ export interface AlignDocument {
 }
 
 export type AlignChange =
+	/** fromFile: an import (the stored name predates the op). */
 	| { kind: "created"; fromFile?: true }
 	| { kind: "added"; ids: string[] }
 	/** ids: item ids, or "title"/"summary" for the document's own fields. */
@@ -170,14 +171,33 @@ function need(ok: boolean, message: string): asserts ok {
 	if (!ok) throw new AlignError(message);
 }
 
-/** Field names models reach for from other tools (pi's edit takes newText), and the one meant. */
-const MEANT: Record<string, string> = { newText: "text", new_text: "text", answer: "decision", reason: "why", question: "ask" };
+/**
+ * Field names models reach for (from pi's edit tool, the op's older shape, or another op), and the
+ * ones meant, in order of preference: the hint names the first one this op takes.
+ */
+const MEANT: Record<string, readonly string[]> = {
+	newText: ["text"],
+	new_text: ["text"],
+	replacement: ["text"],
+	answer: ["decision"],
+	question: ["ask"],
+	why: ["reason"],
+	reason: ["why"],
+	file: ["path"],
+	fromFile: ["path"],
+	filePath: ["path"],
+	file_path: ["path"],
+	id: ["q"],
+	ids: ["qs"],
+	q: ["qs"],
+	status: ["to"],
+};
 
 function onlyKeys(value: Record<string, unknown>, allowed: readonly string[], where: string): void {
 	for (const key of Object.keys(value)) {
 		if (value[key] === undefined) continue;
-		const meant = MEANT[key] !== undefined && allowed.includes(MEANT[key]) ? ` (did you mean "${MEANT[key]}"?)` : "";
-		need(allowed.includes(key), `${where}: unknown field "${key}"${meant} (allowed: ${allowed.join(", ")})`);
+		const meant = MEANT[key]?.find((k) => allowed.includes(k));
+		need(allowed.includes(key), `${where}: unknown field "${key}"${meant ? ` (did you mean "${meant}"?)` : ""} (allowed: ${allowed.join(", ")})`);
 	}
 }
 
@@ -238,7 +258,7 @@ function rejectedInput(value: unknown, where: string): { option: string; why: st
 	return { option: text(v.option, `${where}.option`), why: text(v.why, `${where}.why`) };
 }
 
-/** What a create supplies (inline, or as the JSON file `fromFile` names). */
+/** What a create supplies (inline), or the JSON file an import names. */
 export interface AlignDocInput {
 	title: string;
 	summary: string;
@@ -250,7 +270,7 @@ export interface AlignDocInput {
 
 export const DOC_INPUT_KEYS = ["title", "summary", "findings", "approach", "rejected", "questions"] as const;
 
-/** Strict: every field typed, nothing unknown. `where` prefixes each message ("fromFile x.json"). */
+/** Strict: every field typed, nothing unknown. `where` prefixes each message ("import /tmp/x.json"). */
 export function parseDocInput(value: unknown, where: string): AlignDocInput {
 	need(isRecord(value), `${where} must be a JSON object with ${DOC_INPUT_KEYS.join(", ")}`);
 	const v = value as Record<string, unknown>;
@@ -265,32 +285,95 @@ export function parseDocInput(value: unknown, where: string): AlignDocInput {
 	};
 }
 
-/** The JSON a planning worker writes for `create` + `fromFile`: said once, for the tool description and prompts. */
-export const ALIGN_FILE_SCHEMA = `{"title": string, "summary": one line on what the concern is about, "findings": [string], "approach": [string, in order], "rejected": [{"option": string, "why": string}], "questions": [{"topic": short, "ask": the question, "context": what the user needs to answer it (optional), "options": [{"label": string, "tradeoff": string}] (optional), "recommendation": {"choice": string, "why": string}}]}`;
+/** The JSON a planning worker writes for `import`: said once, for the tool's schema and the prompts. */
+export const ALIGN_FILE_SCHEMA = `{"title": string, "summary": string (one line), "findings"?: [string], "approach"?: [string, in order], "rejected"?: [{"option": string, "why": string}], "questions"?: [{"topic": string, "ask": string, "context"?: string, "options"?: [{"label": string, "tradeoff": string}], "recommendation": {"choice": string, "why": string}}]}`;
 
 // ── Operations ───────────────────────────────────────────────────────────────
 
-export const ALIGN_OPS = ["create", "add", "edit", "remove", "decide", "accept", "reopen", "drop", "status", "exempt", "get"] as const;
+export const ALIGN_OPS = [
+	"create",
+	"import",
+	"add",
+	"edit",
+	"edit_question",
+	"edit_rejected",
+	"edit_doc",
+	"remove",
+	"decide",
+	"accept",
+	"accept_all",
+	"reopen",
+	"drop_question",
+	"drop_alignment",
+	"status",
+	"exempt",
+	"get",
+] as const;
 export type AlignOpName = (typeof ALIGN_OPS)[number];
 
-const OP_KEYS: Record<AlignOpName, readonly string[]> = {
-	create: ["op", "fromFile", ...DOC_INPUT_KEYS],
-	add: ["op", "findings", "approach", "rejected", "questions"],
-	edit: ["op", "id", "title", "summary", "text", "option", "why", "topic", "ask", "context", "options", "recommendation"],
-	remove: ["op", "ids"],
-	decide: ["op", "q", "decision"],
-	accept: ["op", "q"],
-	reopen: ["op", "q"],
-	drop: ["op", "q", "why"],
-	status: ["op", "to"],
-	exempt: ["op", "why"],
-	get: ["op"],
+/**
+ * Each op's fields: `required` must be present, `optional` may be; nothing else is taken. `atLeast`:
+ * the op needs this many of its optional fields. align-tool.ts builds the JSON schema's branch per
+ * op from the same table, so the schema and this check can't disagree (smoke.mjs pins it).
+ */
+export const ALIGN_OP_FIELDS: Record<AlignOpName, { required: readonly string[]; optional: readonly string[]; atLeast?: number }> = {
+	create: { required: ["title", "summary"], optional: ["findings", "approach", "rejected", "questions"] },
+	import: { required: ["path"], optional: [] },
+	add: { required: [], optional: ["findings", "approach", "rejected", "questions"], atLeast: 1 },
+	edit: { required: ["id", "text"], optional: [] },
+	edit_question: { required: ["q"], optional: ["topic", "ask", "context", "options", "recommendation"], atLeast: 1 },
+	edit_rejected: { required: ["id"], optional: ["option", "why"], atLeast: 1 },
+	edit_doc: { required: [], optional: ["title", "summary"], atLeast: 1 },
+	remove: { required: ["ids"], optional: [] },
+	decide: { required: ["q", "decision"], optional: [] },
+	accept: { required: ["qs"], optional: [] },
+	accept_all: { required: [], optional: [] },
+	reopen: { required: ["q"], optional: [] },
+	drop_question: { required: ["q", "reason"], optional: [] },
+	drop_alignment: { required: ["reason"], optional: [] },
+	status: { required: ["to"], optional: [] },
+	exempt: { required: ["reason"], optional: [] },
+	get: { required: [], optional: [] },
 };
+
+/** Op names models reach for, and what to use instead. */
+const OP_MEANT: Record<string, string> = {
+	delete: 'use {op: "remove", ids: [...]} for findings, steps and rejected alternatives, or drop_question for a question',
+	add_question: 'use {op: "add", questions: [...]}',
+	add_questions: 'use {op: "add", questions: [...]}',
+	drop: 'use drop_question {q, reason} for one question, or drop_alignment {reason} for the whole alignment',
+	create_from_file: 'use {op: "import", path}',
+	accept_open: 'use {op: "accept_all"}',
+};
+
+/**
+ * An op that is one of the older shapes (or a near miss) gets a message naming the op meant, before
+ * the generic field check would only list the allowed fields.
+ */
+function opShapeHint(o: Record<string, unknown>): string | undefined {
+	switch (o.op) {
+		case "create":
+			if (o.fromFile !== undefined || o.path !== undefined) return 'a file is imported with {op: "import", path: "/absolute/path.json"}, never create';
+			return undefined;
+		case "edit": {
+			const id = typeof o.id === "string" ? o.id : undefined;
+			if (id === undefined && (o.title !== undefined || o.summary !== undefined)) return 'the title and summary are changed with {op: "edit_doc", title?, summary?}';
+			if (id !== undefined && itemKind(id) === "q") return `a question is changed with {op: "edit_question", q: "${id}", topic?, ask?, context?, options?, recommendation?}`;
+			if (id !== undefined && itemKind(id) === "x") return `a rejected alternative is changed with {op: "edit_rejected", id: "${id}", option?, why?}`;
+			return undefined;
+		}
+		case "accept":
+			if (o.q === "open" || (Array.isArray(o.q) && o.q.length === 1 && o.q[0] === "open")) return 'every open question is accepted with {op: "accept_all"}; accept takes qs: ["q1", ...]';
+			return undefined;
+		default:
+			return undefined;
+	}
+}
 
 export interface AlignEnv {
 	/** ISO timestamp stamped on decisions, drops and the document. */
 	now: string;
-	/** Reads `fromFile` (resolved by the caller against the session's cwd). */
+	/** Reads an import's file (an absolute path). */
 	readFile(path: string): string;
 }
 
@@ -373,66 +456,95 @@ function docList(docs: readonly AlignDocument[]): string {
 	return docs.map((doc) => `${doc.id} "${doc.title}"`).join(", ");
 }
 
+/** A question id must be one ("q3"), never a list or "open". `where` names the field. */
+function questionIdOf(value: unknown, where: string): string {
+	need(typeof value === "string" && itemKind(value) === "q", `${where} must be one question id like "q3"`);
+	return value as string;
+}
+
+/** The call's shape and each op's fields; the first problem throws. */
+function checkedOps(input: unknown): (Record<string, unknown> & { op: AlignOpName })[] {
+	// A bare op, or a list of them, without the wrapper: the one mistake the schema's shape invites.
+	if (Array.isArray(input) || (isRecord(input) && typeof input.op === "string" && input.ops === undefined)) {
+		throw new AlignError('wrap ops in {ops: [...]}: align takes {doc?, ops: [{op: ...}, ...]}');
+	}
+	need(isRecord(input), "align takes {doc?, ops: [...]}");
+	const params = input as Record<string, unknown>;
+	onlyKeys(params, ["doc", "ops"], "align");
+	need(Array.isArray(params.ops) && params.ops.length > 0, "ops must be a non-empty array of operations");
+	return (params.ops as unknown[]).map((op, i) => {
+		need(isRecord(op), `ops[${i}] must be an object with an "op" field`);
+		const o = op as Record<string, unknown>;
+		if (typeof o.op === "string" && !(ALIGN_OPS as readonly string[]).includes(o.op) && OP_MEANT[o.op] !== undefined) {
+			throw new AlignError(`ops[${i}].op "${o.op}" is not an op: ${OP_MEANT[o.op]}`);
+		}
+		need(typeof o.op === "string" && (ALIGN_OPS as readonly string[]).includes(o.op), `ops[${i}].op must be one of ${ALIGN_OPS.join(", ")}`);
+		const where = `ops[${i}] (${o.op})`;
+		const hint = opShapeHint(o);
+		if (hint !== undefined) throw new AlignError(`${where}: ${hint}`);
+		const fields = ALIGN_OP_FIELDS[o.op as AlignOpName];
+		onlyKeys(o, ["op", ...fields.required, ...fields.optional], where);
+		for (const key of fields.required) need(o[key] !== undefined, `${where}: ${key} is required`);
+		if (fields.atLeast !== undefined) {
+			need(fields.optional.filter((k) => o[k] !== undefined).length >= fields.atLeast, `${where}: give at least one of ${fields.optional.join(", ")}`);
+		}
+		return o as Record<string, unknown> & { op: AlignOpName };
+	});
+}
+
 /**
  * Apply one tool call to the branch's documents, atomically: every op is validated before
  * anything is kept, and the first problem throws AlignError. Pure apart from `env.readFile`.
  */
 export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, env: AlignEnv): AlignOutcome {
-	need(isRecord(input), "align takes {doc?, ops: [...]}");
+	const ops = checkedOps(input);
 	const params = input as Record<string, unknown>;
-	onlyKeys(params, ["doc", "ops"], "align");
-	need(Array.isArray(params.ops) && params.ops.length > 0, "ops must be a non-empty array of operations");
-	const ops = (params.ops as unknown[]).map((op, i) => {
-		need(isRecord(op), `ops[${i}] must be an object with an "op" field`);
-		const o = op as Record<string, unknown>;
-		need(typeof o.op === "string" && (ALIGN_OPS as readonly string[]).includes(o.op), `ops[${i}].op must be one of ${ALIGN_OPS.join(", ")}`);
-		onlyKeys(o, OP_KEYS[o.op as AlignOpName], `ops[${i}] (${o.op})`);
-		return o as Record<string, unknown> & { op: AlignOpName };
-	});
 
 	// An exemption touches no document and stands alone.
 	if (ops.some((o) => o.op === "exempt")) {
 		need(ops.length === 1, "exempt stands alone in its call");
-		const why = oneLine(text(ops[0]!.why, "ops[0] (exempt): why"));
+		const reason = oneLine(text(ops[0]!.reason, "ops[0] (exempt): reason"));
 		return {
-			details: { v: 1, changes: [], line: "", exempt: { why } },
-			text: [`Recorded: no alignment needed — ${/[.!?]$/.test(why) ? why : `${why}.`}`, ...otherDocsLine(docs, undefined)].join("\n"),
+			details: { v: 1, changes: [], line: "", exempt: { why: reason } },
+			text: [`Recorded: no alignment needed — ${/[.!?]$/.test(reason) ? reason : `${reason}.`}`, ...otherDocsLine(docs, undefined)].join("\n"),
 		};
 	}
 
-	const creates = ops.findIndex((o) => o.op === "create");
-	need(creates <= 0 && ops.filter((o) => o.op === "create").length <= 1, "create must be the first op, once per call");
+	const starts = ops.filter((o) => o.op === "create" || o.op === "import").length;
+	const first = ops[0]!.op;
+	need(starts === 0 || (starts === 1 && (first === "create" || first === "import")), "create or import must be the first op, once per call");
+	const creates = starts === 1;
 	const onlyGets = ops.every((o) => o.op === "get");
 
 	let doc: AlignDocument | undefined;
 	const changes: AlignChange[] = [];
-	if (creates === 0) {
+	if (creates) {
 		const o = ops[0]!;
 		let parsed: AlignDocInput;
-		if (o.fromFile !== undefined) {
-			need(DOC_INPUT_KEYS.every((k) => o[k] === undefined), "ops[0] (create): give either fromFile or the document's fields, not both");
-			const path = text(o.fromFile, "ops[0] (create): fromFile");
+		if (o.op === "import") {
+			const path = text(o.path, "ops[0] (import): path");
+			need(path.startsWith("/") || path.startsWith("~/"), `ops[0] (import): path must be absolute (e.g. "/tmp/align-plan.json"), not "${path}"`);
 			let raw: string;
 			try {
 				raw = env.readFile(path);
 			} catch (error) {
-				throw new AlignError(`fromFile ${path}: cannot read it (${error instanceof Error ? error.message : String(error)})`);
+				throw new AlignError(`import ${path}: cannot read it (${error instanceof Error ? error.message : String(error)})`);
 			}
 			let json: unknown;
 			try {
 				json = JSON.parse(raw);
 			} catch (error) {
-				// Only where it broke, never the parser's quote of the file's first bytes: fromFile may
+				// Only where it broke, never the parser's quote of the file's first bytes: the path may
 				// have been pointed at something that isn't an alignment at all.
 				const at = /position (\d+)/.exec(error instanceof Error ? error.message : "")?.[1];
-				throw new AlignError(`fromFile ${path}: not valid JSON${at ? ` (near position ${at})` : ""}`);
+				throw new AlignError(`import ${path}: not valid JSON${at ? ` (near position ${at})` : ""}`);
 			}
-			parsed = parseDocInput(json, `fromFile ${path}`);
+			parsed = parseDocInput(json, `import ${path}`);
 		} else {
 			parsed = parseDocInput(Object.fromEntries(DOC_INPUT_KEYS.map((k) => [k, o[k]])), "ops[0] (create)");
 		}
 		doc = freshDoc(nextDocId(docs), parsed, env.now);
-		changes.push(o.fromFile !== undefined ? { kind: "created", fromFile: true } : { kind: "created" });
+		changes.push(o.op === "import" ? { kind: "created", fromFile: true } : { kind: "created" });
 	} else {
 		const open = openDocsOf(docs);
 		if (params.doc !== undefined) {
@@ -449,8 +561,7 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 	}
 
 	const gets: AlignDocument[] = [];
-	const start = creates === 0 ? 1 : 0;
-	for (let i = start; i < ops.length; i++) {
+	for (let i = creates ? 1 : 0; i < ops.length; i++) {
 		const o = ops[i]!;
 		const where = `ops[${i}] (${o.op})`;
 		if (o.op === "get") continue;
@@ -460,8 +571,6 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 		}
 		switch (o.op) {
 			case "add": {
-				const fields = { findings: o.findings, approach: o.approach, rejected: o.rejected, questions: o.questions };
-				need(Object.values(fields).some((v) => v !== undefined), `${where}: give findings, approach, rejected or questions`);
 				const ids = addItems(d, {
 					findings: o.findings === undefined ? [] : list(o.findings, `${where}: findings`, text),
 					approach: o.approach === undefined ? [] : list(o.approach, `${where}: approach`, text),
@@ -472,15 +581,48 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 				changes.push({ kind: "added", ids });
 				break;
 			}
-			case "edit":
-				changes.push({ kind: "edited", ids: editItem(d, o, where) });
+			case "edit": {
+				const id = text(o.id, `${where}: id`);
+				const kind = itemKind(id);
+				need(kind === "f" || kind === "a", `${where}: id must be a finding (fN) or an approach step (aN); questions take edit_question, rejected alternatives edit_rejected, the title and summary edit_doc`);
+				const item = (kind === "f" ? d.findings : d.approach).find((x) => x.id === id);
+				need(item !== undefined, `${where}: ${d.id} has no ${id}`);
+				item!.text = text(o.text, `${where}: text`);
+				changes.push({ kind: "edited", ids: [id] });
 				break;
+			}
+			case "edit_question":
+				changes.push({ kind: "edited", ids: [editQuestion(d, o, where)] });
+				break;
+			case "edit_rejected": {
+				const id = text(o.id, `${where}: id`);
+				need(itemKind(id) === "x", `${where}: id must be a rejected alternative like "x1"`);
+				const item = d.rejected.find((x) => x.id === id);
+				need(item !== undefined, `${where}: ${d.id} has no ${id}`);
+				if (o.option !== undefined) item!.option = text(o.option, `${where}: option`);
+				if (o.why !== undefined) item!.why = text(o.why, `${where}: why`);
+				changes.push({ kind: "edited", ids: [id] });
+				break;
+			}
+			case "edit_doc": {
+				const ids: string[] = [];
+				if (o.title !== undefined) {
+					d.title = oneLine(text(o.title, `${where}: title`));
+					ids.push("title");
+				}
+				if (o.summary !== undefined) {
+					d.summary = oneLine(text(o.summary, `${where}: summary`));
+					ids.push("summary");
+				}
+				changes.push({ kind: "edited", ids });
+				break;
+			}
 			case "remove": {
 				const ids = list(o.ids, `${where}: ids`, text);
 				need(ids.length > 0, `${where}: ids must name at least one item`);
 				for (const id of ids) {
 					const kind = itemKind(id);
-					need(kind === "f" || kind === "a" || kind === "x", `${where}: ${id} can't be removed (findings fN, approach aN and rejected xN only; drop a question instead)`);
+					need(kind === "f" || kind === "a" || kind === "x", `${where}: ${id} can't be removed (findings fN, approach aN and rejected xN only; a question takes drop_question)`);
 					const key = kind === "f" ? "findings" : kind === "a" ? "approach" : "rejected";
 					const before = d[key].length;
 					(d as unknown as Record<string, { id: string }[]>)[key] = d[key].filter((item) => item.id !== id);
@@ -490,20 +632,21 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 				break;
 			}
 			case "decide": {
-				const q = findQuestion(d, o.q, where);
+				const q = findQuestion(d, questionIdOf(o.q, `${where}: q`), where);
 				need(!q.dropped, `${where}: ${q.id} is dropped; reopen it first`);
 				q.decision = { text: oneLine(text(o.decision, `${where}: decision`)), by: "user", at: env.now };
 				changes.push({ kind: "decided", q: q.id });
 				break;
 			}
-			case "accept": {
+			case "accept":
+			case "accept_all": {
 				let targets: AlignQuestion[];
-				if (o.q === "open") {
+				if (o.op === "accept_all") {
 					targets = openQuestionsOf(d);
 					need(targets.length > 0, `${where}: ${d.id} has no open questions to accept`);
 				} else {
-					const ids = typeof o.q === "string" ? [o.q] : list(o.q, `${where}: q`, text);
-					need(ids.length > 0, `${where}: q must be "open" or question ids`);
+					const ids = list(o.qs, `${where}: qs`, questionIdOf);
+					need(ids.length > 0, `${where}: qs must name at least one question`);
 					targets = ids.map((id) => findQuestion(d, id, where));
 					for (const q of targets) need(!q.dropped, `${where}: ${q.id} is dropped; reopen it first`);
 				}
@@ -517,28 +660,27 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 				break;
 			}
 			case "reopen": {
-				const q = findQuestion(d, o.q, where);
+				const q = findQuestion(d, questionIdOf(o.q, `${where}: q`), where);
 				need(q.decision !== undefined || q.dropped !== undefined, `${where}: ${q.id} is already open`);
 				delete q.decision;
 				delete q.dropped;
 				changes.push({ kind: "reopened", q: q.id });
 				break;
 			}
-			case "drop": {
-				const why = oneLine(text(o.why, `${where}: why`));
-				if (o.q === undefined) {
-					d.phase = "dropped";
-					d.droppedWhy = why;
-					changes.push({ kind: "dropped" });
-				} else {
-					const q = findQuestion(d, o.q, where);
-					need(!q.dropped, `${where}: ${q.id} is already dropped`);
-					delete q.decision;
-					q.dropped = { why, at: env.now };
-					changes.push({ kind: "question-dropped", q: q.id });
-				}
+			case "drop_question": {
+				const q = findQuestion(d, questionIdOf(o.q, `${where}: q`), where);
+				const reason = oneLine(text(o.reason, `${where}: reason`));
+				need(!q.dropped, `${where}: ${q.id} is already dropped`);
+				delete q.decision;
+				q.dropped = { why: reason, at: env.now };
+				changes.push({ kind: "question-dropped", q: q.id });
 				break;
 			}
+			case "drop_alignment":
+				d.phase = "dropped";
+				d.droppedWhy = oneLine(text(o.reason, `${where}: reason`));
+				changes.push({ kind: "dropped" });
+				break;
 			case "status": {
 				const to = o.to;
 				need(to === "implementing" || to === "done" || to === "open", `${where}: to must be implementing, done or open`);
@@ -546,7 +688,7 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 					const open = openQuestionsOf(d);
 					need(
 						open.length === 0,
-						`${where}: ${d.id} still has ${open.length} open question${open.length === 1 ? "" : "s"} (${open.map((q) => q.id).join(", ")}): decide, accept or drop ${open.length === 1 ? "it" : "them"} earlier in the same call`,
+						`${where}: ${d.id} still has ${open.length} open question${open.length === 1 ? "" : "s"} (${open.map((q) => q.id).join(", ")}): only once the user has answered ${open.length === 1 ? "it" : "them"} (decide), taken your recommendation (accept) or it no longer applies (drop_question), earlier in the same call`,
 					);
 				}
 				const phase: AlignPhase = to;
@@ -564,7 +706,7 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 	}
 
 	const changed = changes.length > 0;
-	if (doc && changed && creates !== 0) {
+	if (doc && changed && !creates) {
 		doc.rev += 1;
 		doc.updatedAt = env.now;
 	}
@@ -577,46 +719,8 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 	return { details, text: `${lines.filter((l) => l !== "").join("\n")}${body}`.trim() };
 }
 
-function editItem(d: AlignDocument, o: Record<string, unknown>, where: string): string[] {
-	const fields = (keys: string[]) => keys.filter((k) => o[k] !== undefined);
-	const allow = (keys: string[], what: string) => {
-		const extra = fields(["title", "summary", "text", "option", "why", "topic", "ask", "context", "options", "recommendation"]).filter((k) => !keys.includes(k));
-		need(extra.length === 0, `${where}: ${what} takes ${keys.join(", ")}, not ${extra.join(", ")}`);
-		need(fields(keys).length > 0, `${where}: give at least one of ${keys.join(", ")}`);
-	};
-	if (o.id === undefined) {
-		allow(["title", "summary"], "the document (no id)");
-		const ids: string[] = [];
-		if (o.title !== undefined) {
-			d.title = oneLine(text(o.title, `${where}: title`));
-			ids.push("title");
-		}
-		if (o.summary !== undefined) {
-			d.summary = oneLine(text(o.summary, `${where}: summary`));
-			ids.push("summary");
-		}
-		return ids;
-	}
-	const id = text(o.id, `${where}: id`);
-	const kind = itemKind(id);
-	need(kind !== undefined, `${where}: id must be an item id (fN, aN, xN or qN), or omitted for the title and summary`);
-	if (kind === "f" || kind === "a") {
-		allow(["text"], `${id}`);
-		const item = (kind === "f" ? d.findings : d.approach).find((x) => x.id === id);
-		need(item !== undefined, `${where}: ${d.id} has no ${id}`);
-		item!.text = text(o.text, `${where}: text`);
-		return [id];
-	}
-	if (kind === "x") {
-		allow(["option", "why"], `${id}`);
-		const item = d.rejected.find((x) => x.id === id);
-		need(item !== undefined, `${where}: ${d.id} has no ${id}`);
-		if (o.option !== undefined) item!.option = text(o.option, `${where}: option`);
-		if (o.why !== undefined) item!.why = text(o.why, `${where}: why`);
-		return [id];
-	}
-	allow(["topic", "ask", "context", "options", "recommendation"], `${id}`);
-	const q = findQuestion(d, id, where);
+function editQuestion(d: AlignDocument, o: Record<string, unknown>, where: string): string {
+	const q = findQuestion(d, questionIdOf(o.q, `${where}: q`), where);
 	if (o.topic !== undefined) q.topic = text(o.topic, `${where}: topic`);
 	if (o.ask !== undefined) q.ask = text(o.ask, `${where}: ask`);
 	if (o.context !== undefined) {
@@ -631,7 +735,7 @@ function editItem(d: AlignDocument, o: Record<string, unknown>, where: string): 
 		else q.options = options;
 	}
 	if (o.recommendation !== undefined) q.recommendation = recommendation(o.recommendation, `${where}: recommendation`);
-	return [id];
+	return q.id;
 }
 
 /** The documents with `doc` replaced (or added), moved to the end: the fold's touch order. */

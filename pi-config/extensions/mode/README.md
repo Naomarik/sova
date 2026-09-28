@@ -163,15 +163,24 @@ trade-off), a recommendation (choice and why) and, once answered, a decision
 reused, so "q3" means one question for the document's life.
 
 One call applies a batch of ops to one document, atomically (one bad op fails
-the call, with the reason, and changes nothing): `create` (inline, or
-`fromFile` — a JSON file a planning worker wrote at an absolute path outside the
-repository, validated strictly; only a regular file up to 256 KB, and refused in a
-remote session, whose files live on the target: create inline there), `add`,
-`edit`, `remove`, `decide`, `accept` (the recommendation becomes the decision; never
-over a question already decided, which must be reopened first),
-`reopen`, `drop` (a question, or the whole document), `status` (`implementing`,
-`done`, back to `open`), `exempt` (alone: a work request needs no alignment)
-and `get`. The result is a compact echo of what is still open.
+the call, with the reason, and changes nothing). The schema has one branch per
+op, each with exactly its fields, the required ones required: `create` (inline),
+`import` (`path`: a JSON file a planning worker wrote at an absolute path
+outside the repository, validated strictly; only a regular file up to 256 KB,
+and refused in a remote session, whose files live on the target: create inline
+there), `add`, `edit` (a finding's or step's `text`), `edit_question`,
+`edit_rejected`, `edit_doc` (title, summary), `remove`, `decide`, `accept`
+(`qs`: the recommendation becomes the decision; never over a question already
+decided, which must be reopened first), `accept_all`, `reopen`,
+`drop_question` and `drop_alignment` (each with a `reason`), `status`
+(`implementing`, `done`, back to `open`), `exempt` (alone, with a `reason`: a
+work request needs no alignment) and `get`. A field or op borrowed from
+elsewhere gets a did-you-mean (`newText` → `text`, `why` → `reason`, op
+`delete` → `remove`, `create` with `fromFile` → `import`, a bare op without
+`{ops: [...]}`). The result is a compact echo of what is still open. Sessions
+written with the older op names (`create` + `fromFile`, `drop`, `accept`
+`"open"`) still fold: the state is read from the results' snapshots, never
+from the call's arguments.
 
 Status is derived from the data: `aligning` while a question is open (or
 there are none yet), `confirmed` once every question is decided or dropped,
@@ -442,7 +451,7 @@ node --test index.test.ts     # pure state/prompt/minor/palette logic
 node --test delegate.test.ts  # the routing file: defaults, parsing, persistence, per-turn re-read
 node --test routing.test.ts   # primary → fallback → ask, discovery failure, policy
 node --test spec.test.ts      # the spec writer file: parsing, persistence, per-turn re-read
-node --test align.test.ts     # alignments: ops, strict input and fromFile, fold, echo, note, nudge heuristic, legacy entries
+node --test align.test.ts     # alignments: ops, strict input and import, hints, fold, echo, note, nudge heuristic, legacy entries
 node tests/smoke.mjs          # real index.ts against a fake pi host, no model requests
 node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge

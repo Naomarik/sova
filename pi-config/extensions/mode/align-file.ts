@@ -1,5 +1,5 @@
 /**
- * The align tool's `fromFile` reader. Node builtins only, so align.test.ts tests it directly.
+ * The align tool's `import` reader. Node builtins only, so align.test.ts tests it directly.
  *
  * A hosted runtime lives in Sova's server process, so this read must never block or balloon it: only
  * a regular file (a FIFO with no writer would block the event loop for good, /dev/zero would grow
@@ -8,6 +8,7 @@
  * worker wrote the JSON over there, so a local read would miss it or read the wrong file. Refused.
  */
 import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 /** An alignment is a page of text; a file past this is not one. */
@@ -18,16 +19,17 @@ function sizeText(bytes: number): string {
 }
 
 /**
- * The file's text, resolved against `cwd` (an absolute path is taken as is). `remoteTarget`: the
+ * The file's text, resolved against `cwd` (an absolute path is taken as is, a leading "~/" is the
+ * home directory). `remoteTarget`: the
  * session's target when its tools run remotely. Throws an Error whose message says why.
  */
 export function readAlignFile(cwd: string, path: string, remoteTarget?: string): string {
 	if (remoteTarget !== undefined) {
 		throw new Error(
-			`this session's tools run on target "${remoteTarget}", and fromFile reads this machine's disk; create the alignment inline instead, with the fields of the worker's JSON`,
+			`this session's tools run on target "${remoteTarget}", and import reads this machine's disk; use create instead, with the fields of the worker's JSON`,
 		);
 	}
-	const fd = openSync(resolve(cwd, path), constants.O_RDONLY | constants.O_NONBLOCK);
+	const fd = openSync(path.startsWith("~/") ? resolve(homedir(), path.slice(2)) : resolve(cwd, path), constants.O_RDONLY | constants.O_NONBLOCK);
 	try {
 		const stat = fstatSync(fd);
 		if (!stat.isFile()) throw new Error("not a regular file");

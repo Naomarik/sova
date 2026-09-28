@@ -51,7 +51,7 @@ const [created, second, answered, finished] = calls([
   { ops: [{ op: "create", title: "Export", summary: "Download a session.", questions: [Q("Format"), Q("Zip")] }] },
   { ops: [{ op: "create", title: "Pane", summary: "Show workers.", questions: [Q("Cap")] }] },
   { doc: "al_1", ops: [{ op: "decide", q: "q1", decision: "JSONL" }] },
-  { doc: "al_2", ops: [{ op: "accept", q: "open" }, { op: "status", to: "done" }] },
+  { doc: "al_2", ops: [{ op: "accept_all" }, { op: "status", to: "done" }] },
 ]) as [AlignDetails, AlignDetails, AlignDetails, AlignDetails];
 
 describe("transcript: an align tool result is its own row", () => {
@@ -66,7 +66,7 @@ describe("transcript: an align tool result is its own row", () => {
   });
 
   test("an exemption is a row too; a get, a failed call and unreadable details stay plain tool results", () => {
-    const exempt = applyAlignCall([], { ops: [{ op: "exempt", why: "a question, no change" }] }, env).details;
+    const exempt = applyAlignCall([], { ops: [{ op: "exempt", reason: "a question, no change" }] }, env).details;
     assert.equal(normalizeEntry(result(exempt, null))[0]!.align?.exempt?.why, "a question, no change");
     const get = applyAlignCall([created.doc!], { ops: [{ op: "get" }] }, env).details;
     for (const entry of [
@@ -99,7 +99,7 @@ describe("sessionAlignOf: the session list's counts", () => {
     assert.equal(sessionAlignOf([finished.doc!]), undefined, "nothing open: no field");
     const confirmed = calls([
       { ops: [{ op: "create", title: "C", summary: "s", questions: [Q("x")] }] },
-      { ops: [{ op: "accept", q: "open" }] },
+      { ops: [{ op: "accept_all" }] },
     ])[1]!.doc!;
     assert.deepEqual(sessionAlignOf([confirmed]), { openDocs: 1, openQuestions: 0, questionDocs: 0 }, "open but asking nothing: no lead");
   });
@@ -230,7 +230,7 @@ describe("SessionSummary.align", () => {
     assert.deepEqual((await getSessionSummary(path))?.align, { openDocs: 1, openQuestions: 1, questionDocs: 1, lead: { id: "al_1", title: "Export" } });
     const done = calls([
       { ops: [{ op: "create", title: "Export", summary: "Download a session.", questions: [Q("Format"), Q("Zip")] }] },
-      { ops: [{ op: "accept", q: "open" }, { op: "status", to: "done" }] },
+      { ops: [{ op: "accept_all" }, { op: "status", to: "done" }] },
     ])[1]!;
     appendFileSync(path, `${JSON.stringify(result(done, b.id))}\n`);
     // A different size is a changed file for the list's cache.
@@ -246,11 +246,11 @@ describe("the web derives what the extension derives", () => {
       { ops: [{ op: "create", title: "A", summary: "s" }] },
       { ops: [{ op: "add", questions: [Q("x"), Q("y")] }] },
       { ops: [{ op: "decide", q: "q1", decision: "no" }] },
-      { ops: [{ op: "drop", q: "q2", why: "later" }] },
-      { ops: [{ op: "reopen", q: "q2" }, { op: "accept", q: "open" }, { op: "status", to: "implementing" }] },
+      { ops: [{ op: "drop_question", q: "q2", reason: "later" }] },
+      { ops: [{ op: "reopen", q: "q2" }, { op: "accept_all" }, { op: "status", to: "implementing" }] },
       { ops: [{ op: "status", to: "done" }] },
       { doc: "al_1", ops: [{ op: "status", to: "open" }] },
-      { ops: [{ op: "drop", why: "gone" }] },
+      { ops: [{ op: "drop_alignment", reason: "gone" }] },
     ]);
     for (const d of all) assert.equal(web.alignStatusOf(d.doc!), alignStatus(d.doc!), `rev ${d.doc!.rev}`);
     const entries = [result(created, null), result(second, null), result(answered, null)];
@@ -259,5 +259,32 @@ describe("the web derives what the extension derives", () => {
       web.foldAlignRows(rows).map((e) => [e.doc.id, e.doc.rev, e.rowId]),
       foldAlignments(entries).docs.map((d) => [d.id, d.rev, entries.find((e) => (e.message.details as AlignDetails).doc?.id === d.id && (e.message.details as AlignDetails).doc?.rev === d.rev)!.id]),
     );
+  });
+});
+
+describe("a session written with the old op names", () => {
+  test("its rows and its summary come from the results' snapshots, whatever the call's args said", async () => {
+    // pi-config/extensions/mode/tests/align-old-ops.jsonl: written by align.ts before the op rename
+    // (create + fromFile, accept "open", drop, edit of a question, exempt {why}).
+    const fixture = readFileSync(new URL("../pi-config/extensions/mode/tests/align-old-ops.jsonl", import.meta.url), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    let parentId: string | null = "u1";
+    const lines = fixture.map((entry) => {
+      const chained = { ...entry, id: `old-${entry.id}`, parentId, timestamp: env.now };
+      parentId = chained.id;
+      return chained;
+    });
+    const rows = normalizeEntries(lines).filter((row) => row.kind === "align");
+    assert.deepEqual(rows.map((row) => row.align?.line || (row.align?.exempt ? "exempt" : "")), [
+      "created from file",
+      "q1 accepted · q2 dropped · q3 edited",
+      "q3 accepted · → implementing",
+      "created",
+      "dropped",
+      "exempt",
+    ]);
+    const path = session("old-ops", lines);
+    const scan = await readAlignScan(path, readFileSync(path).length, null);
+    assert.equal(scan.found, true);
+    assert.deepEqual(scan.summary, { openDocs: 1, openQuestions: 0, questionDocs: 0 });
   });
 });

@@ -110,6 +110,9 @@
 .cost-table-wrap { margin: 0; }
 .cost-table td .cost-tokens { display: block; color: var(--color-ink-muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .cost-table td .cost-unpriced { color: var(--color-ink-muted); }
+/* A row's name is its header cell, but reads as a cell: no header fill, regular weight, and it wraps. */
+.md .cost-table tbody th[scope="row"] { background: none; font-weight: var(--fw-regular); white-space: normal; }
+.md .cost-table tbody tr:last-child th { border-bottom: 0; }
 .cost-table tfoot th, .cost-table tfoot td { background: var(--color-sunken); font-weight: var(--fw-semibold); border-bottom: 0; }
 .cost-table tfoot td .cost-tokens { font-weight: var(--fw-regular); }
 /* Top sessions: title (link or plain) with kind · who under it, cost at the right. */
@@ -118,32 +121,33 @@
 .cost-session:last-child { border-bottom: 0; }
 .cost-session-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .cost-session-meta { display: block; color: var(--color-ink-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); }
-/* Under 560px of page the tables stack, as the Usage tab's does: one block per row, the row's
-   name on its first line, each figure under its column's name (the cell's data-label). */
+/* Under 560px of page the model table stacks (.cost-table-stack; the kinds table's 2 columns
+   fit): one block per model, its name on the first line, then one line per figure, labelled by
+   its column's name (the cell's data-label). */
 @container insights (max-width: 559px) {
-  .cost-table,
-  .cost-table tbody,
-  .cost-table tfoot { display: block; }
-  .cost-table thead { display: none; }
-  .cost-table tr {
+  .cost-table-stack,
+  .cost-table-stack tbody,
+  .cost-table-stack tfoot { display: block; }
+  .cost-table-stack thead { display: none; }
+  .cost-table-stack tr {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 2px var(--space-3);
     padding: var(--space-2) var(--space-3);
     border-bottom: var(--stroke-thin) solid var(--color-border);
   }
-  .cost-table tbody tr:last-child { border-bottom: 0; }
-  .cost-table tfoot tr { border-top: var(--stroke-thin) solid var(--color-border); border-bottom: 0; background: var(--color-sunken); }
-  .md .cost-table th,
-  .md .cost-table td { display: block; padding: 0; border: 0; background: none; }
-  .cost-table th[scope="row"] { grid-column: 1 / -1; }
-  .md .cost-table td[data-label] { display: flex; justify-content: flex-end; align-items: baseline; gap: var(--space-2); text-align: right; }
-  .cost-table td[data-label]::before {
+  .cost-table-stack tbody tr:last-child { border-bottom: 0; }
+  .cost-table-stack tfoot tr { border-top: var(--stroke-thin) solid var(--color-border); border-bottom: 0; background: var(--color-sunken); }
+  .md .cost-table-stack th,
+  .md .cost-table-stack td { display: block; padding: 0; border: 0; background: none; }
+  .cost-table-stack th[scope="row"] { grid-column: 1 / -1; }
+  .md .cost-table-stack td[data-label] { display: flex; justify-content: flex-end; align-items: baseline; gap: var(--space-2); text-align: right; }
+  .cost-table-stack td[data-label]::before {
     content: attr(data-label);
     margin-right: auto;
     font-family: var(--font-body);
     font-weight: var(--fw-regular);
     color: var(--color-ink-muted);
   }
-  .cost-table td .cost-tokens { display: inline; }
+  .cost-table-stack td .cost-tokens { display: inline; }
 }

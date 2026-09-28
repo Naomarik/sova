@@ -88,7 +88,7 @@ function CostBody(props: { cost: ProjectCost; orgId: string }) {
       </Show>
       <Show when={models().length}>
         <div class="md md-table-wrap cost-table-wrap">
-          <table class="cost-table">
+          <table class="cost-table cost-table-stack">
             <caption class="visually-hidden">Cost by model and token kind</caption>
             <thead>
               <tr>

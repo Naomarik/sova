@@ -152,7 +152,10 @@
 }
 .vis-em-badge-svg circle { fill: var(--vis-stroke); }
 .vis-svg .vis-em-badge-svg text { fill: var(--color-on-accent); font-weight: var(--fw-semibold); }
-.vis-notes {
+/* base.css's `.md ul/ol` indent and `.md li + li` spacing are for prose lists, not a drawing's rows. */
+.md .vis :where(ul, ol) { margin: 0; padding: 0; }
+.md .vis li + li { margin-top: 0; }
+.vis .vis-notes {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);

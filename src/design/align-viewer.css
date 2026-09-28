@@ -85,8 +85,8 @@
 .align-doc-dropped { margin: 0; color: var(--color-ink-2); }
 
 /* Body text is --fs-body in ink / ink-2 (AA on the card); muted is kept for ids, eyebrow, meta
-   and the decision's "· you" tail. An open question carries its recommendation in a tinted,
-   ruled block; a decided one keeps the plain line, one step quieter. */
+   and the decision's "· you" tail. The recommendation is a plain line under the options, no fill
+   or rule; a decided question's recommendation is one step quieter. */
 .align-questions { list-style: none; margin: 0; padding: 0; display: grid; }
 .align-q {
   display: grid;
@@ -113,13 +113,6 @@
 .align-q-decision { color: var(--color-ink-2); }
 .align-q-label { font-weight: var(--fw-semibold); color: var(--color-ink); }
 .align-q-by { color: var(--color-ink-muted); }
-.align-q[data-state="open"] .align-q-rec {
-  padding: var(--space-2) var(--space-3);
-  border-left: 3px solid var(--color-accent);
-  border-radius: 0 var(--r-xs) var(--r-xs) 0;
-  background: var(--color-accent-tint);
-  color: var(--color-ink);
-}
 .align-q[data-state="decided"] .align-q-ask,
 .align-q[data-state="decided"] .align-q-rec strong { color: var(--color-ink-2); }
 .align-q[data-state="decided"] .align-q-decision { color: var(--color-ink); }

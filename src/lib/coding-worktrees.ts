@@ -26,7 +26,6 @@ export function codingModeOf(key: CodingModeKey): ProjectCodingMode | null {
 
 export const codingModeLabel = (key: CodingModeKey): string => (key === "auto" ? "Automatic" : modeWords(codingModeOf(key)!));
 
-export const isDelegate = (key: CodingModeKey): boolean => key.startsWith("delegate");
 
 // ---- coding sessions and their worktrees ------------------------------------------------------------
 

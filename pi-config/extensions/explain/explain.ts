@@ -79,6 +79,8 @@ export interface BeginRequest {
 	effort?: string;
 	/** The parent's live Claude CLI session (claude-code-cli models): the child resumes it. */
 	claudeFork?: ClaudeForkPoint;
+	/** The parent's active tool names: a forked child keeps exactly these (see prompt.ts searchTools). */
+	parentTools?: readonly string[];
 }
 
 export interface BeginResult {
@@ -206,6 +208,7 @@ export class ExplainRuns {
 			metaPath: `${dir}/meta.json`,
 			webSearch: Boolean(webAccess),
 			forked: Boolean(forkSession),
+			...(request.parentTools ? { parentTools: request.parentTools } : {}),
 		});
 
 		const start = this.host.start ?? startExplainWorker;

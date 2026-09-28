@@ -16,6 +16,8 @@ import {
 	declaredState,
 	gateToolCall,
 	mirrorPrompt,
+	readOnlyShellCommand,
+	shellPipeline,
 	planTools,
 	sameDeclaration,
 	withoutBtwNotes,
@@ -102,14 +104,14 @@ test("planTools keeps every declared tool, in order, and only callable ones can 
 	const plan = planTools(declared, own, new Set(["read", "grep", "find", "ls", "write", "edit"]));
 	assert.deepEqual(
 		plan.map((entry) => [entry.name, entry.action]),
-		[["read", "own"], ["bash", "stub"], ["grep", "wrap"], ["agent_spawn", "stub"], ["write", "own"], ["web_search", "own"]],
+		[["read", "own"], ["bash", "own"], ["grep", "wrap"], ["agent_spawn", "stub"], ["write", "own"], ["web_search", "own"]],
 	);
 	assert.equal(plan.find((entry) => entry.name === "grep")?.declaration.description, "parent grep", "a wrap carries the parent's words");
 	assert.equal(plan.some((entry) => entry.name === "ls"), false, "a tool the parent never declared is not added: it would change the prefix");
 
 	// A parent in strict mode has no write: the child adds it, at the end (additive).
 	const strict = planTools([tool("read"), tool("bash")], own, new Set(["read", "write"]));
-	assert.deepEqual(strict.map((entry) => [entry.name, entry.action]), [["read", "own"], ["bash", "stub"], ["write", "own"]]);
+	assert.deepEqual(strict.map((entry) => [entry.name, entry.action]), [["read", "own"], ["bash", "own"], ["write", "own"]]);
 
 	// Unforked: nothing to mirror, the callable tools the child has.
 	assert.deepEqual(planTools(undefined, own, new Set()).map((entry) => entry.name), ["read", "grep", "ls", "write", "web_search"]);
@@ -132,7 +134,45 @@ test("the gate lets the child read, look things up, and write only inside its st
 	assert.match(gateToolCall("write", { path: `${store}/../x-2/index.html` }, store, at) ?? "", /writes only inside/, "no escape by ..");
 	assert.match(gateToolCall("write", { path: `${store}-evil/index.html` }, store, at) ?? "", /writes only inside/, "a sibling with the same prefix is outside");
 	assert.match(gateToolCall("write", {}, store, at) ?? "", /writes only inside/);
-	for (const name of ["bash", "agent_spawn", "worktree", "powershell"]) assert.match(gateToolCall(name, { command: "rm -rf /" }, store, at) ?? "", /read-only/, name);
+	for (const name of ["agent_spawn", "worktree", "powershell"]) assert.match(gateToolCall(name, { command: "ls" }, store, at) ?? "", /read-only/, name);
+	assert.equal(gateToolCall("bash", { command: "rg -n 'forkFrom|fork' pi-config | head -20" }, store, at), undefined);
+	assert.match(gateToolCall("bash", { command: "rm -rf /" }, store, at) ?? "", /read-only command line/);
+});
+
+test("bash runs only one read-only command line: listed programs, pipes, quotes; nothing that writes or chains", () => {
+	assert.deepEqual(shellPipeline(`rg -n "a|b" 'c d' src\\ dir | head -5`), [["rg", "-n", "a|b", "c d", "src dir"], ["head", "-5"]]);
+	for (const ok of [
+		"ls -la pi-config/extensions",
+		"find . -name '*.ts' -not -path './node_modules/*'",
+		"grep -rn fork pi-config/extensions/explain",
+		"git log --oneline -5 -- pi-config",
+		"git show HEAD:server/index.ts | head -5",
+		"cat package.json | jq .scripts",
+		"wc -l pi-config/extensions/explain/*.ts",
+	]) assert.equal(readOnlyShellCommand(ok), undefined, ok);
+	for (const bad of [
+		"rm -rf /",
+		"ls > out.txt",
+		"ls; rm x",
+		"ls && rm x",
+		"cat $(echo /etc/passwd)",
+		"echo `id`",
+		'grep "$HOME" x',
+		"find . -delete",
+		"find . -exec rm {} +",
+		"rg --pre=sh pattern",
+		"sort -o /tmp/x file",
+		"git checkout -- .",
+		"git -c core.pager=sh log",
+		"git diff --output=/tmp/x",
+		"curl https://example.com",
+		"sed -i s/a/b/ f",
+		"tail -f log",
+		"ls |",
+		"(ls)",
+		"ls\nrm x",
+		"",
+	]) assert.notEqual(readOnlyShellCommand(bad), undefined, bad);
 });
 
 test("btw notes are dropped like the parent's btw extension drops them; other messages are untouched", () => {
@@ -250,4 +290,13 @@ test("a forked run's session copy is deleted when it settles and when it is stop
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
+});
+
+test("the prompt names the search tools the child actually has", async () => {
+	const { searchTools } = await import("./prompt.ts");
+	assert.equal(searchTools({ forked: false }), "read/grep/find/ls", "unforked: the child's own tools");
+	assert.equal(searchTools({ forked: true, parentTools: ["read", "grep", "find", "ls", "bash"] }), "read/grep/find/ls");
+	const shell = searchTools({ forked: true, parentTools: ["read", "bash", "edit", "write", "agent_spawn"] });
+	assert.ok(shell.startsWith("read, and `bash` for ONE read-only command line"), shell);
+	assert.equal(searchTools({ forked: true, parentTools: ["read", "write"] }), "read");
 });

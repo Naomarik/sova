@@ -8,12 +8,14 @@
  *  - session_start: activate exactly the tools the parent's transcript declares, with the parent's
  *    declarations (own / wrapped built-in / stub), plus `read` and `write` if the parent lacked them;
  *  - before_agent_start: rebuild the system prompt from the parent's replayed sections;
- *  - tool_call: block every call except reading, web lookups, and writes inside the store;
+ *  - tool_call: block every call except reading, web lookups, one read-only bash command line,
+ *    and writes inside the store;
  *  - context: drop the btw notes the parent's btw extension drops from its requests;
  *  - before_provider_request: ask OpenAI-style providers for the parent's cache key.
  */
 import { resolve } from "node:path";
 import {
+	createBashToolDefinition,
 	createEditToolDefinition,
 	createFindToolDefinition,
 	createGrepToolDefinition,
@@ -46,6 +48,7 @@ const BUILTINS: Record<string, (cwd: string) => ToolDefinition<any, any, any>> =
 	ls: (cwd) => createLsToolDefinition(cwd),
 	write: (cwd) => createWriteToolDefinition(cwd),
 	edit: (cwd) => createEditToolDefinition(cwd),
+	bash: (cwd) => createBashToolDefinition(cwd),
 };
 
 /**

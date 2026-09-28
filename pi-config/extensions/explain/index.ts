@@ -139,6 +139,7 @@ export default function explainExtension(pi: ExtensionAPI): void {
 					model,
 					...(ctx.thinkingLevel ? { effort: ctx.thinkingLevel } : {}),
 					...(claudeFork ? { claudeFork } : {}),
+					parentTools: pi.getActiveTools(),
 				});
 				const how = [started.forked ? "forked" : "fresh (this session is not on disk yet)", started.webSearch ? "web search on" : "no web search"].join(", ");
 				ctx.ui.notify(`Explaining "${topic}" in a subagent (${how}). It lands in ${started.dir} and is announced here.`, "info");

@@ -152,11 +152,112 @@ export const READ_TOOLS: readonly string[] = ["read", "grep", "find", "ls"];
 export const STORE_WRITE_TOOLS: readonly string[] = ["write", "edit"];
 /** pi-web-access's default tool names: network reads, loaded only when that package is installed. */
 export const WEB_TOOLS: readonly string[] = ["web_search", "fetch_content", "get_search_content", "source_check"];
+/**
+ * The shell, allowed only for one read-only command line (`readOnlyShellCommand`). A parent's
+ * default tools are read, bash, edit and write: no grep, find or ls. Declaring those in the child
+ * would change the prefix, so a mirrored child searches through bash instead.
+ */
+export const SHELL_TOOL = "bash";
 /** Tools the child activates even when the parent did not declare them: it must read, and write its page. */
 export const REQUIRED_TOOLS: readonly string[] = ["read", "write"];
 
 export function callable(name: string): boolean {
-	return READ_TOOLS.includes(name) || STORE_WRITE_TOOLS.includes(name) || WEB_TOOLS.includes(name);
+	return READ_TOOLS.includes(name) || STORE_WRITE_TOOLS.includes(name) || WEB_TOOLS.includes(name) || name === SHELL_TOOL;
+}
+
+/**
+ * Programs a read-only command line may run, and the arguments that would make each one write,
+ * execute something else, or reach the network. Anything not listed is refused.
+ */
+const SHELL_PROGRAMS: Record<string, (args: readonly string[]) => string | undefined> = {
+	rg: (args) => args.find((a) => /^--pre(-glob)?(=|$)/.test(a) || a === "--search-zip" || a === "-z") && "rg --pre and --search-zip run other programs",
+	grep: () => undefined,
+	egrep: () => undefined,
+	fgrep: () => undefined,
+	find: (args) => args.find((a) => /^-(exec|execdir|ok|okdir|delete|fprint0?|fprintf|fls)$/.test(a)) && "find may not execute, delete or write files",
+	ls: () => undefined,
+	cat: () => undefined,
+	head: () => undefined,
+	tail: (args) => args.find((a) => /^(-f|-F|--follow)/.test(a)) && "tail -f never ends",
+	wc: () => undefined,
+	file: () => undefined,
+	stat: () => undefined,
+	tree: (args) => args.find((a) => a === "-o" || a.startsWith("--output")) && "tree -o writes a file",
+	pwd: () => undefined,
+	realpath: () => undefined,
+	dirname: () => undefined,
+	basename: () => undefined,
+	du: () => undefined,
+	diff: () => undefined,
+	cut: () => undefined,
+	sort: (args) => args.find((a) => a === "-o" || a.startsWith("--output") || a.startsWith("--compress-program")) && "sort -o writes a file",
+	jq: () => undefined,
+	git: (args) => {
+		const sub = args.find((a) => !a.startsWith("-"));
+		if (!sub || !["log", "show", "diff", "status", "grep", "ls-files", "blame", "rev-parse", "shortlog", "describe"].includes(sub)) return `git ${sub ?? ""} is not a read-only git command here`.trim();
+		if (args.some((a) => a.startsWith("--output") || a.startsWith("--ext-diff") || a === "-c" || a.startsWith("--exec") || a.startsWith("--git-dir") || a.startsWith("--work-tree"))) return "that git option can write or run other programs";
+		return undefined;
+	},
+};
+
+/**
+ * Split a command line into pipeline segments of words, honouring quotes. Undefined for anything
+ * a plain word list cannot express: expansion (`$`, backticks), redirection, chaining (`;`, `&`,
+ * newlines), subshells, globbing is fine (it only names files).
+ */
+export function shellPipeline(command: string): string[][] | undefined {
+	const segments: string[][] = [[]];
+	let word: string | undefined;
+	const end = () => {
+		if (word !== undefined) segments[segments.length - 1]!.push(word);
+		word = undefined;
+	};
+	for (let i = 0; i < command.length; i++) {
+		const c = command[i]!;
+		if (c === "'") {
+			const close = command.indexOf("'", i + 1);
+			if (close < 0) return undefined;
+			word = (word ?? "") + command.slice(i + 1, close);
+			i = close;
+		} else if (c === '"') {
+			let j = i + 1;
+			let text = "";
+			for (; j < command.length && command[j] !== '"'; j++) {
+				const d = command[j]!;
+				if (d === "$" || d === "`") return undefined;
+				if (d === "\\" && j + 1 < command.length) text += command[++j];
+				else text += d;
+			}
+			if (j >= command.length) return undefined;
+			word = (word ?? "") + text;
+			i = j;
+		} else if (c === "\\") {
+			if (i + 1 >= command.length || command[i + 1] === "\n") return undefined;
+			word = (word ?? "") + command[++i];
+		} else if (c === " " || c === "\t") end();
+		else if (c === "|") {
+			if (command[i + 1] === "|") return undefined;
+			end();
+			segments.push([]);
+		} else if ("$`;&<>()\n\r{}".includes(c)) return undefined;
+		else word = (word ?? "") + c;
+	}
+	end();
+	return segments.every((segment) => segment.length > 0) ? segments : undefined;
+}
+
+/** Why `command` is not one read-only command line, or undefined if it is. */
+export function readOnlyShellCommand(command: unknown): string | undefined {
+	if (typeof command !== "string" || !command.trim()) return "no command";
+	const pipeline = shellPipeline(command.trim());
+	if (!pipeline) return "only plain commands and pipes: no redirection, chaining, substitution or variables";
+	for (const [program, ...args] of pipeline) {
+		const check = SHELL_PROGRAMS[program!];
+		if (!check) return `"${program}" is not on the read-only list (${Object.keys(SHELL_PROGRAMS).join(", ")})`;
+		const why = check(args);
+		if (why) return why;
+	}
+	return undefined;
 }
 
 export type ToolAction =
@@ -199,6 +300,7 @@ export function planTools(
 		plan.push({ name: declaration.name, action, declaration });
 	}
 	const planned = new Set(plan.map((entry) => entry.name));
+	// Unforked, the child has grep, find and ls of its own and needs no shell.
 	const extra = declared ? REQUIRED_TOOLS : [...READ_TOOLS, ...STORE_WRITE_TOOLS, ...WEB_TOOLS];
 	for (const name of extra) {
 		const mine = own.get(name);
@@ -224,12 +326,16 @@ export function insideDir(dir: string, target: string, resolve: (...parts: strin
  */
 export function gateToolCall(toolName: string, input: unknown, storeDir: string, resolve: (...parts: string[]) => string): string | undefined {
 	if (READ_TOOLS.includes(toolName) || WEB_TOOLS.includes(toolName)) return undefined;
+	if (toolName === SHELL_TOOL) {
+		const why = readOnlyShellCommand(input && typeof input === "object" ? (input as { command?: unknown }).command : undefined);
+		return why ? `The /explain worker runs bash only for one read-only command line (rg, grep, find, ls, cat, head, git log…, pipes allowed): ${why}.` : undefined;
+	}
 	if (STORE_WRITE_TOOLS.includes(toolName)) {
 		const path = input && typeof input === "object" ? (input as { path?: unknown }).path : undefined;
 		if (typeof path === "string" && path && insideDir(storeDir, path, resolve)) return undefined;
 		return `The /explain worker writes only inside ${storeDir}. Write index.html and meta.json there; nothing else on disk.`;
 	}
-	return `The /explain worker is read-only: "${toolName}" is not available here. Use read, grep, find and ls to research, and write only inside ${storeDir}.`;
+	return `The /explain worker is read-only: "${toolName}" is not available here. Research with read (and grep, find, ls, or read-only bash, whichever you have), and write only inside ${storeDir}.`;
 }
 
 /** The btw extension's visible side-thread notes (`btw/btw.ts` BTW_MESSAGE_TYPE), which its `context` handler drops from every request. */

@@ -5326,21 +5326,80 @@ a.subagent-row { text-decoration: none; }
 .overseer-head .button-sm { flex: none; }
 .overseer-proactivity { gap: var(--space-1); }
 .action-menu-text { display: inline-flex; align-items: center; gap: var(--space-2); }
-/* "N finished" and "N drafts" in the meta line open the lists of those sessions: text-sized
-   triggers, so the line keeps its height, with the meta's own voice until hovered. */
+/* "N drafts" in the meta line (and "N started" on a project overseer's) opens the list of those
+   sessions: a text-sized trigger, so the line keeps its height, with the meta's own voice until hovered. */
 .session-head-meta .overseer-count { flex: none; min-height: 0; padding: 0 var(--space-1); gap: var(--space-1); font-size: inherit; color: inherit; }
 /* The line clips its overflow, and with it an outset ring: this one is drawn inside. */
 .session-head-meta .overseer-count:focus-visible { outline-offset: calc(-1 * var(--focus-width)); }
 .overseer-count-state { margin: 0; padding: var(--space-2) var(--space-3); }
 @container session-head (max-width: 479px) {
   /* The counts keep their words: their icons, chevrons and separating dots go first. */
-  .overseer-proactivity .icon,
   .overseer-count > .icon:first-child,
   .overseer-count .action-menu-text > .icon,
   .overseer-count-sep { display: none; }
-  /* History keeps its clock and its name for AT; the word goes, so Clear stays on screen.
-     A direct child only: "N finished" and "N drafts" in the meta line are their words. */
-  .overseer-head > .button .action-menu-text { display: none; }
+  /* A project overseer's level keeps its icon and its name for AT; the word goes. */
+  .po-head > .button .action-menu-text { display: none; }
+}
+
+/* ---- The Overseer page's head (not a project overseer's .po-head, which also carries
+   .overseer-head), in three tiers of its OWN width, so a narrow desktop pane gets what a
+   phone gets:
+     ≥900     every control on the row; no ⋯
+     640–899  History and Clear leave the row for ⋯ (the Fold's inner screen, upright)
+     <640     the proactivity cycle leaves too; Ideas and Todos go icon-only (overseer-ideas.css)
+   ⋯ lists the same rows at every width: it is in the top layer, outside the head's container.
+   These rules contract, so each container query has a @media floor. ---- */
+/* 44px wide at every width: a flex item may shrink below its width, and the back link did. */
+.overseer-page-head > .app-back,
+.overseer-page-head > .overseer-more { flex: none; }
+.overseer-page-head > .overseer-more { display: none; }
+/* The counts the meta line opens as a menu keep their words; the plain facts before them give
+   way, but never to nothing. */
+.overseer-page-head .overseer-facts { flex: 0 1 auto; min-width: 4ch; }
+.overseer-mode-spacer { flex: none; width: 16px; height: 16px; }
+/* Below 900 the drafts count is its words alone and the context readout its percent, so the
+   facts before them keep room; below 400 the count is its pencil and number (its name still says
+   "drafts"), and the line's gaps close a step. Each tier's floor follows its query and the
+   narrowest tier comes last: a later floor for a wider tier would undo a narrower tier's rule. */
+@container session-head (max-width: 899px) {
+  .overseer-page-head > .overseer-wide { display: none; }
+  .overseer-page-head > .overseer-more { display: inline-flex; }
+  .overseer-page-head .overseer-count > .icon:first-child,
+  .overseer-page-head .overseer-count .action-menu-text > .icon,
+  .overseer-page-head .overseer-count-sep { display: none; }
+  /* The full "Context 237k / 1M" waits for the wide tier: with back on the row (a window under
+     768) it left the drafts count no room at 720–767. */
+  .overseer-page-head .context-label,
+  .overseer-page-head .context-value { display: none; }
+  .overseer-page-head .context-pct { display: inline; }
+}
+@media (max-width: 899px) {
+  .overseer-page-head > .overseer-wide { display: none; }
+  .overseer-page-head > .overseer-more { display: inline-flex; }
+  .overseer-page-head .overseer-count > .icon:first-child,
+  .overseer-page-head .overseer-count .action-menu-text > .icon,
+  .overseer-page-head .overseer-count-sep { display: none; }
+  .overseer-page-head .context-label,
+  .overseer-page-head .context-value { display: none; }
+  .overseer-page-head .context-pct { display: inline; }
+}
+@container session-head (max-width: 639px) {
+  .overseer-page-head > .overseer-mid { display: none; }
+}
+@media (max-width: 639px) {
+  .overseer-page-head > .overseer-mid { display: none; }
+}
+@container session-head (max-width: 399px) {
+  .overseer-page-head .session-head-meta { gap: var(--space-1); }
+  .overseer-page-head .overseer-count > .icon:first-child { display: inline; }
+  .overseer-page-head .overseer-count-word { display: none; }
+  .overseer-page-head .overseer-facts { min-width: 3ch; }
+}
+@media (max-width: 399px) {
+  .overseer-page-head .session-head-meta { gap: var(--space-1); }
+  .overseer-page-head .overseer-count > .icon:first-child { display: inline; }
+  .overseer-page-head .overseer-count-word { display: none; }
+  .overseer-page-head .overseer-facts { min-width: 3ch; }
 }
 
 /* The Overseer's empty thread: a live fact, then the absence. */

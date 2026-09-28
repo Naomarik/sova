@@ -2,14 +2,14 @@ import { createEffect, createMemo, createResource, createSignal, For, on, onMoun
 import type { AttentionDigest, OverseerInfo, OverseerProactivity, SessionSummary } from "../../shared/protocol";
 import { clearOverseer, getOverseer, getOverseerIdeas, getOverseerSettings, getOverseerTodos, putOverseerSettings } from "../lib/api";
 import { relativeTime, shortModel } from "../lib/format";
-import { type HeadList, headLists, nextProactivity, OVERSEER_HASH, overseerHistoryHref, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
+import { type HeadList, headDrafts, nextProactivity, OVERSEER_HASH, overseerHistoryHref, PROACTIVITY, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
 import { isMainThread } from "../lib/regions";
 import { settingsOpenAt } from "../lib/settings-nav";
 import { announce, toast } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
-import { ActionMenu } from "./ActionMenu";
+import { ActionMenu, type ActionMenuApi } from "./ActionMenu";
 import type { OverseerChat, OverseerSender } from "./ChatView";
-import { ContextGauge } from "./ContextGauge";
+import { ContextGauge, ContextMetaPrefix } from "./ContextGauge";
 import { OverseerIdeas } from "./OverseerIdeas";
 import { OverseerTodos } from "./OverseerTodos";
 import type { PaneWiring } from "./GroupView";
@@ -45,7 +45,7 @@ export function OverseerView(props: {
   /** The info a request just returned (a clear): adopt it as the latest. */
   onInfo(info: OverseerInfo): void;
   refetch(): void;
-  /** The attention digest: the head's finished and drafts menus list from it. */
+  /** The attention digest: the head's drafts menu lists from it. */
   attention: AttentionFeed;
   /** An earlier Overseer file to read, from `#/overseer/h/<id>`. */
   historyId: string | null;
@@ -66,7 +66,7 @@ export function OverseerView(props: {
   const main = createMemo(() => props.sessions.filter(isMainThread));
   const working = () => main().filter((s) => s.busy || sessionWorking(s) > 0 || s.activity?.state === "working").length;
   const act = () => props.info?.badge.act ?? 0;
-  /** The head's one line: what the Overseer is watching, as counts. "N finished" and "N drafts" are the menus after it. */
+  /** The head's one line: what the Overseer is watching, as counts. "N drafts" is the menu after it. */
   const facts = () => {
     const parts = [`${sessions(main().length)}`];
     if (working()) parts.push(`${working()} working`);
@@ -74,12 +74,12 @@ export function OverseerView(props: {
     return parts.join(" · ");
   };
 
-  // ---- Finished and drafts: two menus read from the attention digest, so each count is its list --
-  // App polls it for the whole page; opening the page reads it once more, so the menus start fresh.
+  // ---- Drafts: a menu read from the attention digest, so its count is its list -------------------
+  // App polls it for the whole page; opening the page reads it once more, so the menu starts fresh.
   onMount(() => props.attention.refetch());
-  const lists = createMemo(() => {
+  const drafts = createMemo(() => {
     const d = props.attention.data();
-    return d ? headLists(d) : undefined;
+    return d ? headDrafts(d) : undefined;
   });
 
   // ---- Ideas: the backlog the Overseer files, in a panel over the chat's right side -----------
@@ -143,10 +143,10 @@ export function OverseerView(props: {
   });
   const shownProactivity = (): OverseerProactivity => proactivity() ?? props.info?.proactivity ?? "badge";
   const [savingProactivity, setSavingProactivity] = createSignal(false);
-  const cycleProactivity = async () => {
-    if (savingProactivity()) return;
+  /** The head's cycle and ⋯'s rows both save through here. */
+  const saveProactivity = async (next: OverseerProactivity) => {
     const before = shownProactivity();
-    const next = nextProactivity(before);
+    if (savingProactivity() || next === before) return;
     setProactivity(next);
     setSavingProactivity(true);
     try {
@@ -197,8 +197,85 @@ export function OverseerView(props: {
 
   /** A file with no message yet is "Untitled" to the list; here it is said as what it is. */
   const history = () => (props.info?.history ?? []).map((h) => (h.title === "Untitled" ? { ...h, title: "No messages" } : h));
+  const age = (at: string) => relativeTime(at, props.wiring.now);
+  const clearNow = () => void clear().then((ok) => ok && announce("Cleared. The previous conversation is in History."));
+  /** A screen swap moves focus to its first row, as opening the menu does; with no row, to the trigger. */
+  const showScreen = (menu: ActionMenuApi, name: string) => {
+    menu.show(name);
+    queueMicrotask(() => {
+      const row = document.querySelector<HTMLElement>(".action-menu:popover-open [role=menuitem]");
+      if (row) row.focus();
+      else menu.focusTrigger();
+    });
+  };
+  const earlierWords = (n: number) => `${n} earlier ${n === 1 ? "conversation" : "conversations"}`;
+  const HistoryRows = (p: { menu: ActionMenuApi; fallback?: boolean }) => (
+    <For each={history()} fallback={p.fallback ? <p class="mode-option-note overseer-count-state">No earlier conversations yet.</p> : undefined}>
+      {(h) => <p.menu.Item label={h.title} title={h.title} aria={`${h.title}, ${age(h.lastActiveAt)}`} description={age(h.lastActiveAt)} href={overseerHistoryHref(h.id)} />}
+    </For>
+  );
+  const ProactivityRows = (p: { menu: ActionMenuApi }) => (
+    <For each={PROACTIVITY}>
+      {(mode) => {
+        const chosen = () => shownProactivity() === mode;
+        return (
+          <p.menu.Item
+            label={PROACTIVITY_LABEL[mode]}
+            icon={chosen() ? <Icon name="check" small /> : <span class="overseer-mode-spacer" aria-hidden="true" />}
+            aria={`${PROACTIVITY_LABEL[mode]}, ${PROACTIVITY_HINT[mode]}${chosen() ? " Chosen." : ""}`}
+            description={PROACTIVITY_HINT[mode]}
+            onRun={() => void saveProactivity(mode)}
+          />
+        );
+      }}
+    </For>
+  );
+  /** ⋯: the same rows at every width it shows (below a 900px head); the row's copies go by container query. */
+  const More = (p: { earlier: boolean }) => (
+    <ActionMenu label="Overseer actions" title="Overseer actions" icon="more" class="overseer-more">
+      {(menu) => (
+        <Show
+          when={menu.screen() === null}
+          fallback={
+            <Show when={menu.screen() === "history"} fallback={<ProactivityRows menu={menu} />}>
+              <HistoryRows menu={menu} fallback />
+            </Show>
+          }
+        >
+          <Show when={!p.earlier}>
+            <menu.Item
+              label="Proactivity…"
+              aria={`Proactivity: ${PROACTIVITY_LABEL[shownProactivity()]}. Change it.`}
+              description={PROACTIVITY_LABEL[shownProactivity()]}
+              disabled={props.info ? undefined : "Starting the Overseer"}
+              stayOpen
+              onRun={() => showScreen(menu, "proactivity")}
+            />
+          </Show>
+          <menu.Item
+            label="History…"
+            aria={`History, ${earlierWords(history().length)}`}
+            description={history().length ? `${history().length} earlier` : undefined}
+            stayOpen
+            onRun={() => showScreen(menu, "history")}
+          />
+          <Show when={!p.earlier}>
+            <menu.Item
+              label="Clear"
+              aria="Clear: start a new conversation"
+              description="Start a new conversation. This one moves to History."
+              disabled={clearing() ? "Clearing" : props.info ? undefined : "Starting the Overseer"}
+              onRun={clearNow}
+            />
+          </Show>
+        </Show>
+      )}
+    </ActionMenu>
+  );
+  // One row in three tiers of the head's own width (base.css, OVERSEER): `overseer-mid` leaves the
+  // row below a 640px head, `overseer-wide` below 900px, and ⋯ shows only below 900px.
   const Head = (p: { earlier?: { title: string; lastActiveAt: string } }) => (
-    <header class="session-head overseer-head">
+    <header class="session-head overseer-head overseer-page-head">
       <a class="button button-icon button-ghost app-back" href={p.earlier ? OVERSEER_HASH : "#/"} aria-label={p.earlier ? "Back to the Overseer" : "Back to Sessions"}>
         <Icon name="chevron-left" />
       </a>
@@ -211,15 +288,17 @@ export function OverseerView(props: {
             when={p.earlier}
             fallback={
               <>
-                <span title={facts()}>{facts()}</span>
-                <HeadMenu kind={FINISHED} list={lists()?.finished} error={props.attention.error()} reading={props.attention.reading()} retry={props.attention.refetch} now={props.wiring.now} />
-                <HeadMenu kind={DRAFTS} list={lists()?.drafts} error={props.attention.error()} reading={props.attention.reading()} retry={props.attention.refetch} now={props.wiring.now} />
+                <Show when={props.info}>{(info) => <ContextMetaPrefix path={info().path} />}</Show>
+                <span class="overseer-facts" title={facts()}>
+                  {facts()}
+                </span>
+                <HeadMenu kind={DRAFTS} list={drafts()} error={props.attention.error()} reading={props.attention.reading()} retry={props.attention.refetch} now={props.wiring.now} />
               </>
             }
           >
             {(e) => (
               <span title={e().title}>
-                {e().title} · {relativeTime(e().lastActiveAt, props.wiring.now)}
+                {e().title} · {age(e().lastActiveAt)}
               </span>
             )}
           </Show>
@@ -228,18 +307,18 @@ export function OverseerView(props: {
       <Show when={!p.earlier && props.info}>
         {(info) => (
           <>
-        <ContextGauge path={info().path} />
-        <button
-          type="button"
-          class="button button-sm button-ghost overseer-proactivity"
-          aria-label={`Proactivity: ${PROACTIVITY_LABEL[shownProactivity()]}. Change to ${PROACTIVITY_LABEL[nextProactivity(shownProactivity())]}.`}
-          title={`${PROACTIVITY_HINT[shownProactivity()]} Press to change.`}
-          aria-disabled={savingProactivity() ? "true" : undefined}
-          onClick={() => void cycleProactivity()}
-        >
-          <Icon name="bell" small />
-          {PROACTIVITY_LABEL[shownProactivity()]}
-        </button>
+            <ContextGauge path={info().path} />
+            <button
+              type="button"
+              class="button button-sm button-ghost overseer-proactivity overseer-mid"
+              aria-label={`Proactivity: ${PROACTIVITY_LABEL[shownProactivity()]}. Change to ${PROACTIVITY_LABEL[nextProactivity(shownProactivity())]}.`}
+              title={`${PROACTIVITY_HINT[shownProactivity()]} Press to change.`}
+              aria-disabled={savingProactivity() ? "true" : undefined}
+              onClick={() => void saveProactivity(nextProactivity(shownProactivity()))}
+            >
+              <Icon name="bell" small />
+              {PROACTIVITY_LABEL[shownProactivity()]}
+            </button>
           </>
         )}
       </Show>
@@ -276,35 +355,22 @@ export function OverseerView(props: {
         </button>
       </Show>
       <Show when={history().length > 0}>
-        <ActionMenu label="Earlier Overseer conversations" title="Earlier conversations" icon="clock" text="History" class="button-sm">
-          {(menu) => (
-            <For each={history()}>
-              {(h) => (
-                <menu.Item
-                  label={h.title}
-                  title={h.title}
-                  aria={`${h.title}, ${relativeTime(h.lastActiveAt, props.wiring.now)}`}
-                  description={relativeTime(h.lastActiveAt, props.wiring.now)}
-                  href={overseerHistoryHref(h.id)}
-                />
-              )}
-            </For>
-          )}
+        <ActionMenu label="Earlier Overseer conversations" title="Earlier conversations" icon="clock" text="History" class="button-sm overseer-wide">
+          {(menu) => <HistoryRows menu={menu} />}
         </ActionMenu>
       </Show>
       <Show when={!p.earlier}>
         <button
           type="button"
-          class="button button-sm"
+          class="button button-sm overseer-wide"
           title="Start a new conversation. This one moves to History. Same as /clear."
           aria-disabled={clearing() || !props.info ? "true" : undefined}
-          onClick={() => {
-            void clear().then((ok) => ok && announce("Cleared. The previous conversation is in History."));
-          }}
+          onClick={clearNow}
         >
           Clear
         </button>
       </Show>
+      <More earlier={!!p.earlier} />
     </header>
   );
 
@@ -446,31 +512,22 @@ export function OverseerView(props: {
   );
 }
 
-/** The words one head menu uses: "3 finished" and its list, or "2 drafts" and its list. */
+/** The words the head's count menu uses: "2 drafts" and its list. */
 interface HeadMenuKind {
-  count(n: number): string;
-  /** The trigger's accessible name: "3 finished sessions", "1 draft". */
+  /** The noun after the number, "draft" or "drafts": the part that gives way first on a narrow head. */
+  word(n: number): string;
+  /** The trigger's accessible name: "1 draft". */
   name(n: number): string;
   title: string;
-  icon: "check" | "pencil";
-  /** What a read is of: "the finished sessions". */
+  icon: "pencil";
+  /** What a read is of: "the drafts". */
   subject: string;
   empty: string;
   cut: string;
 }
 
-const FINISHED: HeadMenuKind = {
-  count: (n) => `${n} finished`,
-  name: (n) => `${n} finished ${n === 1 ? "session" : "sessions"}`,
-  title: "Finished sessions",
-  icon: "check",
-  subject: "the finished sessions",
-  empty: "Nothing finished right now.",
-  cut: "Some finished sessions may not be listed: this list stops at the 30 most urgent items.",
-};
-
 const DRAFTS: HeadMenuKind = {
-  count: (n) => `${n} ${n === 1 ? "draft" : "drafts"}`,
+  word: (n) => (n === 1 ? "draft" : "drafts"),
   name: (n) => `${n} ${n === 1 ? "draft" : "drafts"}`,
   title: "Drafts and queued messages",
   icon: "pencil",
@@ -522,7 +579,12 @@ function HeadMenu(props: { kind: HeadMenuKind; list: HeadList | undefined; error
         label={`${props.kind.name(n())}, show list`}
         title={props.kind.title}
         icon={props.kind.icon}
-        text={props.kind.count(n())}
+        text={
+          <span>
+            {n()}
+            <span class="overseer-count-word"> {props.kind.word(n())}</span>
+          </span>
+        }
         class="button-sm button-ghost overseer-count"
         align="start"
         contain

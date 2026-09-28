@@ -10,7 +10,7 @@ import {
   CONFIRM_SESSIONS_SHOWN,
   createTurnOwner,
   detailsOf,
-  headLists,
+  headDrafts,
   isBriefText,
   isOverseerHash,
   isOverseerShortcut,
@@ -142,8 +142,8 @@ const digestOf = (items: AttentionItem[], total = items.length) => {
   return { items, counts };
 };
 
-test("the head's menus split the decide sessions by kind: a reply is finished, a draft or queued input is a draft", () => {
-  const { finished, drafts } = headLists(
+test("the head's drafts menu lists the decide sessions with a draft or queued input, never a finished one", () => {
+  const drafts = headDrafts(
     digestOf([
       attention("blocked", "act", "needs-input", 50),
       attention("blocked", "decide", "finished", 900),
@@ -156,14 +156,7 @@ test("the head's menus split the decide sessions by kind: a reply is finished, a
       attention("running", "fyi", "working", 1000),
     ]),
   );
-  // A session with an act item is counted as "needs you", never in either menu.
-  assert.deepEqual(
-    finished.rows.map((r) => [r.id, r.since]),
-    [
-      ["replied", 300],
-      ["both", 100],
-    ],
-  );
+  // A session with an act item is counted as "needs you", never in the menu; "replied" has only a finished item.
   assert.deepEqual(
     drafts.rows.map((r) => [r.id, r.since]),
     [
@@ -172,21 +165,16 @@ test("the head's menus split the decide sessions by kind: a reply is finished, a
     ],
     "queued input is a draft; a session's row takes its newest draft or queued item",
   );
-  for (const list of [finished, drafts]) assert.equal(new Set(list.rows.map((r) => r.id)).size, list.rows.length, "no session twice in a menu");
+  assert.equal(new Set(drafts.rows.map((r) => r.id)).size, drafts.rows.length, "no session twice in the menu");
   assert.equal(drafts.rows[1]!.href, "#/s/queued");
-  assert.equal(finished.cut || drafts.cut, false, "fyi items past the cap cost no row");
+  assert.equal(drafts.cut, false, "fyi items past the cap cost no row");
 });
 
-test("the head's menus say when the digest's cap dropped act or decide items", () => {
-  const items = [attention("a", "act", "error", 1), attention("b", "decide", "finished", 2)];
-  const onlyFyi = headLists(digestOf(items, 40));
-  assert.deepEqual([onlyFyi.finished.cut, onlyFyi.drafts.cut], [false, false], "only fyi items were cut");
-  const cut = headLists({ items, counts: { act: 1, decide: 5, fyi: 0 } });
-  assert.deepEqual([cut.finished.cut, cut.drafts.cut], [true, true]);
-  assert.deepEqual(headLists({ items: [], counts: { act: 0, decide: 0, fyi: 0 } }), {
-    finished: { rows: [], cut: false },
-    drafts: { rows: [], cut: false },
-  });
+test("the head's drafts menu says when the digest's cap dropped act or decide items", () => {
+  const items = [attention("a", "act", "error", 1), attention("b", "decide", "draft", 2)];
+  assert.equal(headDrafts(digestOf(items, 40)).cut, false, "only fyi items were cut");
+  assert.equal(headDrafts({ items, counts: { act: 1, decide: 5, fyi: 0 } }).cut, true);
+  assert.deepEqual(headDrafts({ items: [], counts: { act: 0, decide: 0, fyi: 0 } }), { rows: [], cut: false });
 });
 
 test("confirm details: items parse tolerantly; a card without them has no items at all", () => {

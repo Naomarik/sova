@@ -68,8 +68,9 @@ export function ActionMenu(props: {
   /** Extra classes on the trigger, for a head that reveals it on hover. */
   class?: string;
   /** A toolbar trigger says what it opens in words: the icon-only "⋯" is the default, and this
-      turns it into a labelled button with a chevron, like every other menu trigger with room. */
-  text?: string;
+      turns it into a labelled button with a chevron, like every other menu trigger with room.
+      Markup, not only a string, so a part of it can give way on a narrow head. */
+  text?: JSX.Element;
   /** Which trigger edge the panel lines up with. "end" (default) suits a trailing "⋯"; "start"
       suits a leading trigger, whose panel would otherwise hang off to the left and be clamped. */
   align?: "start" | "end";

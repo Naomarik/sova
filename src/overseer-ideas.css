@@ -8,11 +8,11 @@
 /* The head's toggle: star, word, count. The word goes first when the head is narrow. */
 .overseer-ideas-toggle { gap: var(--space-1); }
 .overseer-ideas-toggle[aria-expanded="true"] { background: var(--color-accent-tint); color: var(--color-ink); }
-@container session-head (max-width: 479px) {
-  /* Narrow: icon-only, the count riding its corner like the entry button's (neutral, not the
-     accent: an idea doesn't need you), so Clear stays on screen. */
+@container session-head (max-width: 639px) {
+  /* Narrow: icon-only, 44px wide, the count riding its corner like the entry button's (neutral,
+     not the accent: an idea doesn't need you), so the head keeps ⋯ on screen. */
   .overseer-ideas-word { display: none; }
-  .overseer-ideas-toggle { position: relative; padding: 0 var(--space-2); }
+  .overseer-ideas-toggle { position: relative; min-width: var(--tap-min); padding: 0 var(--space-2); }
   .overseer-ideas-toggle .chip-count {
     position: absolute;
     top: -4px;

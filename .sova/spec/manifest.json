@@ -1888,10 +1888,11 @@
       "kind": "behavior",
       "requires": [],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
-        "pi-config/extensions/claude-code/provider/session-records.ts"
+        "pi-config/extensions/claude-code/provider/session-records.ts",
+        "pi-config/extensions/claude-code/provider/fork-point.ts"
       ]
     },
     "§app.worker-restore/restore": {
@@ -6014,7 +6015,7 @@
     "§chat.alignment/session-mark": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/align-state.ts",
         "server/align-state.test.ts",

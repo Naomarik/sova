@@ -146,13 +146,21 @@ function AlignQuestion(props: { q: AlignQuestionInfo }) {
       <strong class="align-q-topic" title={fold ? props.q.topic : undefined}>
         {props.q.topic}
       </strong>
-      <Chip tone={chip().tone}>{chip().label}</Chip>
+      <Show when={!fold}>
+        <Chip tone={chip().tone}>{chip().label}</Chip>
+      </Show>
       <Show when={fold && outcome()}>
         {(o) => (
           <span class="align-q-outcome" title={`${o().label} ${plain(o().text)}${o().by ? ` · ${o().by}` : ""}`}>
             {outcomeLine()}
           </span>
         )}
+      </Show>
+      {/* A folded row's chip closes the line, at its right end. */}
+      <Show when={fold}>
+        <span class="align-q-end">
+          <Chip tone={chip().tone}>{chip().label}</Chip>
+        </span>
       </Show>
     </>
   );

@@ -235,8 +235,9 @@ an `align` call: it is the message, not its working.
   or "accepted recommendation") once there is one. Each
   question's head carries its state as a chip: Open, Decided, or Dropped with its why.
 - **Only open questions are expanded.** A decided or dropped question is folded by default to
-  **one line** that never wraps: a twist, the id, the topic, the chip, then its outcome
-  ("Decided: … · you" / "· accepted recommendation", or "Dropped: …"). The topic and the outcome
+  **one line** that never wraps: a twist, the id, the topic, then its outcome
+  ("Decided: … · you" / "· accepted recommendation", or "Dropped: …"), with the chip at the
+  line's right end. The topic and the outcome
   truncate with an ellipsis (the outcome gives up more of the line) and carry their full text as a
   hover title. Folded rows take less vertical padding than open questions. The twist opens the
   question: the head wraps whole and drops its inline outcome, and below it come the ask,

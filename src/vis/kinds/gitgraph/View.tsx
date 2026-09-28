@@ -128,7 +128,7 @@ function Chip(props: { c: GitChip; spec: GitgraphSpec; em: Emphasis | undefined;
         <rect x={c().x} y={top()} width={c().w} height="18" rx="9" />
       )}
       <text x={c().x + c().w / 2 + (tag() ? 2.5 : 0)} y={c().y} font-size={String(GIT_FONT.chip)} text-anchor="middle" dominant-baseline="central">
-        {c().name}
+        {c().label}
       </text>
       <SvgEmBadge e={props.em} x={c().x + c().w} y={top()} />
     </g>

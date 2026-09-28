@@ -23,6 +23,8 @@ const BEND = 14;
 export interface GitChip {
   kind: "branch" | "tag";
   name: string;
+  /** What it shows: the name, shortened with "…" when the pane is too narrow for it. */
+  label: string;
   /** A branch chip's lane (its colour); a tag's is -1. */
   lane: number;
   x: number;
@@ -77,11 +79,12 @@ export function layoutGitgraph(spec: GitgraphSpec, width: number, at = spec.comm
   const textX = laneX[lanes - 1]! + R + GAP;
   const avail = Math.max(120, width - textX - PAD);
   const { heads, tags } = refsAt(spec, at);
+  const chipW = (label: string, kind: GitChip["kind"]) => measure(label, GIT_FONT.chip) + CHIP_PAD * 2 + (kind === "tag" ? 5 : 0);
   const byCommit = new Map<string, GitChip[]>();
-  const chip = (commit: string | null, c: Omit<GitChip, "x" | "y" | "w">) => {
+  const chip = (commit: string | null, c: Omit<GitChip, "x" | "y" | "w" | "label">) => {
     if (commit === null) return;
     const list = byCommit.get(commit) ?? [];
-    list.push({ ...c, x: 0, y: 0, w: measure(c.name, GIT_FONT.chip) + CHIP_PAD * 2 + (c.kind === "tag" ? 5 : 0) });
+    list.push({ ...c, label: c.name, x: 0, y: 0, w: chipW(c.name, c.kind) });
     byCommit.set(commit, list);
   };
   spec.branches.forEach((b, i) => heads.has(b.name) && chip(heads.get(b.name)!, { kind: "branch", name: b.name, lane: i }));
@@ -90,16 +93,18 @@ export function layoutGitgraph(spec: GitgraphSpec, width: number, at = spec.comm
   const rowOf = new Map(spec.commits.map((c, i) => [c.id, i]));
   // One id column, so the messages line up whatever the ids' lengths.
   const idCol = Math.max(0, ...spec.commits.filter((c) => c.named).map((c) => measure(c.id, GIT_FONT.id, true) + 8));
+  // A numbered mark's badge sits before the id; when any row has one, every row makes room, so the ids stay in line.
+  const badgeCol = spec.commits.some((c) => badged.has(c.id));
   const placed: PlacedCommit[] = [];
   let y = PAD;
   let right = textX;
   spec.commits.forEach((c, row) => {
     const ghost = c.ghostAt !== undefined && c.ghostAt <= at;
-    const tx = textX + (badged.has(c.id) ? BADGE : 0);
+    const tx = textX + (badgeCol ? BADGE : 0);
     const idW = idCol;
     const msgX = tx + idW;
     const msgW = Math.max(60, avail - (tx - textX) - idW);
-    const lines = c.message ? wrap(c.message, msgW, 3, GIT_FONT.message, measure) : [];
+    const lines = c.message ? wrap(c.message, msgW, 4, GIT_FONT.message, measure) : [];
     // After the message: the meta phrase and the chips, flowing onto new lines as they need.
     let line = 0;
     let x = lines.length ? msgX + measure(lines[lines.length - 1]!, GIT_FONT.message) + 8 : msgX;
@@ -116,7 +121,18 @@ export function layoutGitgraph(spec: GitgraphSpec, width: number, at = spec.comm
     };
     const metaText = meta(c, ghost, spec);
     const metaAt = metaText ? place(measure(metaText, GIT_FONT.meta)) : undefined;
-    const chips = (ghost ? [] : (byCommit.get(c.id) ?? [])).map((ch) => ({ ch, at: place(ch.w) }));
+    const chips = (ghost ? [] : (byCommit.get(c.id) ?? [])).map((ch) => {
+      // A chip never runs past the pane: a long name loses its end.
+      const room = limit - msgX;
+      let label = ch.label;
+      while (chipW(label, ch.kind) > room && label.length > 1) label = label.slice(0, -1);
+      if (label !== ch.label) {
+        while (chipW(`${label}…`, ch.kind) > room && label.length > 1) label = label.slice(0, -1);
+        label = `${label}…`;
+      }
+      const w = chipW(label, ch.kind);
+      return { ch: { ...ch, label, w }, at: place(w) };
+    });
     const nLines = Math.max(1, lines.length, line + 1);
     const h = Math.max(ROW_MIN, nLines * LH + 12);
     const cy = y + 6 + LH / 2;

@@ -74,9 +74,22 @@ test("gitgraph layout: a badge moves the text right; a cherry-pick gets a link",
   const badged = layoutGitgraph(REBASE, 560, undefined, undefined, new Set(["C'"]));
   const i = REBASE.commits.findIndex((c) => c.id === "C'");
   assert.ok(badged.commits[i]!.tx > plain.commits[i]!.tx);
+  // Every row makes the same room, so ids stay in one column.
+  assert.equal(new Set(badged.commits.map((p) => p.tx)).size, 1);
   const pick = layoutGitgraph(spec("commit A\nbranch fix\ncommit H\ncheckout main\ncommit B\ncherry-pick H"), 400);
   assert.equal(pick.edges.filter((e) => e.link).length, 1);
   assert.equal(pick.commits.at(-1)!.meta?.text, "picked from H");
+});
+
+test("gitgraph layout: a long branch name is shortened to fit, never past the edge", () => {
+  const long = spec("commit A\nbranch feature/a-very-long-branch-name-for-the-payments-rewrite\ncommit B \"x\"");
+  for (const w of [260, 320]) {
+    const chip = layoutGitgraph(long, w).commits[1]!.chips[0]!;
+    assert.ok(chip.x + chip.w <= w, `chip ends at ${chip.x + chip.w} > ${w}`);
+    assert.ok(chip.label.endsWith("…"));
+    assert.equal(chip.name, "feature/a-very-long-branch-name-for-the-payments-rewrite");
+  }
+  assert.equal(layoutGitgraph(long, 720).commits[1]!.chips[0]!.label, long.branches[1]!.name);
 });
 
 test("gitgraph layout: same input, same output", () => {

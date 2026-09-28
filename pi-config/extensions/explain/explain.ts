@@ -13,15 +13,26 @@
  * the child is spawned (so the row is visible for the whole run), then the
  * final entry, without `status`, when it settles; the later entry supersedes
  * the earlier one for readers deduping by id. A run stopped at shutdown
- * records no final entry; its running entry is the last word, exactly as a
- * crashed parent would leave it.
+ * (restart, /reload, a crash) records no final entry then: nothing may be
+ * written while a session closes. Its running entry is settled later, by
+ * `reconcile` at the session's next prompt, as `status: "interrupted"`.
+ *
+ * The child forks a byte-copy of the parent's session (`copyForFork`), kept in
+ * `explanations/.forks/` for the run and deleted when it ends.
  */
+import { mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { join } from "node:path";
+import type { ClaudeForkPoint } from "../claude-code/provider/fork-point.ts";
 import { buildChildPrompt } from "./prompt.ts";
 import {
 	ensureStoreDir,
 	entryData,
+	explanationsRoot,
+	interruptedEntryData,
+	isExplanationId,
 	newId,
 	normalizeMeta,
+	readMeta,
 	runningEntryData,
 	storeDir,
 	storeExists,
@@ -31,6 +42,7 @@ import {
 	type KnownMeta,
 } from "./store.ts";
 import {
+	copyForFork,
 	forkable,
 	startExplainWorker,
 	webAccessExtension,
@@ -65,6 +77,8 @@ export interface BeginRequest {
 	parentSessionFile?: string;
 	model: string;
 	effort?: string;
+	/** The parent's live Claude CLI session (claude-code-cli models): the child resumes it. */
+	claudeFork?: ClaudeForkPoint;
 }
 
 export interface BeginResult {
@@ -80,6 +94,22 @@ interface Run {
 	known: KnownMeta;
 	dir: string;
 	handle: ExplainWorkerHandle;
+	/** The session copy the child forked; deleted when the run ends. */
+	forkCopy?: string;
+}
+
+/** Where the per-run session copies live, beside the stores (a dot name is never an explanation id). */
+export const FORK_DIR = ".forks";
+/** A copy older than this was left by a parent that died mid-run. */
+const STALE_FORK_MS = 24 * 60 * 60 * 1000;
+
+function removeQuietly(path: string | undefined): void {
+	if (!path) return;
+	try {
+		rmSync(path, { force: true });
+	} catch {
+		/* A leftover copy is swept by the next run. */
+	}
 }
 
 /** customType of the completion message that wakes the parent agent. */
@@ -167,7 +197,7 @@ export class ExplainRuns {
 			model: request.model,
 		};
 
-		const forkSession = forkable(request.parentSessionFile) ? request.parentSessionFile : undefined;
+		const forkSession = forkable(request.parentSessionFile) ? this.copyParent(request.parentSessionFile, id, env) : undefined;
 		const webAccess = webAccessExtension(env);
 		const task = buildChildPrompt({
 			...known,
@@ -179,19 +209,29 @@ export class ExplainRuns {
 		});
 
 		const start = this.host.start ?? startExplainWorker;
-		const handle = start(
-			{
-				id,
-				task,
-				cwd: request.cwd,
-				model: request.model,
-				...(request.effort ? { effort: request.effort } : {}),
-				...(forkSession ? { forkSession } : {}),
-				...(webAccess ? { extensions: [webAccess] } : {}),
-			},
-			{ onSettled: (result) => this.finish(id, result) },
-		);
-		this.runs.set(id, { known, dir, handle });
+		let handle: ExplainWorkerHandle;
+		try {
+			handle = start(
+				{
+					id,
+					task,
+					cwd: request.cwd,
+					model: request.model,
+					storeDir: dir,
+					parentSessionId: request.parentSessionId,
+					...(request.effort ? { effort: request.effort } : {}),
+					...(forkSession ? { forkSession } : {}),
+					// Only a forked child has the parent's conversation to resume.
+					...(forkSession && request.claudeFork ? { claudeFork: request.claudeFork } : {}),
+					...(webAccess ? { extensions: [webAccess] } : {}),
+				},
+				{ onSettled: (result) => this.finish(id, result) },
+			);
+		} catch (error) {
+			removeQuietly(forkSession);
+			throw error;
+		}
+		this.runs.set(id, { known, dir, handle, ...(forkSession ? { forkCopy: forkSession } : {}) });
 		// Only now: a refused spawn threw above and must leave no phantom running row.
 		this.record(runningEntryData(known));
 		return { id, dir, forked: Boolean(forkSession), webSearch: Boolean(webAccess) };
@@ -203,6 +243,7 @@ export class ExplainRuns {
 		if (!run) return;
 		this.runs.delete(id);
 		void run.handle.kill().catch(() => {});
+		removeQuietly(run.forkCopy);
 
 		// The child's own model id wins: it is what actually wrote the page.
 		const known: KnownMeta = { ...run.known, model: result.model || run.known.model };
@@ -244,10 +285,67 @@ export class ExplainRuns {
 		}
 	}
 
-	/** Stop every live child (session shutdown, reload). */
+	/** Stop every live child (session shutdown, reload). Their running entries are settled by `reconcile` later. */
 	async stopAll(): Promise<void> {
-		const handles = [...this.runs.values()].map((run) => run.handle);
+		const runs = [...this.runs.values()];
 		this.runs.clear();
-		await Promise.all(handles.map((handle) => handle.kill().catch(() => {})));
+		await Promise.all(runs.map((run) => run.handle.kill().catch(() => {})));
+		for (const run of runs) removeQuietly(run.forkCopy);
+	}
+
+	/**
+	 * Settle the running entries no child of THIS process is behind: the runs a restart, a
+	 * /reload or a crash killed before they recorded their end. `entries` is the `explain-doc`
+	 * data on the session's branch, oldest first; for each id whose newest entry is still
+	 * running, append a final `status: "interrupted"` entry. A child can finish its page right
+	 * before the kill, so a complete store is validated and linked (`note`); otherwise the entry
+	 * is `error`: there is nothing to open. Returns how many were settled.
+	 *
+	 * Call it when the session is about to be written anyway (its first prompt, or /explain),
+	 * never on open: opening a runtime must not write.
+	 */
+	reconcile(entries: readonly ExplainEntryData[]): number {
+		const latest = new Map<string, ExplainEntryData>();
+		for (const entry of entries) if (entry && typeof entry.id === "string") latest.set(entry.id, entry);
+		const env = this.host.env ?? process.env;
+		let settled = 0;
+		for (const entry of latest.values()) {
+			if (entry.status !== "running" || this.runs.has(entry.id) || !isExplanationId(entry.id)) continue;
+			const dir = storeDir(entry.id, env);
+			const raw = readMeta(dir) as { cwd?: unknown } | undefined;
+			const known: KnownMeta = {
+				id: entry.id,
+				topic: entry.topic,
+				parentSessionId: entry.parentSessionId,
+				cwd: raw && typeof raw.cwd === "string" ? raw.cwd : "",
+				createdAt: entry.createdAt,
+				model: entry.model ?? "",
+			};
+			const check = storeExists(dir) ? validateStore(dir, known) : undefined;
+			this.record(check?.ok && check.meta ? interruptedEntryData(check.meta, true) : interruptedEntryData({ ...known, summary: "" }, false));
+			settled++;
+		}
+		return settled;
+	}
+
+	/** Copy the parent's session for the child to fork, after sweeping copies older runs left behind. */
+	private copyParent(source: string, id: string, env: NodeJS.ProcessEnv): string | undefined {
+		const dir = join(explanationsRoot(env), FORK_DIR);
+		try {
+			mkdirSync(dir, { recursive: true, mode: 0o700 });
+			const now = this.host.now();
+			for (const name of readdirSync(dir)) {
+				const path = join(dir, name);
+				try {
+					if (!this.runs.has(name.replace(/\.jsonl$/, "")) && now - statSync(path).mtimeMs > STALE_FORK_MS) rmSync(path, { force: true });
+				} catch {
+					/* Raced with another sweep. */
+				}
+			}
+			const target = join(dir, `${id}.jsonl`);
+			return copyForFork(source, target) ? target : undefined;
+		} catch {
+			return undefined; // No copy, no fork: the child starts fresh, and says so.
+		}
 	}
 }

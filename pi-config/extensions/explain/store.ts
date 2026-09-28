@@ -54,10 +54,16 @@ export type KnownMeta = Omit<ExplainMeta, "summary">;
  *
  * `status: "running"` marks the provisional entry appended when the child is
  * spawned, so the row is visible for the whole run and not only at the end.
- * The value space is exactly "running" or absent: the final entry (same `id`,
- * appended when the run settles) never carries the field, so it supersedes the
- * running one and every entry written before the field existed stays valid.
- * A running entry has an empty summary and never `error` or `note`.
+ * The final entry (same `id`, appended when the run settles) never carries
+ * "running", so it supersedes the running one and every entry written before
+ * the field existed stays valid. A running entry has an empty summary and
+ * never `error` or `note`.
+ *
+ * `status: "interrupted"` is the final entry of a run whose parent stopped
+ * (restart, /reload, crash) before the run settled, appended at the session's
+ * next prompt (explain.ts `reconcile`). It always carries one of the two
+ * problems: `note` when a complete page was on disk anyway (it links), `error`
+ * when there was none.
  */
 export interface ExplainEntryData {
 	id: string;
@@ -69,8 +75,8 @@ export interface ExplainEntryData {
 	model?: string;
 	error?: string;
 	note?: string;
-	/** Only on the provisional entry of a run still in progress; see above. */
-	status?: "running";
+	/** "running" only on the provisional entry of a run in progress, "interrupted" on a run its parent never saw end; see above. */
+	status?: "running" | "interrupted";
 }
 
 /** What went wrong, and whether it cost the reader the page. */
@@ -336,6 +342,21 @@ export function entryData(meta: ExplainMeta, problem?: ExplainProblem): ExplainE
  */
 export function runningEntryData(known: KnownMeta): ExplainEntryData {
 	return { ...entryData({ ...known, summary: "" }), status: "running" };
+}
+
+/** The note or error of an interrupted run; the wording says which case the reader is in. */
+export const INTERRUPTED_WITH_PAGE = "Interrupted: the session stopped (a restart or /reload) before this run finished. The page was written, but may be unfinished.";
+export const INTERRUPTED_NO_PAGE = "Interrupted: the session stopped (a restart or /reload) before this run wrote its page.";
+
+/**
+ * The final entry of an interrupted run (see ExplainEntryData). `hasPage`: the store validated,
+ * and `meta` is its normalized meta.json; otherwise `meta` is what the running entry knew.
+ */
+export function interruptedEntryData(meta: ExplainMeta, hasPage: boolean): ExplainEntryData {
+	return {
+		...entryData(meta, hasPage ? { kind: "note", text: INTERRUPTED_WITH_PAGE } : { kind: "error", text: INTERRUPTED_NO_PAGE }),
+		status: "interrupted",
+	};
 }
 
 /** True when a directory already holds an explanation. */

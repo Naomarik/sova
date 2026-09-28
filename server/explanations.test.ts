@@ -193,7 +193,12 @@ describe("GET /explain/:id", () => {
   test("no frame-blocking headers: the gallery renders thumbnails in a sandboxed iframe", async () => {
     const res = await app.request("/explain/aaa");
     assert.equal(res.headers.get("X-Frame-Options"), null);
-    assert.equal(res.headers.get("Content-Security-Policy"), null);
+    assert.doesNotMatch(res.headers.get("Content-Security-Policy") ?? "", /frame-ancestors/);
+  });
+
+  test("the page runs sandboxed in an opaque origin: scripts yes (the theme), same-origin no", async () => {
+    const res = await app.request("/explain/aaa");
+    assert.equal(res.headers.get("Content-Security-Policy"), "sandbox allow-scripts");
   });
 
   test("unknown id, and an id whose dir has no page, are 404", async () => {

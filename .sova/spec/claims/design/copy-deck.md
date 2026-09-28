@@ -98,7 +98,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Wake nudge card, closed | `Wake nudge {id}` · {reason, or blank} · `fired {HH:MM}` (· `{late} late`, only when overdue) |
 | Wake nudge card, open | the fired message, verbatim, all four lines |
 | Wake nudge in Inputs Only / the Timeline | {reason}, or `Wake nudge {id}` when it carries none |
-| Alignment card (§chat.alignment/card) | eyebrow `{al_N} · Alignment · v{rev}` · chips Aligning · Confirmed · Implementing · Done · Dropped · meta `{k} of {n} open` (none: `No questions yet`; none left open: `All {n} decided`) · `· {change line}` · question chips Open · Decided · Dropped · `Recommended: {choice} — {why}` · `Decided: {text} · you` / `· accepted recommendation` · `Dropped: {why}` · sections `Findings · {n}` · `Approach · {n}` · `Rejected · {n}` |
+| Alignment card (§chat.alignment/card) | eyebrow `{al_N} · Alignment · v{rev}` · status `• Aligning` · Confirmed · Implementing · Done · Dropped · meta `{k} of {n} open` (none: `No questions yet`; none left open: `All {n} decided`) · `· {change line}` · question state `• Open` · Decided · Dropped · `Recommended: {choice} — {why}` · `Decided: {text} · you` / `· accepted recommendation` · `Dropped: {why}` · sections `Findings · {n}` · `Approach · {n}` · `Rejected · {n}` |
 | Alignment revision row | `{al_N} v{rev} {title} · {change line}` · change words (the extension's `changeLine`, joined by " · "): created · created from file · +q11 +f4 · q3, title edited · −f2 −a1 · q1, q3 decided · q1, q2 accepted · q3 reopened · q3 dropped · → implementing · → done · → open · dropped |
 | Alignment exempt row | No alignment needed: {why} |
 

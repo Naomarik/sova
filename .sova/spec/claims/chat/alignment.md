@@ -168,7 +168,7 @@ an `align` call: it is the message, not its working.
     <p class="align-doc-eyebrow"><span class="text-mono">al_3</span> · Alignment · v5</p>
     <div class="align-doc-titlerow">
       <h3 class="align-doc-title" id="align-doc-{n}">Autonomy settings</h3>
-      <span class="chip chip-warn"><i class="chip-dot"></i>Aligning</span>
+      <span class="align-state">• Aligning</span>
     </div>
     <p class="align-doc-meta">2 of 7 open · q3 decided · +q11</p>
   </header>
@@ -176,7 +176,7 @@ an `align` call: it is the message, not its working.
   <ol class="align-questions">
     <li class="align-q" data-state="open|decided|dropped">
       <p class="align-q-head"><span class="text-mono">q3</span> <strong>Pace limit</strong>
-        <span class="chip"><i class="chip-dot"></i>Open</span></p>
+        <span class="align-state">• Open</span></p>
       <p class="align-q-ask">How often may it start a run on its own?</p>
       <p class="align-q-context">…context…</p>
       <ul class="align-q-options"><li><strong>1 per 10 min</strong> — trade-off</li></ul>
@@ -197,16 +197,18 @@ an `align` call: it is the message, not its working.
 
 - **Card** is capped at `--measure`, `--space-3`/`--space-4` padding; the eyebrow is `micro`
   uppercase muted, the title `heading-s` semibold, the meta a muted caption. Questions are separated
-  by a `--color-border` rule; the ask is ink body text, context, options, recommendation and
-  decision are captions (context muted). Inline code spans and bold runs in these fields render;
-  no other markdown.
+  by a `--color-border` rule. The summary, ask, context, options, recommendation, decision and the
+  folded sections are body text in full ink, for legibility; only a decided question's ask and
+  recommendation, and a dropped question's ask, step down one level. Inline code spans and bold runs in these fields
+  render; no other markdown.
 
-- **Status chip**, dot and word: Aligning (warn), Confirmed (success), Implementing (accent), Done
-  (success), Dropped (neutral).
-- **Questions** show their parts distinctly: the ask in body text, context in muted caption,
-  options as a list of label and trade-off, the recommendation on its own line, and the decision
-  (with "you" or "accepted recommendation") once there is one. Open questions carry an Open chip;
-  a decided one reads Decided, a dropped one Dropped with its why.
+- **Status**, a bullet and a plain word in a caption after the title, with no chip and no colour:
+  Aligning, Confirmed, Implementing, Done, Dropped.
+- **Questions** show their parts distinctly: the ask, the context, the options as a list of label
+  and trade-off, the recommendation as a plain line after the options (no fill, no rule, no
+  colour), and the decision (with "you" or "accepted recommendation") once there is one. Each
+  question's head carries its state the same way as the status, bullet and word: Open, Decided, or
+  Dropped with its why.
 - **Nothing on the card writes.** There is no checkbox to tick and no button that answers, accepts
   or pre-fills an answer: the user answers in chat.
 - While a run streams, the call's card appears as soon as its result arrives, from the result's

@@ -99,26 +99,6 @@ mark markdown.ts "the vis hook lives here"
 ```
 - Quote a name that has spaces or quotes: `"My Docs" "shared"`. At most 80 lines: show the branch that matters and one `…` item for the rest. `mark` an item by its name (the first one wins).
 
-## gitgraph
-<!-- owner: structure member. kinds/gitgraph: parse.ts runs the history (errors read like git's), layout.ts (lanes down the left, text beside, per-step heads/ghosts), View.tsx with Step Through. Emphasis target: commit id, a commit's "message", or a branch name (key `branch:<name>`). -->
-Commit history across branches, written as the git commands that made it. To contrast merge with rebase, draw the same start twice: one ending in `merge`, one in `rebase`.
-```vis gitgraph
-title: Rebasing a feature branch
-caption: C and D are replayed onto E as new commits; the originals are left behind.
-commit A "init"
-branch feature
-commit C "add login"
-commit D "remember me"
-checkout main
-commit E "fix typo"
-checkout feature
-rebase main
-mark C' "same change, new SHA"
-```
-- `commit [id] ["message"] [tone]` goes on the checked-out branch (`main` until you branch). `branch <name> [from <id>]` creates a branch and checks it out; `checkout <name>` switches.
-- `merge <branch> [id] ["message"]` makes a merge commit; add `ff` to fast-forward or `squash` to squash. `rebase <branch>` replays this branch's commits as `C'`, `D'`, leaving the originals as ghosts. `cherry-pick <id>` copies a commit as `<id>'`. `tag <name> [on <id>]`.
-- Give ids to the commits you'll mention (`A`, or a short SHA). No `git` prefix, no `push`/`pull`. At most 6 branches and 40 commits. `mark` a commit id, its "message", or a branch name.
-
 ## chart
 <!-- owner: data member. kinds/chart: parse.ts, scale.ts (axes, ticks), layout.ts (geometry, tested), View.tsx. Emphasis target: row label (key = row index). -->
 Numbers to compare. `type:` `bar` (default; `series:` makes grouped bars), `stacked`, `line` (a trend across ordered rows) or `scatter` (two measures per item). `unit:`, `x:` and `y:` name the axes; `scale: log` for values spanning decades (both axes in a scatter). No pie or donut charts.

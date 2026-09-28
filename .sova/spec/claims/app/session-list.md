@@ -98,7 +98,7 @@
                    The error takes the dot's place, never sits beside it: an errored reply since you
                    looked is new activity too. Both come from the server and clear on a visit alike.
                    Then at most ONE needs-you mark, the most urgent kind first:
-                     questions    chat + count, --color-accent   "3 open questions. "  (§chat.alignment/session-mark)
+                     questions    count alone, --color-accent    "3 open questions. "  (§chat.alignment/session-mark)
                      looping      refresh,      --status-warn    "May be looping. "  (a subagent's: "A subagent may be stuck. ")
                    Open questions come from the session's `align` counts; looping from the server's
                    attention signals (the session's `signals.kinds`, and its subagents'
@@ -106,7 +106,7 @@
                    then the session's own signal over its subagents'. The glyph sits in a span whose
                    `title` says the fact in one sentence ("3 open questions in 2 alignments", "The
                    last turn looks like it went in circles.", "A subagent looks stuck.").
-                   Kinds differ in glyph as well as tone. The looping mark is gone once the session
+                   Kinds differ in shape as well as tone: questions are the bare accent count, no glyph. The looping mark is gone once the session
                    is seen after it was classified; open questions stay until they are answered, the user moves on, or align is turned off. No
                    mark shows while this tab runs a turn there.
                    Every line-1 mark is hidden on the open session,

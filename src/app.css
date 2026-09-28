@@ -41,13 +41,22 @@ html, body, #root { height: 100%; }
   contain-intrinsic-block-size: auto var(--entry-est, 120px);
   overflow-clip-margin: var(--space-2);
 }
+/* Whole pixels: a row added above the view moves the scroll by its estimate, and a fraction there
+   shows as the view shaking by a pixel while the older rows are built. */
+@supports (width: round(1.5px, 1px)) {
+  .entry { contain-intrinsic-block-size: auto round(var(--entry-est, 120px), 1px); }
+}
 .entry:empty { display: none; }
 .entry:focus-within,
 .entry[data-actions-revealed] { content-visibility: visible; contain: layout paint style; }
-/* Text wraps to about twice the lines in a folded-width transcript, and image tiles to half as
-   many a row (lib/tail-render `imagesEstimate`). */
-.thread { --entry-line-est: 23px; --entry-narrow: 0; }
-@container (width < 600px) { .thread { --entry-line-est: 42px; --entry-narrow: 1; } }
+/* What a row's estimate needs from the width (lib/tail-render `rowEstimate`): a body line's height,
+   and the characters a message line holds, which the transcript measures (`--entry-cols-measured`,
+   Thread) and a fixed count stands in for before it has. Image tiles fold to half as many a row
+   (`imagesEstimate`). */
+.thread { --entry-line: calc(var(--fs-body) * var(--lh-body)); --entry-cols: var(--entry-cols-measured, 110); --entry-narrow: 0; }
+@container (width < 600px) { .thread { --entry-cols: var(--entry-cols-measured, 42); --entry-narrow: 1; } }
+/* As wide as a message can be: the transcript reads its width for `--entry-cols-measured`. */
+.entry-measure { max-width: min(100%, var(--measure)); height: 0; }
 /* The top of a transcript with older rows still to fetch (Thread `older-edge`): a line's height
    held while there are any, so its text appearing (a slow fetch) never moves the view. */
 .older-edge {

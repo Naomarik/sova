@@ -11,7 +11,7 @@ import { home } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, LOADING_OLDER, registerRows, registerTranscript } from "../lib/jump";
 import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
-import { carriedStart, chunkStart, FIRST_CHUNK, type ImagesAt, initialStart, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
+import { carriedStart, chunkStart, FIRST_CHUNK, type ImagesAt, initialStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { isChangeRow } from "../lib/change-rows";
@@ -982,6 +982,8 @@ interface ScrollerApi {
   jumping(): boolean;
 }
 const ScrollerContext = createContext<ScrollerApi | null>(null);
+/** The characters a message line held in the last transcript measured (`--entry-cols-measured`). */
+let lastCols = 0;
 
 /** Runs `fn` once the browser is idle (at the latest after a short wait); returns a cancel. */
 function whenIdle(fn: () => void): () => void {
@@ -1050,9 +1052,19 @@ export function ThreadScroller(props: {
     jumpQuiet = setTimeout(() => (jumpScrolling = false), JUMP_QUIET_MS);
   };
   onCleanup(() => clearTimeout(jumpQuiet));
+  /** The view's width at the last scroll event. */
+  let scrolledWidth = 0;
   const onScroll = () => {
     if (jumpScrolling) jumpScrolled();
     lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // The view narrowing or widening reflows the rows, and scroll anchoring's correction can come
+    // before `viewResized` and `measured` put a following view back at the end: not scrolling away.
+    const width = el.clientWidth;
+    if (width !== scrolledWidth) {
+      const first = scrolledWidth === 0;
+      scrolledWidth = width;
+      if (!first && follow) return;
+    }
     const near = lastGap < FOLLOW_PX;
     if (near && performance.now() < jumpingUntil) return;
     if (near === follow) return;
@@ -1098,6 +1110,23 @@ export function ThreadScroller(props: {
   // the new, shorter view before this runs, so it can't wait for `lastGap`.
   const viewResized = typeof ResizeObserver === "function" ? new ResizeObserver(() => follow && !toggled && toBottom()) : null;
   onCleanup(() => viewResized?.disconnect());
+  // The characters a message line holds, for the rows' estimates (lib/tail-render `lineCols`), from
+  // a probe as wide as a message: set only when it changes, since every row reads it. A new
+  // transcript starts from the last one's, so a switch at the same width lays its rows out once.
+  // The rows not yet drawn change height with it, after `viewResized` has put a following view
+  // back at the end, so it goes back there again; scroll anchoring keeps any other view in place.
+  let cols = lastCols;
+  const measured =
+    typeof ResizeObserver === "function"
+      ? new ResizeObserver(([entry]) => {
+          const width = entry?.contentRect.width ?? 0;
+          if (width <= 0 || lineCols(width) === cols) return;
+          cols = lastCols = lineCols(width);
+          el.style.setProperty("--entry-cols-measured", String(cols));
+          if (follow && !toggled) toBottom();
+        })
+      : null;
+  onCleanup(() => measured?.disconnect());
   const api: ScrollerApi = {
     root: () => el,
     prepend(build) {
@@ -1188,6 +1217,7 @@ export function ThreadScroller(props: {
         tabindex="0"
         ref={(node) => {
           el = node;
+          if (cols) node.style.setProperty("--entry-cols-measured", String(cols));
           observer.observe(node, { childList: true, subtree: true, characterData: true });
           // A jump (lib/jump) takes the view away from the bottom: stop following, as a scroll up would.
           node.addEventListener("click", onClick, true);
@@ -1222,6 +1252,7 @@ export function ThreadScroller(props: {
           <div class="thread" ref={(thread) => resized?.observe(thread)}>
             <ScrollerContext.Provider value={api}>{props.children}</ScrollerContext.Provider>
           </div>
+          <div class="entry-measure" aria-hidden="true" ref={(probe) => measured?.observe(probe)} />
         </div>
       </section>
       {/* Always mounted, shown by attribute: inserting it relaid out the whole transcript at the

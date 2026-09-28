@@ -589,8 +589,12 @@ is virtualized.
   text selection reach the whole transcript once the older rows have arrived and the fill
   completes: a few hundred milliseconds for an 800-row session on this machine, longer over a
   slow link, where the arriving is most of it. A row off screen is skipped by layout and paint
-  (`content-visibility: auto`), at a height estimated from its text and its images until it is
-  first drawn: a row's single image counts at the height its box will have
+  (`content-visibility: auto`), at a height estimated from its kind, its text and its images
+  until it is first drawn. The estimate counts a card or disclosure at its collapsed height
+  (a compaction as its folded disclosure, not its summary). Text is wrapped at the width the
+  transcript has at that moment, so the same row is estimated taller on a phone than on a wide
+  window. A row that draws nothing (a tool result shown in its call's card) takes no space. A
+  row's single image counts at the height its box will have
   (§chat.images/thread-thumbnails), two or more at an estimate of their rows of tiles. A
   row being pointed at, focused or revealed (§chat.transcript/message-actions) is always drawn
   whole.
@@ -609,7 +613,8 @@ is virtualized.
   re-read from where the view now is, so Jump to Latest appears if the end has gone out of view.
   While following, the transcript also returns to the end when the view gets shorter (the
   composer's status row appearing) or a row below changes height with no new content (an image
-  decoding).
+  decoding). It keeps following when the view gets narrower or wider (a panel opening beside
+  it, a window resized): the rows reflowing is not scrolling away.
 - **Refetches keep rows.** A new `hello`, a turn-end reload or a new snapshot replaces the list,
   but every row whose entry renders the same keeps its element. A `hello` or snapshot with older
   rows to come replaces the list from its first row on; when the list on screen already has rows

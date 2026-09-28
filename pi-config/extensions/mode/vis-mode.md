@@ -29,7 +29,7 @@ To point at the one thing that matters, add a `mark` line (at the start of a lin
 `vis html` / `vis svg` are the fallback when no kind fits: at most 8 KB of source, no network (no external scripts, fonts, images or fetches), no autoplay — nothing moves until the reader clicks, so give animations a visible Play or Step button. See § html / svg.
 
 ## flow
-<!-- owner: foundation (reference implementation). Emphasis target: node id or label. -->
+<!-- owner: process member. Emphasis target: node id or label. A too-wide drawing re-lays out for a phone by itself (dir: right turns down, then compact). -->
 Boxes and arrows: architecture, pipelines, request paths, decisions. Laid out automatically.
 ```vis flow
 title: How a prompt reaches the model
@@ -46,11 +46,11 @@ mark sdk "one writer per session file"
 ```
 - `node <id> "Label" ["second line"] [shape] [tone]`; shapes: `box` (default) `round` `store` `decision` `circle`. Undeclared ids become boxes labelled with the id.
 - Edges: `a -> b`, dashed `a --> b`, both ways `a <-> b`; a label goes in quotes after the target; chains: `a -> b "x" -> c`.
-- `dir: down` (default, best on phones) or `dir: right`. Prefer under 12 nodes. `mark` a node by id.
+- `dir: down` (default) or `dir: right` (drawn down on a phone). Prefer under 12 nodes and short labels. `mark` a node by id.
 
 ## sequence
-<!-- owner: sequence member. Draft View with a step-through control (stepper.tsx). Emphasis targets: actor id, or message number (1 = first message). -->
-Messages between parties over time (protocols, handshakes, request/response). The reader can step through it.
+<!-- owner: process member. Step-through walks messages (a divider goes with the next, a note with the one before), so "Step 2" is what `mark 2` names. Emphasis targets: actor id or label, message number. -->
+Messages between parties over time (protocols, handshakes, request/response). The reader can step through it one message at a time.
 ```vis sequence
 actor c "Client"
 actor s "Server"
@@ -60,11 +60,12 @@ s --> c "SYN-ACK"
 note c s "keys derived from the exchange"
 mark 2 "the server commits resources here"
 ```
-- `actor <id> ["Label"] [tone]` (optional; order = first use). `a -> b "msg"`, reply `a --> b "msg"`, self `a -> a "msg"`. `note a [b] "text"`, `== section ==`. At most 8 actors. `mark` an actor id or a message number.
+- `actor <id> ["Label"] [tone]` (optional; order = first use). `a -> b "msg"`, reply `a --> b "msg"`, self `a -> a "msg"`. `note a [b] "text"`, `== section ==`. At most 8 actors; 2–4 read best on a phone. Keep message labels to a few words.
+- `mark` an actor id, or a message by number: 1 is the first message; notes and dividers aren't counted.
 
 ## state
-<!-- owner: state member (shares flow's parser and layout; state-specific drawing goes in kinds/flow or a new kinds/state). Emphasis target: state id. -->
-A state machine: flow syntax, but nodes default to `round`; `node s0 start` / `node done end` are the entry and exit dots; label edges with the event.
+<!-- owner: process member (flow's parser, layout and View; `end` sinks to the last rank). Emphasis target: state id or label. -->
+A state machine: flow syntax, but nodes default to `round`; `node s0 start` / `node done end` are the entry and exit dots; label each edge with its event. `mark` a state by id.
 ```vis state
 node s0 start
 s0 -> idle

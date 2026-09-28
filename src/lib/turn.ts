@@ -7,5 +7,6 @@ import type { TranscriptItem } from "../../shared/protocol";
     words, not the user's: never an input (`isInput`). */
 export const isTurnStart = (row: Pick<TranscriptItem, "kind">): boolean => row.kind === "user" || row.kind === "wake" || row.kind === "link";
 
-/** The user's inputs: the turn starts the inputs count, the Timeline and the rewind targets list. */
-export const isInput = (row: Pick<TranscriptItem, "kind">): boolean => row.kind === "user" || row.kind === "wake";
+/** The user's inputs: the turn starts the inputs count, the Timeline and the rewind targets list.
+    One rule with the server's count of the rows it didn't send (shared/row-counts.ts). */
+export { isInput } from "../../shared/row-counts";

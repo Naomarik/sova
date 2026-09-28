@@ -19,7 +19,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } from "../shared/protocol";
 import { BATON_SENT_ENTRY, type BatonSentData, OPERATOR } from "../shared/baton";
-import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, WorkerInfo } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { stripImageNotes } from "../shared/image-note";
@@ -36,7 +36,7 @@ import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./wor
 import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
-import { cutTail, type HistoryPart } from "./tail-hello";
+import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
@@ -283,6 +283,9 @@ export interface ChatClient {
   sendRaw?(json: string): void;
   /** Asked for newest rows first (`/ws/chat?tail=1`): its hellos are cut (server/tail-hello.ts). */
   tail?: boolean;
+  /** …and fetches the older rows itself (`?tail=rest`, server/transcript-rows.ts): no history is
+      pushed, and its hellos carry `olderSummary` (and `prefetch`, for a browser on this machine). */
+  pull?: { prefetch: boolean };
 }
 
 /** `msg` to one client, serialized at most once however many clients get it (`raw`). */
@@ -293,13 +296,22 @@ function deliver(client: ChatClient, msg: ChatServerMessage, raw: () => string):
 
 /** A hello cut for tail clients: the hello they get, and the history that follows it. */
 interface CutHello {
-  hello: ChatServerMessage;
+  hello: Extract<ChatServerMessage, { type: "hello" }>;
   history: HistoryPart[];
+  /** The whole branch's rows, for a `?tail=rest` client's summary of the ones it wasn't sent. */
+  all: TranscriptItem[];
 }
 
-function cutHello(hello: Extract<ChatServerMessage, { type: "hello" }>): CutHello {
-  const cut = cutTail(hello.items);
-  return { hello: cut.older > 0 ? { ...hello, items: cut.items, older: cut.older } : hello, history: cut.history };
+/** `history`: false when only `?tail=rest` clients get it, who are never pushed any. */
+function cutHello(hello: Extract<ChatServerMessage, { type: "hello" }>, history = true): CutHello {
+  const cut = cutTail(hello.items, { history });
+  return { hello: cut.older > 0 ? { ...hello, items: cut.items, older: cut.older } : hello, history: cut.history, all: hello.items };
+}
+
+/** The cut hello as `client` gets it: a `?tail=rest` client's also sums up the rows before it. */
+function helloFor(cut: CutHello, client: ChatClient): ChatServerMessage {
+  const older = cut.hello.older ?? 0;
+  return client.pull && older > 0 ? { ...cut.hello, ...pullFields(cut.all, older, client.pull.prefetch) } : cut.hello;
 }
 
 /** A cut hello's history to the tail clients that got that hello and are still here. */
@@ -1690,8 +1702,8 @@ class ChatSession {
     const hello = this.hello();
     // A tail client's older rows go last, after the state its first paint needs, and in this same
     // synchronous step, so no event, append or other hello can come between them.
-    const cut = client.tail ? cutHello(hello) : null;
-    client.send(cut ? cut.hello : hello);
+    const cut = client.tail ? cutHello(hello, !client.pull) : null;
+    client.send(cut ? helloFor(cut, client) : hello);
     client.send(this.commands());
     // The queue goes out on EVERY attach, empty or not: a reconnect resets the pane's live rows to
     // nothing, so a client that is told nothing cannot tell "no queue" from "not told yet" and
@@ -1702,7 +1714,7 @@ class ChatSession {
     const snap = this.workersSnapshot();
     if (snap) client.send(snap);
     pushLinks(this, client);
-    sendHistory(cut, [client], (c) => this.clients.has(c));
+    if (!client.pull) sendHistory(cut, [client], (c) => this.clients.has(c));
   }
 
   detach(client: ChatClient): void {
@@ -2403,11 +2415,12 @@ class ChatSession {
     let cut: CutHello | null = null;
     let raw: string | null = null;
     const tails: ChatClient[] = [];
+    const pushed = [...this.clients].some((c) => c.tail && !c.pull);
     for (const c of this.clients) {
       if (c.tail) {
-        cut ??= cutHello(hello);
-        tails.push(c);
-        c.send(cut.hello);
+        cut ??= cutHello(hello, pushed);
+        if (!c.pull) tails.push(c);
+        c.send(helloFor(cut, c));
       } else deliver(c, hello, () => (raw ??= JSON.stringify(hello)));
     }
     // Every client's hello handler clears its worker list, and pushWorkers only sends on change,

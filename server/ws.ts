@@ -36,8 +36,18 @@ function sendRaw(ws: WebSocket, json: string): void {
   }
 }
 
-async function handleChat(ws: WebSocket, path: string, force: boolean, tail: boolean): Promise<void> {
-  const client: ChatClient = { send: (msg) => sendJson(ws, msg), sendRaw: (json) => sendRaw(ws, json), ...(tail ? { tail } : {}) };
+/** What a client asked of the transcript: all of it (legacy), newest rows first with the rest
+    pushed (`?tail=1`), or newest rows alone, the rest fetched over REST (`?tail=rest`, with
+    `prefetch` for a browser on this machine connecting directly: it may as well fetch it all). */
+type TailAsk = { tail: false } | { tail: true; pull: false } | { tail: true; pull: true; prefetch: boolean };
+
+async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk): Promise<void> {
+  const client: ChatClient = {
+    send: (msg) => sendJson(ws, msg),
+    sendRaw: (json) => sendRaw(ws, json),
+    ...(ask.tail ? { tail: true } : {}),
+    ...(ask.tail && ask.pull ? { pull: { prefetch: ask.prefetch } } : {}),
+  };
   // Buffer messages that arrive while the runtime is still opening.
   const early: ChatClientMessage[] = [];
   let chat: Awaited<ReturnType<typeof acquireChat>> | null = null;
@@ -85,7 +95,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, tail: boo
   for (const msg of early.splice(0)) chat.handle(client, msg);
 }
 
-function handleWatch(ws: WebSocket, path: string, cut: boolean, normalize?: Normalize, tally?: UsageTally, format: Format = "pi"): void {
+function handleWatch(ws: WebSocket, path: string, ask: TailAsk, normalize?: Normalize, tally?: UsageTally, format: Format = "pi"): void {
   // pi replies name their model, so the fill carries its window; the runtime is resolved first.
   let resolve: WindowResolver = () => null;
   const tail = new SessionTail(
@@ -94,7 +104,8 @@ function handleWatch(ws: WebSocket, path: string, cut: boolean, normalize?: Norm
     normalize,
     tally,
     contextTally(format, (ref) => resolve(ref)),
-    cut ? (json) => sendRaw(ws, json) : undefined,
+    ask.tail && !ask.pull ? (json) => sendRaw(ws, json) : undefined,
+    ask.tail && ask.pull ? { prefetch: ask.prefetch } : undefined,
   );
   // A claude-code worker's own file has no Sova session id: nothing to stamp.
   const id = normalize ? "" : idOf(path);
@@ -153,15 +164,18 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
     return;
   }
   // A browser on this machine, not through a proxy: decline permessage-deflate (server/compression.ts).
-  if (isDirectLocal(req)) delete req.headers["sec-websocket-extensions"];
+  const direct = isDirectLocal(req);
+  if (direct) delete req.headers["sec-websocket-extensions"];
   wss.handleUpgrade(req, socket, head, (ws) => {
     // /ws/watch?feed=sessions: no session at all, the list's pushed overlays.
     if (route === "/ws/watch" && url.searchParams.get("feed") === "sessions") {
       handleFeed(ws);
       return;
     }
-    // ?tail=1: the transcript newest rows first (server/tail-hello.ts); anything else, as it always was.
-    const tail = url.searchParams.get("tail") === "1";
+    // ?tail=1: the transcript newest rows first (server/tail-hello.ts); ?tail=rest: newest rows
+    // alone (server/transcript-rows.ts); anything else, as it always was.
+    const t = url.searchParams.get("tail");
+    const tail: TailAsk = t === "1" ? { tail: true, pull: false } : t === "rest" ? { tail: true, pull: true, prefetch: direct } : { tail: false };
     // /ws/watch?claude=<uuid>: a claude-code worker's own session file, in CC's own format.
     const claudeId = route === "/ws/watch" ? url.searchParams.get("claude") : null;
     if (claudeId) {
@@ -171,7 +185,8 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
         ws.close(4404, "bad path");
         return;
       }
-      handleWatch(ws, file, tail, normalizeClaudeText, claudeUsageTally(), "claude");
+      // REST serves pi session files only: a Claude Code file's older rows are pushed, as with ?tail=1.
+      handleWatch(ws, file, tail.tail ? { tail: true, pull: false } : tail, normalizeClaudeText, claudeUsageTally(), "claude");
       return;
     }
     const path = resolveSessionPath(url.searchParams.get("path"));

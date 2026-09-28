@@ -7,7 +7,8 @@
 // whole-branch rule (the newest align doc, the newest explain run, the running model) has run.
 // Pure, for tsx --test.
 
-import type { TranscriptItem } from "../shared/protocol";
+import type { OlderSummary, TranscriptItem } from "../shared/protocol";
+import { summarize } from "../shared/row-counts";
 
 /** The tail holds at least this many rows, when its size allows (the client builds 60 with it). */
 export const TAIL_MIN_ROWS = 60;
@@ -112,13 +113,51 @@ export interface TailCut {
  * its length picks the cut, and its JSON is reused in the history message's own JSON, which is
  * byte for byte what `JSON.stringify` makes of that message.
  */
-export function cutTail(items: TranscriptItem[], opts: { minRows?: number; maxChars?: number; chunkChars?: number } = {}): TailCut {
+export function cutTail(
+  items: TranscriptItem[],
+  opts: { minRows?: number; maxChars?: number; chunkChars?: number; history?: boolean } = {},
+): TailCut {
   const json = items.map((it) => JSON.stringify(it));
   const sizes = json.map((s) => s.length);
   const start = tailStart(items, sizes, opts.minRows, opts.maxChars);
-  const history = historyRanges(sizes, start, opts.chunkChars).map(([from, to]): HistoryPart => ({
+  // `history: false`: a `?tail=rest` client, which fetches the older rows itself.
+  const history = (opts.history === false ? [] : historyRanges(sizes, start, opts.chunkChars)).map(([from, to]): HistoryPart => ({
     msg: { type: "history", items: items.slice(from, to), left: from },
     raw: `{"type":"history","items":[${json.slice(from, to).join(",")}],"left":${from}}`,
   }));
   return { items: start === 0 ? items : items.slice(start), older: start, history };
+}
+
+// ---- Older rows on demand (`?tail=rest`, server/transcript-rows.ts) ------------------------------
+// A client that asks with `?tail=rest` gets the same cut hello or snapshot and no history: it
+// fetches older rows over REST when it wants them, a chunk before its first row or a range down to
+// a jump's target. Each is cut from the same normalized list, so they concatenate exactly.
+
+/** Where the chunk of about `maxChars` just before row `end` starts: whole entries back from it
+    (always the entry just before it), cut by `tailStart`'s rules, so a chunk never opens on a tool
+    result or inside a baton wrap-up either. */
+export function chunkStart(items: readonly TranscriptItem[], sizes: readonly number[], end: number, maxChars = HISTORY_CHUNK_CHARS): number {
+  if (end <= 0) return 0;
+  return tailStart(items.slice(0, end), sizes.slice(0, end), Number.POSITIVE_INFINITY, maxChars);
+}
+
+/** Where a range down to row `target` starts: that row's entry, back to the call of a tool result
+    (a result never opens what's loaded without its call), and back to the start of a baton wrap-up
+    it's inside. */
+export function rangeStart(items: readonly TranscriptItem[], target: number): number {
+  let s = entryStart(items, target);
+  while (s > 0 && items[s]!.kind === "tool-result") s = entryStart(items, s - 1);
+  for (let i = s - 1; i >= 0; i--) {
+    const m = items[i]!.batonMark;
+    if (m?.kind !== "wrapup") continue;
+    if (m.phase === "start") s = i;
+    break;
+  }
+  return s;
+}
+
+/** What a `?tail=rest` hello or snapshot with `older` rows before it adds: those rows' summary,
+    and whether the client should fetch them all now. */
+export function pullFields(items: readonly TranscriptItem[], older: number, prefetch: boolean): { olderSummary: OlderSummary; prefetch?: true } {
+  return { olderSummary: summarize(items.slice(0, older)), ...(prefetch ? { prefetch: true as const } : {}) };
 }

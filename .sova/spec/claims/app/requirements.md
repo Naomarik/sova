@@ -160,7 +160,11 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   (`"site" is not an owner area. Use one of: "website", "branding" or "none".`). A choice with the
   same area key as a roster area (it differs only in case, spacing or punctuation) is that area, and is stored as the roster
   spells it. The model sees the choices, with every active person's name and job title
-  (§app.baton/goal-and-loadout).
+  (§app.baton/goal-and-loadout). Its prompt makes `none` the default: it gives an area only when
+  the decision itself is about that area's subject, never because of who said it or whose area the
+  conversation was started for (a page's layout, design or wording is not finance because a
+  finance person asked for it). The project overseer questions an implausible owner area before
+  promoting a decision as its author's own (§app.project-overseer/tools).
 - **`none`**: no decision area on the roster covers it. The project's main stakeholder decides it
   (§app.organizations/stakeholder), else nobody: the operator.
 - **Older decisions.** A decision recorded before owner areas has no `ownerArea` and keeps today's

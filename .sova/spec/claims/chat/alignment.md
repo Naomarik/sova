@@ -7,7 +7,10 @@ keeps with one tool, `align`, from pi's `mode` extension (`pi-config/extensions/
 can hold several alignments at once, one per concern. The user never edits one: they answer in
 chat, and the agent records the answer. Sova shows each alignment as a card in the transcript, a
 chip in the composer, and a count on the session's row. It works the same in the TUI and in Sova,
-for sessions Sova holds and sessions it only watches.
+for sessions Sova holds and sessions it only watches, with one web-only shortcut: in a chat Sova
+holds, the card can tick recommendations to take and go with all of them (§chat.alignment/card).
+Those only compose an ordinary message for the agent to record, exactly as if it were typed; the
+TUI user types the same words.
 
 ## §chat.alignment/document — What an alignment holds
 
@@ -192,10 +195,17 @@ an `align` call: it is the message, not its working.
       <p class="align-q-ask">How often may it start a run on its own?</p>
       <p class="align-q-context">…context…</p>
       <ol class="align-q-options">
-        <li><span class="text-mono align-q-letter">a</span> <span><strong>1 per 10 min</strong> — trade-off</span></li>
-        <li><span class="text-mono align-q-letter">b</span> <span><strong>1 per hour</strong> — trade-off</span></li>
+        <li><span class="text-mono align-q-letter">a</span> <span><strong class="align-q-line">1 per 10 min</strong>
+          <span class="align-q-desc">trade-off</span></span></li>
+        <li><span class="text-mono align-q-letter">b</span> <span><strong class="align-q-line">1 per hour</strong>
+          <span class="align-q-desc">trade-off</span></span></li>
       </ol>
-      <p class="align-q-rec">Recommended: <span class="align-q-letter">a</span> — <strong>1 per 10 min</strong> — why</p>
+      <p class="align-q-rec"><span class="align-q-line"><span class="align-q-kicker">Recommended</span>
+        <span class="align-q-letter">a</span> — <strong>1 per 10 min</strong></span>
+        <span class="align-q-desc">why</span></p>
+      <!-- or, answerable (below): the same line as a checkbox's label -->
+      <label class="toggle align-q-rec align-q-take"><input type="checkbox"><span class="toggle-box"></span>
+        <span><span class="visually-hidden">Take the recommendation for q3. </span>…the same two lines…</span></label>
     </li>
     <li class="align-q" data-state="decided|dropped">
       <details class="align-q-fold">
@@ -210,6 +220,12 @@ an `align` call: it is the message, not its working.
   <details class="align-section"><summary>Findings · 3</summary>…</details>
   <details class="align-section"><summary>Approach · 4</summary>…</details>
   <details class="align-section"><summary>Rejected · 2</summary>…</details>
+  <!-- answerable only (below) -->
+  <div class="card-foot align-doc-foot">
+    <button type="button" class="button button-sm" aria-disabled="true|absent" aria-describedby="align-doc-{n}-hint"
+            title="{reason}">Go With Recommendations</button>
+    <span class="align-doc-foot-hint" id="align-doc-{n}-hint">Or tick some and answer the rest below. | {reason}</span>
+  </div>
 </article>
 <!-- an earlier revision -->
 <details class="disclosure align-rev">
@@ -221,17 +237,19 @@ an `align` call: it is the message, not its working.
 - **Card** is capped at `--measure`, `--space-3`/`--space-4` padding; the eyebrow is `micro`
   uppercase muted, the title `heading-s` semibold, the meta a muted caption. Questions are separated
   by a `--color-border` rule. The summary, ask, context, options, recommendation, decision and the
-  folded sections are body text in full ink, for legibility; only a decided question's ask and
-  recommendation, and a dropped question's ask, step down one level. Inline code spans and bold runs in these fields
+  folded sections are body text in full ink, for legibility, except a question's context, one
+  level down (ink-2) so it sits below the options' trade-offs; a decided question's ask and
+  recommendation, and a dropped question's ask, step down one level too. Inline code spans and bold runs in these fields
   render; no other markdown.
 
 - **Status chip**, dot and word, only once the document is past aligning: Confirmed (success),
   Implementing (accent), Done (success), Dropped (neutral). An aligning document shows none.
 - **Questions** show their parts distinctly: the ask, the context, the options as a list lettered
   a, b, c… (the letter in the bullet's place, in its own column so a wrapped line aligns under the
-  text) of label and trade-off, the recommendation as a plain line after the options (no fill, no
-  rule, no colour) — "Recommended: b — {label} — {why}" when it names an option
-  (§chat.alignment/document), else "Recommended: {choice} — {why}" — and the decision (with "you"
+  text), each its label in bold on one line and its trade-off on the next, set in slightly (no
+  separator), then the recommendation after the options (no fill, no rule) in the same two lines:
+  first, bold, a small-caps accent "Recommended" then "b — {label}" when it names an option
+  (§chat.alignment/document), else "{choice}"; below it, set in the same, its why — and the decision (with "you"
   or "accepted recommendation") once there is one. Each
   question's head carries its state as a chip: Open, Decided, or Dropped with its why.
 - **Only open questions are expanded.** A decided or dropped question is folded by default to
@@ -243,8 +261,35 @@ an `align` call: it is the message, not its working.
   question: the head wraps whole and drops its inline outcome, and below it come the ask,
   context, options and recommendation it was settled from, then the outcome line in full. The
   fold is per card render and is not remembered.
-- **Nothing on the card writes.** There is no checkbox to tick and no button that answers, accepts
-  or pre-fills an answer: the user answers in chat.
+- **Nothing on the card writes alignment state.** Only the agent's `align` calls do
+  (§chat.alignment/state). The card's two controls below only compose an ordinary user message,
+  which the agent records like any typed answer (§chat.alignment/model).
+- **Answerable card.** Only in a chat Sova holds (the chat view, never a live watch, the Overseer's
+  watch or a worker transcript), with the **align** minor mode on in that chat, and not in the
+  Overseer, a project overseer or a baton session. Even there, only the **newest revision** of an
+  **open** alignment (not done or dropped) with **at least one open question** answers; every
+  earlier revision, an older session's `align-doc` card and a settled document stay read-only.
+- **Take a recommendation (tick).** Each open question's recommendation becomes the label
+  of a checkbox (`label.toggle`, both lines the target; the box sits in the options' letter
+  column), named "Take the recommendation for {qN}." for assistive tech. A tick stages nothing on
+  the server: ticks live in memory per session, like the draft, until the next send. They show
+  above the composer as one removable row (§chat.composer/anatomy) and go out with the next
+  message. A tick whose question stops being open in a newer revision, or whose alignment ends,
+  drops. Ticking is disabled only where the composer is blocked because the chat is archived,
+  with that reason as the hover title; a passing block (reconnecting, saving a turn) leaves it on.
+- **The message the ticks send**, one line per alignment, in the order the alignments were last
+  touched and each's questions in card order: `{al_N}: take your recommendation on {q1}, {q2} and
+  {q3}.` At Send, that line (or lines), a blank line, then the typed text make **one** message;
+  Send works with ticks and no text. A refused send keeps both. The agent reads it as `accept` of
+  exactly those questions and records typed answers with `decide`.
+- **Go With Recommendations.** The card's foot has one button (secondary, `button-sm`), with the
+  hint "Or tick some and answer the rest below." beside it. It sends only its own message:
+  `{al_N}: go with your recommendations for every open question, and go ahead.` — which the agent
+  reads as `accept_all` then status `implementing`. It is `aria-disabled`, with the reason as its
+  title and in place of the hint, while the composer's send is blocked (that reason,
+  §chat.composer/disabled-states), while a turn runs ("Wait for the turn to end."), and while the
+  composer holds a draft — typed text, an attachment or ticks ("Send or clear your draft first.").
+  After it sends, that alignment's ticks clear and focus moves to the composer.
 - While a run streams, the call's card appears as soon as its result arrives, from the result's
   own snapshot; the settled transcript renders the same card.
 
@@ -264,17 +309,32 @@ chip and the Inputs trigger sit together at the row's right end.
   <span class="icon icon-sm" style="--icon:url(/icons/chevron-down.svg)" aria-hidden="true"></span>
 </button>
 <div class="model-menu action-menu align-menu" popover="auto" role="menu" aria-label="Open alignments">
-  <div class="mode-option group-option align-menu-item" role="menuitem" tabindex="0">
-    <span class="mode-option-text"><span class="mode-option-id"><span class="text-mono">al_3</span> Autonomy settings</span>
-      <span class="mode-option-note">How far the Overseer may act alone. · 2 of 7 open</span></span>
+  <div class="align-menu-item" role="menuitem" tabindex="0"
+       aria-label="al_3 Autonomy settings: 5 of 7 questions decided — jump to its card">
+    <span class="text-mono align-menu-id">al_3</span>
+    <span class="align-menu-title" title="Autonomy settings">Autonomy settings</span>
+    <span class="align-menu-bar" aria-hidden="true"><span class="align-menu-fill align-menu-fill-warn" style="width:71%"></span></span>
+    <span class="chip chip-count chip-warn"><i class="chip-dot"></i>5/7</span>
+  </div>
+  <div class="align-menu-item" role="menuitem" tabindex="0"
+       aria-label="al_1 Queue shape: implementing, no questions — jump to its card">
+    <span class="text-mono align-menu-id">al_1</span>
+    <span class="align-menu-title" title="Queue shape">Queue shape</span>
+    <span class="chip chip-accent"><i class="chip-dot"></i>Implementing</span>
   </div>
 </div>
 ```
 
-- **Expanding** it (a menu button, `aria-expanded`; ↑/↓ move between rows, Escape closes) lists
-  each open alignment, the last touched first: its id and title, then its summary and "{k} of {m}
-  open" (or its status word when nothing is open). The panel opens above the chip when it fits,
-  340px wide from 768px.
+- **Expanding** it (a menu button, `aria-expanded`; ↑/↓ move between rows, Home/End go to the
+  first/last, Escape closes) lists each open alignment on one line: those with an open question
+  first, each group the last touched first. A row reads left to right: its id (mono, muted), its
+  title (one line, cut with an ellipsis, the whole title on hover), a thin progress bar of its
+  decided questions out of its live ones, and a round count chip "{decided}/{live}" ("5/7"). The
+  bar and the chip are warn while any question is open and success once all are decided. An
+  alignment with no live questions shows its status word in the status chip's tone instead of
+  the bar and count. The summary is not shown, nor any question. Rows are 44px tall at every
+  width. The panel opens above the chip when it fits, 340px wide from 768px; under 768px it is
+  the menus' bottom sheet.
 - **Choosing one** jumps to that alignment's newest card in the transcript (the jump's highlight
   included), building older rows first when the thread hasn't reached it; if the card isn't on
   screen, a toast says so.

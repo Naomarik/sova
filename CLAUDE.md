@@ -132,31 +132,58 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   model stay there and never in the repo). `--check` verifies links and seed keys without changing
   anything; `--save` copies live values of seed-declared keys back into the seed.
 
-## Dev-server restart pitfall (worker suicide)
+## Live server restart (worker suicide)
 
-`pnpm run dev:server` is `tsx watch`: editing ANY file in the server's live import graph —
-non-test `server/**` files, `shared/**`, and ANY non-test file under `pi-config/extensions/mode/`
-(`scripts/dev-server.mjs` watches that whole directory, not just the two files Sova imports) —
-restarts the server process within ~100ms. Workers spawned by a session hosted in that server
-(pi or claude-code backend from agent_spawn/team_create) are CHILD PROCESSES of it with piped
-stdio: the restart kills them mid-task and zeroes the in-memory subagent registry (agent_list
-returns empty; the dead worker's transcript is "unavailable"). Hosted chat sessions themselves
-survive (JSONL persistence; the webapp reconnects and the runtime reopens). Workers don't.
+The live server on 127.0.0.1:4800 is the systemd user unit `sova-runtime.service`
+(`~/.config/systemd/user/`, `Restart=always`, ExecStart `node --import tsx server/index.ts`). It has
+no file watcher: editing `server/**`, `shared/**` or `pi-config/extensions/mode/**` restarts nothing,
+and the process keeps the code it loaded at start. A change goes live only on
+`systemctl --user restart sova-runtime.service`. Workers spawned by a hosted session (pi or
+claude-code, from agent_spawn/team_create) are CHILD PROCESSES of that server, so the restart kills
+every one of them mid-task and zeroes the in-memory subagent registry. Hosted chat sessions survive
+(JSONL persistence; the webapp reconnects and the runtime reopens). Workers don't.
 
 Rules:
-- Before ANY server-graph edit: check for live workers in ANY hosted session (read
-  `~/.pi/agent/sessions/live/p<server-pid>-*.json`, heartbeat ≤ 30s: `workerCounts.working > 0`,
-  or another session's `activity.state === "working"` — your own turn counts too). Hold the edit
-  if busy: background workers from earlier turns and other web sessions die with the restart.
-- While the watch server runs, delegate only `src/**`, test files (`server/*.test.ts`), and docs.
-- Apply server-graph edits from the orchestrator session itself, batched into as few write bursts
-  as possible and as the LAST step of a turn — the restart may cut the turn, but the edits persist.
-- `pnpm run dev:server` runs `scripts/dev-server.mjs`: a gated watcher that holds restarts while
-  any live record shows working subagents or in-flight turns (`r` key or SIGUSR2 forces).
-  `dev:server:tsx` is the old plain watch. Hosted runtimes are never idle-disposed: they live
-  until archived (the close gesture — running subagents die with it), a foreign-writer reload,
-  or server shutdown.
-- Or run the server without watch (`pnpm exec tsx server/index.ts`) for the duration of server-side work.
+- After a server-side change, say that it is not live yet and needs that restart.
+- Before any restart, read the live records `~/.pi/agent/sessions/live/p<server-pid>-*.json`
+  (heartbeat ≤ 30s) for every hosted session: `presence.workerCounts.working > 0`, or
+  `presence.activity.state === "working"` (your own turn counts too). Hold the restart if any is busy.
+- Never restart from inside a hosted session: you are the server's child.
+- The claude-code bridge is a `globalThis` singleton (`getSessionBridge()`, Symbol.for registry): a
+  fresh session that reloads the extension still gets the bridge built from the code loaded first,
+  so provider edits also need a restart. Before trusting a live test, check the unit's start time
+  (`systemctl --user status sova-runtime.service`) against the edited files' mtimes.
+
+Dev only (`pnpm run dev:server`, not the live unit): `scripts/dev-server.mjs` is a gated watcher
+over the server's import graph (non-test `server/**`, `shared/**`, and the whole
+`pi-config/extensions/mode/` directory). It restarts within ~100ms of an edit, but holds the
+restart while any live record shows working subagents or an in-flight turn (`r` key or SIGUSR2
+forces). `dev:server:tsx` is the old plain watch, with no gate. While a watch server hosts your
+session, apply server-graph edits from the orchestrator itself, batched, as the last step of a turn.
+Hosted runtimes are never idle-disposed: they live until archived (running subagents die with it),
+a foreign-writer reload, or server shutdown.
+
+## Working rules
+
+- Never use Opus 5 (`claude-opus-5`). "opus" means Opus 5.5: claude-code `opus` or `opus[1m]`.
+- Throwaway test sessions run on `zai/glm-5.3`. New web sessions default to a costlier model, so set
+  the model before the first prompt, and archive the session afterwards.
+- Never `git stash`, `checkout`, `reset` or `restore` in a worktree others share. Take baselines with
+  `git archive <rev> | tar -x -C ~/.cache/<name>`, never `git worktree add` (it writes the shared `.git`).
+- Run `mise trust <worktree>` in a fresh worktree before any node/pnpm command.
+- Retire a worker past 50% of its context window: have it write a checkpoint, then hand off to a
+  fresh worker instead of resuming or steering the old one.
+- The pi-web archive and the pi-config mirror are private repositories: never link, fork or expose
+  them. In public docs, describe `pi-config/` as a directory in this repo.
+- Playwright in a fresh worktree: symlink the live tree's `.claude/skills/playwright/scripts/node_modules`
+  and remove it afterwards. If port 4810 is taken by another worktree, never kill it: run
+  `PORT=481x PI_CODING_AGENT_DIR=<wt>/.agent pnpm exec tsx server/index.ts`. After a rebuild,
+  unregister the app's service worker and clear its caches, or the page keeps the previous build.
+- Web Push testing: use `CHROMIUM_BIN=/usr/bin/google-chrome-stable` (bundled Chromium cannot
+  subscribe), and grant, enable, trigger and check inside ONE `pw.sh run`: a CDP permission grant
+  resets on detach and Chrome drops the subscription.
+- `dev:hermetic` regenerates `.agent/settings.json` on every start. For a custom pi setting, run
+  `node scripts/hermetic-agent-dir.mjs`, add the key, then start the server yourself.
 
 ## Product documentation
 

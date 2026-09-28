@@ -313,6 +313,8 @@ const EXPLAIN_DOC = "explain-doc";
       `explain.status = "running"`; there is no page yet, so nothing may link to it.
     - finished: the ExplanationInfo the explainer wrote alongside its page in the store
       (server/explanations.ts), with no status at all. Old sessions hold only this shape.
+    - interrupted: a running run whose parent stopped, settled later with `status: "interrupted"`
+      and a `note` (the page is there) or an `error` (it isn't); read like any finished entry.
     The row carries the data verbatim for the gallery/strip; `preview` is the topic and `body` the
     summary, so the collapsed row reads without opening the page. Entries without an id, a topic
     or a createdAt are the extension mid-write: no row. */
@@ -328,7 +330,7 @@ function explainRow(id: string, entry: Entry): TranscriptItem[] {
     parentSessionId: s(d.parentSessionId),
   };
   if (!explain.id || !explain.topic || !explain.createdAt) return [];
-  if (d.status === "running") explain.status = "running";
+  if (d.status === "running" || d.status === "interrupted") explain.status = d.status;
   // The two halves of "the run went wrong" (pi-config/extensions/explain/store.ts
   // ExplainEntryData), at most one ever set. `error` is fatal — no page was written, nothing to
   // open — and also goes on `report.error`, where every other report row puts its failure, so

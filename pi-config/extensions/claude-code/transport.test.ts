@@ -216,6 +216,17 @@ test("a stable session id is passed only when asked for, and must be a UUID", ()
 	assert.ok(!argvFor().args!.includes("--session-id"));
 });
 
+test("forkSession resumes into a new record: --resume <id> --fork-session, optionally named by --session-id", () => {
+	const parent = "3708bfa3-4e74-5f1f-a32e-cd209e9231e1";
+	const child = "4a8b9433-75c5-4bc0-9b2c-27c90a88a5d1";
+	const args = argvFor({ resume: parent, forkSession: true, sessionId: child }).args!;
+	assert.deepEqual(args.slice(args.indexOf("--resume"), args.indexOf("--resume") + 3), ["--resume", parent, "--fork-session"]);
+	assert.equal(args[args.indexOf("--session-id") + 1], child);
+	assert.match(argvFor({ forkSession: true }).error ?? "", /forkSession needs resume/);
+	assert.match(argvFor({ resume: parent, sessionId: child }).error ?? "", /exclusive/, "without a fork, resume still refuses a new id");
+	assert.equal(argvFor({ resume: parent }).args!.includes("--fork-session"), false);
+});
+
 test("resume continues an existing session with --resume, never --session-id", () => {
 	const id = "886313e1-3b8a-5372-9b90-0c9aee199e5d";
 	const args = argvFor({ resume: id }).args!;

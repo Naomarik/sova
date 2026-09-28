@@ -1,15 +1,18 @@
-import { createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
+import { createEffect, createSignal, on, onCleanup } from "solid-js";
 import type { TmpAttachment } from "../../shared/protocol";
 import { renderMarkdown, type RenderedMarkdown } from "../lib/markdown";
 import { activatePathChip } from "../lib/path-attachments";
 import { sessionIndexVersion } from "../lib/session-links";
 import { announce, openLightbox } from "../lib/ui-state";
+import { createMarkdownPatcher } from "../vis/hydrate";
 
 /**
  * An assistant-text body rendered as markdown. The HTML comes only from
  * renderMarkdown, which escapes all model text (markdown-it html:false). While `streaming`, the
  * whole text is re-rendered at most once per animation frame, and an open fence shows as an
  * unhighlighted code block. `attachments` turns those /tmp image paths in prose into chips.
+ * The HTML reaches the DOM one top-level block at a time (vis/hydrate.tsx): unchanged blocks, and
+ * the `vis` drawings mounted in them, survive each streaming frame.
  */
 export function Markdown(props: { text: string; streaming?: boolean; attachments?: TmpAttachment[] }) {
   const [rendered, setRendered] = createSignal<RenderedMarkdown>(renderMarkdown(props.text, !!props.streaming, props.attachments));
@@ -36,7 +39,14 @@ export function Markdown(props: { text: string; streaming?: boolean; attachments
       { defer: true },
     ),
   );
-  const html = createMemo(() => rendered().html);
+  let el!: HTMLDivElement;
+  let patcher: ReturnType<typeof createMarkdownPatcher> | undefined;
+  createEffect(() => {
+    const r = rendered();
+    patcher ??= createMarkdownPatcher(el);
+    patcher.patch(r);
+  });
+  onCleanup(() => patcher?.dispose());
 
   const copy = async (button: HTMLButtonElement) => {
     const source = rendered().codes[Number(button.dataset.codeIndex)];
@@ -60,8 +70,8 @@ export function Markdown(props: { text: string; streaming?: boolean; attachments
 
   return (
     <div
+      ref={el}
       class="message-body md"
-      innerHTML={html()}
       onClick={(e) => {
         const target = e.target as HTMLElement;
         const copyButton = target.closest<HTMLButtonElement>(".md-code-copy");

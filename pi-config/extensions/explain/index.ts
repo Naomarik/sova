@@ -32,6 +32,8 @@
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { parentForkPoint } from "../claude-code/provider/fork-point.ts";
+import { rpcScopedModel } from "../subagents/runner.ts";
 import { ExplainRuns, MAX_LIVE, wakeMessage, type ExplainHost } from "./explain.ts";
 import { parentIdentity } from "./identity.ts";
 import { EXPLAIN_ENTRY_TYPE, type ExplainEntryData } from "./store.ts";
@@ -63,6 +65,31 @@ export default function explainExtension(pi: ExtensionAPI): void {
 	};
 	const runs = new ExplainRuns(host);
 
+	/**
+	 * Settle running entries left by a stopped parent (explain.ts `reconcile`), once per session
+	 * and only when the session is being written anyway: its first prompt, or /explain. Opening
+	 * a session never writes.
+	 */
+	let reconciledFor: string | undefined;
+	const reconcile = (ctx: ExtensionContext): void => {
+		try {
+			const sessionId = ctx.sessionManager.getSessionId();
+			if (reconciledFor === sessionId) return;
+			reconciledFor = sessionId;
+			const entries = ctx.sessionManager
+				.getBranch()
+				.filter((entry) => entry.type === "custom" && entry.customType === EXPLAIN_ENTRY_TYPE)
+				.map((entry) => (entry as { data?: ExplainEntryData }).data)
+				.filter((data): data is ExplainEntryData => !!data && typeof data === "object");
+			runs.reconcile(entries);
+		} catch {
+			/* Best-effort: an unsettled row only keeps reading as running. */
+		}
+	};
+	pi.on("before_agent_start", async (_event, ctx) => {
+		reconcile(ctx);
+	});
+
 	pi.on("session_start", async (_event, ctx) => {
 		activeCtx = ctx;
 	});
@@ -78,8 +105,13 @@ export default function explainExtension(pi: ExtensionAPI): void {
 		if (!data) return undefined;
 		// Provisional entry of a run still in progress; its final entry (same id) renders as below.
 		if (data.status === "running") return new Text(`${theme.fg("warning", "[explaining]")} ${data.topic} — ${theme.fg("dim", "working…")}`, 0, 0);
-		const label = data.error ? theme.fg("error", "[explain failed]") : theme.fg("accent", "[explain]");
-		const detail = data.error ? data.error : data.summary || data.id;
+		const label =
+			data.status === "interrupted"
+				? theme.fg("warning", "[explain interrupted]")
+				: data.error
+					? theme.fg("error", "[explain failed]")
+					: theme.fg("accent", "[explain]");
+		const detail = data.error ? data.error : data.status === "interrupted" ? data.note || data.id : data.summary || data.id;
 		return new Text(`${label} ${data.topic} — ${theme.fg("dim", detail)}`, 0, 0);
 	});
 
@@ -93,8 +125,11 @@ export default function explainExtension(pi: ExtensionAPI): void {
 				ctx.ui.notify(`${USAGE}\n${runs.live} of ${MAX_LIVE} explanations running.`, "warning");
 				return;
 			}
+			reconcile(ctx);
 			const parent = parentIdentity(ctx.sessionManager);
 			const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "";
+			// A Claude CLI parent: its live CLI session is where the child picks up, not a folded replay.
+			const claudeFork = rpcScopedModel(model) ? parentForkPoint(parent.id) : undefined;
 			try {
 				const started = runs.begin({
 					topic,
@@ -103,6 +138,8 @@ export default function explainExtension(pi: ExtensionAPI): void {
 					...(parent.file ? { parentSessionFile: parent.file } : {}),
 					model,
 					...(ctx.thinkingLevel ? { effort: ctx.thinkingLevel } : {}),
+					...(claudeFork ? { claudeFork } : {}),
+					parentTools: pi.getActiveTools(),
 				});
 				const how = [started.forked ? "forked" : "fresh (this session is not on disk yet)", started.webSearch ? "web search on" : "no web search"].join(", ");
 				ctx.ui.notify(`Explaining "${topic}" in a subagent (${how}). It lands in ${started.dir} and is announced here.`, "info");

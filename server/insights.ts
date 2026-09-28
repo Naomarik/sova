@@ -529,6 +529,7 @@ function decodeExplanation(data: unknown): ExplanationInfo | null {
   const note = str(data.note);
   if (error) x.error = error;
   else if (note) x.note = note;
+  if (data.status === "interrupted") x.status = "interrupted";
   return x;
 }
 

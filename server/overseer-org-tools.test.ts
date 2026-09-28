@@ -482,6 +482,9 @@ describe("archive a project (§app.organizations/archive)", async () => {
     assert.deepEqual(await startPo.json(), { error: "Old Site is archived. Unarchive it to use its overseer." });
     const run = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/run`, { method: "POST" });
     assert.equal(run.status, 409);
+    const coding = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(coding.status, 409, "New Coding Session too");
+    assert.deepEqual(await coding.json(), { error: "Old Site is archived. Unarchive it first." });
     assert.deepEqual(await po.lookNow(org.id, project.id, true), { started: false, why: "the project is archived" });
     const msg = await overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${project.id}/overseer/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
     assert.equal(msg.status, 409);

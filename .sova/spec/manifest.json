@@ -26,7 +26,7 @@
     "§app.insights/insight-strip": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/InsightStrip.tsx",
         "src/design/base.css",
@@ -34,7 +34,8 @@
         "src/lib/insights.ts",
         "shared/outline-order.ts",
         "src/lib/outline-order.test.ts",
-        "src/lib/jump.ts"
+        "src/lib/jump.ts",
+        "server/index.ts"
       ]
     },
     "§app.insights/placement": {
@@ -231,9 +232,12 @@
     "§app.session-list/states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/lib/api.ts"
       ]
     },
     "§app.session-list/tokens": {
@@ -649,8 +653,11 @@
     },
     "§chat.markdown/code-blocks": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/markdown.ts"
+      ]
     },
     "§chat.markdown/element-styling": {
       "kind": "behavior",
@@ -670,7 +677,10 @@
     "§chat.markdown/streaming": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/markdown.ts"
+      ]
     },
     "§chat.mode-menu/how-a-switch-reaches-the-chat": {
       "kind": "behavior",
@@ -1020,7 +1030,12 @@
         "src/lib/live.ts",
         "src/components/ToolCard.tsx",
         "src/components/AlignDocCard.tsx",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/components/ExplainCard.tsx",
+        "server/explanations.test.ts",
+        "src/lib/explain.ts",
+        "src/lib/explain.test.ts",
+        "src/components/SessionPane.tsx"
       ]
     },
     "§chat/composer": {
@@ -1059,7 +1074,8 @@
         "pi-config/extensions/mode/state.ts",
         "server/mode-state.ts",
         "server/chat-manager.ts",
-        "server/project-overseer.ts"
+        "server/project-overseer.ts",
+        "server/mode-state.test.ts"
       ]
     },
     "§chat/model-menu": {
@@ -3651,7 +3667,7 @@
     "§app.baton/goal-and-loadout": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/baton.ts",
         "server/baton-loadout.ts",
@@ -4050,7 +4066,7 @@
     "§app.organizations/workspace-repo": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/workspace-git.ts",
         "server/orgs.ts",
@@ -4160,7 +4176,9 @@
         "src/lib/project-overseer-view.ts",
         "src/lib/api.ts",
         "src/lib/project-overseer-view.test.ts",
-        "server/project-overseer.test.ts"
+        "server/project-overseer.test.ts",
+        "server/project-overseer-prompt.md",
+        "server/project-overseer-tools.ts"
       ],
       "requires": [
         "§app.overseer/ideas",
@@ -4234,7 +4252,8 @@
         "server/wrapup-recovery.ts",
         "server/index.ts",
         "shared/project-overseer.ts",
-        "server/baton-loadout.ts"
+        "server/baton-loadout.ts",
+        "server/project-coding-runtime.test.ts"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels"
@@ -4484,6 +4503,8 @@
         "pi-config/extensions/worktrees/index.ts",
         "pi-config/extensions/worktrees/git.ts",
         "pi-config/extensions/worktrees/index.test.ts",
+        "pi-config/extensions/worktrees/git.test.ts",
+        "pi-config/extensions/worktrees/state.ts",
         "server/transcript.ts",
         "server/worktrees-state.ts",
         "server/worktrees-state.test.ts",
@@ -5812,7 +5833,7 @@
         "pi-config/extensions/subagents/adapters/pi.ts",
         "pi-config/extensions/claude-code/transcript-adapter.ts"
       ],
-      "evidence": "verified"
+      "evidence": "reviewed"
     },
     "§app/project-costs": {
       "kind": "surface",
@@ -5852,11 +5873,16 @@
         "src/lib/hidden-rows.ts",
         "src/design/align-viewer.css",
         "server/transcript.ts",
-        "server/align-state.test.ts"
+        "server/align-state.test.ts",
+        "src/components/Composer.tsx",
+        "src/lib/align-picks.ts",
+        "src/lib/align-picks.test.ts"
       ],
       "requires": [
         "§chat.alignment/state",
-        "§chat.transcript/transcript-items"
+        "§chat.transcript/transcript-items",
+        "§chat.alignment/model",
+        "§chat.composer/disabled-states"
       ]
     },
     "§chat.alignment/chip": {
@@ -6003,7 +6029,7 @@
     "§app.requirements/owner-area": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.requirements/routing",
         "§app.requirements/promotion",
@@ -6025,7 +6051,152 @@
         "server/baton-owner-area.test.ts",
         "server/reconcile.test.ts",
         "server/decisions-routes.test.ts",
-        "server/baton-handoff.test.ts"
+        "server/baton-handoff.test.ts",
+        "server/project-overseer-tools.ts"
+      ]
+    },
+    "§app.project-overseer/new-coding-session": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-overseer.ts",
+        "server/project-overseer-routes.ts",
+        "server/chat-manager.ts",
+        "server/org-sessions.ts",
+        "server/sessions-index.ts",
+        "server/project-overseer-tools.ts",
+        "shared/project-overseer.ts",
+        "src/lib/api.ts",
+        "src/lib/ui-state.ts",
+        "src/App.tsx",
+        "src/components/ProjectOverseerPanel.tsx",
+        "server/project-coding-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.project-overseer/coding-worktrees",
+        "§app.project-overseer/coding-mode"
+      ]
+    },
+    "§chat.markdown/visuals": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/code-blocks",
+        "§chat.markdown/streaming"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/markdown.ts",
+        "src/components/Markdown.tsx",
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/vis-mode.md",
+        "src/vis/StubView.tsx",
+        "src/vis/Visual.tsx",
+        "src/vis/core/core.test.ts",
+        "src/vis/core/emphasis.test.ts",
+        "src/vis/core/emphasis.ts",
+        "src/vis/core/grammar.ts",
+        "src/vis/core/scale.ts",
+        "src/vis/core/text.ts",
+        "src/vis/emphasis.tsx",
+        "src/vis/guide.test.ts",
+        "src/vis/hydrate.tsx",
+        "src/vis/kinds/chart/View.tsx",
+        "src/vis/kinds/chart/chart.css",
+        "src/vis/kinds/chart/layout.test.ts",
+        "src/vis/kinds/chart/layout.ts",
+        "src/vis/kinds/chart/parse.test.ts",
+        "src/vis/kinds/chart/parse.ts",
+        "src/vis/kinds/chart/scale.test.ts",
+        "src/vis/kinds/chart/scale.ts",
+        "src/vis/kinds/code/View.tsx",
+        "src/vis/kinds/code/code.css",
+        "src/vis/kinds/code/layout.test.ts",
+        "src/vis/kinds/code/layout.ts",
+        "src/vis/kinds/code/lines.test.ts",
+        "src/vis/kinds/code/lines.ts",
+        "src/vis/kinds/code/parse.test.ts",
+        "src/vis/kinds/code/parse.ts",
+        "src/vis/kinds/flow/View.tsx",
+        "src/vis/kinds/flow/flow.css",
+        "src/vis/kinds/flow/layout.test.ts",
+        "src/vis/kinds/flow/layout.ts",
+        "src/vis/kinds/flow/parse.test.ts",
+        "src/vis/kinds/flow/parse.ts",
+        "src/vis/kinds/flow/width.ts",
+        "src/vis/kinds/frame/View.tsx",
+        "src/vis/kinds/frame/examples/binary-search.html",
+        "src/vis/kinds/frame/examples/hash-table.html",
+        "src/vis/kinds/frame/examples/unit-circle.svg",
+        "src/vis/kinds/frame/frame.css",
+        "src/vis/kinds/frame/height.test.ts",
+        "src/vis/kinds/frame/height.ts",
+        "src/vis/kinds/frame/parse.test.ts",
+        "src/vis/kinds/frame/parse.ts",
+        "src/vis/kinds/frame/srcdoc.ts",
+        "src/vis/kinds/layers/View.tsx",
+        "src/vis/kinds/layers/height.test.ts",
+        "src/vis/kinds/layers/height.ts",
+        "src/vis/kinds/layers/layers.css",
+        "src/vis/kinds/layers/parse.test.ts",
+        "src/vis/kinds/layers/parse.ts",
+        "src/vis/kinds/matrix/View.tsx",
+        "src/vis/kinds/matrix/height.test.ts",
+        "src/vis/kinds/matrix/height.ts",
+        "src/vis/kinds/matrix/matrix.css",
+        "src/vis/kinds/matrix/parse.test.ts",
+        "src/vis/kinds/matrix/parse.ts",
+        "src/vis/kinds/sequence/View.tsx",
+        "src/vis/kinds/sequence/layout.test.ts",
+        "src/vis/kinds/sequence/layout.ts",
+        "src/vis/kinds/sequence/parse.test.ts",
+        "src/vis/kinds/sequence/parse.ts",
+        "src/vis/kinds/sequence/sequence.css",
+        "src/vis/kinds/timeline/View.tsx",
+        "src/vis/kinds/timeline/height.test.ts",
+        "src/vis/kinds/timeline/height.ts",
+        "src/vis/kinds/timeline/parse.test.ts",
+        "src/vis/kinds/timeline/parse.ts",
+        "src/vis/kinds/timeline/timeline.css",
+        "src/vis/kinds/tree/View.tsx",
+        "src/vis/kinds/tree/height.test.ts",
+        "src/vis/kinds/tree/height.ts",
+        "src/vis/kinds/tree/measure.ts",
+        "src/vis/kinds/tree/parse.test.ts",
+        "src/vis/kinds/tree/parse.ts",
+        "src/vis/kinds/tree/tree.css",
+        "src/vis/markdown.test.ts",
+        "src/vis/parse.test.ts",
+        "src/vis/parse.ts",
+        "src/vis/registry.ts",
+        "src/vis/stepper.tsx",
+        "src/vis/svg.tsx",
+        "src/vis/types.ts",
+        "src/vis/views.ts",
+        "src/vis/vis.css"
+      ]
+    },
+    "§chat.mode-menu/minor-toggle-keeps-prompt": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/prompt-holds-across-turn-starters",
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§app.worker-restore/claude-bridge-restart"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/state.ts",
+        "pi-config/extensions/mode/index.test.ts",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/mode/tests/note-turn.mjs",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "server/mode-state.ts",
+        "server/mode-state.test.ts"
       ]
     }
   },

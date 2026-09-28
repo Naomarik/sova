@@ -4,7 +4,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import { appliesAfter, defaultPatchOf, mergeMode, modeApplyPlan, modeInfo, modeKey, parseModePatch, parseModeRequest, readMode, resolveChatMode, writeMode } from "./mode-state";
+import { MODE_NOTE_TYPE, restoreHead } from "../pi-config/extensions/mode/state.ts";
+import { appliesAfter, defaultPatchOf, mergeMode, modeApplyPlan, modeInfo, modeKey, parseModePatch, parseModeRequest, pinEntryFor, readMode, resolveChatMode, writeMode } from "./mode-state";
 import { normalizeEntry } from "./transcript";
 
 const dir = mkdtempSync(join(tmpdir(), "sova-mode-test-"));
@@ -23,7 +24,7 @@ describe("parseModePatch (POST /api/mode body)", () => {
       const r = parseModePatch(body);
       assert.ok("error" in r, JSON.stringify(body));
     }
-    assert.match((parseModePatch({ minorModes: ["nope"] }) as { error: string }).error, /Unknown minor mode: nope \(known: align, spec\)/);
+    assert.match((parseModePatch({ minorModes: ["nope"] }) as { error: string }).error, /Unknown minor mode: nope \(known: align, spec, vis\)/);
   });
 });
 
@@ -125,7 +126,7 @@ describe("mode.json read/merge/write", () => {
     const info = modeInfo(readMode(file("absent.json")));
     assert.deepEqual(info.modes.map((m) => m.id), ["normal", "delegate"]);
     assert.match(info.modes[1]!.description, /^Orchestrate: /);
-    assert.deepEqual(info.minors.map((m) => m.id), ["align", "spec"]);
+    assert.deepEqual(info.minors.map((m) => m.id), ["align", "spec", "vis"]);
     assert.ok(info.minors[0]!.description.length > 0);
   });
 });
@@ -242,5 +243,28 @@ describe("mode markers in the transcript", () => {
     assert.deepEqual(major.map((i) => i.text), ["Mode → delegate"]);
     // An entry carrying only the snapshot has nothing to say in the transcript.
     assert.deepEqual(normalizeEntry({ type: "custom", customType: "mode", data: { active: { version: 1, mode: "normal", strict: false, minorModes: [] } }, id: "s4" }), []);
+  });
+});
+
+describe("the prompt head: the `mode` entry's additive `head`, and the hidden mode notes", () => {
+  const snapshot = (minorModes: ("align" | "spec" | "vis")[]) => ({ version: 1, mode: "normal", strict: false, minorModes });
+  test("an entry carrying `head` renders and restores exactly as one without it", () => {
+    const withHead = { type: "custom", customType: "mode", id: "h1", data: { minor: "vis", on: true, active: snapshot(["vis"]), head: [] } };
+    assert.deepEqual(normalizeEntry(withHead).map((i) => i.text), ["Minor mode: vis on"]);
+    assert.deepEqual(resolveChatMode([withHead], join(tmpdir(), "absent-mode.json")).minorModes, ["vis"], "the active set, not the head");
+    assert.equal(pinEntryFor([withHead], snapshot(["vis"]) as never), null, "already pinned to that state");
+  });
+
+  test("Sova's pin carries no head: a pinned session's first run builds its head from the pinned modes", () => {
+    const pin = pinEntryFor([], snapshot(["vis"]) as never)!;
+    assert.ok(!("head" in pin.data));
+    assert.deepEqual(restoreHead([{ type: "custom", ...pin }]), { head: undefined, told: undefined, guides: [] });
+  });
+
+  test("a mode note is hidden in the transcript", () => {
+    const note = { type: "custom_message", id: "n1", customType: MODE_NOTE_TYPE, display: false, content: "Mode change: the user turned the vis minor mode on.", details: { v: 1, minorModes: ["vis"], guides: ["vis"] } };
+    assert.deepEqual(normalizeEntry(note), []);
+    const replayed = { type: "message", id: "n2", message: { role: "custom", customType: MODE_NOTE_TYPE, display: false, content: note.content, timestamp: 1 } };
+    assert.deepEqual(normalizeEntry(replayed), [], "and as a message");
   });
 });

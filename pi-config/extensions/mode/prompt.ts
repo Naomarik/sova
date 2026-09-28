@@ -1,7 +1,7 @@
 /** The delegate system-prompt text, prompt composition, and status labels. Pure functions: unit-testable. */
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateDefaults, type DelegateProfileId, type WorkerChoice } from "./delegate.ts";
 import { ALIGN_FILE_SCHEMA } from "./align.ts";
-import { buildMinorPrompt, type MinorMode } from "./minor.ts";
+import { buildMinorPrompt, MINOR_MODES, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import type { Mode, ModeState } from "./state.ts";
 
@@ -81,29 +81,74 @@ export function buildSpecWriterPrompt(route: SlotRoute): string {
 /**
  * Everything to append to this turn's system prompt: delegate block first, then minor blocks in
  * registry order. Takes just the session-scoped triple, so a `ModeActive` satisfies it too.
- * `writer` is the routed spec writer, or null when none is set.
+ * `writer` is the routed spec writer, or null when none is set. `headMinors` is the set of minor
+ * modes the session's prompt was built with (the head, see index.ts), when it differs from the
+ * active one: their blocks are the ones written, while the delegate block's align bridge follows the
+ * active align (turning align on changes the tool set anyway, so it can't keep the prefix).
  */
 export function composePrompt(
 	state: Pick<ModeState, "mode" | "strict" | "minorModes">,
 	routes: readonly ProfileRoute[],
 	writer: SlotRoute | null = null,
+	headMinors: readonly MinorMode[] = state.minorModes,
 ): string | undefined {
 	const blocks: string[] = [];
 	if (state.mode === "delegate") {
 		const delegate = buildDelegatePrompt(routes);
 		blocks.push(state.minorModes.includes("align") ? `${delegate}\n\n${DELEGATE_ALIGN_BRIDGE}` : delegate);
 	}
-	for (const minor of state.minorModes) {
-		const block = buildMinorPrompt(minor);
-		blocks.push(minor === "spec" && writer ? `${block}\n\n${buildSpecWriterPrompt(writer)}` : block);
-	}
+	for (const minor of headMinors) blocks.push(minorBlock(minor, writer));
 	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
+}
+
+/** One minor mode's block exactly as the prompt carries it: spec gains the writer paragraph while a writer is set. */
+function minorBlock(minor: MinorMode, writer: SlotRoute | null): string {
+	const block = buildMinorPrompt(minor);
+	return minor === "spec" && writer ? `${block}\n\n${buildSpecWriterPrompt(writer)}` : block;
+}
+
+/**
+ * The hidden note that tells the model about minor modes switched after its prompt was built,
+ * from `told` (what it was last told) to `now`. A mode turned on gets its whole block, the same text
+ * the prompt would have carried, unless that block is already in context: in the prompt (`head`) or
+ * in an earlier note since the last compaction (`guides`), when a pointer to it is enough. A mode
+ * turned off gets a line saying its instructions no longer apply. Undefined when nothing changed.
+ * `guides` in the result: the modes whose whole block this note carries.
+ */
+export function buildModeNote(
+	told: readonly MinorMode[],
+	now: readonly MinorMode[],
+	known: { head: readonly MinorMode[]; guides: readonly MinorMode[] },
+	writer: SlotRoute | null = null,
+): { text: string; guides: MinorMode[] } | undefined {
+	const where = (minor: MinorMode) => (known.head.includes(minor) ? "in your system prompt" : "given earlier in this conversation");
+	const parts: string[] = [];
+	const guides: MinorMode[] = [];
+	for (const minor of MINOR_MODES) {
+		if (told.includes(minor) && !now.includes(minor)) {
+			parts.push(`Mode change: the user turned the ${minor} minor mode off. Its instructions (the "# Minor mode: ${minor}" block ${where(minor)}) no longer apply; do not follow them unless a later note turns it back on.`);
+		}
+	}
+	for (const minor of MINOR_MODES) {
+		if (now.includes(minor) && !told.includes(minor)) {
+			if (known.head.includes(minor) || known.guides.includes(minor)) {
+				parts.push(`Mode change: the user turned the ${minor} minor mode back on. Its instructions (the "# Minor mode: ${minor}" block ${where(minor)}) apply again from now on.`);
+			} else {
+				guides.push(minor);
+				parts.push(`Mode change: the user turned the ${minor} minor mode on. Its instructions follow and apply from now on, as if they were part of your system prompt.\n\n${minorBlock(minor, writer)}`);
+			}
+		}
+	}
+	return parts.length > 0 ? { text: parts.join("\n\n"), guides } : undefined;
 }
 
 /**
  * The system-prompt section the mode blocks are delivered in on pi >= 0.86. Pi wraps the
- * content as `<mode>...</mode>` and diffs it against the section the model already has,
- * so a toggle costs one small patch instead of a whole new prompt.
+ * content as `<mode>...</mode>` and diffs it against the section the model already has. A
+ * minor-mode toggle leaves it alone (its minor blocks are the head's, see buildModeNote): any
+ * change here rewrites the head on providers without mid-conversation system messages and
+ * restarts a Claude Code CLI. It moves on a major-mode switch, a Delegate or spec-writer routing
+ * change, align in delegate (the bridge), and at the first prompt after a compaction.
  */
 export const MODE_SECTION = "mode";
 

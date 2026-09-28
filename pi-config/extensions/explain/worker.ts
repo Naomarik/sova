@@ -3,9 +3,9 @@
  * extension's `SubagentRunner` (`../subagents/runner.ts`).
  *
  * Why that runner and not our own process handling: it already owns the exact
- * argv this feature needs (`--fork`, `--no-extensions`, tool restriction,
- * `-e <source>`), the RPC handshake, the settle/outcome distinction,
- * and the abort → SIGTERM → SIGKILL teardown. It is imported as a class, not as
+ * argv this feature needs (`--fork`, `--no-extensions`, `-e <source>`), the RPC
+ * handshake, the settle/outcome distinction, and the abort → SIGTERM → SIGKILL
+ * teardown. It is imported as a class, not as
  * an extension: no manager, no registry, no `agent_*` tools, nothing of the
  * subagents extension's state is touched, and the child discovers no
  * extensions of its own.
@@ -15,15 +15,18 @@
  * does load the subagents worker marker (`../subagents/worker-mark.ts`) first,
  * like every subagents pi worker: the child's own session then carries a
  * `subagents-worker-session` entry, and Sova keeps it out of its session list.
+ *
+ * No tool restriction on the argv: the child's tools are the parent's, declared exactly as the
+ * parent declared them, so the fork keeps the parent's prompt cache; `child.ts` (loaded last)
+ * sets them up and blocks every call but reading and writing into the store. See mirror.ts.
  */
-import { closeSync, existsSync, openSync, readSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, openSync, readSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { CLAUDE_FORK_ENV, encodeForkPoint, type ClaudeForkPoint } from "../claude-code/provider/fork-point.ts";
 import { claudeCodeProviderLoad, SubagentRunner, type SpawnOptions } from "../subagents/runner.ts";
+import { EXPLAIN_PARENT_SESSION_ENV, EXPLAIN_STORE_ENV } from "./mirror.ts";
 import { agentDir } from "./store.ts";
-
-/** Everything the child needs to research a topic and write the two store files. */
-export const EXPLAIN_TOOLS: readonly string[] = ["read", "grep", "find", "ls", "bash", "write", "edit"];
 
 /** Worker name, so a stray child is recognizable in `ps` output and in its own session list. */
 export const WORKER_NAME = "explain";
@@ -36,8 +39,14 @@ export interface ExplainWorkerSpec {
 	cwd: string;
 	model?: string;
 	effort?: string;
-	/** Parent session file to copy; omitted for an unpersisted parent. */
+	/** Session file the child forks: a byte-copy of the parent's (`copyForFork`); omitted for an unpersisted parent. */
 	forkSession?: string;
+	/** The store directory: the only place the child may write. */
+	storeDir: string;
+	/** The parent's pi session id (provider cache key). */
+	parentSessionId: string;
+	/** The parent's live Claude CLI session, for a claude-code-cli child to resume instead of folding. */
+	claudeFork?: ClaudeForkPoint;
 	/** Extra extension sources for the child (web search, when it is already installed); loaded after the worker marker. */
 	extensions?: string[];
 	/** @internal Test seam. */
@@ -66,6 +75,9 @@ export interface ExplainWorkerHandlers {
  * this file's own location, the way `../subagents/runner.ts` is imported.
  */
 export const WORKER_MARK_EXTENSION = fileURLToPath(new URL("../subagents/worker-mark.ts", import.meta.url));
+
+/** The child's own extension (child.ts), loaded LAST so its before_agent_start has the final word on the prompt. */
+export const CHILD_EXTENSION = fileURLToPath(new URL("./child.ts", import.meta.url));
 
 const MESSAGE_MARK = '"type":"message"';
 const SCAN_CHUNK = 64 * 1024;
@@ -102,6 +114,37 @@ export function forkable(sessionFile: string | undefined): sessionFile is string
 }
 
 /**
+ * Copy `source` to `target`, cut after its last newline: the child forks this copy, never the
+ * parent's file. pi's fork (`SessionManager.forkFrom` → `loadEntriesFromFile`) appends "\n" to a
+ * source whose last line is partial, and the parent may be mid-append right now. The partial line
+ * is simply left out. False when there is no complete line to copy.
+ */
+export function copyForFork(source: string, target: string): boolean {
+	let fd: number | undefined;
+	let bytes: Buffer;
+	try {
+		fd = openSync(source, "r");
+		const size = fstatSync(fd).size;
+		bytes = Buffer.alloc(size);
+		let off = 0;
+		while (off < size) {
+			const read = readSync(fd, bytes, off, size - off, off);
+			if (read <= 0) break;
+			off += read;
+		}
+		bytes = bytes.subarray(0, off);
+	} catch {
+		return false;
+	} finally {
+		if (fd !== undefined) closeSync(fd);
+	}
+	const end = bytes.lastIndexOf(0x0a);
+	if (end < 0) return false;
+	writeFileSync(target, bytes.subarray(0, end + 1), { mode: 0o600 });
+	return true;
+}
+
+/**
  * Web search/fetch for the child, but only if the package pi already installed
  * for this user is sitting there: the point is "trivially available", never an
  * install on the critical path of a slash command.
@@ -116,6 +159,8 @@ export function startExplainWorker(spec: ExplainWorkerSpec, handlers: ExplainWor
 	let settled = false;
 	// A claude-code-cli model needs its provider's extension and switch in the child.
 	const load = claudeCodeProviderLoad(spec.model, [WORKER_MARK_EXTENSION, ...(spec.extensions ?? [])], undefined);
+	const env: Record<string, string> = { [EXPLAIN_STORE_ENV]: spec.storeDir, [EXPLAIN_PARENT_SESSION_ENV]: spec.parentSessionId };
+	if (spec.claudeFork) env[CLAUDE_FORK_ENV] = encodeForkPoint(spec.claudeFork);
 	const runner = new SubagentRunner(
 		{
 			id: `explain-${spec.id}`,
@@ -123,13 +168,13 @@ export function startExplainWorker(spec: ExplainWorkerSpec, handlers: ExplainWor
 			name: WORKER_NAME,
 			task: spec.task,
 			cwd: spec.cwd,
-			tools: [...EXPLAIN_TOOLS],
 			wake: false,
 			...(spec.model ? { model: spec.model } : {}),
 			...(spec.effort ? { effort: spec.effort } : {}),
 			...(spec.forkSession ? { forkSession: spec.forkSession } : {}),
-			extensions: load.extensions,
+			extensions: [...load.extensions, CHILD_EXTENSION],
 			...(load.flags ? { flags: load.flags } : {}),
+			env,
 			...(spec.spawnImpl ? { spawnImpl: spec.spawnImpl } : {}),
 			...(spec.timings ? { timings: spec.timings } : {}),
 		},

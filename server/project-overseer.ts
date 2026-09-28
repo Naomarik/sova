@@ -12,6 +12,8 @@ import {
   type PoLimitKind,
   type ProjectOverseerSettings,
   PROJECT_OVERSEER_ENTRY,
+  type CodingStartInput,
+  type CodingStartResult,
   type ItemCodeInput,
   type ItemCodeResult,
   type ItemSendInput,
@@ -63,7 +65,7 @@ import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overs
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { readNotes, rotateState } from "./overseer-store";
 import { appendUpdate, cleanUpdateText, lastUpdate } from "./project-updates";
-import { promptOpenTodos, readTodos, updateTodo } from "./overseer-todos";
+import { readTodos, updateTodo } from "./overseer-todos";
 import { UserTurns } from "./overseer-tools";
 import { canonicalPath } from "./paths";
 import { listDecisions, onReconcileEvent, promoteDecisions, reconcileProject } from "./reconcile";
@@ -274,6 +276,9 @@ function codingOf(p: ProjectOverseerPaths): { sessionId: string; path: string | 
     });
 }
 
+/** A listing's title, or "" for a session nobody has written in yet (its derived "Untitled"). */
+const listedTitle = (t: string | undefined): string => (t && t !== "Untitled" ? t : "");
+
 /** Every coding session the project started (both kinds), with its worktree or why it runs in the root, newest first. */
 async function codingWorktrees(p: ProjectOverseerPaths, root: string): Promise<CodingWorktree[]> {
   const known = indexedSessionPaths();
@@ -286,8 +291,9 @@ async function codingWorktrees(p: ProjectOverseerPaths, root: string): Promise<C
       path,
       // A title given here (a rename, Start coding session's) first; then the one it started with,
       // which travels in the repo (another host has no file and no title store for it); then the
-      // listing's own (the first message, which ends with Sova's commit paragraph).
-      title: readSessionTitles()[r.sessionId] || r.title || (path ? ((await getSessionSummary(path).catch(() => null))?.title ?? "") : ""),
+      // listing's own (the first message, which ends with Sova's commit paragraph); none before the
+      // first message (New Coding Session), and the page says "Untitled coding session".
+      title: readSessionTitles()[r.sessionId] || r.title || (path ? listedTitle((await getSessionSummary(path).catch(() => null))?.title) : ""),
       startedBy: r.kind === "coding" ? ("overseer" as const) : ("operator" as const),
       ...(r.kind === "operator-coding" && r.via === "overseer" ? { via: "overseer" as const } : {}),
       running: path ? isSessionBusy(path) : false,
@@ -438,7 +444,6 @@ export function renderProjectOverseerPrompt(orgId: string, projectId: string, to
     CODING_MODE: `${describeCodingMode(baseCodingMode(settings.codingMode, project.root))}${settings.codingMode ? " (the operator's setting)" : " (Automatic)"}`,
     ROSTER: active.length ? [...active.map(participantLine), stakeholderLine(project, roster) ?? ""].filter(Boolean).join("\n") : "(nobody yet: ask the operator to add people)",
     IDEAS: r.redact(promptToc(readManifest(p.ideas), readPoState(p)?.current ?? "")),
-    TODOS: r.redact(promptOpenTodos(readTodos(p.todos))),
     NOTES: notes ? r.redact(notes.slice(0, 4000)) : "(none yet)",
     TOOLS: toolCatalogue(tools),
     NOW: now.toString(),
@@ -543,6 +548,7 @@ function toolHost(rt: Rt): PoToolHost {
       return { queued: r.queued, ...(applies ? { modeApplies: applies } : {}) };
     },
     coding: () => codingOf(paths),
+    builds: () => codingWorktrees(paths, projectOf(orgId, projectId).root),
     startedCoding: () => new Map(readStarted(paths).filter((r) => r.kind === "coding" || r.kind === "operator-coding").map((r) => [r.sessionId, { removed: !!r.removed }])),
     hold: (item) => writeMemo(paths, holdItem(readMemo(paths), { ...item, since: new Date(clock()).toISOString() })),
     held: () => readMemo(paths).held,
@@ -704,20 +710,22 @@ export interface StartedCoding {
 export const NOT_PROMPTED = "Started, but not prompted: its mode could not be set.";
 
 /**
- * A new ordinary coding session for the project (sova_create_session, Start coding session): in its
- * own git worktree and branch cut from the root's HEAD when the root is in git (else in the root,
- * with the reason recorded), created through the same route the browser uses, recorded in
+ * A new ordinary coding session for the project (sova_create_session, Start coding session, New
+ * Coding Session): in its own git worktree and branch cut from the root's HEAD when the root is in
+ * git (else in the root, with the reason recorded), created through the same route the browser uses, recorded in
  * started.json at once (so it is listed and counted against its caps even when its prompt fails), titled, with
  * model and thinking, then its mode set and pinned, and only then its first prompt. A mode that
- * could not be set sends no prompt.
+ * could not be set sends no prompt. With no prompt (New Coding Session) nothing is sent: a worktree
+ * session gets the commit paragraph as a note, and the operator writes the first message.
  */
 async function startCodingSession(
   orgId: string,
   projectId: string,
-  input: { cwd?: string; prompt: string; title?: string; model?: string; thinking?: string; mode?: ProjectCodingMode; kind: "coding" | "operator-coding"; via?: "overseer" },
+  input: { cwd?: string; prompt?: string; title?: string; model?: string; thinking?: string; mode?: ProjectCodingMode; kind: "coding" | "operator-coding"; via?: "overseer" },
 ): Promise<StartedCoding> {
   // Nothing new starts in an archived project (§app.organizations/archive).
   assertNotArchived(orgId, projectId);
+  const prompt = input.prompt?.trim() ?? "";
   const project = projectOf(orgId, projectId);
   const p = projectOverseerPaths(orgId, projectId);
   const settings = readPoSettings(p);
@@ -728,7 +736,7 @@ async function startCodingSession(
   if ("reason" in repo) extra = { inRoot: repo.reason };
   else {
     try {
-      const cut = await cutWorktree(repo, cwd, input.title?.trim() || input.prompt.trim().split(/\s+/).slice(0, 8).join(" "));
+      const cut = await cutWorktree(repo, cwd, input.title?.trim() || prompt.split(/\s+/).slice(0, 8).join(" "));
       cwd = cut.cwd;
       extra = { worktree: cut.worktree };
     } catch (err) {
@@ -743,8 +751,8 @@ async function startCodingSession(
     throw new OrgError(json?.error ?? `Creating the session failed (HTTP ${res.status}).`, res.status === 409 ? 409 : 400);
   }
   const title = input.title?.trim() ? cleanSessionTitle(input.title) : null;
-  // The row always carries a title: the one given, else the prompt's first line.
-  const rowTitle = title ?? cleanSessionTitle((input.prompt.trim().split("\n")[0] ?? "").slice(0, 80));
+  // The row carries a title: the one given, else the prompt's first line; none with neither (New Coding Session).
+  const rowTitle = title ?? (prompt ? cleanSessionTitle((prompt.split("\n")[0] ?? "").slice(0, 80)) : null);
   noteStarted(p, json.id, input.kind, new Date(), json.path, { ...extra, ...(rowTitle ? { title: rowTitle } : {}), ...(input.via ? { via: input.via } : {}) });
   if (title) setSessionTitle(json.id, title);
   const choice = codingChoice(input, settings, await overseerRunning(orgId, projectId));
@@ -773,18 +781,28 @@ async function startCodingSession(
     console.warn(`[project-overseer] ${json.id}: mode ${describeCodingMode(mode)} not set: ${err instanceof Error ? err.message : String(err)}`);
     return { ...made, notPrompted: NOT_PROMPTED };
   }
-  const sent = await promptSession(json.path, codingFirstPrompt(input.prompt, extra.worktree));
+  if (!prompt) {
+    // Nothing is sent: the operator writes the first message. The commit paragraph goes in first, as a note.
+    if (extra.worktree && !(await (await acquireChat(json.path)).appendNote(CODING_WORKTREE_NOTE, codingWorktreeParagraph(extra.worktree))))
+      console.warn(`[project-overseer] ${json.id}: its worktree note could not be written`);
+    return made;
+  }
+  const sent = await promptSession(json.path, codingFirstPrompt(prompt, extra.worktree));
   if (!sent.ok) throw new OrgError(sent.error, 409);
   return made;
 }
 
-/**
- * A coding session's first prompt: in its own worktree, told to commit there and merge its target
- * in before it ends its turn (Merge Branch refuses uncommitted work and conflicts); in the project root, as asked.
- */
+/** `customType` of the note a coding session started with no prompt gets: its worktree paragraph. */
+export const CODING_WORKTREE_NOTE = "sova-coding-worktree";
+
+/** What a worktree session is told: commit there, and merge its target in before it ends its turn (Merge Branch refuses uncommitted work and conflicts). */
+export const codingWorktreeParagraph = (worktree: { branch: string; target: string }): string =>
+  `You work in your own git worktree on the branch ${worktree.branch}. Commit your work on this branch before you end your turn: uncommitted changes can't be merged. Before you end your turn, also merge ${worktree.target} into your branch and resolve any conflicts.`;
+
+/** A coding session's first prompt: in its own worktree, ending with its paragraph; in the project root, as asked. */
 export function codingFirstPrompt(prompt: string, worktree: { branch: string; target: string } | undefined): string {
   if (!worktree) return prompt;
-  return `${prompt}\n\nYou work in your own git worktree on the branch ${worktree.branch}. Commit your work on this branch before you end your turn: uncommitted changes can't be merged. Before you end your turn, also merge ${worktree.target} into your branch and resolve any conflicts.`;
+  return `${prompt}\n\n${codingWorktreeParagraph(worktree)}`;
 }
 
 // ---- worktrees: the operator's merge and removal ------------------------------------------------------
@@ -812,11 +830,13 @@ export async function mergeCodingWorktree(orgId: string, projectId: string, sess
   const p = projectOverseerPaths(orgId, projectId);
   const r = worktreeRow(p, sessionId);
   const path = refuseBusy(r);
-  const title = (await getSessionSummary(path).catch(() => null))?.title || r.worktree.branch;
+  const title = readSessionTitles()[r.sessionId] || r.title || listedTitle((await getSessionSummary(path).catch(() => null))?.title) || r.worktree.branch;
   try {
     const m = await mergeBack(r.worktree, project.root, title);
     markStarted(p, r.sessionId, { merged: { at: new Date().toISOString(), commit: m.sha } });
     noteBuildMerged(r.sessionId, true);
+    // The branch reached its target: news for the overseer, which can't see the operator merge otherwise.
+    noteReason(orgId, projectId, `The operator merged "${title}" (${r.worktree.branch}) into ${r.worktree.target}.`, false, true);
   } catch (err) {
     if (err instanceof WorktreeRefusal) {
       // The session's or the branch's to fix (commit, resolve): the overseer is told. The root's own checkout is the operator's.
@@ -1028,6 +1048,34 @@ export async function sendItem(orgId: string, projectId: string, body: ItemSendI
 }
 
 /**
+ * New Coding Session: a coding session of the project tied to no item, with nothing sent (the
+ * operator writes the first message in its composer). Recorded as the operator's (`operator-coding`),
+ * linked to nothing, and no reason to look: the overseer sees it when it next looks.
+ */
+export async function startCoding(orgId: string, projectId: string, body: CodingStartInput): Promise<CodingStartResult> {
+  projectOf(orgId, projectId);
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  const title = str(body?.title);
+  const model = str(body?.model);
+  const thinking = str(body?.thinking);
+  const made = await startCodingSession(orgId, projectId, {
+    ...(title ? { title: title.slice(0, 80) } : {}),
+    ...(model ? { model } : {}),
+    ...(thinking ? { thinking } : {}),
+    kind: "operator-coding",
+  });
+  return {
+    path: made.path,
+    sessionId: made.sessionId,
+    ...(made.worktree ? { worktree: made.worktree } : {}),
+    ...(made.note ? { note: made.note } : {}),
+    ...(made.notPrompted ? { modeNotSet: MODE_NOT_SET } : {}),
+  };
+}
+
+export const MODE_NOT_SET = "Started, but its mode could not be set. Set it from the chat's mode menu before you send.";
+
+/**
  * Start coding session: an ordinary session in the project root with the item as its first prompt,
  * linked to it. `via: "overseer"`: the global Overseer started it for the operator
  * (§app.overseer/org-project-overseers), which alone may give no item, with `prompt` and `title`.
@@ -1151,14 +1199,12 @@ export function watchDecision(input: {
   return { run: true };
 }
 
-/** `openTodos`: how many of the operator's to-dos are open (their text is in the prompt). */
-export function watchText(reasons: string[], autonomy: string, openTodos = 0): string {
+/** An unattended look's message. It never points at the operator's to-dos or ideas: they are the operator's own list. */
+export function watchText(reasons: string[], autonomy: string): string {
   const list = reasons.length ? reasons.slice(-20).map((r) => `- ${r}`).join("\n") : "- (the operator asked for a look)";
-  const todos = openTodos ? `The operator has ${openTodos} open to-do item${openTodos === 1 ? "" : "s"} for you, listed in full in your prompt: work on ${openTodos === 1 ? "it" : "them"} too. ` : "";
   return (
     `${WATCH_PREFIX} Since your last look:\n${list}\n\n` +
     `Re-read the project (sova_project, and sova_decisions where it matters). Infer gaps against the roster's decision areas and file new ones as ideas (§gap/…). ` +
-    todos +
     `Then act within your autonomy (${autonomy}): the tools tell you when something needs a higher level. Keep your reply to a few lines for the operator.`
   );
 }
@@ -1275,9 +1321,8 @@ export async function lookNow(orgId: string, projectId: string, force = false): 
   try {
     const po = await acquireChat(path!);
     po.assertModelAllowed();
-    const openTodos = readTodos(p.todos).todos.filter((t) => !t.done).length;
     const from = po.session.sessionManager.getBranch().length;
-    const { queued, turn } = po.acceptPrompt(watchText(reasons, eff.autonomy, openTodos), undefined, "server");
+    const { queued, turn } = po.acceptPrompt(watchText(reasons, eff.autonomy), undefined, "server");
     const end = (err?: unknown) => recordRunEnd(p, at, runEnd(po, from, err));
     if (queued) {
       // Held behind a start or a compaction: it runs as the next turn, which ends at the next settle.

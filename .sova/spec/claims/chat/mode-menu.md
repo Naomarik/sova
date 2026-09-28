@@ -2,7 +2,7 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
-`delegate`, and any set of **minor modes** (today `align` and `spec`). What Delegate routes where is
+`delegate`, and any set of **minor modes** (today `align`, `spec` and `vis`, which teaches the inline visuals of §chat.markdown/visuals). What Delegate routes where is
 Settings → Modes (§app/settings-dialog), not this menu.
 
 Both are **per session**: each chat keeps its own, persisted in that session's own `mode`
@@ -192,7 +192,9 @@ A chat's system prompt is the same whether its turn was started by the user's me
 extension's message: a subagent settling (`subagent-complete`), a team question, an Overseer
 wake-up. In particular the mode extension's `<mode>` section (delegate instructions, minor-mode
 biases) is neither dropped nor re-added because of *who* started the turn; it changes only when
-the mode, a minor mode, strict, or the Delegate routing changes.
+the major mode, the Delegate or spec-writer routing, or align while in delegate changes, and at the
+first run after a compaction. Any other minor-mode toggle leaves it alone
+(§chat.mode-menu/minor-toggle-keeps-prompt).
 
 Why this needs saying: pi builds a user turn's prompt in `before_agent_start`, where the mode
 extension writes its block into that turn's prompt sections. A turn an extension's message starts
@@ -226,6 +228,46 @@ no `mode: null` system entry after its tool result, and the bridge does not rest
 prompt the provider receives is byte-identical to the previous user turn's. With the mode
 unchanged, the session carries one `mode` section for its whole life: no system entry patches it,
 on the first turn, on later turns, or after the chat is reopened.
+
+## §chat.mode-menu/minor-toggle-keeps-prompt — A minor toggle keeps the cached prompt
+
+Turning a minor mode (`align`, `spec`, `vis`) on or off mid-session never rewrites the prompt the
+model already has, on any provider. The `<mode>` section's minor blocks stay those of the **head**:
+the minor modes the first run after the session's start, or after its last compaction, was built
+with. Only models that take mid-conversation system messages could absorb a changed section as a
+cheap tail patch; everywhere else (Sonnet, Haiku, GLM, DeepSeek, everything on ollama-cloud) pi
+folds it into a new head, and the claude-code bridge restarts its CLI
+(§app.worker-restore/claude-bridge-restart), so one toggle re-sent the whole conversation uncached
+(measured: 53K–180K tokens per toggle).
+
+Instead the switch reaches the model as a **hidden note**, one path for every provider: a
+`mode-note` custom message (`display: false`, so neither the TUI nor Sova's transcript shows it)
+at the switch's next run — beside the user's prompt, or, in a run an extension's message starts (a
+worker's report), steered in ahead of its first request. A run already under way keeps its mode to
+its end (§chat.mode-menu/how-a-switch-reaches-the-chat). Switches made between two runs are told
+once, as their net change.
+
+- **Turning a mode on** carries that mode's whole block, the text the head would have had (for
+  `spec`, with its writer paragraph), unless the block is already in context — in the head, or in an
+  earlier note since the last compaction — when the note points back to it instead.
+- **Turning a mode off** says the mode is off and its earlier instructions no longer apply.
+- **Reopen.** The head is persisted additively in the session's `mode` entries (`head`, recorded
+  while it differs from that entry's `active.minorModes`; entries Sova writes with `pinEntryFor`
+  never carry it) and each note's details record what the model was told. A reopened session, after
+  a server restart included, rebuilds the head it started with, replays its notes from history, and
+  tells the model any switch it had not heard of yet.
+- **Compaction.** The cached prefix is gone anyway: the next run rebuilds the head from the modes
+  active then, sends no note for them, and drops from its requests any older note the compaction
+  kept in its recent tail, so no guide reaches the model twice.
+
+Not covered: `align` also adds or removes its `align` tool, and a tool-set change breaks the cached
+prefix on every provider and restarts the claude-code CLI, note or not. A major-mode switch still
+changes the section, as before.
+
+Observable: toggling `vis` in a chat on the claude-code provider starts no new CLI (no "restarted"
+fold) and the next request's cache read covers the previous context; on any provider the session
+records no system entry for the toggle, and the provider's system prompt is byte-identical before
+and after it. The model draws `vis` fences after turning it on and none after turning it off.
 
 ## §chat.mode-menu/states — States
 

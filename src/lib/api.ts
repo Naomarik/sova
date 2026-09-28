@@ -1,5 +1,6 @@
 import type {
   AgentsInsight,
+  SessionsDirInfo,
   AttentionDigest,
   ChatModeResult,
   ClaudeCliStatus,
@@ -63,7 +64,7 @@ import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, PersonPage, PersonP
 import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
-import type { ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
+import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
@@ -140,6 +141,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
+export const sessionsDir = () => request<SessionsDirInfo>("/api/sessions/dir");
 
 /** A link's message thread as `host` (the pane's session's host) holds it (§mesh.links/agents-pane). */
 export const fetchLinkThread = (host: string | null, linkId: string) =>
@@ -1044,6 +1046,9 @@ export const sendProjectItem = (orgId: string, projectId: string, input: ItemSen
   request<ItemSendResult>(`${overseerBase(orgId, projectId)}/items/send`, jsonInit("POST", input));
 export const codeProjectItem = (orgId: string, projectId: string, input: ItemCodeInput) =>
   request<ItemCodeResult>(`${overseerBase(orgId, projectId)}/items/code`, jsonInit("POST", input));
+/** New Coding Session: a coding session in its own worktree, tied to no item, with nothing sent. */
+export const startProjectCoding = (orgId: string, projectId: string, input: CodingStartInput = {}) =>
+  request<CodingStartResult>(`${overseerBase(orgId, projectId)}/coding`, jsonInit("POST", input));
 /** The operator's gestures on a coding session's worktree: merge its branch into the root's, or remove it. */
 export const mergeCodingWorktree = (orgId: string, projectId: string, sessionId: string) =>
   request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));

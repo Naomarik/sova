@@ -1,12 +1,12 @@
 import type { Context, Hono } from "hono";
-import type { ItemCodeInput, ItemSendInput } from "../shared/project-overseer";
+import type { CodingStartInput, ItemCodeInput, ItemSendInput } from "../shared/project-overseer";
 import type { IdeaUpdate } from "./overseer-ideas";
 import { BusyError } from "./chat-manager";
 import { archivedOverseerRefusal, OrgError } from "./orgs";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
 import { addIdea, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea } from "./overseer-ideas";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
-import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, noteReason, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, sendItem } from "./project-overseer";
+import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, noteReason, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, sendItem, startCoding } from "./project-overseer";
 import { projectOf, projectOverseerPaths, type ProjectOverseerPaths } from "./project-overseer-store";
 import { shareInfo } from "./share/listener";
 
@@ -112,7 +112,6 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
     const b = await body(c);
     addIdea({ id: b.id, title: b.title, text: b.text, tags: b.tags }, p.ideas);
     // The operator's items reach its next look: a reason to look, the item itself in its prompt.
-    noteReason(p.orgId, p.projectId, "The operator added an idea.");
     return c.json(ideasInfo(p.ideas), 201, NO_STORE);
   }));
   app.get(`${base}/idea`, handle((c) => {
@@ -152,7 +151,6 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
     for (const key of ["text", "ideaId", "sessionId"] as const)
       if (b[key] !== undefined && typeof b[key] !== "string") return c.json({ error: `${key} must be a string` }, 400);
     addTodo({ text: b.text, ideaId: b.ideaId, sessionId: b.sessionId }, p.todos, p.ideas);
-    noteReason(p.orgId, p.projectId, "The operator queued a to-do item.");
     return c.json(todos(p), 201, NO_STORE);
   }));
   app.patch(`${base}/todo`, handle(async (c) => {
@@ -214,6 +212,11 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
     const overseerId = overseerOf(c);
     if (!overseerId) return c.json({ error: "Only the Overseer sends here. Write in the overseer's own composer." }, 403);
     return c.json(await messageProjectOverseer(p.orgId, p.projectId, (await body(c)).text, overseerId), 200, NO_STORE);
+  }));
+  // New Coding Session: tied to no item, nothing sent.
+  app.post(`${base}/coding`, handle(async (c) => {
+    const p = pathsOf(c);
+    return c.json(await startCoding(p.orgId, p.projectId, (await body(c)) as CodingStartInput), 201);
   }));
   // A coding session's own worktree: merge its branch back into its target, or remove it once merged (or empty).
   app.post(`${base}/worktrees/merge`, handle(async (c) => {

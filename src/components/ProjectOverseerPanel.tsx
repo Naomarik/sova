@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, Show } from "solid-js";
-import type { IdeaRecord, OverseerAction, OverseerTodosInfo } from "../../shared/protocol";
+import { TODO_TEXT_MAX, type IdeaRecord, type OverseerAction, type OverseerTodosInfo } from "../../shared/protocol";
 import {
   ALLOWANCE_MAX,
   AT_ONCE_MAX,
@@ -12,7 +12,7 @@ import {
   SOON_CHOICES,
   type ProjectOverseerCaps,
 } from "../../shared/project-overseer";
-import { AUTONOMY_LEVELS, AUTONOMY_MEANING, type Autonomy, type ItemCodeInput, type ItemCodeResult, type ItemSendInput, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
+import { AUTONOMY_LEVELS, AUTONOMY_MEANING, type Autonomy, type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendInput, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { OrgDetail } from "../../shared/orgs";
 import {
   addProjectOverseerIdea,
@@ -20,6 +20,7 @@ import {
   ApiError,
   codeProjectItem,
   getProjectOverseer,
+  getSessionSummaryById,
   listModels,
   mergeCodingWorktree,
   openProjectOverseer,
@@ -31,6 +32,7 @@ import {
   removeCodingWorktree,
   runProjectOverseer,
   sendProjectItem,
+  startProjectCoding,
 } from "../lib/api";
 import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, folderNote, mergeGate, mergeNote, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
 import { relativeTime, tildePath } from "../lib/format";
@@ -38,7 +40,7 @@ import { hostLabel, orgHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll } from "../lib/poll";
 import { actionLine, allowanceLine, gapArea, gapWords, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
-import { announce, home, toast } from "../lib/ui-state";
+import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon } from "./ui";
 
@@ -203,7 +205,15 @@ export function ProjectOverseerPanel(props: {
             />
             <Limits info={i()} host={host()} save={(patch) => run(() => patchProjectOverseer(o(), p(), patch), "Limits saved.")} />
             <Started info={i()} />
-            <CodingSessions info={i()} merge={(w) => mergeCodingWorktree(o(), p(), w.sessionId)} remove={(w) => removeCodingWorktree(o(), p(), w.sessionId)} onInfo={info.set} />
+            <CodingSessions
+              info={i()}
+              archived={props.archived}
+              start={() => startProjectCoding(o(), p())}
+              merge={(w) => mergeCodingWorktree(o(), p(), w.sessionId)}
+              remove={(w) => removeCodingWorktree(o(), p(), w.sessionId)}
+              onInfo={info.set}
+              onStarted={() => info.refetch()}
+            />
           </>
         )}
       </Show>
@@ -554,7 +564,7 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(pa
       <h3 class="orgs-h3" id="project-limits-legend">
         Limits
       </h3>
-      <p class="field-hint project-limits-hint">Past a limit it stops and tells you. Your own Start Coding Session and Send to Person aren't counted.</p>
+      <p class="field-hint project-limits-hint">Past a limit it stops and tells you. Your own coding sessions and Send to Person aren't counted.</p>
       <For each={LIMIT_GROUPS}>
         {(g) => (
           <fieldset class="project-limits-group">
@@ -723,11 +733,46 @@ function Started(props: { info: ProjectOverseerInfo }) {
  * coding-worktrees): each runs in a worktree and branch of its own, cut from the root's branch, or
  * in the root when it can't. Merging the branch back, and removing the worktree, are the operator's.
  */
-function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorktree): Promise<ProjectOverseerInfo>; remove(w: CodingWorktree): Promise<ProjectOverseerInfo>; onInfo(i: ProjectOverseerInfo): void }) {
+function CodingSessions(props: {
+  info: ProjectOverseerInfo;
+  /** The project is archived: New Coding Session is disabled, "Archived". */
+  archived?: boolean;
+  /** New Coding Session (§app.project-overseer/new-coding-session): tied to no item, nothing sent. */
+  start(): Promise<CodingStartResult>;
+  merge(w: CodingWorktree): Promise<ProjectOverseerInfo>;
+  remove(w: CodingWorktree): Promise<ProjectOverseerInfo>;
+  onInfo(i: ProjectOverseerInfo): void;
+  onStarted(): void;
+}) {
   const wt = () => props.info.worktrees;
   const rows = createMemo(() => worktreeOrder(wt().sessions));
   const [confirming, setConfirming] = createSignal<string | null>(null);
   const [working, setWorking] = createSignal<string | null>(null);
+  const [starting, setStarting] = createSignal(false);
+  /** New Coding Session's own refusal, under the heading. */
+  const [startError, setStartError] = createSignal<string | null>(null);
+  const start = async () => {
+    if (starting() || props.archived) return;
+    setStarting(true);
+    try {
+      const r = await props.start();
+      props.onStarted();
+      // Started, but its mode isn't set: it stays on this page, listed, to be opened and set by hand.
+      if (r.modeNotSet) {
+        setStartError(r.modeNotSet);
+        return;
+      }
+      setStartError(null);
+      toast(r.worktree ? `Coding session started on ${r.worktree.branch}.` : "Coding session started in the project root.");
+      // Empty until the operator writes, so the list hides it: the app adopts it, as New Session's.
+      const s = await getSessionSummaryById(r.sessionId).catch(() => null);
+      if (!s || !adoptSession(s)) location.hash = sessionHref(r.path);
+    } catch (x) {
+      setStartError(unchangedError(errText(x), "No session was started."));
+    } finally {
+      setStarting(false);
+    }
+  };
   /** A refusal stays under its own row. */
   const [errors, setErrors] = createSignal<Record<string, string>>({});
   const act = async (w: CodingWorktree, fn: () => Promise<ProjectOverseerInfo>, done: string) => {
@@ -747,9 +792,24 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
     }
   };
   return (
-    <Show when={rows().length || !wt().available}>
-      <h3 class="orgs-h3">Coding sessions</h3>
+    <>
+      <div class="orgs-head">
+        <h3 class="orgs-h3">Coding sessions</h3>
+        <button
+          type="button"
+          class="button button-sm"
+          aria-disabled={starting() || props.archived ? "true" : undefined}
+          title={props.archived ? "Archived" : undefined}
+          onClick={() => void start()}
+        >
+          <Icon name="terminal" small /> New Coding Session
+        </button>
+      </div>
+      <Show when={startError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
       <Show when={!wt().available && wt().reason}>{(r) => <p class="orgs-line project-muted">Coding sessions run in the project root: {r()}</p>}</Show>
+      <Show when={!rows().length}>
+        <p class="orgs-empty">None yet. Yours and the overseer's are listed here.</p>
+      </Show>
       <ul class="list">
         <For each={rows()}>
           {(row) => {
@@ -758,10 +818,10 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
             return (
               <li class="list-row orgs-row project-worktree">
                 <span class="list-main">
-                  <Show when={row.path} fallback={<span class="list-title">{row.title}</span>}>
+                  <Show when={row.path} fallback={<span class="list-title">{row.title || UNTITLED_CODING}</span>}>
                     {(path) => (
-                      <a class="list-title" href={sessionHref(path())}>
-                        {row.title}
+                      <a class="list-title" href={sessionHref(path())} onClick={(e) => !row.title && openUntitled(e, row.sessionId)}>
+                        {row.title || UNTITLED_CODING}
                       </a>
                     )}
                   </Show>
@@ -849,7 +909,21 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
           }}
         </For>
       </ul>
-    </Show>
+    </>
+  );
+}
+
+/** A coding session nobody has written in yet (New Coding Session, before its first message). */
+const UNTITLED_CODING = "Untitled coding session";
+
+/** Opens an untitled coding session: the list hides an empty one, so the app adopts it (else the plain link). */
+function openUntitled(e: MouseEvent, sessionId: string): void {
+  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  const href = (e.currentTarget as HTMLAnchorElement).getAttribute("href") ?? "";
+  void getSessionSummaryById(sessionId).then(
+    (s) => adoptSession(s) || (location.hash = href),
+    () => (location.hash = href),
   );
 }
 
@@ -1008,7 +1082,7 @@ function Todos(
       >
         <label class="field orgs-grow">
           <span class="field-label">New to-do item</span>
-          <input class="input" value={draft()} onInput={(e) => setDraft(e.currentTarget.value)} maxlength={300} />
+          <input class="input" value={draft()} onInput={(e) => setDraft(e.currentTarget.value)} maxlength={TODO_TEXT_MAX} />
         </label>
         <button type="submit" class="button">
           Add Item

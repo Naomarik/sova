@@ -41,6 +41,13 @@ export function explainState(info: { status?: string; error?: string; note?: str
   return "ok";
 }
 
+/**
+ * The run's parent stopped (a restart or /reload) before the run settled, and the extension
+ * settled it later. Orthogonal to `explainState`, which still says whether there is a page:
+ * `noted` (the page was on disk anyway; it links) or `failed` (no page).
+ */
+export const explainInterrupted = (info: { status?: string }): boolean => info.status === "interrupted";
+
 /** The explain id a transcript row carries, when it is an explain-doc row. */
 const explainIdOf = (item: TranscriptItem): string | undefined => item.report?.explain?.id;
 

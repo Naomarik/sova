@@ -72,9 +72,9 @@ const REMOTE_DISCOVER_EVENT = "remote:discover";
 import { policyDenial, readPolicy } from "../subagents/policy.ts";
 import { DELEGATE_FILE_NAME, DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateKey, delegateReader, type DelegateBackend } from "./delegate.ts";
 import { WorkerProbe } from "./discovery.ts";
-import { isMinorMode, MINOR_MODES, parseMinorFlag, type MinorMode } from "./minor.ts";
+import { isMinorMode, MINOR_MODES, normalizeMinorModes, parseMinorFlag, type MinorMode } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
-import { applyModeSection, composePrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
+import { applyModeSection, buildModeNote, composePrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
 import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import { SPEC_FILE_NAME, SPEC_WRITER_LABEL, specBackends, specKey, specReader } from "./spec.ts";
 import {
@@ -84,14 +84,17 @@ import {
 	hasMinor,
 	loadState,
 	MODE_ENTRY_TYPE,
+	MODE_NOTE_TYPE,
 	MODES,
 	parseMode,
 	restoreActive,
+	restoreHead,
 	saveState,
 	toggleMode,
 	withMinor,
 	type Mode,
 	type ModeActive,
+	type ModeNoteDetails,
 	type ModeState,
 } from "./state.ts";
 
@@ -113,14 +116,31 @@ const discoveryTtl = (discovery: Discovery): number =>
 /** Tools removed from the orchestrator while strict delegate is on. */
 const STRICT_REMOVED_TOOLS = new Set(["edit", "write"]);
 
-/** What changed in this switch. Old entries carry only `mode`; `active` is absent before per-session state. */
-type ModeMarker = ({ mode: Mode } | { minor: MinorMode; on: boolean } | { strict: boolean }) & { active?: ModeActive };
+/**
+ * What changed in this switch. Old entries carry only `mode`; `active` is absent before per-session state.
+ * `head`: the minor modes the prompt's mode section was built with, only while they differ from
+ * `active.minorModes` (restoreHead in state.ts).
+ */
+type ModeMarker = ({ mode: Mode } | { minor: MinorMode; on: boolean } | { strict: boolean }) & { active?: ModeActive; head?: MinorMode[] };
 
 export default function modeExtension(pi: ExtensionAPI): void {
 	/** The file: shortcuts (read once, at registration) and the default a new session starts from. */
 	let config: ModeState = loadState(STATE_FILE);
 	/** This session's active state. Resolved per session in session_start / session_tree; never global. */
 	let active: ModeActive = activeOf(config);
+	/**
+	 * The prompt head: the minor modes this session's `mode` section was built with. It is fixed by the
+	 * first run after the session starts or compacts (undefined until then, when it follows `active`),
+	 * and a later minor toggle leaves it alone, so the cached prefix survives: the switch reaches the
+	 * model as a hidden note (MODE_NOTE_TYPE) at the next run instead. Restored from the branch.
+	 */
+	let head: MinorMode[] | undefined;
+	/** The minor modes the model was last told are on: the head plus the notes since. */
+	let told: MinorMode[] = [];
+	/** Modes whose whole guide a note since the last compaction carried (a later "on" points back to it). */
+	let guides: MinorMode[] = [];
+	/** From a run's first agent_start to agent_settled: its continuations keep the mode it started with. */
+	let running = false;
 	/** The global Delegate routing, re-read (one stat) whenever it is consulted. */
 	const readDelegate = delegateReader(DELEGATE_FILE);
 	/** The global spec writer (mode-spec.json), re-read (one stat) whenever spec is on and it is consulted. */
@@ -202,7 +222,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 * base sections. pi replaces the base object when tools change, so this is re-run at every run
 	 * start and after every switch, not once. A getter whose runner was replaced is dropped.
 	 */
-	function syncHostSection(block: string | undefined = composePrompt(active, routes, writerRoute)): void {
+	function syncHostSection(block: string | undefined = modeBlock()): void {
 		if (hostPromptOptions === undefined) return;
 		let sections: Record<string, string> | undefined;
 		try {
@@ -214,6 +234,29 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		if (sections) applyModeSection(sections, block);
 	}
 
+	const headMinors = (): MinorMode[] => head ?? active.minorModes;
+
+	/** The `mode` section: the major mode as it is now, the minor blocks as the head has them. */
+	const modeBlock = (): string | undefined => composePrompt(active, routes, writerRoute, headMinors());
+
+	/** A run is about to send the prompt: a head not sent since the start or the last compaction is the active set from now on. */
+	function fixHead(): void {
+		if (head !== undefined) return;
+		head = [...active.minorModes];
+		told = [...head];
+		guides = [];
+	}
+
+	/** The hidden note for what the model hasn't been told yet, now counted as told; undefined when there is nothing. */
+	function takeNote(): { customType: string; content: string; display: false; details: ModeNoteDetails } | undefined {
+		if (head === undefined) return undefined;
+		const note = buildModeNote(told, active.minorModes, { head, guides }, writerRoute);
+		if (!note) return undefined;
+		told = [...active.minorModes];
+		guides = normalizeMinorModes([...guides, ...note.guides]);
+		return { customType: MODE_NOTE_TYPE, content: note.text, display: false, details: { v: 1, minorModes: [...told], guides: note.guides } };
+	}
+
 	/**
 	 * Route every profile of the routing (in delegate) and the spec writer (while spec is on) as they
 	 * are NOW (files and policy re-read) against the last discovery. Synchronous and cheap: what a
@@ -223,7 +266,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		const policy = readPolicy();
 		const denial = (choice: { backend: DelegateBackend; model: string }) => policyDenial(policy, choice.backend, choice.model);
 		if (active.mode === "delegate") routes = routeAll(readDelegate(), discoveries, denial);
-		writerRoute = hasMinor(active, "spec") ? routeWriter(readSpec(), discoveries, denial) : null;
+		// The head's spec block carries the writer paragraph too, so spec turned off keeps it there.
+		writerRoute = hasMinor(active, "spec") || headMinors().includes("spec") ? routeWriter(readSpec(), discoveries, denial) : null;
 	}
 
 	/**
@@ -310,8 +354,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 * the pin (the session then follows the default again), never the turn.
 	 */
 	function appendSwitch(marker: { mode: Mode } | { minor: MinorMode; on: boolean } | { strict: boolean }): void {
+		const data: ModeMarker = { ...marker, active: activeOf(active) };
+		if (head !== undefined && head.join(",") !== active.minorModes.join(",")) data.head = [...head];
 		try {
-			pi.appendEntry<ModeMarker>(MODE_ENTRY_TYPE, { ...marker, active: activeOf(active) });
+			pi.appendEntry<ModeMarker>(MODE_ENTRY_TYPE, data);
 		} catch {
 			// Appending is impossible before session_start; nothing else here depends on it.
 		}
@@ -419,6 +465,15 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			}
 		}
 		active = next;
+		let restoredHead: ReturnType<typeof restoreHead> = { head: undefined, told: undefined, guides: [] };
+		try {
+			restoredHead = restoreHead(ctx.sessionManager.getBranch());
+		} catch {
+			// An unreadable branch: the head follows the active set until the next run fixes it.
+		}
+		head = restoredHead.head;
+		told = restoredHead.told ?? [...(head ?? [])];
+		guides = restoredHead.guides;
 		// A restore can land on a different strict flag than the tools currently reflect.
 		if (active.mode === "delegate" && active.strict) applyStrictTools();
 		else restoreTools();
@@ -807,6 +862,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("agent_settled", async () => {
+		running = false;
 		runAlignCalls = 0;
 		lastReplyText = "";
 		runUserAsked = false;
@@ -819,6 +875,28 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	pi.on("session_compact", async () => {
 		const note = hasMinor(active, "align") ? alignStateNote(alignDocs, true) : undefined;
 		if (note) pi.sendMessage({ customType: ALIGN_STATE_MESSAGE, content: note, display: false });
+		// The cached prefix is gone with the history, so the next run rebuilds the head from the modes
+		// active then, and the notes the summary replaced are no longer needed. A run already under way
+		// keeps its own prompt to its end (pi copies the options per run), with the notes it had.
+		head = undefined;
+		told = [];
+		guides = [];
+		syncHostSection();
+	});
+
+	// Notes from before the last compaction that it kept (its recent tail) repeat what the rebuilt head
+	// now says: drop them from every request once that head is fixed. Same result every request, so the
+	// prefix stays stable; while a run that compacted still goes on, its prompt is the old one and they stay.
+	pi.on("context", async (event) => {
+		if (head === undefined) return;
+		const messages = event.messages as { role?: string; customType?: string; timestamp?: number }[];
+		let cut: number | undefined;
+		for (let i = messages.length - 1; i >= 0 && cut === undefined; i--) {
+			if (messages[i]?.role === "compactionSummary") cut = messages[i]?.timestamp;
+		}
+		if (cut === undefined) return;
+		const kept = event.messages.filter((_m, i) => !(messages[i]?.role === "custom" && messages[i]?.customType === MODE_NOTE_TYPE && (messages[i]?.timestamp ?? 0) < cut!));
+		return kept.length === event.messages.length ? undefined : { messages: kept };
 	});
 
 	// Branch navigation (/tree, /fork) changes which mode and which doc are current.
@@ -834,10 +912,12 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		viewerOpen = false;
 	});
 
-	// The behaviour change itself: put the active mode blocks into this turn's system prompt.
-	// pi >= 0.86 exposes mutable prompt sections and diffs them against what the model already
-	// has, so a toggle costs one small patch and keeps the cached prefix; older hosts without
-	// them (pi < 0.86) still take the whole-prompt append.
+	// The behaviour change itself: put the mode blocks into this turn's system prompt, the minor ones
+	// as the head has them (a minor switch since then rides a hidden note instead). pi >= 0.86 exposes
+	// mutable prompt sections and diffs them against what the model already has; a change there is a
+	// tail patch only on models that take mid-conversation system messages, and elsewhere rewrites the
+	// head (and restarts a Claude Code CLI), which is why a minor toggle no longer touches it. Older
+	// hosts without sections (pi < 0.86) still take the whole-prompt append.
 	//
 	// Delegate's routing is re-read here, at every turn boundary: a routing or policy change reaches
 	// a session already in delegate from its next prompt. A changed routing (or stale discovery)
@@ -859,7 +939,12 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				// Status is best-effort here.
 			}
 		}
-		const block = composePrompt(active, routes, writerRoute);
+		// The first run since the start or a compaction fixes the head; a later one tells the model,
+		// in a hidden note beside this prompt, about minor modes switched since.
+		fixHead();
+		const modeNote = takeNote();
+		if (modeNote) pi.sendMessage(modeNote, { deliverAs: "nextTurn" });
+		const block = modeBlock();
 		// The same block into the base options, so a later request of this run, or a run an
 		// extension's message starts, is built with it too (see hostPromptOptions).
 		syncHostSection(block);
@@ -877,11 +962,22 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	});
 
 	// Every run, whoever started it, and after pi may have rebuilt its base options (a tool
-	// change): the base sections carry the current block before the run's first request.
-	pi.on("agent_start", async () => syncHostSection());
+	// change): the base sections carry the current block before the run's first request. A run an
+	// extension's message started (no before_agent_start) gets its mode note here, steered in ahead of
+	// its first request; a continuation of a run (after a compaction or a nudge) keeps the run's mode.
+	pi.on("agent_start", async () => {
+		if (!running) {
+			running = true;
+			fixHead();
+			const modeNote = takeNote();
+			if (modeNote) pi.sendMessage(modeNote);
+		}
+		syncHostSection();
+	});
 
 	pi.on("session_start", async (event, ctx) => {
 		lastCtx = ctx;
+		running = false;
 		restoreActiveState(event?.reason, ctx);
 		restoreAlign(ctx);
 		if (viewerShortcutClash && ctx.hasUI) {

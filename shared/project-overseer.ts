@@ -35,6 +35,7 @@
  *                                                               Overseer alone may give { prompt, title } with no item)
  * POST   /api/orgs/:id/projects/:pid/overseer/message       body { text } -> ProjectMessageResult (the global Overseer's one route into
  *                                                               the overseer's conversation; 403 for any other caller)
+ * POST   /api/orgs/:id/projects/:pid/overseer/coding        body CodingStartInput -> 201 CodingStartResult (New Coding Session: no item, no prompt)
  * POST   /api/orgs/:id/projects/:pid/overseer/worktrees/merge  body { sessionId } -> ProjectOverseerInfo (merge a coding session's branch into its target)
  * POST   /api/orgs/:id/projects/:pid/overseer/worktrees/remove body { sessionId } -> ProjectOverseerInfo (remove its worktree; the branch too once merged)
  */
@@ -376,3 +377,15 @@ export interface ItemCodeResult {
   /** Its mode could not be set, so its first prompt was not sent (the session exists and is listed). */
   notPrompted?: string;
 }
+
+/** New Coding Session: a coding session tied to no to-do or idea, with no first prompt (the operator writes it in the composer). */
+export interface CodingStartInput {
+  /** Names the branch and the row; absent: `sova/coding-<hex>`, and the row is untitled until the first message. */
+  title?: string;
+  model?: string;
+  thinking?: string;
+}
+export type CodingStartResult = Omit<ItemCodeResult, "notPrompted"> & {
+  /** Its mode could not be set (the session exists and is listed): the sentence to show. */
+  modeNotSet?: string;
+};

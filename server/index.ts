@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
@@ -24,7 +25,7 @@ import { registerDecisionRoutes } from "./decisions-routes";
 import { startShareListener, stopShareListener } from "./share/listener";
 import { flushOpenVisits } from "./visits";
 import { disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
-import { canonicalPath, resolveSessionPath } from "./paths";
+import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { stateRoot } from "./state-root";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
 import { setFavorite } from "./model-favorites";
@@ -48,7 +49,7 @@ import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_M
 import { promptGroup } from "./group-prompt";
 import { runFanout } from "./fanout";
 import { runFork } from "./fork";
-import type { FanoutRequest, ForkRequest, WorkerResumeResult } from "../shared/protocol";
+import type { FanoutRequest, ForkRequest, SessionsDirInfo, WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -137,6 +138,8 @@ app.onError((err, c) => {
 });
 
 app.get("/api/health", (c) => c.json({ ok: true }));
+// The folder this server lists sessions from (its agent dir's), which the empty list names.
+app.get("/api/sessions/dir", (c) => c.json({ sessionsDir: SESSIONS_DIR, home: homedir() } satisfies SessionsDirInfo));
 
 app.get("/api/sessions", async (c) => c.json(await listSessions()));
 
@@ -1147,11 +1150,20 @@ app.all("/design/*", (c) => c.text("Not found", 404));
 // open directly. Registered before the static/SPA handlers below so those never shadow it; the
 // query string is passed through untouched (the page reads ?theme= itself). The id must be a
 // plain store dir name — anything with a slash, a ".." or nothing at all is a 404, not a read.
+/** The CSP every served explanation page gets (§app.insights/explanations-page). */
+const EXPLAIN_PAGE_CSP = "sandbox allow-scripts";
 app.get("/explain/:id", async (c) => {
   const id = c.req.param("id");
   const html = isExplanationId(id) ? await readExplanationPage(id) : null;
   if (html === null) return c.text("Explanation not found", 404);
-  return c.body(html, 200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-cache" });
+  return c.body(html, 200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "private, no-cache",
+    // The page is model-written HTML on Sova's own origin. `sandbox` without allow-same-origin
+    // gives it an opaque origin, so its scripts can't read Sova's storage or call /api with the
+    // user's session; allow-scripts keeps the one inline ?theme= script (ExplainTiles.tsx).
+    "Content-Security-Policy": EXPLAIN_PAGE_CSP,
+  });
 });
 
 // Anything else under /explain (bare "/explain", a nested path, an encoded slash that didn't

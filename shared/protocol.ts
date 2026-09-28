@@ -320,9 +320,9 @@ export interface WorktreeMergeInfo {
   path: string;
   branch: string;
   target: string;
-  /** The target's commit after the merge (full). */
+  /** The target's commit after the merge (full); for a detected merge, the commit that brought the branch in. */
   sha: string;
-  /** Commits the merge brought into the target. */
+  /** Commits the merge brought into the target; for a detected merge, the branch's own, as are `added`/`removed`. */
   commits: number;
   added: number;
   removed: number;
@@ -416,8 +416,12 @@ export interface ExplanationInfo {
       `summary` is "". Appears ONLY on a transcript row's `report.explain`, and only until the
       run's final entry (same `id`) replaces it; never in SessionInsight.explanations or
       GET /api/explanations, which carry openable pages only. A finished entry has no status at
-      all — there is no "done" value. */
-  status?: "running";
+      all — there is no "done" value.
+      "interrupted": the run's parent stopped (a restart or /reload) before the run settled, and the
+      extension settled it at the session's next prompt. Always with `note` (a complete page was on
+      disk anyway: it links) or `error` (no page). Rows, and SessionInsight.explanations when it has
+      a page. */
+  status?: "running" | "interrupted";
 }
 
 /** Status and metrics of an align document. status: explicit "implementing"/"confirmed" first,
@@ -465,9 +469,16 @@ export interface UploadResult {
   size: number;
 }
 
+/** GET /api/sessions/dir: the sessions folder this server lists (its agent dir's `sessions`), with its home folder so a page can show it as `~/…`. */
+export interface SessionsDirInfo {
+  sessionsDir: string;
+  home: string;
+}
+
 // ---------------------------------------------------------------------------
 // REST (JSON)
 //
+// GET  /api/sessions/dir        -> SessionsDirInfo
 // GET  /api/sessions            -> SessionSummary[]
 // POST /api/sessions { cwd }    -> SessionSummary   (creates a NEW empty webapp-owned session)
 // POST /api/sessions { target, remoteCwd } -> SessionSummary   (remote session: creates the local placeholder

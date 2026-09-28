@@ -3,7 +3,7 @@ import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { fetchTargets, setSessionArchived } from "../lib/api";
+import { fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
@@ -1191,6 +1191,16 @@ export function Sidebar(props: {
       prev,
     ),
   );
+  /** The folder the server lists sessions from (its own agent dir's), read once the list is empty. */
+  const isEmpty = createMemo(() => !!props.sessions && all().length === 0);
+  const [dirInfo] = createResource(
+    () => isEmpty() || undefined,
+    () => fetchSessionsDir().catch(() => null),
+  );
+  const sessionsDir = () => {
+    const d = dirInfo();
+    return d ? tildePath(d.sessionsDir, d.home) : null;
+  };
   /**
    * The selection lives in module state and is keyed by PATH, so a background poll can neither
    * reset it nor unpick a row whose object was rebuilt. The one thing a poll may change about it:
@@ -1849,7 +1859,13 @@ export function Sidebar(props: {
           <Show when={props.sessions && all().length === 0}>
             <div class="empty">
               <p class="empty-title">
-                0 sessions in <code>~/.pi/agent/sessions</code>.
+                <Show when={sessionsDir()} fallback="0 sessions yet.">
+                  {(dir) => (
+                    <>
+                      0 sessions in <code>{dir()}</code>.
+                    </>
+                  )}
+                </Show>
               </p>
               <p class="empty-body">
                 Start one here, or run <code>pi</code> in a terminal. It'll show up in this list.

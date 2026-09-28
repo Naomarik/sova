@@ -123,6 +123,13 @@ export function orgLookup(): OrgLookup {
   };
 }
 
+/** The ids of every attached org project's coding sessions (both kinds): Clean Up's husk sweep
+    never deletes one, since a New Coding Session is empty until the operator writes in it. */
+export function orgCodingIds(): Set<string> {
+  const orgs = readIndex().orgs;
+  return orgs.length ? new Set(codingSessions(orgs).keys()) : new Set();
+}
+
 /** Session id → project, for every coding row of every project store of the attached orgs (a
     project removed from projects.json keeps its store, so its sessions stay organizational). */
 function codingSessions(orgs: readonly { id: string; dir: string }[]): Map<string, { orgId: string; dir: string; projectId: string; row: StartedRow }> {

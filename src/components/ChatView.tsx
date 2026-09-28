@@ -16,6 +16,8 @@ import type {
 import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
 import { OverseerThreadContext, QuickActions } from "./OverseerCards";
+import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
+import { acceptAllMessage, clearPicks, composeWithPicks, pickCount, picksLabel, picksOf, prunePicks, samePicks, togglePick } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
 import { createFork, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
@@ -1118,6 +1120,42 @@ export function ChatView(props: {
     return null;
   };
 
+  // ---- Taking recommendations from an alignment card (§chat.alignment/card) --------------
+  /** The card takes ticks and its button only with align on, in a chat whose mode the user sets
+      (not the Overseer's, a project overseer's or a baton session's). */
+  const alignAnswerable = () =>
+    !props.overseer && !props.projectOverseer && !props.summary?.()?.baton && !props.summary?.()?.projectOverseer && !!modeState()?.minorModes.includes("align");
+  /** This session's ticks that still apply: open questions of each alignment's newest revision. */
+  const picks = createMemo(() => (alignAnswerable() ? prunePicks(picksOf(props.path), aligns()) : {}), {}, { equals: samePicks });
+  /** Whether the composer holds typed text or an attachment: the card's button then waits. */
+  const [hasDraft, setHasDraft] = createSignal(false);
+  const alignAnswer: AlignAnswer = {
+    on: alignAnswerable,
+    current: (id) => aligns().find((e) => e.doc.id === id)?.doc,
+    picked: (doc, q) => picks()[doc]?.includes(q) ?? false,
+    toggle: (doc, q, on) => togglePick(props.path, doc, q, on),
+    tickBlocked: () => (archivedPane() ? blocked()?.text ?? null : null),
+    goBlocked: () => {
+      const reason = blocked()?.text;
+      if (reason) return reason;
+      if (live.running) return "Wait for the turn to end.";
+      return hasDraft() || pickCount(picks()) > 0 ? "Send or clear your draft first." : null;
+    },
+    goWithRecommendations: (doc) => {
+      if (alignAnswer.goBlocked()) return;
+      if (send(acceptAllMessage(doc), false, [])) {
+        clearPicks(props.path, doc);
+        focusComposer();
+      }
+    },
+  };
+  const composerPicks = createMemo(() => {
+    const p = picks();
+    return pickCount(p) === 0
+      ? null
+      : { label: picksLabel(p), compose: (text: string) => composeWithPicks(p, text), clear: () => clearPicks(props.path) };
+  });
+
   if (props.overseer?.bindSender) {
     const unbind = props.overseer.bindSender({
       send: (text) => {
@@ -1514,6 +1552,7 @@ export function ChatView(props: {
         <Show when={items()} fallback={<TranscriptSkeleton />}>
           {(list) => (
             <OverseerThreadContext.Provider value={props.overseer ? { answer: (text, card) => send(text, false, [], card) } : null}>
+            <AlignAnswerContext.Provider value={alignAnswer}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -1590,6 +1629,7 @@ export function ChatView(props: {
                   {(o) => o().empty()}
                 </Show>
               </Show>
+            </AlignAnswerContext.Provider>
             </OverseerThreadContext.Provider>
           )}
         </Show>
@@ -1649,6 +1689,8 @@ export function ChatView(props: {
         onFanOut={fanOut()}
         undo={undoControl}
         onSend={send}
+        picks={composerPicks()}
+        onDraft={setHasDraft}
         onAbort={abort}
         restored={restored()}
       />

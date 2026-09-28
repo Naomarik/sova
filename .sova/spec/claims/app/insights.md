@@ -694,7 +694,11 @@ which draws them on the session's axis; the strip keeps no history of its own.
   (§app.insights/explanations-page), the transcript's report row and the session pane's explain row are all plain links to
   `/explain/:id` with no `target`. In an installed app a new tab is a new window whose history
   has one entry, so Back couldn't return to Sova; in place, it can. `/explain/:id` stays a
-  standalone document for direct links. None of them carries the `external` icon or a "new tab"
+  standalone document for direct links. The server sends it with
+  `Content-Security-Policy: sandbox allow-scripts` (no `allow-same-origin`): the model-written page
+  runs in an opaque origin, so its scripts can't read Sova's storage or call its API as the
+  user, while its one inline `?theme=` script still applies the theme, and the thumbnails'
+  `sandbox=""` frames render as before. None of them carries the `external` icon or a "new tab"
   suffix any more, so each link's accessible name is just what it is — the report row and the
   pane row start with a visually hidden `Explanation: ` ahead of the topic, read as
   "Explanation: {topic}". The `external` glyph on `Open {n} Explanations` is unrelated: that link

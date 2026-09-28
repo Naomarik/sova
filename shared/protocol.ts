@@ -416,8 +416,12 @@ export interface ExplanationInfo {
       `summary` is "". Appears ONLY on a transcript row's `report.explain`, and only until the
       run's final entry (same `id`) replaces it; never in SessionInsight.explanations or
       GET /api/explanations, which carry openable pages only. A finished entry has no status at
-      all — there is no "done" value. */
-  status?: "running";
+      all — there is no "done" value.
+      "interrupted": the run's parent stopped (a restart or /reload) before the run settled, and the
+      extension settled it at the session's next prompt. Always with `note` (a complete page was on
+      disk anyway: it links) or `error` (no page). Rows, and SessionInsight.explanations when it has
+      a page. */
+  status?: "running" | "interrupted";
 }
 
 /** Status and metrics of an align document. status: explicit "implementing"/"confirmed" first,

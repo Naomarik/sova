@@ -282,9 +282,14 @@ export interface ClaudeArgvOptions {
 	sessionId?: string;
 	/**
 	 * An existing CLI session to continue (`--resume <id>`): a restored subagent
-	 * worker brought back after a restart. Exclusive with sessionId.
+	 * worker brought back after a restart. Exclusive with sessionId, unless forkSession is set.
 	 */
 	resume?: string;
+	/**
+	 * `--fork-session`: resume `resume` into a NEW record instead of appending to it (a forked
+	 * pi child continuing its parent's CLI session). `sessionId`, if given, names the new record.
+	 */
+	forkSession?: boolean;
 	/**
 	 * `--settings` JSON (the sandbox extension's, while a session's sandbox is on). It must parse to an
 	 * object; buildClaudeArgv merges NO_ATTRIBUTION over it and passes the result as the one `--settings`.
@@ -319,10 +324,12 @@ export function buildClaudeArgv(o: ClaudeArgvOptions): ClaudeArgvResult {
 		if (!UUID.test(o.sessionId)) return { error: "Invalid sessionId: the CLI requires a canonical UUID" };
 		args.push("--session-id", o.sessionId);
 	}
+	if (o.forkSession && o.resume === undefined) return { error: "forkSession needs resume: --fork-session forks the session --resume names" };
 	if (o.resume !== undefined) {
-		if (o.sessionId !== undefined) return { error: "sessionId and resume are exclusive: --session-id creates a session, --resume continues one" };
+		if (o.sessionId !== undefined && !o.forkSession) return { error: "sessionId and resume are exclusive: --session-id creates a session, --resume continues one" };
 		if (!UUID.test(o.resume)) return { error: "Invalid resume: the CLI requires a canonical session UUID" };
 		args.push("--resume", o.resume);
+		if (o.forkSession) args.push("--fork-session");
 	}
 	let settings: Record<string, unknown> = {};
 	if (o.settingsJson !== undefined) {

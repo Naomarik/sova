@@ -317,6 +317,15 @@ closed, and the markdown on the left when open.
   `status`. Per id, only the newest entry renders (as with an older session's align-doc entries), so a settled run is one
   row, and a live append replaces the running row in place. A running row is not a link — there
   is no page yet — and reads "Explaining {topic}" with the live pulse where the chevron sits.
+- **Explain rows: interrupted.** A run whose parent stopped before it settled (a server restart, a
+  `/reload`) leaves its running entry as the newest. Opening the session writes nothing, so the
+  row still reads Explaining then; the session's next prompt (or its next `/explain`) appends the
+  final entry under the same id with `status: "interrupted"`, which replaces the row. It carries
+  a `.chip-warn` "Interrupted" chip where a failed run has "Failed", and the reason under the row
+  as a muted `.report-meta` line. When a complete page was on disk anyway (the entry has `note`),
+  the row reads "Explained" and links to it like any finished row; when there was none (`error`),
+  it reads "Explain" and is not a link. The session pane's explain row shows the same chip in
+  place of Failed.
 - **Other long extension messages** (intercom messages, team questions, broker reports): any
   `custom_message` longer than 200 characters or spanning lines gets the same row, with its
   customType in place of the agent and no chip. Markdown, not `<pre>`: these payloads are

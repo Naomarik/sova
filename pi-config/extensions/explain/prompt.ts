@@ -18,6 +18,19 @@ export interface ChildPromptSpec extends KnownMeta {
 	webSearch: boolean;
 	/** The child was started from a copy of the parent conversation. */
 	forked: boolean;
+	/**
+	 * The parent's active tools, which a forked child keeps (mirror.ts). Decides how the prompt
+	 * tells it to search; absent for an unforked child, which has grep, find and ls of its own.
+	 */
+	parentTools?: readonly string[];
+}
+
+/** How the child searches code, in words that match the tools it actually has. */
+export function searchTools(spec: Pick<ChildPromptSpec, "forked" | "parentTools">): string {
+	const tools = spec.forked ? (spec.parentTools ?? []) : ["read", "grep", "find", "ls"];
+	const direct = ["grep", "find", "ls"].filter((name) => tools.includes(name));
+	if (direct.length === 3 || !tools.includes("bash")) return ["read", ...direct].join("/");
+	return `${["read", ...direct].join("/")}, and \`bash\` for ONE read-only command line at a time (rg, grep, find, ls, cat, head, wc, git log/show/diff; pipes are fine; no redirection, \`;\`, \`&&\`, \`$\` or subshells — anything else is refused)`;
 }
 
 const AUDIENCE = `## Who you're writing for
@@ -172,10 +185,11 @@ thrown away.`;
 
 /** The whole child prompt: one message, sent as the worker's task. */
 export function buildChildPrompt(spec: ChildPromptSpec): string {
+	const search = searchTools(spec);
 	const research = spec.webSearch
-		? `Research first if the topic needs it — read the code here (grep/find/read) when the question is about this
+		? `Research first if the topic needs it — read the code here (${search}) when the question is about this
 codebase, and search the web when it is about something external and you are not certain.`
-		: `Research first if the topic needs it — read the code here (grep/find/read) when the question is about this
+		: `Research first if the topic needs it — read the code here (${search}) when the question is about this
 codebase. You have no web access, so for anything external write only what you actually know and mark the rest.`;
 	return [
 		`Explain this: **${spec.topic}**`,
@@ -202,7 +216,7 @@ codebase. You have no web access, so for anything external write only what you a
 		"## Rules for this run",
 		"",
 		"- **Never open a browser** and never run an opener script (`open`, `xdg-open`, `open-html.sh`). The page is read in Sova; opening a window from a background worker is wrong here.",
-		"- Write only inside the store directory above. Do not edit the repository, do not commit, do not touch anything else on disk.",
+		"- Write only inside the store directory above. Do not edit the repository, do not commit, do not touch anything else on disk. You are read-only everywhere else: other tools you can see in this conversation are refused, so do not try them.",
 		"- The page is the deliverable. Your final message is one or two sentences: the file path and the shortest honest version of the answer. Do not re-explain in chat.",
 	].join("\n");
 }

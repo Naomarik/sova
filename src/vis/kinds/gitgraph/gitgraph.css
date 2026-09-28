@@ -37,3 +37,5 @@
 .vis-git-chip.vis-em > rect, .vis-git-chip.vis-em > path { stroke: var(--vis-stroke); stroke-width: 2.5; }
 /* A merge stays hollow when toned or marked: the ring takes the tone. */
 .vis-git-merge.vis-git-toned .vis-git-dot, .vis-git-commit.vis-git-merge.vis-em > .vis-git-dot { fill: var(--color-surface); stroke: var(--vis-stroke); stroke-width: 3.5; }
+/* A marked ghost keeps its thin dashed ring, in the mark's tone; the row band and badge carry the mark. */
+.vis-git-commit.vis-git-ghost.vis-em > .vis-git-dot { fill: var(--vis-fill); stroke: var(--vis-stroke); stroke-width: 1.5; stroke-dasharray: 2.5 2; }

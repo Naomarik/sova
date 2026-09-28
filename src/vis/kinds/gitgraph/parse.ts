@@ -223,7 +223,8 @@ export function parseGitgraph(body: string): GitgraphSpec {
         const first = spec.commits.length;
         for (const c of own) {
           // Like git, a rebase drops merge commits: their changes arrive with the replayed ones.
-          c.ghostAt = first;
+          // A replayed commit turns ghost at its copy's row, so a step-through replays one at a time.
+          c.ghostAt = spec.commits.length;
           if (c.kind === "merge") continue;
           const copy = addCommit({ id: copyId(c), named: c.named, kind: "rebase", from: c.id, ...(c.message ? { message: c.message } : {}), ...(c.tone ? { tone: c.tone } : {}) }, [parent], n);
           c.replacedBy = copy.id;

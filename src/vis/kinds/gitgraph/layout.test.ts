@@ -67,6 +67,9 @@ test("gitgraph layout: at the end the originals are ghosts with their copy named
   assert.deepEqual(end.commits.find((p) => p.commit.id === "D'")!.chips.map((ch) => ch.name), ["feature/login"]);
   assert.deepEqual(end.commits.find((p) => p.commit.id === "E")!.chips.map((ch) => ch.name), ["main", "v1.0"]);
   assert.equal(refsAt(REBASE, 3).tags.length, 0);
+  // Mid-rebase: C is replayed, D not yet.
+  const mid = layoutGitgraph(REBASE, 560, 5);
+  assert.deepEqual(["C", "D"].map((id) => mid.commits.find((p) => p.commit.id === id)!.ghost), [true, false]);
 });
 
 test("gitgraph layout: a badge moves the text right; a cherry-pick gets a link", () => {

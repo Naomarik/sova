@@ -40,7 +40,7 @@ test("gitgraph: rebase replays the branch's own commits as primes and leaves gho
   assert.deepEqual(shape(s), ["A@0<", "B@0<A", "C@1<B", "D@1<C", "E@0<B", "C'@1<E", "D'@1<C'"]);
   const [c, d] = [s.commits[2]!, s.commits[3]!];
   assert.equal(c.ghostAt, 5);
-  assert.equal(d.ghostAt, 5);
+  assert.equal(d.ghostAt, 6);
   assert.equal(c.replacedBy, "C'");
   assert.equal(s.commits[5]!.message, "add login");
   assert.equal(s.commits[5]!.kind, "rebase");

@@ -2,6 +2,7 @@ import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { stateRoot } from "./state-root";
 
 /** What the Overseer's read/grep/find/ls answer for a secret file. */
 export const SECRET_REFUSAL = "That file holds credentials; the Overseer can't read it.";
@@ -20,7 +21,7 @@ export const SECRET_REFUSAL = "That file holds credentials; the Overseer can't r
  * A fixed file is denied at its own path and at its symlink target, so `~/.pi/agent/models.json`
  * also denies the file it links to.
  */
-export function secretRules(home = homedir(), agentDir = getAgentDir()) {
+export function secretRules(home = homedir(), agentDir = getAgentDir(), state = stateRoot()) {
   const piRoots = [join(home, ".pi"), agentDir];
   return {
     /** File names that are secret at any depth under these roots. `models.json`: pi's model
@@ -38,6 +39,9 @@ export function secretRules(home = homedir(), agentDir = getAgentDir()) {
       join(home, ".netrc"),
       // The GitHub CLI's tokens. (`targets.json` names SSH key *paths*, denied below, so it stays readable.)
       join(home, ".config", "gh", "hosts.yml"),
+      // Sova's link stores: every hand-off link's and owner link's token hash (§app.overseer/tools).
+      join(state, "baton-links.json"),
+      join(state, "person-links.json"),
     ],
     /** Whole directories: nothing inside is read, listed or matched. */
     dirs: [
@@ -157,6 +161,35 @@ export class SecretGuard {
   /** Throw the refusal for a secret path. */
   check(p: string): void {
     if (this.isSecret(p)) throw new Error(SECRET_REFUSAL);
+  }
+}
+
+/** What the Overseer's read/grep/find/ls answer for a path in an attached organization's workspace. */
+export const WORKSPACE_REFUSAL = "That folder is an organization's workspace; read it with sova_orgs and sova_read_session.";
+
+/**
+ * The Overseer's guard: the secret files, and every attached organization's workspace directory as a
+ * whole (its roster and history with every contact, the About text, the hand-off transcripts, the
+ * overseers' state; §app.overseer/tools). The workspaces are the ones attached when the call runs,
+ * each taken as given and at its realpath, and every path both ways, so a symlink can't reach one;
+ * a search or listing from a parent leaves them out.
+ */
+export class OverseerGuard extends SecretGuard {
+  private readonly workspaces: string[];
+  constructor(workspaces: readonly string[], rules: SecretRules = secretRules()) {
+    super(rules);
+    this.workspaces = workspaces.flatMap((w) => [...new Set([resolve(w), realpathLoose(w)])]);
+  }
+  /** Whether `p` is an attached workspace or inside one. */
+  inWorkspace(p: string): boolean {
+    return [resolve(p), realpathLoose(p)].some((c) => this.workspaces.some((w) => within(c, w)));
+  }
+  override isSecret(p: string): boolean {
+    return this.inWorkspace(p) || super.isSecret(p);
+  }
+  override check(p: string): void {
+    if (this.inWorkspace(p)) throw new Error(WORKSPACE_REFUSAL);
+    super.check(p);
   }
 }
 

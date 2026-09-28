@@ -4,6 +4,7 @@ import type { MeshLinkView } from "../../shared/mesh-links";
 import { briefBody, confirmReply, confirmRows, goTo, navigateDetails, settingsTarget } from "../lib/overseer";
 import { clockTime, relativeTime } from "../lib/format";
 import { groupLinkIndex, resolveAppLink, sessionIndex, sessionIndexVersion } from "../lib/session-links";
+import { personHref, projectHref } from "../lib/orgs-route";
 import { openSettings } from "../lib/settings-nav";
 import { ActionMenu } from "./ActionMenu";
 import { Markdown } from "./Markdown";
@@ -15,8 +16,9 @@ import { Icon } from "./ui";
  * be answered.
  */
 export interface OverseerThread {
-  /** Sends `text` as the user's next message; false when it couldn't be sent. */
-  answer(text: string): boolean;
+  /** Sends `text` as the user's next message; false when it couldn't be sent. `card`: the confirm
+      card's tool call id, so the server knows a click (never typed text) opened the turn. */
+  answer(text: string, card?: string): boolean;
 }
 export const OverseerThreadContext = createContext<OverseerThread | null>(null);
 export const useOverseerThread = () => useContext(OverseerThreadContext);
@@ -26,7 +28,7 @@ export const useOverseerThread = () => useContext(OverseerThreadContext);
  * message. Once any later user message exists the card is answered: the buttons go and the
  * choice is said, so a reload or a restart shows the same thing, because it lives in the transcript.
  */
-export function ConfirmCard(props: { details: SovaConfirmDetails; answered: boolean; choice: string | null; pending?: boolean }) {
+export function ConfirmCard(props: { details: SovaConfirmDetails; answered: boolean; choice: string | null; pending?: boolean; card?: string }) {
   const thread = useOverseerThread();
   const canAnswer = () => !!thread && !props.answered && !props.pending;
   return (
@@ -66,7 +68,7 @@ export function ConfirmCard(props: { details: SovaConfirmDetails; answered: bool
                 class={`button button-sm${o.tone === "danger" ? " button-destructive" : ""}`}
                 aria-disabled={canAnswer() ? undefined : "true"}
                 title={!thread ? "Read only." : props.pending ? "Wait for the turn to end." : undefined}
-                onClick={() => canAnswer() && thread!.answer(confirmReply(o))}
+                onClick={() => canAnswer() && thread!.answer(confirmReply(o), props.card)}
               >
                 {o.label}
               </button>
@@ -82,11 +84,12 @@ export function ConfirmCard(props: { details: SovaConfirmDetails; answered: bool
 }
 
 /**
- * What a confirm card is about: the sessions, ideas and todos the server resolved when the card was
- * raised, as a snapshot. Ideas and todos come first and always show; only the sessions after them
- * collapse (confirmRows). A session links to its route, named by its summary (else its title); an
- * idea is its id and title as text, never a link; a todo is its text. Each may carry the
- * Overseer's note under it.
+ * What a confirm card is about: the sessions, ideas, todos, projects and people the server resolved
+ * when the card was raised, as a snapshot. Ideas, todos, projects and people come first and always
+ * show; only the sessions after them collapse (confirmRows). A session links to its route, named by
+ * its summary (else its title); an idea is its id and title as text, never a link; a todo is its
+ * text; a project and a person link to their page, with the org after the name (and a person's
+ * status chip unless active). Each may carry the Overseer's note under it.
  */
 function ConfirmItems(props: { items: SovaConfirmItem[] }) {
   const [all, setAll] = createSignal(false);
@@ -140,6 +143,28 @@ function ConfirmItemRow(props: { item: SovaConfirmItem }) {
         <ItemNote note={it.note} />
       </li>
     );
+  if (it.kind === "project" || it.kind === "person") {
+    const href = it.kind === "project" ? projectHref(it.orgId, it.id) : personHref(it.orgId, it.id);
+    return (
+      <li class="overseer-confirm-item">
+        <span class="overseer-confirm-item-line">
+          <a class="overseer-confirm-item-name" href={href}>
+            {it.name}
+          </a>
+          <span class="overseer-confirm-item-meta">{it.orgName}</span>
+          <Show when={it.kind === "person" && it.status !== "active" ? it.status : null}>
+            {(st) => (
+              <span class={`chip ${st() === "proposed" ? "chip-info" : ""}`}>
+                <span class="chip-dot" />
+                {st() === "proposed" ? "Proposed" : "Left"}
+              </span>
+            )}
+          </Show>
+        </span>
+        <ItemNote note={it.note} />
+      </li>
+    );
+  }
   /** The session's route, and its title now (else the snapshot's). */
   const view = () => {
     sessionIndexVersion();

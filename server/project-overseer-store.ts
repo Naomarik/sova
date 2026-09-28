@@ -372,6 +372,8 @@ export interface StartedRow {
   inRoot?: string;
   /** A coding session's title when it started, for a host without its file (§app.project-overseer/coding-worktrees). */
   title?: string;
+  /** An `operator-coding` row the global Overseer started for the operator (§app.overseer/org-attribution). */
+  via?: "overseer";
 }
 
 function parseWorktree(v: unknown): WorktreeRecord | undefined {
@@ -399,6 +401,7 @@ function parseStarted(v: unknown): StartedRow[] {
       ...(s.branchDeleted === true ? { branchDeleted: true } : {}),
       ...(typeof s.inRoot === "string" && s.inRoot ? { inRoot: s.inRoot } : {}),
       ...(typeof s.title === "string" && s.title ? { title: s.title } : {}),
+      ...(s.via === "overseer" ? { via: "overseer" as const } : {}),
     }))
     .slice(-STARTED_MAX);
 }
@@ -441,7 +444,7 @@ export const nextMidnight = (d = new Date()): Date => new Date(d.getFullYear(), 
 export const dayKey = (d = new Date()): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Record a session it started (the listing and the concurrency caps). */
-export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: StartedRow["kind"], now = new Date(), path?: string, extra: Pick<StartedRow, "worktree" | "inRoot" | "title"> = {}): void {
+export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: StartedRow["kind"], now = new Date(), path?: string, extra: Pick<StartedRow, "worktree" | "inRoot" | "title" | "via"> = {}): void {
   const rows = readStarted(p);
   if (rows.some((s) => s.sessionId === sessionId)) return;
   writeStarted(p, [...rows, { sessionId, kind, createdAt: now.toISOString(), ...(path ? { path } : {}), ...extra }]);

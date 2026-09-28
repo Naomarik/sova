@@ -2,10 +2,11 @@ import type { Context, Hono } from "hono";
 import type { ItemCodeInput, ItemSendInput } from "../shared/project-overseer";
 import type { IdeaUpdate } from "./overseer-ideas";
 import { BusyError } from "./chat-manager";
-import { OrgError } from "./orgs";
+import { archivedOverseerRefusal, OrgError } from "./orgs";
+import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
 import { addIdea, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea } from "./overseer-ideas";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
-import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, noteReason, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, sendItem } from "./project-overseer";
+import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, noteReason, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, sendItem } from "./project-overseer";
 import { projectOf, projectOverseerPaths, type ProjectOverseerPaths } from "./project-overseer-store";
 import { shareInfo } from "./share/listener";
 
@@ -24,6 +25,15 @@ async function body(c: Context): Promise<Record<string, unknown>> {
     if (typeof b === "object" && b !== null && !Array.isArray(b)) return b;
   } catch {}
   throw new OrgError("Expected a JSON object body");
+}
+
+/** The global Overseer's id when this request is its own in-process call (the sender secret), else undefined. */
+const overseerOf = (c: Context): string | undefined => overseerSender(c.req.header(OVERSEER_SENDER_HEADER));
+
+/** Its overseer refuses while the project is archived (§app.organizations/archive). */
+function refuseArchived(c: Context): void {
+  const project = projectOf(c.req.param("id") ?? "", c.req.param("pid") ?? "");
+  if (project.archived) throw new OrgError(archivedOverseerRefusal(project.name), 409);
 }
 
 /** The project's paths (404 for an unknown org or project). */
@@ -59,6 +69,7 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   }));
   app.post(base, handle(async (c) => {
     const p = pathsOf(c);
+    refuseArchived(c);
     await ensureProjectOverseer(p.orgId, p.projectId);
     return c.json(await projectOverseerInfo(p.orgId, p.projectId), 200, NO_STORE);
   }));
@@ -72,6 +83,7 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   }));
   app.post(`${base}/run`, handle(async (c) => {
     const p = pathsOf(c);
+    refuseArchived(c);
     const r = await lookNow(p.orgId, p.projectId, true);
     if (!r.started) return c.json({ error: `Not started: ${r.why ?? "unknown"}.` }, 409);
     return c.json(await projectOverseerInfo(p.orgId, p.projectId), 200, NO_STORE);
@@ -192,7 +204,16 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   }));
   app.post(`${base}/items/code`, handle(async (c) => {
     const p = pathsOf(c);
-    return c.json(await codeItem(p.orgId, p.projectId, (await body(c)) as unknown as ItemCodeInput), 201);
+    // The global Overseer's call starts it for the operator, marked so (and may give no item).
+    return c.json(await codeItem(p.orgId, p.projectId, (await body(c)) as unknown as ItemCodeInput, overseerOf(c) ? "overseer" : undefined), 201);
+  }));
+  // The global Overseer's one route into the overseer's conversation (§app.overseer/org-project-overseers):
+  // nothing else writes there but the operator's own composer.
+  app.post(`${base}/message`, handle(async (c) => {
+    const p = pathsOf(c);
+    const overseerId = overseerOf(c);
+    if (!overseerId) return c.json({ error: "Only the Overseer sends here. Write in the overseer's own composer." }, 403);
+    return c.json(await messageProjectOverseer(p.orgId, p.projectId, (await body(c)).text, overseerId), 200, NO_STORE);
   }));
   // A coding session's own worktree: merge its branch back into its target, or remove it once merged (or empty).
   app.post(`${base}/worktrees/merge`, handle(async (c) => {

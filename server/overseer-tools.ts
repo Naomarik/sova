@@ -8,6 +8,7 @@ import type {
   SessionGroup,
   SessionInsight,
   SessionSummary,
+  SovaConfirmItem,
   SovaNavigateDetails,
   TargetInfo,
   TranscriptItem,
@@ -29,6 +30,8 @@ import { readTodos } from "./overseer-todos";
 import { readManifest, resolveIdeaId } from "./overseer-ideas";
 import { confirmTool } from "./overseer-confirm";
 import { linkTools, type LinksApi } from "./overseer-link-tools";
+import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
+import { contactRedactor, loggedArgs } from "./overseer-org-view";
 import type { PeerLinkRead } from "../shared/mesh-links";
 
 /**
@@ -79,6 +82,9 @@ export interface OverseerToolHost extends IdeaToolHost {
   counted(path: string): boolean;
   /** Whether the message the Overseer is answering now is one the user sent (UserTurns). */
   attended(): boolean;
+  /** The items of the confirm card whose click opened this turn (the user's own run, not typed);
+      null when no card click opened it (§app.overseer/org-people-facing). */
+  confirmed(): SovaConfirmItem[] | null;
   /** A mesh peer by id, with its state now (a briefly cached hello); null while the mesh is off
       or when this host has no such peer. */
   peer(id: string): Promise<PeerRef | null>;
@@ -180,8 +186,14 @@ const NEUTRAL_ROLES = new Set(["assistant", "toolResult", "system", "compactionS
  * `send` and is unattended: that turn is read-only, never the reverse.
  */
 export class UserTurns {
-  private readonly sending = new AsyncLocalStorage<{ open: boolean }>();
+  private readonly sending = new AsyncLocalStorage<{ open: boolean; confirm?: string }>();
   private readonly fromUser = new WeakSet<object>();
+  /** A marked message that is a click on a confirm card: that card's tool call id. */
+  private readonly confirmOf = new WeakMap<object, string>();
+  /** The confirm card whose click opened the user's part of this run, while it lasts. */
+  private card: string | null = null;
+  private retryCard: string | null = null;
+  private rerunCard: string | null = null;
   private readonly watched = new WeakSet<object>();
   private now = false;
   /** The user's message entered and the model has not replied to it yet: other input now is part of it. */
@@ -190,9 +202,10 @@ export class UserTurns {
   private retry: boolean | null = null;
   /** The run started as a re-run, and nothing has entered it yet. */
   private rerun: boolean | null = null;
-  /** Run the SDK call that hands a message the user sent to the runtime. */
-  send<T>(send: () => T): T {
-    return this.sending.run({ open: true }, send);
+  /** Run the SDK call that hands a message the user sent to the runtime. `confirm`: the message is a
+      click on the confirm card of that tool call (the chat runtime says so; typed text never is). */
+  send<T>(send: () => T, confirm?: string): T {
+    return this.sending.run({ open: true, ...(confirm ? { confirm } : {}) }, send);
   }
   /** Mark, from now on, the user message each `send` produces as it reaches this Agent. */
   watch(agent: UserMessageSink): void {
@@ -214,6 +227,7 @@ export class UserTurns {
     if (!message) return;
     ctx.open = false;
     this.fromUser.add(message as object);
+    if (ctx.confirm) this.confirmOf.set(message as object, ctx.confirm);
   }
   /** One event from the Overseer session's stream; returns true when a message the user sent
       entered the context (the per-turn caps renew). */
@@ -223,17 +237,25 @@ export class UserTurns {
         this.now = false;
         this.batch = false;
         this.rerun = this.retry;
+        this.rerunCard = this.retryCard;
         this.retry = null;
+        this.retryCard = null;
+        this.card = null;
         return false;
       case "auto_retry_start":
         this.retry = this.now;
+        this.retryCard = this.card;
         return false;
       case "compaction_end":
-        if (event.willRetry) this.retry = this.now;
+        if (event.willRetry) {
+          this.retry = this.now;
+          this.retryCard = this.card;
+        }
         return false;
       case "auto_retry_end":
       case "agent_settled":
         this.retry = null;
+        this.retryCard = null;
         return false;
       case "message_start":
         return this.entered(event.message);
@@ -244,31 +266,48 @@ export class UserTurns {
   private entered(message: unknown): boolean {
     const role = (message as { role?: unknown } | undefined)?.role;
     const rerun = this.rerun;
+    const rerunCard = this.rerunCard;
     this.rerun = null;
+    this.rerunCard = null;
     if (role === "assistant") {
       // A re-run the model answers straight away is the failed request again.
-      if (rerun !== null) this.now = rerun;
+      if (rerun !== null) {
+        this.now = rerun;
+        this.card = rerun ? rerunCard : null;
+      }
       this.batch = false;
       return false;
     }
     if (typeof role === "string" && NEUTRAL_ROLES.has(role)) {
       this.rerun = rerun;
+      this.rerunCard = rerunCard;
       return false;
     }
     const text = userMessageText(message)?.trim();
     if (text === undefined) {
       // Input no one marked (an extension's custom message). With the user's own message it is
       // context for that message; anywhere else it ends the user's part of the run.
-      if (!this.batch) this.now = false;
+      if (!this.batch) {
+        this.now = false;
+        this.card = null;
+      }
       return false;
     }
     const mine = this.fromUser.delete(message as object);
+    const card = this.confirmOf.get(message as object) ?? null;
+    this.confirmOf.delete(message as object);
     this.now = mine && !parseWakeNudge(text) && !text.startsWith(OVERSEER_BRIEF_PREFIX);
+    // Only the click itself opens a confirmed run: a later message, typed or not, is a new run of its own.
+    this.card = this.now ? card : null;
     this.batch = this.now;
     return this.now;
   }
   attended(): boolean {
     return this.now;
+  }
+  /** The confirm card whose click opened the user's part of this run, or null (§app.overseer/org-people-facing). */
+  confirmedCard(): string | null {
+    return this.now ? this.card : null;
   }
   /** /clear: nothing carries over. */
   reset(): void {
@@ -276,6 +315,9 @@ export class UserTurns {
     this.batch = false;
     this.retry = null;
     this.rerun = null;
+    this.card = null;
+    this.retryCard = null;
+    this.rerunCard = null;
   }
 }
 
@@ -287,14 +329,31 @@ export const UNATTENDED_REFUSAL =
 
 // ---- per-turn limits ---------------------------------------------------------------------------
 
-export type LimitKind = "create" | "prompt" | "archive" | "explore" | "link";
+export type LimitKind = "create" | "prompt" | "archive" | "explore" | "link" | "org" | "gather";
 
-const fresh = (): Record<LimitKind, number> => ({ create: 0, prompt: 0, archive: 0, explore: 0, link: 0 });
-const CAP_OF: Record<LimitKind, keyof OverseerCaps> = { create: "createPerTurn", prompt: "promptsPerTurn", archive: "archivesPerTurn", explore: "explorePerTurn", link: "linksPerTurn" };
-const WHAT: Record<LimitKind, string> = { create: "new sessions", prompt: "prompts to other sessions", archive: "archive operations", explore: "explorers launched", link: "links made" };
+const fresh = (): Record<LimitKind, number> => ({ create: 0, prompt: 0, archive: 0, explore: 0, link: 0, org: 0, gather: 0 });
+const CAP_OF: Record<LimitKind, keyof OverseerCaps> = {
+  create: "createPerTurn",
+  prompt: "promptsPerTurn",
+  archive: "archivesPerTurn",
+  explore: "explorePerTurn",
+  link: "linksPerTurn",
+  org: "orgWritesPerTurn",
+  gather: "gatherPerTurn",
+};
+const WHAT: Record<LimitKind, string> = {
+  create: "new sessions",
+  prompt: "prompts to other sessions",
+  archive: "archive operations",
+  explore: "explorers launched",
+  link: "links made",
+  org: "organization writes",
+  gather: "gathering sessions or offers started",
+};
 
 /**
- * The per-turn caps: sessions created, prompts sent, archive operations, explorers launched, links made. "Turn" means the USER's
+ * The per-turn caps: sessions created, prompts sent, archive operations, explorers launched, links made,
+ * organization writes, gathering sessions or offers started. "Turn" means the USER's
  * turn: the counters reset only when a message the user sent from the UI (typed, a quick action, a
  * confirm-card click, a regenerate) enters the context (UserTurns), or on /clear. A brief, a wake-up or any other
  * server-started run continues the budget of the user message before it, so the model can never
@@ -334,6 +393,11 @@ export class TurnLimits {
     this.used[kind] += n;
     this.persist();
     return null;
+  }
+  /** Hand back what `take` took for an act that was then refused: a refusal consumes nothing. */
+  give(kind: LimitKind, n = 1): void {
+    this.used[kind] = Math.max(0, this.used[kind] - n);
+    this.persist();
   }
   /**
    * Reserve one running-at-once slot, synchronously: `running` is how many Overseer-started
@@ -450,7 +514,8 @@ function argSummary(raw: unknown, toolCallId?: string): string {
   const call = content.find((b) => b?.type === "toolCall" && (toolCallId === undefined || b.id === toolCallId));
   const args = call?.arguments;
   if (!args || typeof args !== "object") return "";
-  const first = Object.values(args as Record<string, unknown>).find((v) => typeof v === "string") as string | undefined;
+  // Never a call's contact (a referral's, §app.overseer/org-projection), whatever order its arguments are in.
+  const first = Object.entries(args as Record<string, unknown>).find(([k, v]) => k !== "contact" && typeof v === "string")?.[1] as string | undefined;
   return first ? cut(first, 60) : "";
 }
 
@@ -633,18 +698,21 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       try {
         if (!opts.unattended && !host.attended()) throw new Refusal(UNATTENDED_REFUSAL);
         const out = await run(params, toolCallId, { signal, ctx });
-        logAction({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: params, outcome: "ok" });
+        // No contact in the log (§app.overseer/org-projection): a contact argument is `[contact]`, and any value on a roster too.
+        const c = contactRedactor();
+        logAction({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: c.deep(loggedArgs(name, params)), outcome: "ok" });
         return out;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        const c = contactRedactor();
         logAction({
           at: new Date().toISOString(),
           overseerId: host.overseerId(),
           toolCallId,
           tool: name,
-          args: params,
+          args: c.deep(loggedArgs(name, params)),
           outcome: err instanceof Refusal ? "refused" : "error",
-          error: message,
+          error: c.text(message),
         });
         throw err instanceof Error ? err : new Error(message);
       }
@@ -1311,6 +1379,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           return id ? { id, title: m.ideas[id]!.title } : null;
         },
         todo: (ref) => readTodos().todos.find((t) => t.id === ref) ?? null,
+        person: orgConfirmLookup.person,
+        project: orgConfirmLookup.project,
       },
       wrap: (run) => act("sova_confirm", run, { unattended: true }),
       refusal: (m) => new Refusal(m),
@@ -1328,9 +1398,63 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     }),
     ...todoTools({ act, read, resolve, refusal: (m) => new Refusal(m), obj, str }),
     ...linkTools({ act, read, links: host.links, take: () => limits.take("link", host.caps()), refusal: (m) => new Refusal(m), obj, str }),
+    ...orgTools({
+      act,
+      read,
+      refusal: (m) => new Refusal(m),
+      call,
+      take: (kind) => limits.take(kind, host.caps()),
+      give: (kind) => limits.give(kind),
+      slot(path) {
+        // As sova_send: a session that already counts takes no new slot.
+        if (path && host.counted(path)) return { release() {} };
+        const busy = limits.reserveRun(host.runningStarted(), host.caps());
+        return busy ? { refusal: busy } : { release: () => limits.releaseRun() };
+      },
+      started: (path, prompted) => host.started(path, prompted),
+      confirmed: () => host.confirmed(),
+      sessionRef,
+      obj,
+      str,
+      int,
+      bool,
+    }),
   ];
-  // Every tool, this list's and any added to it: no secret value in or out (overseer-redact.ts).
-  return tools.map((t) => redactingTool(t, redactor));
+  // Every tool, this list's and any added to it: no secret value in or out (overseer-redact.ts), and
+  // no contact value out (§app.overseer/org-projection).
+  return tools.map((t) => redactingTool(contactRedactingTool(t), redactor));
+}
+
+/**
+ * A tool whose result, partial results and error carry no contact value of any attached org's
+ * roster (§app.overseer/org-projection): each becomes `[contact]`. Its arguments are left as the
+ * model wrote them, so a write stores what it was given.
+ */
+export function contactRedactingTool<T extends ToolDefinition<any, any>>(tool: T): T {
+  const clean = <R>(r: ReturnType<typeof contactRedactor>, result: R): R => {
+    if (!result || typeof result !== "object") return result;
+    const res = result as { content?: unknown; details?: unknown };
+    const content = Array.isArray(res.content)
+      ? (res.content as { type?: string; text?: unknown }[]).map((b) => (b?.type === "text" && typeof b.text === "string" ? { ...b, text: r.text(b.text) } : b))
+      : res.content;
+    return { ...result, content, details: r.deep(res.details) } as R;
+  };
+  return {
+    ...tool,
+    execute: async (toolCallId: string, params: unknown, signal?: AbortSignal, onUpdate?: (p: unknown) => void, ctx?: unknown) => {
+      try {
+        const out = await (tool.execute as (...a: unknown[]) => Promise<unknown>)(toolCallId, params, signal, onUpdate && ((partial: unknown) => onUpdate(clean(contactRedactor(), partial))), ctx);
+        return clean(contactRedactor(), out);
+      } catch (err) {
+        const r = contactRedactor();
+        if (err instanceof Error) {
+          err.message = r.text(err.message);
+          throw err;
+        }
+        throw new Error(r.text(String(err)));
+      }
+    },
+  } as T;
 }
 
 /** Every tool name the Overseer has: its own plus the read-only built-ins and wake_nudge. */

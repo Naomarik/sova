@@ -474,8 +474,9 @@ export interface OverseerRuntime {
   /** Runs the SDK call that hands the Overseer a message the user sent from the UI (a prompt, a
       steer, a regenerate; `origin` "client"). The turn the resulting message opens is the user's,
       whatever an extension's `input` handler or a template made of its text: full tools, and the
-      per-turn caps start over. Server-started runs (a brief, a wake-up) never go through it. */
-  userSend<T>(send: () => T): T;
+      per-turn caps start over. Server-started runs (a brief, a wake-up) never go through it.
+      `confirm`: the message is a click on the confirm card of that tool call (never typed). */
+  userSend<T>(send: () => T, confirm?: string): T;
 }
 
 let overseerRuntime: OverseerRuntime | null = null;
@@ -507,6 +508,9 @@ export interface SpecialLoadout {
   clientSend?(path: string, msg: { images: number }): { by: string; undo?(): void };
   /** A client gesture this kind refuses (a message for the client), or null. */
   refuses?(gesture: "rewind" | "regenerate" | "mode"): string | null;
+  /** Its composer takes nothing right now (a message for the client), or null: an archived
+      project's overseer (§app.organizations/archive). */
+  composerClosed?(path: string): string | null;
   /** Runs the SDK call that hands this runtime a message the operator sent from the UI (origin
       "client"), like the Overseer's `userSend`: the kind can tell the operator's turns by identity. */
   userSend?<T>(path: string, send: () => T): T;
@@ -1033,7 +1037,7 @@ class ChatSession {
     this.assertModelAllowed();
     this.flushDeferredAppends();
     const images = item.images as Parameters<AgentSession["steer"]>[1];
-    const toSdk = <T>(send: () => T) => this.toSdk(item.origin, send);
+    const toSdk = <T>(send: () => T) => this.toSdk(item.origin, send, item.confirm);
     // The sender's mark goes in with the message, never earlier: a held item is not in the SDK,
     // so a message the user types meanwhile with the same text must not take its mark. It stays
     // until the message ends (markSend) or the item departs undelivered (onGone).
@@ -1069,9 +1073,9 @@ class ChatSession {
 
   /** Hand a message to the SDK. In the Overseer, one the user sent from the UI (`origin` "client")
       goes through its `userSend`, so the turn it opens is known as theirs by identity, not text. */
-  private toSdk<T>(origin: QueueItem["origin"], send: () => T): T {
+  private toSdk<T>(origin: QueueItem["origin"], send: () => T, confirm?: string): T {
     if (origin === "client" && this.specialEntry?.userSend) return this.specialEntry.userSend(this.path, send);
-    return this.overseer && origin === "client" && overseerRuntime ? overseerRuntime.userSend(send) : send();
+    return this.overseer && origin === "client" && overseerRuntime ? overseerRuntime.userSend(send, confirm) : send();
   }
 
   /**
@@ -1770,7 +1774,7 @@ class ChatSession {
         or, when it is queued, at its hand-off; `sentByBaton` likewise marks it as a baton
         participant's (§app.baton/attribution). `delivery`: the kind it is queued as mid-turn, as
         the composer's Steer or a Playbook's follow-up; idle, either is a plain prompt. */
-    opts?: { replay?: boolean; sentByOverseer?: { overseerId?: string }; sentByBaton?: { by: string }; delivery?: WebQueueItem["kind"] },
+    opts?: { replay?: boolean; sentByOverseer?: { overseerId?: string }; sentByBaton?: { by: string }; delivery?: WebQueueItem["kind"]; confirm?: string },
   ): { queued: boolean; turn: Promise<void> } {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
     assertNotLive(this.path);
@@ -1785,7 +1789,8 @@ class ChatSession {
     if (this.session.isStreaming || this.isCompacting() || this.starting) {
       const overseer = opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {};
       const baton = opts?.sentByBaton ? { baton: opts.sentByBaton } : {};
-      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton });
+      const confirm = opts?.confirm ? { confirm: opts.confirm } : {};
+      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...confirm });
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
@@ -1799,7 +1804,7 @@ class ChatSession {
         : null;
     const send: SenderMark | null = sender ? { text, sender } : null;
     if (send) this.senderMarks.push(send);
-    const turn = this.toSdk(origin, () => this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }));
+    const turn = this.toSdk(origin, () => this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }), opts?.confirm);
     this.noteStarting(turn);
     if (send)
       turn.catch(() => {
@@ -1818,6 +1823,7 @@ class ChatSession {
         id: clientId,
         ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}),
         ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}),
+        ...(opts?.confirm ? { confirm: opts.confirm } : {}),
       };
       if (!this.heldForCompaction(err, item)) throw err;
     };
@@ -2105,6 +2111,12 @@ class ChatSession {
       switch (msg.type) {
         case "prompt":
         case "steer": {
+          // A kind whose composer is closed right now (an archived project's overseer).
+          const closed = this.specialEntry?.composerClosed?.(this.path);
+          if (closed) {
+            fail(new BusyError(closed, "busy"));
+            return;
+          }
           // `/compact [instructions]` as a whole message: Sova's builtin, never text for the
           // model. It runs here, before pi's prompt() could send the literal "/compact" to the
           // model, and before a streaming steer could queue it. The send's own id names the
@@ -2155,7 +2167,9 @@ class ChatSession {
           this.assertModelAllowed();
           const images = parseImages(msg.images);
           const text = String(msg.text ?? "");
-          const { queued, turn } = this.acceptPrompt(text, images, "client", clientId);
+          // A confirm card's click in the Overseer (never a typed answer): the turn it opens may act on the card's items.
+          const confirm = this.overseer && msg.type === "prompt" && typeof msg.confirm === "string" && msg.confirm ? msg.confirm : undefined;
+          const { queued, turn } = this.acceptPrompt(text, images, "client", clientId, confirm ? { confirm } : undefined);
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.
           if (clientId) client.send({ type: "send_ack", clientId, queued });

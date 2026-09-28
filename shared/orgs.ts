@@ -91,9 +91,25 @@ export interface ProfileChange {
   field: ProfileField;
   from: unknown;
   to: unknown;
-  by: { kind: ChangeWriter; sessionId?: string; entryId?: string; quote?: string };
+  by: ChangeBy;
   /** The `at` of the change this undoes. */
   revertOf?: string;
+}
+
+/** A change made by the global Overseer for the operator (§app.overseer/org-attribution): always
+    with `kind: "operator"`, which alone decides what the change may do. */
+export const VIA_OVERSEER = "overseer";
+export type ChangeVia = typeof VIA_OVERSEER;
+
+/** Who wrote a history line. `via`/`overseerId`: the operator's change, made through the global
+    Overseer (never on any other kind). */
+export interface ChangeBy {
+  kind: ChangeWriter;
+  sessionId?: string;
+  entryId?: string;
+  quote?: string;
+  via?: ChangeVia;
+  overseerId?: string;
 }
 
 /** A history line with the person's current name, for the Recent profile changes feed. */
@@ -127,6 +143,9 @@ export interface OrgProject {
   stakeholderCleared?: { personId: string; name: string; at: string };
   /** The operator switched this project off the owner's page (§app.owner-page/chats). Absent: shown. */
   ownerHidden?: boolean;
+  /** Archived (§app.organizations/archive): put away, nothing deleted. `via`: the global Overseer
+      did it for the operator. Absent: not archived. */
+  archived?: { at: string; via?: ChangeVia };
 }
 
 /** One change of a project's main stakeholder: the operator set it (`operator`), or the person left (`left`). */
@@ -135,6 +154,8 @@ export interface StakeholderChange {
   from: string | null;
   to: string | null;
   why: "operator" | "left";
+  /** The operator's change, made through the global Overseer. */
+  via?: ChangeVia;
 }
 
 /** `org.json` in the workspace repo. */
@@ -158,6 +179,8 @@ export interface OwnerChange {
   from: string | null;
   to: string | null;
   why: "operator" | "left";
+  /** The operator's change, made through the global Overseer. */
+  via?: ChangeVia;
 }
 
 /** The owner card on the People tab (OrgDetail.ownerPage). No token, no hash. */
@@ -182,7 +205,7 @@ export interface OrgChange {
   /** "" = none. */
   from: string;
   to: string;
-  by: { kind: "operator" };
+  by: { kind: "operator"; via?: ChangeVia; overseerId?: string };
   /** The `at` of the change this undoes. */
   revertOf?: string;
 }
@@ -203,7 +226,10 @@ export interface OrgSummary extends Org {
   /** The workspace repo on this host. */
   dir: string;
   people: number;
+  /** Projects not archived (§app.organizations/archive). */
   projects: number;
+  /** Archived projects (absent: none, or an older server). */
+  archivedProjects?: number;
   /** Baton sessions not done or closed. */
   openBatons: number;
   /** GET /api/orgs only: what in this org waits on the operator, the same items the attention list

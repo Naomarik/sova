@@ -1540,7 +1540,11 @@ export type ChatClientMessage =
       is held in the outgoing queue it becomes that item's `QueueItem.id`, so the client can key
       its pending row by a value it already has instead of waiting to be told one. Omitted = the
       server allocates an id, and the row is only nameable from the next `queue` snapshot. */
-  | { type: "prompt"; text: string; images?: OutboundImage[]; clientId?: string }
+  | { type: "prompt"; text: string; images?: OutboundImage[]; clientId?: string;
+      /** The Overseer only: this message is a click on the `sova_confirm` card whose tool call has
+          this id (never a typed answer). The turn it opens may run the acts that card listed
+          (§app.overseer/org-people-facing). Ignored anywhere else. */
+      confirm?: string }
   | { type: "steer"; text: string; images?: OutboundImage[]; clientId?: string }
   | { type: "abort" }
   | { type: "set_model"; ref: string }   // calls session.setModel; server replies {type:"model"} or error
@@ -2428,6 +2432,8 @@ export interface OverseerCaps {
   concurrentSessions: number; // default 5: Overseer-started sessions running at once
   explorePerTurn: number;     // default 2: explorer subagents launched (sova_idea explore); absent on read → default
   linksPerTurn: number;       // default 3: links made (sova_link, §app.overseer/links-tools); absent on read → default
+  orgWritesPerTurn: number;   // default 20: organization writes (§app.overseer/org-tools); absent on read → default
+  gatherPerTurn: number;      // default 3: gathering sessions or offers started (sova_gather start/offer); absent on read → default
 }
 
 /** `<stateRoot>/overseer.json`. Tolerant on read, strict on PUT. */
@@ -2532,6 +2538,9 @@ export interface SessionOrgRef {
   orgName: string;
   projectId?: string;
   projectName?: string;
+  /** The project is archived (§app.organizations/archive): the Organizations region leaves it out,
+      except in its own Needs you. Safe by absence. */
+  projectArchived?: true;
 }
 
 export interface SessionOrg extends SessionOrgRef {
@@ -2596,7 +2605,11 @@ export interface SovaConfirmDetails {
 export type SovaConfirmItem =
   | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; note?: string }
   | { kind: "idea"; id: string; title: string; note?: string }
-  | { kind: "todo"; id: string; text: string; note?: string };
+  | { kind: "todo"; id: string; text: string; note?: string }
+  /** A project of an org on this host: its name and the org's (§app.overseer/org-tools). */
+  | { kind: "project"; id: string; orgId: string; name: string; orgName: string; note?: string }
+  /** A roster person: name, status and org. Never a contact or a link. */
+  | { kind: "person"; id: string; orgId: string; name: string; orgName: string; status: "active" | "proposed" | "left"; note?: string };
 
 /** The longest note one confirm item may carry. */
 export const CONFIRM_NOTE_MAX = 220;

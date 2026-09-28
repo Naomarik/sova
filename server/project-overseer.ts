@@ -19,6 +19,7 @@ import {
   type CodingWorktree,
   type ProjectCodingMode,
   type ProjectOverseerInfo,
+  type ProjectMessageResult,
   type ProjectOverseerMarkerData,
   type StartedSession,
 } from "../shared/project-overseer";
@@ -35,7 +36,26 @@ import { workingSubagents } from "./live";
 import { mergeMode } from "./mode-state";
 import { baseCodingMode, codingModeChoice, describeCodingMode, type ModeRequest } from "./project-coding-mode";
 import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, WorktreeRefusal } from "./project-worktrees";
-import { decidePerson, onOrgAttached, orgDir, orgOfSessionPath, overseerPausedSince, resumeOverseer, OrgError, participantLine, readIndex, readOrg, readOrgAbout, readProjects, readRoster, operatorName, stakeholderLine } from "./orgs";
+import {
+  archivedOverseerRefusal,
+  assertNotArchived,
+  decidePerson,
+  onOrgAttached,
+  orgDir,
+  orgOfSessionPath,
+  overseerPausedSince,
+  resumeOverseer,
+  OrgError,
+  participantLine,
+  projectArchived,
+  readIndex,
+  readOrg,
+  readOrgAbout,
+  readProjects,
+  readRoster,
+  operatorName,
+  stakeholderLine,
+} from "./orgs";
 import { appRequest, pathOfId, promptSession, toolCatalogue } from "./overseer";
 import { RootConfinement } from "./overseer-deny";
 import { overseerFileTools } from "./overseer-file-tools";
@@ -269,6 +289,7 @@ async function codingWorktrees(p: ProjectOverseerPaths, root: string): Promise<C
       // listing's own (the first message, which ends with Sova's commit paragraph).
       title: readSessionTitles()[r.sessionId] || r.title || (path ? ((await getSessionSummary(path).catch(() => null))?.title ?? "") : ""),
       startedBy: r.kind === "coding" ? ("overseer" as const) : ("operator" as const),
+      ...(r.kind === "operator-coding" && r.via === "overseer" ? { via: "overseer" as const } : {}),
       running: path ? isSessionBusy(path) : false,
       workers: path ? workingSubagents(path) : 0,
       createdAt: r.createdAt,
@@ -693,8 +714,10 @@ export const NOT_PROMPTED = "Started, but not prompted: its mode could not be se
 async function startCodingSession(
   orgId: string,
   projectId: string,
-  input: { cwd?: string; prompt: string; title?: string; model?: string; thinking?: string; mode?: ProjectCodingMode; kind: "coding" | "operator-coding" },
+  input: { cwd?: string; prompt: string; title?: string; model?: string; thinking?: string; mode?: ProjectCodingMode; kind: "coding" | "operator-coding"; via?: "overseer" },
 ): Promise<StartedCoding> {
+  // Nothing new starts in an archived project (§app.organizations/archive).
+  assertNotArchived(orgId, projectId);
   const project = projectOf(orgId, projectId);
   const p = projectOverseerPaths(orgId, projectId);
   const settings = readPoSettings(p);
@@ -722,7 +745,7 @@ async function startCodingSession(
   const title = input.title?.trim() ? cleanSessionTitle(input.title) : null;
   // The row always carries a title: the one given, else the prompt's first line.
   const rowTitle = title ?? cleanSessionTitle((input.prompt.trim().split("\n")[0] ?? "").slice(0, 80));
-  noteStarted(p, json.id, input.kind, new Date(), json.path, { ...extra, ...(rowTitle ? { title: rowTitle } : {}) });
+  noteStarted(p, json.id, input.kind, new Date(), json.path, { ...extra, ...(rowTitle ? { title: rowTitle } : {}), ...(input.via ? { via: input.via } : {}) });
   if (title) setSessionTitle(json.id, title);
   const choice = codingChoice(input, settings, await overseerRunning(orgId, projectId));
   // Opened on its model and thinking from the start (its file never records the default first);
@@ -941,6 +964,11 @@ registerSpecialLoadout({
   refuses(gesture) {
     return gesture === "mode" ? "The project overseer has no modes." : null;
   },
+  // An archived project's overseer is paused: its composer takes nothing (§app.organizations/archive).
+  composerClosed(path) {
+    const po = projectOverseerOfPath(path);
+    return po && projectArchived(po.orgId, po.projectId) ? archivedOverseerRefusal(projectOf(po.orgId, po.projectId).name) : null;
+  },
 });
 
 /** The project's tools as its runtime builds them, for the tests. */
@@ -999,20 +1027,29 @@ export async function sendItem(orgId: string, projectId: string, body: ItemSendI
   return { path: made.path, sessionId: made.sessionId, links: links.map((l) => ({ personId: l.personId, name: nameOf(orgId, l.personId), link: linkUrl(l.token) })) };
 }
 
-/** Start coding session: an ordinary session in the project root with the item as its first prompt, linked to it. */
-export async function codeItem(orgId: string, projectId: string, body: ItemCodeInput): Promise<ItemCodeResult> {
+/**
+ * Start coding session: an ordinary session in the project root with the item as its first prompt,
+ * linked to it. `via: "overseer"`: the global Overseer started it for the operator
+ * (§app.overseer/org-project-overseers), which alone may give no item, with `prompt` and `title`.
+ */
+export async function codeItem(orgId: string, projectId: string, body: ItemCodeInput, via?: "overseer"): Promise<ItemCodeResult> {
   const p = projectOverseerPaths(orgId, projectId);
-  const item = itemOf(p, body);
+  const hasItem = (typeof body.todoId === "string" && !!body.todoId) || (typeof body.ideaId === "string" && !!body.ideaId);
+  const item = hasItem || !via ? itemOf(p, body) : null;
+  const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  if (!item && (!prompt || !title)) throw new OrgError("Without an item (todo or idea), give both prompt and title.");
   // Recorded at once as organizational (server/org-sessions.ts), under its own kind so the
   // overseer's caps, which read only "coding", never count the operator's sessions.
   const made = await startCodingSession(orgId, projectId, {
-    prompt: body.prompt?.trim() || item.text,
-    title: item.title.slice(0, 80),
+    prompt: prompt || item!.text,
+    title: (title || item!.title).slice(0, 80),
     ...(body.model ? { model: body.model } : {}),
     ...(body.thinking ? { thinking: body.thinking } : {}),
     kind: "operator-coding",
+    ...(via ? { via } : {}),
   });
-  linkItem(p, item, made.sessionId);
+  if (item) linkItem(p, item, made.sessionId);
   return {
     path: made.path,
     sessionId: made.sessionId,
@@ -1020,6 +1057,60 @@ export async function codeItem(orgId: string, projectId: string, body: ItemCodeI
     ...(made.note ? { note: made.note } : {}),
     ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
   };
+}
+
+// ---- archive: what must stop first (§app.organizations/archive) -------------------------------------------
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * What is open in the project now, one phrase each, in the refusal's words: its gathering sessions
+ * and offers not done or closed, its coding sessions mid-turn or with workers running, a turn of its
+ * overseer. Empty: nothing stops an archive.
+ */
+export async function archiveBlockers(orgId: string, projectId: string): Promise<string[]> {
+  const out: string[] = [];
+  const open = projectBatons(orgId, projectId).filter((b) => b.state === "open" || b.state === "needs-you");
+  if (open.length) out.push(`${plural(open.length, "gathering session", "gathering sessions")} open (${open.map((b) => b.publicTitle).join(", ")})`);
+  const p = projectOverseerPaths(orgId, projectId);
+  const known = indexedSessionPaths();
+  const running: string[] = [];
+  for (const r of readStarted(p)) {
+    if (r.kind !== "coding" && r.kind !== "operator-coding") continue;
+    const path = known.get(r.sessionId) ?? (r.path && existsSync(r.path) ? r.path : null);
+    if (!path || !(isSessionBusy(path) || workingSubagents(path) > 0)) continue;
+    running.push(readSessionTitles()[r.sessionId] || r.title || (await getSessionSummary(path).catch(() => null))?.title || r.sessionId);
+  }
+  if (running.length) out.push(`${plural(running.length, "coding session", "coding sessions")} running (${running.join(", ")})`);
+  const st = readPoState(p);
+  const path = st ? await pathOfId(st.current) : null;
+  if (path && isSessionBusy(path)) out.push("its overseer is working");
+  return out;
+}
+
+// ---- the global Overseer's message route (§app.overseer/org-project-overseers) -----------------------------
+
+/**
+ * A message from the global Overseer into the project overseer's current conversation: idle it
+ * starts a turn, mid-turn it waits in the queue as a follow-up. It goes in as the operator's own
+ * (origin "client": the run is theirs, and it resets the per-message allowance, as their message
+ * does), marked as the Overseer's (§app.overseer/sent-marker). The route checks the sender.
+ */
+export async function messageProjectOverseer(orgId: string, projectId: string, text: unknown, overseerId: string): Promise<ProjectMessageResult> {
+  const project = projectOf(orgId, projectId);
+  if (project.archived) throw new OrgError(archivedOverseerRefusal(project.name), 409);
+  const t = typeof text === "string" ? text.trim() : "";
+  if (!t) throw new OrgError("text must not be blank");
+  if (t.startsWith("/")) throw new OrgError("Send words; use op clear to clear it.");
+  const p = projectOverseerPaths(orgId, projectId);
+  const st = readPoState(p);
+  const path = st ? await pathOfId(st.current) : null;
+  if (!st || !path || !projectOverseerOfPath(path)) throw new OrgError(`${project.name} has no overseer yet. Start it first (op start).`, 409);
+  const chat = await acquireChat(path);
+  chat.assertModelAllowed();
+  const { queued, turn } = chat.acceptPrompt(t, undefined, "client", undefined, { sentByOverseer: { overseerId } });
+  void turn.catch((err) => chat.reportTurnFailure(err));
+  return { queued, sessionId: st.current, path };
 }
 
 // ---- the watch loop ------------------------------------------------------------------------------------
@@ -1143,6 +1234,8 @@ function releaseRaised(orgId: string, projectId: string, before: ProjectOverseer
 
 /** Start one unattended look now, when the rules allow (the ticker, Run Now). */
 export async function lookNow(orgId: string, projectId: string, force = false): Promise<{ started: boolean; why?: string }> {
+  // Archived: paused, whatever asks (§app.organizations/archive); the route words it for the page.
+  if (projectArchived(orgId, projectId)) return { started: false, why: "the project is archived" };
   const p = projectOverseerPaths(orgId, projectId);
   const settings = readPoSettings(p);
   const st = readPoState(p);
@@ -1315,6 +1408,8 @@ async function tick(): Promise<void> {
         const p = projectOverseerPaths(o.id, pr.id);
         // Paused by an attach: the watch loop waits (its reasons keep) until the operator sets its level here.
         if (overseerPausedSince(o.id, pr.id)) continue;
+        // Archived: paused likewise, its reasons kept, until it is unarchived (§app.organizations/archive).
+        if (pr.archived) continue;
         if (!readPoState(p)) continue;
         releaseHeld(o.id, pr.id);
         if (!readMemo(p).pending.length) continue;

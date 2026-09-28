@@ -32,7 +32,11 @@ import {
   revertChange,
   revertOrgChange,
   setOperatorName,
+  setProjectArchived,
+  type OperatorBy,
 } from "./orgs";
+import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
+import { archiveBlockers } from "./project-overseer";
 import { resolveSessionPath } from "./paths";
 import { refreshShare } from "./share/hub";
 import { shareInfo } from "./share/listener";
@@ -224,6 +228,13 @@ export function withOrgActivity(info: OrgsInfo): OrgsInfo {
   };
 }
 
+/** What waits on the operator in one org, and why per baton session: for the global Overseer's reads,
+    which never take the org detail (it carries the About text). */
+export function orgWaiting(orgId: string): { needsYou: OrgNeedsYou; batons: Map<string, "reply" | "link"> } {
+  const w = waitingIn(orgId, orgDir(orgId), allBatons().filter((r) => r.orgId === orgId));
+  return { needsYou: w.needsYou, batons: w.batons };
+}
+
 /** An org's page (§app.organizations/org-page): its detail, with what waits on the operator for the tabs' dots. */
 export async function orgPage(orgId: string): Promise<OrgDetail> {
   const d = await orgDetail(orgId);
@@ -252,6 +263,16 @@ function lastOpenedOf(orgId: string): { lastOpened?: Record<string, { at?: strin
   } catch {
     return {};
   }
+}
+
+/**
+ * Who a write is recorded as (§app.overseer/org-attribution): the operator, and when the request
+ * carries the server's sender secret (the global Overseer's own in-process call), the operator
+ * through the Overseer. Nothing in a body can claim it.
+ */
+export function operatorBy(c: Context): OperatorBy {
+  const overseerId = overseerSender(c.req.header(OVERSEER_SENDER_HEADER));
+  return overseerId ? { kind: "operator", via: "overseer", overseerId } : { kind: "operator" };
 }
 
 /** A route param ("" when absent: every lookup then answers 404). */
@@ -306,7 +327,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id",
     handle(async (c) => {
       const b = await body(c);
-      patchOrg(p(c, "id"), { name: b.name, about: b.about });
+      patchOrg(p(c, "id"), { name: b.name, about: b.about }, operatorBy(c));
       return c.json(await orgPage(p(c, "id")));
     }),
   );
@@ -316,7 +337,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const at = (await body(c)).at;
       if (typeof at !== "string") throw new OrgError("at is required");
-      revertOrgChange(id, at);
+      revertOrgChange(id, at, operatorBy(c));
       return c.json(await orgPage(id));
     }),
   );
@@ -353,7 +374,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/people",
     handle(async (c) => {
       const id = p(c, "id");
-      addPerson(id, (await body(c)) as unknown as PersonInput);
+      addPerson(id, (await body(c)) as unknown as PersonInput, operatorBy(c));
       return c.json(await orgPage(id), 201);
     }),
   );
@@ -361,7 +382,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/people/:pid",
     handle(async (c) => {
       const id = p(c, "id");
-      applyChange(id, p(c, "pid"), await body(c), { kind: "operator" });
+      applyChange(id, p(c, "pid"), await body(c), operatorBy(c));
       nudgeMarks(); // a renamed or re-statused person may be a baton holder or a waiting referral
       return c.json(await orgPage(id));
     }),
@@ -370,7 +391,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/people/:pid/approve",
     handle(async (c) => {
       const id = p(c, "id");
-      approvePerson(id, p(c, "pid"));
+      approvePerson(id, p(c, "pid"), operatorBy(c));
       nudgeMarks(); // the session that proposed them loses its Approve item: re-diff the list now
       return c.json(await orgPage(id));
     }),
@@ -379,7 +400,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/people/:pid/decline",
     handle(async (c) => {
       const id = p(c, "id");
-      declinePerson(id, p(c, "pid"));
+      declinePerson(id, p(c, "pid"), operatorBy(c));
       nudgeMarks();
       return c.json(await orgPage(id));
     }),
@@ -424,7 +445,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const at = (await body(c)).at;
       if (typeof at !== "string") throw new OrgError("at is required");
-      revertChange(id, p(c, "pid"), at);
+      revertChange(id, p(c, "pid"), at, operatorBy(c));
       return c.json(await orgPage(id));
     }),
   );
@@ -448,7 +469,31 @@ export function registerOrgRoutes(app: Hono<any>): void {
         ...(b.spec !== undefined ? { spec: b.spec } : {}),
         ...(b.stakeholder !== undefined ? { stakeholder: b.stakeholder } : {}),
         ...(b.ownerHidden !== undefined ? { ownerHidden: b.ownerHidden } : {}),
-      });
+      }, operatorBy(c));
+      return c.json(await orgPage(id));
+    }),
+  );
+  // Archive Project (§app.organizations/archive): refused while anything in it is open, naming each.
+  app.post(
+    "/api/orgs/:id/projects/:pid/archive",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const pid = p(c, "pid");
+      const project = readProjects(id).find((x) => x.id === pid);
+      if (!project) throw new OrgError("Unknown project", 404);
+      if (!project.archived) {
+        const open = await archiveBlockers(id, pid);
+        if (open.length) throw new OrgError(`Stop these first: ${open.join("; ")}.`, 409);
+      }
+      setProjectArchived(id, pid, true, operatorBy(c));
+      return c.json(await orgPage(id));
+    }),
+  );
+  app.post(
+    "/api/orgs/:id/projects/:pid/unarchive",
+    handle(async (c) => {
+      const id = p(c, "id");
+      setProjectArchived(id, p(c, "pid"), false, operatorBy(c));
       return c.json(await orgPage(id));
     }),
   );
@@ -461,7 +506,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const b = await body(c);
       if (!("personId" in b)) throw new OrgError("personId is required (null: no owner)");
-      setOwner(id, b.personId);
+      setOwner(id, b.personId, operatorBy(c));
       return c.json(await orgPage(id));
     }),
   );
@@ -515,7 +560,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const b = await body(c);
       // `owner` is for in-process callers (the project overseer, the reconciler), never a request.
-      const { owner: _owner, mintLink: _mint, ...input } = b;
+      const { owner: _owner, mintLink: _mint, startedVia: _via, ...input } = b;
       const created = createBaton(input as unknown as BatonStartInput);
       const orgId = String(b.orgId);
       return c.json(

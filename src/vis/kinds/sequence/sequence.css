@@ -1,5 +1,6 @@
 /* `vis sequence`: actor heads and lifelines, messages, notes, dividers; emphasis and the step-through's current step. */
 .vis-actor > rect { fill: var(--vis-fill); stroke: var(--vis-stroke); stroke-width: 1.5; }
+.vis-actor.vis-em > rect { stroke-width: 2.5; }
 .vis-svg .vis-actor text { fill: var(--vis-ink); font-weight: var(--fw-medium); }
 .vis-lifeline { stroke: var(--color-border-strong); stroke-width: 1; stroke-dasharray: 3 4; }
 .vis-actor.vis-em > .vis-lifeline { stroke: var(--vis-stroke); stroke-width: 1.5; }

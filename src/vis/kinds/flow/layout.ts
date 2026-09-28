@@ -83,7 +83,9 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, com
   // ---- boxes -------------------------------------------------------------------------------
   const boxes = spec.nodes.map((n) => {
     const tiny = n.shape === "start" || n.shape === "end";
-    const maxText = n.shape === "decision" ? (compact ? 96 : 120) : MAX_TEXT;
+    // A decision wraps early (two short lines make a squarer, narrower diamond), never mid-word.
+    const longestWord = Math.max(0, ...n.label.split(/\s+/).map((w) => measure(w, FLOW_FONT.label)));
+    const maxText = n.shape === "decision" ? Math.min(MAX_TEXT, Math.max(compact ? 80 : 90, longestWord + 1)) : MAX_TEXT;
     const lines = tiny ? [] : wrap(n.label, maxText, 3, FLOW_FONT.label, measure);
     const noteLines = tiny || !n.note ? [] : wrap(n.note, maxText, 2, FLOW_FONT.note, measure);
     const tw = Math.max(widest(lines, FLOW_FONT.label, measure), widest(noteLines, FLOW_FONT.note, measure));

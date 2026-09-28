@@ -15,7 +15,7 @@ import {
   type PriceTable,
   type TokenUsage,
 } from "../shared/model-prices/prices";
-import { ALIASES_FILE, CHECK_MS, createPriceBook, MODELS_DEV_URL, SEED_FILE, STALE_MS } from "./model-prices";
+import { ALIASES_FILE, CHECK_MS, createPriceBook, fetchEnabled, MODELS_DEV_URL, SEED_FILE, STALE_MS } from "./model-prices";
 
 const aliases = JSON.parse(readFileSync(ALIASES_FILE, "utf8")) as Aliases;
 const seed = JSON.parse(readFileSync(SEED_FILE, "utf8")) as PriceTable;
@@ -297,4 +297,12 @@ test("load: a newer cache wins; an older one takes the seed's prices on top of i
   assert.ok(p.status === "priced" && p.usd.input === 3);
   const corrupt = harness({ cache: "{not json" });
   assert.equal(corrupt.book.info().fetchedAt, T0);
+});
+
+test("fetchEnabled: the env switch, and a test process never fetches unless told to", () => {
+  assert.equal(fetchEnabled({}), true);
+  for (const v of ["off", "0", "false", "OFF"]) assert.equal(fetchEnabled({ SOVA_PRICES_FETCH: v }), false);
+  assert.equal(fetchEnabled({ NODE_TEST_CONTEXT: "child-v8" }), false);
+  assert.equal(fetchEnabled({ NODE_TEST_CONTEXT: "child-v8", SOVA_PRICES_FETCH: "on" }), true);
+  assert.equal(process.env.NODE_TEST_CONTEXT !== undefined, true, "this runner sets it");
 });

@@ -23,7 +23,8 @@ import { stateRoot } from "./state-root";
  * and the floor: a host with no cache, or a cache older than the seed, prices from the seed. A
  * host with no cache fetches at its first check, however fresh the seed.
  * A failed fetch keeps the last good table and logs one line. `SOVA_PRICES_FETCH=off` never
- * fetches (hermetic tests), so prices then come from the seed or an existing cache.
+ * fetches (hermetic tests), so prices then come from the seed or an existing cache; a `node --test`
+ * process never fetches either (fetchEnabled).
  */
 
 export const MODELS_DEV_URL = "https://models.dev/api.json";
@@ -87,6 +88,18 @@ function currentOf(table: PriceTable): Parameters<typeof mergeFetched>[1] {
   return out;
 }
 
+/**
+ * `SOVA_PRICES_FETCH=off|0|false` never fetches; `on|1|true` always may. Unset, a test process
+ * (`node --test` sets NODE_TEST_CONTEXT) never fetches, so a test that starts the server stays
+ * off the network.
+ */
+export function fetchEnabled(env: NodeJS.ProcessEnv): boolean {
+  const v = (env.SOVA_PRICES_FETCH ?? "").toLowerCase();
+  if (["off", "0", "false"].includes(v)) return false;
+  if (["on", "1", "true"].includes(v)) return true;
+  return !env.NODE_TEST_CONTEXT;
+}
+
 const ms = (iso: string | null) => (iso ? Date.parse(iso) : -Infinity);
 
 export function createPriceBook(opts: PriceBookOptions = {}): PriceBook {
@@ -95,7 +108,7 @@ export function createPriceBook(opts: PriceBookOptions = {}): PriceBook {
   const cachePath = opts.cachePath ?? join(stateRoot(), "model-prices.json");
   const now = opts.now ?? Date.now;
   const log = opts.log ?? ((line: string) => console.warn(`[model-prices] ${line}`));
-  const enabled = opts.enabled ?? !["off", "0", "false"].includes(process.env.SOVA_PRICES_FETCH ?? "");
+  const enabled = opts.enabled ?? fetchEnabled(process.env);
   const doFetch = opts.fetch ?? ((url, init) => fetch(url, init));
 
   let current: PriceTable = seed;

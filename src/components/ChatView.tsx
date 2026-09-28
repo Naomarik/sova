@@ -113,6 +113,7 @@ import { SessionSetupCard } from "./SessionSetup";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
+import { ChangesSession } from "./ChangesViewer";
 import { type ForkMarker, HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
@@ -148,8 +149,6 @@ export interface OverseerSender {
 
 /** ui_request kinds UiDialog can show; anything else needs the terminal UI. */
 const UI_DIALOG_METHODS = ["select", "confirm", "input", "editor"];
-/** How long a first connect goes unsaid in the composer foot: most land well inside it. */
-const CONNECTING_SHOWN_AFTER_MS = 500;
 
 /**
  * Full-duplex chat with a webapp-owned session. When the server refuses to let us write
@@ -357,9 +356,6 @@ export function ChatView(props: {
   const [modeState, setModeState] = createSignal<ModeState | null>(null);
   /** This chat's sandbox (WS "sandbox"), null while its runtime has no sandbox extension. */
   const [sandbox, setSandboxState] = createSignal<SandboxInfo | null>(null);
-  /** A hello has arrived: from then on the sandbox is the socket's to say (a runtime without the
-      extension sends none), not the session list's. */
-  const [sandboxSaid, setSandboxSaid] = createSignal(false);
   const [sandboxPending, setSandboxPending] = createSignal(false);
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show, `note` one
       that was refused (a /compact), whose row then says why instead of "Ran". */
@@ -567,7 +563,6 @@ export function ChatView(props: {
           });
           setModel(msg.model);
           setSandboxState(null); // a "sandbox" message follows when the runtime has the extension
-          setSandboxSaid(true);
           batch(() => {
             setThinking(msg.thinking);
             setPendingThinking(null);
@@ -1126,13 +1121,6 @@ export function ChatView(props: {
       action strip, so reading the list itself there rebuilt every strip's buttons on each change
       of the list (an append, a turn-end reload, each chunk of a tail-first hello's history). */
   const listHere = createMemo(() => !!items());
-  /** The first connect has taken long enough to say so. A quick one, the usual case, never shows
-      "Connecting…" in the composer foot, where it would squeeze the model indicator and the mode
-      switch for the frames until the hello (§chat.composer/disabled-states). */
-  const [connectSlow, setConnectSlow] = createSignal(false);
-  const connectSlowTimer = setTimeout(() => setConnectSlow(true), CONNECTING_SHOWN_AFTER_MS);
-  onCleanup(() => clearTimeout(connectSlowTimer));
-  const connecting = (): ComposerReason => ({ icon: "clock", text: "Connecting…", ...(connectSlow() ? {} : { quiet: true }) });
   const blocked = (): ComposerReason | null => {
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
@@ -1140,14 +1128,14 @@ export function ChatView(props: {
     if (baton) return baton;
     switch (socket.status()) {
       case "connecting":
-        return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : connecting();
+        return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : { icon: "clock", text: "Connecting…" };
       case "reconnecting":
         return { icon: "clock", text: "Reconnecting. Your draft is kept." };
       case "failed":
       case "closed":
         return { icon: "clock", text: "Not connected." };
     }
-    if (!listHere()) return connecting();
+    if (!listHere()) return { icon: "clock", text: "Connecting…" };
     if (syncing()) return { icon: "clock", text: "Saving this turn…" };
     if (pendingModel()) return { icon: "clock", text: "Switching model…" };
     // Any compaction: this chat's /compact (asked, or already running), pi's automatic one, or an
@@ -1275,7 +1263,6 @@ export function ChatView(props: {
   };
   const thinkingControl: ThinkingControl = {
     level: thinking,
-    known: () => props.summary?.()?.thinking ?? null,
     pending: pendingThinking,
     blocked: thinkingBlocked,
     choose: (level: string) => {
@@ -1291,7 +1278,6 @@ export function ChatView(props: {
   /** The composer flyout's model panel; the header no longer carries a model trigger. */
   const modelControl: ModelControl = {
     model,
-    known: () => props.summary?.()?.model ?? null,
     pending: pendingModel,
     blocked: () => {
       if (live.running) return { title: "Model changes wait until this turn finishes.", body: "Stop or wait, then pick one." };
@@ -1301,11 +1287,10 @@ export function ChatView(props: {
     choose: chooseModel,
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
-  const modeControl: ModeControl = { state: modeState, path: props.path, known: () => props.summary?.()?.mode ?? null };
+  const modeControl: ModeControl = { state: modeState, path: props.path };
   /** The flyout's Sandbox row: the extension answers with a toast and a "sandbox" message. */
   const sandboxControl: SandboxControl = {
     state: sandbox,
-    known: () => (sandboxSaid() ? null : (props.summary?.()?.sandbox ?? null)),
     pending: sandboxPending,
     set: (on) => {
       setSandboxPending(true);
@@ -1592,6 +1577,7 @@ export function ChatView(props: {
           {(list) => (
             <OverseerThreadContext.Provider value={props.overseer ? { answer: (text, card) => send(text, false, [], card) } : null}>
             <AlignAnswerContext.Provider value={alignAnswer}>
+              <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.summary?.()?.cwd; } }}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -1604,6 +1590,7 @@ export function ChatView(props: {
                 older={olderRows.api}
                 liveAlignIds={liveAlignIds()}
               />
+              </ChangesSession.Provider>
               <LiveEntries
                 live={live}
                 author={props.author}

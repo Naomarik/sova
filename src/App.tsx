@@ -4,7 +4,6 @@ import { Portal } from "solid-js/web";
 import type { SessionSummary, WorkerInfo } from "../shared/protocol";
 import { reuseUnchanged } from "./lib/summary-diff";
 import { setAgentsFeedSource } from "./lib/agents-feed";
-import { ensureModels } from "./lib/models";
 import { setExplanationsFeedSource } from "./lib/explanations-feed";
 import {
   ApiError,
@@ -302,9 +301,6 @@ export function App() {
   void getThemes()
     .then(reconcileTheme)
     .catch(() => {});
-  // The model list is app-wide, not a session's: loaded once for the page, so the first session
-  // opened has its composer's thinking ladder without a load of its own (lib/models).
-  void ensureModels().catch(() => {});
   const usage = createPoll(fetchUsage, USAGE_POLL_MS);
   const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
   setAgentsFeedSource(agents.data);

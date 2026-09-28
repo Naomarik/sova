@@ -16,9 +16,6 @@ export interface ModeControl {
   state: Accessor<ModeState | null>;
   /** This chat's session file: POST /api/mode?path= switches this chat and no other. */
   path: string;
-  /** What the session list says this session's mode is (`SessionSummary.mode`): the trigger's
-      label until `state` arrives, so the trigger is at its width from the view's first frame. */
-  known?: Accessor<{ mode: string; minorModes: readonly string[] } | null>;
 }
 
 /** radio: the major mode; check: a minor mode; action: opens a settings screen, switches nothing. */
@@ -73,11 +70,9 @@ export function ModeMenu(props: { control: ModeControl }) {
   /** The save's own request. `busy` is the rows' (a switch): the button says "Saving…" only for this. */
   const [saving, setSaving] = createSignal(false);
 
-  // This chat's own state only. Before its WS "mode" message arrives nothing is checked: the
-  // default in `info()` is not this chat's mode. The trigger's label reads what the session list
-  // knows of this session's mode until then (`known`), and "Mode" when it knows nothing.
+  // This chat's own state only. Before its WS "mode" message arrives there is nothing to show:
+  // the default in `info()` is not this chat's mode, so the label stays "Mode" and nothing is checked.
   const current = () => props.control.state();
-  const labelled = () => current() ?? props.control.known?.() ?? null;
   const items = createMemo<Item[]>(() => {
     const i = info();
     if (!i) return [];
@@ -93,7 +88,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     return it.kind === "radio" ? c.mode === it.id : c.minorModes.includes(it.id);
   };
   const label = () => {
-    const c = labelled();
+    const c = current();
     return c ? [c.mode, ...c.minorModes].join(" · ") : "Mode";
   };
   const name = () => `Mode: ${label()}${current()?.applies === "after-turn" ? ", applies after this turn" : ""}`;
@@ -297,9 +292,9 @@ export function ModeMenu(props: { control: ModeControl }) {
       >
         <Icon name="sliders" small />
         {/* Two parts, so a narrow foot ellipsizes the minor modes before the major one. */}
-        <span class="mode-trigger-label">{labelled()?.mode ?? "Mode"}</span>
-        <Show when={labelled()?.minorModes.length}>
-          <span class="mode-trigger-label mode-trigger-minor">· {labelled()!.minorModes.join(" · ")}</span>
+        <span class="mode-trigger-label">{current()?.mode ?? "Mode"}</span>
+        <Show when={current()?.minorModes.length}>
+          <span class="mode-trigger-label mode-trigger-minor">· {current()!.minorModes.join(" · ")}</span>
         </Show>
         <Icon name="chevron-down" small />
       </button>

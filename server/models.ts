@@ -7,7 +7,6 @@ import { getModelRuntime } from "./chat-manager";
 import { readFavorites } from "./model-favorites";
 import type { BranchContext } from "./transcript";
 import { claudeCodeProviderEnabled } from "./web-settings";
-import { claudeContextWindow } from "../pi-config/extensions/claude-code/context-window.ts";
 
 /** pi's cached remote catalogs (READ-ONLY): {[provider]: {models: [{id, contextWindow}]}}. */
 const MODELS_STORE_FILE = join(getAgentDir(), "models-store.json");
@@ -57,10 +56,7 @@ export function modelProvider(ref: string | null | undefined): string | null {
 
 /**
  * contextWindow for "provider/id": the SDK model registry first (includes custom models.json
- * providers such as ollama-cloud), then models-store.json, then, for a Claude Code model, the
- * claude-code extension's own window rule: that provider is registered only inside a session's
- * runtime, so the shared registry never has it, while the chat's `hello` reads the window the
- * provider registered with that same rule. Cached per ref; unknown → null.
+ * providers such as ollama-cloud), then models-store.json. Cached per ref; unknown → null.
  */
 export function contextWindow(ref: string, modelRuntime: ModelRuntime): number | null {
   const hit = windowCache.get(ref);
@@ -69,10 +65,7 @@ export function contextWindow(ref: string, modelRuntime: ModelRuntime): number |
   if (slash <= 0) return null;
   const [provider, id] = [ref.slice(0, slash), ref.slice(slash + 1)];
   const fromRegistry = modelRuntime.getModel(provider, id)?.contextWindow;
-  const window =
-    typeof fromRegistry === "number" && fromRegistry > 0
-      ? fromRegistry
-      : (storeWindow(provider, id) ?? (provider === CLAUDE_CODE_PROVIDER ? claudeContextWindow(id) : null));
+  const window = typeof fromRegistry === "number" && fromRegistry > 0 ? fromRegistry : storeWindow(provider, id);
   windowCache.set(ref, window);
   return window;
 }

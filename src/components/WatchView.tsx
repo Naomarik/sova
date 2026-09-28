@@ -16,6 +16,7 @@ import type { WorkingSplit } from "../lib/workers";
 import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
+import { ChangesSession } from "./ChangesViewer";
 import { type ForkMarker, HistoryItems, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton } from "./Thread";
 import type { MessageActionItem } from "./MessageActions";
 import {
@@ -263,6 +264,7 @@ export function WatchView(props: {
                 </div>
               }
             >
+              <ChangesSession.Provider value={{ get path() { return props.path; } }}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -273,6 +275,7 @@ export function WatchView(props: {
                 actions={watchActions}
                 older={olderRows.api}
               />
+              </ChangesSession.Provider>
             </Show>
           )}
         </Show>

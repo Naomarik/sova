@@ -157,15 +157,6 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
   While the composer is disabled it still shows the model and is `aria-disabled` with a dead
   click, like the flyout's own rows. It stays at every width, because it's the only place the
   model is on screen.
-- **Opening a session.** The indicator is final from the view's first frame, so the foot never
-  re-lays out when the chat's `hello` lands. Until then it reads what the session list has for THIS
-  session, in the same format: its model (`SessionSummary.model`) and its thinking level
-  (`SessionSummary.thinking`, the newest `thinking_level_change` in its file), the level shown only
-  when that model's ladder has it. The ladder comes from the model list, which the app loads once
-  for the page at start (it is the app's, not a session's); until that load lands, from the ladders
-  this browser last loaded (`localStorage`), so a session opened at once still shows its level. The
-  `hello` and the list then only confirm it, or correct a list read that disagrees (a level pi
-  clamps, a model pi can't run).
 
 ## §chat.composer/disabled-states — Disabled states
 
@@ -175,7 +166,7 @@ the skill's copy ladder.
 | Condition | Textarea | Buttons | Reason (with icon) |
 |---|---|---|---|
 | Session is live in a TUI | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
-| Chat socket connecting (first connect) | enabled (typing is fine) | Send `aria-disabled` | `clock` — "Connecting…", once the connect has taken 500ms: a quicker one, the usual case, blocks the same but says nothing, so the reason never flashes into the foot and squeezes the model indicator and the mode switch for the frames before the `hello` |
+| Chat socket connecting (first connect) | enabled (typing is fine) | Send `aria-disabled` | `clock` — "Connecting…" |
 | Chat socket dropped | enabled | Send `aria-disabled` | `clock` — "Reconnecting. Your draft is kept." |
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
 | Server `error` with `code:"busy"` | enabled | Send `aria-disabled` until the next `agent_settled` | `attention` — "pi is busy with another turn. Send when it finishes." |
@@ -353,11 +344,7 @@ Sandbox row.
   composer is collapsed.
 - **Source.** The server sends `{type:"sandbox", on, enforcement, status}` after the hello, after
   a rewind and on every `sandbox` entry, and only when the runtime has the `/sandbox` command. No
-  such message means no shield and no flyout row. Before the chat's `hello`, the shield reads what
-  the session list has for this session (`SessionSummary.sandbox`: the newest `sandbox` entry in
-  its file, listed only while on), so opening a sandboxed session shows it from the first frame
-  instead of squeezing the mode switch when the message lands; from the `hello` on it is the
-  socket's alone.
+  such message means no shield and no flyout row.
 - **Transcript.** Sova's transcript renders the `sandbox` entry as nothing: the shield and the
   toast are the web's only sandbox signals.
 

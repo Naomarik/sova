@@ -1,7 +1,7 @@
 import { type Dirent, statSync } from "node:fs";
 import { type FileHandle, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { CURRENT_SESSION_FORMAT, OVERSEER_ENTRY, type SandboxInfo, type SessionSummary } from "../shared/protocol";
+import { CURRENT_SESSION_FORMAT, OVERSEER_ENTRY, type SessionSummary } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
@@ -20,10 +20,6 @@ import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
 import { messageContextTokens } from "./transcript";
 import { type AlignScan, readAlignScan } from "./align-state";
-import { readRosterScan, type RosterScan } from "./roster-scan";
-import { MODE_ENTRY_TYPE, readMode, restoreActive } from "./mode-state";
-import { sandboxOfLine } from "./sandbox-state";
-import { SANDBOX_ENTRY_TYPE } from "../pi-config/extensions/sandbox/state.ts";
 import { WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
@@ -58,13 +54,13 @@ export type WindowResolver = (ref: string) => number | null;
 
 /** Cached per (mtime, size). `contextModel` is the ref the window is looked up under; it is kept
  *  beside the summary because the window depends on the caller's runtime, not on the file.
- *  `last` is how far the outline, mode and thinking read got, which the next read of the grown file starts from. */
+ *  `outline` is how far the outline read got, which the next read of the grown file starts from. */
 interface CacheEntry {
   mtimeMs: number;
   size: number;
   summary: BaseSummary;
   contextModel: string | null;
-  last: LastScan | null;
+  outline: OutlineScan | null;
   /** The file's last finished assistant reply (tail window), for the unread dot and the turn-error mark. */
   lastReply: LastReply | null;
   /** The file carries the Overseer marker. Whether it IS the Overseer's is decided per read
@@ -73,8 +69,6 @@ interface CacheEntry {
   /** How far the align read got (server/align-state.ts): the marker search resumes from it while
       the file only grows, and a file with no `align` result is never parsed. */
   align: AlignScan | null;
-  /** How far the team and worker-record read got (server/roster-scan.ts), the same way. */
-  roster: RosterScan | null;
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -196,27 +190,13 @@ interface TailOutline {
   topics: number;
 }
 
-/** The session's mode as the file last pinned it (the `mode` entry's snapshot). */
-interface FileMode {
-  mode: string;
-  minorModes: string[];
-}
-
-/** What the backward read looks for: the newest line of each kind in the file. */
-interface LastFinds {
-  outline: TailOutline | null;
-  mode: FileMode | null;
-  /** The newest thinking_level_change's level. */
-  thinking: string | null;
-  /** The newest `sandbox` entry's status. */
-  sandbox: SandboxInfo | null;
-}
-
 /**
- * How far a file's backward read got (readLast), kept with its cached summary so that the next
- * read, once the file has only grown, starts where this one stopped.
+ * How far a file's outline read got, kept with its cached summary so that the next read, once the
+ * file has only grown, starts where this one stopped (readOutline).
  */
-interface LastScan extends LastFinds {
+interface OutlineScan {
+  /** The latest outline found, carried from earlier reads while the file only grows. */
+  found: TailOutline | null;
   /** The file size this read went up to: a smaller file next time was not appended to. */
   size: number;
   /** Just past the last newline this read saw: where the first line it could not read WHOLE
@@ -230,116 +210,64 @@ interface LastScan extends LastFinds {
 
 const MARK_BYTES = 64;
 
-/** Past the last MAX_TAIL bytes, a first read goes on in chunks this big: it only searches them
-    for the kinds' marks, so a long file costs its read and no per-line work. */
+/** Past the last MAX_TAIL bytes, a first read goes on back in chunks this big. */
 const DEEP_CHUNK = 1024 * 1024;
 
-/** One line as the outline's snapshot, or null when it isn't one that reads: the `topic-outline`
-    custom entry's rolling "now" line, its "overall" gist, when it was generated, and how many
-    topics that same entry carried. */
-function outlineOfLine(line: Buffer): TailOutline | null {
-  try {
-    const e = JSON.parse(line.toString("utf-8"));
-    const data = e?.type === "custom" && e?.customType === "topic-outline" ? e.data : null;
-    if (!data || typeof data.now !== "string") return null;
-    const now = summaryLine(data.now);
-    // An empty "now" (drafting/none) is no summary: keep scanning for one that reads.
-    if (!now) return null;
-    return {
-      now,
-      gist: typeof data.overall === "string" ? summaryLine(data.overall) : "",
-      generatedAt: typeof data.generatedAt === "number" && Number.isFinite(data.generatedAt) ? data.generatedAt : 0,
-      topics: Array.isArray(data.topics) ? data.topics.length : 0,
-    };
-  } catch {
-    return null; // torn trailing line or not JSON: skip
-  }
-}
-
-/** One line as the mode it pins, by the extension's own restore rule (a legacy marker without a
-    snapshot pins nothing: keep scanning), or null. */
-function modeOfLine(line: Buffer): FileMode | null {
-  try {
-    const active = restoreActive([JSON.parse(line.toString("utf-8"))]);
-    return active ? { mode: active.mode, minorModes: [...active.minorModes] } : null;
-  } catch {
-    return null;
-  }
-}
-
-/** One line as the thinking level it sets, or null. */
-function thinkingOfLine(line: Buffer): string | null {
-  try {
-    const e = JSON.parse(line.toString("utf-8"));
-    return e?.type === "thinking_level_change" && typeof e.thinkingLevel === "string" && e.thinkingLevel ? e.thinkingLevel : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Each kind: the bytes that mark a line worth parsing for it, and its parse. */
-const KINDS: { [K in keyof LastFinds]: { mark: Buffer; read: (line: Buffer) => LastFinds[K] } } = {
-  outline: { mark: Buffer.from('"topic-outline"'), read: outlineOfLine },
-  mode: { mark: Buffer.from(`"customType":"${MODE_ENTRY_TYPE}"`), read: modeOfLine },
-  thinking: { mark: Buffer.from('"type":"thinking_level_change"'), read: thinkingOfLine },
-  sandbox: { mark: Buffer.from(`"customType":"${SANDBOX_ENTRY_TYPE}"`), read: (line) => sandboxOfLine(line.toString("utf-8")) },
-};
-const KIND_KEYS = Object.keys(KINDS) as (keyof LastFinds)[];
-
 /**
- * The newest line of each kind in [floor, size), scanned backwards from `size`. The outline is the
- * sidebar's summary row (the gist, the "now" line its fallback, the count from the SAME accepted
- * entry, so it always describes the snapshot shown next to it); the live record's broadcast may be
- * newer (outlineOverlay). The mode, the thinking level and the sandbox are the composer's mode
- * switch, model indicator and shield until the chat says. Like the
- * other tail reads it is the file's end that wins, not the active branch. Only lines holding a
- * kind's mark are parsed, found by a byte search, so a long range costs its read; the read stops
- * once every kind is found. A kind not found is null; `resume` is LastScan's. null when the file
- * was truncated under the read.
+ * The topic-outline's latest snapshot in [floor, size), scanned backwards like readTailModel: the
+ * last `topic-outline` custom entry's rolling "now" line, its "overall" gist, when it was
+ * generated, and how many topics that same entry carried. The gist is the sidebar's summary row
+ * (the "now" line is the fallback for snapshots without one); the live record's broadcast
+ * may be newer (outlineOverlay). The count comes from the ACCEPTED entry (the one whose "now"
+ * reads), so it always describes the snapshot shown next to it. `found` is null when the range has
+ * none; `resume` is OutlineScan's. null when the file was truncated under the read.
  */
-async function scanLast(fh: FileHandle, size: number, floor: number): Promise<(LastFinds & { resume: number }) | null> {
-  const found: LastFinds = { outline: null, mode: null, thinking: null, sandbox: null };
-  const wanted = () => KIND_KEYS.filter((k) => found[k] === null);
+async function scanOutline(fh: FileHandle, size: number, floor: number): Promise<{ found: TailOutline | null; resume: number } | null> {
   let resume = -1; // set by the first newline met walking back from `size`
   let end = size;
-  let carry = Buffer.alloc(0); // the bytes before the first newline seen so far: a line whose start is still unread
-  while (end > floor && wanted().length) {
+  let carry = Buffer.alloc(0); // bytes after the first newline seen so far: a line's start is still unread
+  while (end > floor) {
     const start = Math.max(floor, end - (size - end < MAX_TAIL ? CHUNK : DEEP_CHUNK));
     const chunk = Buffer.alloc(end - start);
     const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
     if (bytesRead < chunk.length) return null; // truncated under us: the next request retries
     end = start;
     const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
-    if (resume < 0) {
-      const nl = buf.lastIndexOf(NL);
-      if (nl >= 0) resume = start + nl + 1;
-    }
-    // Complete lines start after the buffer's first newline, unless nothing before it is left to
-    // read (the start of the file, or the floor: the grown read's floor is the newline itself).
-    const first = start > floor ? buf.indexOf(NL) : -1;
-    if (start > floor && first < 0) {
-      carry = buf;
-      continue;
-    }
-    const lo = first + 1;
-    let hi = buf.length;
+    // Complete lines are those after a newline in this buffer (or all of it at BOF).
+    let stop = buf.length;
     for (;;) {
-      const want = wanted();
-      // The newest line below `hi` holding any wanted kind's mark.
-      let m = -1;
-      for (const k of want) if (hi > lo) m = Math.max(m, buf.lastIndexOf(KINDS[k].mark, hi - 1));
-      if (m < lo) break;
-      const from = buf.lastIndexOf(NL, m) + 1;
-      const nl = buf.indexOf(NL, m);
-      const line = buf.subarray(from, nl < 0 ? buf.length : nl);
-      for (const k of want) if (line.includes(KINDS[k].mark)) (found as unknown as Record<string, unknown>)[k] = KINDS[k].read(line);
-      if (!wanted().length) break;
-      hi = from;
+      const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
+      if (i < 0 && start > 0) break; // line start not read yet: carry it into the next chunk
+      if (resume < 0) resume = start + i + 1;
+      const line = buf.subarray(i + 1, stop);
+      if (line.includes('"topic-outline"')) {
+        try {
+          const e = JSON.parse(line.toString("utf-8"));
+          const data = e?.type === "custom" && e?.customType === "topic-outline" ? e.data : null;
+          if (data && typeof data.now === "string") {
+            const now = summaryLine(data.now);
+            // An empty "now" (drafting/none) is no summary: keep scanning for one that reads.
+            if (now) {
+              const found = {
+                now,
+                gist: typeof data.overall === "string" ? summaryLine(data.overall) : "",
+                generatedAt: typeof data.generatedAt === "number" && Number.isFinite(data.generatedAt) ? data.generatedAt : 0,
+                topics: Array.isArray(data.topics) ? data.topics.length : 0,
+              };
+              return { found, resume };
+            }
+          }
+        } catch {
+          // torn trailing line or not JSON: skip
+        }
+      }
+      if (i < 0) return { found: null, resume };
+      stop = i;
     }
-    carry = buf.subarray(0, Math.max(0, first));
+    carry = buf.subarray(0, stop);
   }
   // No newline in the range: the line it ends in started before `floor`, and stays unread.
-  return { ...found, resume: resume < 0 ? floor : resume };
+  return { found: null, resume: resume < 0 ? floor : resume };
 }
 
 /** The MARK_BYTES before `offset` (fewer near the start of the file, or if it got shorter). */
@@ -351,35 +279,27 @@ async function bytesBefore(fh: FileHandle, offset: number): Promise<Buffer> {
 }
 
 /**
- * The file's latest outline, mode and thinking level for its summary, and how far the read got.
+ * The file's latest outline for its summary, and how far the read got.
  *
  * If the file has only grown since the read `prev` — it is no shorter, and the bytes just before
- * where `prev` stopped are the same — only the bytes after that point are read, and each of
- * `prev`'s finds is carried unless they hold a newer one. Anything else — a first read, a file that
- * shrank or was rewritten — reads back from the end until it has found each, as far as the start
- * of the file. A tail window alone lost the outline of any session whose last snapshot was more
- * than MAX_TAIL from the end (an image read back is ~150 KB a line): the row had none while the
+ * where `prev` stopped are the same — only the bytes after that point are read, and `prev`'s
+ * outline is carried unless they hold a newer one. Anything else — a first read, a file that
+ * shrank or was rewritten — reads back from the end until it finds one, as far as the start of the
+ * file. A tail window alone lost the outline of any session whose last snapshot was more than
+ * MAX_TAIL from the end (an image read back is ~150 KB a line): the row had none while the
  * thread's strip, which reads the whole file, showed it, so opening the session popped the strip
- * in (§app/insights, opening a session). A `mode` entry is usually near the start (a session
- * pinned at creation). Each file is read that far once per (process, content): what is carried is
- * this process's own, and each server that lists a file reads its growth for itself.
+ * in (§app/insights, opening a session). Each file is read that far once per (process, content):
+ * what is carried is this process's own, and each server that lists a file reads its growth for
+ * itself.
  * null when the file was truncated under the read.
  */
-async function readLast(path: string, size: number, prev: LastScan | null): Promise<LastScan | null> {
+async function readOutline(path: string, size: number, prev: OutlineScan | null): Promise<OutlineScan | null> {
   const fh = await open(path, "r");
   try {
     const grown = prev !== null && size >= prev.size && (await bytesBefore(fh, prev.resume)).equals(prev.mark);
-    const scan = await scanLast(fh, size, grown ? Math.max(0, prev.resume - 1) : 0);
+    const scan = await scanOutline(fh, size, grown ? Math.max(0, prev.resume - 1) : 0);
     if (!scan) return null;
-    return {
-      outline: scan.outline ?? (grown ? prev.outline : null),
-      mode: scan.mode ?? (grown ? prev.mode : null),
-      thinking: scan.thinking ?? (grown ? prev.thinking : null),
-      sandbox: scan.sandbox ?? (grown ? prev.sandbox : null),
-      size,
-      resume: scan.resume,
-      mark: await bytesBefore(fh, scan.resume),
-    };
+    return { found: scan.found ?? (grown ? prev.found : null), size, resume: scan.resume, mark: await bytesBefore(fh, scan.resume) };
   } finally {
     await fh.close();
   }
@@ -709,12 +629,11 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     if (!head || typeof head.header.id !== "string") return null;
     const h = head.header;
     const model = (await readTailModel(path, st.size)) ?? head.model;
-    const scan = await readLast(path, st.size, hit?.last ?? null);
-    const outline = scan?.outline ?? null;
+    const scan = await readOutline(path, st.size, hit?.outline ?? null);
+    const outline = scan?.found ?? null;
     const ctx = await readTailContext(path, st.size);
     const lastReply = await readTailReply(path, st.size);
     const align = await readAlignScan(path, st.size, hit?.align ?? null);
-    const roster = await readRosterScan(path, st.size, hit?.roster ?? null);
     // A workspace session (an org's baton or overseer file) is listed under the dir it opens in on
     // THIS host; its header keeps the dir of the host that created it (§app.organizations/portability).
     const hostCwd = extraSessionRoots().includes(dirname(path)) ? cwdOverride(path) : undefined;
@@ -737,18 +656,13 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       model,
       ...(outline ? { outlineNow: outline.now, outlineAt: outline.generatedAt, outlineTopics: outline.topics } : {}),
       ...(outline?.gist ? { outlineGist: outline.gist } : {}),
-      ...(scan?.mode ? { mode: scan.mode } : {}),
-      ...(scan?.thinking ? { thinking: scan.thinking } : {}),
-      ...(scan?.sandbox?.on ? { sandbox: scan.sandbox } : {}),
-      ...(roster.team ? { team: roster.team } : {}),
-      ...(roster.restoredWorkers > 0 ? { restoredWorkers: roster.restoredWorkers } : {}),
       ...(ctx ? { context: { tokens: ctx.tokens, window: null } } : {}),
       ...(parent ?? {}),
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
       ...(format !== CURRENT_SESSION_FORMAT ? { legacyFormat: true as const } : {}),
       ...(align.summary ? { align: align.summary } : {}),
     };
-    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, last: scan, lastReply, marked: head.overseer, align, roster };
+    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, marked: head.overseer, align };
     cache.set(path, entry);
     return withWindow(entry, resolveWindow);
   } catch {
@@ -871,13 +785,6 @@ function decisionFields(
   };
 }
 
-/** The mode a session whose file pins none opens in: mode.json's, read per listing (it changes
-    without any session file changing), as the chat's own resolveChatMode reads it. */
-function modeDefault(): NonNullable<SessionSummary["mode"]> {
-  const d = readMode();
-  return { mode: d.mode, minorModes: [...d.minorModes] };
-}
-
 /** All sessions, newest activity first, with fresh live presence merged in. */
 export async function listSessions(): Promise<SessionSummary[]> {
   const files = await listSessionFiles();
@@ -890,7 +797,6 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const seen = readSeen();
   const attention = readDecisionSettings().features.attention;
   const orgs = orgLookup();
-  const defaultMode = modeDefault();
   // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
   // session's file is gone" pane IS that assignment rendered (spec 14-workspaces "Gone from
   // disk"), and pruning here — on every listing pass — would race the pane's own Remove From
@@ -934,7 +840,6 @@ export async function listSessions(): Promise<SessionSummary[]> {
     out.push({
       ...withTitle(s, titles),
       ...outlineOverlay(s, liveOutline(l, ownRec)),
-      mode: s.mode ?? defaultMode,
       live: liveField(l),
       workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
       origin: isWebSession(s.id) ? "web" : "external",
@@ -980,7 +885,6 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
   return {
     ...withTitle(s, readSessionTitles()),
     ...outlineOverlay(s, liveOutline(l, ownRec)),
-    mode: s.mode ?? modeDefault(),
     live: liveField(l),
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
     origin: isWebSession(s.id) ? "web" : "external",

@@ -145,16 +145,6 @@ ellipsis.
     class="icon icon-sm" style="--icon:url(/icons/worker.svg)"></span></a>`,
     `aria-label`/`title` "{n} subagents working now",
     the word carried by the label rather than the box. The icon inside a `.chip-count` is 12px.
-    With nothing working and no TUI on the file, a session with a team shows its first team as
-    `Team · {members}` (a neutral `.chip-count`, not a link), adding ` · paused` while a pause is
-    in force; `title` is the team's name, then the pause's text.
-  - **Opening a session.** The head's chips are there from the view's first frame, so the context
-    gauge beside them never moves when the insight lands. Until it does, the team chip reads what
-    the session list has for THIS session (`SessionSummary.team`: its first team on the active
-    branch, the member count and the pause, folded as the insight folds them), and the working
-    chip's team comes from the app's #/agents poll, which lists a running session's teams with the
-    insight's own join. A session the list knows no team for shows no team chip and holds no space
-    for one. The insight then replaces both.
   - The count inside a sidebar session row is **never** a link, because an `<a>` can't nest in
     the row's link — and now it sits outside the link, in the rail, as a `tabindex="-1"` button.
     The foot's Agents row is still the way to the page from the sidebar.

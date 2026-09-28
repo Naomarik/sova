@@ -41,29 +41,6 @@ export interface SessionSummary {
   /** Outline topics in that same snapshot — the count the sidebar shows beside the "now" line.
       Absent when the snapshot is missing, like outlineNow. 0 is a real count. */
   outlineTopics?: number;
-  /** The mode the session's composer mode switch reads (§chat/mode-menu) until its chat's own
-      "mode" message says: the newest `mode` entry's snapshot in the file (not branch-aware: the
-      file's end wins), else the default for sessions (mode.json). Absent from older servers. */
-  mode?: { mode: string; minorModes: string[] };
-  /** The thinking level the composer's model indicator reads until its chat's hello says: the
-      newest `thinking_level_change` entry's level in the file (not branch-aware: the file's end
-      wins). Absent when the file has none (pi appends one when it opens a session), and from
-      older servers. */
-  thinking?: string;
-  /** The session's first team on its active branch, as the head's "Team · N" chip names it until
-      the view's insight loads: its name, member count, and the pause in force (the newest
-      pause/resume event is a pause: its text). Absent when the branch has no team, and from
-      older servers. */
-  team?: { name: string; members: number; paused?: string };
-  /** How many workers the session's own records restore when nothing publishes them: the worker
-      manifests on its active branch (at most the 40 a live record lists). The composer's
-      settled-workers trigger counts it until a live record (`workers`) or the chat's own
-      "workers" message says. Absent when there are none, and from older servers. */
-  restoredWorkers?: number;
-  /** The sandbox the composer's shield reads until its chat's own "sandbox" message says: the newest
-      `sandbox` entry's status in the file (not branch-aware: the file's end wins), present only
-      while it is on. Absent when off or unrecorded, and from older servers. */
-  sandbox?: SandboxInfo;
   /** Context fill at the file's last assistant reply: the head's own rule (input + cacheRead +
       cacheWrite of the last assistant usage on the branch; a compaction after it means no value),
       but read from the FILE TAIL, so a rewound branch can disagree with the head's gauge. Absent
@@ -3394,3 +3371,109 @@ export type SessionFeedMessage =
       (coalesced). */
   | { type: "list_changed" }
   | { type: "error"; message: string };
+
+// --- Git diffs (server/git-diff.ts, §chat.diff) ---------------------------------------------------
+//
+// Read-only. The client names WHAT to compare, never a ref: the server resolves every ref itself,
+// and every folder must be one the named session already knows (its header cwd, its tracked
+// worktrees, its merge cards' paths, its workers' cwds) — a path inside one of those is accepted,
+// anything else is refused (400). `sessionPath` is SessionSummary.path.
+//
+// GET /api/diff/summary?<scope>                 -> 200 DiffSummary; 400 { error } (bad or unknown scope)
+// GET /api/diff/patch?<scope>&file=<path>[&old=<oldPath>][&context=1]
+//                                               -> 200 DiffFilePatch; 400 { error }; 404 { error } (not in the diff)
+//    `context=1` adds `oldText`, the file's old side whole (for expanding folded context).
+// <scope> as query parameters: kind=worktree&session=<sessionPath>&path=<worktreePath>
+//                            | kind=commit&session=<sessionPath>&path=<repoPath>&sha=<hex sha>
+//                            | kind=dirty&session=<sessionPath>&path=<cwd>
+// (`diffScopeQuery` below builds it.) Both send Cache-Control: no-store. No route reads a file or a
+// blob by a name the client gives: contents leave only as a file's patch and its own old side.
+
+/** What a diff compares. */
+export type DiffScope =
+  /** A worktree's branch (committed HEAD) against its merge-base with its base branch (the tracked
+      worktree's `baseBranch`, else master, else main, else origin/HEAD's target). */
+  | { kind: "worktree"; sessionPath: string; worktreePath: string }
+  /** One commit against its first parent (a root commit: against the empty tree). `sha` is hex,
+      4–64 chars, resolved to a commit in that repository; a merge card's sha, typically. */
+  | { kind: "commit"; sessionPath: string; repoPath: string; sha: string }
+  /** The repository containing `cwd`: index + working tree (untracked files as added) against HEAD. */
+  | { kind: "dirty"; sessionPath: string; cwd: string };
+
+/** The scope's query string (no leading `?`). */
+export function diffScopeQuery(s: DiffScope): string {
+  const q = new URLSearchParams({ kind: s.kind, session: s.sessionPath });
+  if (s.kind === "worktree") q.set("path", s.worktreePath);
+  else if (s.kind === "commit") {
+    q.set("path", s.repoPath);
+    q.set("sha", s.sha);
+  } else q.set("path", s.cwd);
+  return q.toString();
+}
+
+/** M modified, A added (untracked, in the dirty scope), D deleted, R renamed (maybe also edited),
+    T type change (file ↔ symlink), B binary (any of those, on a binary file: no line counts). */
+export type DiffFileStatus = "M" | "A" | "D" | "R" | "T" | "B";
+
+export interface DiffFileSummary {
+  /** Repository-relative, `/`-separated; the new path for a rename, the old one for a delete. */
+  path: string;
+  /** Renames only: the path before. */
+  oldPath?: string;
+  status: DiffFileStatus;
+  added: number;
+  removed: number;
+  /** Full blob oids of each side; absent for the missing side (add/delete) and for a working-tree
+      side git has not hashed (dirty scope). */
+  oldOid?: string;
+  newOid?: string;
+  /** Dirty scope only: the file is not tracked (shown as added). */
+  untracked?: true;
+  /** Untracked only: too large to diff, or past the summary's read budget; `added` counts only the
+      lines read (server/git-diff.ts MAX_UNTRACKED_READ, UNTRACKED_BUDGET), 0 when none were. */
+  tooLarge?: true;
+}
+
+/** One side of a comparison, for the header. */
+export interface DiffSide {
+  /** "master (merge-base)", "a1b2c3d^1", "HEAD", "Working tree" … */
+  label: string;
+  /** The commit, when the side is one (never for the working tree, or an empty tree). */
+  oid?: string;
+}
+
+export interface DiffSummary {
+  scope: DiffScope;
+  /** Repository top level the diff ran in. */
+  repo: string;
+  base: DiffSide;
+  head: DiffSide;
+  /** In git's order (path order), at most `MAX_DIFF_FILES` (server/git-diff.ts). */
+  files: DiffFileSummary[];
+  /** Over every file, including those cut by `truncated`. */
+  totals: { files: number; added: number; removed: number };
+  /** The file list stopped at the cap; `totals.files` is the real count. */
+  truncated?: true;
+  generatedAt: number;
+}
+
+/** One file's patch. `patch` is git's unified text for this file alone (from its `diff --git`
+    header, `--histogram -M`, 3 lines of context, full-index oids), UTF-8 decoded. */
+export interface DiffFilePatch {
+  path: string;
+  oldPath?: string;
+  status: DiffFileStatus;
+  /** Present unless `binary` or `tooLarge`. An empty string is a mode-only change. */
+  patch?: string;
+  binary?: true;
+  /** The patch passed the byte cap; `bytes` says how far it got. */
+  tooLarge?: { bytes: number; cap: number };
+  oldOid?: string;
+  newOid?: string;
+  /** With `context=1` only: the old side's whole text, the blob `oldOid` names. Absent when the
+      patch has no single old side, or that side is binary or past 8 MB. */
+  oldText?: string;
+  /** As in the summary: a changed HEAD between the two requests shows up here. */
+  base: DiffSide;
+  head: DiffSide;
+}

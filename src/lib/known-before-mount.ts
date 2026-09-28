@@ -1,13 +1,12 @@
 // What a session view knows about its session before its own reads land (the insight load, the
 // chat's hello), from what the client already holds: the session list's row and App's
-// explanations and #/agents polls. A view opening another session shows its "Current goal" strip and its
+// explanations poll. A view opening another session shows its "Current goal" strip and its
 // composer status row from these at the first frame, so neither pops in and shifts the transcript.
 // Each is this session's own fact, and each gives way to the view's own read once it lands.
 // Pure: no reactive state, so the rules are testable (known-before-mount.test.ts).
 
-import type { AgentsInsight, ExplanationInfo, LiveAgentSession, SessionSummary, TeamInfo, TranscriptItem } from "../../shared/protocol";
+import type { ExplanationInfo, SessionSummary, TranscriptItem } from "../../shared/protocol";
 import { isInput } from "../../shared/row-counts";
-import { teamPause } from "./insights";
 
 /** The strip's collapsed row as the session list has it: the newest outline snapshot's lines. */
 export interface KnownOutline {
@@ -37,18 +36,14 @@ export const knownExplanations = (all: readonly ExplanationInfo[] | undefined, s
  */
 export const knownInputs = (s: Pick<SessionSummary, "title" | "originalTitle">): boolean => (s.originalTitle ?? s.title) !== "Untitled";
 
-/** How many subagents the session's live record counts, else how many its own records restore: a
-    session no runtime hosts yet, or one whose runtime has just started and lists none while it
-    restores them. The settled-workers row's number. */
-export const knownWorkers = (s: Pick<SessionSummary, "workers" | "live" | "restoredWorkers">): number =>
-  (s.workers ?? s.live?.workers)?.total || (s.restoredWorkers ?? 0);
+/** How many subagents the session's live record counts: the settled-workers row's number. */
+export const knownWorkers = (s: Pick<SessionSummary, "workers" | "live">): number => (s.workers ?? s.live?.workers)?.total ?? 0;
 
 /**
  * The settled-workers trigger's count: the socket's list once it has said, else the list's
  * (`known`). A runtime's first "workers" message can come before its subagents extension has
- * restored the workers the file records (its record lists none yet, and the next look is seconds
- * later), so a said-empty list doesn't override a known count: the session's own records say the
- * runtime will list them.
+ * restored its workers (it lists none yet, and the next look is seconds later), so a said-empty
+ * list doesn't override a known count: the live record says the runtime will list them.
  */
 export const workersShown = (said: boolean, listed: number, known: number): number => (said && (listed > 0 || known === 0) ? listed : known);
 
@@ -60,33 +55,3 @@ export const workersShown = (said: boolean, listed: number, known: number): numb
  */
 export const inputsPending = (count: number | null, list: readonly TranscriptItem[] | null, known: boolean): boolean =>
   count === null && (known || (list ?? []).some(isInput));
-
-/** The head's "Team · N" chip while nothing works: the first team's name, members and pause. */
-export interface HeadTeam {
-  name: string;
-  members: number;
-  /** The pause in force: its text. */
-  paused: string | null;
-}
-
-/**
- * The head chip's team: the view's insight once it has loaded (`teams` defined), and until then
- * the session list's `team`, so the chip is there from the first frame for a session known to have
- * one, and absent for one known to have none.
- */
-export function headTeam(teams: readonly TeamInfo[] | undefined, known: SessionSummary["team"]): HeadTeam | null {
-  if (teams) {
-    const t = teams[0];
-    return t ? { name: t.name, members: t.members.length, paused: teamPause(t)?.text ?? null } : null;
-  }
-  return known ? { name: known.name, members: known.members, paused: known.paused ?? null } : null;
-}
-
-/** The session as App's #/agents poll has it (running sessions only; its teams are the insight's
-    own join): undefined when the poll doesn't list it. */
-export const knownAgents = (feed: AgentsInsight | undefined, path: string): LiveAgentSession | undefined =>
-  feed?.sessions.find((x) => x.path === path);
-
-/** The busiest live team: where the head's working chip links, "Team · N working". */
-export const busiestLiveTeam = (teams: readonly TeamInfo[] | undefined): TeamInfo | null =>
-  (teams ?? []).filter((t) => t.live).reduce<TeamInfo | null>((b, t) => (!b || t.working > b.working ? t : b), null);

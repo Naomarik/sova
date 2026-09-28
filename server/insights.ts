@@ -14,7 +14,6 @@ import type {
   SessionInsight,
   SessionOutline,
   SessionSkills,
-  SessionSummary,
   SessionUsage,
   SpendOrigin,
   TeamDuty,
@@ -311,7 +310,7 @@ function lastKnown(p: UsageProvider): UsageProvider {
 // Session JSONL facts: teams (subagents-team-v1), last worker reports (subagent-complete),
 // topic-outline snapshot, compactions. One parse per (mtime, size), active branch only.
 
-export const TEAM_ENTRY = "subagents-team-v1";
+const TEAM_ENTRY = "subagents-team-v1";
 /** The durable per-worker records the protocol fold reads (readWorkerManifests). */
 const WORKER_RECORD_TYPES: ReadonlySet<unknown> = new Set([WORKER_MANIFEST_ENTRY_TYPE, LEGACY_REGISTRY_ENTRY_TYPE]);
 /** The explain extension's completion entry; server/transcript.ts turns it into a report row. */
@@ -435,34 +434,6 @@ function addTeamEntry(teams: Map<string, RosterTeam>, data: unknown): void {
     if (!team) return;
     for (const m of valid) if (!team.members.some((x) => x.workerId === m.workerId)) team.members.push(m);
   }
-}
-
-/**
- * The session list's side of teams (SessionSummary.team): a branch's team entries and team events,
- * folded as extractFacts folds them, and the head chip's facts about the first team (the one the
- * head's "Team · N" names while nothing works). Undefined when the branch has no team.
- */
-export function teamChipOf(branch: readonly Rec[]): SessionSummary["team"] {
-  const teams = new Map<string, RosterTeam>();
-  const events: TeamEvent[] = [];
-  for (const e of branch) {
-    if (e.type === "custom" && e.customType === TEAM_ENTRY) addTeamEntry(teams, e.data);
-    else if (e.type === "custom" && e.customType === TEAM_EVENT_TYPE) {
-      const ev = teamEventOf(e);
-      if (ev) events.push(ev);
-    }
-  }
-  const t = teams.values().next().value;
-  if (!t) return undefined;
-  // The client's teamPause rule: the newest pause or resume of this team decides.
-  let paused: string | undefined;
-  for (let i = events.length - 1; i >= 0; i--) {
-    const ev = events[i]!;
-    if (ev.teamId !== t.id || (ev.kind !== "pause" && ev.kind !== "resume")) continue;
-    if (ev.kind === "pause") paused = ev.text;
-    break;
-  }
-  return { name: t.name, members: t.members.length, ...(paused ? { paused } : {}) };
 }
 
 // "### ag_08 (lead) — waiting · task success" (current) or "Subagent ag_02 (quick-2) finished its task." (older)

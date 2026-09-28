@@ -52,7 +52,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   tool: each result's `details` (`{v: 1, doc?, changes, line, exempt?}`, the touched alignment's
   whole snapshot, newest per id on the branch wins), read by Sova for the card, the composer chip
   and the session list, and its hidden `align-state` / `align-nudge` custom messages, which Sova
-  must keep hidden (`display: false`); an older session's `align-doc` custom entries are read-only.
+  must keep hidden (`display: false`); an older session's `align-doc` custom entries are read-only;
+  show-changes' `show_changes` tool: each result's `details` (`{v: 1, scope, title?, paths?,
+  steps?}`), read by Sova for the card that opens the changes viewer.
   Not covered by Sova's tsconfig, with these exceptions: the server imports
   `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts` and `spec.ts` (`server/mode-state.ts`,
   `server/delegate.ts`, `server/spec-settings.ts`; hence `allowImportingTsExtensions`),
@@ -71,8 +73,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
   the session list's `SessionSummary.align` read what the extension writes, with its own code),
   `server/insights.ts` imports
-  `pi-config/extensions/usage-status/fetch.ts`, `server/worker-context.ts`, `server/delegate.ts` and
-  `server/models.ts` import `pi-config/extensions/claude-code/context-window.ts` (imports nothing: the one Claude Code
+  `pi-config/extensions/usage-status/fetch.ts`, `server/worker-context.ts` and `server/delegate.ts`
+  import `pi-config/extensions/claude-code/context-window.ts` (imports nothing: the one Claude Code
   window rule, `[1m]` or natively 1M else 200k, and the list rule that adds `opus[1m]` and
   `claude-fable-5-1[1m]` after their listed base; the provider, `agent_models` and the subagents
   roster use the same file), and the worker-transcript protocol is imported by
@@ -82,11 +84,17 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `claude-code/transcript-adapter.ts` and `claude-code/provider/session-records.ts` (the per-backend
   readers: locating a worker's transcript and counting its usage, for restored workers and for
   every `/ws/watch` usage total; the dev watcher does not watch these, so an edit there reaches a
-  running server only at its next restart). The frontend imports one file, the only pi-config
-  import in `src/`: `src/lib/format.ts` re-exports `pi-config/extensions/stamp/format.ts` (the
+  running server only at its next restart). The frontend imports two files, the only runtime
+  pi-config imports in `src/`: `src/lib/format.ts` re-exports `pi-config/extensions/stamp/format.ts` (the
   12-hour clock, stamp and relative time, shared with the TUI's `stamp` extension); the server
-  imports the same file directly, for the ages on `sova_session`'s topics (`server/overseer-tools.ts`). Vite bundles
-  it for the browser, so it must import nothing at all. So an edit to any of these can break Sova's
+  imports the same file directly, for the ages on `sova_session`'s topics (`server/overseer-tools.ts`).
+  And `src/components/Thread.tsx` imports `pi-config/extensions/show-changes/details.ts` at
+  runtime (`SHOW_CHANGES_TOOL` and the strict check `normalizeShowChangesDetails`, for the
+  `show_changes` tool's details `{v: 1, scope, title?, paths?, steps?}`, its scope named like
+  `DiffScope` minus `sessionPath`; the tool checks the steps' shape only, Sova places every hunk
+  against the real diff); `src/lib/changes-view.ts` and `src/components/ChangesViewer.tsx` import
+  only its types (`import type`, erased from the bundle). Vite bundles
+  them for the browser, so each must import nothing at all. So an edit to any of these can break Sova's
   typecheck. Keep them pi-runtime-free (node builtins and, for the mode trio and the protocol set,
   each other only), and import nothing else from pi-config at runtime. `minor.ts` also reads its sibling `spec-mode.md` once at load, and
   refuses to load if that file's shell block is malformed. One test-only exception: `server/claude-models.test.ts` imports

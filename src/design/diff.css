@@ -1,0 +1,141 @@
+/* Diff renderer (DiffView): one file's hunks, Unified or Split. Tokens only; the diff colours are
+   tokens.css's --diff-* set. Numbers and signs are user-select: none, so a copy is code only. */
+
+.diff {
+  --diff-num-w: 3ch;
+  min-width: 0;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+  color: var(--color-ink);
+}
+.diff:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.diff-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  background: var(--color-surface);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.diff-path {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diff-path-dir { color: var(--color-ink-muted); }
+
+.diff-stat { flex: none; white-space: nowrap; }
+.diff-stat-add { color: var(--diff-add-ink); }
+.diff-stat-del { color: var(--diff-del-ink); }
+
+.diff-layout { display: inline-flex; flex: none; gap: 0; }
+.diff-layout-button {
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-ink-2);
+  font: inherit;
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+.diff-layout-button:first-child { border-radius: var(--r-md) 0 0 var(--r-md); }
+.diff-layout-button:last-child { border-radius: 0 var(--r-md) var(--r-md) 0; margin-left: calc(var(--stroke-thin) * -1); }
+.diff-layout-button:hover { background: var(--color-sunken); color: var(--color-ink); }
+.diff-layout-button[aria-pressed="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); color: var(--color-ink); position: relative; }
+.diff-layout-button:disabled { opacity: .42; cursor: not-allowed; }
+.diff-layout-button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); position: relative; }
+@media (pointer: coarse) { .diff-layout-button { min-height: 44px; } }
+
+.diff-body { overflow-x: auto; }
+.diff-hunk:focus { outline: none; }
+.diff-hunk:focus-visible { box-shadow: inset 2px 0 var(--color-accent); }
+
+/* Unified: old number, new number, sign, code. Long lines wrap; numbers stay on the first line. */
+.diff-row {
+  display: grid;
+  grid-template-columns: calc(var(--diff-num-w) + var(--space-2)) calc(var(--diff-num-w) + var(--space-2)) 2ch minmax(0, 1fr);
+}
+.diff-unnumbered .diff-row { grid-template-columns: 2ch minmax(0, 1fr); }
+.diff-unnumbered .diff-num { display: none; }
+.diff-num {
+  padding-right: var(--space-1);
+  text-align: right;
+  color: var(--color-ink-muted);
+  background: var(--diff-gutter);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.diff-sign { text-align: center; color: var(--color-ink-muted); user-select: none; }
+.diff-code {
+  min-width: 0;
+  padding-right: var(--space-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diff-add { background: var(--diff-add-bg); }
+.diff-del { background: var(--diff-del-bg); }
+.diff-add .diff-num,
+.diff-del .diff-num { background: transparent; }
+.diff-add .diff-sign { color: var(--diff-add-ink); }
+.diff-del .diff-sign { color: var(--diff-del-ink); }
+
+/* Word marks: the changed words inside a paired line, in ink on the stronger tint. */
+.diff-word { text-decoration: none; border-radius: 2px; color: var(--color-ink); }
+ins.diff-word { background: var(--diff-add-emph); }
+del.diff-word { background: var(--diff-del-emph); }
+
+/* Split: each side a half-row, so a wrapped line keeps its opposite in step. */
+.diff-srow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.diff-half {
+  display: grid;
+  grid-template-columns: calc(var(--diff-num-w) + var(--space-2)) 2ch minmax(0, 1fr);
+  min-width: 0;
+}
+.diff-half + .diff-half { border-left: var(--stroke-thin) solid var(--color-border); }
+.diff-filler { background: var(--diff-gutter); }
+
+/* Folded unchanged lines (a button when they can open in place), and the rule between hunks. */
+.diff-fold {
+  display: block;
+  width: 100%;
+  min-height: 30px;
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  border-block: var(--stroke-thin) solid var(--color-border);
+  border-radius: 0;
+  background: var(--diff-gutter);
+  color: var(--color-ink-2);
+  font: inherit;
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+button.diff-fold { cursor: pointer; }
+button.diff-fold:hover { background: var(--color-accent-tint); color: var(--color-ink); }
+button.diff-fold:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+@media (pointer: coarse) { button.diff-fold { min-height: 44px; } }
+.diff-fold-static { color: var(--color-ink-muted); }
+.diff-body > .diff-fold:first-child { border-top: 0; }
+.diff-body > .diff-fold:last-child { border-bottom: 0; }
+.diff-load { border-block: 0; }
+
+.diff-empty { margin: 0; padding: var(--space-2) var(--space-3); color: var(--color-ink-muted); font-family: var(--font-body); font-size: var(--fs-caption); }
+
+/* In a tool card the diff scrolls inside the card's output height. */
+.toolcard .diff .diff-body { max-height: var(--tool-output-max); overflow-y: auto; }
+.toolcard-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.toolcard-summary .diff-stat { font-size: var(--fs-mono); }

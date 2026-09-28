@@ -62,9 +62,6 @@ const PANE_ID = "session-pane";
 export interface ComposerReason {
   icon: IconName;
   text: string;
-  /** Blocks all the same, but the foot doesn't say it (yet): a first connect that is still quick,
-      whose "Connecting…" would only flash in the foot and squeeze the model and mode for a frame. */
-  quiet?: boolean;
 }
 
 /** `KB` under 1 MB, rounded; otherwise one decimal. */
@@ -238,10 +235,7 @@ export function Composer(props: {
   /** TUI-live, connecting, reconnecting: nothing attaches and nothing sends. */
   const disabled = () => !!reason();
   /** What the foot says: the state's reason, else that an attachment is still uploading. */
-  const shownReason = (): ComposerReason | null => {
-    const r = reason();
-    return r ? (r.quiet ? null : r) : uploading() > 0 ? { icon: "clock", text: "Uploading…" } : null;
-  };
+  const shownReason = (): ComposerReason | null => reason() ?? (uploading() > 0 ? { icon: "clock", text: "Uploading…" } : null);
   // The key hint lives in the placeholder, and only at unfolded width: a touch-first device has
   // no Enter key to speak of. Live, so a resize across 768px swaps it in place.
   const unfolded = matchMedia("(min-width: 768px)");
@@ -258,24 +252,18 @@ export function Composer(props: {
 
   // ---- Model indicator: this session's model and thinking level, and
   // the second trigger for the flyout that changes them. -----------------------------------
-  /** What the session runs: the chat's own word once its hello says, and until then what the
-      session list read off the file (`known`), so the indicator is final from the first frame. */
-  const runningRef = () => props.model?.model() ?? props.model?.known?.() ?? null;
   /** What the session runs, or the target it's switching to — the flyout's Model row, shortened. */
-  const modelRef = () => props.model?.pending() ?? runningRef();
-  /** The level to show, or null when this model's ladder isn't a choice. Before the hello, the
-      list's level, if the ladder has it (pi clamps a level the model lacks: the hello will say). */
+  const modelRef = () => props.model?.pending() ?? props.model?.model() ?? null;
+  /** The level to show, or null when this model's ladder isn't a choice. */
   const levelShown = () => {
     const thinking = props.thinking;
-    const ladder = thinking ? thinkingLevelsFor(runningRef(), hostOf(props.path)) : [];
-    if (!thinking || ladder.length <= 1) return null;
-    const known = thinking.known?.() ?? null;
-    return thinking.pending() ?? thinking.level() ?? (known && ladder.includes(known) ? known : null);
+    if (!thinking || thinkingLevelsFor(props.model?.model(), hostOf(props.path)).length <= 1) return null;
+    return thinking.pending() ?? thinking.level();
   };
   // The thinking ladder decides whether the level is worth showing, and it only arrives with the
   // model catalog — load it as soon as a session has a thinking control, not when the flyout opens.
   createEffect(() => {
-    if (props.thinking && runningRef() && !modelList(hostOf(props.path))) void ensureModels(hostOf(props.path)).catch(() => {});
+    if (props.thinking && props.model?.model() && !modelList(hostOf(props.path))) void ensureModels(hostOf(props.path)).catch(() => {});
   });
   /** Open by the indicator, closed by it again: one control, one state. */
   const indicatorOpen = () => !!menu()?.open() && menu()?.anchor() === indicator;
@@ -1150,7 +1138,7 @@ export function Composer(props: {
               )}
             </Show>
           </span>
-          <Show when={sandboxBadge(props.sandbox?.state() ?? props.sandbox?.known?.() ?? null)}>
+          <Show when={sandboxBadge(props.sandbox?.state() ?? null)}>
             {(b) => (
               <span class={`composer-sandbox composer-sandbox-${b().tone}`} title={b().label}>
                 <Icon name="shield" small />

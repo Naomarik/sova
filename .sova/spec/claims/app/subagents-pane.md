@@ -67,14 +67,13 @@ parent runs, the trigger stays in the row with the counts alone, so watching the
 is one click rather than a wait for the turn to settle.
 
 Opening a chat shows the settled trigger from the view's first frame, with the count the session
-list has for it (its live record's worker total; when there is none, or it counts 0, the workers
-its own records restore: the manifests on its active branch, at most the 40 a record lists) whenever the chat's
+list has for it (its live record's worker total) whenever the chat's
 socket hasn't said otherwise: the socket's count shows while its latest `workers` message since the
 `hello` lists any, or when the list counts none; a `workers` message listing none never takes a
 count the list has down to nothing. The `hello`
 alone changes nothing on the trigger — its runtime's first `workers` can come well after it, or
 not at all while the runtime has no live record yet, or list none while its extension is still
-restoring the file's workers — so the count never blinks off and back at the `hello`. A working trigger (the live
+restoring its workers — so the count never blinks off and back at the `hello`. A working trigger (the live
 dot) comes only from this chat's own `workers` messages. A watched session's
 trigger reads the same list count until its insight lands.
 

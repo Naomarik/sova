@@ -638,12 +638,7 @@ machine. Nothing that's held is virtualized.
   row's single image counts at the height its box will have
   (§chat.images/thread-thumbnails), two or more at an estimate of their rows of tiles. A
   row being pointed at, focused or revealed (§chat.transcript/message-actions) is always drawn
-  whole. So is every row in the view of a transcript that follows its end, from the frame it is
-  put there: when the view goes to the end (opening, new rows, a row growing), the rows then in
-  view are drawn at once, the view goes back to the end, and again while that brings rows not
-  yet drawn into view — all before the frame is painted, so opening a transcript never shows its
-  last rows at their estimates and then grows them in place. Such a row is skipped again, at the
-  height it was drawn at, once it has left the view.
+  whole.
 - **Jumps build their target first.** Whether an entry can be jumped to is asked of the rows the
   thread renders, not of what is built. Every jump builds the rows down from its target if the
   fill hasn't reached it, then scrolls and tints as before (§chat.timeline/jumping): a Timeline
@@ -1175,14 +1170,11 @@ repository around the folder. Two of its figures:
 - **Tool card.** `--color-sunken`, `--r-lg`, and `--font-mono` / `--fs-mono`. Name `--fw-semibold`
   in `--color-ink`; arg `--color-ink-muted`. `pre` sits on `--color-surface` with `--r-sm`.
   Section labels use eyebrow styling (`--fs-micro`, `--ls-eyebrow`).
-- **Tool card file content.** `write` content, each `edit` pair ("Replaced" / "With", "· n of
-  m" when several), and `read` output are highlighted by file path (never auto-detected) in
-  `pre.toolcard-code`: back on `--color-sunken`, where the syntax colors were checked, with
-  `--color-ink` and no wrapping. The path shows above in `.toolcard-path` (mono, ink-muted).
-  Edit blocks add a 3px left rule: `.toolcard-code-del` in `--diff-del-ink`,
-  `.toolcard-code-add` in `--diff-add-ink`; the label carries the meaning. Copy Code on write
-  content and on each "With" block. Unknown extensions, errors, and args still streaming stay
-  plain.
+- **Tool card file content.** `write` content and each `edit` show as a diff
+  (§chat.changes/tool-card-diff, drawn per §chat.changes/diff-renderer). `read` output is
+  highlighted by file path (never auto-detected) in `pre.toolcard-code`: back on
+  `--color-sunken`, where the syntax colors were checked, with `--color-ink` and no wrapping.
+  Unknown extensions, errors, and args still streaming stay plain.
 - **Info row.** `--fs-caption` in `--color-ink-muted`, with rules in `--color-border`.
 - **Banners.**
   - Info: `--status-info-bg` with a `--status-info` icon.

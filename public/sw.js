@@ -125,7 +125,6 @@ self.addEventListener("push", (event) => {
   const options = {
     body: typeof data.body === "string" ? data.body : "A session needs you.",
     tag: typeof data.tag === "string" && data.tag ? data.tag : "sova",
-    icon: "/icons/pwa-192.png",
     badge: "/icons/badge-96.png",
     timestamp: typeof data.ts === "number" ? data.ts : Date.now(),
     data: { hash: safeHash(data.hash) },

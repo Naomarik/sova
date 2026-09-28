@@ -48,21 +48,36 @@ const BUILTINS: Record<string, (cwd: string) => ToolDefinition<any, any, any>> =
 	edit: (cwd) => createEditToolDefinition(cwd),
 };
 
+/**
+ * The parent's declaration in full, `constrainedSampling` included: pi-ai compares it too, and
+ * the built-in bash sets it, so a stub without it would redeclare the tool (seen live).
+ */
+function declared(declaration: ToolDeclaration): Pick<ToolDefinition, "description" | "parameters" | "constrainedSampling"> {
+	return {
+		description: declaration.description,
+		parameters: declaration.parameters as ToolDefinition["parameters"],
+		constrainedSampling: declaration.constrainedSampling as ToolDefinition["constrainedSampling"],
+	};
+}
+
 function withDeclaration(base: ToolDefinition<any, any, any>, declaration: ToolDeclaration): ToolDefinition<any, any, any> {
-	return { ...base, description: declaration.description, parameters: declaration.parameters as ToolDefinition["parameters"] };
+	const tool: ToolDefinition<any, any, any> = { ...base, ...declared(declaration) };
+	if (declaration.constrainedSampling === undefined) delete tool.constrainedSampling;
+	return tool;
 }
 
 /** A declared tool that never runs; tool_call blocks it first, this is the backstop. */
 function stub(declaration: ToolDeclaration): ToolDefinition<any, any, any> {
-	return {
+	const tool: ToolDefinition<any, any, any> = {
 		name: declaration.name,
 		label: declaration.name,
-		description: declaration.description,
-		parameters: declaration.parameters as ToolDefinition["parameters"],
+		...declared(declaration),
 		async execute() {
 			throw new Error(`"${declaration.name}" is not available in the /explain worker.`);
 		},
 	};
+	if (declaration.constrainedSampling === undefined) delete tool.constrainedSampling;
+	return tool;
 }
 
 export default function explainChildExtension(pi: ExtensionAPI): void {

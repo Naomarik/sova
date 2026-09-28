@@ -332,7 +332,7 @@ function layoutScatter(spec: ChartSpec, W: number, measure: Measure): ChartLayou
     const text = spec.rows[p.row]!.label;
     const w = measure(text, FONT.point);
     const h = 13;
-    const gap = marks.has(p.row) ? 12 : 7; // clear of a mark's ring
+    const gap = marks.has(p.row) ? 14 : 7; // clear of a mark's ring (r 8 + stroke) by about 5px
     const tries: [number, number, "start" | "end" | "middle"][] = [
       [p.x + gap, p.y, "start"],
       [p.x - gap, p.y, "end"],

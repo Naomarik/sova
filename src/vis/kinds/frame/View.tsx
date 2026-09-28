@@ -1,6 +1,7 @@
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { appTheme } from "../../../lib/explain";
 import type { ViewProps } from "../../types";
+import { estimateHeight, MIN_FRAME_HEIGHT, rememberHeight } from "./height";
 import type { FrameSpec } from "./parse";
 import { buildSrcdoc, FRAME_MESSAGE, MAX_FRAME_HEIGHT, readTokens, tokenCss } from "./srcdoc";
 import "./frame.css";
@@ -20,7 +21,9 @@ export default function FrameView(props: ViewProps<FrameSpec>) {
   const [theme, setTheme] = createSignal(appTheme());
   const css = () => tokenCss(readTokens(root), theme());
   const srcdoc = buildSrcdoc(props.spec.kind, props.spec.source, id, css());
-  const [height, setHeight] = createSignal(props.spec.kind === "svg" ? 240 : 160);
+  // Until the frame reports, it takes the height this source had before, or an svg's computed one
+  // (height.ts): set in onMount, once the frame's width is known, before the first paint.
+  const [height, setHeight] = createSignal(MIN_FRAME_HEIGHT);
   const [failed, setFailed] = createSignal(false);
   let frame!: HTMLIFrameElement;
 
@@ -30,8 +33,13 @@ export default function FrameView(props: ViewProps<FrameSpec>) {
       const d = e.data as { type?: unknown; id?: unknown; height?: unknown; failed?: unknown } | null;
       if (!d || d.type !== FRAME_MESSAGE || d.id !== id) return;
       if (d.failed === true) setFailed(true);
-      if (typeof d.height === "number" && Number.isFinite(d.height)) setHeight(Math.max(40, Math.min(MAX_FRAME_HEIGHT, Math.ceil(d.height))));
+      if (typeof d.height === "number" && Number.isFinite(d.height)) {
+        const h = Math.max(MIN_FRAME_HEIGHT, Math.min(MAX_FRAME_HEIGHT, Math.ceil(d.height)));
+        setHeight(h);
+        rememberHeight(props.spec, frame.clientWidth, h);
+      }
     };
+    setHeight(estimateHeight(props.spec, frame.clientWidth));
     window.addEventListener("message", onMessage);
     // Theme changes (data-theme, or a custom theme's inline tokens) reach the frame as new tokens.
     const mo = new MutationObserver(() => {

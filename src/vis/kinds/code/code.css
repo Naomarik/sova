@@ -4,6 +4,8 @@
   max-width: 100%;
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  /* The height is fixed (View.tsx, from layout.ts); a horizontal scrollbar overlays the bottom padding. */
+  overflow-y: hidden;
   background: var(--color-sunken);
   border-bottom: var(--stroke-thin) solid var(--color-border);
 }
@@ -12,7 +14,7 @@
   display: grid;
   width: max-content;
   min-width: 100%;
-  padding: var(--space-2) 0;
+  padding: var(--space-2) 0 12px;
   font-family: var(--font-mono);
   font-size: var(--fs-mono);
   line-height: var(--lh-mono);

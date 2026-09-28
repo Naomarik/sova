@@ -9,6 +9,7 @@ import { highlight, resolveLanguage } from "../../../lib/markdown";
 import { emphasisMap } from "../../core/emphasis";
 import { EmBadge, emClass } from "../../emphasis";
 import type { ViewProps } from "../../types";
+import { estimateHeight } from "./layout";
 import { splitHighlighted } from "./lines";
 import type { CodeSpec } from "./parse";
 import "./code.css";
@@ -21,7 +22,7 @@ export default function CodeView(props: ViewProps<CodeSpec>) {
   const digits = createMemo(() => String(props.spec.start + props.spec.lines.length - 1).length);
   const lang = () => (props.spec.lang ? resolveLanguage(props.spec.lang) : "plaintext");
   return (
-    <div class="vis-code" tabindex="0" role="region" aria-label={`${props.label} (scrolls sideways)`} style={{ "--vis-code-digits": String(digits()) }}>
+    <div class="vis-code" tabindex="0" role="region" aria-label={`${props.label} (scrolls sideways)`} style={{ "--vis-code-digits": String(digits()), height: `${estimateHeight(props.spec, 0)}px` }}>
       <div class={`vis-code-lines hljs language-${lang()}`} classList={{ "vis-code-has-badges": hasBadges() }}>
         <For each={rows()}>
           {(html, i) => {

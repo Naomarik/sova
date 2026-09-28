@@ -1,7 +1,7 @@
 import { createSignal, type Accessor } from "solid-js";
 
 /**
- * Step-through for kinds that unfold in order (sequence first; gitgraph could use it). Starts showing
+ * Step-through for kinds that unfold in order (sequence today). Starts showing
  * everything — a still picture is the default and nothing plays by itself; Step starts from the
  * first item, then Prev/Next walk it, All ends the walk. `shown(i)`: whether item i (0-based) is
  * visible. Buttons are real buttons with names, so it works from the keyboard and a screen reader.

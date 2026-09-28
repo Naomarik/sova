@@ -164,5 +164,13 @@
 /* ---- Step-through (stepper.tsx) and not-drawn-yet kinds (StubView.tsx) ----------------------- */
 .vis-stepper { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin-bottom: var(--space-2); }
 .vis-stepper-count { font-size: var(--fs-caption); color: var(--color-ink-muted); font-variant-numeric: tabular-nums; padding: 0 var(--space-2); }
+.vis-stepper-short { display: none; }
+/* At phone width the count shortens to "9/10" so the whole row, Show All included, stays on one line. */
+@container vis (max-width: 420px) {
+  .vis-stepper { gap: 0; }
+  .vis-stepper-count { padding: 0 var(--space-1); }
+  .vis-stepper-long { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .vis-stepper-short { display: inline; }
+}
 .vis-future { opacity: .18; }
 .vis-stub { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }

@@ -35,3 +35,11 @@ test("a setting unquotes one quoted string, and leaves a quoted list as written"
   assert.deepEqual(commaList(list.raw, 1), ["A b", "C", "D e"]);
   assert.deepEqual(commaList(setting(line('series: "A, b"'))!.raw, 1), ["A, b"]);
 });
+
+test("wrap never strands a one- or two-character tail of a split word", () => {
+  for (const w of [60, 80, 100]) {
+    const lines = wrap("GET /callback?code=…", w, 4, 12);
+    assert.ok(lines.every((l) => l.length > 2), `${w}: ${JSON.stringify(lines)}`);
+    assert.equal(lines.join("").replace(/\s/g, ""), "GET/callback?code=…");
+  }
+});

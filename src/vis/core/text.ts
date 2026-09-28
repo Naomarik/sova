@@ -44,7 +44,7 @@ export const canvasMeasure: Measure = (text, px, mono = false) => {
 
 /**
  * Greedy word wrap into at most `maxLines` lines no wider than `maxWidth`. A word too long for a
- * line breaks after `/ . - _` when it can, else anywhere. Overflow ends the last line with "…".
+ * line breaks after `/ . - _ ? = &` when it can, else anywhere. Overflow ends the last line with "…".
  * Explicit "\n" in the text starts a new line.
  */
 export function wrap(text: string, maxWidth: number, maxLines: number, px: number, measure: Measure = estimateWidth, mono = false): string[] {
@@ -79,7 +79,7 @@ export function wrap(text: string, maxWidth: number, maxLines: number, px: numbe
 function splitWord(word: string, maxWidth: number, w: (s: string) => number): string[] {
   const parts: string[] = [];
   let cur = "";
-  const soft = word.split(/(?<=[/._-])/);
+  const soft = word.split(/(?<=[/._?=&-])/);
   for (const s of soft) {
     if (w(cur + s) <= maxWidth) {
       cur += s;
@@ -96,6 +96,16 @@ function splitWord(word: string, maxWidth: number, w: (s: string) => number): st
     }
   }
   if (cur) parts.push(cur);
+  // A stranded tail ("…", "s"): pull the previous part's last soft segment down to keep it company.
+  const n = parts.length;
+  if (n > 1 && parts[n - 1]!.length <= 2) {
+    const prev = parts[n - 2]!;
+    const cut = prev.search(/[^/._?=&-]+[/._?=&-]*$/);
+    if (cut > 0 && w(prev.slice(cut) + parts[n - 1]) <= maxWidth) {
+      parts[n - 2] = prev.slice(0, cut);
+      parts[n - 1] = prev.slice(cut) + parts[n - 1];
+    }
+  }
   return parts;
 }
 

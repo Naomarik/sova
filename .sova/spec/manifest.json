@@ -2745,9 +2745,11 @@
         "§app.worker-restore/claude-bridge-restart"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
-        "pi-config/extensions/mode/index.ts"
+        "pi-config/extensions/mode/index.ts",
+        "server/chat-manager.ts",
+        "server/chat-mode-sync.test.ts"
       ]
     },
     "§app.overseer/explorer": {

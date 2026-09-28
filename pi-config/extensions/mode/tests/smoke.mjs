@@ -933,4 +933,27 @@ await commands.get("mode").handler("normal", ctx);
 	assert.equal(await beforeAgentStart({ systemPrompt: "base" }, ctx), undefined, "back to normal with no host: inert");
 }
 
+// ── /mode sync: adopt the host and re-apply the session's block, and nothing else ──
+// Sova runs it at every chat open, on a session whose mode session_start already restored.
+{
+	await commands.get("mode").handler("spec on", ctx);
+	const entriesBefore = entries.length;
+	const noticesBefore = store.notices.length;
+	const statusBefore = store.status.get("mode");
+	const base = { sections: { preamble: "fresh runtime" } };
+	await commands.get("mode").handler("sync", { ...ctx, getSystemPromptOptions: () => base });
+	assert.match(base.sections.mode, /# Minor mode: spec/, "sync writes the session's block into the base");
+	assert.equal(entries.length, entriesBefore, "sync appends no entry");
+	assert.equal(store.notices.length, noticesBefore, "sync notifies nothing");
+	assert.equal(store.status.get("mode"), statusBefore, "sync leaves the status alone");
+	const block = base.sections.mode;
+	await commands.get("mode").handler("sync", { ...ctx, getSystemPromptOptions: () => base });
+	assert.equal(base.sections.mode, block, "a second sync changes no byte");
+	await hook("agent_start", {});
+	assert.equal(base.sections.mode, block, "a run start keeps the same bytes");
+	assert.ok(commands.get("mode").getArgumentCompletions("sy").some((item) => item.value === "sync"), "sync is completed");
+	await commands.get("mode").handler("spec off", ctx);
+	assert.ok(!("mode" in base.sections), "a later switch still reaches the base sync adopted");
+}
+
 console.log("mode smoke tests passed");

@@ -1431,6 +1431,25 @@ class ChatSession {
     // The same rule the extension's own session_start runs, so both agree on this session's mode.
     this.modeState = resolveChatMode(session.sessionManager.getBranch());
     this.modeApplies = this.modeCommand() ? "now" : "new-chats";
+    await this.syncModePrompt();
+  }
+
+  /**
+   * `/mode sync`: the extension's quiet argument that changes and writes nothing, only hands it
+   * pi's base prompt options (reachable from a command context alone) and puts the session's mode
+   * block there. Without it, a chat never switched in this runtime lost its mode section on every
+   * turn an extension's message starts (a worker settling) at that turn's second request, and
+   * the claude-code bridge restarted its CLI at each flip. Run at every bind, so every chat has it
+   * before its first turn; safe on a foreign or terminal-live session, since nothing is written.
+   */
+  private async syncModePrompt(): Promise<void> {
+    const cmd = this.modeCommand();
+    if (!cmd) return;
+    try {
+      await cmd.handler("sync", this.session.extensionRunner.createCommandContext());
+    } catch (err) {
+      console.error("[chat] /mode sync failed", err);
+    }
   }
 
   /**

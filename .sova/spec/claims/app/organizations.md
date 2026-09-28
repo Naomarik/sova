@@ -116,7 +116,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     no History disclosure: a person's history and its Revert buttons are on their page. A
     person's name in Recent Profile Changes links to their page too.
   - **Projects**: the About this organization card (§app.organizations/about), then the org's projects, each row one link to its project page (folder icon, name,
-    folder path, a trailing chevron), and the Add Project form (`Project name`, `Folder`); with none,
+    folder path, the project's cost at API prices, a trailing chevron) under the org's total
+    (§app.project-costs/org-rollup), and the Add Project form (`Project name`, `Folder`); with none,
     "No projects yet. A project is a folder that hand-off sessions and its overseer work in."
 - **Rows and width.** A hand-off session row's title and meta line wrap rather than truncate. Each
   card on the org list, org and project pages stops at 880px wide, left-aligned. The project
@@ -311,11 +312,13 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     (current and history), written there directly by pi (`SessionManager.create(cwd, sessionDir)`);
   - per project, `projects/<projectId>/`: `decisions.json` (the decision index, its last reconcile
     run and last promotion), `conflicts.json`, `updates.jsonl` (the updates the overseer posted to
-    the owner page, and the ones taken down, §app.owner-page/updates), and the overseer's `overseer/` — `overseer.json`
-    (autonomy, models, the coding sessions' mode, caps, token budget, watch, extra instructions), `state.json` (current
+    the owner page, and the ones taken down, §app.owner-page/updates), `costs.json` (each session's
+    title and token counts as last counted, by model, time and token kind, §app.project-costs/ledger),
+    `usage.jsonl` (the reconciler's decide calls' usage, §app.project-costs/recording), and the
+    overseer's `overseer/` — `overseer.json`
+    (autonomy, models, the coding sessions' mode, caps, watch, extra instructions), `state.json` (current
     conversation and history), `notes.md`, `actions.jsonl`, `ideas/`, `todos.json` and
-    `started.json` (the sessions it started, with what each of its coding sessions spent when last
-    counted, and the coding sessions the operator started with Start coding session, as
+    `started.json` (the sessions it started, and the coding sessions the operator started with Start coding session, as
     `operator-coding` rows; each coding row names its title, its worktree's branch and this host's
     path to it, which is host-local, like the row's session path);
   - `visits.jsonl`, the visit log: each time a roster person opened one of their links, and each
@@ -393,8 +396,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   here, and a project overseer in its project's root as `projects.json` says now (after a move, the
   operator edits the project's folder).
 - The coding sessions an overseer started are ordinary sessions on the host that ran them: on
-  another host they are listed "(not on this host)", and the token budget counts what they had
-  spent when last counted.
+  another host they are listed "(not on this host)", and the project's cost counts what they had
+  spent when last counted (§app.project-costs/ledger).
 - A conflict's settle session is found by its id on this host; `conflicts.json` stores no path
   for it, so its card opens the session here after a move.
 - Attaching an org another host holds warns and asks to confirm first (§app.organizations/holder).
@@ -415,7 +418,7 @@ apply the same rule, as the Overseer's flag does (§app.overseer/identity-and-cl
 - **Coding sessions the org's project started**: a session whose id is a row of some attached org's
   `projects/<pid>/overseer/started.json` with kind `coding` (the project overseer's `sova_create_session`)
   or `operator-coding` (**Start coding session** on the project page, which now records its session there).
-  The overseer's token budget and concurrency caps still count `coding` rows only.
+  The overseer's concurrency caps still count `coding` rows only.
 - **`kind`**: a baton whose row has offers is an `offer`, any other baton a `gathering`; a file with
   THAT org's project-overseer marker is an `overseer` conversation, even one `state.json` no longer
   lists (pushed past the history cap); anything else in the workspace is `other`, with no project.

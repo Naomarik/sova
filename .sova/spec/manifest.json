@@ -5598,6 +5598,150 @@
         "src/lib/project-overseer-view.ts",
         "src/components/SessionView.tsx"
       ]
+    },
+    "§app.project-costs/card": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§app.organizations/org-page"
+      ],
+      "code": [
+        "src/components/ProjectCostCard.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/lib/costs.ts",
+        "src/lib/costs.test.ts",
+        "src/lib/api.ts",
+        "src/projects.css",
+        "server/project-costs-routes.ts",
+        "server/index.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§app.project-costs/ledger": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§app.organizations/workspace-repo"
+      ],
+      "code": [
+        "server/project-costs-ledger.ts",
+        "server/project-costs.ts",
+        "server/project-costs.test.ts",
+        "server/project-overseer-store.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§app.project-costs/org-rollup": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§app.organizations/org-page"
+      ],
+      "code": [
+        "src/components/OrgsView.tsx",
+        "src/lib/costs.ts",
+        "src/orgs.css",
+        "server/project-costs-routes.ts",
+        "server/project-costs.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§app.project-costs/price-table": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "shared/model-prices/prices.ts",
+        "shared/model-prices/aliases.json",
+        "shared/model-prices/seed.json",
+        "server/model-prices.ts",
+        "scripts/prices-update.mjs",
+        "server/model-prices.test.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§app.project-costs/pricing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "shared/model-prices/prices.ts",
+        "shared/model-prices/aliases.json",
+        "server/project-costs.ts",
+        "server/model-prices.test.ts",
+        "server/project-costs.test.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§app.project-costs/privacy": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§app.owner-page/never",
+        "§app.project-overseer/tools"
+      ],
+      "code": [
+        "server/owner-page-privacy.test.ts",
+        "server/project-overseer-tools.ts",
+        "server/project-overseer-prompt.md",
+        "server/project-overseer.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§app.project-costs/recording": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/reconcile.ts",
+        "server/project-costs-ledger.ts",
+        "server/decide.ts",
+        "server/decide-llm.ts",
+        "server/reconcile.test.ts",
+        "server/decide-llm.test.ts",
+        "pi-config/extensions/claude-code/provider/stream.ts",
+        "pi-config/extensions/claude-code/provider/types.ts",
+        "pi-config/extensions/claude-code/transcript-adapter.ts",
+        "pi-config/extensions/subagents/adapters/pi.ts",
+        "pi-config/extensions/subagents/worker-transcript.ts",
+        "pi-config/extensions/claude-code/provider/stream.test.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§app.project-costs/scope": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/project-costs.ts",
+        "server/project-costs.test.ts",
+        "shared/costs.ts",
+        "pi-config/extensions/subagents/worker-transcript.ts",
+        "pi-config/extensions/subagents/adapters/pi.ts",
+        "pi-config/extensions/claude-code/transcript-adapter.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§app/project-costs": {
+      "kind": "surface",
+      "authority": "accepted",
+      "code": [
+        "server/project-costs.ts",
+        "server/project-costs-routes.ts",
+        "server/project-costs-ledger.ts",
+        "shared/costs.ts",
+        "shared/model-prices/prices.ts",
+        "server/model-prices.ts",
+        "src/components/ProjectCostCard.tsx",
+        "src/lib/costs.ts"
+      ],
+      "evidence": "verified"
+    },
+    "§design.copy-deck/project-costs": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ProjectCostCard.tsx",
+        "src/lib/costs.ts",
+        "src/components/OrgsView.tsx"
+      ]
     }
   },
   "boundary": {

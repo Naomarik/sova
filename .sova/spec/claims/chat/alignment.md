@@ -19,6 +19,13 @@ options (each a label and its trade-off), a **recommendation** (the choice and w
 answered, a **decision**: its text, who made it (`user`, or `accepted-recommendation` when the user
 took the recommendation), and when. A question can also be dropped, with why, and reopened.
 
+**Options are lettered** a, b, c… in their order, wherever they are listed, so the user can answer
+a question by its number and an option's letter ("3a": q3's option a). A recommendation **names an
+option** when its choice equals the option's label (trimmed, case-insensitive, bold markers
+ignored), or starts with it followed by a non-word character, the longest such label winning; it
+then reads by that letter and label ("b — Parquet"), otherwise by its choice as written. The
+extension and Sova's card apply the same rule.
+
 **Status is derived from the data**, never typed: `dropped` or `done` when the document was dropped
 or marked done; `implementing` when it was marked so; otherwise `aligning` while any question is
 open or it has no questions yet, and `confirmed` once every question is decided or dropped. Only
@@ -66,7 +73,10 @@ a missing or unknown field before the tool runs. The ops:
   same call does it). A document that is done or dropped takes nothing but `status open`.
 - **exempt** `{reason}` — alone in its call, touching no document: the agent records why a work
   request needs no alignment.
-- **get** — the document (or, with none named, every open one) as markdown, read-only.
+- **get** — the document (or, with none named, every open one) as markdown, read-only: each
+  option a paragraph of its own, `a. **{label}** — {trade-off}`, and the recommendation
+  `Recommended: b — **{label}** — {why}` when it names an option, else
+  `Recommended: **{choice}** — {why}`.
 
 The tool's description and the ops' own descriptions tell the model how a reply maps onto ops:
 decide what the user answered, accept only what they told it to take the recommendation on, leave
@@ -85,8 +95,8 @@ A session written with the older op names (before this schema) still reads the s
 the results' snapshots (§chat.alignment/state), never the calls' arguments.
 
 The tool's answer is a compact echo of what is still open: the touched document's id, title,
-status and "k of n open", one line per open question with its recommendation, and one line naming
-the other open alignments.
+status and "k of n open", one line per open question with its recommendation (by letter and label
+when it names an option), and one line naming the other open alignments.
 
 ## §chat.alignment/state — The state lives in the tool results
 
@@ -113,7 +123,8 @@ any more, and they count toward no chip, row or digest.
   the repository that the agent names (with Delegate on, the delegate block's no-edit rule for
   planning workers names this one file as its exception; in a remote session the worker reports the
   JSON and the agent creates inline), to change a document only
-  through ops and never by re-creating it, to record answers with `decide` (what the user answered) and
+  through ops and never by re-creating it, to read "3a" as q3's option a and decide it with that
+  option's label, to record answers with `decide` (what the user answered) and
   `accept` (only what they told it to take the recommendation on, leaving the rest open), to use
   `exempt` for a work request that needs no alignment, and to mark `implementing` before building —
   never while a question is open; a go-ahead with questions still open takes the recommendations for
@@ -122,8 +133,9 @@ any more, and they count toward no chip, row or digest.
   sit in pi's tools section.
 - **A hidden note on each user prompt.** While align is on and an alignment is open, each prompt the
   user sends carries a hidden message (`align-state`, never shown in the transcript) listing the
-  open alignments, their status and their open questions with ids and recommendations, so an answer
-  like "q2 yes, your recs for the rest" maps onto the right ids. Nothing about alignments goes into
+  open alignments, their status and their open questions with ids, lettered option labels
+  ("a. CSV · b. Parquet") and recommendations, so an answer like "q2 yes, your recs for the rest"
+  or "3a" maps onto the right ids and options. Nothing about alignments goes into
   the system prompt: a prompt change restarts a Claude Code session's CLI.
 - **A hidden note after a compaction.** A compaction summarizes the tool results away, and a run no
   user prompt starts (a worker's report, a team message) carries no note. So while align is on and an
@@ -174,14 +186,25 @@ an `align` call: it is the message, not its working.
   </header>
   <p class="align-doc-summary">How far the Overseer may act without asking.</p>
   <ol class="align-questions">
-    <li class="align-q" data-state="open|decided|dropped">
+    <li class="align-q" data-state="open">
       <p class="align-q-head"><span class="text-mono">q3</span> <strong>Pace limit</strong>
         <span class="chip"><i class="chip-dot"></i>Open</span></p>
       <p class="align-q-ask">How often may it start a run on its own?</p>
       <p class="align-q-context">…context…</p>
-      <ul class="align-q-options"><li><strong>1 per 10 min</strong> — trade-off</li></ul>
-      <p class="align-q-rec">Recommended: <strong>1 per 10 min</strong> — why</p>
-      <p class="align-q-decision">Decided: … · you | accepted recommendation</p>
+      <ol class="align-q-options">
+        <li><span class="text-mono align-q-letter">a</span> <span><strong>1 per 10 min</strong> — trade-off</span></li>
+        <li><span class="text-mono align-q-letter">b</span> <span><strong>1 per hour</strong> — trade-off</span></li>
+      </ol>
+      <p class="align-q-rec">Recommended: <span class="align-q-letter">a</span> — <strong>1 per 10 min</strong> — why</p>
+    </li>
+    <li class="align-q" data-state="decided|dropped">
+      <details class="align-q-fold">
+        <summary class="align-q-head align-q-summary">› <span class="text-mono">q2</span>
+          <strong class="align-q-topic" title="{topic}">Budget</strong> <span class="chip">Decided</span>
+          <span class="align-q-outcome" title="Decided: {text} · you">Decided: … · you</span></summary>
+        <div class="align-q-body">…ask, context, options, recommendation…
+          <p class="align-q-decision">Decided: … · you | accepted recommendation</p></div>
+      </details>
     </li>
   </ol>
   <details class="align-section"><summary>Findings · 3</summary>…</details>
@@ -204,14 +227,21 @@ an `align` call: it is the message, not its working.
 
 - **Status chip**, dot and word, only once the document is past aligning: Confirmed (success),
   Implementing (accent), Done (success), Dropped (neutral). An aligning document shows none.
-- **Questions** show their parts distinctly: the ask, the context, the options as a list of label
-  and trade-off, the recommendation as a plain line after the options (no fill, no rule, no
-  colour), and the decision (with "you" or "accepted recommendation") once there is one. Each
+- **Questions** show their parts distinctly: the ask, the context, the options as a list lettered
+  a, b, c… (the letter in the bullet's place, in its own column so a wrapped line aligns under the
+  text) of label and trade-off, the recommendation as a plain line after the options (no fill, no
+  rule, no colour) — "Recommended: b — {label} — {why}" when it names an option
+  (§chat.alignment/document), else "Recommended: {choice} — {why}" — and the decision (with "you"
+  or "accepted recommendation") once there is one. Each
   question's head carries its state as a chip: Open, Decided, or Dropped with its why.
-- **Only open questions are expanded.** A decided or dropped question is folded by default: its
-  head (a twist, the id, the topic and the chip) and its outcome line ("Decided: …" or
-  "Dropped: …") show; the twist opens the ask, context, options and recommendation it was settled
-  from. The fold is per card render and is not remembered.
+- **Only open questions are expanded.** A decided or dropped question is folded by default to
+  **one line** that never wraps: a twist, the id, the topic, the chip, then its outcome
+  ("Decided: … · you" / "· accepted recommendation", or "Dropped: …"). The topic and the outcome
+  truncate with an ellipsis (the outcome gives up more of the line) and carry their full text as a
+  hover title. Folded rows take less vertical padding than open questions. The twist opens the
+  question: the head wraps whole and drops its inline outcome, and below it come the ask,
+  context, options and recommendation it was settled from, then the outcome line in full. The
+  fold is per card render and is not remembered.
 - **Nothing on the card writes.** There is no checkbox to tick and no button that answers, accepts
   or pre-fills an answer: the user answers in chat.
 - While a run streams, the call's card appears as soon as its result arrives, from the result's
@@ -277,7 +307,8 @@ change parses only the lines appended since (a file that shrank or was rewritten
 
 The TUI draws each `align` call as one dim line naming the document and its ops, and its result as
 a compact card: the id, title, status and open count, the change line, and the open questions with
-their recommendations (the whole document when the tool row is expanded). A widget above the editor
+their recommendations, by letter and label when one names an option (the whole document, options
+lettered, when the tool row is expanded). A widget above the editor
 lists the open alignments ("◇ align · al_3 2/7 open · al_2 implementing · alt+a view") while align is
 on. The viewer (`/align`, the viewer key) shows one document at a time as markdown, ←/→ switching
 between them; `/align status` lists them and `/align export [path]` writes them as markdown. An

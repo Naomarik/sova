@@ -5796,7 +5796,11 @@
       "code": [
         "pi-config/extensions/mode/align.ts",
         "pi-config/extensions/mode/align.test.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/lib/align.ts",
+        "src/lib/align.test.ts",
+        "server/align-state.test.ts",
+        "pi-config/extensions/mode/README.md"
       ],
       "requires": []
     },
@@ -5813,7 +5817,8 @@
         "pi-config/extensions/mode/index.test.ts",
         "pi-config/extensions/mode/align.test.ts",
         "pi-config/extensions/mode/tests/align-turn.mjs",
-        "pi-config/extensions/mode/tests/smoke.mjs"
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/mode/README.md"
       ],
       "requires": [
         "§chat.alignment/state",
@@ -5875,7 +5880,8 @@
         "pi-config/extensions/mode/tests/smoke.mjs",
         "pi-config/extensions/mode/tests/align-turn.mjs",
         "pi-config/extensions/mode/align-file.ts",
-        "pi-config/extensions/mode/tests/align-old-ops.jsonl"
+        "pi-config/extensions/mode/tests/align-old-ops.jsonl",
+        "pi-config/extensions/mode/README.md"
       ],
       "requires": [
         "§chat.alignment/document"
@@ -5889,7 +5895,9 @@
         "pi-config/extensions/mode/align-ui.ts",
         "pi-config/extensions/mode/index.ts",
         "pi-config/extensions/mode/palette.ts",
-        "pi-config/extensions/mode/tests/smoke.mjs"
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/mode/align.ts",
+        "pi-config/extensions/mode/align.test.ts"
       ],
       "requires": [
         "§chat.alignment/state"

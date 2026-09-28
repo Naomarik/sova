@@ -5606,6 +5606,7 @@
       "code": [
         "server/ws.ts",
         "server/index.ts",
+        "server/compression.ts",
         "server/compression.test.ts"
       ]
     }

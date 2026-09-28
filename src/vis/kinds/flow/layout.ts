@@ -20,9 +20,13 @@ import type { FlowSpec, Shape } from "./parse";
 export const FLOW_FONT = { label: 13, note: 11.5, edge: 11.5 } as const;
 const LINE = { label: 17, note: 15, edge: 15 };
 const RANK_GAP = 18;
-/** Spacing and wrap widths; `compact` is for a pane the natural drawing would overflow (a phone). */
-const ROOMY = { padX: 14, padY: 9, maxText: 168, maxEdgeText: 140, nodeGap: 28, virtualGap: 12, margin: 12, minW: 64 };
-const COMPACT = { padX: 10, padY: 8, maxText: 120, maxEdgeText: 100, nodeGap: 14, virtualGap: 6, margin: 6, minW: 48 };
+/** Spacing and wrap widths by level: 0 roomy; 1 and 2 for a pane the roomier drawing would overflow (a phone). */
+const SPACING = [
+  { padX: 14, padY: 9, maxText: 168, maxEdgeText: 140, nodeGap: 28, virtualGap: 12, margin: 12, minW: 64 },
+  { padX: 10, padY: 8, maxText: 120, maxEdgeText: 100, nodeGap: 14, virtualGap: 6, margin: 6, minW: 48 },
+  { padX: 7, padY: 7, maxText: 96, maxEdgeText: 80, nodeGap: 9, virtualGap: 4, margin: 4, minW: 40 },
+] as const;
+export const FLOW_LEVELS = SPACING.length;
 
 export interface PlacedFlowNode {
   id: string;
@@ -75,8 +79,9 @@ interface Chain {
   labelKey: number | null;
 }
 
-export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, compact = false): FlowLayout {
-  const { padX, padY, maxText: MAX_TEXT, maxEdgeText: MAX_EDGE_TEXT, nodeGap: NODE_GAP, virtualGap: VIRTUAL_GAP, margin: MARGIN, minW } = compact ? COMPACT : ROOMY;
+export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, level = 0): FlowLayout {
+  const compact = level > 0;
+  const { padX, padY, maxText: MAX_TEXT, maxEdgeText: MAX_EDGE_TEXT, nodeGap: NODE_GAP, virtualGap: VIRTUAL_GAP, margin: MARGIN, minW } = SPACING[Math.min(level, SPACING.length - 1)]!;
   const right = spec.dir === "right";
   const index = new Map(spec.nodes.map((n, i) => [n.id, i]));
 

@@ -73,7 +73,7 @@ test("an end state sinks to the last rank; a start stays on top", () => {
   assert.equal(byId(l, "s0").y, Math.min(...ys));
 });
 
-test("compact is narrower and still overlap-free and in bounds", () => {
+test("each compact level is narrower and still overlap-free and in bounds", () => {
   const spec = flow(`node gw "API gateway"
 gw -> auth "verify"
 gw -> users
@@ -84,8 +84,9 @@ auth -> db
 orders -> queue
 billing -> queue`);
   const roomy = layoutFlow(spec);
-  const tight = layoutFlow(spec, undefined, true);
-  assert.ok(tight.width < roomy.width, `${tight.width} < ${roomy.width}`);
+  const compact = layoutFlow(spec, undefined, 1);
+  const tight = layoutFlow(spec, undefined, 2);
+  assert.ok(compact.width < roomy.width && tight.width < compact.width, `${tight.width} < ${compact.width} < ${roomy.width}`);
   const boxes = [...tight.nodes, ...tight.edges.flatMap((e) => (e.label ? [e.label] : []))];
   for (let i = 0; i < boxes.length; i++)
     for (let j = i + 1; j < boxes.length; j++) assert.ok(!overlap(boxes[i]!, boxes[j]!));

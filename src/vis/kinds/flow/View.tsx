@@ -5,7 +5,7 @@ import { canvasMeasure } from "../../core/text";
 import { emClass, SvgEmBadge } from "../../emphasis";
 import { Lines, SvgScroll, useMarkerId } from "../../svg";
 import type { ViewProps } from "../../types";
-import { FLOW_FONT, layoutFlow, type FlowLayout, type PlacedFlowNode } from "./layout";
+import { FLOW_FONT, FLOW_LEVELS, layoutFlow, type FlowLayout, type PlacedFlowNode } from "./layout";
 import type { FlowSpec } from "./parse";
 import { useWidth } from "./width";
 import "./flow.css";
@@ -13,7 +13,7 @@ import "./flow.css";
 /**
  * `vis flow` / `vis state`: boxes and arrows, laid out by ./layout. A drawing that would have to
  * scroll in its pane (a phone) is laid out again to fit: a `dir: right` one downwards first, then
- * compact (tighter gaps and wraps); if nothing fits, the narrowest one scrolls.
+ * compact, then tighter still (gaps and wraps); if nothing fits, the narrowest one scrolls.
  */
 export default function FlowView(props: ViewProps<FlowSpec>) {
   const [width, measure] = useWidth();
@@ -24,7 +24,8 @@ export default function FlowView(props: ViewProps<FlowSpec>) {
   const layout = createMemo(() => {
     if (!tooWide()) return natural();
     const down = { ...props.spec, dir: "down" as const };
-    const tries = props.spec.dir === "right" ? [() => layoutFlow(down, canvasMeasure), () => layoutFlow(down, canvasMeasure, true)] : [() => layoutFlow(props.spec, canvasMeasure, true)];
+    const spec = props.spec.dir === "right" ? down : props.spec;
+    const tries = Array.from({ length: FLOW_LEVELS }, (_, level) => () => layoutFlow(spec, canvasMeasure, level)).slice(props.spec.dir === "right" ? 0 : 1);
     let best = natural();
     for (const t of tries) {
       const l = t();

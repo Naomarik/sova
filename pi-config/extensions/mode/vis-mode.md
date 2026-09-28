@@ -102,8 +102,8 @@ mark markdown.ts "the vis hook lives here"
 Commit history across branches — merges, rebases, cherry-picks.
 
 ## chart
-<!-- owner: chart member. Draft View. Scatter parses (type: scatter, rows `label x y [tone]`) but isn't drawn yet: add it to this section when it is. Emphasis target: row label. -->
-Numbers to compare. `type:` `bar` (default; several `series:` make grouped bars), `stacked`, or `line`; `unit:`, `x:`, `y:`, `scale: log`. No pie or donut charts.
+<!-- owner: data member. kinds/chart: parse.ts, scale.ts (axes, ticks), layout.ts (geometry, tested), View.tsx. Emphasis target: row label (key = row index). -->
+Numbers to compare. `type:` `bar` (default; `series:` makes grouped bars), `stacked`, `line` (a trend across ordered rows) or `scatter` (two measures per item). `unit:`, `x:` and `y:` name the axes; `scale: log` for values spanning decades (both axes in a scatter). No pie or donut charts.
 ```vis chart
 type: bar
 unit: ms
@@ -112,26 +112,30 @@ unit: ms
 "Bubble sort" 9800
 mark "Bubble sort" warn "quadratic"
 ```
-- Each row: a label (quote it if it has spaces), then one number per series (`-` for none), then an optional tone (single series only). No thousands commas.
+- A row: a label (quote it if it has spaces), one number per series (`-` for none), then an optional tone (single series only). Negatives and `12%` are fine; no thousands commas. At most 40 rows, 6 series.
+- Scatter rows are `label x y [tone]`, with no `series:`.
+- `mark` a row (a point) by its label.
 
 ## timeline
-<!-- owner: timeline member. Emphasis target: a row's when or label. -->
+<!-- owner: data member. Emphasis target: a row's when or label (key = item index). -->
 Events in order: `when | label | note (optional) | tone (optional)`; `== section ==` groups rows.
 ```vis timeline
 2013 | React | virtual DOM
 2016 | Vue 2 | reactive templates
 mark React "components as functions of state"
 ```
+- `mark` a row by its when or its label.
 
 ## matrix
-<!-- owner: matrix member. Emphasis target: row label. -->
-Options against criteria. `columns: A, B`, then `criterion | cell | cell`; a cell is `yes`, `no`, `partial` (optionally followed by a "note"), or short text.
+<!-- owner: data member. Emphasis target: row label (key = index) or column name (key = c<index>). -->
+Options against criteria. `columns: A, B`, then `criterion | cell | cell`; a cell is `yes`, `no`, `partial` (optionally followed by a "note"), or short text. At most 6 columns.
 ```vis matrix
 columns: Merge, Rebase
 Keeps original commits | yes | no "new SHAs"
 Linear history | no | yes
 mark "Keeps original commits" "why rebase needs a force-push"
 ```
+- `mark` a row by its criterion, or a column by its name.
 
 ## code
 <!-- owner: code member. kinds/code: View.tsx (hljs via lib/markdown, sticky numbered gutter, badges), lines.ts. Emphasis target: line number or range, as displayed. -->

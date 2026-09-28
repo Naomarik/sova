@@ -3,7 +3,7 @@
 // PI_CODING_AGENT_DIR and workspace in the OS temp dir, the share server on an ephemeral loopback
 // port; ~/.pi untouched.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +13,11 @@ import WebSocket from "ws";
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-visits-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 mkdirSync(join(root, "agent", "sessions"), { recursive: true });
+// The shell route answers 503 until the share page is built, and logs no preview then: a stub
+// build, so the test never depends on dist-share/ existing.
+process.env.SOVA_SHARE_DIST = join(root, "dist-share");
+mkdirSync(process.env.SOVA_SHARE_DIST);
+writeFileSync(join(process.env.SOVA_SHARE_DIST, "index.html"), "<!doctype html><title>stub</title>");
 
 const orgs = await import("./orgs");
 const baton = await import("./baton");
@@ -212,6 +217,7 @@ describe("through the share listener", async () => {
     // The shell answers the same for a previewer and for a token it doesn't know.
     const shell = await fetch(`${base}/h/${c.token}`, { headers: { "User-Agent": SLACK } });
     const unknown = await fetch(`${base}/h/${"Q".repeat(43)}`, { headers: { "User-Agent": SLACK } });
+    assert.equal(shell.status, 200);
     assert.equal(shell.status, unknown.status);
     assert.equal(await shell.text(), await unknown.text());
     assert.equal((await fetch(`${base}/api/h/${closed.token}`, { headers: h })).status, 410);

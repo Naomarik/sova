@@ -19,8 +19,9 @@ import { classify, recordOpen, recordRefused, recordShellFetch, type VisitLink }
  * before a request gets here.
  */
 
-/** The share page's own build (vite build --mode share). Never the operator app's dist/. */
-export const SHARE_DIST = resolve(import.meta.dirname, "..", "..", "dist-share");
+/** The share page's own build (vite build --mode share). Never the operator app's dist/.
+    SOVA_SHARE_DIST points elsewhere (tests: a stub, so they don't depend on a build). */
+export const SHARE_DIST = process.env.SOVA_SHARE_DIST || resolve(import.meta.dirname, "..", "..", "dist-share");
 
 export const MESSAGES_PER_MINUTE = 10;
 const perToken = new Map<string, number[]>();

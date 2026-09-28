@@ -638,7 +638,12 @@ machine. Nothing that's held is virtualized.
   row's single image counts at the height its box will have
   (§chat.images/thread-thumbnails), two or more at an estimate of their rows of tiles. A
   row being pointed at, focused or revealed (§chat.transcript/message-actions) is always drawn
-  whole.
+  whole. So is every row in the view of a transcript that follows its end, from the frame it is
+  put there: when the view goes to the end (opening, new rows, a row growing), the rows then in
+  view are drawn at once, the view goes back to the end, and again while that brings rows not
+  yet drawn into view — all before the frame is painted, so opening a transcript never shows its
+  last rows at their estimates and then grows them in place. Such a row is skipped again, at the
+  height it was drawn at, once it has left the view.
 - **Jumps build their target first.** Whether an entry can be jumped to is asked of the rows the
   thread renders, not of what is built. Every jump builds the rows down from its target if the
   fill hasn't reached it, then scrolls and tints as before (§chat.timeline/jumping): a Timeline
@@ -678,7 +683,11 @@ machine. Nothing that's held is virtualized.
   spot whose row the `hello` didn't keep is fetched and placed then, unless the view has moved
   from the end meanwhile. Any other open lands at the end. A reload keeps nothing. Rows kept this
   way are never taken as the whole transcript: until this visit's `hello` or snapshot has said
-  what's above them, nothing says a row isn't there, and nothing counts the whole list.
+  what's above them, nothing says a row isn't there, and nothing counts the whole list — with
+  one exception: opening a chat whose rows were kept shows the inputs count
+  (§chat.timeline/opening-it) that was known with them (the last visit's `hello`, or the Recent
+  fetch that kept them), and this visit's `hello` corrects it. The count is kept with those rows
+  alone; once the list holds other rows it is gone until the `hello`.
 
 ## §chat.transcript/compressed-transfer — A transcript travels compressed
 

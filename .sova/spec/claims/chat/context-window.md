@@ -59,6 +59,11 @@ and on some sessions they visibly differ:
   exactly as `readTailModel` takes the last model — "the file end wins", not branch-aware. Open a
   session whose active branch is behind the file's end and the head's gauge is the one that
   describes what you are looking at. The row is describing the file.
+- **The row's window is the chat's window.** The list looks a model's limit up where the chat
+  does: the model registry, then pi's cached catalogs, and for a Claude Code model
+  (`claude-code-cli/*`) the claude-code extension's own window rule, the one its provider registers
+  its models with — that provider exists only inside a session's runtime, so the list otherwise
+  never knew the limit, and such a row had no ring while its head showed a percent.
 - **A TUI mid-turn lags.** The live record carries no context, so a watched session's ring holds
   the last reply's value until the new reply is appended and the index re-reads the tail. It is
   never wrong, only late — which is the same contract the head's gauge has during streaming.
@@ -147,6 +152,7 @@ thousands.
 | Just compacted (`null` after a compaction row) | `.context-gauge.context-compacted`: "Context" plus "compacted" (in body type, muted). Narrow shows `compacted` in the meta line |
 | Streaming | It keeps the last reply's value until the turn ends, then updates. It never animates and never pulses |
 | Watch view | Same rules, from the same data |
+| Opening a session, before the view's own value | The session list's value for it (`SessionSummary.context`, read off the file's tail, the same one its sidebar ring shows), so the readout and the meta copy are there from the view's first frame and the meta line doesn't move when the `hello` or snapshot lands. That value then replaces it. Nothing while the list has none |
 
 ## §chat.context-window/last-reply — Which reply counts
 

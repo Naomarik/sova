@@ -11,11 +11,18 @@
     "§app.insights/aggregate-chips-live-vs-working": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/Sidebar.tsx",
         "src/components/SessionView.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "server/roster-scan.ts",
+        "server/insights.ts",
+        "server/sessions-index.ts",
+        "server/sessions-context.test.ts",
+        "shared/protocol.ts",
+        "src/lib/known-before-mount.ts",
+        "src/lib/known-before-mount.test.ts"
       ]
     },
     "§app.insights/compaction-row": {
@@ -35,7 +42,12 @@
         "shared/outline-order.ts",
         "src/lib/outline-order.test.ts",
         "src/lib/jump.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "src/lib/known-before-mount.ts",
+        "src/lib/known-before-mount.test.ts",
+        "src/lib/explanations-feed.ts",
+        "src/App.tsx",
+        "server/sessions-index.ts"
       ]
     },
     "§app.insights/placement": {
@@ -164,7 +176,10 @@
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
-        "src/lib/folder-open.ts"
+        "src/lib/folder-open.ts",
+        "server/sessions-index.ts",
+        "server/sessions-context.test.ts",
+        "shared/protocol.ts"
       ]
     },
     "§app.session-list/groups": {
@@ -413,7 +428,17 @@
     "§app.subagents-pane/trigger": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/SessionView.tsx",
+        "src/lib/known-before-mount.ts",
+        "server/roster-scan.ts",
+        "server/sessions-index.ts",
+        "server/sessions-context.test.ts",
+        "shared/protocol.ts",
+        "src/lib/known-before-mount.test.ts"
+      ]
     },
     "§app.subagents-pane/worker-rows": {
       "kind": "behavior",
@@ -518,7 +543,19 @@
         "§chat.images/composer-attachments"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/lib/models.ts",
+        "src/lib/models-ladders.test.ts",
+        "src/App.tsx",
+        "server/sessions-index.ts",
+        "server/sessions-context.test.ts",
+        "shared/protocol.ts"
+      ]
     },
     "§chat.composer/composer-flyout": {
       "kind": "behavior",
@@ -538,7 +575,7 @@
     "§chat.composer/disabled-states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
@@ -562,8 +599,12 @@
     },
     "§chat.context-window/honesty": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "server/models.ts",
+        "server/models.test.ts"
+      ]
     },
     "§chat.context-window/markup": {
       "kind": "behavior",
@@ -591,7 +632,11 @@
     "§chat.context-window/states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ContextGauge.tsx",
+        "src/components/SessionView.tsx"
+      ]
     },
     "§chat.context-window/steps-toward-the-limit": {
       "kind": "behavior",
@@ -704,7 +749,10 @@
     "§chat.mode-menu/states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ModeMenu.tsx"
+      ]
     },
     "§chat.mode-menu/tokens": {
       "kind": "note",
@@ -716,7 +764,13 @@
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
-        "src/components/ChatView.tsx"
+        "src/components/ChatView.tsx",
+        "src/components/ModeMenu.tsx",
+        "server/sessions-index.ts",
+        "server/mode-state.ts",
+        "shared/protocol.ts",
+        "src/lib/summary-diff.ts",
+        "src/lib/summary-diff.test.ts"
       ]
     },
     "§chat.model-menu/content-and-order": {
@@ -867,12 +921,16 @@
     "§chat.timeline/opening-it": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
         "src/lib/older-rows.ts",
-        "shared/row-counts.ts"
+        "shared/row-counts.ts",
+        "src/lib/transcript-cache.ts",
+        "src/lib/transcript-cache.test.ts",
+        "src/lib/known-before-mount.ts",
+        "src/lib/known-before-mount.test.ts"
       ]
     },
     "§chat.timeline/rejected": {
@@ -1777,7 +1835,7 @@
         "§chat/sandbox"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "public/icons/shield.svg",
         "server/chat-manager.ts",
@@ -1787,7 +1845,10 @@
         "src/components/Composer.tsx",
         "src/components/ui.tsx",
         "src/design/base.css",
-        "src/lib/sandbox.ts"
+        "src/lib/sandbox.ts",
+        "src/components/ComposerMenu.tsx",
+        "server/sessions-index.ts",
+        "server/sessions-context.test.ts"
       ]
     },
     "§design.copy-deck/sandbox": {
@@ -5603,7 +5664,7 @@
         "§chat.images/thread-thumbnails"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/lib/tail-render.ts",
         "src/lib/tail-render.test.ts",
@@ -5635,7 +5696,8 @@
         "server/index.ts",
         "shared/row-counts.ts",
         "src/lib/api.ts",
-        "scripts/e2e/transcript-drift.mjs"
+        "scripts/e2e/transcript-drift.mjs",
+        "src/lib/recent-preload.ts"
       ]
     },
     "§app.subagents-pane/hidden-workers": {

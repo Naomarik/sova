@@ -435,7 +435,10 @@ label a person reads says "sessions pane".
   second. The line truncates after a few words in a narrow rail, so what stands there has to be the
   thing that makes this session recognizable — "Sova theming: palette, fonts, Themes tab", never
   "The round is committed as dc63576 with …". Snapshots written before the gist existed fall back
-  to `outlineNow`, the rolling "now" line, so those rows keep the line they had. Rendered only when
+  to `outlineNow`, the rolling "now" line, so those rows keep the line they had. The snapshot is
+  the last one in the file however far back it lies — the same one the thread's Current goal strip
+  opens with (§app/insights) — not only one near the end: the server reads back from the end until
+  it finds one, once per file, and after that reads only what is appended. Rendered only when
   present: `--fs-micro` in `--color-ink-2`, one line truncated with an ellipsis. `title=` carries
   the full line, and the "now" line under a `Now: ` label when it says something else — the latest
   activity is one hover away, never in the row. Sessions without any outline (older sessions, or

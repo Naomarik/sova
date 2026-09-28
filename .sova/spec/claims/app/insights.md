@@ -145,6 +145,16 @@ ellipsis.
     class="icon icon-sm" style="--icon:url(/icons/worker.svg)"></span></a>`,
     `aria-label`/`title` "{n} subagents working now",
     the word carried by the label rather than the box. The icon inside a `.chip-count` is 12px.
+    With nothing working and no TUI on the file, a session with a team shows its first team as
+    `Team · {members}` (a neutral `.chip-count`, not a link), adding ` · paused` while a pause is
+    in force; `title` is the team's name, then the pause's text.
+  - **Opening a session.** The head's chips are there from the view's first frame, so the context
+    gauge beside them never moves when the insight lands. Until it does, the team chip reads what
+    the session list has for THIS session (`SessionSummary.team`: its first team on the active
+    branch, the member count and the pause, folded as the insight folds them), and the working
+    chip's team comes from the app's #/agents poll, which lists a running session's teams with the
+    insight's own join. A session the list knows no team for shows no team chip and holds no space
+    for one. The insight then replaces both.
   - The count inside a sidebar session row is **never** a link, because an `<a>` can't nest in
     the row's link — and now it sits outside the link, in the rail, as a `tabindex="-1"` button.
     The foot's Agents row is still the way to the page from the sidebar.
@@ -709,6 +719,15 @@ which draws them on the session's axis; the strip keeps no history of its own.
   deliberate open survives updates, while navigating to another session, another mode, or the
   landing page remounts it closed. It should never stay open on nav away, so there is nothing
   worth persisting.
+- **Opening a session.** Opening a session — a first visit or a switch back — shows its strip at
+  its full height from the view's first frame, so the transcript below never moves when the
+  insight lands. Until that load lands the strip is built from what the client already holds of
+  THIS session, never another's: the session list's outline snapshot (`outlineNow`,
+  `outlineTopics`, `outlineGist`) fills the closed row, "Current goal · {now} · {n} topics", and
+  the body's `overall`, and the app's explanations poll gives the Explained count, the
+  Explanations link and the Latest line. The state line, the live dot and the topics come with
+  the insight, which then replaces all of it. A session the list knows no outline and no
+  explanations for shows no strip and holds no space for one until its insight says otherwise.
 - **Dismissal.** A `pointerdown` anywhere outside the strip closes it — the transcript, the
   sidebar, the composer, the pane — on the press, not the release. Inside is everything within
   the disclosure (the summary row, a topic's heading and bullets, Jump, `Open Timeline`,

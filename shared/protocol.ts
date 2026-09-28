@@ -41,29 +41,6 @@ export interface SessionSummary {
   /** Outline topics in that same snapshot — the count the sidebar shows beside the "now" line.
       Absent when the snapshot is missing, like outlineNow. 0 is a real count. */
   outlineTopics?: number;
-  /** The mode the session's composer mode switch reads (§chat/mode-menu) until its chat's own
-      "mode" message says: the newest `mode` entry's snapshot in the file (not branch-aware: the
-      file's end wins), else the default for sessions (mode.json). Absent from older servers. */
-  mode?: { mode: string; minorModes: string[] };
-  /** The thinking level the composer's model indicator reads until its chat's hello says: the
-      newest `thinking_level_change` entry's level in the file (not branch-aware: the file's end
-      wins). Absent when the file has none (pi appends one when it opens a session), and from
-      older servers. */
-  thinking?: string;
-  /** The session's first team on its active branch, as the head's "Team · N" chip names it until
-      the view's insight loads: its name, member count, and the pause in force (the newest
-      pause/resume event is a pause: its text). Absent when the branch has no team, and from
-      older servers. */
-  team?: { name: string; members: number; paused?: string };
-  /** How many workers the session's own records restore when nothing publishes them: the worker
-      manifests on its active branch (at most the 40 a live record lists). The composer's
-      settled-workers trigger counts it until a live record (`workers`) or the chat's own
-      "workers" message says. Absent when there are none, and from older servers. */
-  restoredWorkers?: number;
-  /** The sandbox the composer's shield reads until its chat's own "sandbox" message says: the newest
-      `sandbox` entry's status in the file (not branch-aware: the file's end wins), present only
-      while it is on. Absent when off or unrecorded, and from older servers. */
-  sandbox?: SandboxInfo;
   /** Context fill at the file's last assistant reply: the head's own rule (input + cacheRead +
       cacheWrite of the last assistant usage on the branch; a compaction after it means no value),
       but read from the FILE TAIL, so a rewound branch can disagree with the head's gauge. Absent

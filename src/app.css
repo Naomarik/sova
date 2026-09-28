@@ -54,9 +54,7 @@ html, body, #root { height: 100%; }
 }
 .entry:empty { display: none; }
 .entry:focus-within,
-.entry[data-actions-revealed],
-/* A row in the view that the transcript draws now, not a frame later (Thread `drawInView`). */
-.entry[data-in-view] { content-visibility: visible; contain: layout paint style; }
+.entry[data-actions-revealed] { content-visibility: visible; contain: layout paint style; }
 /* What a row's estimate needs from the width (lib/tail-render `rowEstimate`): a body line's height,
    and the characters a message line holds, which the transcript measures (`--entry-cols-measured`,
    Thread) and a fixed count stands in for before it has. Image tiles fold to half as many a row

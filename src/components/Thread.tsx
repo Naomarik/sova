@@ -1049,53 +1049,10 @@ export function ThreadScroller(props: {
   // Resolve once: reading a JSX prop twice would build its DOM twice.
   const banner = children(() => props.banner);
 
-  let thread: HTMLElement | undefined;
-  /**
-   * Marks drawn rows (`data-in-view`, app.css) that are in the view, and drops the mark once a row
-   * has left it: off screen it is skipped again, at the height it was drawn at.
-   */
-  let inView: IntersectionObserver | null = null;
-  onCleanup(() => inView?.disconnect());
-  /**
-   * Draws the rows in the view now, at their real heights. A row off screen is skipped
-   * (content-visibility, app.css) and one that a scroll brings into view is drawn only in the next
-   * frame, so the view put at the end would paint the rows there at their estimates for a frame and
-   * then grow them in place: the transcript jumped when it opened (§chat.transcript/rendering).
-   * Each row in the view is drawn now instead, and the view goes back to the end, which can bring
-   * more rows into it; again until none is left to draw. Before paint, and bounded.
-   */
-  const drawInView = () => {
-    if (!thread || typeof IntersectionObserver !== "function") return;
-    inView ??= new IntersectionObserver(
-      (entries) => {
-        for (const e of entries)
-          if (!e.isIntersecting) {
-            e.target.removeAttribute("data-in-view");
-            inView?.unobserve(e.target);
-          }
-      },
-      { root: el },
-    );
-    for (let pass = 0; pass < 8; pass++) {
-      const view = el.getBoundingClientRect();
-      let drew = false;
-      for (let row = thread.lastElementChild; row; row = row.previousElementSibling) {
-        const box = row.getBoundingClientRect();
-        if (box.bottom <= view.top) break;
-        if (box.top >= view.bottom || !row.classList.contains("entry") || row.hasAttribute("data-in-view")) continue;
-        row.setAttribute("data-in-view", "");
-        inView.observe(row);
-        drew = true;
-      }
-      if (!drew) return;
-      el.scrollTop = el.scrollHeight;
-    }
-  };
   /** How far the view was from the end when last read: 0 right after a scroll to the bottom. */
   let lastGap = 0;
   const toBottom = () => {
     el.scrollTop = el.scrollHeight;
-    drawInView();
     lastGap = 0;
   };
   const resumeFollowing = () => {
@@ -1313,13 +1270,7 @@ export function ThreadScroller(props: {
           <div class="transcript-banner">{banner()}</div>
         </Show>
         <div class="transcript-inner">
-          <div
-            class="thread"
-            ref={(node) => {
-              thread = node;
-              resized?.observe(node);
-            }}
-          >
+          <div class="thread" ref={(thread) => resized?.observe(thread)}>
             <ScrollerContext.Provider value={api}>{props.children}</ScrollerContext.Provider>
           </div>
           <div class="entry-measure" aria-hidden="true" ref={(probe) => measured?.observe(probe)} />

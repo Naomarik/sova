@@ -1,7 +1,6 @@
 import { createSignal } from "solid-js";
 import type { ModelInfo } from "../../shared/protocol";
 import { listModels, putModelFavorite } from "./api";
-import { readKey, writeKey } from "./storage-keys";
 
 /**
  * The one model list the app keeps per host (GET /api/models; a peer's through /peer/<id>). Both
@@ -25,32 +24,6 @@ const setModels = (host: string | null | undefined, update: (list: ModelInfo[] |
     return copy;
   });
 
-/**
- * Each model's thinking ladder as this browser last loaded it, per host: what the composer's model
- * indicator reads until this page's first load of the list, so a session opened at once shows its
- * thinking level from the first frame instead of adding it when the list lands (§chat.composer).
- * Only the ladders: the list itself (favorites, windows) is always this page's own load.
- */
-const LADDERS_KEY = "sova:model-ladders";
-type Ladders = Record<string, Record<string, string[]>>;
-function readLadders(): Ladders {
-  try {
-    const v: unknown = JSON.parse(readKey(localStorage, LADDERS_KEY) ?? "{}");
-    return typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Ladders) : {};
-  } catch {
-    return {}; // no storage (tests), or a value that doesn't parse: nothing remembered
-  }
-}
-const ladders: Ladders = readLadders();
-function rememberLadders(host: string | null | undefined, list: readonly ModelInfo[]): void {
-  ladders[keyOf(host)] = Object.fromEntries(list.filter((m) => m.thinkingLevels.length > 1).map((m) => [m.ref, m.thinkingLevels]));
-  try {
-    writeKey(localStorage, LADDERS_KEY, JSON.stringify(ladders));
-  } catch {
-    // No storage: this page's list still answers once loaded.
-  }
-}
-
 /** The cache as it stands: null before the first successful load. */
 export const modelList = (host?: string | null): ModelInfo[] | null => lists().get(keyOf(host)) ?? null;
 
@@ -60,7 +33,6 @@ export async function loadModels(fetchList?: () => Promise<ModelInfo[]>, host?: 
   let next = await (fetchList ?? (() => listModels(host)))();
   for (const [key, t] of toggles) if (key.host === keyOf(host)) next = withFavorite(next, key.ref, t.want);
   setModels(host, () => next);
-  rememberLadders(host, next);
   return next;
 }
 
@@ -128,12 +100,7 @@ export const modelByRef = (ref: string | null | undefined, host?: string | null)
 
 /**
  * A model's thinking ladder (off…max), or [] when the model isn't in the list yet. A model with
- * one level (or none) has nothing to choose, which is what hides the Thinking group. Before this
- * page has loaded the list, the ladder this browser last saw for the model (`rememberLadders`);
- * once it has, the list alone.
+ * one level (or none) has nothing to choose, which is what hides the Thinking group.
  */
-export const thinkingLevelsFor = (ref: string | null | undefined, host?: string | null): string[] => {
-  const list = modelList(host);
-  if (list) return (ref && list.find((m) => m.ref === ref)?.thinkingLevels) || [];
-  return (ref && ladders[keyOf(host)]?.[ref]) || [];
-};
+export const thinkingLevelsFor = (ref: string | null | undefined, host?: string | null): string[] =>
+  modelByRef(ref, host)?.thinkingLevels ?? [];

@@ -1,7 +1,7 @@
 // Run: npx tsx --test server/models.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CLAUDE_CODE_PROVIDER, contextWindow, supportedThinkingLevels, toModelInfo } from "./models";
+import { supportedThinkingLevels, toModelInfo } from "./models";
 
 test("non-reasoning models support only off", () => {
   assert.deepEqual(supportedThinkingLevels({ reasoning: false }), ["off"]);
@@ -68,15 +68,4 @@ test("toModelInfo carries the context window, and leaves it out when nothing kno
     const info = toModelInfo({ provider: "ollama-cloud", id: "kimi-k3" }, favorites, unknown);
     assert.ok(!("contextWindow" in info), `window ${String(unknown)} is left out`);
   }
-});
-
-test("a Claude Code model's window comes from the extension's rule, which the shared registry never holds", () => {
-  const runtime = { getModel: () => undefined } as unknown as Parameters<typeof contextWindow>[1];
-  assert.equal(contextWindow(`${CLAUDE_CODE_PROVIDER}/opus[1m]`, runtime), 1_000_000);
-  assert.equal(contextWindow(`${CLAUDE_CODE_PROVIDER}/haiku`, runtime), 200_000);
-  // Any other provider the registry doesn't know stays unknown: never a guess.
-  assert.equal(contextWindow("some-provider/opus[1m]", runtime), null);
-  // The registry still wins where it has the model.
-  const known = { getModel: (p: string, id: string) => (p === CLAUDE_CODE_PROVIDER && id === "sonnet" ? { contextWindow: 123_000 } : undefined) } as unknown as Parameters<typeof contextWindow>[1];
-  assert.equal(contextWindow(`${CLAUDE_CODE_PROVIDER}/sonnet`, known), 123_000);
 });

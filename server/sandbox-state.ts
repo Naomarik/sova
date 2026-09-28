@@ -21,17 +21,6 @@ export function sandboxCommandOf(runner: { getCommand(name: string): Command | u
   return cmd && /[\\/]extensions[\\/]sandbox[\\/]index\.ts$/.test(cmd.sourceInfo?.path ?? "") ? cmd : undefined;
 }
 
-/** One line of a session file as the sandbox status it records, or null when it records none
-    (not a `sandbox` entry, or one the extension's rule wouldn't restore). */
-export function sandboxOfLine(line: string): SandboxInfo | null {
-  try {
-    const e = JSON.parse(line) as Entry;
-    return restoreActive([e]) ? sandboxInfo([e]) : null;
-  } catch {
-    return null;
-  }
-}
-
 /** This branch's sandbox status: the newest `sandbox` entry, restored by the extension's own rule. */
 export function sandboxInfo(branch: readonly Entry[]): SandboxInfo {
   const active = restoreActive(branch) ?? OFF;

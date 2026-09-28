@@ -37,15 +37,52 @@ tables for comparisons, the tradeoff named out loud, and length that follows the
 topic. Two things differ: the page goes to the store below instead of a temp file,
 and the child is told never to open a browser.
 
-The child gets `read`, `grep`, `find`, `ls`, `bash`, `write` and `edit`, plus web
-search/fetch **only** when `pi-web-access` is already installed in
+### The prompt cache, and what the child may do
+
+A forked child keeps the parent's prompt cache: its first request is the parent's
+last request, byte for byte, with the explain instruction appended as one new user
+message. Since pi 0.86 the system prompt and the tool loadout are part of the
+transcript (role `system` messages with named sections and declared tools), so the
+fork already starts with the parent's; it would lose them only by declaring
+something different. `child.ts`, loaded last into the child, declares exactly what
+the parent declared (`mirror.ts` has the reasoning):
+
+- **tools:** every tool the parent's transcript declares stays active, with the
+  parent's declaration. A tool the child may use and has itself is used as is; a
+  built-in whose declaration differs (a different pi version) is re-registered with
+  the parent's words over the child's own implementation; everything else is a stub
+  that never runs. `read` and `write` are added if the parent lacked them (a parent
+  in strict mode), at the one cost of changing the prefix.
+- **system prompt:** rebuilt from the parent's replayed sections, so pi appends no
+  system patch.
+- **what runs:** a `tool_call` gate allows `read`, `grep`, `find`, `ls`, the web
+  tools, `write`/`edit` only inside the store directory, and `bash` only for one
+  read-only command line (a short program allowlist; pipes yes; redirection,
+  chaining, substitution and the options that make find/rg/sort/git write or execute,
+  no). A parent's default tools have no grep/find/ls, and adding them would change
+  the prefix, so a mirrored child searches through that bash. The prompt tells the
+  child which of these it has.
+- Also mirrored: the btw extension's request filter, and, for OpenAI-style
+  providers, the parent's `prompt_cache_key`.
+
+Under the claude-code backend the parent's live, idle Claude CLI session is the
+prefix: the child's provider resumes it with `--resume <parent> --fork-session`
+(`../claude-code/provider/fork-point.ts`) and sends only the new user message,
+instead of folding the history into one text message. If the parent's CLI child
+is busy or gone, or the transcripts don't line up, it folds as before (no cache).
+
+Web search/fetch is there **only** when `pi-web-access` is already installed in
 `~/.pi/agent/npm/node_modules` — "trivially available", never an install on the
-critical path of a slash command. The only other extension it loads — first, on
-top of `--no-extensions`, exactly like every subagents pi worker — is the subagents
-worker marker, `../subagents/worker-mark.ts`: at its own session_start the child
-writes one `subagents-worker-session` custom entry into its session, and Sova
-keeps sessions carrying it out of its Recent list. Nothing else of the subagents
-extension comes along, so it cannot spawn workers of its own.
+critical path of a slash command — and the parent declared its tools. The first
+extension the child loads, on top of `--no-extensions`, is the subagents worker
+marker, `../subagents/worker-mark.ts`: at its own session_start the child writes one
+`subagents-worker-session` custom entry into its session, and Sova keeps sessions
+carrying it out of its Recent list. Nothing else of the subagents extension comes
+along, so it cannot spawn workers of its own.
+
+The child forks a byte-copy of the parent's session, cut after its last newline
+(`explanations/.forks/<id>.jsonl`, deleted when the run ends): pi's fork appends a
+newline to a source whose last line is partial, and the parent may be mid-append.
 
 ## The store (kept forever)
 
@@ -125,9 +162,15 @@ supersedes the running one:
   "data": { "id": "…", "topic": "…", "summary": "…", "createdAt": "…", "parentSessionId": "…", "model": "…" } }
 ```
 
-`status` is exactly `"running"` or absent: a final entry never carries it (there
+`status` is `"running"` only on the provisional entry, never on a final one (there
 is no `"done"`), so every entry written before the field existed is already a
 final one. The TUI renders a running entry as `[explaining] <topic> — working…`.
+
+`status: "interrupted"` is a final entry too: a run whose parent stopped (restart,
+`/reload`, crash) before it settled. It is appended at the session's next prompt or
+`/explain` — never when a session is merely opened — with `note` when a complete page
+was on disk anyway (it links) or `error` when not. The TUI shows
+`[explain interrupted]`, Sova an Interrupted chip.
 
 A run that went wrong carries exactly one of two extra fields, and they mean
 different things to whoever renders the entry:
@@ -177,9 +220,12 @@ and the user still sees the `explain-doc` entry and the answer.
   parent forks only a file holding at least one `"type":"message"` line;
   otherwise the child starts fresh and works from the topic and the working
   directory. Everything else is identical.
-- Session shutdown or `/reload` stops live children and records no final entry,
-  so the running entry is the last one for that id. Their store directories
-  stay; an unfinished one simply has no page in it.
+- Session shutdown or `/reload` stops live children and records nothing then; the
+  running entry is settled as `interrupted` at the session's next prompt. Their
+  store directories stay; an unfinished one simply has no page in it.
+- The cache hit needs the parent's cache still warm: providers keep it for minutes
+  (zai's expired within ~7 minutes in testing), and a claude-code parent must be
+  idle with a live CLI child.
 
 ## Source
 
@@ -187,14 +233,16 @@ and the user still sees the `explain-doc` entry and the answer.
 | --- | --- |
 | `store.ts` | The on-disk contract: ids, paths, `meta.json`, validation and repair, the session-entry shape |
 | `prompt.ts` | The child's instructions |
-| `worker.ts` | The forked child, hosted through `../subagents/runner.ts` |
+| `worker.ts` | The forked child, hosted through `../subagents/runner.ts`, and the session byte-copy it forks |
+| `child.ts` | Loaded into the child: mirrors the parent's tools and prompt, gates every tool call |
+| `mirror.ts` | The pure half of `child.ts`: replay, prompt mirror, tool plan, call gate |
 | `explain.ts` | Run lifecycle: start, record running, settle, validate, record final, wake |
 | `identity.ts` | Which session is the parent, and which file the child forks |
 | `index.ts` | Pi wiring only: the command, the entry renderer, shutdown |
 
 `worker.ts` imports the subagents extension's `SubagentRunner` **as a class**: it
-already owns the exact argv this needs (`--fork`, `--no-extensions`, tool
-restriction, `-e <worker marker>` then `-e <installed package>`), the RPC handshake, the settle/outcome
+already owns the exact argv this needs (`--fork`, `--no-extensions`,
+`-e <worker marker>`, `-e <installed package>`, then `-e child.ts`), the RPC handshake, the settle/outcome
 distinction, and the abort → SIGTERM → SIGKILL teardown. No manager, no registry,
 no `agent_*` tools: these children never appear in `/agents`, and this extension
 stops its own.

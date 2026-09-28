@@ -22,6 +22,7 @@ import {
 import { streamClaudeCode } from "./stream.ts";
 import { STATIC_MODELS } from "./index.ts";
 import type { ClaudeFrame, ClaudeTurnRequest } from "./types.ts";
+import type { ClaudeForkPoint } from "./fork-point.ts";
 
 // ---------------------------------------------------------------------------
 // Fake CLI child
@@ -150,10 +151,11 @@ const EMPTY_PROJECTS = mkdtempSync(join(tmpdir(), "pi-bridge-projects-"));
 // /tmp is inode-limited on the dev machine: leave nothing behind.
 after(() => rmSync(EMPTY_PROJECTS, { recursive: true, force: true }));
 
-function harness({ refuseSessionId = 0, manualInitialize = false, projectsRoot = EMPTY_PROJECTS, limits }: { refuseSessionId?: number; manualInitialize?: boolean; projectsRoot?: string; limits?: Partial<typeof LIMITS> } = {}) {
+function harness({ refuseSessionId = 0, manualInitialize = false, projectsRoot = EMPTY_PROJECTS, limits, forkFrom, refuseResume = false }: { refuseSessionId?: number; manualInitialize?: boolean; projectsRoot?: string; limits?: Partial<typeof LIMITS>; forkFrom?: ClaudeForkPoint; refuseResume?: boolean } = {}) {
 	const children: FakeClaude[] = [];
 	const debug: Record<string, unknown>[] = [];
 	const bridge = new SessionBridge({
+		...(forkFrom ? { forkFrom } : {}),
 		onDebug: (entry) => debug.push(entry),
 		cwd: "/tmp/pi-bridge-test",
 		projectsRoot,
@@ -161,6 +163,13 @@ function harness({ refuseSessionId = 0, manualInitialize = false, projectsRoot =
 			const child = new FakeClaude(command, argv, options, 5000 + children.length);
 			children.push(child);
 			if (manualInitialize) child.autoInitialize = false;
+			if (refuseResume && argv.includes("--resume")) {
+				child.autoInitialize = false;
+				setTimeout(() => {
+					child.stderr.write("No conversation found with session ID\n");
+					child.exit(1);
+				}, 0);
+			}
 			if (children.length <= refuseSessionId) {
 				const id = argv[argv.indexOf("--session-id") + 1];
 				child.autoInitialize = false;
@@ -1795,4 +1804,84 @@ test("the window pre-check refuses only what certainly cannot fit", () => {
 	// The system prompt counts; no window, no verdict.
 	assert.ok(windowOverflow(Math.floor(room) - 100, { ...at, systemPrompt: "s".repeat(1_000) }));
 	assert.equal(windowOverflow(10_000_000, { model: "sonnet" }), undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Forking a parent's CLI session (fork-point.ts)
+// ---------------------------------------------------------------------------
+
+test("a fork point exists only for a live, idle child, and names the prefix it heard", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	assert.equal(bridge.forkPoint("pi-session-1"), undefined, "no child yet");
+	await collectAfter(bridge.runTurn(request([user("one")])), async () => {
+		const cli = await child(children, 1);
+		await cli.handshake();
+		await cli.waitFor((f) => f.type === "user");
+		assert.equal(bridge.forkPoint("pi-session-1"), undefined, "mid-turn: the record ends in an open turn");
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.deepEqual(bridge.forkPoint("pi-session-1"), {
+		v: 1, claudeSessionId: claudeSessionId("pi-session-1"), messages: 1, prefix: transcriptFingerprint([user("one")])[0], cwd: "/tmp/pi-bridge-test",
+	});
+	await bridge.disposeAll();
+	assert.equal(bridge.forkPoint("pi-session-1"), undefined, "gone with its child");
+});
+
+test("a forked session resumes the parent's CLI session and sends only the new user message", { timeout: 8000 }, async () => {
+	const heard = [user("one"), assistantWithCall("toolu_1", "read", { path: "a" }), toolResult("toolu_1", "read", "body")];
+	const fingerprints = transcriptFingerprint(heard);
+	const forkFrom: ClaudeForkPoint = { v: 1, claudeSessionId: claudeSessionId("pi-parent"), messages: heard.length, prefix: fingerprints[fingerprints.length - 1]!, cwd: "/tmp/pi-bridge-test" };
+	const { bridge, children } = harness({ forkFrom });
+	// The parent's final reply came from the CLI after the prefix it heard: already in its record.
+	const messages = [...heard, assistantText("the reply"), user("Explain this: vector clocks")];
+	await collectAfter(bridge.runTurn(request(messages, { sessionId: "pi-child" })), async () => {
+		const cli = await child(children, 1);
+		assert.deepEqual(cli.argv.slice(cli.argv.indexOf("--resume"), cli.argv.indexOf("--resume") + 3), ["--resume", claudeSessionId("pi-parent"), "--fork-session"]);
+		assert.equal(cli.argv[cli.argv.indexOf("--session-id") + 1], claudeSessionId("pi-child"), "the fork's record is named like any launch of this pi session");
+		await cli.handshake();
+		const sent = await cli.waitFor((f) => f.type === "user");
+		assert.deepEqual(sent.message.content, [{ type: "text", text: "Explain this: vector clocks" }]);
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	// The next turn is an ordinary continuation of the forked child: no second resume.
+	await collectAfter(bridge.runTurn(request([...messages, assistantText("done"), user("more")], { sessionId: "pi-child" })), async () => {
+		const cli = children[0]!;
+		await cli.waitFor((f) => f.type === "user" && f.message.content[0].text === "more");
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(children.length, 1);
+	await bridge.disposeAll();
+});
+
+test("a fork whose transcript does not start with the parent's heard prefix folds, as without a seed", { timeout: 8000 }, async () => {
+	const forkFrom: ClaudeForkPoint = { v: 1, claudeSessionId: claudeSessionId("pi-parent"), messages: 1, prefix: transcriptFingerprint([user("something else")])[0]!, cwd: "/tmp/pi-bridge-test" };
+	for (const seed of [forkFrom, { ...forkFrom, prefix: transcriptFingerprint([user("one")])[0]!, cwd: "/elsewhere" }]) {
+		const { bridge, children } = harness({ forkFrom: seed });
+		await collectAfter(bridge.runTurn(request([user("one"), assistantText("r"), user("explain")], { sessionId: "pi-child" })), async () => {
+			const cli = await child(children, 1);
+			assert.equal(cli.argv.includes("--resume"), false);
+			await cli.handshake();
+			const sent = await cli.waitFor((f) => f.type === "user");
+			assert.ok(sent.message.content[0].text.startsWith(`<conversation-history>\n${JOINED_HEADER}`));
+			cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+		});
+		await bridge.disposeAll();
+	}
+});
+
+test("a resume the CLI refuses falls back to a fold in the same turn", { timeout: 8000 }, async () => {
+	const heard = [user("one")];
+	const forkFrom: ClaudeForkPoint = { v: 1, claudeSessionId: claudeSessionId("pi-parent"), messages: 1, prefix: transcriptFingerprint(heard)[0]!, cwd: "/tmp/pi-bridge-test" };
+	const { bridge, children } = harness({ forkFrom, refuseResume: true });
+	const frames = bridge.runTurn(request([...heard, assistantText("r"), user("explain")], { sessionId: "pi-child" }));
+	await collectAfter(frames, async () => {
+		assert.ok((await child(children, 1)).argv.includes("--resume"));
+		const cli = await child(children, 2);
+		assert.equal(cli.argv.includes("--resume"), false);
+		await cli.handshake();
+		const sent = await cli.waitFor((f) => f.type === "user");
+		assert.ok(sent.message.content[0].text.startsWith("<conversation-history>"));
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	await bridge.disposeAll();
 });

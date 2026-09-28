@@ -1,0 +1,51 @@
+title: Linear probing in a hash table
+caption: A key goes to hash mod 11; on a collision it walks right to the next free slot.
+
+<style>
+.slots{display:grid;grid-template-columns:repeat(11,1fr);gap:4px;margin:12px 0 6px}
+.s{display:flex;flex-direction:column;align-items:center;gap:2px}
+.box{width:100%;height:38px;display:grid;place-items:center;border-radius:6px;border:1.5px solid var(--color-border);background:var(--color-sunken);font:600 13px/1 "JetBrains Mono",monospace;color:var(--color-ink)}
+.box.probe{border-color:var(--status-warn);background:var(--status-warn-bg)}
+.box.new{border-color:var(--color-accent);background:var(--color-accent-tint)}
+.i{font:11px "JetBrains Mono",monospace;color:var(--color-ink-muted)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+input{width:5.5em}
+#msg{min-height:1.5em;margin:6px 0 0;color:var(--color-ink-2)}
+#load{color:var(--color-ink-muted);font-size:13px}
+</style>
+<div class="bar">
+  <input id="k" type="number" min="0" max="999" value="25" aria-label="Key">
+  <button id="add">Insert</button>
+  <button id="rnd">Random key</button>
+  <button id="clr">Clear</button>
+  <span id="load"></span>
+</div>
+<div class="slots" id="slots"></div>
+<p id="msg">Try 25, then 36 and 47: they all hash to slot 3.</p>
+<script>
+var M=11,t=new Array(M).fill(null),slots=document.getElementById("slots"),msg=document.getElementById("msg"),k=document.getElementById("k");
+function draw(probed,placed){
+  slots.innerHTML="";
+  for(var i=0;i<M;i++){
+    var s=document.createElement("div");s.className="s";
+    var b=document.createElement("div");b.className="box"+(i===placed?" new":probed.indexOf(i)>=0?" probe":"");
+    b.textContent=t[i]===null?"":t[i];
+    var n=document.createElement("div");n.className="i";n.textContent=i;
+    s.appendChild(b);s.appendChild(n);slots.appendChild(s);
+  }
+  var used=t.filter(function(v){return v!==null}).length;
+  document.getElementById("load").textContent="load "+used+"/"+M;
+}
+function insert(x){
+  if(t.indexOf(x)>=0){msg.textContent=x+" is already in the table.";return}
+  var h=x%M,i=h,probed=[];
+  while(t[i]!==null){probed.push(i);i=(i+1)%M;if(i===h){msg.textContent="The table is full.";draw(probed,-1);return}}
+  t[i]=x;draw(probed,i);
+  msg.textContent=x+" mod "+M+" = "+h+(probed.length?": "+probed.length+" slot"+(probed.length>1?"s":"")+" taken, placed in "+i+".":": free, placed there.");
+}
+document.getElementById("add").onclick=function(){var x=parseInt(k.value,10);if(x>=0)insert(x)};
+k.onkeydown=function(e){if(e.key==="Enter")document.getElementById("add").click()};
+document.getElementById("rnd").onclick=function(){var x=Math.floor(Math.random()*100);k.value=x;insert(x)};
+document.getElementById("clr").onclick=function(){t.fill(null);msg.textContent="Cleared.";draw([],-1)};
+draw([],-1);
+</script>

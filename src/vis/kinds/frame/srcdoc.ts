@@ -59,7 +59,8 @@ export function tokenCss(tokens: Record<string, string>, scheme: "light" | "dark
 const BASE_CSS = `
 *,*::before,*::after{box-sizing:border-box}
 html,body{margin:0;padding:0;background:transparent}
-body{font:14px/1.5 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--color-ink);overflow-x:auto}
+body{padding:12px;font:14px/1.5 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--color-ink);overflow-x:auto}
+@media (max-width:420px){body{padding:8px}}
 svg{max-width:100%;height:auto;display:block}
 button{font:inherit;font-size:13px;min-height:32px;padding:4px 12px;border-radius:8px;border:1.5px solid var(--color-border-strong);background:var(--color-surface);color:var(--color-ink);cursor:pointer}
 button:hover{background:var(--color-sunken)}
@@ -70,15 +71,17 @@ code,pre,kbd{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size
 `;
 
 /**
- * Posts `{type, id, height}` whenever the document's size changes, and applies theme updates the
- * parent sends as `{type, tokens}`. The id ties a message to its frame; the parent also checks the
- * message's source window.
+ * Posts `{type, id, height}` whenever the document's size changes, `{type, id, failed: true}` the
+ * first time a script throws, and applies theme updates the parent sends as `{type, css}`. The id
+ * ties a message to its frame; the parent also checks the message's source window. A top-level
+ * `<svg>` with a viewBox and no width is drawn at its natural size, never scaled up.
  */
 const reporter = (id: string) => `(function(){
 var id=${JSON.stringify(id)},last=-1;
 function h(){var b=document.body,e=document.documentElement;if(!b)return;var v=Math.ceil(Math.max(b.scrollHeight,b.getBoundingClientRect().height,e.getBoundingClientRect().height));if(v!==last){last=v;parent.postMessage({type:${JSON.stringify(FRAME_MESSAGE)},id:id,height:v},"*")}}
+var failed=false;addEventListener("error",function(){if(failed)return;failed=true;parent.postMessage({type:${JSON.stringify(FRAME_MESSAGE)},id:id,failed:true},"*")});
 addEventListener("load",h);
-addEventListener("DOMContentLoaded",function(){h();if(window.ResizeObserver)new ResizeObserver(h).observe(document.body)});
+addEventListener("DOMContentLoaded",function(){var l=document.querySelectorAll("body>svg,body>.sova-svg>svg");for(var i=0;i<l.length;i++){var s=l[i],v=s.viewBox&&s.viewBox.baseVal;if(v&&v.width&&!s.getAttribute("width"))s.style.maxWidth=v.width+"px"}h();if(window.ResizeObserver)new ResizeObserver(h).observe(document.body)});
 addEventListener("message",function(ev){var d=ev.data;if(ev.source===parent&&d&&d.type===${JSON.stringify(FRAME_MESSAGE)}&&d.css){var s=document.getElementById("sova-tokens");if(s)s.textContent=d.css;}});
 setTimeout(h,50);setTimeout(h,400);
 })();`;
@@ -105,7 +108,7 @@ export function buildSrcdoc(kind: "html" | "svg", source: string, id: string, to
     `<!doctype html><html><head><meta charset="utf-8">` +
     `<meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">` +
     `<meta name="viewport" content="width=device-width,initial-scale=1">` +
-    `<style id="sova-tokens">${tokens}</style><style>${BASE_CSS}${kind === "svg" ? ".sova-svg{display:flex;justify-content:center}.sova-svg>svg{width:100%;max-width:720px}" : ""}</style>` +
+    `<style id="sova-tokens">${tokens}</style><style>${BASE_CSS}${kind === "svg" ? ".sova-svg{display:flex;justify-content:center}.sova-svg>svg{width:100%}" : ""}</style>` +
     `<style id="sova-motion">*,*::before,*::after{animation-play-state:paused!important}</style>` +
     `<script>${MOTION_GATE}${reporter(id)}</script></head><body>${body}</body></html>`
   );

@@ -1,2 +1,13 @@
 /* `vis html` / `vis svg` frame. Owner: the free-form member. */
 .vis-frame { display: block; width: 100%; border: 0; background: transparent; }
+.vis-frame-failed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}

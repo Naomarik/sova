@@ -25,3 +25,14 @@ test("tree: indentation or tree-drawing art, notes and tones", () => {
   assert.match(err("tree", "a\n  b\n      c").message, /more than one level/);
   assert.match(err("tree", "a\n  b\n   c").message, /not a multiple of 2/);
 });
+
+test("tree: mark an item by name (first match, depth first) or quoted name", () => {
+  const s = ok<TreeSpec>("tree", 'src/\n  index.ts\n  lib/\n    index.ts\n"My Docs"\nmark index.ts "the entry"\nmark "My Docs" muted');
+  assert.deepEqual(s.emphasis, [
+    { key: "0.0", tone: "accent", note: "the entry", n: 1 },
+    { key: "1", tone: "muted" },
+  ]);
+  assert.match(err("tree", "a\nmark b").message, /no item b/);
+  // An indented "mark …" line is an item, not a mark.
+  assert.equal(ok<TreeSpec>("tree", "a\n  mark b").roots[0]!.children[0]!.name, "mark b");
+});

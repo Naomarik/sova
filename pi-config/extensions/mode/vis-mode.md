@@ -76,18 +76,20 @@ mark failed error "retried once, then shown"
 ```
 
 ## layers
-<!-- owner: layers member. Emphasis target: layer label. -->
-Layers of a system, top first: `label | item, item, … | note (optional) | tone (optional)`.
+<!-- owner: structure member. kinds/layers: HTML bands, label column folds above the items at phone width. Emphasis target: layer label (key = index). -->
+A system as a stack, top first: tiers, a protocol stack, what runs where. One line per layer: `label | item, item, … | note (optional) | tone (optional)`.
 ```vis layers
+title: Where a chat message lives
 Browser | Solid app, service worker | accent
-Server | Hono REST, /ws/chat
+Server | Hono REST, /ws/chat | one process per checkout
 Disk | session JSONL | muted
 mark Server "holds every live session"
 ```
+- Quote an item that contains a comma. Leave the items empty (`Disk | | muted`) for a label-only layer. At most 10 layers, 12 items each. `mark` a layer by its label.
 
 ## tree
-<!-- owner: tree member. Emphasis target: item name (first match). -->
-A hierarchy (files, modules, org, taxonomy): one item per line, 2 spaces of indent per level; each line `name ["note"] [tone]`.
+<!-- owner: structure member. kinds/tree: nested HTML lists with elbow connectors. Also accepts ├── └── │ tree-drawing lines. Emphasis target: item name, first match depth first (key = path "0.2.1"). -->
+A hierarchy: files, modules, an org chart, a taxonomy. One item per line, 2 spaces of indent per level; each line `name ["note"] [tone]`. End folder names with `/`.
 ```vis tree
 src/
   lib/
@@ -95,11 +97,27 @@ src/
   main.tsx
 mark markdown.ts "the vis hook lives here"
 ```
+- Quote a name that has spaces or quotes: `"My Docs" "shared"`. At most 80 lines: show the branch that matters and one `…` item for the rest. `mark` an item by its name (the first one wins).
 
 ## gitgraph
-<!-- stub -->
-<!-- owner: gitgraph member. Design the syntax (commit, branch, checkout, merge; rebase and cherry-pick as new commits; tags), write kinds/gitgraph/parse.ts and View.tsx, then drop the stub marker here and `stub: true` in registry.ts. Emphasis target: commit id. -->
-Commit history across branches — merges, rebases, cherry-picks.
+<!-- owner: structure member. kinds/gitgraph: parse.ts runs the history (errors read like git's), layout.ts (lanes down the left, text beside, per-step heads/ghosts), View.tsx with Step Through. Emphasis target: commit id, a commit's "message", or a branch name (key `branch:<name>`). -->
+Commit history across branches, written as the git commands that made it. To contrast merge with rebase, draw the same start twice: one ending in `merge`, one in `rebase`.
+```vis gitgraph
+title: Rebasing a feature branch
+caption: C and D are replayed onto E as new commits; the originals are left behind.
+commit A "init"
+branch feature
+commit C "add login"
+commit D "remember me"
+checkout main
+commit E "fix typo"
+checkout feature
+rebase main
+mark C' "same change, new SHA"
+```
+- `commit [id] ["message"] [tone]` goes on the checked-out branch (`main` until you branch). `branch <name> [from <id>]` creates a branch and checks it out; `checkout <name>` switches.
+- `merge <branch> [id] ["message"]` makes a merge commit; add `ff` to fast-forward or `squash` to squash. `rebase <branch>` replays this branch's commits as `C'`, `D'`, leaving the originals as ghosts. `cherry-pick <id>` copies a commit as `<id>'`. `tag <name> [on <id>]`.
+- Give ids to the commits you'll mention (`A`, or a short SHA). No `git` prefix, no `push`/`pull`. At most 6 branches and 40 commits. `mark` a commit id, its "message", or a branch name.
 
 ## chart
 <!-- owner: data member. kinds/chart: parse.ts, scale.ts (axes, ticks), layout.ts (geometry, tested), View.tsx. Emphasis target: row label (key = row index). -->

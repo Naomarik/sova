@@ -1,0 +1,39 @@
+/* `vis gitgraph`: lanes, dots, the text column, branch and tag chips. Each lane has a colour and
+   every head carries its branch's name, so the colour is never the only signal. */
+.vis-gitgraph .vis-svg { margin: 0; }
+.vis-git-lane-0 { --lane: var(--color-ink-2); }
+.vis-git-lane-1 { --lane: var(--color-accent); }
+.vis-git-lane-2 { --lane: var(--status-info); }
+.vis-git-lane-3 { --lane: var(--status-success); }
+.vis-git-lane-4 { --lane: var(--status-warn); }
+.vis-git-lane-5 { --lane: var(--color-ink-muted); }
+
+.vis-git-edge { fill: none; stroke: var(--lane); stroke-width: 2; stroke-linecap: round; }
+.vis-git-edge.vis-git-lane-em { stroke-width: 3.5; }
+.vis-git-edge.vis-git-ghost { stroke: var(--color-ink-muted); stroke-width: 1.5; stroke-dasharray: 3 3; opacity: .7; }
+.vis-git-edge.vis-git-link { stroke: var(--color-ink-muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+
+/* A dot sits in a ring of the surface colour, so the lines meeting it read as meeting it. */
+.vis-git-dot { fill: var(--lane); stroke: var(--color-surface); stroke-width: 2; }
+.vis-git-merge .vis-git-dot { fill: var(--color-surface); stroke: var(--lane); stroke-width: 3; }
+.vis-git-toned .vis-git-dot { fill: var(--vis-stroke); }
+.vis-git-commit.vis-em > .vis-git-dot { stroke: var(--vis-stroke); stroke-width: 3; fill: var(--vis-stroke); }
+.vis-git-ghost .vis-git-dot { fill: var(--color-surface); stroke: var(--color-ink-muted); stroke-width: 1.5; stroke-dasharray: 2.5 2; }
+
+.vis-svg .vis-git-id { fill: var(--color-ink-muted); font-family: var(--font-mono); }
+.vis-svg .vis-git-msg { fill: var(--color-ink); }
+.vis-svg .vis-git-meta { fill: var(--color-ink-muted); font-style: italic; }
+.vis-svg .vis-git-ghost .vis-git-msg { fill: var(--color-ink-muted); }
+.vis-svg .vis-git-commit.vis-em .vis-git-msg { font-weight: var(--fw-semibold); }
+
+.vis-git-band.vis-em { fill: var(--vis-fill); stroke: none; }
+
+.vis-git-chip rect, .vis-git-chip path { fill: color-mix(in srgb, var(--lane) 12%, var(--color-surface)); stroke: var(--lane); stroke-width: 1.25; }
+.vis-svg .vis-git-chip text { fill: var(--color-ink); font-weight: var(--fw-medium); }
+.vis-git-head rect { fill: var(--lane); }
+.vis-svg .vis-git-head text { fill: var(--color-surface); font-weight: var(--fw-semibold); }
+.vis-git-tag { --lane: var(--color-ink-muted); }
+.vis-git-tag path { fill: var(--color-sunken); stroke: var(--color-border-strong); }
+.vis-git-chip.vis-em > rect, .vis-git-chip.vis-em > path { stroke: var(--vis-stroke); stroke-width: 2.5; }
+/* A merge stays hollow when toned or marked: the ring takes the tone. */
+.vis-git-merge.vis-git-toned .vis-git-dot, .vis-git-commit.vis-git-merge.vis-em > .vis-git-dot { fill: var(--color-surface); stroke: var(--vis-stroke); stroke-width: 3.5; }

@@ -17,3 +17,19 @@ test("layers: layers top to bottom with items, note, tone", () => {
     { label: "Disk", items: [], tone: "muted" },
   ]);
 });
+
+test("layers: mark a layer by its label; errors say what to write", () => {
+  const s = ok<LayersSpec>("layers", 'Browser | Solid app\n"Edge cache" | CDN\nmark "Edge cache" warn "stale for 60s"\nmark Browser');
+  assert.deepEqual(s.emphasis, [
+    { key: "1", tone: "warn", note: "stale for 60s", n: 1 },
+    { key: "0", tone: "accent" },
+  ]);
+  const err = (body: string) => {
+    const r = parseVis("layers", body);
+    assert.equal(r.ok, false);
+    return (r as { message: string }).message;
+  };
+  assert.match(err("Browser | a\nmark Server"), /no layer Server/);
+  assert.match(err("Browser"), /a layer is/);
+  assert.match(err("Browser | a | b | c | d"), /a layer is/);
+});

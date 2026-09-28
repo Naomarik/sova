@@ -1,8 +1,37 @@
-/* `vis tree` — DRAFT, not yet verified in a browser. Owner: the tree member. */
-.vis-tree, .vis-tree ul { list-style: none; margin: 0; padding: 0; }
-.vis-tree ul { padding-left: var(--space-4); border-left: var(--stroke-thin) solid var(--color-border); margin-left: var(--space-1); }
-.vis-tree-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); padding: 2px 0; }
-.vis-tree-name { color: var(--vis-ink); font-weight: var(--fw-medium); }
-.vis-tone-accent > .vis-tree-row .vis-tree-name { color: var(--color-accent); }
-.vis-tree-note { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* `vis tree`: nested lists with elbow connectors drawn by each child item. */
+/* `.vis` in front: beats the chat's `.md ul` / `.md li + li` spacing. */
+.vis .vis-tree, .vis .vis-tree ul { list-style: none; margin: 0; padding: 0; }
+.vis .vis-tree ul { padding-left: 20px; }
+.vis .vis-tree li { margin: 0; }
+.vis-tree ul > li { position: relative; }
+/* The elbow into this item, and (unless it's the last) the line on down to its next sibling. */
+.vis-tree ul > li::before {
+  content: "";
+  position: absolute;
+  left: -13px;
+  top: 0;
+  width: 11px;
+  height: 13px;
+  border-left: var(--stroke-thin) solid var(--color-border-strong);
+  border-bottom: var(--stroke-thin) solid var(--color-border-strong);
+  border-bottom-left-radius: var(--r-xs);
+}
+.vis-tree ul > li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: -13px;
+  top: 0;
+  bottom: 0;
+  border-left: var(--stroke-thin) solid var(--color-border-strong);
+}
+.vis-tree-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); padding: 2px var(--space-1); line-height: 22px; }
+.vis-tree-name { color: var(--vis-ink); font-weight: var(--fw-medium); overflow-wrap: anywhere; }
+.vis-tree-row:not(.vis-em) .vis-tree-name { color: var(--color-ink); }
+.vis-tone-accent > .vis-tree-row .vis-tree-name, .vis-tone-ok > .vis-tree-row .vis-tree-name,
+.vis-tone-warn > .vis-tree-row .vis-tree-name, .vis-tone-error > .vis-tree-row .vis-tree-name,
+.vis-tone-info > .vis-tree-row .vis-tree-name { text-decoration: underline 2px var(--vis-stroke); text-underline-offset: 3px; }
+.vis-tone-muted > .vis-tree-row .vis-tree-name { color: var(--color-ink-muted); }
+.vis-tree-row.vis-em .vis-tree-name { font-weight: var(--fw-semibold); }
+.vis-tree-row > .vis-em-badge { margin-right: 0; align-self: center; }
+.vis-tree-note { font-size: var(--fs-caption); color: var(--color-ink-muted); line-height: var(--lh-caption); }
 .vis-mono { font-family: var(--font-mono); font-size: var(--fs-mono); }

@@ -47,7 +47,7 @@ export const KINDS: Record<string, KindEntry> = {
   state: kind(parseState, () => import("./kinds/flow/View"), "State machine"),
   layers: kind(parseLayers, () => import("./kinds/layers/View"), "Layers"),
   tree: kind(parseTree, () => import("./kinds/tree/View"), "Tree"),
-  gitgraph: kind(parseGitgraph, stubView, "Git history", { stub: true }),
+  gitgraph: kind(parseGitgraph, () => import("./kinds/gitgraph/View"), "Git history"),
   chart: kind(parseChart, () => import("./kinds/chart/View"), "Chart"),
   timeline: kind(parseTimeline, () => import("./kinds/timeline/View"), "Timeline"),
   matrix: kind(parseMatrix, () => import("./kinds/matrix/View"), "Matrix"),

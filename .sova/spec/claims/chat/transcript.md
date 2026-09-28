@@ -566,23 +566,29 @@ runaway reply there is capped: it can't write a line too long to read back or to
 - **Watch socket drops.** `.banner.banner-warn` with `alert-circle`. Title: "Stopped watching.
   The connection dropped." Body: "What's shown is up to `14:06`. Reconnecting…" When it
   reconnects, the banner goes away. The snapshot replaces the list, and scroll position is
-  kept if the user wasn't following.
+  kept if the user wasn't following. Its older rows follow it (§chat.transcript/rendering).
 
 ## §chat.transcript/rendering — Opening and switching a long transcript
 
 A transcript opens on its newest rows, and every row is in the page once it has settled: nothing
 is virtualized.
 
-- **Newest rows first.** The last 60 rows are built with the transcript itself (the chat's
-  `hello`, the watch view's snapshot), so the first frame after it lands shows the end of the
-  session, however long it is. The older rows are then built above them while the browser is
-  idle, a chunk at a time, each chunk sized to stay under a frame, until every row is built. The
-  view doesn't move while they're added: it keeps its distance from the end, which at the bottom
-  is the bottom. Rows added above aren't new content: they don't scroll a following view and
-  don't count in Jump to Latest's "N new".
+- **Newest rows first.** The chat's `hello` and the watch view's snapshot carry only the
+  transcript's newest whole entries: at least 60 rows, within about 256 KB, never opening on a
+  tool result or inside a baton wrap-up. The older rows follow on the same socket, newest first,
+  in chunks of about 256 KB. So the first frame shows the end of the session as soon as those
+  newest rows land, however long the session is, and waits on nothing older. Its last 60 rows are
+  built with it. The older rows are built above them while the browser is idle, a chunk at a time,
+  each chunk sized to stay under a frame, as they arrive and until every row is built; a chunk
+  arriving never builds its rows at once. The view doesn't move while they're added: it keeps its
+  distance from the end, which at the bottom is the bottom. Rows added above aren't new content:
+  they don't scroll a following view and don't count in Jump to Latest's "N new". The newest rows
+  alone can't be much smaller than the newest entry: one that holds a large image arrives whole
+  with them.
 - **Nothing is virtualized.** A built row stays in the page, so `Ctrl+F`, screen readers and
-  text selection reach the whole transcript once the fill completes (a few hundred milliseconds
-  for an 800-row session). A row off screen is skipped by layout and paint
+  text selection reach the whole transcript once the older rows have arrived and the fill
+  completes: a few hundred milliseconds for an 800-row session on this machine, longer over a
+  slow link, where the arriving is most of it. A row off screen is skipped by layout and paint
   (`content-visibility: auto`), at a height estimated from its text and its images until it is
   first drawn: a row's single image counts at the height its box will have
   (§chat.images/thread-thumbnails), two or more at an estimate of their rows of tiles. A
@@ -592,7 +598,10 @@ is virtualized.
   thread renders, not of what is built. Every jump builds the rows down from its target if the
   fill hasn't reached it, then scrolls and tints as before (§chat.timeline/jumping): a Timeline
   input row, the outline's Jump to Message, the Skills tab, Open in Session, Align to Fork, and a
-  switch back (below). "Isn't in the transcript" still means the thread has no row for the entry.
+  switch back (below). While the older rows are still arriving, a jump to a row not here yet
+  waits for them and then lands; after half a second of waiting a toast says "Loading older
+  messages…". A newer jump replaces a waiting one. "Isn't in the transcript" still means the
+  thread has no row for the entry, and only a transcript that has arrived whole says it.
   Rows never drawn have estimated heights, so a long jump that doesn't land in the middle aims
   again once the scroll has rested, at most twice.
 - **Opening a disclosure keeps the view.** Opening or closing a tool card, thinking, a report or
@@ -602,14 +611,19 @@ is virtualized.
   composer's status row appearing) or a row below changes height with no new content (an image
   decoding).
 - **Refetches keep rows.** A new `hello`, a turn-end reload or a new snapshot replaces the list,
-  but every row whose entry renders the same keeps its element. Open cards, focus and a revealed
+  but every row whose entry renders the same keeps its element. A `hello` or snapshot with older
+  rows to come replaces the list from its first row on; when the list on screen already has rows
+  above that one (kept from the last visit, or before a reconnect), they stay as they are until
+  the older rows have all arrived, and are then replaced the same way, in one step. Open cards, focus and a revealed
   action strip survive the end of a turn, a reconnect and a rewind; only changed and new rows
   are built.
 - **Switching back.** The last 3 sessions opened in the tab keep their rows and where they were
   scrolled: at the end while following, else the row at the top of the view and its offset.
   Switching back to one shows those rows at once, where they were (with Jump to Latest when not
-  following), while its `hello` or snapshot is on the way, then reconciles them as above. Any
-  other open lands at the end. A reload keeps nothing.
+  following), while its `hello` or snapshot is on the way, then reconciles them as above, which
+  completes when its older rows have arrived. Any other open lands at the end. A reload keeps
+  nothing. Rows kept this way are never taken as the whole transcript: until this visit's own
+  rows have arrived whole, nothing says a row isn't there, and nothing counts the whole list.
 
 ## §chat.transcript/own-writes-across-restart — The server's own writes survive a restart
 
@@ -750,7 +764,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 | No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Start section's action cards (`New Session`, `Fan Out`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
-| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread has no **rendered row**: model, thinking and mode change rows draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |
+| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread, arrived whole, has no **rendered row**: model, thinking and mode change rows draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
 
 ## §chat.transcript/setup-card — Setup card

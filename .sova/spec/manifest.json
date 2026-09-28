@@ -26,7 +26,7 @@
     "§app.insights/insight-strip": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/InsightStrip.tsx",
         "src/design/base.css",
@@ -832,9 +832,11 @@
     "§chat.timeline/jumping": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
-        "src/lib/timeline.ts"
+        "src/lib/timeline.ts",
+        "src/components/SessionTimeline.tsx",
+        "src/lib/jump.ts"
       ]
     },
     "§chat.timeline/no-virtualization": {
@@ -845,7 +847,11 @@
     "§chat.timeline/opening-it": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified",
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/Composer.tsx"
+      ]
     },
     "§chat.timeline/rejected": {
       "kind": "note",
@@ -940,7 +946,12 @@
     "§chat.transcript/live-watch": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified",
+      "code": [
+        "src/components/WatchView.tsx",
+        "server/watch.ts",
+        "src/lib/tail-hello.ts"
+      ]
     },
     "§chat.transcript/message-actions": {
       "kind": "behavior",
@@ -1259,9 +1270,10 @@
     "§workspace.fanout/entry-points": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
-        "src/components/ComposerMenu.tsx"
+        "src/components/ComposerMenu.tsx",
+        "src/components/ChatView.tsx"
       ]
     },
     "§workspace.fanout/states": {
@@ -1277,7 +1289,11 @@
     "§workspace.fanout/the-fork-point-in-a-transcript": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified",
+      "code": [
+        "src/components/GroupView.tsx",
+        "src/lib/jump.ts"
+      ]
     },
     "§workspace.fanout/the-route": {
       "kind": "behavior",
@@ -5539,7 +5555,18 @@
         "src/components/GroupView.tsx",
         "src/components/SubagentPane.tsx",
         "src/app.css",
-        "src/design/base.css"
+        "src/design/base.css",
+        "server/tail-hello.ts",
+        "server/tail-hello.test.ts",
+        "server/ws.ts",
+        "server/watch.ts",
+        "server/chat-manager.ts",
+        "shared/protocol.ts",
+        "src/lib/tail-hello.ts",
+        "src/lib/tail-hello.test.ts",
+        "src/lib/message-actions.ts",
+        "src/components/SessionTimeline.tsx",
+        "src/components/SessionPane.tsx"
       ]
     },
     "§app.subagents-pane/hidden-workers": {

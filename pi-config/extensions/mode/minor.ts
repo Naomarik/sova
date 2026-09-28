@@ -2,10 +2,10 @@
 
 import { readFileSync } from "node:fs";
 
-export type MinorMode = "align" | "spec";
+export type MinorMode = "align" | "spec" | "vis";
 
 /** Registry order: the canonical order for state, status, and prompt composition. */
-export const MINOR_MODES: readonly MinorMode[] = ["align", "spec"];
+export const MINOR_MODES: readonly MinorMode[] = ["align", "spec", "vis"];
 
 export function isMinorMode(value: unknown): value is MinorMode {
 	return typeof value === "string" && (MINOR_MODES as readonly string[]).includes(value);
@@ -14,6 +14,7 @@ export function isMinorMode(value: unknown): value is MinorMode {
 export const MINOR_DESCRIPTIONS: Record<MinorMode, string> = {
 	align: "Align with the user on what to build (architecture, UX, scope) before building",
 	spec: "Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented",
+	vis: "Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose",
 };
 
 export const ALIGN_INSTRUCTIONS = `# Minor mode: align
@@ -68,9 +69,18 @@ function specCoreShell(text: string): string {
 	return shell;
 }
 
+/**
+ * The vis mode's text is vis-mode.md beside this module, read once at load, with its HTML comments
+ * (owner notes per section) stripped: the model gets the formats Sova's `vis` fence renderer parses.
+ */
+export const VIS_INSTRUCTIONS = readFileSync(new URL("./vis-mode.md", import.meta.url), "utf8")
+	.replace(/<!--[\s\S]*?-->\n?/g, "")
+	.trim();
+
 const MINOR_INSTRUCTIONS: Record<MinorMode, string> = {
 	align: ALIGN_INSTRUCTIONS,
 	spec: SPEC_INSTRUCTIONS,
+	vis: VIS_INSTRUCTIONS,
 };
 
 export function buildMinorPrompt(mode: MinorMode): string {

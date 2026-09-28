@@ -250,8 +250,16 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.match(align, /go ahead while questions are still open/);
 });
 
+test("vis: vis-mode.md verbatim minus its owner comments, composed last", () => {
+	const vis = buildMinorPrompt("vis");
+	assert.match(vis, /^# Minor mode: vis\n/);
+	assert.doesNotMatch(vis, /<!--|owner:/, "owner notes never reach the model");
+	assert.match(vis, /```vis flow\n/);
+	assert.equal(composePrompt(withMinor(withMinor(defaults(), "vis", true), "align", true), ALL_OK), `${buildMinorPrompt("align")}\n\n${vis}`);
+});
+
 test("spec: a registered minor mode, composed after align and never bridged", () => {
-	assert.deepEqual(MINOR_MODES, ["align", "spec"], "registry order is prompt and status order");
+	assert.deepEqual(MINOR_MODES, ["align", "spec", "vis"], "registry order is prompt and status order");
 	assert.deepEqual(Object.keys(MINOR_DESCRIPTIONS), [...MINOR_MODES], "one description per minor mode, nothing else");
 	assert.deepEqual(parseMinorFlag("spec,align"), { minorModes: ["align", "spec"], unknown: [] });
 	const spec = buildMinorPrompt("spec");
@@ -291,12 +299,13 @@ test("spec: the prompt is spec-mode.md, byte for byte", () => {
 test("spec: minor.ts reads its own spec-mode.md, from any cwd, and refuses a malformed one", () => {
 	const here = dirname(fileURLToPath(import.meta.url));
 	const canonical = readFileSync(join(here, "spec-mode.md"), "utf8");
-	// A standalone copy of just these two files, imported from an unrelated cwd.
+	// A standalone copy of just these files (minor.ts and the prompt texts it reads), imported from an unrelated cwd.
 	const load = (md: string) => {
 		const dir = mkdtempSync(join(tmpdir(), "spec-mode-"));
 		try {
 			writeFileSync(join(dir, "minor.ts"), readFileSync(join(here, "minor.ts")));
 			writeFileSync(join(dir, "spec-mode.md"), md);
+			writeFileSync(join(dir, "vis-mode.md"), readFileSync(join(here, "vis-mode.md")));
 			const src = `import(${JSON.stringify(pathToFileURL(join(dir, "minor.ts")).href)}).then((m) => process.stdout.write(JSON.stringify([m.buildMinorPrompt("spec"), m.SPEC_CORE_SHELL])))`;
 			return spawnSync(process.execPath, ["--input-type=module", "-e", src], { cwd: tmpdir(), encoding: "utf8" });
 		} finally {

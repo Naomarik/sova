@@ -33,7 +33,9 @@ export default function FrameView(props: ViewProps<FrameSpec>) {
       const d = e.data as { type?: unknown; id?: unknown; height?: unknown; failed?: unknown } | null;
       if (!d || d.type !== FRAME_MESSAGE || d.id !== id) return;
       if (d.failed === true) setFailed(true);
-      if (typeof d.height === "number" && Number.isFinite(d.height)) {
+      // The first report can be h=0, sent before the frame's body is laid out; the real height
+      // follows a few ms later. Taking it would collapse the frame to its minimum for a frame or two.
+      if (typeof d.height === "number" && Number.isFinite(d.height) && d.height >= 1) {
         const h = Math.max(MIN_FRAME_HEIGHT, Math.min(MAX_FRAME_HEIGHT, Math.ceil(d.height)));
         setHeight(h);
         rememberHeight(props.spec, frame.clientWidth, h);

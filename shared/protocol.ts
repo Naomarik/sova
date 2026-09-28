@@ -320,9 +320,9 @@ export interface WorktreeMergeInfo {
   path: string;
   branch: string;
   target: string;
-  /** The target's commit after the merge (full). */
+  /** The target's commit after the merge (full); for a detected merge, the commit that brought the branch in. */
   sha: string;
-  /** Commits the merge brought into the target. */
+  /** Commits the merge brought into the target; for a detected merge, the branch's own, as are `added`/`removed`. */
   commits: number;
   added: number;
   removed: number;

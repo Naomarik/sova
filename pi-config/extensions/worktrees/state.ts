@@ -33,7 +33,7 @@ export type MergeHow = "tool" | "detected";
 export interface WorktreeMerge {
 	/** The branch merged into. */
 	target: string;
-	/** The target's commit after the merge. */
+	/** A tool merge: the target's commit after the merge. A detected one: the commit that brought the branch in (git.ts `landedStats`). */
 	sha: string;
 	at: number;
 	how: MergeHow;
@@ -68,8 +68,13 @@ export interface WorktreeMergeDetails {
 	path: string;
 	branch: string;
 	target: string;
+	/** As `WorktreeMerge.sha`: the target's new tip (tool), or the commit that brought the branch in (detected). */
 	sha: string;
-	/** Commits the merge brought into the target (reachable from the branch, not from the old target). */
+	/**
+	 * Commits the merge brought into the target (reachable from the branch, not from the old target).
+	 * `added`/`removed` are the target's own change for a tool merge; for a detected one, the
+	 * branch's own change, never the whole run's.
+	 */
 	commits: number;
 	added: number;
 	removed: number;

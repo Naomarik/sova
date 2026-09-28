@@ -11,8 +11,9 @@ stylesheets — no component library.
 - **Assets.** Vite serves `public/` at the site root: `/fonts/*.woff2`, `/icons/*.svg`,
   `/favicon.svg`.
 - **Naming.** The product is **Sova** (Sessions, Orchestration, Viewing & Agents) and the mark is
-  `public/icons/sova-mark.svg`. The state directory is `~/.pi/agent/sova/`, the browser keys are
-  `sova:*` and the theme schema is `sova-theme/v1`.
+  `public/icons/sova-mark.svg`: a V and an A folded from one ribbon, 3 flat-cut bands with the
+  shared middle stroke in front and no crossbar. The state directory is `~/.pi/agent/sova/`, the
+  browser keys are `sova:*` and the theme schema is `sova-theme/v1`.
 
 ## §design.overview/class-index — Class index (all in `src/design/base.css`)
 

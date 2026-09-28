@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { BatonSession, BatonView } from "../shared/baton";
-import type { DecisionsInfo, PromoteResult } from "../shared/decisions";
+import type { DecisionRow, DecisionsInfo, PromoteResult } from "../shared/decisions";
 import type { OrgProject, Person } from "../shared/orgs";
 import type { ProjectUpdate } from "../shared/owner";
 import { GAP_TAG, LIMIT_WHAT, PER_DAY, PER_TURN, PO_LIMIT_KINDS, type AllowanceUse, type Autonomy, type CodingWorktree, type HeldItem, type PoLimitKind, type ProjectCodingMode, type ProjectOverseerCaps, type ProjectOverseerSettings } from "../shared/project-overseer";
@@ -52,6 +52,8 @@ export interface PoToolHost {
   promote(ids: string[]): Promise<PromoteResult>;
   /** Start a gathering session (one person) or an offer (≥ 2), owned by this overseer. */
   startGathering(input: { to: string | string[]; publicTitle: string; goal: string; question: string; model?: string; thinking?: string }): Promise<{ sessionId: string; path: string; invited: string[] }>;
+  /** Close one of this project's gathering sessions, as the operator's Close does. */
+  closeGathering(sessionId: string): Promise<void>;
   /** Approve (active) or decline (left) a proposed person. */
   decideReferral(personId: string, approve: boolean): Promise<Person>;
   /** Every listed session (the tools keep those under the root). */
@@ -219,6 +221,7 @@ export const TOOL_NEEDS: Record<string, Need> = {
   sova_start_gathering: "L1",
   sova_owner_update: "L1",
   sova_offer: "L1",
+  sova_close_gathering: "L1",
   sova_reconcile: "L1",
   sova_promote: "L2",
   sova_create_session: "L3",
@@ -489,7 +492,7 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
           conflicts.length ? conflicts.map((c) => `- ${c.id} · ${c.areaKey} · routed to ${nm[c.routedTo] ?? c.routedTo} (${c.routeReason})`).join("\n") : "(none)",
           "",
           "## Spec",
-          dec ? `${dec.spec.exists ? "exists" : "none yet"} · ${dec.spec.promoted} promoted · ${dec.spec.drafted} drafted, not promoted${dec.spec.frozen ? " · frozen" : ""}` : "(unavailable)",
+          dec ? `${dec.spec.exists ? "exists" : "none yet"} · ${dec.spec.promoted} promoted${builtCounts(dec)} · ${dec.spec.drafted} drafted, not promoted${dec.spec.frozen ? " · frozen" : ""}` : "(unavailable)",
           "",
           "## Builds (coding sessions, newest first; merged is read from git)",
           ...(builds.length ? builds.slice(0, 20).map((w) => buildLine(w)) : ["(none yet)"]),
@@ -516,7 +519,7 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
         const rows = dec.decisions.filter((d) => (!q.area || d.areaKey === q.area || d.area.toLowerCase() === String(q.area).toLowerCase()) && (!q.state || d.state === q.state));
         const body = rows
           .slice(0, 80)
-          .map((d) => `- ${d.id} · ${d.areaKey} · ${d.state} · ${d.name}: ${cut(d.statement, 200)}\n  owner area: ${d.ownerArea ?? "not set"} · ${d.authorOwnsArea ? "the author decides it" : "outside the author's decision area"}\n  quote: "${cut(d.quote, 240)}"`);
+          .map((d) => `- ${d.id} · ${d.areaKey} · ${d.state}${buildNote(d)} · ${d.name}: ${cut(d.statement, 200)}\n  owner area: ${d.ownerArea ?? "not set"} · ${d.authorOwnsArea ? "the author decides it" : "outside the author's decision area"}\n  quote: "${cut(d.quote, 240)}"`);
         return {
           content: text(`<<untrusted: people's words>>\n${body.join("\n") || "(no decisions match)"}${rows.length > 80 ? `\n(${rows.length - 80} more)` : ""}\n<<end>>`),
           details: { count: rows.length },
@@ -737,7 +740,7 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
         {
           person: str('A roster person\'s id or exact name, or "operator".'),
           public_title: str(`One line, e.g. 'Invoicing rules for Q4'. ${"Shown to the person VERBATIM: neutral wording only, no internal labels (\"gap\", idea or area ids), no judgments about people."}`),
-          goal: str("What must be established, for the session's model: the gap, what is known, what to ask. Name people by name only, never by role or job title: the session's model may repeat it."),
+          goal: str(`What must be established, for the session's model: the gap, what is known, what to ask. ${GOAL_RULES}`),
           model: str('Optional model ref "provider/model" the person talks to (default: the project\'s gathering model, else yours).'),
           question: str(`The first question to put to them. ${"Shown to the person VERBATIM: neutral wording only, no internal labels (\"gap\", idea or area ids), no judgments about people."}`),
         },
@@ -754,13 +757,33 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
         {
           people: strs("Roster ids or exact names, at least two."),
           public_title: str(`One line. ${"Shown to the person VERBATIM: neutral wording only, no internal labels (\"gap\", idea or area ids), no judgments about people."}`),
-          goal: str("What must be established, for the session's model only. Name people by name only, never by role or job title: the session's model may repeat it."),
+          goal: str(`What must be established, for the session's model only. ${GOAL_RULES}`),
           model: str('Optional model ref "provider/model" (default: the project\'s gathering model, else yours).'),
           question: str(`The first question. ${"Shown to the person VERBATIM: neutral wording only, no internal labels (\"gap\", idea or area ids), no judgments about people."}`),
         },
         ["people", "public_title", "goal", "question"],
       ),
       execute: act("sova_offer", async (q) => gather(q, true)),
+    },
+    {
+      name: "sova_close_gathering",
+      label: "Close gathering",
+      description:
+        "Close a gathering session or offer you started that nobody has written in yet: when a newer one covers it, so it stops counting against your limit and stops waiting in Needs you. Never a conflict's settle session (it ends when the conflict is settled) or the operator's.",
+      promptSnippet: "close a gathering session of yours that nobody has answered",
+      parameters: obj({ session: str(SESSION_PARAM), reason: str("Why, in one line (e.g. 'covered by the newer invoicing session'). Kept in your activity.") }, ["session", "reason"]),
+      execute: act("sova_close_gathering", async (q) => {
+        const id = sessionRef(q.session);
+        const reason = typeof q.reason === "string" ? q.reason.trim() : "";
+        if (!reason) throw new Refusal("Say why you close it (reason).");
+        const b = host.batons().find((x) => x.sessionId === id);
+        if (!b || typeof b.owner !== "object" || b.owner.overseerOf !== host.project().id) throw new Refusal("Not one of your gathering sessions.");
+        if (b.conflict) throw new Refusal("That is a settle session: the conflict ends when it is settled.");
+        if (b.state === "done" || b.state === "closed") throw new Refusal(`It is already ${b.state}.`);
+        if (b.wroteAt) throw new Refusal("Someone it went to has already written in it.");
+        await host.closeGathering(b.sessionId);
+        return { content: text(`Closed ${link({ id: b.sessionId, title: b.publicTitle })}.`), details: { id: b.sessionId, note: `Closed: ${cut(reason, 160)}` } };
+      }),
     },
     {
       name: "sova_owner_update",
@@ -952,6 +975,22 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
 }
 
 /** The session parameter's description: the id as the tools print it. */
+/** The spec line's build counts over promoted decisions, as the Requirements card says them:
+    " · 4 built, 9 not built yet", or "" when none is promoted. */
+function builtCounts(dec: DecisionsInfo): string {
+  const built = dec.spec.built ?? 0;
+  const notBuilt = dec.spec.notBuilt ?? 0;
+  return built + notBuilt ? ` · ${built} built, ${notBuilt} not built yet` : "";
+}
+
+/** A promoted decision's build and drift, as its spec record says (§app.requirements/decisions). */
+const buildNote = (d: DecisionRow): string =>
+  d.state !== "promoted" ? "" : `${d.build === "built" ? " · built (as the build recorded it)" : d.build === "not-built" ? " · not built yet" : ""}${d.editedInSpec ? " · edited in the spec since it was promoted" : ""}`;
+
+/** What a gathering's `goal` never says: the session's model may repeat it to the person. */
+export const GOAL_RULES =
+  'Name people by name only, never by role or job title, and never say how the answers will be recorded or under which area ("as finance decisions"): the session\'s model may repeat it.';
+
 const SESSION_PARAM = 'Session id as sova_list_sessions lists it (a bare id; "sova://s/<id>" also works).';
 
 /** The built-ins it has besides its own tools: read-only file access in the project root. */

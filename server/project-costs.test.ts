@@ -33,17 +33,19 @@ const RATES = { input: 1, output: 10, cacheRead: 0.1, cacheWrite5m: 1.25, cacheW
 function fakePrice(ref: ModelRef, u: TokenUsage, _at: number | string): PricedUsage {
   if (ref.provider === "free") return { status: "free", why: "local" };
   if (ref.provider === "nopr" || ref.provider === "jev") return { status: "unpriced", ref: `${ref.provider}/${ref.model}`, why: "No price." };
+  // `period/*`: its price doubles at a refresh inside a day (a new period from T0 + 200 s).
+  const later = ref.provider === "period" && (typeof _at === "number" ? _at : Date.parse(_at)) >= Date.parse("2026-09-20T10:03:20Z");
   const over = u.input + u.cacheRead + u.cacheWrite5m + u.cacheWrite1h > 3_000_000;
-  const f = over ? 2 : 1;
+  const f = (over ? 2 : 1) * (later ? 2 : 1);
   const usd = { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, total: 0 };
   for (const k of ["input", "output", "cacheRead", "cacheWrite5m", "cacheWrite1h"] as const) {
     usd[k] = (u[k] * RATES[k] * f) / 1e6;
     usd.total += usd[k];
   }
-  return { status: "priced", key: `priced/${ref.responseModel ?? ref.model}`, period: null, tier: over ? 3_000_000 : null, usd };
+  return { status: "priced", key: `priced/${ref.responseModel ?? ref.model}`, period: later ? "2026-09-20T10:03:20.000Z" : null, tier: over ? 3_000_000 : null, usd };
 }
 let clock = Date.parse("2026-09-28T12:00:00Z");
-costs.setCostDeps({ price: fakePrice, prices: () => ({ fetchedAt: "2026-09-28T00:00:00.000Z" }), now: () => clock });
+costs.setCostDeps({ name: (k) => (k === "priced/claude-opus-5-5" ? "Claude Opus 5.5" : undefined), price: fakePrice, prices: () => ({ fetchedAt: "2026-09-28T00:00:00.000Z" }), now: () => clock });
 
 // ---- transcript fixtures ----------------------------------------------------------------------------------
 
@@ -136,7 +138,7 @@ describe("a project's cost (§app/project-costs)", async () => {
     reply(T0 + 91_000, "claude-code-cli", "opus[1m]", usage(0, 0, 0, 1_000_000, { cacheWrite1h: 1_000_000 }), { responseModel: "claude-opus-5-5" }),
   ]));
   const codeB = join(sess, "code-b.jsonl");
-  writeFileSync(codeB, lines([header(T0), reply(T0 + 100_000, "nopr", "spark", usage(123)), reply(T0 + 101_000, "zai", "glm-5.3", usage(400_000)), reply(T0 + 102_000, "zai", "glm-5.3", usage(3_500_000))]));
+  writeFileSync(codeB, lines([header(T0), reply(T0 + 100_000, "nopr", "spark", usage(123)), reply(T0 + 101_000, "zai", "glm-5.3", usage(400_000)), reply(T0 + 102_000, "zai", "glm-5.3", usage(3_500_000)), reply(T0 + 103_000, "period", "p", usage(1_000_000)), reply(T0 + 300_000, "period", "p", usage(1_000_000))]));
   store.noteStarted(pp, "code-a", "coding", new Date(T0), codeA, { title: "Build A" });
   store.noteStarted(pp, "code-b", "operator-coding", new Date(T0), codeB, { title: "Build B" });
   // A row from another host, counted only by the removed token budget: unpriced.
@@ -157,7 +159,7 @@ describe("a project's cost (§app/project-costs)", async () => {
   const MEMBER = 0.1;
   const CC_WORKER = 2 * (2.5 + 0.6 * 1.25 + 0.4 * 2) + 1; // over the tier: 2.5M input + 600k 5m + 400k 1h, doubled; haiku 100k output
   const CODE_A = 2 + 2; // 1M 1-hour writes each (the first assumed)
-  const CODE_B_REAL = 0.4 + 3.5 * 2; // one message under the tier, one over it
+  const CODE_B_REAL = 0.4 + 3.5 * 2 + 1 + 2; // one message under the tier, one over it; one each side of a new price period the same day
   const RECONCILE = 1;
 
   test("every source, priced per message: kinds, starters, models, estimates, unpriced, legacy", async () => {
@@ -194,7 +196,9 @@ describe("a project's cost (§app/project-costs)", async () => {
     assert.equal(local?.why, "local");
     const opus = c.byModel.find((m) => m.model === "priced/claude-opus-5-5");
     assert.ok(opus && opus.usdBy.cacheWrite1h > 0, "the answering model names the row");
-    assert.deepEqual([c.top[0]?.sessionId, c.top[0]?.kind, c.top[0]?.title], [CC, "workers", "cc"]);
+    assert.equal(opus?.name, "Claude Opus 5.5", "models.dev's name");
+    assert.deepEqual([c.top[0]?.sessionId, c.top[1]?.sessionId], ["code-b", CC], "most expensive first");
+    assert.deepEqual([c.top[1]?.kind, c.top[1]?.title], ["workers", "cc"]);
     assert.ok(c.top.some((t) => t.kind === "reconcile" && t.path === null));
     assert.equal(c.prices.fetchedAt, "2026-09-28T00:00:00.000Z");
     assert.equal(c.notOnHost, null);

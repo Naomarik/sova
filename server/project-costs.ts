@@ -9,7 +9,7 @@ import { claudeSidechainFiles, claudeUsageAccumulator } from "../pi-config/exten
 import { piUsageAccumulator } from "../pi-config/extensions/subagents/adapters/pi.ts";
 import { type CountedMessage, readWorkerManifests, type WorkerManifest, type WorkerTranscriptAdapters, type WorkerUsage } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import { allBatons, sessionPathOf, workspaceHasFile } from "./baton";
-import { pricesInfo, priceUsage } from "./model-prices";
+import { modelName, pricesInfo, priceUsage } from "./model-prices";
 import { orgDir, readProjects } from "./orgs";
 import { type CostBucket, type CostLedger, type CostSnapshot, type EstimateFlag, ledgerPaths, readCostLedger, readUsageLedger, writeCostLedger, type UsageRow } from "./project-costs-ledger";
 import { projectOf, projectOverseerPaths, readPoMarker, readStarted, sessionIdOfFile } from "./project-overseer-store";
@@ -35,10 +35,12 @@ type Pricer = (ref: ModelRef, usage: TokenUsage, at: number | string) => PricedU
 export interface CostDeps {
   price: Pricer;
   prices: () => { fetchedAt: string | null };
+  /** models.dev's display name of a price key. */
+  name: (key: string) => string | undefined;
   adapters: () => WorkerTranscriptAdapters;
   now: () => number;
 }
-const baseDeps = (): CostDeps => ({ price: priceUsage, prices: pricesInfo, adapters: defaultAdapters, now: Date.now });
+const baseDeps = (): CostDeps => ({ price: priceUsage, prices: pricesInfo, name: modelName, adapters: defaultAdapters, now: Date.now });
 let deps: CostDeps = baseDeps();
 /** Tests replace the pricer, the adapters and the clock. */
 export function setCostDeps(d: Partial<CostDeps> | null): void {
@@ -83,11 +85,17 @@ class Buckets {
     const usage: TokenUsage = { input: c.input, output: c.output, cacheRead: c.cacheRead, cacheWrite5m: c.cacheWrite - (h1 ?? 0), cacheWrite1h: h1 ?? 0 };
     const noModel = m.source === "toolResult" && m.inferredModel === true;
     let band: number | undefined;
+    // The price key and period it resolves to: a bucket never spans a dated alias's switch or a
+    // new price period inside its day, so pricing it at its first message stays exact.
+    let priced = "";
     if (!noModel) {
       const p = deps.price({ provider, model, ...(m.responseModel ? { responseModel: m.responseModel } : {}) }, usage, at);
-      if (p.status === "priced" && p.tier !== null) band = p.tier;
+      if (p.status === "priced") {
+        if (p.tier !== null) band = p.tier;
+        priced = `${p.key}@${p.period ?? ""}`;
+      }
     }
-    const key = [kind, provider, model, m.responseModel ?? "", dayOf(at), band ?? "", est.join(","), noModel ? "x" : ""].join("\0");
+    const key = [kind, provider, model, m.responseModel ?? "", dayOf(at), band ?? "", est.join(","), noModel ? "x" : "", priced].join("\0");
     let b = this.map.get(key);
     if (!b) {
       b = { kind, provider, model, ...(m.responseModel ? { responseModel: m.responseModel } : {}), at: new Date(at).toISOString(), n: 0, input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, ...(band ? { band } : {}), ...(est.length ? { est } : {}), ...(noModel ? { noModel: true as const } : {}) };
@@ -457,7 +465,8 @@ async function computeProjectCost(orgId: string, projectId: string): Promise<Pro
       byStarter.set(s.by, starterRow);
       addTo(starterRow, p);
       const mk = `${p.status}\0${p.model}`;
-      const modelRow = byModel.get(mk) ?? { model: p.model, status: p.status, ...(p.why ? { why: p.why } : {}), ...zeroRow() };
+      const name = p.status === "priced" ? deps.name(p.model) : undefined;
+      const modelRow = byModel.get(mk) ?? { model: p.model, ...(name ? { name } : {}), status: p.status, ...(p.why ? { why: p.why } : {}), ...zeroRow() };
       byModel.set(mk, modelRow);
       addTo(modelRow, p);
       if (p.status === "unpriced") {

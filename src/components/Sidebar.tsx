@@ -511,8 +511,11 @@ function SessionRow(props: {
               {(m) => (
                 <>
                   <span class="session-signal-wrap" title={signalTitle(m())}>
-                    <Icon name={SIGNAL_ICON[m().kind]} small class={SIGNAL_CLASS[m().kind]} />
-                    <Show when={m().kind === "questions" && m().align}>
+                    {/* Open questions show as the accent count alone; its color is the mark. */}
+                    <Show
+                      when={m().kind === "questions" && m().align}
+                      fallback={<Icon name={SIGNAL_ICON[m().kind]} small class={SIGNAL_CLASS[m().kind]} />}
+                    >
                       {(a) => (
                         <span class="session-signal-count text-num" aria-hidden="true">
                           {a().openQuestions}

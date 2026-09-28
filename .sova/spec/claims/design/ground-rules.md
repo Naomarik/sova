@@ -91,6 +91,13 @@ The choice is made in Settings → Themes (§app/settings-dialog), persists in `
 and is applied — custom properties written, `data-theme` set to the theme's base — before first
 paint. An id that no longer resolves falls back to `dark`.
 
+**The browser chrome follows the header.** `<meta name="theme-color">` — the Android status bar
+and the installed app's title bar — takes the worn theme's `surface`, the color of the app's top
+bars, on every apply and clear, including the pre-paint one, in the same call that writes the
+theme's properties, so the bar never shows a different color from the header under it. A theme that omits `surface` gets its base's default
+surface (`#2C2C38` on dark, `#FFFFFF` on light), and no theme at all gets `#2C2C38`. The value is
+passed through verbatim, like every other token.
+
 **A font pick sits over the theme.** Settings → Themes → Typography (§app/settings-dialog) lets this browser put
 one of a closed list of bundled faces on `--font-body` + `--font-display` (Text) and `--font-mono`
 (Code), persisted under `sova:typography` as catalogue ids — never a stack the user typed, so
@@ -164,7 +171,8 @@ linear gradient from `#4A43D8` at the top-left to `#1E1A5C` at the bottom-right.
 the favicon scaled up. The maskable and apple-touch icons are full-bleed, with the gradient over
 the whole square and the mark centred inside the 80% safe zone. The manifest's `background_color`
 is `#1E1A5C`, so the install splash matches the icon. Its `theme_color`, and the `index.html`
-`<meta name="theme-color">`, stay `#1E1E26` to match the app's dark UI.
+`<meta name="theme-color">`, hold `#2C2C38`, the default dark surface, as the launch default
+only: once the app runs, the meta follows the worn theme (§design.ground-rules/theme).
 
 ## §design.ground-rules/voice — Voice (fold-ai-dev, en-US)
 

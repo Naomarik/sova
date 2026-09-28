@@ -26,7 +26,7 @@ import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chaos, container, hostUrl, lab, laptopFetch, readAgentFile, requireLab, sh, tailnetIp, waitFor, writeAgentFile } from "./lib.mjs";
-import { accept, api, decline, inbox, link, makeTree, MODEL, newSession, offer, offers, prompt, releaseLock, rowOf, send, takeLock, transcript, treeHash, unlink, waitIdle, waitOffer, writeLinksFile } from "./links-lib.mjs";
+import { accept, api, byId, decline, inbox, link, makeTree, MODEL, newSession, offer, offers, prompt, releaseLock, rowOf, send, takeLock, transcript, treeHash, unlink, waitIdle, waitInbox, waitOffer, writeLinksFile } from "./links-lib.mjs";
 
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));
 /** Phase-1 links, no offers: every offer route answers the plain 404. */
@@ -238,6 +238,26 @@ describe("2. two hosts, no dest: the recipient answers", () => {
     await waitFor(async () => (await linkRows("a", L.s.a.path, of)).length >= 1, { what: "a's wake" });
     await sleep(3000);
     assert.equal((await linkRows("a", L.s.a.path, of)).length, 1, "a woken once");
+    await waitIdle("a", L.s.a.id).catch(() => {});
+    await waitIdle("b", L.s.b.id).catch(() => {});
+  });
+
+  test("a decline while a is finishing a turn: the wake is steered in and still reaches a", async () => {
+    await waitIdle("a", L.s.a.id).catch(() => {});
+    const r = await offer("a", { session: L.s.a.id, paths: ["small"], note: HANDS_OFF });
+    assert.equal(r.status, 200, refusal(r));
+    const of = r.json.offer.id;
+    // A one-word turn has no tool call, so no next step: a steer arriving now lands as it ends.
+    assert.equal((await prompt("a", L.s.a.path, "Reply with the single word: ok")).status, 200);
+    await waitFor(async () => (await byId("a", L.s.a.id))?.busy, { timeoutMs: 20000, intervalMs: 200, what: "a busy" });
+    const dec = await decline("b", L.s.b.id, of, "declined while you were busy");
+    assert.equal(dec.status, 200, refusal(dec));
+    const wake = await waitInbox("a", L.s.a.id, (xs) => xs.some((x) => x.dir === "in" && x.offer?.id === of), { what: "a's wake record" });
+    const state = wake.find((x) => x.dir === "in" && x.offer?.id === of).delivery?.state;
+    console.log(`# a's wake was ${state}`);
+    await waitFor(async () => (await linkRows("a", L.s.a.path, of)).length >= 1, { timeoutMs: 120000, what: "a's wake on its transcript" });
+    await sleep(3000);
+    assert.equal((await linkRows("a", L.s.a.path, of)).length, 1, "taken in once");
     await waitIdle("a", L.s.a.id).catch(() => {});
     await waitIdle("b", L.s.b.id).catch(() => {});
   });

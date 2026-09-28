@@ -213,7 +213,9 @@ The harnesses:
   - With `dest`, a's repo of 5 000 files lands on b with no b turn before it: one wake on b, one on a,
     the spool and `.part` gone, and `git log` works on b.
   - Without `dest`, the offer message reaches b's agent. It is answered by the local accept, by b's
-    glm agent calling link_accept (else the API), and by a decline that carries its reason. An
+    glm agent calling link_accept (else the API), and by a decline that carries its reason. A
+    decline that lands while a is finishing a one-word turn is steered in, and its wake still
+    reaches a's transcript, once. An
     unanswered offer expires on both copies under `SOVA_LINK_OFFER_TTL_MS` (set through `lab sova-env`).
   - One offer to b and c with a dest map, while c's Sova is stopped, packs one spool. c's copy goes
     through a's outbox, both pull the same sha, and a is woken exactly once.

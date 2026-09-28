@@ -686,7 +686,7 @@ export const NOT_PROMPTED = "Started, but not prompted: its mode could not be se
  * A new ordinary coding session for the project (sova_create_session, Start coding session): in its
  * own git worktree and branch cut from the root's HEAD when the root is in git (else in the root,
  * with the reason recorded), created through the same route the browser uses, recorded in
- * started.json at once (so it is listed and budgeted even when its prompt fails), titled, with
+ * started.json at once (so it is listed and counted against its caps even when its prompt fails), titled, with
  * model and thinking, then its mode set and pinned, and only then its first prompt. A mode that
  * could not be set sends no prompt.
  */
@@ -1004,7 +1004,7 @@ export async function codeItem(orgId: string, projectId: string, body: ItemCodeI
   const p = projectOverseerPaths(orgId, projectId);
   const item = itemOf(p, body);
   // Recorded at once as organizational (server/org-sessions.ts), under its own kind so the
-  // overseer's budget and caps, which read only "coding", never count the operator's sessions.
+  // overseer's caps, which read only "coding", never count the operator's sessions.
   const made = await startCodingSession(orgId, projectId, {
     prompt: body.prompt?.trim() || item.text,
     title: item.title.slice(0, 80),
@@ -1104,7 +1104,7 @@ const DO: Record<PoLimitKind, string> = { gather: "start gathering sessions", pr
 /**
  * Held items whose time has come become reasons to look (§app.project-overseer/limits): a day's
  * allowance or the looks at midnight (soon, unless Off), the message allowance's at once (at the
- * normal pace). The budget's waits for the operator (releaseRaised).
+ * normal pace). One with no retry time waits for the operator to raise its limit (releaseRaised).
  */
 export function releaseHeld(orgId: string, projectId: string, now = clock()): void {
   const p = projectOverseerPaths(orgId, projectId);

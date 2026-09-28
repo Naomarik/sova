@@ -1,7 +1,7 @@
 import { For, Show } from "solid-js";
 import type { AlignDocInfo, AlignQuestionInfo, AlignRowInfo } from "../../shared/protocol";
 import { ALIGN_STATUS_CHIP, alignStatusOf, openLabel, QUESTION_CHIP, questionStateOf } from "../lib/align";
-import { Chip, Icon } from "./ui";
+import { Icon } from "./ui";
 import "../design/align-viewer.css";
 
 let seq = 0;
@@ -73,7 +73,7 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
           <h3 class="align-doc-title" id={titleId}>
             {props.doc.title}
           </h3>
-          <Chip tone={status().tone}>{status().label}</Chip>
+          <span class="align-state">• {status().label}</span>
         </div>
         <p class="align-doc-meta">
           <span class="text-num">{openLabel(props.doc)}</span>
@@ -114,7 +114,7 @@ function AlignQuestion(props: { q: AlignQuestionInfo }) {
       <p class="align-q-head">
         <span class="text-mono align-q-id">{props.q.id}</span>
         <strong class="align-q-topic">{props.q.topic}</strong>
-        <Chip tone={chip().tone}>{chip().label}</Chip>
+        <span class="align-state">• {chip().label}</span>
       </p>
       <p class="align-q-ask"><Inline text={props.q.ask} /></p>
       <Show when={props.q.context}>

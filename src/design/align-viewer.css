@@ -80,13 +80,15 @@
   color: var(--color-ink);
   overflow-wrap: anywhere;
 }
+/* The document's status and each question's state: a plain word after a bullet, no chip. */
+.align-state { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); white-space: nowrap; }
 .align-doc-meta { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
-.align-doc-summary { margin: 0; color: var(--color-ink-2); }
-.align-doc-dropped { margin: 0; color: var(--color-ink-2); }
+.align-doc-summary { margin: 0; color: var(--color-ink); }
+.align-doc-dropped { margin: 0; color: var(--color-ink); }
 
-/* Body text is --fs-body in ink / ink-2 (AA on the card); muted is kept for ids, eyebrow, meta
-   and the decision's "· you" tail. The recommendation is a plain line under the options, no fill
-   or rule; a decided question's recommendation is one step quieter. */
+/* Body text is --fs-body in ink, for legibility; ink-2 is only for a settled question's ask and
+   recommendation, and muted only for ids, eyebrow, meta and the decision's "· you" tail. The
+   recommendation is a plain line under the options, no fill or rule. */
 .align-questions { list-style: none; margin: 0; padding: 0; display: grid; }
 .align-q {
   display: grid;
@@ -100,21 +102,22 @@
 .align-q-id { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .align-q-topic { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .align-q-ask { color: var(--color-ink); }
-.align-q-context { color: var(--color-ink-2); }
+.align-q-context { color: var(--color-ink); }
 .align-q-options {
   margin: 0;
   padding-left: var(--space-5);
   display: grid;
   gap: var(--space-2);
-  color: var(--color-ink-2);
+  color: var(--color-ink);
 }
 .align-q-options strong { color: var(--color-ink); }
 .align-q-rec,
-.align-q-decision { color: var(--color-ink-2); }
+.align-q-decision { color: var(--color-ink); }
 .align-q-label { font-weight: var(--fw-semibold); color: var(--color-ink); }
 .align-q-by { color: var(--color-ink-muted); }
 .align-q[data-state="decided"] .align-q-ask,
-.align-q[data-state="decided"] .align-q-rec strong { color: var(--color-ink-2); }
+.align-q[data-state="decided"] .align-q-rec,
+.align-q[data-state="decided"] .align-q-rec .align-q-label { color: var(--color-ink-2); }
 .align-q[data-state="decided"] .align-q-decision { color: var(--color-ink); }
 .align-q[data-state="dropped"] .align-q-ask { color: var(--color-ink-2); }
 
@@ -122,7 +125,7 @@
 .align-section { max-width: none; }
 .align-section > .disclosure-body,
 .align-rev > .disclosure-body { white-space: normal; }
-.align-list { margin: 0; padding-left: var(--space-5); display: grid; gap: var(--space-2); font-size: var(--fs-body); line-height: var(--lh-body); color: var(--color-ink-2); }
+.align-list { margin: 0; padding-left: var(--space-5); display: grid; gap: var(--space-2); font-size: var(--fs-body); line-height: var(--lh-body); color: var(--color-ink); }
 .align-item-id { color: var(--color-ink-muted); }
 
 /* An earlier revision: one caption line; open, that revision's body under the disclosure rule. */

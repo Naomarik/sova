@@ -95,7 +95,10 @@
 /* The main stakeholder, at the top of the Requirements card: its banners above the select. */
 .project-stakeholder { display: flex; flex-direction: column; gap: var(--space-2); }
 .project-stakeholder-field { max-width: 28rem; }
-.project-owner-area { max-width: 18rem; }
+.project-decision { flex-wrap: wrap; }
+/* Its own row under the decision, lined up with the statement: never squeezed by the chips. */
+.project-owner-area { flex-basis: 100%; padding-left: calc(var(--tap-min) + var(--space-3)); }
+.project-owner-area .select-wrap { max-width: 18rem; }
 
 
 /* The Cost card (§app.project-costs/card). Money is mono with tabular digits and never wraps, so a

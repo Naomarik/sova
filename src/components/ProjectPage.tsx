@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, type JSX, on, onCleanup, Show } from "solid-js";
 import { OWNER_AREA_NONE, type Conflict, type DecisionRow, type DecisionsInfo, type PromoteResult } from "../../shared/decisions";
 import type { OrgDetail, OrgProject } from "../../shared/orgs";
 import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, redraftProject, resolveConflict, routeConflict, setOwnerArea, setProjectStakeholder, setSpecFrozen } from "../lib/api";
@@ -516,6 +516,7 @@ function Provenance(props: { orgId: string; row: DecisionRow }) {
 /** Who decides a decision (§app.requirements/owner-area): the operator changes it here, and the
     server re-routes a conflict it is in. */
 function OwnerAreaField(props: CardProps & { row: DecisionRow }) {
+  const id = createUniqueId();
   let select: HTMLSelectElement | undefined;
   const current = () => props.row.ownerArea ?? "";
   // A roster area removed since it was picked still shows as picked.
@@ -531,25 +532,32 @@ function OwnerAreaField(props: CardProps & { row: DecisionRow }) {
     if (!ok && select) select.value = current();
   };
   return (
-    <label class="field project-owner-area">
-      <span class="field-label">Owner area</span>
-      <select ref={select} class="select" disabled={!!props.busy} onChange={(e) => void set(e.currentTarget.value)}>
-        <Show when={!props.row.ownerArea}>
-          <option value="" selected disabled>
-            Not set
-          </option>
-        </Show>
-        <option value={OWNER_AREA_NONE} selected={props.row.ownerArea === OWNER_AREA_NONE}>
-          None
-        </option>
-        <For each={choices()}>
-          {(a) => (
-            <option value={a} selected={a === props.row.ownerArea}>
-              {a}
+    <div class="field project-owner-area">
+      <label class="field-label" for={id}>
+        Owner area
+      </label>
+      <div class="select-wrap">
+        <select ref={select} id={id} class="select" disabled={!!props.busy} onChange={(e) => void set(e.currentTarget.value)}>
+          <Show when={!props.row.ownerArea}>
+            <option value="" selected disabled>
+              Not set
             </option>
-          )}
-        </For>
-      </select>
+          </Show>
+          <option value={OWNER_AREA_NONE} selected={props.row.ownerArea === OWNER_AREA_NONE}>
+            None
+          </option>
+          <For each={choices()}>
+            {(a) => (
+              <option value={a} selected={a === props.row.ownerArea}>
+                {a}
+              </option>
+            )}
+          </For>
+        </select>
+        <span class="select-caret" aria-hidden="true">
+          ▾
+        </span>
+      </div>
       <Show when={last()}>
         {(l) => (
           <span class="field-hint">
@@ -557,7 +565,7 @@ function OwnerAreaField(props: CardProps & { row: DecisionRow }) {
           </span>
         )}
       </Show>
-    </label>
+    </div>
   );
 }
 
@@ -657,9 +665,6 @@ function DecisionsCard(props: CardProps) {
                         <Show when={d.recordId}>
                           {(id) => <p class="orgs-mono project-muted">{id()}</p>}
                         </Show>
-                        <Show when={d.state !== "superseded"}>
-                          <OwnerAreaField {...props} row={d} />
-                        </Show>
                       </div>
                       <div class="project-chips">
                         <Chip tone={DECISION_STATE[d.state].tone} title={DECISION_STATE[d.state].hint}>
@@ -671,6 +676,9 @@ function DecisionsCard(props: CardProps) {
                           </Chip>
                         </Show>
                       </div>
+                      <Show when={d.state !== "superseded"}>
+                        <OwnerAreaField {...props} row={d} />
+                      </Show>
                     </li>
                   )}
                 </For>

@@ -218,6 +218,9 @@ export interface BatonSession {
   /** A settle session: the conflict it asks someone to settle (§app.requirements/routing), kept after
       a re-route closes it. */
   conflict?: { id: string; area: string };
+  /** Started by the global Overseer for the operator (`sova_gather`, §app.overseer/org-attribution).
+      Recorded, shown nowhere. */
+  startedVia?: "overseer";
 }
 
 export interface BatonStartInput {

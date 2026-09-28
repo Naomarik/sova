@@ -31,7 +31,10 @@
  * GET    /api/orgs/:id/projects/:pid/overseer/actions?limit= -> OverseerAction[] (newest first, refusals included)
  * POST   /api/orgs/:id/projects/:pid/overseer/run           -> ProjectOverseerInfo (Run Now: one watch-loop turn, now; 409 while busy)
  * POST   /api/orgs/:id/projects/:pid/overseer/items/send    body ItemSendInput -> 201 ItemSendResult (Send to person…)
- * POST   /api/orgs/:id/projects/:pid/overseer/items/code    body ItemCodeInput -> 201 ItemCodeResult (Start coding session)
+ * POST   /api/orgs/:id/projects/:pid/overseer/items/code    body ItemCodeInput -> 201 ItemCodeResult (Start coding session; the global
+ *                                                               Overseer alone may give { prompt, title } with no item)
+ * POST   /api/orgs/:id/projects/:pid/overseer/message       body { text } -> ProjectMessageResult (the global Overseer's one route into
+ *                                                               the overseer's conversation; 403 for any other caller)
  * POST   /api/orgs/:id/projects/:pid/overseer/coding        body CodingStartInput -> 201 CodingStartResult (New Coding Session: no item, no prompt)
  * POST   /api/orgs/:id/projects/:pid/overseer/worktrees/merge  body { sessionId } -> ProjectOverseerInfo (merge a coding session's branch into its target)
  * POST   /api/orgs/:id/projects/:pid/overseer/worktrees/remove body { sessionId } -> ProjectOverseerInfo (remove its worktree; the branch too once merged)
@@ -282,6 +285,8 @@ export interface CodingWorktree {
   path: string | null;
   title: string;
   startedBy: "overseer" | "operator";
+  /** An operator's row the global Overseer started for them: "Started by you, via the Overseer". */
+  via?: "overseer";
   /** `sova/<name>`; null for a session in the project root. */
   branch: string | null;
   /** Why it runs in the project root (a tail: "it isn't a Git repository."). */
@@ -351,9 +356,18 @@ export interface ItemCodeInput {
   ideaId?: string;
   /** Defaults to the item's text. */
   prompt?: string;
+  /** With no item (the global Overseer only): the session's title. */
+  title?: string;
   model?: string;
   thinking?: string;
 }
+/** POST …/overseer/message: where the text went (idle: a turn started; mid-turn: queued as a follow-up). */
+export interface ProjectMessageResult {
+  queued: boolean;
+  sessionId: string;
+  path: string;
+}
+
 export interface ItemCodeResult {
   path: string;
   sessionId: string;

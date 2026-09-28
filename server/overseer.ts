@@ -14,10 +14,12 @@ import {
   type OverseerSettings,
   type OverseerSettingsInfo,
   type SessionSummary,
+  type SovaConfirmDetails,
+  type SovaConfirmItem,
 } from "../shared/protocol";
 import { setArchived } from "./archived-sessions";
 import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./attention";
-import { stakeholderAttention } from "./orgs";
+import { readIndex, stakeholderAttention } from "./orgs";
 import {
   acquireChat,
   BusyError,
@@ -53,8 +55,10 @@ import { promptToc, readManifest } from "./overseer-ideas";
 import { promptTodos, readTodos } from "./overseer-todos";
 import type { SubagentTool } from "./overseer-idea-tools";
 import { workerDenial } from "./delegate";
-import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, renderTranscript, TurnLimits, UserTurns } from "./overseer-tools";
+import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, renderTranscript, TurnLimits, userMessageText, UserTurns } from "./overseer-tools";
+import { contactRedactor } from "./overseer-org-view";
 import { overseerFileTools } from "./overseer-file-tools";
+import { OverseerGuard } from "./overseer-deny";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { type Redactor, redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { canonicalPath, resolveSessionPath } from "./paths";
@@ -577,6 +581,7 @@ const host: OverseerToolHost = {
   runningStarted: () => countRunning(started, running, promptedAt),
   counted: (path) => countRunning(started.has(path) ? [path] : [], running, promptedAt) > 0,
   attended: () => turns.attended(),
+  confirmed: () => confirmedItems(turns.confirmedCard(), overseerSession?.sessionManager.getBranch() ?? []),
   explorer: () => readOverseerSettings().explorer,
   explorerCwd: () => overseerDir(),
   subagent: (name) => (overseerSession?.extensionRunner?.getToolDefinition(name) as SubagentTool | undefined) ?? null,
@@ -602,7 +607,32 @@ export async function renderPeerRead(
     title,
     id: s?.id ?? idOf(path),
   });
-  return { text: redactor().redact(text), from: 0, total: items.length, title: redactor().redact(title) };
+  // No contact of an org's roster leaves either (§app.overseer/org-projection), as no secret does.
+  const contact = contactRedactor();
+  return { text: contact.text(redactor().redact(text)), from: 0, total: items.length, title: contact.text(redactor().redact(title)) };
+}
+
+/**
+ * The items of the confirm card `card` (its tool call id), when the run's opening message is the
+ * click on it: the card's result is on the branch, the first user message after it is the run's own
+ * (the latest), and that text is one of the card's options. Null otherwise: a typed answer, a later
+ * turn, a card nobody clicked. Pure over the branch, for the tests.
+ */
+export function confirmedItems(card: string | null, branch: readonly unknown[]): SovaConfirmItem[] | null {
+  if (!card) return null;
+  type E = { type?: string; message?: { role?: string; toolCallId?: string; toolName?: string; details?: unknown } };
+  const entries = branch as E[];
+  const at = entries.findIndex((e) => e.type === "message" && e.message?.role === "toolResult" && e.message.toolCallId === card && e.message.toolName === "sova_confirm");
+  if (at < 0) return null;
+  const details = entries[at]!.message!.details as SovaConfirmDetails | undefined;
+  if (!details || !Array.isArray(details.options)) return null;
+  const users = entries.map((e, i) => ({ e, i })).filter(({ e, i }) => i > at && e.type === "message" && e.message?.role === "user");
+  const click = users[0];
+  const last = [...entries.keys()].reverse().find((i) => entries[i]!.type === "message" && entries[i]!.message?.role === "user");
+  if (!click || click.i !== last) return null;
+  const said = userMessageText(click.e.message)?.trim() ?? "";
+  if (!details.options.some((o) => (o.reply?.trim() || o.label) === said || o.label === said)) return null;
+  return details.items ?? [];
 }
 
 /** An in-process call exactly as the Overseer's tools make it. Exported for the tests. */
@@ -649,7 +679,7 @@ export function renderOverseerPrompt(
     .replaceAll("{{HOME}}", homedir())
     .replaceAll(
       "{{CAPS}}",
-      `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions or explorers, ${c.archivesPerTurn} archive operations, ${c.explorePerTurn} explorers launched, ${c.linksPerTurn} links made; at most ${c.concurrentSessions} sessions you started running at once`,
+      `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions or explorers, ${c.archivesPerTurn} archive operations, ${c.explorePerTurn} explorers launched, ${c.linksPerTurn} links made, ${c.orgWritesPerTurn} organization writes, ${c.gatherPerTurn} gathering sessions or offers started; at most ${c.concurrentSessions} sessions you started running at once`,
     );
 }
 
@@ -745,8 +775,8 @@ setOverseerRuntime({
         appendSystemPromptOverride: (base) => prompt.seed(base),
       },
       tools: [...tools.map((t) => t.name), ...BUILTIN_ALLOWED],
-      // read/grep/find/ls reach anywhere except secret files (overseer-deny.ts).
-      customTools: overseerFileTools(overseerDir()),
+      // read/grep/find/ls reach anywhere except secret files and the attached orgs' workspaces (overseer-deny.ts).
+      customTools: overseerFileTools(overseerDir(), () => new OverseerGuard(readIndex().orgs.map((o) => o.dir))),
       model: settings.model,
       thinking: settings.thinking,
     };
@@ -767,8 +797,8 @@ setOverseerRuntime({
       if (turns.observe(event)) limits.reset();
     });
   },
-  userSend(send) {
-    return turns.send(send);
+  userSend(send, confirm) {
+    return turns.send(send, confirm);
   },
 });
 

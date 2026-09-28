@@ -1,5 +1,5 @@
 import type { OwnerPageInfo } from "../shared/orgs";
-import { onPersonLeft, OrgError, ownerOf, readIndex, readOrg, readRoster, setOrgOwner } from "./orgs";
+import { onPersonLeft, type OperatorBy, OrgError, ownerOf, readIndex, readOrg, readRoster, setOrgOwner } from "./orgs";
 import { findPersonLink, mintOwnerLink, ownerLinksOf, personLinkDead, personLinkState, revokePersonLinks, type PersonLinkRecord } from "./person-links";
 import { readVisits } from "./visits";
 
@@ -13,8 +13,8 @@ import { readVisits } from "./visits";
 export const OWNER_LINK_SOON_MS = 7 * 86_400_000;
 
 /** Set the owner (the operator's select). A change turns the previous owner's link off at once. */
-export function setOwner(orgId: string, personId: unknown): void {
-  const { from, to } = setOrgOwner(orgId, personId);
+export function setOwner(orgId: string, personId: unknown, by?: OperatorBy): void {
+  const { from, to } = setOrgOwner(orgId, personId, by);
   if (from !== to) revokePersonLinks((l) => l.orgId === orgId && l.personId !== to, "owner-changed");
 }
 

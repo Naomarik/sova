@@ -29,7 +29,7 @@ export function ownerLinkLine(info: OwnerPageInfo | undefined, now = Date.now())
     (a leave is said by the banner). */
 export function ownerChangeLine(history: OwnerChange[] | undefined, now = Date.now()): string {
   const last = history?.at(-1);
-  return last && last.why === "operator" ? `Set by you ${relativeTime(last.at, now)}.` : "";
+  return last && last.why === "operator" ? `Set by you${last.via === "overseer" ? ", via the Overseer" : ""} ${relativeTime(last.at, now)}.` : "";
 }
 
 /** The confirm under Get Owner Link while a link is live: minting turns that one off. */

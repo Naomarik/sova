@@ -64,6 +64,8 @@ export function InsightsPage(props: {
   back?: { href: string; label: string };
   /** Page-specific class on the head and the pane, for a page that lays out its own width. */
   class?: string;
+  /** The page's own action in its head, before the refresh button (the project page's Archive Project). */
+  actions?: JSX.Element;
   children: JSX.Element;
 }) {
   return (
@@ -92,6 +94,7 @@ export function InsightsPage(props: {
             <p class="session-head-meta">{props.meta}</p>
           </Show>
         </div>
+        {props.actions}
         <button
           type="button"
           class="button button-icon button-ghost"

@@ -329,11 +329,25 @@ describe("the About text has one reader in the server", () => {
     assert.deepEqual(using(/about\.md|org-history\.jsonl/), ["orgs.ts"]);
   });
 
-  test("its readers are called only by the org detail and the project overseer's prompt", () => {
-    assert.deepEqual(using(/\breadOrgAbout\b/), ["orgs.ts", "project-overseer.ts"]);
-    assert.deepEqual(using(/\breadOrgHistory\b/), ["orgs.ts"]);
+  test("its readers are called only by the org detail, the project overseer's prompt and the global Overseer's one about read", () => {
+    assert.deepEqual(using(/\breadOrgAbout\b/), ["orgs.ts", "overseer-org-view.ts", "project-overseer.ts"]);
+    assert.deepEqual(using(/\breadOrgHistory\b/), ["orgs.ts", "overseer-org-view.ts"]);
     assert.deepEqual(using(/\borgDetail\b/), ["org-routes.ts", "orgs.ts"]);
     assert.deepEqual(using(/\borgPage\b/), ["org-routes.ts"]);
+  });
+
+  test("in the global Overseer's projection, only its one about read reads it, and only sova_orgs {org, about: true} calls that", () => {
+    const text = sources.find((s) => s.file === "overseer-org-view.ts")!.text;
+    const head = "export function aboutView(";
+    const start = text.indexOf(head);
+    const end = text.indexOf("\n}\n", start);
+    for (const re of [/\breadOrgAbout\(/g, /\breadOrgHistory\(/g]) {
+      const calls = [...text.matchAll(re)].map((m) => m.index!);
+      assert.equal(calls.length, 1, `${re}: one call`);
+      assert.ok(calls[0]! > start && calls[0]! < end, `${re}: inside aboutView`);
+    }
+    assert.deepEqual(using(/\baboutView\(/), ["overseer-org-view.ts"], "called nowhere else");
+    assert.match(text, /if \(about\) lines\.push\("", \.\.\.aboutView\(orgId, now\)\)/, "and only for about: true");
   });
 
   test("in the project overseer, only the prompt's render reads it, and the owner-update guard (to keep it out)", () => {

@@ -21,8 +21,14 @@ which is also its live view: its tool calls render as tool cards as they happen.
   `sova-project-overseer` marker `{v:1, orgId, projectId}`, and its cwd is the **project root**.
   It is that project's overseer only when the marker is present, the file is in THAT org's
   workspace, and the project's `state.json` knows its id; a copy or a fork is an ordinary session.
-  The session list marks it (`projectOverseer`, and `org`, §app.organizations/org-sessions); nothing (the Overseer's prompt route included)
-  writes a message into it but the operator's own composer.
+  The session list marks it (`projectOverseer`, and `org`, §app.organizations/org-sessions).
+- **Two writers, each by its own route.** Only two things write a message into it: the operator's
+  own composer, and the global Overseer, through its one message route and only in a turn the
+  operator started (§app.overseer/org-project-overseers), which marks each message as the
+  Overseer's. Nothing else: the Overseer's prompt route (`sova_send`, `POST
+  /api/sessions/prompt`) still refuses it (409), and the message route refuses any caller without
+  the server's sender secret (403). A message from either is the operator's to its model and to its
+  limits (§app.project-overseer/autonomy-levels).
 - Its state is in the workspace repo under `projects/<projectId>/overseer/`: `overseer.json`
   (autonomy, model, thinking, the coding sessions' model, thinking and mode, the limits, the pace,
   watch on/off, extra instructions; §app.project-overseer/limits), `state.json`,
@@ -50,6 +56,15 @@ which is also its live view: its tool calls render as tool cards as they happen.
   list (never their text: it reads them with `sova_todos` when the operator asks,
   §app.project-overseer/ideas-and-todos), its notes, the organization's About text (§app.organizations/about) and, last, the operator's extra instructions. Model and thinking from `overseer.json`, else the new-session
   defaults; the composer's picks are saved there.
+- **Extra instructions.** The project's Overseer card has an **Extra instructions** field, after
+  the coding sessions' mode and before Limits: the hint "Added last to this overseer's prompt, after
+  the organization's About text, and they win over it. It reads them at its next run.", a textarea
+  (at most 8,000 characters) with a live `{n} / 8,000` counter, and **Save** and **Cancel**, both
+  disabled until the text differs from what is saved (Cancel puts the saved text back). Save sends
+  only `extraSystemPrompt` (`PATCH …/overseer`, one PATCH); a blank save removes them; a longer text
+  is refused (400) and the reason shows under the field. Secrets in them are redacted when they are
+  put into the prompt. The global Overseer reads and sets them too (`sova_org_project`,
+  `sova_project_overseer` `settings`). Copy: §design.copy-deck/overseer-orgs.
 - **Thinking levels a model doesn't offer.** A `PATCH …/overseer` naming a thinking level (its own,
   `codingThinking` or `gatheringThinking`) that the model it applies to doesn't offer is refused
   (400, "{model} offers thinking {levels}.") and writes nothing; the model it applies to is the
@@ -66,7 +81,10 @@ heading, §app.session-list/organizations, or the project page's Open Overseer, 
 same eye), but under a **head of
 its own** in place of the session head, with its status in a short strip under it. A workspace pane
 keeps the pane head. Everything else of the chat is unchanged: the thread is its live view, the
-composer has no mode switch.
+composer has no mode switch. A message the global Overseer sent it (§app.overseer/org-project-overseers)
+is a user row carrying the **Overseer** tag, live and on reload, and while it waits in the queue
+its row reads **Overseer** (§app.overseer/sent-marker); Rewind and Regenerate work on it as on any
+user row.
 
 ```html
 <header class="session-head overseer-head po-head">
@@ -153,8 +171,9 @@ composer has no mode switch.
   now: L0." and the reason, shown whenever it is paused, even with L0 chosen).
 - The level binds only runs the operator did not start (a watch-loop look, Run Now). A message the
   operator sends from the UI makes that run theirs (decided by identity, as for the Overseer), and
-  every tool may run in it, under the caps. Changing or reading the operator's to-do list runs only
-  in the operator's own turns.
+  so does a message the global Overseer sends through its route in a turn the operator started
+  (§app.overseer/org-project-overseers); every tool may run in it, under the caps. Changing or
+  reading the operator's to-do list runs only in the operator's own turns.
 - Enforced in the tools' wrapper at every call, never by the prompt: a tool above the level refuses
   with a sentence telling the model to file the gap as an idea or raise a confirm card instead, the
   refusal is logged, and nothing reaches the gathering, reconcile, promote or session code. A level
@@ -168,8 +187,8 @@ composer has no mode switch.
 
 - **Two allowances.** *Each message you send* covers the turns the operator started: 3 gathering
   sessions or offers started, 20 decisions promoted, 2 coding sessions started, 5 prompts to them
-  (`gatherPerTurn`, `promotePerTurn`, `createPerTurn`, `promptsPerTurn`); an operator message and
-  Clear reset it. *On its own, each day* covers every run the operator did not start (a watch-loop
+  (`gatherPerTurn`, `promotePerTurn`, `createPerTurn`, `promptsPerTurn`); an operator message
+  (the global Overseer's message included, §app.overseer/org-project-overseers) and Clear reset it. *On its own, each day* covers every run the operator did not start (a watch-loop
   look, Run Now): 6 gathering sessions or offers, 60 promotions, 4 coding sessions, 12 prompts
   (`gatherPerDay`, `promotePerDay`, `createPerDay`, `promptsPerDay`), reset at local midnight on
   this host. An operator message never refills what a run on its own may do, and a run on its own
@@ -375,7 +394,9 @@ composer has no mode switch.
   title, not as a link, and "On another host: its worktree is there.", never "Worktree folder
   missing".
 - **The project page lists them.** "Coding sessions" lists every coding session the project started
-  (the overseer's and the operator's), newest first: title (a link on this host), who started it,
+  (the overseer's and the operator's), newest first: title (a link on this host), who started it
+  (the overseer, you, or you via the Overseer: an `operator-coding` row marked `via: "overseer"`,
+  §app.overseer/org-project-overseers),
   state, and its branch in mono, then **Merge Branch** and **Remove Worktree**; "Sessions it
   started" keeps its gathering sessions and offers. Copy: §design.copy-deck/project-coding.
 - **Merge Branch** is the operator's gesture; the overseer has no tool for it. It merges
@@ -424,7 +445,7 @@ composer has no mode switch.
   the operator adds or changes: they are the operator's own list
   (§app.project-overseer/ideas-and-todos).
 - Every 20 s, a project with reasons, watching on, not paused by an attach
-  (§app.organizations/portability), an idle overseer, at least its gap since its last unattended
+  (§app.organizations/portability), not archived (§app.organizations/archive), an idle overseer, at least its gap since its last unattended
   look (10 minutes unless the project sets another, §app.project-overseer/limits) and under its
   looks per day gets one unattended run, which lists the reasons and asks it to re-read the
   project, infer gaps and act within its level. The same tick turns held items whose time has come
@@ -438,7 +459,7 @@ composer has no mode switch.
   (the daily limit, watching on, not paused, an idle overseer) still holds, and the run lists every
   reason waiting.
 - **Run Now** (`POST …/overseer/run`) starts one now, skipping the reasons and the gap
-  but not the looks per day or a busy overseer (409 with why). The project page shows the last run
+  but not the looks per day, a busy overseer or an archived project (409 with why). The project page shows the last run
   and the reasons waiting: running ("Last looked on its own {time}, running now, after
   {reasons}."), finished ("…, after {reasons}."), stopped and why ("…, stopped: {why}.": the stream
   guard's trip, the model's error, or "Stopped" for an abort), cut off by a restart ("…, cut off by

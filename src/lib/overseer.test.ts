@@ -217,6 +217,12 @@ test("confirm details: items parse tolerantly; a card without them has no items 
   assert.ok(!("items" in confirmDetails({ title: "Go?", options: ["Yes"], items: "s1" })!), "items that aren't a list are ignored");
 });
 
+test("confirm details: clickOnly parses only as true; an ordinary card has none", () => {
+  assert.equal(confirmDetails({ title: "Close?", options: ["Close"], clickOnly: true })?.clickOnly, true);
+  assert.ok(!("clickOnly" in confirmDetails({ title: "Go?", options: ["Yes"] })!), "an ordinary card keeps its hint");
+  assert.ok(!("clickOnly" in confirmDetails({ title: "Go?", options: ["Yes"], clickOnly: "yes" })!));
+});
+
 test("confirm details: an item's note parses on every kind, blank or non-string notes are dropped", () => {
   const d = confirmDetails({
     title: "Archive?",
@@ -255,4 +261,20 @@ test("confirm rows: ideas and todos come first and are never collapsed; only ses
   assert.deepEqual([few.rows.length, few.collapsible, few.rows.at(-1)!.id], [13, false, "s1"]);
   // 9 sessions: hiding 1 saves nothing, so no toggle.
   assert.equal(confirmRows(Array.from({ length: 9 }, (_, i) => session(i)), false).collapsible, false);
+});
+
+test("a card's project and person rows keep their org and status; one without its org or name is dropped", () => {
+  const d = confirmDetails({
+    title: "Start?",
+    options: ["Start"],
+    items: [
+      { kind: "project", id: "prj_1", orgId: "org_1", name: "Ledger", orgName: "Harbor Works", note: "Its site." },
+      { kind: "person", id: "p_1", orgId: "org_1", name: "Tony", orgName: "Harbor Works", status: "proposed" },
+      { kind: "person", id: "p_2", name: "No org" },
+    ],
+  });
+  assert.deepEqual(d?.items, [
+    { kind: "project", id: "prj_1", orgId: "org_1", name: "Ledger", orgName: "Harbor Works", note: "Its site." },
+    { kind: "person", id: "p_1", orgId: "org_1", name: "Tony", orgName: "Harbor Works", status: "proposed" },
+  ]);
 });

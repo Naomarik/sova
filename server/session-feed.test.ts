@@ -95,6 +95,9 @@ describe("D3: list_changed, for what the marks can't carry", () => {
     assert.equal(listChanged(map([row("a", { baton: waiting }), row("b")]), map([row("a", { baton: held }), row("b")])), true);
     assert.equal(listChanged(map([row("a", { baton: held }), row("b")]), map([row("a", { baton: { ...held } }), row("b")])), false);
     assert.equal(listChanged(map(base), map([row("a", { signals: signals(1), tags: { topic: "docs" } }), row("b")])), false);
+    // An org session's project archived (projects.json, not its file): it leaves the Organizations region.
+    const org = { orgId: "o1", orgName: "Acme", projectId: "p1", projectName: "Ledger", kind: "gathering" as const };
+    assert.equal(listChanged(map([row("a", { org }), row("b")]), map([row("a", { org: { ...org, projectArchived: true } }), row("b")])), true);
   });
 
   test("a session that appears after connect is announced once; nothing on the connect itself", async () => {

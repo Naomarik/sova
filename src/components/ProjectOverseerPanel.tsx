@@ -68,6 +68,8 @@ export function ProjectOverseerPanel(props: {
   projectId: string;
   /** Whether the overseer is working now, after every read: its acts (a promotion) change the page around it. */
   onBusy?(busy: boolean): void;
+  /** The project is archived (§app.organizations/archive): its start gestures are disabled, "Archived". */
+  archived?: boolean;
 }) {
   const o = () => props.org.id;
   const p = () => props.projectId;
@@ -123,10 +125,22 @@ export function ProjectOverseerPanel(props: {
             Working
           </Chip>
         </Show>
-        <button type="button" class="button button-sm button-ghost" aria-disabled={busy() || info.data()?.busy ? "true" : undefined} title="Look at the project now, as the watch loop would." onClick={() => void run(() => runProjectOverseer(o(), p()), "The overseer is looking now.")}>
+        <button
+          type="button"
+          class="button button-sm button-ghost"
+          aria-disabled={busy() || info.data()?.busy || props.archived ? "true" : undefined}
+          title={props.archived ? "Archived" : "Look at the project now, as the watch loop would."}
+          onClick={() => !props.archived && void run(() => runProjectOverseer(o(), p()), "The overseer is looking now.")}
+        >
           Run Now
         </button>
-        <button type="button" class="button button-sm" aria-disabled={busy() ? "true" : undefined} onClick={openChat}>
+        <button
+          type="button"
+          class="button button-sm"
+          aria-disabled={busy() || (props.archived && !info.data()?.exists) ? "true" : undefined}
+          title={props.archived && !info.data()?.exists ? "Archived" : undefined}
+          onClick={() => !(props.archived && !info.data()?.exists) && openChat()}
+        >
           <Icon name="eye" small />
           {info.data()?.exists ? "Open Overseer" : "Start Overseer"}
           <Show when={info.data()?.unread}>{(n) => <span class="chip chip-count">{n()}</span>}</Show>
@@ -179,10 +193,21 @@ export function ProjectOverseerPanel(props: {
                 <CodingMode info={i()} onSave={(key) => run(() => patchProjectOverseer(o(), p(), { codingMode: codingModeOf(key) }), key === "auto" ? "Coding sessions' mode: Automatic." : `Coding sessions run ${codingModeLabel(key)}.`)} />
               </SessionModel>
             </div>
+            <ExtraInstructions
+              saved={i().settings.extraSystemPrompt}
+              save={async (text) => {
+                const next = await patchProjectOverseer(o(), p(), { extraSystemPrompt: text });
+                info.set(next);
+                const done = text.trim() ? "Extra instructions saved." : "Extra instructions removed.";
+                toast(done);
+                announce(done);
+              }}
+            />
             <Limits info={i()} host={host()} save={(patch) => run(() => patchProjectOverseer(o(), p(), patch), "Limits saved.")} />
             <Started info={i()} />
             <CodingSessions
               info={i()}
+              archived={props.archived}
               start={() => startProjectCoding(o(), p())}
               merge={(w) => mergeCodingWorktree(o(), p(), w.sessionId)}
               remove={(w) => removeCodingWorktree(o(), p(), w.sessionId)}
@@ -196,6 +221,7 @@ export function ProjectOverseerPanel(props: {
       <Activity actions={actions.data()} error={actions.error()} />
       <Ideas
         org={props.org}
+        archived={props.archived}
         ideas={ideas.data() ? openIdeas(ideas.data()!.ideas) : undefined}
         error={ideas.error()}
         add={async (title) => {
@@ -213,6 +239,7 @@ export function ProjectOverseerPanel(props: {
       />
       <Todos
         org={props.org}
+        archived={props.archived}
         info={todos.data()}
         error={todos.error()}
         onLinks={setLinks}
@@ -375,6 +402,96 @@ function SessionModel(props: { info: ProjectOverseerInfo; host: string | null; k
       </label>
       {props.children}
     </div>
+  );
+}
+
+/** The most characters of the extra instructions (the server's EXTRA_PROMPT_MAX). */
+const EXTRA_MAX = 8000;
+
+/**
+ * Extra instructions (§app.project-overseer/identity): the operator's own words, added last to the
+ * overseer's prompt, after the organization's About text. One PATCH on Save; Cancel puts the saved
+ * text back; a blank save removes them.
+ */
+function ExtraInstructions(props: { saved: string; save(text: string): Promise<void> }) {
+  const [draft, setDraft] = createSignal<string | null>(null);
+  const [problem, setProblem] = createSignal<string | null>(null);
+  const [saving, setSaving] = createSignal(false);
+  const text = () => draft() ?? props.saved;
+  const dirty = () => draft() !== null && draft() !== props.saved;
+  const over = () => text().length > EXTRA_MAX;
+  const submit = async () => {
+    if (!dirty() || saving()) return;
+    if (over()) {
+      setProblem("Extra instructions can be at most 8,000 characters.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await props.save(text());
+      setDraft(null);
+      setProblem(null);
+    } catch (err) {
+      const m = errText(err);
+      setProblem(/at most 8000 characters/.test(m) ? "Extra instructions can be at most 8,000 characters." : m);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <form
+      class="field project-extra"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <label class="field-label" for="project-extra-text">
+        Extra instructions
+      </label>
+      <p class="field-hint" id="project-extra-hint">
+        Added last to this overseer's prompt, after the organization's About text, and they win over it. It reads them at its next run.
+      </p>
+      <textarea
+        id="project-extra-text"
+        class="input textarea"
+        rows={4}
+        value={text()}
+        aria-describedby={problem() ? "project-extra-hint project-extra-error" : "project-extra-hint"}
+        aria-invalid={problem() || over() ? "true" : undefined}
+        onInput={(e) => {
+          setDraft(e.currentTarget.value);
+          setProblem(null);
+        }}
+      />
+      <Show when={problem()}>
+        {(p) => (
+          <p class="field-error" id="project-extra-error">
+            {p()}
+          </p>
+        )}
+      </Show>
+      <div class="button-row project-extra-foot">
+        <span class={over() ? "field-error orgs-mono" : "field-hint orgs-mono"}>
+          {text().length.toLocaleString("en-US")} / 8,000
+        </span>
+        <span class="orgs-grow" />
+        <button
+          type="button"
+          class="button button-sm button-ghost"
+          disabled={!dirty() || saving()}
+          onClick={() => {
+            setDraft(null);
+            setProblem(null);
+          }}
+        >
+          Cancel
+        </button>
+        <button type="submit" class="button button-sm" disabled={!dirty() || saving()}>
+          Save
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -618,6 +735,8 @@ function Started(props: { info: ProjectOverseerInfo }) {
  */
 function CodingSessions(props: {
   info: ProjectOverseerInfo;
+  /** The project is archived: New Coding Session is disabled, "Archived". */
+  archived?: boolean;
   /** New Coding Session (§app.project-overseer/new-coding-session): tied to no item, nothing sent. */
   start(): Promise<CodingStartResult>;
   merge(w: CodingWorktree): Promise<ProjectOverseerInfo>;
@@ -633,7 +752,7 @@ function CodingSessions(props: {
   /** New Coding Session's own refusal, under the heading. */
   const [startError, setStartError] = createSignal<string | null>(null);
   const start = async () => {
-    if (starting()) return;
+    if (starting() || props.archived) return;
     setStarting(true);
     try {
       const r = await props.start();
@@ -676,7 +795,13 @@ function CodingSessions(props: {
     <>
       <div class="orgs-head">
         <h3 class="orgs-h3">Coding sessions</h3>
-        <button type="button" class="button button-sm" aria-disabled={starting() ? "true" : undefined} onClick={() => void start()}>
+        <button
+          type="button"
+          class="button button-sm"
+          aria-disabled={starting() || props.archived ? "true" : undefined}
+          title={props.archived ? "Archived" : undefined}
+          onClick={() => void start()}
+        >
           <Icon name="terminal" small /> New Coding Session
         </button>
       </div>
@@ -836,6 +961,8 @@ function Activity(props: { actions: OverseerAction[] | undefined; error: string 
 
 interface ItemCallbacks {
   org: OrgDetail;
+  /** The project is archived: nothing new starts from an item. */
+  archived?: boolean;
   onLinks(l: Links): void;
   send(input: ItemSendInput): Promise<ItemSendResult>;
   code(input: ItemCodeInput): Promise<ItemCodeResult>;
@@ -1025,10 +1152,23 @@ function ItemActions(props: ItemCallbacks & { item: Item }) {
             </a>
           )}
         </Show>
-        <button type="button" class="button button-sm button-ghost" aria-expanded={sending()} onClick={() => setSending(!sending())}>
+        <button
+          type="button"
+          class="button button-sm button-ghost"
+          aria-expanded={sending()}
+          aria-disabled={props.archived ? "true" : undefined}
+          title={props.archived ? "Archived" : undefined}
+          onClick={() => !props.archived && setSending(!sending())}
+        >
           Send to Person…
         </button>
-        <button type="button" class="button button-sm button-ghost" aria-disabled={working() ? "true" : undefined} onClick={() => void code()}>
+        <button
+          type="button"
+          class="button button-sm button-ghost"
+          aria-disabled={working() || props.archived ? "true" : undefined}
+          title={props.archived ? "Archived" : undefined}
+          onClick={() => !props.archived && void code()}
+        >
           <Icon name="terminal" small /> Start Coding Session
         </button>
       </div>

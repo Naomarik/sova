@@ -1317,7 +1317,8 @@ export function ChatView(props: {
   // outside a workspace has nobody to tell — the prop is simply absent there.
   createEffect(() => props.onTurnError?.(turnError()));
 
-  const send = (text: string, steer: boolean, attachments: UploadResult[]) => {
+  /** `confirm`: the Overseer's confirm card click (that card's tool call id); never set by typing. */
+  const send = (text: string, steer: boolean, attachments: UploadResult[], confirm?: string) => {
     // A model turned off in Settings → Models is refused by the server on its way to the provider
     // (server/model-policy.ts). Saying so here keeps the message in the composer instead of
     // spending it on a refusal, and never picks another model for you.
@@ -1334,7 +1335,7 @@ export function ChatView(props: {
     const compact = compactCommand(text);
     if (compact) return sendCompact(text, compact.instructions, steer, attachments.length > 0);
     const clientId = newClientId();
-    if (!socket.send({ type: steer ? "steer" : "prompt", text, clientId })) return false;
+    if (!socket.send(steer ? { type: "steer", text, clientId } : { type: "prompt", text, clientId, ...(confirm ? { confirm } : {}) })) return false;
     // A known slash command isn't a message to the model (templates and skills expand into other
     // text, extensions may never start the agent): no optimistic bubble or running state, just a
     // local "Ran" row, whether sent idle or as a steer mid-turn (pi runs it either way).
@@ -1550,7 +1551,7 @@ export function ChatView(props: {
       >
         <Show when={items()} fallback={<TranscriptSkeleton />}>
           {(list) => (
-            <OverseerThreadContext.Provider value={props.overseer ? { answer: (text) => send(text, false, []) } : null}>
+            <OverseerThreadContext.Provider value={props.overseer ? { answer: (text, card) => send(text, false, [], card) } : null}>
             <AlignAnswerContext.Provider value={alignAnswer}>
               <HistoryItems
                 items={list()}

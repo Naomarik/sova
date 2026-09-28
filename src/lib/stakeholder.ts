@@ -14,7 +14,7 @@ export interface StakeholderView {
   /** The stakeholder left the org, so the project has none (until the operator picks again). */
   cleared: { name: string; at: string } | null;
   /** The newest change, for the line under the select: the operator's, or a leaving (with who left). */
-  latest: { why: "operator"; at: string } | { why: "left"; at: string; name: string } | null;
+  latest: { why: "operator"; at: string; via?: "overseer" } | { why: "left"; at: string; name: string } | null;
 }
 
 export function stakeholderView(project: Pick<OrgProject, "stakeholder" | "stakeholderCleared" | "stakeholderHistory">, roster: readonly Person[]): StakeholderView {
@@ -26,6 +26,6 @@ export function stakeholderView(project: Pick<OrgProject, "stakeholder" | "stake
     ? null
     : last.why === "left"
       ? { why: "left", at: last.at, name: roster.find((p) => p.id === last.from)?.name ?? project.stakeholderCleared?.name ?? last.from ?? "" }
-      : { why: "operator", at: last.at };
+      : { why: "operator", at: last.at, ...(last.via === "overseer" ? { via: "overseer" as const } : {}) };
   return { current, options, cleared, latest, suggestion: !current && options.length === 1 ? options[0]! : null };
 }

@@ -309,17 +309,32 @@ chip and the Inputs trigger sit together at the row's right end.
   <span class="icon icon-sm" style="--icon:url(/icons/chevron-down.svg)" aria-hidden="true"></span>
 </button>
 <div class="model-menu action-menu align-menu" popover="auto" role="menu" aria-label="Open alignments">
-  <div class="mode-option group-option align-menu-item" role="menuitem" tabindex="0">
-    <span class="mode-option-text"><span class="mode-option-id"><span class="text-mono">al_3</span> Autonomy settings</span>
-      <span class="mode-option-note">How far the Overseer may act alone. · 2 of 7 open</span></span>
+  <div class="align-menu-item" role="menuitem" tabindex="0"
+       aria-label="al_3 Autonomy settings: 5 of 7 questions decided — jump to its card">
+    <span class="text-mono align-menu-id">al_3</span>
+    <span class="align-menu-title" title="Autonomy settings">Autonomy settings</span>
+    <span class="align-menu-bar" aria-hidden="true"><span class="align-menu-fill align-menu-fill-warn" style="width:71%"></span></span>
+    <span class="chip chip-count chip-warn"><i class="chip-dot"></i>5/7</span>
+  </div>
+  <div class="align-menu-item" role="menuitem" tabindex="0"
+       aria-label="al_1 Queue shape: implementing, no questions — jump to its card">
+    <span class="text-mono align-menu-id">al_1</span>
+    <span class="align-menu-title" title="Queue shape">Queue shape</span>
+    <span class="chip chip-accent"><i class="chip-dot"></i>Implementing</span>
   </div>
 </div>
 ```
 
-- **Expanding** it (a menu button, `aria-expanded`; ↑/↓ move between rows, Escape closes) lists
-  each open alignment, the last touched first: its id and title, then its summary and "{k} of {m}
-  open" (or its status word when nothing is open). The panel opens above the chip when it fits,
-  340px wide from 768px.
+- **Expanding** it (a menu button, `aria-expanded`; ↑/↓ move between rows, Home/End go to the
+  first/last, Escape closes) lists each open alignment on one line: those with an open question
+  first, each group the last touched first. A row reads left to right: its id (mono, muted), its
+  title (one line, cut with an ellipsis, the whole title on hover), a thin progress bar of its
+  decided questions out of its live ones, and a round count chip "{decided}/{live}" ("5/7"). The
+  bar and the chip are warn while any question is open and success once all are decided. An
+  alignment with no live questions shows its status word in the status chip's tone instead of
+  the bar and count. The summary is not shown, nor any question. Rows are 44px tall at every
+  width. The panel opens above the chip when it fits, 340px wide from 768px; under 768px it is
+  the menus' bottom sheet.
 - **Choosing one** jumps to that alignment's newest card in the transcript (the jump's highlight
   included), building older rows first when the thread hasn't reached it; if the card isn't on
   screen, a toast says so.

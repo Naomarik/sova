@@ -25,7 +25,7 @@ import {
   visitWords,
 } from "../lib/person-page";
 import { createPoll } from "../lib/poll";
-import { STATUS_CHIP, valueText, WRITER } from "../lib/profile-changes";
+import { STATUS_CHIP, valueText, writerWord } from "../lib/profile-changes";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { LinksBanner } from "./LinksBanner";
@@ -706,7 +706,7 @@ function History(props: { data: PersonPageData; now: number; act: Act }) {
                   <span class="orgs-change-field">{c.field}</span> {valueText(c.field, c.from)} → {valueText(c.field, c.to)}
                   <span class="list-meta">
                     {" "}
-                    · {WRITER[c.by.kind] ?? c.by.kind}
+                    · {writerWord(c.by)}
                     {c.by.quote ? ` · “${c.by.quote}”` : ""}
                     {c.revertOf ? " · a revert" : ""} · <time title={exact(c.at)}>{relativeTime(c.at, props.now)}</time>
                   </span>

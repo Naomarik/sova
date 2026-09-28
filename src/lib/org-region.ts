@@ -66,6 +66,10 @@ const isCurrentOverseer = (s: Pick<SessionSummary, "org">): boolean => s.org?.ki
 /** What the region holds: every org session but a cleared overseer conversation. */
 export const inOrgRegion = (s: Pick<SessionSummary, "org">): boolean => !!s.org && !isClearedOverseer(s);
 
+/** A session of an archived project (§app.organizations/archive): in no org → project list, no
+    heading, no eye, not counted; only the region's own Needs you still shows it while it waits. */
+export const inArchivedProject = (s: Pick<SessionSummary, "org">): boolean => !!s.org?.projectArchived;
+
 /** Which of a project's groups a row goes in. */
 export function rowGroup(s: Pick<SessionSummary, "org" | "baton">): "conversations" | "conflicts" | "builds" | "other" {
   const k = s.org?.kind;
@@ -115,7 +119,7 @@ export function orgSections(sessions: readonly SessionSummary[]): OrgSection[] {
   const orgs = new Map<string, { id: string; name: string; projects: Map<string, OrgProject> }>();
   for (const s of sessions) {
     const o = s.org;
-    if (!o || !inOrgRegion(s)) continue;
+    if (!o || !inOrgRegion(s) || inArchivedProject(s)) continue;
     let org = orgs.get(o.orgId);
     if (!org) orgs.set(o.orgId, (org = { id: o.orgId, name: o.orgName || o.orgId, projects: new Map() }));
     // A later row may carry the name an earlier one lacked.

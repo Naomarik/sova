@@ -49,7 +49,7 @@ export function confirmDetails(details: unknown): SovaConfirmDetails | null {
   });
   if (options.length === 0) return null;
   const items = Array.isArray(details.items) ? details.items.flatMap(confirmItem) : [];
-  return { title, detail: str(details.detail), options, ...(items.length ? { items } : {}) };
+  return { title, detail: str(details.detail), options, ...(items.length ? { items } : {}), ...(details.clickOnly === true ? { clickOnly: true as const } : {}) };
 }
 
 /** One card item, tolerant: a row without its kind's id and name is dropped, bad optional fields go. */
@@ -79,6 +79,16 @@ function confirmItem(v: unknown): SovaConfirmItem[] {
   if (v.kind === "todo") {
     const text = str(v.text)?.trim();
     return text ? [{ kind: "todo", id, text, ...note }] : [];
+  }
+  // An org's project or roster person (§app.overseer/confirm): its org is part of what it is.
+  if (v.kind === "project" || v.kind === "person") {
+    const orgId = str(v.orgId)?.trim();
+    const name = str(v.name)?.trim();
+    if (!orgId || !name) return [];
+    const orgName = str(v.orgName)?.trim() || orgId;
+    if (v.kind === "project") return [{ kind: "project", id, orgId, name, orgName, ...note }];
+    const status = v.status === "proposed" || v.status === "left" ? v.status : "active";
+    return [{ kind: "person", id, orgId, name, orgName, status, ...note }];
   }
   return [];
 }

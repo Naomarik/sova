@@ -41,7 +41,8 @@ export function orgTabsOf(o: TabSource): OrgTabInfo[] {
     {
       id: "projects",
       label: "Projects",
-      count: o.projectList.length,
+      // Archived projects are not counted (§app.organizations/archive).
+      count: o.projectList.filter((p) => !p.archived).length,
       waiting: conflicts + stakeholders,
       waitingText: words([conflicts ? `${plural(conflicts, "conflict")} to settle` : "", stakeholders ? `${plural(stakeholders, "stakeholder")} to pick` : ""]),
     },

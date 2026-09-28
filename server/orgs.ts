@@ -28,6 +28,7 @@ import {
   type NamedChange,
   type OwnerChange,
   type StakeholderChange,
+  type ChangeVia,
 } from "../shared/orgs";
 import { heldElsewhere, heldSentence, hostIdentity, readHolder, writeHeld, writeReleased } from "./org-holder";
 import { setExtraSessionRoots } from "./paths";
@@ -370,7 +371,11 @@ export async function detachOrg(orgId: string): Promise<void> {
   }
 }
 
-export function patchOrg(orgId: string, patch: { name?: unknown; about?: unknown }): Org {
+/** The operator's own write, or theirs made through the global Overseer (§app.overseer/org-attribution). */
+export type OperatorBy = { kind: "operator"; via?: ChangeVia; overseerId?: string };
+const OPERATOR_BY: OperatorBy = { kind: "operator" };
+
+export function patchOrg(orgId: string, patch: { name?: unknown; about?: unknown }, by: OperatorBy = OPERATOR_BY): Org {
   const dir = orgDir(orgId);
   const org = readOrg(orgId);
   const about = patch.about === undefined ? undefined : cleanAbout(patch.about);
@@ -380,7 +385,7 @@ export function patchOrg(orgId: string, patch: { name?: unknown; about?: unknown
     org.name = name;
     writeOrgFile(dir, org);
   }
-  if (about !== undefined) writeAbout(dir, about);
+  if (about !== undefined) writeAbout(dir, about, undefined, by);
   return org;
 }
 
@@ -441,14 +446,14 @@ export function readOrgHistory(orgId: string): OrgChange[] {
 }
 
 /** THE writer of about.md: one history line first, then the file (blank removes it). The same text writes nothing. */
-function writeAbout(dir: string, to: string, revertOf?: string): void {
+function writeAbout(dir: string, to: string, revertOf?: string, by: OperatorBy = OPERATOR_BY): void {
   const from = readAboutFile(dir).trim();
   if (from === to) return;
   const history = readOrgHistoryFile(dir);
   let t = Date.now();
   const lastAt = history.length ? Date.parse(history[history.length - 1]!.at) : 0;
   if (t <= lastAt) t = lastAt + 1;
-  const line: OrgChange = { at: new Date(t).toISOString(), field: "about", from, to, by: { kind: "operator" }, ...(revertOf ? { revertOf } : {}) };
+  const line: OrgChange = { at: new Date(t).toISOString(), field: "about", from, to, by: { ...by }, ...(revertOf ? { revertOf } : {}) };
   appendFileSync(orgHistoryFile(dir), `${JSON.stringify(line)}\n`);
   if (!to) rmSync(aboutFile(dir), { force: true });
   else {
@@ -459,11 +464,11 @@ function writeAbout(dir: string, to: string, revertOf?: string): void {
 }
 
 /** Set the About text back to history line `at`'s `from`, as a new operator change. */
-export function revertOrgChange(orgId: string, at: string): void {
+export function revertOrgChange(orgId: string, at: string, by: OperatorBy = OPERATOR_BY): void {
   const dir = orgDir(orgId);
   const line = readOrgHistoryFile(dir).find((c) => c.at === at);
   if (!line) throw new OrgError("No such change", 404);
-  writeAbout(dir, line.from, at);
+  writeAbout(dir, line.from, at, by);
 }
 
 // ---- roster ------------------------------------------------------------------------------------------
@@ -748,11 +753,11 @@ export const approvePerson = (orgId: string, personId: string, by?: ProfileChang
 export const declinePerson = (orgId: string, personId: string, by?: ProfileChange["by"]) => decidePerson(orgId, personId, false, by);
 
 /** Set the field of history line `at` back to that line's `from`, as a new operator change. */
-export function revertChange(orgId: string, personId: string, at: string): Person {
+export function revertChange(orgId: string, personId: string, at: string, by: OperatorBy = OPERATOR_BY): Person {
   const line = readHistory(orgId, personId).find((c) => c.at === at);
   if (!line) throw new OrgError("No such change", 404);
   if (line.from === null && line.field === "name") throw new OrgError("A person's creation can't be reverted; set their status to left instead.", 409);
-  return applyChange(orgId, personId, { [line.field]: line.from ?? emptyOf(line.field) }, { kind: "operator" }, { revertOf: at });
+  return applyChange(orgId, personId, { [line.field]: line.from ?? emptyOf(line.field) }, { ...by }, { revertOf: at });
 }
 
 const emptyOf = (f: ProfileField): unknown => (f === "decides" || f === "skills" ? [] : f === "contact" || f === "competence" ? {} : f === "referral" ? null : "");
@@ -892,11 +897,11 @@ export function addProject(orgId: string, input: { name: unknown; root: unknown 
 /** Most stakeholder changes kept per project. */
 const STAKEHOLDER_HISTORY_MAX = 50;
 
-function noteStakeholder(p: OrgProject, to: string | null, why: StakeholderChange["why"], at = new Date().toISOString()): void {
+function noteStakeholder(p: OrgProject, to: string | null, why: StakeholderChange["why"], at = new Date().toISOString(), via?: ChangeVia): void {
   const from = p.stakeholder ?? null;
   if (from === to) return;
   p.stakeholder = to;
-  p.stakeholderHistory = [...(p.stakeholderHistory ?? []), { at, from, to, why }].slice(-STAKEHOLDER_HISTORY_MAX);
+  p.stakeholderHistory = [...(p.stakeholderHistory ?? []), { at, from, to, why, ...(via ? { via } : {}) }].slice(-STAKEHOLDER_HISTORY_MAX);
 }
 
 /** `person` left the org: every project they were the main stakeholder of has none now, and says why. */
@@ -913,7 +918,12 @@ function clearStakeholder(dir: string, person: Person): void {
   if (changed) writeJson(projectsFile(dir), { version: 1, projects });
 }
 
-export function patchProject(orgId: string, projectId: string, patch: { name?: unknown; root?: unknown; spec?: unknown; stakeholder?: unknown; ownerHidden?: unknown }): OrgProject {
+export function patchProject(
+  orgId: string,
+  projectId: string,
+  patch: { name?: unknown; root?: unknown; spec?: unknown; stakeholder?: unknown; ownerHidden?: unknown },
+  by: OperatorBy = OPERATOR_BY,
+): OrgProject {
   const dir = orgDir(orgId);
   const projects = readProjectsFile(dir);
   const p = projects.find((x) => x.id === projectId);
@@ -935,7 +945,7 @@ export function patchProject(orgId: string, projectId: string, patch: { name?: u
       const person = typeof to === "string" ? readRosterFile(dir).people.find((x) => x.id === to) : undefined;
       if (!person || person.status !== "active") throw new OrgError("Only an active person on the roster can be a project's main stakeholder.");
     }
-    noteStakeholder(p, (to as string | null) ?? null, "operator");
+    noteStakeholder(p, (to as string | null) ?? null, "operator", undefined, by.via);
     // The operator has answered: whatever it says now, the "pick one" item is done.
     delete p.stakeholderCleared;
   }
@@ -948,17 +958,54 @@ export function patchProject(orgId: string, projectId: string, patch: { name?: u
   return p;
 }
 
+/**
+ * Archive or unarchive a project (§app.organizations/archive): `archived: {at, via?}` in
+ * projects.json, or removed. The same state again writes nothing. What must be stopped first is the
+ * route's to check (server/org-routes.ts), which knows the sessions; this is the store's write.
+ */
+export function setProjectArchived(orgId: string, projectId: string, archived: boolean, by: OperatorBy = OPERATOR_BY): { project: OrgProject; changed: boolean } {
+  const dir = orgDir(orgId);
+  const projects = readProjectsFile(dir);
+  const p = projects.find((x) => x.id === projectId);
+  if (!p) throw new OrgError("Unknown project", 404);
+  if (!!p.archived === archived) return { project: p, changed: false };
+  if (archived) p.archived = { at: new Date().toISOString(), ...(by.via ? { via: by.via } : {}) };
+  else delete p.archived;
+  writeJson(projectsFile(dir), { version: 1, projects });
+  return { project: p, changed: true };
+}
+
+/** Whether the project is archived (false for an unknown one). */
+export function projectArchived(orgId: string, projectId: string): boolean {
+  try {
+    return !!readProjects(orgId).find((p) => p.id === projectId)?.archived;
+  } catch {
+    return false;
+  }
+}
+
+/** "{project} is archived. Unarchive it first.": every new start in an archived project. */
+export const archivedRefusal = (name: string) => `${name} is archived. Unarchive it first.`;
+/** Its overseer's: Run Now, a message to it, its start. */
+export const archivedOverseerRefusal = (name: string) => `${name} is archived. Unarchive it to use its overseer.`;
+
+/** Refuse a new start in an archived project (409). */
+export function assertNotArchived(orgId: string, projectId: string): void {
+  const p = readProjects(orgId).find((x) => x.id === projectId);
+  if (p?.archived) throw new OrgError(archivedRefusal(p.name), 409);
+}
+
 // ---- the org's owner (§app.owner-page/owner) ------------------------------------------------------------------
 
 /** Most owner changes kept per org. */
 const OWNER_HISTORY_MAX = 50;
 
-function noteOwner(org: Org, to: string | null, why: OwnerChange["why"], at = new Date().toISOString()): boolean {
+function noteOwner(org: Org, to: string | null, why: OwnerChange["why"], at = new Date().toISOString(), via?: ChangeVia): boolean {
   const from = org.owner ?? null;
   if (from === to) return false;
   if (to) org.owner = to;
   else delete org.owner;
-  org.ownerHistory = [...(org.ownerHistory ?? []), { at, from, to, why }].slice(-OWNER_HISTORY_MAX);
+  org.ownerHistory = [...(org.ownerHistory ?? []), { at, from, to, why, ...(via ? { via } : {}) }].slice(-OWNER_HISTORY_MAX);
   return true;
 }
 
@@ -982,7 +1029,7 @@ export function ownerOf(orgId: string): Person | null {
 
 /** THE writer of the owner: the operator only (§app.organizations/field-authority). Only an active
     roster person, or null (none). Returns the previous owner's id. */
-export function setOrgOwner(orgId: string, personId: unknown): { from: string | null; to: string | null } {
+export function setOrgOwner(orgId: string, personId: unknown, by: OperatorBy = OPERATOR_BY): { from: string | null; to: string | null } {
   const dir = orgDir(orgId);
   const org = readOrg(orgId);
   if (personId !== null) {
@@ -991,7 +1038,7 @@ export function setOrgOwner(orgId: string, personId: unknown): { from: string | 
   }
   const from = org.owner ?? null;
   const to = (personId as string | null) ?? null;
-  const changed = noteOwner(org, to, "operator");
+  const changed = noteOwner(org, to, "operator", undefined, by.via);
   // The operator has answered: whatever it says now, "pick one" is done.
   const hadCleared = !!org.ownerCleared;
   delete org.ownerCleared;
@@ -1015,7 +1062,17 @@ export function orgSummaries(): OrgSummary[] {
   for (const e of readIndex().orgs) {
     const org = readOrgFile(e.dir);
     if (!org) continue;
-    out.push({ ...org, id: e.id, dir: e.dir, people: readRosterFile(e.dir).people.length, projects: readProjectsFile(e.dir).length, openBatons: openBatonCount(e.id) });
+    const projects = readProjectsFile(e.dir);
+    const archived = projects.filter((p) => p.archived).length;
+    out.push({
+      ...org,
+      id: e.id,
+      dir: e.dir,
+      people: readRosterFile(e.dir).people.length,
+      projects: projects.length - archived,
+      ...(archived ? { archivedProjects: archived } : {}),
+      openBatons: openBatonCount(e.id),
+    });
   }
   return out;
 }
@@ -1038,7 +1095,8 @@ export async function orgDetail(orgId: string): Promise<OrgDetail> {
     id: orgId,
     dir,
     people: roster.people.length,
-    projects: projectList.length,
+    projects: projectList.filter((p) => !p.archived).length,
+    ...(projectList.some((p) => p.archived) ? { archivedProjects: projectList.filter((p) => p.archived).length } : {}),
     openBatons: openBatonCount(orgId),
     roster: roster.people,
     projectList,

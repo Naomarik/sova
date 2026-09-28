@@ -756,7 +756,7 @@ export function HistoryItems(props: {
                     >
                       {(details) => {
                         const answer = () => confirmAnswer(props.items, props.items.indexOf(item), details());
-                        return <ConfirmCard details={details()} answered={answer().answered} choice={answer().choice} />;
+                        return <ConfirmCard details={details()} answered={answer().answered} choice={answer().choice} card={item.toolCallId} />;
                       }}
                     </Show>
                   );
@@ -859,7 +859,7 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
                 </Show>
               }
             >
-              {(details) => <ConfirmCard details={details()} answered={false} choice={null} pending={props.live.running} />}
+              {(details) => <ConfirmCard details={details()} answered={false} choice={null} pending={props.live.running} card={b().id} />}
             </Show>
             </Show>
           );

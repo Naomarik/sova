@@ -37,13 +37,14 @@ const NONE: OrgLookup = { of: () => undefined };
 export function orgLookup(): OrgLookup {
   const orgs = readIndex().orgs;
   if (!orgs.length) return NONE;
-  const names = new Map<string, { orgName: string; projects: Map<string, string>; roots: Map<string, string> }>();
+  const names = new Map<string, { orgName: string; projects: Map<string, string>; roots: Map<string, string>; archived: Set<string> }>();
   const namesOf = (orgId: string, dir: string) => {
     let n = names.get(orgId);
     if (!n) {
       let orgName = basename(dir);
       let projects = new Map<string, string>();
       let roots = new Map<string, string>();
+      let archived = new Set<string>();
       try {
         orgName = readOrg(orgId).name;
       } catch {
@@ -53,17 +54,25 @@ export function orgLookup(): OrgLookup {
         const listed = readProjects(orgId);
         projects = new Map(listed.map((p) => [p.id, p.name]));
         roots = new Map(listed.map((p) => [p.id, p.root]));
+        archived = new Set(listed.filter((p) => p.archived).map((p) => p.id));
       } catch {
         // detached between reads
       }
-      names.set(orgId, (n = { orgName, projects, roots }));
+      names.set(orgId, (n = { orgName, projects, roots, archived }));
     }
     return n;
   };
   const ref = (orgId: string, dir: string, projectId: string | undefined): SessionOrgRef => {
     const n = namesOf(orgId, dir);
     const projectName = projectId ? n.projects.get(projectId) : undefined;
-    return { orgId, orgName: n.orgName, ...(projectId ? { projectId } : {}), ...(projectName !== undefined ? { projectName } : {}) };
+    return {
+      orgId,
+      orgName: n.orgName,
+      ...(projectId ? { projectId } : {}),
+      ...(projectName !== undefined ? { projectName } : {}),
+      // The Organizations region leaves an archived project out (§app.organizations/archive).
+      ...(projectId && n.archived.has(projectId) ? { projectArchived: true as const } : {}),
+    };
   };
 
   let batons: Map<string, BatonSession> | null = null;

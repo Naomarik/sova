@@ -3,6 +3,7 @@ import { MESSAGES_CAP, MESSAGES_DEFAULT, MESSAGES_MIN, OPERATOR, type BatonStart
 import { ORG_ABOUT_MAX, type NamedChange, type OrgChange, type OrgDetail, type Person, type PersonInput, type ProfileChange } from "../../shared/orgs";
 import {
   addOrgProject,
+  unarchiveOrgProject,
   addPerson,
   ApiError,
   approvePerson,
@@ -28,7 +29,7 @@ import { usd } from "../lib/costs";
 import { duration, relativeTime, stampTime } from "../lib/format";
 import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
 import { proposedAreasLine } from "../lib/baton-strip";
-import { groupChanges, revertible, STATUS_CHIP, valueText, WRITER } from "../lib/profile-changes";
+import { groupChanges, revertible, STATUS_CHIP, valueText, writerWord } from "../lib/profile-changes";
 import { aboutChangeWord, aboutCount, aboutLength, aboutOverCap, aboutPreview } from "../lib/org-about";
 import { orgPageRoute } from "../lib/org-page-route";
 import { createOrgSource } from "../lib/org-source";
@@ -539,7 +540,9 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
     if (props.start) location.replace(orgTabHref(props.org.id, "sessions"));
   };
   // A select with no matching option shows blank: the first option is the default, as it looks.
-  const pid = () => projectId() || props.org.projectList[0]?.id || "";
+  // Archived projects are not offered (§app.organizations/archive).
+  const liveProjects = () => props.org.projectList.filter((p) => !p.archived);
+  const pid = () => projectId() || liveProjects()[0]?.id || "";
   /** Nobody ticked = you start; 1 = a hand-off; 2 or more = an offer. */
   const target = (): string | string[] => (to().length === 0 ? OPERATOR : to().length === 1 ? to()[0]! : to());
   const nameOf = (id: string) => props.org.roster.find((p) => p.id === id)?.name ?? "Their";
@@ -601,7 +604,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
         </ul>
       </Show>
       <Show
-        when={props.org.projectList.length}
+        when={liveProjects().length}
         fallback={
           <p class="orgs-empty">
             Add a project on the <a href={orgTabHref(props.org.id, "projects")}>Projects</a> tab to start a hand-off session in it.
@@ -623,7 +626,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
             <label class="field">
               <span class="field-label">Project</span>
               <select class="select" value={pid()} onChange={(e) => setProjectId(e.currentTarget.value)}>
-                <For each={props.org.projectList}>{(p) => <option value={p.id} selected={p.id === pid()}>{p.name}</option>}</For>
+                <For each={liveProjects()}>{(p) => <option value={p.id} selected={p.id === pid()}>{p.name}</option>}</For>
               </select>
             </label>
             <fieldset class="baton-strip-people">
@@ -885,7 +888,7 @@ function ChangesSection(props: { org: OrgDetail; act: Act }) {
                     {g.added ? " added" : ""}
                     <span class="list-meta">
                     {" "}
-                    · by {WRITER[g.by.kind] ?? g.by.kind} · <time title={g.key}>{relativeTime(g.key)}</time>
+                    · by {writerWord(g.by)} · <time title={g.key}>{relativeTime(g.key)}</time>
                     <Show when={pathOf(g.by.sessionId)}>
                       {(path) => (
                         <>
@@ -960,7 +963,8 @@ function AboutCard(props: { org: OrgDetail; act: Act }) {
         About this organization
       </h2>
       <p class="orgs-line project-muted" id="orgs-about-hint">
-        Every project overseer in this organization reads this at its next run. Nothing else does: not hand-off sessions, share pages, wrap-ups or coding sessions.
+        Every project overseer in this organization reads this at its next run, and the Overseer when it looks it up for you. Nothing else does: not hand-off sessions, share pages, wrap-ups or
+        coding sessions.
       </p>
       <form
         class="orgs-about-form"
@@ -1026,6 +1030,7 @@ function AboutCard(props: { org: OrgDetail; act: Act }) {
                         {" · "}
                         <time title={stampTime(c.at)}>{relativeTime(c.at)}</time>
                         {` · ${aboutLength(c.to)}`}
+                        {c.by.via === "overseer" ? " · by you, via the Overseer" : ""}
                       </span>
                     </span>
                     <span class="orgs-about-preview">{aboutPreview(c.to)}</span>
@@ -1066,6 +1071,9 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
   const orgId = createMemo(() => props.org.id);
   const [costs] = createResource(orgId, (id) => getOrgCosts(id).catch(() => null));
   const costOf = (pid: string) => costs()?.projects.find((c) => c.projectId === pid);
+  // Archived projects leave the list for a disclosure under it (§app.organizations/archive).
+  const live = () => props.org.projectList.filter((p) => !p.archived);
+  const archived = () => props.org.projectList.filter((p) => p.archived);
   return (
     <section class="card orgs-section" aria-labelledby="orgs-projects">
       <h2 class="orgs-h2" id="orgs-projects">
@@ -1078,9 +1086,18 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
           </p>
         )}
       </Show>
-      <Show when={props.org.projectList.length} fallback={<p class="orgs-empty">No projects yet. A project is a folder that hand-off sessions and its overseer work in.</p>}>
+      <Show
+        when={live().length}
+        fallback={
+          <p class="orgs-empty">
+            {archived().length
+              ? `${archived().length === 1 ? "The 1 project here is" : `All ${archived().length} projects here are`} archived. Unarchive one below, or add a project.`
+              : "No projects yet. A project is a folder that hand-off sessions and its overseer work in."}
+          </p>
+        }
+      >
         <ul class="list orgs-project-list">
-          <For each={props.org.projectList}>
+          <For each={live()}>
             {(p) => (
               <li>
                 {/* The whole row opens the project page: its overseer, requirements and decisions. */}
@@ -1103,6 +1120,31 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
             )}
           </For>
         </ul>
+      </Show>
+      <Show when={archived().length}>
+        <details class="orgs-history orgs-history-section">
+          <summary>Archived Projects ({archived().length})</summary>
+          <ul class="list orgs-project-list">
+            <For each={archived()}>
+              {(p) => (
+                <li class="orgs-archived-row">
+                  <a class="list-row list-row-interactive orgs-row orgs-project-row" href={projectHref(props.org.id, p.id)}>
+                    <Icon name="folder" />
+                    <span class="list-main">
+                      <span class="list-title">{p.name}</span>
+                      <span class="list-meta">
+                        archived <time title={p.archived!.at}>{relativeTime(p.archived!.at)}</time>
+                      </span>
+                    </span>
+                  </a>
+                  <button type="button" class="button button-sm button-ghost" onClick={() => void props.act(() => unarchiveOrgProject(props.org.id, p.id), `${p.name} is back.`)}>
+                    Unarchive
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </details>
       </Show>
       <form
         class="orgs-inline orgs-project-form"

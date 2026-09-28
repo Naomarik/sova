@@ -53,7 +53,7 @@ describe("overseer settings", () => {
     const s = store.readOverseerSettings(join(agentDir, "none.json"));
     assert.equal(s.proactivity, "badge");
     assert.deepEqual(s.quickActions.map((a) => a.label), ["What Needs Me", "What Finished", "What's Running", "Tidy Up", "Where Was I"]);
-    assert.deepEqual(s.caps, { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5, explorePerTurn: 2, linksPerTurn: 3 });
+    assert.deepEqual(s.caps, { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3 });
     assert.equal(s.model, null);
   });
 

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AlignDocInfo, AlignQuestionInfo, ReportInfo, TranscriptItem } from "../../shared/protocol";
-import { alignChip, alignChipCounts, alignChipLabel, alignChipText, alignMenuNote, alignMetrics, alignOf, alignRowFromDetails, alignStatusOf, foldAlignRows, latestAlignId, newestAlignRows, openLabel, optionLetter, recommendedOption, type AlignInfo } from "./align";
+import { alignChip, alignChipCounts, alignChipLabel, alignChipText, alignMenuLabel, alignMenuRows, alignMetrics, alignOf, alignRowFromDetails, alignStatusOf, foldAlignRows, latestAlignId, newestAlignRows, openLabel, optionLetter, recommendedOption, type AlignInfo } from "./align";
 
 const a = (extra: Partial<AlignInfo> = {}): AlignInfo => ({
   status: "aligning",
@@ -89,8 +89,24 @@ test("the chip counts open documents only: '2 aligns · 3/4'", () => {
   assert.equal(alignChipText(c), "2 aligns · 3/4");
   assert.equal(alignChipText({ docs: 1, open: 0, total: 3 }), "1 align · 0/3");
   assert.equal(alignChipLabel(c), "2 open alignments, 3 of 4 questions open — show alignments");
-  assert.equal(alignMenuNote(entries[0]!.doc), "S al_1 · 1 of 2 open");
-  assert.equal(alignMenuNote(doc("al_9", 1, [q("q1", { decision: decided })], "implementing")), "S al_9 · implementing");
+});
+
+test("menu rows: open documents only, those still asking first, each group last touched first", () => {
+  const entries = foldAlignRows([
+    alignItem("r1", doc("al_1", 1, [q("q1")])),
+    alignItem("r2", doc("al_2", 1, [q("q1", { decision: decided })], "implementing")),
+    alignItem("r3", doc("al_3", 1, [q("q1")])),
+    alignItem("r4", doc("al_4", 1, [])),
+    alignItem("r5", doc("al_5", 1, [q("q1")], "done")),
+  ]);
+  assert.deepEqual(alignMenuRows(entries).map((e) => e.doc.id), ["al_3", "al_1", "al_4", "al_2"]);
+});
+
+test("a menu row's accessible name: decided of live, or the status when there are no questions", () => {
+  const d = doc("al_1", 1, [q("q1"), q("q2", { decision: decided }), q("q3", { dropped: { why: "x", at: "" } })]);
+  assert.equal(alignMenuLabel(d), "al_1 T al_1: 1 of 2 questions decided — jump to its card");
+  assert.equal(alignMenuLabel(doc("al_2", 1, [q("q1", { decision: decided })])), "al_2 T al_2: 1 of 1 question decided — jump to its card");
+  assert.equal(alignMenuLabel(doc("al_3", 1, [], "implementing")), "al_3 T al_3: implementing, no questions — jump to its card");
 });
 
 test("a live result's details become a row only when they are a changed document or an exemption", () => {

@@ -1320,6 +1320,11 @@ no region (they are in the overseer's own History, §app.project-overseer/page).
   field: a TUI-live org coding session, a web one, an archived one all live here and nowhere else in
   the pane — except a cleared overseer conversation, which no region lists. Rows are the unchanged `SessionRow` — rail (a TUI word included), unread dot, turn-error
   mark, needs-you mark, baton holder suffix, context ring — and open `#/s/<path>`.
+- **An archived project is left out** (§app.organizations/archive): a session whose `org` carries
+  `projectArchived` is in no org → project list, its project has no heading and no eye, and it is
+  not in the region's count (nor its org's). Only while it waits on the operator is it shown, in the
+  region's own Needs you. An org whose every project is archived and none waiting has no section; a
+  region with nothing else left is omitted, as with no rows.
 - **Its Needs you.** The region's first block, above the organizations: every org session **waiting on
   the operator**, one row per session, labelled with its place. A session waits on you when it isn't
   finished and its `baton`

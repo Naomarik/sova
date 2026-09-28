@@ -46,16 +46,13 @@ html, body, #root { height: 100%; }
 .entry:focus-within,
 .entry[data-actions-revealed] { content-visibility: visible; }
 /* What a row's estimate needs from the width (lib/tail-render `rowEstimate`): a body line's height,
-   and the characters a message line holds. A message is as wide as the pane less its padding, up to
-   the reading measure; `tan(atan2(w, 1px))` is that width as a number of px, and 60px of bubble
-   padding and 7px a character are fitted to real rows. Image tiles fold to half as many a row
-   (`imagesEstimate`). Without container units or trig functions, a fixed count at each side of the
-   fold. */
-.thread { --entry-line: calc(var(--fs-body) * var(--lh-body)); --entry-cols: 110; --entry-narrow: 0; }
-@container (width < 600px) { .thread { --entry-cols: 42; --entry-narrow: 1; } }
-@supports (width: calc(tan(atan2(1cqi, 1px)) * 1px)) {
-  .thread { --entry-cols: calc((tan(atan2(min(100cqi - 2 * var(--space-4), var(--measure)), 1px)) - 60) / 7); }
-}
+   and the characters a message line holds, which the transcript measures (`--entry-cols-measured`,
+   Thread) and a fixed count stands in for before it has. Image tiles fold to half as many a row
+   (`imagesEstimate`). */
+.thread { --entry-line: calc(var(--fs-body) * var(--lh-body)); --entry-cols: var(--entry-cols-measured, 110); --entry-narrow: 0; }
+@container (width < 600px) { .thread { --entry-cols: var(--entry-cols-measured, 42); --entry-narrow: 1; } }
+/* As wide as a message can be: the transcript reads its width for `--entry-cols-measured`. */
+.entry-measure { max-width: min(100%, var(--measure)); height: 0; }
 
 /* Archive date sections: each a <details> whose summary is
    the eyebrow label (twist, name, count), collapsed by default; a rule between sections. */

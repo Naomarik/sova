@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { carriedStart, chunkStart, imagesEstimate, initialStart, MAX_CHUNK, MIN_CHUNK, nextChunk, rowEstimate, rowIndexFor, TAIL_ROWS, textShape } from "./tail-render";
+import { carriedStart, chunkStart, imagesEstimate, initialStart, lineCols, MAX_CHUNK, MIN_CHUNK, nextChunk, rowEstimate, rowIndexFor, TAIL_ROWS, textShape } from "./tail-render";
 
 test("a long list opens on its last TAIL_ROWS rows; a short one is built whole", () => {
   assert.equal(initialStart(802), 802 - TAIL_ROWS);
@@ -113,4 +113,10 @@ test("a row without images keeps its text-only estimate; with them, it adds a wi
 test("a compaction is estimated as its folded disclosure, not its summary", () => {
   assert.equal(rowEstimate({ kind: "info", text: "summary ".repeat(5000), raw: { type: "compaction" } }), "calc(36px)");
   assert.match(rowEstimate({ kind: "info", text: "Model changed" }), /^calc\(-4px \+ min\(200, 1 \+ 13 \//);
+});
+
+test("a line holds the message width's characters, less the bubble's padding", () => {
+  assert.equal(lineCols(896), 121);
+  assert.equal(lineCols(348), 43);
+  assert.equal(lineCols(0), 10, "never fewer than 10");
 });

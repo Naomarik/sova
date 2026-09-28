@@ -120,11 +120,14 @@ export function imagesEstimate(images: readonly string[] | undefined, at: Images
   return [chrome + tileRows(n, TILES_WIDE), chrome + tileRows(n, TILES_NARROW)];
 }
 
+/** Characters a message line holds at a message width of `px`: less the bubble's padding, 7px a
+    character, both fitted to real rows. The transcript sets it as `--entry-cols` (Thread). */
+export const lineCols = (px: number): number => Math.max(10, Math.round((px - 50) / 7));
+
 /**
  * Wrapped lines, as a CSS expression: each prose line is `perLine` of a line (short ones don't
  * wrap), plus its characters over the characters a line holds at the width the transcript has
- * (`--entry-cols`, app.css). The two constants are fitted to the rows' real heights at 1440 and
- * 390px wide.
+ * (`--entry-cols`). The constants are fitted to the rows' real heights at 1440 and 390px wide.
  */
 const wrapped = (s: TextShape, perLine: number) =>
   `min(${MAX_EST_LINES}, ${+(perLine * s.lines).toFixed(2)} + ${s.chars} / var(--entry-cols, 110)) * var(--entry-line, 22.5px)`;

@@ -1,4 +1,11 @@
-import { For, type JSX } from "solid-js";
+import { For, createSignal, type JSX } from "solid-js";
+
+// Bumped when a web font finishes loading. canvasMeasure drops its cached widths then
+// (core/text.ts), so a layout memo that reads this re-measures its text in the real font.
+const [fonts, setFonts] = createSignal(0);
+if (typeof document !== "undefined" && document.fonts) document.fonts.addEventListener("loadingdone", () => setFonts((n) => n + 1));
+/** Read inside any layout memo that measures text with canvasMeasure: it re-runs once fonts load. */
+export const fontsLoaded = fonts;
 
 let markerSeq = 0;
 /** A document-unique id for an SVG <marker>: several visuals share one page. */

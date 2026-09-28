@@ -73,6 +73,10 @@
 
 /* ---- Placeholder states in markdown ------------------------------------------------------ */
 .md-vis { margin: 0 0 var(--space-3); min-width: 0; }
+/* A drawing never serves as the scroll anchor: when one straddling the top of the view grows (a
+   frame reporting its height, a font re-layout), the browser anchors on the text after it instead,
+   so what the reader is looking at stays put. */
+.md-vis, .md-vis-pending { overflow-anchor: none; }
 .md-vis > .vis { margin: 0; }
 .md-vis-pending {
   display: flex;

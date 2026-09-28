@@ -3,7 +3,8 @@ import { OPERATOR } from "../shared/baton";
 import type { OrgDetail, Person } from "../shared/orgs";
 import type { SovaConfirmItem } from "../shared/protocol";
 import { attentionChanged } from "./attention-memo";
-import { createBaton } from "./baton";
+import { createBaton, projectAbilities } from "./baton";
+import { ABILITIES_PARAM, overseerAbilities } from "./gathering-abilities";
 import type { ToolCall } from "./overseer-idea-tools";
 import { readHistory } from "./orgs";
 import {
@@ -479,7 +480,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     name: "sova_gather",
     label: "Gathering sessions",
     description:
-      "Gathering sessions (hand-offs) with the people of an organization, for the user. start {org, project, to, public_title, question, goal, briefing?, model?, thinking?, messages_max?}: to is a person, operator (the user), or a list of two or more people for an offer. offer {session, to, question?, briefing?}, handoff {session, to, question, briefing?}, take {session} (Take Back), close {session}, extend {session, by} (more messages), revoke_link {session, person?}. " +
+      "Gathering sessions (hand-offs) with the people of an organization, for the user. start {org, project, to, public_title, question, goal, briefing?, model?, thinking?, messages_max?, abilities?}: to is a person, operator (the user), or a list of two or more people for an offer. offer {session, to, question?, briefing?}, handoff {session, to, question, briefing?}, take {session} (Take Back), close {session}, extend {session, by} (more messages), revoke_link {session, person?}. " +
       "start, offer, handoff, take, close and revoke_link run only in the turn a confirm card's click opened, listing every person, project and session the call acts on; extend needs none. No link is ever made for you: the user sends each person their link from Needs you. " +
       "public_title and question are shown to the person as written: plain, specific words for them, never an internal label, an id, a cost, the About text or a note about anyone; goal is what the session must find out, for its model only.",
     promptSnippet: "start, offer, hand off, take back, close, extend or revoke a gathering session (people-facing: confirm first)",
@@ -497,6 +498,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         model: str('start: model ref "provider/model" (default: the new-session default).'),
         thinking: str("start: thinking level."),
         messages_max: int("start: the session's message limit.", { minimum: 1 }),
+        abilities: { ...ABILITIES_PARAM, description: `start: ${ABILITIES_PARAM.description}` },
         by: int("extend: how many more messages.", { minimum: 1 }),
         person: str("revoke_link: only this person's link (id or exact name); omit for the current hand-off's links."),
       },
@@ -513,6 +515,9 @@ export function orgTools(d: OrgToolDeps): Tool[] {
             const to = list.map((x: string) => target(org.id, x));
             if (to.length > 1 && to.some((x: { id: string }) => x.id === OPERATOR)) throw refuse("An offer goes to two or more people on the roster, never to operator.");
             const people = to.filter((x: { id: string }) => x.id !== OPERATOR);
+            // Within the project's ceiling, as the project overseer's (§app.baton/abilities).
+            const abilities = overseerAbilities(p.abilities, projectAbilities(org.id, project.id));
+            if ("error" in abilities) throw refuse(abilities.error);
             requireConfirm({ projects: [{ orgId: org.id, id: project.id, name: project.name }], people: people.map((x: { id: string; name: string }) => personOf(org.id, x)) });
             const made = await counted("gather", async () =>
               // In-process, never POST /api/baton: no link is minted, so no URL or token exists to leak (§app.overseer/org-people-facing).
@@ -527,6 +532,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
                 ...(typeof p.model === "string" && p.model ? { model: p.model } : {}),
                 ...(typeof p.thinking === "string" && p.thinking ? { thinking: p.thinking } : {}),
                 ...(p.messages_max !== undefined ? { messagesMax: p.messages_max } : {}),
+                abilities,
                 mintLink: false,
                 startedVia: "overseer",
               }),

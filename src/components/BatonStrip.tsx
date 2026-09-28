@@ -1,5 +1,5 @@
 import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
-import { MESSAGES_CAP, OPERATOR, type BatonInfo, type OfferLink, type ProposedPerson } from "../../shared/baton";
+import { abilitiesOf, MESSAGES_CAP, OPERATOR, type BatonInfo, type OfferLink, type ProposedPerson } from "../../shared/baton";
 import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, approvePerson, batonLink, closeBaton, declinePerson, extendBaton, getBaton, handBaton, inviteeLink, offerBaton, revokeBatonLink, takeBaton, withdrawOffer } from "../lib/api";
 import { linkReplaced, linksStale, liveOffer, proposedAreasLine, whereLine, wrapupLine } from "../lib/baton-strip";
@@ -10,7 +10,8 @@ import { orgHref, rememberStartParent, startForHref } from "../lib/orgs-route";
 import { announce, toast } from "../lib/ui-state";
 import { LinksBanner } from "./LinksBanner";
 import { createMemo, onCleanup } from "solid-js";
-import { retryWrapup, setBatonHiddenFromOwner } from "../lib/api";
+import { retryWrapup, setBatonAbilities, setBatonHiddenFromOwner } from "../lib/api";
+import { abilityToast } from "../lib/gathering-abilities";
 import { firstName } from "../lib/person-page";
 import { Banner, Chip } from "./ui";
 import "../orgs.css";
@@ -98,6 +99,28 @@ export function BatonStrip(props: {
             <span class="baton-strip-meta">
               {i().orgName} · {i().projectName} · {whereLine(i(), now())} · {i().session.budget.messagesUsed} of {i().session.budget.messagesMax} messages
             </span>
+            {/* What it can do (§app.baton/abilities): from its next reply; the share page never shows it. */}
+            <div class="baton-strip-abilities" role="group" aria-labelledby="baton-strip-abilities-label">
+              <span id="baton-strip-abilities-label">It can:</span>
+              <For each={["draw", "readLinks"] as const}>
+                {(k) => (
+                  <label class="toggle">
+                    <input
+                      type="checkbox"
+                      disabled={!open(i())}
+                      checked={abilitiesOf(i().session)[k]}
+                      onChange={(e) => {
+                        const el = e.currentTarget;
+                        const on = el.checked;
+                        void act(() => setBatonAbilities(sid(), { [k]: on }), abilityToast(k, on)).then((ok) => ok || (el.checked = !on));
+                      }}
+                    />
+                    <span class="toggle-box" />
+                    <span>{k === "draw" ? "Draw" : "Read links"}</span>
+                  </label>
+                )}
+              </For>
+            </div>
           </div>
           <Chip tone={i().session.state === "needs-you" ? "warn" : i().session.state === "done" ? "success" : i().session.state === "open" ? "info" : undefined}>
             {i().session.state === "needs-you" ? "Needs you" : i().session.state === "open" ? (liveOffer(i()) ? "Offered" : "Open") : i().session.state === "done" ? "Done" : "Closed"}

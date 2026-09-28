@@ -185,6 +185,19 @@ export interface WrapupInfo {
 }
 
 /** A row of `baton.json` in the org's workspace repo. */
+/** What a gathering session can do beyond talking (§app.baton/abilities): draw the share page's
+    drawings, and open links someone wrote in the conversation (`read_link`). */
+export interface GatheringAbilities {
+  draw: boolean;
+  readLinks: boolean;
+}
+
+/** Automatic: what a project with no setting gives its gathering sessions. */
+export const AUTOMATIC_ABILITIES: GatheringAbilities = { draw: true, readLinks: false };
+
+/** A session with no `abilities` on its row (started before them) has neither. */
+export const abilitiesOf = (row: Pick<BatonSession, "abilities">): GatheringAbilities => ({ draw: row.abilities?.draw === true, readLinks: row.abilities?.readLinks === true });
+
 export interface BatonSession {
   sessionId: string;
   /** Relative to the workspace repo: "sessions/<file>.jsonl". */
@@ -208,6 +221,8 @@ export interface BatonSession {
   budget: { messagesMax: number; messagesUsed: number };
   model?: string;
   thinking?: string;
+  /** Fixed at start, changed only by the operator from the strip; absent: neither. */
+  abilities?: GatheringAbilities;
   createdAt: string;
   closedAt?: string;
   /** The operator hid it from the org owner's page (§app.owner-page/chats). Absent: shown. */
@@ -241,6 +256,8 @@ export interface BatonStartInput {
   thinking?: string;
   /** This session's message limit (MESSAGES_MIN..MESSAGES_CAP); default: Settings' default. */
   messagesMax?: number;
+  /** Over the project's set (§app.baton/abilities); what it leaves out comes from the project. */
+  abilities?: Partial<GatheringAbilities>;
 }
 
 /** GET/PUT /api/baton/settings — the host's defaults for new baton sessions. */

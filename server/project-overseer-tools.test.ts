@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
+import type { GatheringAbilities } from "../shared/baton";
 import type { Person } from "../shared/orgs";
 import type { Autonomy, CodingWorktree, ProjectCodingMode, ProjectOverseerSettings } from "../shared/project-overseer";
 import type { SessionSummary } from "../shared/protocol";
@@ -16,6 +17,7 @@ const { defaultPoSettings, effectiveAutonomy, projectOverseerPaths, EMPTY_ROSTER
 type HeldInput = import("./project-overseer-tools").HeldInput;
 const { AUTONOMY_LEVELS } = await import("../shared/project-overseer");
 const { baseCodingMode, codingModeChoice } = await import("./project-coding-mode");
+const { baseAbilities, overseerAbilities } = await import("./gathering-abilities");
 after(() => rmSync(root, { recursive: true, force: true }));
 
 const person = (id: string, name: string, status: Person["status"] = "active"): Person => ({
@@ -39,6 +41,8 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
   const held = new Map<string, HeldInput>();
   /** The mode each create/send reached the host with (a send without one records null). */
   const modes: (ProjectCodingMode | null)[] = [];
+  /** The abilities each gathering start reached the host with. */
+  const abilities: GatheringAbilities[] = [];
   const dir = join(root, `ws${n++}`);
   const paths = projectOverseerPaths("org_aaaaaaaa", "prj_bbbbbbbb", dir);
   const roster = opts.roster ?? [person("p_tony0001", "Tony"), person("p_bob00001", "Bob", "proposed")];
@@ -82,8 +86,9 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     closeGathering: async (sid: string) => {
       calls.push(`close:${sid}`);
     },
-    startGathering: async (input: { to: string | string[] }) => {
+    startGathering: async (input: { to: string | string[]; abilities: GatheringAbilities }) => {
       calls.push(`gather:${[input.to].flat().join(",")}`);
+      abilities.push(input.abilities);
       return { sessionId: "b1", path: "/s/b1.jsonl", invited: [input.to].flat() };
     },
     decideReferral: async (id: string, approve: boolean) => {
@@ -92,6 +97,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     },
     sessions: async () => sessions,
     transcript: async () => [],
+    gatheringAbilities: (arg: unknown) => overseerAbilities(arg, baseAbilities(settings.gatheringAbilities)),
     codingMode: (req: { mode?: string; minor_modes?: unknown }) => codingModeChoice(req, baseCodingMode(settings.codingMode, "/proj", opts.hasSpec ?? false), settings.codingMode),
     createCoding: async (input: { cwd: string; mode: ProjectCodingMode }) => {
       calls.push(`create:${input.cwd}`);
@@ -119,7 +125,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     assert.ok(t, name);
     return t.execute("call-1", params, undefined, undefined, undefined as never);
   };
-  return { host, tools, run, calls, modes, limits, paths, state, held, settings };
+  return { host, tools, run, calls, modes, abilities, limits, paths, state, held, settings };
 }
 
 /** A call per tool that does something when allowed (each the tool's "act" form). */
@@ -209,6 +215,32 @@ describe("the wrapper enforces it, per tool", () => {
     f.host.settings().autonomy = "L1";
     await f.run("sova_reconcile");
     assert.deepEqual(f.calls, ["reconcile"]);
+  });
+});
+
+describe("gathering abilities (§app.baton/abilities)", () => {
+  const gather = { person: "Tony", public_title: "Invoicing", goal: "Who approves invoices", question: "Who approves invoices?" };
+  test("a start with no abilities gets the project's set: Automatic is draw on, read links off", async () => {
+    const f = fake({ attended: true });
+    await f.run("sova_start_gathering", gather);
+    assert.deepEqual(f.abilities, [{ draw: true, readLinks: false }]);
+  });
+  test("it may turn draw off or on, and read links only when the project allows it", async () => {
+    const f = fake({ attended: true, roster: [person("p_tony0001", "Tony"), person("p_ana00001", "Ana")], settings: { gatheringAbilities: { draw: false, readLinks: false } } });
+    await f.run("sova_start_gathering", { ...gather, abilities: { draw: true } });
+    await assert.rejects(() => f.run("sova_offer", { people: ["Tony", "Ana"], public_title: "x", goal: "g", question: "q?", abilities: { read_links: true } }), /Reading links is off for this project's gathering sessions; the operator can allow it on the project page\./);
+    assert.deepEqual(f.abilities, [{ draw: true, readLinks: false }]);
+    assert.equal(f.limits.count("gather"), 1, "the refusal counted nothing");
+    const g = fake({ attended: true, settings: { gatheringAbilities: { draw: true, readLinks: true } } });
+    await g.run("sova_start_gathering", { ...gather, abilities: { draw: false } });
+    await g.run("sova_start_gathering", { ...gather, abilities: { read_links: false } });
+    assert.deepEqual(g.abilities, [{ draw: false, readLinks: true }, { draw: true, readLinks: false }]);
+  });
+  test("an unknown ability or a non-boolean is refused before anything starts", async () => {
+    const f = fake({ attended: true });
+    await assert.rejects(() => f.run("sova_start_gathering", { ...gather, abilities: { search: true } }), /Unknown ability search/);
+    await assert.rejects(() => f.run("sova_start_gathering", { ...gather, abilities: { draw: "yes" } }), /abilities\.draw must be true or false/);
+    assert.deepEqual(f.calls, []);
   });
 });
 

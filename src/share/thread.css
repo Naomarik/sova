@@ -32,3 +32,9 @@
 .share-card-quiet { background: transparent; border: 1px solid var(--color-border); }
 .share-card-head { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
 .share-brief { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--color-border); }
+
+/* Drawings in a reply (§app.baton/outsider-view): vis.css draws the figure and the "Drawing…" box;
+   these are the share page's own lines. */
+.share-md .md-vis-pending-line { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
+.share-md .md-vis:last-child, .share-md .md-vis-pending:last-child { margin-bottom: 0; }
+.share-vis-broken { font-size: var(--fs-caption); color: var(--color-ink-muted); }

@@ -149,5 +149,5 @@
     font-weight: var(--fw-regular);
     color: var(--color-ink-muted);
   }
-  .cost-table-stack td .cost-tokens { display: inline; min-width: 4ch; text-align: right; }
+  .cost-table-stack td .cost-tokens { display: inline-block; min-width: 4ch; text-align: right; }
 }

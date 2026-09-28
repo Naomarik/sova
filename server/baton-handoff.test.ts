@@ -26,6 +26,8 @@ after(async () => {
   await disposeAllChats();
   rmSync(root, { recursive: true, force: true });
 });
+// pi's model catalog and auth storage can still write here after after() ran: exit is last.
+process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
@@ -58,7 +60,7 @@ const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0
 /** A baton chat whose model replies "ok" once `release()` is called, or stops when aborted.
     `start()`: with `holdStart`, a prompt waits in the SDK's input handlers (a turn that is starting,
     its run not yet begun) until it is called. */
-async function heldChat(path: string, opts: { holdStart?: boolean; seen?: unknown[][] } = {}) {
+async function heldChat(path: string, opts: { holdStart?: boolean; seen?: unknown[][]; tools?: unknown[][]; script?: unknown[][] } = {}) {
   const chat = await acquireChat(path);
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
@@ -74,19 +76,25 @@ async function heldChat(path: string, opts: { holdStart?: boolean; seen?: unknow
     s._runInputHandlers = async (...a) => (await started, run(...a));
   }
   const seen = opts.seen;
+  const tools = opts.tools;
+  const script = opts.script;
   s._modelRuntime.hasConfiguredAuth = () => true;
   s.agent.state.model = STUB;
   s.agent.getApiKey = async () => "stub";
   s.agent.streamFunction = async (_m: unknown, context: { messages?: unknown[] }, opts?: { signal?: AbortSignal }) => {
+    // The tools the run can call (the transcript declares them to the model), each time it is called.
+    tools?.push((s.agent.state as unknown as { tools: { name: string; parameters: unknown }[] }).tools.map((t) => ({ name: t.name, parameters: structuredClone(t.parameters) })));
     // What the model reads, each time it is called.
     opts?.signal && seen?.push(structuredClone(context?.messages ?? []));
     // Aborted already when the model is called: a stop that came at the run's first event.
     const aborted = new Promise<"aborted">((r) => (opts?.signal?.aborted ? r("aborted") : opts?.signal?.addEventListener("abort", () => r("aborted"), { once: true })));
     const how = await Promise.race([gate.then(() => "done" as const), aborted]);
+    // A scripted reply (tool calls) when one is queued, else "ok".
+    const scripted = how === "aborted" ? undefined : script?.shift();
     const message = {
       role: "assistant", api: "stub", provider: "stub", model: "stub", timestamp: Date.now(), usage,
-      content: [{ type: "text", text: "ok" }],
-      stopReason: how === "aborted" ? "aborted" : "stop",
+      content: scripted ?? [{ type: "text", text: "ok" }],
+      stopReason: how === "aborted" ? "aborted" : scripted ? "toolUse" : "stop",
     };
     const end = how === "aborted" ? { type: "error", reason: "aborted", error: message } : { type: "done", reason: "stop", message };
     return { async *[Symbol.asyncIterator]() { yield end; }, result: async () => message };
@@ -212,6 +220,42 @@ describe("someone marked left", () => {
       /Gus Gone has left the organization/,
     );
     assert.equal(orgs.readRoster(org.id).filter((p) => p.name === "Gus Gone").length, 1, "no second Gus");
+  });
+});
+
+describe("record_decision's owner areas follow the roster (§app.requirements/owner-area)", () => {
+  test("an area added mid-session is offered at the next run; the conversation's tools stay exactly its own", async () => {
+    const ana = orgs.addPerson(org.id, { name: "Ana Owner", role: "Lead", decides: ["website"] });
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: ana.id, publicTitle: "Areas", goal: "g" });
+    const calls: unknown[][] = [];
+    const { chat, release } = await heldChat(c.path, { tools: calls });
+    release();
+    const enumOf = (tools: unknown[]) => (tools as { name: string; parameters: any }[]).find((t) => t.name === "record_decision")!.parameters.properties.ownerArea.enum as string[];
+    says(chat, c.sessionId, ana.id, "first");
+    await until(() => calls.length === 1 && !chat.session.isStreaming);
+    assert.ok(enumOf(calls[0]!).includes("website"));
+    assert.ok(!enumOf(calls[0]!).includes("hosting"));
+    orgs.applyChange(org.id, ana.id, { decides: ["website", "hosting"] }, { kind: "operator" });
+    says(chat, c.sessionId, ana.id, "second");
+    await until(() => calls.length === 2 && !chat.session.isStreaming);
+    assert.ok(enumOf(calls[1]!).includes("hosting"), JSON.stringify(enumOf(calls[1]!)));
+    assert.deepEqual((calls[1] as { name: string }[]).map((t) => t.name).sort(), [...loadout.BATON_TOOLS].sort(), "the wrap-up's tool stays inactive");
+  });
+
+  test("through pi's own tool call: an unknown owner area is refused naming the choices; a case variant is stored as the roster spells it", async () => {
+    const kim = orgs.addPerson(org.id, { name: "Kim Picks", role: "Lead", decides: ["finance"] });
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Picks", goal: "g" });
+    const call = (id: string, ownerArea: string) => ({ type: "toolCall", id, name: "record_decision", arguments: { area: "payroll dates", ownerArea, statement: "Pay on the 1st.", quote: "the 1st" } });
+    const { chat, release } = await heldChat(c.path, { script: [[call("t1", "payroll"), call("t2", "Finance")]] });
+    release();
+    says(chat, c.sessionId, kim.id, "we pay on the 1st");
+    await until(() => !chat.session.isStreaming && entriesOf(c.path).some((e) => e.message?.role === "toolResult" && e.message.toolCallId === "t2"));
+    const results = entriesOf(c.path).filter((e) => e.message?.role === "toolResult");
+    const text = (id: string) => JSON.stringify(results.find((e) => e.message.toolCallId === id)!.message.content);
+    assert.match(text("t1"), /\\"payroll\\" is not an owner area\. Use one of: .*\\"finance\\".* or \\"none\\"\./, text("t1"));
+    assert.doesNotMatch(text("t1"), /must be equal to one of the allowed values/);
+    const decided = entriesOf(c.path).filter((e) => e.customType === "sova-baton-decision");
+    assert.deepEqual(decided.map((e) => e.data.ownerArea), ["finance"], "one decision, stored as the roster spells it");
   });
 });
 

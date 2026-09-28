@@ -48,3 +48,18 @@ test("a pending explain jump is claimed once, by its own session, on the explana
   assert.equal(pendingExplainJump(), null);
   clearExplainJump();
 });
+
+test("while older rows are arriving, a pending explain jump whose row isn't here waits; only a whole list says missing", async () => {
+  const { requestExplainJump, claimExplainJump, pendingExplainJump, clearExplainJump } = await import("./jump");
+  const tail = [{ id: "u9" }];
+  requestExplainJump({ explainId: "exp-1", sessionId: "sid-a", path: "/a.jsonl" }, 1000);
+  assert.equal(claimExplainJump({ path: "/a.jsonl" }, tail, 1001, false), null, "not whole: not missing yet");
+  assert.ok(pendingExplainJump(), "still waiting");
+  // The history lands with the row in it.
+  const whole = [{ id: "row-2", report: { explain: { id: "exp-1" } } }, ...tail];
+  assert.deepEqual(claimExplainJump({ path: "/a.jsonl" }, whole, 1002, false), { kind: "jump", rowId: "row-2" }, "found: claimed even before whole");
+  requestExplainJump({ explainId: "exp-gone", sessionId: "sid-a", path: "/a.jsonl" }, 2000);
+  assert.equal(claimExplainJump({ path: "/a.jsonl" }, whole, 2001, false), null);
+  assert.deepEqual(claimExplainJump({ path: "/a.jsonl" }, whole, 2002, true), { kind: "missing" }, "whole, and not there");
+  clearExplainJump();
+});

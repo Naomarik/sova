@@ -25,7 +25,9 @@ the fork-point marker (below) is the only thing that tells them apart afterwards
 - **The composer flyout** (§chat/composer, the `plus` menu panel), a row after Hide thinking and Sandbox: `Fan Out…`. It
   opens the dialog with **Fork at the current leaf** selected and this session as the source.
   Absent when the session has no assistant reply yet — there is nothing to fork — and absent for
-  a watch view, where Sova holds no runtime.
+  a watch view, where Sova holds no runtime. Also absent until the chat's `hello` has arrived:
+  the dialog counts the branch's messages, the rows held plus those the `hello` counts among the
+  rows it didn't carry (§chat.transcript/rendering).
 - **The overview's Start section** (§chat.transcript/landing-page), beside `New Session`: the
   `Fan Out` action card ("Send one prompt to several models and compare the replies side by
   side."). It opens the same dialog with **A fresh prompt** selected and no source. This is the fresh-mode
@@ -616,7 +618,10 @@ at all** — `display: none` has no scroll offsets — so it is never counted as
 alignment is remembered and lands the moment its tab is opened (or the row returns to split),
 and the announcement says that instead: "Aligned 2 members now. glm-5.3 #3 will align when you
 open its tab." Counting a scroll that did not happen would be the announcement overstating
-something the reader cannot check. The button is absent for a group with no
+something the reader cannot check. A pane that doesn't hold the marker's row yet but has older
+rows it hasn't fetched (§chat.transcript/rendering) isn't named as missing it: the rows down to
+the marker are fetched in one request and it aligns once they're here; the announcement counts
+the members aligned so far ("Aligned 2 members now.") and adds nothing for it. The button is absent for a group with no
 `seed`, because there is nothing to align to — and **present for one that adopted a seed later**
 (`groupId`, above), which is the one visible trace adoption leaves. A hand-made group that has
 been fanned into gains fork markers on the new members and this button; it keeps its name, its

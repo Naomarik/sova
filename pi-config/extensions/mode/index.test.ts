@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL, visPrompt } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
+import { ALIGN_FILE_SCHEMA, ALIGN_NUDGE_TEXT, ALIGN_OPS } from "./align.ts";
 import { delegateDefaults, type DelegateSettings } from "./delegate.ts";
 import {
 	applyModeSection,
@@ -233,21 +234,37 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.match(align, /not the Investigation profile/);
 	assert.match(align, /Stop and wait/);
 	assert.match(align, /Exempt/);
-	assert.match(align, /do not re-ask/);
-	// The block skeleton align.ts parses (headings verbatim, task-list questions, status words).
-	assert.match(align, /^## Alignment: /m);
-	assert.match(align, /^### Findings$/m);
-	assert.match(align, /^### Approach$/m);
-	assert.match(align, /^### Open questions$/m);
-	assert.match(align, /^### Rejected$/m);
-	assert.match(align, /^### Status$/m);
-	// Questions carry their number inside the checkbox label; a list-number marker would be lost by the viewer.
-	assert.match(align, /^- \[ \] \*\*1\. /m);
-	assert.doesNotMatch(align.split("### Open questions")[1]?.split("### Rejected")[0] ?? "", /^\d+\. \[[ xX]\]/m);
-	assert.match(align, /`\[x\]`/);
-	assert.match(align, /Status `confirmed`/);
-	assert.match(align, /Status `implementing`/);
-	assert.match(align, /go ahead while questions are still open/);
+	assert.match(align, /never re-ask a settled question/);
+	// Every alignment goes through the tool, never prose; answers and lifecycle through ops.
+	assert.match(align, /record every alignment with the `align` tool/);
+	assert.match(align, /Never write an alignment as reply text/);
+	assert.match(align, /import it with the import op and that absolute path/);
+	assert.match(align, /decide \(in their words\), accept only the questions they told you to take your recommendation on/);
+	assert.match(align, /leave the rest open/);
+	assert.match(align, /Never set status implementing while a question is open/);
+	assert.match(align, /set status implementing before you build/);
+	assert.match(align, /status done when the work is finished/);
+	assert.match(align, /align exempt and a reason/);
+	assert.match(align, /Several alignments can be open at once/);
+	// No markdown template survives: the parser that read it is gone.
+	assert.doesNotMatch(align, /^#{2,3} (Alignment|Findings|Open questions|Status)/m);
+	assert.doesNotMatch(align, /\[ \]/);
+	// The bridge hands the planning worker's result over as a file, in the tool's schema.
+	assert.match(DELEGATE_ALIGN_BRIDGE, /Workers have no align tool/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /align \{op: "import", path: that same absolute path\}/);
+	// No text the model reads names an op shape the tool no longer takes, and every op it names is one.
+	for (const text of [align, DELEGATE_ALIGN_BRIDGE, ALIGN_NUDGE_TEXT]) {
+		assert.doesNotMatch(text, /fromFile|create \+|\bdrop \{|\{why\}|exempt with why|accept \{q|q: "open"/);
+		for (const op of text.match(/\b(?:accept|drop|edit)_[a-z]+\b/g) ?? []) assert.ok((ALIGN_OPS as readonly string[]).includes(op), op);
+	}
+	// The planner's one write is named, absolute and outside the repo, and the delegate block's
+	// no-edit rule names that same exception, so the two never contradict each other.
+	assert.match(DELEGATE_ALIGN_BRIDGE, /one permitted write is the alignment JSON/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /absolute path outside the repository that you name in its prompt/);
+	assert.match(buildDelegatePrompt([]), /must not edit files[^\n]*The one exception is a planning worker's alignment JSON \(align on\), written outside the repository\./);
+	assert.match(align, /absolute path outside the repository/);
+	assert.ok(DELEGATE_ALIGN_BRIDGE.includes(ALIGN_FILE_SCHEMA), "the bridge quotes the one file schema");
+	assert.match(DELEGATE_ALIGN_BRIDGE, /status is implementing/);
 });
 
 test("vis: vis-mode.md verbatim minus its owner comments, composed last", () => {

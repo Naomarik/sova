@@ -24,12 +24,12 @@ which is also its live view: its tool calls render as tool cards as they happen.
   The session list marks it (`projectOverseer`, and `org`, §app.organizations/org-sessions); nothing (the Overseer's prompt route included)
   writes a message into it but the operator's own composer.
 - Its state is in the workspace repo under `projects/<projectId>/overseer/`: `overseer.json`
-  (autonomy, model, thinking, the coding sessions' model, thinking and mode, the limits and token
-  budget, the pace, watch on/off, extra instructions; §app.project-overseer/limits), `state.json`,
+  (autonomy, model, thinking, the coding sessions' model, thinking and mode, the limits, the pace,
+  watch on/off, extra instructions; §app.project-overseer/limits), `state.json`,
   `notes.md`, `actions.jsonl` (every act, refused or not; an act that did only part of what was asked, a
   promotion with refusals, is logged `partial` with what was refused), `ideas/`, `todos.json`, `started.json`
-  (the sessions it started, and what its coding sessions spent; plus, as `operator-coding` rows that
-  no cap or budget counts, the ones the operator started with Start coding session; each coding row
+  (the sessions it started; plus, as `operator-coding` rows that
+  no cap counts, the ones the operator started with Start coding session; each coding row
   also names its worktree, §app.project-overseer/coding-worktrees); committed with the org's
   workspace commits (§app.organizations/workspace-repo). Only the counters (each message's and
   each day's) and the watch loop's timing and held items are host-local.
@@ -146,7 +146,7 @@ composer has no mode switch.
   **L0 propose** (read, keep notes, file ideas, ask with a confirm card), **L1 gather** (+ start
   gathering sessions and offers, run the reconciler), **L2 reconcile** (+ promote drafted
   decisions, approve or decline referrals), **L3 build** (+ start and prompt coding sessions in the
-  project, within the token budget).
+  project, within its limits).
 - The level in force is **L0 while the overseer is paused by an attach on this host**
   (§app.organizations/portability), until the operator sets its level here, and **L0 while the
   org's roster has no active person**, whatever the setting; the project page says why ("In force
@@ -160,8 +160,9 @@ composer has no mode switch.
   refusal is logged, and nothing reaches the gathering, reconcile, promote or session code. A level
   change applies from the next tool call.
 - **Limits** (§app.project-overseer/limits): what it may start or send per message the operator
-  sends, per day on its own, and at once, and the coding token budget. Over a limit a tool refuses
-  and takes nothing.
+  sends, per day on its own, and at once. Over a limit a tool refuses and takes nothing. There is
+  no token or cost budget; what the project's sessions cost is shown to the operator only
+  (§app/project-costs).
 
 ## §app.project-overseer/limits — Limits, per project
 
@@ -176,14 +177,15 @@ composer has no mode switch.
   (`unattendedPerDay`).
 - **At once**, for both kinds of turn: 5 of its gathering sessions open (0–20) and 2 of its coding
   sessions running (0–10).
-- **Coding token budget** (default 2,000,000) over everything its coding sessions have spent,
-  counted from their files, **their workers included** (every worker and team member a coding
-  session started, pi or Claude Code, at its lifetime total), after which starting or prompting one
-  refuses.
+- **No token budget.** The coding token budget is gone: nothing refuses on tokens or cost. A
+  `tokenBudget` in an older `overseer.json` is ignored on read and dropped at the next save; a
+  PATCH carrying one ignores it; a held `budget` item in the host-local watch memo is dropped on
+  read, so no "Waiting for you" line outlives it. Past budget refusals stay in `actions.jsonl`.
+  An older Sova on another host reads the missing key as its own default, stricter, never looser.
 - **Unlimited** is `null` in `overseer.json` and in `PATCH …/overseer`: allowed for the eight
-  allowances, the looks per day and the token budget; **never for the two at-once limits**, which
+  allowances and the looks per day; **never for the two at-once limits**, which
   are what stop a burst ("Coding sessions running can't be Unlimited: it's what stops a burst.").
-  Allowances are whole numbers from 0 to 1000, the budget from 0 to 1,000,000,000. A PATCH with a
+  Allowances are whole numbers from 0 to 1000. A PATCH with a
   bad value is refused (400) with the first problem as a sentence ("{Label} must be a whole number
   from 0 to 1000, or Unlimited.", "Coding sessions running must be a whole number from 0 to
   10.") and writes nothing. A hand-edited file is read tolerantly: a bad value falls back to its
@@ -193,11 +195,10 @@ composer has no mode switch.
   page offers 2, 5, 10, 30 and 60; the server takes 1–1440), and after a reason to look soon at
   `soonLookSec` seconds (default 60; the page offers 30, 60, 120, 300 and Off; the server takes
   30–3600 or `null` = Off, when those reasons wait for the normal pace like any other).
-- **Held, then retried.** A refusal for an allowance, the looks per day or the budget records a
+- **Held, then retried.** A refusal for an allowance or the looks per day records a
   *held* item in the host-local watch memo (one per limit, at most 10) with a retry time: the next
   local midnight for a daily allowance or the looks; at once for the message allowance (a later
-  look of its own may go on, at the normal pace, within today's allowance); none for the budget
-  (only the operator raising it). Every tick, a held item whose time has come becomes a reason to
+  look of its own may go on, at the normal pace, within today's allowance). Every tick, a held item whose time has come becomes a reason to
   look ("Today's allowance is back: it may start gathering sessions again (refused {time})."),
   soon (unless Off) except the message allowance's, which waits for the normal pace. A PATCH that
   raises a limit or sets it Unlimited releases its held items at once ("You raised the limit on
@@ -209,9 +210,7 @@ composer has no mode switch.
   midnight." + "Nothing starts before then. Tell the operator what is waiting; don't promise an
   earlier look."; the message allowance, "This message's allowance is used: {n} of {max} {what}
   per message you send." + "Stop here and tell the operator what is done and what is left, or ask
-  with sova_confirm."; the budget, "The coding token budget is spent ({spent} of {budget}). It
-  starts no coding session until you raise it." + "Tell the operator; they can raise it on the
-  project page. Don't promise a later look."; an at-once limit, "{n} of its gathering sessions are
+  with sova_confirm."; an at-once limit, "{n} of its gathering sessions are
   open, and the limit is {max} at once." (or coding sessions running) + "One finishing is a reason
   to look again; don't promise when." The prompt says never to promise a look "next time" unless
   a tool result says when it comes, and lists every limit in force.
@@ -221,22 +220,22 @@ composer has no mode switch.
   drafted, in a conflict, outside its author's area) takes nothing, and a call that promotes none
   takes nothing.
 - **The page** (the project's Overseer card) has a **Limits** section: every limit above, each
-  allowance and the budget with an `Unlimited` checkbox that disables its field (a blank field is
+  allowance with an `Unlimited` checkbox that disables its field (a blank field is
   never Unlimited), the at-once limits without one, and the pace; one form, **Save Limits** (one
   PATCH), **Reset Limits** (the defaults, into the form, unsaved), with the first problem under it
-  before anything is sent. It replaces the budget's own form. Under the status line, what it has
+  before anything is sent. Under the status line, what it has
   used today on its own and in the operator's last message, and a **Waiting** line per held item
   that isn't the message allowance's. The Watch hint is built from the pace. Copy:
   §design.copy-deck/project-limits.
 - `GET …/overseer` answers `usage.allowance` (`message` and `today`: per kind, `used` and `max`,
-  `null` = Unlimited), `usage.held` and `usage.tokenBudget` (`null` = Unlimited). `sova_project`
-  reports both allowances used and left, the looks today, the budget, the at-once limits and the
-  held items.
+  `null` = Unlimited) and `usage.held`; no token count and no cost. `sova_project`
+  reports both allowances used and left, the looks today, the at-once limits and the held items,
+  and nothing about tokens or cost.
 
 ## §app.project-overseer/tools — Scoped to its project
 
 - Reads: `sova_project` (level, roster, gathering sessions, decisions by state and area, open
-  conflicts, spec status, its budget), `sova_decisions` (with who and their exact words),
+  conflicts, spec status, its limits), `sova_decisions` (with who and their exact words),
   `sova_list_sessions` / `sova_read_session` (the project's gathering sessions as their
   participants see them, and ordinary sessions whose folder is inside the project root, never
   another project's, an overseer's or a subagent's own), `sova_roster` (read; both it and `sova_project` name the main stakeholder, as the prompt
@@ -305,7 +304,7 @@ composer has no mode switch.
     on the project page."
   - `normal` always.
   An unknown name refuses too. Each refusal happens before anything else: no session is created,
-  nothing is sent, and no cap, counter or budget is taken, attended or not.
+  nothing is sent, and no cap or counter is taken, attended or not.
 - **`sova_send` with a mode** sets it on that session first, then sends the text. Mid-turn, the mode
   applies from the session's next turn, and the result says so. A terminal-owned session is
   refused, as today.

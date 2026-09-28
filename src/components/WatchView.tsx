@@ -1,11 +1,13 @@
-import { createEffect, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
-import type { SessionSummary, TranscriptItem, WatchServerMessage } from "../../shared/protocol";
-import { createFork, fetchTranscriptWithContext, wsUrl } from "../lib/api";
+import { batch, createEffect, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
+import type { SessionSummary, TranscriptItem, WatchContext, WatchServerMessage } from "../../shared/protocol";
+import { createFork, fetchTranscriptRows, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
 import { landExplainJump } from "../lib/jump";
+import { newestOnly, newRows } from "../lib/older-rows";
+import { createOlderRows } from "../lib/older-rows-view";
 import { hostOf, sessionViewKey } from "../lib/mesh";
-import { cachedTranscript, cacheItems, cacheSpot, reconcileItems } from "../lib/transcript-cache";
+import { cachedTranscript, cacheItems, cacheSpot, transcripts } from "../lib/transcript-cache";
 import { copyText, hideThinking, hideTools, setSessionContext, toast } from "../lib/ui-state";
 import { openCreated, stageFork } from "../lib/fork-stage";
 import { usePaneAnnounce } from "../lib/pane-scope";
@@ -65,27 +67,49 @@ export function WatchView(props: {
   // Rows kept from the last visit paint at once; the snapshot reconciles them (lib/transcript-cache).
   const cacheKey = sessionViewKey(hostOf(props.path), props.path);
   const cached = cachedTranscript(cacheKey);
+  onCleanup(transcripts.show(cacheKey));
   const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
   createEffect(on(items, (list) => list && cacheItems(cacheKey, list)));
+  /** The rows above the list that it doesn't hold (lib/older-rows, as ChatView's). */
+  const olderRows = createOlderRows({ path: props.path, items, setItems });
+  const { older, whole } = olderRows;
+  /** The last snapshot's first row: rows that arrive above it are history, never "N new". */
+  const [newFrom, setNewFrom] = createSignal<string | null>(null);
   // "Open in Session" from an Explanations card: land on that explanation's row once the snapshot
-  // is here. Only a jump waiting for this session is claimed, and only once.
-  createEffect(on(items, (list) => list && landExplainJump({ path: props.path, sessionId: props.sessionId }, list, toast)));
+  // is here. Only a jump waiting for this session is claimed, and only once; one whose row isn't
+  // here is fetched, down to it.
+  createEffect(on([items, older], ([list, o]) => list && landExplainJump({ path: props.path, sessionId: props.sessionId }, list, toast, whole(), o ? olderRows.api.load : undefined)));
   const [error, setError] = createSignal<string | null>(null);
   const [lastUpdate, setLastUpdate] = createSignal<string | null>(null);
 
-  // Context fill: the model's window comes once from the transcript response; the fill itself
-  // follows the watched items (last assistant usage on the branch; a compaction after it → null).
+  // Context fill: the model's window comes from the snapshot's own context (pi files name the
+  // reply's model); the fill itself follows the watched items (last assistant usage on the branch;
+  // a compaction after it → null). Only a snapshot that names no window (no reply yet, compacted,
+  // an unknown model, a server that predates it) asks the transcript's newest rows for one, once.
+  // While the list holds no reply and rows above it aren't fetched, the fill is the server's own
+  // (the snapshot's or the last append's): it read the whole branch.
   const [contextWindow, setContextWindow] = createSignal<number | null | undefined>(undefined);
-  void fetchTranscriptWithContext(props.path)
-    .then((r) => {
-      setContextWindow(r.context?.window ?? null);
-      if (!items()) setSessionContext(props.path, contextStateFor(r.context, r.items));
-    })
-    .catch(() => setContextWindow(null)); // the meter just stays without a window
+  let askedWindow = false;
+  const askWindow = () => {
+    if (askedWindow) return;
+    askedWindow = true;
+    void fetchTranscriptRows(props.path, { tail: true })
+      .then((r) => {
+        if ("code" in r) throw new Error(r.code);
+        if (!contextWindow()) setContextWindow(r.context?.window ?? null);
+        if (!items()) setSessionContext(props.path, contextStateFor(r.context ?? null, r.items));
+      })
+      .catch(() => contextWindow() === undefined && setContextWindow(null)); // the meter just stays without a window
+  };
+  const windowOf = (ctx: WatchContext | undefined) => (ctx && ctx !== "compacted" ? ctx.window : null);
+  const [serverContext, setServerContext] = createSignal<WatchContext | undefined>(undefined);
   createEffect(() => {
     const list = items();
     const window = contextWindow();
-    if (list && window !== undefined) setSessionContext(props.path, contextFromItems(list, window));
+    if (!list || window === undefined) return;
+    const mine = contextFromItems(list, window);
+    const theirs = serverContext();
+    setSessionContext(props.path, mine === null && (older()?.left ?? 0) > 0 && theirs !== undefined ? theirs : mine);
   });
 
   let unannounced = 0;
@@ -162,20 +186,34 @@ export function WatchView(props: {
     note: (entryId) => (actionNote()?.entryId === entryId ? actionNote()!.text : null),
   };
 
-  const socket = createReconnectingSocket<WatchServerMessage>(wsUrl("/ws/watch", props.path), {
+  const socket = createReconnectingSocket<WatchServerMessage>(newestOnly(wsUrl("/ws/watch", props.path)), {
     onMessage(msg) {
       switch (msg.type) {
-        case "snapshot": // may repeat if the file is rewritten: always replace
+        case "snapshot": {
+          // May repeat if the file is rewritten: always replace. The newest rows; the rest are
+          // fetched when wanted (lib/older-rows), and rows kept above the first are its ancestors.
           setError(null);
-          setItems((prev) => reconcileItems(prev, msg.items));
+          const w = windowOf(msg.context);
+          if (w) setContextWindow(w);
+          else askWindow();
+          batch(() => {
+            if (msg.context !== undefined) setServerContext(msg.context);
+            olderRows.hello(msg);
+            setNewFrom(msg.items[0]?.id ?? null);
+          });
           setLastUpdate(new Date().toISOString());
           break;
-        case "append":
+        }
+        case "append": {
+          const w = windowOf(msg.context);
+          if (w && !contextWindow()) setContextWindow(w);
+          if (msg.context !== undefined) setServerContext(msg.context);
           setItems((prev) => [...(prev ?? []), ...msg.items]);
           setLastUpdate(new Date().toISOString());
           noteAppended(msg.items.length);
           props.onAppend?.();
           break;
+        }
         case "error":
           setError(msg.message);
           break;
@@ -189,7 +227,7 @@ export function WatchView(props: {
         path={props.path}
         restore={cached?.spot}
         onSpot={(spot) => cacheSpot(cacheKey, spot)}
-        count={visibleCount(items() ?? [], { tools: hideTools(props.path), thinking: hideThinking(props.path) })}
+        count={visibleCount(newRows(items() ?? [], newFrom()), { tools: hideTools(props.path), thinking: hideThinking(props.path) })}
         busy={!items()}
         banner={
           <div class="stack-2">
@@ -217,7 +255,7 @@ export function WatchView(props: {
         <Show when={items()} fallback={<TranscriptSkeleton />}>
           {(list) => (
             <Show
-              when={list().length > 0}
+              when={list().length > 0 || !whole()}
               fallback={
                 <div class="empty">
                   <p class="empty-title">0 entries in this session so far.</p>
@@ -233,6 +271,7 @@ export function WatchView(props: {
                 hideThinking={hideThinking(props.path)}
                 fork={props.fork}
                 actions={watchActions}
+                older={olderRows.api}
               />
             </Show>
           )}

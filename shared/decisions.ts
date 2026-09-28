@@ -16,6 +16,8 @@
  * POST  /api/orgs/:id/projects/:pid/promote              body { ids: string[] (DecisionRow ids), bulk?: boolean } -> PromoteResult
  *                                                        (bulk = "Select all ready": out-of-area decisions are refused;
  *                                                        default false = the operator named each id: allowed)
+ * PATCH /api/orgs/:id/projects/:pid/decisions/:did      body { ownerArea: string } -> DecisionsInfo (a roster decision
+ *                                                        area or "none"; kept in ownerAreaHistory; re-routes its open conflict)
  * POST  /api/orgs/:id/projects/:pid/conflicts/:cid/route  body { to?: PersonRef } -> DecisionsInfo (start its baton session now)
  * POST  /api/orgs/:id/projects/:pid/conflicts/:cid/resolve body ConflictResolveInput -> DecisionsInfo (the operator decides)
  * GET   /api/orgs/:id/projects/:pid/spec                 -> SpecStatus
@@ -47,6 +49,21 @@ export interface Provenance {
  * - `promoted`: in the project's current spec.
  * - `superseded`: a later decision replaced it (`supersededBy`).
  */
+/** The owner area of a decision no roster decision area covers: the main stakeholder's, else the operator's. */
+export const OWNER_AREA_NONE = "none";
+
+/** One change of a decision's owner area on the project page. */
+export interface OwnerAreaChange {
+  at: string;
+  /** "operator". */
+  by: string;
+  /** Their display name then. */
+  name: string;
+  /** null: the decision was recorded before owner areas. */
+  from: string | null;
+  to: string;
+}
+
 export type DecisionState = "pending" | "drafted" | "promoted" | "superseded" | "conflict";
 
 export interface DecisionRow {
@@ -58,6 +75,11 @@ export interface DecisionRow {
   area: string;
   /** The spec area it files under: `§requirements/<areaKey>` (lowercase letters and hyphens). */
   areaKey: string;
+  /** Who decides it (§app.requirements/owner-area): a roster decision area as the roster spells
+      it, or "none". Absent: recorded before owner areas, so `areaKey` is matched instead. */
+  ownerArea?: string;
+  /** The operator's changes of `ownerArea`, oldest first. */
+  ownerAreaHistory?: OwnerAreaChange[];
   statement: string;
   quote: string;
   /** A roster person's id, or "operator". */
@@ -70,9 +92,10 @@ export interface DecisionRow {
   entryId: string;
   /** The `sova-baton-decision` entry's own id. */
   markerId: string;
-  /** The author may decide this area: the operator, or an active person whose `decides` (set by
-      the operator, not self-asserted) covers `areaKey`. Out-of-area decisions are promoted only
-      by the operator naming them explicitly. */
+  /** The author may decide it: the operator, or an active person whose `decides` (set by the
+      operator, not self-asserted) covers `ownerArea` (else `areaKey`), or the main stakeholder
+      where no one does or the owner area is "none". Out-of-area decisions are promoted only by
+      the operator naming them explicitly. */
   authorOwnsArea: boolean;
   /** The session file on this host, for #/s/<path>; null when it is not here. */
   sessionPath: string | null;
@@ -98,6 +121,8 @@ export interface Conflict {
   orgId: string;
   projectId: string;
   areaKey: string;
+  /** The owner area its sides name, when they name one (and the same one). */
+  ownerArea?: string;
   /** DecisionRow ids; `a` is the older. */
   a: string;
   b: string;
@@ -164,6 +189,8 @@ export interface DecisionsInfo {
   running: boolean;
   /** personId → name, for routedTo / by. */
   names: Record<string, string>;
+  /** The owner areas a decision may pick (the roster's active decision areas); "none" besides. */
+  ownerAreas: string[];
 }
 
 export interface PromoteResult {

@@ -3,11 +3,9 @@ import type { IdeaRecord, OverseerAction, OverseerTodosInfo } from "../../shared
 import {
   ALLOWANCE_MAX,
   AT_ONCE_MAX,
-  budgetProblem,
   capProblem,
   DEFAULT_PO_CAPS,
   DEFAULT_SOON_LOOK_SEC,
-  DEFAULT_TOKEN_BUDGET,
   DEFAULT_WATCH_GAP_MIN,
   GAP_CHOICES,
   isAtOnce,
@@ -34,12 +32,12 @@ import {
   runProjectOverseer,
   sendProjectItem,
 } from "../lib/api";
-import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, folderNote, isDelegate, mergeGate, mergeNote, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
+import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, folderNote, mergeGate, mergeNote, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
 import { relativeTime, tildePath } from "../lib/format";
 import { hostLabel, orgHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll } from "../lib/poll";
-import { actionLine, allowanceLine, gapArea, gapWords, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, tokens, waitingLines, watchHint } from "../lib/project-overseer-view";
+import { actionLine, allowanceLine, gapArea, gapWords, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
 import { announce, home, toast } from "../lib/ui-state";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon } from "./ui";
@@ -245,7 +243,7 @@ function StatusLine(props: { info: ProjectOverseerInfo }) {
       <For each={[allowanceLine("Today on its own", u().allowance.today), allowanceLine("Your last message", u().allowance.message)].filter((l): l is string => !!l)}>
         {(line) => <p class="orgs-line project-muted">{line}</p>}
       </For>
-      <For each={waitingLines(u().held, i().settings, u().codingTokens)}>{(line) => <p class="orgs-line project-waiting">{line}</p>}</For>
+      <For each={waitingLines(u().held, i().settings)}>{(line) => <p class="orgs-line project-waiting">{line}</p>}</For>
     </>
   );
 }
@@ -374,11 +372,10 @@ function SessionModel(props: { info: ProjectOverseerInfo; host: string | null; k
 /** The Limits form's values: a limit is a number, NaN while its field is empty or not a number, or null (Unlimited). */
 interface LimitsDraft {
   caps: Record<keyof ProjectOverseerCaps, number | null>;
-  tokenBudget: number | null;
   watchGapMin: number;
   soonLookSec: number | null;
 }
-const limitsOf = (s: ProjectOverseerInfo["settings"]): LimitsDraft => ({ caps: { ...s.caps }, tokenBudget: s.tokenBudget, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec });
+const limitsOf = (s: ProjectOverseerInfo["settings"]): LimitsDraft => ({ caps: { ...s.caps }, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec });
 // A hint that names a host takes the org's host (a peer's day ends at its own midnight).
 const LIMIT_GROUPS: { legend: string; hint?: string | ((host: string) => string); keys: (keyof ProjectOverseerCaps)[] }[] = [
   { legend: "Each message you send", keys: ["gatherPerTurn", "promotePerTurn", "createPerTurn", "promptsPerTurn"] },
@@ -403,7 +400,7 @@ const numberOf = (v: string): number => (v.trim() === "" ? Number.NaN : Number(v
 
 /**
  * The project's limits (§app.project-overseer/limits): each message's allowance, the day's on its
- * own, at once, the coding token budget and the pace. One form, one PATCH. Unlimited is a checkbox
+ * own, at once, and the pace. One form, one PATCH. Unlimited is a checkbox
  * beside the field, never a blank field; the at-once limits have none.
  */
 function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(patch: ProjectOverseerPatch): Promise<boolean> }) {
@@ -414,7 +411,6 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(pa
   /** The number a field had before Unlimited was ticked, to bring back when it is unticked. */
   const kept = new Map<string, number>();
   const [problem, setProblem] = createSignal<string | null>(null);
-  const u = () => props.info.usage;
   const setCap = (k: keyof ProjectOverseerCaps, v: number | null) => setDraft((d) => ({ ...d, caps: { ...d.caps, [k]: v } }));
   const unlimited = (key: string, on: boolean, cur: number | null, fallback: number, set: (v: number | null) => void) => {
     if (on) {
@@ -428,7 +424,7 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(pa
     const why = limitsProblem(d);
     setProblem(why);
     if (why) return;
-    await props.save({ caps: d.caps as ProjectOverseerCaps, tokenBudget: d.tokenBudget, watchGapMin: d.watchGapMin, soonLookSec: d.soonLookSec });
+    await props.save({ caps: d.caps as ProjectOverseerCaps, watchGapMin: d.watchGapMin, soonLookSec: d.soonLookSec });
   };
   const gaps = createMemo(() => [...new Set([...GAP_CHOICES, draft().watchGapMin])].sort((a, b) => a - b));
   const soons = createMemo(() => {
@@ -494,40 +490,6 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(pa
         )}
       </For>
       <fieldset class="project-limits-group">
-        <legend class="project-limits-legend">Coding token budget</legend>
-        <div class="field project-limit project-limit-budget">
-          <label class="visually-hidden" for="project-limit-budget">
-            Coding token budget
-          </label>
-          <input
-            class="input input-mono"
-            id="project-limit-budget"
-            inputmode="numeric"
-            value={draft().tokenBudget === null || Number.isNaN(draft().tokenBudget) ? "" : String(draft().tokenBudget)}
-            disabled={draft().tokenBudget === null}
-            placeholder={draft().tokenBudget === null ? "Unlimited" : undefined}
-            aria-describedby="project-budget-hint"
-            aria-invalid={budgetProblem(draft().tokenBudget) ? "true" : undefined}
-            onInput={(e) => {
-              const n = numberOf(e.currentTarget.value.replace(/[,_\s]/g, ""));
-              setDraft((d) => ({ ...d, tokenBudget: n }));
-            }}
-          />
-          <label class="toggle project-limit-unlimited">
-            <input
-              type="checkbox"
-              checked={draft().tokenBudget === null}
-              onChange={(e) => unlimited("tokenBudget", e.currentTarget.checked, draft().tokenBudget, DEFAULT_TOKEN_BUDGET, (x) => setDraft((d) => ({ ...d, tokenBudget: x })))}
-            />
-            <span class="toggle-box" />
-            <span>Unlimited</span>
-          </label>
-          <span class="field-hint" id="project-budget-hint">
-            Spent {tokens(u().codingTokens)} by sessions it started, workers included.{props.info.settings.tokenBudget === null ? " No limit." : ""}
-          </span>
-        </div>
-      </fieldset>
-      <fieldset class="project-limits-group">
         <legend class="project-limits-legend">Pace</legend>
         <div class="orgs-fields">
           <label class="field">
@@ -566,7 +528,7 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(pa
           class="button button-ghost"
           onClick={() => {
             setProblem(null);
-            setDraft({ caps: { ...DEFAULT_PO_CAPS }, tokenBudget: DEFAULT_TOKEN_BUDGET, watchGapMin: DEFAULT_WATCH_GAP_MIN, soonLookSec: DEFAULT_SOON_LOOK_SEC });
+            setDraft({ caps: { ...DEFAULT_PO_CAPS }, watchGapMin: DEFAULT_WATCH_GAP_MIN, soonLookSec: DEFAULT_SOON_LOOK_SEC });
           }}
         >
           Reset Limits
@@ -605,7 +567,6 @@ function CodingMode(props: { info: ProjectOverseerInfo; onSave(key: CodingModeKe
       </select>
       <span class="field-hint" id="project-coding-mode-hint">
         Every coding session this project starts runs in it, yours included. One started now: <span class="orgs-mono">{modeWords(now())}</span>.
-        <Show when={isDelegate(key())}> Their workers' tokens count against the budget.</Show>
       </span>
     </label>
   );

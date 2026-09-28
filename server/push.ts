@@ -18,7 +18,7 @@ const BODY_MAX = 300;
 
 export const PUSH_KIND_LABEL: Record<PushKind, string> = {
   "needs-input": "Needs input",
-  "asks-you": "Asks you",
+  "open-questions": "Open questions",
   error: "Error",
   looping: "Subagent stuck",
   "baton-needs-you": "Baton",

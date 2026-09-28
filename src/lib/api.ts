@@ -38,6 +38,7 @@ import type {
   ThemeList,
   TmpAttachment,
   TranscriptItem,
+  TranscriptRows,
   UploadResult,
   UsageInsight,
   WebSettings,
@@ -61,6 +62,7 @@ import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, Proje
 import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
+import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
@@ -646,8 +648,10 @@ function noteAttachmentsHost(path: string, items: TranscriptItem[]): TranscriptI
   return items;
 }
 
-export const fetchTranscript = (path: string) =>
-  request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}`).then((r) => noteAttachmentsHost(path, r.items));
+/** The whole branch with each row light (`view=light`): what the session pane reads of every row,
+    without the replies' text, tools' output and image bytes that only the thread draws. */
+export const fetchTranscriptLight = (path: string) =>
+  request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}&view=light`).then((r) => noteAttachmentsHost(path, r.items));
 
 /** The transcript plus its context-window fill (null when unknown or stale). */
 export const fetchTranscriptWithContext = (path: string) =>
@@ -655,6 +659,56 @@ export const fetchTranscriptWithContext = (path: string) =>
     items: noteAttachmentsHost(path, r.items),
     context: r.context ?? null,
   }));
+
+/** What GET /api/transcript's rows can ask for (TranscriptRows in shared/protocol.ts). */
+export type RowsAsk = { tail: true } | { before: string; from?: string; explain?: string; chars?: number } | { from: string };
+
+/** Rows of a session's branch (lib/older-rows), or why not: the branch moved under the list, or the
+    target isn't on it. */
+export async function fetchTranscriptRows(path: string, ask: RowsAsk, leaf?: string | null): Promise<TranscriptRows | { code: "moved" | "missing" }> {
+  const q = new URLSearchParams({ path });
+  for (const [k, v] of Object.entries(ask)) q.set(k, v === true ? "1" : String(v));
+  if (leaf) q.set("leaf", leaf);
+  try {
+    const r = await request<TranscriptRows>(`/api/transcript?${q}`);
+    return { ...r, items: noteAttachmentsHost(path, r.items) };
+  } catch (err) {
+    const code = err instanceof ApiError ? (err.body as { code?: unknown } | undefined)?.code : undefined;
+    if (code === "moved" || code === "missing") return { code };
+    throw err;
+  }
+}
+
+/**
+ * A transcript's newest rows for keeping in memory (lib/recent-preload): the same read-only GET, with its size
+ * (the body's length, else the JSON's characters) for the memory budget. `fits` sees the
+ * announced length before the body comes: when it says no, the download stops there and the
+ * answer is just the size.
+ */
+export async function fetchTranscriptForCache(
+  path: string,
+  fits: (size: number) => boolean,
+): Promise<(TranscriptRows & { size: number }) | { tooBig: number }> {
+  const aborter = new AbortController();
+  // The newest rows only, as a view's hello carries them (TranscriptRows): the view fetches the
+  // rest when it wants them (lib/older-rows).
+  const res = await fetch(routeUrl(`/api/transcript?path=${encodeURIComponent(path)}&tail=1`), { signal: aborter.signal });
+  if (!res.ok) throw new ApiError(`${res.status} ${res.statusText}`, res.status);
+  const announced = Number(res.headers.get("content-length")) || 0;
+  if (announced && !fits(announced)) {
+    aborter.abort();
+    return { tooBig: announced };
+  }
+  const text = await res.text();
+  const rows = JSON.parse(text) as TranscriptRows;
+  // A server that predates the rows sends the whole branch: nothing above it.
+  return {
+    items: noteAttachmentsHost(path, rows.items),
+    older: rows.older ?? 0,
+    olderSummary: rows.olderSummary ?? { inputs: [], messages: 0, replies: false },
+    size: announced || text.length,
+  };
+}
 
 /** The composer draft stored for a session; `text: null` when there is none. The server has
     already dropped attachments whose file is gone. */
@@ -946,12 +1000,20 @@ export const redraftProject = (orgId: string, projectId: string) => request<Deci
 /** `bulk`: the ids are exactly what Select All Ready chose (the server holds bulk to the stricter rule). */
 export const promoteDecisions = (orgId: string, projectId: string, ids: string[], bulk: boolean) =>
   request<PromoteResult>(`${projectBase(orgId, projectId)}/promote`, jsonInit("POST", { ids, bulk }));
+/** Who decides a decision: a roster decision area or "none" (§app.requirements/owner-area). */
+export const setOwnerArea = (orgId: string, projectId: string, did: string, ownerArea: string) =>
+  request<DecisionsInfo>(`${projectBase(orgId, projectId)}/decisions/${encodeURIComponent(did)}`, jsonInit("PATCH", { ownerArea }));
 export const routeConflict = (orgId: string, projectId: string, cid: string, to?: string) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/route`, jsonInit("POST", to ? { to } : {}));
 export const resolveConflict = (orgId: string, projectId: string, cid: string, input: ConflictResolveInput) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/resolve`, jsonInit("POST", input));
 export const setSpecFrozen = (orgId: string, projectId: string, frozen: boolean) =>
   request<SpecStatus>(`${projectBase(orgId, projectId)}/spec`, jsonInit("PATCH", { frozen }));
+
+// ---- a project's cost at API prices (§app/project-costs) ---------------------------------------------
+
+export const getProjectCost = (orgId: string, projectId: string) => request<ProjectCost>(`${projectBase(orgId, projectId)}/costs`);
+export const getOrgCosts = (orgId: string) => request<OrgCosts>(`/api/orgs/${encodeURIComponent(orgId)}/costs`);
 
 // ---- a project's overseer (§app/project-overseer) ---------------------------------------------------
 

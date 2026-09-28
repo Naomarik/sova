@@ -21,6 +21,8 @@ after(async () => {
   await disposeAllChats();
   rmSync(agentDir, { recursive: true, force: true });
 });
+// pi's model catalog and auth storage can still write here after after() ran: exit is last.
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 
 const json = (method: string, url: string, body?: unknown) =>
   app.request(url, { method, headers: { "content-type": "application/json" }, ...(body === undefined ? {} : { body: typeof body === "string" ? body : JSON.stringify(body) }) });

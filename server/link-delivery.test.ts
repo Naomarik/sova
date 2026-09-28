@@ -15,6 +15,8 @@ import { formatLinkMessage, parseLinkMessage } from "../shared/link-message";
 import type { ChatServerMessage } from "../shared/protocol";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-link-delivery-test-"));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before chat-manager computes its paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-linkdelivery--");
 const liveDir = join(agentDir, "sessions", "live");
@@ -116,11 +118,11 @@ describe("§mesh.links/transcript: exclusions", () => {
     assert.equal((await readTailTurn(own, st.size))?.user, "own ask");
   });
 
-  test('attention signals never ask whether a link-opened turn "asks you"; a long one is still checked for stuck', () => {
+  test("attention signals never ask whether any turn asks something; a long link-opened turn is still checked for stuck", () => {
     const facts = (lastUser: string, tools = 0) => ({ turnId: "a", replyAt: 2, lastUser, assistantLast: "Should I merge it?", tools: Array.from({ length: tools }, () => ({ name: "bash", args: "{}", result: "" })), stopReason: "stop", durationMs: 1000 });
     assert.deepEqual(Object.keys(turnQuestions(facts(linkText()))), []);
     assert.deepEqual(Object.keys(turnQuestions(facts(linkText(), 50))), ["stuck"]);
-    assert.ok("asks_user" in turnQuestions(facts("please fix the build")), "the user's own turn is still asked");
+    assert.deepEqual(Object.keys(turnQuestions(facts("please fix the build"))), [], "nor is the user's own: a question to the user is no model's call (§chat.alignment/session-mark)");
     // turnFacts reads the tagged message as the turn's opener, as the classifier needs.
     const branch = [msg("l1", null, "user", linkText()), msg("a1", "l1", "assistant", "Should I merge it?")];
     assert.ok(turnFacts(branch as never)!.lastUser.startsWith("[link_msg "));

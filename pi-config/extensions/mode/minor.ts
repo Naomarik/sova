@@ -19,31 +19,18 @@ export const MINOR_DESCRIPTIONS: Record<MinorMode, string> = {
 
 export const ALIGN_INSTRUCTIONS = `# Minor mode: align
 
-Before building anything non-trivial, align with the user on what to build. Do not edit files or spawn implementation workers until the user has confirmed a plan.
+Before building anything non-trivial, align with the user on what to build, and record every alignment with the \`align\` tool. Do not edit files or spawn implementation workers until the user has confirmed a plan.
 
 On any prompt that implies work (a feature, an investigated fix, a refactor, a migration, new files, or any multi-step change), do this first:
 1. Investigate the codebase and context behind the ask. In delegate mode give this to a non-editing Planning & specs worker (investigation that feeds a design is planning, not the Investigation profile); otherwise investigate yourself. Find the real constraints, existing patterns, and affected surfaces.
-2. Reply with an alignment block in exactly this markdown shape (surrounding prose may be brief; the block is captured into a viewer the user reads, so keep it self-contained):
+2. Record the alignment with \`align\` create: a title, a one-line summary of the concern, findings, approach steps in order, rejected alternatives each with why, and only the questions that would materially change the work (architecture, UX, scope, trade-offs) — each with a topic, the ask, the context the user needs to answer it, options with their trade-offs when there are real choices, and your recommendation with why. When a planning worker produced it, have the worker write it as a JSON file in the create schema, at an absolute path outside the repository that you name, and import it with the import op and that absolute path; never retype or restyle it.
+3. Never write an alignment as reply text: no freeform plan, no "open questions" section, no numbered list of decisions in prose. The user reads the alignment card. Your reply is a sentence or two naming the alignment (its id) and what you need from the user; don't restate its questions, options or recommendations.
+4. Stop and wait. The user answers in chat, often by question id ("q2: yes", "your recs") or by number and option letter ("3a" is q3's option a: decide it with that option's label). Record each answer they gave with decide (in their words), accept only the questions they told you to take your recommendation on (accept_all only when they said it for every open one), and leave the rest open; do it together with any other change, in one call. Change an alignment only through ops (add, edit, edit_question, remove, drop_question, reopen); never create it again to change it, and never re-ask a settled question.
+5. When the user confirms or says to go ahead, set status implementing before you build. A go-ahead with questions still open takes your recommendations for them: accept_all (or drop_question what no longer applies) earlier in the same call. An answer to only some questions is not a go-ahead: record it and leave the rest open. Never set status implementing while a question is open. Set status done when the work is finished and verified, or drop_alignment with a reason if it is abandoned.
 
-## Alignment: <short title>
-### Findings
-A few lines on what you found.
-### Approach
-What you would do, in order.
-### Open questions
-- [ ] **1. Topic:** Question on architecture, UX, scope, or trade-offs, with your recommendation.
-- [ ] **2. Topic:** Next question.
-### Rejected
-- Alternative — why not.
-### Status
-aligning
+Several alignments can be open at once, one per concern: each has its own id (al_N), and question ids (qN) never change. Name the alignment (doc) in every call while more than one is open. Before each of your turns the open alignments are listed for you in a hidden note.
 
-   Number each question INSIDE the checkbox label — \`- [ ] **1. Topic:** …\`, \`- [ ] **2. Topic:** …\` — never as a markdown list number (\`1. [ ] …\`): the viewer renders the checkbox as a glyph and drops list numbering, so a number outside the label is lost and the user cannot answer "2". Keep each question's number and topic stable across re-emits, so "1" means the same question all the way through. Ask only what would materially change the work; do not pad with obvious questions. Use real markdown headings, not bold look-alikes: the \`## Alignment: <title>\` anchor carries the title into the viewer, and bold pseudo-headings are only a tolerated fallback (they parse with an empty title; other shapes are dropped with a warning).
-3. Stop and wait. Build only after the user confirms or answers, and then do not re-ask points already settled.
-
-Whenever anything in the block changes (the user answers, scope moves, you learn something), re-emit the whole block, updated: mark settled questions \`[x]\` and append the decision after an em dash (\`- [x] **1. Topic:** … — decision\`), keep unsettled ones \`[ ]\`, and keep every question's number and topic unchanged. When the user confirms, re-emit it once more with Status \`confirmed\`; when you begin building, Status \`implementing\`. If the user says to go ahead while questions are still open, treat that as confirmation: set Status \`implementing\`, keep those questions \`[ ]\`, and proceed with your recommendation. Keep the headings verbatim so the block can be parsed.
-
-Exempt: questions and explanations, explicit commands to run, trivial one-line changes the user pointed at, follow-ups that are plainly a confirmation, and prompts where the user says to skip alignment. When the ask already looks fully specified, still confirm your reading of it in one short alignment block before building. Bias heavily toward asking.`;
+Exempt: questions and explanations, explicit commands to run, trivial one-line changes the user pointed at, follow-ups that plainly confirm, and prompts where the user says to skip alignment. When you act on a work request you judge exempt, record that with align exempt and a reason first; conversation needs nothing. When the ask already looks fully specified, still record a short alignment with your reading of it and ask the user to confirm. Bias heavily toward asking.`;
 
 /**
  * The spec mode's text is spec-mode.md beside this module, read once at load: the injected block is that file

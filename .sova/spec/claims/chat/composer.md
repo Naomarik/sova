@@ -13,6 +13,8 @@
     <!-- while streaming only -->
     <p class="run-status"><span class="live-dot"></span>Working<span class="run-status-detail">· running bash</span></p>
     <!-- or, idle with ≥ 1 worker working: the subagents trigger, button.run-status-link (§app/subagents-pane) -->
+    <!-- with an open alignment: the alignment chip, a menu button immediately left of the Inputs
+         trigger, both at the row's right end (§chat.alignment/chip) -->
 
     <!-- pending attachments; omit the <ul> when there are none; see §chat/images -->
     <ul class="attachments" aria-label="Attachments">…</ul>

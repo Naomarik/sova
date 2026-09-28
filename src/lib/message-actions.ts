@@ -81,6 +81,13 @@ export function messageStrips(rows: readonly TranscriptItem[]): MessageStrip[] {
   return strips;
 }
 
+/** Whether two strips offer the same thing: everything but where they hang (`index`), which moves
+    whenever rows are added above. A row keeps its strip's object while this holds, so a list
+    change that doesn't touch the message doesn't rebuild its buttons. */
+export const sameStrip = (a: MessageStrip | undefined, b: MessageStrip | undefined): boolean =>
+  a === b ||
+  (!!a && !!b && a.entryId === b.entryId && a.role === b.role && a.text === b.text && !!a.fromWake === !!b.fromWake && !!a.fromLink === !!b.fromLink);
+
 /** The strips by the row index they hang off, which is how a renderer asks "is there one here?". */
 export function stripsByRow(rows: readonly TranscriptItem[]): Map<number, MessageStrip> {
   return new Map(messageStrips(rows).map((s) => [s.index, s]));

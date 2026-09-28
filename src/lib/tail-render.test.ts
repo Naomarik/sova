@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { carriedStart, chunkStart, imagesEstimate, initialStart, MAX_CHUNK, MIN_CHUNK, nextChunk, rowEstimate, rowIndexFor, TAIL_ROWS, wrapLines } from "./tail-render";
+import { carriedStart, chunkStart, imagesEstimate, initialStart, lineCols, MAX_CHUNK, MIN_CHUNK, nextChunk, rowEstimate, rowIndexFor, TAIL_ROWS, textShape, windowId } from "./tail-render";
 
 test("a long list opens on its last TAIL_ROWS rows; a short one is built whole", () => {
   assert.equal(initialStart(802), 802 - TAIL_ROWS);
@@ -50,22 +50,40 @@ test("the window survives appends and refetches, and restarts at the tail when i
   assert.equal(carriedStart("r120", at, ids.length), 120, "kept where it was");
   assert.equal(carriedStart(null, at, ids.length), 0, "fully built stays fully built");
   assert.equal(carriedStart("rewound-away", at, ids.length), initialStart(ids.length), "back to the tail");
+  assert.equal(carriedStart("rewound-away", at, ids.length, 0), 0, "all built before: all built still");
+  assert.equal(carriedStart("rewound-away", at, ids.length, 5), initialStart(ids.length));
 });
 
-test("wrapLines counts hard lines and their wraps", () => {
-  assert.equal(wrapLines("", 80), 1);
-  assert.equal(wrapLines("a\n\nb", 80), 3);
-  assert.equal(wrapLines("x".repeat(161), 80), 3);
+test("a list built whole is held by its first row, so rows prepended later are left to the fill", () => {
+  // A tail-first hello's 60 rows are all built at once; its history then lands above them.
+  const tail = Array.from({ length: TAIL_ROWS }, (_, i) => ({ id: `t${i}` }));
+  const first = windowId(tail, initialStart(tail.length));
+  assert.equal(first, "t0", "index 0 holds an id, not 'everything built'");
+  const history = Array.from({ length: 250 }, (_, i) => ({ id: `h${i}` }));
+  const after = [...history, ...tail];
+  const start = carriedStart(first, (id) => after.findIndex((r) => r.id === id), after.length, 0);
+  assert.equal(start, 250, "the prepended rows are above the window, not built");
+  assert.equal(windowId([], 0), null);
 });
 
-test("a row's estimate grows with its text and is capped", () => {
-  const short = rowEstimate({ kind: "assistant-text", text: "hi" });
-  const long = rowEstimate({ kind: "assistant-text", text: "word ".repeat(2000) });
-  const huge = rowEstimate({ kind: "assistant-text", text: "x\n".repeat(100_000) });
-  assert.match(short, /^calc\(24px \+ 1 \* var\(--entry-line-est, 23px\)\)$/);
-  assert.match(long, /\+ 125 \*/);
-  assert.match(huge, /\+ 200 \*/);
-  assert.match(rowEstimate({ kind: "tool-call", text: "bash" }), /^calc\(40px \+ 0 \*/, "a collapsed card is one line of chrome");
+test("textShape counts prose lines and characters apart from code, fences and tables", () => {
+  assert.deepEqual(textShape(""), { lines: 0, chars: 0, code: 0, fences: 0, table: 0 });
+  assert.deepEqual(textShape("ab\n\ncd e"), { lines: 2, chars: 6, code: 0, fences: 0, table: 0 }, "a blank line is a paragraph break");
+  assert.deepEqual(textShape("ab\n\ncd e", true), { lines: 3, chars: 6, code: 0, fences: 0, table: 0 }, "plain text keeps it as a line");
+  assert.deepEqual(textShape("x\n```ts\nconst a = 1;\n\n```\n| a | b |\n|---|---|"), { lines: 1, chars: 1, code: 2, fences: 1, table: 2 });
+  assert.deepEqual(textShape("```\nunclosed"), { lines: 0, chars: 0, code: 1, fences: 1, table: 0 });
+  assert.deepEqual(textShape("| not a table", true), { lines: 1, chars: 13, code: 0, fences: 0, table: 0 }, "plain text has no markdown");
+});
+
+test("a row's estimate grows with its text over the width's characters a line, and is capped", () => {
+  const lines = "min(200, 0.8 + 2 / var(--entry-cols, 110)) * var(--entry-line, 22.5px)";
+  assert.equal(rowEstimate({ kind: "assistant-text", text: "hi" }), `calc(99px + ${lines})`);
+  assert.equal(rowEstimate({ kind: "assistant-text", text: "hi\n```\na\nb\n```" }), `calc(${99 + 2 * 19 + 93}px + ${lines})`);
+  assert.match(rowEstimate({ kind: "assistant-text", text: "word ".repeat(2000) }), /0\.8 \+ 10000 \/ var/);
+  assert.match(rowEstimate({ kind: "user", text: "a\n\nb" }), /^calc\(97px \+ min\(200, 2\.1 \+ 2 \//);
+  assert.match(rowEstimate({ kind: "assistant-text", text: "x\n".repeat(100_000) }), /^calc\(99px \+ min\(200, 80000 \+/);
+  assert.equal(rowEstimate({ kind: "tool-call", text: "bash" }), "calc(46px)", "a collapsed card");
+  assert.equal(rowEstimate({ kind: "thinking", text: "long ".repeat(500) }), "calc(36px)", "a folded disclosure");
 });
 
 /** A PNG data URL of this size: the IHDR, then an IEND (the size reader stops at either). */
@@ -99,9 +117,20 @@ test("a row's images count in its estimate: one at its box's height, more as row
 test("a row without images keeps its text-only estimate; with them, it adds a wide and a folded term", () => {
   const item = { kind: "user", text: "look" };
   assert.equal(rowEstimate(item, []), rowEstimate(item));
-  assert.equal(rowEstimate(item, [pngUrl(2000, 1000)]), `calc(48px + 1 * var(--entry-line-est, 23px) + 169px)`);
+  assert.equal(rowEstimate(item, [pngUrl(2000, 1000)]), `calc(97px + min(200, 0.7 + 4 / var(--entry-cols, 110)) * var(--entry-line, 22.5px) + 169px)`);
   assert.equal(
     rowEstimate(item, new Array(4).fill(pngUrl(10, 10))),
-    `calc(48px + 1 * var(--entry-line-est, 23px) + 106px + var(--entry-narrow, 0) * 106px)`,
+    `calc(97px + min(200, 0.7 + 4 / var(--entry-cols, 110)) * var(--entry-line, 22.5px) + 106px + var(--entry-narrow, 0) * 106px)`,
   );
+});
+
+test("a compaction is estimated as its folded disclosure, not its summary", () => {
+  assert.equal(rowEstimate({ kind: "info", text: "summary ".repeat(5000), raw: { type: "compaction" } }), "calc(36px)");
+  assert.match(rowEstimate({ kind: "info", text: "Model changed" }), /^calc\(-4px \+ min\(200, 1 \+ 13 \//);
+});
+
+test("a line holds the message width's characters, less the bubble's padding", () => {
+  assert.equal(lineCols(896), 121);
+  assert.equal(lineCols(348), 43);
+  assert.equal(lineCols(0), 10, "never fewer than 10");
 });

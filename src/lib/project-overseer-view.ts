@@ -4,7 +4,6 @@
 import type { IdeaRecord, OverseerAction } from "../../shared/protocol";
 import {
   AUTONOMY_MEANING,
-  budgetProblem,
   capProblem,
   GAP_TAG,
   PER_DAY,
@@ -146,12 +145,12 @@ export const LIMIT_FIELDS: readonly (keyof ProjectOverseerCaps)[] = [
 ];
 
 /** Why the Limits form can't be saved, as the server would say it, or null. An empty field is NaN, never Unlimited (null). */
-export function limitsProblem(d: { caps: Record<keyof ProjectOverseerCaps, number | null>; tokenBudget: number | null }): string | null {
+export function limitsProblem(d: { caps: Record<keyof ProjectOverseerCaps, number | null> }): string | null {
   for (const k of LIMIT_FIELDS) {
     const why = capProblem(k, d.caps[k]);
     if (why) return why;
   }
-  return budgetProblem(d.tokenBudget);
+  return null;
 }
 
 /** A gap in minutes as the page says it: "10 min", "1 hour". */
@@ -175,12 +174,11 @@ export function allowanceLine(prefix: string, use: AllowanceUse): string | null 
 }
 
 /** One line per held item the operator should know of (the message allowance's retries at once: not shown). */
-export function waitingLines(held: readonly HeldItem[], s: { caps: ProjectOverseerCaps; tokenBudget: number | null }, spent: number): string[] {
+export function waitingLines(held: readonly HeldItem[], s: { caps: ProjectOverseerCaps }): string[] {
   const out: string[] = [];
   for (const h of held) {
     const [ledger, kind] = h.key.split(":") as [string, PoLimitKind | undefined];
-    if (h.key === "budget") out.push(`Waiting for you: the coding token budget is spent (${tokens(spent)} of ${s.tokenBudget === null ? "no limit" : tokens(s.tokenBudget)}).`);
-    else if (h.key === "looks") out.push(`Waiting until midnight: today's ${s.caps.unattendedPerDay ?? "unlimited"} looks are used.`);
+    if (h.key === "looks") out.push(`Waiting until midnight: today's ${s.caps.unattendedPerDay ?? "unlimited"} looks are used.`);
     else if (ledger === "day" && kind && kind in USED_NOUN) out.push(`Waiting until midnight: today's ${s.caps[PER_DAY[kind]] ?? "unlimited"} ${USED_NOUN[kind]} are used.`);
   }
   return out;
@@ -220,11 +218,11 @@ export const waitingToLook = (n: number): string => (n <= 0 ? "" : `Waiting to l
  * nothing the operator sets fixes an empty roster).
  */
 export function statusLines(
-  i: LevelInfo & Pick<ProjectOverseerInfo, "lastRun"> & { settings: { caps: ProjectOverseerCaps; tokenBudget: number | null }; usage: Pick<ProjectOverseerInfo["usage"], "pending" | "held" | "codingTokens"> & { allowance: { today: AllowanceUse } } },
+  i: LevelInfo & Pick<ProjectOverseerInfo, "lastRun"> & { settings: { caps: ProjectOverseerCaps }; usage: Pick<ProjectOverseerInfo["usage"], "pending" | "held"> & { allowance: { today: AllowanceUse } } },
   when: string,
 ): { lines: string[]; resume: Autonomy | null; pendingTitle: string } {
   const run = [lastRunLine(i.lastRun, when), waitingToLook(i.usage.pending.length)].filter(Boolean).join(" ");
-  const waits = waitingLines(i.usage.held, i.settings, i.usage.codingTokens).join(" ");
+  const waits = waitingLines(i.usage.held, i.settings).join(" ");
   const rest = [run, allowanceLine("Today on its own", i.usage.allowance.today), waits].filter((l): l is string => !!l);
   const forced = levelForced(i) && i.effective.reason;
   return {

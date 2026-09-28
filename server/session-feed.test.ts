@@ -8,7 +8,7 @@ import { diffMarks, listChanged, marksOf, rowSignature, SessionFeed } from "./se
 const row = (id: string, over: Partial<SessionSummary> = {}): SessionSummary => ({
   id, path: `/s/${id}.jsonl`, cwd: "/w", title: id, createdAt: "", lastActiveAt: "", model: null, live: null, busy: false, origin: "web", archived: false, ...over,
 });
-const signals = (at: number): SessionSignals => ({ at, turnId: `t${at}`, provider: "jev", asksUser: 0.9, kinds: ["asks-you"] });
+const signals = (at: number): SessionSignals => ({ at, turnId: `t${at}`, provider: "jev", stuck: { score: 2, confidence: 0.9 }, kinds: ["looping"] });
 
 describe("diffMarks", () => {
   test("new fields are sent, unchanged ones are not, cleared ones are null, a gone session clears what it had", () => {

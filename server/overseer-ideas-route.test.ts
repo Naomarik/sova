@@ -21,6 +21,8 @@ after(async () => {
   await disposeAllChats();
   rmSync(agentDir, { recursive: true, force: true });
 });
+// pi's model catalog and auth storage can still write here after after() ran: exit is last.
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 
 const patch = (id: string, body: unknown) =>
   app.request(`/api/overseer/idea?id=${encodeURIComponent(id)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });

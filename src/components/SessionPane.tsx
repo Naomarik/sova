@@ -1,6 +1,6 @@
 import { createEffect, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import type { ExplanationInfo, SessionInsight, SessionSkillOffer, SessionSkillUse, SessionSummary, TranscriptItem, WorkerInfo } from "../../shared/protocol";
-import { fetchTranscript } from "../lib/api";
+import { fetchTranscriptLight } from "../lib/api";
 import { formatTokens } from "../lib/context";
 import { explainCaption, explainHref, explainState, newestFirst } from "../lib/explain";
 import { relativeTime } from "../lib/format";
@@ -8,7 +8,7 @@ import { absoluteTime } from "../lib/spend";
 import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state";
 import { capTitle, usageHeadline, usageTitle, usageTotal, type UsageTotalView, type UsageView, workerLabel, workerTeam } from "../lib/workers";
 import type { RewindControl } from "../lib/inputs";
-import { jumpToEntry } from "../lib/jump";
+import { jumpWhenArrived } from "../lib/jump";
 import { RemotePaneStatus } from "./RemoteStatus";
 import { SessionDetails } from "./SessionDetails";
 import { SessionTimeline } from "./SessionTimeline";
@@ -81,14 +81,16 @@ export function SessionPane(props: {
   onTab?(tab: TabId | null): void;
 }) {
   // The transcript, read once for the whole pane: the Session tab and the Timeline both want
-  // the same rows, and a fetch per tab meant a refetch on every tab switch. It reloads when the
+  // the same rows, and a fetch per tab meant a refetch on every tab switch. Light rows (no reply
+  // text, tool output or image bytes): the pane reads every row but draws none of that, and a jump
+  // from the Timeline mustn't wait behind the whole transcript downloading. It reloads when the
   // session's file moved (App's debounced insight reload) and after a rewind, whoever started it.
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   let run = 0;
   const loadItems = async () => {
     const mine = ++run;
     try {
-      const next = await fetchTranscript(props.path);
+      const next = await fetchTranscriptLight(props.path);
       if (mine === run) setItems(next);
     } catch {
       // The rows on screen stay; the next change to the file retries.
@@ -413,7 +415,7 @@ function SkillsTab(props: { path: string; insight: PaneInsight; now: number; onS
   const loads = () => (own()?.used.length ?? 0) + workerLoads().reduce((n, w) => n + w.skills.used.length, 0);
 
   const jump = (entryId: string) => {
-    if (!jumpToEntry(entryId, props.path)) toast("That entry isn't in the transcript on screen.");
+    jumpWhenArrived(entryId, props.path, () => toast("That entry isn't in the transcript on screen."));
   };
 
   return (

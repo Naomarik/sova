@@ -169,6 +169,50 @@ test("worktree merge records the merge and sends the card; a plain-git merge in 
 	}
 });
 
+test("branches merged into an integration branch that the tool then merges each get their own detected card", async () => {
+	const r = repo();
+	try {
+		const f = fakePi();
+		worktrees(f.pi);
+		const c = f.ctx(r.main);
+		await f.fire("session_start", c);
+		for (const name of ["a", "b", "i"]) await f.call(c, { action: "create", name });
+		const [a, b, i] = ["a", "b", "i"].map((n) => join(r.root, ".worktrees", `repo-${n}`)) as [string, string, string];
+		const before = sh(r.main, "rev-parse", "master");
+		await f.fire("agent_start", c);
+		writeFileSync(join(a, "a2.txt"), "a\n");
+		sh(a, "add", "a2.txt");
+		sh(a, "commit", "-q", "-m", "a");
+		writeFileSync(join(b, "b.txt"), "b\nb\nb\n");
+		sh(b, "add", "b.txt");
+		sh(b, "commit", "-q", "-m", "b");
+		sh(i, "merge", "-q", "--no-edit", "--no-ff", "feat/a");
+		const ma = sh(i, "rev-parse", "HEAD");
+		sh(i, "merge", "-q", "--no-edit", "--no-ff", "feat/b");
+		const mb = sh(i, "rev-parse", "HEAD");
+		await f.call(c, { action: "merge", path: i });
+		await f.fire("agent_settled", c);
+		const cards = f.messages.map((m) => m.details as Record<string, unknown>);
+		assert.deepEqual(
+			cards.map((d) => [d.branch, d.sha, d.commits, d.added, d.removed, d.fastForward, d.how]),
+			[
+				["feat/i", mb, 4, 4, 0, true, "tool"],
+				["feat/a", ma, 1, 1, 0, false, "detected"],
+				["feat/b", mb, 1, 3, 0, false, "detected"],
+			],
+		);
+		assert.equal(sh(r.main, "rev-parse", "master"), mb);
+		assert.notEqual(before, mb);
+		// The pane's record and the model's line name the same commit as the card.
+		const trees = restoreActive(f.entries)!.trees;
+		assert.equal(trees.find((x) => x.path === a)!.merge?.sha, ma);
+		assert.equal(trees.find((x) => x.path === b)!.merge?.sha, mb);
+		assert.equal(f.messages[1]!.content, `Merged feat/a into master at ${ma.slice(0, 7)}, 1 commit, +1 −0`);
+	} finally {
+		r.done();
+	}
+});
+
 test("a merge made outside this session's turns gets no card", async () => {
 	const r = repo();
 	try {

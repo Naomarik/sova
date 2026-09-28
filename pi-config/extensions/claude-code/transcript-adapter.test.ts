@@ -66,6 +66,23 @@ test("usage: dedupe by message.id, sidechains counted, per-model rows, tokens on
 	assert.equal(usage.policy?.nestedAgents, true);
 });
 
+test("usage onCount: once per message id, with its time, model, the 1-hour writes, speed and web searches", () => {
+	const split = { ...u(3, 4, 10, 90), cache_creation: { ephemeral_1h_input_tokens: 60, ephemeral_5m_input_tokens: 30 }, speed: "fast", server_tool_use: { web_search_requests: 2 } };
+	const lines = [
+		...assistantLines("m1", 1, [{ type: "text", text: "a" }, { type: "text", text: "b" }], split, {}, "claude-opus-5-5"),
+		...assistantLines("m2", 2, [{ type: "text", text: "c" }], u(1, 1, 0, 5)),
+		...assistantLines("m3", 3, [{ type: "text", text: "API Error" }], u(0, 0), { isApiErrorMessage: true }, "<synthetic>"),
+	];
+	const seen: any[] = [];
+	const acc = claudeUsageAccumulator({ onCount: (m) => seen.push(m) });
+	acc.add(lines);
+	acc.add(lines.slice(0, 1));
+	assert.equal(seen.length, 3);
+	assert.deepEqual(seen[0], { model: "claude/claude-opus-5-5", counts: { input: 3, output: 4, cacheRead: 10, cacheWrite: 90, turns: 1 }, source: "assistant", at: Date.parse(T(1)), cacheWrite1h: 60, speed: "fast", webSearches: 2 });
+	assert.equal(seen[1].cacheWrite1h, undefined, "no split recorded: absent, never guessed");
+	assert.equal(seen[2].model, "claude/<synthetic>");
+});
+
 test("summary: main chain only; settled success, tool_use in progress, interrupted = aborted, API error = error", () => {
 	const base = [userLine(0, "task"), ...assistantLines("m1", 1, [{ type: "text", text: "final answer" }], u(1, 1))];
 	const settled = summarizeClaudeEntries(base, [], ref(), { items: "all" });

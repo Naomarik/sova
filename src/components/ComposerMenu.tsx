@@ -23,7 +23,8 @@ export interface ThinkingControl {
 
 /** What the chat view exposes so the flyout can rewind to just before the last user message. */
 export interface UndoControl {
-  /** Why it can't run now ("Stop first…", nothing to undo, composer disabled), else null. */
+  /** Why it can't run now ("Stop first…", nothing to undo, composer disabled), else null; "" when
+      it can't run yet with nothing to say (the chat's transcript hasn't said where its last input is). */
   blocked: Accessor<string | null>;
   run(): void;
 }
@@ -237,14 +238,14 @@ export function ComposerMenu(props: {
         id: "undo",
         role: "menuitem",
         icon: "refresh",
-        label: undoArmed() && !why ? "Confirm: undo last turn" : "Undo last turn",
-        disabled: !!why,
-        title: why ?? "Rewind to before your last message; its text comes back to the composer",
+        label: undoArmed() && why === null ? "Confirm: undo last turn" : "Undo last turn",
+        disabled: why !== null,
+        title: why || "Rewind to before your last message; its text comes back to the composer",
         run: () => {
           // Two steps, inline (no modal): the first activation arms the row and keeps the flyout
           // open. Disarming BEFORE running means a double click (or Enter then a click) re-arms
           // instead of rewinding twice.
-          const step = confirmActivate(undoArmed(), !!why);
+          const step = confirmActivate(undoArmed(), why !== null);
           setUndoArmed(step.armed);
           if (!step.run) return;
           close(true);

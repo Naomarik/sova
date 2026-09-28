@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createWorktree, forkPoint, GitError, inspectWorktree, mergeWorktree, probeMerge, runGit } from "./git.ts";
+import { createWorktree, forkPoint, GitError, inspectWorktree, landedStats, mergeStats, mergeWorktree, probeMerge, runGit } from "./git.ts";
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" } }).trim();
 
@@ -128,6 +128,89 @@ test("probeMerge: a branch with no commits beyond its base is not merged", async
 		commit(f.path, "e.txt", "e\n", "e");
 		assert.equal(await forkPoint(runGit, f.path, "feat/empty", "master"), f.base);
 		assert.equal(await probeMerge(runGit, { ...f, path: join(r.root, "missing") }), undefined);
+	} finally {
+		r.done();
+	}
+});
+
+/** A branch `name` off master's current tip with one commit writing `file`; master stays checked out. */
+function branchWith(main: string, name: string, file: string, body: string): string {
+	sh(main, "checkout", "-q", "-b", name, "master");
+	commit(main, file, body, name);
+	sh(main, "checkout", "-q", "master");
+	return sh(main, "rev-parse", name);
+}
+
+test("landedStats: two branches merged one after the other each name their own merge commit and lines", async () => {
+	const r = repo();
+	try {
+		const x = branchWith(r.main, "x", "x.txt", "1\n2\n");
+		sh(r.main, "checkout", "-q", "-b", "y", "master");
+		commit(r.main, "y.txt", "1\n2\n3\n", "y");
+		commit(r.main, "a.txt", "uno\n", "y2");
+		const y = sh(r.main, "rev-parse", "HEAD");
+		sh(r.main, "checkout", "-q", "master");
+		const before = sh(r.main, "rev-parse", "master");
+		sh(r.main, "merge", "-q", "--no-edit", "--no-ff", "x");
+		const mx = sh(r.main, "rev-parse", "master");
+		sh(r.main, "merge", "-q", "--no-edit", "--no-ff", "y");
+		const my = sh(r.main, "rev-parse", "master");
+		assert.deepEqual(await landedStats(runGit, r.main, before, my, x), { sha: mx, commits: 1, added: 2, removed: 0, fastForward: false });
+		assert.deepEqual(await landedStats(runGit, r.main, before, my, y), { sha: my, commits: 2, added: 4, removed: 1, fastForward: false });
+	} finally {
+		r.done();
+	}
+});
+
+test("landedStats: through an integration branch, a merged branch names the integration merge, one taken directly its own tip", async () => {
+	const r = repo();
+	try {
+		const x = branchWith(r.main, "x", "x.txt", "x\n");
+		const y = branchWith(r.main, "y", "y.txt", "y\ny\n");
+		const before = sh(r.main, "rev-parse", "master");
+		sh(r.main, "checkout", "-q", "-b", "i", "master");
+		sh(r.main, "merge", "-q", "--ff-only", "y");
+		sh(r.main, "merge", "-q", "--no-edit", "--no-ff", "x");
+		const mi = sh(r.main, "rev-parse", "HEAD");
+		sh(r.main, "checkout", "-q", "master");
+		sh(r.main, "merge", "-q", "--ff-only", "i");
+		const after = sh(r.main, "rev-parse", "master");
+		assert.equal(after, mi);
+		assert.deepEqual(await landedStats(runGit, r.main, before, after, x), { sha: mi, commits: 1, added: 1, removed: 0, fastForward: false });
+		assert.deepEqual(await landedStats(runGit, r.main, before, after, y), { sha: y, commits: 1, added: 2, removed: 0, fastForward: true });
+	} finally {
+		r.done();
+	}
+});
+
+test("landedStats: a commit made directly on the target during the run is in no branch's lines", async () => {
+	const r = repo();
+	try {
+		const x = branchWith(r.main, "x", "x.txt", "x\n");
+		const before = sh(r.main, "rev-parse", "master");
+		commit(r.main, "m.txt", "m\nm\nm\n", "direct");
+		commit(r.main, "a.txt", "changed\n", "direct2");
+		sh(r.main, "merge", "-q", "--no-edit", "--no-ff", "x");
+		const after = sh(r.main, "rev-parse", "master");
+		assert.deepEqual(await landedStats(runGit, r.main, before, after, x), { sha: after, commits: 1, added: 1, removed: 0, fastForward: false });
+		// The whole run's diff would have counted them.
+		assert.deepEqual(await mergeStats(runGit, r.main, before, after, x), { commits: 1, added: 5, removed: 1, fastForward: false });
+	} finally {
+		r.done();
+	}
+});
+
+test("landedStats: a single merge gives mergeStats' numbers at the target's new tip", async () => {
+	const r = repo();
+	try {
+		const x = branchWith(r.main, "x", "x.txt", "1\n2\n");
+		const before = sh(r.main, "rev-parse", "master");
+		sh(r.main, "merge", "-q", "--no-edit", "--no-ff", "x");
+		const after = sh(r.main, "rev-parse", "master");
+		const { sha, ...stats } = await landedStats(runGit, r.main, before, after, x);
+		assert.equal(sha, after);
+		assert.deepEqual(stats, await mergeStats(runGit, r.main, before, after, x));
+		assert.deepEqual(stats, { commits: 1, added: 2, removed: 0, fastForward: false });
 	} finally {
 		r.done();
 	}

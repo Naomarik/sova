@@ -57,19 +57,19 @@ describe("pushDecision", () => {
       assert.deepEqual(pushDecision({ ...base, current: [b("a", "error")], announced: d.announced }).send, [], why);
     }
     // worker-error is off by default; a non-push act kind never sends.
-    const d = pushDecision({ ...base, current: [b("a", "worker-error"), b("c", "finished"), b("d", "asks-you")], announced: new Set() });
-    assert.deepEqual(keysOf(d), ["d:asks-you"]);
+    const d = pushDecision({ ...base, current: [b("a", "worker-error"), b("c", "finished"), b("d", "open-questions")], announced: new Set() });
+    assert.deepEqual(keysOf(d), ["d:open-questions"]);
     assert.ok(d.announced.has("a:worker-error") && d.announced.has("c:finished"));
   });
 
   test("inside the gap, fresh blockers wait (not told) and go out together after it", () => {
     const now = base.now;
-    let d = pushDecision({ ...base, current: [b("a", "error"), b("b", "asks-you")], announced: new Set(), lastSentAt: now - PUSH_MIN_GAP_MS + 1 });
+    let d = pushDecision({ ...base, current: [b("a", "error"), b("b", "open-questions")], announced: new Set(), lastSentAt: now - PUSH_MIN_GAP_MS + 1 });
     assert.deepEqual(d.send, []);
     assert.equal(d.announced.size, 0);
     // One cleared while waiting: never sent.
-    d = pushDecision({ ...base, current: [b("b", "asks-you"), b("c", "needs-input")], announced: d.announced, lastSentAt: now - PUSH_MIN_GAP_MS });
-    assert.deepEqual(keysOf(d), ["b:asks-you", "c:needs-input"]);
+    d = pushDecision({ ...base, current: [b("b", "open-questions"), b("c", "needs-input")], announced: d.announced, lastSentAt: now - PUSH_MIN_GAP_MS });
+    assert.deepEqual(keysOf(d), ["b:open-questions", "c:needs-input"]);
   });
 });
 
@@ -84,7 +84,7 @@ describe("pushPayload", () => {
     assert.equal(p.count, 2);
   });
   test("several sessions: a count, a line each, opens the Overseer", () => {
-    const p = pushPayload([b("a", "error"), b("b", "looping"), b("a", "asks-you")], 3, 5, plain);
+    const p = pushPayload([b("a", "error"), b("b", "looping"), b("a", "open-questions")], 3, 5, plain);
     assert.equal(p.title, "2 sessions need you");
     assert.equal(p.body, "Session a — Error\nSession b — Subagent stuck");
     assert.equal(p.tag, "sova:several");
@@ -137,6 +137,22 @@ describe("stores", () => {
     assert.equal(tolerant.contact, null);
     assert.equal(tolerant.enabled, true);
     assert.equal(tolerant.kinds.error, false);
+  });
+
+  test("asks-you became open-questions: a stored choice carries over, an explicit one wins, and the old key is never a 400", () => {
+    const parsed = (raw: unknown, strict: boolean) => {
+      const out = store.parsePushSettings(raw, strict);
+      if ("error" in out) throw new Error(out.error);
+      return out;
+    };
+    const off = parsed({ kinds: { "asks-you": false } }, false);
+    assert.equal(off.kinds["open-questions"], false, "a user who turned asks-you off keeps open questions off");
+    assert.ok(!("asks-you" in off.kinds), "the old key is not kept");
+    assert.equal(parsed({ kinds: { "asks-you": false, "open-questions": true } }, false).kinds["open-questions"], true, "an explicit open-questions wins");
+    assert.equal(parsed({ kinds: { "open-questions": true, "asks-you": false } }, false).kinds["open-questions"], true, "in either key order");
+    const stale = parsed({ kinds: { "asks-you": true, error: false } }, true);
+    assert.equal(stale.kinds["open-questions"], true, "a stale client's PUT with the old key is accepted");
+    assert.equal(parsed({}, false).kinds["open-questions"], true, "no stored choice: the default");
   });
 
   test("quiet hours wrap across midnight, in server-local time", () => {

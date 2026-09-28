@@ -15,6 +15,7 @@ import {
   type DecisionProviderId,
   type DecisionRequest,
   type DecisionResult,
+  type DecisionUsage,
   type Question,
 } from "./decide";
 
@@ -82,7 +83,8 @@ export interface LlmRuntime {
     content: ({ type: string; text?: string })[];
     stopReason?: string;
     errorMessage?: string;
-    usage?: { input?: number; output?: number };
+    usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cacheWrite1h?: number };
+    responseModel?: string;
   }>;
 }
 
@@ -128,7 +130,9 @@ export function createLlmProvider(choice: WorkerChoice, deps: LlmProviderDeps): 
 }
 
 type Fail = (failure: DecisionFailure, message: string) => DecisionError;
-type RunOut = { json: unknown; usage?: { inputTokens: number; outputTokens: number } };
+type RunOut = { json: unknown; usage?: DecisionUsage };
+
+const count = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
 
 async function runPi(choice: WorkerChoice, prompt: string, req: DecisionRequest, deps: LlmProviderDeps, timeoutMs: number, fail: Fail): Promise<RunOut> {
   const slash = choice.model.indexOf("/");
@@ -171,7 +175,18 @@ async function runPi(choice: WorkerChoice, prompt: string, req: DecisionRequest,
       throw fail(textFailure(why), why);
     }
     if (!text.trim()) throw fail("malformed-answer", "empty reply");
-    const usage = response.usage && typeof response.usage.input === "number" ? { inputTokens: response.usage.input, outputTokens: response.usage.output ?? 0 } : undefined;
+    const u = response.usage;
+    const usage: DecisionUsage | undefined =
+      u && typeof u.input === "number"
+        ? {
+            inputTokens: u.input,
+            outputTokens: count(u.output),
+            cacheRead: count(u.cacheRead),
+            cacheWrite: count(u.cacheWrite),
+            ...(count(u.cacheWrite1h) ? { cacheWrite1h: count(u.cacheWrite1h) } : {}),
+            ...(typeof response.responseModel === "string" && response.responseModel ? { model: response.responseModel } : {}),
+          }
+        : undefined;
     return { json: extractJsonObject(text), usage };
   } catch (err) {
     if (err instanceof DecisionError) throw err;
@@ -206,7 +221,31 @@ interface ClaudeEnvelope {
   result?: string;
   structured_output?: unknown;
   subtype?: string;
-  usage?: { input_tokens?: number; output_tokens?: number };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_creation?: { ephemeral_1h_input_tokens?: number; ephemeral_5m_input_tokens?: number };
+  };
+  /** Per resolved model id (`claude-haiku-4-5-20251001`). */
+  modelUsage?: Record<string, { inputTokens?: number; outputTokens?: number }>;
+}
+
+/** The envelope's usage, with the model that did most of the work (its `modelUsage` key). Pure. */
+export function claudeEnvelopeUsage(env: Pick<ClaudeEnvelope, "usage" | "modelUsage">): DecisionUsage | undefined {
+  const u = env.usage;
+  if (typeof u?.input_tokens !== "number") return undefined;
+  const top = Object.entries(env.modelUsage ?? {}).sort(([, a], [, b]) => count(b.inputTokens) + count(b.outputTokens) - count(a.inputTokens) - count(a.outputTokens))[0]?.[0];
+  const h1 = count(u.cache_creation?.ephemeral_1h_input_tokens);
+  return {
+    inputTokens: u.input_tokens,
+    outputTokens: count(u.output_tokens),
+    cacheRead: count(u.cache_read_input_tokens),
+    cacheWrite: count(u.cache_creation_input_tokens),
+    ...(h1 ? { cacheWrite1h: h1 } : {}),
+    ...(top ? { model: top } : {}),
+  };
 }
 
 /** The CLI's JSON envelope → the answer object: `structured_output` when --json-schema filled it, else the text. */
@@ -221,7 +260,7 @@ export function parseClaudeEnvelope(stdout: string, fail: Fail): RunOut {
     const why = (env.result || env.subtype || "claude reported an error").slice(0, 240);
     throw fail(textFailure(why), `claude: ${why}`);
   }
-  const usage = typeof env.usage?.input_tokens === "number" ? { inputTokens: env.usage.input_tokens, outputTokens: env.usage.output_tokens ?? 0 } : undefined;
+  const usage = claudeEnvelopeUsage(env);
   if (env.structured_output && typeof env.structured_output === "object") return { json: env.structured_output, usage };
   if (typeof env.result !== "string" || !env.result.trim()) throw fail("malformed-answer", "claude returned no result");
   return { json: extractJsonObject(env.result), usage };

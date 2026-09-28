@@ -3,12 +3,10 @@ import { basename, join } from "node:path";
 import {
   AT_ONCE_MAX,
   AUTONOMY_LEVELS,
-  budgetProblem,
   capProblem,
   DEFAULT_AUTONOMY,
   DEFAULT_PO_CAPS,
   DEFAULT_SOON_LOOK_SEC,
-  DEFAULT_TOKEN_BUDGET,
   DEFAULT_WATCH_GAP_MIN,
   gapProblem,
   isAtOnce,
@@ -34,7 +32,8 @@ import { stateRoot } from "./state-root";
  * The project overseer's files (§app.project-overseer/identity): per project, in the org's
  * workspace repo, under `projects/<projectId>/overseer/`, so they move with the org and are
  * committed with it — settings, state, notes, actions, ideas, to-dos, and the sessions it started
- * with what their coding sessions spent (`started.json`, so the token budget survives a move).
+ * (`started.json`). What the project's sessions cost is in `projects/<projectId>/costs.json` and
+ * `usage.jsonl` (server/project-costs.ts, §app.project-costs/ledger).
  * Only the counters (each message's and each day's) and the watch loop's timing (pending reasons,
  * last run, runs per day, held items) are host-local: a restore starts them fresh. The stores are the Overseer's own
  * (server/overseer-store.ts, overseer-ideas.ts, overseer-todos.ts), called with these paths.
@@ -51,7 +50,7 @@ export interface ProjectOverseerPaths {
   actions: string;
   ideas: string;
   todos: string;
-  /** The sessions it started, and what its coding sessions spent. */
+  /** The sessions it started. */
   started: string;
   /** Host-local: TurnLimits counters. */
   turn: string;
@@ -91,7 +90,7 @@ export function projectOf(orgId: string, projectId: string): OrgProject {
 
 // ---- settings --------------------------------------------------------------------------------
 
-export { DEFAULT_PO_CAPS, DEFAULT_TOKEN_BUDGET };
+export { DEFAULT_PO_CAPS };
 
 export function defaultPoSettings(): ProjectOverseerSettings {
   return {
@@ -105,7 +104,6 @@ export function defaultPoSettings(): ProjectOverseerSettings {
     gatheringModel: null,
     gatheringThinking: null,
     caps: { ...DEFAULT_PO_CAPS },
-    tokenBudget: DEFAULT_TOKEN_BUDGET,
     watchGapMin: DEFAULT_WATCH_GAP_MIN,
     soonLookSec: DEFAULT_SOON_LOOK_SEC,
     watch: true,
@@ -147,7 +145,6 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
     gatheringModel: typeof raw.gatheringModel === "string" && raw.gatheringModel.trim() ? raw.gatheringModel.trim() : null,
     gatheringThinking: typeof raw.gatheringThinking === "string" && raw.gatheringThinking.trim() ? raw.gatheringThinking.trim() : null,
     caps,
-    tokenBudget: "tokenBudget" in raw && budgetProblem(raw.tokenBudget) === null ? (raw.tokenBudget as number | null) : d.tokenBudget,
     watchGapMin: gapProblem(raw.watchGapMin) === null ? (raw.watchGapMin as number) : d.watchGapMin,
     soonLookSec: "soonLookSec" in raw && soonProblem(raw.soonLookSec) === null ? (raw.soonLookSec as number | null) : d.soonLookSec,
     watch: typeof raw.watch === "boolean" ? raw.watch : d.watch,
@@ -221,11 +218,6 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: 
     const m = checkCodingModePatch(patch.codingMode);
     if (m && "error" in m) throw new OrgError(m.error);
     next.codingMode = m;
-  }
-  if (patch.tokenBudget !== undefined) {
-    const why = budgetProblem(patch.tokenBudget);
-    if (why) throw new OrgError(why);
-    next.tokenBudget = patch.tokenBudget;
   }
   if (patch.watchGapMin !== undefined) {
     const why = gapProblem(patch.watchGapMin);
@@ -317,7 +309,8 @@ function parseHeld(v: unknown): HeldItem[] {
   for (const h of v) {
     if (!isObj(h) || typeof h.key !== "string" || typeof h.what !== "string" || typeof h.why !== "string" || typeof h.since !== "string") continue;
     if (h.retryAt !== null && typeof h.retryAt !== "string") continue;
-    if (out.some((x) => x.key === h.key)) continue;
+    // The coding token budget is gone (§app.project-overseer/limits): nothing can release its held item.
+    if (h.key === "budget" || out.some((x) => x.key === h.key)) continue;
     out.push({ key: h.key, what: h.what, why: h.why, since: h.since, retryAt: h.retryAt });
   }
   return out.slice(-HELD_MAX);
@@ -355,15 +348,16 @@ export function writeMemo(p: ProjectOverseerPaths, m: WatchMemo): void {
 
 export interface StartedRow {
   sessionId: string;
-  /** `coding`: started by the overseer (its token budget and caps count these, and only these);
+  /** `coding`: started by the overseer (its caps count these, and only these);
       `operator-coding`: started by the operator's Start coding session on an item — organizational
       (listed under the project), never counted against the overseer. An older Sova ignores it. */
   kind: "gathering" | "offer" | "coding" | "operator-coding";
   createdAt: string;
   /** A coding session's file on the host that started it (coding sessions are not in the repo). */
   path?: string;
-  /** A coding session's spend (input + output + cache tokens) when last counted from its file, so
-      the token budget still counts it on a host that doesn't have the file. */
+  /** Legacy, read only: a coding session's input + output + cache tokens as the removed token
+      budget last counted them. No model or token kinds, so the project's cost shows them as
+      unpriced when the session's file isn't on this host (server/project-costs.ts). */
   tokens?: number;
   /** A coding session's own git worktree (§app.project-overseer/coding-worktrees). `path` is
       host-local (the host that started it); the branch is in the client repo. */
@@ -441,26 +435,12 @@ function dropLegacyStarted(p: ProjectOverseerPaths): void {
   writeAtomic(p.memo, `${JSON.stringify(rest, null, 2)}\n`);
 }
 
-/** Record what the coding sessions spent, as just counted from their files; writes only on a change. */
-export function recordTokens(p: ProjectOverseerPaths, counted: Map<string, number>): void {
-  const rows = readStarted(p);
-  let changed = false;
-  for (const r of rows) {
-    const t = counted.get(r.sessionId);
-    if (t !== undefined && t !== r.tokens) {
-      r.tokens = t;
-      changed = true;
-    }
-  }
-  if (changed) writeStarted(p, rows);
-}
-
 /** The next local midnight after `d`: when a day's allowances and looks come back. */
 export const nextMidnight = (d = new Date()): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
 
 export const dayKey = (d = new Date()): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-/** Record a session it started (the listing, the concurrency and token caps). */
+/** Record a session it started (the listing and the concurrency caps). */
 export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: StartedRow["kind"], now = new Date(), path?: string, extra: Pick<StartedRow, "worktree" | "inRoot" | "title"> = {}): void {
   const rows = readStarted(p);
   if (rows.some((s) => s.sessionId === sessionId)) return;

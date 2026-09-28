@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import type { Server } from "node:http";
+import type { IncomingMessage, Server } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
@@ -7,12 +7,16 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { compress } from "hono/compress";
+import { isDirectLocal } from "./compression";
+import { asksForRows, type RowsQuery, transcriptLight, transcriptRows } from "./transcript-rows";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
 import { startBatonMarksBackfill } from "./baton-marks";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
+import { registerProjectCostRoutes } from "./project-costs-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
 import { WorkspaceCommitter } from "./workspace-commits";
@@ -30,6 +34,7 @@ import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { decodeWorkers, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
+import { startPriceRefresh } from "./model-prices";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
@@ -114,6 +119,18 @@ process.on("unhandledRejection", (err) => console.error("[unhandledRejection]", 
 
 const app = new Hono();
 
+// gzip/deflate for the JSON API (a transcript is MBs), when the client asks for it. Registered
+// first so it wraps every /api route. hono/compress skips what must pass as is: responses that
+// already carry a Content-Encoding, 206s, HEAD, Cache-Control: no-transform, and types it doesn't
+// deem compressible (images, text/event-stream). Its 1 KB threshold reads Content-Length, which
+// c.json doesn't set, so small JSON is gzipped too (~20 bytes more). The static app, /ext and
+// /peer aren't under it. Not for a browser on this machine connecting directly (isDirectLocal).
+const gzip = compress();
+app.use("/api/*", (c, next) => {
+  const incoming = (c.env as { incoming?: IncomingMessage } | undefined)?.incoming;
+  return incoming && isDirectLocal(incoming) ? next() : gzip(c, next);
+});
+
 app.onError((err, c) => {
   console.error("[api]", err);
   return c.json({ error: err.message }, 500);
@@ -191,6 +208,7 @@ app.post("/api/sessions/connect", async (c) => {
 registerOrgRoutes(app);
 registerWrapupRoutes(app);
 registerProjectOverseerRoutes(app);
+registerProjectCostRoutes(app);
 // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
 registerDecisionRoutes(app);
 
@@ -732,6 +750,24 @@ app.get("/api/transcript", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  // Rows of it (older rows on demand, server/transcript-rows.ts); without these, the whole branch.
+  const q: RowsQuery = {
+    tail: c.req.query("tail") === "1",
+    before: c.req.query("before") || undefined,
+    from: c.req.query("from") || undefined,
+    explain: c.req.query("explain") || undefined,
+    leaf: c.req.query("leaf") || undefined,
+    chars: Number(c.req.query("chars")) || undefined,
+  };
+  if (c.req.query("view") === "light") {
+    const body = await transcriptLight(path, (branch) => resolveContext(contextForBranch(branch)));
+    return c.body(body, 200, { "Content-Type": "application/json; charset=UTF-8" });
+  }
+  if (asksForRows(q)) {
+    const r = await transcriptRows(path, q, (branch) => resolveContext(contextForBranch(branch)));
+    if (r.status !== 200) return c.json({ error: r.error, code: r.code }, r.status);
+    return c.body(r.body, 200, { "Content-Type": "application/json; charset=UTF-8" });
+  }
   const branch = await readActiveBranch(path);
   return c.json({ items: normalizeEntries(branch), context: await resolveContext(contextForBranch(branch)) });
 });
@@ -1214,6 +1250,9 @@ void (async () => {
 
 // Keeps the shared usage cache fresh without an open TUI (SOVA_USAGE_POLL=off switches it off).
 const usagePoller = startUsagePoller({ busy: usageRefreshBusy, onFetched: invalidateUsageMemo });
+// models.dev prices for project costs: refreshed in the background when older than 3 days
+// (§app.project-costs/price-table; SOVA_PRICES_FETCH=off switches fetching off).
+const priceRefresh = startPriceRefresh();
 
 let shuttingDown = false;
 async function shutdown() {
@@ -1233,6 +1272,7 @@ async function shutdown() {
   markShutdown();
   for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
   usagePoller.stop();
+  priceRefresh.stop();
   meshLinks.stop();
   stopMesh();
   stopShareListener();

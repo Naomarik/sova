@@ -18,8 +18,14 @@ a conflict is aborted). Where it is not checked out, only a fast-forward (`updat
 the old value). A merge made with plain git during a turn is detected when the run settles: each
 active worktree's branch is probed at `agent_start` and at `agent_settled`
 (`git merge-base --is-ancestor <branch> <target>`, and the branch has commits beyond its base), and
-one that became merged in between is recorded with `how: "detected"`. A merge made outside this
-session's turns gets no card; Sova's pane still shows it merged.
+one that became merged in between is recorded with `how: "detected"`. A tool merge's card names
+the target's new tip and its numbers are the target's own change. A detected card names the commit
+that brought the branch in: the first commit on the target's first-parent history since the run
+started that contains the branch tip (the tip itself when the target fast-forwarded through it,
+shown as a fast-forward), and its numbers are the branch's own (`git diff --numstat
+<before>...<branch>`), so branches that arrived together, say through an integration branch, each
+show their own. A merge made outside this session's turns gets no card; Sova's pane still shows it
+merged.
 
 Workers never have this extension: the subagents extension refuses any copy of `worktrees` (and
 `subagents`) as a worker extension. It enforces where workers may start itself

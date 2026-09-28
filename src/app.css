@@ -41,13 +41,47 @@ html, body, #root { height: 100%; }
   contain-intrinsic-block-size: auto var(--entry-est, 120px);
   overflow-clip-margin: var(--space-2);
 }
+/* Whole pixels: a row added above the view moves the scroll by its estimate, and a fraction there
+   shows as the view shaking by a pixel while the older rows are built. */
+@supports (width: round(1.5px, 1px)) {
+  .entry { contain-intrinsic-block-size: auto round(var(--entry-est, 120px), 1px); }
+}
+/* And its real height too, once drawn: text lines (22.475px) and image boxes (their aspect ratio)
+   come out fractional, scroll anchoring moves the view only by whole pixels, and what it leaves
+   over adds up, row by row, into the view stepping a pixel while rows above are first drawn. */
+@supports (height: calc-size(auto, round(up, size, 1px))) {
+  .entry { height: calc-size(auto, round(up, size, 1px)); }
+}
 .entry:empty { display: none; }
 .entry:focus-within,
 .entry[data-actions-revealed] { content-visibility: visible; contain: layout paint style; }
-/* Text wraps to about twice the lines in a folded-width transcript, and image tiles to half as
-   many a row (lib/tail-render `imagesEstimate`). */
-.thread { --entry-line-est: 23px; --entry-narrow: 0; }
-@container (width < 600px) { .thread { --entry-line-est: 42px; --entry-narrow: 1; } }
+/* What a row's estimate needs from the width (lib/tail-render `rowEstimate`): a body line's height,
+   and the characters a message line holds, which the transcript measures (`--entry-cols-measured`,
+   Thread) and a fixed count stands in for before it has. Image tiles fold to half as many a row
+   (`imagesEstimate`). */
+.thread { --entry-line: calc(var(--fs-body) * var(--lh-body)); --entry-cols: var(--entry-cols-measured, 110); --entry-narrow: 0; }
+@container (width < 600px) { .thread { --entry-cols: var(--entry-cols-measured, 42); --entry-narrow: 1; } }
+/* As wide as a message can be: the transcript reads its width for `--entry-cols-measured`. */
+.entry-measure { max-width: min(100%, var(--measure)); height: 0; }
+/* The top of a transcript with older rows still to fetch (Thread `older-edge`): a line's height
+   held while there are any, so its indicator appearing (a slow fetch) never moves the view. It
+   sticks to the top of the view, over the rows, so a jump fetching from the end shows it too; it
+   takes no pointer and is never a scroll anchor. The indicator is the skeleton sweep, the loop
+   that means work is happening, as a short bar. */
+.older-edge {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: calc(var(--fs-caption) * 2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  overflow-anchor: none;
+}
+/* On the strong line colour, not the skeleton's sunken one: it sits over text, and a state
+   indicator needs 3:1 against what's behind it. */
+.older-edge-bar { display: block; width: calc(var(--space-4) * 6); height: var(--space-1); border-radius: var(--r-full); background-color: var(--color-border-strong); }
 
 /* Archive date sections: each a <details> whose summary is
    the eyebrow label (twist, name, count), collapsed by default; a rule between sections. */

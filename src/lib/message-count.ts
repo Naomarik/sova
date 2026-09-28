@@ -13,16 +13,6 @@
 // Excluded: every row that is not a message at all — info (model changes, compaction, the fork
 // marker), report, tool-result, unknown.
 
-import type { TranscriptItem } from "../../shared/protocol";
-import { entryIdOf } from "./jump";
-
-/** The kinds a rendered row can belong to that ARE messages (a user's, a nudge's, a reply's). */
-const MESSAGE_KINDS: ReadonlySet<TranscriptItem["kind"]> = new Set(["user", "wake", "link", "assistant-text", "thinking", "tool-call"]);
-
-/**
- * User and assistant messages on this branch — the number "up to message {n}" names. Distinct
- * entry ids, so one multi-block assistant reply counts once, and a turn's tool calls never count
- * as messages of their own.
- */
-export const messageCount = (items: readonly TranscriptItem[]): number =>
-  new Set(items.filter((it) => MESSAGE_KINDS.has(it.kind)).map((it) => entryIdOf(it.id))).size;
+// One rule with the server's count of the rows a newest-rows-first hello didn't send
+// (shared/row-counts.ts).
+export { messageCount } from "../../shared/row-counts";

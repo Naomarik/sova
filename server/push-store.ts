@@ -54,9 +54,12 @@ export function readOrCreateVapid(file = vapidFile()): VapidKeys {
 
 // ---- settings --------------------------------------------------------------------------------------
 
+/** The kind "open-questions" replaced (the asks-you classifier), still found in older push.json files. */
+const LEGACY_ASKS_YOU = "asks-you";
+
 export const DEFAULT_KINDS: Record<PushKind, boolean> = {
   "needs-input": true,
-  "asks-you": true,
+  "open-questions": true,
   error: true,
   looping: true,
   "baton-needs-you": true,
@@ -94,6 +97,12 @@ export function parsePushSettings(raw: unknown, strict: boolean): PushSettings |
       if (e) return e;
     } else
       for (const [k, v] of Object.entries(raw.kinds)) {
+        // "asks-you" became "open-questions": a stored choice carries over (an explicit
+        // open-questions wins), and a stale client still sending the old key is not refused for it.
+        if (k === LEGACY_ASKS_YOU && typeof v === "boolean") {
+          if (!isObj(raw.kinds) || raw.kinds["open-questions"] === undefined) out.kinds["open-questions"] = v;
+          continue;
+        }
         if (!(PUSH_KINDS as readonly string[]).includes(k) || typeof v !== "boolean") {
           const e = fail(`kinds.${k} isn't a notification kind with a true or false value.`);
           if (e) return e;

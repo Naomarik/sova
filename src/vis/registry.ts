@@ -29,7 +29,7 @@ export interface KindEntry<S extends VisBase = VisBase> {
   framed?: boolean;
   /**
    * Not ready to be taught: its vis-mode.md section must carry the `<!-- stub -->` marker (so the
-   * model never hears of it; guide.test.ts checks), and its View may be StubView.
+   * model never hears of it; guide.test.ts checks), and its View may be `() => import("./StubView")`.
    */
   stub?: boolean;
 }
@@ -37,7 +37,6 @@ export interface KindEntry<S extends VisBase = VisBase> {
 type Opts = { framed?: boolean; stub?: boolean };
 const kind = <S extends VisBase>(parse: KindEntry<S>["parse"], view: KindEntry<S>["view"], label: string, opts: Opts = {}): KindEntry =>
   ({ parse, view, label, ...opts }) as unknown as KindEntry;
-const stubView = () => import("./StubView");
 
 // One line per fence word, in the order the guide presents them. `state` reuses flow's parser and View.
 export const KINDS: Record<string, KindEntry> = {

@@ -57,7 +57,7 @@ type PatchState =
 type Pick = { kind: "file"; path: string } | { kind: "step"; id: string };
 
 /** Split needs the diff pane at least this wide (§chat.changes/viewer). */
-const SPLIT_MIN = 700;
+const SPLIT_MIN = 520;
 /** Patches read at once: the server's own git concurrency. */
 const PATCH_CONCURRENCY = 4;
 
@@ -116,6 +116,7 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
   /** Folded width: which of the two views shows. */
   const [view, setView] = createSignal<"list" | "diff">("list");
   const [paneWidth, setPaneWidth] = createSignal(0);
+  const [sideWidth, setSideWidth] = createSignal(0);
 
   let run = 0;
   const load = async () => {
@@ -332,13 +333,34 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
   const wide = () => paneWidth() >= SPLIT_MIN;
   const layout = (): DiffLayout => (diffLayout() === "split" && wide() ? "split" : "unified");
   const paneHidden = () => changesPaneHidden();
-  // The diff pane mounts once the summary is in, and again after a reload: measure whichever is there.
+  // Split can fit once the left pane is hidden: the diff pane then takes the list's width too.
+  const widenable = () => !wide() && !paneHidden() && paneWidth() + sideWidth() >= SPLIT_MIN;
+  const widenForSplit = () => {
+    batch(() => {
+      setChangesPaneHidden(true);
+      setDiffLayout("split");
+    });
+  };
+  // The diff pane mounts once the summary is in, and again after a reload: measure whichever is
+  // there, and the list beside it (0 while hidden).
   let diffPane: HTMLDivElement | undefined;
-  const ro = new ResizeObserver(([entry]) => setPaneWidth(entry?.contentRect.width ?? 0));
+  let sidePane: HTMLElement | undefined;
+  const ro = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.target === diffPane) setPaneWidth(entry.contentRect.width);
+      else if (entry.target === sidePane) setSideWidth((entry.target as HTMLElement).offsetWidth);
+    }
+  });
   onCleanup(() => ro.disconnect());
   const measure = (el: HTMLDivElement) => {
     if (diffPane) ro.unobserve(diffPane);
     diffPane = el;
+    ro.observe(el);
+  };
+  const measureSide = (el: HTMLElement) => {
+    side = el;
+    if (sidePane) ro.unobserve(sidePane);
+    sidePane = el;
     ro.observe(el);
   };
   // A new pick starts at the top of the diff pane.
@@ -386,7 +408,7 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
         </div>
         <button
           type="button"
-          class="button button-sm button-ghost"
+          class="button button-sm button-ghost changes-refresh"
           aria-label="Refresh Changes"
           title="Read the diff again. Nothing is changed."
           aria-disabled={loading() ? "true" : undefined}
@@ -427,7 +449,7 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
         </Match>
         <Match when={summary()}>
           <div class="changes-body">
-            <nav class="changes-side" aria-label="Files and steps" ref={side} tabindex="-1">
+            <nav class="changes-side" aria-label="Files and steps" ref={measureSide} tabindex="-1">
               <div class="changes-side-bar">
                 <h3 class="text-eyebrow">Files</h3>
                 <span class="changes-spacer" />
@@ -530,7 +552,14 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
                     );
                   }}
                 </Show>
-                <DiffLayoutToggle layout={layout()} splitAllowed={wide()} onChange={setDiffLayout} />
+                <DiffLayoutToggle
+                  layout={layout()}
+                  splitAllowed={wide()}
+                  onChange={setDiffLayout}
+                  widen={widenable() ? widenForSplit : undefined}
+                  widenHint="Needs a wider pane — hides the file list"
+                  narrowReason="Too narrow for two sides, even without the file list"
+                />
               </div>
               <div class="changes-main-body" ref={measure} tabindex="-1">
                 <Switch fallback={<p class="changes-note text-caption text-muted">Placing hunks into steps…</p>}>

@@ -40,7 +40,7 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
 }
 .changes[data-pane="hidden"] .changes-body { grid-template-columns: minmax(0, 1fr); }
 .changes[data-pane="hidden"] .changes-side { display: none; }
@@ -54,20 +54,45 @@
 }
 .changes-side-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-2) var(--space-1) var(--space-3);
+  gap: 0 var(--space-1);
+  padding: var(--space-1) var(--space-2) 0 var(--space-3);
 }
+.changes-side-bar .text-eyebrow { line-height: 28px; }
+@media (pointer: coarse) { .changes-side-bar .button-sm { min-height: var(--tap-min); } }
 .changes-side-bar .text-eyebrow { margin: 0; }
 .changes-spacer { flex: 1; }
 .changes-note { margin: 0; padding: var(--space-2) var(--space-3); }
 .changes-note p { margin: 0 0 var(--space-2); }
 
 /* ---- file tree ---- */
+/* The tree and the steps list are dense on purpose, below --tap-min: a change's shape should fit
+   on one screen, and a whole-width row is an easier target than its height says. 28px with a
+   mouse, 32px on touch. */
 .changes-tree,
 .changes-steps { list-style: none; margin: 0; padding: 0; }
 .changes-row,
-.changes-step-row,
+.changes-step-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--color-ink);
+  font: inherit;
+  font-size: var(--fs-caption);
+  text-align: left;
+  cursor: pointer;
+}
+@media (pointer: coarse) {
+  .changes-row,
+  .changes-step-row { min-height: 32px; }
+}
 .changes-run-head,
 .changes-file-head {
   display: flex;
@@ -86,12 +111,11 @@
   cursor: pointer;
 }
 @media (pointer: coarse) {
-  .changes-row,
-  .changes-step-row,
   .changes-run-head,
   .changes-file-head { min-height: var(--tap-min); }
 }
-.changes-row { padding: 0 var(--space-2) 0 calc(var(--space-3) + var(--depth, 0) * 12px); }
+.changes-row { padding: 0 var(--space-2) 0 calc(var(--space-3) + var(--depth, 0) * 10px); }
+.changes-counts { margin-left: var(--space-1); }
 .changes-row:hover,
 .changes-step-row:hover,
 .changes-run-head:hover,
@@ -125,11 +149,11 @@ button.changes-step-chip { border: 0; margin: auto 0; cursor: pointer; box-sizin
 .changes-file > .changes-step-chip { margin-right: var(--space-1); }
 .changes-file > .changes-step-chip:last-child { margin-right: var(--space-2); }
 button.changes-step-chip:hover { background: var(--color-accent); color: var(--color-on-accent); }
-@media (pointer: coarse) { button.changes-step-chip { min-width: 28px; height: 28px; font-size: var(--fs-caption); } }
+@media (pointer: coarse) { button.changes-step-chip { min-width: 24px; height: 24px; } }
 button.changes-step-chip[aria-pressed="true"] { background: var(--color-accent); color: var(--color-on-accent); }
 
 /* ---- steps ---- */
-.changes-step-row { align-items: baseline; flex-wrap: wrap; padding: var(--space-2) var(--space-3); gap: 0 var(--space-2); }
+.changes-step-row { flex-wrap: wrap; padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3); gap: 0 var(--space-2); }
 .changes-step-row[aria-current="true"] { background: var(--color-accent-tint); box-shadow: inset 3px 0 var(--color-accent); }
 /* A step number: a round badge, so "2" beside a file name reads as a step, not a count. */
 .changes-step-n,
@@ -150,7 +174,7 @@ button.changes-step-chip[aria-pressed="true"] { background: var(--color-accent);
   line-height: 1;
 }
 .changes-step-other { background: var(--color-sunken); color: var(--color-ink-muted); }
-.changes-step-title { flex: 1 1 10rem; min-width: 0; overflow-wrap: anywhere; }
+.changes-step-title { flex: 1 1 6rem; min-width: 0; overflow-wrap: anywhere; }
 .changes-step-builds { flex: none; margin-left: calc(1em + var(--space-2)); }
 
 /* ---- the diff pane ---- */
@@ -174,7 +198,24 @@ button.changes-step-chip[aria-pressed="true"] { background: var(--color-accent);
   color: var(--color-ink);
 }
 .changes-main-title:not(.text-mono) { font-size: var(--fs-body); font-weight: var(--fw-semibold); }
-.changes-viewed { display: inline-flex; align-items: center; gap: var(--space-1); min-height: 28px; cursor: pointer; }
+/* The pane's controls: roomy enough that no label meets its edge, --tap-min on touch. */
+.changes-viewed {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+  padding: 0 var(--space-3);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.changes-viewed:hover { background: var(--color-sunken); }
+.changes-main-bar .diff-layout-button { min-height: var(--control-sm); padding: 0 var(--space-4); }
+.changes-refresh { padding: 0 var(--space-4); }
+@media (pointer: coarse) {
+  .changes-viewed,
+  .changes-main-bar .diff-layout-button,
+  .changes-refresh { min-height: var(--tap-min); }
+}
 .changes-back { display: none; }
 .changes-main-body {
   flex: 1;

@@ -28,9 +28,20 @@ export function DiffStat(props: { added: number; removed: number; class?: string
   );
 }
 
-/** The Unified / Split pair. Split is disabled, with its reason, when `splitAllowed` is false. */
-export function DiffLayoutToggle(props: { layout: DiffLayout; splitAllowed: boolean; onChange: (l: DiffLayout) => void }) {
+/** The Unified / Split pair. Split is disabled, with its reason, when `splitAllowed` is false,
+    unless `widen` is given: then it stays tappable, says `widenHint`, and a tap calls `widen`
+    (which makes room) instead of `onChange`. */
+export function DiffLayoutToggle(props: {
+  layout: DiffLayout;
+  splitAllowed: boolean;
+  onChange: (l: DiffLayout) => void;
+  widen?: () => void;
+  widenHint?: string;
+  narrowReason?: string;
+}) {
   const split = () => props.layout === "split" && props.splitAllowed;
+  const hint = () => (props.splitAllowed ? undefined : props.widen ? props.widenHint : (props.narrowReason ?? "Too narrow for two sides"));
+  const hintId = `diff-layout-hint-${++hintSeq}`;
   return (
     <span class="diff-layout" role="group" aria-label="Diff layout">
       <button type="button" class="diff-layout-button" aria-pressed={split() ? "false" : "true"} onClick={() => props.onChange("unified")}>
@@ -40,15 +51,22 @@ export function DiffLayoutToggle(props: { layout: DiffLayout; splitAllowed: bool
         type="button"
         class="diff-layout-button"
         aria-pressed={split() ? "true" : "false"}
-        disabled={!props.splitAllowed}
-        title={props.splitAllowed ? undefined : "Too narrow for two sides"}
-        onClick={() => props.onChange("split")}
+        disabled={!props.splitAllowed && !props.widen}
+        title={hint()}
+        aria-describedby={hint() ? hintId : undefined}
+        onClick={() => (props.splitAllowed || !props.widen ? props.onChange("split") : props.widen())}
       >
         Split
       </button>
+      <Show when={hint()}>
+        <span id={hintId} class="visually-hidden">
+          {hint()}
+        </span>
+      </Show>
     </span>
   );
 }
+let hintSeq = 0;
 
 /** A path with its folder muted; a rename reads "old → new". */
 export function DiffPath(props: { file: FileDiff }) {

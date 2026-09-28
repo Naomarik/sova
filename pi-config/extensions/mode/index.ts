@@ -1023,7 +1023,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		const bases = new Map(specRun.roots);
 		const root = await findSpecRoot(cwd);
 		if (root && specRun.start?.head && !bases.has(root)) bases.set(root, specRun.start.head);
-		if (root) for (const name of drafts) for (const id of (await draftForeign(root, name, SPEC_CORE)) ?? []) ids.add(id);
+		if (root) for (const name of drafts) for (const id of (await draftForeign(root, name, SPEC_CORE, undefined, undefined, specRun.start?.head ?? undefined)) ?? []) ids.add(id);
 		// Against the work tree: a promotion not committed yet lands all the same.
 		for (const [dir, base] of bases) for (const id of (await foreignBetween(dir, base, undefined, SPEC_CORE)) ?? []) ids.add(id);
 		return [...ids].sort();

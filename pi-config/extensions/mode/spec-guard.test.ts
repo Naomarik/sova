@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -218,6 +218,13 @@ test("CensusHook on a real Git tree: bash-style writes are caught by the git del
 		assert.deepEqual(draftsTouched(before, before), []);
 		assert.deepEqual(await draftForeign(project, "feat", CORE), ["§app/shell"]);
 		assert.equal(await draftForeign(project, "missing", CORE), undefined);
+		const meta = join(project, ".sova/spec/drafts/feat/draft.json");
+		const record = JSON.parse(readFileSync(meta, "utf8"));
+		delete record.base.commit;
+		writeFileSync(meta, JSON.stringify(record));
+		assert.equal(await draftForeign(project, "feat", CORE), undefined, "an older draft without base.commit and no fallback: unknown");
+		const head = spawnSync("git", ["-C", project, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+		assert.deepEqual(await draftForeign(project, "feat", CORE, localIO, undefined, head), ["§app/shell"], "the run's starting HEAD stands in");
 		const committed = await after();
 		assert.ok(committed.text?.includes("src/later.ts"), `a file created and committed in one call still counts: ${JSON.stringify(committed)}`);
 	} finally {

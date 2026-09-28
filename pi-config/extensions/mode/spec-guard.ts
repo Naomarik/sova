@@ -584,13 +584,22 @@ export function draftsTouched(before: Record<string, number> | undefined, after:
 
 /**
  * The foreign § a draft changes against the commit it was made from (draft.json `base.commit`, so what
- * current changed since isn't counted). undefined when the draft or its base can't be read.
+ * current changed since isn't counted); a draft made by an older tool has none, and `fallbackBase` (the
+ * run's starting HEAD) stands in. undefined when nothing can be computed: the caller then checks the
+ * line's form only, never "none" against an empty list.
  */
-export async function draftForeign(root: string, name: string, core: string, io: SpecIO = localIO, signal?: AbortSignal): Promise<string[] | undefined> {
+export async function draftForeign(
+	root: string,
+	name: string,
+	core: string,
+	io: SpecIO = localIO,
+	signal?: AbortSignal,
+	fallbackBase?: string,
+): Promise<string[] | undefined> {
 	try {
 		const draft = JSON.parse(await io.readFile(join(root, SPEC_REL, "drafts", name, "draft.json"))) as { base?: { commit?: unknown } };
-		const base = draft.base?.commit;
-		if (typeof base !== "string" || !base) return undefined;
+		const base = typeof draft.base?.commit === "string" && draft.base.commit ? draft.base.commit : fallbackBase;
+		if (!base) return undefined;
 		return await foreignBetween(root, base, undefined, core, io, signal, `${SPEC_REL}/drafts/${name}/spec`);
 	} catch {
 		return undefined;

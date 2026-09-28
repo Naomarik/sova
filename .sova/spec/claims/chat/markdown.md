@@ -220,7 +220,8 @@ enters the app's DOM**. Assistant-text rows only (§chat/markdown's scope).
     (`setTimeout` loops and script-made SVG escape it; the guide asks for a Play/Step button);
   - height: only a clamped number posted by the frame is trusted;
   - a script error shows one muted line under the frame.
-- **The `vis` minor mode** (§chat/mode-menu) puts the guide in the system prompt: when to draw (at most
+- **The `vis` minor mode** (§chat/mode-menu) puts the guide in the system prompt, or in a hidden note
+  when it is turned on mid-session (§chat.mode-menu/minor-toggle-keeps-prompt): when to draw (at most
   1–2 per reply, small, captioned, next to prose that says what to notice), the shared rules, and
   one section per kind. A kind flagged `stub` in the registry is never taught.
 

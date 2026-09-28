@@ -6176,6 +6176,28 @@
         "src/vis/views.ts",
         "src/vis/vis.css"
       ]
+    },
+    "§chat.mode-menu/minor-toggle-keeps-prompt": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.mode-menu/prompt-holds-across-turn-starters",
+        "§chat.mode-menu/how-a-switch-reaches-the-chat",
+        "§app.worker-restore/claude-bridge-restart"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/state.ts",
+        "pi-config/extensions/mode/index.test.ts",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/mode/tests/note-turn.mjs",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "server/mode-state.ts",
+        "server/mode-state.test.ts"
+      ]
     }
   },
   "boundary": {

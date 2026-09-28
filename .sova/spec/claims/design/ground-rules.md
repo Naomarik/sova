@@ -187,9 +187,8 @@ Spend `--color-accent` on only three things:
 1. The one primary button in view (Send, or Create Session inside the dialog).
 2. The live indicator (`.chip-live` and `.live-dot`), and every TUI mark — the sidebar row's
    rail `TUI` chip (`.session-rail-tui`, the word, no dot), the spine tile's `.spine-dot-live`,
-   the session head's `TUI` chip (`.chip.chip-accent`, dot and word) and the `{n} TUI` count
-   under search (`.chip.chip-accent.chip-count`, dot and count) — all of which are accent but
-   **static** (see Motion).
+   and the session head's `TUI` chip (`.chip.chip-accent`, dot and word) — all of which are
+   accent but **static** (see Motion).
 3. Focus rings and links.
 
 Selected rows and user bubbles take `--color-accent-tint`. Anything else that "needs color" is a
@@ -210,7 +209,7 @@ fade in over `--dur-base`. Only two things loop:
 
 **TUI never pulses — Busy and running tools own the pulse.** This holds on every surface: the
 sidebar row's rail `TUI` chip (§app/session-list), the spine's `.spine-dot-live`, the session head's `TUI` chip
-(§chat/transcript), and the `{n} TUI` count under search. The three chips take `.chip-accent` **without**
+(§chat/transcript). Both chips take `.chip-accent` **without**
 `.chip-live`. A TUI holding a file open is
 *ownership*, and a count of them is a tally; neither is work in flight. What moves is our own
 run: Busy in a row, the composer's `.run-status` live dot, a Running tool card, and a

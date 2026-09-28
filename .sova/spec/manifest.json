@@ -231,7 +231,8 @@
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/signals.ts",
-        "src/lib/org-region.ts"
+        "src/lib/org-region.ts",
+        "src/design/base.css"
       ]
     },
     "§app.session-list/selecting-several-sessions": {
@@ -241,7 +242,8 @@
       "code": [
         "src/lib/session-selection.ts",
         "src/lib/session-selection.test.ts",
-        "src/components/SelectionToolbar.tsx"
+        "src/components/SelectionToolbar.tsx",
+        "src/components/Sidebar.tsx"
       ]
     },
     "§app.session-list/states": {
@@ -1246,7 +1248,7 @@
     "§design.copy-deck/sidebar": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/drag-archive.ts",

@@ -12,7 +12,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Search label (visually hidden) | Search sessions |
 | Search placeholder | Title, folder, or tag (model still matches; the placeholder must fit the 320px field) |
 | Count | `{n} sessions` · filtered: `{visible} of {total} sessions` |
-| TUI count chip (count row under search) | `{n} TUI` (only when n ≥ 1), static — a count is not work in flight. `title`: "Sessions open in a TUI" |
+| Search icon button (folded toolbar line, §app.session-list/search) | wordless `search` · `aria-label` "Search sessions" · `title` "Search sessions · /" |
+| Close Search (folded toolbar line, while the search is open) | wordless `close` · `aria-label` and `title`: Close Search |
 | Row TUI chip (rail) | `TUI`, static, no dot · `aria-label` (replaces the visible word in the accessible name): "Open in a TUI. Pid {pid}, status {status}." · `title`: "Open in a TUI · pid {pid} · {status}" · tap: the `title` as a toast |
 | Row Busy dot (rail) | wordless, pulsing · `aria-label` and `title`: "pi is replying in this session" · tap: the same as a toast |
 | Row worker count (rail) | `{n}` + worker icon · `aria-label` and `title`: "{n} subagents working now" |

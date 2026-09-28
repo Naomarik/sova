@@ -29,10 +29,34 @@
     </div>
     <div class="spread">
       <p class="search-count" id="session-count" aria-live="polite">12 of 48 sessions</p>
-      <span class="chip chip-accent chip-count" title="Sessions open in a TUI">
-        <i class="chip-dot"></i>2 TUI</span>           <!-- only when ≥1 live; static, no pulse -->
     </div>
   </div>
+
+  <!-- folded (<768): the same region as ONE line (§app.session-list/search). Collapsed: -->
+  <div class="sidebar-search" role="search">
+    <label class="visually-hidden" for="session-search">Search sessions</label>
+    <div class="sidebar-toolbar">
+      <a class="button button-icon overseer-entry button-ghost" href="#/overseer" aria-label="Overseer"
+         title="Overseer · Alt+O">…eye…</a>
+      <p class="search-count" id="session-count" aria-live="polite">48 sessions</p>
+      <!-- not in selection mode -->
+      <button class="button button-sm button-ghost sidebar-select-start" type="button">…check…Select</button>
+      <button class="button button-icon button-ghost" type="button" aria-label="Search sessions"
+              title="Search sessions · /">…search…</button>
+    </div>
+  </div>
+  <!-- open (after the search icon, or while there is a query): -->
+    <div class="sidebar-toolbar">
+      <div class="search">
+        <svg class="icon" aria-hidden="true">…search…</svg>
+        <input class="input" id="session-search" type="search" placeholder="Title, folder, or tag"
+               aria-describedby="session-count" autocomplete="off" spellcheck="false">
+        <!-- only when the query is non-empty -->
+        <button class="button button-icon" type="button" aria-label="Clear Search">…close…</button>
+      </div>
+      <button class="button button-icon" type="button" aria-label="Close Search" title="Close Search">…close…</button>
+      <p class="search-count visually-hidden" id="session-count" aria-live="polite">12 of 48 sessions</p>
+    </div>
 
   <nav class="sidebar-list pane" aria-label="Session list">
     <!-- First region: Needs you (§app.session-list/needs-you), only while a session is blocked on
@@ -297,7 +321,7 @@ label a person reads says "sessions pane".
 - **Live tallies.** "{n} subagents working now" — `activeAgentCounts(…).agents`: subagents
   working right now in fresh host sessions, idle and waiting workers counting 0, the same figure
   the expanded foot's Agents row shows — and
-  "{n} sessions open in a TUI" (the same count as the `N TUI` chip under the search), each only at
+  "{n} sessions open in a TUI" (every live session, whatever the search filters), each only at
   n ≥ 1, with `.spine-stats` omitted when both are 0. They are **facts, not doorways**: nothing
   opens. Pointer users get the sentence as the `title`; a tap raises the same sentence as a toast,
   the rail's precedent (§app.session-list/accessibility — there is no hover on touch).
@@ -505,7 +529,7 @@ label a person reads says "sessions pane".
   are each on the first line's centre (delta 0.00, 0.01 and 0.01px).
 - **TUI chip.** Shown when `live !== null`:
   `.session-rail-item.session-rail-state.session-rail-tui.chip.chip-accent` holding the text
-  `TUI` — the same word as the session head's `TUI` chip and the sidebar's `{n} TUI` count — and
+  `TUI` — the same word as the session head's `TUI` chip — and
   no dot. It is a `--color-surface` plate with **no outline at rest**: its 1px border is
   transparent and turns `--color-border-strong` on hover (`.session-rail-tui:hover`), the rail's
   only hover outline. It measures **20.2 × 16**: the word (16.2px at 9px mono, untracked) plus
@@ -606,13 +630,8 @@ label a person reads says "sessions pane".
   or dropping the count — spends a readable state to save height we are not spending.
 - **Other placements.** None for v1. The open session already shows its own run state (the
   `.run-status` line and the author's `.live-dot`, §chat/transcript), so the session head doesn't repeat Busy.
-  It doesn't count toward the "N TUI" chip either.
-- **Live count.** `N TUI` as `.chip.chip-accent.chip-count`, shown only when N ≥ 1. It sits at
-  the right end of the count row under search (`.spread`), not in the head: at 320px the head
-  holds exactly brand and New Session. It always counts all live sessions, not just the
-  filtered ones. **It does not pulse** — `.chip-live` came off it with the rail change. A count is
-  a tally, not work in flight, and it was the one pulse on the screen that never stopped. The
-  accent dot and the word `TUI` carry it.
+- **No live count under the search.** The expanded pane has no `N TUI` tally: each live row
+  carries its own rail `TUI`, and the collapsed spine keeps its "{n} sessions open in a TUI" fact.
 - **Selection.** The row link for the open session gets `aria-current="page"`, and its shell gets
   `.session-row-shell-current`, which is what the stylesheet tints with `--color-accent-tint` —
   the tint has to cover the rail too, or the open row would read as two pieces. The tint is never
@@ -967,7 +986,8 @@ to open. So the list itself can be picked from.
 **The way in is a press held on a row**, ~500ms, mouse or thumb alike: that row is selected and
 the sidebar enters **selection mode**. Press-and-hold is the accelerator; the **Select** button
 beside the session count is the door, for a keyboard and for anyone who has never held a row in
-their life. There is never only one way in.
+their life — on a phone it shares the one toolbar line with the count, before the search icon
+(§app.session-list/search), and leaves it while the search is open. There is never only one way in.
 
 **What a press is, and what it stops being.** A press becomes a hold only if it stays within 10px
 of where it started and nothing interrupts it. Moving further is a drag (rows still drag into
@@ -1651,8 +1671,20 @@ record whose transcript is gone.
 - **Overseer button.** The search row also holds the Overseer entry button (§app.overseer/entry-button).
   While the filter is focused or has a query, the button is removed (not just hidden) and the
   field takes the full row; blur with an empty query brings it back.
-- **Keys.** `/` anywhere, while focus isn't in a text field, focuses search. `Esc` inside search
-  clears the query first, then blurs on a second press. Clear Search returns focus to the input.
+- **Folded (<768): one line.** On a phone the search row and the count row are one toolbar line:
+  the Overseer eye, the count, then at the far end `Select` (while not in selection mode) and a
+  wordless **search icon button**. The field is not on screen until that button is pressed; then
+  it opens **in the same line**, and the line holds only the field (with its Clear Search `×`
+  while there is a query) and a **Close Search** button — the eye, the count, `Select` and the
+  search icon are gone from it. The count stays in the DOM, visually hidden, so the field's
+  description and the live count still speak. The line stays open while there is a query, and
+  blur never closes it: tapping a row and coming back finds the field as it was left. **Close
+  Search** clears the query and folds the line back, and focus returns to the search icon.
+  Unfolding the screen drops the open state: the unfolded layout is the two rows above, always.
+- **Keys.** `/` anywhere, while focus isn't in a text field, focuses search — on a phone it opens
+  the folded line first. `Esc` inside search clears the query first; a second press blurs it
+  (unfolded) or closes the folded line, as Close Search does. Clear Search returns focus to the
+  input.
 
 ## §app.session-list/states — States
 

@@ -590,7 +590,8 @@ region lists (§app.session-list/needs-you).
 
 - An **eye** icon button (aria-label "Overseer") sits in the session-list search row, beside the
   filter. It is **removed** while the filter is focused or has a query, and comes back on blur with
-  an empty query.
+  an empty query. On a phone, where the search opens inline in the list's one toolbar line
+  (§app.session-list/search), it is also removed for as long as that search is open.
 - The collapsed spine carries the same button.
 - **Alt+O** opens the Overseer from anywhere.
 - **Badge:** one count, top-right in the accent pill (`.overseer-entry-count`, "99+" past 99): the

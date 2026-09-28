@@ -108,6 +108,16 @@ test("foreign: without --head reads the working tree; deletions count; no spec a
   assert.deepEqual([k.foreign, k.created], [[], ["§a/b"]]);
 });
 
+test("foreign --spec: a draft's graph is the head, compared with the base revision", () => {
+  const root = repo();
+  assert.equal(draft(root, "new", "d0", "--write").exit, 0);
+  write(root, ".sova/spec/drafts/d0/spec/claims/design/copy.md", "# §design/copy\n\nOpen questions: the count.\n");
+  const j = core(root, "foreign", "--base", "HEAD", "--spec", ".sova/spec/drafts/d0/spec");
+  assert.deepEqual([j.exit, j.foreign, j.head.spec], [0, ["§design/copy"], ".sova/spec/drafts/d0/spec"]);
+  assert.deepEqual(core(root, "foreign", "--base", "HEAD").foreign, [], "current is untouched");
+  assert.ok(codes(core(root, "foreign", "--base", "HEAD", "--head", "HEAD", "--spec", ".sova/spec/drafts/d0/spec")).includes("usage"));
+});
+
 test("foreign: usage and bad revisions", () => {
   const root = repo();
   assert.ok(codes(core(root, "foreign")).includes("usage"));

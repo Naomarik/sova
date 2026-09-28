@@ -9,7 +9,7 @@ node sova-spec.mjs scope  §ns/name      [--root DIR] [--spec DIR] [--json] [--b
 node sova-spec.mjs impact §ns/name      [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs census               [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs census --changed [--base REV] [--related] [--root DIR] [--spec DIR] [--json]
-node sova-spec.mjs foreign --base REV [--head REV] [--root DIR] [--json]
+node sova-spec.mjs foreign --base REV [--head REV | --spec DIR] [--root DIR] [--json]
 ```
 
 `--spec` picks which spec graph to read. It's a directory relative to the project root, and it
@@ -156,14 +156,15 @@ to the project root. New fields are only ever added. Other tools read this outpu
 - **foreign --base REV [--head REV]**: the § a range of history changes, for a merge's or a
   promotion's `Also changes:` line. It reads `.sova/spec` at each revision from Git objects
   (read-only `ls-tree` and `cat-file --batch`; no checkout), or from the working tree when
-  `--head` is omitted. An id is in `foreign` when its prose span's text or its canonical record
+  `--head` is omitted; with `--spec DIR` (no `--head`) the working-tree head is that graph, a
+  draft's `spec/`, so a turn can name the foreign § its draft edits. An id is in `foreign` when its prose span's text or its canonical record
   differs, when it is deleted, or when it is an H1 on both sides that gains a new H2
   (`child-added`, with `children`), and it is not created in the range (an id head records and
   base does not). A revision without a spec is an empty graph. Output: `base: {rev, commit}`,
   `head: {rev, commit}` (or `{rev: null, worktree: true}`), `foreign: [id]`, `changes: [{id, change,
   children?}]` (`change` joins `text`, `record`, `child-added` with `+`, or is `deleted`),
-  `created: [id]`. A bad revision is `bad-rev` and no Git is `not-git`, both exit 2; `--spec` is a
-  usage error. Human output ends `Foreign § changed: §a, §b` (or `none`).
+  `created: [id]`. A bad revision is `bad-rev` and no Git is `not-git`, both exit 2; `--spec` with
+  `--head` is a usage error. Human output ends `Foreign § changed: §a, §b` (or `none`).
 - **§a.b ids.** `scope` and `impact` read `§a.b` (not a § identifier) as `§a/b`, with an `id-alias`
   note; an unknown result is `unknown-id` as usual.
 

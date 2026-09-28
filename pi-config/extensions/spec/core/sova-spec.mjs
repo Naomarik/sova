@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // sova-spec: read-only core for a project's .sova/spec. Node stdlib only; never writes.
-// Commands: check | scope §id | impact §id | census [--changed [--base REV] [--related]] | foreign --base REV [--head REV].
+// Commands: check | scope §id | impact §id | census [--changed [--base REV] [--related]] | foreign --base REV [--head REV | --spec DIR].
 // Flags: --root DIR, --spec DIR, --json, --budget BYTES.
 // Exit: 0 usable known closure (never completeness), 1 relevant unknown/stale/unread, 2 untrustworthy.
 import { readFileSync, readdirSync, lstatSync, existsSync, realpathSync } from "node:fs";
@@ -62,14 +62,14 @@ function parseArgs(argv) {
   }
   if (!o.usage && cmd === "foreign") {
     if (o.base === undefined) o.usage = "foreign needs --base REV";
-    else if (o.spec !== undefined) o.usage = "foreign reads .sova/spec at each revision; --spec does not apply";
+    else if (o.spec !== undefined && o.head !== undefined) o.usage = "foreign --spec reads a draft in the working tree as the head; it does not combine with --head";
   } else if (!o.usage && o.head !== undefined) o.usage = "--head applies to foreign only";
   if (!o.usage && o.base !== undefined && !o.changed && cmd !== "foreign") o.usage = "--base applies to census --changed and foreign only";
   if (!o.usage && o.related && !o.changed) o.usage = "--related applies to census --changed only";
   if (!o.usage && o.changed && cmd !== "census") o.usage = "--changed applies to census only";
   return o;
 }
-const USAGE = "usage: sova-spec <check | scope §id | impact §id | census [--changed [--base REV] [--related]] | foreign --base REV [--head REV]> [--root DIR] [--spec DIR] [--json] [--budget BYTES]";
+const USAGE = "usage: sova-spec <check | scope §id | impact §id | census [--changed [--base REV] [--related]] | foreign --base REV [--head REV | --spec DIR]> [--root DIR] [--spec DIR] [--json] [--budget BYTES]";
 
 // --spec: a project-relative directory holding manifest.json (default .sova/spec). → {rel} | {why}
 function specDir(raw) {
@@ -715,8 +715,8 @@ function foreign(root, opt) {
   const head = opt.head !== undefined ? resolveRev(root, opt.head, "--head") : undefined;
   if (!base || head === null) return {};
   const b = loadAt(root, prefix, base);
-  const h = head ? loadAt(root, prefix, head) : load(root, DEFAULT_SPEC);
-  const range = { base: { rev: opt.base, commit: base }, head: head ? { rev: opt.head, commit: head } : { rev: null, worktree: true } };
+  const h = head ? loadAt(root, prefix, head) : load(root, opt.spec ?? DEFAULT_SPEC);
+  const range = { base: { rev: opt.base, commit: base }, head: head ? { rev: opt.head, commit: head } : { rev: null, worktree: true, spec: opt.spec ?? DEFAULT_SPEC } };
   if (!b || !h || exitOf(findings) === 2) return { ...range, foreign: null, changes: null, created: null };
   const has = (ctx, id) => Object.hasOwn(ctx.m.claims, id);
   const all = [...new Set([...Object.keys(b.m.claims), ...Object.keys(h.m.claims)])].sort();
@@ -797,10 +797,11 @@ function main(argv) {
   if (opt.help) { process.stdout.write(USAGE + "\n"); return 0; }
   if (opt.usage) add("error", "usage", `${opt.usage}. ${USAGE}`);
   else {
+    const draftSpec = opt.spec;
     opt.spec ??= DEFAULT_SPEC;
     out.spec = opt.spec;
     const root = findSpec(opt) ?? (opt.cmd === "foreign" ? process.cwd() : null);
-    if (root && opt.cmd === "foreign") out = { ...out, root, ...foreign(root, opt), notice: FOREIGN_NOTICE };
+    if (root && opt.cmd === "foreign") out = { ...out, root, ...foreign(root, { ...opt, spec: draftSpec }), notice: FOREIGN_NOTICE };
     else if (!root) add("error", "manifest-not-found", `no ${opt.spec}/manifest.json in this directory or any parent`);
     else {
       out.root = root;

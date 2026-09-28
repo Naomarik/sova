@@ -192,7 +192,9 @@ and again when the count changes, at most once a second. When there are none, an
     duration, then append the result under the same id when the run settles; the result row
     replaces the running row in place, live and on reload. `/explain` does this (§chat/transcript report,
     "Explain rows"). Unlike the "Ran" row, it is persisted: a reload mid-run shows it still
-    running.
+    running. A run the restart or `/reload` stopped stays running until the session's next prompt
+    or `/explain`, which settles it as Interrupted (§chat.transcript/transcript-items, "Explain rows:
+    interrupted").
 - **Reload.** The persisted entries render the same way. The local "Ran" row is local only and
   isn't restored.
 - **Unknown commands.** A `/word` that isn't in the list is sent and rendered as an ordinary

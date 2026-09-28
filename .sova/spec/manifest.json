@@ -26,7 +26,7 @@
     "§app.insights/insight-strip": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/InsightStrip.tsx",
         "src/design/base.css",
@@ -34,7 +34,8 @@
         "src/lib/insights.ts",
         "shared/outline-order.ts",
         "src/lib/outline-order.test.ts",
-        "src/lib/jump.ts"
+        "src/lib/jump.ts",
+        "server/index.ts"
       ]
     },
     "§app.insights/placement": {
@@ -1020,7 +1021,12 @@
         "src/lib/live.ts",
         "src/components/ToolCard.tsx",
         "src/components/AlignDocCard.tsx",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/components/ExplainCard.tsx",
+        "server/explanations.test.ts",
+        "src/lib/explain.ts",
+        "src/lib/explain.test.ts",
+        "src/components/SessionPane.tsx"
       ]
     },
     "§chat/composer": {

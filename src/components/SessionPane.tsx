@@ -415,7 +415,7 @@ function SkillsTab(props: { path: string; insight: PaneInsight; now: number; onS
   const loads = () => (own()?.used.length ?? 0) + workerLoads().reduce((n, w) => n + w.skills.used.length, 0);
 
   const jump = (entryId: string) => {
-    jumpWhenArrived(entryId, props.path, toast, () => toast("That entry isn't in the transcript on screen."));
+    jumpWhenArrived(entryId, props.path, () => toast("That entry isn't in the transcript on screen."));
   };
 
   return (

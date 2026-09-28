@@ -571,29 +571,56 @@ runaway reply there is capped: it can't write a line too long to read back or to
 - **Watch socket drops.** `.banner.banner-warn` with `alert-circle`. Title: "Stopped watching.
   The connection dropped." Body: "What's shown is up to `14:06`. Reconnecting…" When it
   reconnects, the banner goes away. The snapshot replaces the list, and scroll position is
-  kept if the user wasn't following. Its older rows follow it (§chat.transcript/rendering).
+  kept if the user wasn't following. Older rows are fetched when wanted, as in a chat
+  (§chat.transcript/rendering). While the rows held have no reply to read the context fill from,
+  the gauge shows the fill the server read from the whole branch (the snapshot's, or the last
+  append's).
 
 ## §chat.transcript/rendering — Opening and switching a long transcript
 
-A transcript opens on its newest rows, and every row is in the page once it has settled: nothing
-is virtualized.
+A transcript opens on its newest rows, and fetches the older ones only when they're wanted: as
+the reader scrolls toward them, when a jump needs them, or all at once for a browser on this
+machine. Nothing that's held is virtualized.
 
 - **Newest rows first.** The chat's `hello` and the watch view's snapshot carry only the
   transcript's newest whole entries: at least 60 rows, within about 256 KB, never opening on a
-  tool result or inside a baton wrap-up. The older rows follow on the same socket, newest first,
-  in chunks of about 256 KB. So the first frame shows the end of the session as soon as those
-  newest rows land, however long the session is, and waits on nothing older. Its last 60 rows are
-  built with it. The older rows are built above them while the browser is idle, a chunk at a time,
-  each chunk sized to stay under a frame, as they arrive and until every row is built; a chunk
-  arriving never builds its rows at once. The view doesn't move while they're added: it keeps its
-  distance from the end, which at the bottom is the bottom. Rows added above aren't new content:
-  they don't scroll a following view and don't count in Jump to Latest's "N new". The newest rows
-  alone can't be much smaller than the newest entry: one that holds a large image arrives whole
-  with them.
-- **Nothing is virtualized.** A built row stays in the page, so `Ctrl+F`, screen readers and
-  text selection reach the whole transcript once the older rows have arrived and the fill
-  completes: a few hundred milliseconds for an 800-row session on this machine, longer over a
-  slow link, where the arriving is most of it. A row off screen is skipped by layout and paint
+  tool result or inside a baton wrap-up. Nothing older follows on the socket: from then on it
+  carries only live traffic, so a streamed event or an append never waits behind the transcript.
+  So the first frame shows the end of the session as soon as those newest rows land, however
+  long the session is, and its last 60 rows are built with it. The newest rows alone can't be
+  much smaller than the newest entry: one that holds a large image arrives whole with them.
+- **Older rows when wanted.** They come over REST (`GET /api/transcript`, read-only, never a
+  runtime or a write), cut from the same rows the socket would have carried, so they fit onto the
+  list exactly. Three things fetch them:
+  - **Scrolling up.** Once every row held is built and the view is within 2 viewports of their
+    top, the next rows above are fetched: about 256 KB of whole entries, never opening on a tool
+    result or inside a baton wrap-up. A list too short to fill that much fetches at once, until
+    it's taller or reaches the top. While older rows remain, a line's height is held at the top
+    of the transcript, so what appears in it never moves the view. When a fetch (this one, or a
+    jump's) takes longer than 0.4 s, a short bar sweeps in that line: the skeleton sweep, with no
+    text; screen readers hear it as "Loading older messages" (a status region). The line sticks to
+    the top of the view, over the rows, taking no pointer, so a jump fetching from the end shows
+    it too.
+  - **A jump** fetches every row down to its target in one request (below).
+  - **A browser on this machine connecting directly** (the rule of
+    §chat.transcript/compressed-transfer; the server says so with the `hello`) fetches all of
+    them in the background right after the first paint, in chunks of about 1 MB while the browser
+    is idle, so `Ctrl+F` reaches the whole transcript within a second or two. A phone, or any
+    client reaching the server through a proxy, never does.
+
+  Fetched rows are built above the ones on screen while the browser is idle, a chunk at a time,
+  each chunk sized to stay under a frame; rows landing never build at once. The view doesn't move
+  while they're added, not by a pixel: it keeps its distance from the end, which at the bottom is
+  the bottom. Nor does it while a row above it is first drawn at its real height: every row,
+  estimated or drawn, is laid out at a whole-pixel height.
+  Rows added above aren't new content: they don't scroll a following view and don't count in
+  Jump to Latest's "N new". Each fetch names the list's first row and its last entry; if the
+  branch has moved under the list since (a rewind in another tab), the view starts again from
+  the branch's newest rows, keeping the rows above them that are still their ancestors.
+- **Nothing held is virtualized.** A built row stays in the page, so `Ctrl+F`, screen readers
+  and text selection reach every row fetched so far: the whole transcript once a browser on this
+  machine has fetched it all and the fill completes, a few hundred milliseconds for an 800-row
+  session. A row off screen is skipped by layout and paint
   (`content-visibility: auto`), at a height estimated from its kind, its text and its images
   until it is first drawn. The estimate counts a card or disclosure at its collapsed height
   (a compaction as its folded disclosure, not its summary). Text is wrapped at the width the
@@ -607,12 +634,18 @@ is virtualized.
   thread renders, not of what is built. Every jump builds the rows down from its target if the
   fill hasn't reached it, then scrolls and tints as before (§chat.timeline/jumping): a Timeline
   input row, the outline's Jump to Message, the Skills tab, Open in Session, Align to Fork, and a
-  switch back (below). While the older rows are still arriving, a jump to a row not here yet
-  waits for them and then lands; after half a second of waiting a toast says "Loading older
-  messages…". A newer jump replaces a waiting one. "Isn't in the transcript" still means the
-  thread has no row for the entry, and only a transcript that has arrived whole says it.
+  switch back (below). A jump to a row the list doesn't hold, while the branch has rows above
+  the list, fetches every row down to it in one request and then lands; nothing is said while it
+  waits, and a slow fetch shows the top edge's bar (above). A newer jump replaces a waiting one. "Isn't in
+  the transcript" still means the thread has no row for the entry: said by a list that reaches
+  the top of the branch, or when the server finds no such row on it.
   Rows never drawn have estimated heights, so a long jump that doesn't land in the middle aims
   again once the scroll has rested, at most twice.
+- **Counts of the whole branch.** The `hello` and the snapshot also say what the counts need of
+  the rows they don't carry: the ids of their inputs, how many messages they hold, and whether
+  any is a reply; so does each fetch, of the rows above what it returns. The inputs count, Fan
+  Out's "up to message {n}" and Undo last turn count the rows held plus those, so they're right
+  from the first `hello` on, with no older row fetched.
 - **Opening a disclosure keeps the view.** Opening or closing a tool card, thinking, a report or
   the hidden-rows disclosure never scrolls the transcript, even while following. Following is
   re-read from where the view now is, so Jump to Latest appears if the end has gone out of view.
@@ -621,20 +654,22 @@ is virtualized.
   decoding). It keeps following when the view gets narrower or wider (a panel opening beside
   it, a window resized): the rows reflowing is not scrolling away.
 - **Refetches keep rows.** A new `hello`, a turn-end reload or a new snapshot replaces the list,
-  but every row whose entry renders the same keeps its element. A `hello` or snapshot with older
-  rows to come replaces the list from its first row on; when the list on screen already has rows
-  above that one (kept from the last visit, or before a reconnect), they stay as they are until
-  the older rows have all arrived, and are then replaced the same way, in one step. Open cards, focus and a revealed
-  action strip survive the end of a turn, a reconnect and a rewind; only changed and new rows
-  are built.
+  but every row whose entry renders the same keeps its element. A `hello` or snapshot replaces
+  the list from its first row on; rows the list on screen already has above that one (kept from
+  the last visit, or before a reconnect or a rewind) stay, since they are that row's ancestors,
+  unless their inputs disagree with what the `hello` says of the rows above it (then only its own
+  rows stay). A turn-end reload fetches again the rows the list holds, from its first row to the
+  end; rows above them stay unfetched. Open cards, focus and a revealed action strip survive the
+  end of a turn, a reconnect and a rewind; only changed and new rows are built.
 - **Switching back.** The last 3 sessions opened in the tab keep their rows and where they were
   scrolled: at the end while following, else the row at the top of the view and its offset. So
   do the sessions in Recent, fetched ahead (§chat.transcript/recent-preload).
   Switching back to one shows those rows at once, where they were (with Jump to Latest when not
-  following), while its `hello` or snapshot is on the way, then reconciles them as above, which
-  completes when its older rows have arrived. Any other open lands at the end. A reload keeps
-  nothing. Rows kept this way are never taken as the whole transcript: until this visit's own
-  rows have arrived whole, nothing says a row isn't there, and nothing counts the whole list.
+  following), while its `hello` or snapshot is on the way, then reconciles them as above. A kept
+  spot whose row the `hello` didn't keep is fetched and placed then, unless the view has moved
+  from the end meanwhile. Any other open lands at the end. A reload keeps nothing. Rows kept this
+  way are never taken as the whole transcript: until this visit's `hello` or snapshot has said
+  what's above them, nothing says a row isn't there, and nothing counts the whole list.
 
 ## §chat.transcript/compressed-transfer — A transcript travels compressed
 
@@ -673,16 +708,17 @@ view then reconciles them with its own `hello` or snapshot (§chat.transcript/re
   shows now. Anything else is dropped. Membership follows Recent live: its count setting, and
   sessions moving in or out as they become active or archived.
 - **Fetched in the background.** A Recent session not yet in memory is fetched with the
-  read-only `GET /api/transcript`, the same rows the `hello` and the snapshot carry; fetching
-  never opens a chat runtime or writes anything. One session at a time, in Recent's order, once
+  read-only `GET /api/transcript`: its newest rows only, the ones the `hello` and the snapshot
+  carry (§chat.transcript/rendering); fetching never opens a chat runtime or writes anything. One session at a time, in Recent's order, once
   every open view has painted its rows (or 10 s have passed), while the browser is idle. None
   while a turn runs in a session on screen; none for a Recent session in the middle of its own
   turn, until it ends. None at all when the browser asks to save data
   (`navigator.connection.saveData`). Peer sessions are fetched through the host, as their views
   are.
 - **Kept current.** A kept Recent session whose file changed (`lastActiveAt`) after its rows
-  were fetched, or after the last view showing it closed, is fetched again in the background. A
-  failed fetch is retried only once the file changes.
+  were fetched, or after the last view showing it closed, is fetched again in the background:
+  its newest rows, with any older ones a view fetched kept above them while they're still their
+  ancestors. A failed fetch is retried only once the file changes.
 - **A memory budget.** The Recent sessions kept beyond the last 3 opened and those on screen add
   up to at most 40 MB of transcript JSON (about 50-60 MB of memory). Past it, the largest go
   first. A session is not downloaded when the size its response announces can't fit, and one
@@ -829,7 +865,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 | No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Start section's action cards (`New Session`, `Fan Out`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
-| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread, arrived whole, has no **rendered row**: model, thinking and mode change rows draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |
+| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
 
 ## §chat.transcript/setup-card — Setup card

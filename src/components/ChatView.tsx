@@ -98,7 +98,7 @@ import {
 import type { MessageActionItem } from "./MessageActions";
 import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
-import { entryIdOf, jumpToEntry, landExplainJump, LOADING_OLDER, transcriptRoot } from "../lib/jump";
+import { entryIdOf, jumpToEntry, landExplainJump, transcriptRoot } from "../lib/jump";
 import { anyReply, inputTotal, lastInput as lastInputOf, messageTotal, newestOnly, newRows } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
 import { alignRowFromDetails, foldAlignRows, type AlignEntry } from "../lib/align";
@@ -921,7 +921,9 @@ export function ChatView(props: {
       if (block === "streaming") return "Stop the turn first, then undo.";
       if (block === "compacting") return "Wait for compaction to finish, then undo.";
       if (rewindsPending() > 0) return "A rewind is already in progress.";
-      return lastInput() ? null : older() ? "Nothing to undo yet." : LOADING_OLDER;
+      // Before this connection's hello nothing says where the last input is: can't run yet, and
+      // nothing to say about it.
+      return lastInput() ? null : older() ? "Nothing to undo yet." : "";
     },
     run: () => {
       const id = lastInput();

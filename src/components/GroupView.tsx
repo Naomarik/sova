@@ -406,8 +406,7 @@ export function GroupView(props: {
       deferred.size > 0
         ? ` ${[...deferred].map(nameOf).join(", ")} will align when you open ${deferred.size === 1 ? "its" : "their"} tab.`
         : "";
-    const later = waiting.length > 0 ? ` ${waiting.join(", ")} will align once ${waiting.length === 1 ? "its" : "their"} older messages have loaded.` : "";
-    announce(head + tail + later);
+    announce(head + tail);
   };
   // The deferred alignments land the moment their pane is shown: a tab switch (which is also how
   // Ctrl+Alt+←/→ arrives, through focusPane) or a return to split, where every pane is visible.

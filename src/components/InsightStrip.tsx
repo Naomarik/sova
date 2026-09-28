@@ -5,7 +5,6 @@ import { newestFirst } from "../lib/explain";
 import { explanationsHref } from "../lib/insights";
 import { hasEntryRow, jumpWhenArrived, rowsOlder, transcriptRoot } from "../lib/jump";
 import { relativeTime, stampTime } from "../lib/format";
-import { toast } from "../lib/ui-state";
 import { Icon } from "./ui";
 
 const STATE_CLAUSE: Partial<Record<SessionOutline["state"], string>> = {
@@ -28,7 +27,7 @@ function Topic(props: { topic: OutlineTopic; now: number; open: boolean; path: s
   const jump = () => {
     // Gone since the strip opened (compacted away): the button goes rather than scrolling nowhere.
     if (!props.topic.entryId) return setTarget(false);
-    jumpWhenArrived(props.topic.entryId, props.path, toast, () => setTarget(false));
+    jumpWhenArrived(props.topic.entryId, props.path, () => setTarget(false));
   };
   // The topic's own section, not the summarizer's clock (topicTime falls back to it).
   const at = () => new Date(topicTime(props.topic)).toISOString();

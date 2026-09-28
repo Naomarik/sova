@@ -610,8 +610,8 @@ fetched except the lookups below.
   rendering can't pull the view back down. It works whether or not the session's runtime was
   already open, and it happens once: the request is dropped after
   it lands, after it fails, or 60s after it was made if it still hasn't, the fetch of older rows
-  included. While that fetch is on its way it waits, and after half a second a toast says
-  "Loading older messages…". When the branch has no such row (the explanation's entry is not on
+  included. While that fetch is on its way it waits, with no toast: a slow fetch shows the
+  transcript's top-edge bar (§chat.transcript/rendering). When the branch has no such row (the explanation's entry is not on
   the branch on screen, e.g. after a rewind: the list reaches the top without it, or the server
   finds none), the session stays open and a toast says "That explanation isn't on this branch of
   the session." Rows kept from the last visit never count as the whole transcript.

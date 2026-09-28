@@ -620,8 +620,8 @@ and the announcement says that instead: "Aligned 2 members now. glm-5.3 #3 will 
 open its tab." Counting a scroll that did not happen would be the announcement overstating
 something the reader cannot check. A pane that doesn't hold the marker's row yet but has older
 rows it hasn't fetched (§chat.transcript/rendering) isn't named as missing it: the rows down to
-the marker are fetched in one request, it aligns once they're here, and the announcement says
-"Aligned 2 members now. glm-5.3 #3 will align once its older messages have loaded." The button is absent for a group with no
+the marker are fetched in one request and it aligns once they're here; the announcement counts
+the members aligned so far ("Aligned 2 members now.") and adds nothing for it. The button is absent for a group with no
 `seed`, because there is nothing to align to — and **present for one that adopted a seed later**
 (`groupId`, above), which is the one visible trace adoption leaves. A hand-made group that has
 been fanned into gains fork markers on the new members and this button; it keeps its name, its

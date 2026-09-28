@@ -844,7 +844,8 @@
         "server/transcript-rows.ts",
         "server/transcript-rows.test.ts",
         "server/index.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/components/InsightStrip.tsx"
       ]
     },
     "§chat.timeline/no-virtualization": {
@@ -874,9 +875,11 @@
         "§chat.transcript/message-actions"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
-        "server/chat-manager.ts"
+        "server/chat-manager.ts",
+        "src/components/ChatView.tsx",
+        "src/components/ComposerMenu.tsx"
       ]
     },
     "§chat.timeline/rows": {
@@ -4585,7 +4588,7 @@
     "§app.insights/explanations-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.insights/usage-page-and-agents-page",
         "§app.insights/insight-strip",

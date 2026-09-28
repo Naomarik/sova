@@ -370,7 +370,8 @@ Streaming refuses; it never auto-aborts. Stopping is the user's call, and a rewi
 killed a running turn and its workers would be the surprise. The server enforces all of this
 again (below), so a stale pane can't get past it: a refusal's message shows inline under its row
 (a `.text-error` span inside an `.input-row-note`, hung off the button's `aria-describedby`), and
-the flyout toasts it.
+the flyout toasts it. Until the chat's `hello` has said where its last input is, the flyout's Undo
+last turn is off with its usual title and no reason.
 
 ### After a rewind
 
@@ -443,9 +444,9 @@ body lands on that message exactly as it would unfiltered, and the filter stays 
 - **A message the transcript doesn't show** — compacted away, or not on the branch on screen —
   can't be landed on, so the jump says so instead of scrolling nowhere: "That message isn't in
   the transcript on screen." A jump to a message older than the rows the transcript holds fetches
-  every row down to it in one request and lands (§chat.transcript/rendering); after half a second
-  of waiting a toast says "Loading older messages…", and below 1280 the pane still closes at once,
-  so the landing is in view. The line above is said when the branch has no such row. The fetch
+  every row down to it in one request and lands (§chat.transcript/rendering), with no toast: a slow
+  fetch shows the transcript's top-edge bar. Below 1280 the pane still closes at once, so the
+  landing and the bar are in view. The line above is said when the branch has no such row. The fetch
   starts at the click. The pane never waits on the whole transcript either: it reads every row of
   the branch without what only the thread draws (a reply's text, a tool's output, image bytes, a
   report's body), a small fraction of the transcript's size, so on a slow link its list is there

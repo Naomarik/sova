@@ -591,8 +591,11 @@ machine. Nothing that's held is virtualized.
     top, the next rows above are fetched: about 256 KB of whole entries, never opening on a tool
     result or inside a baton wrap-up. A list too short to fill that much fetches at once, until
     it's taller or reaches the top. While older rows remain, a line's height is held at the top
-    of the transcript; when a fetch takes longer than 0.4 s it says "Loading older messages…"
-    there, so it appearing never moves the view.
+    of the transcript, so what appears in it never moves the view. When a fetch (this one, or a
+    jump's) takes longer than 0.4 s, a short bar sweeps in that line: the skeleton sweep, with no
+    text; screen readers hear it as "Loading older messages" (a status region). The line sticks to
+    the top of the view, over the rows, taking no pointer, so a jump fetching from the end shows
+    it too.
   - **A jump** fetches every row down to its target in one request (below).
   - **A browser on this machine connecting directly** (the rule of
     §chat.transcript/compressed-transfer; the server says so with the `hello`) fetches all of
@@ -627,8 +630,8 @@ machine. Nothing that's held is virtualized.
   fill hasn't reached it, then scrolls and tints as before (§chat.timeline/jumping): a Timeline
   input row, the outline's Jump to Message, the Skills tab, Open in Session, Align to Fork, and a
   switch back (below). A jump to a row the list doesn't hold, while the branch has rows above
-  the list, fetches every row down to it in one request and then lands; after half a second of
-  waiting a toast says "Loading older messages…". A newer jump replaces a waiting one. "Isn't in
+  the list, fetches every row down to it in one request and then lands; nothing is said while it
+  waits, and a slow fetch shows the top edge's bar (above). A newer jump replaces a waiting one. "Isn't in
   the transcript" still means the thread has no row for the entry: said by a list that reaches
   the top of the branch, or when the server finds no such row on it.
   Rows never drawn have estimated heights, so a long jump that doesn't land in the middle aims

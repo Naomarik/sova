@@ -44,7 +44,7 @@ Example: the user replied "q2: weekly is fine; take your rec on q4", and asked t
 
 export const ALIGN_TOOL_GUIDELINES = [
 	"While the align minor mode is on, record every alignment (a plan, open questions, decisions the user must make) with the align tool — never as reply text or a numbered list in prose; the user reads the alignment card, so keep the reply to a sentence or two.",
-	"Record the user's answers by question id: decide the ones they answered, in their words; accept only the ones they told you to take your recommendation on (accept_all only when they said it for every open question); leave the rest open. Change an alignment only with ops; never create it again.",
+	"Record the user's answers by question id (\"3a\" is q3's option a: decide it with that option's label): decide the ones they answered, in their words; accept only the ones they told you to take your recommendation on (accept_all only when they said it for every open question); leave the rest open. Change an alignment only with ops; never create it again.",
 	"When a planning worker wrote the alignment as a JSON file, use import with the file's absolute path; never retype its plan.",
 	"Set status implementing before building, never while a question is open, and done when finished and verified; use exempt with a reason for a work request that needs no alignment.",
 ];

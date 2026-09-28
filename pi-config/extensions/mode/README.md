@@ -187,7 +187,10 @@ Status is derived from the data: `aligning` while a question is open (or
 there are none yet), `confirmed` once every question is decided or dropped,
 and `implementing`, `done` or `dropped` when the agent moved it there. The
 agent answers nothing itself: the user answers in chat ("q2: yes", "your
-recs"), and the agent records it with `decide`/`accept`.
+recs", or "3a": q3's option a, recorded as that option's label), and the
+agent records it with `decide`/`accept`. Options are lettered a, b, c… wherever
+they are listed, and a recommendation that names an option by its label reads
+"b — <label>".
 
 - **State** — each changing call returns the document's full snapshot in the
   tool result's `details`; the newest snapshot per id on the branch wins
@@ -197,8 +200,8 @@ recs"), and the agent records it with `decide`/`accept`.
 - **What the model sees** — the tool's description and guidelines (in pi's
   tools section, so they survive a dropped mode section), the align prompt
   block, and a hidden `align-state` message on each user prompt listing the
-  open alignments and their open questions. A compaction writes one more, right
-  after its summary, that also lists their decided and dropped questions: a run
+  open alignments and their open questions, each with its lettered options. A
+  compaction writes one more, right after its summary, that also lists their decided and dropped questions: a run
   no user prompt starts (a worker's report) gets no per-prompt note, and the
   summary may state the alignments loosely. Nothing about alignments goes into
   the system prompt: a prompt change restarts a Claude Code session's CLI.

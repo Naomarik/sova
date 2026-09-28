@@ -133,6 +133,37 @@ export function questionState(q: AlignQuestion): AlignQuestionState {
 	return q.decision ? "decided" : "open";
 }
 
+/** An option's letter, "a" for the first: the user answers "q3 option a" as "3a". Past z, its number. */
+export const optionLetter = (i: number): string => (i < 26 ? String.fromCharCode(97 + i) : String(i + 1));
+
+const bareLabel = (s: string): string => s.replaceAll("**", "").trim().toLowerCase();
+
+/**
+ * The option the recommendation names, by index: its choice equals an option's label (trimmed,
+ * case-insensitive, bold markers ignored), else starts with one followed by a non-word character,
+ * the longest such label winning. undefined when it names none. Sova's card uses the same rule
+ * (src/lib/align.ts `recommendedOption`).
+ */
+export function recommendedOption(q: Pick<AlignQuestion, "options" | "recommendation">): number | undefined {
+	const labels = (q.options ?? []).map((o) => bareLabel(o.label));
+	const choice = bareLabel(q.recommendation.choice);
+	if (choice === "") return undefined;
+	const exact = labels.indexOf(choice);
+	if (exact >= 0) return exact;
+	let best = -1;
+	labels.forEach((l, i) => {
+		if (l === "" || !choice.startsWith(l) || /[\p{L}\p{N}_]/u.test(choice.charAt(l.length))) return;
+		if (best < 0 || l.length > labels[best]!.length) best = i;
+	});
+	return best >= 0 ? best : undefined;
+}
+
+/** The recommendation's short form: "b — Parquet" when it names option b, else its choice. */
+export function recommendedText(q: AlignQuestion): string {
+	const i = recommendedOption(q);
+	return i === undefined ? q.recommendation.choice : `${optionLetter(i)} — ${q.options![i]!.label}`;
+}
+
 export const isTerminal = (doc: AlignDocument): boolean => doc.phase === "done" || doc.phase === "dropped";
 export const openQuestionsOf = (doc: AlignDocument): AlignQuestion[] => doc.questions.filter((q) => questionState(q) === "open");
 /** Questions that still count: every one not dropped. */
@@ -962,7 +993,7 @@ export function docLine(doc: AlignDocument): string {
 }
 
 function questionLine(q: AlignQuestion): string {
-	return `  ${q.id} ${q.topic} — open (rec: ${q.recommendation.choice})`;
+	return `  ${q.id} ${q.topic} — open (rec: ${recommendedText(q)})`;
 }
 
 function otherDocsLine(docs: readonly AlignDocument[], except: string | undefined): string[] {
@@ -979,6 +1010,11 @@ function echoLines(docs: readonly AlignDocument[], id: string, line: string): st
 	const out = [head, ...openQuestionsOf(doc).map(questionLine)];
 	if (doc.phase === "dropped" && doc.droppedWhy) out.push(`  dropped: ${doc.droppedWhy}`);
 	return [...out, ...otherDocsLine(docs, id)];
+}
+
+/** " — a. CSV · b. Parquet" for a question with options, so a "3a" answer resolves; "" without. */
+function optionsLine(q: AlignQuestion): string {
+	return q.options ? ` — ${q.options.map((o, i) => `${optionLetter(i)}. ${oneLine(o.label)}`).join(" · ")}` : "";
 }
 
 /**
@@ -999,7 +1035,7 @@ export function alignStateNote(docs: readonly AlignDocument[], afterCompaction =
 		lines.push(`${docLine(doc)}`);
 		for (const q of doc.questions) {
 			const state = questionState(q);
-			if (state === "open") lines.push(`  ${q.id} ${q.topic}: ${oneLine(q.ask)} (rec: ${q.recommendation.choice})`);
+			if (state === "open") lines.push(`  ${q.id} ${q.topic}: ${oneLine(q.ask)}${optionsLine(q)} (rec: ${recommendedText(q)})`);
 			else if (afterCompaction && state === "decided") lines.push(`  ${q.id} ${q.topic}: decided — ${oneLine(q.decision!.text)}`);
 			else if (afterCompaction) lines.push(`  ${q.id} ${q.topic}: dropped — ${oneLine(q.dropped!.why)}`);
 		}
@@ -1066,8 +1102,10 @@ export function toMarkdown(doc: AlignDocument): string {
 			const state = questionState(q);
 			out.push("", `**${q.id} · ${q.topic}** (${state})`, "", q.ask);
 			if (q.context) out.push("", q.context);
-			if (q.options) out.push("", ...q.options.map((o) => `- **${o.label}** — ${o.tradeoff}`));
-			out.push("", `Recommended: **${q.recommendation.choice}** — ${q.recommendation.why}`);
+			// One paragraph per option: "a." is no list marker, so adjacent lines would run together.
+			if (q.options) for (const [i, o] of q.options.entries()) out.push("", `${optionLetter(i)}. **${o.label}** — ${o.tradeoff}`);
+			const rec = recommendedOption(q);
+			out.push("", `Recommended: ${rec === undefined ? `**${q.recommendation.choice}**` : `${optionLetter(rec)} — **${q.options![rec]!.label}**`} — ${q.recommendation.why}`);
 			if (q.decision) out.push("", `Decided: ${q.decision.text} (${q.decision.by === "user" ? "user" : "accepted recommendation"})`);
 			if (q.dropped) out.push("", `Dropped: ${q.dropped.why}`);
 		}

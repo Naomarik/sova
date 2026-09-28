@@ -567,7 +567,7 @@ const card = alignTool.renderResult(going, { expanded: false, isPartial: false }
 assert.match(card, /al_1 Widget refresh/);
 assert.match(card, /implementing · all 2 decided · v3 · q2 accepted · → implementing/);
 const full = alignTool.renderResult(going, { expanded: true, isPartial: false }, ctx.ui.theme).render(100).join("\n");
-assert.match(full, /Recommended: \*\*alt\+a\*\*/, "expanded: the whole document");
+assert.match(full, /a\. \*\*alt\+a\*\* — free today[\s\S]*Recommended: a — \*\*alt\+a\*\*/, "expanded: the whole document");
 
 // The settle nudge: once per run, only when the run made no align call and the reply plans in prose.
 const plan = "The plan is ready.\n\n**Open questions, with my suggested answers:**\n1. **Cap:** 400\n2. **Group:** by worker\n\nShould I go ahead with those answers?";

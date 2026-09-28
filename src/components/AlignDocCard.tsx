@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js";
 import type { AlignDocInfo, AlignQuestionInfo, AlignRowInfo } from "../../shared/protocol";
-import { ALIGN_STATUS_CHIP, alignStatusOf, openLabel, QUESTION_CHIP, questionStateOf } from "../lib/align";
+import { ALIGN_STATUS_CHIP, alignStatusOf, openLabel, optionLetter, QUESTION_CHIP, questionStateOf, recommendedOption } from "../lib/align";
 import { Chip, Icon } from "./ui";
 import "../design/align-viewer.css";
 
@@ -110,17 +110,50 @@ function AlignDocBody(props: { doc: AlignDocInfo }) {
   );
 }
 
+/** A field's text as plain words, for a truncated line's hover title. */
+const plain = (text: string) => text.replace(/\*\*([^*\n]+)\*\*/g, "$1").replace(/`([^`\n]+)`/g, "$1");
+
 function AlignQuestion(props: { q: AlignQuestionInfo }) {
   const state = () => questionStateOf(props.q);
   const chip = () => QUESTION_CHIP[state()];
-  const head = (twist: boolean) => (
+  const rec = () => recommendedOption(props.q);
+  const by = (d: NonNullable<AlignQuestionInfo["decision"]>) => (d.by === "user" ? "you" : "accepted recommendation");
+  // The outcome: under an opened fold in full, and in its folded summary as one truncated line.
+  const outcome = () => {
+    const d = props.q.decision;
+    if (d) return { label: "Decided:", text: d.text, by: by(d) };
+    const x = props.q.dropped;
+    return x ? { label: "Dropped:", text: x.why, by: undefined } : undefined;
+  };
+  const outcomeLine = () => (
+    <Show when={outcome()}>
+      {(o) => (
+        <>
+          <span class="align-q-label">{o().label}</span> <Inline text={o().text} />
+          <Show when={o().by}>
+            <span class="align-q-by"> · {o().by}</span>
+          </Show>
+        </>
+      )}
+    </Show>
+  );
+  const head = (fold: boolean) => (
     <>
-      <Show when={twist}>
+      <Show when={fold}>
         <Icon name="chevron-right" small class="icon-twist" />
       </Show>
       <span class="text-mono align-q-id">{props.q.id}</span>
-      <strong class="align-q-topic">{props.q.topic}</strong>
+      <strong class="align-q-topic" title={fold ? props.q.topic : undefined}>
+        {props.q.topic}
+      </strong>
       <Chip tone={chip().tone}>{chip().label}</Chip>
+      <Show when={fold && outcome()}>
+        {(o) => (
+          <span class="align-q-outcome" title={`${o().label} ${plain(o().text)}${o().by ? ` · ${o().by}` : ""}`}>
+            {outcomeLine()}
+          </span>
+        )}
+      </Show>
     </>
   );
   const body = () => (
@@ -130,23 +163,31 @@ function AlignQuestion(props: { q: AlignQuestionInfo }) {
         <p class="align-q-context"><Inline text={props.q.context ?? ""} /></p>
       </Show>
       <Show when={props.q.options?.length}>
-        <ul class="align-q-options" aria-label="Options">
+        <ol class="align-q-options" aria-label="Options">
           <For each={props.q.options}>
-            {(o) => (
+            {(o, i) => (
               <li>
-                <strong><Inline text={o.label} /></strong> — <Inline text={o.tradeoff} />
+                <span class="text-mono align-q-letter">{optionLetter(i())}</span>
+                <span>
+                  <strong><Inline text={o.label} /></strong> — <Inline text={o.tradeoff} />
+                </span>
               </li>
             )}
           </For>
-        </ul>
+        </ol>
       </Show>
       <p class="align-q-rec">
-        <span class="align-q-label">Recommended:</span> <strong><Inline text={props.q.recommendation.choice} /></strong> — <Inline text={props.q.recommendation.why} />
+        <span class="align-q-label">Recommended:</span>{" "}
+        <Show when={rec() !== undefined} fallback={<strong><Inline text={props.q.recommendation.choice} /></strong>}>
+          <span class="text-mono align-q-letter">{optionLetter(rec()!)}</span> — <strong><Inline text={props.q.options![rec()!]!.label} /></strong>
+        </Show>{" "}
+        — <Inline text={props.q.recommendation.why} />
       </p>
     </>
   );
-  // An open question is what the user answers, so it stays whole; a settled one folds to its head
-  // and its outcome, and opens to the ask, options and recommendation it was settled from.
+  // An open question is what the user answers, so it stays whole; a settled one folds to one line
+  // (its head and outcome, truncated) and opens to the ask, options and recommendation it was
+  // settled from, then its outcome in full.
   return (
     <li class="align-q" data-state={state()}>
       <Show
@@ -160,23 +201,11 @@ function AlignQuestion(props: { q: AlignQuestionInfo }) {
       >
         <details class="align-q-fold">
           <summary class="align-q-head align-q-summary">{head(true)}</summary>
-          <div class="align-q-body">{body()}</div>
+          <div class="align-q-body">
+            {body()}
+            <p class="align-q-decision">{outcomeLine()}</p>
+          </div>
         </details>
-      </Show>
-      <Show when={props.q.decision}>
-        {(d) => (
-          <p class="align-q-decision">
-            <span class="align-q-label">Decided:</span> <Inline text={d().text} />
-            <span class="align-q-by"> · {d().by === "user" ? "you" : "accepted recommendation"}</span>
-          </p>
-        )}
-      </Show>
-      <Show when={props.q.dropped}>
-        {(d) => (
-          <p class="align-q-decision">
-            <span class="align-q-label">Dropped:</span> <Inline text={d().why} />
-          </p>
-        )}
       </Show>
     </li>
   );

@@ -27,6 +27,7 @@ import {
 	normalizeAlignDetails,
 	openQuestionsOf,
 	openText,
+	recommendedText,
 	toMarkdown,
 	viewport,
 	type AlignDocument,
@@ -300,7 +301,7 @@ export function renderAlignResult(result: { content?: unknown; details?: unknown
 	const tone = status === "aligning" ? "accent" : status === "dropped" ? "dim" : "success";
 	const lines = [
 		`${theme.fg(tone, theme.bold(`${doc.id} ${doc.title}`))} ${theme.fg("dim", `· ${alignStatusWord(status)} · ${openText(doc)} · v${doc.rev}${details.line ? ` · ${details.line}` : ""}`)}`,
-		...openQuestionsOf(doc).map((q) => `  ${theme.fg("accent", q.id)} ${q.topic}: ${q.ask} ${theme.fg("dim", `(rec: ${q.recommendation.choice})`)}`),
+		...openQuestionsOf(doc).map((q) => `  ${theme.fg("accent", q.id)} ${q.topic}: ${q.ask} ${theme.fg("dim", `(rec: ${recommendedText(q)})`)}`),
 	];
 	return new Text(lines.join("\n"), 0, 0);
 }

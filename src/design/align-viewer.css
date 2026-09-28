@@ -97,8 +97,22 @@
 .align-q:last-child { padding-bottom: var(--space-1); }
 .align-q > p { margin: 0; overflow-wrap: anywhere; }
 .align-q-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
-/* A decided or dropped question folds to its head (and its outcome, outside the fold). */
-.align-q-summary { cursor: pointer; list-style: none; }
+/* A decided or dropped question folds to one line — twist, id, topic, chip, outcome — that never
+   wraps: the topic and the outcome truncate (the full text is their title). Opened, the head wraps
+   whole and the outcome moves below the body, in full. */
+.align-q:is([data-state="decided"], [data-state="dropped"]) { padding: var(--space-2) 0; }
+.align-q:is([data-state="decided"], [data-state="dropped"]):last-child { padding-bottom: 0; }
+.align-q-fold { min-width: 0; }
+.align-q-summary { cursor: pointer; list-style: none; flex-wrap: nowrap; min-width: 0; }
+.align-q-summary > * { flex: none; }
+.align-q-summary > .align-q-topic,
+.align-q-summary > .align-q-outcome { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.align-q-outcome { color: var(--color-ink); }
+/* The topic names the question: the outcome gives up more of the line. */
+.align-q-summary > .align-q-outcome { flex-shrink: 2; }
+.align-q-fold[open] > .align-q-summary { flex-wrap: wrap; }
+.align-q-fold[open] > .align-q-summary > .align-q-topic { white-space: normal; overflow-wrap: anywhere; }
+.align-q-fold[open] > .align-q-summary > .align-q-outcome { display: none; }
 .align-q-summary::-webkit-details-marker { display: none; }
 .align-q-summary .icon-twist { flex: none; margin-left: calc(-1 * var(--space-1)); transition: transform var(--dur-fast) var(--ease-standard); }
 .align-q-fold[open] > .align-q-summary .icon-twist { transform: rotate(90deg); }
@@ -108,13 +122,18 @@
 .align-q-topic { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .align-q-ask { color: var(--color-ink); }
 .align-q-context { color: var(--color-ink); }
+/* Lettered a, b, c… so the user can answer "3a"; the letter sits in the bullet's place, in a
+   column of its own so wrapped lines align under the text. */
 .align-q-options {
+  list-style: none;
   margin: 0;
-  padding-left: var(--space-5);
+  padding: 0;
   display: grid;
   gap: var(--space-2);
   color: var(--color-ink);
 }
+.align-q-options > li { display: grid; grid-template-columns: var(--space-5) 1fr; align-items: baseline; }
+.align-q-letter { font-size: inherit; font-weight: var(--fw-semibold); color: var(--color-ink-2); }
 .align-q-options strong { color: var(--color-ink); }
 .align-q-rec,
 .align-q-decision { color: var(--color-ink); }

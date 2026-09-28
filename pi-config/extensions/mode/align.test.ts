@@ -24,7 +24,10 @@ import {
 	normalizeAlignDetails,
 	normalizeAlignEntry,
 	openText,
+	optionLetter,
 	planSignal,
+	recommendedOption,
+	recommendedText,
 	toMarkdown,
 	viewport,
 	widgetText,
@@ -489,9 +492,38 @@ test("changeLine: one short word per change, consecutive decisions merged", () =
 test("toMarkdown: every section and every question's parts", () => {
 	const { docs } = run([{ ops: [CREATE] }, { ops: [{ op: "decide", q: "q1", decision: "full" }] }]);
 	const md = toMarkdown(docs[0]!);
-	for (const needle of ["## al_1: Session export", "_Let the user download a session as a file._", "### Questions", "**q1 · Tool output** (decided)", "- **Collapsed** — smaller", "Decided: full (user)", "### Findings", "- f1: The exporter", "### Approach", "1. a1: Add a route.", "### Rejected", "- x1: Client-side export — too slow"]) {
+	for (const needle of ["## al_1: Session export", "_Let the user download a session as a file._", "### Questions", "**q1 · Tool output** (decided)", "a. **Collapsed** — smaller", "b. **Full** — complete", "Recommended: **yes** — because Tool output", "Decided: full (user)", "### Findings", "- f1: The exporter", "### Approach", "1. a1: Add a route.", "### Rejected", "- x1: Client-side export — too slow"]) {
 		assert.ok(md.includes(needle), needle);
 	}
+});
+
+test("options are lettered; a recommendation naming one reads by letter and label", () => {
+	const opts = [{ label: "CSV", tradeoff: "readable" }, { label: "CSV + gzip", tradeoff: "smaller" }, { label: "**Parquet**", tradeoff: "compact" }];
+	const q = (choice: string, options: typeof opts | undefined = opts) => ({ options, recommendation: { choice, why: "w" } });
+	assert.deepEqual([0, 1, 25, 26].map(optionLetter), ["a", "b", "z", "27"]);
+	assert.equal(recommendedOption(q(" csv ")), 0, "trimmed, case-insensitive");
+	assert.equal(recommendedOption(q("CSV + gzip")), 1, "the exact label beats a shorter prefix");
+	assert.equal(recommendedOption(q("CSV + gzip, since it is smaller")), 1, "the longest label the choice starts with");
+	assert.equal(recommendedOption(q("CSV — it reads anywhere")), 0);
+	assert.equal(recommendedOption(q("parquet")), 2, "bold markers on the label are ignored");
+	assert.equal(recommendedOption(q("**Parquet**")), 2, "and on the choice");
+	assert.equal(recommendedOption(q("CSVs")), undefined, "a prefix must end at a word boundary");
+	assert.equal(recommendedOption(q("Avro")), undefined);
+	assert.equal(recommendedOption({ recommendation: { choice: "CSV", why: "w" } }), undefined, "no options, no letter");
+
+	const { docs } = run([{ ops: [{ ...CREATE, questions: [{ topic: "Format", ask: "Which?", options: opts, recommendation: { choice: "csv + GZIP", why: "the warehouse reads it" } }, Q("Zip", "no")] }] }]);
+	const [format, zip] = docs[0]!.questions;
+	assert.equal(recommendedText(format!), "b — CSV + gzip", "the option's own label, not the choice's spelling");
+	assert.equal(recommendedText(zip!), "no");
+	const md = toMarkdown(docs[0]!);
+	assert.ok(md.includes("a. **CSV** — readable\n\nb. **CSV + gzip** — smaller\n\nc. "), md);
+	assert.ok(md.includes("Recommended: b — **CSV + gzip** — the warehouse reads it"), md);
+	assert.ok(md.includes("Recommended: **no** — because Zip"), md);
+	const note = alignStateNote(docs)!;
+	assert.match(note, /^ {2}q1 Format: Which\? — a\. CSV · b\. CSV \+ gzip · c\. \*\*Parquet\*\* \(rec: b — CSV \+ gzip\)$/m);
+	assert.match(note, /^ {2}q2 Zip: Zip\? \(rec: no\)$/m);
+	const echo = applyAlignCall(docs, { ops: [{ op: "get" }] }, env).text;
+	assert.match(echo, /^ {2}q1 Format — open \(rec: b — CSV \+ gzip\)$/m);
 });
 
 // The settle nudge's heuristic, calibrated offline against the two sessions the design report names

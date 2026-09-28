@@ -29,6 +29,30 @@ export const isOpenDoc = (doc: AlignDocInfo): boolean => doc.phase !== "done" &&
 export const openCount = (doc: AlignDocInfo): number => doc.questions.filter((q) => questionStateOf(q) === "open").length;
 export const liveCount = (doc: AlignDocInfo): number => doc.questions.filter((q) => !q.dropped).length;
 
+/** An option's letter, "a" for the first: the user answers "q3 option a" as "3a". Past z, its number. */
+export const optionLetter = (i: number): string => (i < 26 ? String.fromCharCode(97 + i) : String(i + 1));
+
+const bareLabel = (s: string): string => s.replaceAll("**", "").trim().toLowerCase();
+
+/**
+ * The option the recommendation names, by index, by the extension's rule (pi-config/extensions/mode/align.ts
+ * `recommendedOption`): its choice equals an option's label (trimmed, case-insensitive, bold markers
+ * ignored), else starts with one followed by a non-word character, the longest such label winning.
+ */
+export function recommendedOption(q: Pick<AlignQuestionInfo, "options" | "recommendation">): number | undefined {
+  const labels = (q.options ?? []).map((o) => bareLabel(o.label));
+  const choice = bareLabel(q.recommendation.choice);
+  if (choice === "") return undefined;
+  const exact = labels.indexOf(choice);
+  if (exact >= 0) return exact;
+  let best = -1;
+  labels.forEach((l, i) => {
+    if (l === "" || !choice.startsWith(l) || /[\p{L}\p{N}_]/u.test(choice.charAt(l.length))) return;
+    if (best < 0 || l.length > labels[best]!.length) best = i;
+  });
+  return best >= 0 ? best : undefined;
+}
+
 export interface AlignChip {
   tone?: Tone | "accent";
   label: string;

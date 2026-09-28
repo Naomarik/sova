@@ -260,6 +260,20 @@ describe("the web derives what the extension derives", () => {
       foldAlignments(entries).docs.map((d) => [d.id, d.rev, entries.find((e) => (e.message.details as AlignDetails).doc?.id === d.id && (e.message.details as AlignDetails).doc?.rev === d.rev)!.id]),
     );
   });
+
+  test("src/lib/align recommendedOption and optionLetter agree with the extension's", async () => {
+    const ext = await import("../pi-config/extensions/mode/align.ts");
+    const web = await import("../src/lib/align");
+    const options = [{ label: "CSV", tradeoff: "t" }, { label: "CSV + gzip", tradeoff: "t" }, { label: "**Parquet**", tradeoff: "t" }, { label: "Ü-mode", tradeoff: "t" }];
+    const choices = ["csv", " CSV + GZIP ", "CSV + gzip, smaller", "CSV — plain", "CSVs", "parquet", "**Parquet** it is", "ü-mode", "Avro", "", "   "];
+    for (const choice of choices) {
+      for (const opts of [options, undefined]) {
+        const q = { options: opts, recommendation: { choice, why: "w" } };
+        assert.equal(web.recommendedOption(q), ext.recommendedOption(q), JSON.stringify(q));
+      }
+    }
+    for (let i = 0; i < 30; i++) assert.equal(web.optionLetter(i), ext.optionLetter(i));
+  });
 });
 
 describe("a session written with the old op names", () => {

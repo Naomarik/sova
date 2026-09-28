@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AlignDocInfo, AlignQuestionInfo, ReportInfo, TranscriptItem } from "../../shared/protocol";
-import { alignChip, alignChipCounts, alignChipLabel, alignChipText, alignMenuNote, alignMetrics, alignOf, alignRowFromDetails, alignStatusOf, foldAlignRows, latestAlignId, newestAlignRows, openLabel, type AlignInfo } from "./align";
+import { alignChip, alignChipCounts, alignChipLabel, alignChipText, alignMenuNote, alignMetrics, alignOf, alignRowFromDetails, alignStatusOf, foldAlignRows, latestAlignId, newestAlignRows, openLabel, optionLetter, recommendedOption, type AlignInfo } from "./align";
 
 const a = (extra: Partial<AlignInfo> = {}): AlignInfo => ({
   status: "aligning",
@@ -100,4 +100,25 @@ test("a live result's details become a row only when they are a changed document
   for (const bad of [undefined, null, {}, { v: 2, doc: d, changes: [], line: "" }, { v: 1, changes: [], line: "" }, { v: 1, doc: { ...d, questions: [{ id: "q1" }] }, changes: [], line: "" }]) {
     assert.equal(alignRowFromDetails(bad), undefined, JSON.stringify(bad)?.slice(0, 60));
   }
+});
+
+test("options are lettered from a; the recommendation names one by its label", () => {
+  assert.deepEqual([0, 1, 2, 25, 26].map(optionLetter), ["a", "b", "c", "z", "27"]);
+  const options = [
+    { label: "CSV", tradeoff: "readable" },
+    { label: "CSV + gzip", tradeoff: "smaller" },
+    { label: "**Parquet**", tradeoff: "compact" },
+  ];
+  const rec = (choice: string) => recommendedOption({ options, recommendation: { choice, why: "w" } });
+  assert.equal(rec("csv"), 0, "case-insensitive");
+  assert.equal(rec("  CSV  "), 0, "trimmed");
+  assert.equal(rec("CSV + gzip"), 1, "an exact label beats a shorter one it starts with");
+  assert.equal(rec("CSV + gzip — half the bytes"), 1, "the longest label the choice starts with");
+  assert.equal(rec("CSV, since anyone can read it"), 0);
+  assert.equal(rec("Parquet"), 2, "bold markers on the label are ignored");
+  assert.equal(rec("**Parquet**"), 2, "and on the choice");
+  assert.equal(rec("CSVs"), undefined, "the label must end at a word boundary");
+  assert.equal(rec("Avro"), undefined, "no option named: the line keeps the choice");
+  assert.equal(rec(""), undefined);
+  assert.equal(recommendedOption({ recommendation: { choice: "CSV", why: "w" } }), undefined, "no options");
 });

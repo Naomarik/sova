@@ -23,7 +23,7 @@
   background: var(--color-sunken);
   border-bottom: var(--stroke-thin) solid var(--color-border);
 }
-.frame-brand { display: inline-flex; align-items: center; gap: 6px; font-weight: var(--fw-display); letter-spacing: var(--ls-wordmark); font-size: 13px; }
+.frame-brand { display: inline-flex; align-items: center; gap: 5px; font-weight: var(--fw-display); letter-spacing: var(--ls-wordmark); font-size: 13px; }
 .frame-brand .mark { color: var(--color-accent); }
 .frame-path { font-family: var(--font-mono); font-size: 11.5px; color: var(--color-ink-muted); }
 .frame-path::before { content: "/"; margin-right: var(--space-3); color: var(--color-border-strong); }
@@ -258,7 +258,8 @@
 .phone-date { text-align: center; font-size: 12.5px; color: var(--color-ink-2); margin-top: 6px; }
 .notif { margin: 18px 10px 0; padding: 10px 12px; border-radius: 18px; background: var(--color-surface); border: var(--stroke-thin) solid var(--color-border); box-shadow: var(--shadow-2); display: grid; grid-template-columns: 30px 1fr; gap: 10px; }
 .notif + .notif { margin-top: 8px; }
-.notif-icon { width: 30px; height: 30px; border-radius: 8px; background: var(--color-bg); display: grid; place-items: center; color: var(--color-accent); border: var(--stroke-thin) solid var(--color-border); }
+/* The app icon, as the lock screen shows it: the dusk tile, not the accent mark. */
+.notif-icon { display: block; }
 .notif-top { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--color-ink-muted); }
 .notif-title { font-weight: var(--fw-semibold); font-size: 12.5px; margin-top: 1px; }
 .notif-body { font-size: 12px; color: var(--color-ink-2); line-height: 1.4; }

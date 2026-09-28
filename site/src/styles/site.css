@@ -136,7 +136,7 @@ p code, li code, td code, dd code {
 
 /* ---- HERO. Centered copy, then the workspace, half on paper and half on a sunken band. ---- */
 
-.hero { padding: clamp(56px, 8vw, 104px) 0 0; position: relative; isolation: isolate; }
+.hero { padding: clamp(40px, 5.5vw, 72px) 0 0; position: relative; isolation: isolate; }
 
 /* Hero + closing backdrop: the one deliberate exception to "no gradients/glow".
    An indigo radial glow, plus (hero only) a faint grid masked out toward the edges.
@@ -176,6 +176,10 @@ p code, li code, td code, dd code {
 }
 .h-hero .grad { display: inline; background: var(--site-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .hero-copy { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-5); }
+/* The app icon, large enough for the fold to read. Its box is fixed by width and height, so
+   nothing moves when it paints. The pill sits a little closer to it than the copy's usual gap,
+   and the hero's top padding gave back about what the mark added. */
+.hero-mark { width: clamp(64px, 6vw, 88px); height: auto; aspect-ratio: 1; border-radius: 25%; box-shadow: var(--shadow-2); margin-bottom: calc(var(--space-4) - var(--space-5)); }
 .hero .h-hero { max-width: 20ch; }
 .hero .h-hero > span { display: block; }
 .hero .lead { max-width: 64ch; }

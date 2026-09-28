@@ -42,6 +42,20 @@ the whole repository checked out, not only `site/`.
 - **The design tokens:** re-copy `src/design/tokens.css` into `src/styles/tokens.css`; don't edit
   values here.
 
+## The social card
+
+`public/og-image.png` (1200×630) is rendered from `brand/og-image.svg`:
+
+```sh
+cd site/brand
+rsvg-convert -w 1200 -h 630 og-image.svg -o ../public/og-image.png
+```
+
+Its text is outlined from `public/fonts/Inter-Variable.woff2`, so the render needs no installed
+font; a comment in the SVG names the text, weights, sizes and tracking, for re-outlining a changed
+line. `og:image` is absolute only when `astro.config.mjs` sets `site`; set it to the deployed
+origin, or some crawlers ignore the image.
+
 ## Deploy: Cloudflare Pages
 
 Static output, no Functions and no adapter.

@@ -2,11 +2,12 @@
 // sova-spec-draft: isolated proposal drafts of a project's .sova/spec, and guarded promotion. Node stdlib only.
 //   new NAME [--purpose TEXT] [--write]                  literal copy of manifest + whole claims tree
 //   status NAME | diff NAME [--against base|current]      never write
-//   check NAME                                           the sibling core's `check` over the draft graph
+//   check NAME [--base REV]                              the sibling core's `check` over the draft graph, plus drift checks
 //   evidence NAME --id §x... --by WHO --verification TEXT (--commit REV | --snapshot | --doc-only)
 //            [--path P]... [--log FILE] [--write]        record implementation + verification evidence
 //   promote NAME (--id §x... | --all) [--meta KEY]... [--file PATH]... [--plan SHA] [--write]
 //   recover [--write]                                    roll back an interrupted promotion
+//   merge-manifest [--base F --ours F --theirs F] [--write]  record-level 3-way merge of manifest.json (a Git conflict)
 // All take --root DIR (required) and [--json]. Writes happen only with --write, only under
 // .sova/spec/drafts/, except `promote --write`/`recover --write`, which also write .sova/spec/manifest.json
 // and files in the claims tree. It runs only the sibling core (`sova-spec.mjs`) and, in a Git project,
@@ -54,9 +55,9 @@ const canon = (v) => (v === undefined ? null : JSON.stringify(sortKeys(v)));
 const uniqSorted = (a) => [...new Set(a)].sort();
 
 // ---------------------------------------------------------------- args
-const FLAGS = { new: ["purpose", "write"], status: [], diff: ["against"], check: [],
+const FLAGS = { new: ["purpose", "write"], status: [], diff: ["against"], check: ["base"],
   evidence: ["id", "by", "verification", "commit", "snapshot", "doc-only", "path", "log", "write"],
-  promote: ["id", "all", "meta", "file", "plan", "write"], recover: ["write"] };
+  promote: ["id", "all", "meta", "file", "plan", "write"], recover: ["write"], "merge-manifest": ["base", "ours", "theirs", "write"] };
 const BOOL = new Set(["json", "write", "snapshot", "doc-only", "all"]), MULTI = new Set(["id", "path", "meta", "file"]);
 function parseArgs(argv) {
   const o = { pos: [], id: [], path: [], meta: [], file: [], seen: new Set() };
@@ -65,7 +66,7 @@ function parseArgs(argv) {
     if (!a.startsWith("--")) { o.pos.push(a); continue; }
     const k = a.slice(2);
     if (BOOL.has(k)) { o[k] = true; o.seen.add(k); continue; }
-    if (!["root", "purpose", "against", "by", "verification", "commit", "log", "plan", ...MULTI].includes(k)) throw new Fail(2, "usage", `unknown flag ${a}`);
+    if (!["root", "purpose", "against", "by", "verification", "commit", "log", "plan", "base", "ours", "theirs", ...MULTI].includes(k)) throw new Fail(2, "usage", `unknown flag ${a}`);
     if (i + 1 >= argv.length) throw new Fail(2, "usage", `${a} needs a value`);
     if (MULTI.has(k)) o[k].push(argv[++i]); else o[k] = argv[++i];
     o.seen.add(k);
@@ -75,13 +76,19 @@ function parseArgs(argv) {
   if (!FLAGS[cmd]) throw new Fail(2, "usage", cmd ? `unknown command ${cmd}` : "missing command");
   if (o.root === undefined) throw new Fail(2, "usage", "--root PROJECT is required");
   for (const k of o.seen) if (k !== "root" && k !== "json" && !FLAGS[cmd].includes(k)) throw new Fail(2, "usage", `--${k} does not apply to ${cmd}`);
-  if (cmd === "recover") { if (name !== undefined) throw new Fail(2, "usage", "recover takes no arguments"); return o; }
+  if (cmd === "recover" || cmd === "merge-manifest") {
+    if (name !== undefined) throw new Fail(2, "usage", `${cmd} takes no arguments`);
+    const sides = ["base", "ours", "theirs"].filter((k) => o[k] !== undefined).length;
+    if (sides !== 0 && sides !== 3) throw new Fail(2, "usage", "merge-manifest takes all of --base, --ours and --theirs (a merge driver's %O %A %B), or none (the index stages)");
+    return o;
+  }
   if (name === undefined || rest.length) throw new Fail(2, "usage", `${cmd} takes exactly one draft NAME`);
   if (!NAME_RE.test(name)) throw new Fail(2, "usage", `draft name must match ${NAME_RE}`);
   o.name = name;
   for (const id of o.id) if (!ID_RE.test(id)) throw new Fail(2, "usage", `not a § identifier: ${id}`);
   const text = (k, max) => { if (typeof o[k] !== "string" || !o[k].trim() || o[k].length > max || /[\0-\x08\x0b-\x1f\x7f]/.test(o[k])) throw new Fail(2, "usage", `--${k} needs 1-${max} characters of text`); };
   if (o.purpose !== undefined) text("purpose", 4000);
+  if (o.base !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._/~^@{}-]{0,199}$/.test(o.base)) throw new Fail(2, "usage", "--base is not a plain revision name");
   if (o.against !== undefined && !["base", "current"].includes(o.against)) throw new Fail(2, "usage", "--against must be base or current");
   if (cmd === "evidence") {
     if (!o.id.length) throw new Fail(2, "usage", "evidence needs at least one --id");
@@ -101,7 +108,8 @@ function parseArgs(argv) {
 }
 const USAGE = "usage: sova-spec-draft <new NAME [--purpose T] | status NAME | diff NAME [--against base|current] | check NAME | " +
   "evidence NAME --id §x --by WHO --verification T (--commit REV|--snapshot|--doc-only) [--path P] [--log FILE] | " +
-  "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] | recover> --root DIR [--write] [--json]";
+  "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] | check NAME [--base REV] | recover | " +
+  "merge-manifest [--base F --ours F --theirs F]> --root DIR [--write] [--json]";
 
 // ---------------------------------------------------------------- paths and bytes
 function normRel(raw) {
@@ -251,7 +259,7 @@ function runCore(root, specRel) {
 async function declsOf(root, specRel) {
   const j = await runCore(root, specRel);
   const decls = new Map();
-  for (const d of j.declarations ?? []) decls.set(d.id, { file: d.file.startsWith(`${specRel}/`) ? d.file.slice(specRel.length + 1) : d.file, textSha256: d.textSha256 });
+  for (const d of j.declarations ?? []) decls.set(d.id, { file: d.file.startsWith(`${specRel}/`) ? d.file.slice(specRel.length + 1) : d.file, textSha256: d.textSha256, lines: d.lines });
   return { exit: j.exit, findings: j.findings, decls, counts: j.counts };
 }
 
@@ -321,6 +329,7 @@ function draftSchema(d, name) {
   if (!obj(d) || d.format !== FORMAT || d.name !== name) return "format/name";
   if (!obj(d.base) || typeof d.base.specExisted !== "boolean" || !obj(d.base.files)) return "base";
   for (const [p, h] of Object.entries(d.base.files)) if (!normRel(p) || !HEX.test(h)) return `base file ${p}`;
+  if (d.base.commit !== undefined && !/^[0-9a-f]{40,64}$/.test(d.base.commit)) return "base commit";
   if (!Array.isArray(d.evidence) || !Array.isArray(d.promotions)) return "evidence/promotions";
   for (const e of d.evidence) {
     if (!obj(e) || !["commit", "snapshot", "doc-only"].includes(e.mode) || typeof e.by !== "string" || typeof e.verification !== "string") return "evidence entry";
@@ -478,8 +487,10 @@ async function cmdNew(root, o) {
         await writeFile(join(root, tmpRel, "spec/manifest.json"), STARTER, { flag: "wx" });
         await mkdir(join(root, tmpRel, "spec/claims"));
       } else await mkdir(join(root, tmpRel, "spec", b.t.claimsRoot), { recursive: true });
+      // The code the draft starts from, so `check` can tell code changed since then from prose that did not follow.
+      const g = await gitInfo(root), commit = g.git ? resolveCommit(root, "HEAD") : null;
       const d = { format: FORMAT, name: o.name, createdAt: new Date().toISOString(), ...(o.purpose ? { purpose: o.purpose } : {}),
-        base: { specExisted: b.t.exists, claimsRoot: b.t.claimsRoot ?? "claims", files: Object.fromEntries([...b.t.files].map(([p, f]) => [p, f.sha256])) },
+        base: { specExisted: b.t.exists, claimsRoot: b.t.claimsRoot ?? "claims", files: Object.fromEntries([...b.t.files].map(([p, f]) => [p, f.sha256])), ...(commit ? { commit } : {}) },
         evidence: [], promotions: [] };
       await writeFile(join(root, tmpRel, "draft.json"), JSON.stringify(d, null, 2) + "\n", { flag: "wx" });
       if (await exists(join(drafts, o.name))) throw new Fail(1, "name-taken", `${rel} already exists`);
@@ -545,10 +556,95 @@ async function cmdDiff(root, o) {
   return { exit: 0, name: o.name, against, files, records, meta };
 }
 
+// Words that never make a phrase on their own ("the count", "is shown" say nothing about one claim).
+const STOP = new Set(("a an and are as at be been but by can each for from has have if in into is it its no not of on or so such " +
+  "than that the their them then there these they this those to was were when where which while who will with without you your " +
+  "one two all any only also its it's own every more most other same does do done still").split(" "));
+const words = (text) => text.split("\n").filter((l) => !/^#{1,2}\s+§/.test(l)).join("\n").toLowerCase()
+  .replace(/§[^\s)]*/g, " ").match(/[a-z0-9][a-z0-9'-]*/g) ?? [];
+// Two- and three-word phrases with no stopword and at least one word of four letters or more.
+function phrases(text) {
+  const w = words(text), out = new Set();
+  for (let n = 2; n <= 3; n++) for (let i = 0; i + n <= w.length; i++) {
+    const g = w.slice(i, i + n);
+    if (g.every((x) => !STOP.has(x) && x.length > 1 && !x.includes("'") && !/^\d+$/.test(x)) && g.some((x) => x.length >= 4)) out.add(g.join(" "));
+  }
+  return out;
+}
+const MAX_ELSEWHERE = 5, MAX_REMOVED = 30;
+const declText = (tree, d) => d && tree.files.get(d.file) ? tree.files.get(d.file).buf.toString("utf8").split(/\r?\n/).slice(d.lines[0] - 1, d.lines[1]).join("\n") + "\n" : null;
+
+// Drift a draft can carry unnoticed: (1) a phrase it removed from one § that other § still say (the same fact written
+// twice, edited once); (2) code changed since the draft's base commit under a § whose prose the draft left as it was.
+async function drift(root, a, g, baseRev) {
+  const removedElsewhere = [], cited = new Map(); // § cited on a line the draft changed → the § whose text changed
+  const texts = new Map([...a.pc.decls].map(([id, d]) => [id, declText(a.prop, d)]));
+  const grams = new Map([...texts].map(([id, t]) => [id, phrases(t ?? "")]));
+  for (const [id, d] of [...a.pc.decls].sort(([x], [y]) => (x < y ? -1 : 1))) {
+    const b = a.bc.decls.get(id);
+    if (!b || b.textSha256 === d.textSha256) continue;
+    const [was, now] = [declText(a.base, b) ?? "", texts.get(id) ?? ""].map((t) => t.split("\n"));
+    const edited = [...was.filter((l) => !now.includes(l)), ...now.filter((l) => !was.includes(l))];
+    for (const c of edited.join("\n").match(new RegExp(ID_RE.source.slice(1, -1), "g")) ?? []) if (c !== id) cited.set(c, uniqSorted([...(cited.get(c) ?? []), id]));
+    const gone = [...phrases(declText(a.base, b) ?? "")].filter((p) => !grams.get(id).has(p));
+    const kept = [];
+    for (const phrase of gone.sort((x, y) => x.split(" ").length - y.split(" ").length || (x < y ? -1 : 1))) {
+      if (kept.some((k) => phrase.includes(k.phrase))) continue; // a longer phrase around one already reported
+      const alsoIn = [...grams].filter(([o, gs]) => o !== id && gs.has(phrase)).map(([o]) => o).sort();
+      if (alsoIn.length && alsoIn.length <= MAX_ELSEWHERE) kept.push({ id, phrase, alsoIn });
+    }
+    removedElsewhere.push(...kept);
+  }
+  let base = null, proseUnchanged = [];
+  const rev = baseRev ?? a.d.base.commit;
+  if (g.git && rev) {
+    base = resolveCommit(root, rev);
+    if (!base) throw new Fail(1, "bad-rev", `--base ${rev} does not name a commit`);
+    const diff = git(root, ["diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--relative", base, "--", "."]);
+    const others = git(root, ["ls-files", "-z", "--others", "--exclude-standard", "--", "."]);
+    if (diff.status !== 0 || others.status !== 0) throw new Fail(2, "git-failed", `git diff/ls-files: ${(diff.err || others.err || "").trim()}`);
+    const changed = new Set([...diff.out.split("\0"), ...others.out.split("\0")].filter((p) => p && !(p === SPEC || p.startsWith(`${SPEC}/`))));
+    for (const [id, d] of [...a.pc.decls].sort(([x], [y]) => (x < y ? -1 : 1))) {
+      const b = a.bc.decls.get(id);
+      if (!b || b.textSha256 !== d.textSha256) continue;
+      const files = uniqSorted((recOf(a.prop, id)?.code ?? []).filter((p) => typeof p === "string" && changed.has(normRel(p))));
+      if (files.length) proseUnchanged.push({ id, files, ...(cited.has(id) ? { citedBy: cited.get(id) } : {}) });
+    }
+    proseUnchanged.sort((x, y) => (y.citedBy ? 1 : 0) - (x.citedBy ? 1 : 0));
+  }
+  return { base, removedElsewhere: removedElsewhere.slice(0, MAX_REMOVED), proseUnchanged };
+}
+
 async function cmdCheck(root, o) {
-  const { rel } = await loadDraft(root, o.name);
+  const { rel, d } = await loadDraft(root, o.name), g = await gitInfo(root);
   const j = await runCore(root, `${rel}/spec`);
-  return { exit: j.exit, name: o.name, spec: `${rel}/spec`, counts: j.counts, coreFindings: j.findings, frontier: j.frontier ?? [] };
+  const findings = [];
+  let a = null;
+  try { if (j.exit !== 2) a = await analyze(root, o.name); } catch (e) {
+    if (!(e instanceof Fail) || e.exit === 2) throw e;
+    findings.push({ severity: "note", code: "drift-skipped", message: `drift checks skipped: ${e.message}` });
+  }
+  const dr = a && a.bc.exit !== 2 ? await drift(root, a, g, o.base) : null;
+  for (const r of dr?.removedElsewhere ?? [])
+    findings.push({ severity: "warn", code: "removed-phrase-elsewhere", id: r.id, message: `the draft removed "${r.phrase}" from ${r.id}, but ${r.alsoIn.join(", ")} still say it: read them; if the fact changed, change it there too (each is a foreign §)` });
+  for (const r of dr?.proseUnchanged ?? [])
+    findings.push(r.citedBy
+      ? { severity: "warn", code: "cited-prose-unchanged", id: r.id, message: `the draft edited a line of ${r.citedBy.join(", ")} that cites ${r.id}, and ${r.files.join(", ")} changed since ${dr.base.slice(0, 12)}, but ${r.id}'s prose is as it was: read it; if what it says changed, edit it in this draft (it is a foreign §)` }
+      : { severity: "note", code: "code-changed-prose-unchanged", id: r.id, message: `${r.files.join(", ")} changed since ${dr.base.slice(0, 12)} and the draft leaves ${r.id}'s prose as it was: read it; if what it says changed, edit it in this draft` });
+  if (dr && !dr.base && g.git) findings.push({ severity: "note", code: "drift-base-unknown", message: "the draft records no base commit (made before drafts recorded one): pass --base REV to check code changed since then" });
+  // Evidence that names a commit this line no longer has (a rebase after evidence): the record's claim is orphaned.
+  const evidenceNotAncestor = [];
+  if (g.git) for (const e of d.evidence) if (e.mode === "commit") {
+    const why = resolveCommit(root, e.commit) !== e.commit ? "missing" : !isAncestor(root, e.commit) ? "not-ancestor" : null;
+    if (!why) continue;
+    const x = evidenceNotAncestor.find((y) => y.commit === e.commit) ?? (evidenceNotAncestor.push({ commit: e.commit, reason: why, ids: [] }), evidenceNotAncestor.at(-1));
+    x.ids = uniqSorted([...x.ids, ...e.ids.map((i) => i.id)]);
+  }
+  for (const x of evidenceNotAncestor)
+    findings.push({ severity: "warn", code: "evidence-not-ancestor", message: `evidence commit ${x.commit.slice(0, 12)} (${x.ids.join(", ")}) is ${x.reason === "missing" ? "gone" : "not an ancestor of HEAD"}: a rebase after evidence orphans it; merge instead, and re-record evidence against the commit HEAD has` });
+  const exit = Math.max(j.exit, findings.some((f) => f.severity === "warn") ? 1 : 0);
+  return { exit, name: o.name, spec: `${rel}/spec`, counts: j.counts, coreFindings: j.findings, frontier: j.frontier ?? [],
+    drift: dr, evidenceNotAncestor, findings };
 }
 
 async function cmdEvidence(root, o) {
@@ -688,10 +784,28 @@ async function plan(root, o) {
     } finally { await rm(tmp, { recursive: true, force: true }); }
   }
   const planSha = sha(JSON.stringify({ draft: o.name, targets }));
+  const also = alsoChanges(a, [...ids].filter((x) => a.changed.has(x)));
   return { a, cand, targets, planSha, refusals, out: {
-    name: o.name, ids: [...ids].sort(), meta: meta.map((m) => m.key), files: files.map((f) => ({ path: f.path, merge: f.merge, ids: f.ids })),
+    name: o.name, ids: [...ids].sort(), alsoChanges: also.map((x) => x.id), alsoChangesDetail: also, meta: meta.map((m) => m.key), files: files.map((f) => ({ path: f.path, merge: f.merge, ids: f.ids })),
     records: records.map((r) => ({ id: r.id, merge: r.merge })), evidence, candidate, bootstrap,
     targets: targets.map((t) => ({ ...t, action: t.before === null ? "create" : t.after === null ? "delete" : "replace" })), plan: planSha, refusals } };
+}
+
+// The foreign § a promotion of `ids` changes: each one current already has, and each current H1 that gains a new H2.
+// This, not memory, is what the reply's "Also changes:" line names.
+function alsoChanges(a, ids) {
+  const inCur = (id) => recOf(a.cur, id) !== undefined, dirKinds = a.prop.manifest?.grammar?.directoryKinds ?? ["section"];
+  const kinds = new Map(), mark = (id, k) => kinds.set(id, [...(kinds.get(id) ?? []), k]);
+  const children = new Map();
+  for (const id of uniqSorted(ids)) {
+    const c = a.changed.get(id);
+    if (inCur(id)) { if (c.deleted) mark(id, "deleted"); else { if (c.text) mark(id, "text"); if (c.record) mark(id, "record"); } continue; }
+    const [ns] = id.slice(1).split("/"), parts = ns.split(".");
+    const parent = parts.length > 1 && !dirKinds.includes(parts[0]) ? `§${parts[0]}/${parts[1]}` : null;
+    if (parent && inCur(parent) && !c.deleted) children.set(parent, [...(children.get(parent) ?? []), id]);
+  }
+  for (const p of children.keys()) mark(p, "child-added");
+  return [...kinds.keys()].sort().map((id) => ({ id, change: kinds.get(id).join("+") || "file", ...(children.has(id) ? { children: children.get(id) } : {}) }));
 }
 
 async function cmdPromote(root, o) {
@@ -805,6 +919,77 @@ async function cmdRecover(root, o) {
   }, { takeOverDead: true });
 }
 
+// ---------------------------------------------------------------- merge-manifest
+// Record-level three-way merge of manifest.json: each claim record and each top-level key merges on its own; the
+// same key changed differently on both sides is a conflict, and a conflict writes nothing. Claim prose files are not
+// touched: a claims file conflict is Git's (and yours) to resolve.
+function mergeValue(b, o, t) {
+  const [cb, co, ct] = [canon(b), canon(o), canon(t)];
+  if (co === ct) return { v: o };
+  if (co === cb) return { v: t, from: "theirs" };
+  if (ct === cb) return { v: o };
+  return { conflict: true };
+}
+function mergeObjects(b, o, t, kind, conflicts, taken) {
+  const out = {};
+  for (const k of uniqOrdered([...Object.keys(o), ...Object.keys(t)])) {
+    const r = mergeValue(b[k], o[k], t[k]);
+    if (r.conflict) { conflicts.push({ key: k, kind }); continue; }
+    if (r.from === "theirs") taken.push({ key: k, kind, action: t[k] === undefined ? "delete" : o[k] === undefined ? "add" : "replace" });
+    if (r.v !== undefined) out[k] = r.v;
+  }
+  return out;
+}
+const uniqOrdered = (a) => [...new Set(a)];
+function mergeManifests(bText, oText, tText) {
+  const parse = (text, side) => {
+    if (text === null || !text.trim()) return {};
+    let m;
+    try { m = JSON.parse(text); } catch (e) { throw new Fail(2, "manifest-unreadable", `${side} manifest.json: ${e.message}`); }
+    if (!obj(m) || (m.claims !== undefined && !obj(m.claims))) throw new Fail(2, "manifest-unreadable", `${side} manifest.json is not an object with an object claims`);
+    return m;
+  };
+  const [b, o, t] = [parse(bText, "base"), parse(oText, "ours"), parse(tText, "theirs")];
+  const conflicts = [], taken = [];
+  const meta = (m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== "claims"));
+  const top = mergeObjects(meta(b), meta(o), meta(t), "meta", conflicts, taken);
+  const claims = mergeObjects(b.claims ?? {}, o.claims ?? {}, t.claims ?? {}, "claim", conflicts, taken);
+  // Ours' key order, with claims where ours had them (or last).
+  const merged = {};
+  for (const k of uniqOrdered([...Object.keys(o), ...Object.keys(top), "claims"])) if (k === "claims") merged.claims = claims; else if (k in top) merged[k] = top[k];
+  return { conflicts, taken, text: JSON.stringify(merged, null, 2) + "\n" };
+}
+async function cmdMergeManifest(root, o) {
+  const driver = o.ours !== undefined;
+  let texts, target;
+  if (driver) {
+    const read = async (p, side) => {
+      const r = await readOpen(resolve(p));
+      if (r.state === "absent" && side === "base") return null;
+      if (r.state !== "present") throw new Fail(2, "file-refused", `--${side} ${p}: ${r.why ?? r.state}`);
+      return r.buf.toString("utf8");
+    };
+    texts = [await read(o.base, "base"), await read(o.ours, "ours"), await read(o.theirs, "theirs")];
+    target = resolve(o.ours);
+  } else {
+    const g = await gitInfo(root);
+    if (!g.git) throw new Fail(2, "not-git", "merge-manifest without --base/--ours/--theirs reads Git's index stages; this is not a Git project");
+    const path = `${g.prefix ? `${g.prefix}/` : ""}${SPEC}/manifest.json`;
+    const stages = git(root, ["ls-files", "-u", "-z", "--full-name", "--", `${SPEC}/manifest.json`]);
+    const have = new Set(stages.out?.split("\0").filter(Boolean).map((l) => l.split(/\s+/)[2]) ?? []);
+    if (!have.has("2") || !have.has("3")) throw new Fail(1, "not-conflicted", `${SPEC}/manifest.json is not in a merge conflict (no index stages 2 and 3); nothing to merge`);
+    const stage = (n) => { if (!have.has(n)) return null; const r = git(root, ["cat-file", "blob", `:${n}:${path}`]); if (r.status !== 0) throw new Fail(2, "git-failed", `git cat-file :${n}:${path}: ${r.err.trim()}`); return r.out; };
+    texts = [stage("1"), stage("2"), stage("3")];
+  }
+  const m = mergeManifests(...texts);
+  const out = { mode: driver ? "driver" : "index", conflicts: m.conflicts, fromTheirs: m.taken, written: false };
+  if (m.conflicts.length) throw new Fail(1, "manifest-conflict", `${m.conflicts.length} key(s) changed differently on both sides (${m.conflicts.map((c) => `${c.kind} ${c.key}`).join(", ")}); nothing was written — re-apply one side's change in a new draft from the other and promote it`, out);
+  if (!o.write) return { exit: 0, ...out };
+  if (driver) await writeAtomic(dirname(target), posix.basename(target.split("\\").join("/")), m.text);
+  else await withLock(root, async () => { await refusePending(root); await writeAtomic(await ownDir(root, SPEC, false), "manifest.json", m.text); });
+  return { exit: 0, ...out, written: true, ...(driver ? {} : { next: `run sova-spec.mjs check, resolve any claims/ conflicts, then git add ${SPEC}/manifest.json` }) };
+}
+
 // ---------------------------------------------------------------- output
 function human(out) {
   const L = [];
@@ -830,8 +1015,10 @@ function human(out) {
     for (const e of out.evidence) L.push(`  evidence ${e.id} ${e.state}${e.state !== "valid" ? `: ${e.reasons.join("; ")}` : ""}`);
     for (const t of out.targets) L.push(`  ${t.action.padEnd(7)} ${SPEC}/${t.path}`);
     for (const r of out.refusals ?? []) L.push(`  refused ${r.code}: ${r.message}`);
+    if (out.alsoChanges) L.push(`Also changes must name: ${out.alsoChanges.join(", ") || "none"} (foreign § this promotion changes)`);
     if (!out.written && !(out.refusals ?? []).length) L.push(`plan ${out.plan} — write with: promote ${out.name} … --plan ${out.plan} --write`);
   }
+  if (out.command === "merge-manifest" && out.mode) L.push(`merge-manifest (${out.mode}): ${out.conflicts.length ? `${out.conflicts.length} conflict(s): ${out.conflicts.map((c) => `${c.kind} ${c.key}`).join(", ")}` : `${out.fromTheirs.length} key(s) from theirs`} ${out.written ? "(written)" : "(nothing written)"}`);
   if (out.command === "recover") L.push(out.pending === false ? "no pending promotion" : `pending promotion of draft ${out.draft}: ${(out.targets ?? []).map((t) => `${t.path} ${t.state}`).join(", ")}${out.action ? ` → ${out.action}` : ""}`);
   for (const f of out.findings) L.push(`${f.severity} ${f.code}: ${f.message}`);
   L.push(`note: ${NOTICE}`, `exit ${out.exit}`);
@@ -849,7 +1036,7 @@ async function main(argv) {
     out.root = root;
     if (await ownDir(root, SPEC, false).catch(() => { throw new Fail(2, "symlink-refused", `${SPEC} or .sova is not a plain directory`); }) === null && o.cmd !== "new")
       throw new Fail(2, "draft-missing", `no ${SPEC} under ${root}`);
-    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, promote: cmdPromote, recover: cmdRecover };
+    const cmds = { new: cmdNew, status: cmdStatus, diff: cmdDiff, check: cmdCheck, evidence: cmdEvidence, promote: cmdPromote, recover: cmdRecover, "merge-manifest": cmdMergeManifest };
     out = { ...out, ...(await cmds[o.cmd](root, o)) };
   } catch (e) {
     if (!(e instanceof Fail)) e = new Fail(2, "internal", e.stack ?? String(e));

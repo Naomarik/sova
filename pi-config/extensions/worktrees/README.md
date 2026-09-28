@@ -27,6 +27,19 @@ shown as a fast-forward), and its numbers are the branch's own (`git diff --nums
 show their own. A merge made outside this session's turns gets no card; Sova's pane still shows it
 merged.
 
+Spec report (`spec.ts`): when the project has `.sova/spec/manifest.json` before or after the merge
+and the spec tools sit beside this extension (`../spec/core`), every recorded merge's model note
+(the card's content and the tool result; never the card's details, so the card looks the same)
+gains `Foreign § this merge changes: §a, §b` (or `none`), computed by
+`sova-spec.mjs foreign --base <target before> --head <target after>`, then one `Spec warning: …`
+line each for: a draft in the worktree with unpromoted records (`sova-spec-draft.mjs status`:
+`pending` or `conflict`), an evidence commit a draft names that the branch doesn't contain (a rebase
+after evidence), and code commits after the branch's last spec commit (one touching `.sova/spec/`
+or named by evidence; merges skipped; none when the branch has no spec commit). Every recorded merge
+is also emitted on the bus as `worktrees:merged` (`{version: 1, path, branch, target, sha, how, spec,
+foreign, warnings}`; `spec` false and the lists empty without a spec); the spec mode checks the
+turn's last line against `foreign`. The report is best-effort: a failure never fails the merge.
+
 Workers never have this extension: the subagents extension refuses any copy of `worktrees` (and
 `subagents`) as a worker extension. It enforces where workers may start itself
 (`workerCwdRefusal` in `state.ts`, see `subagents/README.md` "Worktrees").
@@ -37,6 +50,6 @@ subagents extension import it.
 ## Tests
 
 ```sh
-node --test state.test.ts git.test.ts   # the fold, the cwd rule; git against throwaway repos
+node --test state.test.ts git.test.ts spec.test.ts   # the fold, the cwd rule; git and the spec report against throwaway repos
 node tests/run.mjs                      # the extension against a fake pi: tool, approval, merge detection
 ```

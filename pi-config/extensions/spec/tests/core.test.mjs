@@ -913,7 +913,7 @@ test("census --changed: without --related, no touched list or per-§ notes; the 
   write(root, "lib/claimed.js", "2\n");
   const j = run(root, "census", "--changed");
   assert.equal(j.census.touched, undefined);
-  assert.deepEqual(Object.keys(j.census), ["mode", "base", "changed", "foreignNote", "foreign", "childUnderForeign", "boundary", "files", "claimed", "unclaimed", "outside", "symlinks"]);
+  assert.deepEqual(Object.keys(j.census), ["mode", "base", "changed", "foreignNote", "foreign", "childUnderForeign", "boundary", "files", "claimed", "unclaimed", "outside", "mappedOutside", "symlinks"]);
   assert.deepEqual(codes(j), ["foreign-summary"]);
 });
 

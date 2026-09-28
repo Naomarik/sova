@@ -183,9 +183,10 @@ export interface MergeRequest {
  * Merge the worktree's branch into `target`. Where `target` is checked out, that checkout must have
  * no tracked changes and the merge runs there (fast-forward when possible, else a merge commit; a
  * conflict is aborted, leaving everything as it was). Where it is not checked out, only a
- * fast-forward is done (update-ref, guarded by the old value).
+ * fast-forward is done (update-ref, guarded by the old value). `before` and `branchSha` are the target's old tip and
+ * the branch tip merged.
  */
-export async function mergeWorktree(git: Git, req: MergeRequest): Promise<Omit<WorktreeMergeDetails, "version" | "how">> {
+export async function mergeWorktree(git: Git, req: MergeRequest): Promise<Omit<WorktreeMergeDetails, "version" | "how"> & { before: string; branchSha: string }> {
 	const cwd = req.tree.path;
 	await checkBranch(git, req.target, cwd);
 	if (req.target === req.tree.branch) throw new GitError(`Cannot merge ${req.target} into itself`);
@@ -211,7 +212,7 @@ export async function mergeWorktree(git: Git, req: MergeRequest): Promise<Omit<W
 	const after = await refSha(git, req.target, cwd);
 	if (!after) throw new GitError(`Target branch ${req.target} vanished during the merge`);
 	const stats = await mergeStats(git, cwd, before, after, branchSha);
-	return { path: req.tree.path, branch: req.tree.branch, target: req.target, sha: after, ...stats };
+	return { path: req.tree.path, branch: req.tree.branch, target: req.target, sha: after, ...stats, before, branchSha };
 }
 
 /** One worktree's merge state: `merged` when its branch has commits beyond its base and all of them are in `target`. */

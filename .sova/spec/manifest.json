@@ -5624,6 +5624,18 @@
         "src/lib/project-overseer-view.ts",
         "src/components/SessionView.tsx"
       ]
+    },
+    "§chat.transcript/compressed-transfer": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/ws.ts",
+        "server/index.ts",
+        "server/compression.ts",
+        "server/compression.test.ts"
+      ]
     }
   },
   "boundary": {

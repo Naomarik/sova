@@ -3,6 +3,7 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { ChatClientMessage, ChatServerMessage, SessionFeedMessage, WatchServerMessage } from "../shared/protocol";
+import { isDirectLocal } from "./compression";
 import { acquireChat, BusyError, ConfigError, type ChatClient } from "./chat-manager";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
@@ -126,7 +127,21 @@ function handleFeed(ws: WebSocket): void {
   ws.on("message", () => {}); // read-only: ignore anything the client sends
 }
 
-const wss = new WebSocketServer({ noServer: true });
+// permessage-deflate, for a browser that offers it: a session's hello is one JSON frame of the
+// whole transcript (MBs for a large one), sent to phones over the tailnet. Frames under 1 KB (the
+// streaming deltas) go uncompressed. No context takeover either way, so a connection holds no
+// window between messages; ws creates its zlib streams lazily, so a socket that only ever sends
+// small frames holds none at all. Level 1: the ratio on a hello is within a few percent of level 6
+// at a fraction of the CPU (numbers in the commit message).
+const wss = new WebSocketServer({
+  noServer: true,
+  perMessageDeflate: {
+    threshold: 1024,
+    serverNoContextTakeover: true,
+    clientNoContextTakeover: true,
+    zlibDeflateOptions: { level: 1 },
+  },
+});
 
 /** Sova's own sockets, /ws/chat and /ws/watch; anything else is dropped. Also the peer
     listener's upgrade handler (server/mesh/listener.ts). */
@@ -137,6 +152,8 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
     socket.destroy();
     return;
   }
+  // A browser on this machine, not through a proxy: decline permessage-deflate (server/compression.ts).
+  if (isDirectLocal(req)) delete req.headers["sec-websocket-extensions"];
   wss.handleUpgrade(req, socket, head, (ws) => {
     // /ws/watch?feed=sessions: no session at all, the list's pushed overlays.
     if (route === "/ws/watch" && url.searchParams.get("feed") === "sessions") {

@@ -358,6 +358,15 @@ export function recordDecisionTool(sessionId: string, append: AppendEntry, roste
       },
       ["area", "ownerArea", "statement", "quote"],
     ) as any,
+    // Before pi's schema check: a case or spacing variant becomes the roster's spelling, and an
+    // unknown value is refused with every choice named (the enum's own error names none).
+    prepareArguments(args: unknown) {
+      const hit = batonById(sessionId);
+      if (!hit || typeof args !== "object" || args === null) return args as any;
+      const owner = pickOwnerArea(readRoster(hit.row.orgId), (args as { ownerArea?: unknown }).ownerArea);
+      if (!owner.ok) throw new Error(owner.error);
+      return { ...(args as object), ownerArea: owner.ownerArea } as any;
+    },
     async execute(_id, params: any, _signal, _update, ctx) {
       const hit = batonById(sessionId);
       if (!hit) throw new Error("This conversation is no longer registered.");

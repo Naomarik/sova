@@ -58,7 +58,7 @@ const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0
 /** A baton chat whose model replies "ok" once `release()` is called, or stops when aborted.
     `start()`: with `holdStart`, a prompt waits in the SDK's input handlers (a turn that is starting,
     its run not yet begun) until it is called. */
-async function heldChat(path: string, opts: { holdStart?: boolean; seen?: unknown[][]; tools?: unknown[][] } = {}) {
+async function heldChat(path: string, opts: { holdStart?: boolean; seen?: unknown[][]; tools?: unknown[][]; script?: unknown[][] } = {}) {
   const chat = await acquireChat(path);
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
@@ -75,6 +75,7 @@ async function heldChat(path: string, opts: { holdStart?: boolean; seen?: unknow
   }
   const seen = opts.seen;
   const tools = opts.tools;
+  const script = opts.script;
   s._modelRuntime.hasConfiguredAuth = () => true;
   s.agent.state.model = STUB;
   s.agent.getApiKey = async () => "stub";
@@ -86,10 +87,12 @@ async function heldChat(path: string, opts: { holdStart?: boolean; seen?: unknow
     // Aborted already when the model is called: a stop that came at the run's first event.
     const aborted = new Promise<"aborted">((r) => (opts?.signal?.aborted ? r("aborted") : opts?.signal?.addEventListener("abort", () => r("aborted"), { once: true })));
     const how = await Promise.race([gate.then(() => "done" as const), aborted]);
+    // A scripted reply (tool calls) when one is queued, else "ok".
+    const scripted = how === "aborted" ? undefined : script?.shift();
     const message = {
       role: "assistant", api: "stub", provider: "stub", model: "stub", timestamp: Date.now(), usage,
-      content: [{ type: "text", text: "ok" }],
-      stopReason: how === "aborted" ? "aborted" : "stop",
+      content: scripted ?? [{ type: "text", text: "ok" }],
+      stopReason: how === "aborted" ? "aborted" : scripted ? "toolUse" : "stop",
     };
     const end = how === "aborted" ? { type: "error", reason: "aborted", error: message } : { type: "done", reason: "stop", message };
     return { async *[Symbol.asyncIterator]() { yield end; }, result: async () => message };
@@ -235,6 +238,22 @@ describe("record_decision's owner areas follow the roster (§app.requirements/ow
     await until(() => calls.length === 2 && !chat.session.isStreaming);
     assert.ok(enumOf(calls[1]!).includes("hosting"), JSON.stringify(enumOf(calls[1]!)));
     assert.deepEqual((calls[1] as { name: string }[]).map((t) => t.name).sort(), [...loadout.BATON_TOOLS].sort(), "the wrap-up's tool stays inactive");
+  });
+
+  test("through pi's own tool call: an unknown owner area is refused naming the choices; a case variant is stored as the roster spells it", async () => {
+    const kim = orgs.addPerson(org.id, { name: "Kim Picks", role: "Lead", decides: ["finance"] });
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Picks", goal: "g" });
+    const call = (id: string, ownerArea: string) => ({ type: "toolCall", id, name: "record_decision", arguments: { area: "payroll dates", ownerArea, statement: "Pay on the 1st.", quote: "the 1st" } });
+    const { chat, release } = await heldChat(c.path, { script: [[call("t1", "payroll"), call("t2", "Finance")]] });
+    release();
+    says(chat, c.sessionId, kim.id, "we pay on the 1st");
+    await until(() => !chat.session.isStreaming && entriesOf(c.path).some((e) => e.message?.role === "toolResult" && e.message.toolCallId === "t2"));
+    const results = entriesOf(c.path).filter((e) => e.message?.role === "toolResult");
+    const text = (id: string) => JSON.stringify(results.find((e) => e.message.toolCallId === id)!.message.content);
+    assert.match(text("t1"), /\\"payroll\\" is not an owner area\. Use one of: .*\\"finance\\".* or \\"none\\"\./, text("t1"));
+    assert.doesNotMatch(text("t1"), /must be equal to one of the allowed values/);
+    const decided = entriesOf(c.path).filter((e) => e.customType === "sova-baton-decision");
+    assert.deepEqual(decided.map((e) => e.data.ownerArea), ["finance"], "one decision, stored as the roster spells it");
   });
 });
 

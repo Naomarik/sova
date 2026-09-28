@@ -98,6 +98,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Wake nudge card, closed | `Wake nudge {id}` · {reason, or blank} · `fired {HH:MM}` (· `{late} late`, only when overdue) |
 | Wake nudge card, open | the fired message, verbatim, all four lines |
 | Wake nudge in Inputs Only / the Timeline | {reason}, or `Wake nudge {id}` when it carries none |
+| Alignment card, answerable (§chat.alignment/card) | button `Go With Recommendations` · hint "Or tick some and answer the rest below." · its reasons: the composer's blocked reason · "Wait for the turn to end." · "Send or clear your draft first." · checkbox name "Take the recommendation for {qN}." · sends `{al_N}: go with your recommendations for every open question, and go ahead.` · ticks send `{al_N}: take your recommendation on {q1}, {q2} and {q3}.` (one line per alignment) |
 | Alignment card (§chat.alignment/card) | eyebrow `{al_N} · Alignment · v{rev}` · status chips (none while aligning) Confirmed · Implementing · Done · Dropped · meta `{k} of {n} open` (none: `No questions yet`; none left open: `All {n} decided`) · `· {change line}` · question chips Open · Decided · Dropped · option letters `a` `b` `c`… · `Recommended: {letter} — {label} — {why}` (names an option) / `Recommended: {choice} — {why}` · `Decided: {text} · you` / `· accepted recommendation` · `Dropped: {why}` · sections `Findings · {n}` · `Approach · {n}` · `Rejected · {n}` |
 | Alignment revision row | `{al_N} v{rev} {title} · {change line}` · change words (the extension's `changeLine`, joined by " · "): created · created from file · +q11 +f4 · q3, title edited · −f2 −a1 · q1, q3 decided · q1, q2 accepted · q3 reopened · q3 dropped · → implementing · → done · → open · dropped |
 | Alignment exempt row | No alignment needed: {why} |
@@ -150,6 +151,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Buttons | `Send` · streaming: `Steer` + `Stop` · after Stop is pressed: "Stopping…" in run status |
 | Run status | `Working` + detail: `· thinking` / `· writing` / `· running {tool}` · stopping: `Stopping…` · while ≥ 1 worker runs, the subagents trigger beside it with the counts only: `2 subagents` · `1 subagent · 2 team members` |
 | Alignment chip (§chat.alignment/chip) | `{n} aligns · {open}/{total}` (1: `1 align · …`) · `aria-label` "{n} open alignments, {open} of {total} questions open — show alignments" · menu rows: {title}, then "{summary} · {k} of {m} open" (nothing open: "{summary} · {status}") · off-screen toast: "That alignment isn't in the transcript on screen." |
+| Staged recommendations (§chat.alignment/card) | `Taking your recommendation: {al_N} {q1}, {q3}` (alignments joined by "; ") · group label "Staged recommendations" · `Clear Picks` |
 | Reason: TUI-live | Read only while this session is open in the TUI. |
 | Reason: busy (server `code:"busy"`) | pi is busy with another turn. Send when it finishes. |
 | Reason: connecting / reconnecting / gave up | see Connection above |

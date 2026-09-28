@@ -5,35 +5,20 @@ import { canvasMeasure } from "../../core/text";
 import { emClass, SvgEmBadge } from "../../emphasis";
 import { Lines, SvgScroll, useMarkerId } from "../../svg";
 import type { ViewProps } from "../../types";
-import { FLOW_FONT, FLOW_LEVELS, layoutFlow, type FlowLayout, type PlacedFlowNode } from "./layout";
+import { FLOW_FONT, fitFlow, layoutFlow, type PlacedFlowNode } from "./layout";
 import type { FlowSpec } from "./parse";
 import { useWidth } from "./width";
 import "./flow.css";
 
 /**
  * `vis flow` / `vis state`: boxes and arrows, laid out by ./layout. A drawing that would have to
- * scroll in its pane (a phone) is laid out again to fit: a `dir: right` one downwards first, then
- * compact, then tighter still (gaps and wraps); if nothing fits, the narrowest one scrolls.
+ * scroll in its pane (a phone) is laid out again to fit (fitFlow); ./layout's estimateHeight is
+ * the height this draws at, for the shell's reserved box.
  */
 export default function FlowView(props: ViewProps<FlowSpec>) {
   const [width, measure] = useWidth();
   const natural = createMemo(() => layoutFlow(props.spec, canvasMeasure));
-  // SvgScroll shrinks a drawing to 80% before it scrolls.
-  const fits = (l: FlowLayout) => l.width * 0.8 <= width();
-  const tooWide = createMemo(() => width() > 0 && !fits(natural()));
-  const layout = createMemo(() => {
-    if (!tooWide()) return natural();
-    const down = { ...props.spec, dir: "down" as const };
-    const spec = props.spec.dir === "right" ? down : props.spec;
-    const tries = Array.from({ length: FLOW_LEVELS }, (_, level) => () => layoutFlow(spec, canvasMeasure, level)).slice(props.spec.dir === "right" ? 0 : 1);
-    let best = natural();
-    for (const t of tries) {
-      const l = t();
-      if (fits(l)) return l;
-      if (l.width < best.width) best = l;
-    }
-    return best;
-  });
+  const layout = createMemo(() => fitFlow(props.spec, canvasMeasure, width(), natural()));
   const em = createMemo(() => emphasisMap(props.spec));
   const arrow = useMarkerId();
   return (

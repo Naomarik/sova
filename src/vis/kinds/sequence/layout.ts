@@ -5,7 +5,8 @@
  * until the drawing fits, so a phone gets taller rows rather than a sideways scroll. Pure.
  */
 
-import { estimateWidth, widest, wrap, type Measure } from "../../core/text";
+import { canvasMeasure, estimateWidth, widest, wrap, type Measure } from "../../core/text";
+import { scrolledHeight } from "../flow/layout";
 import type { SequenceSpec } from "./parse";
 
 export const SEQ_FONT = { actor: 12.5, msg: 12, note: 12 } as const;
@@ -90,6 +91,20 @@ export function stepsOf(spec: SequenceSpec): { stepOf: number[]; steps: number }
     }
   });
   return { stepOf, steps: msgs };
+}
+
+/** The step-through row above the drawing, as it first shows: one `.button-sm` (36) and its 8px margin. */
+export const STEPPER_H = 44;
+
+/** The fit width SequenceView lays out at in a pane `width` px wide, counting SvgScroll's shrink to 80%. */
+export const seqFit = (width: number) => Math.floor(width / 0.8);
+
+/**
+ * The px height SequenceView renders in a `.vis-body` whose content box is `width` px wide: the
+ * step-through row, then the drawing at SvgScroll's size. Exact, with the View's own measure and fit.
+ */
+export function estimateHeight(spec: SequenceSpec, width: number): number {
+  return STEPPER_H + scrolledHeight(layoutSequence(spec, canvasMeasure, seqFit(width)), width);
 }
 
 export function layoutSequence(spec: SequenceSpec, measure: Measure = estimateWidth, fit = 0): SequenceLayout {

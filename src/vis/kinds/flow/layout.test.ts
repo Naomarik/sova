@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { widest } from "../../core/text";
-import { FLOW_FONT, layoutFlow, type FlowLayout } from "./layout";
+import { estimateWidth, widest } from "../../core/text";
+import { FLOW_FONT, estimateHeight, fitFlow, layoutFlow, scrolledHeight, type FlowLayout } from "./layout";
 import { parseFlow, parseState, type FlowSpec } from "./parse";
 
 const flow = (body: string): FlowSpec => parseFlow(body);
@@ -115,4 +115,32 @@ running -> cancelled "cancel acknowledged"`);
   const ys = (text: string) => l.edges.find((e) => e.label?.lines.join(" ") === text)!.label!.y;
   const cancelYs = l.edges.filter((e) => e.label?.lines.join(" ") === "cancel").map((e) => e.label!.y);
   assert.ok(cancelYs.every((y) => y !== ys("ok")), "neither cancel label crowds running's rank");
+});
+
+test("scrolledHeight: natural size, then shrinking with the pane to 80%, then scrolling at that size", () => {
+  const l = { width: 500, height: 200 };
+  assert.equal(scrolledHeight(l, 0), 200, "unmeasured: natural");
+  assert.equal(scrolledHeight(l, 800), 200, "a wider pane never enlarges it");
+  assert.equal(scrolledHeight(l, 450), 180);
+  assert.equal(scrolledHeight(l, 400), 160, "80%");
+  assert.equal(scrolledHeight(l, 300), 160, "past 80% it scrolls, keeping that height");
+});
+
+test("estimateHeight is the chosen layout's height at SvgScroll's size, sane over phone to desktop widths", () => {
+  const specs = [
+    flow(`node gw "API gateway"\ngw -> auth "verify"\ngw -> users\ngw -> orders\ngw -> search "query"\ngw -> billing\nauth -> db\norders -> queue`),
+    flow(`dir: right\nnode ok "Green?" decision\nsrc -> lint -> test -> ok\nsrc -> build -> ok\nok -> ship "yes"\nok --> src "no"`),
+    parseState("node s0 start\nnode done end\ns0 -> idle\nidle -> busy \"prompt\"\nbusy -> idle \"settled\"\nbusy -> done"),
+  ];
+  for (const spec of specs) {
+    const natural = layoutFlow(spec);
+    for (let w = 296; w <= 900; w += 26) {
+      const h = estimateHeight(spec, w);
+      // Node has no canvas: canvasMeasure falls back to estimateWidth, the measure used here.
+      assert.equal(h, scrolledHeight(fitFlow(spec, estimateWidth, w), w), `w=${w}`);
+      assert.equal(h, estimateHeight(spec, w), "deterministic");
+      assert.ok(Number.isFinite(h) && h > 0 && h < 4 * natural.height, `w=${w}: ${h}`);
+      if (w >= natural.width) assert.equal(h, natural.height, "a pane that holds it gets the natural drawing");
+    }
+  }
 });

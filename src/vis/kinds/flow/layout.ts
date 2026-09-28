@@ -14,7 +14,7 @@
  */
 
 import type { Tone } from "../../core/grammar";
-import { estimateWidth, wrap, widest, type Measure } from "../../core/text";
+import { canvasMeasure, estimateWidth, wrap, widest, type Measure } from "../../core/text";
 import type { FlowSpec, Shape } from "./parse";
 
 export const FLOW_FONT = { label: 13, note: 11.5, edge: 11.5 } as const;
@@ -463,4 +463,42 @@ export function curve(pts: { x: number; y: number }[], right: boolean): string {
     }
   }
   return d;
+}
+
+/**
+ * The height SvgScroll (svg.tsx) gives a drawing in a pane `width` px wide: natural size, shrinking
+ * with the pane down to 80% of it (rounded, as SvgScroll's min-width is), then scrolling sideways at
+ * that size. A width of 0 (not measured yet) means natural size.
+ */
+export function scrolledHeight(l: { width: number; height: number }, width: number): number {
+  if (width <= 0 || width >= l.width) return l.height;
+  return (l.height * Math.max(Math.round(l.width * 0.8), width)) / l.width;
+}
+
+/**
+ * The layout FlowView draws in a pane `width` px wide (0: not measured, the natural one). One that
+ * would scroll is laid out again to fit: a `dir: right` one downwards first, then compact, then
+ * tighter still; if nothing fits, the narrowest one scrolls.
+ */
+export function fitFlow(spec: FlowSpec, measure: Measure, width: number, natural: FlowLayout = layoutFlow(spec, measure)): FlowLayout {
+  const fits = (l: FlowLayout) => l.width * 0.8 <= width;
+  if (width <= 0 || fits(natural)) return natural;
+  const right = spec.dir === "right";
+  const at = right ? { ...spec, dir: "down" as const } : spec;
+  let best = natural;
+  for (let level = right ? 0 : 1; level < FLOW_LEVELS; level++) {
+    const l = layoutFlow(at, measure, level);
+    if (fits(l)) return l;
+    if (l.width < best.width) best = l;
+  }
+  return best;
+}
+
+/**
+ * The px height FlowView renders in a `.vis-body` whose content box is `width` px wide, for the
+ * shell to reserve before the View loads. Exact: the same measure, layout choice and shrink the
+ * View uses. (A drawing that still has to scroll may add a desktop scrollbar's height.)
+ */
+export function estimateHeight(spec: FlowSpec, width: number): number {
+  return scrolledHeight(fitFlow(spec, canvasMeasure, width), width);
 }

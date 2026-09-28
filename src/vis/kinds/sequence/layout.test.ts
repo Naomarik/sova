@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { layoutSequence, stepsOf, type SequenceLayout } from "./layout";
+import { scrolledHeight } from "../flow/layout";
+import { STEPPER_H, estimateHeight, layoutSequence, seqFit, stepsOf, type SequenceLayout } from "./layout";
 import { parseSequence } from "./parse";
 
 const OAUTH = `actor u "User"
@@ -62,4 +63,16 @@ test("the last actor's self-message loops left, inside the drawing", () => {
   inBounds(l);
   const first = layoutSequence(parseSequence('a -> a "think"\na -> b "go"')).rows[0]!;
   assert.ok(first.type === "msg" && !first.left, "any other actor's loops right");
+});
+
+test("estimateHeight: the step-through row plus the fitted drawing at SvgScroll's size", () => {
+  const spec = parseSequence(OAUTH);
+  const wide = layoutSequence(spec);
+  for (let w = 296; w <= 900; w += 26) {
+    const h = estimateHeight(spec, w);
+    assert.equal(h, STEPPER_H + scrolledHeight(layoutSequence(spec, undefined, seqFit(w)), w), `w=${w}`);
+    assert.equal(h, estimateHeight(spec, w), "deterministic");
+    assert.ok(h > STEPPER_H && h < STEPPER_H + 3 * wide.height, `w=${w}: ${h}`);
+    if (w >= wide.width) assert.equal(h, STEPPER_H + wide.height);
+  }
 });

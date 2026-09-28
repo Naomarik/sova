@@ -21,6 +21,7 @@ import {
 	addRow,
 	checkRef,
 	parseJsonLines,
+	type CountedMessage,
 	type TokenCounts,
 	type WorkerTranscriptAdapter,
 	type WorkerTranscriptCapabilities,
@@ -127,7 +128,13 @@ export interface ClaudeUsageAccumulator {
 	reset(): void;
 }
 
-export function claudeUsageAccumulator(): ClaudeUsageAccumulator {
+export interface ClaudeUsageOptions {
+	/** Called once per counted message (after deduplication by message id): a price per message. */
+	onCount?: (message: CountedMessage) => void;
+}
+
+export function claudeUsageAccumulator(options: ClaudeUsageOptions = {}): ClaudeUsageAccumulator {
+	const onCount = options.onCount;
 	let seen = new Set<string>();
 	let rows = new Map<string, WorkerUsageRow>();
 	let total = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, turns: 0 };
@@ -153,6 +160,20 @@ export function claudeUsageAccumulator(): ClaudeUsageAccumulator {
 				total.input += counts.input; total.output += counts.output; total.cacheRead += counts.cacheRead; total.cacheWrite += counts.cacheWrite;
 				total.turns++;
 				if (counts.input + counts.output + counts.cacheRead + counts.cacheWrite > 0) addRow(rows, modelName(message.model) ?? "claude/unknown", counts);
+				if (onCount) {
+					const at = epoch(e.timestamp);
+					const h1 = u.cache_creation && typeof u.cache_creation === "object" && typeof u.cache_creation.ephemeral_1h_input_tokens === "number" ? Math.min(amount(u.cache_creation.ephemeral_1h_input_tokens), counts.cacheWrite) : undefined;
+					const searches = amount(u.server_tool_use?.web_search_requests);
+					onCount({
+						model: typeof message.model === "string" && message.model ? `claude/${message.model}` : "claude/unknown",
+						counts,
+						source: "assistant",
+						...(at === undefined ? {} : { at }),
+						...(h1 === undefined ? {} : { cacheWrite1h: h1 }),
+						...(typeof u.speed === "string" && u.speed ? { speed: u.speed } : {}),
+						...(searches ? { webSearches: searches } : {}),
+					});
+				}
 			}
 		},
 		usage() {

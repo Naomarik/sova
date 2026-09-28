@@ -179,6 +179,11 @@ at the tool-call's position. A result with no matching call gets its own card wi
   the card is opened and kept after, as a report's body is. A running call's body follows its
   output from then on. So `Ctrl+F` finds a tool's arguments and output only in cards opened once.
 
+**align.** An `align` tool result that changed an alignment (§chat.alignment/card): the card, or
+for an earlier revision of the same alignment its one-line change row, at the call's position; the
+call's own tool card renders nothing once this result is there. A failed `align` call stays an
+ordinary tool-call and tool-result.
+
 **wake.** A fired wake-nudge (pi-config's `wake_nudge` tool): under the hood a real `role:"user"`
 message tagged `[wake_nudge n1] …` (shared/wake.ts `parseWakeNudge`), but it never reads as "You" —
 a machine event fired the turn, not the person. Same `.toolcard` shell as tool-call/tool-result
@@ -309,7 +314,7 @@ closed, and the markdown on the left when open.
   first opened, so a transcript with dozens of reports stays cheap.
 - **Explain rows: running.** An `/explain` run appends its `explain-doc` entry twice under one
   `data.id`: at spawn with `status: "running"` and an empty summary, and at settle with no
-  `status`. Per id, only the newest entry renders (as with align-doc), so a settled run is one
+  `status`. Per id, only the newest entry renders (as with an older session's align-doc entries), so a settled run is one
   row, and a live append replaces the running row in place. A running row is not a link — there
   is no page yet — and reads "Explaining {topic}" with the live pulse where the chevron sits.
 - **Other long extension messages** (intercom messages, team questions, broker reports): any

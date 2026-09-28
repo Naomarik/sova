@@ -20,36 +20,34 @@ const stuck = (score: number, confidence: number): Answer => ({ type: "score", s
 
 describe("thresholds, applied at read time", () => {
   test("each kind at and just below its threshold", () => {
-    assert.deepEqual(store.signalKinds({ asks_user: asks(store.ASKS_USER_MIN) }), ["asks-you"]);
-    assert.deepEqual(store.signalKinds({ asks_user: asks(store.ASKS_USER_MIN - 0.01) }), []);
     assert.deepEqual(store.signalKinds({ stuck: stuck(store.STUCK_SCORE_MIN, store.STUCK_CONFIDENCE_MIN) }), ["looping"]);
     assert.deepEqual(store.signalKinds({ stuck: stuck(store.STUCK_SCORE_MIN - 0.01, 1) }), []);
     assert.deepEqual(store.signalKinds({ stuck: stuck(2, store.STUCK_CONFIDENCE_MIN - 0.01) }), []);
-    assert.deepEqual(store.signalKinds({ asks_user: asks(1), stuck: stuck(2, 1) }), ["asks-you", "looping"]);
+    assert.deepEqual(store.signalKinds({ asks_user: asks(1), stuck: stuck(2, 1) }), ["looping"], "an old asks_user answer makes no kind");
   });
 
-  test("an old record's failure answers are read by nothing: no kind, no wire field", () => {
-    // Records written before failure left the classifier still carry these; no migration.
-    const old = { asks_user: asks(0.1), outcome: outcome("failed", 1), work_failed: asks(1) };
+  test("an old record's asks_user and failure answers are read by nothing: no kind, no wire field", () => {
+    // Records written before asks-you and failure left the classifier still carry these; no migration.
+    const old = { asks_user: asks(0.99), outcome: outcome("failed", 1), work_failed: asks(1) };
     assert.deepEqual(store.signalKinds(old), []);
     const wire = store.toWire({ turnId: "t", replyAt: 1, at: 2, provider: "jev", model: "m", answers: old });
-    assert.deepEqual(Object.keys(wire).sort(), ["asksUser", "at", "kinds", "provider", "turnId"]);
+    assert.deepEqual(Object.keys(wire).sort(), ["at", "kinds", "provider", "turnId"]);
   });
 });
 
 describe("the overlay shows a mark only while it should", () => {
   const file = join(agentDir, "sova", "signals.json");
   store.updateSignals((d) => {
-    d.sessions.a = { turnId: "t1", replyAt: NOW - 10, at: NOW, provider: "jev", model: "jev-1", answers: { asks_user: asks(0.9) } };
-    d.sessions.quiet = { turnId: "t1", replyAt: NOW - 10, at: NOW, provider: "jev", model: "jev-1", answers: { asks_user: asks(0.1) } };
+    d.sessions.a = { turnId: "t1", replyAt: NOW - 10, at: NOW, provider: "jev", model: "jev-1", answers: { stuck: stuck(2, 0.9) } };
+    d.sessions.quiet = { turnId: "t1", replyAt: NOW - 10, at: NOW, provider: "jev", model: "jev-1", answers: { stuck: stuck(0.2, 0.9), asks_user: asks(0.99) } };
   }, file);
   const data = store.readSignals(file);
   const ctx = { enabled: true, viewing: false, running: false };
 
   test("shown: unseen or seen before the classification; carries raw values and kinds", () => {
     const s = store.signalsOverlay("a", ctx, data)!;
-    assert.deepEqual(s.kinds, ["asks-you"]);
-    assert.equal(s.asksUser, 0.9);
+    assert.deepEqual(s.kinds, ["looping"]);
+    assert.deepEqual(s.stuck, { score: 2, confidence: 0.9 });
     assert.equal(s.provider, "jev");
     assert.ok(store.signalsOverlay("a", { ...ctx, seenAt: NOW - 1 }, data));
   });

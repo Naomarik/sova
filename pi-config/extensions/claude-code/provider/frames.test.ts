@@ -12,6 +12,10 @@ test("init, usage and terminal frames are normalized", () => {
 		parseClaudeFrame({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 3, output_tokens: 1 } } } }),
 		{ type: "stream", event: { type: "message_start", usage: { input: 3, output: 1, cacheRead: 0, cacheWrite: 0 } } },
 	);
+	assert.deepEqual(
+		parseClaudeFrame({ type: "stream_event", event: { type: "message_start", message: { model: "claude-opus-5-5", usage: { input_tokens: 3, output_tokens: 1, cache_creation_input_tokens: 8, cache_creation: { ephemeral_1h_input_tokens: 6, ephemeral_5m_input_tokens: 2 } } } } }),
+		{ type: "stream", event: { type: "message_start", usage: { input: 3, output: 1, cacheRead: 0, cacheWrite: 8, cacheWrite1h: 6 }, model: "claude-opus-5-5" } },
+	);
 	assert.deepEqual(parseClaudeFrame({ type: "result", subtype: "success", is_error: false }), { type: "result", outcome: "success", message: undefined, usage: undefined });
 	assert.deepEqual(parseClaudeFrame({ type: "result", subtype: "error_during_execution", is_error: true, result: "boom" }), {
 		type: "result", outcome: "error", message: "boom", usage: undefined,

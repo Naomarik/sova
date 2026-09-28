@@ -1,0 +1,37 @@
+{
+  "_notes": [
+    "Hand-kept. Maps a Sova model ref (provider/id as the session records it) onto a models.dev key (provider/model). Read by shared/model-prices/prices.ts.",
+    "providers: <provider>/<id> -> <to>/<id> when models.dev prices that key (a trailing -YYYYMMDD is tried without it; a trailing [1m] is always dropped). local: $0.",
+    "models: explicit refs, checked before the provider rule. '*/<id>' matches any provider. A list is dated: the first entry whose 'until' is after the message (or has none) wins. A recorded responseModel beats these.",
+    "unpriced: tokens count, no dollars, never a sibling's price. free: $0 by nature.",
+    "derive: rates models.dev doesn't list, as a multiple of input. Anthropic bills a 1-hour cache write at 2x input (docs.claude.com pricing); models.dev's cache_write is the 5-minute rate.",
+    "claude-code-cli/opus moved from Opus 5 to Opus 5.5 when Claude Code's alias did; the first Opus 5.5 reply seen on this host is 2026-09-21T18:42Z."
+  ],
+  "providers": {
+    "anthropic": { "to": "anthropic" },
+    "claude-code-cli": { "to": "anthropic" },
+    "claude": { "to": "anthropic" },
+    "openai": { "to": "openai" },
+    "openai-codex": { "to": "openai" },
+    "zai": { "to": "zai" },
+    "deepseek": { "to": "deepseek" },
+    "ollama-cloud": { "to": "ollama-cloud" },
+    "ollama": { "local": true }
+  },
+  "models": {
+    "*/<synthetic>": { "free": "synthetic" },
+    "claude-code-cli/opus": [
+      { "until": "2026-09-21T18:00:00Z", "to": "anthropic/claude-opus-5" },
+      { "to": "anthropic/claude-opus-5-5" }
+    ],
+    "claude-code-cli/sonnet": { "to": "anthropic/claude-sonnet-5" },
+    "claude-code-cli/haiku": { "to": "anthropic/claude-haiku-4-5" },
+    "openai-codex/gpt-5.3-codex-spark": { "unpriced": "Codex only: OpenAI lists no API price (models.dev repeats gpt-5.3-codex's)." },
+    "openai/gpt-5.3-codex-spark": { "unpriced": "Codex only: OpenAI lists no API price (models.dev repeats gpt-5.3-codex's)." },
+    "zai/glm-5.2-highspeed": { "unpriced": "Coding Plan only: Z.ai lists no API price." },
+    "zai/glm-5.3-highspeed": { "unpriced": "Coding Plan only: Z.ai lists no API price." }
+  },
+  "derive": {
+    "anthropic": { "cacheWrite1h": { "input": 2 } }
+  }
+}

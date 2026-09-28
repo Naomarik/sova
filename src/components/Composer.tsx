@@ -44,6 +44,8 @@ import {
 } from "../lib/ui-state";
 import { paneScopedId, usePaneAnnounce, usePaneScope } from "../lib/pane-scope";
 import { inputsText } from "../lib/input-count";
+import { isOpenDoc, type AlignEntry } from "../lib/align";
+import { AlignChip } from "./AlignChip";
 import { dragHasRow } from "../lib/session-groups";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
 import { showWorkersLabel, teamNote, type WorkingSplit, workersRunningLabel, workersWorkingLabel } from "../lib/workers";
@@ -116,6 +118,11 @@ export function Composer(props: {
   /** Opens the session pane's Timeline tab: a bare "/timeline" unfiltered; a bare "/tree" and
       the run-status row's "N inputs" trigger with `inputsOnly`, on your own messages. */
   onShowTimeline?: (inputsOnly?: boolean) => void;
+  /** The branch's alignments (§chat.alignment/chip): with one open, the run-status row carries
+      the alignment chip right before the Inputs trigger. */
+  aligns?: AlignEntry[];
+  /** Jump to an alignment's newest card. */
+  onJumpAlign?: (entry: AlignEntry) => void;
   /** User messages on this chat's active branch; the status row's inputs trigger, hidden at 0. */
   inputCount?: number;
   autofocus?: boolean;
@@ -293,6 +300,9 @@ export function Composer(props: {
     const n = props.inputCount ?? 0;
     return n > 0 && props.onShowTimeline ? { n, text: inputsText(n), label: showInputsOnTimelineLabel(n) } : null;
   };
+
+  /** The alignment chip, while an alignment is open (and there is somewhere to jump). */
+  const alignRow = () => (props.onJumpAlign && (props.aligns ?? []).some((e) => isOpenDoc(e.doc)) ? props.aligns! : null);
 
   // ---- Slash-command autocomplete (combobox: focus stays in the textarea) ----------------
   const slashMatches = createMemo(() => {
@@ -704,7 +714,7 @@ export function Composer(props: {
     <>
         {/* One row, whichever of the three has something to say (they can coexist: the inputs
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
-        <Show when={controls().status || workersRow() || inputsRow()}>
+        <Show when={controls().status || workersRow() || inputsRow() || alignRow()}>
           <p class="run-status">
             <Show when={controls().status}>
               <span class="live-dot" />
@@ -748,13 +758,15 @@ export function Composer(props: {
                 </>
               )}
             </Show>
-            {/* Right-aligned, so it keeps its place whatever else the row carries. */}
+            {/* The alignment chip, then the inputs trigger: right-aligned together (the chip takes the
+                auto margin when it is there), so they keep their place whatever else the row carries. */}
+            <Show when={alignRow()}>{(entries) => <AlignChip entries={entries()} onJump={(e) => props.onJumpAlign?.(e)} />}</Show>
             <Show when={inputsRow()}>
               {(row) => (
                 <button
                   type="button"
                   class="run-status-link"
-                  style={{ "margin-left": "auto", "margin-right": 0 }}
+                  style={{ "margin-left": alignRow() ? 0 : "auto", "margin-right": 0 }}
                   aria-label={row().label}
                   aria-expanded={props.inputsOpen ? "true" : "false"}
                   aria-controls={PANE_ID}

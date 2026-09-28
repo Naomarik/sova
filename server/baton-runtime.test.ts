@@ -10,6 +10,8 @@ import { BATON_DECISION_ENTRY, BATON_DONE_ENTRY, BATON_HANDOFF_ENTRY, BATON_SENT
 import type { SessionSummary } from "../shared/protocol";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-rt-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });

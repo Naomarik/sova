@@ -62,6 +62,7 @@ import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, Proje
 import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
+import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
@@ -999,12 +1000,20 @@ export const redraftProject = (orgId: string, projectId: string) => request<Deci
 /** `bulk`: the ids are exactly what Select All Ready chose (the server holds bulk to the stricter rule). */
 export const promoteDecisions = (orgId: string, projectId: string, ids: string[], bulk: boolean) =>
   request<PromoteResult>(`${projectBase(orgId, projectId)}/promote`, jsonInit("POST", { ids, bulk }));
+/** Who decides a decision: a roster decision area or "none" (§app.requirements/owner-area). */
+export const setOwnerArea = (orgId: string, projectId: string, did: string, ownerArea: string) =>
+  request<DecisionsInfo>(`${projectBase(orgId, projectId)}/decisions/${encodeURIComponent(did)}`, jsonInit("PATCH", { ownerArea }));
 export const routeConflict = (orgId: string, projectId: string, cid: string, to?: string) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/route`, jsonInit("POST", to ? { to } : {}));
 export const resolveConflict = (orgId: string, projectId: string, cid: string, input: ConflictResolveInput) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/resolve`, jsonInit("POST", input));
 export const setSpecFrozen = (orgId: string, projectId: string, frozen: boolean) =>
   request<SpecStatus>(`${projectBase(orgId, projectId)}/spec`, jsonInit("PATCH", { frozen }));
+
+// ---- a project's cost at API prices (§app/project-costs) ---------------------------------------------
+
+export const getProjectCost = (orgId: string, projectId: string) => request<ProjectCost>(`${projectBase(orgId, projectId)}/costs`);
+export const getOrgCosts = (orgId: string) => request<OrgCosts>(`/api/orgs/${encodeURIComponent(orgId)}/costs`);
 
 // ---- a project's overseer (§app/project-overseer) ---------------------------------------------------
 

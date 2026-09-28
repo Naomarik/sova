@@ -1,0 +1,7 @@
+# site/ is its own pnpm project, not a member of the repository root's workspace: this file
+# stops pnpm from walking up to ../pnpm-workspace.yaml, so installs here never touch the root
+# package.json or pnpm-lock.yaml.
+# Only esbuild's and sharp's install scripts run (Astro's bundler and image service).
+allowBuilds:
+  esbuild: true
+  sharp: true

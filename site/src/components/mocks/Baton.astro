@@ -1,0 +1,61 @@
+---
+// Organizations: a baton session from both sides. The operator's transcript, with a hand-off and a
+// decision noted, and the same conversation on the phone of the person it was handed to.
+import Frame from "../Frame.astro";
+import Icon from "../Icon.astro";
+---
+<figure class="baton">
+  <Frame path="orgs/northwind/payroll-setup" class="m-frame baton-desk" caption="">
+    <div class="m-session">
+      <header class="m-head">
+        <span class="m-head-title">Payroll setup</span>
+        <span class="m-head-sub">Northwind · baton</span>
+        <span class="m-head-end"><span class="chip chip-accent"><span class="chip-dot"></span>With Priya</span></span>
+      </header>
+      <div class="m-thread">
+        <div class="b-said">
+          <span class="b-who">Dana · Finance</span>
+          <div class="m-msg-user">The new bank wants our payroll file by the 25th. I don't know which export they take.</div>
+        </div>
+        <p class="m-msg">Priya runs the payroll system, so I'll ask her and bring the answer back here.</p>
+        <div class="m-confirm b-hand">
+          <div class="m-confirm-head"><Icon name="arrow-right" size={14} class="m-muted" />Handed to Priya <span class="m-muted b-role">· Payroll</span></div>
+          <div class="b-hand-body">
+            <p class="b-q">Which payroll export does the bank accept?</p>
+            <p class="b-brief"><span class="m-muted">Briefing</span> Payroll moves to a new bank on the 1st. Dana owns the deadline.</p>
+          </div>
+        </div>
+        <div class="m-info">Priya opened her link</div>
+        <div class="b-said">
+          <span class="b-who">Priya · Payroll</span>
+          <div class="m-msg-user">The CSV export, "Bank v2" layout. They reject the old fixed-width file.</div>
+        </div>
+        <span class="chip chip-success b-noted"><Icon name="check" size={11} />Noted · payroll export</span>
+      </div>
+    </div>
+  </Frame>
+  <div class="phone baton-phone" aria-hidden="true">
+    <div class="phone-screen">
+      <div class="phone-status"><span>10:12</span><span>71%</span></div>
+      <div class="s-head">
+        <p class="s-title">Payroll setup</p>
+        <p class="s-status">Your turn, Priya.</p>
+      </div>
+      <div class="s-thread">
+        <div class="s-msg">
+          <span class="s-who">Dana · Finance</span>
+          <p>The new bank wants our payroll file by the 25th. I don't know which export they take.</p>
+        </div>
+        <div class="s-msg s-msg-reply">
+          <span class="s-who">Facilitator</span>
+          <p>Hi Priya. Payroll moves to a new bank on the 1st. Which export does the bank accept?</p>
+        </div>
+      </div>
+      <div class="s-composer">
+        <div class="s-input">Write your reply</div>
+        <div class="s-foot"><span><span>0 of 4,000 characters ·</span><span>Ctrl+Enter sends</span></span><span class="m-btn m-btn-primary m-btn-off">Send</span></div>
+      </div>
+    </div>
+  </div>
+  <figcaption class="visually-hidden">A baton session in a fictional organization. On the left, the operator's transcript: Dana from Finance asks which payroll export the bank takes, the model hands the conversation to Priya with that question and a short briefing, Priya answers, and the answer is noted as a decision. On the right, Priya's phone shows the shared page: the conversation with each sender's name, "Your turn, Priya.", and a reply box.</figcaption>
+</figure>

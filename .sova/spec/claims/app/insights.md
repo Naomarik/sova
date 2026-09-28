@@ -393,7 +393,7 @@ Sova that aren't archived.
 - **State.** One per row, on its rail (a colored left edge) and in a chip with a dot and the
   word: **Needs you** when the session waits on input or has an extension dialog open; else
   **Working** when its turn runs or any of its workers works; else **Needs you** when its last
-  turn failed or stopped on an error, or its decision marks (unseen asks-you or looping, a stuck
+  turn failed or stopped on an error, or it has open alignment questions, or its decision marks (unseen looping, a stuck
   subagent) say so; else **Idle**, or **Archived** for an archived session nothing runs in. The
   chip's `title` says why a row needs you, and the open row says it in a line.
 - **Sort.** Working first, then Needs you, then the rest; within each, last active first.

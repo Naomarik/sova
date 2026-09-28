@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { BATON_DECISION_ENTRY, OPERATOR, type BatonDecisionData, type BatonSession } from "../shared/baton";
-import type { Conflict, DecisionRow, DecisionState, Provenance, ReconcileRun } from "../shared/decisions";
+import { OWNER_AREA_NONE, type Conflict, type DecisionRow, type DecisionState, type Provenance, type ReconcileRun } from "../shared/decisions";
 import type { Person } from "../shared/orgs";
 import { allBatons, sessionPathOf } from "./baton";
 import { operatorName, orgDir, OrgError, readProjects, readRoster } from "./orgs";
@@ -112,6 +112,44 @@ export function specSlug(text: string, max = 40): string {
 /** The spec area a recorded area files under. */
 export const areaKeyOf = (area: string): string => specSlug(area, 40) || "general";
 
+// ---- owner areas (§app.requirements/owner-area) --------------------------------------------------------
+
+/** The owner areas a decision may pick, "none" aside: every active person's decision areas, once
+    per area key, as first spelled, in roster order. */
+export function ownerAreaChoices(roster: readonly Person[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of roster)
+    if (p.status === "active")
+      for (const a of p.decides) {
+        const k = areaKeyOf(a);
+        if (seen.has(k) || k === OWNER_AREA_NONE) continue;
+        seen.add(k);
+        out.push(a);
+      }
+  return out;
+}
+
+const quoted = (xs: string[]) => xs.map((x) => `"${x}"`);
+const orList = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs.at(-1)}`);
+
+/** An owner area as given (the model's, the operator's), against the roster as it is: a roster
+    area with the same key, stored as the roster spells it, or "none"; else why not, naming every
+    choice. */
+export function pickOwnerArea(roster: readonly Person[], value: unknown): { ok: true; ownerArea: string } | { ok: false; error: string } {
+  const choices = ownerAreaChoices(roster);
+  const given = typeof value === "string" ? value.trim() : "";
+  if (given) {
+    const k = areaKeyOf(given);
+    if (k === OWNER_AREA_NONE) return { ok: true, ownerArea: OWNER_AREA_NONE };
+    const hit = choices.find((a) => areaKeyOf(a) === k);
+    if (hit) return { ok: true, ownerArea: hit };
+  }
+  if (!choices.length) return { ok: false, error: `Give the owner area: "${OWNER_AREA_NONE}" (no one on the roster has a decision area yet).` };
+  const list = orList(quoted([...choices, OWNER_AREA_NONE]));
+  return { ok: false, error: given ? `"${given}" is not an owner area. Use one of: ${list}.` : `Give the owner area. Use one of: ${list}.` };
+}
+
 // ---- reading transcripts -------------------------------------------------------------------------------
 
 interface RawEntry {
@@ -156,6 +194,7 @@ export function decisionsInSession(file: string, row: Pick<BatonSession, "sessio
     if (e.type !== "custom" || e.customType !== BATON_DECISION_ENTRY || typeof e.id !== "string" || !isObj(e.data)) continue;
     const d = e.data as Partial<BatonDecisionData>;
     if (typeof d.area !== "string" || typeof d.statement !== "string" || typeof d.quote !== "string") continue;
+    const ownerArea = typeof d.ownerArea === "string" && d.ownerArea ? d.ownerArea : undefined;
     // The quote's location: the nearest user message up the tree.
     let entryId = e.id;
     let cur = e.parentId ? byId.get(e.parentId) : undefined;
@@ -173,6 +212,7 @@ export function decisionsInSession(file: string, row: Pick<BatonSession, "sessio
       projectId: row.projectId,
       area: d.area,
       areaKey: areaKeyOf(d.area),
+      ...(ownerArea ? { ownerArea } : {}),
       statement: d.statement,
       quote: d.quote,
       by,
@@ -223,7 +263,7 @@ export function syncDecisions(orgId: string, projectId: string): { store: Decisi
 }
 
 /** A decision the operator states on the project page (a conflict's resolution): no transcript. */
-export function operatorDecision(orgId: string, projectId: string, input: { area: string; areaKey: string; statement: string; now?: Date; markerId: string }): DecisionRow {
+export function operatorDecision(orgId: string, projectId: string, input: { area: string; areaKey: string; ownerArea?: string; statement: string; now?: Date; markerId: string }): DecisionRow {
   const at = (input.now ?? new Date()).toISOString();
   return {
     id: `operator:${input.markerId}`,
@@ -231,6 +271,7 @@ export function operatorDecision(orgId: string, projectId: string, input: { area
     projectId,
     area: input.area,
     areaKey: input.areaKey,
+    ...(input.ownerArea ? { ownerArea: input.ownerArea } : {}),
     statement: input.statement,
     quote: input.statement,
     by: OPERATOR,

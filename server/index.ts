@@ -16,6 +16,7 @@ import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
 import { startBatonMarksBackfill } from "./baton-marks";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
+import { registerProjectCostRoutes } from "./project-costs-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
 import { WorkspaceCommitter } from "./workspace-commits";
@@ -33,6 +34,7 @@ import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { decodeWorkers, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
+import { startPriceRefresh } from "./model-prices";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
@@ -206,6 +208,7 @@ app.post("/api/sessions/connect", async (c) => {
 registerOrgRoutes(app);
 registerWrapupRoutes(app);
 registerProjectOverseerRoutes(app);
+registerProjectCostRoutes(app);
 // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
 registerDecisionRoutes(app);
 
@@ -1247,6 +1250,9 @@ void (async () => {
 
 // Keeps the shared usage cache fresh without an open TUI (SOVA_USAGE_POLL=off switches it off).
 const usagePoller = startUsagePoller({ busy: usageRefreshBusy, onFetched: invalidateUsageMemo });
+// models.dev prices for project costs: refreshed in the background when older than 3 days
+// (§app.project-costs/price-table; SOVA_PRICES_FETCH=off switches fetching off).
+const priceRefresh = startPriceRefresh();
 
 let shuttingDown = false;
 async function shutdown() {
@@ -1266,6 +1272,7 @@ async function shutdown() {
   markShutdown();
   for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
   usagePoller.stop();
+  priceRefresh.stop();
   meshLinks.stop();
   stopMesh();
   stopShareListener();

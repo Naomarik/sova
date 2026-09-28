@@ -12,14 +12,13 @@ import { stateRoot } from "./state-root";
  *
  * The thresholds live here and are applied at READ time, so moving one needs no re-classification.
  * Whether a turn FAILED is not a question here: that is the file's own stopReason, read by the
- * session list (SessionSummary.turnError). Records written before that change may still carry
- * `outcome` / `work_failed` answers; nothing reads them, and a worker "outcome" check is dropped
- * on load.
+ * session list (SessionSummary.turnError). Nor is whether a reply ASKS the user something: that is
+ * the session's open alignment questions (SessionSummary.align), counted from the file. Records
+ * written before may still carry `asks_user`, `outcome` or `work_failed` answers (and a `detail`
+ * sentence); nothing reads them, and a worker "outcome" check is dropped on load.
  * Same store rules as seen.ts: re-read and merge before writing, atomic tmp+rename, ~1 s read cache.
  */
 
-/** asks_user.p at or above → "asks-you". */
-export const ASKS_USER_MIN = 0.7;
 /** stuck score (0..2) at or above, with confidence at or above STUCK_CONFIDENCE_MIN → "looping". */
 export const STUCK_SCORE_MIN = 1.5;
 export const STUCK_CONFIDENCE_MIN = 0.5;
@@ -37,9 +36,6 @@ export interface StoredTurn {
   provider: DecisionProviderId;
   model: string;
   answers: Record<string, Answer>;
-  /** The reply's last sentence (the asking one, when it asks), redacted and capped: the digest's
-      detail. Local only: never on the list or the feed. */
-  detail?: string;
 }
 
 /** One "stuck" check of a running subagent worker (repeated while it runs). */
@@ -114,7 +110,6 @@ export function updateSignals(fn: (data: SignalsFile) => void, file = signalsFil
 
 // ---- thresholds ---------------------------------------------------------------------------------
 
-const boolP = (a: Answer | undefined) => (a?.type === "boolean" ? a.p : undefined);
 const scoreOf = (a: Answer | undefined) => (a?.type === "score" ? a : undefined);
 
 export function isLooping(answers: Record<string, Answer>): boolean {
@@ -125,21 +120,17 @@ export function isLooping(answers: Record<string, Answer>): boolean {
 /** The kinds that fire for one turn's raw answers, most urgent first. */
 export function signalKinds(answers: Record<string, Answer>): SignalKind[] {
   const out: SignalKind[] = [];
-  const p = boolP(answers.asks_user);
-  if (p !== undefined && p >= ASKS_USER_MIN) out.push("asks-you");
   if (isLooping(answers)) out.push("looping");
   return out;
 }
 
 /** A stored turn as the wire carries it. */
 export function toWire(t: StoredTurn): SessionSignals {
-  const p = boolP(t.answers.asks_user);
   const s = scoreOf(t.answers.stuck);
   return {
     at: t.at,
     turnId: t.turnId,
     provider: t.provider,
-    ...(p !== undefined ? { asksUser: p } : {}),
     ...(s ? { stuck: { score: s.score, confidence: s.confidence } } : {}),
     kinds: signalKinds(t.answers),
   };
@@ -147,15 +138,14 @@ export function toWire(t: StoredTurn): SessionSignals {
 
 /**
  * The digest's words for a session's signals (server/attention.ts AttentionRow.signalText): the
- * stored reply sentence, and the names of workers whose stuck check is current and fires. Read only
- * to word items the list's overlay already decided to show.
+ * names of workers whose stuck check is current and fires. Read only to word items the list's
+ * overlay already decided to show.
  */
-export function signalTextOf(id: string, now = Date.now(), data = readSignals()): { sentence?: string; stuckWorkers: string[] } {
-  const t = data.sessions[id];
+export function signalTextOf(id: string, now = Date.now(), data = readSignals()): { stuckWorkers: string[] } {
   const stuckWorkers = Object.values(data.workers)
     .filter((w) => w.sessionId === id && w.kind === "stuck" && now - w.at <= WORKER_STUCK_FRESH_MS && isLooping(w.answers))
     .map((w) => w.name ?? "unnamed");
-  return { ...(t?.detail ? { sentence: t.detail } : {}), stuckWorkers };
+  return { stuckWorkers };
 }
 
 // ---- the list overlay ---------------------------------------------------------------------------

@@ -27,6 +27,9 @@
 .orgs-project-row { color: inherit; text-decoration: none; }
 .orgs-project-list > li + li { border-top: var(--stroke-thin) solid var(--color-border); }
 .orgs-project-row .orgs-row-go { color: var(--color-ink-muted); }
+/* Its cost at API prices, before the chevron; the org total is the line above the list. */
+.orgs-project-cost { flex: none; }
+.orgs-projects-cost .cost-figure { color: var(--color-ink); }
 
 .orgs-form { display: flex; flex-direction: column; gap: var(--space-3); }
 .orgs-subform { padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
@@ -283,6 +286,12 @@
   /* The meta keeps the project: the org and the watch word go (⋯ says Watching). */
   .po-head-meta > .po-head-part { display: none; }
   .po-head-meta > .po-head-project { max-width: none; flex: 0 1 auto; }
+  /* The chip and the icons leave the meta no room beside the title: it takes a line of its own
+     under the head, lined up with the title (after the back button, always shown below 768px). */
+  .po-head { flex-wrap: wrap; row-gap: 0; }
+  .po-head > .session-head-main { display: contents; }
+  .po-head .session-head-title { flex: 1 1 0; min-width: 0; }
+  .po-head-meta { order: 1; flex: 1 0 100%; min-width: 0; margin-top: calc(-1 * var(--space-2)); padding-left: calc(44px + var(--space-3)); }
   .po-menu-narrow { display: contents; }
 }
 .po-menu-state { margin: 0; padding: var(--space-2) var(--space-3); }

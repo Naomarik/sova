@@ -10,6 +10,8 @@ import type { SessionSummary } from "../shared/protocol";
 import type { OverseerToolHost, PeerRef } from "./overseer-tools";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-overseer-link-tools-"));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 
 const { overseerTools, TurnLimits, renderTranscript } = await import("./overseer-tools");

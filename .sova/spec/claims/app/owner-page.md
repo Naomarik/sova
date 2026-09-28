@@ -103,8 +103,10 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 - **What's been built**: two counts only, over the project's coding sessions (the overseer's and
   the operator's): finished (its worktree merged or its branch deleted; one in the project root
   that isn't working now) and in progress (an unmerged worktree, missing or not; one in the project
-  root while it works); a worktree removed without a merge is not counted. Git state is read at most
-  once a minute. Nothing else about a coding session reaches the page.
+  root while it works); a worktree removed without a merge is not counted. Merged is git's answer,
+  as on the project page (§app.project-overseer/coding-worktrees): a branch merged once and given
+  new commits since is in progress again; the recorded merge, or a deleted branch, counts only when
+  the branch is gone or git can't be read. Git state is read at most once a minute. Nothing else about a coding session reaches the page.
 - **Conversations**: every shown conversation of the project (§app.owner-page/conversations),
   newest first, each its public title, a status (`Waiting on you`, `Waiting on {first name}`,
   `With {operator's first name}`, `Asked {n} people`, `Finished`, `Ended`), when it started and how

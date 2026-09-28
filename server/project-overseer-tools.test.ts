@@ -33,7 +33,7 @@ const person = (id: string, name: string, status: Person["status"] = "active"): 
 });
 
 let n = 0;
-function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]; tokens?: number; settings?: Partial<ProjectOverseerSettings>; hasSpec?: boolean; now?: () => Date; open?: number } = {}) {
+function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]; settings?: Partial<ProjectOverseerSettings>; hasSpec?: boolean; now?: () => Date; open?: number } = {}) {
   const calls: string[] = [];
   /** What the refusals held for a later look, by key (the host keeps one per key). */
   const held = new Map<string, HeldInput>();
@@ -65,10 +65,10 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     overseerId: () => "po-1",
     batons: () => Array.from({ length: opts.open ?? 0 }, (_, i) => ({ sessionId: `open-${i}`, owner: { overseerOf: "prj_bbbbbbbb" }, state: "open" }) as never),
     batonView: async () => null,
-    decisions: async () => ({ decisions: [], conflicts: [], spec: { specRoot: "", exists: false, frozen: false, draft: null, promoted: 0, drafted: 0 }, lastRun: null, running: false, names: {} }),
+    decisions: async () => ({ decisions: [], conflicts: [], spec: { specRoot: "", exists: false, frozen: false, draft: null, promoted: 0, drafted: 0 }, lastRun: null, running: false, names: {}, ownerAreas: [] }),
     reconcile: async () => {
       calls.push("reconcile");
-      return { decisions: [], conflicts: [], spec: { specRoot: "", exists: false, frozen: false, draft: null, promoted: 0, drafted: 0 }, lastRun: null, running: false, names: {} };
+      return { decisions: [], conflicts: [], spec: { specRoot: "", exists: false, frozen: false, draft: null, promoted: 0, drafted: 0 }, lastRun: null, running: false, names: {}, ownerAreas: [] };
     },
     promote: async (ids: string[]) => {
       calls.push(`promote:${ids.join(",")}`);
@@ -102,7 +102,6 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     },
     coding: () => [],
     startedCoding: () => new Map([["in-tree", { removed: false }], ["gone-tree", { removed: true }]]),
-    codingTokens: async () => opts.tokens ?? 0,
     hold: (h: HeldInput) => void held.set(h.key, h),
     postOwnerUpdate: async (input: { text: string; attended: boolean }) => {
       calls.push("owner-update");
@@ -208,7 +207,7 @@ describe("the wrapper enforces it, per tool", () => {
   });
 });
 
-describe("scope, caps and budget", () => {
+describe("scope and caps", () => {
   test("gathering refuses people not on the roster, proposed people, and a one-person offer", async () => {
     const f = fake({ attended: true });
     await assert.rejects(() => f.run("sova_start_gathering", { person: "Zed", public_title: "x", goal: "y", question: "q" }), /not on the roster/);
@@ -274,21 +273,23 @@ describe("scope, caps and budget", () => {
     for (const t of ["Overseer · Portal", "\"Overseer\"", "worker", "Baton"]) assert.ok(!listed.includes(t), t);
   });
 
-  test("per-turn caps refuse without reaching the host, and a spent token budget stops L3", async () => {
+  test("per-turn caps refuse without reaching the host; no token budget stops L3", async () => {
     const f = fake({ attended: true, settings: { caps: { ...defaultPoSettings().caps, createPerTurn: 1 } } });
     await f.run("sova_create_session", { prompt: "one" });
     await assert.rejects(() => f.run("sova_create_session", { prompt: "two" }), /This message's allowance is used: 1 of 1 coding sessions started per message you send\./);
-    const g = fake({ attended: true, tokens: 5_000_000 });
-    await assert.rejects(() => g.run("sova_create_session", { prompt: "p" }), /token budget is spent/);
-    await assert.rejects(() => g.run("sova_send", { session: "in-root", text: "p" }), /token budget is spent/);
-    assert.deepEqual(g.calls, []);
+    const g = fake({ attended: true });
+    await g.run("sova_create_session", { prompt: "p" });
+    await g.run("sova_send", { session: "in-root", text: "p" });
+    assert.ok(!g.held.has("budget"));
   });
 
   test("sova_promote accounts for every id: promoted, refused with the reconciler's reason, or refused as unknown", async () => {
     const f = fake({ attended: true });
     const out = JSON.stringify(await f.run("sova_promote", { ids: ["s:1", "c:2", "nope"] }));
     assert.match(out, /Promoted 1, refused 2: c:2 \(in an open conflict\); nope \(not a drafted decision of this project/);
+    assert.equal(f.limits.count("promote"), 1, "only the promoted id counts against the allowance");
     await assert.rejects(() => f.run("sova_promote", { ids: ["nope", "c:9"] }), /Promoted 0, refused 2/);
+    assert.equal(f.limits.count("promote"), 1, "a call that promotes nothing takes nothing");
     // An out-of-area decision: refused even in the operator's own turn, the reconciler's reason relayed as is.
     await assert.rejects(() => f.run("sova_promote", { ids: ["o:1"] }), /o:1 \(outside Ana Ruiz's decision area \(invoicing\): only the operator promotes it\)/);
     const log = readFileSync(f.paths.actions, "utf8").trim().split("\n").map((l) => JSON.parse(l));
@@ -299,6 +300,17 @@ describe("scope, caps and budget", () => {
     const last = readFileSync(f.paths.actions, "utf8").trim().split("\n").map((l) => JSON.parse(l)).at(-1);
     assert.deepEqual([last.outcome, last.error], ["ok", undefined]);
     assert.doesNotMatch(JSON.stringify(out), /"partial"/, "the model never sees the log's field");
+  });
+
+  test("sova_promote: a request over what is left is refused whole and takes nothing; refused ids are given back", async () => {
+    const f = fake({ attended: true, settings: { caps: { ...defaultPoSettings().caps, promotePerTurn: 2 } } });
+    await assert.rejects(() => f.run("sova_promote", { ids: ["s:1", "s:2", "s:3"] }), /This message's allowance is used: 0 of 2 decisions promoted per message you send\./);
+    assert.equal(f.limits.count("promote"), 0);
+    assert.deepEqual(f.calls.filter((c) => c.startsWith("promote")), [], "nothing promoted");
+    await f.run("sova_promote", { ids: ["s:1", "nope"] });
+    assert.equal(f.limits.count("promote"), 1);
+    await f.run("sova_promote", { ids: ["s:2"] });
+    assert.equal(f.limits.count("promote"), 2);
   });
 
   test("session ids in every form the tools print reach the same session; anything else is refused", async () => {
@@ -353,8 +365,8 @@ describe("coding sessions' modes (the operator's ceiling)", () => {
     }
   });
 
-  test("a mode refusal comes before the budget and the caps (a spent budget still names the mode)", async () => {
-    const f = fake({ attended: true, tokens: 10 ** 12 });
+  test("a mode refusal comes before the caps", async () => {
+    const f = fake({ attended: true });
     await assert.rejects(() => f.run("sova_create_session", { prompt: "p", mode: "delegate" }), /Delegate is off/);
   });
 
@@ -428,11 +440,11 @@ describe("two allowances: each message you send, and on its own each day", () =>
     assert.equal(defaultPoSettings().caps.gatherPerDay, 6);
   });
 
-  test("Unlimited (null) never refuses; the at-once limits and the budget still do", async () => {
-    const f = fake({ settings: { ...caps({ promotePerDay: null, gatherPerDay: null, gatheringsOpen: 2 }), tokenBudget: null }, tokens: 10 ** 12, autonomy: "L3" });
+  test("Unlimited (null) never refuses; the at-once limits still do", async () => {
+    const f = fake({ settings: caps({ promotePerDay: null, gatherPerDay: null, gatheringsOpen: 2 }), autonomy: "L3" });
     const ids = Array.from({ length: 1500 }, (_, i) => `s:${i}`);
     await f.run("sova_promote", { ids });
-    await f.run("sova_create_session", { prompt: "a null budget never refuses" });
+    await f.run("sova_create_session", { prompt: "unlimited never refuses" });
     const g = fake({ settings: caps({ gatherPerDay: null, gatheringsOpen: 2 }), open: 2 });
     await assert.rejects(() => g.run("sova_start_gathering", gather), /2 of its gathering sessions are open, and the limit is 2 at once\./);
     assert.equal(g.held.size, 0, "an at-once refusal holds nothing: a session finishing is already a reason");
@@ -449,21 +461,18 @@ describe("two allowances: each message you send, and on its own each day", () =>
 
   test("a refusal holds one item per limit, with when to retry", async () => {
     const now = new Date(2026, 8, 27, 14, 11);
-    const f = fake({ settings: { ...caps({ gatherPerDay: 1 }), tokenBudget: 100 }, tokens: 100, now: () => now, autonomy: "L3" });
+    const f = fake({ settings: caps({ gatherPerDay: 1 }), now: () => now, autonomy: "L3" });
     await f.run("sova_start_gathering", gather);
     await assert.rejects(() => f.run("sova_start_gathering", gather));
     await assert.rejects(() => f.run("sova_start_gathering", gather));
     const day = f.held.get("day:gather");
     assert.equal(day?.retryAt, nextMidnight(now).toISOString());
     assert.equal(day?.retryAt, new Date(2026, 8, 28).toISOString());
-    await assert.rejects(() => f.run("sova_create_session", { prompt: "p" }), /The coding token budget is spent \(100 of 100\)\. It starts no coding session until you raise it\./);
-    assert.equal(f.held.get("budget")?.retryAt, null, "only the operator raising it");
     f.state.attended = true;
     f.settings.caps.createPerTurn = 0;
-    f.settings.tokenBudget = null;
     await assert.rejects(() => f.run("sova_create_session", { prompt: "p" }), /This message's allowance is used/);
     assert.equal(f.held.get("message:create")?.retryAt, now.toISOString(), "a later look of its own may go on");
-    assert.deepEqual([...f.held.keys()].sort(), ["budget", "day:gather", "message:create"]);
+    assert.deepEqual([...f.held.keys()].sort(), ["day:gather", "message:create"]);
   });
 
   test("the day's allowance resets at local midnight", async () => {
@@ -491,13 +500,14 @@ describe("two allowances: each message you send, and on its own each day", () =>
     assert.equal(tomorrow.count("gather", false), 0, "another day's counts are not today's");
   });
 
-  test("sova_project reports both allowances, the looks, the budget and what is held", async () => {
-    const f = fake({ settings: { ...caps({ gatherPerDay: null }), tokenBudget: null } });
+  test("sova_project reports both allowances, the looks and what is held, and no cost or tokens", async () => {
+    const f = fake({ settings: caps({ gatherPerDay: null }) });
     await f.run("sova_start_gathering", gather);
     const out = JSON.stringify(await f.run("sova_project"));
     assert.match(out, /Today on your own: 1 gathering sessions started \(no limit\)/);
     assert.match(out, /This operator message: 0 of 3 gathering sessions started/);
-    assert.match(out, /Coding tokens: 0 \(no limit\)/);
+    assert.doesNotMatch(out, /Coding tokens|token budget|\$\d|cost/i);
+    for (const t of f.tools) assert.doesNotMatch(`${t.description} ${t.promptSnippet ?? ""}`, /\btokens?\b|budget|\$\d/i, t.name);
     assert.match(out, /Looks on your own: at most 12 a day/);
   });
 });

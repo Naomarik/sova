@@ -1,0 +1,26 @@
+---
+// One tiny app per built-in theme, painted with that theme's own colors (read from themes/*.json
+// at build time).
+import { themes } from "../data/themes";
+
+const vars = (c: Record<string, string>) =>
+  [
+    ["bg", c.bg], ["surface", c.surface], ["sunken", c.sunken], ["ink", c.ink], ["ink2", c["ink-2"]],
+    ["muted", c["ink-muted"]], ["border", c.border], ["accent", c.accent], ["tint", c["accent-tint"]],
+    ["on-accent", c["on-accent"]], ["add", c["diff-add-ink"]], ["add-bg", c["diff-add-bg"]],
+    ["del", c["diff-del-ink"]], ["del-bg", c["diff-del-bg"]],
+  ].map(([k, v]) => `--t-${k}:${v}`).join(";");
+---
+<ul class="themes" aria-label={`${themes.length} built-in themes`}>
+  {themes.map((t) => (
+    <li class="swatch" style={vars(t.colors)}>
+      <div class="swatch-top"><span class="swatch-dot" /><span class="swatch-name">{t.name}</span><span class="swatch-base">{t.base}</span></div>
+      <div class="swatch-body" aria-hidden="true">
+        <span class="swatch-bubble">Cap it at 30s</span>
+        <span class="swatch-card">Clamped where it's computed.</span>
+        <span class="swatch-diff"><span class="swatch-del">− ms = base</span><span class="swatch-add">+ ms = min(base, MAX)</span></span>
+        <span class="swatch-foot"><span class="swatch-btn">Send</span><span class="swatch-muted">glm-5.3</span></span>
+      </div>
+    </li>
+  ))}
+</ul>

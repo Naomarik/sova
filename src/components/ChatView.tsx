@@ -98,9 +98,10 @@ import {
 import type { MessageActionItem } from "./MessageActions";
 import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
-import { entryIdOf, landExplainJump, LOADING_OLDER } from "../lib/jump";
+import { entryIdOf, jumpToEntry, landExplainJump, LOADING_OLDER, transcriptRoot } from "../lib/jump";
 import { anyReply, inputTotal, lastInput as lastInputOf, messageTotal, newestOnly, newRows } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
+import { alignRowFromDetails, foldAlignRows, type AlignEntry } from "../lib/align";
 import { Composer, type ComposerReason } from "./Composer";
 import { openCreated } from "../lib/fork-stage";
 import { FlyoutSession, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
@@ -252,6 +253,24 @@ export function ChatView(props: {
   /** Whether the running turn is this tab's: only then does a navigate result move this tab. */
   const owner = createTurnOwner((id) => sentHere(props.path, id));
   const [live, setLive] = createStore<LiveState>(emptyLive());
+  /** This run's align results, in call order (§chat.alignment/chip counts them before the run settles). */
+  const liveAligns = createMemo(() =>
+    Object.values(live.tools)
+      .filter((t) => t.name === "align" && t.status === "done")
+      .map((t) => alignRowFromDetails(t.details))
+      .filter((r) => r !== undefined),
+  );
+  /** The branch's alignments: the settled rows, then this run's. */
+  const aligns = createMemo(() => foldAlignRows(items() ?? [], liveAligns()));
+  /** Documents this run changed: their settled cards collapse to revision rows until the refetch. */
+  const liveAlignIds = createMemo(() => new Set(liveAligns().flatMap((r) => (r.doc ? [r.doc.id] : []))));
+  const jumpToAlign = (entry: AlignEntry) => {
+    if (entry.rowId && jumpToEntry(entry.rowId, props.path)) return;
+    // A revision this run made has no transcript row yet: its live card carries the document's id.
+    const card = transcriptRoot(props.path)?.querySelector<HTMLElement>(`[data-align-live="${CSS.escape(entry.doc.id)}"]`);
+    if (card) card.scrollIntoView({ block: "center", behavior: "smooth" });
+    else toast("That alignment isn't in the transcript on screen.");
+  };
   const [syncing, setSyncing] = createSignal(false);
   const [errors, setErrors] = createSignal<string[]>([]);
   /** The pane's turn-error STATE (≠ `errors`, the thread's permanent record): the last turn ended
@@ -1502,6 +1521,7 @@ export function ChatView(props: {
                 fork={props.fork}
                 actions={chatActions}
                 older={olderRows.api}
+                liveAlignIds={liveAlignIds()}
               />
               <LiveEntries
                 live={live}
@@ -1615,6 +1635,8 @@ export function ChatView(props: {
         }
         onShowTimeline={props.onShowTimeline}
         inputCount={older() ? inputTotal(items() ?? [], older()!) : 0}
+        aligns={aligns()}
+        onJumpAlign={jumpToAlign}
         autofocus={props.autofocus}
         model={modelControl}
         thinking={thinkingControl}

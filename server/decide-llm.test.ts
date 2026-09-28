@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { describe, test } from "node:test";
 import { DecisionError, type Question } from "./decide";
-import { answerSchema, buildPrompt, claudeArgs, createLlmProvider, textFailure, type LlmRuntime } from "./decide-llm";
+import { answerSchema, buildPrompt, claudeArgs, claudeEnvelopeUsage, createLlmProvider, textFailure, type LlmRuntime } from "./decide-llm";
 
 const qs: Record<string, Question> = {
   asks: { type: "boolean", instructions: "Does it ask?" },
@@ -66,7 +66,12 @@ describe("pi backend", () => {
     assert.equal(f.calls[0]!.options.temperature, 0);
     assert.equal(f.calls[0]!.options.cacheRetention, "none");
     assert.equal("reasoning" in f.calls[0]!.options, false);
-    assert.deepEqual(r.usage, { inputTokens: 100, outputTokens: 20 });
+    assert.deepEqual(r.usage, { inputTokens: 100, outputTokens: 20, cacheRead: 0, cacheWrite: 0 });
+  });
+  test("the usage keeps its cache fields and the model that answered", async () => {
+    const f = fakeRuntime(() => ({ ...text(JSON.stringify(good)), usage: { input: 10, output: 2, cacheRead: 300, cacheWrite: 40, cacheWrite1h: 40 }, responseModel: "model-x-0813" }));
+    const r = await createLlmProvider(pi, { runtime: f.runtime }).decide(req);
+    assert.deepEqual(r.usage, { inputTokens: 10, outputTokens: 2, cacheRead: 300, cacheWrite: 40, cacheWrite1h: 40, model: "model-x-0813" });
   });
   test("JSON with prose around it still parses", async () => {
     const f = fakeRuntime(() => text(`Here you go: ${JSON.stringify(good)} hope that helps`));
@@ -129,6 +134,14 @@ function fakeSpawn(stdout: string, code = 0) {
 
 describe("claude-code backend", () => {
   const cc = { backend: "claude-code" as const, model: "haiku", effort: "low" };
+  test("the envelope's usage: cache reads and writes, the 1-hour part, and the resolved model", () => {
+    const u = claudeEnvelopeUsage({
+      usage: { input_tokens: 5, output_tokens: 60, cache_read_input_tokens: 0, cache_creation_input_tokens: 9000, cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 9000 } },
+      modelUsage: { "claude-haiku-4-5-20251001": { inputTokens: 5, outputTokens: 60 } },
+    });
+    assert.deepEqual(u, { inputTokens: 5, outputTokens: 60, cacheRead: 0, cacheWrite: 9000, model: "claude-haiku-4-5-20251001" });
+    assert.equal(claudeEnvelopeUsage({}), undefined);
+  });
   test("structured_output envelope → answers; argv, private cwd (removed after), CLAUDECODE stripped", async () => {
     process.env.CLAUDECODE = "1";
     const f = fakeSpawn(JSON.stringify({ type: "result", is_error: false, result: "", structured_output: good, usage: { input_tokens: 50, output_tokens: 9 } }));

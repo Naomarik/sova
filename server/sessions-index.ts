@@ -19,6 +19,7 @@ import { isUnread, isViewing, readSeen, turnErrorShows } from "./seen";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
 import { messageContextTokens } from "./transcript";
+import { type AlignScan, readAlignScan } from "./align-state";
 import { WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
@@ -65,6 +66,9 @@ interface CacheEntry {
   /** The file carries the Overseer marker. Whether it IS the Overseer's is decided per read
       (`overseerOf`): the answer changes with overseer-state.json, not with the file. */
   marked: boolean;
+  /** How far the align read got (server/align-state.ts): the marker search resumes from it while
+      the file only grows, and a file with no `align` result is never parsed. */
+  align: AlignScan | null;
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -624,6 +628,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     const outline = scan?.found ?? null;
     const ctx = await readTailContext(path, st.size);
     const lastReply = await readTailReply(path, st.size);
+    const align = await readAlignScan(path, st.size, hit?.align ?? null);
     // A workspace session (an org's baton or overseer file) is listed under the dir it opens in on
     // THIS host; its header keeps the dir of the host that created it (§app.organizations/portability).
     const hostCwd = extraSessionRoots().includes(dirname(path)) ? cwdOverride(path) : undefined;
@@ -650,8 +655,9 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(parent ?? {}),
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
       ...(format !== CURRENT_SESSION_FORMAT ? { legacyFormat: true as const } : {}),
+      ...(align.summary ? { align: align.summary } : {}),
     };
-    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, marked: head.overseer };
+    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, marked: head.overseer, align };
     cache.set(path, entry);
     return withWindow(entry, resolveWindow);
   } catch {

@@ -45,14 +45,17 @@ once), **lease** (an offer's lock on its first taker).
   it refuses outside one. The system
   prompt is Sova's (`server/baton-prompt.md`), rendered at the start of every run with the public
   title, the goal, the holder's name and private steering profile, the other participants (name,
-  role, decision areas), the roster's active people it may hand to, the operator's name and the
+  role, decision areas), the roster's active people it may hand to, a private "who decides what"
+  list of every active person, the holder included, with their job title and decision areas (the
+  owner areas a decision picks from, §app.requirements/owner-area; "none" when no area covers it), the operator's name and the
   rules, and — when anyone has left the organization — the names (and former roles) of the people
   who left, with the rule to say they have left and ask who covers their area now (never to hand
   to them or propose them as someone new); the user's `APPEND_SYSTEM.md` is not included, and the prompt's working-directory line
   reads `(none)`. The prompt **never names the org**: an outsider learns nothing of it beyond the
   public title, so the model is not told it. Its rules say what it may say about other people:
   their name, and, when suggesting who could answer, the decision areas the list gives them;
-  never anyone's role or job title (the holder's own included), contact or anything else, and
+  never anyone's role or job title (the holder's own included), contact or anything else, never
+  the "who decides what" list or which areas the holder decides, and
   never an organization, company or project beyond the title. The summary, hand-off questions and
   recorded decisions fall under the same rules, since everyone in the conversation sees them.
   The model's own earlier replies have the holder's secret profile phrases redacted
@@ -102,8 +105,11 @@ once), **lease** (an offer's lock on its first taker).
   choose, and wait.
 - `goal_done({summary})`: the goal is met. An invisible `sova-baton-done` entry `{v:1, summary}`;
   the session is **done**, no one holds the baton, and the turn ends.
-- `record_decision({area, statement, quote})`: an invisible `sova-baton-decision` entry `{v:1,
-  area, statement, quote, by}` (`by` = the holder); the turn goes on — unless the same reply also
+- `record_decision({area, ownerArea, statement, quote})`: an invisible `sova-baton-decision` entry
+  `{v:1, area, ownerArea, statement, quote, by}` (`by` = the holder). `area` is the topic in a few
+  words; `ownerArea` is one of the roster's decision areas or "none", checked against the roster
+  (a value that is neither is refused, naming the choices: §app.requirements/owner-area). The turn
+  goes on — unless the same reply also
   calls `hand_to` or `goal_done`, when it ends the turn with them (pi ends a run only when every
   tool of the batch agrees). Slice 1 only logs decisions.
 - `hand_to` also takes the roster line the prompt shows ("Maria Lopez (id p_…)", "Maria Lopez —

@@ -1,6 +1,6 @@
 // Run: pnpm exec tsx --test server/project-coding-mode.test.ts. The project's coding mode (stored
 // tolerantly, patched strictly, Automatic from the spec's presence, the overseer's requests under the
-// ceiling), what a coding session spends (its workers included) and the promotion commit's message.
+// ceiling) and the promotion commit's message.
 // Files in a throwaway dir (PI_CODING_AGENT_DIR too). No model, no git.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -13,7 +13,6 @@ process.env.PI_CODING_AGENT_DIR = join(tmp, "agent");
 after(() => rmSync(tmp, { recursive: true, force: true }));
 const { automaticMode, baseCodingMode, codingModeChoice, parseCodingMode } = await import("./project-coding-mode");
 const store = await import("./project-overseer-store");
-const { sessionSpend } = await import("./project-overseer");
 const { promotionMessage } = await import("./reconcile");
 
 test("Automatic: normal · spec when the root has a spec manifest, else normal; never mode.json", () => {
@@ -58,12 +57,6 @@ test("the overseer's request over the base: field by field, under the ceiling", 
   const del = { mode: "delegate" as const, minorModes: [] };
   assert.deepEqual(codingModeChoice({ minor_modes: ["spec"] }, del, del), { mode: { mode: "delegate", minorModes: ["spec"] } });
   assert.deepEqual(codingModeChoice({ mode: "normal", minor_modes: [] }, del, del), { mode: { mode: "normal", minorModes: [] } });
-});
-
-test("a coding session's spend counts its workers' lifetime total", () => {
-  const u = (n: number) => ({ input: n, output: n, cacheRead: n, cacheWrite: n });
-  assert.equal(sessionSpend(u(1)), 4);
-  assert.equal(sessionSpend(u(1), { ...u(10), cost: 5 }), 44);
 });
 
 test("the promotion commit's message names every promoted decision: area — statement, each ≤ 72, at most 10", () => {

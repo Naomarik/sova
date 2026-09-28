@@ -1,0 +1,10 @@
+---
+// The app's context ring: how full a session's context window is. Paired with a figure wherever
+// it appears, never alone.
+interface Props { pct: number; tone?: "warn" | "error" }
+const { pct, tone } = Astro.props;
+const r = 5, c = 2 * Math.PI * r;
+---
+<span class:list={["context-ring", tone && `context-${tone}`]}>
+  <svg viewBox="0 0 12 12"><circle class="context-ring-track" cx="6" cy="6" r={r} fill="none" /><circle class="context-ring-fill" cx="6" cy="6" r={r} fill="none" stroke-dasharray={`${(c * pct) / 100} ${c}`} transform="rotate(-90 6 6)" /></svg>
+</span>

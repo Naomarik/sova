@@ -136,14 +136,15 @@ writes a byte into a session file. All writes are atomic tmp+rename.
   repeats counted in code. Nothing in it counts or marks failed tool calls: a failure the agent
   worked past (an exit-1 `grep -c` that found nothing) read as a failed turn.
 - **Questions** (raw answers stored in `<stateRoot>/signals.json`, pruned when a session leaves
-  the list): `asks_user` (boolean: does the reply end by asking the user something it needs before
-  continuing) for every turn; `stuck` (score over making progress / some repetition / clearly looping) only for a turn of 5
-  minutes or more, or 20 tool calls or more.
-- **Thresholds, fixed in code:** `asks-you` when `asks_user ≥ 0.7`; `looping` when `stuck ≥ 1.5`
-  with confidence ≥ 0.5. The wire carries the kinds with the raw `asksUser` and stuck answers;
-  the server derives the kinds and the client never re-derives them. Records stored before
-  failure left the questions may still hold `outcome` and `work_failed` answers: nothing reads
-  them, and no kind comes from them.
+  the list): `stuck` (score over making progress / some repetition / clearly looping), asked only
+  for a turn of 5 minutes or more, or 20 tool calls or more. A shorter turn asks nothing and makes
+  no model call; like an errored turn, it drops the stored answers of the turn before it. **No
+  model judges whether a reply asks the user something**: whether a session waits on the user's
+  answers is the deterministic count of its open alignment questions (§chat.alignment/session-mark).
+- **Thresholds, fixed in code:** `looping` when `stuck ≥ 1.5` with confidence ≥ 0.5. The wire
+  carries the kinds with the raw stuck answer; the server derives the kinds and the client never
+  re-derives them. Records stored before may still hold `asks_user`, `outcome` and `work_failed`
+  answers: nothing reads them, and no kind comes from them.
 - **Workers**, pi and Claude Code alike: a worker running for 5 minutes or more is checked for
   `stuck` at most every 5 minutes. A worker that ended is never checked: one that ended in an
   error is the digest's deterministic `worker-error` (§app.overseer/attention-digest). The parent

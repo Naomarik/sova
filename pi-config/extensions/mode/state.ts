@@ -33,7 +33,7 @@ export interface ModeState {
 	minorModes: MinorMode[];
 	/** Optional per-minor-mode toggle shortcuts (pi-tui KeyIds). None by default. */
 	minorShortcuts?: Partial<Record<MinorMode, string>>;
-	/** Optional override of the alignment-doc viewer shortcut (a pi-tui KeyId). Default: alt+a. */
+	/** Optional override of the alignments viewer shortcut (a pi-tui KeyId). Default: alt+a. */
 	viewerShortcut?: string;
 }
 

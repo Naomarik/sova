@@ -19,6 +19,7 @@ import {
 	addRow,
 	checkRef,
 	parseJsonLines,
+	type CountedMessage,
 	type TokenCounts,
 	type WorkerTranscriptAdapter,
 	type WorkerTranscriptCapabilities,
@@ -47,6 +48,8 @@ const epoch = (value: unknown): number | undefined => {
 export interface PiUsageOptions {
 	/** Exclude entries a forked session copied from its parent. Default true (workers); Sova's main sessions pass false. */
 	forkBoundary?: boolean;
+	/** Called once per counted message, after deduplication and the fork boundary (a price per message). */
+	onCount?: (message: CountedMessage) => void;
 }
 
 /**
@@ -70,7 +73,8 @@ export function piUsageAccumulator(options: PiUsageOptions = {}): PiUsageAccumul
 	let inCopy = false;
 	let model = "unknown";
 
-	const count = (u: any, rowModel: string, turn: boolean): void => {
+	const onCount = options.onCount;
+	const count = (u: any, rowModel: string, turn: boolean, meta?: Omit<CountedMessage, "model" | "counts" | "cacheWrite1h">): void => {
 		if (!u || typeof u !== "object") return;
 		const counts: TokenCounts = {
 			input: amount(u.input), output: amount(u.output), cacheRead: amount(u.cacheRead), cacheWrite: amount(u.cacheWrite),
@@ -79,6 +83,10 @@ export function piUsageAccumulator(options: PiUsageOptions = {}): PiUsageAccumul
 		total.input += counts.input; total.output += counts.output; total.cacheRead += counts.cacheRead; total.cacheWrite += counts.cacheWrite;
 		total.cost += counts.cost ?? 0; total.turns += counts.turns ?? 0;
 		addRow(rows, rowModel, counts);
+		if (onCount && meta) {
+			const h1 = typeof u.cacheWrite1h === "number" && Number.isFinite(u.cacheWrite1h) && u.cacheWrite1h >= 0 ? Math.min(u.cacheWrite1h, counts.cacheWrite) : undefined;
+			onCount({ ...meta, model: rowModel, counts, ...(h1 === undefined ? {} : { cacheWrite1h: h1 }) });
+		}
 	};
 
 	return {
@@ -106,27 +114,37 @@ export function piUsageAccumulator(options: PiUsageOptions = {}): PiUsageAccumul
 				let u: unknown;
 				let rowModel = model;
 				let turn = false;
+				let source: CountedMessage["source"] | undefined;
+				let named = false;
+				let at = epoch(e.timestamp);
+				let responseModel: string | undefined;
 				if (e.type === "usage") {
 					u = e.usage;
-					if (typeof e.model === "string") rowModel = typeof e.provider === "string" ? `${e.provider}/${e.model}` : e.model;
+					source = "usage";
+					if (typeof e.model === "string") { rowModel = typeof e.provider === "string" ? `${e.provider}/${e.model}` : e.model; named = true; }
 				} else if (e.type === "message" && e.message && typeof e.message === "object") {
 					const m = e.message;
+					at = epoch(m.timestamp) ?? at;
 					if (m.role === "assistant") {
 						u = m.usage;
 						turn = true;
-						if (typeof m.model === "string") rowModel = model = typeof m.provider === "string" ? `${m.provider}/${m.model}` : m.model;
+						source = "assistant";
+						if (typeof m.model === "string") { rowModel = model = typeof m.provider === "string" ? `${m.provider}/${m.model}` : m.model; named = true; }
+						if (typeof m.responseModel === "string" && m.responseModel) responseModel = m.responseModel;
 					} else if (m.role === "toolResult") {
 						u = m.usage; // a tool's own nested LLM work
+						source = "toolResult";
 					}
 				} else if (e.type === "compaction" || e.type === "branch_summary") {
 					u = e.usage;
+					source = e.type;
 				}
 				if (!u) continue;
 				if (typeof e.id === "string") {
 					if (seen.has(e.id)) continue;
 					seen.add(e.id);
 				}
-				count(u, rowModel, turn);
+				count(u, rowModel, turn, onCount && source ? { source, ...(at === undefined ? {} : { at }), ...(named ? {} : { inferredModel: true }), ...(responseModel ? { responseModel } : {}) } : undefined);
 			}
 		},
 		usage() {

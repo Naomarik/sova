@@ -116,6 +116,30 @@ test("pi usage: a fork with no marker falls back to the fork header's time", () 
 	assert.equal(piUsage(parseJsonLines(text)).input, 10);
 });
 
+test("pi usage onCount: once per counted message, after dedupe and the fork boundary, with its time, model, 1h writes and responseModel", () => {
+	const text = piSession({ parentSession: "/parent.jsonl", timestamp: iso(T0 + 60_000) }, [
+		assistant(T0 + 1000, usage(1000, 100, 5)), // copied from the parent: not counted
+		marker(T0 + 60_001),
+		{ ...assistant(T0 + 61_000, { ...usage(10, 1, 0, 50, 30), cacheWrite1h: 20 }, { responseModel: "kimi-k3-0901" }), id: "a1" },
+		{ type: "usage", kind: "cache_warm", provider: "anthropic", model: "claude-sonnet-5", usage: usage(0, 0, 0, 0, 500), timestamp: iso(T0 + 62_000) },
+		{ type: "message", timestamp: iso(T0 + 63_000), message: { role: "toolResult", toolName: "delegate", content: [], usage: usage(7, 3, 0) } },
+	]);
+	const seen: any[] = [];
+	const acc = piUsageAccumulator({ onCount: (m) => seen.push(m) });
+	const lines = parseJsonLines(text);
+	acc.add(lines);
+	acc.add(lines.filter((e: any) => e.id === "a1")); // a re-read: counted once
+	assert.equal(seen.length, 3);
+	assert.deepEqual(seen[0], { source: "assistant", at: T0 + 61_000, responseModel: "kimi-k3-0901", model: "ollama-cloud/kimi-k3", counts: { input: 10, output: 1, cacheRead: 50, cacheWrite: 30, cost: 0, turns: 1 }, cacheWrite1h: 20 });
+	assert.equal(seen[1].source, "usage");
+	assert.equal(seen[1].model, "anthropic/claude-sonnet-5");
+	assert.equal(seen[1].inferredModel, undefined);
+	assert.equal(seen[2].source, "toolResult");
+	assert.equal(seen[2].inferredModel, true, "a tool result's usage takes the session's model");
+	const sum = seen.reduce((n, m) => n + m.counts.input, 0);
+	assert.equal(sum, acc.usage().input, "the messages add up to the total");
+});
+
 test("pi usage accumulator: incremental adds equal a whole read; reset starts over", () => {
 	const all = parseJsonLines(piSession({}, [user(T0, "t"), assistant(T0 + 1, usage(5, 5, 0)), assistant(T0 + 2, usage(6, 6, 0))]));
 	const acc = piUsageAccumulator();

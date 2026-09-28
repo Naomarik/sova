@@ -295,8 +295,8 @@ describe("the Owner page's code never reads private stores", () => {
   const read = (f: string) => readFileSync(join(serverDir, f), "utf8");
   const files = ["owner-page.ts", "owner.ts", "person-links.ts", "project-updates.ts", ...readdirSync(join(serverDir, "share")).map((f) => `share/${f}`)];
 
-  test("no About text, overseer notes, ideas, to-dos, actions, settings or instructions reader; no coding titles or usage", () => {
-    const forbidden = /\b(readOrgAbout|readOrgHistory|readNotes|readManifest|readProse|promptToc|readTodos|readPoSettings|readPoState|logAction|getSessionSummary|getSessionInsight|piUsageTally|codingTokens|readActions)\b|"\.\.?\/overseer-(store|ideas|todos)"|about\.md|notes\.md|actions\.jsonl/;
+  test("no About text, overseer notes, ideas, to-dos, actions, settings or instructions reader; no coding titles, usage or costs", () => {
+    const forbidden = /\b(readOrgAbout|readOrgHistory|readNotes|readManifest|readProse|promptToc|readTodos|readPoSettings|readPoState|logAction|getSessionSummary|getSessionInsight|piUsageTally|projectCost|orgCosts|readCostLedger|readUsageLedger|appendUsage|priceMessage|readActions)\b|"\.\.?\/(overseer-(store|ideas|todos)|project-costs|model-prices)"|"\.\.\/shared\/(costs|model-prices)"|about\.md|notes\.md|actions\.jsonl|costs\.json|usage\.jsonl/;
     for (const f of files) assert.doesNotMatch(read(f), forbidden, relative(serverDir, join(serverDir, f)));
   });
 

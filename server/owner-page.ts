@@ -176,10 +176,6 @@ async function builtCounts(ctx: Ctx, project: OrgProject): Promise<{ finished: n
   for (const r of started) {
     if (r.kind !== "coding" && r.kind !== "operator-coding") continue;
     times.push(r.createdAt, r.merged?.at ?? "");
-    if (r.merged || r.branchDeleted) {
-      finished++;
-      continue;
-    }
     if (!r.worktree) {
       // Runs in the project root: its work lands there; building while it runs.
       if (r.path && isSessionBusy(r.path)) inProgress++;
@@ -192,7 +188,10 @@ async function builtCounts(ctx: Ctx, project: OrgProject): Promise<{ finished: n
       hit = { at: ctx.now, reading: await readWorktree(r.worktree, project.root) };
       worktreeCache.set(key, hit);
     }
-    if (hit.reading.merged) finished++;
+    // Git decides, as on the project page (a branch merged once may have new commits); the recorded
+    // merge, or removal with its branch, only when the branch is gone or git can't be read.
+    const w = hit.reading;
+    if (w.branch && !w.error ? w.merged : w.merged || !!r.merged || !!r.branchDeleted) finished++;
     else if (!r.removed) inProgress++;
   }
   return { finished, inProgress, lastAt: latest(times) };

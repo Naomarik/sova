@@ -16,6 +16,14 @@
     <!-- with an open alignment: the alignment chip, a menu button immediately left of the Inputs
          trigger, both at the row's right end (§chat.alignment/chip) -->
 
+    <!-- ticked alignment recommendations, staged for the next send (§chat.alignment/card);
+         omit when there are none -->
+    <div class="align-picks" role="group" aria-label="Staged recommendations">
+      <span class="icon icon-sm" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
+      <span class="align-picks-text">Taking your recommendation: <span class="text-mono">al_3 q1, q3; al_4 q2</span></span>
+      <button class="button button-icon button-ghost" type="button" aria-label="Clear Picks" title="Clear Picks">…close…</button>
+    </div>
+
     <!-- pending attachments; omit the <ul> when there are none; see §chat/images -->
     <ul class="attachments" aria-label="Attachments">…</ul>
 
@@ -162,6 +170,10 @@ the skill's copy ladder.
 | Chat socket dropped | enabled | Send `aria-disabled` | `clock` — "Reconnecting. Your draft is kept." |
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
 | Server `error` with `code:"busy"` | enabled | Send `aria-disabled` until the next `agent_settled` | `attention` — "pi is busy with another turn. Send when it finishes." |
+
+Send is enabled by typed text, an attachment, **or ticked alignment recommendations alone**
+(§chat.alignment/card): with ticks and no text it sends just their line. With ticks staged, a
+typed local command (`/new`, `/tree`, `/agents`…) is sent as text after them, not run.
 
 Use `aria-disabled="true"` rather than `disabled` on buttons whose reason matters. That keeps them
 focusable, so the reason (tied to them with `aria-describedby="composer-reason"`) gets read. The

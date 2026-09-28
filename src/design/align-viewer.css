@@ -49,8 +49,9 @@
 .entry:has(> .align-superseded) { display: none; }
 
 /* ---- ALIGNMENTS (§chat.alignment/card): the `align` tool's card in the transcript, an earlier
-   revision's one-line row, and their question list. Read-only: nothing here is a control
-   except the native <details> twists. */
+   revision's one-line row, and their question list. Nothing here writes: in a chat Sova holds
+   with align on, the newest card of an open alignment takes ticks and a card-foot button, which
+   only compose a message. */
 
 .align-doc {
   max-width: var(--measure);
@@ -145,6 +146,21 @@
 .align-q[data-state="decided"] .align-q-rec .align-q-label { color: var(--color-ink-2); }
 .align-q[data-state="decided"] .align-q-decision { color: var(--color-ink); }
 .align-q[data-state="dropped"] .align-q-ask { color: var(--color-ink-2); }
+/* A recommendation to take: the line is the checkbox's label, and the box sits in the options'
+   letter column so the text lines up under theirs. The row is the target, not the box. */
+.align-q-take.toggle {
+  display: grid;
+  grid-template-columns: var(--space-5) 1fr;
+  justify-content: start;
+  align-items: start;
+  gap: 0;
+  min-height: 0;
+  font-size: inherit;
+}
+.align-q-take > .toggle-box { margin-top: calc((1lh - 18px) / 2); }
+/* The card's foot: one button to go with every recommendation, and its hint or its reason. */
+.align-doc-foot.card-foot { padding: var(--space-3) 0 0; margin-top: var(--space-1); }
+.align-doc-foot-hint { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 
 /* Findings, approach, rejected: folded, since the questions are what the user answers. */
 .align-section { max-width: none; }
@@ -162,6 +178,18 @@
 /* The composer's alignment chip (§chat.alignment/chip) sits right before the Inputs trigger; the
    pair is pushed to the row's right end together. */
 .run-status-align { margin-left: auto; }
+/* The ticked recommendations staged above the composer (§chat.composer/anatomy): one removable row,
+   sent with the next message. */
+.align-picks {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.align-picks-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (min-width: 768px) {
   .model-menu.action-menu.align-menu { width: 340px; max-width: calc(100vw - var(--space-6)); }
 }

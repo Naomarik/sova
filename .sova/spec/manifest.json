@@ -5860,11 +5860,16 @@
         "src/lib/hidden-rows.ts",
         "src/design/align-viewer.css",
         "server/transcript.ts",
-        "server/align-state.test.ts"
+        "server/align-state.test.ts",
+        "src/components/Composer.tsx",
+        "src/lib/align-picks.ts",
+        "src/lib/align-picks.test.ts"
       ],
       "requires": [
         "§chat.alignment/state",
-        "§chat.transcript/transcript-items"
+        "§chat.transcript/transcript-items",
+        "§chat.alignment/model",
+        "§chat.composer/disabled-states"
       ]
     },
     "§chat.alignment/chip": {

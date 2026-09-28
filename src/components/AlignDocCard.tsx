@@ -1,10 +1,30 @@
-import { For, Show } from "solid-js";
+import { createContext, For, Show, useContext } from "solid-js";
 import type { AlignDocInfo, AlignQuestionInfo, AlignRowInfo } from "../../shared/protocol";
-import { ALIGN_STATUS_CHIP, alignStatusOf, openLabel, optionLetter, QUESTION_CHIP, questionStateOf, recommendedOption } from "../lib/align";
+import { ALIGN_STATUS_CHIP, alignStatusOf, isOpenDoc, openCount, openLabel, optionLetter, QUESTION_CHIP, questionStateOf, recommendedOption } from "../lib/align";
 import { Chip, Icon } from "./ui";
 import "../design/align-viewer.css";
 
 let seq = 0;
+
+/**
+ * Taking recommendations from the card (§chat.alignment/card), in a chat Sova holds: only ChatView
+ * provides it, so watch views and worker transcripts stay read-only. Ticks and the button only
+ * compose an ordinary message; the agent records it with its `align` tool.
+ */
+export interface AlignAnswer {
+  /** Whether the align minor mode is on in a chat this user can write to. */
+  on(): boolean;
+  /** The newest revision of an alignment on the branch: only its card takes answers. */
+  current(doc: string): AlignDocInfo | undefined;
+  picked(doc: string, q: string): boolean;
+  toggle(doc: string, q: string, on: boolean): void;
+  /** Why ticking can't stage anything here, else null. */
+  tickBlocked(): string | null;
+  /** Why "Go With Recommendations" can't send now, else null. */
+  goBlocked(): string | null;
+  goWithRecommendations(doc: string): void;
+}
+export const AlignAnswerContext = createContext<AlignAnswer | null>(null);
 
 /** A field's text with its inline code spans and bold runs, the two marks models put in these one-liners; no other markdown. */
 function Inline(props: { text: string }) {
@@ -19,7 +39,9 @@ function Inline(props: { text: string }) {
 /**
  * An `align` call's row (§chat.alignment/card): the full card for the newest revision of its
  * document on the branch, one line for an earlier revision (open it to read that revision), and
- * one info row for an exemption. Read-only: the user answers in chat, never here.
+ * one info row for an exemption. Nothing here writes: in a chat Sova holds with align on, the
+ * newest card of an open alignment lets the user tick recommendations and go with all of them,
+ * which only composes a message (AlignAnswerContext).
  */
 export function AlignRow(props: { row: AlignRowInfo; newest: boolean }) {
   return (
@@ -62,6 +84,11 @@ function AlignRevision(props: { doc: AlignDocInfo; line: string }) {
 
 export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
   const titleId = `align-doc-${++seq}`;
+  const hintId = `${titleId}-hint`;
+  const ctx = useContext(AlignAnswerContext);
+  /** Answerable: this card is its alignment's newest revision, open, with a question open. */
+  const answer = () => (ctx?.on() && ctx.current(props.doc.id)?.rev === props.doc.rev && isOpenDoc(props.doc) && openCount(props.doc) > 0 ? ctx : null);
+  const goBlocked = () => answer()?.goBlocked() ?? null;
   // "Aligning" is every open document's default: only a later status earns a chip.
   const status = () => {
     const s = alignStatusOf(props.doc);
@@ -86,12 +113,31 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
           </Show>
         </p>
       </header>
-      <AlignDocBody doc={props.doc} />
+      <AlignDocBody doc={props.doc} answer={answer()} />
+      <Show when={answer()}>
+        {(a) => (
+          <div class="card-foot align-doc-foot">
+            <button
+              type="button"
+              class="button button-sm"
+              aria-disabled={goBlocked() ? "true" : undefined}
+              aria-describedby={hintId}
+              title={goBlocked() ?? undefined}
+              onClick={() => !goBlocked() && a().goWithRecommendations(props.doc.id)}
+            >
+              Go With Recommendations
+            </button>
+            <span class="align-doc-foot-hint" id={hintId}>
+              {goBlocked() ?? "Or tick some and answer the rest below."}
+            </span>
+          </div>
+        )}
+      </Show>
     </article>
   );
 }
 
-function AlignDocBody(props: { doc: AlignDocInfo }) {
+function AlignDocBody(props: { doc: AlignDocInfo; answer?: AlignAnswer | null }) {
   return (
     <>
       <p class="align-doc-summary"><Inline text={props.doc.summary} /></p>
@@ -100,7 +146,7 @@ function AlignDocBody(props: { doc: AlignDocInfo }) {
       </Show>
       <Show when={props.doc.questions.length > 0}>
         <ol class="align-questions" aria-label="Questions">
-          <For each={props.doc.questions}>{(q) => <AlignQuestion q={q} />}</For>
+          <For each={props.doc.questions}>{(q) => <AlignQuestion q={q} doc={props.doc.id} answer={props.answer} />}</For>
         </ol>
       </Show>
       <AlignSection label="Findings" items={props.doc.findings.map((f) => ({ id: f.id, body: f.text }))} />
@@ -113,10 +159,20 @@ function AlignDocBody(props: { doc: AlignDocInfo }) {
 /** A field's text as plain words, for a truncated line's hover title. */
 const plain = (text: string) => text.replace(/\*\*([^*\n]+)\*\*/g, "$1").replace(/`([^`\n]+)`/g, "$1");
 
-function AlignQuestion(props: { q: AlignQuestionInfo }) {
+function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: AlignAnswer | null }) {
   const state = () => questionStateOf(props.q);
   const chip = () => QUESTION_CHIP[state()];
   const rec = () => recommendedOption(props.q);
+  const take = () => (state() === "open" ? props.answer : null);
+  const recLine = () => (
+    <>
+      <span class="align-q-label">Recommended:</span>{" "}
+      <Show when={rec() !== undefined} fallback={<strong><Inline text={props.q.recommendation.choice} /></strong>}>
+        <span class="text-mono align-q-letter">{optionLetter(rec()!)}</span> — <strong><Inline text={props.q.options![rec()!]!.label} /></strong>
+      </Show>{" "}
+      — <Inline text={props.q.recommendation.why} />
+    </>
+  );
   const by = (d: NonNullable<AlignQuestionInfo["decision"]>) => (d.by === "user" ? "you" : "accepted recommendation");
   // The outcome: under an opened fold in full, and in its folded summary as one truncated line.
   const outcome = () => {
@@ -184,13 +240,25 @@ function AlignQuestion(props: { q: AlignQuestionInfo }) {
           </For>
         </ol>
       </Show>
-      <p class="align-q-rec">
-        <span class="align-q-label">Recommended:</span>{" "}
-        <Show when={rec() !== undefined} fallback={<strong><Inline text={props.q.recommendation.choice} /></strong>}>
-          <span class="text-mono align-q-letter">{optionLetter(rec()!)}</span> — <strong><Inline text={props.q.options![rec()!]!.label} /></strong>
-        </Show>{" "}
-        — <Inline text={props.q.recommendation.why} />
-      </p>
+      {/* An open question on an answerable card: the recommendation is the checkbox's label, so
+          the whole line is the target and what it takes is what it says. */}
+      <Show when={take()} fallback={<p class="align-q-rec">{recLine()}</p>}>
+        {(a) => (
+          <label class="toggle align-q-rec align-q-take" title={a().tickBlocked() ?? undefined}>
+            <input
+              type="checkbox"
+              checked={a().picked(props.doc, props.q.id)}
+              disabled={!!a().tickBlocked()}
+              onChange={(e) => a().toggle(props.doc, props.q.id, e.currentTarget.checked)}
+            />
+            <span class="toggle-box" />
+            <span>
+              <span class="visually-hidden">Take the recommendation for {props.q.id}. </span>
+              {recLine()}
+            </span>
+          </label>
+        )}
+      </Show>
     </>
   );
   // An open question is what the user answers, so it stays whole; a settled one folds to one line

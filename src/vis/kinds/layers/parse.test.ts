@@ -33,3 +33,17 @@ test("layers: mark a layer by its label; errors say what to write", () => {
   assert.match(err("Browser"), /a layer is/);
   assert.match(err("Browser | a | b | c | d"), /a layer is/);
 });
+
+test("layers: items that are all quoted keep their own quotes (the field isn't unquoted as a whole)", () => {
+  const s = ok<LayersSpec>("layers", 'Ingress | "Ingress controller", "TLS cert (Secret)", "host/path rules" | L7 routing | accent\nPod | "sidecar (optional)", "app container"\nEdge | "IndexedDB, caches"\n"Load balancer" | Cloud LB, "static IP" | "one per cluster"');
+  assert.deepEqual(s.layers.map((l) => l.items), [
+    ["Ingress controller", "TLS cert (Secret)", "host/path rules"],
+    ["sidecar (optional)", "app container"],
+    ["IndexedDB, caches"],
+    ["Cloud LB", "static IP"],
+  ]);
+  assert.equal(s.layers[0]!.note, "L7 routing");
+  assert.equal(s.layers[0]!.tone, "accent");
+  assert.equal(s.layers[3]!.label, "Load balancer");
+  assert.equal(s.layers[3]!.note, "one per cluster");
+});

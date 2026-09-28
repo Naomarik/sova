@@ -30,7 +30,7 @@ export function parseMatrix(body: string): MatrixSpec {
   const { rest, marks } = takeMarks(settled);
   const cols = values.get("columns");
   if (!cols) fail(0, "matrix needs columns: A, B, C");
-  spec.columns = commaList(cols!.value, cols!.n);
+  spec.columns = commaList(cols!.raw, cols!.n);
   if (spec.columns.length < 1 || spec.columns.length > MAX_COLUMNS) fail(cols!.n, `1 to ${MAX_COLUMNS} columns`);
   for (const line of rest) {
     const fs = fields(line);

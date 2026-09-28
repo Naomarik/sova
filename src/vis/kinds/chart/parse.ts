@@ -50,7 +50,7 @@ export function parseChart(body: string): ChartSpec {
     if (v) spec[key] = text(v.value, v.n);
   }
   const series = values.get("series");
-  if (series) spec.series = commaList(series.value, series.n);
+  if (series) spec.series = commaList(series.raw, series.n);
   if (spec.series.length > MAX_SERIES) fail(series!.n, `${spec.series.length} series; at most ${MAX_SERIES}`);
   if (spec.type === "scatter" && series) fail(series.n, "scatter takes no series: each row is label x y");
   const width = spec.type === "scatter" ? 2 : Math.max(1, spec.series.length);

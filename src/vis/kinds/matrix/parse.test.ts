@@ -31,3 +31,7 @@ test("matrix: mark a row by its label, or a column by its name", () => {
   assert.match(err("matrix", "columns: A, B\nx | yes | no\nmark C").message, /no row or column C/);
   assert.deepEqual(s.rows[0]!.cells, [{ mark: "no" }, { mark: "yes" }]);
 });
+
+test("matrix: a quoted column name may hold a comma", () => {
+  assert.deepEqual(ok<MatrixSpec>("matrix", 'columns: "Merge, then push"\nx | yes').columns, ["Merge, then push"]);
+});

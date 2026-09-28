@@ -49,3 +49,7 @@ test("chart: stacked bars refuse a log scale; quoted series names keep their spa
   assert.match(err("chart", "type: stacked\nscale: log\nseries: a, b\nx 1 2").message, /stacked bars can't use scale: log/);
   assert.deepEqual(ok<ChartSpec>("chart", 'series: "Merge sort", Quicksort, "Insertion sort"\nx 1 2 3').series, ["Merge sort", "Quicksort", "Insertion sort"]);
 });
+
+test("chart: a quoted series name may hold a comma", () => {
+  assert.deepEqual(ok<ChartSpec>("chart", 'series: "A, B"\nx 1').series, ["A, B"]);
+});

@@ -18,6 +18,8 @@
  *                                                        default false = the operator named each id: allowed)
  * PATCH /api/orgs/:id/projects/:pid/decisions/:did      body { ownerArea: string } -> DecisionsInfo (a roster decision
  *                                                        area or "none"; kept in ownerAreaHistory; re-routes its open conflict)
+ * POST  /api/orgs/:id/projects/:pid/decisions/:did/text body { action: "keep" | "restore" } -> DecisionsInfo (a promoted
+ *                                                        decision edited in the spec: keep the spec's words, or promote theirs again)
  * POST  /api/orgs/:id/projects/:pid/conflicts/:cid/route  body { to?: PersonRef } -> DecisionsInfo (start its baton session now)
  * POST  /api/orgs/:id/projects/:pid/conflicts/:cid/resolve body ConflictResolveInput -> DecisionsInfo (the operator decides)
  * GET   /api/orgs/:id/projects/:pid/spec                 -> SpecStatus
@@ -113,6 +115,17 @@ export interface DecisionRow {
       successful reconcile run has filed and compared it. */
   checkedWith?: string[];
   promotedAt?: string;
+  /** SHA-256 of its record's prose as the last promotion wrote it (or as the operator kept it). */
+  promotedText?: string;
+  /** The commit that promotion made in the project root, when it made one. */
+  promotedCommit?: string;
+  /** The operator kept the spec's words after they were edited (Keep Spec's Words). */
+  textKept?: { at: string; by: string; name: string };
+  /** Promoted, and its record's prose differs from what was promoted: derived on each read. */
+  editedInSpec?: boolean;
+  /** Promoted: whether its record carries `code` and reviewed or verified `evidence` (derived on
+      each read from the current spec; what the builder recorded, not proof). */
+  build?: "built" | "not-built";
 }
 
 export interface Conflict {
@@ -158,6 +171,9 @@ export interface SpecStatus {
   specRoot: string;
   /** A current spec exists (manifest.json). */
   exists: boolean;
+  /** Promoted decisions whose record says they are built, and those not built yet. */
+  built?: number;
+  notBuilt?: number;
   /** Only the reconciler's promotion writes claims/ (a rule of Sova's; a coding session's tools can't be stopped). */
   frozen: boolean;
   /** The project draft the writer keeps, when one exists. */

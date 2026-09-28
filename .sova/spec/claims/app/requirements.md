@@ -33,6 +33,35 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   other live decision of its area, no open conflict, written to the project draft: promotable),
   `conflict`, `promoted`, `superseded` (a later decision replaced it; `supersededBy` names it).
   A state is recomputed from those facts on every read, never stored as a separate truth.
+- **Who owns which field.** Of a record in the project's spec, the decisions layer owns its prose
+  (the statement, each quote with who said it and when, the supersede line) and the manifest
+  fields `decision`, `provenance` and `supersededBy`. It writes `kind: note` and `authority:
+  accepted` only when it creates the record. Every other field (`evidence`, `code`, `requires`, a
+  relabelled `authority` or `kind`, any other key) is the spec layer's, set by a builder or a
+  reviewer: the reconciler never compares, drops or rewrites it.
+- **Still promoted.** A promoted decision is `drafted` again (promotable) only when its record is
+  missing from the current spec, or its decisions-owned fields differ from what the reconciler
+  would write now (a restatement was folded in; a promoted decision it replaced doesn't say so
+  yet). A builder adding `evidence` or `code`, or relabelling the record, leaves it `promoted`. A
+  decision already `drafted` again for that reason reads `promoted` again with nothing migrated,
+  and the stale project draft goes at the next Reconcile, promotion or Rewrite Draft.
+- **Edited in the spec.** A promotion keeps, on each promoted decision's row, a hash of its
+  record's prose as written (`promotedText`) and the promotion's commit (`promotedCommit`, when it
+  made one). When the current prose differs from it (for a decision promoted before that was kept:
+  from what the reconciler would write), the decision stays `promoted` and is marked `editedInSpec`;
+  its row in the Decisions list says "Edited in the spec since it was promoted." with **Keep Spec's
+  Words** (the row takes the current prose's hash, and records `{at, by, name}` as `textKept`) and
+  **Restore Their Words** (the person's words are promoted again, prose only: the record's other
+  fields stay, and it is committed like any promotion). Both are `POST …/decisions/:did/text
+  {action: "keep" | "restore"}`, for a promoted decision marked edited only, else 409. The project
+  overseer reports it and never keeps or restores.
+- **Built or not built yet.** A promoted decision is **built** when its record in the current spec
+  has `code` and `evidence` `reviewed` or `verified`, else **not built yet** (`build` on the row,
+  derived on each read like its state). It repeats what the builder recorded, not proof: a branch
+  not yet merged reads "not built yet". Each promoted decision's row shows a **Built** or **Not
+  built yet** chip; the Requirements card's spec line adds "· {n} built, {m} not built yet" when any
+  decision is promoted (`SpecStatus.built`, `notBuilt`). Only the operator and the project overseer
+  see it; a share page never shows it.
 
 ## §app.requirements/drafts-with-provenance — Records in the project's own spec
 
@@ -197,7 +226,8 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   `projects.json`): its documentation is written only by the reconciler's promotion.
 - Sova cannot stop a coding session's own file tools from editing `claims/`; instead, a frozen
   project records a hash of its current spec after every promotion and reports `editedOutside`
-  when the spec no longer matches it.
+  when the spec no longer matches it. The hash covers the whole spec, so a builder recording
+  `evidence` or `code` reports it too: in a frozen project only promotion writes the spec.
 
 ## §app.requirements/promotion — Piecemeal, explicit promotion
 
@@ -211,7 +241,12 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   a project overseer's promotion refuse it with "outside <name>'s decision area: promote it
   explicitly by id", and promote the rest. A promotion builds a fresh draft holding exactly the
   selection (claim files move whole), plus, for a promoted decision the selection supersedes, its
-  record rewritten with `Superseded by <record>.` and `supersededBy`; records `--doc-only`
+  record rewritten with `Superseded by <record>.` and `supersededBy`. It writes only what it
+  changes: a record already in the spec keeps every field the decisions layer doesn't own
+  (§app.requirements/decisions), only a changed record's block of its claim file is rewritten,
+  every other byte of the file (other records, the lede, blank lines) stays as it was, and a file
+  with nothing to change isn't written, so records of other owners in the same file are never
+  pulled into the selection (the project draft is written the same way). It records `--doc-only`
   evidence per changed record `--by reconciler`, with a verification naming the author, date,
   session, entry, quote and what it was reconciled against; previews the promotion and writes it
   with that preview's plan hash. The batch draft `sova-promote-<time>` is kept: its `draft.json`

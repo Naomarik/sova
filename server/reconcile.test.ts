@@ -554,6 +554,15 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, true);
     writeFileSync(md, bytes);
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, false);
+    // A builder recording evidence writes the spec too: frozen means only promotion does.
+    const mf = join(client, ".sova", "spec", "manifest.json");
+    const mbytes = readFileSync(mf, "utf8");
+    const m = JSON.parse(mbytes);
+    const rid = Object.keys(m.claims).find((k) => k.startsWith("§requirements.invoicing/"))!;
+    m.claims[rid].evidence = "verified";
+    writeFileSync(mf, JSON.stringify(m));
+    assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, true);
+    writeFileSync(mf, mbytes);
     reconcile.setFrozen(org.id, project.id, false);
     writeFileSync(md, `${bytes}\nA hand edit.\n`);
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, undefined);
@@ -959,5 +968,144 @@ describe("an existing spec", () => {
     const m = JSON.parse(readFileSync(join(root, ".sova", "spec", "manifest.json"), "utf8"));
     assert.deepEqual(m.claims["§app/thing"], { kind: "note", authority: "accepted" });
     assert.equal(readFileSync(join(root, ".sova", "spec", "claims", "app", "thing.md"), "utf8"), "# §app/thing — Thing\n\nPre-existing.\n");
+  });
+});
+
+// ---- NEW-MS2-1: the decisions layer owns only its fields (§app.requirements/decisions, /promotion) ----------------
+
+describe("the decisions layer owns only its fields", async () => {
+  const org = await orgs.createOrg({ name: "Garage", dir: join(tmp, "ws-layers") });
+  const client = join(tmp, "client-layers");
+  mkdirSync(client);
+  const project = orgs.addProject(org.id, { name: "Invoices", root: client });
+  const kim = orgs.addPerson(org.id, { name: "Kim Park", role: "Finance", decides: ["invoicing"] });
+  const s = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Invoices", goal: "g" });
+  const md = join(client, ".sova", "spec", "claims", "requirements", "invoicing.md");
+  const manifestFile = join(client, ".sova", "spec", "manifest.json");
+  let a = "";
+  let b = "";
+  const row = (info: { decisions: { id: string }[] }, id: string) => info.decisions.find((d) => d.id === id) as any;
+
+  test("a builder's evidence and code leave a promoted decision promoted, and it reads as built", async () => {
+    a = `${s.sessionId}:${say(s.path, kim.id, "Net 30 for all.", { area: "invoicing", statement: "Invoices are due after thirty days.", quote: "Net 30 for all." }).markerId}`;
+    b = `${s.sessionId}:${say(s.path, kim.id, "Blue letterhead.", { area: "invoicing", statement: "Invoices use the blue letterhead.", quote: "Blue letterhead." }).markerId}`;
+    await reconcile.reconcileProject(org.id, project.id);
+    const r = await reconcile.promoteDecisions(org.id, project.id, [a, b]);
+    assert.deepEqual(r.promoted.sort(), [a, b].sort());
+    assert.match(row(r.info, a).promotedText, /^[0-9a-f]{64}$/, "the prose as promoted is kept");
+    assert.equal(row(r.info, a).build, "not-built");
+    assert.deepEqual([r.info.spec.built, r.info.spec.notBuilt], [0, 2]);
+    // The builder, in spec mode on its branch, records evidence and code, relabels, and the file's layout differs.
+    const m = specManifest(client);
+    const ra = row(r.info, a).recordId;
+    const rb = row(r.info, b).recordId;
+    Object.assign(m.claims[ra], { evidence: "verified", code: ["src/due.js"] });
+    Object.assign(m.claims[rb], { authority: "migrated", requires: [] });
+    writeFileSync(manifestFile, `${JSON.stringify(m, null, 2)}\n`);
+    writeFileSync(md, `${readFileSync(md, "utf8")}\n\n`);
+    const info = await reconcile.reconcileProject(org.id, project.id);
+    assert.equal(row(info, a).state, "promoted", "evidence and code are the spec layer's");
+    assert.equal(row(info, b).state, "promoted", "so is a relabel");
+    assert.equal(row(info, a).build, "built");
+    assert.equal(row(info, b).build, "not-built");
+    assert.equal(row(info, a).editedInSpec, undefined, "a layout change is not an edit");
+    assert.deepEqual([info.spec.built, info.spec.notBuilt, info.spec.drafted, info.spec.draft], [1, 1, 0, null], "and no draft would take the evidence away");
+  });
+
+  test("a re-promotion keeps the builder's fields and every byte it didn't mean to change", async () => {
+    const c = `${s.sessionId}:${say(s.path, kim.id, "Thirty, yes.", { area: "invoicing", statement: "Thirty days, confirmed.", quote: "Thirty, yes." }).markerId}`;
+    await reconcile.reconcileProject(org.id, project.id);
+    // Fold C into A, as a confirmation would be.
+    const store = decisions.readDecisionStore(org.id, project.id);
+    const r = (id: string) => store.decisions.find((d) => d.id === id)!;
+    r(a).folded = [c];
+    Object.assign(r(c), { state: "superseded", supersededBy: a });
+    decisions.writeDecisionStore(org.id, project.id, store);
+    const drafted = await reconcile.draftProject(org.id, project.id);
+    assert.equal(row(drafted, a).state, "drafted", "a folded quote is the decisions layer's: promotable again");
+    const ra = row(drafted, a).recordId;
+    const rb = row(drafted, b).recordId;
+    const draftRec = JSON.parse(readFileSync(join(client, ".sova", "spec", "drafts", "sova-decisions", "spec", "manifest.json"), "utf8")).claims[ra];
+    assert.equal(draftRec.evidence, "verified", "the draft keeps the builder's evidence");
+    assert.deepEqual(draftRec.code, ["src/due.js"]);
+    const before = readFileSync(md, "utf8");
+    const bBlock = before.slice(before.indexOf(`## ${rb}`));
+    const out = await reconcile.promoteDecisions(org.id, project.id, [a]);
+    assert.deepEqual(out.refused, [], "B's record, in the same file, is not pulled into the selection");
+    assert.deepEqual(out.promoted, [a]);
+    const m = specManifest(client);
+    assert.equal(m.claims[ra].evidence, "verified");
+    assert.deepEqual(m.claims[ra].code, ["src/due.js"]);
+    assert.deepEqual(m.claims[ra].provenance.map((p: any) => p.quote), ["Net 30 for all.", "Thirty, yes."]);
+    assert.deepEqual([m.claims[rb].authority, m.claims[rb].requires], ["migrated", []]);
+    assert.ok(readFileSync(md, "utf8").endsWith(bBlock), "B's block and the file's trailing layout are byte for byte as they were");
+  });
+
+  test("prose edited in the spec is flagged, stays promoted, and the operator keeps or restores it", async () => {
+    const info0 = reconcile.listDecisions(org.id, project.id);
+    const rb = row(info0, b).recordId;
+    const original = readFileSync(md, "utf8");
+    writeFileSync(md, original.replace("Invoices use the blue letterhead.\n", "Invoices use the blue letterhead, 12 pt.\n"));
+    let info = reconcile.listDecisions(org.id, project.id);
+    assert.equal(row(info, b).state, "promoted");
+    assert.equal(row(info, b).editedInSpec, true);
+    await assert.rejects(reconcile.settleSpecText(org.id, project.id, a, "keep"), /as they were promoted/);
+    info = await reconcile.settleSpecText(org.id, project.id, b, "keep");
+    assert.equal(row(info, b).editedInSpec, undefined);
+    assert.equal(row(info, b).textKept.by, OPERATOR);
+    // Edited again, then restored: the person's words come back, the record's other fields stay.
+    writeFileSync(md, readFileSync(md, "utf8").replace("12 pt.", "14 pt."));
+    assert.equal(row(reconcile.listDecisions(org.id, project.id), b).editedInSpec, true);
+    info = await reconcile.settleSpecText(org.id, project.id, b, "restore");
+    assert.equal(row(info, b).editedInSpec, undefined);
+    assert.equal(row(info, b).state, "promoted");
+    assert.equal(readFileSync(md, "utf8"), original, "their words, and the file as it was");
+    assert.deepEqual([specManifest(client).claims[rb].authority, specManifest(client).claims[rb].requires], ["migrated", []]);
+  });
+});
+
+describe("the writer changes only what it means to", () => {
+  const row = (slug: string, statement: string) =>
+    ({ id: `s:${slug}`, areaKey: "hosting", area: "Hosting", statement, quote: statement, name: "Tony", at: "2026-09-26T00:00:00Z", by: "p_t", sessionId: "s", entryId: "e", recordId: `§requirements.hosting/${slug}` }) as any;
+  const setup = (name: string, text: string, claims: Record<string, unknown>) => {
+    const dir = join(tmp, name);
+    mkdirSync(join(dir, "claims", "requirements"), { recursive: true });
+    writeFileSync(join(dir, "manifest.json"), `${JSON.stringify({ formatVersion: 1, claims }, null, 2)}\n`);
+    writeFileSync(join(dir, "claims", "requirements", "hosting.md"), text);
+    return dir;
+  };
+  const x = row("x", "Runs on srv-01.");
+  const y = row("y", "Backups nightly.");
+  const lede = writer.renderLede("hosting", "Hosting");
+  const odd = `${lede}\n${writer.renderRecord(x)}\n\n\n${writer.renderRecord(y)}\n\n`;
+  const recs = { "§requirements/hosting": { kind: "note", authority: "accepted" }, [x.recordId]: { ...writer.manifestRecord(x), evidence: "verified", code: ["a.js"] }, [y.recordId]: writer.manifestRecord(y) };
+
+  test("nothing to change: no file is written", () => {
+    const dir = setup("w-same", odd, recs);
+    const before = readFileSync(join(dir, "manifest.json"), "utf8");
+    assert.deepEqual(writer.applyToSpecDir(dir, { rows: [x, y], supersededBy: new Map() }), []);
+    assert.equal(readFileSync(join(dir, "claims", "requirements", "hosting.md"), "utf8"), odd);
+    assert.equal(readFileSync(join(dir, "manifest.json"), "utf8"), before);
+  });
+  test("a manifest-only change leaves the claim file's bytes alone and keeps the spec layer's fields", () => {
+    const dir = setup("w-manifest", odd, recs);
+    const x2 = { ...x, entryId: "e2" };
+    assert.deepEqual(writer.applyToSpecDir(dir, { rows: [x2], supersededBy: new Map() }), [x.recordId]);
+    assert.equal(readFileSync(join(dir, "claims", "requirements", "hosting.md"), "utf8"), odd);
+    const m = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+    assert.equal(m.claims[x.recordId].provenance[0].entryId, "e2");
+    assert.deepEqual([m.claims[x.recordId].evidence, m.claims[x.recordId].code], ["verified", ["a.js"]]);
+  });
+  test("a changed block keeps its layout; the other blocks keep their bytes; an appended one follows a blank line", () => {
+    const dir = setup("w-block", odd, recs);
+    const z = row("z", "Logs kept 90 days.");
+    const out = writer.applyToSpecDir(dir, { rows: [z, x], supersededBy: new Map([[x.recordId, z.recordId]]) });
+    assert.deepEqual(out, [x.recordId, z.recordId].sort());
+    const text = readFileSync(join(dir, "claims", "requirements", "hosting.md"), "utf8");
+    assert.equal(text, `${lede}\n${writer.renderRecord(x, z.recordId)}\n\n\n${writer.renderRecord(y)}\n\n\n${writer.renderRecord(z)}`, "the old bytes, then the new block");
+    const m = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+    assert.equal(m.claims[x.recordId].supersededBy, z.recordId);
+    assert.equal(m.claims[x.recordId].evidence, "verified");
+    assert.deepEqual(m.claims[z.recordId], writer.manifestRecord(z), "a new record gets kind and authority");
   });
 });

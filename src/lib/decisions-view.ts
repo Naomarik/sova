@@ -11,6 +11,19 @@ export const DECISION_STATE: Record<DecisionState, { word: string; tone?: "info"
   superseded: { word: "Superseded", hint: "A later decision replaced it." },
 };
 
+/** A promoted decision's build, as its spec record says (§app.requirements/decisions). */
+export const BUILD_CHIP: Record<NonNullable<DecisionRow["build"]>, { word: string; tone?: "success"; hint: string }> = {
+  built: { word: "Built", tone: "success", hint: "Its spec record has code and reviewed or verified evidence: what the build recorded, not proof." },
+  "not-built": { word: "Not built yet", hint: "Its spec record has no code with reviewed or verified evidence yet. A branch not merged yet reads this way too." },
+};
+
+/** The Requirements card's build counts, or "" when nothing is promoted: " · 4 built, 9 not built yet". */
+export function builtLine(spec: { built?: number; notBuilt?: number }): string {
+  const built = spec.built ?? 0;
+  const notBuilt = spec.notBuilt ?? 0;
+  return built + notBuilt ? ` · ${built} built, ${notBuilt} not built yet` : "";
+}
+
 /** Only a drafted decision can be promoted: compared clean and written to the draft. */
 export const promotable = (d: Pick<DecisionRow, "state">): boolean => d.state === "drafted";
 

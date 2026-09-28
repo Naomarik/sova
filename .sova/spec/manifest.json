@@ -4305,7 +4305,15 @@
       "code": [
         "server/decisions.ts",
         "server/reconcile.ts",
-        "server/reconcile.test.ts"
+        "server/reconcile.test.ts",
+        "server/spec-draft-writer.ts",
+        "shared/decisions.ts",
+        "server/decisions-routes.ts",
+        "src/components/ProjectPage.tsx",
+        "src/lib/decisions-view.ts",
+        "src/lib/decisions-view.test.ts",
+        "src/lib/api.ts",
+        "src/projects.css"
       ],
       "requires": [
         "§app.baton/hand-off"

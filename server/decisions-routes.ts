@@ -2,7 +2,7 @@ import type { Context, Hono } from "hono";
 import type { ConflictResolveInput } from "../shared/decisions";
 import { DecisionError } from "./decide";
 import { OrgError } from "./orgs";
-import { watchResolutions, draftProject, listDecisions, promoteDecisions, reconcileProject, resolveConflict, routeConflictNow, setFrozen, setOwnerArea, specStatusOf } from "./reconcile";
+import { watchResolutions, draftProject, listDecisions, promoteDecisions, reconcileProject, resolveConflict, routeConflictNow, setFrozen, setOwnerArea, settleSpecText, specStatusOf } from "./reconcile";
 import { SpecToolError } from "./spec-draft-writer";
 
 /**
@@ -72,6 +72,10 @@ export function registerDecisionRoutes(app: Hono<any>): void {
       if (typeof ownerArea !== "string") throw new OrgError('Expected { ownerArea: string } (a roster decision area or "none")');
       return c.json(await setOwnerArea(p(c, "id"), p(c, "pid"), p(c, "did"), ownerArea));
     }),
+  );
+  app.post(
+    `${BASE}/decisions/:did/text`,
+    handle(async (c) => c.json(await settleSpecText(p(c, "id"), p(c, "pid"), p(c, "did"), (await body(c)).action))),
   );
   app.post(
     `${BASE}/conflicts/:cid/route`,

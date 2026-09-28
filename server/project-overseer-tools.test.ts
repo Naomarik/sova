@@ -63,7 +63,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     effective: () => effectiveAutonomy(settings, roster),
     attended: () => state.attended,
     overseerId: () => "po-1",
-    batons: () => Array.from({ length: opts.open ?? 0 }, (_, i) => ({ sessionId: `open-${i}`, owner: { overseerOf: "prj_bbbbbbbb" }, state: "open" }) as never),
+    batons: () => Array.from({ length: opts.open ?? 0 }, (_, i) => ({ sessionId: `open-${i}`, owner: { overseerOf: "prj_bbbbbbbb" }, state: "open", publicTitle: `Open ${i}` }) as never),
     batonView: async () => null,
     decisions: async () => ({ decisions: [], conflicts: [], spec: { specRoot: "", exists: false, frozen: false, draft: null, promoted: 0, drafted: 0 }, lastRun: null, running: false, names: {}, ownerAreas: [] }),
     reconcile: async () => {
@@ -78,6 +78,9 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
         .filter((i) => i.startsWith("c:") || i.startsWith("o:"))
         .map((id) => ({ id, reason: id.startsWith("o:") ? "outside Ana Ruiz's decision area (invoicing): only the operator promotes it" : "in an open conflict" }));
       return { info: await host.decisions(), promoted, refused };
+    },
+    closeGathering: async (sid: string) => {
+      calls.push(`close:${sid}`);
     },
     startGathering: async (input: { to: string | string[] }) => {
       calls.push(`gather:${[input.to].flat().join(",")}`);
@@ -131,6 +134,7 @@ const ACTS: Record<string, Record<string, unknown>> = {
   sova_idea: { op: "add", id: "§gap/vat", title: "Nobody decided VAT" },
   sova_note: { op: "append", text: "remember" },
   sova_owner_update: { text: "The opening hours are agreed." },
+  sova_close_gathering: { session: "open-0", reason: "covered by a newer one" },
 };
 
 describe("the autonomy table", () => {
@@ -163,7 +167,7 @@ describe("the wrapper enforces it, per tool", () => {
   for (const level of AUTONOMY_LEVELS) {
     test(`unattended at ${level}`, async () => {
       for (const [name, params] of Object.entries(ACTS)) {
-        const f = fake({ autonomy: level, roster: [person("p_tony0001", "Tony"), person("p_tony0002", "Toni")] });
+        const f = fake({ autonomy: level, roster: [person("p_tony0001", "Tony"), person("p_tony0002", "Toni")], open: 1 });
         const need = TOOL_NEEDS[name]!;
         const allowed = need !== "operator" && (need === "read" || AUTONOMY_LEVELS.indexOf(level) >= AUTONOMY_LEVELS.indexOf(need as Autonomy));
         if (allowed) await f.run(name, params);
@@ -181,7 +185,7 @@ describe("the wrapper enforces it, per tool", () => {
   test("attended (the operator's own message): every act runs, even at L0 with an empty roster", async () => {
     for (const [name, params] of Object.entries(ACTS)) {
       if (name === "sova_start_gathering" || name === "sova_offer") continue; // needs a roster person
-      const f = fake({ attended: true, autonomy: "L0", roster: [] });
+      const f = fake({ attended: true, autonomy: "L0", roster: [], open: 1 });
       assert.equal(f.host.effective().autonomy, "L0");
       await f.run(name, params);
     }
@@ -326,6 +330,7 @@ describe("scope and caps", () => {
     for (const name of ["sova_start_gathering", "sova_offer"]) {
       const goal = (f.tools.find((t) => t.name === name)!.parameters as any).properties.goal.description;
       assert.match(goal, /by name only, never by role or job title/, name);
+      assert.match(goal, /never say how the answers will be recorded or under which area \("as finance decisions"\)/, name);
     }
   });
 
@@ -588,5 +593,54 @@ describe("owner areas reach the promotion check (NEW-MS-5)", () => {
     assert.match(out, /owner area: finance · the author decides it/);
     const promote = f.tools.find((t) => t.name === "sova_promote")!;
     assert.match(promote.description, /check its owner area fits what it is about/);
+  });
+});
+
+describe("closing its own gatherings (NEW-MS2-2)", () => {
+  const b = (x: Record<string, unknown>) => ({ owner: { overseerOf: "prj_bbbbbbbb" }, state: "open", publicTitle: "Invoices", ...x }) as never;
+  const batons = [
+    b({ sessionId: "unsent" }),
+    b({ sessionId: "answered", wroteAt: "2026-09-28T12:00:00Z" }),
+    b({ sessionId: "settle", conflict: { id: "cf_1", area: "invoicing" } }),
+    b({ sessionId: "theirs", owner: "operator" }),
+    b({ sessionId: "over", state: "done" }),
+  ];
+  test("closes only one it started that nobody has written in, with its reason as the note", async () => {
+    const f = fake();
+    f.host.batons = () => batons;
+    const out = await f.run("sova_close_gathering", { session: "sova://s/unsent", reason: "covered by the newer invoicing session" });
+    assert.deepEqual(f.calls, ["close:unsent"]);
+    assert.match(textOf(out), /Closed/);
+    const log = readFileSync(f.paths.actions, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    assert.equal(log.at(-1).note, "Closed: covered by the newer invoicing session");
+  });
+  test("never a settle session, the operator's, one already over or one someone answered; a reason is required", async () => {
+    const f = fake();
+    f.host.batons = () => batons;
+    const close = (session: string, reason = "old") => f.run("sova_close_gathering", { session, reason });
+    await assert.rejects(close("settle"), /settle session: the conflict ends when it is settled/);
+    await assert.rejects(close("theirs"), /Not one of your gathering sessions/);
+    await assert.rejects(close("nope"), /Not one of your gathering sessions/);
+    await assert.rejects(close("over"), /It is already done/);
+    await assert.rejects(close("answered"), /already written in it/);
+    await assert.rejects(close("unsent", " "), /Say why/);
+    assert.deepEqual(f.calls, []);
+  });
+  test("its description says when: a newer gathering covers an unanswered one", () => {
+    const t = fake().tools.find((x) => x.name === "sova_close_gathering")!;
+    assert.match(t.description, /nobody has written in yet: when a newer one covers it/);
+  });
+});
+
+describe("what is built reaches the overseer (§app.requirements/decisions)", () => {
+  test("sova_decisions and sova_project say built or not built yet, and edited in the spec", async () => {
+    const f = fake();
+    const row = (id: string, x: Record<string, unknown>) => ({ id, areaKey: "invoicing", area: "Invoicing", authorOwnsArea: true, state: "promoted", name: "Tahir", statement: `S ${id}`, quote: "q", ...x });
+    const spec = { specRoot: "", exists: true, frozen: false, draft: null, promoted: 3, drafted: 0, built: 1, notBuilt: 1 };
+    f.host.decisions = async () => ({ decisions: [row("s:1", { build: "built" }), row("s:2", { build: "not-built", editedInSpec: true })], conflicts: [], spec, lastRun: null, running: false, names: {}, ownerAreas: [] }) as never;
+    const out = textOf(await f.run("sova_decisions"));
+    assert.match(out, /s:1 · invoicing · promoted · built \(as the build recorded it\)/);
+    assert.match(out, /s:2 · invoicing · promoted · not built yet · edited in the spec since it was promoted/);
+    assert.match(textOf(await f.run("sova_project")), /exists · 3 promoted · 1 built, 1 not built yet · 0 drafted, not promoted/);
   });
 });

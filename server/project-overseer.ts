@@ -29,7 +29,8 @@ import { ORG_ABOUT_MAX } from "../shared/orgs";
 import { clockTime } from "../pi-config/extensions/stamp/format.ts";
 import type { SessionSummary } from "../shared/protocol";
 import { type BatonEvent, onBatonEvent } from "./baton-events";
-import { allBatons, batonById, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
+import { allBatons, batonById, closeBaton, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
+import { scheduleWrapup } from "./baton-loadout";
 import { noteBuildMerged } from "./build-merged";
 import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, registerSpecialLoadout, setOpeningChoice, type ChatSession } from "./chat-manager";
 import { PROCESS_START, shuttingDown } from "./wrapup-recovery";
@@ -73,7 +74,7 @@ import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
 import { getSessionSummary, indexedSessionPaths, listSessions } from "./sessions-index";
 import { setArchived } from "./archived-sessions";
-import { readView } from "./share/hub";
+import { readView, refreshShare } from "./share/hub";
 import { normalizeEntries, readActiveBranch } from "./transcript";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
@@ -521,6 +522,12 @@ function toolHost(rt: Rt): PoToolHost {
       const to = Array.isArray(input.to) ? input.to : [input.to];
       noteStarted(paths, made.sessionId, to.length > 1 ? "offer" : "gathering");
       return { sessionId: made.sessionId, path: made.path, invited: to.map((ref) => nameOf(orgId, ref)) };
+    },
+    async closeGathering(sessionId) {
+      // As the operator's Close does (POST /api/baton/:sid/close): closed, its share page told, the wrap-up scheduled.
+      closeBaton(sessionId);
+      refreshShare(sessionId);
+      scheduleWrapup(sessionId);
     },
     decideReferral: async (personId, approve) => decidePerson(orgId, personId, approve, { kind: "overseer", sessionId: readPoState(paths)?.current ?? "" }),
     sessions: () => listSessions(),

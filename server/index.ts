@@ -33,6 +33,7 @@ import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
+import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { decodeWorkers, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
 import { startPriceRefresh } from "./model-prices";
@@ -868,6 +869,24 @@ app.get("/api/insights/worktrees", async (c) => {
   const paths = raw.split(",").map((p) => p.trim()).filter(Boolean);
   return c.json(await worktreeInsights.get(paths), 200, { "Cache-Control": "no-store" });
 });
+
+// Git diffs for the changes viewer (server/git-diff.ts, shared/protocol.ts DiffScope). Read-only;
+// the scope names a folder the session knows, the server picks every ref.
+const diffRoute = (fn: (c: Context) => Promise<unknown>) => async (c: Context) => {
+  try {
+    return c.json(await fn(c), 200, { "Cache-Control": "no-store" });
+  } catch (err) {
+    if (err instanceof DiffError) return c.json({ error: err.message }, err.status, { "Cache-Control": "no-store" });
+    throw err;
+  }
+};
+app.get("/api/diff/summary", diffRoute((c) => gitDiffs.summary(scopeFromQuery((n) => c.req.query(n)))));
+app.get(
+  "/api/diff/patch",
+  diffRoute((c) =>
+    gitDiffs.patch(scopeFromQuery((n) => c.req.query(n)), c.req.query("file") ?? "", c.req.query("old"), { context: c.req.query("context") === "1" }),
+  ),
+);
 
 // /explain artifacts (server/explanations.ts). The store is read-only here: listing never fails,
 // a missing or corrupt entry is simply absent. ?session=<sessionId> filters by parentSessionId.

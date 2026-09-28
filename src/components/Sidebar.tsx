@@ -3,13 +3,18 @@ import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { fetchTargets, setSessionArchived } from "../lib/api";
+import { fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isMainThread, isOrdinarySession, isOrgSession, isTopSession } from "../lib/regions";
 import {
-  finishedOpen as finishedOpenRule,
+  eyeLabel,
+  doneOpen as doneOpenRule,
+  isClearedOverseer,
+  overseerEye,
+  regionCount,
+  rowLine,
   orgCount,
   orgNeedsYouRows,
   orgProjectItems,
@@ -50,6 +55,8 @@ import {
 import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
 import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, tagSearchText, tagStatusWord, tagsTitle, turnErrorTitle } from "../lib/signals";
+import { requestListRefresh } from "../lib/list-refresh";
+import { orgHref } from "../lib/orgs-route";
 import { marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
 import { readKey, removeKey, writeKey } from "../lib/storage-keys";
@@ -127,10 +134,10 @@ const [openGroups, setOpenGroups] = createSignal<Record<string, boolean>>({});
     the same reason: the folder rules mint fresh folder objects on every poll, so every folder section
     in the list is rebuilt a few seconds after the user collapses one. */
 const [openFolders, setOpenFolders] = createSignal<Record<string, boolean>>({});
-/** Which org sections (by org id) and Finished tails (by org id + project id) the user opened or
+/** Which org sections (by org id) and Done tails (by org id + project id + group) the user opened or
     closed: memory only, module state for the same reason as the groups — rebuilt on every poll. */
 const [openOrgs, setOpenOrgs] = createSignal<Record<string, boolean>>({});
-const [openFinished, setOpenFinished] = createSignal<Record<string, boolean>>({});
+const [openDone, setOpenDone] = createSignal<Record<string, boolean>>({});
 /** The Groups head's `+` has opened the new-group name field. */
 const [newGroupField, setNewGroupField] = createSignal(false);
 
@@ -215,6 +222,38 @@ const BUSY_CLAUSE = ", pi is replying in this session";
 
 /** Busy: this tab's own run wins over the last fetched list; Live wins over both. */
 const sessionBusy = (s: SessionSummary) => !s.live && !!(localRunning()[s.path] ?? s.busy);
+
+/**
+ * A project's current overseer, on its heading (§app.session-list/organizations): an eye, not a row.
+ * One mark at most, from the list alone: Busy's pulsing dot, else the turn-error mark, else the
+ * unread dot. Tinted and `aria-current` while its conversation is open, like the global eye.
+ */
+function OverseerEye(props: { session: SessionSummary; project: string; selected: string | null }) {
+  const eye = createMemo(() => overseerEye(props.session, { selected: props.selected, busy: sessionBusy(props.session) }));
+  const label = () => eyeLabel(props.project, eye().mark);
+  return (
+    <a
+      class="button button-icon button-ghost org-overseer"
+      href={`#/s/${encodeURIComponent(props.session.path)}`}
+      aria-current={eye().current ? "page" : undefined}
+      aria-label={label()}
+      title={label()}
+    >
+      <Icon name="eye" small />
+      <Switch>
+        <Match when={eye().mark === "working"}>
+          <span class="org-overseer-mark session-rail-dot" aria-hidden="true" />
+        </Match>
+        <Match when={eye().mark === "error"}>
+          <Icon name="alert-circle" small class="org-overseer-mark session-turn-error" />
+        </Match>
+        <Match when={eye().mark === "unread"}>
+          <span class="org-overseer-mark session-unread" aria-hidden="true" />
+        </Match>
+      </Switch>
+    </a>
+  );
+}
 
 /**
  * One session row: a wordless status rail on the left, then the link itself. The rail buttons are
@@ -465,13 +504,24 @@ function SessionRow(props: {
                 <span class="visually-hidden">New activity. </span>
               </Match>
             </Switch>
-            {/* What the last finished turn says about you (Settings → Decisions): one mark, the most
-                urgent kind, its shape and word per kind. Gone once you've seen the session. */}
+            {/* What the session waits on you for: its open alignment questions (a count, until they are
+                answered), else what the last finished turn says (Settings → Decisions, gone once you've
+                seen the session). One mark, the most urgent kind, its shape and word per kind. */}
             <Show when={needsYou()}>
               {(m) => (
                 <>
                   <span class="session-signal-wrap" title={signalTitle(m())}>
-                    <Icon name={SIGNAL_ICON[m().kind]} small class={SIGNAL_CLASS[m().kind]} />
+                    {/* Open questions show as the accent count alone; its color is the mark. */}
+                    <Show
+                      when={m().kind === "questions" && m().align}
+                      fallback={<Icon name={SIGNAL_ICON[m().kind]} small class={SIGNAL_CLASS[m().kind]} />}
+                    >
+                      {(a) => (
+                        <span class="session-signal-count text-num" aria-hidden="true">
+                          {a().openQuestions}
+                        </span>
+                      )}
+                    </Show>
                   </span>
                   <span class="visually-hidden">{signalWords(m())}</span>
                 </>
@@ -488,7 +538,7 @@ function SessionRow(props: {
           {/* A never-sent session kept in the list by its stored draft: line 2 says so, in the place
               a summary would take, so the row is as tall as its neighbours. The pencil is
               decorative; the hidden word is what the row's accessible name says. */}
-          {/* In Needs you, line 2 is why the session is there ("Asks you: …"), in place of the
+          {/* In Needs you, line 2 is why the session is there ("2 open questions in al_3 …"), in place of the
               draft preview or the gist: that sentence is the region's reason to exist. */}
           <Show when={props.detail}>
             {(d) => (
@@ -1126,17 +1176,31 @@ export function Sidebar(props: {
   });
 
   // Decision marks arrive over the session feed as they change, and so does word that the list itself
-  // changed (a session a TUI just started): that re-reads it. The list poll stays the fallback.
-  openSessionFeed(() => props.onRefresh());
+  // changed (a session a TUI just started): that re-reads it, and the attention digest with it (App,
+  // lib/list-refresh.ts), since the Organizations region's Needs you lists the digest's items: a reply
+  // or a Get Link in another tab clears its row at once, not at the digest's next 10 s read. The list
+  // poll stays the fallback.
+  openSessionFeed(requestListRefresh);
   /** Main threads only (src/lib/regions.ts): every region, search hit and count reads this. Each row
       carries the feed's marks over the list's (a peer's row keeps its own); `reuseUnchanged` keeps a
       row's object across feed messages that don't touch it, so rows update in place. */
   const all = createMemo<SessionSummary[]>((prev) =>
     reuseUnchanged(
-      (props.sessions ?? []).filter(isMainThread).map((s) => overlaid(s, marksOverlay(), !!hostOf(s.path))),
+      // A cleared project overseer conversation is drawn nowhere: its overseer's History opens it.
+      (props.sessions ?? []).filter((s) => isMainThread(s) && !isClearedOverseer(s)).map((s) => overlaid(s, marksOverlay(), !!hostOf(s.path))),
       prev,
     ),
   );
+  /** The folder the server lists sessions from (its own agent dir's), read once the list is empty. */
+  const isEmpty = createMemo(() => !!props.sessions && all().length === 0);
+  const [dirInfo] = createResource(
+    () => isEmpty() || undefined,
+    () => fetchSessionsDir().catch(() => null),
+  );
+  const sessionsDir = () => {
+    const d = dirInfo();
+    return d ? tildePath(d.sessionsDir, d.home) : null;
+  };
   /**
    * The selection lives in module state and is keyed by PATH, so a background poll can neither
    * reset it nor unpick a row whose object was rebuilt. The one thing a poll may change about it:
@@ -1302,10 +1366,12 @@ export function Sidebar(props: {
   };
   /**
    * Organizations (lib/org-region): the only place org sessions are listed. Its own Needs you first,
-   * then org → project → rows with a Finished tail. Open by default, a collapse remembered for the tab.
+   * then org → project → groups (Conversations, Conflicts to settle, Builds), each with a Done tail. Open by default, a collapse remembered for the tab.
    */
   const orgs = createMemo(() => orgSections(orgHits()));
-  const orgTotal = () => all().filter(isOrgSession).length;
+  /** The region counts rows: a project's eye is not one. */
+  const orgRowCount = () => regionCount(orgs());
+  const orgTotal = () => regionCount(orgSections(all().filter(isOrgSession)));
   const orgNeedsYou = createMemo(() => orgNeedsYouRows(props.attention, orgHits()));
   /** Its Needs you items that are no session: projects to pick a main stakeholder for. */
   const orgItems = createMemo(() => orgProjectItems(props.attention, query()));
@@ -1318,15 +1384,13 @@ export function Sidebar(props: {
   const orgNeedsTitle = (k: number) =>
     k === 1 ? "The 1 organization session waiting on you." : `The ${k} organization sessions waiting on you, newest first.`;
   /** A project's label title: its root, read off the project overseer's folder, else its name. */
-  const projectTitle = (p: OrgProject) => {
-    const po = [...p.active, ...p.finished].find((s) => s.org?.kind === "overseer");
-    return po ? tildePath(po.cwd, home()) : p.name;
-  };
+  const projectTitle = (p: OrgProject) => (p.overseer ? tildePath(p.overseer.cwd, home()) : p.name);
   /** Paths waiting on the operator, for the org heads' warn dot. */
   const orgWaiting = createMemo(() => new Set(orgNeedsYou().map((r) => r.session.path)));
   const waitingIn = (rows: readonly SessionSummary[]) => rows.filter((r) => orgWaiting().has(r.path)).length;
-  /** ONE rule for the region and its spine door: any org row among the hits. */
-  const showOrgs = () => !!props.sessions && orgHits().length > 0;
+  /** ONE rule for the region and its spine door: any org row among the hits (an archived project's
+      counts only while it waits on you, in the region's own Needs you). */
+  const showOrgs = () => !!props.sessions && (orgs().length > 0 || orgNeedsYou().length > 0);
   const [orgsStored, setOrgsStored] = createSignal(storedOrgsOpen(readKey(sessionStorage, ORGS_KEY)));
   const orgsOpen = () =>
     orgsRegionOpenRule({
@@ -1347,13 +1411,58 @@ export function Sidebar(props: {
     if (open === orgOpen(o)) return;
     setOpenOrgs((m) => ({ ...m, [o.id]: open }));
   };
-  const finishedKey = (o: OrgSection, p: OrgProject) => `${o.id}\n${p.id}`;
-  const projectFinishedOpen = (o: OrgSection, p: OrgProject) =>
-    finishedOpenRule({ chosen: openFinished()[finishedKey(o, p)], searching: searching(), holdsSelected: holds(p.finished) });
-  const onFinishedToggle = (o: OrgSection, p: OrgProject, e: Event & { currentTarget: HTMLDetailsElement }) => {
+  /** A group's Done tail, keyed by org, project and group: collapsed by default, forced open by a search or the open session. */
+  const groupDoneOpen = (key: string, rows: readonly SessionSummary[]) =>
+    doneOpenRule({ chosen: openDone()[key], searching: searching(), holdsSelected: holds(rows) });
+  const onGroupDoneToggle = (key: string, rows: readonly SessionSummary[], e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
-    if (open === projectFinishedOpen(o, p)) return;
-    setOpenFinished((m) => ({ ...m, [finishedKey(o, p)]: open }));
+    if (open === groupDoneOpen(key, rows)) return;
+    setOpenDone((m) => ({ ...m, [key]: open }));
+  };
+  /** A project row: line 2 names a settle session's conflict, or why a conversation hasn't started. */
+  const ProjectRow = (r: { session: SessionSummary }) => {
+    const line = () => rowLine(r.session);
+    return <SessionRow session={r.session} selected={props.selected} now={props.now} targets={targets()} detail={line() ? { text: line()!, title: line()! } : null} />;
+  };
+  const rowList = (rows: readonly SessionSummary[]) => (
+    <ul class="list">
+      <For each={rows}>{(s) => <ProjectRow session={s} />}</For>
+    </ul>
+  );
+  /** One group of a project: its label and count, the live states, then its collapsed Done. */
+  const ProjectGroup = (g: { key: string; label: string; title: string; doneTitle: string; states: { label: string; rows: SessionSummary[] }[]; done: SessionSummary[] }) => {
+    const count = () => g.states.reduce((n, x) => n + x.rows.length, 0) + g.done.length;
+    return (
+      <Show when={count() > 0}>
+        <section class="org-group" aria-label={`${g.label}, ${count()}`}>
+          <h5 class="list-group-label org-group-label" title={g.title}>
+            {g.label} <span class="text-num">{count()}</span>
+          </h5>
+          <For each={g.states}>
+            {(st) => (
+              <Show when={st.rows.length > 0}>
+                <Show when={st.label}>
+                  <h6 class="org-state-label">
+                    {st.label} <span class="text-num">{st.rows.length}</span>
+                  </h6>
+                </Show>
+                {rowList(st.rows)}
+              </Show>
+            )}
+          </For>
+          <Show when={g.done.length > 0}>
+            <details class="archive-date org-done" open={groupDoneOpen(g.key, g.done)} onToggle={(e) => onGroupDoneToggle(g.key, g.done, e)}>
+              <summary class="list-group-label archive-date-label" title={g.doneTitle}>
+                <Icon name="chevron-right" small class="icon-twist" />
+                <span class="archive-date-name">Done</span>
+                <span class="text-num">{g.done.length}</span>
+              </summary>
+              {rowList(g.done)}
+            </details>
+          </Show>
+        </section>
+      </Show>
+    );
   };
   // Date sections: collapsed by default, each remembering its own choice the same way.
   const [storedDateOpen, setStoredDateOpen] = createSignal<Partial<Record<ArchiveGroupId, boolean>>>({});
@@ -1394,7 +1503,7 @@ export function Sidebar(props: {
   /** The Organizations door: its sessions, and who is waiting, so nothing waits unseen behind the spine. */
   const orgsDoorLabel = () => {
     const k = orgWaitingCount();
-    return `Organizations · ${sessionsWord(orgHits().length)}${k > 0 ? ` · ${k} waiting on you` : ""}`;
+    return `Organizations · ${sessionsWord(orgRowCount())}${k > 0 ? ` · ${k} waiting on you` : ""}`;
   };
   const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
 
@@ -1536,7 +1645,7 @@ export function Sidebar(props: {
                 }
               >
                 <Icon name="building" />
-                <span class="spine-count text-num">{orgHits().length}</span>
+                <span class="spine-count text-num">{orgRowCount()}</span>
                 <Show when={orgWaitingCount() > 0}>
                   <span class="spine-dot spine-dot-warn" aria-hidden="true" />
                 </Show>
@@ -1750,7 +1859,13 @@ export function Sidebar(props: {
           <Show when={props.sessions && all().length === 0}>
             <div class="empty">
               <p class="empty-title">
-                0 sessions in <code>~/.pi/agent/sessions</code>.
+                <Show when={sessionsDir()} fallback="0 sessions yet.">
+                  {(dir) => (
+                    <>
+                      0 sessions in <code>{dir()}</code>.
+                    </>
+                  )}
+                </Show>
               </p>
               <p class="empty-body">
                 Start one here, or run <code>pi</code> in a terminal. It'll show up in this list.
@@ -1922,7 +2037,7 @@ export function Sidebar(props: {
 
           {/* Organizations, last before the Archive (lib/org-region): the only place an org's
               sessions are listed. Its own Needs you first, then org → project → rows, each project
-              with a collapsed Finished tail. Open by default; a collapse holds for the tab. */}
+              in groups, each with a collapsed Done tail. Open by default; a collapse holds for the tab. */}
           <Show when={showOrgs()}>
             <details class="sidebar-region sidebar-orgs" aria-labelledby="r-orgs" open={orgsOpen()} onToggle={onOrgsToggle}>
               <summary class="sidebar-orgs-summary">
@@ -1933,7 +2048,7 @@ export function Sidebar(props: {
                 >
                   <Icon name="chevron-right" small class="icon-twist" />
                   Organizations{" "}
-                  <span class="sidebar-region-count">· {searching() ? `${orgHits().length} of ${orgTotal()}` : orgHits().length}</span>
+                  <span class="sidebar-region-count">· {searching() ? `${orgRowCount()} of ${orgTotal()}` : orgRowCount()}</span>
                   {/* Nothing waits unseen: the warn dot and count stay on the head, open or shut. */}
                   <Show when={orgWaitingCount() > 0}>
                     <span class="chip chip-warn org-needs-chip" title={waitingTitle(orgWaitingCount())}>
@@ -2010,7 +2125,7 @@ export function Sidebar(props: {
                         <span class="text-num">{count()}</span>
                         <a
                           class="button button-icon button-ghost org-link"
-                          href={`#/orgs/${encodeURIComponent(o.id)}`}
+                          href={orgHref(o.id)}
                           aria-label={`Open the ${o.name} page`}
                           title={`Open the ${o.name} page`}
                           onClick={(e) => e.stopPropagation()}
@@ -2022,36 +2137,46 @@ export function Sidebar(props: {
                       <For each={o.projects}>
                         {(p) => (
                           <div class="org-project">
-                            <h4 class="list-group-label org-project-label" title={projectTitle(p)}>
-                              <span class="org-project-name">
-                                <bdi>{p.name}</bdi>
-                              </span>
-                              <span class="text-num">{projectCount(p)}</span>
-                            </h4>
-                            <Show when={p.active.length > 0}>
-                              <ul class="list">
-                                <For each={p.active}>
-                                  {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
-                                </For>
-                              </ul>
-                            </Show>
-                            <Show when={p.finished.length > 0}>
-                              <details class="archive-date org-finished" open={projectFinishedOpen(o, p)} onToggle={(e) => onFinishedToggle(o, p, e)}>
-                                <summary
-                                  class="list-group-label archive-date-label"
-                                  title="Hand-offs that reached their goal or were closed, cleared overseer conversations, and sessions you archived."
-                                >
-                                  <Icon name="chevron-right" small class="icon-twist" />
-                                  <span class="archive-date-name">Finished</span>
-                                  <span class="text-num">{p.finished.length}</span>
-                                </summary>
-                                <ul class="list">
-                                  <For each={p.finished}>
-                                    {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
-                                  </For>
-                                </ul>
-                              </details>
-                            </Show>
+                            <div class="org-project-head">
+                              <h4 class="list-group-label org-project-label" title={projectTitle(p)}>
+                                <span class="org-project-name">
+                                  <bdi>{p.name}</bdi>
+                                </span>
+                                <span class="text-num">{projectCount(p)}</span>
+                              </h4>
+                              <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>
+                            </div>
+                            <ProjectGroup
+                              key={`${o.id}\n${p.id}\nconversations`}
+                              label="Conversations"
+                              title="Gathering sessions and offers sent to people."
+                              doneTitle="Done or closed, and the ones you archived."
+                              states={[
+                                { label: "Not started", rows: p.conversations.notStarted },
+                                { label: "In progress", rows: p.conversations.inProgress },
+                              ]}
+                              done={p.conversations.done}
+                            />
+                            <ProjectGroup
+                              key={`${o.id}\n${p.id}\nconflicts`}
+                              label="Conflicts to settle"
+                              title="Sessions asking someone to settle two decisions that disagree."
+                              doneTitle="Done or closed, and the ones you archived."
+                              states={[
+                                { label: "Not started", rows: p.conflicts.notStarted },
+                                { label: "In progress", rows: p.conflicts.inProgress },
+                              ]}
+                              done={p.conflicts.done}
+                            />
+                            <ProjectGroup
+                              key={`${o.id}\n${p.id}\nbuilds`}
+                              label="Builds"
+                              title="Coding sessions this project started."
+                              doneTitle="Merged, and the ones you archived."
+                              states={[{ label: "", rows: p.builds.active }]}
+                              done={p.builds.done}
+                            />
+                            <Show when={p.other.length > 0}>{rowList(p.other)}</Show>
                           </div>
                         )}
                       </For>

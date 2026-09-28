@@ -2,7 +2,22 @@
 // under tsx --test.
 
 import type { IdeaRecord, OverseerAction } from "../../shared/protocol";
-import { GAP_TAG, type ItemSendInput, type LastRunOutcome, type StartedSession } from "../../shared/project-overseer";
+import {
+  AUTONOMY_MEANING,
+  capProblem,
+  GAP_TAG,
+  PER_DAY,
+  PO_LIMIT_KINDS,
+  type AllowanceUse,
+  type Autonomy,
+  type HeldItem,
+  type ItemSendInput,
+  type LastRunOutcome,
+  type PoLimitKind,
+  type ProjectOverseerCaps,
+  type ProjectOverseerInfo,
+  type StartedSession,
+} from "../../shared/project-overseer";
 import { settled } from "./ideas";
 
 /** The ideas worth acting on: not done or dropped, gaps first, then the store's order. */
@@ -111,3 +126,114 @@ export function itemSendInput(ref: { ideaId?: string; todoId?: string }, form: {
     question,
   };
 }
+
+// ---- limits (§app.project-overseer/limits, §design.copy-deck/project-limits) ----
+
+/** The limits the Limits section edits, in the order it shows them (the first problem is theirs). */
+export const LIMIT_FIELDS: readonly (keyof ProjectOverseerCaps)[] = [
+  "gatherPerTurn",
+  "promotePerTurn",
+  "createPerTurn",
+  "promptsPerTurn",
+  "gatherPerDay",
+  "promotePerDay",
+  "createPerDay",
+  "promptsPerDay",
+  "unattendedPerDay",
+  "gatheringsOpen",
+  "codingRunning",
+];
+
+/** Why the Limits form can't be saved, as the server would say it, or null. An empty field is NaN, never Unlimited (null). */
+export function limitsProblem(d: { caps: Record<keyof ProjectOverseerCaps, number | null> }): string | null {
+  for (const k of LIMIT_FIELDS) {
+    const why = capProblem(k, d.caps[k]);
+    if (why) return why;
+  }
+  return null;
+}
+
+/** A gap in minutes as the page says it: "10 min", "1 hour". */
+export const gapWords = (min: number): string => (min % 60 === 0 ? `${min / 60} ${min === 60 ? "hour" : "hours"}` : `${min} min`);
+/** A delay in seconds: "30 s", "1 min". */
+export const soonWords = (sec: number): string => (sec % 60 === 0 ? `${sec / 60} min` : `${sec} s`);
+
+/** The Watch hint, from the project's pace. */
+export function watchHint(gapMin: number, soonSec: number | null): string {
+  const head = "When a session finishes, a conflict appears, or you promote, it looks on its own";
+  return soonSec === null ? `${head} at most every ${gapWords(gapMin)}.` : `${head}: within ${soonWords(soonSec)} for the important ones, otherwise at most every ${gapWords(gapMin)}.`;
+}
+
+/** Each kind as the readout names it. */
+const USED_NOUN: Record<PoLimitKind, string> = { gather: "gathering sessions", promote: "decisions promoted", create: "coding sessions", prompt: "prompts to coding sessions" };
+
+/** "Today on its own: 3 of 6 gathering sessions, 2 coding sessions (no limit)." — only what was used; null when nothing was. */
+export function allowanceLine(prefix: string, use: AllowanceUse): string | null {
+  const parts = PO_LIMIT_KINDS.filter((k) => use[k].used > 0).map((k) => (use[k].max === null ? `${use[k].used} ${USED_NOUN[k]} (no limit)` : `${use[k].used} of ${use[k].max} ${USED_NOUN[k]}`));
+  return parts.length ? `${prefix}: ${parts.join(", ")}.` : null;
+}
+
+/** One line per held item the operator should know of (the message allowance's retries at once: not shown). */
+export function waitingLines(held: readonly HeldItem[], s: { caps: ProjectOverseerCaps }): string[] {
+  const out: string[] = [];
+  for (const h of held) {
+    const [ledger, kind] = h.key.split(":") as [string, PoLimitKind | undefined];
+    if (h.key === "looks") out.push(`Waiting until midnight: today's ${s.caps.unattendedPerDay ?? "unlimited"} looks are used.`);
+    else if (ledger === "day" && kind && kind in USED_NOUN) out.push(`Waiting until midnight: today's ${s.caps[PER_DAY[kind]] ?? "unlimited"} ${USED_NOUN[kind]} are used.`);
+  }
+  return out;
+}
+
+// ---- its chat head (§app.project-overseer/page, §design.copy-deck/project-overseer-head) ----
+
+type LevelInfo = { settings: { autonomy: Autonomy }; effective: { autonomy: Autonomy; reason?: string }; paused?: string | null };
+
+/** The level in force differs from the chosen one, or an attach paused it (shown even with L0 chosen). */
+export const levelForced = (i: LevelInfo): boolean => !!i.paused || i.effective.autonomy !== i.settings.autonomy;
+
+/** The head's one state chip: Working while its turn runs, else "L0 in force" while forced, else none. */
+export function headState(i: LevelInfo, busy: boolean): { tone: "accent" | "warn"; text: string; title?: string } | null {
+  if (busy) return { tone: "accent", text: "Working" };
+  if (levelForced(i)) return { tone: "warn", text: `${i.effective.autonomy} in force`, title: i.effective.reason };
+  return null;
+}
+
+/** The level button's name: the chosen level and its meaning, what is in force while forced, and what it does. */
+export function levelName(i: LevelInfo): string {
+  const l = i.settings.autonomy;
+  return `Level ${l}, ${AUTONOMY_MEANING[l]}${levelForced(i) ? ` In force now: ${i.effective.autonomy}.` : ""} Change level.`;
+}
+
+/** Status line 1's run sentence, the project page's words: "Last looked on its own {when}{tail}." */
+export function lastRunLine(run: ProjectOverseerInfo["lastRun"], when: string): string {
+  return run ? `Last looked on its own ${when}${lastRunTail(run)}.` : "It hasn't looked on its own yet.";
+}
+
+/** How many reasons wait for its next look; never when (the loop's timing can't be promised here). */
+export const waitingToLook = (n: number): string => (n <= 0 ? "" : `Waiting to look at ${n} ${n === 1 ? "thing" : "things"}.`);
+
+/**
+ * The strip under the head: at most 3 lines, each only with something to say. Forced to L0, the
+ * reason leads (with the level to resume at when an attach paused it: a level change ends that, and
+ * nothing the operator sets fixes an empty roster).
+ */
+export function statusLines(
+  i: LevelInfo & Pick<ProjectOverseerInfo, "lastRun"> & { settings: { caps: ProjectOverseerCaps }; usage: Pick<ProjectOverseerInfo["usage"], "pending" | "held"> & { allowance: { today: AllowanceUse } } },
+  when: string,
+): { lines: string[]; resume: Autonomy | null; pendingTitle: string } {
+  const run = [lastRunLine(i.lastRun, when), waitingToLook(i.usage.pending.length)].filter(Boolean).join(" ");
+  const waits = waitingLines(i.usage.held, i.settings).join(" ");
+  const rest = [run, allowanceLine("Today on its own", i.usage.allowance.today), waits].filter((l): l is string => !!l);
+  const forced = levelForced(i) && i.effective.reason;
+  return {
+    lines: (forced ? [i.effective.reason!, ...rest] : rest).slice(0, 3),
+    resume: forced && i.paused ? i.settings.autonomy : null,
+    pendingTitle: pendingLine(i.usage.pending),
+  };
+}
+
+/** A History row's title: an untitled conversation is said as what it is. */
+export const historyTitle = (title: string): string => (title === "Untitled" ? "No messages" : title);
+
+/** A started session's row note in the head's menu: "Gathering · open". */
+export const startedWords = (s: Pick<StartedSession, "kind" | "state">): string => `${STARTED_KIND[s.kind]} · ${s.state}`;

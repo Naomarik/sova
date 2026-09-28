@@ -27,9 +27,9 @@ export interface AttentionRow {
   activitySince: number;
   /** ms epoch of the last assistant reply; undefined unknown. */
   lastReplyAt?: number;
-  /** Words for the decision-signal items (signals-store.ts signalTextOf): the reply's quoted
-      sentence, and the names of subagents that look stuck. Absent: the fixed fallbacks. */
-  signalText?: { sentence?: string; stuckWorkers: string[] };
+  /** Words for the decision-signal items (signals-store.ts signalTextOf): the names of subagents
+      that look stuck. Absent: the fixed fallbacks. */
+  signalText?: { stuckWorkers: string[] };
 }
 
 export const DIGEST_MAX = 30;
@@ -47,6 +47,13 @@ const cap = (s: string) => {
 export function whereOf(s: Pick<SessionSummary, "cwd" | "target" | "remoteCwd">, home = homedir()): string {
   if (s.target) return `${s.target}:${s.remoteCwd ?? ""}`;
   return home && (s.cwd === home || s.cwd.startsWith(`${home}/`)) ? `~${s.cwd.slice(home.length)}` : s.cwd;
+}
+
+/** "3 open questions in al_3 Autonomy settings" (one alignment asks) / "… in 2 alignments". */
+export function openQuestionsText(a: NonNullable<SessionSummary["align"]>): string {
+  const n = `${a.openQuestions} open question${a.openQuestions === 1 ? "" : "s"}`;
+  if (a.questionDocs === 1 && a.lead) return `${n} in ${a.lead.id} ${a.lead.title}`;
+  return `${n} in ${a.questionDocs} alignments`;
 }
 
 /** The items one session contributes, most urgent first. */
@@ -96,13 +103,14 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
     row.viewing === true || (s.seenAt !== undefined && row.workerErrorAt !== undefined && s.seenAt >= row.workerErrorAt);
   if (row.failedWorkers > 0 && !errorSeen)
     add("act", "worker-error", lastActive, `${row.failedWorkers} subagent${row.failedWorkers === 1 ? "" : "s"} ended in an error.`);
+  // Open alignment questions (§chat.alignment/session-mark): a fact of the file, no model. Waiting
+  // on the user only while nothing runs; an archived session is out of the way on purpose.
+  if (s.align && s.align.openQuestions > 0 && !running && !s.archived) add("act", "open-questions", row.lastReplyAt ?? lastActive, openQuestionsText(s.align));
   // Decision signals (server/signals-store.ts): the list carries them only while unseen and idle,
   // with the kinds already derived from the fixed thresholds. A main session's "looping" is a
   // judgement call (decide); a looping subagent is a blocker (act).
   const sig = s.signals?.kinds ?? [];
   const at = s.signals?.at ?? lastActive;
-  const sentence = row.signalText?.sentence;
-  if (sig.includes("asks-you")) add("act", "asks-you", at, sentence ? `Asks you: ${sentence}` : "The last reply asks you something.");
   const ws = s.workerSignals;
   if (ws?.stuck) {
     const names = row.signalText?.stuckWorkers ?? [];

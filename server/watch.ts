@@ -1,6 +1,7 @@
 import { type FSWatcher, watch } from "node:fs";
 import { open, stat } from "node:fs/promises";
 import type { TranscriptItem, WatchServerMessage } from "../shared/protocol";
+import { cutTail, pullFields } from "./tail-hello";
 import { activeBranch, normalizeEntries, parseLines } from "./transcript";
 import { piUsageTally, totalOf, type UsageTally } from "./transcript-usage";
 import type { ContextTally } from "./worker-context";
@@ -17,7 +18,10 @@ const piNormalize: Normalize = (text, part) =>
 /**
  * Read-only tail of one session JSONL file for one client. Opens the file with "r" only.
  * Sends `snapshot` (active branch), then `append` for each batch of complete new lines.
- * If the file shrinks (rewritten), a fresh `snapshot` is sent.
+ * If the file shrinks (rewritten), a fresh `snapshot` is sent. With `sendRaw` (the client asked
+ * with `?tail=1`), each snapshot holds only the newest rows and its older rows follow as `history`
+ * before anything else (server/tail-hello.ts): no read runs until the snapshot's step is done.
+ * With `pull` (`?tail=rest`), the snapshot is cut the same way and nothing follows it.
  */
 export class SessionTail {
   private offset = 0;
@@ -37,6 +41,11 @@ export class SessionTail {
     private readonly tally: UsageTally = piUsageTally(),
     /** The transcript's context fill, same feed; per connection for the same reason. */
     private readonly context?: ContextTally,
+    /** Set for a tail-first client: its snapshot is cut, and the history goes out through this. */
+    private readonly sendRaw?: (json: string) => void,
+    /** Set for a `?tail=rest` client: its snapshot is cut, and it fetches the older rows itself
+        (server/transcript-rows.ts); `prefetch`: all of them, now (a browser on this machine). */
+    private readonly pull?: { prefetch: boolean },
   ) {}
 
   async start(): Promise<void> {
@@ -85,7 +94,18 @@ export class SessionTail {
     this.offset = consumed;
     const usage = totalOf(this.tally(text, "snapshot"));
     const context = this.context?.(text, "snapshot");
-    if (!this.closed) this.send({ type: "snapshot", items: this.normalize(text, "snapshot"), ...(usage ? { usage } : {}), ...(context !== undefined ? { context } : {}) });
+    if (this.closed) return;
+    const items = this.normalize(text, "snapshot");
+    const cut = this.sendRaw || this.pull ? cutTail(items, { history: !this.pull }) : null;
+    this.send({
+      type: "snapshot",
+      items: cut ? cut.items : items,
+      ...(usage ? { usage } : {}),
+      ...(context !== undefined ? { context } : {}),
+      ...(cut && cut.older > 0 ? { older: cut.older } : {}),
+      ...(cut && cut.older > 0 && this.pull ? pullFields(items, cut.older, this.pull.prefetch) : {}),
+    });
+    if (cut && this.sendRaw) for (const part of cut.history) this.sendRaw(part.raw);
   }
 
   private kick(): void {

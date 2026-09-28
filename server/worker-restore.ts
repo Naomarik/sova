@@ -99,6 +99,22 @@ export class WorkerRestorer {
   }
 }
 
+/** The active branch's workers whose id isn't in `skip`, newest spawn first, from their durable
+    records alone: no transcript is read, so usage is the snapshot the record saved (or
+    unavailable). What the pane appends for the workers a live record couldn't list. */
+export function workersFromRecords(entries: readonly Entry[], branch: readonly Entry[], skip: ReadonlySet<string>, resolveWindow: WindowResolver = () => null): WorkerInfo[] {
+  const activeEntryIds = new Set(branch.map((e) => e.id).filter((id): id is string => typeof id === "string"));
+  const { manifests } = readWorkerManifests(entries, { activeEntryIds });
+  const out: WorkerInfo[] = [];
+  // The fold keeps first-record order, which is spawn order.
+  for (const m of [...manifests.values()].reverse()) {
+    if (!m.onActiveBranch || skip.has(m.workerId)) continue;
+    const usage = resolveWorkerUsage(undefined, m.usageSnapshot);
+    out.push(workerInfo(m, null, usage, usage.source === "snapshot" ? usage.asOf : undefined, resolveWindow));
+  }
+  return out;
+}
+
 function tokens(u: WorkerUsage): TokenUsage {
   return {
     input: u.input, output: u.output, cacheRead: u.cacheRead, cacheWrite: u.cacheWrite,

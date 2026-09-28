@@ -2,10 +2,10 @@
 // dirs in the OS temp dir, deleted after; ~/.pi is never read or written.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, describe, test } from "node:test";
+import { after, before, describe, test } from "node:test";
 import { PROFILE_FIELDS, type ChangeWriter, type ProfileField } from "../shared/orgs";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-orgs-")));
@@ -15,6 +15,8 @@ mkdirSync(join(root, "agent", "sessions"), { recursive: true });
 const orgs = await import("./orgs");
 const { resolveSessionPath } = await import("./paths");
 const { settled } = await import("./workspace-git");
+const { Hono } = await import("hono");
+const { registerOrgRoutes } = await import("./org-routes");
 
 after(() => rmSync(root, { recursive: true, force: true }));
 
@@ -191,5 +193,116 @@ describe("workspace dirs never inside Sova's own repo", () => {
     // In a git checkout the ignore rules decide, base or not: an unignored base is still refused.
     const unignored = join(sova, "state", "workspaces");
     assert.match((await orgs.workspaceDirProblem(join(unignored, "acme"), sova, unignored)) ?? "", /must not live inside Sova/);
+  });
+});
+
+describe("About this organization (§app.organizations/about)", () => {
+  // Made in before(): the first describe's tests pin the exact set of attached orgs.
+  let org: { id: string };
+  let dir = "";
+  before(async () => {
+    org = await orgs.createOrg({ name: "About Co", dir: join(root, "ws-about") });
+    dir = orgs.orgDir(org.id);
+  });
+  const app = new Hono();
+  registerOrgRoutes(app);
+  const call = (method: string, path: string, body: unknown) =>
+    app.request(`/api/orgs/${org.id}${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const historyText = () => readFileSync(join(dir, "org-history.jsonl"), "utf8");
+
+  test("none at first: no file, no detail field, no history", async () => {
+    assert.equal(orgs.readOrgAbout(org.id), "");
+    const d = await orgs.orgDetail(org.id);
+    assert.equal(d.about, undefined);
+    assert.deepEqual(d.aboutHistory, []);
+  });
+
+  test("a save writes about.md trimmed, history first; the same text appends nothing", () => {
+    orgs.patchOrg(org.id, { about: "  They pay late.\n" });
+    assert.equal(readFileSync(join(dir, "about.md"), "utf8"), "They pay late.");
+    assert.equal(orgs.readOrgAbout(org.id), "They pay late.");
+    const lines = orgs.readOrgHistory(org.id);
+    assert.equal(lines.length, 1);
+    assert.deepEqual([lines[0]!.field, lines[0]!.from, lines[0]!.to, lines[0]!.by], ["about", "", "They pay late.", { kind: "operator" }]);
+    const before = historyText();
+    orgs.patchOrg(org.id, { about: "They pay late." });
+    assert.equal(historyText(), before, "no change, no line");
+  });
+
+  test("the cap: 4,000 characters saved, 4,001 refused and nothing written", async () => {
+    const before = historyText();
+    assert.throws(() => orgs.patchOrg(org.id, { about: "x".repeat(4001) }), /at most 4,000 characters/);
+    assert.equal(historyText(), before);
+    const res = await call("PATCH", "", { about: "y".repeat(4001) });
+    assert.equal(res.status, 400);
+    assert.match(((await res.json()) as { error: string }).error, /at most 4,000 characters/);
+    assert.equal((await call("PATCH", "", { about: "z".repeat(4000) })).status, 200);
+    assert.equal(orgs.readOrgAbout(org.id).length, 4000);
+    assert.throws(() => orgs.patchOrg(org.id, { about: 7 }), /about must be text/);
+  });
+
+  test("a blank save removes the file and records the clearing", () => {
+    orgs.patchOrg(org.id, { about: "Short again." });
+    orgs.patchOrg(org.id, { about: "   " });
+    assert.equal(existsSync(join(dir, "about.md")), false);
+    assert.equal(orgs.readOrgAbout(org.id), "");
+    const last = orgs.readOrgHistory(org.id).at(-1)!;
+    assert.deepEqual([last.from, last.to], ["Short again.", ""]);
+  });
+
+  test("Revert writes a new change back to the line's from; a revert of a revert; history only grows; `at` is unique", async () => {
+    orgs.patchOrg(org.id, { about: "First." });
+    orgs.patchOrg(org.id, { about: "Second." });
+    const second = orgs.readOrgHistory(org.id).at(-1)!;
+    const before = historyText();
+    const res = await call("POST", "/about/revert", { at: second.at });
+    assert.equal(res.status, 200);
+    assert.equal(((await res.json()) as { about?: string }).about, "First.");
+    assert.ok(historyText().startsWith(before), "appended only");
+    const back = orgs.readOrgHistory(org.id).at(-1)!;
+    assert.deepEqual([back.from, back.to, back.revertOf], ["Second.", "First.", second.at]);
+    orgs.revertOrgChange(org.id, back.at);
+    assert.equal(orgs.readOrgAbout(org.id), "Second.");
+    assert.equal(orgs.readOrgHistory(org.id).at(-1)!.revertOf, back.at);
+    const ats = orgs.readOrgHistory(org.id).map((c) => c.at);
+    assert.equal(new Set(ats).size, ats.length);
+    assert.equal((await call("POST", "/about/revert", { at: "1999-01-01T00:00:00.000Z" })).status, 404);
+  });
+
+  test("the detail carries the text and the last 20 lines, newest first; the summary and the org never carry it", async () => {
+    for (let i = 0; i < 22; i++) orgs.patchOrg(org.id, { about: `Version ${i}` });
+    const d = await orgs.orgDetail(org.id);
+    assert.equal(d.about, "Version 21");
+    assert.equal(d.aboutHistory!.length, 20);
+    assert.equal(d.aboutHistory![0]!.to, "Version 21");
+    assert.ok(!("about" in orgs.readOrg(org.id)));
+    assert.ok(orgs.orgSummaries().every((s) => !("about" in s) && !("aboutHistory" in s)));
+    assert.ok(!JSON.stringify(orgs.orgsInfo()).includes("Version 21"));
+  });
+
+  test("a hand-edited longer file is read whole (the render clips it); a hand edit has no history line", () => {
+    const lines = orgs.readOrgHistory(org.id).length;
+    writeFileSync(join(dir, "about.md"), "h".repeat(4100));
+    assert.equal(orgs.readOrgAbout(org.id).length, 4100);
+    assert.equal(orgs.readOrgHistory(org.id).length, lines);
+  });
+
+  test("org.json's old notes field is gone: ignored on read, dropped at the next write, ignored in a PATCH", async () => {
+    const raw = JSON.parse(readFileSync(join(dir, "org.json"), "utf8"));
+    writeFileSync(join(dir, "org.json"), JSON.stringify({ ...raw, notes: "OLD-NOTES" }));
+    assert.ok(!("notes" in orgs.readOrg(org.id)));
+    assert.ok(!JSON.stringify(await orgs.orgDetail(org.id)).includes("OLD-NOTES"));
+    assert.equal((await call("PATCH", "", { name: "About Co Ltd", notes: "NEW-NOTES" })).status, 200);
+    const now = readFileSync(join(dir, "org.json"), "utf8");
+    assert.ok(!now.includes("OLD-NOTES") && !now.includes("NEW-NOTES"));
+    assert.equal(orgs.readOrg(org.id).name, "About Co Ltd");
+  });
+
+  test("the name alone leaves the text and its history alone", () => {
+    const before = historyText();
+    const about = orgs.readOrgAbout(org.id);
+    orgs.patchOrg(org.id, { name: "About Co" });
+    assert.equal(historyText(), before);
+    assert.equal(orgs.readOrgAbout(org.id), about);
   });
 });

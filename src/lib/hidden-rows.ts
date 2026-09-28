@@ -26,8 +26,17 @@ export interface HiddenSplit {
   thinking: number;
 }
 
-const isToolRow = (it: TranscriptItem) => it.kind === "tool-call" || it.kind === "tool-result";
-const isHidden = (it: TranscriptItem, hide: HideKinds) => (hide.tools && isToolRow(it)) || (hide.thinking && it.kind === "thinking");
+/** Tools the thread renders as cards (the Overseer's question with buttons and link card, an
+    alignment) rather than tool cards: "Hide tool calls" never folds them, since they are the
+    message, not its working. */
+export const CARD_TOOLS: ReadonlySet<string> = new Set(["sova_confirm", "sova_link", "sova_unlink", "align"]);
+
+/** Ids of the calls that render as cards (their paired results go with them). */
+const cardCallIds = (items: TranscriptItem[]) =>
+  new Set(items.filter((it) => it.kind === "tool-call" && it.toolCallId && CARD_TOOLS.has(it.text ?? "")).map((it) => it.toolCallId!));
+const isToolRow = (it: TranscriptItem, cards: ReadonlySet<string>) =>
+  (it.kind === "tool-call" || it.kind === "tool-result") && !(it.toolCallId && cards.has(it.toolCallId)) && !(it.kind === "tool-call" && CARD_TOOLS.has(it.text ?? ""));
+const isHidden = (it: TranscriptItem, hide: HideKinds, cards: ReadonlySet<string>) => (hide.tools && isToolRow(it, cards)) || (hide.thinking && it.kind === "thinking");
 
 /** Counts the way `HistoryItems` renders: a paired result folds into its call's card, an orphan gets its own. */
 export function splitHidden(items: TranscriptItem[], hide: HideKinds): HiddenSplit {
@@ -38,6 +47,7 @@ export function splitHidden(items: TranscriptItem[], hide: HideKinds): HiddenSpl
     if (it.kind === "tool-call" && it.toolCallId) callIds.add(it.toolCallId);
   }
   const failedResult = (r: TranscriptItem | undefined) => !!r && toolResultView(r.raw, r.text).isError;
+  const cards = cardCallIds(items);
 
   const shown: TranscriptItem[] = [];
   const hidden: TranscriptItem[] = [];
@@ -46,7 +56,7 @@ export function splitHidden(items: TranscriptItem[], hide: HideKinds): HiddenSpl
   let failed = 0;
   let thinking = 0;
   for (const it of items) {
-    if (!isHidden(it, hide)) {
+    if (!isHidden(it, hide, cards)) {
       shown.push(it);
       if (isTurnStart(it)) openFrom = hidden.length;
       continue;
@@ -66,7 +76,7 @@ export function splitHidden(items: TranscriptItem[], hide: HideKinds): HiddenSpl
 
 /** Whether a streaming block is one the preferences hide. */
 export const isHiddenBlock = (b: LiveBlock | undefined, hide: HideKinds) =>
-  !!b && ((hide.tools && b.type === "toolCall") || (hide.thinking && b.type === "thinking"));
+  !!b && ((hide.tools && b.type === "toolCall" && !CARD_TOOLS.has(b.name)) || (hide.thinking && b.type === "thinking"));
 
 /** The streaming turn's hidden blocks, counted from its blocks and, for tool calls, their live status. */
 export function liveHiddenCounts(live: LiveState, hide: HideKinds): { calls: number; failed: number; running: number; thinking: number } {
@@ -99,5 +109,7 @@ export const toolsHiddenLabel = (calls: number) => `${calls} tool ${calls === 1 
 export const thinkingHiddenLabel = (blocks: number) => `${blocks} thinking ${blocks === 1 ? "block" : "blocks"} hidden`;
 
 /** Rows the transcript renders, for the scroller's "N new": hidden rows aren't new to the reader. */
-export const visibleCount = (items: TranscriptItem[], hide: HideKinds) =>
-  items.filter((it) => !isHidden(it, hide) && !isChangeRow(it)).length;
+export const visibleCount = (items: TranscriptItem[], hide: HideKinds) => {
+  const cards = cardCallIds(items);
+  return items.filter((it) => !isHidden(it, hide, cards) && !isChangeRow(it)).length;
+};

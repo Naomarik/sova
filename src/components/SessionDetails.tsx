@@ -30,6 +30,7 @@ import { sessionWorking } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
 import { sessionHref } from "./Sidebar";
 import { GroupWithParent, MoveToGroupMenu } from "./Groups";
+import { ChangesDialog } from "./ChangesViewer";
 
 /** Long machine facts wrap instead of widening the sheet. */
 const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
@@ -121,7 +122,7 @@ export function SessionDetails(props: {
 
       {/* 3 · Repository. The git state of the folder the session works in, read on its own
           schedule: never part of the insight poll. */}
-      <RepositorySection path={props.path} now={now()} changed={props.gitChanged} labelId={id("repository")} />
+      <RepositorySection path={props.path} cwd={summary()?.cwd} now={now()} changed={props.gitChanged} labelId={id("repository")} />
 
       {/* 4 · Worktrees. The ones this session tracks (the worktrees extension's entry on the
           branch), read with the insight; the pane only shows them, the agent's tool changes them.
@@ -140,7 +141,7 @@ export function SessionDetails(props: {
           </Show>
         }
       >
-        {(i) => <WorktreesSection rows={i().worktrees ?? []} labelId={id("worktrees")} />}
+        {(i) => <WorktreesSection rows={i().worktrees ?? []} path={props.path} cwd={summary()?.cwd} labelId={id("worktrees")} />}
       </Show>
 
       {/* 5 · Identity. What this session is, where it runs, and since when. */}
@@ -281,7 +282,7 @@ const GIT_SETTLE_MS = 2_000;
  * when the session's file settles after a change, every GIT_REFRESH_MS while the page is visible,
  * on return to the page, and on Refresh. The server caches ~10s; Refresh skips that.
  */
-function RepositorySection(props: { path: string; now: number; changed: number; labelId: string }) {
+function RepositorySection(props: { path: string; cwd?: string; now: number; changed: number; labelId: string }) {
   const [git, setGit] = createSignal<GitSummary | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
@@ -353,6 +354,8 @@ function RepositorySection(props: { path: string; now: number; changed: number; 
     const g = git();
     return g?.state === "repo" ? g : null;
   };
+  /** The viewer on the folder's uncommitted changes (§chat.changes/entry). */
+  const [reviewing, setReviewing] = createSignal(false);
   const checked = () => {
     const g = git();
     return g ? relativeTime(new Date(g.checkedAt).toISOString(), props.now) : "";
@@ -409,6 +412,18 @@ function RepositorySection(props: { path: string; now: number; changed: number; 
         </Match>
         <Match when={repo()}>{(s) => <RepositoryFacts summary={s()} now={props.now} />}</Match>
       </Switch>
+      <Show when={repo() && repo()!.filesTotal > 0 && props.cwd}>
+        {(cwd) => (
+          <div class="cluster">
+            <button type="button" class="button button-sm" title="Every uncommitted change, against HEAD. Nothing is changed." onClick={() => setReviewing(true)}>
+              Review Changes
+            </button>
+            <Show when={reviewing()}>
+              <ChangesDialog scope={{ kind: "dirty", sessionPath: props.path, cwd: cwd() }} cwd={cwd()} onClose={() => setReviewing(false)} />
+            </Show>
+          </div>
+        )}
+      </Show>
       <Show when={git()}>
         <p class="usage-note text-muted">
           Read {checked()}
@@ -421,7 +436,7 @@ function RepositorySection(props: { path: string; now: number; changed: number; 
 
 /** The session's tracked worktrees, dropped and merged ones included, or the line saying it tracks
     none. Read-only. */
-function WorktreesSection(props: { rows: SessionWorktreeInfo[]; labelId: string }) {
+function WorktreesSection(props: { rows: SessionWorktreeInfo[]; path: string; cwd?: string; labelId: string }) {
   return (
     <section class="stack-2" aria-labelledby={props.labelId}>
       <h3 class="text-eyebrow" id={props.labelId}>
@@ -430,7 +445,7 @@ function WorktreesSection(props: { rows: SessionWorktreeInfo[]; labelId: string 
       <p class="usage-note">{worktreesSummary(props.rows)}</p>
       <Show when={props.rows.length > 0}>
         <ul class="list worktree-list">
-          <For each={props.rows}>{(w) => <WorktreeRow worktree={w} />}</For>
+          <For each={props.rows}>{(w) => <WorktreeRow worktree={w} path={props.path} cwd={props.cwd} />}</For>
         </ul>
       </Show>
     </section>
@@ -440,9 +455,11 @@ function WorktreesSection(props: { rows: SessionWorktreeInfo[]; labelId: string 
 const chipTone = (c: Pick<WorktreeChip, "tone">) => (c.tone === "neutral" ? "chip" : `chip chip-${c.tone}`);
 
 /** One worktree: its branch, where it is, its status and what runs there. */
-function WorktreeRow(props: { worktree: SessionWorktreeInfo }) {
+function WorktreeRow(props: { worktree: SessionWorktreeInfo; path: string; cwd?: string }) {
   const w = () => props.worktree;
   const status = () => worktreeStatus(w());
+  /** The viewer on the branch against its merge-base (§chat.changes/entry): active, existing rows. */
+  const [reviewing, setReviewing] = createSignal(false);
   return (
     <li class="list-row worktree-row">
       <div class="list-main">
@@ -479,6 +496,22 @@ function WorktreeRow(props: { worktree: SessionWorktreeInfo }) {
             )}
           </Show>
         </div>
+        <Show when={w().status === "active" && w().exists}>
+          <div class="cluster">
+            <button
+              type="button"
+              class="button button-sm"
+              aria-label={`Review Changes on ${w().branch}`}
+              title="The branch's commits against where it left its base branch. Nothing is changed."
+              onClick={() => setReviewing(true)}
+            >
+              Review Changes
+            </button>
+          </div>
+          <Show when={reviewing()}>
+            <ChangesDialog scope={{ kind: "worktree", sessionPath: props.path, worktreePath: w().path }} cwd={props.cwd} onClose={() => setReviewing(false)} />
+          </Show>
+        </Show>
       </div>
     </li>
   );

@@ -20,14 +20,14 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Folder head, an agent at work in it | Busy's dot, wordless, pulsing · `title`: "An agent is working in this folder" · hidden clause in the heading: ", an agent is working here" |
 | Row unread dot (line 1) | wordless accent dot · hidden: "New activity. " |
 | Row turn-error mark (line 1, in the unread dot's place; §app.overseer/seen) | wordless alert circle in error · hidden: "Turn failed. " · `title`: "The last turn stopped with an error: {message}" · without a message: "The last turn stopped with an error." |
-| Row needs-you mark (line 1, after the unread dot or turn-error mark; one per row, §app.decisions/attention-signals) | wordless glyph · hidden: asks-you "Asks you. " · looping "May be looping. " · a stuck subagent "A subagent may be stuck. " · `title`: "The last reply asks you something." · "The last turn looks like it went in circles." · "A subagent looks stuck." |
+| Row needs-you mark (line 1, after the unread dot or turn-error mark; one per row, §chat.alignment/session-mark, §app.decisions/attention-signals) | open questions: speech bubble + `{n}` · hidden "{n} open questions. " (1: "1 open question. ") · `title` "{n} open questions in {m} alignments" (1 alignment: "{n} open questions in {al_N} {title}") · otherwise a wordless glyph · hidden: looping "May be looping. " · a stuck subagent "A subagent may be stuck. " · `title`: "The last turn looks like it went in circles." · "A subagent looks stuck." |
 | Row meta title, when tagged | Topic: {topic word} · status: {status word} (tagged automatically) · without a topic: Status: {status word} (tagged automatically) |
 | Row status word (line 3, between time and model) | done · in progress · abandoned · blocked (lowercase) |
 | Topic words (search; §app.decisions/session-tags) | feature · bug fix · refactor · tests · docs · infra · research · planning · review · data · config · experiment · chore · other |
 | Untitled row | Untitled (muted) |
 | Draft row (a never-sent session with a stored draft) | title Untitled (muted) · line 2: `pencil` icon, then the draft's first non-empty line, about 80 characters · image-only: `1 image` / `2 images` · accessible name and `title`: Draft: {preview} |
 | Needs you region head (§app.session-list/needs-you) | Needs you · {n} where n = its rows · `title`: "The {n} sessions waiting on you, newest first." (1: "The 1 session waiting on you.") |
-| Needs you row, line 2 | the digest's sentence for the session's newest act item, verbatim ("Asks you: …", "Waiting on a dialog.", "1 subagent ended in an error.") · `title`: every act sentence, newest first |
+| Needs you row, line 2 | the digest's sentence for the session's newest act item, verbatim ("2 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "1 subagent ended in an error.") · `title`: every act sentence, newest first |
 | Needs you cut note | Some sessions may not be listed: this list stops at the 30 most urgent items. |
 | Needs you spine door | wordless `alert-circle` over {n} · `aria-label` and `title`: Needs you · {n} sessions (1: "1 session") |
 | Overseer entry button (eye) | wordless · badge: {unread}, "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
@@ -41,11 +41,16 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Org section head | {org}, wordless warn dot with hidden ", {k} waiting on you", then its count · `title`: "{n} sessions in {org}." + " {k} waiting on you." when k ≥ 1 |
 | Org page link (org head) | wordless `arrow-right` · `aria-label` and `title`: Open the {org} page |
 | Project label | {project}, then its count · `title`: the project root (from its overseer's folder), else {project} · Unknown project · Other |
-| Finished list | Finished {n} · `title`: "Hand-offs that reached their goal or were closed, cleared overseer conversations, and sessions you archived." |
+| Project overseer eye (project heading, §app.session-list/organizations) | wordless `eye`, one mark at most: Busy's pulsing dot · the turn-error mark · the unread dot · `aria-label` and `title`: Open the {project} overseer, + " · working" / " · last turn failed" / " · new reply" |
+| Project groups (in order, each only with rows) | `Conversations` {n} · `title`: "Gathering sessions and offers sent to people." · `Conflicts to settle` {n} · `title`: "Sessions asking someone to settle two decisions that disagree." · `Builds` {n} · `title`: "Coding sessions this project started." |
+| States (Conversations, Conflicts to settle) | `Not started` {n} · `In progress` {n} · `Done` {n} (collapsed) |
+| Done (every group) | Done {n} · `title`: Conversations and Conflicts: "Done or closed, and the ones you archived." · Builds: "Merged, and the ones you archived." |
+| Not started row, line 2 | "Link not sent yet" · "Not opened yet" · "Opened, no reply yet" · none while you hold it |
+| Settle row, line 2 | "In conflict: {area}" · not started: "In conflict: {area} · {hint}" |
 | Organizations spine door | wordless `building` over {n} · `aria-label` and `title`: Organizations · {n} sessions (1: "1 session"), + " · {k} waiting on you" while k ≥ 1 |
-| Org archive toasts | "Archived. Find it in {project}, under Finished." · "Moved back to {project}." · no project: "Archived. Find it in {org}, under Finished." · "Moved back to {org}." · a project with no name left: {project} = "its project" |
+| Org archive toasts | "Archived. Find it in {project}, under Done." · "Moved back to {project}." · no project: "Archived. Find it in {org}, under Done." · "Moved back to {org}." · a project with no name left: {project} = "its project" |
 | Org group refusal (drop, Move into group reason, server 400) | Organization sessions stay with their project. |
-| Select mode, org rows | Move to group: "Skipped 1: an organization session stays with its project." · "Skipped {n}: organization sessions stay with their project." · Archive: "{n} went to its project's Finished list." (n > 1: "{n} went to their projects' Finished lists.") |
+| Select mode, org rows | Move to group: "Skipped 1: an organization session stays with its project." · "Skipped {n}: organization sessions stay with their project." · Archive: "{n} went to its project's Done list." (n > 1: "{n} went to their projects' Done lists.") |
 | Archive date sections | Today · Yesterday · Last 7 days · Last 30 days · Older (each with its count) |
 | Groups region head (§app.session-list/groups) | Groups · {n} where n = **groups** · searching: Groups · {matching groups} of {all groups} |
 | New group button (the `+` on the Groups region head) | wordless `+` · `aria-label` and `title`: New group |
@@ -64,7 +69,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Empty top region note | 0 sessions open in a TUI, or started here and not archived. The archive below has the rest. |
 | Loading | skeleton only, no text |
 | Error banner | **Couldn't read your sessions.** `~/.pi/agent/sessions` wasn't changed. Check the server is running, then retry. · button: `Retry` |
-| Empty (0 on disk) | **0 sessions in `~/.pi/agent/sessions`.** Start one here, or run `pi` in a terminal. It'll show up in this list. · button: `New Session` |
+| Empty (0 on disk) | **0 sessions in `{the server's sessions folder}`.** (`~/.pi/agent/sessions` on a default host; before the server says: **0 sessions yet.**) Start one here, or run `pi` in a terminal. It'll show up in this list. · button: `New Session` |
 | No matches | **0 of {total} match “{query}”.** We search titles, folders, models, and tags. · button: `Clear Search` |
 
 ## §design.copy-deck/main-pane — Main pane
@@ -93,6 +98,10 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Wake nudge card, closed | `Wake nudge {id}` · {reason, or blank} · `fired {HH:MM}` (· `{late} late`, only when overdue) |
 | Wake nudge card, open | the fired message, verbatim, all four lines |
 | Wake nudge in Inputs Only / the Timeline | {reason}, or `Wake nudge {id}` when it carries none |
+| Alignment card, answerable (§chat.alignment/card) | button `Go With Recommendations` · hint "Or tick some and answer the rest below." · its reasons: the composer's blocked reason · "Wait for the turn to end." · "Send or clear your draft first." · checkbox name "Take the recommendation for {qN}." · sends `{al_N}: go with your recommendations for every open question, and go ahead.` · ticks send `{al_N}: take your recommendation on {q1}, {q2} and {q3}.` (one line per alignment) |
+| Alignment card (§chat.alignment/card) | eyebrow `{al_N} · Alignment · v{rev}` · status chips (none while aligning) Confirmed · Implementing · Done · Dropped · meta `{k} of {n} open` (none: `No questions yet`; none left open: `All {n} decided`) · `· {change line}` · question chips Open · Decided · Dropped · option letters `a` `b` `c`… · `Recommended` (small caps, no colon) `{letter} — {label}`, `{why}` on the next line (names an option) / `Recommended` `{choice}`, `{why}` on the next line · `Decided: {text} · you` / `· accepted recommendation` · `Dropped: {why}` · sections `Findings · {n}` · `Approach · {n}` · `Rejected · {n}` |
+| Alignment revision row | `{al_N} v{rev} {title} · {change line}` · change words (the extension's `changeLine`, joined by " · "): created · created from file · +q11 +f4 · q3, title edited · −f2 −a1 · q1, q3 decided · q1, q2 accepted · q3 reopened · q3 dropped · → implementing · → done · → open · dropped |
+| Alignment exempt row | No alignment needed: {why} |
 
 ## §design.copy-deck/message-actions — Message actions (§chat.transcript/message-actions)
 
@@ -141,6 +150,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Placeholder, streaming | ≥768: Steer the current turn…—Enter sends, Shift+Enter adds a line · <768: Steer the current turn… |
 | Buttons | `Send` · streaming: `Steer` + `Stop` · after Stop is pressed: "Stopping…" in run status |
 | Run status | `Working` + detail: `· thinking` / `· writing` / `· running {tool}` · stopping: `Stopping…` · while ≥ 1 worker runs, the subagents trigger beside it with the counts only: `2 subagents` · `1 subagent · 2 team members` |
+| Alignment chip (§chat.alignment/chip) | `{n} aligns · {open}/{total}` (1: `1 align · …`) · `aria-label` "{n} open alignments, {open} of {total} questions open — show alignments" · menu rows: {id} {title}, then "{decided}/{live}" (no live questions: the status word) · row `aria-label` "{id} {title}: {decided} of {live} questions decided — jump to its card" (no live questions: "{id} {title}: {status}, no questions — jump to its card") · off-screen toast: "That alignment isn't in the transcript on screen." |
+| Staged recommendations (§chat.alignment/card) | `Taking your recommendation: {al_N} {q1}, {q3}` (alignments joined by "; ") · group label "Staged recommendations" · `Clear Picks` |
 | Reason: TUI-live | Read only while this session is open in the TUI. |
 | Reason: busy (server `code:"busy"`) | pi is busy with another turn. Send when it finishes. |
 | Reason: connecting / reconnecting / gave up | see Connection above |
@@ -408,6 +419,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | View head id | beside the title, muted mono: `{id}` (e.g. `ag_02`) |
 | View head meta | `{model}` (hover: `{provider} · {model id}` — a claude-code worker's provider reads `claude code`) · `{level}` (only when the worker has an effort; hover: "effort {level}") · `{tokens} tok` (hover: the usage breakdown) · usage unavailable (when it has none) · `{context fill}` — compact, last, at the line's right edge with no `·` before it: the context ring + "`{pct}%`", hover: the §chat/context-window sentence; "Context `{tokens}`" when the window is unknown, "Context compacted" after a compaction, nothing before a reply has measured one |
 | Transcript section `aria-label` | {name} transcript |
+| Workers the live record doesn't list (§app.subagents-pane/hidden-workers) | line: `{shown} of {total} shown` · button: Show `{n}` More (`{n}`: every hidden worker, all added at once) · while loading: Loading… · failure: the reason, in the button's `title` |
 | No workers | **0 subagents in this session.** Workers it starts show up here while they run. |
 | None selected | **{n} subagents, {w} working.** Pick one to read its transcript. |
 | No session yet (Claude Code) | **Its transcript isn't available in Sova.** `{name}` is starting — no Claude session yet. Latest: {preview} |
@@ -466,7 +478,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Refused fallback (under the row, error) | {server reason}. Your saved fallback model is unchanged. |
 | Fallback notes (under the row, warn) | {server note, without its "Fallback model:" label}. · Not verified, because {backend} couldn't list its models ({why}): Fallback model. |
 | Options failed (banner-warn) | **Couldn't check which models are offered.** Your saved choice stays, marked not verified. [Check Again] |
-| Features (legend) | Features · Flag sessions that need you — After each finished turn, checks whether it asks you something or is going in circles, and marks the row. The Overseer lists them too. · Tag sessions — Gives each session a topic and a status word you can search. |
+| Features (legend) | Features · Flag sessions going in circles — After a long turn, checks whether it went in circles, and marks the row. The Overseer lists them too. · Tag sessions — Gives each session a topic and a status word you can search. |
 | Unavailable (replaces a switched-on feature's hint, warn) | Unavailable: Jev is off and no fallback model is set. Nothing is checked. · Unavailable: Jev can't answer ({reason}) and no fallback model is set. Nothing is checked until one of them can. |
 | Features note (under the switches, warn, when they don't already say it) | {server reason} The features stay unavailable and send nothing until one is. |
 | Never send (legend) | Never send · switch Never send TUI sessions — Sessions started in the pi terminal stay on this machine. · Folders — One per line. Sessions in these folders, and their subfolders, are never checked. · issue: "{line}" isn't a full path. Start it with / or ~/. · That's {n} folders. Use at most 100. |
@@ -672,20 +684,54 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Mode select (beside the coding sessions' model and thinking) | label `Coding sessions' mode` · options `Automatic` · `normal` · `normal · spec` · `delegate` · `delegate · spec` — the mode ids in lower case, as the mode menu shows them (§chat/mode-menu) |
-| …its hint (`.field-hint`) | "Every coding session this project starts runs in it, yours included. One started now: {codingModeNow}." — `{codingModeNow}` in mono, `normal` or `normal · spec` · for a `delegate` option, a second sentence: "Their workers' tokens count against the budget." |
+| …its hint (`.field-hint`) | "Every coding session this project starts runs in it, yours included. One started now: {codingModeNow}." — `{codingModeNow}` in mono, `normal` or `normal · spec` |
 | …saved (toast) | "Coding sessions run {mode}." · Automatic: "Coding sessions' mode: Automatic." |
-| Budget hint (replaces the old one) | "Spent {tokens} of {budget}, workers included. At L3 it starts no coding session beyond it." |
 | List heading | `Coding sessions` — replaces "Sessions it started" for coding rows; gathering sessions and offers keep their own list |
-| Row | the title (a link on this host) · meta: "Started by the overseer" or "Started by you" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
+| Row | the title (a link on this host) · meta: "Started by the overseer", "Started by you" or "Started by you, via the Overseer" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
 | Above the list, when the project can't have worktrees | "Coding sessions run in the project root: {reason}" — `{reason}` one of "it isn't a Git repository." · "the repository has no commits yet." · "its checkout is on a detached HEAD." |
 | …a row in the root | "In the project root: {reason}" — no branch, no buttons |
-| …after | "Merged into `{target}` {relative time}" · "Worktree removed" · "Worktree folder missing" |
+| …after | "Merged into `{target}` {relative time}" · "Worktree removed" · "Worktree folder missing" · merged before, with commits since: "{n} new commits since the last merge into `{target}` {relative time}" (1: "1 new commit since…"), and Merge Branch again |
 | Merge | `Merge Branch` (secondary) · disabled reasons: "Session working" · "Workers running" · "On another host" · done (toast): "Merged sova/{name} into {target}." |
 | …refused (`.field-error` under the row) | "The project root has {branch} checked out, not {target}. Check out {target} there, then merge." · "The project root has uncommitted changes to tracked files. Commit or stash them, then merge." · "The project root is in the middle of a {merge/rebase/cherry-pick}. Finish it, then merge." · detached root: "The project root's checkout is on a detached HEAD, not {target}. Check out {target} there, then merge." · uncommitted in the worktree: "The worktree has uncommitted changes in {n} files ({first file}). Commit them in the session first, then merge." · nothing to merge: "sova/{name} has nothing to merge into {target}." · conflict: "sova/{name} conflicts with {target} in {n} files. Nothing was merged. Resolve it in the worktree, then merge again." · busy (server): "The session is working." · "Its workers are running." · another host: "On another host: its worktree is there." |
 | Remove | `Remove Worktree` (destructive, outlined) · disabled reasons as Merge's · confirm, merged: "The folder `{path}` and the merged branch `sova/{name}` go away. The session and its transcript stay." · unmerged: "The folder `{path}` goes away. The branch `sova/{name}` keeps its commits, and the session and its transcript stay." · buttons `Remove Worktree` · `Cancel` · done: "Worktree removed." · refused: "The worktree has uncommitted changes in {n} files ({first file}). Nothing was removed. Commit or discard them first." · twice: "Its worktree was already removed." |
+| List heading, empty | `Coding sessions` is always shown · "None yet. Yours and the overseer's are listed here." · a row with no title yet: "Untitled coding session" |
+| New Coding Session | `New Coding Session` (secondary, terminal icon) on the `Coding sessions` heading · toast as Start Coding Session's, then the session opens · mode not set (`.field-error` under the heading): "Started, but its mode could not be set. Set it from the chat's mode menu before you send." · refused (`.field-error`): "{reason} No session was started." |
 | Start Coding Session (toast) | "Coding session started on sova/{name}." · in the root: "Coding session started in the project root." · mode not set (`.field-error`): "Started, but not prompted: its mode could not be set. Open it and send the message yourself." · no worktree (`.field-error`): "No session was started: its worktree could not be made ({git's first line})." |
 | Promote (Decisions tab, after a promotion) | "Promoted {n}. Committed {short sha} on {branch}." · skipped: the reason as §app.requirements/promotion-commit words it ("Not committed: …") · no Git: no second sentence |
 | Overseer tool refusals (the model reads them; the activity list shows them) | "Delegate is off for this project's coding sessions; the operator can allow it on the project page." · "Align needs someone to answer its questions, and nobody answers a coding session's." · "Spec is on for this project's coding sessions; only the operator can turn it off on the project page." · "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: only spec is allowed." · "Its worktree was removed, so it has no folder to work in." |
+
+## §design.copy-deck/project-limits — Project page · limits and pace (§app.project-overseer/limits)
+
+| Where | Copy |
+|---|---|
+| Section | legend `Limits` · hint "Past a limit it stops and tells you. Your own coding sessions and Send to Person aren't counted." |
+| Groups | `Each message you send` · `On its own, each day`, hint "Resets at midnight on this host." · `At once`, hint "These never go Unlimited: they are what stops a burst." · `Pace` |
+| Allowance fields | `Gathering sessions started` · `Decisions promoted` · `Coding sessions started` · `Prompts to coding sessions` · per day also `Looks` · each with a checkbox `Unlimited` |
+| At-once fields | `Gathering sessions open` (0–20) · `Coding sessions running` (0–10) · no Unlimited |
+| Pace | `Looks at most every` [`2 min` · `5 min` · `10 min` · `30 min` · `1 hour`] · `After a session finishes, it looks within` [`30 s` · `1 min` · `2 min` · `5 min` · `Off`] |
+| Buttons | `Save Limits` (secondary, like the other saves on the card) · `Reset Limits` (ghost: the defaults into the form, not saved) · saved (toast): "Limits saved." |
+| Problems (`.field-error`, before sending; the server's 400 says the same) | "{Label} must be a whole number from 0 to 1000, or Unlimited." · "Gathering sessions open must be a whole number from 0 to 20." · "Coding sessions running must be a whole number from 0 to 10." · server only: "Coding sessions running can't be Unlimited: it's what stops a burst." |
+| Watch hint (built from the pace) | "When a session finishes, a conflict appears, or you promote, it looks on its own: within {soon} for the important ones, otherwise at most every {gap}." · soon Off: "When a session finishes, a conflict appears, or you promote, it looks on its own at most every {gap}." |
+| Readout (under the status line; only kinds used) | "Today on its own: {n} of {max} gathering sessions, {n} coding sessions (no limit)." · "Your last message: {n} of {max} prompts to coding sessions." |
+| Waiting (one line each) | "Waiting until midnight: today's {max} {what} are used." · looks: "Waiting until midnight: today's {max} looks are used." |
+| Refusals (activity list; the operator's sentence only) | "Today's allowance is used: {n} of {max} {what} on its own. It looks again at midnight." · "This message's allowance is used: {n} of {max} {what} per message you send." · "{n} of its gathering sessions are open, and the limit is {max} at once." · "{n} of its coding sessions are running, and the limit is {max} at once." |
+| Reasons it gets back (the model reads them; "Waiting to look at:" shows them) | "Today's allowance is back: it may start {what} again (refused {time})." · "Today's looks are back (refused {time})." · "The operator's last message reached its limit on {what}; it may go on within today's allowance." · "You raised the limit on {what}." |
+
+## §design.copy-deck/project-costs — Project page · Cost card, org page · totals (§app/project-costs)
+
+| Where | Copy |
+|---|---|
+| Card | heading `Cost` · total `$12.48` (mono) then "at API prices" · under it: "What these sessions would cost at each provider's API prices. Your subscriptions bill differently." |
+| Money | two decimals with thousands commas, mono: `$1,240.00` · `$0.56` · above 0 and under a cent: `<$0.01` · nothing: `$0.00` · the project total when part of it is an estimate: `≈$4.10` (`title` "Partly an estimate: see the note below.") |
+| Tokens | the short figure used elsewhere: `940` · `12.3k` · `2.8M` |
+| By who started it (one line, only starters with a cost) | "Started by the overseer {usd} · by you {usd} · by Sova on its own {usd}" |
+| By kind (table) | heads `Kind` · `Cost` · rows `Overseer conversations` · `Gathering and offers` · `Settling` · `Wrap-ups` · `Coding sessions` · `Their workers` · `Reconciler` |
+| By model (table) | heads `Model` · `Input` · `Output` · `Cache read` · `Cache write` · `Cost` · a token cell: `{usd}` over `{tokens}` (muted) · last row `All models` · a local model's cost cell: `local` · an unpriced model's cost cells: `unpriced` (muted) |
+| Top sessions | heading `Most expensive sessions` · row: `{title}` (link when on this host, else plain with "(not on this host)") · `{kind} · {started by}` with `started by` one of "started by the overseer", "started by you", "run by Sova" · `{usd}` |
+| Notes (one line each, only when true) | unpriced: "{tokens} tokens on {model} have no API price, so they aren't in the total." (one line per model; the reason as its `title`) · legacy: "{tokens} tokens counted before costs have no model recorded, so they aren't in the total." · estimate: "≈ Older Claude Code messages didn't record how long their cache was kept, so their cache writes are priced at the 1-hour rate." · not on this host: "{n} sessions aren't on this host: their cost is as last counted, {date}." · always: "Not counted: topic summaries, image descriptions, and Sova's own side calls." · always: "Prices from models.dev, as of {Mon D}." |
+| Empty | "{n} sessions in this project. Nothing spent yet." · one: "1 session in this project. Nothing spent yet." · with no session: "Nothing spent yet." |
+| Loading · error | "Counting…" · "Couldn't count this project's cost. {reason}" (the API error's message) |
+| Org page, Projects tab | above the list: "All projects: {usd} at API prices." · each project row: `{usd}` (mono, muted) before the chevron · no projects: no line |
 
 ## §design.copy-deck/project-stakeholder — Project page · main stakeholder, thinking, activity (§app.organizations/stakeholder, §app.project-overseer/identity)
 
@@ -693,7 +739,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Stakeholder select (the project page's decisions area, above the decisions) | label `Main stakeholder` · options `None`, then the org's active people by name · hint (`.field-hint`): "Decides every area of this project that no one on the roster decides by name." |
 | …saved (toast) | "{name} is this project's main stakeholder." · None: "This project has no main stakeholder." |
-| …latest change (under the hint) | "Set by you {relative time}." · "Cleared {relative time}: {name} left the organization." |
+| …latest change (under the hint) | "Set by you {relative time}." · "Set by you, via the Overseer {relative time}." · "Cleared {relative time}: {name} left the organization." |
 | …refused (`.field-error`) | "Only an active person on the roster can be a project's main stakeholder." |
 | Cleared banner (warn, while nobody is picked) | "{name} was this project's main stakeholder until they left the organization {relative time}. Pick someone else, or choose None." |
 | Suggestion (info line, no stakeholder, exactly 1 active person) | "{name} is the only person on the roster. Make them this project's main stakeholder?" · button `Make Main Stakeholder` (secondary) |
@@ -704,3 +750,127 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Thinking refused (project page, `.field-error` under the select) | "{model} offers thinking {levels}." — levels comma-separated, as the model lists them |
 | Thinking moved after a model change (toast, after the model's own) | "Thinking is now {level}: {model} doesn't offer {old}." |
 | Activity chip for a partial act | `Partly` (warn: dot and word) beside `Done` · `Refused` · `Failed` · line: "{tool words}: partly ({n} refused: {id} ({reason}); …)" |
+
+## §design.copy-deck/project-overseer-head — Project overseer · chat head (§app.project-overseer/page)
+
+| Where | Copy |
+|---|---|
+| Title | `Overseer` · an earlier conversation: `Earlier Overseer Conversation`, meta "{title} · {age}", back link `aria-label` "Back to the overseer" |
+| Meta line | {project} (a link to its page) · {org} · `Watching` / `Not watching` · "{n} started" (a menu; `aria-label` "{n} sessions it started, show list"; rows "{kind} · {state}") |
+| State chip | `Working` (accent, live dot) · `L0 in force` (warn, dot and word; `title`: the server's reason) |
+| Level button | the chosen level, `L1` · `aria-label` "Level {level}, {meaning}" + " In force now: L0." while forced + " Change level." · rows `L0`–`L3`, each with its meaning (the project page's), the chosen one checked · done (toast): "Level: {level}." |
+| Project page's Open Overseer / Start Overseer | the `eye` icon (was `chat`) |
+| Run Now | `Run Now` (ghost) · disabled reason: "Working now" · done (toast): "The overseer is looking now." |
+| ⋯ menu | `aria-label` "Overseer actions · {project}" · `Stop Watching` / `Start Watching` (toasts "Not watching." / "Watching.") · `History…`, note "{n} earlier" while any (`aria-label` "History, {n} earlier conversations", 1: "conversation") · `Clear`, note "Start a new conversation. This one moves to History." · `Project Page` · below 480px also `Run Now` and `Level…` (note: the chosen level) |
+| Meta line, below 480px | {project} only: the org and the watch word go |
+| History screen | its earlier conversations, each "{title}" ("No messages" when untitled) with its age · none: "No earlier conversations yet." |
+| Clear / `/clear` | done (announced): "Cleared. The previous conversation is in History." · failed (toast): "Couldn't clear the overseer. {why}" |
+| Status strip, line 1 | "Last looked on its own {time}{tail}." or "It hasn't looked on its own yet." + " Waiting to look at {n} things." (1: "1 thing"; `title`: the reasons) · paused by an attach: the reason, then `Resume at {level}` · empty roster: the reason |
+| Status strip, lines 2–3 | the project page's readout ("Today on its own: …") and waiting sentences (§design.copy-deck/project-limits) · below 480px: `Details` toggles them |
+| Read-only line (earlier conversation) | "An earlier conversation. Read only." |
+
+## §design.copy-deck/overseer-orgs — The Overseer in organizations (§app.overseer/org-tools, §app.organizations/archive)
+
+| Where | Copy |
+|---|---|
+| Writer, wherever a change names who made it | `you, via the Overseer` (Profile Changes, Recent Profile Changes) · About History row: "by you, via the Overseer" · latest-change lines: "Set by you, via the Overseer {relative time}." · coding row: "Started by you, via the Overseer" |
+| Row tag and queued row, in a project overseer's thread | `Overseer` — the tag and word of §app.overseer/sent-marker |
+| Confirm card rows | project: `{project}` then `{org}` (muted) · person: `{name}` then `{org}` (muted) and, unless active, the status chip (`Proposed`, `Left`) |
+| Extra instructions (project's Overseer card) | label `Extra instructions` · hint "Added last to this overseer's prompt, after the organization's About text, and they win over it. It reads them at its next run." · counter `{n} / 8,000` · `Save` (secondary) · `Cancel` (ghost) · saved (toast): "Extra instructions saved." · blank: "Extra instructions removed." · refused (`.field-error`): "Extra instructions can be at most 8,000 characters." |
+| Archive (project page head) | `Archive Project` (destructive, outlined) · confirm: "{project} leaves the Projects list and its overseer stops looking. Nothing is deleted; Unarchive brings it back." · buttons `Archive Project` · `Cancel` · done (toast): "{project} archived." |
+| …refused (`.field-error`, the server's words) | "Stop these first: {list}." — items joined with "; ": "{n} gathering session open ({titles})" / "{n} gathering sessions open (…)" · "{n} coding session running (…)" / "{n} coding sessions running (…)" · "its overseer is working" |
+| Archived banner (info) | "{project} was archived {relative time}. Its overseer is paused and nothing new starts here. Nothing was deleted." · via: "{project} was archived by you, via the Overseer {relative time}. …" · button `Unarchive` (secondary) · done (toast): "{project} is back." |
+| Archived, disabled reason | "Archived" (Start Overseer, Run Now, Start Coding Session, Send to Person…) |
+| Archived, refused (server) | "{project} is archived. Unarchive it first." · the overseer: "{project} is archived. Unarchive it to use its overseer." |
+| Projects tab | disclosure `Archived Projects ({n})` (collapsed; absent with none) · row: the project link · "archived {relative time}" · `Unarchive` (ghost) · every project archived, in place of "No projects yet…": "The 1 project here is archived. Unarchive one below, or add a project." / "All {n} projects here are archived. Unarchive one below, or add a project." |
+| Overseer tool refusals and notes (the model reads them; the action log keeps the refusals) | "This reaches people or ends something: ask with sova_confirm, listing {what} in its items, and act in the turn the user's click starts." · "Only the Overseer sends here. Write in the overseer's own composer." (403) · "Send words; use op clear to clear it." · "That folder is an organization's workspace; read it with sova_orgs and sova_read_session." · "No link was made: Needs you asks you to send {name} their link." |
+
+## §design.copy-deck/owner-page — Owner page (§app/owner-page)
+
+The owner is not technical: short sentences, everyday words, full words for time. `{first}` is a
+person's first name, `{op}` the operator's first name, `{org}` the org's name, `{project}` a
+project's name. Times on the owner page: "just now", "{n} minutes ago", "{n} hours ago",
+"yesterday", "{n} days ago", then "Mar 4" (and "Mar 4, 2025" in another year); singular "1 minute
+ago", "1 hour ago"; the exact date and time as the element's title. Every count has its singular.
+
+**Owner page (what the owner reads)**
+
+| Where | Copy |
+|---|---|
+| Browser tab title | `{org}` |
+| Greeting | "Hi {first}. Here's how your projects are going." |
+| Read-only line | "You can read everything here. Nothing you do on this page changes anything." |
+| Freshness | "Updated just now" · "Updated {time}" |
+| Waiting on you, heading | "Waiting on you" |
+| …line | "1 question is waiting for your answer." / "{n} questions are waiting for your answer." |
+| …row | "{conversation title}" · "{project} · asked {time}" |
+| …hint | "Answer it using the link {op} sent you for it." |
+| Projects, heading | "Your projects" |
+| Project card, counts | "Talked to {n} people · {n} decisions · {n} pieces of work finished" — singulars "1 person", "1 decision", "1 piece of work" |
+| …no updates yet | "No updates yet." |
+| Projects, none | "There are no projects on this page yet. When {op} starts one, it will show up here." |
+| Project status chips | `Waiting on you` (warn) · `Asking questions` (info) · `Building` (info) · `Quiet` (neutral) |
+| Back links | "← All projects" · "← {project}" |
+| Updates, heading | "Updates" |
+| …none | "{n} conversations so far. No updates yet." |
+| …show all | `Show All {n} Updates` |
+| Who we've talked to, heading | "Who we've talked to" |
+| …row | "{name}" · "{n} conversations · last wrote {time}" / "{n} conversations · hasn't replied yet" |
+| …none | "Nobody has been asked anything yet." |
+| What's been decided, heading | "What's been decided" |
+| …row meta | "{name}, {date}" · disclosure "In {first}'s words" |
+| …status chips | `Agreed` (success) · `Noted` (neutral) · `Needs a choice` (warn) |
+| …none | "{n} conversations so far. Nothing has been decided yet." |
+| …show all | `Show All {n} Decisions` |
+| Different answers | "{A} and {B} gave different answers about {topic}. We've asked {C} to choose." · to the owner: "…We've asked you to choose." · to the operator: "…{op} will choose." |
+| What's been built, heading | "What's been built" |
+| …counts | "{n} pieces of work finished · {n} in progress" |
+| …none | "Nothing has been built yet." |
+| Conversations, heading | "Conversations" |
+| …row | "{conversation title}" · "Started {time} · {n} messages" |
+| …status chips | `Waiting on you` (warn) · `Waiting on {first}` (info) · `With {op}` (info) · `Asked {n} people` (info) · `Finished` (success) · `Ended` (neutral) |
+| …none | "No conversations yet." |
+| …show all | `Show All {n} Conversations` |
+| Conversation, line | "You can read this conversation. You can't write here." |
+| …when it's the owner's turn | "It's your turn in this conversation. Answer it using the link {op} sent you." |
+| Footer | "Only people with this link can open this page. If someone else gets it, tell {op} and they'll turn it off." |
+| Link expired (410) | "This link has expired." / "These links last 90 days. Ask the person who sent it for a new one." |
+| Link no longer active (410) | "This link is no longer active." / "Ask the person who sent it for a new one." |
+| Unknown link (404) | "This link doesn't open anything." / "Check that you copied all of it." |
+| A project or conversation not on the page (404) | "This isn't on your page." / "Go back to all your projects to see what is." · "← All projects" |
+| Couldn't load | "We couldn't load this page. Your link still works. Try again in a minute." · `Try Again` |
+| Too many requests | "Too many requests from this network. Wait a minute, then reload." |
+
+Never on the owner page, in any form: baton, hand-off, holder, offer, lease, overseer, agent,
+model, AI, promote, promoted, draft, drafted, reconcile, conflict, stakeholder, worktree, branch,
+merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
+
+**Operator side**
+
+| Where | Copy |
+|---|---|
+| People tab, card title | "Owner" |
+| …hint | "The owner follows every project on one page: the overseer's updates, who was asked, what was decided, and each conversation. They can read it, not change it." |
+| …select | label `Owner` · options `None`, then active people by name |
+| …saved (toast) | "{name} is the owner now." · None: "This organization has no owner now." |
+| …refused (`.field-error`) | "Only an active person on the roster can be the owner." |
+| …latest change | "Set by you {relative time}." |
+| …cleared (warn banner) | "{name} left the organization, so it has no owner now. Their owner link stopped working." |
+| …link line | "Owner link made {relative time} · expires {relative time} · opened {n} times" · none: "No owner link yet." · newest turned off or replaced: "The owner link is turned off." · under 14 days (warn): "Owner link expires {relative time}." · expired: "The owner link expired {relative time}." |
+| …buttons | `Get Owner Link` (secondary) · `Preview Owner Page` (secondary) · `Turn Off Owner Link` (destructive, outlined, apart) |
+| Get Owner Link, while one is live (confirm) | "{first}'s current link stops working at once. The new one works from now." · `Get Owner Link` · `Cancel` |
+| Get Owner Link, no owner | "Pick an owner first." |
+| Turn Off, confirm | "{first}'s owner page stops opening at once. The conversations and updates stay." · `Turn Off Owner Link` · `Cancel` |
+| Link shown once | the baton strip's Copy Link pattern; `linkWarning` when no share address is known |
+| Preview modal title | "{org}, as {first} sees it" |
+| …line | "Read only. Nothing you do here reaches {first}, and no visit is recorded." |
+| Project page card title | "Owner Page" |
+| …switch | "Show this project on {first}'s page" |
+| …updates log heading | "Updates for {first}" |
+| …log row meta | "Posted by the overseer {relative time}" · "Posted when you asked {relative time}" · taken down: "Taken down {relative time}" |
+| …none | "The overseer hasn't posted an update yet. It posts when a conversation finishes, something is agreed, or a piece of work is finished, at most once a day." |
+| …Take Down | `Take Down` (destructive, outlined) · confirm: "{first} stops seeing this update. It stays in this list and in the workspace history." · `Take Down` · `Cancel` |
+| …switch saved (toast) | "{project} shows on {first}'s page." · "{project} is off {first}'s page." |
+| Baton strip | `Hide From {first}` / `Show To {first}` · while hidden: "Hidden from {first}'s owner page." · toasts "Hidden from {first}'s owner page." / "Shown on {first}'s owner page." |
+| Person page | chip `Owner` beside the status · link row title "The owner page", state `Can read` / `Turned off` / `Expired` · visit row "Opened the owner page · {device} · {relative time}" |
+| Overseer tool refusals (the model reads them; the activity list shows them) | "Nothing new since the last update: post one when a conversation finishes, a decision is agreed, or a coding session finishes or is merged." · "An update was posted {relative time}: at most one a day." · "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words." · "This update repeats private text (a conversation's goal or briefing, the operator's instructions, or a person's profile or contact). Updates are for the client: write it again in your own words." · "An update is at most 2,000 characters." · "This organization has no owner, so there is no page to post to." |

@@ -10,7 +10,9 @@
  * PUT    /api/orgs/operator                 body { name } -> OrgsInfo
  * GET    /api/orgs/:id                      -> OrgDetail (with needsYou, each baton's waiting, projectConflicts;
  *                                               so is every route below that answers OrgDetail)
- * PATCH  /api/orgs/:id                      body { name?, notes? } -> OrgDetail
+ * PATCH  /api/orgs/:id                      body { name?, about? } -> OrgDetail (about: the org's About text,
+ *                                               at most ORG_ABOUT_MAX characters; blank removes it)
+ * POST   /api/orgs/:id/about/revert         body { at } -> OrgDetail (the About text back to that line's `from`)
  * DELETE /api/orgs/:id                      -> { ok: true } (detach: removes it from this host's index only)
  * POST   /api/orgs/:id/commit               -> OrgDetail (Commit now; pushes when a remote is set)
  * PUT    /api/orgs/:id/remote               body { url } ("" removes it) -> OrgDetail
@@ -28,6 +30,7 @@
  *                                               their link shows it; no token, no visit; 404 when the session isn't theirs)
  * POST   /api/orgs/:id/people/:pid/links/revoke body { sessionId?, n? } -> PersonPage (both: turns off that one
  *                                               link of theirs; neither: every live /h/ link of theirs on this host)
+ * The org's owner and the Owner page's operator routes: see shared/owner.ts.
  */
 
 import type { BatonView } from "./baton";
@@ -88,9 +91,25 @@ export interface ProfileChange {
   field: ProfileField;
   from: unknown;
   to: unknown;
-  by: { kind: ChangeWriter; sessionId?: string; entryId?: string; quote?: string };
+  by: ChangeBy;
   /** The `at` of the change this undoes. */
   revertOf?: string;
+}
+
+/** A change made by the global Overseer for the operator (§app.overseer/org-attribution): always
+    with `kind: "operator"`, which alone decides what the change may do. */
+export const VIA_OVERSEER = "overseer";
+export type ChangeVia = typeof VIA_OVERSEER;
+
+/** Who wrote a history line. `via`/`overseerId`: the operator's change, made through the global
+    Overseer (never on any other kind). */
+export interface ChangeBy {
+  kind: ChangeWriter;
+  sessionId?: string;
+  entryId?: string;
+  quote?: string;
+  via?: ChangeVia;
+  overseerId?: string;
 }
 
 /** A history line with the person's current name, for the Recent profile changes feed. */
@@ -122,6 +141,11 @@ export interface OrgProject {
   /** Set when the main stakeholder left the org (so the project has none); removed when the
       operator sets the stakeholder again (to someone or to none). Needs you asks for a new one. */
   stakeholderCleared?: { personId: string; name: string; at: string };
+  /** The operator switched this project off the owner's page (§app.owner-page/chats). Absent: shown. */
+  ownerHidden?: boolean;
+  /** Archived (§app.organizations/archive): put away, nothing deleted. `via`: the global Overseer
+      did it for the operator. Absent: not archived. */
+  archived?: { at: string; via?: ChangeVia };
 }
 
 /** One change of a project's main stakeholder: the operator set it (`operator`), or the person left (`left`). */
@@ -130,6 +154,8 @@ export interface StakeholderChange {
   from: string | null;
   to: string | null;
   why: "operator" | "left";
+  /** The operator's change, made through the global Overseer. */
+  via?: ChangeVia;
 }
 
 /** `org.json` in the workspace repo. */
@@ -138,7 +164,50 @@ export interface Org {
   name: string;
   slug: string;
   createdAt: string;
-  notes?: string;
+  /** The org's owner (§app.owner-page/owner): an active roster person's id; absent or null: none.
+      Set only by the operator; cleared when they leave. Reads the Owner page; decides nothing. */
+  owner?: string | null;
+  /** Each change of `owner`, oldest first (at most 50). */
+  ownerHistory?: OwnerChange[];
+  /** Set when the owner left the org (so it has none); removed when the operator sets it again. */
+  ownerCleared?: { personId: string; name: string; at: string };
+}
+
+/** One change of the org's owner: the operator set it, or the person left. */
+export interface OwnerChange {
+  at: string;
+  from: string | null;
+  to: string | null;
+  why: "operator" | "left";
+  /** The operator's change, made through the global Overseer. */
+  via?: ChangeVia;
+}
+
+/** The owner card on the People tab (OrgDetail.ownerPage). No token, no hash. */
+export interface OwnerPageInfo {
+  /** The owner now, or null. */
+  person: NamedRef | null;
+  /** Their newest owner link on this host: live, expired, or off (turned off, replaced); null: none yet. */
+  link: { state: "live" | "expired" | "off"; createdAt: string; expiresAt: string } | null;
+  /** Visits to the Owner page by a person (not scanners or previews), all time. */
+  opened: number;
+  lastOpenedAt?: string;
+}
+
+/** The most characters of the org's About text (`about.md`, §app.organizations/about). */
+export const ORG_ABOUT_MAX = 4000;
+
+/** One line of `org-history.jsonl`, append-only: a change of the org's About text. */
+export interface OrgChange {
+  /** ISO time; unique per org, the key Revert names. */
+  at: string;
+  field: "about";
+  /** "" = none. */
+  from: string;
+  to: string;
+  by: { kind: "operator"; via?: ChangeVia; overseerId?: string };
+  /** The `at` of the change this undoes. */
+  revertOf?: string;
 }
 
 export interface OrgGitStatus {
@@ -157,7 +226,10 @@ export interface OrgSummary extends Org {
   /** The workspace repo on this host. */
   dir: string;
   people: number;
+  /** Projects not archived (§app.organizations/archive). */
   projects: number;
+  /** Archived projects (absent: none, or an older server). */
+  archivedProjects?: number;
   /** Baton sessions not done or closed. */
   openBatons: number;
   /** GET /api/orgs only: what in this org waits on the operator, the same items the attention list
@@ -180,6 +252,8 @@ export interface OrgNeedsYou {
   conflicts: number;
   /** Projects whose main stakeholder left the org, so the operator must pick a new one (absent: an older server). */
   stakeholders?: number;
+  /** 1 when the org has an owner whose owner link expired or has under 7 days left, with no newer one. */
+  ownerLink?: number;
 }
 
 /** One baton session of the org, for its page. */
@@ -198,16 +272,30 @@ export interface OrgBatonRow {
   waiting?: "reply" | "link";
 }
 
+/** What Commit Now did: a commit (its short sha), a push, both, or nothing. */
+export interface CommitNowOutcome {
+  committed: boolean;
+  sha?: string;
+  pushed?: boolean;
+}
+
 export interface OrgDetail extends OrgSummary {
   roster: Person[];
   projectList: OrgProject[];
   /** Newest first. */
   batons: OrgBatonRow[];
   git: OrgGitStatus;
+  /** Only on Commit Now's answer (`POST /api/orgs/:id/commit`): what it did. */
+  commit?: CommitNowOutcome;
   /** Newest first, at most 20: the Recent profile changes feed. */
   recentChanges: NamedChange[];
   /** Any file problem reading the repo (a hand-edited roster that doesn't parse). */
   problems: string[];
+  /** The org's About text, whole (a hand edit may pass the cap); absent when none. Only on the
+      detail: never on `Org` or `OrgSummary`. */
+  about?: string;
+  /** Its history, newest first, at most 20. */
+  aboutHistory?: OrgChange[];
   /** From the org routes: open conflicts routed to the operator with no session yet, per project id
       (projects with none are absent). */
   projectConflicts?: Record<string, number>;
@@ -215,6 +303,8 @@ export interface OrgDetail extends OrgSummary {
       `at`: the start of their newest visit (link previews, scanners and turned-off attempts don't
       count); `minted`: a link was ever minted for them on this host. People with neither are absent. */
   lastOpened?: Record<string, { at?: string; minted: boolean }>;
+  /** From the org routes: the owner card (absent: an older server). */
+  ownerPage?: OwnerPageInfo;
 }
 
 // ---- a person's page (§app.organizations/person-page) -------------------------------------------------
@@ -347,6 +437,8 @@ export interface VisitRow {
   kind: "visit" | "preview" | "refused" | "capped";
   at: string;
   lastSeenAt?: string;
+  /** "owner": the Owner page ("Opened the owner page"; sessionId "", n 0). Absent: a hand-off link. */
+  via?: "owner";
   sessionId: string;
   /** The session's public title ("" when the row is gone). */
   publicTitle: string;
@@ -386,6 +478,10 @@ export interface PersonPage {
   history: ProfileChange[];
   /** The projects they are the main stakeholder of (absent: an older server). */
   stakeholderOf?: { projectId: string; name: string }[];
+  /** They are the org's owner (the `Owner` chip). */
+  owner?: boolean;
+  /** Their owner links on this host, newest first (no token, no hash). */
+  ownerLinks?: { createdAt: string; expiresAt: string; revokedAt?: string; state: "live" | "expired" | "off"; visits: number; lastVisitAt?: string }[];
 }
 
 export interface OrgsInfo {

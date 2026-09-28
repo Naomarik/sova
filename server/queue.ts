@@ -90,6 +90,8 @@ export interface WebQueueItem {
   overseer?: { overseerId?: string };
   /** A baton participant sent it (§app.baton/attribution): marked `sova-baton-sent` at hand-off. */
   baton?: { by: string };
+  /** The Overseer only: a click on the confirm card of this tool call (§app.overseer/org-people-facing). */
+  confirm?: string;
 }
 
 /**

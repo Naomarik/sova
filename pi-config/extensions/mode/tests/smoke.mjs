@@ -27,7 +27,9 @@ function makeApi() {
 	const commands = new Map();
 	const shortcuts = new Map();
 	const renderers = new Map();
+	const registeredTools = new Map();
 	const entries = [];
+	const sent = [];
 	let tools = ["read", "bash", "edit", "write", "grep"];
 	const events = {
 		on(name, handler) {
@@ -49,13 +51,15 @@ function makeApi() {
 		registerShortcut: (id, options) => shortcuts.set(id, options),
 		appendEntry: (type, data) => entries.push({ type, data }),
 		registerEntryRenderer: (type, renderer) => renderers.set(type, renderer),
+		registerTool: (tool) => registeredTools.set(tool.name, tool),
+		sendMessage: (message, options) => sent.push({ message, options }),
 		getActiveTools: () => [...tools],
 		setActiveTools: (next) => {
 			tools = [...next];
 		},
 		flags: new Map(),
 	};
-	return { api, hooks, commands, shortcuts, renderers, entries, events, getTools: () => tools };
+	return { api, hooks, commands, shortcuts, renderers, registeredTools, entries, sent, events, getTools: () => tools };
 }
 
 const fakeTui = { terminal: { rows: 30, columns: 100 }, requestRender() {} };
@@ -97,7 +101,7 @@ let offered = [
 	{ id: "opus[1m]", name: "Opus" },
 ];
 
-const { api, hooks, commands, shortcuts, renderers, entries, events, getTools } = makeApi();
+const { api, hooks, commands, shortcuts, renderers, registeredTools, entries, sent, events, getTools } = makeApi();
 const store = { status: new Map(), notices: [], widgets: new Map(), branch: [], customCalls: [] };
 const ctx = makeCtx(store);
 
@@ -152,6 +156,14 @@ async function hook(name, ...args) {
 	return result;
 }
 const beforeAgentStart = (event, c = ctx) => hooks.get("before_agent_start")[0](event, c);
+// The prompt's minor blocks are the head's: fixed by the first run, rebuilt only after a compaction.
+// Scenarios about how the blocks compose rebuild it first; the note scenarios below test toggles.
+const rebuildHead = () => hook("session_compact", {});
+// One run: its start (which fixes the head and steers in a pending note) and its settling.
+const runStart = async () => {
+	await hook("agent_start", {});
+	await hook("agent_settled", {});
+};
 
 await hook("session_start", {});
 assert.equal(store.status.get("mode"), "<dim>normal</dim>", "normal status renders");
@@ -211,6 +223,7 @@ assert.equal(store.status.get("mode"), "<dim>normal</dim>", "shortcut toggles ba
 const alignHeader = /# Minor mode: align/;
 await commands.get("mode").handler("align on", ctx);
 assert.equal(store.status.get("mode"), "<accent>normal · align</accent>", "align shows in normal status");
+await rebuildHead();
 const normalAlign = await beforeAgentStart({ systemPrompt: "base" }, ctx);
 assert.match(normalAlign.systemPrompt, /^base\n\n# Minor mode: align/);
 assert.doesNotMatch(normalAlign.systemPrompt, /# Mode: delegate/);
@@ -242,6 +255,7 @@ assert.match(store.notices.at(-1).message, /^minor: align$/m);
 // Bare /mode align toggles off; prompt back to heavy only
 await commands.get("mode").handler("align", ctx);
 assert.equal(store.status.get("mode"), "<accent>delegate · strict</accent>");
+await rebuildHead();
 const heavyOnly = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
 assert.match(heavyOnly, /# Mode: delegate/);
 assert.doesNotMatch(heavyOnly, alignHeader);
@@ -253,6 +267,7 @@ assert.match(store.notices.at(-1).message, /^minor: \(none\)$/m);
 await commands.get("mode").handler("spec on", ctx);
 await commands.get("mode").handler("align on", ctx);
 assert.equal(store.status.get("mode"), "<accent>delegate · strict · align · spec</accent>");
+await rebuildHead();
 const heavyAlignSpec = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
 assert.ok(heavyAlignSpec.search(alignHeader) < heavyAlignSpec.indexOf("# Minor mode: spec"), "align before spec");
 assert.ok(entries.some((e) => e.type === "mode" && e.data.minor === "spec" && e.data.on === true), "spec marker appended");
@@ -260,6 +275,7 @@ assert.deepEqual(modeEntries().at(-1).data.active.minorModes, ["align", "spec"])
 await commands.get("mode").handler("spec", ctx);
 await commands.get("mode").handler("align off", ctx);
 assert.equal(store.status.get("mode"), "<accent>delegate · strict</accent>");
+await rebuildHead();
 assert.doesNotMatch((await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt, /# Minor mode: spec/);
 
 // Palette rows: align toggles in place with a live marker; major rows switch mode
@@ -361,7 +377,7 @@ entriesBefore = entries.length;
 await hook("session_start", { reason: "startup" });
 await flush();
 assert.equal(store.status.get("mode"), "<accent>delegate · strict · align</accent>", "the newest usable snapshot wins over --major/--minor and the default");
-assert.deepEqual(getTools(), ["read", "bash", "grep"], "restoring strict heavy reapplies the strict tool set");
+assert.deepEqual(getTools(), ["read", "bash", "grep", "align"], "restoring strict heavy reapplies the strict tool set, and align (on in the snapshot) brings its tool");
 assert.match((await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt, /# Mode: delegate/, "the restored mode shapes the prompt");
 assert.equal(entries.length, entriesBefore, "restoring appends nothing");
 
@@ -374,7 +390,7 @@ entriesBefore = entries.length;
 await hook("session_start", { reason: "resume" });
 assert.equal(store.status.get("mode"), "<accent>normal · align</accent>", "a never-switched session follows the default");
 assert.equal(entries.length, entriesBefore, "adopting the default appends no entry");
-assert.deepEqual(getTools(), ["read", "bash", "edit", "write", "grep"], "the default is not strict");
+assert.deepEqual(getTools(), ["read", "bash", "edit", "write", "grep", "align"], "the default is not strict (and has align on, so its tool)");
 
 // Launch flags apply on top of the default, on a first start only
 flagValues.minor = "none";
@@ -409,7 +425,7 @@ assert.equal(store.status.get("mode"), "<accent>delegate · strict</accent>", "t
 assert.deepEqual(getTools(), ["read", "bash", "grep"], "tree onto strict heavy removes edit/write");
 store.branch = [];
 await hook("session_tree", { newLeafId: "a", oldLeafId: "c" });
-assert.deepEqual(getTools(), ["read", "bash", "edit", "write", "grep"], "tree back off strict restores them");
+assert.deepEqual(getTools(), ["read", "bash", "edit", "write", "grep", "align"], "tree back off strict restores them (the default has align on)");
 
 // Back to a plain default and a pristine branch for the scenarios below
 writeDefault("normal", []);
@@ -427,103 +443,124 @@ assert.equal(flagNotices.length, 1, "exactly one notification for the flag");
 assert.equal(flagNotices[0].level, "warning");
 assert.match(flagNotices[0].message, /bogus/);
 
-// ── Alignment doc ────────────────────────────────────────────────────────────
+// ── Alignments: the align tool ───────────────────────────────────────────────
 const ALIGN_WIDGET = "mode-align";
-const blockV1 = `Here is what I found.
+const alignTool = registeredTools.get("align");
+assert.ok(alignTool, "the align tool is registered");
+assert.equal(alignTool.executionMode, "sequential", "calls share state: one at a time");
+assert.ok(alignTool.promptGuidelines.some((g) => /never as reply text/.test(g)), "the guideline survives a dropped mode section");
 
-## Alignment: Widget refresh
-### Findings
-The footer redraws on model_select.
-### Approach
-Re-assert the status.
-### Open questions
-1. [ ] Keep the widget above the editor?
-2. [ ] Default key alt+a?
-### Rejected
-- Global file — one file for N sessions.
-### Status
-aligning`;
-const blockV2 = blockV1.replace("1. [ ] Keep the widget above the editor?", "1. [x] Keep the widget above the editor? — yes");
-const assistant = (text, stopReason = "stop") => ({ role: "assistant", content: [{ type: "text", text }], stopReason });
-const alignEntries = () => entries.filter((e) => e.type === "align-doc");
+// The schema: one branch per op, its fields exactly the ones applyAlignCall takes, the required ones
+// required, so pi's own argument check refuses a call missing one before execute runs.
+{
+	const { validateToolArguments } = await jiti.import("@earendil-works/pi-ai");
+	const { ALIGN_OPS, ALIGN_OP_FIELDS } = await jiti.import(pathToFileURL(path.resolve(new URL("../align.ts", import.meta.url).pathname)).href);
+	const branches = alignTool.parameters.properties.ops.items.anyOf;
+	assert.deepEqual(branches.map((b) => b.properties.op.const), [...ALIGN_OPS], "one branch per op, in order");
+	const minimal = {
+		create: { title: "t", summary: "s" },
+		import: { path: "/tmp/plan.json" },
+		add: { findings: ["x"] },
+		edit: { id: "a1", text: "x" },
+		edit_question: { q: "q1", ask: "x" },
+		edit_rejected: { id: "x1", why: "x" },
+		edit_doc: { title: "x" },
+		remove: { ids: ["f1"] },
+		decide: { q: "q1", decision: "x" },
+		accept: { qs: ["q1"] },
+		accept_all: {},
+		reopen: { q: "q1" },
+		drop_question: { q: "q1", reason: "x" },
+		drop_alignment: { reason: "x" },
+		status: { to: "done" },
+		exempt: { reason: "x" },
+		get: {},
+	};
+	const check = (ops) => validateToolArguments(alignTool, { type: "toolCall", id: "v", name: "align", arguments: { ops } });
+	for (const branch of branches) {
+		const op = branch.properties.op.const;
+		const { required, optional } = ALIGN_OP_FIELDS[op];
+		assert.deepEqual([...branch.required].sort(), ["op", ...required].sort(), `${op}: required fields`);
+		assert.deepEqual(Object.keys(branch.properties).sort(), ["op", ...required, ...optional].sort(), `${op}: fields`);
+		assert.equal(branch.additionalProperties, false, `${op}: nothing else`);
+		check([{ op, ...minimal[op] }]);
+		for (const key of required) {
+			const { [key]: _gone, ...rest } = minimal[op];
+			assert.throws(() => check([{ op, ...rest }]), /Validation failed for tool "align"/, `${op} without ${key}`);
+		}
+	}
+	assert.throws(() => check([{ op: "edit", id: "a1", newText: "x" }]), /Validation failed/, "an unknown field fails at the schema");
+	assert.throws(() => check([{ op: "accept", qs: [] }]), /Validation failed/, "accept names at least one question");
+	assert.throws(() => check([{ op: "edit_question", q: "q1" }]), /Validation failed/, "edit_question changes at least one field");
+}
+const resultEntry = (id, result, isError = false) => ({
+	type: "message",
+	id,
+	message: { role: "toolResult", toolCallId: `c${id}`, toolName: "align", content: result.content, details: result.details, isError },
+});
+const callAlign = async (params, c = ctx) => {
+	const result = await alignTool.execute(`call-${Math.random()}`, params, undefined, undefined, c);
+	store.branch.push(resultEntry(String(store.branch.length), result));
+	return result;
+};
+const assistant = (text, stopReason = "stop", extra = []) => ({ role: "assistant", content: [{ type: "text", text }, ...extra], stopReason });
 
-// Align off: nothing is captured
+// Align off: the tool is out of the loadout, no widget, no note.
 await commands.get("mode").handler("align off", ctx);
-await hook("turn_end", { turnIndex: 0, message: assistant(blockV1), toolResults: [] });
-assert.equal(alignEntries().length, 0, "no capture while align is off");
+assert.ok(!getTools().includes("align"), "no align tool while align is off");
 assert.ok(!store.widgets.has(ALIGN_WIDGET), "no widget while align is off");
 await commands.get("align").handler("", ctx);
-assert.match(store.notices.at(-1).message, /No alignment doc yet/);
+assert.match(store.notices.at(-1).message, /No alignments yet/);
 
-// Align on: the block is captured, persisted, and shown in the widget and /mode status
+// Align on: the tool joins the loadout; a create returns the snapshot and the echo.
 await commands.get("mode").handler("align on", ctx);
-await hook("turn_end", { turnIndex: 1, message: assistant(blockV1), toolResults: [] });
-assert.equal(alignEntries().length, 1, "one align-doc entry appended");
-assert.equal(alignEntries()[0].data.version, 1);
-assert.equal(alignEntries()[0].data.doc.title, "Widget refresh");
-assert.equal(alignEntries()[0].data.doc.revision, 1);
-assert.ok(store.widgets.has(ALIGN_WIDGET), "widget set after capture");
-const widgetText = store.widgets.get(ALIGN_WIDGET)(fakeTui, ctx.ui.theme).render(60).join("");
-assert.match(widgetText, /questions open/);
-assert.match(widgetText, /0\/2 settled/);
+assert.ok(getTools().includes("align"), "align on adds the tool");
+store.branch = [];
+const created = await callAlign({
+	ops: [
+		{
+			op: "create",
+			title: "Widget refresh",
+			summary: "Keep the footer status after redraws.",
+			findings: ["The footer redraws on model_select."],
+			approach: ["Re-assert the status."],
+			rejected: [{ option: "Global file", why: "one file for N sessions" }],
+			questions: [
+				{ topic: "Placement", ask: "Keep the widget above the editor?", recommendation: { choice: "above", why: "it is where the eye is" } },
+				{ topic: "Key", ask: "Default key alt+a?", options: [{ label: "alt+a", tradeoff: "free today" }], recommendation: { choice: "alt+a", why: "free" } },
+			],
+		},
+	],
+});
+assert.equal(created.details.doc.id, "al_1");
+assert.match(created.content[0].text, /^al_1 "Widget refresh" · aligning · 2 of 2 open · v1 · created$/m);
+assert.ok(store.widgets.has(ALIGN_WIDGET), "widget shows the open alignment");
+assert.match(store.widgets.get(ALIGN_WIDGET)(fakeTui, ctx.ui.theme).render(80).join(""), /◇ align · al_1 2\/2 open/);
 await commands.get("mode").handler("status", ctx);
-assert.match(store.notices.at(-1).message, /^align doc: v1 · questions open · 0\/2 settled · \d+ lines$/m);
+assert.match(store.notices.at(-1).message, /^alignments: al_1 "Widget refresh" · aligning · 2 of 2 open$/m);
 
-// Identical re-emit: no new revision; an updated block bumps the revision
-await hook("turn_end", { turnIndex: 2, message: assistant(blockV1), toolResults: [] });
-assert.equal(alignEntries().length, 1, "identical block is not re-captured");
-await hook("turn_end", { turnIndex: 3, message: assistant(blockV2), toolResults: [] });
-assert.equal(alignEntries().length, 2, "changed block captured");
-assert.equal(alignEntries()[1].data.doc.revision, 2);
-assert.match(store.widgets.get(ALIGN_WIDGET)(fakeTui, ctx.ui.theme).render(60).join(""), /1\/2 settled/);
+// A bad call fails whole, with a reason, and changes nothing.
+await assert.rejects(alignTool.execute("bad", { ops: [{ op: "decide", q: "q9", decision: "x" }] }, undefined, undefined, ctx), /al_1 has no question q9.*Nothing was changed\./);
 
-// Aborted or errored turns never overwrite a good doc
-await hook("turn_end", { turnIndex: 4, message: assistant("## Alignment: truncated\n### Open q", "aborted"), toolResults: [] });
-await hook("turn_end", { turnIndex: 5, message: assistant("## Alignment: truncated\n### Open q", "error"), toolResults: [] });
-assert.equal(alignEntries().length, 2, "aborted/error turns ignored");
+// The hidden note rides the user's prompt (never the system prompt) while something is open.
+const withNote = await beforeAgentStart({ systemPrompt: "base" }, ctx);
+assert.equal(withNote.message.customType, "align-state");
+assert.equal(withNote.message.display, false);
+assert.match(withNote.message.content, /q1 Placement: Keep the widget above the editor\? \(rec: above\)/);
+assert.doesNotMatch(withNote.systemPrompt, /Widget refresh/, "no alignment content in the system prompt");
+const sectionsNote = { preamble: "base" };
+const sectionResult = await beforeAgentStart({ systemPrompt: "base", systemPromptOptions: { cwd: ctx.cwd, sections: sectionsNote } }, ctx);
+assert.equal(sectionResult.message.customType, "align-state", "a sections host gets the note too");
+assert.doesNotMatch(sectionsNote.mode, /Widget refresh/);
 
-// A bold, anchorless block (the shape the agent actually emitted once) is captured, not dropped
-const boldBlock = `Summary:
-
-**Findings**
-- footer redraws
-**Approach** (option a)
-1. re-assert
-**Open questions**
-- keep it above the editor?
-**Rejected**
-- global file
-**Status: aligning** — proceed?`;
-const warningsBefore = store.notices.filter((n) => n.level === "warning").length;
-await hook("turn_end", { turnIndex: 6, message: assistant(boldBlock), toolResults: [] });
-assert.equal(alignEntries().length, 3, "bold anchorless block captured");
-assert.equal(alignEntries()[2].data.doc.title, "");
-assert.equal(alignEntries()[2].data.doc.revision, 3);
-assert.equal(alignEntries()[2].data.doc.explicitStatus, "aligning");
-assert.equal(alignEntries()[2].data.doc.questions.length, 1);
-assert.equal(store.notices.filter((n) => n.level === "warning").length, warningsBefore, "captured blocks never warn");
-await hook("turn_end", { turnIndex: 7, message: assistant(boldBlock), toolResults: [] });
-assert.equal(alignEntries().length, 3, "re-emitted bold block is not a new revision");
-
-// A block that looks like an alignment doc but has unparseable headings warns once; a plain answer stays silent
-const bareLabels = "Findings:\n- a\nApproach:\n- b\nStatus: aligning";
-await hook("turn_end", { turnIndex: 8, message: assistant(bareLabels), toolResults: [] });
-assert.equal(alignEntries().length, 3, "bare labels are not captured");
-const captureWarnings = () => store.notices.filter((n) => /looked like an alignment doc but was not captured/.test(n.message));
-assert.equal(captureWarnings().length, 1, "one warning for the malformed block");
-assert.equal(captureWarnings()[0].level, "warning");
-await hook("turn_end", { turnIndex: 9, message: assistant("Done. I changed the approach in two files; status is green."), toolResults: [] });
-assert.equal(captureWarnings().length, 1, "a plain answer never warns");
-await hook("turn_end", { turnIndex: 10, message: assistant(bareLabels, "aborted"), toolResults: [] });
-assert.equal(captureWarnings().length, 1, "aborted turns never warn");
-await commands.get("mode").handler("align off", ctx);
-await hook("turn_end", { turnIndex: 11, message: assistant(bareLabels), toolResults: [] });
-assert.equal(captureWarnings().length, 1, "no warning while align is off");
-await commands.get("mode").handler("align on", ctx);
-
-// Restore the markdown block so the viewer scenarios below see a titled doc
-await hook("turn_end", { turnIndex: 12, message: assistant(blockV2), toolResults: [] });
-assert.equal(alignEntries().length, 4);
+// Answers and the lifecycle go through ops; a second concern is its own document.
+await callAlign({ ops: [{ op: "decide", q: "q1", decision: "above, like the status" }] });
+const second = await callAlign({ ops: [{ op: "create", title: "Second concern", summary: "Another thing.", questions: [{ topic: "Scope", ask: "All of it?", recommendation: { choice: "yes", why: "simpler" } }] }] });
+assert.equal(second.details.doc.id, "al_2");
+await assert.rejects(alignTool.execute("x", { ops: [{ op: "accept_all" }] }, undefined, undefined, ctx), /doc is required while several are open/);
+assert.match(store.widgets.get(ALIGN_WIDGET)(fakeTui, ctx.ui.theme).render(120).join(""), /al_1 1\/2 open · al_2 1\/1 open/);
+const going = await callAlign({ doc: "al_1", ops: [{ op: "accept", qs: ["q2"] }, { op: "status", to: "implementing" }] });
+assert.equal(going.details.line, "q2 accepted · → implementing");
 
 // Widget lines never exceed the width
 for (const width of [20, 40, 120]) {
@@ -532,9 +569,71 @@ for (const width of [20, 40, 120]) {
 	}
 }
 
-// /align in rpc: notifies the markdown; in tui: opens an overlay viewer
+// The TUI renderers: one dim call line, a compact result card.
+const callLine = alignTool.renderCall({ doc: "al_1", ops: [{ op: "accept_all" }, { op: "accept", qs: ["q1", "q3"] }, { op: "drop_question", q: "q4", reason: "x" }, { op: "status", to: "implementing" }] }, ctx.ui.theme).render(200).join("");
+assert.match(callLine, /◇ align al_1 · accept all · accept q1,q3 · drop q4 · → implementing/);
+const importLine = alignTool.renderCall({ ops: [{ op: "import", path: "/tmp/p.json" }] }, ctx.ui.theme).render(100).join("");
+assert.match(importLine, /◇ align · import \/tmp\/p\.json/);
+// An older session's call rows still read.
+const oldLine = alignTool.renderCall({ ops: [{ op: "create", fromFile: "/tmp/p.json" }, { op: "accept", q: "open" }, { op: "drop", why: "x" }] }, ctx.ui.theme).render(100).join("");
+assert.match(oldLine, /◇ align · import \/tmp\/p\.json · accept open · drop/);
+const card = alignTool.renderResult(going, { expanded: false, isPartial: false }, ctx.ui.theme).render(200).join("\n");
+assert.match(card, /al_1 Widget refresh/);
+assert.match(card, /implementing · all 2 decided · v3 · q2 accepted · → implementing/);
+const full = alignTool.renderResult(going, { expanded: true, isPartial: false }, ctx.ui.theme).render(100).join("\n");
+assert.match(full, /a\. \*\*alt\+a\*\* — free today[\s\S]*Recommended: a — \*\*alt\+a\*\*/, "expanded: the whole document");
+
+// The settle nudge: once per run, only when the run made no align call and the reply plans in prose.
+const plan = "The plan is ready.\n\n**Open questions, with my suggested answers:**\n1. **Cap:** 400\n2. **Group:** by worker\n\nShould I go ahead with those answers?";
+const settle = () => hook("agent_before_settle", { type: "agent_before_settle", entries: [], continue: false, outcome: "completed" });
+await hook("turn_end", { turnIndex: 0, message: assistant(plan), toolResults: [] });
+const nudge = await settle();
+assert.equal(nudge.continue, true);
+assert.equal(nudge.entries.length, 1);
+assert.equal(nudge.entries[0].customType, "align-nudge");
+assert.equal(nudge.entries[0].display, false);
+await hook("turn_end", { turnIndex: 1, message: assistant(plan), toolResults: [] });
+assert.equal(await settle(), undefined, "never twice in one run");
+await hook("agent_settled", {});
+await hook("turn_end", { turnIndex: 2, message: assistant("Recorded it.", "toolUse", [{ type: "toolCall", id: "t", name: "align", arguments: {} }]), toolResults: [] });
+await hook("tool_execution_end", { type: "tool_execution_end", toolCallId: "t", toolName: "align", isError: false, result: { details: { v: 1, doc: { id: "al_1" }, changes: [], line: "" } } });
+await hook("turn_end", { turnIndex: 3, message: assistant(plan), toolResults: [] });
+assert.equal(await settle(), undefined, "a run that recorded with align is not nudged");
+await hook("agent_settled", {});
+// A refused call, or a bare get, recorded nothing: the prose plan still gets its nudge.
+await hook("turn_end", { turnIndex: 3, message: assistant("", "toolUse", [{ type: "toolCall", id: "t2", name: "align", arguments: {} }, { type: "toolCall", id: "t3", name: "align", arguments: {} }]), toolResults: [] });
+await hook("tool_execution_end", { type: "tool_execution_end", toolCallId: "t2", toolName: "align", isError: true, result: { content: [] } });
+await hook("tool_execution_end", { type: "tool_execution_end", toolCallId: "t3", toolName: "align", isError: false, result: { details: undefined } });
+await hook("turn_end", { turnIndex: 3, message: assistant(plan), toolResults: [] });
+assert.equal((await settle())?.continue, true, "a failed align call does not count as recorded");
+await hook("agent_settled", {});
+// The final message has no text: the nudge judges it, not the plan an earlier turn wrote.
+await hook("turn_end", { turnIndex: 3, message: assistant(plan), toolResults: [] });
+await hook("turn_end", { turnIndex: 4, message: assistant("", "stop", []), toolResults: [] });
+assert.equal(await settle(), undefined, "no stale reply text");
+await hook("agent_settled", {});
+// Options offered back to a user who asked a question answer it; the same reply to a work request is a decision.
+const options = "The two options are:\n- A: a flag\n- B: a subcommand\n\nWhich do you prefer?";
+await beforeAgentStart({ systemPrompt: "base", prompt: "What are my options for the export?" }, ctx);
+await hook("turn_end", { turnIndex: 5, message: assistant(options), toolResults: [] });
+assert.equal(await settle(), undefined, "a choice answering the user's question");
+await hook("agent_settled", {});
+await beforeAgentStart({ systemPrompt: "base", prompt: "Add an export." }, ctx);
+await hook("turn_end", { turnIndex: 6, message: assistant(options), toolResults: [] });
+assert.equal((await settle())?.continue, true, "the same choice after a work request");
+await hook("agent_settled", {});
+await hook("turn_end", { turnIndex: 4, message: assistant("Lane E is finished; lanes B–D are still running."), toolResults: [] });
+assert.equal(await settle(), undefined, "a report is not nudged");
+await hook("agent_settled", {});
+await commands.get("mode").handler("align off", ctx);
+await hook("turn_end", { turnIndex: 5, message: assistant(plan), toolResults: [] });
+assert.equal(await settle(), undefined, "align off: no nudge");
+await hook("agent_settled", {});
+await commands.get("mode").handler("align on", ctx);
+
+// /align in rpc: notifies the markdown; in tui: opens an overlay viewer that steps between alignments
 await commands.get("align").handler("", ctx);
-assert.match(store.notices.at(-1).message, /## Alignment: Widget refresh/);
+assert.match(store.notices.at(-1).message, /## al_2: Second concern/);
 assert.equal(store.customCalls.length, 0, "no overlay outside tui");
 await commands.get("align").handler("", tuiCtx);
 assert.equal(store.customCalls.length, 1, "overlay opened in tui");
@@ -542,52 +641,62 @@ assert.equal(store.customCalls[0].options.overlay, true);
 const viewer = store.customCalls[0].component;
 const viewerLines = viewer.render(80);
 assert.ok(viewerLines.every((line) => visibleWidth(line) <= 80), "viewer lines fit the width");
-assert.ok(viewerLines.some((line) => line.includes("Widget refresh")), "viewer shows the title");
-assert.ok(viewerLines.some((line) => line.includes("☑") || line.includes("☐")), "viewer shows checklist glyphs");
+assert.ok(viewerLines[0].includes("al_1") && viewerLines[0].includes("2/2"), "opens on the last-touched open alignment, of two");
+viewer.handleInput("\x1b[D");
+assert.ok(viewer.render(80)[0].includes("al_2"), "← steps to the other alignment");
 viewer.handleInput("q");
 await shortcuts.get("alt+a").handler(tuiCtx);
 assert.equal(store.customCalls.length, 2, "shortcut opens the viewer too");
 store.customCalls[1].component.handleInput("\x1b");
 
-// Marker renderer
-const alignMarker = renderers.get("align-doc")({ data: alignEntries()[1].data }, {}, ctx.ui.theme).render(80).join("");
-assert.match(alignMarker, /alignment v2 · questions open · 1\/2 settled/);
-
-// /align export writes the markdown
+// /align export writes the open alignments as markdown
 const exportPath = path.join(process.env.PI_CODING_AGENT_DIR, "out", "a.md");
 await commands.get("align").handler(`export ${exportPath}`, ctx);
-assert.equal(readFileSync(exportPath, "utf8"), `${alignEntries()[1].data.doc.markdown}\n`);
-
-// /align clear: widget gone, doc:null entry, cleared marker
+const exported = readFileSync(exportPath, "utf8");
+assert.match(exported, /## al_1: Widget refresh/);
+assert.match(exported, /## al_2: Second concern/);
 await commands.get("align").handler("clear", ctx);
-assert.equal(alignEntries().at(-1).data.doc, null, "clear appends doc:null");
-assert.ok(!store.widgets.has(ALIGN_WIDGET), "widget cleared");
-assert.match(renderers.get("align-doc")({ data: { version: 1, doc: null } }, {}, ctx.ui.theme).render(80).join(""), /alignment cleared/);
+assert.match(store.notices.at(-1).message, /Unknown argument "clear"/, "nothing clears the tool's state: the agent drops an alignment");
 
-// session_start restores the newest doc from the branch; a later doc:null hides it; align off hides the widget but keeps the doc
+// session_start and session_tree fold the branch: a rewind lands on the earlier state
+const branchSoFar = [...store.branch];
 store.branch = [
 	// The session's own align toggle: without it the restore would take align from the default (off).
 	{ type: "custom", customType: "mode", data: { minor: "align", on: true, active: { version: 1, mode: "normal", strict: false, minorModes: ["align"] } } },
-	{ type: "custom", customType: "align-doc", data: alignEntries()[0].data },
-	{ type: "custom", customType: "align-doc", data: alignEntries()[1].data },
+	...branchSoFar.slice(0, 2),
 ];
-delete flagValues.minor;
-await hook("session_start", { reason: "resume" });
-assert.ok(store.widgets.has(ALIGN_WIDGET), "widget restored from the branch");
-assert.match(store.widgets.get(ALIGN_WIDGET)(fakeTui, ctx.ui.theme).render(80).join(""), /1\/2 settled/, "newest revision restored");
+await hook("session_tree", { newLeafId: "x", oldLeafId: "y" });
+assert.match(store.widgets.get(ALIGN_WIDGET)(fakeTui, ctx.ui.theme).render(80).join(""), /◇ align · al_1 1\/2 open/, "the rewound branch's state");
+assert.ok(!store.widgets.get(ALIGN_WIDGET)(fakeTui, ctx.ui.theme).render(80).join("").includes("al_2"));
 await commands.get("mode").handler("align off", ctx);
 assert.ok(!store.widgets.has(ALIGN_WIDGET), "widget hidden when align is off");
 await commands.get("align").handler("status", ctx);
-assert.match(store.notices.at(-1).message, /v2 · questions open/, "doc kept while align is off");
+assert.match(store.notices.at(-1).message, /al_1 "Widget refresh" · aligning · 1 of 2 open/, "alignments kept while align is off");
 await commands.get("mode").handler("align on", ctx);
 assert.ok(store.widgets.has(ALIGN_WIDGET), "widget back when align is on");
-store.branch.push({ type: "custom", customType: "align-doc", data: { version: 1, doc: null } });
-await hook("session_tree", { newLeafId: "x", oldLeafId: "y" });
-assert.ok(!store.widgets.has(ALIGN_WIDGET), "doc:null on the branch clears the widget");
+
+// An older session's align-doc entries: read-only, in the viewer and the marker renderer; no widget.
+const legacyData = { version: 1, doc: { version: 1, title: "Old doc", markdown: "## Alignment: Old doc\n### Open questions\n- [x] **1. A:** yes\n- [ ] **2. B:** ?", questions: [{ n: 1, text: "A", checked: true }, { n: 2, text: "B", checked: false }], revision: 2, capturedAt: "2026-09-20T00:00:00.000Z" } };
+store.branch = [
+	{ type: "custom", customType: "mode", data: { minor: "align", on: true, active: { version: 1, mode: "normal", strict: false, minorModes: ["align"] } } },
+	{ type: "custom", customType: "align-doc", data: legacyData },
+];
+await hook("session_start", { reason: "resume" });
+assert.ok(!store.widgets.has(ALIGN_WIDGET), "a legacy doc counts toward nothing");
+await commands.get("align").handler("status", ctx);
+assert.match(store.notices.at(-1).message, /older doc, read-only: v2 · questions open · 1\/2 settled/);
+await commands.get("align").handler("", tuiCtx);
+const legacyViewer = store.customCalls.at(-1).component;
+assert.ok(legacyViewer.render(80).some((line) => line.includes("☑") || line.includes("☐")), "legacy markdown keeps its checklist glyphs");
+assert.ok(legacyViewer.render(80)[0].includes("read-only"));
+legacyViewer.handleInput("q");
+assert.match(renderers.get("align-doc")({ data: legacyData }, {}, ctx.ui.theme).render(80).join(""), /alignment v2 · questions open · 1\/2 settled/);
+assert.match(renderers.get("align-doc")({ data: { version: 1, doc: null } }, {}, ctx.ui.theme).render(80).join(""), /alignment cleared/);
 
 // /align on|off aliases the minor toggle
 await commands.get("align").handler("off", ctx);
 assert.equal(store.status.get("mode"), "<dim>normal</dim>", "/align off turns the minor off");
+assert.ok(!getTools().includes("align"), "/align off removes the tool");
 
 // ── Prompt delivery: diffed sections on pi ≥ 0.86, whole-prompt append on 0.85 hosts ──
 await commands.get("mode").handler("delegate", ctx);
@@ -766,6 +875,7 @@ await commands.get("mode").handler("normal", ctx);
 	offered = [{ id: "claude-fable-5-1[1m]", name: "Fable", efforts: all }, { id: "opus[1m]", name: "Opus", efforts: ["low"] }];
 	await commands.get("mode").handler("normal", ctx);
 	await commands.get("mode").handler("spec on", ctx);
+	await rebuildHead();
 	listCalls = 0;
 	let prompt = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
 	assert.match(prompt, /# Minor mode: spec/);
@@ -791,8 +901,12 @@ await commands.get("mode").handler("normal", ctx);
 	await commands.get("mode").handler("status", ctx);
 	assert.match(store.notices.at(-1).message, /^spec writer \(.*mode-spec\.json\): claude-code · opus\[1m\] · medium, fallback claude-code · claude-fable-5-1\[1m\] · high — using FALLBACK/m);
 
-	// Spec off: no block, no paragraph, nothing probed; the file stays as it was.
+	// Spec off mid-session: the head keeps its spec block, writer paragraph included, byte for byte;
+	// the note says it no longer applies. Rebuilt (as after a compaction): no block, no paragraph.
 	await commands.get("mode").handler("spec off", ctx);
+	assert.equal((await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt, prompt, "a minor toggle leaves the prompt alone");
+	assert.match(sent.at(-1).message.content, /^Mode change: the user turned the spec minor mode off\. Its instructions \(the "# Minor mode: spec" block in your system prompt\) no longer apply/);
+	await rebuildHead();
 	assert.equal(await beforeAgentStart({ systemPrompt: "base" }, ctx), undefined);
 	assert.equal(store.status.get("mode"), "<dim>normal</dim>");
 	assert.ok(existsSync(specFile), "nothing here writes or removes the writer file");
@@ -805,13 +919,14 @@ await commands.get("mode").handler("normal", ctx);
 {
 	let base = { sections: { preamble: "base" } };
 	const commandCtx = { ...ctx, getSystemPromptOptions: () => base };
+	await rebuildHead();
 	await commands.get("mode").handler("align on", commandCtx);
 	assert.match(base.sections.mode, /# Minor mode: align/, "a switch through /mode writes the block into the host's base sections");
 	assert.deepEqual(Object.keys(base.sections), ["preamble", "mode"], "no other base section is touched");
 
 	// pi replaces the base object when tools change; the run start re-syncs whichever object is current.
 	base = { sections: { preamble: "rebuilt" } };
-	await hook("agent_start", {});
+	await runStart();
 	assert.match(base.sections.mode, /# Minor mode: align/, "agent_start writes the block into a rebuilt base");
 
 	// A user turn: the block goes into the turn's own sections and into the base alike.
@@ -825,6 +940,7 @@ await commands.get("mode").handler("normal", ctx);
 	assert.match(base.sections.mode, /# Mode: delegate/, "a shortcut switch reaches the base through the adopted getter");
 	await shortcuts.get("alt+m").handler(ctx); // back to normal
 	assert.match(base.sections.mode, /# Minor mode: align/);
+	await rebuildHead();
 	await commands.get("mode").handler("align off", ctx);
 	assert.ok(!("mode" in base.sections), "no block: the base section is deleted");
 	assert.deepEqual(base.sections, { preamble: "rebuilt again" });
@@ -832,9 +948,10 @@ await commands.get("mode").handler("normal", ctx);
 	// A getter whose runner is gone throws; it is dropped and nothing else fails.
 	const stale = { ...ctx, getSystemPromptOptions: () => { throw new Error("extension runner is no longer active"); } };
 	await commands.get("mode").handler("align on", stale);
-	await hook("agent_start", {});
+	await runStart();
 	assert.ok(!("mode" in base.sections), "a dead getter is dropped, not retried");
 	await commands.get("mode").handler("align off", ctx);
+	await rebuildHead();
 	assert.equal(await beforeAgentStart({ systemPrompt: "base" }, ctx), undefined, "back to normal with no host: inert");
 }
 
@@ -860,6 +977,17 @@ await commands.get("mode").handler("normal", ctx);
 	await commands.get("mode").handler("normal", ctx);
 	await commands.get("mode").handler("spec off", ctx);
 	assert.deepEqual(last(), { version: 1, minorModes: [] }, "spec off: no prompt");
+	await commands.get("mode").handler("vis on", ctx);
+	assert.deepEqual(last(), { version: 1, minorModes: [] }, "vis on publishes, and reaches no worker");
+	await commands.get("mode").handler("spec on", ctx);
+	assert.deepEqual(last().minorModes, ["spec"], "vis beside spec: only spec");
+	assert.doesNotMatch(last().prompt, /# Minor mode: vis/);
+	const beforeSync = published.length;
+	await commands.get("mode").handler("sync", ctx);
+	assert.equal(published.length, beforeSync + 1, "/mode sync (Sova's, at every chat open) republishes");
+	assert.deepEqual(last().minorModes, ["spec"]);
+	await commands.get("mode").handler("spec off", ctx);
+	await commands.get("mode").handler("vis off", ctx);
 	await hook("session_start", { reason: "resume" });
 	assert.deepEqual(last(), { version: 1, minorModes: [] }, "a restore publishes the resolved state");
 	await commands.get("mode").handler("align off", ctx);
@@ -869,10 +997,10 @@ await commands.get("mode").handler("normal", ctx);
 	// the parent's delegate + strict + align snapshot onto its branch; mode-spec.json names a writer.
 	const specFile = path.join(process.env.PI_CODING_AGENT_DIR, "mode-spec.json");
 	writeFileSync(specFile, JSON.stringify({ version: 1, writer: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null } }));
-	const forkedBranch = [{ type: "custom", customType: "mode", data: { mode: "delegate", active: { version: 1, mode: "delegate", strict: true, minorModes: ["align"] } } }];
+	const forkedBranch = [{ type: "custom", customType: "mode", data: { mode: "delegate", active: { version: 1, mode: "delegate", strict: true, minorModes: ["align", "vis"] } } }];
 	const saved = { ...flagValues };
 	flagValues.major = "normal";
-	flagValues.minor = "spec";
+	flagValues.minor = "spec,vis"; // vis is not worker-scope: the worker role drops it
 	const load = (asWorker) => {
 		const w = makeApi();
 		if (asWorker) w.events.on("subagents:worker-discover", () => w.events.emit("subagents:worker", { version: 1 }));
@@ -893,6 +1021,151 @@ await commands.get("mode").handler("normal", ctx);
 	for (const [k, v] of Object.entries(saved)) flagValues[k] = v;
 	for (const k of Object.keys(flagValues)) if (!(k in saved)) delete flagValues[k];
 	rmSync(specFile);
+}
+
+// ── /mode sync: adopt the host and re-apply the session's block, and nothing else ──
+// Sova runs it at every chat open, on a session whose mode session_start already restored.
+{
+	await rebuildHead();
+	await commands.get("mode").handler("spec on", ctx);
+	const entriesBefore = entries.length;
+	const noticesBefore = store.notices.length;
+	const statusBefore = store.status.get("mode");
+	const base = { sections: { preamble: "fresh runtime" } };
+	await commands.get("mode").handler("sync", { ...ctx, getSystemPromptOptions: () => base });
+	assert.match(base.sections.mode, /# Minor mode: spec/, "sync writes the session's block into the base");
+	assert.equal(entries.length, entriesBefore, "sync appends no entry");
+	assert.equal(store.notices.length, noticesBefore, "sync notifies nothing");
+	assert.equal(store.status.get("mode"), statusBefore, "sync leaves the status alone");
+	const block = base.sections.mode;
+	await commands.get("mode").handler("sync", { ...ctx, getSystemPromptOptions: () => base });
+	assert.equal(base.sections.mode, block, "a second sync changes no byte");
+	await runStart();
+	assert.equal(base.sections.mode, block, "a run start keeps the same bytes");
+	assert.ok(commands.get("mode").getArgumentCompletions("sy").some((item) => item.value === "sync"), "sync is completed");
+	await commands.get("mode").handler("spec off", ctx);
+	assert.equal(base.sections.mode, block, "a minor toggle after the run started keeps the same bytes too");
+	await commands.get("mode").handler("delegate", ctx);
+	assert.match(base.sections.mode, /# Mode: delegate/, "a later switch still reaches the base sync adopted");
+	await commands.get("mode").handler("normal", ctx);
+}
+
+// ── A minor toggle keeps the prompt head: the switch reaches the model as a hidden note ──
+// The head's minor blocks are fixed by the first run and rebuilt only after a compaction, so the
+// cached prefix survives a toggle on every provider. Each fake here records, in order, what pi would
+// put on the branch: the extension's entries and the notes it delivers.
+{
+	const { VIS_INSTRUCTIONS, SPEC_INSTRUCTIONS } = await jiti.import(pathToFileURL(path.resolve(new URL("../minor.ts", import.meta.url).pathname)).href);
+	const branch = [{ type: "custom", customType: "mode", data: { mode: "normal", active: { version: 1, mode: "normal", strict: false, minorModes: ["spec"] } } }];
+	const open = () => {
+		const host = makeApi();
+		const hostStore = { status: new Map(), notices: [], widgets: new Map(), branch, customCalls: [] };
+		const hostCtx = makeCtx(hostStore);
+		const { appendEntry, sendMessage } = host.api;
+		host.api.appendEntry = (type, data) => {
+			appendEntry(type, data);
+			branch.push({ type: "custom", customType: type, data });
+		};
+		host.api.sendMessage = (message, options) => {
+			sendMessage(message, options);
+			branch.push({ type: "custom_message", ...message });
+		};
+		modeExtension(host.api);
+		const fire = async (name, event = {}) => {
+			let result;
+			for (const handler of host.hooks.get(name) ?? []) result = (await handler(event, hostCtx)) ?? result;
+			return result;
+		};
+		/** A run a user prompt starts: its mode section, and the notes it delivered. */
+		const userTurn = async () => {
+			const sections = { preamble: "base" };
+			const sentBefore = host.sent.length;
+			await host.hooks.get("before_agent_start")[0]({ systemPrompt: "base", prompt: "go", systemPromptOptions: { cwd: hostCtx.cwd, sections } }, hostCtx);
+			await fire("agent_start");
+			await fire("agent_settled");
+			return { section: sections.mode, notes: host.sent.slice(sentBefore) };
+		};
+		/** A run an extension's message starts: no before_agent_start. */
+		const messageTurn = async () => {
+			const sentBefore = host.sent.length;
+			await fire("agent_start");
+			await fire("agent_settled");
+			return host.sent.slice(sentBefore);
+		};
+		const mode = (args) => host.commands.get("mode").handler(args, hostCtx);
+		return { host, fire, userTurn, messageTurn, mode };
+	};
+
+	let session = open();
+	await session.fire("session_start", { reason: "startup" });
+	const first = await session.userTurn();
+	const head = first.section;
+	assert.match(head, /# Minor mode: spec/, "the first run builds the head from the active modes");
+	assert.doesNotMatch(head, /# Minor mode: vis/);
+	assert.deepEqual(first.notes, [], "nothing to tell on the first run");
+
+	await session.mode("vis on");
+	assert.deepEqual(branch.at(-1).data.head, ["spec"], "the switch records the head it leaves in place");
+	let turn = await session.userTurn();
+	assert.equal(turn.section, head, "a minor toggle leaves the prompt's mode section byte-identical");
+	assert.equal(turn.notes.length, 1, "one note for the switch");
+	const onNote = turn.notes[0];
+	assert.deepEqual(onNote.options, { deliverAs: "nextTurn" }, "the note rides the user's prompt");
+	assert.equal(onNote.message.customType, "mode-note");
+	assert.equal(onNote.message.display, false, "hidden in the TUI and in Sova");
+	assert.ok(onNote.message.content.startsWith("Mode change: the user turned the vis minor mode on. Its instructions follow and apply from now on"), "it says what changed");
+	assert.ok(onNote.message.content.endsWith(`\n\n${VIS_INSTRUCTIONS}`), "turning on carries the mode's whole guide, as the head would have");
+	assert.deepEqual(onNote.message.details, { v: 1, minorModes: ["spec", "vis"], guides: ["vis"] });
+	assert.deepEqual((await session.userTurn()).notes, [], "told once: the next run sends nothing");
+
+	await session.mode("vis off");
+	assert.ok(!("head" in branch.at(-1).data), "no head recorded while it equals the active minor modes");
+	turn = await session.userTurn();
+	assert.equal(turn.section, head);
+	assert.equal(
+		turn.notes[0].message.content,
+		'Mode change: the user turned the vis minor mode off. Its instructions (the "# Minor mode: vis" block given earlier in this conversation) no longer apply; do not follow them unless a later note turns it back on.',
+	);
+
+	// On again, in a run a worker's report starts: steered in ahead of its first request, and the guide
+	// still in context is pointed at, not repeated.
+	await session.mode("vis on");
+	const steered = await session.messageTurn();
+	assert.equal(steered.length, 1);
+	assert.equal(steered[0].options, undefined, "a steer: lands before the run's first request");
+	assert.match(steered[0].message.content, /^Mode change: the user turned the vis minor mode back on\. Its instructions \(the "# Minor mode: vis" block given earlier in this conversation\) apply again/);
+	assert.ok(!steered[0].message.content.includes(VIS_INSTRUCTIONS), "no second copy of the guide");
+	assert.deepEqual(steered[0].message.details.guides, []);
+
+	// Reopen (a new runtime on the same branch) with a switch the model hasn't heard of yet.
+	await session.mode("spec off");
+	session = open();
+	await session.fire("session_start", { reason: "resume" });
+	turn = await session.userTurn();
+	assert.equal(turn.section, head, "a reopened session rebuilds the head it started with, whatever is active now");
+	assert.equal(turn.notes.length, 1, "the pending switch is told after the reopen");
+	assert.match(turn.notes[0].message.content, /^Mode change: the user turned the spec minor mode off\. Its instructions \(the "# Minor mode: spec" block in your system prompt\) no longer apply/);
+	assert.ok(!turn.notes[0].message.content.includes(SPEC_INSTRUCTIONS));
+
+	// Compaction: the next run rebuilds the head from the modes active then, with no note.
+	const notesBefore = branch.filter((e) => e.type === "custom_message").map((e, i) => ({ role: "custom", customType: e.customType, content: e.content, timestamp: 1000 + i }));
+	const summary = { role: "compactionSummary", summary: "…", tokensBefore: 1, timestamp: 5000 };
+	const context = { type: "context", messages: [...notesBefore.slice(0, 1), summary, ...notesBefore.slice(1), { role: "user", content: "hi", timestamp: 6000 }] };
+	branch.push({ type: "compaction", summary: "…" });
+	await session.fire("session_compact", { reason: "threshold", willRetry: false });
+	assert.equal(await session.fire("context", context), undefined, "until a run rebuilds the head, the kept notes stay: a run under way still has the old prompt");
+	turn = await session.userTurn();
+	assert.deepEqual(turn.notes, [], "no guide twice: the rebuilt head has it");
+	assert.match(turn.section, /# Minor mode: vis/, "the head now carries the modes active at the compaction");
+	assert.doesNotMatch(turn.section, /# Minor mode: spec/);
+	const rebuilt = turn.section;
+	const filtered = await session.fire("context", context);
+	assert.deepEqual(filtered.messages.map((m) => m.role), ["compactionSummary", "user"], "notes the compaction kept are dropped once the head is rebuilt");
+	session = open();
+	await session.fire("session_start", { reason: "resume" });
+	turn = await session.userTurn();
+	assert.equal(turn.section, rebuilt, "reopened after the compaction: the rebuilt head again");
+	assert.deepEqual(turn.notes, []);
 }
 
 console.log("mode smoke tests passed");

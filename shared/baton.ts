@@ -78,7 +78,11 @@ export interface BatonHandoffData {
 }
 export interface BatonDecisionData {
   v: 1;
+  /** The topic, in a few words: files the decision in the spec. */
   area: string;
+  /** Who decides it: one of the roster's decision areas as the roster spells it, or "none"
+      (shared/decisions.ts OWNER_AREA_NONE). Absent from decisions recorded before owner areas. */
+  ownerArea?: string;
   statement: string;
   quote: string;
   by: PersonRef;
@@ -206,6 +210,17 @@ export interface BatonSession {
   thinking?: string;
   createdAt: string;
   closedAt?: string;
+  /** The operator hid it from the org owner's page (§app.owner-page/chats). Absent: shown. */
+  hiddenFromOwner?: boolean;
+  /** When someone it was sent to first wrote (ISO): a roster person, or the operator for a session
+      sent to the operator. Absent: nobody has yet. */
+  wroteAt?: string;
+  /** A settle session: the conflict it asks someone to settle (§app.requirements/routing), kept after
+      a re-route closes it. */
+  conflict?: { id: string; area: string };
+  /** Started by the global Overseer for the operator (`sova_gather`, §app.overseer/org-attribution).
+      Recorded, shown nowhere. */
+  startedVia?: "overseer";
 }
 
 export interface BatonStartInput {
@@ -300,6 +315,8 @@ export interface BatonInfo {
   offer: OfferInfo | null;
   proposed: ProposedPerson[];
   wrapup: WrapupInfo | null;
+  /** The org's owner, for the strip's Hide From {first} (`session.hiddenFromOwner`); null: none. */
+  owner?: { name: string } | null;
 }
 
 export interface BatonSummaryField {
@@ -317,6 +334,12 @@ export interface BatonSummaryField {
   linkAt?: string;
   /** People proposed from this session still waiting for approval (attention kind "roster-proposal"). */
   proposals?: { personId: string; name: string; role: string; by: string; since: number }[];
+  /** Someone it was sent to has written (the row's `wroteAt`): In progress, not Not started. */
+  written?: true;
+  /** A person (not a link previewer or a scanner) opened one of its links. */
+  opened?: true;
+  /** A settle session, and the area of the conflict it settles. */
+  settle?: { area: string };
 }
 
 // ---- the outsider view -----------------------------------------------------------------------------

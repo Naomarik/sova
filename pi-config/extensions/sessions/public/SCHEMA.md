@@ -99,7 +99,7 @@ enforce them, and the reference reader enforces them again.
 | `since` | ✔ | ms epoch | | time the status last changed |
 | `completed` | ✔ | ms epoch | | last settled run or worker completion (0 if none yet) |
 | `preview` | ✔ | string | 2000 | latest assistant text |
-| `workers` | ✔ | WorkerEntry[] | 40 | |
+| `workers` | ✔ | WorkerEntry[] | 40 | live ones first (`starting\|running\|stopping\|waiting`, not `restored`), then the rest; each newest first |
 | `target` | | FocusTarget | | **opaque**, see §7 |
 | `outline` | | Outline | | topic-outline enrichment |
 | `activity` | | Activity | | (v2) structured state; prefer it over `status` |
@@ -204,9 +204,13 @@ this order:
 2. `presence.activity.buckets`
 3. `presence.preview` truncated to 600 characters
 4. `presence.outline.overall` and `presence.outline.topics`
-5. `presence.workers[].usage`: every row's own counts, all at once
-6. `presence.workers`: finished (`done|error|killed`) and `restored` ones go first regardless
-   of position, then entries are removed from the end
+5. `presence.workers[].usage` of settled rows (finished `done|error|killed`, or `restored`),
+   all at once
+6. settled `presence.workers`, from the end (the oldest, in the writer's order)
+7. `presence.workers[].usage` of the remaining (live) rows, all at once
+8. the remaining `presence.workers`, from the end
+
+So a live worker keeps its row and its counts while any settled row is left to drop.
 
 `workerCounts` and `workerUsage` still reflect every worker, so
 `workerCounts.total` and `workerUsage.workers` can be larger than

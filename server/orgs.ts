@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AttentionItem } from "../shared/protocol";
 import {
+  ORG_ABOUT_MAX,
   PERSON_ITEM_MAX,
   PERSON_LIST_MAX,
   PERSON_NAME_MAX,
@@ -12,6 +13,7 @@ import {
   type Competence,
   type Org,
   type OrgBatonRow,
+  type OrgChange,
   type OrgDetail,
   type OrgProject,
   type OrgsInfo,
@@ -24,8 +26,11 @@ import {
   type ProfileChange,
   type ProfileField,
   type NamedChange,
+  type OwnerChange,
   type StakeholderChange,
+  type ChangeVia,
 } from "../shared/orgs";
+import { heldElsewhere, heldSentence, hostIdentity, readHolder, writeHeld, writeReleased } from "./org-holder";
 import { setExtraSessionRoots } from "./paths";
 import { stateRoot } from "./state-root";
 import { commitEveryMs, type CommitTarget } from "./workspace-commits";
@@ -37,7 +42,8 @@ import { commitAll, gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./
  * - This host's index, `<stateRoot>/orgs.json`: which orgs are ATTACHED here (resident) and where
  *   their workspace repos are, which project overseers are paused since an attach, plus the
  *   operator's display name. Host state, never committed.
- * - Each org's workspace repo: `org.json`, `roster.json`, `roster-history.jsonl`, `projects.json`,
+ * - Each org's workspace repo: `org.json`, `about.md` and `org-history.jsonl` (the org's About text
+ *   and its history), `roster.json`, `roster-history.jsonl`, `projects.json`,
  *   `baton.json` (server/baton.ts), `sessions/` (baton and project-overseer transcripts) and
  *   `projects/<pid>/` (decisions, conflicts, the project overseer's files). It is the org's whole
  *   portable state, committed hourly (server/workspace-commits.ts); nothing secret is ever written there.
@@ -51,6 +57,8 @@ export class OrgError extends Error {
   constructor(
     message: string,
     readonly status: 400 | 404 | 409 = 400,
+    /** A refusal the client acts on by name (`held`: attach an org another host holds). */
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -227,12 +235,17 @@ const projectsFile = (dir: string) => join(dir, "projects.json");
 function readOrgFile(dir: string): Org | null {
   const raw = readJson(orgFile(dir));
   if (!isObj(raw) || typeof raw.id !== "string" || typeof raw.name !== "string") return null;
+  const cleared = raw.ownerCleared;
   return {
     id: raw.id,
     name: raw.name,
     slug: typeof raw.slug === "string" ? raw.slug : slugOf(raw.name),
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : "",
-    ...(typeof raw.notes === "string" && raw.notes ? { notes: raw.notes } : {}),
+    ...(typeof raw.owner === "string" && raw.owner ? { owner: raw.owner } : {}),
+    ...(Array.isArray(raw.ownerHistory) ? { ownerHistory: raw.ownerHistory.filter((c): c is OwnerChange => isObj(c) && typeof c.at === "string") } : {}),
+    ...(isObj(cleared) && typeof cleared.personId === "string" && typeof cleared.name === "string" && typeof cleared.at === "string"
+      ? { ownerCleared: { personId: cleared.personId, name: cleared.name, at: cleared.at } }
+      : {}),
   };
 }
 
@@ -299,14 +312,19 @@ export async function createOrg(input: { name: unknown; dir?: unknown }): Promis
   if (!existsSync(historyFile(dir))) writeFileSync(historyFile(dir), "");
   // sessions/ must be in the first commit so a clone has it: git keeps no empty dirs.
   if (!existsSync(join(dir, "sessions", ".gitkeep"))) writeFileSync(join(dir, "sessions", ".gitkeep"), "");
+  writeHeld(dir);
   const index = readIndex();
   writeIndex({ ...index, orgs: [...index.orgs, { id, dir, attachedAt: org.createdAt }] });
   await commitAll(dir, `Create organization ${name}`);
   return org;
 }
 
-/** Attach an existing workspace repo (a restored clone) to this host. */
-export async function attachOrg(input: { dir: unknown }): Promise<Org> {
+/**
+ * Attach an existing workspace repo (a restored clone) to this host. Another host holding it
+ * (§app.organizations/holder) refuses with `code: "held"` unless `confirm`; attached, this host
+ * holds it, committed and pushed at once.
+ */
+export async function attachOrg(input: { dir: unknown; confirm?: unknown }): Promise<Org> {
   const dir = typeof input.dir === "string" ? resolve(input.dir.trim()) : "";
   if (!dir) throw new OrgError("dir is required");
   const problem = await workspaceDirProblem(dir);
@@ -315,6 +333,10 @@ export async function attachOrg(input: { dir: unknown }): Promise<Org> {
   if (!org) throw new OrgError("No org.json in that dir: not a workspace repo.");
   const index = readIndex();
   if (index.orgs.some((o) => o.id === org.id)) throw new OrgError("That organization is already attached here.", 409);
+  if (input.confirm !== true) {
+    const held = await heldElsewhere(dir);
+    if (held) throw new OrgError(heldSentence(held), 409, "held");
+  }
   mkdirSync(join(dir, "sessions"), { recursive: true });
   // A restore or a move: every project overseer waits at L0 until the operator sets its level on this host.
   const paused = readProjectsFile(dir).map((p) => p.id);
@@ -325,31 +347,128 @@ export async function attachOrg(input: { dir: unknown }): Promise<Org> {
     } catch (err) {
       console.warn(`[orgs] after attach: ${err instanceof Error ? err.message : String(err)}`);
     }
+  writeHeld(dir);
+  await commitAll(dir, `Attached on ${hostIdentity().name}`);
   return org;
 }
 
-/** Remove the org from this host's index. The repo stays where it is, untouched. */
-export function detachOrg(orgId: string): void {
+/**
+ * Remove the org from this host's index at once; then release it in the repo (§app.organizations/
+ * holder), committed and pushed, best effort: a move's attach elsewhere then asks nothing.
+ */
+export async function detachOrg(orgId: string): Promise<void> {
   const index = readIndex();
-  if (!index.orgs.some((o) => o.id === orgId)) throw new OrgError("Unknown organization", 404);
+  const entry = index.orgs.find((o) => o.id === orgId);
+  if (!entry) throw new OrgError("Unknown organization", 404);
   writeIndex({ ...index, orgs: index.orgs.filter((o) => o.id !== orgId) });
+  try {
+    if (readHolder(entry.dir)?.host?.id !== hostIdentity().id) return;
+    writeReleased(entry.dir);
+    const out = await commitAll(entry.dir, `Released by ${hostIdentity().name}`);
+    if (out.error) console.warn(`[orgs] detach ${orgId}: ${out.error}`);
+  } catch (err) {
+    console.warn(`[orgs] detach ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
-export function patchOrg(orgId: string, patch: { name?: unknown; notes?: unknown }): Org {
+/** The operator's own write, or theirs made through the global Overseer (§app.overseer/org-attribution). */
+export type OperatorBy = { kind: "operator"; via?: ChangeVia; overseerId?: string };
+const OPERATOR_BY: OperatorBy = { kind: "operator" };
+
+export function patchOrg(orgId: string, patch: { name?: unknown; about?: unknown }, by: OperatorBy = OPERATOR_BY): Org {
   const dir = orgDir(orgId);
   const org = readOrg(orgId);
+  const about = patch.about === undefined ? undefined : cleanAbout(patch.about);
   if (patch.name !== undefined) {
     const name = typeof patch.name === "string" ? patch.name.trim() : "";
     if (!name || name.length > PERSON_NAME_MAX) throw new OrgError(`name must be 1–${PERSON_NAME_MAX} characters`);
     org.name = name;
+    writeOrgFile(dir, org);
   }
-  if (patch.notes !== undefined) {
-    if (typeof patch.notes !== "string" || patch.notes.length > 4000) throw new OrgError("notes must be text of at most 4000 characters");
-    if (patch.notes.trim()) org.notes = patch.notes;
-    else delete org.notes;
-  }
-  writeOrgFile(dir, org);
+  if (about !== undefined) writeAbout(dir, about, undefined, by);
   return org;
+}
+
+// ---- the org's About text (§app.organizations/about) ------------------------------------------------
+//
+// The operator's context for the org's project overseers, and for nothing else. It is its own file,
+// never a field of `Org`, so nothing that reads the org carries it; readOrgAbout is its one reader,
+// called only by orgDetail (the operator's page) and the project overseer's prompt
+// (server/org-about-privacy.test.ts fails on any other).
+
+const aboutFile = (dir: string) => join(dir, "about.md");
+const orgHistoryFile = (dir: string) => join(dir, "org-history.jsonl");
+const ABOUT_HISTORY_ON_DETAIL = 20;
+
+function cleanAbout(v: unknown): string {
+  if (typeof v !== "string") throw new OrgError("about must be text");
+  const t = v.trim();
+  if (t.length > ORG_ABOUT_MAX) throw new OrgError(`about must be at most ${ORG_ABOUT_MAX.toLocaleString("en-US")} characters`);
+  return t;
+}
+
+function readAboutFile(dir: string): string {
+  try {
+    return readFileSync(aboutFile(dir), "utf8");
+  } catch {
+    return "";
+  }
+}
+
+/** The org's About text as the file holds it ("" = none); a hand edit may pass the cap. */
+export function readOrgAbout(orgId: string): string {
+  return readAboutFile(orgDir(orgId)).trim();
+}
+
+function readOrgHistoryFile(dir: string): OrgChange[] {
+  let text: string;
+  try {
+    text = readFileSync(orgHistoryFile(dir), "utf8");
+  } catch {
+    return [];
+  }
+  const out: OrgChange[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const c = JSON.parse(line);
+      if (isObj(c) && typeof c.at === "string" && c.field === "about" && typeof c.from === "string" && typeof c.to === "string") out.push(c as unknown as OrgChange);
+    } catch {
+      // a torn line: skip
+    }
+  }
+  return out;
+}
+
+/** The About text's history, oldest first. */
+export function readOrgHistory(orgId: string): OrgChange[] {
+  return readOrgHistoryFile(orgDir(orgId));
+}
+
+/** THE writer of about.md: one history line first, then the file (blank removes it). The same text writes nothing. */
+function writeAbout(dir: string, to: string, revertOf?: string, by: OperatorBy = OPERATOR_BY): void {
+  const from = readAboutFile(dir).trim();
+  if (from === to) return;
+  const history = readOrgHistoryFile(dir);
+  let t = Date.now();
+  const lastAt = history.length ? Date.parse(history[history.length - 1]!.at) : 0;
+  if (t <= lastAt) t = lastAt + 1;
+  const line: OrgChange = { at: new Date(t).toISOString(), field: "about", from, to, by: { ...by }, ...(revertOf ? { revertOf } : {}) };
+  appendFileSync(orgHistoryFile(dir), `${JSON.stringify(line)}\n`);
+  if (!to) rmSync(aboutFile(dir), { force: true });
+  else {
+    const tmp = `${aboutFile(dir)}.${process.pid}.tmp`;
+    writeFileSync(tmp, to);
+    renameSync(tmp, aboutFile(dir));
+  }
+}
+
+/** Set the About text back to history line `at`'s `from`, as a new operator change. */
+export function revertOrgChange(orgId: string, at: string, by: OperatorBy = OPERATOR_BY): void {
+  const dir = orgDir(orgId);
+  const line = readOrgHistoryFile(dir).find((c) => c.at === at);
+  if (!line) throw new OrgError("No such change", 404);
+  writeAbout(dir, line.from, at, by);
 }
 
 // ---- roster ------------------------------------------------------------------------------------------
@@ -604,6 +723,8 @@ export function applyChange(
   writeJson(rosterFile(dir), { version: 1, people: nextPeople });
   // A main stakeholder who left no longer decides anything: their projects have none until the operator picks one.
   if (!creating && current.status !== "left" && next.status === "left") clearStakeholder(dir, next);
+  // The org's owner who left reads nothing any more: the org has none until the operator picks one.
+  if (!creating && current.status !== "left" && next.status === "left") clearOwner(dir, next);
   if (!creating && current.status !== "left" && next.status === "left")
     for (const fn of leftHooks) {
       try {
@@ -632,11 +753,11 @@ export const approvePerson = (orgId: string, personId: string, by?: ProfileChang
 export const declinePerson = (orgId: string, personId: string, by?: ProfileChange["by"]) => decidePerson(orgId, personId, false, by);
 
 /** Set the field of history line `at` back to that line's `from`, as a new operator change. */
-export function revertChange(orgId: string, personId: string, at: string): Person {
+export function revertChange(orgId: string, personId: string, at: string, by: OperatorBy = OPERATOR_BY): Person {
   const line = readHistory(orgId, personId).find((c) => c.at === at);
   if (!line) throw new OrgError("No such change", 404);
   if (line.from === null && line.field === "name") throw new OrgError("A person's creation can't be reverted; set their status to left instead.", 409);
-  return applyChange(orgId, personId, { [line.field]: line.from ?? emptyOf(line.field) }, { kind: "operator" }, { revertOf: at });
+  return applyChange(orgId, personId, { [line.field]: line.from ?? emptyOf(line.field) }, { ...by }, { revertOf: at });
 }
 
 const emptyOf = (f: ProfileField): unknown => (f === "decides" || f === "skills" ? [] : f === "contact" || f === "competence" ? {} : f === "referral" ? null : "");
@@ -776,11 +897,11 @@ export function addProject(orgId: string, input: { name: unknown; root: unknown 
 /** Most stakeholder changes kept per project. */
 const STAKEHOLDER_HISTORY_MAX = 50;
 
-function noteStakeholder(p: OrgProject, to: string | null, why: StakeholderChange["why"], at = new Date().toISOString()): void {
+function noteStakeholder(p: OrgProject, to: string | null, why: StakeholderChange["why"], at = new Date().toISOString(), via?: ChangeVia): void {
   const from = p.stakeholder ?? null;
   if (from === to) return;
   p.stakeholder = to;
-  p.stakeholderHistory = [...(p.stakeholderHistory ?? []), { at, from, to, why }].slice(-STAKEHOLDER_HISTORY_MAX);
+  p.stakeholderHistory = [...(p.stakeholderHistory ?? []), { at, from, to, why, ...(via ? { via } : {}) }].slice(-STAKEHOLDER_HISTORY_MAX);
 }
 
 /** `person` left the org: every project they were the main stakeholder of has none now, and says why. */
@@ -797,7 +918,12 @@ function clearStakeholder(dir: string, person: Person): void {
   if (changed) writeJson(projectsFile(dir), { version: 1, projects });
 }
 
-export function patchProject(orgId: string, projectId: string, patch: { name?: unknown; root?: unknown; spec?: unknown; stakeholder?: unknown }): OrgProject {
+export function patchProject(
+  orgId: string,
+  projectId: string,
+  patch: { name?: unknown; root?: unknown; spec?: unknown; stakeholder?: unknown; ownerHidden?: unknown },
+  by: OperatorBy = OPERATOR_BY,
+): OrgProject {
   const dir = orgDir(orgId);
   const projects = readProjectsFile(dir);
   const p = projects.find((x) => x.id === projectId);
@@ -819,12 +945,105 @@ export function patchProject(orgId: string, projectId: string, patch: { name?: u
       const person = typeof to === "string" ? readRosterFile(dir).people.find((x) => x.id === to) : undefined;
       if (!person || person.status !== "active") throw new OrgError("Only an active person on the roster can be a project's main stakeholder.");
     }
-    noteStakeholder(p, (to as string | null) ?? null, "operator");
+    noteStakeholder(p, (to as string | null) ?? null, "operator", undefined, by.via);
     // The operator has answered: whatever it says now, the "pick one" item is done.
     delete p.stakeholderCleared;
   }
+  if (patch.ownerHidden !== undefined) {
+    if (typeof patch.ownerHidden !== "boolean") throw new OrgError("ownerHidden must be true or false");
+    if (patch.ownerHidden) p.ownerHidden = true;
+    else delete p.ownerHidden;
+  }
   writeJson(projectsFile(dir), { version: 1, projects });
   return p;
+}
+
+/**
+ * Archive or unarchive a project (§app.organizations/archive): `archived: {at, via?}` in
+ * projects.json, or removed. The same state again writes nothing. What must be stopped first is the
+ * route's to check (server/org-routes.ts), which knows the sessions; this is the store's write.
+ */
+export function setProjectArchived(orgId: string, projectId: string, archived: boolean, by: OperatorBy = OPERATOR_BY): { project: OrgProject; changed: boolean } {
+  const dir = orgDir(orgId);
+  const projects = readProjectsFile(dir);
+  const p = projects.find((x) => x.id === projectId);
+  if (!p) throw new OrgError("Unknown project", 404);
+  if (!!p.archived === archived) return { project: p, changed: false };
+  if (archived) p.archived = { at: new Date().toISOString(), ...(by.via ? { via: by.via } : {}) };
+  else delete p.archived;
+  writeJson(projectsFile(dir), { version: 1, projects });
+  return { project: p, changed: true };
+}
+
+/** Whether the project is archived (false for an unknown one). */
+export function projectArchived(orgId: string, projectId: string): boolean {
+  try {
+    return !!readProjects(orgId).find((p) => p.id === projectId)?.archived;
+  } catch {
+    return false;
+  }
+}
+
+/** "{project} is archived. Unarchive it first.": every new start in an archived project. */
+export const archivedRefusal = (name: string) => `${name} is archived. Unarchive it first.`;
+/** Its overseer's: Run Now, a message to it, its start. */
+export const archivedOverseerRefusal = (name: string) => `${name} is archived. Unarchive it to use its overseer.`;
+
+/** Refuse a new start in an archived project (409). */
+export function assertNotArchived(orgId: string, projectId: string): void {
+  const p = readProjects(orgId).find((x) => x.id === projectId);
+  if (p?.archived) throw new OrgError(archivedRefusal(p.name), 409);
+}
+
+// ---- the org's owner (§app.owner-page/owner) ------------------------------------------------------------------
+
+/** Most owner changes kept per org. */
+const OWNER_HISTORY_MAX = 50;
+
+function noteOwner(org: Org, to: string | null, why: OwnerChange["why"], at = new Date().toISOString(), via?: ChangeVia): boolean {
+  const from = org.owner ?? null;
+  if (from === to) return false;
+  if (to) org.owner = to;
+  else delete org.owner;
+  org.ownerHistory = [...(org.ownerHistory ?? []), { at, from, to, why, ...(via ? { via } : {}) }].slice(-OWNER_HISTORY_MAX);
+  return true;
+}
+
+/** `person` left the org: when they were its owner, it has none now, and says why. */
+function clearOwner(dir: string, person: Person): void {
+  const org = readOrgFile(dir);
+  if (!org || org.owner !== person.id) return;
+  const at = new Date().toISOString();
+  noteOwner(org, null, "left", at);
+  org.ownerCleared = { personId: person.id, name: person.name, at };
+  writeOrgFile(dir, org);
+}
+
+/** The org's owner now: an active roster person, or null. */
+export function ownerOf(orgId: string): Person | null {
+  const org = readOrg(orgId);
+  if (!org.owner) return null;
+  const p = readRoster(orgId).find((x) => x.id === org.owner);
+  return p && p.status === "active" ? p : null;
+}
+
+/** THE writer of the owner: the operator only (§app.organizations/field-authority). Only an active
+    roster person, or null (none). Returns the previous owner's id. */
+export function setOrgOwner(orgId: string, personId: unknown, by: OperatorBy = OPERATOR_BY): { from: string | null; to: string | null } {
+  const dir = orgDir(orgId);
+  const org = readOrg(orgId);
+  if (personId !== null) {
+    const person = typeof personId === "string" ? readRosterFile(dir).people.find((x) => x.id === personId) : undefined;
+    if (!person || person.status !== "active") throw new OrgError("Only an active person on the roster can be the owner.");
+  }
+  const from = org.owner ?? null;
+  const to = (personId as string | null) ?? null;
+  const changed = noteOwner(org, to, "operator", undefined, by.via);
+  // The operator has answered: whatever it says now, "pick one" is done.
+  const hadCleared = !!org.ownerCleared;
+  delete org.ownerCleared;
+  if (changed || hadCleared) writeOrgFile(dir, org);
+  return { from, to };
 }
 
 // ---- read models for the routes -------------------------------------------------------------------------
@@ -843,7 +1062,17 @@ export function orgSummaries(): OrgSummary[] {
   for (const e of readIndex().orgs) {
     const org = readOrgFile(e.dir);
     if (!org) continue;
-    out.push({ ...org, id: e.id, dir: e.dir, people: readRosterFile(e.dir).people.length, projects: readProjectsFile(e.dir).length, openBatons: openBatonCount(e.id) });
+    const projects = readProjectsFile(e.dir);
+    const archived = projects.filter((p) => p.archived).length;
+    out.push({
+      ...org,
+      id: e.id,
+      dir: e.dir,
+      people: readRosterFile(e.dir).people.length,
+      projects: projects.length - archived,
+      ...(archived ? { archivedProjects: archived } : {}),
+      openBatons: openBatonCount(e.id),
+    });
   }
   return out;
 }
@@ -860,12 +1089,14 @@ export async function orgDetail(orgId: string): Promise<OrgDetail> {
   const roster = readRosterFile(dir);
   if (roster.problem) problems.push(roster.problem);
   const projectList = readProjectsFile(dir);
+  const about = readOrgAbout(orgId);
   return {
     ...(org ?? { id: orgId, name: orgId, slug: orgId, createdAt: "" }),
     id: orgId,
     dir,
     people: roster.people.length,
-    projects: projectList.length,
+    projects: projectList.filter((p) => !p.archived).length,
+    ...(projectList.some((p) => p.archived) ? { archivedProjects: projectList.filter((p) => p.archived).length } : {}),
     openBatons: openBatonCount(orgId),
     roster: roster.people,
     projectList,
@@ -873,6 +1104,8 @@ export async function orgDetail(orgId: string): Promise<OrgDetail> {
     git: { ...(await gitStatus(dir)), commitEveryMs: commitEveryMs() },
     recentChanges: recentChanges(orgId, 20, roster.people),
     problems,
+    ...(about ? { about } : {}),
+    aboutHistory: readOrgHistory(orgId).slice(-ABOUT_HISTORY_ON_DETAIL).reverse(),
   };
 }
 

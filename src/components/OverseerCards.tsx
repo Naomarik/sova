@@ -1,8 +1,10 @@
-import { createContext, For, Show, useContext } from "solid-js";
-import type { OverseerQuickAction, SovaConfirmDetails } from "../../shared/protocol";
+import { createContext, createSignal, For, Show, useContext } from "solid-js";
+import type { OverseerQuickAction, SovaConfirmDetails, SovaConfirmItem } from "../../shared/protocol";
 import type { MeshLinkView } from "../../shared/mesh-links";
-import { briefBody, confirmReply, goTo, navigateDetails, settingsTarget } from "../lib/overseer";
-import { clockTime } from "../lib/format";
+import { briefBody, confirmReply, confirmRows, goTo, navigateDetails, settingsTarget } from "../lib/overseer";
+import { clockTime, relativeTime } from "../lib/format";
+import { groupLinkIndex, resolveAppLink, sessionIndex, sessionIndexVersion } from "../lib/session-links";
+import { personHref, projectHref } from "../lib/orgs-route";
 import { openSettings } from "../lib/settings-nav";
 import { ActionMenu } from "./ActionMenu";
 import { Markdown } from "./Markdown";
@@ -14,8 +16,9 @@ import { Icon } from "./ui";
  * be answered.
  */
 export interface OverseerThread {
-  /** Sends `text` as the user's next message; false when it couldn't be sent. */
-  answer(text: string): boolean;
+  /** Sends `text` as the user's next message; false when it couldn't be sent. `card`: the confirm
+      card's tool call id, so the server knows a click (never typed text) opened the turn. */
+  answer(text: string, card?: string): boolean;
 }
 export const OverseerThreadContext = createContext<OverseerThread | null>(null);
 export const useOverseerThread = () => useContext(OverseerThreadContext);
@@ -24,8 +27,9 @@ export const useOverseerThread = () => useContext(OverseerThreadContext);
  * `sova_confirm`, drawn as the question it asks. Its buttons send the choice as the user's next
  * message. Once any later user message exists the card is answered: the buttons go and the
  * choice is said, so a reload or a restart shows the same thing, because it lives in the transcript.
+ * A click-only card (`clickOnly`) has no "Or type your answer." hint: typed text can't approve what it gates.
  */
-export function ConfirmCard(props: { details: SovaConfirmDetails; answered: boolean; choice: string | null; pending?: boolean }) {
+export function ConfirmCard(props: { details: SovaConfirmDetails; answered: boolean; choice: string | null; pending?: boolean; card?: string }) {
   const thread = useOverseerThread();
   const canAnswer = () => !!thread && !props.answered && !props.pending;
   return (
@@ -38,6 +42,9 @@ export function ConfirmCard(props: { details: SovaConfirmDetails; answered: bool
       </div>
       <Show when={props.details.detail}>
         <div class="card-body overseer-confirm-detail">{props.details.detail}</div>
+      </Show>
+      <Show when={props.details.items?.length}>
+        <ConfirmItems items={props.details.items!} />
       </Show>
       <div class="card-foot">
         <Show
@@ -62,18 +69,136 @@ export function ConfirmCard(props: { details: SovaConfirmDetails; answered: bool
                 class={`button button-sm${o.tone === "danger" ? " button-destructive" : ""}`}
                 aria-disabled={canAnswer() ? undefined : "true"}
                 title={!thread ? "Read only." : props.pending ? "Wait for the turn to end." : undefined}
-                onClick={() => canAnswer() && thread!.answer(confirmReply(o))}
+                onClick={() => canAnswer() && thread!.answer(confirmReply(o), props.card)}
               >
                 {o.label}
               </button>
             )}
           </For>
-          <Show when={thread && !props.pending}>
+          <Show when={thread && !props.pending && !props.details.clickOnly}>
             <span class="overseer-confirm-hint">Or type your answer.</span>
           </Show>
         </Show>
       </div>
     </section>
+  );
+}
+
+/**
+ * What a confirm card is about: the sessions, ideas, todos, projects and people the server resolved
+ * when the card was raised, as a snapshot. Ideas, todos, projects and people come first and always
+ * show; only the sessions after them collapse (confirmRows). A session links to its route, named by
+ * its summary (else its title); an idea is its id and title as text, never a link; a todo is its
+ * text; a project and a person link to their page, with the org after the name (and a person's
+ * status chip unless active). Each may carry the Overseer's note under it.
+ */
+function ConfirmItems(props: { items: SovaConfirmItem[] }) {
+  const [all, setAll] = createSignal(false);
+  const view = () => confirmRows(props.items, all());
+  return (
+    <div class="card-body overseer-confirm-items">
+      <ul class="overseer-confirm-list" aria-label={`${props.items.length} ${props.items.length === 1 ? "item" : "items"}`}>
+        <For each={view().rows}>{(it) => <ConfirmItemRow item={it} />}</For>
+      </ul>
+      <Show when={view().collapsible}>
+        <button type="button" class="button button-ghost button-sm overseer-confirm-more" aria-expanded={all()} onClick={() => setAll(!all())}>
+          <Icon name={all() ? "chevron-down" : "chevron-right"} small />
+          {all() ? "Show fewer" : `Show all ${view().sessions} sessions`}
+        </button>
+      </Show>
+    </div>
+  );
+}
+
+/** The Overseer's note on an item: what it is and why the card acts on it, up to 2 lines. */
+function ItemNote(props: { note?: string }) {
+  return (
+    <Show when={props.note}>
+      <span class="overseer-confirm-item-note" title={props.note}>
+        {props.note}
+      </span>
+    </Show>
+  );
+}
+
+function ConfirmItemRow(props: { item: SovaConfirmItem }) {
+  const it = props.item;
+  if (it.kind === "idea")
+    return (
+      <li class="overseer-confirm-item">
+        <span class="overseer-confirm-item-line">
+          <span class="overseer-confirm-idea-id">{it.id}</span>
+          <Show when={it.title}>
+            <span class="overseer-confirm-item-name"> — {it.title}</span>
+          </Show>
+        </span>
+        <ItemNote note={it.note} />
+      </li>
+    );
+  if (it.kind === "todo")
+    return (
+      <li class="overseer-confirm-item">
+        <span class="overseer-confirm-item-line">
+          <span class="overseer-confirm-item-name">{it.text}</span>
+        </span>
+        <ItemNote note={it.note} />
+      </li>
+    );
+  if (it.kind === "project" || it.kind === "person") {
+    const href = it.kind === "project" ? projectHref(it.orgId, it.id) : personHref(it.orgId, it.id);
+    return (
+      <li class="overseer-confirm-item">
+        <span class="overseer-confirm-item-line">
+          <a class="overseer-confirm-item-name" href={href}>
+            {it.name}
+          </a>
+          <span class="overseer-confirm-item-meta">{it.orgName}</span>
+          <Show when={it.kind === "person" && it.status !== "active" ? it.status : null}>
+            {(st) => (
+              <span class={`chip ${st() === "proposed" ? "chip-info" : ""}`}>
+                <span class="chip-dot" />
+                {st() === "proposed" ? "Proposed" : "Left"}
+              </span>
+            )}
+          </Show>
+        </span>
+        <ItemNote note={it.note} />
+      </li>
+    );
+  }
+  /** The session's route, and its title now (else the snapshot's). */
+  const view = () => {
+    sessionIndexVersion();
+    const v = resolveAppLink(`sova://s/${it.id}`, sessionIndex(), groupLinkIndex());
+    return v?.kind === "route" ? { href: v.href, title: v.title ?? it.title } : null;
+  };
+  // The summary names the work; the title is the first prompt, so it is only the fallback.
+  const name = () => it.summary ?? view()?.title ?? it.title;
+  const meta = () => [it.project, it.lastActiveAt ? relativeTime(it.lastActiveAt) : ""].filter(Boolean).join(" · ");
+  return (
+    <li class="overseer-confirm-item">
+      <span class="overseer-confirm-item-line">
+        <Show when={view()} fallback={<span class="overseer-confirm-item-name">{name()}</span>}>
+          {(v) => (
+            <a class="overseer-confirm-item-name" href={v().href} title={v().title}>
+              {name()}
+            </a>
+          )}
+        </Show>
+        <Show when={meta()}>
+          <span class="overseer-confirm-item-meta">{meta()}</span>
+        </Show>
+        <Show when={it.workers}>
+          {(n) => (
+            <span class="chip chip-warn">
+              <span class="chip-dot" />
+              {n()} {n() === 1 ? "subagent" : "subagents"} working
+            </span>
+          )}
+        </Show>
+      </span>
+      <ItemNote note={it.note} />
+    </li>
   );
 }
 

@@ -6,7 +6,7 @@ import { hasMinor, MODE_DESCRIPTIONS, MODES, type Mode, type ModeState } from ".
 export interface ModeActions {
 	setMode(next: Mode): void | Promise<void>;
 	setMinor(minor: MinorMode, on: boolean): void;
-	/** Open the read-only alignment-doc viewer (align minor mode). */
+	/** Open the read-only alignments viewer (align minor mode). */
 	openAlignViewer(): void | Promise<void>;
 	/** Write this session's mode, strict flag and minor modes to mode.json as the default for new sessions. */
 	saveDefault(): void | Promise<void>;
@@ -38,7 +38,7 @@ export function modeCategoryItems(getState: () => Pick<ModeState, "mode" | "mino
 	const viewer: MenuItem = {
 		id: "mode:align:view",
 		label: "align: open viewer",
-		description: "Read the accumulated alignment doc (findings, approach, open questions)",
+		description: "Read this session's alignments (questions, decisions, findings, approach)",
 		run: () => actions.openAlignViewer(),
 	};
 	const saveDefault: MenuItem = {

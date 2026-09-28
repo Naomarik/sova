@@ -70,10 +70,18 @@ over with `margin-left:auto`, beside the subagents trigger (§app/subagents-pane
   `src/lib/input-count.ts`. It drops the moment a rewind lands, because the branch is what it
   counts. The count stays visible: it is a fact about the session, whether or not the pane is open.
 - **Hidden at 0**, and hidden means *absent*: a session nobody has written to yet shows no control,
-  not a greyed one. Visible text is "7 inputs" / "1 input"; the accessible name says where it
+  not a greyed one. Before the chat's `hello` it shows the count known with rows kept for the
+  session (§chat.transcript/rendering), when there is one. Otherwise, when the session is known to
+  have an input — its list row has a derived title (a typed first message), or a row on screen is
+  an input — its box is held, invisible and out of the accessibility tree, so the status row is
+  there at its final height from the view's first frame; the `hello` fills it in, or removes it
+  (a branch rewound past its first message). A session known to have none (a new one) holds
+  nothing. It counts the
+  whole branch from then on, the rows held plus the inputs the `hello` names among the rows it
+  didn't carry (§chat.transcript/rendering), with no older row fetched. Visible text is "7 inputs" / "1 input"; the accessible name says where it
   goes, singular throughout at one: "1 input in this chat — show it on the Timeline".
 - **The row renders whenever any of its three parts has something to say** — a running turn,
-  workers, or inputs — so an idle session with messages still has one.
+  workers, or inputs (a held inputs box included) — so an idle session with messages still has one.
 
 Both triggers point `aria-controls` at the pane's one tab-neutral id, `session-pane` (§app/subagents-pane). The
 pane is in the DOM only while it's open, so that reference dangles while it's closed: intended,
@@ -368,7 +376,8 @@ Streaming refuses; it never auto-aborts. Stopping is the user's call, and a rewi
 killed a running turn and its workers would be the surprise. The server enforces all of this
 again (below), so a stale pane can't get past it: a refusal's message shows inline under its row
 (a `.text-error` span inside an `.input-row-note`, hung off the button's `aria-describedby`), and
-the flyout toasts it.
+the flyout toasts it. Until the chat's `hello` has said where its last input is, the flyout's Undo
+last turn is off with its usual title and no reason.
 
 ### After a rewind
 
@@ -440,7 +449,14 @@ body lands on that message exactly as it would unfiltered, and the filter stays 
   usually does.
 - **A message the transcript doesn't show** — compacted away, or not on the branch on screen —
   can't be landed on, so the jump says so instead of scrolling nowhere: "That message isn't in
-  the transcript on screen."
+  the transcript on screen." A jump to a message older than the rows the transcript holds fetches
+  every row down to it in one request and lands (§chat.transcript/rendering), with no toast: a slow
+  fetch shows the transcript's top-edge bar. Below 1280 the pane still closes at once, so the
+  landing and the bar are in view. The line above is said when the branch has no such row. The fetch
+  starts at the click. The pane never waits on the whole transcript either: it reads every row of
+  the branch without what only the thread draws (a reply's text, a tool's output, image bytes, a
+  report's body), a small fraction of the transcript's size, so on a slow link its list is there
+  and a jump's fetch has the link to itself.
 - **Density and gap rows aren't buttons.** They describe a stretch, and a stretch has no one
   message to land on. The input above the density line is the landing, and it is one row away.
   The rewind, past-summary and model/thinking/mode change markers aren't buttons either, for the

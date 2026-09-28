@@ -26,6 +26,7 @@ import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { claudeProjectsRoot, claudeSessionId, nextFreeLaunch } from "./session-records.ts";
+import { BRIDGE_REGISTRY, CLAUDE_FORK_ENV, decodeForkPoint, type ClaudeForkPoint } from "./fork-point.ts";
 import {
 	buildClaudeArgv, ClaudeTransport,
 	type ClaudeTransportLimits, type ClaudeTransportTimings, type SpawnImpl,
@@ -187,6 +188,11 @@ export interface SessionBridgeOptions {
 	projectsRoot?: string;
 	/** Extra child environment, merged after the nested-session markers are dropped. */
 	env?: Record<string, string>;
+	/**
+	 * Resume this CLI session for the first conversation instead of folding it (fork-point.ts).
+	 * Defaults to `CLAUDE_FORK_ENV` in `env`, then in this process's environment.
+	 */
+	forkFrom?: ClaudeForkPoint;
 	mcpToolTimeoutMs?: number;
 	/**
 	 * Send pi's system prompt through `initialize`. The CLI accepts
@@ -645,16 +651,35 @@ class CliSession {
 	private desynced?: string;
 	/** An interrupt was sent; the CLI still owes that turn's `result` frame. */
 	private abortPending = false;
+	/** The CLI session id of the live child, once its handshake succeeded. */
+	private claudeId?: string;
+	/**
+	 * A forked pi session's way into its parent's CLI session (fork-point.ts): tried once, for
+	 * the first child, and dropped either way.
+	 */
+	private forkSeed?: ClaudeForkPoint;
 
-	constructor(piSessionId: string, options: SessionBridgeOptions, cwd: string) {
+	constructor(piSessionId: string, options: SessionBridgeOptions, cwd: string, forkSeed?: ClaudeForkPoint) {
 		this.piSessionId = piSessionId;
 		this.options = options;
 		this.cwd = cwd;
+		this.forkSeed = forkSeed;
 		this.timings = { ...TIMINGS, ...options.timings };
 		this.limits = { ...LIMITS, ...options.limits };
 	}
 
 	isBusy(): boolean { return !!this.turn || this.calls.length > 0 || this.restarting; }
+
+	/**
+	 * Where a fork of this pi session can resume this child's CLI session, or undefined unless
+	 * the child is live, idle and in step with pi: a record mid-turn ends in a tool call the
+	 * fork could never answer, and a desynced one is not the conversation pi holds.
+	 */
+	forkPoint(): ClaudeForkPoint | undefined {
+		if (!this.started || !this.claudeId || !this.transport || this.transport.isClosed() || this.transport.hasExited()) return undefined;
+		if (this.isBusy() || this.desynced || this.abortPending || this.recorded.length === 0) return undefined;
+		return { v: 1, claudeSessionId: this.claudeId, messages: this.recorded.length, prefix: this.recorded[this.recorded.length - 1]!, cwd: this.cwd };
+	}
 
 	// -- turn ---------------------------------------------------------------
 
@@ -664,19 +689,26 @@ class CliSession {
 		if (signal?.aborted) return;
 
 		const next = transcriptFingerprint(request.messages);
-		const plan = this.plan(request, next);
+		let plan = this.plan(request, next);
 
 		// The restart finishes before the turn exists, so no frame from the
 		// dying child can reach it, whatever the timing of its death. Nothing is
 		// written to the new child until the turn is registered below, so
 		// nothing it says in reply can fall on the floor either.
-		if (plan.restart) {
-			await this.restart(request, plan.reason);
-			if (signal?.aborted) {
-				// The fresh child never got the history; reusing it would drop it.
-				this.markDesynced("the turn was aborted before the restarted child was sent the history");
-				return;
+		if (plan.restart && plan.resume) {
+			try {
+				await this.restart(request, plan.reason, plan.resume);
+			} catch (error) {
+				// The parent's record could not be resumed (gone, or refused): fold, as without a seed.
+				debugLog({ event: "fork-resume-failed", session: this.piSessionId, error: error instanceof Error ? error.message : String(error) });
+				plan = { restart: true, reason: "no live CLI process", results: [], users: [], first: !this.everStarted };
 			}
+		}
+		if (plan.restart && !plan.resume) await this.restart(request, plan.reason);
+		if (plan.restart && signal?.aborted) {
+			// The fresh child never got the history (or, resumed, the new messages); reusing it would drop them.
+			this.markDesynced("the turn was aborted before the restarted child was sent the history");
+			return;
 		}
 
 		const queue = new FrameQueue();
@@ -717,6 +749,8 @@ class CliSession {
 	 */
 	private plan(request: ClaudeTurnRequest, next: string[]): TurnPlan {
 		if (!this.started || !this.transport || this.transport.isClosed() || this.transport.hasExited()) {
+			const fork = this.forkPlan(request, next);
+			if (fork) return fork;
 			return { restart: true, reason: "no live CLI process", results: [], users: [], first: !this.everStarted };
 		}
 		if (this.desynced) {
@@ -750,11 +784,34 @@ class CliSession {
 	}
 
 	/**
+	 * The first child of a forked pi session: resume the parent's CLI session (`forkSeed`) if
+	 * this transcript starts with exactly the prefix that session heard, and what follows it is
+	 * new user messages only (the parent's final reply after that prefix came from the CLI, so it
+	 * is in the record already). Anything else folds, as for any first child.
+	 */
+	private forkPlan(request: ClaudeTurnRequest, next: string[]): TurnPlan | undefined {
+		const seed = this.forkSeed;
+		this.forkSeed = undefined;
+		if (!seed || this.everStarted || seed.cwd !== this.cwd) return undefined;
+		if (next.length <= seed.messages || next[seed.messages - 1] !== seed.prefix) return undefined;
+		const tail = request.messages.slice(seed.messages);
+		if (tail.some((m) => m.role === "toolResult")) return undefined;
+		const users = tail.filter((m) => m.role === "user");
+		if (!users.length) return undefined;
+		return { restart: true, reason: "forked from the parent's Claude session", results: [], users, resume: seed.claudeSessionId };
+	}
+
+	/**
 	 * Answer the CLI's tool calls first, then send any newly arrived user
 	 * messages (steering, follow-ups). A call the CLI has not dispatched yet
 	 * keeps its result until it does.
 	 */
 	private deliver(request: ClaudeTurnRequest, plan: TurnPlan): void {
+		if (plan.restart && plan.resume) {
+			// The resumed record already holds the history; send only what is new to it.
+			this.sendUsers(plan.users);
+			return;
+		}
 		if (plan.restart) {
 			const budget = foldBudgetChars(request, this.limits.maxFoldedChars);
 			const folded = foldHistory(request.messages, this.limits, plan.first ? "first" : "restarted", budget);
@@ -779,12 +836,16 @@ class CliSession {
 			if (slot) slot.result = toMcpResult(result);
 		}
 		this.settleCalls();
-		if (!plan.users.length) return;
+		this.sendUsers(plan.users);
+	}
+
+	private sendUsers(users: readonly Message[]): void {
+		if (!users.length) return;
 		// One stream-json message, not one per pi message: a second raw user
 		// message is folded into the CLI's active turn as a steer rather than
 		// read as part of the same prompt.
-		const text = plan.users.map((m) => textOf(m.content)).filter((t) => t.length > 0).join("\n\n");
-		this.sendUserMessage(text, plan.users.flatMap((m) => imagesOf(m.content)));
+		const text = users.map((m) => textOf(m.content)).filter((t) => t.length > 0).join("\n\n");
+		this.sendUserMessage(text, users.flatMap((m) => imagesOf(m.content)));
 	}
 
 	/**
@@ -821,16 +882,16 @@ class CliSession {
 
 	// -- lifecycle ----------------------------------------------------------
 
-	private async restart(request: ClaudeTurnRequest, reason: string): Promise<void> {
+	private async restart(request: ClaudeTurnRequest, reason: string, resume?: string): Promise<void> {
 		this.restarting = true;
 		try {
-			await this.spawnFresh(request, reason);
+			await this.spawnFresh(request, reason, resume);
 		} finally {
 			this.restarting = false;
 		}
 	}
 
-	private async spawnFresh(request: ClaudeTurnRequest, reason: string): Promise<void> {
+	private async spawnFresh(request: ClaudeTurnRequest, reason: string, resume?: string): Promise<void> {
 		if (this.started) await this.teardown(`restarting: ${reason}`);
 		this.failure = undefined;
 		this.recorded = [];
@@ -842,7 +903,7 @@ class CliSession {
 		// Walk forward until the CLI accepts an id: a collision is survivable and
 		// costs one fast-failing spawn, whereas reusing an id is fatal for good.
 		for (let probe = 0; probe <= SESSION_ID_PROBES; probe++) {
-			const why = await this.launchChild(request, claudeSessionId(this.piSessionId, this.launchAttempt));
+			const why = await this.launchChild(request, claudeSessionId(this.piSessionId, this.launchAttempt), resume);
 			this.launchAttempt++;
 			if (why === undefined) {
 				// A fresh child has heard nothing yet; runTurn() sends the history.
@@ -870,7 +931,7 @@ class CliSession {
 	 * Spawn one child and run the `initialize` handshake. Returns undefined once
 	 * the child is live, or the "Claude <why>" tail for a child already torn down.
 	 */
-	private async launchChild(request: ClaudeTurnRequest, sessionId: string): Promise<string | undefined> {
+	private async launchChild(request: ClaudeTurnRequest, sessionId: string, resume?: string): Promise<string | undefined> {
 		const built = buildClaudeArgv({
 			permissionMode: "dontAsk",
 			permissionModes: ["dontAsk"],
@@ -882,6 +943,8 @@ class CliSession {
 			// the held tools/call never reaches this host at all.
 			allowedTools: [`mcp__${MCP_SERVER_NAME}`],
 			sessionId,
+			// A fork resumes its parent's record into a new one, named like any other launch.
+			...(resume ? { resume, forkSession: true } : {}),
 		});
 		if ("error" in built) throw new Error(`Claude argv rejected: ${built.error}`);
 		const args = built.args;
@@ -946,7 +1009,7 @@ class CliSession {
 			fields.systemPromptSnapshot = false;
 		}
 		const ack = await transport.control("initialize", fields);
-		if (ack === true) { this.everStarted = true; return undefined; }
+		if (ack === true) { this.everStarted = true; this.claudeId = sessionId; return undefined; }
 		// Tear down before reading stderr: the child's last words arrive before
 		// its close, and teardown is what waits for that close.
 		await this.teardown("Claude failed the initialize handshake");
@@ -1268,6 +1331,8 @@ interface TurnPlan {
 	users: Message[];
 	/** No child has ever run for this pi session; the fold is first contact. */
 	first?: boolean;
+	/** Resume (and fork) this CLI session instead of folding: `users` is all it has not heard. */
+	resume?: string;
 }
 
 /** pi's tool result as an MCP `CallToolResult`. */
@@ -1298,10 +1363,18 @@ export class SessionBridge implements ClaudeSessionBridge {
 	private readonly cwds = new Map<string, string>();
 	private readonly options: SessionBridgeOptions;
 	private readonly limits: SessionBridgeLimits;
+	/** This process's fork seed (`CLAUDE_FORK_ENV`), for its first conversation's child only. */
+	private forkSeed?: ClaudeForkPoint;
 
 	constructor(options: SessionBridgeOptions = {}) {
 		this.options = options;
 		this.limits = { ...LIMITS, ...options.limits };
+		this.forkSeed = options.forkFrom ?? decodeForkPoint((options.env?.[CLAUDE_FORK_ENV] ?? process.env[CLAUDE_FORK_ENV]));
+	}
+
+	/** See CliSession.forkPoint; undefined for a session with no child here. */
+	forkPoint(piSessionId: string): ClaudeForkPoint | undefined {
+		return this.sessions.get(piSessionId)?.forkPoint();
 	}
 
 	/**
@@ -1331,7 +1404,11 @@ export class SessionBridge implements ClaudeSessionBridge {
 		// under a fresh uuid, so their child would otherwise idle until reaped.
 		const oneShot = !session && request.tools.length === 0 && !this.cwds.has(key);
 		if (!session) {
-			session = new CliSession(key, this.options, this.cwdFor(key));
+			// A pi child forked from a Claude session (explain) gets the seed for its conversation;
+			// one-shot requests (compaction, branch summaries) never do.
+			const seed = oneShot ? undefined : this.forkSeed;
+			if (seed) this.forkSeed = undefined;
+			session = new CliSession(key, this.options, this.cwdFor(key), seed);
 			this.sessions.set(key, session);
 		}
 		this.reapIdle(key);
@@ -1397,7 +1474,7 @@ export class SessionBridge implements ClaudeSessionBridge {
  * children stayed running. The registry therefore lives on `globalThis`, and
  * the exit hooks are installed exactly once beside it.
  */
-const REGISTRY = Symbol.for("sova.claude-code.session-bridge");
+const REGISTRY = BRIDGE_REGISTRY;
 
 interface Registry { bridge: SessionBridge; hooked: boolean }
 

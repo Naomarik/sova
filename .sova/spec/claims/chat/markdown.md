@@ -57,7 +57,7 @@ dependency needs approval under CLAUDE.md):
 
 ## §chat.markdown/code-blocks — Code blocks
 
-Wrap every fenced block like this:
+Wrap every fenced block like this, except a `vis <kind>` fence, which is a drawing (§chat.markdown/visuals) and falls back to this block only when it can't be drawn:
 
 ```html
 <div class="md-code">
@@ -141,7 +141,7 @@ Don't import a highlight.js stylesheet. These rules are the whole theme, and the
 - **Re-rendering.** Re-parse the whole message's markdown per animation frame, not per delta.
   Swap the body's content in one go.
 - **Open fences.** An **unclosed fence** mid-stream renders as an open code block, with its head
-  and label as usual. Most GFM renderers already treat the rest of the text as code. Copy Code
+  and label as usual (an open `vis` fence is a fixed-height "Drawing…" box instead: §chat.markdown/visuals). Most GFM renderers already treat the rest of the text as code. Copy Code
   is present but copies what's there so far.
 - **Highlighting.** Highlight a block only once its fence closes, or when the turn ends. While
   it's open it shows as plain escaped mono. Highlighting changes only color and weight, never
@@ -151,6 +151,147 @@ Don't import a highlight.js stylesheet. These rules are the whole theme, and the
   reservation. Auto-follow (§chat/transcript) keeps the bottom pinned. When you're not following, the browser's
   scroll anchoring (`overflow-anchor`, on by default) holds your place.
 - **Author.** The `.live-dot` stays in the author row as in §chat/transcript, and there's no cursor glyph.
+
+## §chat.markdown/visuals — Inline visuals (`vis` fences)
+
+A fenced block whose info string is `vis <kind>` is a **drawing**, not code. Sova draws it with its
+own Solid/SVG code (`src/vis/`): no diagram or chart dependency, and **model HTML or SVG never
+enters the app's DOM**. Assistant-text rows only (§chat/markdown's scope).
+
+- **Kinds.** One registry (`src/vis/registry.ts`) lists every fence word; nothing else is drawn:
+
+  | Fence | Draws | `mark` targets |
+  |---|---|---|
+  | `vis flow` | boxes and arrows, laid out by rank | node id or label |
+  | `vis state` | a state machine (flow's layout, round nodes, `start`/`end` dots) | state id |
+  | `vis sequence` | actors, lifelines and numbered messages, with step-through | actor id, message number |
+  | `vis layers` | a stack of labelled layers | layer label |
+  | `vis tree` | an indented hierarchy | item name |
+  | `vis flow` sections | side-by-side panels (§chat.markdown/vis-flow-sections) | node id or label |
+  | `vis chart` | bar (grouped via `series:`, stacked), line, scatter; linear or log axis; parts (§chat.markdown/vis-parts) | row label |
+  | `vis timeline` | dated events in order | the row's date or label |
+  | `vis steps` | scenario chains with a status per row (§chat.markdown/vis-steps) | row label |
+  | `vis matrix` | a comparison grid (yes / no / partial / text cells) | row label |
+  | `vis code` | an annotated snippet: highlighted, numbered, marked lines with notes | line number or range |
+  | `vis html`, `vis svg` | free-form, in a sandboxed frame (below) | — |
+
+  An unknown kind word is an error (below). The grammar of each kind is taught to the model by the
+  `vis` minor mode (`pi-config/extensions/mode/vis-mode.md`); its examples are parsed by the
+  renderer's own parser in tests, so the guide and the renderer can't drift.
+- **The figure.** Every kind sits in one shell (`Visual.tsx`): a head with the `title:` (wrapping,
+  never ellipsized) or, without one, the kind's name as an eyebrow; a **Source** toggle
+  (`aria-pressed`, shows the fence as written, without ligatures) and **Copy** (copies the whole
+  fence, announced like Copy Code); the drawing; the numbered notes; the `caption:`. Backticks in a
+  caption or note render as inline code; everything else is text.
+- **Emphasis.** `mark <target> [tone] ["note"]`, at most 8 per block, notes ≤ 120 characters,
+  works in every kind. A marked item takes its tone (default accent), a heavier outline or a tinted
+  row, and the note's number as a badge; the notes are listed under the drawing in writing order.
+  A target that names nothing, or an item marked twice, is an error. Colour is never the only
+  signal: emphasis adds weight and a number, chart series pair hue with marker and dash, matrix
+  marks carry a word.
+- **Step-through** (sequence). The drawing starts complete; nothing plays by itself.
+  **Step Through** starts at the first item; Previous / Next walk it ("Step 3 of 8", "3/8" at phone
+  width, announced politely); later items are dimmed; **Show All** ends the walk.
+- **Errors.** A closed fence that doesn't parse renders as the ordinary code block of
+  §chat.markdown/code-blocks, its head reading `vis <kind>`, plain (not highlighted), followed by one
+  muted line: "Couldn't draw this vis <kind> block (line N: <what to write instead>), so here is its
+  source." Error text and that source never use ligatures. The model sees the same message, so it
+  doubles as teaching.
+- **Streaming.** An open `vis` fence is never drawn half-way: it holds a 200px dashed box reading
+  "Drawing <kind>… N lines", with a pulsing dot (static under reduced motion). The drawing replaces
+  it when the fence closes. A re-render keeps an unchanged drawing's DOM (and a frame's state); a
+  drawing's identity is a hash of its fence.
+- **No layout shift.** A drawing reserves its height before it draws: each kind estimates it from
+  its parsed spec at the body's width, and the figure holds a blank box of that height until the
+  View mounts. All kinds' Views load together, the first time any visual appears. A frame starts
+  at the last height it reported for the same source and width (kept for the tab), else a default.
+  A drawing is never the scroll anchor, so one growing above the reader leaves their text in place.
+- **Size and phones.** SVG kinds draw at their natural size, shrink to 80 % to fit the pane, then
+  scroll sideways inside a focusable region; the pane never widens (390 px included). Kinds that
+  can re-lay out do so first (flow turns `dir: right` downwards; bars turn horizontal when labels
+  can't fit). At a container width ≤ 420 px the head's buttons are icon-only.
+- **Tokens and theme.** Tokens only (`src/design/tokens.css`), through three tone variables
+  (`--vis-fill`, `--vis-stroke`, `--vis-ink`) for `accent ok warn error info muted`. SVG is styled
+  by classes, so a theme switch needs no re-render.
+- **Free-form (`vis html`, `vis svg`).** The fallback when no kind fits:
+  - at most **8 KB** of source; over that, the error fallback;
+  - an `<iframe sandbox="allow-scripts">` with `srcdoc` (**never** `allow-same-origin`), a CSP that
+    blocks all network access, and the app's tokens injected (re-sent on theme change);
+  - **no autoplay**: a motion gate runs before the model's code and holds CSS animations, SMIL,
+    `requestAnimationFrame` and `setInterval` until the first pointer or key event in the frame
+    (`setTimeout` loops and script-made SVG escape it; the guide asks for a Play/Step button);
+  - height: only a clamped number posted by the frame is trusted;
+  - a script error shows one muted line under the frame.
+- **The `vis` minor mode** (§chat/mode-menu) puts the guide in the system prompt, or in a hidden note
+  when it is turned on mid-session (§chat.mode-menu/minor-toggle-keeps-prompt): when to draw (at most
+  1–2 per reply, small, captioned, next to prose that says what to notice), the shared rules, and
+  one section per kind. A kind flagged `stub` in the registry is never taught.
+
+## §chat.markdown/vis-parts — `vis chart` `type: parts`: a whole and its parts
+
+One bar split into the chart's rows, in order, for a part-of-whole question (a request against the
+context window, a share of a limit). HTML, drawn by `src/vis/kinds/chart/Parts.tsx`.
+
+- **Syntax.** `type: parts`, then one row per part: `label value [tone]`. Optional `unit:` and
+  `of: <capacity>`. `mark` a part by its label.
+- **Head.** Number first, as the design system's Meter: with `of:`, "89.3k of 200k tokens ·
+  45%" (the total in semibold mono, the rest muted); without, "908 KB in total".
+- **Bar.** 20px, the parts in order, 1px apart, each as long as its share; a part with a value above 0
+  keeps at least 3px, so a tiny part stays visible. With `of:` the bar is a track (1px strong border,
+  sunken ground) and the unused rest is its empty part. The bar is `aria-hidden`: the legend carries
+  the numbers. A marked part gets an ink outline inside its own box.
+- **Legend.** One row per part under the bar: swatch, label, value, share, the numbers right-aligned
+  in mono columns; with `of:` a last "Free" row (dashed swatch, muted label) for the unused rest.
+  Shares are of the capacity, else of the total: `<1%` under 1, one decimal under 10, else whole.
+  Once the whole reaches 10k every value from 1000 reads in k (9k beside 14k).
+- **Colour.** A part's tone colours it; parts without one take the chart's series colours in turn
+  (accent, warn, success, error, info, muted). A mark tints the part's legend row, adds the note's
+  number there and outlines the segment; it never recolours the part.
+- **Errors.** A negative part, a part without a number, parts adding up to 0, parts adding up to more
+  than `of:` (at the `of:` line), `of:` on any other type or not a number above 0, `series:`,
+  `scale: log`, `x:`/`y:`, more than 12 parts.
+- **Height.** Estimated from the same metrics before it draws (§chat.markdown/visuals, No layout shift).
+
+## §chat.markdown/vis-flow-sections — `vis flow` sections: panels side by side
+
+A `== label ==` line in a `vis flow` or `vis state` starts a **panel**; the nodes and edges after it
+belong to that panel. For two small graphs to compare (before/after, A vs B).
+
+- **Layout.** Each panel is laid out on its own by flow's layout. The panels sit side by side,
+  top-aligned, with a 1px rule between them, when all of them fit the pane at natural size;
+  otherwise they stack, a rule between them, each re-fitted to the width as a lone flow is (a phone
+  always stacks them). Each panel has its label above it as a heading (caption size, semibold).
+- **Ids** stay unique across the fence. A node belongs to the panel that declares it, else the one
+  that first uses it. `mark` targets any node in any panel.
+- **Errors.** An edge between panels ("crosses from section A to B: sections are separate drawings"),
+  a node declared in a panel after another panel used it, nodes or edges before the first section
+  line, an empty or unlabelled section, a repeated section label, more than 4 sections.
+- **No regression.** A flow without `==` lines parses and draws exactly as before (no `sections`).
+- Frames or clusters inside one connected graph are not part of this.
+- **Chain tones** (any `vis flow` or `vis state`, panels or not). A tone word right after an edge's
+  target (after its optional quoted edge label) tones that node: `a -> miss "dead" error`; a node
+  given two different tones (by a `node` line or another chain) is an error naming both.
+
+## §chat.markdown/vis-steps — `vis steps`: scenario chains
+
+A kind for scenarios or journeys as chains, each with a status. HTML, `src/vis/kinds/steps/`.
+
+- **Syntax.** One row per line: `"Label" [tone] | step -> step -> …`. The label is a "quoted label"
+  or bare words; a step is a "quoted label" or bare words, and steps join with `->` only.
+  `== lane ==` lines group the rows under a heading. No ids. `mark` a row by its label.
+- **Row.** A status mark, then the label (semibold), then the steps as chips (sunken, 1px border)
+  each after the first led by an arrow; the chips wrap with the pane, an arrow staying with the
+  chip it leads to. Beside a 144px label column; at a figure width of 420px or less the label sits
+  above its chain. Rows are bordered bands 4px apart; a marked row takes the shared emphasis tint
+  and the note's number before its label.
+- **Status.** `ok`, `warn`, `error` and `info` rows show their tone's icon (check, alert, x, info) in
+  the tone's colour, so status never rests on hue alone; `accent` a filled dot, `muted` a dotted ring
+  (and a muted label), no tone an empty ring.
+- **Lane heads.** Caption size, semibold, 8px more space above all but the first.
+- **Errors.** A row without `|`, an empty label or step, a step mixing a quoted label and bare
+  words, an arrow other than `->`, an empty or unlabelled lane, more than 10 steps in a row, 16 rows
+  or 6 lanes.
+- **Height.** Estimated from steps.css' fixed metrics before it draws.
 
 ## §chat.markdown/accessibility — Accessibility
 

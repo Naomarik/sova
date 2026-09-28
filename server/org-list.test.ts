@@ -46,7 +46,7 @@ describe("GET /api/orgs: needsYou and lastActivityAt", async () => {
 
   test("a fresh org waits on nothing and was last active when created (or its first roster write)", async () => {
     const q = (await list()).find((o) => o.id === quiet.id)!;
-    assert.deepEqual(q.needsYou, { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0 });
+    assert.deepEqual(q.needsYou, { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0, ownerLink: 0 });
     assert.ok(q.lastActivityAt && Date.parse(q.lastActivityAt) >= Date.parse(quiet.createdAt));
   });
 
@@ -57,9 +57,9 @@ describe("GET /api/orgs: needsYou and lastActivityAt", async () => {
     orgs.addPerson(busy.id, { name: "Bob Ref", status: "proposed", role: "Accountant", contact: { phone: "+1 555 010 0199" }, referral: { why: "Does the books", referredBy: "operator" } });
     const all = await list();
     const b = all.find((o) => o.id === busy.id)!;
-    assert.deepEqual(b.needsYou, { replies: 1, links: 1, proposals: 1, conflicts: 0, stakeholders: 0 });
+    assert.deepEqual(b.needsYou, { replies: 1, links: 1, proposals: 1, conflicts: 0, stakeholders: 0, ownerLink: 0 });
     assert.equal(b.openBatons, 3);
-    assert.deepEqual(all.find((o) => o.id === quiet.id)!.needsYou, { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0 }, "another org's items stay there");
+    assert.deepEqual(all.find((o) => o.id === quiet.id)!.needsYou, { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0, ownerLink: 0 }, "another org's items stay there");
   });
 
   test("a closed session no longer counts, and activity moves forward", async () => {
@@ -81,7 +81,7 @@ describe("GET /api/orgs: needsYou and lastActivityAt", async () => {
 
   test("GET /api/orgs/:id: needsYou, each baton's waiting, projectConflicts", async () => {
     const d = (await (await app.request(`/api/orgs/${busy.id}`)).json()) as OrgDetail;
-    assert.deepEqual(d.needsYou, { replies: 0, links: 1, proposals: 1, conflicts: 1, stakeholders: 0 });
+    assert.deepEqual(d.needsYou, { replies: 0, links: 1, proposals: 1, conflicts: 1, stakeholders: 0, ownerLink: 0 });
     const by = Object.fromEntries(d.batons.map((r) => [r.publicTitle, r.waiting]));
     assert.deepEqual(by, { "No link": "link", Linked: undefined, Mine: undefined });
     assert.deepEqual(d.projectConflicts, { [project.id]: 1 });

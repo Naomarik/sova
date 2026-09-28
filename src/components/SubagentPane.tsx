@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import type { LinkedAgentInfo } from "../../shared/mesh-links";
 import type { ContextInfo, TeamInfo, TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
-import { claudeWatchUrl, wsUrl } from "../lib/api";
+import { claudeWatchUrl, fetchHiddenWorkers, wsUrl } from "../lib/api";
 import { linkGroupId, linkGroups, linkHostLabel, linkReach, threadHost, type LinkReach } from "../lib/links";
 import { chatLinks } from "../lib/links-live";
 import { hostOf, meshState, sessionHrefOn } from "../lib/mesh";
@@ -79,7 +79,48 @@ export function SubagentPane(props: {
     error: () => props.insight.error,
     pending: () => props.insight.pending,
   };
-  const workers = createMemo(() => sortWorkers(props.chatWorkers ?? insight.data()?.workers ?? []));
+  const listed = createMemo(() => sortWorkers(props.chatWorkers ?? insight.data()?.workers ?? []));
+  /** The workers the live record couldn't list (it carries at most 40), fetched on "Show {n}
+      More" and never on a poll: for this session, and the record's count when they came. */
+  const [more, setMore] = createSignal<{ path: string; counted: number; workers: WorkerInfo[] } | null>(null);
+  const [moreLoading, setMoreLoading] = createSignal(false);
+  const [moreError, setMoreError] = createSignal<string | null>(null);
+  /** The listed rows, then the fetched ones the record still doesn't list, oldest last. */
+  const workers = createMemo(() => {
+    const rows = listed();
+    const got = more();
+    if (!got || got.path !== props.path) return rows;
+    const ids = new Set(rows.map((w) => w.id));
+    const extra = got.workers.filter((w) => !ids.has(w.id));
+    return extra.length > 0 ? [...rows, ...extra] : rows;
+  });
+  /** How many workers the record counts, when that is more than the list shows; null otherwise.
+      After Show More, only a count that grew since (a new worker) offers it again. */
+  const counted = createMemo(() => {
+    const n = insight.data()?.workerTotal;
+    if (n === undefined || n <= workers().length) return null;
+    const got = more();
+    return got && got.path === props.path && n <= got.counted ? null : n;
+  });
+  const showMore = async () => {
+    const path = props.path;
+    const n = insight.data()?.workerTotal ?? 0;
+    setMoreLoading(true);
+    setMoreError(null);
+    try {
+      const res = await fetchHiddenWorkers(path);
+      if (path !== props.path) return;
+      const shown = new Set(workers().map((w) => w.id));
+      setMore({ path, counted: n, workers: res.workers });
+      // The button goes with the click: focus moves to the first row it added.
+      const first = res.workers.find((w) => !shown.has(w.id));
+      if (first) queueMicrotask(() => list?.querySelector<HTMLElement>(`.subagent-row[data-worker="${CSS.escape(first.id)}"]`)?.focus());
+    } catch (e) {
+      if (path === props.path) setMoreError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMoreLoading(false);
+    }
+  };
   /** Linked members on other hosts (§mesh.links/agents-pane): the chat socket's `links` frames
       while this session is an open chat here, else the polled insight. Only the Overseer's pane
       holds local members (`self`): it lists every link this host knows, each with all of them. */
@@ -220,7 +261,7 @@ export function SubagentPane(props: {
   const row = (id: string) => (
     <Show when={byId().get(id)}>
       {(w) => (
-        <button type="button" class="subagent-row" aria-current={props.selected === id ? "true" : undefined} onClick={() => open(id)}>
+        <button type="button" class="subagent-row" data-worker={id} aria-current={props.selected === id ? "true" : undefined} onClick={() => open(id)}>
           <span class="subagent-row-name" title={label(w())}>
             <span class="subagent-row-label">{label(w())}</span>
             <Show when={dutyOf(w())}>
@@ -300,6 +341,19 @@ export function SubagentPane(props: {
             </Show>
           )}
         </For>
+        {/* The live record lists at most 40 workers: the rest are one click away, read then. */}
+        <Show when={counted()}>
+          {(n) => (
+            <li class="subagents-more">
+              <p class="text-caption">
+                {workers().length} of {n()} shown
+              </p>
+              <button type="button" class="button subagents-more-button" disabled={moreLoading()} title={moreError() ?? undefined} onClick={showMore}>
+                {moreLoading() ? "Loading…" : `Show ${n() - workers().length} More`}
+              </button>
+            </li>
+          )}
+        </Show>
         {/* After the teams and subagents: members of this session's links on other hosts. The
             Overseer's pane has one section per link on this host, local members included. */}
         <For each={linkSections().map((g) => g.linkId)}>
@@ -877,12 +931,10 @@ function WorkerTranscript(props: {
           </Show>
         </div>
       </section>
-      <Show when={away() !== null}>
-        <button type="button" class="button jump-latest subagents-jump" onClick={resume}>
-          <Icon name="chevron-down" small />
-          {newCount() > 0 ? `Jump to Latest · ${newCount()} new` : "Jump to Latest"}
-        </button>
-      </Show>
+      <button type="button" class="button jump-latest subagents-jump" data-shown={away() !== null ? "" : undefined} onClick={resume}>
+        <Icon name="chevron-down" small />
+        {newCount() > 0 ? `Jump to Latest · ${newCount()} new` : "Jump to Latest"}
+      </button>
     </Show>
   );
 }

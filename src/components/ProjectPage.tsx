@@ -1,21 +1,38 @@
-import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
-import type { Conflict, DecisionRow, DecisionsInfo, PromoteResult } from "../../shared/decisions";
+import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { OWNER_AREA_NONE, type Conflict, type DecisionRow, type DecisionsInfo, type PromoteResult } from "../../shared/decisions";
 import type { OrgDetail, OrgProject } from "../../shared/orgs";
-import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, redraftProject, resolveConflict, routeConflict, setProjectStakeholder, setSpecFrozen } from "../lib/api";
-import { alsoCarriesLine, areaGroups, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
+import {
+  ApiError,
+  archiveOrgProject,
+  getDecisions,
+  getOrg,
+  promoteDecisions,
+  reconcileProject,
+  redraftProject,
+  resolveConflict,
+  routeConflict,
+  setOwnerArea,
+  settleSpecText,
+  setProjectStakeholder,
+  setSpecFrozen,
+  unarchiveOrgProject,
+} from "../lib/api";
+import { alsoCarriesLine, areaGroups, BUILD_CHIP, builtLine, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
 import { promotionCommitLine } from "../lib/coding-worktrees";
 import { relativeTime } from "../lib/format";
-import { orgTabHref } from "../lib/orgs-route";
+import { hostLabel, orgHostOf } from "../lib/mesh";
+import { orgSessionHref, orgTabHref } from "../lib/orgs-route";
 import { stakeholderView } from "../lib/stakeholder";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
+import { OwnerProjectCard } from "./OwnerProjectCard";
+import { ProjectCostCard } from "./ProjectCostCard";
 import { ProjectOverseerPanel } from "./ProjectOverseerPanel";
 import { Banner, Chip } from "./ui";
 import "../orgs.css";
 import "../projects.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
-const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
 const RUNNING_POLL_MS = 3000;
 
 /**
@@ -36,6 +53,8 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
   // The overseer acts on the same data (it reconciles and promotes): read it while it works, and
   // once more when its run ends, so what it did shows without a refresh.
   const [overseerBusy, setOverseerBusy] = createSignal(false);
+  // Refresh Project recounts the cost too.
+  const [costTick, setCostTick] = createSignal(0);
   const running = createMemo(() => !!info()?.running || overseerBusy());
   createEffect(
     on(running, (r, was) => {
@@ -71,9 +90,48 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
     }
   };
 
+  // Archive Project (§app.organizations/archive): a confirm under the head, the server's refusal under it.
+  const [confirmArchive, setConfirmArchive] = createSignal(false);
+  const [archiveError, setArchiveError] = createSignal<string | null>(null);
+  const [archiving, setArchiving] = createSignal(false);
+  const archived = () => project()?.archived ?? null;
+  const setArchived = async (on: boolean) => {
+    const p = project();
+    if (!p || archiving()) return;
+    setArchiving(true);
+    try {
+      mutateOrg(await (on ? archiveOrgProject(props.orgId, p.id) : unarchiveOrgProject(props.orgId, p.id)));
+      setConfirmArchive(false);
+      setArchiveError(null);
+      const done = on ? `${p.name} archived.` : `${p.name} is back.`;
+      toast(done);
+      announce(done);
+    } catch (err) {
+      setArchiveError(errText(err));
+    } finally {
+      setArchiving(false);
+    }
+  };
+
   return (
     <InsightsPage
       title={project()?.name ?? "Project"}
+      titleTip
+      actions={
+        <Show when={project() && !archived()}>
+          <button
+            type="button"
+            class="button button-destructive"
+            aria-expanded={confirmArchive()}
+            onClick={() => {
+              setConfirmArchive(!confirmArchive());
+              setArchiveError(null);
+            }}
+          >
+            Archive Project
+          </button>
+        </Show>
+      }
       meta={
         <Show when={org()}>
           {(o) => (
@@ -95,13 +153,58 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       onRefresh={() => {
         void refetch();
         void refetchOrg();
+        setCostTick((n) => n + 1);
       }}
       error={error() ?? (info.error ? errText(info.error) : org.error ? errText(org.error) : null)}
       errorTitle="Couldn't update this project."
       busy={info.loading && !info()}
       titleRef={props.titleRef}
     >
-      <Show when={org()}>{(o) => <ProjectOverseerPanel org={o()} projectId={props.projectId} onBusy={setOverseerBusy} />}</Show>
+      <Show when={confirmArchive() && !archived() ? project() : null}>
+        {(p) => (
+          <div class="project-archive-confirm">
+            <Banner
+              tone="warn"
+              title={`${p().name} leaves the Projects list and its overseer stops looking. Nothing is deleted; Unarchive brings it back.`}
+              action={
+                <div class="button-row">
+                  <button type="button" class="button button-sm button-destructive" aria-disabled={archiving() ? "true" : undefined} onClick={() => void setArchived(true)}>
+                    Archive Project
+                  </button>
+                  <button type="button" class="button button-sm button-ghost" onClick={() => setConfirmArchive(false)}>
+                    Cancel
+                  </button>
+                </div>
+              }
+            />
+            <Show when={archiveError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+          </div>
+        )}
+      </Show>
+      <Show when={archived() ? project() : null}>
+        {(p) => (
+          <div class="project-archive-confirm">
+            <Banner
+              tone="info"
+              title={`${p().name} was archived${p().archived?.via === "overseer" ? " by you, via the Overseer" : ""} ${relativeTime(p().archived!.at)}. Its overseer is paused and nothing new starts here. Nothing was deleted.`}
+              action={
+                <button type="button" class="button button-sm" aria-disabled={archiving() ? "true" : undefined} onClick={() => void setArchived(false)}>
+                  Unarchive
+                </button>
+              }
+            />
+            <Show when={archiveError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+          </div>
+        )}
+      </Show>
+      <Show when={org()}>{(o) => <ProjectOverseerPanel org={o()} projectId={props.projectId} onBusy={setOverseerBusy} archived={!!archived()} />}</Show>
+      <Show when={`${props.orgId}/${props.projectId}`} keyed>
+        <ProjectCostCard orgId={props.orgId} projectId={props.projectId} tick={costTick()} />
+      </Show>
+      {/* Only while the org has an owner (§app.owner-page/controls). */}
+      <Show when={org()?.ownerPage?.person && project()}>
+        <OwnerProjectCard org={org()!} project={project()!} onOrg={mutateOrg} />
+      </Show>
       <Show when={info()}>
         {(i) => (
           <>
@@ -202,23 +305,24 @@ function Stakeholder(props: { org: OrgDetail; project: OrgProject; onSet(id: str
         <span class="field-hint" id="project-stakeholder-hint">
           Decides every area of this project that no one on the roster decides by name.
         </span>
+        {/* Read through l() each time: a re-pick changes the latest line in place (the Show stays shown). */}
         <Show when={v().latest}>
-          {(l) => {
-            const x = l();
-            return (
-              <span class="field-hint">
-                {x.why === "left" ? (
+          {(l) => (
+            <span class="field-hint">
+              {(() => {
+                const x = l();
+                return x.why === "left" ? (
                   <>
                     Cleared <time title={x.at}>{relativeTime(x.at)}</time>: {x.name} left the organization.
                   </>
                 ) : (
                   <>
-                    Set by you <time title={x.at}>{relativeTime(x.at)}</time>.
+                    Set by you{x.via === "overseer" ? ", via the Overseer" : ""} <time title={x.at}>{relativeTime(x.at)}</time>.
                   </>
-                )}
-              </span>
-            );
-          }}
+                );
+              })()}
+            </span>
+          )}
         </Show>
         <Show when={err()}>{(e) => <span class="field-error">{e()}</span>}</Show>
       </label>
@@ -276,6 +380,7 @@ function SpecCard(props: CardProps & { onSpec(spec: DecisionsInfo["spec"]): void
       <p class="orgs-line project-spec-line">
         <Show when={s().exists} fallback="No spec in this project yet. The first promotion starts one.">
           {s().promoted} promoted · {s().drafted} in the draft
+          {builtLine(s())}
           <Show when={s().draft}>
             {(d) => (
               <>
@@ -377,8 +482,8 @@ function ConflictItem(props: CardProps & { org: OrgDetail | undefined; conflict:
         <Chip tone={c().state === "open" ? "warn" : "success"}>{c().state === "open" ? "Open" : "Resolved"}</Chip>
       </div>
       <div class="project-sides">
-        <Side label="First" row={sides().a} kept={c().outcome === "a" || c().outcome === "both"} />
-        <Side label="Second" row={sides().b} kept={c().outcome === "b" || c().outcome === "both"} />
+        <Side orgId={props.orgId} label="First" row={sides().a} kept={c().outcome === "a" || c().outcome === "both"} />
+        <Side orgId={props.orgId} label="Second" row={sides().b} kept={c().outcome === "b" || c().outcome === "both"} />
       </div>
       <p class="orgs-line project-muted">
         <span class="orgs-mono" title="How likely the two contradict, from the decision model.">
@@ -390,7 +495,7 @@ function ConflictItem(props: CardProps & { org: OrgDetail | undefined; conflict:
           {(path) => (
             <>
               {" · "}
-              <a href={sessionHref(path())}>Open Its Session</a>
+              <a href={orgSessionHref(props.orgId, path())}>Open Its Session</a>
             </>
           )}
         </Show>
@@ -462,7 +567,7 @@ function ConflictItem(props: CardProps & { org: OrgDetail | undefined; conflict:
   );
 }
 
-function Side(props: { label: string; row: DecisionRow | null; kept: boolean }) {
+function Side(props: { orgId: string; label: string; row: DecisionRow | null; kept: boolean }) {
   return (
     <div class="project-side" classList={{ "project-side-kept": props.kept }}>
       <span class="project-side-label">
@@ -470,31 +575,108 @@ function Side(props: { label: string; row: DecisionRow | null; kept: boolean }) 
         {props.kept ? " · kept" : ""}
       </span>
       <Show when={props.row} fallback={<p class="orgs-empty">This decision is no longer in the index.</p>}>
-        {(r) => <Provenance row={r()} />}
+        {(r) => <Provenance orgId={props.orgId} row={r()} />}
       </Show>
     </div>
   );
 }
 
 /** A decision in the words it was recorded with: the statement, the quote, who, when, where. */
-function Provenance(props: { row: DecisionRow }) {
+function Provenance(props: { orgId: string; row: DecisionRow }) {
   const r = () => props.row;
+  const host = () => orgHostOf(props.orgId);
   return (
     <>
       <p class="project-statement">{r().statement}</p>
       <blockquote class="project-quote">{r().quote}</blockquote>
       <p class="project-by">
         {r().name} · <time title={r().at}>{relativeTime(r().at)}</time>
-        <Show when={r().sessionPath} fallback={<span title="The session isn't on this host."> · session elsewhere</span>}>
+        <Show when={r().sessionPath} fallback={<span title={`The session isn't on ${host() ? hostLabel(host()!) : "this host"}.`}> · session elsewhere</span>}>
           {(p) => (
             <>
               {" · "}
-              <a href={sessionHref(p())}>Open Session</a>
+              <a href={orgSessionHref(undefined, p())}>Open Session</a>
             </>
           )}
         </Show>
       </p>
     </>
+  );
+}
+
+/** A promoted decision whose record's prose was edited in the spec (§app.requirements/decisions):
+    it stays promoted; the operator keeps the spec's words or promotes the person's again. */
+function EditedInSpec(props: CardProps & { row: DecisionRow }) {
+  const run = (action: "keep" | "restore") =>
+    props.act("spec-text", () => settleSpecText(props.orgId, props.projectId, props.row.id, action), action === "keep" ? "Kept the spec's words." : `Restored ${props.row.name}'s words.`);
+  return (
+    <div class="project-edited">
+      <p class="field-hint">Edited in the spec since it was promoted.</p>
+      <div class="cluster">
+        <button type="button" class="button button-sm button-ghost" aria-disabled={props.busy ? "true" : undefined} onClick={() => void run("keep")}>
+          Keep Spec's Words
+        </button>
+        <button type="button" class="button button-sm button-ghost" aria-disabled={props.busy ? "true" : undefined} onClick={() => void run("restore")}>
+          Restore Their Words
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Who decides a decision (§app.requirements/owner-area): the operator changes it here, and the
+    server re-routes a conflict it is in. */
+function OwnerAreaField(props: CardProps & { row: DecisionRow }) {
+  const id = createUniqueId();
+  let select: HTMLSelectElement | undefined;
+  const current = () => props.row.ownerArea ?? "";
+  // A roster area removed since it was picked still shows as picked.
+  const choices = createMemo(() => {
+    const all = props.info.ownerAreas;
+    const cur = props.row.ownerArea;
+    return cur && cur !== OWNER_AREA_NONE && !all.includes(cur) ? [...all, cur] : all;
+  });
+  const last = () => props.row.ownerAreaHistory?.at(-1);
+  const set = async (value: string) => {
+    const label = value === OWNER_AREA_NONE ? "None" : value;
+    const ok = await props.act("owner-area", () => setOwnerArea(props.orgId, props.projectId, props.row.id, value), `Owner area set to ${label}.`);
+    if (!ok && select) select.value = current();
+  };
+  return (
+    <div class="field project-owner-area">
+      <label class="field-label" for={id}>
+        Owner area
+      </label>
+      <div class="select-wrap">
+        <select ref={select} id={id} class="select" disabled={!!props.busy} onChange={(e) => void set(e.currentTarget.value)}>
+          <Show when={!props.row.ownerArea}>
+            <option value="" selected disabled>
+              Not set
+            </option>
+          </Show>
+          <option value={OWNER_AREA_NONE} selected={props.row.ownerArea === OWNER_AREA_NONE}>
+            None
+          </option>
+          <For each={choices()}>
+            {(a) => (
+              <option value={a} selected={a === props.row.ownerArea}>
+                {a}
+              </option>
+            )}
+          </For>
+        </select>
+        <span class="select-caret" aria-hidden="true">
+          ▾
+        </span>
+      </div>
+      <Show when={last()}>
+        {(l) => (
+          <span class="field-hint">
+            Changed by {l().name} <time title={l().at}>{relativeTime(l().at)}</time>.
+          </span>
+        )}
+      </Show>
+    </div>
   );
 }
 
@@ -589,7 +771,7 @@ function DecisionsCard(props: CardProps) {
                         </label>
                       </Show>
                       <div class="project-decision-main">
-                        <Provenance row={d} />
+                        <Provenance orgId={props.orgId} row={d} />
                         <Show when={alsoCarriesLine(d, byId())}>{(line) => <p class="project-by">{line()}</p>}</Show>
                         <Show when={d.recordId}>
                           {(id) => <p class="orgs-mono project-muted">{id()}</p>}
@@ -599,12 +781,25 @@ function DecisionsCard(props: CardProps) {
                         <Chip tone={DECISION_STATE[d.state].tone} title={DECISION_STATE[d.state].hint}>
                           {DECISION_STATE[d.state].word}
                         </Chip>
+                        <Show when={d.state === "promoted" && d.build}>
+                          {(b) => (
+                            <Chip tone={BUILD_CHIP[b()].tone} title={BUILD_CHIP[b()].hint}>
+                              {BUILD_CHIP[b()].word}
+                            </Chip>
+                          )}
+                        </Show>
                         <Show when={outsideTheirArea(d)}>
-                          <Chip tone="warn" title={`${d.name} doesn't decide ${d.area}. Select All Ready leaves it out; tick it to promote it anyway.`}>
+                          <Chip tone="warn" title={`${d.name} doesn't decide ${d.ownerArea && d.ownerArea !== OWNER_AREA_NONE ? d.ownerArea : d.area}. Select All Ready leaves it out; tick it to promote it anyway.`}>
                             Outside their area
                           </Chip>
                         </Show>
                       </div>
+                      <Show when={d.state === "promoted" && d.editedInSpec}>
+                        <EditedInSpec {...props} row={d} />
+                      </Show>
+                      <Show when={d.state !== "superseded"}>
+                        <OwnerAreaField {...props} row={d} />
+                      </Show>
                     </li>
                   )}
                 </For>

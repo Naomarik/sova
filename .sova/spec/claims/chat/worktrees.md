@@ -115,6 +115,15 @@ target branch, resulting commit, commit count, lines added and removed, and whet
 fast-forward or a merge commit; a detected one also says "seen after the turn". Details Sova
 can't read render as the plain line.
 
+A tool merge's commit is the target's new tip, and its count and lines are the target's own change.
+For a merge seen after a turn, the commit is the first one on the target's first-parent history
+since the turn started that contains the branch: the branch tip itself when the target
+fast-forwarded through it, which is then shown as a fast-forward. Its count and lines are the
+branch's own commits and changes relative to the target at the turn's start, never the whole
+turn's. Branches that arrive together, such as several merged into an integration branch that is
+then merged into the target, each get their own card with their own numbers, and several may name
+the same commit.
+
 A merge this session did not make gets no card; the pane still shows the worktree as merged
 (§chat.worktrees/pane).
 

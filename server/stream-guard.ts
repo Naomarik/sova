@@ -45,7 +45,8 @@ const COMMON = { whitespaceRunChars: 8 * K, starvedMs: 750, starvedMinArgChars: 
 const CAPS: Record<"baton" | "overseer" | "project-overseer" | "chat", StreamCaps> = {
   baton: { ...COMMON, toolArgChars: 64 * K, outputChars: 256 * K, runWallMs: 10 * 60_000 },
   overseer: { ...COMMON, toolArgChars: 64 * K, outputChars: null, runWallMs: 10 * 60_000 },
-  "project-overseer": { ...COMMON, toolArgChars: 64 * K, outputChars: null, runWallMs: 10 * 60_000 },
+  // Its conversation lives in the org's workspace repo, cloned to every host: one reply can't grow past what reads back.
+  "project-overseer": { ...COMMON, toolArgChars: 64 * K, outputChars: K * K, runWallMs: 10 * 60_000 },
   chat: { ...COMMON, toolArgChars: K * K, outputChars: null, runWallMs: null },
 };
 

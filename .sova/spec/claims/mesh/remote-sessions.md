@@ -36,7 +36,10 @@ it on the right host. Paths stay each host's own.
 
 Everything a peer session's pane reads or changes comes from and goes to that session's host: its
 models (the ones that host can run, with its own keys, favorites and model policy), its modes and
-mode default, its folder index for file mentions, and its attachments and image previews. Settings →
+mode default, its folder index for file mentions, its attachments and image previews, and, for a
+hand-off session, its baton strip: Get Link, Turn Off Link, Take Back, Close Session, Hand On, an
+offer and its withdrawal, Extend, Retry Wrap-Up, an invitee's link, and approving or declining a
+person it proposed all go to that host (the session's id names it there). Settings →
 Models still edits only the host serving the page. With a Host chosen in New Session, the folder
 picker lists that host's folders.
 
@@ -53,3 +56,36 @@ host by name with its dot and, when it isn't answering, the word "down"; exactly
 It narrows together with the text filter, and the choice is remembered across reloads; a remembered
 host that is no longer known reads as `All hosts`. The menu ends with `Mesh details…`. With the
 mesh off, or only one host known, nothing is shown.
+
+## §mesh.remote-sessions/org-pages — An organization on a peer
+
+An organization attached on a peer has pages on every host's page, as its sessions do. The sidebar's
+Organizations region heads such an org with a link that carries the org's host
+(`#/orgs/<id>?host=<peer>`, the host of its sessions' rows), and so do the org page's own links: its
+tabs, its projects, the project overseer, its people and their pages
+(`#/orgs/<id>/projects/<pid>?host=<peer>`, `#/orgs/<id>/people/<pid>?host=<peer>`), so a reload
+or a shared link opens it on the right host. Every read and change such a page makes — the org, its
+people, projects, decisions, conflicts, the project overseer and its settings, ideas, to-dos and
+worktrees, the models its session pickers offer, starting a hand-off session, a person's links and
+preview, Commit Now and the remote — goes to that host through `/peer/<id>/api/…`, which answers
+exactly as it answers its own page. Where such a page names a host, it names that one: a project
+paused by an attach reads "Paused at L0 on <peer>" and "This organization was attached on <peer>
+…", the daily limits "Resets at midnight on <peer>.", and a decision whose session isn't there says
+it isn't on <peer>. A local org's addresses and
+words are unchanged. `#/orgs` still lists this host's orgs only.
+
+## §mesh.remote-sessions/never-cached — A peer's answers are never cached
+
+The page's service worker leaves everything under `/peer/` to the network, as it does `/api/` and
+`/ws`: a peer's API reads, its sockets and anything else there are neither answered from the
+worker's cache nor stored in it, so every read shows what the peer says now (a second New Link
+shows the new link, a strip re-read after an action shows its result). A browser whose worker
+stored peer answers under an earlier version drops that whole cache when the new worker activates.
+The share pages (`/h/`, `/i/`) are served only by the share listener, on its own origin, which this
+worker never controls.
+
+## §mesh.remote-sessions/head-host — A peer session's head names its host
+
+A peer session's head starts its meta line with the host, `on <peer> · <folder> · …`, titled "This
+session lives on <peer>". When the line is too narrow (a 390px phone), the folder gives way first:
+the host keeps its whole name unless that name alone is longer than half the line.

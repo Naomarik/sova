@@ -63,3 +63,27 @@ test("a remembered parent is read once, and only for the same org and person", a
   assert.equal(takeStartParent("org_1", "p_1"), "s1");
   assert.equal(takeStartParent("org_1", "p_1"), undefined, "cleared on read");
 });
+
+test("an org on a peer (§mesh.remote-sessions/org-pages): every href of it carries its host, and parses back; a local org's are unchanged", async () => {
+  const { notePeerOrgs, resetHosts } = await import("./mesh");
+  resetHosts();
+  notePeerOrgs("vps", ["org_far"]);
+  try {
+    assert.equal(orgHref("org_far"), "#/orgs/org_far?host=vps");
+    assert.equal(orgTabHref("org_far", "people"), "#/orgs/org_far/people?host=vps");
+    assert.equal(startForHref("org_far", "p_1"), "#/orgs/org_far/start/p_1?host=vps");
+    assert.equal(projectHref("org_far", "j1"), "#/orgs/org_far/projects/j1?host=vps");
+    assert.equal(projectOverseerHref("org_far", "j1"), "#/orgs/org_far/projects/j1/overseer?host=vps");
+    assert.equal(personHref("org_far", "p_1"), "#/orgs/org_far/people/p_1?host=vps");
+    assert.deepEqual(orgsRouteFromHash(orgHref("org_far")), { kind: "org", id: "org_far", host: "vps" });
+    assert.deepEqual(orgsRouteFromHash(orgTabHref("org_far", "workspace")), { kind: "org", id: "org_far", tab: "workspace", host: "vps" });
+    assert.deepEqual(orgsRouteFromHash(projectOverseerHref("org_far", "j1")), { kind: "overseer", id: "org_far", projectId: "j1", host: "vps" });
+    assert.deepEqual(orgsRouteFromHash(personHref("org_far", "p_1")), { kind: "person", id: "org_far", personId: "p_1", host: "vps" });
+    assert.deepEqual(orgsRouteFromHash("#/orgs/org_x/projects/j2?host=phone"), { kind: "project", id: "org_x", projectId: "j2", host: "phone" });
+    assert.equal(orgHref("org_here"), "#/orgs/org_here");
+    assert.equal(orgsRouteFromHash("#/orgs/org_x?host="), null);
+    assert.equal(orgsRouteFromHash("#/orgs?host=vps"), null);
+  } finally {
+    resetHosts();
+  }
+});

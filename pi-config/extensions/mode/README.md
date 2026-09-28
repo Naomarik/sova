@@ -50,11 +50,12 @@ edit" is a prompt-level rule the orchestrator checks.
 | `/mode normal` · `/mode delegate` | Set explicitly |
 | `/mode status` | Show this session's mode, the default for new sessions, the Delegate routing (and, in delegate, what each profile is actually using), the spec writer (and, with spec on, what it is actually using), strict flag, minor modes, state file |
 | `/mode default` | Save this session's mode, strict flag and minor modes as the default for new sessions (the only command here that writes `mode.json`) |
+| `/mode sync` | Change nothing and say nothing: keep this session's mode block in the prompt whoever starts the turn (see below). Sova runs it at every chat open |
 | `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while in delegate (off by default) |
 | `/mode align [on\|off]` | Toggle (or set) the `align` minor mode |
 | `/mode spec [on\|off]` | Toggle (or set) the `spec` minor mode |
-| `/align`, or `alt+a` | Open the read-only alignment-doc viewer (see below) |
-| `/align status` · `/align clear` · `/align export [path]` · `/align on\|off` | Summarize, clear, write the doc to a file (default `.pi/align.md`), or toggle align |
+| `/align`, or `alt+a` | Open the read-only alignments viewer (see below) |
+| `/align status` · `/align export [path]` · `/align on\|off` | List the alignments, write the open ones to a file (default `.pi/align.md`), or toggle align |
 | `pi --major delegate` | Start that launch in a mode (not persisted) |
 | `pi --minor align` | Start that launch with these minor modes on, comma-separated; `none` clears them (not persisted) |
 
@@ -73,7 +74,7 @@ thinking*; bare `/mode` opens the palette straight at it. It lists:
 - One row per minor mode (`align`, …) with a live `◉` on / `○` off marker.
   Enter toggles it **in place**; the palette stays open so several can be
   flipped in one visit. Esc goes back, Ctrl+P closes.
-- **align: open viewer**, which opens the alignment-doc overlay.
+- **align: open viewer**, which opens the alignments overlay.
 - **save as default**, the same as `/mode default`. Everything above it
   changes this session only; this row is the one that changes `mode.json`.
 
@@ -115,11 +116,12 @@ writer**).
 
 - **align** — before building anything non-trivial, the agent investigates
   (in delegate, through a non-editing **Planning & specs** worker — never the
-  cheaper Investigation profile, since this is design work; itself otherwise), replies
-  with its findings, proposed approach, and numbered open questions on
-  architecture, UX, scope and trade-offs, then stops and waits for
-  confirmation. Questions, explicit commands, pointed-at one-liners and
-  confirmations are exempt. Text in `minor.ts`.
+  cheaper Investigation profile, since this is design work; itself otherwise),
+  records an alignment with the `align` tool (findings, approach, rejected
+  alternatives, and questions with recommendations on architecture, UX, scope
+  and trade-offs), then stops and waits for the user's answers. Questions,
+  explicit commands, pointed-at one-liners and confirmations are exempt. Text
+  in `minor.ts`; see **Alignments**.
 - **spec** — every behavior change is spec'd: the agent scopes it from the
   project's `.sova/spec/` documentation, writes a claim for behavior no claim
   covers in a feature draft before coding, claims only the files the task
@@ -149,61 +151,86 @@ Like the major mode, the prompt is read per turn, so toggles apply from the
 next prompt. Unknown names hand-edited into `minorModes` are dropped on load.
 Toggle them from the palette's Mode category or with `/mode <minor> [on|off]`.
 
-### Alignment doc
+### Alignments
 
-While `align` is on, the agent is asked to put its alignment in a fixed
-markdown block that the extension captures at the end of every turn
-(`align.ts`), so the alignment accumulates into one inspectable document:
+While `align` is on, the agent records every alignment with one tool, `align`
+(`align-tool.ts`), which is in its loadout only while align is on. An
+alignment is a structured document, `al_N`, one per concern; several can be
+open at once. It holds a title, a one-line summary, findings (`fN`), approach
+steps (`aN`), rejected alternatives with why (`xN`) and questions (`qN`). A
+question has a topic, the ask, optional context and options (label and
+trade-off), a recommendation (choice and why) and, once answered, a decision
+(its text, `user` or `accepted-recommendation`, and when). Ids are never
+reused, so "q3" means one question for the document's life.
 
-```markdown
-## Alignment: <short title>
-### Findings
-### Approach
-### Open questions
-- [ ] **1. Topic:** Question — with a recommendation
-- [x] **2. Topic:** Settled question — the decision
-### Rejected
-- Alternative — why not
-### Status
-aligning | confirmed | implementing
-```
+One call applies a batch of ops to one document, atomically (one bad op fails
+the call, with the reason, and changes nothing). The schema has one branch per
+op, each with exactly its fields, the required ones required: `create` (inline),
+`import` (`path`: a JSON file a planning worker wrote at an absolute path
+outside the repository, validated strictly; only a regular file up to 256 KB,
+and refused in a remote session, whose files live on the target: create inline
+there), `add`, `edit` (a finding's or step's `text`), `edit_question`,
+`edit_rejected`, `edit_doc` (title, summary), `remove`, `decide`, `accept`
+(`qs`: the recommendation becomes the decision; never over a question already
+decided, which must be reopened first), `accept_all`, `reopen`,
+`drop_question` and `drop_alignment` (each with a `reason`), `status`
+(`implementing`, `done`, back to `open`), `exempt` (alone, with a `reason`: a
+work request needs no alignment) and `get`. A field or op borrowed from
+elsewhere gets a did-you-mean (`newText` → `text`, `why` → `reason`, op
+`delete` → `remove`, `create` with `fromFile` → `import`, a bare op without
+`{ops: [...]}`). The result is a compact echo of what is still open. Sessions
+written with the older op names (`create` + `fromFile`, `drop`, `accept`
+`"open"`) still fold: the state is read from the results' snapshots, never
+from the call's arguments.
 
-Questions are numbered inside the checkbox label (`**1. Topic:**`), not with
-a markdown list number: the viewer turns the marker into a glyph and drops
-list numbering, so only a number in the label survives into what the user
-reads. The parser still accepts `1. [ ] …` from older blocks.
+Status is derived from the data: `aligning` while a question is open (or
+there are none yet), `confirmed` once every question is decided or dropped,
+and `implementing`, `done` or `dropped` when the agent moved it there. The
+agent answers nothing itself: the user answers in chat ("q2: yes", "your
+recs", or "3a": q3's option a, recorded as that option's label), and the
+agent records it with `decide`/`accept`. Options are lettered a, b, c… wherever
+they are listed, and a recommendation that names an option by its label reads
+"b — <label>".
 
-The agent re-emits the whole block whenever something changes (answers,
-scope, new findings), ticking settled questions `[x]` and keeping each
-question's number and topic. An explicit "go ahead"
-while questions are still open is honoured: the agent sets Status
-`implementing`, keeps those questions unticked, and proceeds. Identical
-re-emits are ignored; every change is a new **revision**. The parser tolerates
-heading-level, case and punctuation drift but needs the headings verbatim;
-turns that end in an error or abort are never captured.
-
-Status is derived from the block: `implementing` and `confirmed` when the
-Status section says so, else `questions open` while any `[ ]` remains,
-`ready to confirm` when every question is ticked, and `aligning` for a block
-without questions.
-
-- **Widget** — one line above the editor while align is on and a doc exists:
-  `◇ align · questions open · 2/5 settled · 41 lines · alt+a view`. It is
-  hidden when align is off or the doc is cleared; the doc itself is kept.
+- **State** — each changing call returns the document's full snapshot in the
+  tool result's `details`; the newest snapshot per id on the branch wins
+  (`foldAlignments` in `align.ts`, node builtins only, also read by Sova). So
+  `/resume`, `/reload`, `/fork`, `/tree`, a rewind and a compaction all land on
+  the right state with nothing else written.
+- **What the model sees** — the tool's description and guidelines (in pi's
+  tools section, so they survive a dropped mode section), the align prompt
+  block, and a hidden `align-state` message on each user prompt listing the
+  open alignments and their open questions, each with its lettered options. A
+  compaction writes one more, right after its summary, that also lists their decided and dropped questions: a run
+  no user prompt starts (a worker's report) gets no per-prompt note, and the
+  summary may state the alignments loosely. Nothing about alignments goes into
+  the system prompt: a prompt change restarts a Claude Code session's CLI.
+- **No gate; one nudge** — nothing blocks edits or spawns while a question is
+  open. A run that is about to settle with no align call, whose final reply
+  reads like a plan asking the user to decide (`planSignal`: an old
+  `## Alignment: <title>` block; a closing question that asks for a decision or a
+  go-ahead, never a merge, push or restart confirmation, and not options offered
+  back to a user who asked a question; or questions listed under a label such as
+  "Questions for you:"), gets one hidden
+  `align-nudge` and one more request; never twice in a run. Only a successful
+  align call that changed a document or recorded an exemption counts as recorded:
+  a refused call or a bare `get` does not.
+- **Widget** — one line above the editor while align is on and an alignment is
+  open: `◇ align · al_3 2/7 open · al_2 implementing · alt+a view`.
+- **Tool row** — the call as one dim line (`◇ align al_3 · decide q3 · → implementing`),
+  the result as a compact card (the whole document when expanded).
 - **Viewer** — `/align`, `alt+a`, or the palette row open a read-only overlay
-  rendering the block as markdown with `☐`/`☑` checklist glyphs. Keys: `↑↓`
-  or `j/k` scroll, `pgup/pgdn` page, `g/G` top/bottom, `q`/`esc` close. It
-  refreshes live when a new revision is captured. Outside the TUI (RPC hosts
-  such as Sova) `/align` shows the summary and markdown as a notification.
-- **Persistence** — every revision is a session custom entry
-  (`customType: "align-doc"`, `{ version: 1, doc }`, `doc: null` after
-  `/align clear`), so the doc travels with the transcript, restores on
-  `/resume`, `/reload`, `/fork` and `/tree`, and is readable by Sova. The
-  transcript shows a dim `── alignment v2 · questions open · 1/2 settled ──`
-  marker per revision. There is no global file; `/align export [path]`
-  writes the markdown on demand.
-- **Read-only** — the viewer never writes back; the agent's block is the only
-  source of truth. `/mode status` includes an `align doc:` line.
+  rendering one alignment as markdown; `←/→` switch between them, `↑↓` or
+  `j/k` scroll, `pgup/pgdn` page, `g/G` top/bottom, `q`/`esc` close. It
+  refreshes live after each call. Outside the TUI (RPC hosts such as Sova)
+  `/align` shows them as a notification. `/align status` lists them (also the
+  `alignments:` line of `/mode status`); `/align export [path]` writes the open
+  ones as markdown (default `.pi/align.md`).
+- **Older sessions** — before the tool, the agent wrote a markdown block that
+  the extension parsed into `align-doc` custom entries. Those stay read-only:
+  the viewer shows the newest one when a session has no tool alignments, the
+  transcript keeps its dim `── alignment v2 · questions open · 1/2 settled ──`
+  marker, and nothing parses markdown any more.
 
 The viewer key is `alt+a` by default; set `"viewerShortcut"` in `mode.json`
 to change it. If it collides with the mode toggle or the `align` toggle key,
@@ -217,11 +244,39 @@ next prompt without `/reload`.
 
 How those instructions reach the model depends on the host. On pi >= 0.86 the
 handler writes the blocks into `systemPromptOptions.sections.mode`, which pi
-diffs against the section the model already has: a toggle costs one small
-mid-conversation patch instead of a whole new prompt, so the cached prefix
-survives, and switching back to normal deletes the section so the instructions
-stop applying. On older hosts without sections (pi < 0.86) there are no
-sections, and the blocks stay a whole-prompt append as before.
+diffs against the section the model already has, and switching back to normal
+deletes the section so the instructions stop applying. On older hosts without
+sections (pi < 0.86) there are no sections, and the blocks stay a whole-prompt
+append as before.
+
+A changed section is a cheap tail patch only on models that take
+mid-conversation system messages (`compat.supportsMidConvoSystemMessages`:
+Opus on pi's anthropic provider, gpt-5.4+, kimi-k3, …). Everywhere else pi
+folds it into a new head, and the claude-code provider restarts its CLI and
+re-sends the whole history uncached. So a **minor-mode toggle never changes the
+section**: its minor blocks are the **head**'s, the minor modes the first run
+after the session's start (or its last compaction) was built with. The switch
+reaches the model instead as a hidden `mode-note` custom message
+(`display: false`) at the next run, one path for every provider: beside the
+user's prompt (`sendMessage(…, {deliverAs: "nextTurn"})` in
+`before_agent_start`), or steered in ahead of the first request of a run an
+extension's message starts (`agent_start`). Turning a mode on carries its whole
+block, the text the head would have had, unless that block is already in
+context (in the head, or in an earlier note since the last compaction), when
+the note points back to it; turning one off says its instructions no longer
+apply. A run already under way keeps its mode to its end.
+
+The head is persisted additively in the `mode` entry: a switch records `head`
+only while it differs from that entry's `active.minorModes`, and each note's
+`details` (`{v: 1, minorModes, guides}`) records what the model has been told,
+so a reopened session rebuilds the head it started with and replays its notes
+(`restoreHead` in `state.ts`). A compaction loses the cached prefix anyway: the
+next run rebuilds the head from the modes active then, and notes the compaction
+kept in its recent tail are dropped from requests (`context`) once it has. A
+major-mode switch, a Delegate or spec-writer routing change, and align in
+delegate (whose bridge paragraph follows the active align) still change the
+section; align also changes the tool set (its `align` tool), which breaks the
+prefix on every provider and restarts the claude-code CLI regardless.
 
 The prompt is the same whoever started the turn. pi runs `before_agent_start`
 only for a turn the user's prompt starts; a turn an extension's message starts
@@ -233,7 +288,7 @@ the next user prompt, and the claude-code provider restarted its CLI (and
 re-sent the whole history) at every switch. So the extension also keeps the
 block in the base options: they are reachable only through a command context
 (`ctx.getSystemPromptOptions`), which `/mode` and `/align` adopt — Sova runs
-`/mode` at every chat open — and from then on every switch, every
+the quiet `/mode sync` at every chat open — and from then on every switch, every
 `before_agent_start` and every run start (`agent_start`, after pi may have
 rebuilt the base on a tool change) writes the current block there. A session
 driven only by the shortcut or the palette, with no `/mode` yet, keeps the old
@@ -252,7 +307,7 @@ anywhere else. It is persisted by snapshotting the whole triple into the same
 ```
 
 So it travels with the transcript: it restores on `/resume`, `/reload`,
-`/fork`, `/tree` and a Sova reopen, exactly like the alignment doc. The
+`/fork`, `/tree` and a Sova reopen, exactly like the alignments. The
 newest entry with a readable `active` wins; entries written before this
 existed, and any future schema this build cannot read, are skipped (they still
 render as markers). Restoring writes nothing, so merely opening a session
@@ -287,7 +342,7 @@ An optional `"shortcut"` field (a pi-tui KeyId such as `"alt+h"`) changes the
 toggle key on the next reload. An optional `"minorShortcuts"` object (for
 example `{ "align": "alt+l" }`) binds a toggle key per minor mode, also on the
 next reload; there are none by default. An optional `"viewerShortcut"`
-(default `"alt+a"`) opens the alignment-doc viewer. Files written before minor modes
+(default `"alt+a"`) opens the alignments viewer. Files written before minor modes
 existed load with no minor modes on.
 
 ## Delegate routing
@@ -419,14 +474,19 @@ cannot compile without deciding):
 
 - **Major modes never reach a worker**: workers spawn no workers, so Delegate
   has nothing to route there.
-- **`spec` does, `align` does not.** `composeWorkerPrompt` (`prompt.ts`) is the
+- **`spec` does; `align` and `vis` do not** (a worker's replies are read by its
+  parent session, not rendered for the user). `composeWorkerPrompt` (`prompt.ts`) is the
   worker-scope minors only: for spec, the `spec-mode.md` block byte for byte,
   then `SPEC_WORKER_NOTE` (the brief is the go-ahead; the parent promotes unless
   the brief says otherwise; flags go as one question in the final report).
-  Never the Delegate block, the align block or bridge, or the writer paragraph.
+  Never the Delegate block, the align block or bridge, the vis guide, or the
+  writer paragraph.
 - **Delivered over the bus** (`events.ts`), like the sandbox's state: the
   extension emits `mode:worker` `{version: 1, minorModes, prompt?}` whenever the
-  session's state is resolved or switched, and on `mode:worker-discover`. The
+  session's state is resolved or switched, at `/mode sync`, and on
+  `mode:worker-discover`. It follows the active modes, not the prompt head: a
+  minor toggle that reaches the chat only as a hidden note reaches the next
+  worker whole. The
   subagents extension appends `prompt` last to each worker's system prompt at
   spawn (pi and Claude Code alike), and takes it afresh at a resume. A switch
   never reaches a running worker.
@@ -435,7 +495,8 @@ cannot compile without deciding):
   loaded first) answers `subagents:worker-discover`, which this extension asks
   at load; answered, it ignores `mode` snapshots on the branch (a `fork` copies
   the parent's) and `mode.json`, runs normal with the worker-scope minors of
-  `--minor`, never strict, offers no writer and injects `composeWorkerPrompt`.
+  `--minor`, never strict, offers no writer and injects `composeWorkerPrompt`
+  (its prompt head is its own; a mode note, if any, carries the worker form).
   An older extension never asks, and nothing is passed as a flag it would
   reject.
 
@@ -445,9 +506,9 @@ Delegation bias and profile choice are instruction-level: the orchestrator
 decides which profile a task is, and a user can always name a worker outright.
 Even in strict mode the orchestrator
 keeps `bash`, so nothing hard-forces delegation; strict only makes `edit` and
-`write` unavailable. Mid-turn toggles apply from the next prompt. The
-alignment checklist is agent-driven: the viewer cannot tick questions, and a
-block with renamed headings is not captured.
+`write` unavailable. Mid-turn toggles apply from the next prompt. Alignments
+are agent-driven: the viewer cannot answer a question, and the user's answers
+reach a document only through the agent's `align` calls.
 
 ## Verification
 
@@ -457,7 +518,9 @@ node --test index.test.ts     # pure state/prompt/minor/palette logic
 node --test delegate.test.ts  # the routing file: defaults, parsing, persistence, per-turn re-read
 node --test routing.test.ts   # primary → fallback → ask, discovery failure, policy
 node --test spec.test.ts      # the spec writer file: parsing, persistence, per-turn re-read
-node --test align.test.ts     # alignment-doc parser, status, restore, scroll math
+node --test align.test.ts     # alignments: ops, strict input and import, hints, fold, echo, note, nudge heuristic, legacy entries
 node tests/smoke.mjs          # real index.ts against a fake pi host, no model requests
 node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
+node tests/note-turn.mjs      # real pi session + scripted provider: a minor toggle keeps the head; notes, reopen, compaction
+node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
 ```

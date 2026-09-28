@@ -5,6 +5,8 @@ import { agentsHref, teamKey, teamPause, teamPulse } from "../lib/insights";
 import { relativeTime, shortModel } from "../lib/format";
 import { sourceBlocked } from "../lib/fanout";
 import { createPaneInsight } from "../lib/pane-insight";
+import { explanationsFeed } from "../lib/explanations-feed";
+import { knownExplanations, knownOutline, knownWorkers } from "../lib/known-before-mount";
 import { PaneScopeProvider, type PaneScope } from "../lib/pane-scope";
 import { cwdLabel } from "../lib/remote-session";
 import type { RewindControl } from "../lib/inputs";
@@ -13,6 +15,7 @@ import { sessionWorking, formatCost, type UsageTotalView, workingSplit } from ".
 import { ChatView, type ChatRefusal, type OverseerChat } from "./ChatView";
 import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./ContextGauge";
 import { InsightStrip } from "./InsightStrip";
+import { createProjectOverseerControl, ProjectOverseerHead } from "./ProjectOverseerHead";
 import { RemoteChip, RemoteHeadChip } from "./RemoteStatus";
 import type { PaneInsight, TabId } from "./SessionPane";
 import type { FanoutSource } from "./FanoutDialog";
@@ -22,8 +25,9 @@ import { Banner, Chip, CountChip, Icon } from "./ui";
 import { hostLabel, hostOf } from "../lib/mesh";
 import { HostScopeProvider } from "../lib/host-scope";
 
-/** Why a session is open read-only. */
-export type WatchWhy = "tui" | "recent";
+/** Why a session is open read-only: a TUI has it, an unknown writer may, or it is a project
+    overseer's earlier conversation. */
+export type WatchWhy = "tui" | "recent" | "earlier";
 
 /** How the open session is shown. Decided once when it's opened, then changed only by events. */
 export type Decision =
@@ -112,6 +116,15 @@ export function SessionView(props: {
   const path = props.path;
   const s = () => props.summary();
 
+  /**
+   * A project overseer's conversation, shown alone (a workspace pane keeps its pane head): its own
+   * head and status strip (§app.project-overseer/page). A cleared one opens read-only under the
+   * earlier-conversation head. Decided once, at mount, like the read/write decision below.
+   */
+  const po = !props.paneId && !props.head ? s().projectOverseer : undefined;
+  const poEarlier = !!po && !!s().org?.finished;
+  const poControl = po ? createProjectOverseerControl({ orgId: po.orgId, projectId: po.projectId, path, summary: s, onRefresh: () => props.onRefresh() }) : null;
+
   /** The model the chat switched to, this view's own: a workspace's panes each run their own. */
   const [chatModel, setChatModel] = createSignal<string | null>(null);
 
@@ -121,7 +134,9 @@ export function SessionView(props: {
    * so nothing can be sent) and we fall back to read-only with Chat Anyway.
    */
   const initial = (): Decision =>
-    s().live
+    poEarlier
+      ? { path, mode: "watch", why: "earlier", listVersion: props.listVersion }
+      : s().live
       ? { path, mode: "watch", why: "tui", listVersion: props.listVersion }
       : { path, mode: "chat", force: false, autofocus: props.autofocus };
   // Decided once, when this view mounts for this session: it is keyed on the path, so a new
@@ -218,7 +233,9 @@ export function SessionView(props: {
           <Show when={hostOf(path)}>
             {(h) => (
               <>
-                <span title={`This session lives on ${hostLabel(h())}`}>on {hostLabel(h())}</span>
+                <span class="session-head-host" title={`This session lives on ${hostLabel(h())}`}>
+                  on {hostLabel(h())}
+                </span>
                 <span aria-hidden="true">·</span>
               </>
             )}
@@ -297,7 +314,27 @@ export function SessionView(props: {
     <PaneScopeProvider value={scope}>
       {/* A peer's session: its composer's models, policy and mode defaults are that host's. */}
       <HostScopeProvider value={() => hostOf(path)}>
-      <Show when={props.paneId} fallback={props.head ? props.head() : <FullHead />}>
+      <Show
+        when={props.paneId}
+        fallback={
+          props.head ? (
+            props.head()
+          ) : poControl ? (
+            <ProjectOverseerHead
+              control={poControl}
+              path={path}
+              summary={s}
+              now={props.now}
+              earlier={poEarlier}
+              titleRef={props.titleRef}
+              detailsOpen={props.paneOn(path, "session")}
+              onDetails={() => props.openPane(path, "session")}
+            />
+          ) : (
+            <FullHead />
+          )
+        }
+      >
         {/* One pane of a workspace: a 40px head under the
             workspace's own, carrying only what tells this member apart — its name, its context
             fill, its state chip, and its tools. The pane's accessible name IS this name. */}
@@ -343,7 +380,8 @@ export function SessionView(props: {
         path={path}
         sessionId={s().id}
         outline={insight.data?.outline ?? null}
-        explanations={insight.data?.explanations}
+        known={insight.data ? null : knownOutline(s())}
+        explanations={insight.data ? insight.data.explanations : knownExplanations(explanationsFeed(), s().id)}
         now={props.now}
         onOpenTimeline={() => props.showTimeline(path)}
       />
@@ -363,7 +401,7 @@ export function SessionView(props: {
                     onCreated={props.onCreated}
                     onAppend={reloadInsight}
                     workersWorking={working()}
-                    workersTotal={insight.data?.workers?.length ?? 0}
+                    workersTotal={insight.data ? (insight.data.workers?.length ?? 0) : knownWorkers(s())}
                     workersSplit={split()}
                     onShowWorkers={() => props.toggleSubagents(path)}
                     workersOpen={props.paneOn(path, "agents")}
@@ -399,7 +437,9 @@ export function SessionView(props: {
                       </Switch>
                     }
                     readOnly={
-                      w().why === "recent"
+                      w().why === "earlier"
+                        ? { icon: "clock", text: "An earlier conversation. Read only." }
+                        : w().why === "recent"
                         ? { icon: "attention", text: "Read only while another process may be writing this file." }
                         : { icon: "attention", text: "Read only while this session is open in the TUI." }
                     }
@@ -441,6 +481,7 @@ export function SessionView(props: {
                       workersOpen={props.paneOn(path, "agents")}
                       onNewSession={() => props.onNewSession(path)}
                       overseer={props.overseer}
+                      projectOverseer={poControl && !poEarlier ? { onClear: poControl.clear, onReloaded: poControl.onReloaded } : undefined}
                       teams={insight.data?.teams}
                       fork={props.fork}
                       onFanOut={

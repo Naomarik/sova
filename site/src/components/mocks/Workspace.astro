@@ -1,0 +1,147 @@
+---
+// Hero: a group of 3 members in split panes, the same prompt sent to each, and the group composer.
+import Frame from "../Frame.astro";
+import Icon from "../Icon.astro";
+import ContextRing from "../ContextRing.astro";
+
+const prompt = "Add retry with backoff to the upload client. Keep its public API as it is.";
+---
+<Frame path="demo-app" class="m-frame" caption="Sova's workspace: a group of 3 sessions on different models answering the same prompt side by side, with a sidebar of sessions and one composer that writes to all 3.">
+  <div class="m-app">
+    <aside class="m-side">
+      <div class="m-side-top">
+        <span class="m-btn"><Icon name="plus" size={14} />New Session</span>
+        <span class="m-btn m-btn-icon"><Icon name="panel-collapse" size={15} /></span>
+      </div>
+      <div class="m-side-search"><span class="m-input"><Icon name="search" size={14} />Title, folder, or tag</span></div>
+      <div class="m-side-count"><span>12 sessions</span><span>Select</span></div>
+
+      <div class="m-group-label">Needs you <span class="m-sep">·</span> 1</div>
+      <div class="m-row">
+        <div class="m-row-main">
+          <div class="m-row-title"><span>Retry policy · claude-sonnet-5</span></div>
+          <div class="m-row-sum">Asks: ky's retry, or its own loop?</div>
+          <div class="m-row-meta"><span>1m ago · needs input</span><ContextRing pct={22} /></div>
+        </div>
+      </div>
+
+      <div class="m-group-label">Groups <span class="m-sep">·</span> 1</div>
+      <div class="m-row m-row-sel">
+        <div class="m-row-main">
+          <div class="m-row-title"><Icon name="grid" size={13} class="m-muted" /><span>Retry policy</span></div>
+          <div class="m-row-meta"><span>3 members · split</span></div>
+        </div>
+      </div>
+
+      <div class="m-group-label">Recent <span class="m-sep">·</span> 3</div>
+      <div class="m-row">
+        <div class="m-row-main">
+          <div class="m-row-title"><span class="live-dot"></span><span>Retry policy · claude-opus-5-5</span></div>
+          <div class="m-row-sum">Retry loop inside the upload client</div>
+          <div class="m-row-meta"><span>just now · working</span><ContextRing pct={4} /></div>
+        </div>
+      </div>
+      <div class="m-row">
+        <div class="m-row-main">
+          <div class="m-row-title"><span>Retry policy · glm-5.3</span></div>
+          <div class="m-row-sum">withRetry() helper; 14 tests pass</div>
+          <div class="m-row-meta"><span>2m ago · done</span><ContextRing pct={31} /></div>
+        </div>
+      </div>
+      <div class="m-row">
+        <div class="m-row-main">
+          <div class="m-row-title"><span>Flaky upload test</span><span class="chip chip-static">TUI</span></div>
+          <div class="m-row-sum">Open in a terminal; watching live</div>
+          <div class="m-row-meta"><span>8m ago · in progress</span><ContextRing pct={58} /></div>
+        </div>
+      </div>
+
+      <div class="m-side-foot"><Icon name="worker" size={14} />3 agents · 2 sessions</div>
+    </aside>
+
+    <section class="m-main">
+      <header class="m-head">
+        <Icon name="grid" size={16} class="m-muted" />
+        <span class="m-head-title">Retry policy</span>
+        <span class="m-head-sub">3 members · forked at message 12</span>
+        <span class="m-head-end">
+          <span class="m-seg"><span class="on">Split</span><span>Tabs</span></span>
+          <span class="m-btn m-btn-ghost"><Icon name="plus" size={14} />Add Members</span>
+        </span>
+      </header>
+      <div class="m-tabs-folded">
+        <span class="on"><span class="live-dot"></span>opus-5-5</span><span>glm-5.3</span><span>sonnet-5</span>
+      </div>
+
+      <div class="m-panes">
+        <div class="m-pane">
+          <div class="m-pane-head">
+            <span class="m-pane-model">claude-opus-5-5</span>
+            <span class="chip chip-accent"><span class="live-dot"></span>Working</span>
+            <span class="m-ctx"><ContextRing pct={4} />41k · 4%</span>
+          </div>
+          <div class="m-thread">
+            <div class="m-msg-user">{prompt}</div>
+            <p class="m-msg">I'll wrap <code>send()</code> in a retry loop, so <code>upload()</code> keeps its signature.</p>
+            <div class="m-tool"><div class="m-tool-sum"><Icon name="chevron-right" size={12} /><span class="m-tool-name">read</span><span class="m-tool-arg">src/upload/client.ts</span><span class="m-ok">✓</span></div></div>
+            <div class="m-tool">
+              <div class="m-tool-sum"><Icon name="chevron-down" size={12} /><span class="m-tool-name">edit</span><span class="m-tool-arg">src/upload/client.ts</span><span class="m-tool-stat"><span class="m-add">+18</span><span class="m-del">−4</span></span></div>
+              <div class="diff">
+                <div class="diff-line"><span class="diff-gutter">41</span><span>  async send(chunk) &#123;</span></div>
+                <div class="diff-line diff-del"><span class="diff-gutter">42</span><span>    return this.http.put(chunk)</span></div>
+                <div class="diff-line diff-add"><span class="diff-gutter">42</span><span>    for (let n = 1; ; n++) &#123;</span></div>
+                <div class="diff-line diff-add"><span class="diff-gutter">43</span><span>      try &#123; return await this.put(chunk) &#125;</span></div>
+                <div class="diff-line diff-add"><span class="diff-gutter">44</span><span>      catch (e) &#123; await backoff(n, e) &#125;</span></div>
+              </div>
+            </div>
+            <div class="m-tool"><div class="m-tool-sum"><span class="live-dot"></span><span class="m-tool-name">bash</span><span class="m-tool-arg">pnpm test upload</span><span class="m-muted">12s</span></div></div>
+          </div>
+        </div>
+
+        <div class="m-pane">
+          <div class="m-pane-head">
+            <span class="m-pane-model">glm-5.3</span>
+            <span class="chip chip-success"><span class="chip-dot"></span>Done</span>
+            <span class="m-ctx"><ContextRing pct={31} />62k · 31%</span>
+          </div>
+          <div class="m-thread">
+            <div class="m-msg-user">{prompt}</div>
+            <p class="m-msg">A small <code>withRetry()</code> helper in its own file, so the client changes at 1 call site.</p>
+            <div class="m-tool"><div class="m-tool-sum"><Icon name="chevron-right" size={12} /><span class="m-tool-name">write</span><span class="m-tool-arg">src/upload/retry.ts</span><span class="m-add">+41</span></div></div>
+            <div class="m-tool"><div class="m-tool-sum"><Icon name="chevron-right" size={12} /><span class="m-tool-name">edit</span><span class="m-tool-arg">src/upload/client.ts</span><span class="m-tool-stat"><span class="m-add">+2</span><span class="m-del">−1</span></span></div></div>
+            <div class="m-tool">
+              <div class="m-tool-sum"><Icon name="chevron-down" size={12} /><span class="m-tool-name">bash</span><span class="m-tool-arg">pnpm test upload</span><span class="m-ok">✓</span></div>
+              <div class="m-tool-body"><span class="m-ok">✓</span> upload/retry.test.ts   9 passed{"\n"}<span class="m-ok">✓</span> upload/client.test.ts  5 passed</div>
+            </div>
+            <p class="m-msg">14 tests pass. Retries stop after 5 tries, or at once on a 4xx.</p>
+          </div>
+        </div>
+
+        <div class="m-pane">
+          <div class="m-pane-head">
+            <span class="m-pane-model">claude-sonnet-5</span>
+            <span class="chip chip-warn"><span class="chip-dot"></span>Needs input</span>
+            <span class="m-ctx"><ContextRing pct={22} />44k · 22%</span>
+          </div>
+          <div class="m-thread">
+            <div class="m-msg-user">{prompt}</div>
+            <p class="m-msg">The client already depends on <code>ky</code>, which has its own retry option. 2 ways to go:</p>
+            <div class="m-tool"><div class="m-tool-sum"><Icon name="chevron-right" size={12} /><span class="m-tool-name">grep</span><span class="m-tool-arg">retry src/</span><span class="m-muted">3 files</span></div></div>
+            <div class="m-ask">
+              <div class="m-ask-q">Use ky's built-in retry, or write the loop by hand?</div>
+              <div class="m-ask-opts"><span class="m-btn">Use ky's Retry</span><span class="m-btn">Write the Loop</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="m-composer">
+        <div class="m-composer-row">
+          <span class="m-btn m-btn-ghost m-btn-icon"><Icon name="plus" size={16} /></span>
+          <span class="m-input">Ask all 3 members…</span>
+          <span class="m-btn m-btn-primary m-btn-off"><Icon name="arrow-right" size={14} />Send</span>
+        </div>
+      </div>
+    </section>
+  </div>
+</Frame>

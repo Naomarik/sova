@@ -123,7 +123,8 @@ written. A missing or malformed file means defaults:
 `subagents/index.ts` publishes authoritative worker snapshots on
 `subagents:workers-snapshot`. It answers `subagents:workers-request` and
 covers both the Pi and Claude backends in that manager (see `workers.ts` for
-the contract). At most 40 workers go on the bus, each with its own cumulative
+the contract). At most 40 workers go on the bus, live ones first and then the
+newest, so a working worker is never the one left out, each with its own cumulative
 token counts (`usage`), plus one `workerUsage` Σ over every worker the session
 ever ran — evicted ones included, so it outlives both caps. Third-party worker managers
 need an adapter, because inferring workers from tool calls isn't reliable.

@@ -1,5 +1,6 @@
 import type {
   AgentsInsight,
+  SessionsDirInfo,
   AttentionDigest,
   ChatModeResult,
   ClaudeCliStatus,
@@ -31,12 +32,14 @@ import type {
   FanoutRequest,
   FanoutResult,
   SessionGroup,
+  SessionHiddenWorkers,
   SessionInsight,
   SessionSetup,
   SessionSummary,
   ThemeList,
   TmpAttachment,
   TranscriptItem,
+  TranscriptRows,
   UploadResult,
   UsageInsight,
   WebSettings,
@@ -56,10 +59,12 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
+import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
-import type { ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
+import type { OrgCosts, ProjectCost } from "../../shared/costs";
+import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
@@ -136,6 +141,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
+export const sessionsDir = () => request<SessionsDirInfo>("/api/sessions/dir");
 
 /** A link's message thread as `host` (the pane's session's host) holds it (§mesh.links/agents-pane). */
 export const fetchLinkThread = (host: string | null, linkId: string) =>
@@ -644,8 +650,10 @@ function noteAttachmentsHost(path: string, items: TranscriptItem[]): TranscriptI
   return items;
 }
 
-export const fetchTranscript = (path: string) =>
-  request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}`).then((r) => noteAttachmentsHost(path, r.items));
+/** The whole branch with each row light (`view=light`): what the session pane reads of every row,
+    without the replies' text, tools' output and image bytes that only the thread draws. */
+export const fetchTranscriptLight = (path: string) =>
+  request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}&view=light`).then((r) => noteAttachmentsHost(path, r.items));
 
 /** The transcript plus its context-window fill (null when unknown or stale). */
 export const fetchTranscriptWithContext = (path: string) =>
@@ -653,6 +661,56 @@ export const fetchTranscriptWithContext = (path: string) =>
     items: noteAttachmentsHost(path, r.items),
     context: r.context ?? null,
   }));
+
+/** What GET /api/transcript's rows can ask for (TranscriptRows in shared/protocol.ts). */
+export type RowsAsk = { tail: true } | { before: string; from?: string; explain?: string; chars?: number } | { from: string };
+
+/** Rows of a session's branch (lib/older-rows), or why not: the branch moved under the list, or the
+    target isn't on it. */
+export async function fetchTranscriptRows(path: string, ask: RowsAsk, leaf?: string | null): Promise<TranscriptRows | { code: "moved" | "missing" }> {
+  const q = new URLSearchParams({ path });
+  for (const [k, v] of Object.entries(ask)) q.set(k, v === true ? "1" : String(v));
+  if (leaf) q.set("leaf", leaf);
+  try {
+    const r = await request<TranscriptRows>(`/api/transcript?${q}`);
+    return { ...r, items: noteAttachmentsHost(path, r.items) };
+  } catch (err) {
+    const code = err instanceof ApiError ? (err.body as { code?: unknown } | undefined)?.code : undefined;
+    if (code === "moved" || code === "missing") return { code };
+    throw err;
+  }
+}
+
+/**
+ * A transcript's newest rows for keeping in memory (lib/recent-preload): the same read-only GET, with its size
+ * (the body's length, else the JSON's characters) for the memory budget. `fits` sees the
+ * announced length before the body comes: when it says no, the download stops there and the
+ * answer is just the size.
+ */
+export async function fetchTranscriptForCache(
+  path: string,
+  fits: (size: number) => boolean,
+): Promise<(TranscriptRows & { size: number }) | { tooBig: number }> {
+  const aborter = new AbortController();
+  // The newest rows only, as a view's hello carries them (TranscriptRows): the view fetches the
+  // rest when it wants them (lib/older-rows).
+  const res = await fetch(routeUrl(`/api/transcript?path=${encodeURIComponent(path)}&tail=1`), { signal: aborter.signal });
+  if (!res.ok) throw new ApiError(`${res.status} ${res.statusText}`, res.status);
+  const announced = Number(res.headers.get("content-length")) || 0;
+  if (announced && !fits(announced)) {
+    aborter.abort();
+    return { tooBig: announced };
+  }
+  const text = await res.text();
+  const rows = JSON.parse(text) as TranscriptRows;
+  // A server that predates the rows sends the whole branch: nothing above it.
+  return {
+    items: noteAttachmentsHost(path, rows.items),
+    older: rows.older ?? 0,
+    olderSummary: rows.olderSummary ?? { inputs: [], messages: 0, replies: false },
+    size: announced || text.length,
+  };
+}
 
 /** The composer draft stored for a session; `text: null` when there is none. The server has
     already dropped attachments whose file is gone. */
@@ -713,6 +771,10 @@ export const fetchExplanations = () => request<ExplanationInfo[]>("/api/explanat
 
 export const fetchSessionInsight = (path: string) =>
   request<SessionInsight>(`/api/insights/session?path=${encodeURIComponent(path)}`);
+
+/** The workers the session's live record doesn't list, read from its file on request. */
+export const fetchHiddenWorkers = (path: string) =>
+  request<SessionHiddenWorkers>(`/api/insights/session/workers?path=${encodeURIComponent(path)}`);
 
 /** The repository around a session's folder (read-only git). `fresh` skips the server's ~10s cache.
     Use loadGitSummary (lib/git-summary.ts), which shares a request already running. */
@@ -856,10 +918,13 @@ const jsonInit = (method: string, body?: unknown): RequestInit => ({
 
 export const getOrgs = () => request<OrgsInfo>("/api/orgs");
 export const createOrg = (name: string, dir?: string) => request<OrgDetail>("/api/orgs", jsonInit("POST", { name, ...(dir ? { dir } : {}) }));
-export const attachOrg = (dir: string) => request<OrgDetail>("/api/orgs/attach", jsonInit("POST", { dir }));
+/** `confirm`: attach although another host holds it (the answer to a 409 `code: "held"`). */
+export const attachOrg = (dir: string, confirm = false) => request<OrgDetail>("/api/orgs/attach", jsonInit("POST", { dir, ...(confirm ? { confirm: true } : {}) }));
 export const setOperatorName = (name: string) => request<OrgsInfo>("/api/orgs/operator", jsonInit("PUT", { name }));
 export const getOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`);
-export const patchOrg = (id: string, patch: { name?: string; notes?: string }) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("PATCH", patch));
+export const patchOrg = (id: string, patch: { name?: string; about?: string }) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("PATCH", patch));
+/** The org's About text back to history line `at`'s `from` (§app.organizations/about). */
+export const revertOrgAbout = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/about/revert`, jsonInit("POST", { at }));
 export const detachOrg = (id: string) => request<{ ok: true }>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("DELETE"));
 export const commitOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/commit`, jsonInit("POST"));
 export const setOrgRemote = (id: string, url: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/remote`, jsonInit("PUT", { url }));
@@ -881,6 +946,32 @@ export const addOrgProject = (id: string, name: string, root: string) => request
 /** Set or clear a project's main stakeholder (a roster person's id, or null for none). */
 export const setProjectStakeholder = (id: string, pid: string, stakeholder: string | null) =>
   request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}`, jsonInit("PATCH", { stakeholder }));
+/** Archive a project (§app.organizations/archive): 409 naming what is open; Unarchive brings it back. */
+export const archiveOrgProject = (id: string, pid: string) =>
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/archive`, jsonInit("POST", {}));
+export const unarchiveOrgProject = (id: string, pid: string) =>
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/unarchive`, jsonInit("POST", {}));
+
+// ---- the org's owner and the Owner page (§app/owner-page; routes in shared/owner.ts) ----
+/** Set the org's owner (an active roster person's id), or none. */
+export const setOrgOwner = (id: string, personId: string | null) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/owner`, jsonInit("PUT", { personId }));
+/** Mint the owner's link, shown once; the older one stops at once. */
+export const ownerLink = (id: string) => request<OwnerLinkResult>(`/api/orgs/${encodeURIComponent(id)}/owner/link`);
+export const revokeOwnerLink = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/owner/revoke`, jsonInit("POST"));
+/** The Owner page as the owner sees it (Home, a project `q_…`, a conversation `k_…`); no token, no visit. */
+export const previewOwnerPage = (id: string, at?: { project?: string; c?: string }) =>
+  request<OwnerHome | OwnerProject | OwnerConversation>(
+    `/api/orgs/${encodeURIComponent(id)}/owner/preview${at?.project ? `?project=${encodeURIComponent(at.project)}` : at?.c ? `?c=${encodeURIComponent(at.c)}` : ""}`,
+  );
+/** Show this project on the owner's page, or not. */
+export const setProjectOwnerHidden = (id: string, pid: string, ownerHidden: boolean) =>
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}`, jsonInit("PATCH", { ownerHidden }));
+/** Hide one conversation from the owner's page, or show it again. */
+export const setBatonHiddenFromOwner = (sid: string, hidden: boolean) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/owner`, jsonInit("POST", { hidden }));
+/** The project's updates on the owner's page, newest first, withdrawn ones included. */
+export const getProjectUpdates = (id: string, pid: string) => request<ProjectUpdate[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/updates`);
+export const withdrawProjectUpdate = (id: string, pid: string, uid: string) =>
+  request<ProjectUpdate[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/updates/${encodeURIComponent(uid)}/withdraw`, jsonInit("POST"));
 
 export const startBaton = (input: BatonStartInput) => request<BatonStartResult>("/api/baton", jsonInit("POST", input));
 export const getBaton = (path: string) => request<BatonInfo>(`/api/baton?path=${encodeURIComponent(path)}`);
@@ -916,12 +1007,23 @@ export const redraftProject = (orgId: string, projectId: string) => request<Deci
 /** `bulk`: the ids are exactly what Select All Ready chose (the server holds bulk to the stricter rule). */
 export const promoteDecisions = (orgId: string, projectId: string, ids: string[], bulk: boolean) =>
   request<PromoteResult>(`${projectBase(orgId, projectId)}/promote`, jsonInit("POST", { ids, bulk }));
+/** Who decides a decision: a roster decision area or "none" (§app.requirements/owner-area). */
+export const setOwnerArea = (orgId: string, projectId: string, did: string, ownerArea: string) =>
+  request<DecisionsInfo>(`${projectBase(orgId, projectId)}/decisions/${encodeURIComponent(did)}`, jsonInit("PATCH", { ownerArea }));
+/** A promoted decision edited in the spec: keep the spec's words, or promote the person's again. */
+export const settleSpecText = (orgId: string, projectId: string, did: string, action: "keep" | "restore") =>
+  request<DecisionsInfo>(`${projectBase(orgId, projectId)}/decisions/${encodeURIComponent(did)}/text`, jsonInit("POST", { action }));
 export const routeConflict = (orgId: string, projectId: string, cid: string, to?: string) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/route`, jsonInit("POST", to ? { to } : {}));
 export const resolveConflict = (orgId: string, projectId: string, cid: string, input: ConflictResolveInput) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/resolve`, jsonInit("POST", input));
 export const setSpecFrozen = (orgId: string, projectId: string, frozen: boolean) =>
   request<SpecStatus>(`${projectBase(orgId, projectId)}/spec`, jsonInit("PATCH", { frozen }));
+
+// ---- a project's cost at API prices (§app/project-costs) ---------------------------------------------
+
+export const getProjectCost = (orgId: string, projectId: string) => request<ProjectCost>(`${projectBase(orgId, projectId)}/costs`);
+export const getOrgCosts = (orgId: string) => request<OrgCosts>(`/api/orgs/${encodeURIComponent(orgId)}/costs`);
 
 // ---- a project's overseer (§app/project-overseer) ---------------------------------------------------
 
@@ -931,6 +1033,8 @@ export const openProjectOverseer = (orgId: string, projectId: string) => request
 export const patchProjectOverseer = (orgId: string, projectId: string, patch: ProjectOverseerPatch) =>
   request<ProjectOverseerInfo>(overseerBase(orgId, projectId), jsonInit("PATCH", patch));
 export const runProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/run`, jsonInit("POST"));
+/** A new conversation; the current one moves to its read-only history. */
+export const clearProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/clear`, jsonInit("POST"));
 export const projectOverseerActions = (orgId: string, projectId: string, limit = 30) =>
   request<OverseerAction[]>(`${overseerBase(orgId, projectId)}/actions?limit=${limit}`);
 export const projectOverseerIdeas = (orgId: string, projectId: string) => request<OverseerIdeasInfo>(`${overseerBase(orgId, projectId)}/ideas`);
@@ -945,6 +1049,9 @@ export const sendProjectItem = (orgId: string, projectId: string, input: ItemSen
   request<ItemSendResult>(`${overseerBase(orgId, projectId)}/items/send`, jsonInit("POST", input));
 export const codeProjectItem = (orgId: string, projectId: string, input: ItemCodeInput) =>
   request<ItemCodeResult>(`${overseerBase(orgId, projectId)}/items/code`, jsonInit("POST", input));
+/** New Coding Session: a coding session in its own worktree, tied to no item, with nothing sent. */
+export const startProjectCoding = (orgId: string, projectId: string, input: CodingStartInput = {}) =>
+  request<CodingStartResult>(`${overseerBase(orgId, projectId)}/coding`, jsonInit("POST", input));
 /** The operator's gestures on a coding session's worktree: merge its branch into the root's, or remove it. */
 export const mergeCodingWorktree = (orgId: string, projectId: string, sessionId: string) =>
   request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));

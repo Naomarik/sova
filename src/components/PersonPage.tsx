@@ -2,19 +2,20 @@ import { createMemo, createResource, createSignal, For, onMount, Show } from "so
 import { Portal } from "solid-js/web";
 import { OPERATOR, type BatonView, type BatonViewItem } from "../../shared/baton";
 import type { Person, PersonInput, PersonPage as PersonPageData, PersonSessionRow, ProfileChange, VisitRow } from "../../shared/orgs";
-import { ApiError, approvePerson, batonLink, declinePerson, getOrg, getPersonPage, inviteeLink, patchPerson, previewAsPerson, revertPersonChange, revokePersonLinks } from "../lib/api";
+import { ApiError, approvePerson, batonLink, declinePerson, getOrg, getPersonPage, inviteeLink, patchPerson, previewAsPerson, revertPersonChange, revokeOwnerLink, revokePersonLinks } from "../lib/api";
 import { proposedAreasLine } from "../lib/baton-strip";
 import { DECISION_STATE } from "../lib/decisions-view";
 import { relativeIn, relativeTime, stampTime } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
 import { ORG_POLL_MS } from "../lib/org-source";
-import { orgHref, orgTabHref, projectHref, startForHref } from "../lib/orgs-route";
+import { orgHref, orgSessionHref, orgTabHref, projectHref, startForHref } from "../lib/orgs-route";
 import {
   canPreview,
   firstName,
   holdLine,
   leftAt,
   LINK_STATE,
+  OWNER_LINK_STATE,
   linkLive,
   messagesLine,
   relationWords,
@@ -24,7 +25,7 @@ import {
   visitWords,
 } from "../lib/person-page";
 import { createPoll } from "../lib/poll";
-import { STATUS_CHIP, valueText, WRITER } from "../lib/profile-changes";
+import { STATUS_CHIP, valueText, writerWord } from "../lib/profile-changes";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { LinksBanner } from "./LinksBanner";
@@ -36,7 +37,6 @@ import "../projects.css";
 import "../person.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
-const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /** The exact stamp a relative time carries as its title: `2026-09-27 14:06`, local, 24-hour. */
 const exact = (at: string) => {
@@ -130,7 +130,14 @@ export function PersonPage(props: { orgId: string; personId: string; titleRef(el
       }
       titleAfter={
         <Show when={person()}>
-          {(p) => <Chip tone={STATUS_CHIP[p().status]?.tone}>{STATUS_CHIP[p().status]?.word ?? p().status}</Chip>}
+          {(p) => (
+            <>
+              <Chip tone={STATUS_CHIP[p().status]?.tone}>{STATUS_CHIP[p().status]?.word ?? p().status}</Chip>
+              <Show when={page.data()?.owner}>
+                <Chip tone="accent">Owner</Chip>
+              </Show>
+            </>
+          )}
         </Show>
       }
       back={{ href: orgTabHref(props.orgId, "people"), label: "People" }}
@@ -235,7 +242,7 @@ function StatusBanner(props: { data: PersonPageData; now: number; roster: readon
                     <>
                       {" in "}
                       <Show when={s().path} fallback={s().publicTitle}>
-                        {(path) => <a href={sessionHref(path())}>{s().publicTitle}</a>}
+                        {(path) => <a href={orgSessionHref(props.data.org.id, path())}>{s().publicTitle}</a>}
                       </Show>
                     </>
                   )}
@@ -372,7 +379,7 @@ function Sessions(props: { data: PersonPageData; now: number; onPreview(row: Per
                   <span class="person-row-title">
                     <Show when={s.path} fallback={<span class="list-title">{s.publicTitle}</span>}>
                       {(path) => (
-                        <a class="list-title" href={sessionHref(path())}>
+                        <a class="list-title" href={orgSessionHref(props.data.org.id, path())}>
                           {s.publicTitle}
                         </a>
                       )}
@@ -397,7 +404,7 @@ function Sessions(props: { data: PersonPageData; now: number; onPreview(row: Per
                       <span class="list-meta">
                         Started from{" "}
                         <Show when={ppath()} fallback={parent().publicTitle}>
-                          {(path) => <a href={sessionHref(path())}>{parent().publicTitle}</a>}
+                          {(path) => <a href={orgSessionHref(props.data.org.id, path())}>{parent().publicTitle}</a>}
                         </Show>
                       </span>
                     );
@@ -452,7 +459,7 @@ function Decisions(props: { data: PersonPageData; now: number }) {
                   <Show when={d.publicTitle}>
                     {" · in "}
                     <Show when={d.sessionPath ?? pathOf(d.sessionId)} fallback={d.publicTitle}>
-                      {(path) => <a href={sessionHref(path())}>{d.publicTitle}</a>}
+                      {(path) => <a href={orgSessionHref(props.data.org.id, path())}>{d.publicTitle}</a>}
                     </Show>
                   </Show>
                   {" · "}
@@ -479,7 +486,7 @@ function Decisions(props: { data: PersonPageData; now: number }) {
                   <Show when={c.publicTitle}>
                     {" · in "}
                     <Show when={c.batonPath ?? pathOf(c.batonSessionId)} fallback={c.publicTitle}>
-                      {(path) => <a href={sessionHref(path())}>{c.publicTitle}</a>}
+                      {(path) => <a href={orgSessionHref(props.data.org.id, path())}>{c.publicTitle}</a>}
                     </Show>
                   </Show>
                   {" · "}
@@ -573,7 +580,7 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                     <span class="person-row-title">
                       <Show when={session()?.path} fallback={l.publicTitle}>
                         {(path) => (
-                          <a class="list-title" href={sessionHref(path())}>
+                          <a class="list-title" href={orgSessionHref(props.data.org.id, path())}>
                             {l.publicTitle}
                           </a>
                         )}
@@ -606,6 +613,44 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                           Turn Off Link
                         </button>
                       </Show>
+                    </div>
+                  </Show>
+                </li>
+              );
+            }}
+          </For>
+        </ul>
+      </Show>
+      <Show when={props.data.ownerLinks?.length}>
+        <h3 class="orgs-h3">Owner links</h3>
+        <ul class="list person-list">
+          <For each={props.data.ownerLinks}>
+            {(l) => {
+              const st = () => OWNER_LINK_STATE[l.state];
+              return (
+                <li class="person-row">
+                  <div class="person-row-head">
+                    <span class="person-row-title">The owner page</span>
+                    <Chip tone={st().tone}>{st().word}</Chip>
+                  </div>
+                  <span class="list-meta person-row-meta">
+                    sent <time title={exact(l.createdAt)}>{relativeTime(l.createdAt, props.now)}</time>
+                    <Show when={l.state === "live" && relativeIn(l.expiresAt, props.now)}>
+                      {(inRel) => (
+                        <>
+                          {" · expires "}
+                          <time title={exact(l.expiresAt)}>{inRel()}</time>
+                        </>
+                      )}
+                    </Show>
+                    {" · "}
+                    {plural(l.visits, "visit")}
+                  </span>
+                  <Show when={l.state === "live"}>
+                    <div class="button-row person-row-actions">
+                      <button type="button" class="button button-sm button-ghost" onClick={() => void props.act(() => revokeOwnerLink(props.data.org.id), "Owner link turned off.")}>
+                        Turn Off Owner Link
+                      </button>
                     </div>
                   </Show>
                 </li>
@@ -661,7 +706,7 @@ function History(props: { data: PersonPageData; now: number; act: Act }) {
                   <span class="orgs-change-field">{c.field}</span> {valueText(c.field, c.from)} → {valueText(c.field, c.to)}
                   <span class="list-meta">
                     {" "}
-                    · {WRITER[c.by.kind] ?? c.by.kind}
+                    · {writerWord(c.by)}
                     {c.by.quote ? ` · “${c.by.quote}”` : ""}
                     {c.revertOf ? " · a revert" : ""} · <time title={exact(c.at)}>{relativeTime(c.at, props.now)}</time>
                   </span>

@@ -27,12 +27,13 @@ import { parseWakeNudge } from "../shared/wake";
 import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, parseTeamMessage, previewLine, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
 import { mergeInfoOf, WORKTREE_MERGE_MESSAGE } from "./worktrees-state";
+import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
 
 // We parse JSONL ourselves instead of using SessionManager.open(): open() is not
 // read-only (it appends "\n" to a trailing partial line and rewrites the file when
 // migrating old versions), and these files may be owned by a running TUI.
 
-type Entry = Record<string, any>;
+export type Entry = Record<string, any>;
 
 const RESULT_TEXT_MAX = 2000;
 
@@ -200,6 +201,15 @@ function normalizeMessage(entry: Entry, id: string, state?: { model?: string }):
       return out;
     }
     case "toolResult": {
+      // An align call that changed an alignment, or recorded an exemption (§chat.alignment/card):
+      // its checked details are the row. A failed call, a `get` or unreadable details stay a plain
+      // tool result, inside their call's card.
+      const align = m.toolName === "align" ? alignResultOf(entry) : undefined;
+      if (align && (align.doc || align.exempt)) {
+        const it = item(id, "align", entry, contentText(m.content, false), m.toolCallId);
+        it.align = align;
+        return [it];
+      }
       const text = contentText(m.content, false);
       return [withPaths(item(id, "tool-result", entry, truncate(text, RESULT_TEXT_MAX), m.toolCallId, contentImages(m.content)), text)];
     }
@@ -303,6 +313,8 @@ const EXPLAIN_DOC = "explain-doc";
       `explain.status = "running"`; there is no page yet, so nothing may link to it.
     - finished: the ExplanationInfo the explainer wrote alongside its page in the store
       (server/explanations.ts), with no status at all. Old sessions hold only this shape.
+    - interrupted: a running run whose parent stopped, settled later with `status: "interrupted"`
+      and a `note` (the page is there) or an `error` (it isn't); read like any finished entry.
     The row carries the data verbatim for the gallery/strip; `preview` is the topic and `body` the
     summary, so the collapsed row reads without opening the page. Entries without an id, a topic
     or a createdAt are the extension mid-write: no row. */
@@ -318,7 +330,7 @@ function explainRow(id: string, entry: Entry): TranscriptItem[] {
     parentSessionId: s(d.parentSessionId),
   };
   if (!explain.id || !explain.topic || !explain.createdAt) return [];
-  if (d.status === "running") explain.status = "running";
+  if (d.status === "running" || d.status === "interrupted") explain.status = d.status;
   // The two halves of "the run went wrong" (pi-config/extensions/explain/store.ts
   // ExplainEntryData), at most one ever set. `error` is fatal — no page was written, nothing to
   // open — and also goes on `report.error`, where every other report row puts its failure, so

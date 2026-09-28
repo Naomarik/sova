@@ -79,7 +79,7 @@ const fake: DecisionProvider = {
         answers[qid] = { type: "choice", choice, probabilities: { [choice]: 1 }, confidence: 1 };
       }
     }
-    return { answers, provider: "jev", model: "fake", latencyMs: 1 };
+    return { answers, provider: "jev", model: "fake", latencyMs: 1, usage: { inputTokens: 10, outputTokens: 2 } };
   },
 };
 
@@ -104,7 +104,7 @@ let seq = 0;
 const nid = () => (++seq).toString(16).padStart(8, "0");
 
 /** What record_decision leaves in a transcript: the person's message, then the tool call, then the entry. */
-function say(file: string, by: string, text: string, decision?: { area: string; statement: string; quote: string }): { userId: string; markerId?: string } {
+function say(file: string, by: string, text: string, decision?: { area: string; ownerArea?: string; statement: string; quote: string }): { userId: string; markerId?: string } {
   const userId = nid();
   const ts = new Date().toISOString();
   const lines: object[] = [
@@ -126,6 +126,15 @@ function say(file: string, by: string, text: string, decision?: { area: string; 
 const specManifest = (root: string) => JSON.parse(readFileSync(join(root, ".sova", "spec", "manifest.json"), "utf8"));
 
 // ---- pure parts ----------------------------------------------------------------------------------------------
+
+describe("usage refs of decide answers", () => {
+  test("pi splits its ref (the answering model wins), Claude Code prices by the resolved id, else its alias; Jev as itself", () => {
+    assert.deepEqual(reconcile.usageRefOf({ provider: "pi", model: "zai/glm-5.3" }), { provider: "zai", model: "glm-5.3" });
+    assert.deepEqual(reconcile.usageRefOf({ provider: "claude-code", model: "haiku", usage: { inputTokens: 1, outputTokens: 1, model: "claude-haiku-4-5-20251001" } }), { provider: "claude", model: "claude-haiku-4-5-20251001" });
+    assert.deepEqual(reconcile.usageRefOf({ provider: "claude-code", model: "haiku" }), { provider: "claude-code-cli", model: "haiku" });
+    assert.deepEqual(reconcile.usageRefOf({ provider: "jev", model: "jev-1.13.0" }), { provider: "jev", model: "jev-1.13.0" });
+  });
+});
 
 describe("slugs and rendering", () => {
   test("spec slugs are letters and hyphens only, accents folded, cut at a word", () => {
@@ -191,6 +200,52 @@ describe("routing", () => {
     assert.equal(owns("bob", "invoicing", "alp", () => false), false, "self-asserted");
     assert.equal(owns(OPERATOR, "anything", null), true);
     assert.equal(reconcile.authorOwnsArea("o", [person("alp", [], "left")], { by: "alp", areaKey: "page-copy" }, trusted, "alp"), false, "left: none");
+  });
+});
+
+describe("owner areas (§app.requirements/owner-area)", () => {
+  const person = (id: string, decides: string[], status = "active") => ({ id, name: id.toUpperCase(), status, decides }) as any;
+  const trusted = () => true;
+  const roster = [person("alp", ["Website", "branding"]), person("bob", ["invoicing", "website "]), person("gone", ["payroll"], "left")];
+  test("the choices: every active person's decision areas, once each as first spelled, then none", () => {
+    assert.deepEqual(decisions.ownerAreaChoices(roster), ["Website", "branding", "invoicing"]);
+    assert.deepEqual(decisions.ownerAreaChoices([]), []);
+  });
+  test("a pick is a roster area (any case or spacing, stored as the roster spells it) or none; anything else is refused naming the choices", () => {
+    assert.deepEqual(decisions.pickOwnerArea(roster, " website"), { ok: true, ownerArea: "Website" });
+    assert.deepEqual(decisions.pickOwnerArea(roster, "NONE"), { ok: true, ownerArea: "none" });
+    assert.deepEqual(decisions.pickOwnerArea(roster, "site"), { ok: false, error: '"site" is not an owner area. Use one of: "Website", "branding", "invoicing" or "none".' });
+    assert.deepEqual(decisions.pickOwnerArea(roster, "payroll"), { ok: false, error: '"payroll" is not an owner area. Use one of: "Website", "branding", "invoicing" or "none".' }, "a left person's area is no choice");
+    assert.deepEqual(decisions.pickOwnerArea([], ""), { ok: false, error: 'Give the owner area: "none" (no one on the roster has a decision area yet).' });
+  });
+  test("authorOwnsArea reads the owner area, not the topic; none is the stakeholder's; an older decision keeps the topic match", () => {
+    const owns = (d: { by: string; areaKey: string; ownerArea?: string }, stakeholder: string | null = null, t = trusted) => reconcile.authorOwnsArea("o", roster, d, t, stakeholder);
+    assert.equal(owns({ by: "alp", areaKey: "site-structure-pages", ownerArea: "Website" }), true, "the topic never matched a roster word; the owner area does");
+    assert.equal(owns({ by: "bob", areaKey: "site-structure-pages", ownerArea: "invoicing" }), true);
+    assert.equal(owns({ by: "alp", areaKey: "invoicing", ownerArea: "branding" }), true, "a topic that happens to be Bob's area is not what counts");
+    assert.equal(owns({ by: "alp", areaKey: "branding", ownerArea: "invoicing" }), false);
+    assert.equal(owns({ by: "alp", areaKey: "x", ownerArea: "none" }, "alp"), true, "none: the main stakeholder");
+    assert.equal(owns({ by: "bob", areaKey: "x", ownerArea: "none" }, "alp"), false);
+    assert.equal(owns({ by: "alp", areaKey: "x", ownerArea: "none" }, null), false, "none and no stakeholder: nobody");
+    assert.equal(owns({ by: "alp", areaKey: "x", ownerArea: "Website" }, null, () => false), false, "a self-asserted say still doesn't count");
+    assert.equal(owns({ by: "alp", areaKey: "x", ownerArea: "payroll" }, "alp"), true, "an area no active person decides falls to the stakeholder");
+    assert.equal(owns({ by: "alp", areaKey: "site-structure-pages" }), false, "recorded before owner areas: the topic is matched, as before");
+    assert.equal(owns({ by: "alp", areaKey: "website" }), true);
+    assert.equal(owns({ by: OPERATOR, areaKey: "x", ownerArea: "invoicing" }), true);
+  });
+  test("a conflict's owner area: the one its sides name; one side's when the other is older; two different ones go to the operator", () => {
+    assert.deepEqual(reconcile.ownerAreaOfPair({ ownerArea: "Website" }, { ownerArea: "website" }), { ownerArea: "Website" });
+    assert.deepEqual(reconcile.ownerAreaOfPair({}, { ownerArea: "none" }), { ownerArea: "none" });
+    assert.deepEqual(reconcile.ownerAreaOfPair({}, {}), {});
+    assert.deepEqual(reconcile.ownerAreaOfPair({ ownerArea: "Website" }, { ownerArea: "invoicing" }), { differ: ["Website", "invoicing"] });
+    const route = (owner: { ownerArea?: string; differ?: [string, string] }, authors: string[], stakeholder: string | null = null) =>
+      reconcile.routeConflict("o", roster, "site-structure-pages", "site structure / pages", authors, trusted, stakeholder, owner);
+    assert.deepEqual(route({ ownerArea: "invoicing" }, ["alp", "alp"]), { to: "bob", reason: "BOB decides invoicing." });
+    assert.deepEqual(route({ ownerArea: "Website" }, ["alp"]), { to: "bob", reason: "BOB decides Website." }, "an owner who wrote neither side");
+    assert.deepEqual(route({ ownerArea: "none" }, ["bob"], "alp"), { to: "alp", reason: "ALP is this project's main stakeholder." });
+    assert.deepEqual(route({ ownerArea: "none" }, ["bob"], null), { to: OPERATOR, reason: "Nobody on the roster decides site structure / pages." });
+    assert.deepEqual(route({ differ: ["Website", "invoicing"] }, ["alp", "bob"], "alp"), { to: OPERATOR, reason: "The two decisions name different owner areas: Website and invoicing." });
+    assert.equal(route({}, ["alp"], null).to, OPERATOR, "no owner area: the topic, which no one decides");
   });
 });
 
@@ -304,6 +359,10 @@ describe("decisions → conflicts → draft → promotion", async () => {
     const row = baton.batonById(c.batonSessionId!)!.row;
     assert.equal(row.holder, carlos.id);
     assert.equal(baton.batonSummaryField(c.batonPath!)?.sendLink?.to, "Carlos Gate", "Needs-you: send Carlos his link");
+    // A settle session: its row names the conflict, and the list says what is in conflict.
+    assert.deepEqual(row.conflict, { id: c.id, area: "Invoicing" });
+    assert.deepEqual(baton.batonSummaryField(c.batonPath!)?.settle, { area: "Invoicing" });
+    assert.equal(baton.batonSummaryField(f1)?.settle, undefined, "an ordinary gathering session is none");
     assert.match(row.goal, /Clients get 30 days\./);
     assert.match(row.goal, /No, billing is 60 days\./);
     assert.equal(info.decisions.find((d) => d.id === d60)!.state, "conflict");
@@ -426,6 +485,9 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.equal(baton.batonById(again.batonSessionId!)!.row.holder, carlos.id);
     assert.equal(baton.batonById(first)!.row.state, "closed");
     assert.deepEqual(ended, [first]);
+    // Both are settle sessions of the same conflict: the closed one keeps its mark (a Done row, still a conflict's).
+    assert.deepEqual(baton.batonById(first)!.row.conflict, { id: c.id, area: "payroll export" });
+    assert.deepEqual(baton.batonById(again.batonSessionId!)!.row.conflict, { id: c.id, area: "payroll export" });
     await assert.rejects(reconcile.routeConflictNow(org.id, project.id, c.id, "p_nobody"), /active person/);
   });
 
@@ -492,6 +554,15 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, true);
     writeFileSync(md, bytes);
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, false);
+    // A builder recording evidence writes the spec too: frozen means only promotion does.
+    const mf = join(client, ".sova", "spec", "manifest.json");
+    const mbytes = readFileSync(mf, "utf8");
+    const m = JSON.parse(mbytes);
+    const rid = Object.keys(m.claims).find((k) => k.startsWith("§requirements.invoicing/"))!;
+    m.claims[rid].evidence = "verified";
+    writeFileSync(mf, JSON.stringify(m));
+    assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, true);
+    writeFileSync(mf, mbytes);
     reconcile.setFrozen(org.id, project.id, false);
     writeFileSync(md, `${bytes}\nA hand edit.\n`);
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, undefined);
@@ -617,7 +688,14 @@ describe("decisions → conflicts → draft → promotion", async () => {
     const overseer = { overseerOf: project.id };
     say(f1, maria.id, "s", { area: "snow clearing", statement: "Snow is cleared within 2 days.", quote: "2 days" });
     say(f2, tony.id, "s", { area: "snow clearing", statement: "Snow is cleared within 6 days.", quote: "6 days" });
+    const ledger = await import("./project-costs-ledger");
+    const lp = ledger.ledgerPaths(org.id, project.id);
+    const rowsBefore = ledger.readUsageLedger(lp);
+    assert.ok(rowsBefore.length > 0 && rowsBefore.every((r) => r.by !== "overseer" && r.provider === "jev" && r.input === 10), "every answer so far is in usage.jsonl");
+    assert.ok(rowsBefore.some((r) => r.by === "operator"), "Reconcile Now is the operator's");
     const info = await reconcile.reconcileProject(org.id, project.id, { owner: overseer });
+    const added = ledger.readUsageLedger(lp).slice(rowsBefore.length);
+    assert.ok(added.length > 0 && added.every((r) => r.by === "overseer"), "the overseer's run is its own");
     const trigger = info.conflicts.find((k) => k.state === "open" && k.areaKey === "snow-clearing")!;
     assert.deepEqual(baton.batonById(trigger.batonSessionId!)!.row.owner, overseer, "the overseer's reconcile opened it");
     const stop = reconcile.watchResolutions(10);
@@ -633,6 +711,9 @@ describe("decisions → conflicts → draft → promotion", async () => {
       }
       assert.ok(c, "the watcher's run found and routed it");
       assert.deepEqual(baton.batonById(c!.batonSessionId!)!.row.owner, overseer, "still the overseer's, not the operator's");
+      // The automatic post-resolution session is a settle session like any other.
+      assert.deepEqual(baton.batonById(c!.batonSessionId!)!.row.conflict, { id: c!.id, area: "gritting" });
+      assert.equal(ledger.readUsageLedger(lp).at(-1)?.by, "sova", "an automatic run is Sova's own, whoever owns what it opens");
     } finally {
       stop();
     }
@@ -797,6 +878,84 @@ describe("a fold of a fold", async () => {
 });
 
 // The spec tool itself, against a project whose spec someone else already wrote: our records join it.
+// ---- owner areas end to end: a project with several owners ------------------------------------------------------------
+
+describe("a multi-owner project routes by owner area", async () => {
+  const org = await orgs.createOrg({ name: "Studio", dir: join(tmp, "ws-owner") });
+  const client = join(tmp, "client-owner");
+  mkdirSync(client);
+  const project = orgs.addProject(org.id, { name: "Site", root: client });
+  const alp = orgs.addPerson(org.id, { name: "Alperen", role: "Founder", decides: ["website", "branding"] });
+  const bob = orgs.addPerson(org.id, { name: "Bob Tan", role: "Accountant", decides: ["invoicing"] });
+  const s1 = baton.createBaton({ orgId: org.id, projectId: project.id, to: alp.id, publicTitle: "Site", goal: "g" });
+  const s2 = baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Billing", goal: "g" });
+  const id = (sid: string, m: { markerId?: string }) => `${sid}:${m.markerId}`;
+  const row = (info: { decisions: { id: string }[] }, x: string) => info.decisions.find((d) => d.id === x) as any;
+
+  test("free topics, roster owner areas: the owner's decisions are theirs, the overseer promotes them, and an older decision keeps the topic match", async () => {
+    const pages = id(s1.sessionId, say(s1.path, alp.id, "Two pages.", { area: "site structure / pages", ownerArea: "website", statement: "The site has two pages.", quote: "Two pages." }));
+    const old = id(s1.sessionId, say(s1.path, alp.id, "Blue.", { area: "page colours", statement: "Pages are blue.", quote: "Blue." }));
+    const byBob = id(s2.sessionId, say(s2.path, bob.id, "Footer.", { area: "site structure / pages", ownerArea: "website", statement: "The footer lists the office address.", quote: "Footer." }));
+    const info = await reconcile.reconcileProject(org.id, project.id, { route: false });
+    assert.equal(row(info, pages).ownerArea, "website");
+    assert.equal(row(info, pages).areaKey, "site-structure-pages", "the topic still files the spec");
+    assert.equal(row(info, pages).authorOwnsArea, true);
+    assert.equal(row(info, old).ownerArea, undefined, "nothing is backfilled");
+    assert.equal(row(info, old).authorOwnsArea, false, "an older decision: page-colours is no one's area");
+    assert.equal(row(info, byBob).authorOwnsArea, false, "Bob doesn't decide website");
+    const r = await reconcile.promoteDecisions(org.id, project.id, [pages, byBob], { by: "overseer" });
+    assert.deepEqual(r.promoted, [pages]);
+    assert.deepEqual(r.refused.map((x) => x.id), [byBob]);
+    assert.ok(specManifest(client).claims["§requirements/site-structure-pages"], "filed under its topic");
+  });
+
+  test("a contradiction goes to the owner area's owner, and the settle session names the owner area", async () => {
+    say(s1.path, alp.id, "a", { area: "payment terms", ownerArea: "invoicing", statement: "Invoices are due 30 days after issue.", quote: "30 days" });
+    say(s1.path, alp.id, "b", { area: "payment terms", ownerArea: "invoicing", statement: "Invoices are due 60 days after issue.", quote: "60 days" });
+    const info = await reconcile.reconcileProject(org.id, project.id);
+    const c = info.conflicts.find((k) => k.state === "open" && k.areaKey === "payment-terms")!;
+    assert.ok(c, JSON.stringify(info.conflicts));
+    assert.deepEqual([c.routedTo, c.routeReason, c.ownerArea], [bob.id, "Bob Tan decides invoicing.", "invoicing"]);
+    assert.match(baton.batonById(c.batonSessionId!)!.row.goal, /owner area "invoicing"/);
+  });
+
+  test("the operator changes a decision's owner area: kept with who and when, authority recomputed, its open conflict re-routed", async () => {
+    let info = reconcile.listDecisions(org.id, project.id);
+    const old = info.decisions.find((d) => d.area === "page colours")!;
+    await assert.rejects(reconcile.setOwnerArea(org.id, project.id, old.id, "site"), /"site" is not an owner area\. Use one of: "website", "branding", "invoicing" or "none"\./);
+    info = await reconcile.setOwnerArea(org.id, project.id, old.id, "Branding");
+    const changed = row(info, old.id);
+    assert.equal(changed.ownerArea, "branding");
+    assert.equal(changed.authorOwnsArea, true);
+    assert.equal(changed.ownerAreaHistory.length, 1);
+    assert.deepEqual({ ...changed.ownerAreaHistory[0], at: "" }, { at: "", by: OPERATOR, name: orgs.operatorName(), from: null, to: "branding" });
+    // Survives a sync from the transcripts.
+    assert.equal(row(reconcile.listDecisions(org.id, project.id), old.id).ownerArea, "branding");
+    // A side of an open conflict: re-routed by its new owner area.
+    const c = info.conflicts.find((k) => k.state === "open" && k.areaKey === "payment-terms")!;
+    const first = c.batonSessionId!;
+    info = await reconcile.setOwnerArea(org.id, project.id, c.a, "website");
+    let again = info.conflicts.find((k) => k.id === c.id)!;
+    assert.deepEqual([again.routedTo, again.routeReason], [OPERATOR, "The two decisions name different owner areas: website and invoicing."]);
+    assert.equal(baton.batonById(first)!.row.state, "closed", "the session asking Bob is over");
+    const second = again.batonSessionId!;
+    assert.notEqual(second, first);
+    info = await reconcile.setOwnerArea(org.id, project.id, c.b, "website");
+    again = info.conflicts.find((k) => k.id === c.id)!;
+    assert.deepEqual([again.routedTo, again.routeReason, again.ownerArea], [alp.id, "Alperen decides website.", "website"], "Alperen wrote both sides and is the only owner");
+    assert.equal(baton.batonById(again.batonSessionId!)!.row.holder, alp.id);
+    assert.equal(baton.batonById(second)!.row.state, "closed");
+    // The same route again changes nothing: no new session.
+    const third = again.batonSessionId;
+    info = await reconcile.setOwnerArea(org.id, project.id, c.b, "Website");
+    assert.equal(info.conflicts.find((k) => k.id === c.id)!.batonSessionId, third);
+  });
+
+  test("an unknown decision is refused", async () => {
+    await assert.rejects(reconcile.setOwnerArea(org.id, project.id, "nope", "none"), /Unknown decision/);
+  });
+});
+
 describe("an existing spec", () => {
   test("appends an area file without touching other claims", async () => {
     const root = join(tmp, "existing");
@@ -809,5 +968,144 @@ describe("an existing spec", () => {
     const m = JSON.parse(readFileSync(join(root, ".sova", "spec", "manifest.json"), "utf8"));
     assert.deepEqual(m.claims["§app/thing"], { kind: "note", authority: "accepted" });
     assert.equal(readFileSync(join(root, ".sova", "spec", "claims", "app", "thing.md"), "utf8"), "# §app/thing — Thing\n\nPre-existing.\n");
+  });
+});
+
+// ---- NEW-MS2-1: the decisions layer owns only its fields (§app.requirements/decisions, /promotion) ----------------
+
+describe("the decisions layer owns only its fields", async () => {
+  const org = await orgs.createOrg({ name: "Garage", dir: join(tmp, "ws-layers") });
+  const client = join(tmp, "client-layers");
+  mkdirSync(client);
+  const project = orgs.addProject(org.id, { name: "Invoices", root: client });
+  const kim = orgs.addPerson(org.id, { name: "Kim Park", role: "Finance", decides: ["invoicing"] });
+  const s = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Invoices", goal: "g" });
+  const md = join(client, ".sova", "spec", "claims", "requirements", "invoicing.md");
+  const manifestFile = join(client, ".sova", "spec", "manifest.json");
+  let a = "";
+  let b = "";
+  const row = (info: { decisions: { id: string }[] }, id: string) => info.decisions.find((d) => d.id === id) as any;
+
+  test("a builder's evidence and code leave a promoted decision promoted, and it reads as built", async () => {
+    a = `${s.sessionId}:${say(s.path, kim.id, "Net 30 for all.", { area: "invoicing", statement: "Invoices are due after thirty days.", quote: "Net 30 for all." }).markerId}`;
+    b = `${s.sessionId}:${say(s.path, kim.id, "Blue letterhead.", { area: "invoicing", statement: "Invoices use the blue letterhead.", quote: "Blue letterhead." }).markerId}`;
+    await reconcile.reconcileProject(org.id, project.id);
+    const r = await reconcile.promoteDecisions(org.id, project.id, [a, b]);
+    assert.deepEqual(r.promoted.sort(), [a, b].sort());
+    assert.match(row(r.info, a).promotedText, /^[0-9a-f]{64}$/, "the prose as promoted is kept");
+    assert.equal(row(r.info, a).build, "not-built");
+    assert.deepEqual([r.info.spec.built, r.info.spec.notBuilt], [0, 2]);
+    // The builder, in spec mode on its branch, records evidence and code, relabels, and the file's layout differs.
+    const m = specManifest(client);
+    const ra = row(r.info, a).recordId;
+    const rb = row(r.info, b).recordId;
+    Object.assign(m.claims[ra], { evidence: "verified", code: ["src/due.js"] });
+    Object.assign(m.claims[rb], { authority: "migrated", requires: [] });
+    writeFileSync(manifestFile, `${JSON.stringify(m, null, 2)}\n`);
+    writeFileSync(md, `${readFileSync(md, "utf8")}\n\n`);
+    const info = await reconcile.reconcileProject(org.id, project.id);
+    assert.equal(row(info, a).state, "promoted", "evidence and code are the spec layer's");
+    assert.equal(row(info, b).state, "promoted", "so is a relabel");
+    assert.equal(row(info, a).build, "built");
+    assert.equal(row(info, b).build, "not-built");
+    assert.equal(row(info, a).editedInSpec, undefined, "a layout change is not an edit");
+    assert.deepEqual([info.spec.built, info.spec.notBuilt, info.spec.drafted, info.spec.draft], [1, 1, 0, null], "and no draft would take the evidence away");
+  });
+
+  test("a re-promotion keeps the builder's fields and every byte it didn't mean to change", async () => {
+    const c = `${s.sessionId}:${say(s.path, kim.id, "Thirty, yes.", { area: "invoicing", statement: "Thirty days, confirmed.", quote: "Thirty, yes." }).markerId}`;
+    await reconcile.reconcileProject(org.id, project.id);
+    // Fold C into A, as a confirmation would be.
+    const store = decisions.readDecisionStore(org.id, project.id);
+    const r = (id: string) => store.decisions.find((d) => d.id === id)!;
+    r(a).folded = [c];
+    Object.assign(r(c), { state: "superseded", supersededBy: a });
+    decisions.writeDecisionStore(org.id, project.id, store);
+    const drafted = await reconcile.draftProject(org.id, project.id);
+    assert.equal(row(drafted, a).state, "drafted", "a folded quote is the decisions layer's: promotable again");
+    const ra = row(drafted, a).recordId;
+    const rb = row(drafted, b).recordId;
+    const draftRec = JSON.parse(readFileSync(join(client, ".sova", "spec", "drafts", "sova-decisions", "spec", "manifest.json"), "utf8")).claims[ra];
+    assert.equal(draftRec.evidence, "verified", "the draft keeps the builder's evidence");
+    assert.deepEqual(draftRec.code, ["src/due.js"]);
+    const before = readFileSync(md, "utf8");
+    const bBlock = before.slice(before.indexOf(`## ${rb}`));
+    const out = await reconcile.promoteDecisions(org.id, project.id, [a]);
+    assert.deepEqual(out.refused, [], "B's record, in the same file, is not pulled into the selection");
+    assert.deepEqual(out.promoted, [a]);
+    const m = specManifest(client);
+    assert.equal(m.claims[ra].evidence, "verified");
+    assert.deepEqual(m.claims[ra].code, ["src/due.js"]);
+    assert.deepEqual(m.claims[ra].provenance.map((p: any) => p.quote), ["Net 30 for all.", "Thirty, yes."]);
+    assert.deepEqual([m.claims[rb].authority, m.claims[rb].requires], ["migrated", []]);
+    assert.ok(readFileSync(md, "utf8").endsWith(bBlock), "B's block and the file's trailing layout are byte for byte as they were");
+  });
+
+  test("prose edited in the spec is flagged, stays promoted, and the operator keeps or restores it", async () => {
+    const info0 = reconcile.listDecisions(org.id, project.id);
+    const rb = row(info0, b).recordId;
+    const original = readFileSync(md, "utf8");
+    writeFileSync(md, original.replace("Invoices use the blue letterhead.\n", "Invoices use the blue letterhead, 12 pt.\n"));
+    let info = reconcile.listDecisions(org.id, project.id);
+    assert.equal(row(info, b).state, "promoted");
+    assert.equal(row(info, b).editedInSpec, true);
+    await assert.rejects(reconcile.settleSpecText(org.id, project.id, a, "keep"), /as they were promoted/);
+    info = await reconcile.settleSpecText(org.id, project.id, b, "keep");
+    assert.equal(row(info, b).editedInSpec, undefined);
+    assert.equal(row(info, b).textKept.by, OPERATOR);
+    // Edited again, then restored: the person's words come back, the record's other fields stay.
+    writeFileSync(md, readFileSync(md, "utf8").replace("12 pt.", "14 pt."));
+    assert.equal(row(reconcile.listDecisions(org.id, project.id), b).editedInSpec, true);
+    info = await reconcile.settleSpecText(org.id, project.id, b, "restore");
+    assert.equal(row(info, b).editedInSpec, undefined);
+    assert.equal(row(info, b).state, "promoted");
+    assert.equal(readFileSync(md, "utf8"), original, "their words, and the file as it was");
+    assert.deepEqual([specManifest(client).claims[rb].authority, specManifest(client).claims[rb].requires], ["migrated", []]);
+  });
+});
+
+describe("the writer changes only what it means to", () => {
+  const row = (slug: string, statement: string) =>
+    ({ id: `s:${slug}`, areaKey: "hosting", area: "Hosting", statement, quote: statement, name: "Tony", at: "2026-09-26T00:00:00Z", by: "p_t", sessionId: "s", entryId: "e", recordId: `§requirements.hosting/${slug}` }) as any;
+  const setup = (name: string, text: string, claims: Record<string, unknown>) => {
+    const dir = join(tmp, name);
+    mkdirSync(join(dir, "claims", "requirements"), { recursive: true });
+    writeFileSync(join(dir, "manifest.json"), `${JSON.stringify({ formatVersion: 1, claims }, null, 2)}\n`);
+    writeFileSync(join(dir, "claims", "requirements", "hosting.md"), text);
+    return dir;
+  };
+  const x = row("x", "Runs on srv-01.");
+  const y = row("y", "Backups nightly.");
+  const lede = writer.renderLede("hosting", "Hosting");
+  const odd = `${lede}\n${writer.renderRecord(x)}\n\n\n${writer.renderRecord(y)}\n\n`;
+  const recs = { "§requirements/hosting": { kind: "note", authority: "accepted" }, [x.recordId]: { ...writer.manifestRecord(x), evidence: "verified", code: ["a.js"] }, [y.recordId]: writer.manifestRecord(y) };
+
+  test("nothing to change: no file is written", () => {
+    const dir = setup("w-same", odd, recs);
+    const before = readFileSync(join(dir, "manifest.json"), "utf8");
+    assert.deepEqual(writer.applyToSpecDir(dir, { rows: [x, y], supersededBy: new Map() }), []);
+    assert.equal(readFileSync(join(dir, "claims", "requirements", "hosting.md"), "utf8"), odd);
+    assert.equal(readFileSync(join(dir, "manifest.json"), "utf8"), before);
+  });
+  test("a manifest-only change leaves the claim file's bytes alone and keeps the spec layer's fields", () => {
+    const dir = setup("w-manifest", odd, recs);
+    const x2 = { ...x, entryId: "e2" };
+    assert.deepEqual(writer.applyToSpecDir(dir, { rows: [x2], supersededBy: new Map() }), [x.recordId]);
+    assert.equal(readFileSync(join(dir, "claims", "requirements", "hosting.md"), "utf8"), odd);
+    const m = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+    assert.equal(m.claims[x.recordId].provenance[0].entryId, "e2");
+    assert.deepEqual([m.claims[x.recordId].evidence, m.claims[x.recordId].code], ["verified", ["a.js"]]);
+  });
+  test("a changed block keeps its layout; the other blocks keep their bytes; an appended one follows a blank line", () => {
+    const dir = setup("w-block", odd, recs);
+    const z = row("z", "Logs kept 90 days.");
+    const out = writer.applyToSpecDir(dir, { rows: [z, x], supersededBy: new Map([[x.recordId, z.recordId]]) });
+    assert.deepEqual(out, [x.recordId, z.recordId].sort());
+    const text = readFileSync(join(dir, "claims", "requirements", "hosting.md"), "utf8");
+    assert.equal(text, `${lede}\n${writer.renderRecord(x, z.recordId)}\n\n\n${writer.renderRecord(y)}\n\n\n${writer.renderRecord(z)}`, "the old bytes, then the new block");
+    const m = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+    assert.equal(m.claims[x.recordId].supersededBy, z.recordId);
+    assert.equal(m.claims[x.recordId].evidence, "verified");
+    assert.deepEqual(m.claims[z.recordId], writer.manifestRecord(z), "a new record gets kind and authority");
   });
 });

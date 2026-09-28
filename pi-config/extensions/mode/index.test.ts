@@ -5,13 +5,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { ALIGN_INSTRUCTIONS, buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, workerMinorModes } from "./minor.ts";
+import { ALIGN_INSTRUCTIONS, buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, VIS_INSTRUCTIONS, visPrompt, workerMinorModes } from "./minor.ts";
 import { parseModeWorkerEvent } from "./events.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
+import { ALIGN_FILE_SCHEMA, ALIGN_NUDGE_TEXT, ALIGN_OPS } from "./align.ts";
 import { delegateDefaults, type DelegateSettings } from "./delegate.ts";
 import {
 	applyModeSection,
 	buildDelegatePrompt,
+	buildModeNote,
 	buildSpecWriterPrompt,
 	composePrompt,
 	composeWorkerPrompt,
@@ -32,12 +34,14 @@ import {
 	isMode,
 	loadState,
 	MODE_DESCRIPTIONS,
+	MODE_NOTE_TYPE,
 	MODES,
 	normalizeActive,
 	normalizeState,
 	parseMode,
 	parseShortcut,
 	restoreActive,
+	restoreHead,
 	saveState,
 	toggleMode,
 	withMinor,
@@ -236,25 +240,55 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.match(align, /not the Investigation profile/);
 	assert.match(align, /Stop and wait/);
 	assert.match(align, /Exempt/);
-	assert.match(align, /do not re-ask/);
-	// The block skeleton align.ts parses (headings verbatim, task-list questions, status words).
-	assert.match(align, /^## Alignment: /m);
-	assert.match(align, /^### Findings$/m);
-	assert.match(align, /^### Approach$/m);
-	assert.match(align, /^### Open questions$/m);
-	assert.match(align, /^### Rejected$/m);
-	assert.match(align, /^### Status$/m);
-	// Questions carry their number inside the checkbox label; a list-number marker would be lost by the viewer.
-	assert.match(align, /^- \[ \] \*\*1\. /m);
-	assert.doesNotMatch(align.split("### Open questions")[1]?.split("### Rejected")[0] ?? "", /^\d+\. \[[ xX]\]/m);
-	assert.match(align, /`\[x\]`/);
-	assert.match(align, /Status `confirmed`/);
-	assert.match(align, /Status `implementing`/);
-	assert.match(align, /go ahead while questions are still open/);
+	assert.match(align, /never re-ask a settled question/);
+	// Every alignment goes through the tool, never prose; answers and lifecycle through ops.
+	assert.match(align, /record every alignment with the `align` tool/);
+	assert.match(align, /Never write an alignment as reply text/);
+	assert.match(align, /import it with the import op and that absolute path/);
+	assert.match(align, /decide \(in their words\), accept only the questions they told you to take your recommendation on/);
+	assert.match(align, /leave the rest open/);
+	assert.match(align, /Never set status implementing while a question is open/);
+	assert.match(align, /set status implementing before you build/);
+	assert.match(align, /status done when the work is finished/);
+	assert.match(align, /align exempt and a reason/);
+	assert.match(align, /Several alignments can be open at once/);
+	// No markdown template survives: the parser that read it is gone.
+	assert.doesNotMatch(align, /^#{2,3} (Alignment|Findings|Open questions|Status)/m);
+	assert.doesNotMatch(align, /\[ \]/);
+	// The bridge hands the planning worker's result over as a file, in the tool's schema.
+	assert.match(DELEGATE_ALIGN_BRIDGE, /Workers have no align tool/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /align \{op: "import", path: that same absolute path\}/);
+	// No text the model reads names an op shape the tool no longer takes, and every op it names is one.
+	for (const text of [align, DELEGATE_ALIGN_BRIDGE, ALIGN_NUDGE_TEXT]) {
+		assert.doesNotMatch(text, /fromFile|create \+|\bdrop \{|\{why\}|exempt with why|accept \{q|q: "open"/);
+		for (const op of text.match(/\b(?:accept|drop|edit)_[a-z]+\b/g) ?? []) assert.ok((ALIGN_OPS as readonly string[]).includes(op), op);
+	}
+	// The planner's one write is named, absolute and outside the repo, and the delegate block's
+	// no-edit rule names that same exception, so the two never contradict each other.
+	assert.match(DELEGATE_ALIGN_BRIDGE, /one permitted write is the alignment JSON/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /absolute path outside the repository that you name in its prompt/);
+	assert.match(buildDelegatePrompt([]), /must not edit files[^\n]*The one exception is a planning worker's alignment JSON \(align on\), written outside the repository\./);
+	assert.match(align, /absolute path outside the repository/);
+	assert.ok(DELEGATE_ALIGN_BRIDGE.includes(ALIGN_FILE_SCHEMA), "the bridge quotes the one file schema");
+	assert.match(DELEGATE_ALIGN_BRIDGE, /status is implementing/);
+});
+
+test("vis: vis-mode.md verbatim minus its owner comments, composed last", () => {
+	const vis = buildMinorPrompt("vis");
+	assert.match(vis, /^# Minor mode: vis\n/);
+	assert.doesNotMatch(vis, /<!--|owner:/, "owner notes never reach the model");
+	// A stub kind is never taught: whichever sections the guide itself marks as stubs.
+	const guide = readFileSync(new URL("./vis-mode.md", import.meta.url), "utf8");
+	for (const [, h] of guide.matchAll(/^## (.+)\n<!-- stub -->/gm)) assert.doesNotMatch(vis, new RegExp(`^## ${h}$`, "m"), `stub ${h} is never taught`);
+	assert.match(vis, /^## code$/m);
+	assert.match(vis, /^## Shared: emphasis$/m);
+	assert.equal(visPrompt("# A\n\n## x\n<!-- stub -->\nhidden\n\n## y\n<!-- note -->\nshown\n"), "# A\n\n## y\nshown");
+	assert.match(vis, /```vis flow\n/);
+	assert.equal(composePrompt(withMinor(withMinor(defaults(), "vis", true), "align", true), ALL_OK), `${buildMinorPrompt("align")}\n\n${vis}`);
 });
 
 test("spec: a registered minor mode, composed after align and never bridged", () => {
-	assert.deepEqual(MINOR_MODES, ["align", "spec"], "registry order is prompt and status order");
+	assert.deepEqual(MINOR_MODES, ["align", "spec", "vis"], "registry order is prompt and status order");
 	assert.deepEqual(Object.keys(MINOR_DESCRIPTIONS), [...MINOR_MODES], "one description per minor mode, nothing else");
 	assert.deepEqual(parseMinorFlag("spec,align"), { minorModes: ["align", "spec"], unknown: [] });
 	const spec = buildMinorPrompt("spec");
@@ -294,12 +328,13 @@ test("spec: the prompt is spec-mode.md, byte for byte", () => {
 test("spec: minor.ts reads its own spec-mode.md, from any cwd, and refuses a malformed one", () => {
 	const here = dirname(fileURLToPath(import.meta.url));
 	const canonical = readFileSync(join(here, "spec-mode.md"), "utf8");
-	// A standalone copy of just these two files, imported from an unrelated cwd.
+	// A standalone copy of just these files (minor.ts and the prompt texts it reads), imported from an unrelated cwd.
 	const load = (md: string) => {
 		const dir = mkdtempSync(join(tmpdir(), "spec-mode-"));
 		try {
 			writeFileSync(join(dir, "minor.ts"), readFileSync(join(here, "minor.ts")));
 			writeFileSync(join(dir, "spec-mode.md"), md);
+			writeFileSync(join(dir, "vis-mode.md"), readFileSync(join(here, "vis-mode.md")));
 			const src = `import(${JSON.stringify(pathToFileURL(join(dir, "minor.ts")).href)}).then((m) => process.stdout.write(JSON.stringify([m.buildMinorPrompt("spec"), m.SPEC_CORE_SHELL])))`;
 			return spawnSync(process.execPath, ["--input-type=module", "-e", src], { cwd: tmpdir(), encoding: "utf8" });
 		} finally {
@@ -764,28 +799,30 @@ test("composePrompt takes a ModeActive, so the per-session state drives the turn
 
 // ── Workers (§chat.mode-menu/workers) ────────────────────────────────────────
 
-test("MINOR_WORKER declares every minor mode, and nothing else: spec reaches workers, align does not", () => {
+test("MINOR_WORKER declares every minor mode, and nothing else: spec reaches workers, align and vis do not", () => {
 	assert.deepEqual(Object.keys(MINOR_WORKER).sort(), [...MINOR_MODES].sort());
 	for (const minor of MINOR_MODES) assert.equal(typeof MINOR_WORKER[minor], "boolean", minor);
 	assert.equal(MINOR_WORKER.spec, true);
 	assert.equal(MINOR_WORKER.align, false);
-	assert.deepEqual(workerMinorModes(["spec", "align"]), ["spec"], "registry order, worker-scope only");
+	assert.equal(MINOR_WORKER.vis, false);
+	assert.deepEqual(workerMinorModes(["vis", "spec", "align"]), ["spec"], "registry order, worker-scope only");
 	assert.deepEqual(workerMinorModes(["align"]), []);
 });
 
 test("composeWorkerPrompt: the spec block byte for byte, then the worker note; never delegate, align, the bridge or a writer", () => {
 	const discovery: Record<string, Discovery> = {};
 	const writer = routeWriter({ ...specDefaults(), writer: { primary: { backend: "claude-code", model: "sonnet", effort: "high" }, fallback: null } } as SpecSettings, discovery, () => null);
-	const everything = { mode: "delegate" as const, strict: true, minorModes: ["align", "spec"] as MinorMode[] };
+	const everything = { mode: "delegate" as const, strict: true, minorModes: ["align", "spec", "vis"] as MinorMode[] };
 	// The parent's own block carries all of it: the worker's must carry none of it.
 	const parent = composePrompt(everything, DEFAULT_ROUTES, writer)!;
-	assert.ok(parent.includes("# Mode: delegate") && parent.includes("# Minor mode: align") && parent.includes("Spec writer:"), "the parent block is the full one");
+	assert.ok(parent.includes("# Mode: delegate") && parent.includes("# Minor mode: align") && parent.includes("# Minor mode: vis") && parent.includes("Spec writer:"), "the parent block is the full one");
 	const worker = composeWorkerPrompt(everything)!;
 	assert.equal(worker, `${SPEC_INSTRUCTIONS}\n\n${SPEC_WORKER_NOTE}`);
 	assert.ok(worker.startsWith(SPEC_INSTRUCTIONS), "starts with spec-mode.md exactly");
-	for (const absent of ["# Mode: delegate", "# Minor mode: align", DELEGATE_ALIGN_BRIDGE, "Spec writer:", ALIGN_INSTRUCTIONS.slice(0, 200)])
+	for (const absent of ["# Mode: delegate", "# Minor mode: align", "# Minor mode: vis", DELEGATE_ALIGN_BRIDGE, "Spec writer:", ALIGN_INSTRUCTIONS.slice(0, 200), VIS_INSTRUCTIONS.slice(0, 200)])
 		assert.ok(!worker.includes(absent), `worker prompt must not include ${absent.slice(0, 40)}`);
 	assert.equal(composeWorkerPrompt({ minorModes: ["align"] }), undefined, "align alone reaches no worker");
+	assert.equal(composeWorkerPrompt({ minorModes: ["vis"] }), undefined, "vis alone reaches no worker");
 	assert.equal(composeWorkerPrompt({ minorModes: [] }), undefined);
 });
 
@@ -803,4 +840,65 @@ test("parseModeWorkerEvent keeps a v1 payload and drops everything else", () => 
 	assert.deepEqual(parseModeWorkerEvent({ version: 1, minorModes: [] }), { version: 1, minorModes: [] });
 	for (const bad of [null, "x", { version: 2, minorModes: [] }, { version: 1 }, { version: 1, minorModes: [1] }, { version: 1, minorModes: [""] }, { version: 1, minorModes: [], prompt: 3 }, { version: 1, minorModes: [], prompt: "  " }])
 		assert.equal(parseModeWorkerEvent(bad), undefined, JSON.stringify(bad));
+});
+
+test("composePrompt: minor blocks follow the head's set, the delegate bridge the active align", () => {
+	const active = { mode: "normal" as const, strict: false, minorModes: ["vis"] as MinorMode[] };
+	assert.equal(composePrompt(active, DEFAULT_ROUTES, null, ["spec"]), buildMinorPrompt("spec"), "the head's blocks, not the active ones");
+	assert.equal(composePrompt(active, DEFAULT_ROUTES, null, []), undefined);
+	assert.equal(composePrompt(active, DEFAULT_ROUTES), buildMinorPrompt("vis"), "no head: the active set, as before");
+	const delegate = { mode: "delegate" as const, strict: false, minorModes: ["align"] as MinorMode[] };
+	const block = composePrompt(delegate, DEFAULT_ROUTES, null, [])!;
+	assert.ok(block.endsWith(DELEGATE_ALIGN_BRIDGE), "align on (a tool-set change anyway): the bridge is in");
+	assert.doesNotMatch(block, /# Minor mode: align/, "the align block itself is the head's business");
+});
+
+test("buildModeNote: whole guide on first turning on, a pointer after, a line for off", () => {
+	const none = { head: [] as MinorMode[], guides: [] as MinorMode[] };
+	assert.equal(buildModeNote(["vis"], ["vis"], none), undefined, "nothing changed");
+	const on = buildModeNote([], ["vis"], none)!;
+	assert.deepEqual(on.guides, ["vis"]);
+	assert.equal(on.text, `Mode change: the user turned the vis minor mode on. Its instructions follow and apply from now on, as if they were part of your system prompt.\n\n${buildMinorPrompt("vis")}`);
+	const back = buildModeNote([], ["vis"], { head: [], guides: ["vis"] })!;
+	assert.deepEqual(back.guides, []);
+	assert.match(back.text, /turned the vis minor mode back on\. Its instructions \(the "# Minor mode: vis" block given earlier in this conversation\) apply again/);
+	const inHead = buildModeNote([], ["vis"], { head: ["vis"], guides: [] })!;
+	assert.match(inHead.text, /block in your system prompt\) apply again/);
+	const off = buildModeNote(["vis", "spec"], ["align"], { head: ["spec"], guides: ["vis"] })!;
+	const parts = off.text.split("\n\nMode change: ");
+	assert.equal(parts.length, 3, "one part per switched mode");
+	assert.match(parts[0], /^Mode change: the user turned the spec minor mode off\. Its instructions \(the "# Minor mode: spec" block in your system prompt\) no longer apply/);
+	assert.match(parts[1], /^the user turned the vis minor mode off\. .*given earlier in this conversation/);
+	assert.ok(parts[2].startsWith("the user turned the align minor mode on") && parts[2].endsWith(buildMinorPrompt("align")), "offs first, then ons");
+	const writer = routeWriter({ version: 1, writer: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null } }, {}, () => null)!;
+	assert.ok(buildModeNote([], ["spec"], none, writer)!.text.endsWith(`${buildMinorPrompt("spec")}\n\n${buildSpecWriterPrompt(writer)}`), "spec carries its writer paragraph, as in the prompt");
+});
+
+test("restoreHead: the newest recorded head, the newest note, and nothing across a compaction", () => {
+	const pin = (minorModes: MinorMode[], head?: MinorMode[]) => ({ type: "custom", customType: "mode", data: { mode: "normal", active: { version: 1, mode: "normal", strict: false, minorModes }, ...(head ? { head } : {}) } });
+	const note = (minorModes: MinorMode[], guides: MinorMode[]) => ({ type: "custom_message", customType: MODE_NOTE_TYPE, details: { v: 1, minorModes, guides } });
+	assert.deepEqual(restoreHead([]), { head: undefined, told: undefined, guides: [] }, "never sent: the head follows the active set");
+	assert.deepEqual(restoreHead([pin(["vis"])]), { head: undefined, told: undefined, guides: [] }, "a Sova pin carries no head");
+	assert.deepEqual(restoreHead([pin(["vis"], [])]), { head: [], told: [], guides: [] }, "recorded, not told yet");
+	assert.deepEqual(
+		restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([]), note([], [])]),
+		{ head: [], told: [], guides: ["vis"] },
+		"an entry equal to its head carries none; the older one still names it, and every guide since counts",
+	);
+	assert.deepEqual(restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([])]), { head: [], told: ["vis"], guides: ["vis"] }, "a switch not told yet: told is the last note's");
+	assert.deepEqual(
+		restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), { type: "compaction" }, pin(["spec", "vis"], ["vis"])]),
+		{ head: ["vis"], told: ["vis"], guides: [] },
+		"notes before a compaction don't count",
+	);
+	assert.deepEqual(restoreHead([pin(["vis"], []), { type: "compaction" }]).head, undefined, "a compaction rebuilds the head from the active set");
+	assert.deepEqual(restoreHead([pin(["vis"], []), { type: "custom_message", customType: MODE_NOTE_TYPE, details: { v: 2 } }]).told, [], "an unknown note is skipped");
+	assert.doesNotThrow(() => restoreHead(null as never));
+});
+
+test("buildModeNote in the worker form: spec turned on carries the worker note, never a writer", () => {
+	const writer = routeWriter({ version: 1, writer: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null } }, {}, () => null)!;
+	const note = buildModeNote([], ["spec"], { head: [], guides: [] }, writer, true)!;
+	assert.ok(note.text.endsWith(`\n\n${composeWorkerPrompt({ minorModes: ["spec"] })}`), "the worker form of the block");
+	assert.doesNotMatch(note.text, /Spec writer:/);
 });

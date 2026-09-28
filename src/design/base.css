@@ -361,6 +361,9 @@ i.icon {
   box-shadow: var(--shadow-1);
   overflow: hidden;
 }
+.card-interactive { cursor: pointer; transition: border-color var(--dur-fast) var(--ease-standard); }
+.card-interactive:hover        { border-color: var(--color-border-strong); }
+.card-interactive:focus-visible{ outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 
 
 /* ---- BANNER. In-flow and persistent; carries the fact itself. ------------ */
@@ -2000,8 +2003,10 @@ a.group-option { color: inherit; text-decoration: none; }
    system. The mono treatment belongs to the pickers `.mode-option-id` was borrowed from. */
 .action-menu .mode-option-id { font-family: var(--font-body); font-size: var(--fs-body); }
 /* Menu rows, not picker rows: the row is a label beside its icon, and the icon keeps the
-   design system's --space-2 from it at every row height. */
-.action-menu .mode-option { gap: var(--space-2); padding: var(--space-1) var(--space-3); }
+   design system's --space-2 from it at every row height. Icon and label sit on the row's centre
+   line: the picker's top alignment left a 16px icon above a 20px label line, and a one-line label
+   above the middle of its min-height row. */
+.action-menu .mode-option { align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-3); }
 .action-menu .mode-option .icon { flex: none; color: var(--color-ink-muted); }
 .action-menu .mode-option[aria-disabled="true"] { cursor: not-allowed; }
 /* The panel is the model menu's column flex with overflow hidden, so rows used to SHRINK to their
@@ -2411,6 +2416,9 @@ a.group-option { color: inherit; text-decoration: none; }
   white-space: nowrap;
 }
 .session-head-meta > * { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* A peer session's host keeps its name on a narrow head: the folder after it gives way first. */
+.session-head-meta > .session-head-host { flex: none; max-width: 50%; }
+.session-head-meta > .session-head-host + * { flex: none; }
 /* A meta that's plain text (the Usage and Agents pages) is an anonymous flex
    item, which can't ellipsize: render it as a block so the line gets its "…". */
 .session-head-meta:not(:has(> *)) { display: block; text-overflow: ellipsis; }
@@ -2672,6 +2680,10 @@ a.group-option { color: inherit; text-decoration: none; }
   white-space: nowrap;
 }
 
+/* Always in the DOM and shown by `[data-shown]`: inserting the button made the browser lay out
+   the whole transcript again (60-200ms at folded width on a long one), where a visibility change
+   only repaints it. Hidden, it is out of the tab order and the accessibility tree. The fade
+   replays each time it is shown. */
 .jump-latest {
   position: absolute;
   left: 50%;
@@ -2679,8 +2691,9 @@ a.group-option { color: inherit; text-decoration: none; }
   transform: translateX(-50%);
   z-index: 3;
   box-shadow: var(--shadow-2);
-  animation: enter-fade var(--dur-base) var(--ease-standard);
+  visibility: hidden;
 }
+.jump-latest[data-shown] { visibility: visible; animation: enter-fade var(--dur-base) var(--ease-standard); }
 /* `.button:active` sets `transform: translateY(1px)` and outranks this rule, so pressing the button
    dropped the centring translate and slid it right by half its width. Re-state the centring while
    pressed, as .lightbox-prev/.lightbox-next do. */
@@ -4623,6 +4636,16 @@ button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offse
   background: var(--color-surface);
 }
 .subagents-list > li { border-bottom: var(--stroke-thin) solid var(--color-border); }
+/* The end of a list the live record cut short: how many show, and the button for the rest. */
+.subagents-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+.subagents-more > .text-caption { margin: 0; color: var(--color-ink-muted); }
 
 /* The back button and the row chevron exist only in list/detail; side by side
    both halves are on screen, so neither has anywhere to go. */
@@ -5117,17 +5140,16 @@ a.subagent-row { text-decoration: none; }
    holds the strip open through the states that outlive a pointer — an armed
    confirm, Copy's check, a refusal.
 
-   the band is the row's. the strip hangs below the bubble and a row is
-   `display: contents`, so it has no box of its own: the pointer keeps `.entry:hover`
-   only while it is over one of the row's children, all the way down to a button.
-   so the strip's box owns the whole thread gap above it — pulled up by the gap and
+   the band is the row's. the strip hangs below the bubble, a gap of the row's own
+   column (app.css `.entry`, which keeps the thread's gap between its children) away.
+   so the strip's box owns the whole gap above it — pulled up by the gap and
    padded back down by the same amount less the old 4px lift, which leaves the icons
    where they were and the row's flow height unchanged — and a hidden strip's BOX is
    hit-testable while its CONTENTS are not (`pointer-events: none` on the children).
    that second half is what keeps the first tap safe: a tap on an unseen button
    lands on the strip box, reveals the row and presses nothing. the band's height
-   IS `.thread`'s gap (`--space-4`): change that gap and this margin and padding
-   change with it.
+   IS `.thread`'s gap (`--space-4`), which `.entry` repeats: change that gap and this
+   margin and padding change with it.
 
    Revealed, the ink is a semantic colour at full opacity, never alpha over the page —
    `--color-ink-muted` is 4.7:1 or better on every surface a message sits on (paper,
@@ -5371,6 +5393,40 @@ a.subagent-row { text-decoration: none; }
 }
 .overseer-confirm-answer .icon { color: var(--status-success); }
 .overseer-confirm-hint { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* What the card is about: one compact row per session, idea or todo, the
+   first 8 shown. A session row is its summary (else title) as a link, then muted
+   "project · 3d ago" and a warn chip while it has subagents working; the note under it. */
+.overseer-confirm-detail + .overseer-confirm-items { padding-top: 0; }
+.overseer-confirm-items { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.overseer-confirm-list { list-style: none; margin: 0; padding: 0; align-self: stretch; }
+.overseer-confirm-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  min-height: var(--tap-min);
+  padding: var(--space-1) 0;
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+/* Straight under the head (no detail), the head's border already divides. */
+.card-head + .overseer-confirm-items .overseer-confirm-item:first-child { border-top: none; }
+.overseer-confirm-item-line { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: var(--space-2); row-gap: var(--space-1); min-width: 0; }
+.overseer-confirm-item-line .chip { align-self: center; }
+.overseer-confirm-item-name { min-width: 0; overflow-wrap: anywhere; }
+.overseer-confirm-item-meta { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); white-space: nowrap; }
+.overseer-confirm-idea-id { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
+/* The Overseer's note: what the item is and why the card acts on it. Body ink,
+   not muted — it is the reason to read the row; two lines, then clamped. */
+.overseer-confirm-item-note {
+  color: var(--color-ink);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+.overseer-confirm-more { margin-inline-start: calc(-1 * var(--space-3)); gap: var(--space-1); }
 
 /* sova_link / sova_unlink's card: the link's id, then one line per member, host first. */
 .overseer-link { max-width: var(--measure); }
@@ -5413,19 +5469,27 @@ a.subagent-row { text-decoration: none; }
    and the Decisions tab's key and provider lines.
    ============================================================================= */
 
-/* A finished turn that needs you: one glyph after the unread dot (or the turn-error mark), before
+/* A session that needs you: one glyph after the unread dot (or the turn-error mark), before
    the draft pencil. It is inline text like the pencil, not an indicator, so line 1 stays the
-   title's. One mark per row, the most urgent kind: asks, then looping. The kind differs in shape
-   as well as tone, so hue never carries it alone: asks-you is a speech bubble in the accent (the
-   accent's one spend, "this needs you"), looping the refresh arrows in warn. The glyph is aria-hidden; the hidden word beside it names the kind.
-   A wrapping span may carry the tooltip; it adds no box of its own. */
+   title's. One mark per row, the most urgent kind: open alignment questions (§chat.alignment/
+   session-mark), then looping. The kind differs in shape as well as tone, so hue never carries it
+   alone: open questions are a speech bubble in the accent (the accent's one spend, "this needs
+   you") followed by their count, looping the refresh arrows in warn. The glyph is aria-hidden; the
+   hidden words beside it name the kind. A wrapping span may carry the tooltip; it adds no box of its own. */
 .list-title .session-signal {
   width: 1em;
   height: 1em;
   margin-right: var(--space-1);
   vertical-align: -0.125em;
 }
-.session-signal-asks    { color: var(--color-accent); }
+.session-signal-questions { color: var(--color-accent); }
+.list-title .session-signal-count {
+  margin-right: var(--space-1);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  color: var(--color-accent);
+}
+.list-title .session-signal-questions { margin-right: 2px; }
 .session-signal-looping { color: var(--status-warn); }
 
 /* The tag's status word joins line 3's facts, "2h ago · done · model", in the meta's own

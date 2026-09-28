@@ -19,6 +19,7 @@ import { isUnread, isViewing, readSeen, turnErrorShows } from "./seen";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
 import { messageContextTokens } from "./transcript";
+import { type AlignScan, readAlignScan } from "./align-state";
 import { WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
@@ -26,7 +27,7 @@ import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-sto
 import { dropSessionTags, tagsFor } from "./session-tags";
 import { batonSummaryField } from "./baton";
 import { projectOverseerOfPath } from "./project-overseer-store";
-import { orgLookup } from "./org-sessions";
+import { orgCodingIds, orgLookup } from "./org-sessions";
 import { orgOfSessionPath, readIndex } from "./orgs";
 
 /** `baton` for a baton session's file (§app/baton), `projectOverseer` for a project overseer's
@@ -65,6 +66,9 @@ interface CacheEntry {
   /** The file carries the Overseer marker. Whether it IS the Overseer's is decided per read
       (`overseerOf`): the answer changes with overseer-state.json, not with the file. */
   marked: boolean;
+  /** How far the align read got (server/align-state.ts): the marker search resumes from it while
+      the file only grows, and a file with no `align` result is never parsed. */
+  align: AlignScan | null;
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -206,6 +210,9 @@ interface OutlineScan {
 
 const MARK_BYTES = 64;
 
+/** Past the last MAX_TAIL bytes, a first read goes on back in chunks this big. */
+const DEEP_CHUNK = 1024 * 1024;
+
 /**
  * The topic-outline's latest snapshot in [floor, size), scanned backwards like readTailModel: the
  * last `topic-outline` custom entry's rolling "now" line, its "overall" gist, when it was
@@ -220,7 +227,7 @@ async function scanOutline(fh: FileHandle, size: number, floor: number): Promise
   let end = size;
   let carry = Buffer.alloc(0); // bytes after the first newline seen so far: a line's start is still unread
   while (end > floor) {
-    const start = Math.max(floor, end - CHUNK);
+    const start = Math.max(floor, end - (size - end < MAX_TAIL ? CHUNK : DEEP_CHUNK));
     const chunk = Buffer.alloc(end - start);
     const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
     if (bytesRead < chunk.length) return null; // truncated under us: the next request retries
@@ -276,19 +283,21 @@ async function bytesBefore(fh: FileHandle, offset: number): Promise<Buffer> {
  *
  * If the file has only grown since the read `prev` — it is no shorter, and the bytes just before
  * where `prev` stopped are the same — only the bytes after that point are read, and `prev`'s
- * outline is carried unless they hold a newer one. The tail window alone lost the outline of a
- * live session whose writer appended more than MAX_TAIL past its last snapshot (an image read back
- * is ~150 KB a line), which emptied the row until the next snapshot while the thread's strip, which
- * reads the whole file, still showed it. Anything else — a first read, a file that shrank or was
- * rewritten — reads the last MAX_TAIL bytes afresh, as every read did before. What is carried is
- * this process's own: each server that lists a file reads its growth for itself.
+ * outline is carried unless they hold a newer one. Anything else — a first read, a file that
+ * shrank or was rewritten — reads back from the end until it finds one, as far as the start of the
+ * file. A tail window alone lost the outline of any session whose last snapshot was more than
+ * MAX_TAIL from the end (an image read back is ~150 KB a line): the row had none while the
+ * thread's strip, which reads the whole file, showed it, so opening the session popped the strip
+ * in (§app/insights, opening a session). Each file is read that far once per (process, content):
+ * what is carried is this process's own, and each server that lists a file reads its growth for
+ * itself.
  * null when the file was truncated under the read.
  */
 async function readOutline(path: string, size: number, prev: OutlineScan | null): Promise<OutlineScan | null> {
   const fh = await open(path, "r");
   try {
     const grown = prev !== null && size >= prev.size && (await bytesBefore(fh, prev.resume)).equals(prev.mark);
-    const scan = await scanOutline(fh, size, grown ? Math.max(0, prev.resume - 1) : Math.max(0, size - MAX_TAIL));
+    const scan = await scanOutline(fh, size, grown ? Math.max(0, prev.resume - 1) : 0);
     if (!scan) return null;
     return { found: scan.found ?? (grown ? prev.found : null), size, resume: scan.resume, mark: await bytesBefore(fh, scan.resume) };
   } finally {
@@ -624,6 +633,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     const outline = scan?.found ?? null;
     const ctx = await readTailContext(path, st.size);
     const lastReply = await readTailReply(path, st.size);
+    const align = await readAlignScan(path, st.size, hit?.align ?? null);
     // A workspace session (an org's baton or overseer file) is listed under the dir it opens in on
     // THIS host; its header keeps the dir of the host that created it (§app.organizations/portability).
     const hostCwd = extraSessionRoots().includes(dirname(path)) ? cwdOverride(path) : undefined;
@@ -650,8 +660,9 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(parent ?? {}),
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
       ...(format !== CURRENT_SESSION_FORMAT ? { legacyFormat: true as const } : {}),
+      ...(align.summary ? { align: align.summary } : {}),
     };
-    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, marked: head.overseer };
+    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, marked: head.overseer, align };
     cache.set(path, entry);
     return withWindow(entry, resolveWindow);
   } catch {
@@ -1046,6 +1057,7 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
   const refusals: { path: string; reason: string }[] = [];
   /** Ids whose file is really gone, so their group assignment goes too (one write after the loop). */
   const forgotten: string[] = [];
+  let codingIds: Set<string> | undefined;
   for (const target of targets) {
     // paths mode re-validates what the route already checked, so a direct caller gets the same rule.
     const path = req.mode === "paths" ? resolveSessionPath(target) : target;
@@ -1069,6 +1081,9 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     }
     const matches = req.mode === "age" ? st.mtimeMs < cutoff : req.mode === "husks" ? await isZeroInput(path, st.size) : true;
     if (!matches) continue;
+    // A project's coding session is empty until the operator's first message (New Coding Session):
+    // its started.json row names it, so it is never swept as a husk.
+    if (req.mode === "husks" && (codingIds ??= orgCodingIds()).has(idOf(path))) continue;
     // Overseer files (current and history) are never swept by age or as husks: a fresh Overseer
     // is a husk by definition, and its history is pruned by /clear itself (paths mode).
     if (req.mode !== "paths" && (await summarize(path))?.overseer) continue;

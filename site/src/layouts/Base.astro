@@ -1,0 +1,75 @@
+---
+import "../styles/tokens.css";
+import "../styles/components.css";
+import "../styles/site.css";
+import "../styles/mock.css";
+
+interface Props { title: string; description: string }
+const { title, description } = Astro.props;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#1E1E26" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/icons/apple-touch-icon.png" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="preload" href="/fonts/Inter-Variable.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- Before first paint: a saved theme choice, so the page never flashes the other one.
+         With none saved, the page is dark, like the app. -->
+    <script is:inline>
+      try {
+        const t = localStorage.getItem("sova-site:theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+        if (t === "light") document.querySelector('meta[name="theme-color"]').content = "#F2F2F7";
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to Content</a>
+    <slot />
+    <script is:inline>
+      // Theme toggle: sets data-theme on <html> and remembers it.
+      for (const b of document.querySelectorAll("[data-theme-toggle]")) {
+        const sync = () => {
+          const light = document.documentElement.dataset.theme === "light";
+          b.setAttribute("aria-pressed", String(light));
+          b.setAttribute("aria-label", light ? "Use Dark Theme" : "Use Light Theme");
+        };
+        sync();
+        b.addEventListener("click", () => {
+          const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+          document.documentElement.dataset.theme = next;
+          document.querySelector('meta[name="theme-color"]').content = next === "light" ? "#F2F2F7" : "#1E1E26";
+          try { localStorage.setItem("sova-site:theme", next); } catch {}
+          for (const other of document.querySelectorAll("[data-theme-toggle]")) other.dispatchEvent(new Event("sync"));
+        });
+        b.addEventListener("sync", sync);
+      }
+      // Copy buttons: copy the command they name, then say so for 2 seconds.
+      for (const b of document.querySelectorAll("[data-copy]")) {
+        b.addEventListener("click", async () => {
+          const text = document.getElementById(b.dataset.copy).textContent;
+          const label = b.querySelector(".install-label");
+          try {
+            await navigator.clipboard.writeText(text);
+            b.classList.add("is-copied");
+            label.textContent = label.dataset.done;
+          } catch {
+            label.textContent = "Select and Copy";
+          }
+          clearTimeout(b._t);
+          b._t = setTimeout(() => { b.classList.remove("is-copied"); label.textContent = label.dataset.idle; }, 2000);
+        });
+      }
+    </script>
+  </body>
+</html>

@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { PromoteCommit } from "../shared/decisions";
-import { type Git, runGit } from "../pi-config/extensions/worktrees/git.ts";
+import { type Git, probeMerge, runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
 import { LOCAL_ONLY_IGNORE } from "./spec-draft-writer";
 
@@ -20,8 +20,8 @@ export const NOT_GIT = "it isn't a Git repository.";
 export const NO_COMMITS = "the repository has no commits yet.";
 export const DETACHED = "its checkout is on a detached HEAD.";
 
-/** The identity for a commit when the repo has none configured (as the workspace repo's commits). */
-const FALLBACK_ID = ["-c", "user.name=Sova", "-c", "user.email=sova@localhost"];
+/** Sova's own identity: always for a promotion commit; for Merge Branch (the operator's gesture) only when the repo has none configured. */
+const SOVA_ID = ["-c", "user.name=Sova", "-c", "user.email=sova@localhost"];
 
 const firstLine = (s: string) => s.trim().split("\n")[0]?.trim() || "git failed";
 
@@ -96,12 +96,9 @@ async function branchSha(git: Git, cwd: string, branch: string): Promise<string 
   return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : null;
 }
 
-/** Whether `branch` has commits beyond `base` that are all in `target`. */
+/** Whether `branch` has commits beyond `base` that are all in `target`: the worktrees extension's own probe, run in `cwd`. */
 async function mergedInto(git: Git, cwd: string, w: WorktreeRecord): Promise<boolean> {
-  const b = await branchSha(git, cwd, w.branch);
-  const t = await branchSha(git, cwd, w.target);
-  if (!b || !t || b === w.base) return false;
-  return (await git(["merge-base", "--is-ancestor", b, t], cwd)).code === 0;
+  return (await probeMerge(git, { path: cwd, branch: w.branch, base: w.base, baseBranch: w.target }, w.target))?.merged === true;
 }
 
 /** The worktree's uncommitted files (tracked changes and untracked files). */
@@ -126,6 +123,8 @@ export interface WorktreeReading {
   /** The branch still exists in the repository. */
   branch: boolean;
   ahead: number;
+  /** Commits on the branch that `target` lacks. */
+  unmerged: number;
   dirty: boolean;
   worktree: string | null;
   error?: string;
@@ -136,15 +135,19 @@ export async function readWorktree(w: WorktreeRecord, root: string, git: Git = r
   const here = existsSync(w.path);
   const cwd = here ? w.path : root;
   try {
-    if (!existsSync(cwd)) return { state: "missing", merged: false, branch: false, ahead: 0, dirty: false, worktree: null };
+    if (!existsSync(cwd)) return { state: "missing", merged: false, branch: false, ahead: 0, unmerged: 0, dirty: false, worktree: null };
     const branch = (await branchSha(git, cwd, w.branch)) !== null;
-    const n = await git(["rev-list", "--count", `${w.base}..refs/heads/${w.branch}`], cwd);
-    const ahead = n.code === 0 ? Number(n.stdout.trim()) || 0 : 0;
+    const count = async (range: string) => {
+      const n = await git(["rev-list", "--count", range], cwd);
+      return n.code === 0 ? Number(n.stdout.trim()) || 0 : 0;
+    };
+    const ahead = await count(`${w.base}..refs/heads/${w.branch}`);
+    const unmerged = branch ? await count(`refs/heads/${w.target}..refs/heads/${w.branch}`) : 0;
     const merged = await mergedInto(git, cwd, w);
     const dirty = here ? (await uncommitted(git, w.path)).length > 0 : false;
-    return { state: !here ? "missing" : merged ? "merged" : "open", merged, branch, ahead, dirty, worktree: here ? w.path : null };
+    return { state: !here ? "missing" : merged ? "merged" : "open", merged, branch, ahead, unmerged, dirty, worktree: here ? w.path : null };
   } catch (err) {
-    return { state: here ? "open" : "missing", merged: false, branch: true, ahead: 0, dirty: false, worktree: here ? w.path : null, error: err instanceof Error ? err.message : String(err) };
+    return { state: here ? "open" : "missing", merged: false, branch: true, ahead: 0, unmerged: 0, dirty: false, worktree: here ? w.path : null, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -185,7 +188,7 @@ export async function mergeBack(w: WorktreeRecord, root: string, title: string, 
   if (!b) throw new WorktreeRefusal(`The branch ${w.branch} no longer exists.`);
   if ((await git(["merge-base", "--is-ancestor", b, "HEAD"], root)).code === 0) throw new WorktreeRefusal(`${w.branch} has nothing to merge into ${w.target}.`);
   const who = await git(["config", "user.email"], root);
-  const id = who.code === 0 && who.stdout.trim() ? [] : FALLBACK_ID;
+  const id = who.code === 0 && who.stdout.trim() ? [] : SOVA_ID;
   const r = await git([...id, "-c", "commit.gpgsign=false", "merge", "--no-edit", "-m", `Merge ${w.branch}: ${title}`, "--", `refs/heads/${w.branch}`], root);
   if (r.code !== 0) {
     const conflicted = await git(["diff", "--name-only", "--diff-filter=U"], root);
@@ -317,9 +320,8 @@ export async function commitSpec(snap: SpecSnapshot, message: string, git: Git =
   if (!files.length) return undefined;
   const add = await git(["add", "--", ...files], snap.top);
   if (add.code !== 0) return { skipped: `Not committed: ${firstLine(add.stderr || add.stdout)}` };
-  const who = await git(["config", "user.email"], snap.top);
-  const id = who.code === 0 && who.stdout.trim() ? [] : FALLBACK_ID;
-  const c = await git([...id, "-c", "commit.gpgsign=false", "commit", "--only", "-m", message, "--", ...files], snap.top);
+  // Sova's identity, never the repo's or the host's: the commit is Sova's act, not the operator's.
+  const c = await git([...SOVA_ID, "-c", "commit.gpgsign=false", "commit", "--only", "-m", message, "--", ...files], snap.top);
   if (c.code !== 0) return { skipped: `Not committed: ${firstLine(c.stderr || c.stdout)}` };
   const sha = await git(["rev-parse", "HEAD"], snap.top);
   return { sha: sha.stdout.trim(), branch: snap.branch ?? "", files, message };

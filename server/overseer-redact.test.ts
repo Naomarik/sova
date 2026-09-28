@@ -9,6 +9,8 @@ import { dirname, join } from "node:path";
 import { after, describe, test } from "node:test";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-redact-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const home = join(root, "home");
 const agentDir = join(root, "agent");
 process.env.HOME = home;

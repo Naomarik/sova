@@ -193,7 +193,12 @@ describe("GET /explain/:id", () => {
   test("no frame-blocking headers: the gallery renders thumbnails in a sandboxed iframe", async () => {
     const res = await app.request("/explain/aaa");
     assert.equal(res.headers.get("X-Frame-Options"), null);
-    assert.equal(res.headers.get("Content-Security-Policy"), null);
+    assert.doesNotMatch(res.headers.get("Content-Security-Policy") ?? "", /frame-ancestors/);
+  });
+
+  test("the page runs sandboxed in an opaque origin: scripts yes (the theme), same-origin no", async () => {
+    const res = await app.request("/explain/aaa");
+    assert.equal(res.headers.get("Content-Security-Policy"), "sandbox allow-scripts");
   });
 
   test("unknown id, and an id whose dir has no page, are 404", async () => {
@@ -312,6 +317,27 @@ describe("transcript: explain-doc rows", () => {
       { ...explainEntry(info({ id: "two" }), "e2"), parentId: "e1" },
     ]);
     assert.deepEqual(rows.map((r) => r.report?.explain?.id), ["one", "two"]);
+  });
+});
+
+describe("transcript: interrupted explain-doc entries", () => {
+  test("an interrupted run with a page is a linkable row: status interrupted, note, no report error", () => {
+    const rows = normalizeEntries([explainEntry({ ...info(), status: "interrupted", note: "Interrupted: may be unfinished." } as never, "e1")]);
+    assert.equal(rows[0]?.report?.explain?.status, "interrupted");
+    assert.equal(rows[0]?.report?.explain?.note, "Interrupted: may be unfinished.");
+    assert.equal(rows[0]?.report?.error, undefined);
+  });
+  test("an interrupted run without a page carries its error on the row, like any failed run", () => {
+    const rows = normalizeEntries([explainEntry({ ...info(), summary: "", status: "interrupted", error: "Interrupted before the page." } as never, "e1")]);
+    assert.equal(rows[0]?.report?.explain?.status, "interrupted");
+    assert.equal(rows[0]?.report?.error, "Interrupted before the page.");
+  });
+  test("the interrupted entry supersedes its running entry (same id, newest wins)", () => {
+    const rows = normalizeEntries([
+      explainEntry({ ...info(), summary: "", status: "running" } as never, "e1"),
+      { ...explainEntry({ ...info(), status: "interrupted", note: "n" } as never, "e2"), parentId: "e1" },
+    ]);
+    assert.deepEqual(rows.map((r) => r.report?.explain?.status), ["interrupted"]);
   });
 });
 

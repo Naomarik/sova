@@ -40,7 +40,7 @@ const digest = (items: AttentionItem[], act = items.filter((i) => i.tier === "ac
 test("one row per session with an act item, newest first; decide and fyi items never list", () => {
   const d = digest([
     item("a", "act", "error", 100, "The last turn stopped with an error."),
-    item("b", "act", "asks-you", 300, "Asks you: ship it?"),
+    item("b", "act", "open-questions", 300, "2 open questions in al_1 Ship it"),
     item("a", "act", "worker-error", 200, "1 subagent ended in an error."),
     item("c", "decide", "finished", 900, "done"),
     item("d", "fyi", "working", 999),

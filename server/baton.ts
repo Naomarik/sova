@@ -27,9 +27,10 @@ import {
 } from "../shared/baton";
 import type { Person } from "../shared/orgs";
 import { deadWhy, liveLinks, mintLink, revokeLinks, type LinkRecord, linkDead, findLink } from "./baton-links";
+import { openedSessions } from "./visits";
 import { emitBatonEvent } from "./baton-events";
 import { readBatonSettings } from "./baton-settings";
-import { onOrgAttached, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, readOrg, readProjects, readRoster, setOpenBatonCounter, shortId } from "./orgs";
+import { archivedRefusal, onOrgAttached, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, readOrg, readProjects, readRoster, setOpenBatonCounter, shortId } from "./orgs";
 import { canonicalPath } from "./paths";
 import { markSeen } from "./seen";
 import { nudgeMarks } from "./session-feed";
@@ -85,7 +86,9 @@ export function allBatons(): BatonSession[] {
 setOpenBatonCounter(
   (orgId) => {
     try {
-      return readRows(orgDir(orgId)).filter((r) => r.state === "open" || r.state === "needs-you").length;
+      // An archived project's are not counted (§app.organizations/archive; none are open while it is).
+      const archived = new Set(readProjects(orgId).filter((p) => p.archived).map((p) => p.id));
+      return readRows(orgDir(orgId)).filter((r) => (r.state === "open" || r.state === "needs-you") && !archived.has(r.projectId)).length;
     } catch {
       return 0;
     }
@@ -327,7 +330,10 @@ function revokeWithdrawn(row: BatonSession, offer: Offer | undefined): void {
  * `mintLink: false` for a caller that can't show a link to anyone — then no link exists and the
  * session asks the operator to send one (Needs you, "Send <name> their link").
  */
-export function createBaton(input: BatonStartInput & { owner?: BatonOwner; mintLink?: boolean }, now = new Date()): Created {
+export function createBaton(
+  input: BatonStartInput & { owner?: BatonOwner; mintLink?: boolean; settle?: { conflictId: string; area: string }; startedVia?: "overseer" },
+  now = new Date(),
+): Created {
   const dir = orgDir(input.orgId);
   readOrg(input.orgId); // a readable org.json, or a 409 before anything is written
   const parent = typeof input.parentSessionId === "string" && input.parentSessionId ? batonById(input.parentSessionId) : null;
@@ -335,6 +341,8 @@ export function createBaton(input: BatonStartInput & { owner?: BatonOwner; mintL
   const projectId = input.projectId || parent?.row.projectId;
   const project = readProjects(input.orgId).find((p) => p.id === projectId);
   if (!project) throw new OrgError("Unknown project", 404);
+  // Nothing new starts in an archived project (§app.organizations/archive).
+  if (project.archived) throw new OrgError(archivedRefusal(project.name), 409);
   const owner = cleanOwner(input.owner);
   const publicTitle = text(input.publicTitle, "publicTitle", PUBLIC_TITLE_MAX);
   const goal = text(input.goal, "goal", GOAL_MAX);
@@ -388,6 +396,8 @@ export function createBaton(input: BatonStartInput & { owner?: BatonOwner; mintL
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
     createdAt: now.toISOString(),
+    ...(input.settle ? { conflict: { id: input.settle.conflictId, area: input.settle.area } } : {}),
+    ...(input.startedVia === "overseer" ? { startedVia: "overseer" as const } : {}),
   };
   writeRows(dir, [...readRows(dir), row]);
   const mint = input.mintLink !== false;
@@ -532,6 +542,10 @@ function lapse(r: BatonSession, now: number): Noted["expired"] {
   return { n: o.n, offerId: o.id, by };
 }
 
+/** A message by `by` is by someone the session was sent to: a roster person, or the operator when the
+    first hand-off went to the operator (a conflict routed to them). */
+export const wroteForIt = (r: Pick<BatonSession, "handoffs">, by: PersonRef): boolean => by !== OPERATOR || r.handoffs[0]?.to === OPERATOR;
+
 /**
  * A message entered the session (from the share page or the operator's composer). The lock of
  * §app.baton/offers-and-leases lives here, in one synchronous read-modify-write (the whole server
@@ -569,6 +583,7 @@ export function noteMessage(sessionId: string, by: PersonRef, now = Date.now()):
     }
     if (budgetSpent(r)) throw new BudgetSpent(by);
     r.budget.messagesUsed++;
+    if (!r.wroteAt && wroteForIt(r, by)) r.wroteAt = new Date(now).toISOString();
     if (by === OPERATOR && r.state === "needs-you") r.state = "open";
     if (o && o.holder === by) {
       o.lastActivityAt = new Date(now).toISOString();
@@ -621,6 +636,16 @@ export function setBudgetUsed(sessionId: string, used: number, expected: number)
   return changed;
 }
 
+/** The backfill's write (server/baton-marks.ts): set only what the row still lacks. */
+export function setBatonMarks(sessionId: string, marks: { wroteAt?: string; conflict?: { id: string; area: string } }): boolean {
+  let changed = false;
+  update(sessionId, (r) => {
+    if (marks.wroteAt && !r.wroteAt) (r.wroteAt = marks.wroteAt), (changed = true);
+    if (marks.conflict && !r.conflict) (r.conflict = marks.conflict), (changed = true);
+  });
+  return changed;
+}
+
 /** A reply ended: the holder's lease renews from now (the later of their message and the reply). */
 export function touchLease(sessionId: string, now = Date.now()): void {
   const hit = batonById(sessionId);
@@ -669,6 +694,8 @@ export function startOffer(
 ): { n: number; from: PersonRef; offer: Offer; links: { personId: string; token: string }[] } {
   const hit = batonById(sessionId);
   if (!hit) throw new OrgError("Unknown baton session", 404);
+  const project = readProjects(hit.row.orgId).find((p) => p.id === hit.row.projectId);
+  if (project?.archived) throw new OrgError(archivedRefusal(project.name), 409);
   const invitees = resolveInvitees(readRoster(hit.row.orgId), to, operatorName());
   if (!invitees.ok) throw new OrgError(invitees.error);
   const q = text(question, "question", QUESTION_MAX, false) || hit.row.publicTitle;
@@ -804,6 +831,9 @@ export function batonSummaryField(path: string): BatonSummaryField | undefined {
     state: row.state,
     ...(offer ? { offer: { state: offer.state === "held" ? "held" : "open", invited: offer.to.length, ...(offer.holder ? { holder: nameOf(row.orgId, offer.holder) } : {}) } } : {}),
     ...(proposals.length ? { proposals } : {}),
+    ...(row.wroteAt ? { written: true as const } : {}),
+    ...(openedSessions(row.orgId).has(row.sessionId) ? { opened: true as const } : {}),
+    ...(row.conflict ? { settle: { area: row.conflict.area } } : {}),
     ...(row.state === "needs-you" && last && last.to === OPERATOR
       ? { needsYou: { from: nameOf(row.orgId, last.from), question: last.question, since: Date.parse(last.at) || 0 } }
       : {}),
@@ -856,4 +886,12 @@ export function setWrapup(sessionId: string, info: WrapupInfo): void {
 /** Drop the row's wrap-up record, so the session wants one again (the operator's Retry, server/wrapup-recovery.ts). */
 export function clearWrapup(sessionId: string): void {
   update(sessionId, (r) => void delete r.wrapup);
+}
+
+/** Hide a conversation from the org owner's page, or show it again (§app.owner-page/chats; the operator's strip). */
+export function setHiddenFromOwner(sessionId: string, hidden: boolean): BatonSession {
+  return update(sessionId, (r) => {
+    if (hidden) r.hiddenFromOwner = true;
+    else delete r.hiddenFromOwner;
+  });
 }

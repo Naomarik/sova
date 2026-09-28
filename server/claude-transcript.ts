@@ -7,7 +7,9 @@
 // Everything here is read-only. The JSONL is Claude Code's own format (pinned to CLI 2.1.278 by
 // the fixtures in claude-transcript.test.ts), so normalizeClaudeEntries translates it into the
 // same TranscriptItem rows server/transcript.ts produces for pi sessions — including a synthetic,
-// pi-shaped `raw` message, so the existing frontend renders these rows with no special case.
+// pi-shaped `raw` message, so the existing frontend renders these rows with no special case. Edit,
+// MultiEdit and Write take pi's edit/write argument names, and their results carry CC's own
+// hunks as `details.structuredPatch` (pi's edit carries `details.patch` text instead).
 
 import { existsSync } from "node:fs";
 import { sep } from "node:path";
@@ -28,10 +30,67 @@ const TOOL_NAMES: Record<string, string> = {
   Bash: "bash",
   Read: "read",
   Edit: "edit",
+  MultiEdit: "edit",
   Write: "write",
   Glob: "glob",
   Grep: "grep",
 };
+
+/**
+ * CC's Edit / MultiEdit / Write arguments under pi's edit / write names, so the card reads them as
+ * it reads pi's: `{path, edits: [{oldText, newText}], replaceAll?}` and `{path, content}`. Anything
+ * else, or a malformed input, passes through as it is.
+ */
+export function piToolArgs(ccName: unknown, input: unknown): unknown {
+  if (!input || typeof input !== "object") return input;
+  const a = input as Record<string, unknown>;
+  if (typeof a.file_path !== "string") return input;
+  if (ccName === "Write" && typeof a.content === "string") return { path: a.file_path, content: a.content };
+  if (ccName === "Edit" && typeof a.old_string === "string" && typeof a.new_string === "string") {
+    return { path: a.file_path, edits: [{ oldText: a.old_string, newText: a.new_string }], ...(a.replace_all === true ? { replaceAll: true } : {}) };
+  }
+  if (ccName === "MultiEdit" && Array.isArray(a.edits)) {
+    const edits = a.edits.filter((e) => typeof e?.old_string === "string" && typeof e?.new_string === "string").map((e) => ({ oldText: e.old_string, newText: e.new_string }));
+    if (edits.length === a.edits.length) return { path: a.file_path, edits };
+  }
+  return input;
+}
+
+/** One `structuredPatch` hunk as CC writes it (the `diff` package's hunk): lines keep their
+    " " / "-" / "+" / "\\" prefix. */
+interface CcHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: string[];
+}
+
+function isHunk(h: unknown): h is CcHunk {
+  const o = h as CcHunk;
+  return (
+    !!o &&
+    typeof o === "object" &&
+    [o.oldStart, o.oldLines, o.newStart, o.newLines].every((n) => Number.isInteger(n) && n >= 0) &&
+    Array.isArray(o.lines) &&
+    o.lines.every((l) => typeof l === "string")
+  );
+}
+
+/**
+ * A successful Edit / MultiEdit / Write result's diff, from the line's `toolUseResult`, as the
+ * synthetic tool result's `details`: `{structuredPatch}` verbatim (hunks only: never
+ * `originalFile`), plus `created: true` for a Write that made the file. Undefined for anything
+ * else (other tools' results, errors, shapes this version does not know).
+ */
+export function editDetailsOf(toolUseResult: unknown): { structuredPatch: CcHunk[]; created?: true } | undefined {
+  const r = toolUseResult as { structuredPatch?: unknown; type?: unknown; filePath?: unknown } | null;
+  if (!r || typeof r !== "object" || Array.isArray(r) || typeof r.filePath !== "string") return undefined;
+  const hunks = r.structuredPatch === undefined && r.type === "create" ? [] : r.structuredPatch;
+  if (!Array.isArray(hunks) || !hunks.every(isHunk)) return undefined;
+  const structuredPatch = hunks.map((h) => ({ oldStart: h.oldStart, oldLines: h.oldLines, newStart: h.newStart, newLines: h.newLines, lines: [...h.lines] }));
+  return r.type === "create" ? { structuredPatch, created: true } : { structuredPatch };
+}
 
 /** id → resolved file. Session files never move, so a hit is only re-checked by the caller's read. */
 const resolved = new Map<string, string>();
@@ -129,7 +188,7 @@ function assistantItems(entry: Entry, id: string, time: string | undefined, mode
       const it = item(
         bid,
         "tool-call",
-        raw(time, { role: "assistant", content: [{ type: "toolCall", id: callId, name, arguments: b.input }] }),
+        raw(time, { role: "assistant", content: [{ type: "toolCall", id: callId, name, arguments: piToolArgs(b.name, b.input) }] }),
         name,
         callId,
       );
@@ -148,6 +207,8 @@ function userItems(entry: Entry, id: string, time: string | undefined): Transcri
   const blocks: any[] = Array.isArray(content) ? content : [];
   const results = blocks.filter((b) => b?.type === "tool_result");
   if (results.length > 0) {
+    // The line's toolUseResult belongs to its one result; with several it can't be paired.
+    const details = results.length === 1 && results[0].is_error !== true ? editDetailsOf(entry.toolUseResult) : undefined;
     return results.map((b, i) => {
       const text = contentText(b.content);
       const callId = typeof b.tool_use_id === "string" ? b.tool_use_id : undefined;
@@ -155,7 +216,7 @@ function userItems(entry: Entry, id: string, time: string | undefined): Transcri
       return item(
         `${id}:${i}`,
         "tool-result",
-        raw(time, { role: "toolResult", toolCallId: callId, isError, content: [{ type: "text", text }] }),
+        raw(time, { role: "toolResult", toolCallId: callId, isError, content: [{ type: "text", text }], ...(details ? { details } : {}) }),
         truncate(text, RESULT_TEXT_MAX),
         callId,
         contentImages(b.content),

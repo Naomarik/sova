@@ -1,0 +1,34 @@
+/* `vis timeline`: one grid (when | rail | text), each row a subgrid; the rail's line runs through
+   every row, so the spine is continuous across sections. Tokens only. */
+/* height.ts mirrors these metrics: change both together. The box is the container, so the phone
+   layout switches at a body width, as height.ts assumes. */
+.vis-timeline-box { container: vis-timeline / inline-size; }
+.vis-timeline { font-size: var(--fs-body); line-height: var(--lh-body); display: grid; grid-template-columns: minmax(2.5em, max-content) 16px minmax(0, 1fr); column-gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+.vis-timeline > li { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: start; }
+.vis-timeline-row { padding: var(--space-1) var(--space-2) var(--space-1) 0; }
+.vis-timeline-when { grid-column: 1; padding-left: var(--space-2); font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-body); color: var(--color-ink-muted); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.vis-timeline-rail { grid-column: 2; grid-row: 1 / span 2; align-self: stretch; position: relative; display: flex; justify-content: center; }
+.vis-timeline-rail::before { content: ""; position: absolute; top: calc(var(--space-1) * -1); bottom: calc(var(--space-1) * -1); left: 50%; width: 2px; margin-left: -1px; background: var(--color-border); }
+.vis-timeline > li:first-child .vis-timeline-rail::before { top: calc(var(--lh-body) * 0.5em); }
+.vis-timeline > li:last-child .vis-timeline-rail::before { bottom: auto; height: calc(var(--lh-body) * 0.5em); }
+.vis-timeline-dot { position: relative; width: 10px; height: 10px; margin-top: calc(var(--lh-body) * 0.5em - 5px); border-radius: var(--r-full); background: var(--color-surface); border: 2px solid var(--color-border-strong); }
+.vis-timeline-toned .vis-timeline-dot { background: var(--vis-stroke); border-color: var(--vis-stroke); }
+.vis-timeline-row.vis-em .vis-timeline-dot { width: 14px; height: 14px; margin-top: calc(var(--lh-body) * 0.5em - 7px); box-shadow: 0 0 0 3px var(--vis-fill); }
+.vis-timeline-text { grid-column: 3; display: flex; flex-direction: column; min-width: 0; }
+.vis-timeline-label { font-weight: var(--fw-medium); color: var(--color-ink); line-height: var(--lh-body); overflow-wrap: anywhere; }
+.vis-timeline-label > .vis-em-badge { vertical-align: 1px; }
+.vis-timeline-note { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.vis-timeline-row.vis-em .vis-timeline-when { color: var(--color-ink); font-weight: var(--fw-semibold); }
+.vis-timeline-section { padding: var(--space-3) 0 var(--space-1); }
+.vis-timeline-section:first-child { padding-top: 0; }
+.vis-timeline-section .vis-timeline-rail { grid-row: 1; }
+.vis-timeline-section-label { grid-column: 3; font-size: var(--fs-micro); line-height: var(--lh-body); font-weight: var(--fw-semibold); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
+/* A phone: the when sits above its label, the rail keeps the left edge. */
+@container vis-timeline (max-width: 404px) {
+  .vis-timeline { grid-template-columns: 24px minmax(0, 1fr); column-gap: var(--space-1); }
+  .vis-timeline-rail { grid-column: 1; }
+  .vis-timeline-when { grid-column: 2; grid-row: 1; padding-left: 0; text-align: left; font-size: var(--fs-micro); }
+  .vis-timeline-text { grid-column: 2; grid-row: 2; }
+  .vis-timeline-section-label { grid-column: 2; }
+  .vis-timeline > li:first-child .vis-timeline-rail::before { top: calc(var(--lh-body) * 0.5em); }
+}

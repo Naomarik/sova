@@ -168,11 +168,44 @@ test("an outline that growth pushes out of the tail window is carried, not lost"
   assert.equal(s?.outlineNow, "reading screenshots");
   assert.equal(s?.outlineAt, 1000);
   assert.equal(s?.outlineTopics, 2);
-  // The same bytes read cold, by a server that never watched them grow, are past the window: the
-  // outline above is the carried one, not the product of a longer read.
-  const cold = session("outline-carried-cold", lines);
-  append(cold, bulk("r1", 150_000), bulk("r2", 150_000));
-  assert.equal((await getSessionSummary(cold))?.outlineGist, undefined);
+});
+
+test("a first read finds the last outline however far from the end it lies", async () => {
+  // Past several deep chunks, with the entry's name in a message between (not an entry: skipped),
+  // and a later outline whose "now" is empty (no summary: the earlier one stands).
+  const p = session("outline-deep", [
+    outlineEntry("too old", 500, [], "An earlier purpose"),
+    outlineEntry("far back", 1000, [topic("t1", "A"), topic("t2", "B")], "Deep purpose"),
+  ]);
+  append(p, bulk("r0", 900_000), { type: "message", id: "m", parentId: null, message: { role: "user", content: 'about the "topic-outline" entry' } });
+  append(p, bulk("r1", 1_500_000), outlineEntry("", 1500, [], "Drafting"), bulk("r2", 400_000));
+  const s = await getSessionSummary(p);
+  assert.equal(s?.outlineGist, "Deep purpose");
+  assert.equal(s?.outlineNow, "far back");
+  assert.equal(s?.outlineAt, 1000);
+  assert.equal(s?.outlineTopics, 2);
+  // What grows after the deep read is read alone, and the deep find is carried past it.
+  append(p, bulk("r3", 300_000));
+  assert.equal((await getSessionSummary(p))?.outlineGist, "Deep purpose");
+  append(p, outlineEntry("newest", 2000, [topic("t1", "A")], "Newest purpose"));
+  assert.equal((await getSessionSummary(p))?.outlineGist, "Newest purpose");
+});
+
+test("an outline line longer than a read chunk, across chunk edges, is read whole", async () => {
+  const big = outlineEntry("big snapshot", 1000, Array.from({ length: 4000 }, (_, i) => topic(`t${i}`, "x".repeat(300))), "Huge outline");
+  assert.ok(JSON.stringify(big).length > 1024 * 1024 + 16 * 1024);
+  const p = session("outline-huge-line", [big]);
+  append(p, bulk("r1", 600_000));
+  const s = await getSessionSummary(p);
+  assert.equal(s?.outlineGist, "Huge outline");
+  assert.equal(s?.outlineTopics, 4000);
+});
+
+test("a file with no outline anywhere lists none, and its growth is read alone", async () => {
+  const p = session("outline-none-deep", [bulk("r0", 2_500_000)]);
+  assert.equal((await getSessionSummary(p))?.outlineNow, undefined);
+  append(p, outlineEntry("arrived", 1000, [], "Late purpose"));
+  assert.equal((await getSessionSummary(p))?.outlineGist, "Late purpose");
 });
 
 test("growth that brings a newer outline shows it, and one with nothing to say keeps the carried one", async () => {

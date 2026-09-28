@@ -1,0 +1,31 @@
+/* `vis chart` `type: parts`: a meter-shaped head (number first, the capacity muted), one split bar,
+   and a legend grid (swatch | label | value | share), each row a subgrid so the numbers line up.
+   Colours come from chart.css' --chart-c classes. parts.ts' PARTS_CSS mirrors every size here:
+   change both together. Tokens only. */
+.vis-parts { min-width: 0; }
+.vis .vis-parts-head { margin: 0 0 var(--space-2); font-family: var(--font-mono); font-size: var(--fs-mono); line-height: 18px; color: var(--color-ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.vis-parts-total { font-weight: var(--fw-semibold); }
+.vis-parts-of { color: var(--color-ink-muted); }
+
+/* The bar: the parts in order, 1px apart. With a capacity it is a track, and its empty rest is free. */
+.vis-parts-bar { display: flex; gap: 1px; height: 20px; margin-bottom: var(--space-2); box-sizing: border-box; border-radius: var(--r-xs); overflow: hidden; }
+.vis-parts-capped .vis-parts-bar { border: var(--stroke-thin) solid var(--color-border-strong); background: var(--color-sunken); }
+.vis-parts-seg { flex: 0 1 0px; min-width: 3px; background: var(--chart-c); }
+.vis-parts-seg.vis-parts-zero { display: none; }
+.vis-parts-seg.vis-parts-free { background: none; }
+/* A marked part: an ink outline inside its own box, so the bar keeps its lengths. */
+.vis-parts-seg.vis-parts-em { box-shadow: inset 0 0 0 2px var(--color-ink); }
+
+.vis .vis-parts-legend { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content max-content; column-gap: var(--space-2); margin: 0; padding: 0; list-style: none; font-size: var(--fs-caption); line-height: 18px; }
+/* A subgrid's padding lands on its edge tracks: they are max-content so they grow by it, not lose it. */
+.vis .vis-parts-legend > li { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: start; margin: 0; padding: 3px 6px; }
+.vis-parts-swatch { width: 12px; height: 12px; margin-top: 3px; box-sizing: border-box; border-radius: var(--r-xs); background: var(--chart-c); }
+.vis-parts-swatch.vis-parts-free { background: var(--color-sunken); border: var(--stroke-thin) dashed var(--color-border-strong); }
+.vis-parts-label { min-width: 0; color: var(--color-ink); overflow-wrap: anywhere; }
+/* The badge is as tall as the 18px line: aligned to its top, it never grows the row. */
+.vis-parts-label > .vis-em-badge { vertical-align: top; }
+.vis-parts-row.vis-em .vis-parts-label { font-weight: var(--fw-semibold); }
+.vis-parts-row-free .vis-parts-label { color: var(--color-ink-muted); }
+.vis-parts-value, .vis-parts-pct { font-family: var(--font-mono); font-size: var(--fs-mono); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.vis-parts-value { color: var(--color-ink); }
+.vis-parts-pct { color: var(--color-ink-muted); }

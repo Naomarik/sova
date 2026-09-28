@@ -7,22 +7,39 @@
 // (§app.organizations/person-page). Ids are the server's (`org_…`, `p_…`, uuid session ids): plain
 // characters that never need encoding, so anything else in the hash is not this route.
 
+import { hostOf, orgHostOf, sessionHrefOn } from "./mesh";
+
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
 export const ORG_TABS = ["sessions", "people", "projects", "workspace"] as const;
 export type OrgTab = (typeof ORG_TABS)[number];
 
+/** `host`: the peer the org is attached on (`?host=<id>`, §mesh.remote-sessions/org-pages); absent here. */
 export type OrgsRoute =
   | { kind: "list" }
   /** No tab = Sessions; `start` implies Sessions. */
-  | { kind: "org"; id: string; start?: string; tab?: OrgTab }
-  | { kind: "project"; id: string; projectId: string }
-  | { kind: "person"; id: string; personId: string }
-  | { kind: "overseer"; id: string; projectId: string };
+  | { kind: "org"; id: string; start?: string; tab?: OrgTab; host?: string }
+  | { kind: "project"; id: string; projectId: string; host?: string }
+  | { kind: "person"; id: string; personId: string; host?: string }
+  | { kind: "overseer"; id: string; projectId: string; host?: string };
 
 export const ORGS_HREF = "#/orgs";
 
+/** The route, with the org's host when the hash names one (`…?host=<id>`, never on the list). */
 export function orgsRouteFromHash(hash: string): OrgsRoute | null {
+  const q = /^(#\/orgs\/[^?]+)\?host=([^&]*)$/.exec(hash);
+  if (!q) return hashRoute(hash);
+  let host = "";
+  try {
+    host = decodeURIComponent(q[2]!);
+  } catch {
+    return null;
+  }
+  const r = hashRoute(q[1]!);
+  return host && r && r.kind !== "list" ? { ...r, host } : null;
+}
+
+function hashRoute(hash: string): OrgsRoute | null {
   if (hash === ORGS_HREF || hash === `${ORGS_HREF}/`) return { kind: "list" };
   const t = /^#\/orgs\/([^/]+)\/(sessions|people|projects|workspace)\/?$/.exec(hash);
   if (t) return ID_RE.test(t[1]!) ? { kind: "org", id: t[1]!, tab: t[2] as OrgTab } : null;
@@ -42,15 +59,23 @@ export function orgsRouteFromHash(hash: string): OrgsRoute | null {
   }
 }
 
-export const orgHref = (id: string): string => `${ORGS_HREF}/${id}`;
+/** An address inside org `id`'s pages; an org on a peer carries its host, so a reload opens it there. */
+const onHost = (id: string, tail: string): string => {
+  const host = orgHostOf(id);
+  return `${ORGS_HREF}/${id}${tail}${host ? `?host=${encodeURIComponent(host)}` : ""}`;
+};
+export const orgHref = (id: string): string => onHost(id, "");
 /** One tab of an org's page. */
-export const orgTabHref = (id: string, tab: OrgTab): string => `${orgHref(id)}/${tab}`;
+export const orgTabHref = (id: string, tab: OrgTab): string => onHost(id, `/${tab}`);
 /** The org page with its start form aimed at one person. */
-export const startForHref = (orgId: string, personId: string): string => `${ORGS_HREF}/${orgId}/start/${personId}`;
-export const projectHref = (orgId: string, projectId: string): string => `${ORGS_HREF}/${orgId}/projects/${projectId}`;
+export const startForHref = (orgId: string, personId: string): string => onHost(orgId, `/start/${personId}`);
+export const projectHref = (orgId: string, projectId: string): string => onHost(orgId, `/projects/${projectId}`);
 /** One person's page. */
-export const personHref = (orgId: string, personId: string): string => `${ORGS_HREF}/${orgId}/people/${personId}`;
-export const projectOverseerHref = (orgId: string, projectId: string): string => `${projectHref(orgId, projectId)}/overseer`;
+export const personHref = (orgId: string, personId: string): string => onHost(orgId, `/people/${personId}`);
+/** A session an org's page links to, on the host that holds it: a peer's listed session by its
+    path, else the org's own host (a session its page names before any list does). */
+export const orgSessionHref = (orgId: string | undefined, path: string): string => sessionHrefOn(hostOf(path) ?? (orgId ? orgHostOf(orgId) : null), path);
+export const projectOverseerHref = (orgId: string, projectId: string): string => onHost(orgId, `/projects/${projectId}/overseer`);
 
 // "Start a session for Bob" from a baton session: the start form records that session as the new
 // one's parent. The hash carries only the person; the parent rides along here, for the one

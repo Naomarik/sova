@@ -1,6 +1,7 @@
 /** The delegate system-prompt text, prompt composition, and status labels. Pure functions: unit-testable. */
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateDefaults, type DelegateProfileId, type WorkerChoice } from "./delegate.ts";
-import { buildMinorPrompt, workerMinorModes, type MinorMode } from "./minor.ts";
+import { ALIGN_FILE_SCHEMA } from "./align.ts";
+import { buildMinorPrompt, MINOR_MODES, workerMinorModes, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import type { Mode, ModeState } from "./state.ts";
 
@@ -46,7 +47,7 @@ Keep local: questions, conversation, requested command runs, pointed-at one-line
 Profiles — pass the backend, model and effort exactly as written:
 {PROFILES}
 
-Pick by the work, not the cost: investigation that feeds a design or plan is Planning & specs, not Investigation; unsure between Routine and Complex, choose Complex. Planning & specs and Investigation workers must not edit files: say so in their prompt. Workers keep their usual permissions, so that rule is prompt-level — check the worktree is unchanged after them.
+Pick by the work, not the cost: investigation that feeds a design or plan is Planning & specs, not Investigation; unsure between Routine and Complex, choose Complex. Planning & specs and Investigation workers must not edit files: say so in their prompt. Workers keep their usual permissions, so that rule is prompt-level — check the worktree is unchanged after them. The one exception is a planning worker's alignment JSON (align on), written outside the repository.
 If a spawn fails because its model is unavailable, retry once with that profile's fallback only if one is listed above as its fallback, and say so; otherwise, or if the fallback fails too, ask the user which model to use, with the reason — never substitute one of your own. When the user names a backend, model or effort for a task, that choice wins over the profile; the user's model settings still apply at spawn, and a spawn they refuse is reported to the user, not rerouted.
 
 Worker prompts are self-contained: goal, files, conventions, verification, report-back. Batch independent spawns with non-overlapping files. Before reporting: read the diffs, run the project's tests or type checks — effort shapes how workers think, never how hard you check. Steer wrong work with agent_steer or respawn; never silently redo it; never present a worker report as your own (state what changed, what you verified, what remains).`;
@@ -59,9 +60,10 @@ export function buildDelegatePrompt(routes: readonly ProfileRoute[]): string {
 
 /**
  * Appended to the delegate block while align is also on. Without it the delegate block's "delegate all
- * else" wins: the orchestrator spawns an implementation worker before any alignment block is emitted.
+ * else" wins: the orchestrator spawns an implementation worker before any alignment is recorded, or
+ * relays a planning worker's report as a freeform plan.
  */
-export const DELEGATE_ALIGN_BRIDGE = `The align minor mode is on and takes precedence over delegation: for any ask that needs alignment, spawn at most a non-editing Planning & specs worker to investigate (never the Investigation profile for this — it is design work), emit the alignment block yourself, and spawn no implementation worker until the user has confirmed.`;
+export const DELEGATE_ALIGN_BRIDGE = `The align minor mode is on and takes precedence over delegation: for any ask that needs alignment, spawn at most a non-editing Planning & specs worker to investigate (never the Investigation profile for this — it is design work). Workers have no align tool: tell the planning worker that its one permitted write is the alignment JSON (${ALIGN_FILE_SCHEMA}), at an absolute path outside the repository that you name in its prompt (e.g. /tmp/align-<topic>-<n>.json), so the worktree stays unchanged; then import it with align {op: "import", path: that same absolute path} — never relay or retype its plan as reply text. In a remote session (tools on a target) import is refused: have the worker put the JSON in its report and pass its fields to align create inline. Spawn no implementation worker until the user has confirmed and the alignment's status is implementing, and give implementation workers the decided questions (align get).`;
 
 /**
  * Appended to the spec block while a spec writer is set (spec.ts, mode-spec.json), under either major
@@ -79,23 +81,68 @@ export function buildSpecWriterPrompt(route: SlotRoute): string {
 /**
  * Everything to append to this turn's system prompt: delegate block first, then minor blocks in
  * registry order. Takes just the session-scoped triple, so a `ModeActive` satisfies it too.
- * `writer` is the routed spec writer, or null when none is set.
+ * `writer` is the routed spec writer, or null when none is set. `headMinors` is the set of minor
+ * modes the session's prompt was built with (the head, see index.ts), when it differs from the
+ * active one: their blocks are the ones written, while the delegate block's align bridge follows the
+ * active align (turning align on changes the tool set anyway, so it can't keep the prefix).
  */
 export function composePrompt(
 	state: Pick<ModeState, "mode" | "strict" | "minorModes">,
 	routes: readonly ProfileRoute[],
 	writer: SlotRoute | null = null,
+	headMinors: readonly MinorMode[] = state.minorModes,
 ): string | undefined {
 	const blocks: string[] = [];
 	if (state.mode === "delegate") {
 		const delegate = buildDelegatePrompt(routes);
 		blocks.push(state.minorModes.includes("align") ? `${delegate}\n\n${DELEGATE_ALIGN_BRIDGE}` : delegate);
 	}
-	for (const minor of state.minorModes) {
-		const block = buildMinorPrompt(minor);
-		blocks.push(minor === "spec" && writer ? `${block}\n\n${buildSpecWriterPrompt(writer)}` : block);
-	}
+	for (const minor of headMinors) blocks.push(minorBlock(minor, writer));
 	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
+}
+
+/** One minor mode's block exactly as the prompt carries it: spec gains the writer paragraph while a writer is set. */
+function minorBlock(minor: MinorMode, writer: SlotRoute | null, worker = false): string {
+	if (worker) return buildWorkerMinorPrompt(minor);
+	const block = buildMinorPrompt(minor);
+	return minor === "spec" && writer ? `${block}\n\n${buildSpecWriterPrompt(writer)}` : block;
+}
+
+/**
+ * The hidden note that tells the model about minor modes switched after its prompt was built,
+ * from `told` (what it was last told) to `now`. A mode turned on gets its whole block, the same text
+ * the prompt would have carried, unless that block is already in context: in the prompt (`head`) or
+ * in an earlier note since the last compaction (`guides`), when a pointer to it is enough. A mode
+ * turned off gets a line saying its instructions no longer apply. Undefined when nothing changed.
+ * `guides` in the result: the modes whose whole block this note carries. `worker`: a block goes in
+ * its worker form (composeWorkerPrompt), and the caller passes only worker-scope modes.
+ */
+export function buildModeNote(
+	told: readonly MinorMode[],
+	now: readonly MinorMode[],
+	known: { head: readonly MinorMode[]; guides: readonly MinorMode[] },
+	writer: SlotRoute | null = null,
+	worker = false,
+): { text: string; guides: MinorMode[] } | undefined {
+	const where = (minor: MinorMode) => (known.head.includes(minor) ? "in your system prompt" : "given earlier in this conversation");
+	const parts: string[] = [];
+	const guides: MinorMode[] = [];
+	for (const minor of MINOR_MODES) {
+		if (told.includes(minor) && !now.includes(minor)) {
+			parts.push(`Mode change: the user turned the ${minor} minor mode off. Its instructions (the "# Minor mode: ${minor}" block ${where(minor)}) no longer apply; do not follow them unless a later note turns it back on.`);
+		}
+	}
+	for (const minor of MINOR_MODES) {
+		if (now.includes(minor) && !told.includes(minor)) {
+			if (known.head.includes(minor) || known.guides.includes(minor)) {
+				parts.push(`Mode change: the user turned the ${minor} minor mode back on. Its instructions (the "# Minor mode: ${minor}" block ${where(minor)}) apply again from now on.`);
+			} else {
+				guides.push(minor);
+				parts.push(`Mode change: the user turned the ${minor} minor mode on. Its instructions follow and apply from now on, as if they were part of your system prompt.\n\n${minorBlock(minor, writer, worker)}`);
+			}
+		}
+	}
+	return parts.length > 0 ? { text: parts.join("\n\n"), guides } : undefined;
 }
 
 /**
@@ -123,8 +170,11 @@ export function composeWorkerPrompt(state: Pick<ModeState, "minorModes">): strin
 
 /**
  * The system-prompt section the mode blocks are delivered in on pi >= 0.86. Pi wraps the
- * content as `<mode>...</mode>` and diffs it against the section the model already has,
- * so a toggle costs one small patch instead of a whole new prompt.
+ * content as `<mode>...</mode>` and diffs it against the section the model already has. A
+ * minor-mode toggle leaves it alone (its minor blocks are the head's, see buildModeNote): any
+ * change here rewrites the head on providers without mid-conversation system messages and
+ * restarts a Claude Code CLI. It moves on a major-mode switch, a Delegate or spec-writer routing
+ * change, align in delegate (the bridge), and at the first prompt after a compaction.
  */
 export const MODE_SECTION = "mode";
 

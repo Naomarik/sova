@@ -199,6 +199,7 @@ export type EntryKind =
   | "info" // session_info, model_change, compaction, labels, branch summaries etc.
   | "report" // subagent reports and other long extension messages (custom_message); see `report`
   | "worktree-merge" // a merge the session recorded (pi-config worktrees extension); see `worktreeMerge`
+  | "align" // an `align` tool result that changed an alignment, or an exemption (pi-config mode extension); see `align`
   | "unknown";
 
 /** A normalized transcript row. `raw` carries the full parsed JSONL entry for advanced rendering. */
@@ -256,7 +257,62 @@ export interface TranscriptItem {
   /** kind "worktree-merge" only: the `worktree-merge` extension message's details (§chat.worktrees/merge-card).
       `text` is the one line the model read ("Merged feat/x into master at abc1234, 5 commits, +120 −30"). */
   worktreeMerge?: WorktreeMergeInfo;
+  /** kind "align" only: the `align` tool result's `details`, checked by the extension's own
+      `normalizeAlignDetails` (pi-config/extensions/mode/align.ts, §chat.alignment/state): the
+      touched document's snapshot after the call, or an exemption. `toolCallId` pairs it with its
+      call, whose tool-call row renders nothing once this row is there. A failed call, a `get`, or
+      details that don't check out stay an ordinary tool-result. */
+  align?: AlignRowInfo;
   raw: unknown;
+}
+
+/** An alignment (§chat.alignment/document), as the `align` tool's snapshot carries it. The
+    extension's AlignDocument (pi-config/extensions/mode/align.ts) is this shape. */
+export interface AlignDocInfo {
+  id: string; // "al_3"
+  title: string;
+  summary: string;
+  findings: { id: string; text: string }[];
+  approach: { id: string; text: string }[];
+  rejected: { id: string; option: string; why: string }[];
+  questions: AlignQuestionInfo[];
+  /** The stored lifecycle; status is derived (alignStatus): implementing/done/dropped from here,
+      else "aligning" while a question is open or there are none, else "confirmed". */
+  phase: "open" | "implementing" | "done" | "dropped";
+  droppedWhy?: string;
+  next: { f: number; a: number; x: number; q: number };
+  rev: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlignQuestionInfo {
+  id: string; // "q3"
+  topic: string;
+  ask: string;
+  context?: string;
+  options?: { label: string; tradeoff: string }[];
+  recommendation: { choice: string; why: string };
+  decision?: { text: string; by: "user" | "accepted-recommendation"; at: string };
+  dropped?: { why: string; at: string };
+}
+
+export type AlignChangeInfo =
+  | { kind: "created"; fromFile?: true }
+  | { kind: "added" | "edited" | "removed"; ids: string[] }
+  | { kind: "decided" | "reopened" | "question-dropped"; q: string }
+  | { kind: "accepted"; qs: string[] }
+  | { kind: "status"; to: "implementing" | "done" | "open" }
+  | { kind: "dropped" };
+
+/** An `align` call's details: `doc` (the snapshot after a changing call) or `exempt`; `line` is the
+    changes in words ("q3 decided · +q11"). */
+export interface AlignRowInfo {
+  v: 1;
+  doc?: AlignDocInfo;
+  changes: AlignChangeInfo[];
+  line: string;
+  exempt?: { why: string };
 }
 
 /** A merge the session recorded: by its `worktree merge` tool, or detected after one of its turns. */
@@ -264,9 +320,9 @@ export interface WorktreeMergeInfo {
   path: string;
   branch: string;
   target: string;
-  /** The target's commit after the merge (full). */
+  /** The target's commit after the merge (full); for a detected merge, the commit that brought the branch in. */
   sha: string;
-  /** Commits the merge brought into the target. */
+  /** Commits the merge brought into the target; for a detected merge, the branch's own, as are `added`/`removed`. */
   commits: number;
   added: number;
   removed: number;
@@ -305,8 +361,8 @@ export interface ReportInfo {
   preview: string;
   /** The extension cut the message at 4000 characters ("[Use agent_transcript for more.]"). */
   truncated: boolean;
-  /** source "align-doc" only: the mode extension's align document (custom entry, full snapshot per
-      revision; only the newest on the branch becomes a row). `body` is its markdown verbatim,
+  /** source "align-doc" only: an OLDER session's align document (custom entry, full snapshot per
+      revision, from before the `align` tool; read-only; only the newest on the branch becomes a row). `body` is its markdown verbatim,
       open questions as "1. [ ] …" / "2. [x] … — decision" checklist items; `agent` is absent. */
   align?: AlignReportInfo;
   /** source "explain-doc" only: a forked /explain subagent finished and wrote its HTML page +
@@ -360,8 +416,12 @@ export interface ExplanationInfo {
       `summary` is "". Appears ONLY on a transcript row's `report.explain`, and only until the
       run's final entry (same `id`) replaces it; never in SessionInsight.explanations or
       GET /api/explanations, which carry openable pages only. A finished entry has no status at
-      all — there is no "done" value. */
-  status?: "running";
+      all — there is no "done" value.
+      "interrupted": the run's parent stopped (a restart or /reload) before the run settled, and the
+      extension settled it at the session's next prompt. Always with `note` (a complete page was on
+      disk anyway: it links) or `error` (no page). Rows, and SessionInsight.explanations when it has
+      a page. */
+  status?: "running" | "interrupted";
 }
 
 /** Status and metrics of an align document. status: explicit "implementing"/"confirmed" first,
@@ -409,9 +469,16 @@ export interface UploadResult {
   size: number;
 }
 
+/** GET /api/sessions/dir: the sessions folder this server lists (its agent dir's `sessions`), with its home folder so a page can show it as `~/…`. */
+export interface SessionsDirInfo {
+  sessionsDir: string;
+  home: string;
+}
+
 // ---------------------------------------------------------------------------
 // REST (JSON)
 //
+// GET  /api/sessions/dir        -> SessionsDirInfo
 // GET  /api/sessions            -> SessionSummary[]
 // POST /api/sessions { cwd }    -> SessionSummary   (creates a NEW empty webapp-owned session)
 // POST /api/sessions { target, remoteCwd } -> SessionSummary   (remote session: creates the local placeholder
@@ -1475,13 +1542,20 @@ export interface SandboxApplyResult {
   sandbox?: SandboxInfo;
 }
 
-/** WS /ws/chat?path= — full-duplex chat for webapp-owned sessions. */
+/** WS /ws/chat?path= — full-duplex chat for webapp-owned sessions. `&tail=1` asks for the transcript
+    newest rows first (`hello.older`, then `history`); `&tail=rest` for the newest rows alone, the
+    older ones fetched over REST when wanted (`hello.older` and `olderSummary`, no `history`; see
+    TranscriptRows). Without either, every message is as it always was. */
 export type ChatClientMessage =
   /** `clientId` is the SENDER'S OWN id for this send, chosen before the round trip. When the send
       is held in the outgoing queue it becomes that item's `QueueItem.id`, so the client can key
       its pending row by a value it already has instead of waiting to be told one. Omitted = the
       server allocates an id, and the row is only nameable from the next `queue` snapshot. */
-  | { type: "prompt"; text: string; images?: OutboundImage[]; clientId?: string }
+  | { type: "prompt"; text: string; images?: OutboundImage[]; clientId?: string;
+      /** The Overseer only: this message is a click on the `sova_confirm` card whose tool call has
+          this id (never a typed answer). The turn it opens may run the acts that card listed
+          (§app.overseer/org-people-facing). Ignored anywhere else. */
+      confirm?: string }
   | { type: "steer"; text: string; images?: OutboundImage[]; clientId?: string }
   | { type: "abort" }
   | { type: "set_model"; ref: string }   // calls session.setModel; server replies {type:"model"} or error
@@ -1629,7 +1703,17 @@ export type ChatServerMessage =
       thinking = the session's active thinking level (one of off…max), clamped to its model. */
   /** `isCompacting` = a compaction (manual or pi's automatic one) is running as this is sent, so a
       client that connects mid-compaction shows it; absent from servers that predate it. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null }
+  /** `older` (only to a client that asked with `?tail=1` or `?tail=rest`): `items` is the branch's
+      newest whole entries, and this many rows come before them. With `?tail=1` they follow as
+      `history` messages right after the messages that follow every hello (below), before anything
+      else; with `?tail=rest` nothing follows, and `olderSummary` sums them up (`prefetch`: fetch
+      them all now; see OlderSummary and TranscriptRows). Absent or 0: `items` is the whole branch,
+      as for every client that didn't ask. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean }
+  /** The older rows of a `hello` with `older` (see HistoryMessage). After attach they come after
+      `links`; after a rewind, regenerate or compaction, after the requester's `rewound`,
+      `regenerated` or `compacted` (and a compaction's `queue`). */
+  | HistoryMessage
   /** Raw pi SDK agent event passthrough. Shapes documented in pi docs/rpc.md "Events":
       message_update (assistantMessageEvent: text_delta | thinking_delta | toolcall_start/delta/end),
       tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ... */
@@ -1751,6 +1835,8 @@ export type ChatServerMessage =
   | { type: "error"; message: string; code?: "busy" | "recent" | "reloaded" | "config" | "refused" | "internal"; clientId?: string };
 
 /** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes.
+    `&tail=1` cuts the snapshot as `/ws/chat` cuts its hello (`older`, then `history`); `&tail=rest`
+    likewise with no `history` (`older`, `olderSummary`, `prefetch`; see TranscriptRows).
     Also accepts `?claude=<uuid>` instead of `?path=`: a claude-code worker's own Claude Code
     session (WorkerInfo.sessionId), found under ~/.claude/projects and normalized into the same
     rows. Same `snapshot`/`append`/`error` messages; an unknown id closes with 4404 like a bad path.
@@ -1763,8 +1849,66 @@ export type ChatServerMessage =
     is known for pi files (the reply's own model); a Claude Code file doesn't name its variant, so
     it is null there and the client takes WorkerInfo.contextWindow. Absent from older servers. */
 export type WatchContext = ContextInfo | "compacted" | null;
+/** Rows that come before a tail-first `hello` or `snapshot` (`older` > 0), newest chunk first,
+    each chunk about 256 KB of JSON: prepend each to the list. `left` = rows still to come after
+    this one; 0 = the list is whole. Sent only to a client that asked with `?tail=1`, in one step
+    with its hello or snapshot, so nothing else comes between the chunks. */
+/**
+ * What the complete-list readers (the inputs count, Fan Out's "up to message {n}", Undo last turn)
+ * need of the rows before a list's first row, which the client doesn't hold: sent with a
+ * `?tail=rest` hello or snapshot, and with every TranscriptRows response, always about the rows
+ * before that message's first row. Counted by the client's own rules (shared/row-counts.ts), so the
+ * client's count of the rows it holds plus these is the whole branch's.
+ */
+export interface OlderSummary {
+  /** Row ids of the user's inputs (user rows and wake nudges), oldest first. */
+  inputs: string[];
+  /** Messages (distinct entries of user, wake, link and reply rows). */
+  messages: number;
+  /** Whether any is a reply's row (assistant text or a tool call). */
+  replies: boolean;
+}
+
+/**
+ * GET /api/transcript?path=&… — the rows of a session's active branch, read from its file (never a
+ * runtime, never a write), normalized exactly as the `hello` and the snapshot are, so rows from here
+ * and rows from the socket put together are the same list. Without the parameters below, the whole
+ * branch as `{ items, context }`, as it always was. With them, a TranscriptRows:
+ * - `tail=1`: the newest rows, cut as a `?tail=1` hello is (and `context`, as without it);
+ * - `before=<row id>`: about 256 KB of whole entries just before that row (`chars=` another size);
+ * - `before=<row id>&from=<entry or row id>` (or `&explain=<explanation id>`): every row from that
+ *   entry's row (or the explanation's report row) up to that row, for a jump; the range starts
+ *   earlier when that row is a tool result (its call comes with it) or inside a baton wrap-up;
+ * - `from=…` alone: from that row to the end (a view refreshing the rows it holds).
+ * `view=light` instead: the whole branch as `{ items, context }`, each row without what only the
+ * thread draws (a reply's text, a tool's output, image bytes, a report's body, the raw entry's
+ * content), for the session pane: every row stays, in order, with its kind, time and counts.
+ * `leaf=<entry id>` is the last entry the client's list renders: an id the file holds that is no
+ * longer on the active branch (a rewind) answers 409 `{ code: "moved" }`, as does a `before` row
+ * that isn't in the list; the client then starts again from a fresh tail. A `from`/`explain`
+ * target not on the branch answers 404 `{ code: "missing" }`.
+ */
+export interface TranscriptRows {
+  items: TranscriptItem[];
+  /** Rows before `items[0]` on the branch (0: `items` reaches the top). */
+  older: number;
+  /** About those rows (OlderSummary). */
+  olderSummary: OlderSummary;
+  /** `tail=1` and `from` alone (the answers that reach the end): the context fill, as the
+      whole-branch response carries it. */
+  context?: ContextInfo | null;
+}
+
+export interface HistoryMessage {
+  type: "history";
+  items: TranscriptItem[];
+  left: number;
+}
+/** `snapshot.older`: as `hello.older` — only with `?tail=1`; the rows follow as `history`, before
+    any `append`. A snapshot sent again (the file was rewritten) is cut the same way. */
 export type WatchServerMessage =
-  | { type: "snapshot"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext }
+  | { type: "snapshot"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext; older?: number; olderSummary?: OlderSummary; prefetch?: boolean }
+  | HistoryMessage
   | { type: "append"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext } // new JSONL rows since snapshot, as they appear
   | { type: "error"; message: string };
 
@@ -2133,6 +2277,11 @@ export interface SessionInsight {
   /** This session's own subagent workers, from its live record (empty when it isn't live, or
       absent from an older server). The nested subagents pane lists these. */
   workers?: WorkerInfo[];
+  /** How many workers the live record counts (its `workerCounts.total`), which can exceed
+      `workers`: the record lists at most 40. The pane offers the rest through
+      `GET /api/insights/session/workers` (SessionHiddenWorkers). Absent when the session isn't
+      live, when `workers` is already every worker, or from an older server. */
+  workerTotal?: number;
   /** The same lifetime token Σ as LiveAgentSession.usageTotal, for the session on screen. */
   usageTotal?: TokenUsageTotal;
 
@@ -2158,6 +2307,20 @@ export interface SessionInsight {
   /** The Agents tab's "Remotely linked agents" rows (§mesh.links/agents-pane), as the `links` chat
       frame carries them. Absent when the session is in no live link, or from an older server. */
   links?: LinkedAgentInfo[];
+}
+
+/** `GET /api/insights/session/workers?path=`: the workers recorded on the session's active branch
+    that its live record doesn't list, newest first, read from the session file only when asked
+    (§app.subagents-pane/hidden-workers). Each is built from its durable records alone: its usage
+    is the snapshot saved there (`usageSource: "snapshot"`, or "unavailable"), never its
+    transcript's. Nothing is hidden when the session has no live record: the insight then lists
+    every worker already. */
+export interface SessionHiddenWorkers {
+  workers: WorkerInfo[];
+  /** Rows the live record lists. */
+  listed: number;
+  /** listed + workers.length. */
+  total: number;
 }
 
 /** One tracked worktree as the Session tab shows it. */
@@ -2284,6 +2447,8 @@ export interface OverseerCaps {
   concurrentSessions: number; // default 5: Overseer-started sessions running at once
   explorePerTurn: number;     // default 2: explorer subagents launched (sova_idea explore); absent on read → default
   linksPerTurn: number;       // default 3: links made (sova_link, §app.overseer/links-tools); absent on read → default
+  orgWritesPerTurn: number;   // default 20: organization writes (§app.overseer/org-tools); absent on read → default
+  gatherPerTurn: number;      // default 3: gathering sessions or offers started (sova_gather start/offer); absent on read → default
 }
 
 /** `<stateRoot>/overseer.json`. Tolerant on read, strict on PUT. */
@@ -2351,7 +2516,7 @@ export type AttentionKind =
   | "context-full"    // context ≥85%
   | "working"         // running now
   | "stale"           // idle web session >3 days, not archived, no draft
-  | "asks-you"        // decisions: the last reply asks the user something (SessionSignals.kinds)
+  | "open-questions"  // an idle session's alignments have open questions (SessionSummary.align, §chat.alignment/session-mark)
   | "looping"         // decisions: the session or a worker is repeating itself
   | "baton-needs-you" // a baton session: the baton is with the operator, or a person needs their link
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
@@ -2388,6 +2553,9 @@ export interface SessionOrgRef {
   orgName: string;
   projectId?: string;
   projectName?: string;
+  /** The project is archived (§app.organizations/archive): the Organizations region leaves it out,
+      except in its own Needs you. Safe by absence. */
+  projectArchived?: true;
 }
 
 export interface SessionOrg extends SessionOrgRef {
@@ -2435,12 +2603,35 @@ export interface SovaNavigateDetails {
 /** `sova_confirm` details. Non-blocking: the tool returns at once and the model ends its turn.
     The card shows `options` as buttons; a click sends the option's `reply` (or its label) as the
     next user message. Answered/disabled once any later user message exists in the transcript
-    (`answer` = that message's text when it matches an option). */
+    (`answer` = that message's text when it matches an option). `items`: what the question is
+    about, resolved by the server when the card was raised and snapshotted here (absent on cards
+    raised without any, and on every card from before the field existed). */
 export interface SovaConfirmDetails {
   title: string;
   detail?: string;
   options: { label: string; reply?: string; tone?: "default" | "danger" }[];
+  items?: SovaConfirmItem[];
+  /** The global Overseer's card listing a person, a project or a gathering session: it may gate an
+      act that reaches people or ends something, which only a click on it approves, never typed text
+      (§app.overseer/org-people-facing). The card drops its "Or type your answer." hint. Safe by absence. */
+  clickOnly?: true;
 }
+
+/** One thing a confirm card is about. A session row: its folder's short name (`project`), last
+    activity (ISO), a one-line summary when it has one, and how many subagents were working.
+    `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
+    sentences, `CONFIRM_NOTE_MAX` characters). */
+export type SovaConfirmItem =
+  | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; note?: string }
+  | { kind: "idea"; id: string; title: string; note?: string }
+  | { kind: "todo"; id: string; text: string; note?: string }
+  /** A project of an org on this host: its name and the org's (§app.overseer/org-tools). */
+  | { kind: "project"; id: string; orgId: string; name: string; orgName: string; note?: string }
+  /** A roster person: name, status and org. Never a contact or a link. */
+  | { kind: "person"; id: string; orgId: string; name: string; orgName: string; status: "active" | "proposed" | "left"; note?: string };
+
+/** The longest note one confirm item may carry. */
+export const CONFIRM_NOTE_MAX = 220;
 
 // --- The Overseer's ideas backlog: spec-shaped (manifest + one .md per idea, § ids), its own
 // small reader and link graph. Nothing is deleted; `dropped` is terminal. ---
@@ -2628,8 +2819,8 @@ export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
 //                              404 no device)
 
 /** The act-tier kinds a phone notification can be about (server/attention.ts). */
-export type PushKind = "needs-input" | "asks-you" | "error" | "looping" | "baton-needs-you" | "worker-error";
-export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "asks-you", "error", "looping", "baton-needs-you", "worker-error"];
+export type PushKind = "needs-input" | "open-questions" | "error" | "looping" | "baton-needs-you" | "worker-error";
+export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "looping", "baton-needs-you", "worker-error"];
 
 /** `<stateRoot>/push.json`. */
 export interface PushSettings {
@@ -3079,8 +3270,10 @@ export interface DecisionProbeResult {
   chain: DecisionChainStatus;
 }
 
-/** Attention-signal kinds the thresholds (fixed in server/attention-signals.ts) derive from raw answers. */
-export type SignalKind = "asks-you" | "looping";
+/** Attention-signal kinds the thresholds (fixed in server/signals-store.ts) derive from raw answers.
+    Only "looping" is left: whether a session waits on the user's answers is its open alignment
+    questions (SessionSummary.align), never a model's guess. */
+export type SignalKind = "looping";
 
 /** One classified finished turn of a session (<stateRoot>/signals.json keeps the raw answers). */
 export interface SessionSignals {
@@ -3089,8 +3282,6 @@ export interface SessionSignals {
   /** Id of the last assistant entry on the active branch when classified (the cache key). */
   turnId: string;
   provider: DecisionProviderId;
-  /** P(the reply ends by asking the user something), 0..1. */
-  asksUser?: number;
   /** score in [0, 2]: 0 progressing … 2 clearly looping. */
   stuck?: { score: number; confidence: number };
   /** The kinds that fire under the server's thresholds; [] = none. The client never re-derives
@@ -3119,9 +3310,27 @@ export interface SessionTags {
   user?: string[];
 }
 
-// Declaration merge: the two overlays SessionSummary gains (listSessions sets them from the
-// stores, never from the (mtime,size) cache). Absent = not classified, feature off, or an older server.
+export interface SessionAlign {
+  openDocs: number;
+  openQuestions: number;
+  questionDocs: number;
+  lead?: { id: string; title: string };
+}
+
+// Declaration merge: what SessionSummary gains beyond its core fields. `signals`, `workerSignals`
+// and `tags` are overlays listSessions sets from the stores, never from the (mtime,size) cache;
+// `align` is read from the file itself and cached with the summary. Absent = not classified,
+// feature off, nothing waiting, or an older server.
 export interface SessionSummary {
+  /** The session's open alignments while it waits on the user (§chat.alignment/session-mark), folded
+      from its file's `align` tool results along the active branch (server/align-state.ts, read
+      incrementally), deterministic, no model. Present only while an alignment is open (not done
+      or dropped), align is on (the newest `mode` entry on the branch), and the newest align result
+      that changed a document comes after the user's last prompt (a wake nudge or link message is
+      not one): once the user has moved on, the questions stay on the card and the chip only.
+      `questionDocs` = the open alignments that have open questions; `lead` = the last-touched of
+      those, for the wording. */
+  align?: SessionAlign;
   signals?: SessionSignals;
   /** Worker checks of this session's subagents: how many look stuck; details are in the attention
       digest. (A worker that ended in an error is the digest's deterministic "worker-error".) */
@@ -3166,3 +3375,109 @@ export type SessionFeedMessage =
       (coalesced). */
   | { type: "list_changed" }
   | { type: "error"; message: string };
+
+// --- Git diffs (server/git-diff.ts, §chat.diff) ---------------------------------------------------
+//
+// Read-only. The client names WHAT to compare, never a ref: the server resolves every ref itself,
+// and every folder must be one the named session already knows (its header cwd, its tracked
+// worktrees, its merge cards' paths, its workers' cwds) — a path inside one of those is accepted,
+// anything else is refused (400). `sessionPath` is SessionSummary.path.
+//
+// GET /api/diff/summary?<scope>                 -> 200 DiffSummary; 400 { error } (bad or unknown scope)
+// GET /api/diff/patch?<scope>&file=<path>[&old=<oldPath>][&context=1]
+//                                               -> 200 DiffFilePatch; 400 { error }; 404 { error } (not in the diff)
+//    `context=1` adds `oldText`, the file's old side whole (for expanding folded context).
+// <scope> as query parameters: kind=worktree&session=<sessionPath>&path=<worktreePath>
+//                            | kind=commit&session=<sessionPath>&path=<repoPath>&sha=<hex sha>
+//                            | kind=dirty&session=<sessionPath>&path=<cwd>
+// (`diffScopeQuery` below builds it.) Both send Cache-Control: no-store. No route reads a file or a
+// blob by a name the client gives: contents leave only as a file's patch and its own old side.
+
+/** What a diff compares. */
+export type DiffScope =
+  /** A worktree's branch (committed HEAD) against its merge-base with its base branch (the tracked
+      worktree's `baseBranch`, else master, else main, else origin/HEAD's target). */
+  | { kind: "worktree"; sessionPath: string; worktreePath: string }
+  /** One commit against its first parent (a root commit: against the empty tree). `sha` is hex,
+      4–64 chars, resolved to a commit in that repository; a merge card's sha, typically. */
+  | { kind: "commit"; sessionPath: string; repoPath: string; sha: string }
+  /** The repository containing `cwd`: index + working tree (untracked files as added) against HEAD. */
+  | { kind: "dirty"; sessionPath: string; cwd: string };
+
+/** The scope's query string (no leading `?`). */
+export function diffScopeQuery(s: DiffScope): string {
+  const q = new URLSearchParams({ kind: s.kind, session: s.sessionPath });
+  if (s.kind === "worktree") q.set("path", s.worktreePath);
+  else if (s.kind === "commit") {
+    q.set("path", s.repoPath);
+    q.set("sha", s.sha);
+  } else q.set("path", s.cwd);
+  return q.toString();
+}
+
+/** M modified, A added (untracked, in the dirty scope), D deleted, R renamed (maybe also edited),
+    T type change (file ↔ symlink), B binary (any of those, on a binary file: no line counts). */
+export type DiffFileStatus = "M" | "A" | "D" | "R" | "T" | "B";
+
+export interface DiffFileSummary {
+  /** Repository-relative, `/`-separated; the new path for a rename, the old one for a delete. */
+  path: string;
+  /** Renames only: the path before. */
+  oldPath?: string;
+  status: DiffFileStatus;
+  added: number;
+  removed: number;
+  /** Full blob oids of each side; absent for the missing side (add/delete) and for a working-tree
+      side git has not hashed (dirty scope). */
+  oldOid?: string;
+  newOid?: string;
+  /** Dirty scope only: the file is not tracked (shown as added). */
+  untracked?: true;
+  /** Untracked only: too large to diff, or past the summary's read budget; `added` counts only the
+      lines read (server/git-diff.ts MAX_UNTRACKED_READ, UNTRACKED_BUDGET), 0 when none were. */
+  tooLarge?: true;
+}
+
+/** One side of a comparison, for the header. */
+export interface DiffSide {
+  /** "master (merge-base)", "a1b2c3d^1", "HEAD", "Working tree" … */
+  label: string;
+  /** The commit, when the side is one (never for the working tree, or an empty tree). */
+  oid?: string;
+}
+
+export interface DiffSummary {
+  scope: DiffScope;
+  /** Repository top level the diff ran in. */
+  repo: string;
+  base: DiffSide;
+  head: DiffSide;
+  /** In git's order (path order), at most `MAX_DIFF_FILES` (server/git-diff.ts). */
+  files: DiffFileSummary[];
+  /** Over every file, including those cut by `truncated`. */
+  totals: { files: number; added: number; removed: number };
+  /** The file list stopped at the cap; `totals.files` is the real count. */
+  truncated?: true;
+  generatedAt: number;
+}
+
+/** One file's patch. `patch` is git's unified text for this file alone (from its `diff --git`
+    header, `--histogram -M`, 3 lines of context, full-index oids), UTF-8 decoded. */
+export interface DiffFilePatch {
+  path: string;
+  oldPath?: string;
+  status: DiffFileStatus;
+  /** Present unless `binary` or `tooLarge`. An empty string is a mode-only change. */
+  patch?: string;
+  binary?: true;
+  /** The patch passed the byte cap; `bytes` says how far it got. */
+  tooLarge?: { bytes: number; cap: number };
+  oldOid?: string;
+  newOid?: string;
+  /** With `context=1` only: the old side's whole text, the blob `oldOid` names. Absent when the
+      patch has no single old side, or that side is binary or past 8 MB. */
+  oldText?: string;
+  /** As in the summary: a changed HEAD between the two requests shows up here. */
+  base: DiffSide;
+  head: DiffSide;
+}

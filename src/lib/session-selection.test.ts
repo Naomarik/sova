@@ -275,7 +275,7 @@ test("an action that throws still hands the tab back (the caller's finally)", as
 test("bulk sentences name organization sessions once", () => {
   assert.equal(
     archiveSummary({ mode: "archive", done: 2, blocked: [], failed: [], org: 1 }),
-    "Archived 2 sessions. 1 went to its project's Finished list.",
+    "Archived 2 sessions. 1 went to its project's Done list.",
   );
   assert.equal(archiveSummary({ mode: "unarchive", done: 2, blocked: [], failed: [], org: 1 }), "Unarchived 2 sessions.");
   assert.equal(

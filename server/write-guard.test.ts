@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-write-guard-test-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 const sessionsDir = join(agentDir, "sessions", "--tmp-write-guard--");
 const liveDir = join(agentDir, "sessions", "live");

@@ -7,7 +7,9 @@ subagents (subagents + sessions live records), and per-session summaries (topic-
 compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in
 `shared/protocol.ts`. **Every status says where it came from**: live-sourced states can pulse,
 while reported states (read from a session file after the fact) never pulse and carry
-"as of `14:06`".
+"as of `14:06`". A live record lists at most 40 workers, live ones first and then the newest
+(§app.subagents-pane/hidden-workers), so a count is always read from its `workerCounts` and a
+working worker is never the one it leaves out.
 
 ## §app.insights/placement — Placement
 
@@ -391,7 +393,7 @@ Sova that aren't archived.
 - **State.** One per row, on its rail (a colored left edge) and in a chip with a dot and the
   word: **Needs you** when the session waits on input or has an extension dialog open; else
   **Working** when its turn runs or any of its workers works; else **Needs you** when its last
-  turn failed or stopped on an error, or its decision marks (unseen asks-you or looping, a stuck
+  turn failed or stopped on an error, or it has open alignment questions, or its decision marks (unseen looping, a stuck
   subagent) say so; else **Idle**, or **Archived** for an archived session nothing runs in. The
   chip's `title` says why a row needs you, and the open row says it in a line.
 - **Sort.** Working first, then Needs you, then the rest; within each, last active first.
@@ -598,16 +600,21 @@ fetched except the lookups below.
   - Not found: the plain text "Session no longer on disk", and no link.
   - The two links are siblings, never one inside the other; the card itself is not a target.
     Each link has the focus ring; the card's border lifts on hover over its page link.
-- **Open in Session lands on the explanation.** The link opens the session, and once its
-  transcript has loaded (the chat's `hello`, or the watch view's snapshot) the transcript scrolls
+- **Open in Session lands on the explanation.** The link opens the session, and once the
+  explanation's row is in the transcript (with the chat's `hello` or the watch view's snapshot,
+  or fetched down to it in one request when it's older than the rows they carry,
+  §chat.transcript/rendering) the transcript scrolls
   the explanation's own row (the report row whose explanation id matches) into the middle and
   tints it, the transcript's usual jump (§app.insights/insight-strip, Jump to Message), and, like
   every jump, stops the transcript following the bottom, so Jump to Latest appears and rows still
   rendering can't pull the view back down. It works whether or not the session's runtime was
   already open, and it happens once: the request is dropped after
-  it lands, after it fails, or after 60s unclaimed. When the loaded transcript has no such row (the
-  explanation's entry is not on the branch on screen, e.g. after a rewind), the session stays open
-  and a toast says "That explanation isn't on this branch of the session."
+  it lands, after it fails, or 60s after it was made if it still hasn't, the fetch of older rows
+  included. While that fetch is on its way it waits, with no toast: a slow fetch shows the
+  transcript's top-edge bar (§chat.transcript/rendering). When the branch has no such row (the explanation's entry is not on
+  the branch on screen, e.g. after a rewind: the list reaches the top without it, or the server
+  finds none), the session stays open and a toast says "That explanation isn't on this branch of
+  the session." Rows kept from the last visit never count as the whole transcript.
 - **Empty.** With no explanation at all, the grid's place holds one `.empty`: "0 explanations
   yet." and "Run `/explain` in a session and its page shows up here." When the filters leave
   nothing: "{n} explanation(s) in all. None match these filters." and "Choose All sessions or
@@ -687,7 +694,11 @@ which draws them on the session's axis; the strip keeps no history of its own.
   (§app.insights/explanations-page), the transcript's report row and the session pane's explain row are all plain links to
   `/explain/:id` with no `target`. In an installed app a new tab is a new window whose history
   has one entry, so Back couldn't return to Sova; in place, it can. `/explain/:id` stays a
-  standalone document for direct links. None of them carries the `external` icon or a "new tab"
+  standalone document for direct links. The server sends it with
+  `Content-Security-Policy: sandbox allow-scripts` (no `allow-same-origin`): the model-written page
+  runs in an opaque origin, so its scripts can't read Sova's storage or call its API as the
+  user, while its one inline `?theme=` script still applies the theme, and the thumbnails'
+  `sandbox=""` frames render as before. None of them carries the `external` icon or a "new tab"
   suffix any more, so each link's accessible name is just what it is — the report row and the
   pane row start with a visually hidden `Explanation: ` ahead of the topic, read as
   "Explanation: {topic}". The `external` glyph on `Open {n} Explanations` is unrelated: that link
@@ -698,6 +709,15 @@ which draws them on the session's axis; the strip keeps no history of its own.
   deliberate open survives updates, while navigating to another session, another mode, or the
   landing page remounts it closed. It should never stay open on nav away, so there is nothing
   worth persisting.
+- **Opening a session.** Opening a session — a first visit or a switch back — shows its strip at
+  its full height from the view's first frame, so the transcript below never moves when the
+  insight lands. Until that load lands the strip is built from what the client already holds of
+  THIS session, never another's: the session list's outline snapshot (`outlineNow`,
+  `outlineTopics`, `outlineGist`) fills the closed row, "Current goal · {now} · {n} topics", and
+  the body's `overall`, and the app's explanations poll gives the Explained count, the
+  Explanations link and the Latest line. The state line, the live dot and the topics come with
+  the insight, which then replaces all of it. A session the list knows no outline and no
+  explanations for shows no strip and holds no space for one until its insight says otherwise.
 - **Dismissal.** A `pointerdown` anywhere outside the strip closes it — the transcript, the
   sidebar, the composer, the pane — on the press, not the release. Inside is everything within
   the disclosure (the summary row, a topic's heading and bullets, Jump, `Open Timeline`,
@@ -740,9 +760,13 @@ which draws them on the session's axis; the strip keeps no history of its own.
     auto-follow, so Jump to Latest appears (§chat/transcript). `entryId` is the first message of the
     topic's own section (§app.insights/summary-sections), so no two topics a run updated jump to the
     same place.
-  - Leave it out when `entryId` is null or the item isn't rendered (it was compacted away). That
-    is decided each time the strip opens, and when a topic arrives while it's open; a Jump that
-    finds its item gone since then removes itself instead of scrolling nowhere. A topic without
+  - Leave it out when `entryId` is null or the transcript has no row for it (it was compacted
+    away). That is asked of the rows the transcript renders, so a row it hasn't built yet still
+    offers Jump, which builds it (§chat.transcript/rendering). While the transcript has older rows
+    it hasn't fetched it is offered too, and the Jump fetches them down to the row
+    (§chat.transcript/rendering); it removes itself if the branch has no such row. It is decided each time the strip
+    opens, and when a topic arrives while it's open; a Jump that finds its item gone since then
+    removes itself instead of scrolling nowhere. A topic without
     Jump still shows its heading, time and bullets.
 - **Refetching.** Refetch after a watch `append` or chat `agent_settled`, debounced. Update in
   place.

@@ -1,0 +1,22 @@
+/* `vis steps`: rows of chains, grouped under lane heads. Every size here is fixed in px (line
+   heights, paddings, the label column, the arrow): ./height.ts computes the drawing's height from
+   the same numbers, so the figure can reserve its space before it draws. Tokens only. */
+.vis-steps { display: flex; flex-direction: column; gap: var(--space-1); }
+.vis-steps-lane { font-size: var(--fs-caption); line-height: 18px; font-weight: var(--fw-semibold); color: var(--color-ink-2); overflow-wrap: anywhere; }
+.vis-steps > * + .vis-steps-lane { padding-top: var(--space-2); }
+.vis-steps-row { display: grid; grid-template-columns: 144px minmax(0, 1fr); align-items: start; gap: var(--space-2); padding: 6px var(--space-2); border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-sm); }
+.vis-steps-head { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.vis-steps-status { flex: none; display: grid; place-items: center; width: 16px; height: 16px; margin-top: 3px; color: var(--vis-stroke); }
+.vis-steps-status-plain::before { content: ""; width: 10px; height: 10px; box-sizing: border-box; border-radius: var(--r-full); border: 2px solid var(--vis-stroke); }
+.vis-tone-accent.vis-steps-status-plain::before { background: var(--vis-stroke); }
+.vis-tone-muted.vis-steps-status-plain::before { border-style: dotted; }
+.vis-steps-label { min-width: 0; font-size: var(--fs-body); line-height: 22px; font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
+.vis-steps-label > .vis-em-badge { vertical-align: 1px; }
+.vis-steps-row.vis-tone-muted .vis-steps-label { color: var(--color-ink-muted); }
+.vis .vis-steps-chain { display: flex; flex-wrap: wrap; row-gap: var(--space-1); margin: 0; padding: 0; list-style: none; min-width: 0; }
+.vis .vis-steps-chain > li { display: flex; align-items: flex-start; max-width: 100%; margin: 0; }
+/* The arrow is the icon, masked to 14px inside its 20px × 24px slot. */
+.vis-steps-arrow.icon { flex: none; width: 20px; height: 24px; -webkit-mask-size: 14px; mask-size: 14px; color: var(--color-ink-muted); }
+.vis-steps-chip { min-width: 0; padding: 2px var(--space-2); border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-xs); background: var(--color-sunken); font-size: var(--fs-caption); line-height: 18px; color: var(--color-ink); overflow-wrap: anywhere; }
+.vis-steps-chip.vis-mono { font-family: var(--font-mono); font-size: var(--fs-mono); }
+@container vis (max-width: 420px) { .vis-steps-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); } }

@@ -67,7 +67,7 @@ describe("a coding session's worktree", () => {
     assert.deepEqual(cut.worktree, { path: join(tmp, `r${n - 1}`, ".worktrees", "client-fix-it-abc123"), branch: "sova/fix-it-abc123", base: git(root, "rev-parse", "HEAD"), target: "master" });
     assert.equal(cut.cwd, join(cut.worktree.path, "app"));
     assert.equal(git(root, "symbolic-ref", "--short", "HEAD"), "master", "the root checkout never switches");
-    assert.deepEqual(await readWorktree(cut.worktree, root), { state: "open", merged: false, branch: true, ahead: 0, dirty: false, worktree: cut.worktree.path });
+    assert.deepEqual(await readWorktree(cut.worktree, root), { state: "open", merged: false, branch: true, ahead: 0, unmerged: 0, dirty: false, worktree: cut.worktree.path });
     // git refuses (the branch exists): the reason is git's.
     await assert.rejects(cutWorktree(await rootOf(root), root, "Fix it", undefined, "abc123"), /already exists/);
   });
@@ -132,7 +132,7 @@ describe("a coding session's worktree", () => {
     assert.equal(existsSync(cut.worktree.path), false);
     assert.notEqual(git(root, "branch", "--list", cut.worktree.branch), "", "the unmerged branch stays");
     // Its folder gone, the branch still merges from the root; its reading comes from the root.
-    assert.deepEqual(await readWorktree(cut.worktree, root), { state: "missing", merged: false, branch: true, ahead: 1, dirty: false, worktree: null });
+    assert.deepEqual(await readWorktree(cut.worktree, root), { state: "missing", merged: false, branch: true, ahead: 1, unmerged: 1, dirty: false, worktree: null });
     await mergeBack(cut.worktree, root, "Keep");
     assert.equal(readFileSync(join(root, "k.txt"), "utf8"), "k\n");
 
@@ -171,6 +171,8 @@ describe("the promotion commit", () => {
     assert.equal(git(root, "rev-parse", "HEAD"), c.sha);
     assert.deepEqual(git(root, "show", "--name-only", "--format=", "HEAD").split("\n").sort(), c.files);
     assert.equal(git(root, "log", "-1", "--format=%s"), "Promote 1 decision: invoicing — Tony approves.");
+    // Sova's identity, never the repo's configured one (t@example.invalid here).
+    assert.equal(git(root, "log", "-1", "--format=%an <%ae> / %cn <%ce>"), "Sova <sova@localhost> / Sova <sova@localhost>");
     // (trimmed: README.md's leading status space goes)
     assert.equal(git(root, "status", "--porcelain"), "M README.md\nA  notes.txt");
   });

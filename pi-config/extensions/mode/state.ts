@@ -33,7 +33,7 @@ export interface ModeState {
 	minorModes: MinorMode[];
 	/** Optional per-minor-mode toggle shortcuts (pi-tui KeyIds). None by default. */
 	minorShortcuts?: Partial<Record<MinorMode, string>>;
-	/** Optional override of the alignment-doc viewer shortcut (a pi-tui KeyId). Default: alt+a. */
+	/** Optional override of the alignments viewer shortcut (a pi-tui KeyId). Default: alt+a. */
 	viewerShortcut?: string;
 }
 
@@ -155,6 +155,67 @@ export function restoreActive(entries: readonly { type: string; customType?: str
 		if (active) return active;
 	}
 	return undefined;
+}
+
+// ── The prompt head and its notes ────────────────────────────────────────────
+
+/**
+ * The hidden custom message (display: false) that tells the model about a minor-mode switch made
+ * after its system prompt was built. The prompt's mode section keeps the minor modes it was built
+ * with (the head) until the next compaction, so a toggle never rewrites the cached prefix.
+ */
+export const MODE_NOTE_TYPE = "mode-note";
+
+/** A mode note's `details`: the minor modes in effect after it, and those whose whole guide it carried. */
+export interface ModeNoteDetails {
+	v: 1;
+	minorModes: MinorMode[];
+	guides: MinorMode[];
+}
+
+/**
+ * What the model has for minor modes on a branch. `head`: the minor modes its prompt's mode section
+ * was built with; undefined while no prompt has been sent since the session's start or its last
+ * compaction, when the head simply follows the active set. `told`: the minor modes the model was
+ * last told are on (the head plus the notes since). `guides`: modes whose whole guide a note since
+ * that compaction carried.
+ */
+export interface ModeHead {
+	head: MinorMode[] | undefined;
+	told: MinorMode[] | undefined;
+	guides: MinorMode[];
+}
+
+/**
+ * The head a branch was left with, by the rule the extension keeps: a `mode` entry records `head`
+ * only while it differs from that entry's own active minor modes, so the newest one carrying it
+ * names the head, and none since the last compaction means the head equals the active set. Notes
+ * before the last compaction are ignored: a compaction rebuilds the head from the active set.
+ * Entries Sova writes (pinEntryFor) never carry `head`. Never throws.
+ */
+export function restoreHead(entries: readonly { type: string; customType?: string; data?: unknown; details?: unknown }[]): ModeHead {
+	let head: MinorMode[] | undefined;
+	let told: MinorMode[] | undefined;
+	const guides = new Set<MinorMode>();
+	if (!Array.isArray(entries)) return { head, told, guides: [] };
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry = entries[i];
+		if (!entry) continue;
+		if (entry.type === "compaction") break;
+		if (entry.type === "custom_message" && entry.customType === MODE_NOTE_TYPE) {
+			const details = entry.details as Partial<ModeNoteDetails> | undefined;
+			if (details?.v !== 1 || !Array.isArray(details.minorModes)) continue;
+			told ??= normalizeMinorModes(details.minorModes);
+			for (const mode of normalizeMinorModes(details.guides)) guides.add(mode);
+			continue;
+		}
+		if (head === undefined && entry.type === "custom" && entry.customType === MODE_ENTRY_TYPE) {
+			const data = entry.data as { head?: unknown } | null | undefined;
+			if (data && typeof data === "object" && Array.isArray(data.head)) head = normalizeMinorModes(data.head);
+		}
+	}
+	if (head === undefined) return { head, told: undefined, guides: [] };
+	return { head, told: told ?? [...head], guides: normalizeMinorModes([...guides]) };
 }
 
 /** Read the defaults file; missing or corrupt files fall back to built-in defaults. Never throws. */

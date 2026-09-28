@@ -8,7 +8,9 @@ import { budgetStop, recordNoted } from "../baton-loadout";
 import { acquireChat } from "../chat-manager";
 import { OrgError } from "../orgs";
 import { refreshShare, viewForToken } from "./hub";
-import { classify, recordOpen, recordRefused, recordShellFetch } from "../visits";
+import { ownerAccess } from "../owner";
+import { ownerView } from "../owner-page";
+import { classify, recordOpen, recordRefused, recordShellFetch, type VisitLink } from "../visits";
 
 /**
  * The share listener's whole API (§app.baton/share-listener). Its own Hono app: nothing of the
@@ -19,6 +21,10 @@ import { classify, recordOpen, recordRefused, recordShellFetch } from "../visits
 
 /** The share page's own build (vite build --mode share). Never the operator app's dist/. */
 export const SHARE_DIST = resolve(import.meta.dirname, "..", "..", "dist-share");
+/** Where the share page is served from: SHARE_DIST unless SOVA_SHARE_DIST names another build
+    (tests serve a stub page, so they don't depend on this checkout having built it). Read per
+    request. */
+const shareDist = (): string => process.env.SOVA_SHARE_DIST || SHARE_DIST;
 
 export const MESSAGES_PER_MINUTE = 10;
 const perToken = new Map<string, number[]>();
@@ -48,6 +54,20 @@ export function tokenLimited(token: string, now = Date.now()): boolean {
 
 /** How many tokens the per-token window holds (tests). */
 export const tokenWindowSize = (): number => perToken.size;
+
+/** Owner page reads per token per minute (a page re-reads every 60 s; this is the ceiling). */
+export const OWNER_GETS_PER_MINUTE = 120;
+const ownerGets = new Map<string, number[]>();
+
+/** Sliding one-minute window of Owner page reads per token; true when this one is over the limit. */
+export function ownerTokenLimited(token: string, now = Date.now()): boolean {
+  for (const [k, v] of ownerGets) if (k !== token && !v.some((t) => now - t < 60_000)) ownerGets.delete(k);
+  const recent = (ownerGets.get(token) ?? []).filter((t) => now - t < 60_000);
+  const over = recent.length >= OWNER_GETS_PER_MINUTE;
+  if (!over) recent.push(now);
+  ownerGets.set(token, recent);
+  return over;
+}
 
 const SECURITY_HEADERS: Record<string, string> = {
   "Cache-Control": "no-store",
@@ -81,13 +101,13 @@ export function createShareApp(): Hono {
 
   app.get("/h/assets/:name", (c) => {
     const name = c.req.param("name");
-    const file = join(SHARE_DIST, "assets", name);
+    const file = join(shareDist(), "assets", name);
     if (!/^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(name) || !existsSync(file)) return c.json({ error: "Not found" }, 404);
     return c.body(readFileSync(file), 200, { "Content-Type": MIME[extname(name)] ?? "application/octet-stream" });
   });
 
   app.get("/h/:token", (c) => {
-    const index = join(SHARE_DIST, "index.html");
+    const index = join(shareDist(), "index.html");
     if (!existsSync(index)) return c.text("The share page is not built on this host.", 503);
     // The shell never looks at the token (no validity oracle), except for a known link previewer's
     // fetch, which the person's page lists as "Link preview by <service>" (§app.baton/visits).
@@ -183,6 +203,50 @@ export function createShareApp(): Hono {
     refreshShare(sessionId);
     return c.json({ ok: true }, 202);
   });
+
+  // ---- the Owner page (§app.owner-page): read-only ------------------------------------------------
+
+  const ownerVisit = (l: { orgId: string; personId: string; gen: number }): VisitLink => ({ orgId: l.orgId, personId: l.personId, via: "owner", gen: l.gen });
+
+  app.get("/i/:token", (c) => {
+    const index = join(shareDist(), "index.html");
+    if (!existsSync(index)) return c.text("The share page is not built on this host.", 503);
+    // As /h/: the shell never looks at the token, except to log a known link previewer's fetch.
+    const ua = c.req.header("user-agent");
+    if (classify(ua).kind === "preview")
+      logVisit(c.req.param("token"), "preview", () => {
+        const a = ownerAccess(c.req.param("token"));
+        if (a.ok) recordShellFetch(ownerVisit(a.link), ua);
+      });
+    return c.body(readFileSync(index, "utf8"), 200, { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": PAGE_CSP });
+  });
+
+  const ownerRead = (what: (c: import("hono").Context) => { project?: string; conversation?: string }) => async (c: import("hono").Context) => {
+    const token = c.req.param("token") ?? "";
+    if (ownerTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const access = ownerAccess(token);
+    const ua = c.req.header("user-agent");
+    if (!access.ok) {
+      const dead = access.link;
+      if (access.status === 410 && dead) logVisit(token, "refused", () => recordRefused(ownerVisit(dead), ua));
+      // §app.owner-page/link: only an expiry is named; no org or person, ever.
+      if (access.status === 404) return c.json(refusal("not-found", "This link doesn't open anything."), 404);
+      return c.json(access.why === "expired" ? refusal("gone", "This link has expired.", "expired") : refusal("gone", "This link is no longer active."), 410);
+    }
+    let view;
+    try {
+      view = await ownerView(access.orgId, what(c));
+    } catch (err) {
+      // An unknown handle, a hidden conversation and a project switched off answer alike.
+      if (err instanceof OrgError && err.status === 404) return c.json(refusal("missing", "Not found."), 404);
+      throw err;
+    }
+    logVisit(token, "open", () => recordOpen(ownerVisit(access.link), { tab: c.req.query("v"), userAgent: ua }));
+    return c.json(view);
+  };
+  app.get("/api/i/:token", ownerRead(() => ({})));
+  app.get("/api/i/:token/p/:handle", ownerRead((c) => ({ project: c.req.param("handle") ?? "" })));
+  app.get("/api/i/:token/c/:handle", ownerRead((c) => ({ conversation: c.req.param("handle") ?? "" })));
 
   app.all("*", (c) => c.json({ error: "Not found" }, 404));
   return app;

@@ -26,8 +26,6 @@ export function codingModeOf(key: CodingModeKey): ProjectCodingMode | null {
 
 export const codingModeLabel = (key: CodingModeKey): string => (key === "auto" ? "Automatic" : modeWords(codingModeOf(key)!));
 
-export const isDelegate = (key: CodingModeKey): boolean => key.startsWith("delegate");
-
 // ---- coding sessions and their worktrees ------------------------------------------------------------
 
 type Row = Pick<CodingWorktree, "state" | "path" | "running" | "workers" | "merged" | "branchGone">;
@@ -42,6 +40,15 @@ function busyGate(w: Row): Gate {
   return null;
 }
 
+/** The merge line's words before its target (the caller adds the target and the last merge's time), or null:
+    merged; merged before, with commits since (git, not the record, says it is merged). */
+export function mergeNote(w: Pick<CodingWorktree, "state" | "merged" | "mergedAt" | "newSinceMerge">): string | null {
+  if (w.merged) return w.state === "merged" || w.mergedAt ? "Merged into" : null;
+  const n = w.newSinceMerge ?? 0;
+  if (!w.mergedAt || n < 1) return null;
+  return `${n} new commit${n === 1 ? "" : "s"} since the last merge into`;
+}
+
 /** Merge Branch is offered on a branch not yet in its target: open, or its folder gone (removed or missing) before a merge. */
 export const offersMerge = (w: Row): boolean => (w.state === "open" || w.state === "removed" || w.state === "missing") && !w.merged && !w.branchGone;
 /** Remove Worktree is offered while the worktree folder is there. */
@@ -50,8 +57,18 @@ export const offersRemove = (w: Row): boolean => w.state === "open" || w.state =
 export const mergeGate = (w: Row): Gate => busyGate(w);
 export const removeGate = (w: Row): Gate => busyGate(w);
 
+/** The line about its worktree folder, or null: removed; on another host (its folder is there, not
+    missing); missing only on the host that made it. */
+export function folderNote(w: Pick<CodingWorktree, "state" | "path">): string | null {
+  if (w.state === "removed") return "Worktree removed";
+  if (w.state === "root") return null;
+  if (w.path === null) return "On another host: its worktree is there.";
+  return w.state === "missing" ? "Worktree folder missing" : null;
+}
+
 /** The row's meta line before its branch: "Started by you · idle · 2h ago" (time added by the caller). */
-export const startedBy = (w: Pick<CodingWorktree, "startedBy">): string => (w.startedBy === "overseer" ? "Started by the overseer" : "Started by you");
+export const startedBy = (w: Pick<CodingWorktree, "startedBy" | "via">): string =>
+  w.startedBy === "overseer" ? "Started by the overseer" : w.via === "overseer" ? "Started by you, via the Overseer" : "Started by you";
 
 /** Newest first. */
 export const worktreeOrder = (ws: readonly CodingWorktree[]): CodingWorktree[] => [...ws].sort((a, b) => b.createdAt.localeCompare(a.createdAt));

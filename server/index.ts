@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import type { Server } from "node:http";
+import type { IncomingMessage, Server } from "node:http";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
@@ -7,11 +8,16 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { compress } from "hono/compress";
+import { isDirectLocal } from "./compression";
+import { asksForRows, type RowsQuery, transcriptLight, transcriptRows } from "./transcript-rows";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
+import { startBatonMarksBackfill } from "./baton-marks";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
+import { registerProjectCostRoutes } from "./project-costs-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
 import { WorkspaceCommitter } from "./workspace-commits";
@@ -19,7 +25,7 @@ import { registerDecisionRoutes } from "./decisions-routes";
 import { startShareListener, stopShareListener } from "./share/listener";
 import { flushOpenVisits } from "./visits";
 import { disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
-import { canonicalPath, resolveSessionPath } from "./paths";
+import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { stateRoot } from "./state-root";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
 import { setFavorite } from "./model-favorites";
@@ -27,8 +33,10 @@ import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
-import { decodeWorkers, getAgentsInsight, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
+import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
+import { decodeWorkers, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
+import { startPriceRefresh } from "./model-prices";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
@@ -42,7 +50,7 @@ import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_M
 import { promptGroup } from "./group-prompt";
 import { runFanout } from "./fanout";
 import { runFork } from "./fork";
-import type { FanoutRequest, ForkRequest, WorkerResumeResult } from "../shared/protocol";
+import type { FanoutRequest, ForkRequest, SessionsDirInfo, WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -113,12 +121,26 @@ process.on("unhandledRejection", (err) => console.error("[unhandledRejection]", 
 
 const app = new Hono();
 
+// gzip/deflate for the JSON API (a transcript is MBs), when the client asks for it. Registered
+// first so it wraps every /api route. hono/compress skips what must pass as is: responses that
+// already carry a Content-Encoding, 206s, HEAD, Cache-Control: no-transform, and types it doesn't
+// deem compressible (images, text/event-stream). Its 1 KB threshold reads Content-Length, which
+// c.json doesn't set, so small JSON is gzipped too (~20 bytes more). The static app, /ext and
+// /peer aren't under it. Not for a browser on this machine connecting directly (isDirectLocal).
+const gzip = compress();
+app.use("/api/*", (c, next) => {
+  const incoming = (c.env as { incoming?: IncomingMessage } | undefined)?.incoming;
+  return incoming && isDirectLocal(incoming) ? next() : gzip(c, next);
+});
+
 app.onError((err, c) => {
   console.error("[api]", err);
   return c.json({ error: err.message }, 500);
 });
 
 app.get("/api/health", (c) => c.json({ ok: true }));
+// The folder this server lists sessions from (its agent dir's), which the empty list names.
+app.get("/api/sessions/dir", (c) => c.json({ sessionsDir: SESSIONS_DIR, home: homedir() } satisfies SessionsDirInfo));
 
 app.get("/api/sessions", async (c) => c.json(await listSessions()));
 
@@ -190,6 +212,7 @@ app.post("/api/sessions/connect", async (c) => {
 registerOrgRoutes(app);
 registerWrapupRoutes(app);
 registerProjectOverseerRoutes(app);
+registerProjectCostRoutes(app);
 // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
 registerDecisionRoutes(app);
 
@@ -731,6 +754,24 @@ app.get("/api/transcript", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  // Rows of it (older rows on demand, server/transcript-rows.ts); without these, the whole branch.
+  const q: RowsQuery = {
+    tail: c.req.query("tail") === "1",
+    before: c.req.query("before") || undefined,
+    from: c.req.query("from") || undefined,
+    explain: c.req.query("explain") || undefined,
+    leaf: c.req.query("leaf") || undefined,
+    chars: Number(c.req.query("chars")) || undefined,
+  };
+  if (c.req.query("view") === "light") {
+    const body = await transcriptLight(path, (branch) => resolveContext(contextForBranch(branch)));
+    return c.body(body, 200, { "Content-Type": "application/json; charset=UTF-8" });
+  }
+  if (asksForRows(q)) {
+    const r = await transcriptRows(path, q, (branch) => resolveContext(contextForBranch(branch)));
+    if (r.status !== 200) return c.json({ error: r.error, code: r.code }, r.status);
+    return c.body(r.body, 200, { "Content-Type": "application/json; charset=UTF-8" });
+  }
   const branch = await readActiveBranch(path);
   return c.json({ items: normalizeEntries(branch), context: await resolveContext(contextForBranch(branch)) });
 });
@@ -811,6 +852,15 @@ app.get("/api/insights/session", async (c) => {
   return c.json(await getSessionInsight(path));
 });
 
+// The workers the session's live record couldn't list, for the pane's "Show {n} More": read only
+// when asked, never on a poll (§app.subagents-pane/hidden-workers).
+app.get("/api/insights/session/workers", async (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  return c.json(await getHiddenWorkers(path), 200, { "Cache-Control": "no-store" });
+});
+
 // The git worktrees each listed session touches (server/worktrees.ts). Paths that aren't sessions
 // come back with trees: []; git failures are a tree's `error`, never a 500.
 app.get("/api/insights/worktrees", async (c) => {
@@ -819,6 +869,24 @@ app.get("/api/insights/worktrees", async (c) => {
   const paths = raw.split(",").map((p) => p.trim()).filter(Boolean);
   return c.json(await worktreeInsights.get(paths), 200, { "Cache-Control": "no-store" });
 });
+
+// Git diffs for the changes viewer (server/git-diff.ts, shared/protocol.ts DiffScope). Read-only;
+// the scope names a folder the session knows, the server picks every ref.
+const diffRoute = (fn: (c: Context) => Promise<unknown>) => async (c: Context) => {
+  try {
+    return c.json(await fn(c), 200, { "Cache-Control": "no-store" });
+  } catch (err) {
+    if (err instanceof DiffError) return c.json({ error: err.message }, err.status, { "Cache-Control": "no-store" });
+    throw err;
+  }
+};
+app.get("/api/diff/summary", diffRoute((c) => gitDiffs.summary(scopeFromQuery((n) => c.req.query(n)))));
+app.get(
+  "/api/diff/patch",
+  diffRoute((c) =>
+    gitDiffs.patch(scopeFromQuery((n) => c.req.query(n)), c.req.query("file") ?? "", c.req.query("old"), { context: c.req.query("context") === "1" }),
+  ),
+);
 
 // /explain artifacts (server/explanations.ts). The store is read-only here: listing never fails,
 // a missing or corrupt entry is simply absent. ?session=<sessionId> filters by parentSessionId.
@@ -1101,11 +1169,20 @@ app.all("/design/*", (c) => c.text("Not found", 404));
 // open directly. Registered before the static/SPA handlers below so those never shadow it; the
 // query string is passed through untouched (the page reads ?theme= itself). The id must be a
 // plain store dir name — anything with a slash, a ".." or nothing at all is a 404, not a read.
+/** The CSP every served explanation page gets (§app.insights/explanations-page). */
+const EXPLAIN_PAGE_CSP = "sandbox allow-scripts";
 app.get("/explain/:id", async (c) => {
   const id = c.req.param("id");
   const html = isExplanationId(id) ? await readExplanationPage(id) : null;
   if (html === null) return c.text("Explanation not found", 404);
-  return c.body(html, 200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-cache" });
+  return c.body(html, 200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "private, no-cache",
+    // The page is model-written HTML on Sova's own origin. `sandbox` without allow-same-origin
+    // gives it an opaque origin, so its scripts can't read Sova's storage or call /api with the
+    // user's session; allow-scripts keeps the one inline ?theme= script (ExplainTiles.tsx).
+    "Content-Security-Policy": EXPLAIN_PAGE_CSP,
+  });
 });
 
 // Anything else under /explain (bare "/explain", a nested path, an encoded slash that didn't
@@ -1156,6 +1233,7 @@ workspaceCommits.start();
 startWrapupRecovery();
 // Messages a crash or kill lost stop counting against their session's limit.
 startBudgetRecount();
+startBatonMarksBackfill();
 
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
 // The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);
@@ -1203,6 +1281,9 @@ void (async () => {
 
 // Keeps the shared usage cache fresh without an open TUI (SOVA_USAGE_POLL=off switches it off).
 const usagePoller = startUsagePoller({ busy: usageRefreshBusy, onFetched: invalidateUsageMemo });
+// models.dev prices for project costs: refreshed in the background when older than 3 days
+// (§app.project-costs/price-table; SOVA_PRICES_FETCH=off switches fetching off).
+const priceRefresh = startPriceRefresh();
 
 let shuttingDown = false;
 async function shutdown() {
@@ -1222,6 +1303,7 @@ async function shutdown() {
   markShutdown();
   for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
   usagePoller.stop();
+  priceRefresh.stop();
   meshLinks.stop();
   stopMesh();
   stopShareListener();

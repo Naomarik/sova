@@ -1,0 +1,38 @@
+---
+// The Overseer: a session that reads every other session, answering "what needs me?" and asking
+// before it acts.
+import Frame from "../Frame.astro";
+import Icon from "../Icon.astro";
+
+const items = [
+  { t: "Upload client", n: "Retry cap merged yesterday. Nothing running." },
+  { t: "Fix README badges", n: "Done 2 days ago. No open questions." },
+  { t: "Try vitest 4", n: "Tests pass on 4. You said to keep 3 for now." },
+];
+---
+<Frame path="overseer" class="m-frame" caption="The Overseer page: it lists the 2 sessions that need you with links to each, then asks with a confirmation card before archiving 3 finished sessions.">
+  <div class="m-session">
+    <header class="m-head">
+      <Icon name="eye" size={16} class="m-muted" />
+      <span class="m-head-title">Overseer</span>
+      <span class="m-head-end"><span class="m-seg"><span>Off</span><span class="on">List Only</span><span>Brief Me</span></span></span>
+    </header>
+    <div class="m-thread">
+      <div class="m-msg-user">What needs me?</div>
+      <div class="m-tool"><div class="m-tool-sum"><Icon name="chevron-right" size={12} /><span class="m-tool-name">sova_attention</span><span class="m-tool-arg">12 sessions</span><span class="m-ok">✓</span></div></div>
+      <div class="m-msg">
+        <p>2 sessions need you:</p>
+        <p style="margin-top:6px"><span class="m-link">Retry policy · claude-sonnet-5</span> asks whether to use ky's retry or its own loop.</p>
+        <p style="margin-top:4px"><span class="m-link">Flaky upload test</span> stopped with an error on its last turn.</p>
+        <p style="margin-top:6px">3 others finished and have been quiet since. Want them archived?</p>
+      </div>
+      <div class="m-confirm">
+        <div class="m-confirm-head">Archive 3 finished sessions?</div>
+        {items.map((i) => (
+          <div class="m-confirm-item"><span class="m-check"><Icon name="check" size={10} /></span><div><b>{i.t}</b><span>{i.n}</span></div></div>
+        ))}
+        <div class="m-confirm-foot"><span class="m-btn m-btn-primary">Archive 3</span><span class="m-btn">Keep Them</span></div>
+      </div>
+    </div>
+  </div>
+</Frame>

@@ -1,0 +1,58 @@
+/* `vis code`: an annotated snippet. Owner: the code member. Syntax colours are base.css's hljs theme. */
+.vis-kind-code .vis-body { padding: 0; }
+.vis-code {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* The height is fixed (View.tsx, from layout.ts); a horizontal scrollbar overlays the bottom padding. */
+  overflow-y: hidden;
+  background: var(--color-sunken);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.vis-code:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.vis-code-lines {
+  display: grid;
+  width: max-content;
+  min-width: 100%;
+  padding: var(--space-2) 0 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+  /* A note quotes the code's characters: `<=` stays `<=`, not a ligature. */
+  font-variant-ligatures: none;
+  color: var(--color-ink);
+}
+.vis-code-line { display: flex; min-height: calc(var(--fs-mono) * var(--lh-mono)); }
+/* The gutter stays put while the code scrolls; it carries the number, the note badge, and the bar. */
+.vis-code-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  background: var(--color-sunken);
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.vis-code-num { min-width: calc(var(--vis-code-digits) * 1ch); text-align: right; }
+.vis-code-badge { display: inline-flex; width: 18px; }
+.vis-code-badge .vis-em-badge { margin: 0; }
+.vis-code-text { flex: 1 0 auto; padding: 0 var(--space-4) 0 var(--space-1); white-space: pre; overflow-wrap: normal; font: inherit; color: inherit; background: none; border: 0; border-radius: 0; }
+/* Emphasis: the line's tone fill runs the full scroll width; the bar sits on the gutter's edge. */
+.vis-code-line.vis-em { background: var(--vis-fill); box-shadow: none; border-radius: 0; }
+.vis-code-line.vis-em .vis-code-gutter {
+  background: linear-gradient(var(--vis-fill), var(--vis-fill)), var(--color-sunken);
+  box-shadow: inset 3px 0 0 var(--vis-stroke);
+  color: var(--color-ink);
+  font-weight: var(--fw-semibold);
+}
+@container vis (max-width: 420px) {
+  .vis-code-gutter { padding-left: var(--space-2); }
+  .vis-code-text { padding-right: var(--space-3); }
+}
+/* The shell's notes sit flush under the drawing; the code block has no body padding to lean on. */
+.vis-kind-code .vis-notes { padding-top: var(--space-3); }

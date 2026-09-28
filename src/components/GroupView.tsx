@@ -35,7 +35,7 @@ import {
 import { announce, home, setGroupComposerActive, toast } from "../lib/ui-state";
 import { cwdLabel } from "../lib/remote-session";
 import { failureLines, partialClosing, partialTitle } from "../lib/fanout";
-import { findEntryRow, transcriptRoot } from "../lib/jump";
+import { ensureRendered, JUMP_EVENT, loadRow, transcriptRoot } from "../lib/jump";
 import { clearPartial, pendingPartial } from "./FanoutDialog";
 import { sessionWorking, type UsageTotalView } from "../lib/workers";
 import type { PaneInsight, TabId } from "./SessionPane";
@@ -344,18 +344,46 @@ export function GroupView(props: {
    * announcement overstating something the user cannot check.
    */
   const [pendingAlign, setPendingAlign] = createSignal<Set<string>>(new Set());
-  const scrollToMarker = (path: string) => {
+  const scrollToMarker = (path: string): boolean | "waiting" => {
     const seed = props.group.seed;
     if (!seed) return false;
-    const row = findEntryRow(seed.leafId, transcriptRoot(path));
-    if (!row) return false;
+    // Built first if the pane hasn't reached it yet (tail-first rendering, lib/tail-render).
+    const root = transcriptRoot(path);
+    const row = ensureRendered(seed.leafId, root);
+    // Not there while the pane may have older rows it doesn't hold (lib/older-rows): not missing
+    // yet; they're fetched down to it, and it aligns once they're here.
+    if (!row) {
+      const load = loadRow(root, { entry: seed.leafId });
+      if (!load) return false;
+      void load.then((r) => r === "here" && queueMicrotask(() => alignArrived(path)));
+      return "waiting";
+    }
+    // As every jump does: the pane stops following first, so rows still being built below (the
+    // ones this just built, or older rows landing) can't pull it back to the end mid-scroll.
+    root?.dispatchEvent(new Event(JUMP_EVENT));
     row.scrollIntoView({ block: "start", behavior: reduceMotion() ? "auto" : "smooth" });
     return true;
+  };
+  /**
+   * A pane whose rows just arrived: none of the rows the scroll passes has been drawn, so their
+   * heights are estimates and the first aim falls short. Aim again once the scroll has rested,
+   * at most twice, as a jump does (lib/jump `recenter`).
+   */
+  const alignArrived = (path: string, left = 2) => {
+    if (!scrollToMarker(path) || left <= 0) return;
+    setTimeout(() => {
+      const seed = props.group.seed;
+      const root = transcriptRoot(path);
+      const row = seed && root ? ensureRendered(seed.leafId, root) : null;
+      if (!row || !root) return;
+      if (Math.abs(row.getBoundingClientRect().top - root.getBoundingClientRect().top) > 24) alignArrived(path, left - 1);
+    }, 700);
   };
   const alignToFork = () => {
     const seed = props.group.seed;
     if (!seed) return;
     const missed: string[] = [];
+    const waiting: string[] = [];
     const deferred = new Set<string>();
     let aligned = 0;
     for (const key of panes()) {
@@ -364,13 +392,15 @@ export function GroupView(props: {
         deferred.add(key);
         continue;
       }
-      if (!scrollToMarker(key)) missed.push(nameOf(key));
+      const done = scrollToMarker(key);
+      if (!done) missed.push(nameOf(key));
+      else if (done === "waiting") waiting.push(nameOf(key));
       else aligned += 1;
     }
     setPendingAlign(deferred);
     const head =
       missed.length === 0
-        ? `Aligned ${aligned} ${aligned === 1 ? "member" : "members"}${deferred.size > 0 ? " now." : " to the fork point."}`
+        ? `Aligned ${aligned} ${aligned === 1 ? "member" : "members"}${deferred.size > 0 || waiting.length > 0 ? " now." : " to the fork point."}`
         : `Aligned ${aligned} ${aligned === 1 ? "member" : "members"}. ${missed.join(", ")} has no fork point on its branch.`;
     const tail =
       deferred.size > 0

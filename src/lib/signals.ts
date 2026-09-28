@@ -1,17 +1,23 @@
 // The session row's marks: line 1's leading state mark (the turn-error mark, else the unread dot)
-// and its "needs you" mark (attention signals), the tag status word on line 3 (session tags), plus
+// and its "needs you" mark (open alignment questions, else attention signals), the tag status word
+// on line 3 (session tags), plus
 // the live feed's overlay of these onto the list (WS /ws/watch?feed=sessions). Pure: the sidebar
 // reads these, the tests pin them.
 
 import type { SessionMarks, SessionSummary, SessionTags, SignalKind } from "../../shared/protocol";
 
-/** The mark's kinds, most urgent first: one mark per row, the first of these that applies. */
-export const SIGNAL_PRECEDENCE: readonly SignalKind[] = ["asks-you", "looping"];
+/** The line-1 mark's kinds: open alignment questions (§chat.alignment/session-mark), or a signal. */
+export type NeedsYouKind = "questions" | SignalKind;
 
-/** What a row's line-1 mark says: the kind, and whether it is about a subagent rather than the session. */
+/** The mark's kinds, most urgent first: one mark per row, the first of these that applies. */
+export const SIGNAL_PRECEDENCE: readonly NeedsYouKind[] = ["questions", "looping"];
+
+/** What a row's line-1 mark says: the kind, whether it is about a subagent rather than the session,
+    and, for open questions, the session's counts. */
 export interface NeedsYouMark {
-  kind: SignalKind;
+  kind: NeedsYouKind;
   worker: boolean;
+  align?: NonNullable<SessionSummary["align"]>;
 }
 
 /**
@@ -32,21 +38,24 @@ export function turnErrorTitle(e: NonNullable<SessionSummary["turnError"]>): str
 }
 
 /**
- * The row's needs-you mark, or null. The server decides the kinds (its thresholds, never re-derived
- * here) and sends `signals` only while the mark should show; `seenAt ≥ at` is checked again because
- * it is the rule. This tab adds what it knows sooner than the last list: the open session never
- * shows it (you're looking at it), and neither does one this tab is running a turn in. The
- * session's own kinds win a tie with its subagents'.
+ * The row's needs-you mark, or null. Open alignment questions come first: a fact of the file
+ * (`align`), not news, so a visit never clears them. Otherwise the server decides the signal kinds
+ * (its thresholds, never re-derived here) and sends `signals` only while the mark should show;
+ * `seenAt ≥ at` is checked again because it is the rule. This tab adds what it knows sooner than
+ * the last list: the open session never shows a mark (you're looking at it), and neither does one
+ * this tab is running a turn in. The session's own kinds win a tie with its subagents'.
  */
 export function rowNeedsYou(
-  s: Pick<SessionSummary, "path" | "signals" | "workerSignals" | "seenAt">,
+  s: Pick<SessionSummary, "path" | "signals" | "workerSignals" | "seenAt" | "align">,
   opts: { selected: string | null; busy: boolean },
 ): NeedsYouMark | null {
   if (s.path === opts.selected || opts.busy) return null;
+  if (s.align && s.align.openQuestions > 0) return { kind: "questions", worker: false, align: s.align };
   const own = s.signals && !(s.seenAt !== undefined && s.seenAt >= s.signals.at) ? s.signals.kinds : [];
   const w = s.workerSignals;
   const workers: SignalKind[] = w && w.stuck > 0 ? ["looping"] : [];
   for (const kind of SIGNAL_PRECEDENCE) {
+    if (kind === "questions") continue;
     if (own.includes(kind)) return { kind, worker: false };
     if (workers.includes(kind)) return { kind, worker: true };
   }
@@ -54,25 +63,30 @@ export function rowNeedsYou(
 }
 
 /** The mark's glyph and class (src/design/base.css, "DECISIONS"): the shape differs per kind, so hue isn't alone. */
-export const SIGNAL_ICON = { "asks-you": "chat", looping: "refresh" } as const satisfies Record<SignalKind, string>;
-export const SIGNAL_CLASS: Record<SignalKind, string> = {
-  "asks-you": "session-signal session-signal-asks",
+export const SIGNAL_ICON = { questions: "chat", looping: "refresh" } as const satisfies Record<NeedsYouKind, string>;
+export const SIGNAL_CLASS: Record<NeedsYouKind, string> = {
+  questions: "session-signal session-signal-questions",
   looping: "session-signal session-signal-looping",
 };
 
+const questionsText = (n: number) => `${n} open question${n === 1 ? "" : "s"}`;
+
 /** The mark's hidden words, read as part of the row's name (trailing space: the title follows). */
 export function signalWords(m: NeedsYouMark): string {
+  if (m.kind === "questions") return `${questionsText(m.align?.openQuestions ?? 0)}. `;
   if (m.worker) return "A subagent may be stuck. ";
-  return { "asks-you": "Asks you. ", looping: "May be looping. " }[m.kind];
+  return "May be looping. ";
 }
 
-/** The mark's tooltip: the same fact, one sentence. */
+/** The mark's tooltip: the same fact, one sentence. Open questions name their alignment when one asks. */
 export function signalTitle(m: NeedsYouMark): string {
+  if (m.kind === "questions") {
+    const a = m.align;
+    if (!a) return "Open questions";
+    return a.questionDocs === 1 && a.lead ? `${questionsText(a.openQuestions)} in ${a.lead.id} ${a.lead.title}` : `${questionsText(a.openQuestions)} in ${a.questionDocs} alignments`;
+  }
   if (m.worker) return "A subagent looks stuck.";
-  return {
-    "asks-you": "The last reply asks you something.",
-    looping: "The last turn looks like it went in circles.",
-  }[m.kind];
+  return "The last turn looks like it went in circles.";
 }
 
 const STATUS_WORD: Record<NonNullable<SessionTags["status"]>, string> = {

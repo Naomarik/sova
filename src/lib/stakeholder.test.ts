@@ -43,3 +43,8 @@ test("latest change: the operator's, or who left", () => {
   assert.deepEqual(stakeholderView({ stakeholderHistory: h }, [ana, cy]).latest, { why: "left", at: "2026-09-27T10:00:00Z", name: "Cy" });
   assert.deepEqual(stakeholderView({ stakeholderHistory: h.slice(0, 1) }, [ana, cy]).latest, { why: "operator", at: "2026-09-26T10:00:00Z" });
 });
+
+test("the latest change set via the Overseer says so (§app.overseer/org-attribution)", () => {
+  const v = stakeholderView({ stakeholder: "p_a", stakeholderHistory: [{ at: "2026-09-28T10:00:00Z", from: null, to: "p_a", why: "operator", via: "overseer" }] }, [ana]);
+  assert.deepEqual(v.latest, { why: "operator", at: "2026-09-28T10:00:00Z", via: "overseer" });
+});

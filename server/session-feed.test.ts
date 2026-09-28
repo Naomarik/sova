@@ -8,7 +8,7 @@ import { diffMarks, listChanged, marksOf, rowSignature, SessionFeed } from "./se
 const row = (id: string, over: Partial<SessionSummary> = {}): SessionSummary => ({
   id, path: `/s/${id}.jsonl`, cwd: "/w", title: id, createdAt: "", lastActiveAt: "", model: null, live: null, busy: false, origin: "web", archived: false, ...over,
 });
-const signals = (at: number): SessionSignals => ({ at, turnId: `t${at}`, provider: "jev", asksUser: 0.9, kinds: ["asks-you"] });
+const signals = (at: number): SessionSignals => ({ at, turnId: `t${at}`, provider: "jev", stuck: { score: 2, confidence: 0.9 }, kinds: ["looping"] });
 
 describe("diffMarks", () => {
   test("new fields are sent, unchanged ones are not, cleared ones are null, a gone session clears what it had", () => {
@@ -95,6 +95,9 @@ describe("D3: list_changed, for what the marks can't carry", () => {
     assert.equal(listChanged(map([row("a", { baton: waiting }), row("b")]), map([row("a", { baton: held }), row("b")])), true);
     assert.equal(listChanged(map([row("a", { baton: held }), row("b")]), map([row("a", { baton: { ...held } }), row("b")])), false);
     assert.equal(listChanged(map(base), map([row("a", { signals: signals(1), tags: { topic: "docs" } }), row("b")])), false);
+    // An org session's project archived (projects.json, not its file): it leaves the Organizations region.
+    const org = { orgId: "o1", orgName: "Acme", projectId: "p1", projectName: "Ledger", kind: "gathering" as const };
+    assert.equal(listChanged(map([row("a", { org }), row("b")]), map([row("a", { org: { ...org, projectArchived: true } }), row("b")])), true);
   });
 
   test("a session that appears after connect is announced once; nothing on the connect itself", async () => {
@@ -113,6 +116,27 @@ describe("D3: list_changed, for what the marks can't carry", () => {
     await new Promise((r) => setTimeout(r, 5));
     await feed.idle();
     assert.equal(got.length, 2); // unchanged: no second nudge
+    remove();
+  });
+
+  test("a list change also drops the attention digest's memo, so Needs you re-reads it fresh (a Get Link, a share-page reply)", async () => {
+    const { onAttentionChanged } = await import("./attention-memo");
+    let drops = 0;
+    onAttentionChanged(() => drops++);
+    let list: SessionSummary[] = [row("a")];
+    const feed = new SessionFeed({ list: async () => list, intervalMs: 60_000, debounceMs: 0 });
+    const remove = feed.add(() => {});
+    await feed.idle();
+    assert.equal(drops, 0, "the baseline changes nothing");
+    list = [{ ...row("a"), baton: { holder: "p_1", state: "open" } as never }];
+    feed.nudge(0);
+    await new Promise((r) => setTimeout(r, 5));
+    await feed.idle();
+    assert.equal(drops, 1);
+    feed.nudge(0);
+    await new Promise((r) => setTimeout(r, 5));
+    await feed.idle();
+    assert.equal(drops, 1, "unchanged: the memo stays");
     remove();
   });
 });

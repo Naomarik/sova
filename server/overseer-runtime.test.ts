@@ -17,6 +17,8 @@ import { after, before, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-runtime-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 // The Overseer loads the user's extensions and prompt templates. This one rewrites a message with
 // images the way vision-delegate does for a text-only model: the text that enters the context is
@@ -290,13 +292,32 @@ describe("turns the user did not start are read-only", () => {
     sova_todo: { op: "add", text: "A probe" },
     sova_link: { members: [{ session: "some-id" }, { host: "peer", session: "other-id" }] },
     sova_unlink: { link: "lk_0123456789abcdef" },
+    // §app.overseer/org-tools: every organization act.
+    sova_org: { op: "create", name: "Probe Org" },
+    sova_org_project: { op: "add", org: "any", name: "p", root: agentDir },
+    sova_roster: { op: "add", org: "any", name: "Probe Person" },
+    sova_owner: { op: "set", org: "any", person: null },
+    sova_project_decisions: { op: "reconcile", org: "any", project: "any" },
+    sova_gather: { op: "start", org: "any", project: "any", to: "operator", public_title: "t", question: "q", goal: "g" },
+    sova_project_overseer: { op: "settings", org: "any", project: "any", watch: false },
   };
+  /** Every other op of the organization acts: refused as read-only too, a message to a project overseer included. */
+  const ACTING_OPS: [string, Record<string, unknown>][] = [
+    ...["rename", "about", "revert_about", "commit"].map((op): [string, Record<string, unknown>] => ["sova_org", { op, org: "any", name: "n", text: "t", at: "x" }]),
+    ...["edit", "archive", "unarchive"].map((op): [string, Record<string, unknown>] => ["sova_org_project", { op, org: "any", project: "any" }]),
+    ...["edit", "approve", "decline", "leave", "revert"].map((op): [string, Record<string, unknown>] => ["sova_roster", { op, org: "any", person: "any", at: "x" }]),
+    ...["promote", "resolve", "route", "freeze"].map((op): [string, Record<string, unknown>] => ["sova_project_decisions", { op, org: "any", project: "any", ids: ["d"], conflict: "cf_x", keep: "a", to: "operator", frozen: true }]),
+    ...["offer", "handoff", "take", "close", "extend", "revoke_link"].map((op): [string, Record<string, unknown>] => ["sova_gather", { op, session: "some-id", to: ["a", "b"], by: 1 }]),
+    ...["start", "run_now", "clear", "idea", "todo", "message", "code"].map((op): [string, Record<string, unknown>] => ["sova_project_overseer", { op, org: "any", project: "any", text: "hello", action: "add", prompt: "p", title: "t" }]),
+  ];
   const ALLOWED: Record<string, Record<string, unknown>> = {
     sova_note: { op: "read" },
     sova_confirm: { title: "Archive these?", options: ["Yes", "No"] },
     sova_navigate: { page: "usage" },
   };
-  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links"];
+  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links", "sova_orgs", "sova_org_person"];
+  /** Reads by their parameters: sova_org_project without op reads (with op it acts, above). */
+  const READ_CALLS: [string, Record<string, unknown>][] = [["sova_org_project", { org: "any", project: "any" }]];
 
   test("every Overseer tool is classified: acting, allowed unattended, or a read", () => {
     const names = overseer.buildOverseerTools().map((t) => t.name).sort();
@@ -313,8 +334,10 @@ describe("turns the user did not start are read-only", () => {
       await userSends(chat, "you may act");
       await start();
       for (const [name, params] of Object.entries(ACTING)) assert.equal(await run(name, params), "readonly", `${name} in a ${unattended}`);
+      for (const [name, params] of ACTING_OPS) assert.equal(await run(name, params), "readonly", `${name} ${params.op} in a ${unattended}`);
       for (const [name, params] of Object.entries(ALLOWED)) assert.notEqual(await run(name, params), "readonly", `${name} stays allowed`);
       for (const name of READS) assert.notEqual(await run(name, {}), "readonly", `${name} stays allowed`);
+      for (const [name, params] of READ_CALLS) assert.notEqual(await run(name, params), "readonly", `${name} without op stays allowed`);
     }
     assert.match(UNATTENDED_REFUSAL, /sova_confirm/);
   });

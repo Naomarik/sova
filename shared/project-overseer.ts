@@ -12,7 +12,7 @@
  *   <workspace>/projects/<projectId>/overseer/actions.jsonl  every act, refused or not (OverseerAction)
  *   <workspace>/projects/<projectId>/overseer/ideas/         ideas (the Overseer's ideas store; gaps are tagged "gap")
  *   <workspace>/projects/<projectId>/overseer/todos.json     the operator's to-do items (the Overseer's todos store)
- * Host-local (never committed): per-turn counters and the watch loop's memo, under the state root.
+ * Host-local (never committed): the counters (each message's and each day's) and the watch loop's memo (held items too), under the state root.
  *
  * Operator routes (main listener only):
  * GET    /api/orgs/:id/projects/:pid/overseer               -> ProjectOverseerInfo (exists: false before the first open)
@@ -31,7 +31,11 @@
  * GET    /api/orgs/:id/projects/:pid/overseer/actions?limit= -> OverseerAction[] (newest first, refusals included)
  * POST   /api/orgs/:id/projects/:pid/overseer/run           -> ProjectOverseerInfo (Run Now: one watch-loop turn, now; 409 while busy)
  * POST   /api/orgs/:id/projects/:pid/overseer/items/send    body ItemSendInput -> 201 ItemSendResult (Send to person…)
- * POST   /api/orgs/:id/projects/:pid/overseer/items/code    body ItemCodeInput -> 201 ItemCodeResult (Start coding session)
+ * POST   /api/orgs/:id/projects/:pid/overseer/items/code    body ItemCodeInput -> 201 ItemCodeResult (Start coding session; the global
+ *                                                               Overseer alone may give { prompt, title } with no item)
+ * POST   /api/orgs/:id/projects/:pid/overseer/message       body { text } -> ProjectMessageResult (the global Overseer's one route into
+ *                                                               the overseer's conversation; 403 for any other caller)
+ * POST   /api/orgs/:id/projects/:pid/overseer/coding        body CodingStartInput -> 201 CodingStartResult (New Coding Session: no item, no prompt)
  * POST   /api/orgs/:id/projects/:pid/overseer/worktrees/merge  body { sessionId } -> ProjectOverseerInfo (merge a coding session's branch into its target)
  * POST   /api/orgs/:id/projects/:pid/overseer/worktrees/remove body { sessionId } -> ProjectOverseerInfo (remove its worktree; the branch too once merged)
  */
@@ -52,7 +56,7 @@ export interface ProjectOverseerMarkerData {
  * - L0 propose: read, keep notes, file ideas (gaps), ask with a confirm card.
  * - L1 gather: + start gathering sessions and offers to roster people, run the reconciler.
  * - L2 reconcile: + promote non-conflicting decisions into the project's spec, approve or decline referrals.
- * - L3 build: + start and prompt coding sessions in the project, within the caps and the token budget.
+ * - L3 build: + start and prompt coding sessions in the project, within the caps.
  */
 export type Autonomy = "L0" | "L1" | "L2" | "L3";
 export const AUTONOMY_LEVELS: readonly Autonomy[] = ["L0", "L1", "L2", "L3"];
@@ -62,19 +66,113 @@ export const AUTONOMY_MEANING: Record<Autonomy, string> = {
   L0: "Propose: reads, files gaps as ideas, asks you before anything else.",
   L1: "Gather: may also start gathering sessions with people on the roster.",
   L2: "Reconcile: may also promote agreed decisions into the spec and approve referrals.",
-  L3: "Build: may also start coding sessions in the project, within the token budget.",
+  L3: "Build: may also start coding sessions in the project, within its limits.",
 };
 
-/** Per operator message (a watch-loop run shares the budget of the last one), except the `*Open`/`*Running` limits (at once). */
+/** A limit that may be Unlimited: `null` (§app.project-overseer/limits). */
+export type Allowance = number | null;
+
+/**
+ * The project overseer's limits (§app.project-overseer/limits). `*PerTurn`: per message the
+ * operator sends (their turns); `*PerDay`: on its own (every run the operator did not start), per
+ * local day on this host; `unattendedPerDay`: looks on its own per day. Each may be Unlimited
+ * (null). `gatheringsOpen`/`codingRunning`: at once, in every turn, never Unlimited: they are what
+ * stops a burst.
+ */
 export interface ProjectOverseerCaps {
-  gatherPerTurn: number; // default 3: gathering sessions or offers started
-  gatheringsOpen: number; // default 5: its gathering sessions open (not done/closed) at once
-  promotePerTurn: number; // default 20: decisions promoted
-  createPerTurn: number; // default 2: coding sessions started
-  promptsPerTurn: number; // default 5: prompts sent to coding sessions
-  codingRunning: number; // default 2: its coding sessions running at once
-  unattendedPerDay: number; // default 12: watch-loop runs per day
+  gatherPerTurn: Allowance; // default 3: gathering sessions or offers started
+  promotePerTurn: Allowance; // default 20: decisions promoted
+  createPerTurn: Allowance; // default 2: coding sessions started
+  promptsPerTurn: Allowance; // default 5: prompts sent to coding sessions
+  gatherPerDay: Allowance; // default 6
+  promotePerDay: Allowance; // default 60
+  createPerDay: Allowance; // default 4
+  promptsPerDay: Allowance; // default 12
+  unattendedPerDay: Allowance; // default 12: watch-loop runs per day
+  gatheringsOpen: number; // default 5 (0–20): its gathering sessions open (not done/closed) at once
+  codingRunning: number; // default 2 (0–10): its coding sessions running at once
 }
+
+export const DEFAULT_PO_CAPS: ProjectOverseerCaps = {
+  gatherPerTurn: 3,
+  promotePerTurn: 20,
+  createPerTurn: 2,
+  promptsPerTurn: 5,
+  gatherPerDay: 6,
+  promotePerDay: 60,
+  createPerDay: 4,
+  promptsPerDay: 12,
+  unattendedPerDay: 12,
+  gatheringsOpen: 5,
+  codingRunning: 2,
+};
+/** Allowances: whole numbers from 0 to this, or Unlimited. */
+export const ALLOWANCE_MAX = 1000;
+/** The at-once limits' maximums: never Unlimited. */
+export const AT_ONCE_MAX = { gatheringsOpen: 20, codingRunning: 10 } as const;
+export type AtOnceKey = keyof typeof AT_ONCE_MAX;
+export const isAtOnce = (k: keyof ProjectOverseerCaps): k is AtOnceKey => k in AT_ONCE_MAX;
+
+/** What an allowance counts. */
+export type PoLimitKind = "gather" | "promote" | "create" | "prompt";
+export const PO_LIMIT_KINDS: readonly PoLimitKind[] = ["gather", "promote", "create", "prompt"];
+export const PER_TURN: Record<PoLimitKind, keyof ProjectOverseerCaps> = { gather: "gatherPerTurn", promote: "promotePerTurn", create: "createPerTurn", prompt: "promptsPerTurn" };
+export const PER_DAY: Record<PoLimitKind, keyof ProjectOverseerCaps> = { gather: "gatherPerDay", promote: "promotePerDay", create: "createPerDay", prompt: "promptsPerDay" };
+/** What each kind counts, in a sentence ("3 of 6 gathering sessions started"). */
+export const LIMIT_WHAT: Record<PoLimitKind, string> = { gather: "gathering sessions started", promote: "decisions promoted", create: "coding sessions started", prompt: "prompts to coding sessions" };
+
+/** Each limit's field label on the project page; the server's 400 sentences use the same words. */
+export const PO_CAP_LABEL: Record<keyof ProjectOverseerCaps, string> = {
+  gatherPerTurn: "Gathering sessions started (each message you send)",
+  promotePerTurn: "Decisions promoted (each message you send)",
+  createPerTurn: "Coding sessions started (each message you send)",
+  promptsPerTurn: "Prompts to coding sessions (each message you send)",
+  gatherPerDay: "Gathering sessions started (on its own, each day)",
+  promotePerDay: "Decisions promoted (on its own, each day)",
+  createPerDay: "Coding sessions started (on its own, each day)",
+  promptsPerDay: "Prompts to coding sessions (on its own, each day)",
+  unattendedPerDay: "Looks (on its own, each day)",
+  gatheringsOpen: "Gathering sessions open",
+  codingRunning: "Coding sessions running",
+};
+
+/** Why a limit's value can't be saved, as the page and the server say it, or null. Pure. */
+export function capProblem(k: keyof ProjectOverseerCaps, v: unknown): string | null {
+  if (isAtOnce(k)) {
+    if (v === null) return `${PO_CAP_LABEL[k]} can't be Unlimited: it's what stops a burst.`;
+    return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= AT_ONCE_MAX[k] ? null : `${PO_CAP_LABEL[k]} must be a whole number from 0 to ${AT_ONCE_MAX[k]}.`;
+  }
+  return v === null || (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= ALLOWANCE_MAX) ? null : `${PO_CAP_LABEL[k]} must be a whole number from 0 to ${ALLOWANCE_MAX}, or Unlimited.`;
+}
+
+/** Pace (§app.project-overseer/limits): minutes between looks on its own, and the soon look's delay. */
+export const DEFAULT_WATCH_GAP_MIN = 10;
+export const DEFAULT_SOON_LOOK_SEC = 60;
+export const GAP_CHOICES = [2, 5, 10, 30, 60] as const;
+/** null = Off. */
+export const SOON_CHOICES = [30, 60, 120, 300, null] as const;
+export const gapProblem = (v: unknown): string | null =>
+  typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 1440 ? null : "Looks at most every must be a whole number of minutes from 1 to 1440.";
+export const soonProblem = (v: unknown): string | null =>
+  v === null || (typeof v === "number" && Number.isInteger(v) && v >= 30 && v <= 3600) ? null : "The soon look must be a whole number of seconds from 30 to 3600, or Off.";
+
+/**
+ * Something a refusal held for later (host-local, in the watch memo): `key` is `day:<kind>`,
+ * `message:<kind>` or `looks`; `retryAt` (ISO) is when the watch loop turns it into a
+ * reason to look, null = when the operator raises the limit.
+ */
+export interface HeldItem {
+  key: string;
+  /** What it counts ("gathering sessions started", "looks"). */
+  what: string;
+  /** The refusal's sentence. */
+  why: string;
+  since: string;
+  retryAt: string | null;
+}
+
+/** Used and the limit (null = Unlimited), per kind. */
+export type AllowanceUse = Record<PoLimitKind, { used: number; max: Allowance }>;
 
 /** The mode a coding session the project starts runs in (the mode extension's major mode and minor
     modes). `align` is never allowed: nobody answers a coding session's alignment questions. */
@@ -103,14 +201,16 @@ export interface ProjectOverseerSettings {
   gatheringModel: string | null;
   gatheringThinking: string | null;
   caps: ProjectOverseerCaps;
-  /** Tokens (input + output + cache) its coding sessions may spend in total; L3 refuses beyond it. */
-  tokenBudget: number;
+  /** It looks on its own at most every this many minutes (1–1440). */
+  watchGapMin: number;
+  /** A reason to look soon starts a look this many seconds after it (30–3600); null = Off. */
+  soonLookSec: number | null;
   /** The watch loop runs for this project. */
   watch: boolean;
   extraSystemPrompt: string;
 }
 
-export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "tokenBudget" | "watch" | "extraSystemPrompt">> & {
+export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "watchGapMin" | "soonLookSec" | "watch" | "extraSystemPrompt">> & {
   caps?: Partial<ProjectOverseerCaps>;
 };
 
@@ -150,9 +250,10 @@ export interface ProjectOverseerInfo {
   /** Replies newer than the operator last looked. */
   unread: number;
   usage: {
-    /** Tokens its coding sessions have spent (sum of their lifetime totals). */
-    codingTokens: number;
-    tokenBudget: number;
+    /** What each allowance has used: the operator's last message's, and today's on its own. */
+    allowance: { message: AllowanceUse; today: AllowanceUse };
+    /** What refusals held for later (§app.project-overseer/limits). */
+    held: HeldItem[];
     unattendedToday: number;
     lastWatchAt: string | null;
     /** Why the watch loop wants to look, not yet looked at. */
@@ -184,6 +285,8 @@ export interface CodingWorktree {
   path: string | null;
   title: string;
   startedBy: "overseer" | "operator";
+  /** An operator's row the global Overseer started for them: "Started by you, via the Overseer". */
+  via?: "overseer";
   /** `sova/<name>`; null for a session in the project root. */
   branch: string | null;
   /** Why it runs in the project root (a tail: "it isn't a Git repository."). */
@@ -197,11 +300,15 @@ export interface CodingWorktree {
   /** open: its folder is here, not merged; merged: its branch is in target (by Merge Branch or by hand);
       removed: Remove Worktree ran; missing: its folder is gone otherwise; root: it runs in the project root. */
   state: "open" | "merged" | "removed" | "missing" | "root";
-  /** Its work is in target: merged by Merge Branch or by hand, or removed with its branch (only a merged one is). */
+  /** Its work is in target, read from git (merged by Merge Branch or by hand); when the branch is gone
+      or git can't be read, the recorded merge or removal with its branch (only a merged one is). */
   merged: boolean;
   /** True when the branch no longer exists (deleted with a merged worktree, or by hand): nothing left to merge. Absent otherwise. */
   branchGone?: boolean;
+  /** The last Merge Branch (history: a branch merged once may have new commits since). */
   mergedAt?: string;
+  /** Merged before and not merged now: its commits that target lacks. Absent otherwise. */
+  newSinceMerge?: number;
   removedAt?: string;
   /** Commits on the branch beyond base. */
   ahead: number;
@@ -249,9 +356,18 @@ export interface ItemCodeInput {
   ideaId?: string;
   /** Defaults to the item's text. */
   prompt?: string;
+  /** With no item (the global Overseer only): the session's title. */
+  title?: string;
   model?: string;
   thinking?: string;
 }
+/** POST …/overseer/message: where the text went (idle: a turn started; mid-turn: queued as a follow-up). */
+export interface ProjectMessageResult {
+  queued: boolean;
+  sessionId: string;
+  path: string;
+}
+
 export interface ItemCodeResult {
   path: string;
   sessionId: string;
@@ -261,3 +377,15 @@ export interface ItemCodeResult {
   /** Its mode could not be set, so its first prompt was not sent (the session exists and is listed). */
   notPrompted?: string;
 }
+
+/** New Coding Session: a coding session tied to no to-do or idea, with no first prompt (the operator writes it in the composer). */
+export interface CodingStartInput {
+  /** Names the branch and the row; absent: `sova/coding-<hex>`, and the row is untitled until the first message. */
+  title?: string;
+  model?: string;
+  thinking?: string;
+}
+export type CodingStartResult = Omit<ItemCodeResult, "notPrompted"> & {
+  /** Its mode could not be set (the session exists and is listed): the sentence to show. */
+  modeNotSet?: string;
+};

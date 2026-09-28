@@ -121,7 +121,7 @@ and `fill="none" stroke="currentColor"`.
 
 | File (`/icons/…`) | Used for |
 |---|---|
-| `sova-mark.svg` | Brand mark in the sidebar head (accent colored). Astra's Fold, drawn on the system grid |
+| `sova-mark.svg` | Brand mark in the sidebar head (accent colored). A folded ribbon: the V and the A share their middle stroke, drawn as 3 flat-cut filled bands (not strokes) on a 32-unit viewBox, with the middle band in front and no crossbar. Through the mask, the middle band is opaque and each leg shades in alpha toward the fold where it tucks under it |
 | `plus.svg` | New Session |
 | `panel-collapse.svg` / `panel-expand.svg` | Collapse sessions pane (the head's last button) / Expand sessions pane (the spine's first item), §app.session-list/spine: a rounded square, a divider a third in, and a chevron in the wide side pointing left / right. One drawing, mirrored. New, drawn on the system grid |
 | `search.svg` | Search field glyph; tool card for `grep` / `find` / `ls` |
@@ -157,8 +157,10 @@ and `fill="none" stroke="currentColor"`.
 | `branch.svg` | The fork-point row in a forked member's transcript, the `Align to Fork` button, and the overview's `Fan Out` action card (§workspace/groups, §workspace/fanout) |
 | `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg` | Reserved. Shipped but unused in the MVP |
 
-`/favicon.svg` is the mark in white (`#FFFFFF`) on the Indigo dusk gradient, a rounded square: a
-linear gradient from `#4A43D8` at the top-left to `#1E1A5C` at the bottom-right. Link it from
+`/favicon.svg` is the mark on the Indigo dusk gradient, a rounded square: a linear gradient from
+`#4A43D8` at the top-left to `#1E1A5C` at the bottom-right. The middle band is white (`#FFFFFF`),
+and the legs are lavender, each shading from `#ECEAFF` to `#ADA7F5` toward the fold where it tucks
+under the middle band. Link it from
 `index.html`: `<link rel="icon" href="/favicon.svg" type="image/svg+xml">`. The PWA icons, which
 `scripts/pwa-icons.sh` generates into `public/icons/`, use the same design. The `any` icons are
 the favicon scaled up. The maskable and apple-touch icons are full-bleed, with the gradient over

@@ -1,0 +1,34 @@
+/* A conversation's items as an outsider reads them (thread.tsx): the share page, the owner page and
+   the operator's owner preview. Token values only; nothing outside these classes. */
+.share-msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 90%;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  align-self: flex-start;
+}
+.share-msg-own { align-self: flex-end; background: var(--color-accent-tint); border-color: transparent; }
+.share-who { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.share-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.share-md { overflow-wrap: anywhere; }
+.share-md > :first-child { margin-top: 0; }
+.share-md > :last-child { margin-bottom: 0; }
+.share-cutoff { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.share-md a,
+.share-text a { color: var(--color-accent); }
+
+.share-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-lg);
+  background: var(--color-sunken);
+}
+.share-card-quiet { background: transparent; border: 1px solid var(--color-border); }
+.share-card-head { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.share-brief { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--color-border); }

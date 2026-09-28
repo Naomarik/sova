@@ -3,7 +3,9 @@
 
 The composer's "2 subagents working…" row opens a pane beside the session: this session's
 workers on the left, the selected worker's live transcript on the right, read-only. It answers
-"what are my workers doing right now?" without leaving the conversation that started them.
+"what are my workers doing right now?" without leaving the conversation that started them. The
+list holds every worker the session's live record carries, live ones first, and the rest of the
+active branch's workers one click away (§app.subagents-pane/hidden-workers).
 
 It is **this session only**. `#/agents` (§app/insights) stays the cross-session surface: every running pi,
 its teams and solo workers, as cards with no transcripts. The session head's "{n} working" chip
@@ -63,6 +65,17 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
 The pane doesn't need the trigger to stay open: it survives a turn starting or ending. While the
 parent runs, the trigger stays in the row with the counts alone, so watching the workers mid-turn
 is one click rather than a wait for the turn to settle.
+
+Opening a chat shows the settled trigger from the view's first frame, with the count the session
+list has for it (its live record's worker total) whenever the chat's
+socket hasn't said otherwise: the socket's count shows while its latest `workers` message since the
+`hello` lists any, or when the list counts none; a `workers` message listing none never takes a
+count the list has down to nothing. The `hello`
+alone changes nothing on the trigger — its runtime's first `workers` can come well after it, or
+not at all while the runtime has no live record yet, or list none while its extension is still
+restoring its workers — so the count never blinks off and back at the `hello`. A working trigger (the live
+dot) comes only from this chat's own `workers` messages. A watched session's
+trigger reads the same list count until its insight lands.
 
 ## §app.subagents-pane/shell-a-third-column — Shell: a third column
 
@@ -293,6 +306,43 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   selection is sticky while the pane is open: if the selected worker drops out of the live list,
   its last known record, and so its transcript, stays shown until you pick another row or close
   the pane. That keeps a finished worker's transcript readable after the parent prunes it.
+
+## §app.subagents-pane/hidden-workers — Workers the live record doesn't list
+
+A running session's list comes from its live record, which carries at most 40 workers within
+its byte budget. The record lists the **live ones first** (starting, running, stopping,
+waiting), then the newest; when the budget is tight it drops finished and restored workers,
+oldest first, before any live worker's token count. So a working worker is always listed, with
+its tokens, however many workers the session has started.
+
+When the record's worker count is larger than the list, the end of the list says so:
+
+```html
+<li class="subagents-more">
+  <p class="text-caption">40 of 57 shown</p>
+  <button type="button" class="button subagents-more-button">Show 17 More</button>
+</li>
+```
+
+- **The count** is the rows the list shows, of the record's worker count (`workerCounts.total`,
+  the insight's `workerTotal`): nothing extra is read to show it. With every worker listed,
+  nothing shows. The button is a regular `.button`, 44px, like a row: the line sits at the end of
+  a list read by touch too.
+- **Show {n} More** names how many it adds, all the hidden ones at once. One click reads the
+  session file once (`GET /api/insights/session/workers`) and appends every worker recorded on
+  the **active branch** that the live record doesn't list (§app.worker-restore/restore), newest
+  first, after the listed rows. Then the line and the button go. If the record's count grows
+  past the list again (a new worker pushed an older one out of the record), they come back.
+- **Appended rows** are built from the session's own worker records: their final status (a
+  worker that was alive when its host went away reads Restored or Interrupted, as after a
+  restart), model, and the **token count saved in the record** (its last usage snapshot), not
+  the worker's transcript. A worker with no saved count shows "usage unavailable". They look like
+  any other settled row and open the same read-only transcript.
+- **Nothing runs in the background for it.** Polls, pushes and the insight never read these
+  rows; only the click does. While the request runs the button is disabled and reads
+  "Loading…"; a failure leaves the button for another try, with the reason in its `title`.
+- **Out of reach.** `#/agents` and the Usage tab keep the live record's rows (the Agents board
+  only gains the live-first order).
 
 ## §app.subagents-pane/transcript-view — Transcript view
 

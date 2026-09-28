@@ -48,7 +48,13 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   coordinator and monitor every new team gets (absent = off), written by Sova's Settings → Teams and
   read by the subagents extension at team creation), worktrees: the session's `worktrees` custom
   entry (the tracked set, whole snapshot, newest on the branch wins) and its `worktree-merge`
-  extension message (the merge card), read by Sova and by the subagents spawn gate.
+  extension message (the merge card), read by Sova and by the subagents spawn gate; mode's `align`
+  tool: each result's `details` (`{v: 1, doc?, changes, line, exempt?}`, the touched alignment's
+  whole snapshot, newest per id on the branch wins), read by Sova for the card, the composer chip
+  and the session list, and its hidden `align-state` / `align-nudge` custom messages, which Sova
+  must keep hidden (`display: false`); an older session's `align-doc` custom entries are read-only;
+  show-changes' `show_changes` tool: each result's `details` (`{v: 1, scope, title?, paths?,
+  steps?}`), read by Sova for the card that opens the changes viewer.
   Not covered by Sova's tsconfig, with these exceptions: the server imports
   `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts` and `spec.ts` (`server/mode-state.ts`,
   `server/delegate.ts`, `server/spec-settings.ts`; hence `allowImportingTsExtensions`),
@@ -62,7 +68,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   strict parse, reader and atomic writer for Settings → Teams), `server/worktrees-state.ts` imports
   `pi-config/extensions/worktrees/state.ts` (builtins only: the `worktrees` entry, its fold, the
   merge card's details) and `git.ts` (builtins only: the extension's own "is this branch merged"
-  probe, git by argv), `server/insights.ts` imports
+  probe, git by argv), `server/transcript.ts` and `server/align-state.ts` import
+  `pi-config/extensions/mode/align.ts` (builtins only: the `align` tool's details shape, its strict
+  check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
+  the session list's `SessionSummary.align` read what the extension writes, with its own code),
+  `server/insights.ts` imports
   `pi-config/extensions/usage-status/fetch.ts`, `server/worker-context.ts` and `server/delegate.ts`
   import `pi-config/extensions/claude-code/context-window.ts` (imports nothing: the one Claude Code
   window rule, `[1m]` or natively 1M else 200k, and the list rule that adds `opus[1m]` and
@@ -74,11 +84,17 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `claude-code/transcript-adapter.ts` and `claude-code/provider/session-records.ts` (the per-backend
   readers: locating a worker's transcript and counting its usage, for restored workers and for
   every `/ws/watch` usage total; the dev watcher does not watch these, so an edit there reaches a
-  running server only at its next restart). The frontend imports one file, the only pi-config
-  import in `src/`: `src/lib/format.ts` re-exports `pi-config/extensions/stamp/format.ts` (the
+  running server only at its next restart). The frontend imports two files, the only runtime
+  pi-config imports in `src/`: `src/lib/format.ts` re-exports `pi-config/extensions/stamp/format.ts` (the
   12-hour clock, stamp and relative time, shared with the TUI's `stamp` extension); the server
-  imports the same file directly, for the ages on `sova_session`'s topics (`server/overseer-tools.ts`). Vite bundles
-  it for the browser, so it must import nothing at all. So an edit to any of these can break Sova's
+  imports the same file directly, for the ages on `sova_session`'s topics (`server/overseer-tools.ts`).
+  And `src/components/Thread.tsx` imports `pi-config/extensions/show-changes/details.ts` at
+  runtime (`SHOW_CHANGES_TOOL` and the strict check `normalizeShowChangesDetails`, for the
+  `show_changes` tool's details `{v: 1, scope, title?, paths?, steps?}`, its scope named like
+  `DiffScope` minus `sessionPath`; the tool checks the steps' shape only, Sova places every hunk
+  against the real diff); `src/lib/changes-view.ts` and `src/components/ChangesViewer.tsx` import
+  only its types (`import type`, erased from the bundle). Vite bundles
+  them for the browser, so each must import nothing at all. So an edit to any of these can break Sova's
   typecheck. Keep them pi-runtime-free (node builtins and, for the mode trio and the protocol set,
   each other only), and import nothing else from pi-config at runtime. `minor.ts` also reads its sibling `spec-mode.md` once at load, and
   refuses to load if that file's shell block is malformed. One test-only exception: `server/claude-models.test.ts` imports
@@ -113,6 +129,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   and there is no read-only mode yet. Copy the sessions you need into the hermetic `.agent`, or view them through the live server.
 - Hermetic gaps: 4810 by default (one server per port; `SOVA_PORT` for a second), and a symlinked `node_modules` can break `pnpm run` in a worktree.
 - `pnpm run typecheck` — must pass. `pnpm run build` — must pass.
+- `pnpm run prices:update` — regenerate the checked-in price seed `shared/model-prices/seed.json` from models.dev and print
+  the changes and any unpriced model (`--from <api.json>` offline, `--check` writes nothing). Aliases are hand-kept in
+  `aliases.json` there. Servers refresh their own copy (`<state root>/model-prices.json`) every 3 days; `SOVA_PRICES_FETCH=off` stops that.
 - `pnpm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`). They're ESM TypeScript with
   extensionless imports, so they run under `tsx --test`; plain `node --test <file>` fails with
   ERR_MODULE_NOT_FOUND.
@@ -121,31 +140,58 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   model stay there and never in the repo). `--check` verifies links and seed keys without changing
   anything; `--save` copies live values of seed-declared keys back into the seed.
 
-## Dev-server restart pitfall (worker suicide)
+## Live server restart (worker suicide)
 
-`pnpm run dev:server` is `tsx watch`: editing ANY file in the server's live import graph —
-non-test `server/**` files, `shared/**`, and ANY non-test file under `pi-config/extensions/mode/`
-(`scripts/dev-server.mjs` watches that whole directory, not just the two files Sova imports) —
-restarts the server process within ~100ms. Workers spawned by a session hosted in that server
-(pi or claude-code backend from agent_spawn/team_create) are CHILD PROCESSES of it with piped
-stdio: the restart kills them mid-task and zeroes the in-memory subagent registry (agent_list
-returns empty; the dead worker's transcript is "unavailable"). Hosted chat sessions themselves
-survive (JSONL persistence; the webapp reconnects and the runtime reopens). Workers don't.
+The live server on 127.0.0.1:4800 is the systemd user unit `sova-runtime.service`
+(`~/.config/systemd/user/`, `Restart=always`, ExecStart `node --import tsx server/index.ts`). It has
+no file watcher: editing `server/**`, `shared/**` or `pi-config/extensions/mode/**` restarts nothing,
+and the process keeps the code it loaded at start. A change goes live only on
+`systemctl --user restart sova-runtime.service`. Workers spawned by a hosted session (pi or
+claude-code, from agent_spawn/team_create) are CHILD PROCESSES of that server, so the restart kills
+every one of them mid-task and zeroes the in-memory subagent registry. Hosted chat sessions survive
+(JSONL persistence; the webapp reconnects and the runtime reopens). Workers don't.
 
 Rules:
-- Before ANY server-graph edit: check for live workers in ANY hosted session (read
-  `~/.pi/agent/sessions/live/p<server-pid>-*.json`, heartbeat ≤ 30s: `workerCounts.working > 0`,
-  or another session's `activity.state === "working"` — your own turn counts too). Hold the edit
-  if busy: background workers from earlier turns and other web sessions die with the restart.
-- While the watch server runs, delegate only `src/**`, test files (`server/*.test.ts`), and docs.
-- Apply server-graph edits from the orchestrator session itself, batched into as few write bursts
-  as possible and as the LAST step of a turn — the restart may cut the turn, but the edits persist.
-- `pnpm run dev:server` runs `scripts/dev-server.mjs`: a gated watcher that holds restarts while
-  any live record shows working subagents or in-flight turns (`r` key or SIGUSR2 forces).
-  `dev:server:tsx` is the old plain watch. Hosted runtimes are never idle-disposed: they live
-  until archived (the close gesture — running subagents die with it), a foreign-writer reload,
-  or server shutdown.
-- Or run the server without watch (`pnpm exec tsx server/index.ts`) for the duration of server-side work.
+- After a server-side change, say that it is not live yet and needs that restart.
+- Before any restart, read the live records `~/.pi/agent/sessions/live/p<server-pid>-*.json`
+  (heartbeat ≤ 30s) for every hosted session: `presence.workerCounts.working > 0`, or
+  `presence.activity.state === "working"` (your own turn counts too). Hold the restart if any is busy.
+- Never restart from inside a hosted session: you are the server's child.
+- The claude-code bridge is a `globalThis` singleton (`getSessionBridge()`, Symbol.for registry): a
+  fresh session that reloads the extension still gets the bridge built from the code loaded first,
+  so provider edits also need a restart. Before trusting a live test, check the unit's start time
+  (`systemctl --user status sova-runtime.service`) against the edited files' mtimes.
+
+Dev only (`pnpm run dev:server`, not the live unit): `scripts/dev-server.mjs` is a gated watcher
+over the server's import graph (non-test `server/**`, `shared/**`, and the whole
+`pi-config/extensions/mode/` directory). It restarts within ~100ms of an edit, but holds the
+restart while any live record shows working subagents or an in-flight turn (`r` key or SIGUSR2
+forces). `dev:server:tsx` is the old plain watch, with no gate. While a watch server hosts your
+session, apply server-graph edits from the orchestrator itself, batched, as the last step of a turn.
+Hosted runtimes are never idle-disposed: they live until archived (running subagents die with it),
+a foreign-writer reload, or server shutdown.
+
+## Working rules
+
+- Never use Opus 5 (`claude-opus-5`). "opus" means Opus 5.5: claude-code `opus` or `opus[1m]`.
+- Throwaway test sessions run on `zai/glm-5.3`. New web sessions default to a costlier model, so set
+  the model before the first prompt, and archive the session afterwards.
+- Never `git stash`, `checkout`, `reset` or `restore` in a worktree others share. Take baselines with
+  `git archive <rev> | tar -x -C ~/.cache/<name>`, never `git worktree add` (it writes the shared `.git`).
+- Run `mise trust <worktree>` in a fresh worktree before any node/pnpm command.
+- Retire a worker past 50% of its context window: have it write a checkpoint, then hand off to a
+  fresh worker instead of resuming or steering the old one.
+- The pi-web archive and the pi-config mirror are private repositories: never link, fork or expose
+  them. In public docs, describe `pi-config/` as a directory in this repo.
+- Playwright in a fresh worktree: symlink the live tree's `.claude/skills/playwright/scripts/node_modules`
+  and remove it afterwards. If port 4810 is taken by another worktree, never kill it: run
+  `PORT=481x PI_CODING_AGENT_DIR=<wt>/.agent pnpm exec tsx server/index.ts`. After a rebuild,
+  unregister the app's service worker and clear its caches, or the page keeps the previous build.
+- Web Push testing: use `CHROMIUM_BIN=/usr/bin/google-chrome-stable` (bundled Chromium cannot
+  subscribe), and grant, enable, trigger and check inside ONE `pw.sh run`: a CDP permission grant
+  resets on detach and Chrome drops the subscription.
+- `dev:hermetic` regenerates `.agent/settings.json` on every start. For a custom pi setting, run
+  `node scripts/hermetic-agent-dir.mjs`, add the key, then start the server yourself.
 
 ## Product documentation
 

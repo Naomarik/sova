@@ -42,6 +42,18 @@ export interface DecisionRequest {
   signal?: AbortSignal;
 }
 
+/** What one answer spent, as the provider reported it (a project's reconcile runs record it:
+    §app.project-costs/ledger). `cacheWrite` is every cache write, `cacheWrite1h` the 1-hour part. */
+export interface DecisionUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  cacheWrite1h?: number;
+  /** The model that answered, when the provider names it (Claude Code: the resolved id, not the alias). */
+  model?: string;
+}
+
 export interface DecisionResult {
   /** One per question id, validated. */
   answers: Record<string, Answer>;
@@ -49,7 +61,7 @@ export interface DecisionResult {
   /** "jev-1.13.0", "ollama-cloud/…", "haiku". */
   model: string;
   latencyMs: number;
-  usage?: { inputTokens: number; outputTokens: number };
+  usage?: DecisionUsage;
   /** Set by the chain when the first provider failed and a later one answered. */
   fellBackFrom?: { provider: DecisionProviderId; failure: DecisionFailure; message: string };
 }

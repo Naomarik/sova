@@ -27,7 +27,7 @@ const settings = (): OverseerSettings => ({
   extraSystemPrompt: "",
   proactivity: "badge",
   quickActions: [{ id: "attention", label: "What Needs Me", description: "Sessions waiting on you.", prompt: "What needs my attention?" }],
-  caps: { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5, explorePerTurn: 2, linksPerTurn: 3 },
+  caps: { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3 },
   explorer: { backend: "claude-code", model: "opus[1m]", effort: "medium" },
 });
 

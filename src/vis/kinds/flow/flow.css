@@ -1,0 +1,22 @@
+/* `vis flow` / `vis state` nodes. Shapes take the tone variables from vis.css. */
+.vis-node > rect, .vis-node > polygon, .vis-node > circle, .vis-node > path {
+  fill: var(--vis-fill);
+  stroke: var(--vis-stroke);
+  stroke-width: 1.5;
+}
+.vis-node > .vis-cap { fill: none; }
+.vis-node > .vis-solid { fill: var(--vis-ink); stroke: none; }
+.vis-svg .vis-node-label { fill: var(--vis-ink); font-weight: var(--fw-medium); }
+.vis-svg .vis-node-note { fill: var(--color-ink-muted); }
+.vis-tone-muted.vis-node > rect, .vis-tone-muted.vis-node > polygon, .vis-tone-muted.vis-node > circle { stroke-dasharray: 4 3; }
+.vis-node.vis-em > rect, .vis-node.vis-em > polygon, .vis-node.vis-em > circle, .vis-node.vis-em > path:not(.vis-cap) { stroke-width: 2.5; }
+/* Sections (./sections.ts mirrors these metrics: SECTION_CSS). Side by side, a rule between panels,
+   24px in all; stacked, a rule above each later panel, 16px in all. */
+.vis-flow-sections { display: flex; flex-direction: column; min-width: 0; }
+.vis-flow-sections-row { flex-direction: row; align-items: flex-start; }
+.vis-flow-section { min-width: 0; }
+.vis-flow-section + .vis-flow-section { margin-top: 7px; padding-top: 8px; border-top: var(--stroke-thin) solid var(--color-border); }
+.vis-flow-sections-row > .vis-flow-section { flex: none; box-sizing: content-box; }
+.vis-flow-sections-row > .vis-flow-section + .vis-flow-section { margin: 0 0 0 11px; padding: 0 0 0 12px; border-top: 0; border-left: var(--stroke-thin) solid var(--color-border); align-self: stretch; }
+.vis .vis-flow-section-head { margin: 0 0 var(--space-1); font-size: var(--fs-caption); line-height: 18px; font-weight: var(--fw-semibold); color: var(--color-ink-2); overflow-wrap: anywhere; }
+.vis-flow-sections-row .vis-flow-section-head { white-space: nowrap; }

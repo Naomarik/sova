@@ -9,6 +9,8 @@ import type { SessionSummary, TranscriptItem } from "../shared/protocol";
 import type { OverseerToolHost } from "./overseer-tools";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-overseer-tools-"));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 
 const { concurrencyRefusal, overseerTools, renderTranscript, TurnLimits, BUILTIN_ALLOWED } = await import("./overseer-tools");
@@ -88,6 +90,25 @@ describe("the prompt and the tool set stay in step", () => {
     const out = await confirm.execute("c1", { title: "Archive 12 sessions?", options: [{ label: "Archive", tone: "danger" }, { label: "Cancel", reply: "no" }] }, undefined, undefined, {} as never);
     assert.equal(out.terminate, true);
     assert.deepEqual(out.details, { title: "Archive 12 sessions?", options: [{ label: "Archive", tone: "danger" }, { label: "Cancel", reply: "no" }] });
+  });
+
+  test("sova_confirm resolves its items against the ideas and todos on disk, and refuses an unknown session id", async () => {
+    const { addIdea } = await import("./overseer-ideas");
+    const { addTodo } = await import("./overseer-todos");
+    addIdea({ id: "§sova/confirm-rows", title: "Cards list their subject" });
+    const todo = addTodo({ text: "Tick the done ones" });
+    const confirm = buildOverseerTools().find((t) => t.name === "sova_confirm")!;
+    const out = await confirm.execute("c2", { title: "Tick?", options: [{ label: "Tick" }], items: { ideas: ["sova/confirm-rows"], todos: [todo.id] } }, undefined, undefined, {} as never);
+    assert.equal(out.terminate, true);
+    assert.deepEqual(out.details.items, [
+      { kind: "idea", id: "§sova/confirm-rows", title: "Cards list their subject" },
+      { kind: "todo", id: todo.id, text: "Tick the done ones" },
+    ]);
+    assert.match((out.content[0] as { text: string }).text, /§sova\/confirm-rows — Cards list their subject/);
+    await assert.rejects(
+      confirm.execute("c3", { title: "Archive?", options: [{ label: "Archive" }], items: { sessions: ["sova://s/nope-1"], todos: [todo.id, "td_missing0"] } }, undefined, undefined, {} as never),
+      /No card was shown\. These ids match nothing \(sessions: sova:\/\/s\/nope-1; todos: td_missing0\)/,
+    );
   });
 
   test("sova_navigate validates settings targets and returns the href", async () => {
@@ -271,5 +292,98 @@ describe("sova_session's Topics line", () => {
       now,
     );
     assert.equal(line, "Topics (newest first): Restart (1m ago); Rerun (3m ago); Cleanup (1h ago)");
+  });
+});
+
+describe("sova_confirm items", async () => {
+  const { resolveConfirmItems, confirmResult, CONFIRM_ITEMS_MAX } = await import("./overseer-confirm");
+  const { CONFIRM_NOTE_MAX } = await import("../shared/protocol");
+  const now = "2026-09-20T10:00:00.000Z";
+  const sessions: Record<string, SessionSummary> = {
+    s1: { id: "s1", title: "Fix [the] parser", cwd: "/home/u/code/sova", lastActiveAt: now, outlineGist: "Parser  fixed,\n tests green", workers: { working: 2, total: 3 } } as SessionSummary,
+    s2: { id: "s2", title: "Remote job", cwd: "/placeholder", remoteCwd: "/srv/app", lastActiveAt: now } as SessionSummary,
+    me: { id: "me", title: "Overseer", cwd: "/state/overseer", lastActiveAt: now, overseer: true } as SessionSummary,
+  };
+  const lookup = {
+    // Stands in for the tools' resolve(): the id from any printed form.
+    session: async (ref: string) => sessions[ref.replace(/^\[[^\]]*\]\((.*)\)$/, "$1").replace(/^sova:\/\/s\//, "").replace(/^s\//, "")] ?? null,
+    idea: (ref: string) => (ref.replace(/^§/, "") === "sova/x" ? { id: "§sova/x", title: "X" } : null),
+    todo: (ref: string) => (ref === "td_aaaaaaaa" ? { id: ref, text: "Do it" } : null),
+    isSelf: (s: SessionSummary) => s.id === "me",
+  };
+  const refusal = (m: string) => new Error(m);
+
+  test("sessions resolve from every printed form, once each, as snapshot rows", async () => {
+    const items = await resolveConfirmItems({ sessions: ["s1", "sova://s/s1", "[Remote job](sova://s/s2)", " s/s2 "] }, lookup, refusal);
+    assert.deepEqual(items, [
+      { kind: "session", id: "s1", title: "Fix [the] parser", project: "sova", lastActiveAt: now, summary: "Parser fixed, tests green", workers: 2 },
+      { kind: "session", id: "s2", title: "Remote job", project: "app", lastActiveAt: now },
+    ]);
+  });
+
+  test("unknown ids refuse the whole card, every one named by kind", async () => {
+    await assert.rejects(
+      resolveConfirmItems({ sessions: ["s1", "zz"], ideas: ["sova/x", "sova/y"], todos: ["td_aaaaaaaa"] }, lookup, refusal),
+      (err: Error) => /sessions: zz; ideas: sova\/y\)/.test(err.message) && !err.message.includes("s1,") && !err.message.includes("todos:"),
+    );
+  });
+
+  test(`at most ${CONFIRM_ITEMS_MAX} items, counted before anything resolves; items must be an object`, async () => {
+    const many = Array.from({ length: CONFIRM_ITEMS_MAX }, (_, i) => `x${i}`);
+    await assert.rejects(resolveConfirmItems({ sessions: many, todos: ["td_aaaaaaaa"] }, lookup, refusal), new RegExp(`at most ${CONFIRM_ITEMS_MAX} items; this one has ${CONFIRM_ITEMS_MAX + 1}`));
+    await assert.rejects(resolveConfirmItems(["s1"], lookup, refusal), /items is an object/);
+    // glm-5.3 sent one entry as items itself; the refusal says where it goes.
+    await assert.rejects(resolveConfirmItems({ id: "s1", note: "n" }, lookup, refusal), /items takes only sessions, ideas and todos, each a list; this one has id, note\. Put each entry in its list, e\.g\. \{"sessions": \[\{"id"/);
+    assert.deepEqual(await resolveConfirmItems(undefined, lookup, refusal), []);
+  });
+
+  test("the result repeats the items with exact ids and links; without items it is the plain notice", async () => {
+    const items = await resolveConfirmItems({ sessions: ["s1"], ideas: ["§sova/x"], todos: ["td_aaaaaaaa"] }, lookup, refusal);
+    const out = confirmResult(items, "user");
+    assert.match(out, /^Shown to the user under your reply\. The card ends your turn/);
+    assert.match(out, /3 items; a pick refers to exactly these:/);
+    assert.ok(out.includes("Sessions:\n- [Fix the parser](sova://s/s1) (s1)"), out);
+    assert.ok(out.includes("Ideas:\n- §sova/x — X"), out);
+    assert.ok(out.includes("Todos:\n- td_aaaaaaaa · Do it"), out);
+    assert.doesNotMatch(confirmResult([], "operator"), /items|Sessions/);
+    assert.match(confirmResult([], "operator"), /^Shown to the operator/);
+  });
+
+  test("an entry is a bare id or { id, note }; the note is snapshotted with whitespace collapsed", async () => {
+    const items = await resolveConfirmItems(
+      { sessions: [{ id: "sova://s/s1", note: "Parser fix.  Merged,\n nothing running." }, "s2"], ideas: [{ id: "sova/x", note: "The sweep itself." }], todos: [{ id: "td_aaaaaaaa" }] },
+      lookup,
+      refusal,
+    );
+    assert.deepEqual(
+      items.map((i) => [i.id, i.note]),
+      [["s1", "Parser fix. Merged, nothing running."], ["s2", undefined], ["§sova/x", "The sweep itself."], ["td_aaaaaaaa", undefined]],
+    );
+    assert.ok(!("note" in items[1]!), "no note, no key");
+  });
+
+  test(`a note over ${CONFIRM_NOTE_MAX} characters refuses the card and names its item`, async () => {
+    const long = "x".repeat(CONFIRM_NOTE_MAX + 1);
+    await assert.rejects(
+      resolveConfirmItems({ sessions: [{ id: "s1", note: "fine" }, { id: "s2", note: long }], todos: [{ id: "td_aaaaaaaa", note: long }] }, lookup, refusal),
+      (err: Error) => err.message.includes(`s2 (${CONFIRM_NOTE_MAX + 1}), td_aaaaaaaa (${CONFIRM_NOTE_MAX + 1})`) && !err.message.includes("s1 (") && /at most 220 characters/.test(err.message),
+    );
+    assert.equal((await resolveConfirmItems({ sessions: [{ id: "s1", note: "y".repeat(CONFIRM_NOTE_MAX) }] }, lookup, refusal))[0]!.note!.length, CONFIRM_NOTE_MAX);
+  });
+
+  test("the overseer's own conversation is refused by name, whatever form names it", async () => {
+    await assert.rejects(resolveConfirmItems({ sessions: ["s1", { id: "sova://s/me", note: "Me." }] }, lookup, refusal), /No card was shown\. sova:\/\/s\/me is your own conversation; a card never lists it/);
+  });
+
+  test("the result carries each note after its item", async () => {
+    const items = await resolveConfirmItems(
+      { sessions: [{ id: "s1", note: "Parser fix. Merged." }], ideas: [{ id: "sova/x", note: "Done by the sweep." }], todos: [{ id: "td_aaaaaaaa", note: "Covered." }] },
+      lookup,
+      refusal,
+    );
+    const out = confirmResult(items, "user");
+    assert.ok(out.includes("- [Fix the parser](sova://s/s1) (s1) — Parser fix. Merged."), out);
+    assert.ok(out.includes("- §sova/x — X — Done by the sweep."), out);
+    assert.ok(out.includes("- td_aaaaaaaa · Do it — Covered."), out);
   });
 });

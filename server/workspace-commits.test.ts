@@ -154,4 +154,13 @@ describe("the hourly workspace commit", () => {
   test("the message names what changed by its top-level entry, never file contents", () => {
     assert.equal(changeSummary(["roster.json", "sessions/x.jsonl", "projects/p1/overseer/todos.json", "projects/p1/decisions.json"]), "projects/ (2 files), roster.json, sessions/ (1 file)");
   });
+
+  test("every workspace commit is Sova's, whatever identity the repo or the host has", async () => {
+    const dir = await repo("identity");
+    git(dir, "config", "user.name", "Operator Person");
+    git(dir, "config", "user.email", "operator@example.invalid");
+    writeFileSync(join(dir, "roster.json"), "{}\n");
+    assert.equal((await commitAll(dir, "m")).committed, true);
+    for (const rev of ["HEAD", "HEAD~1"]) assert.equal(git(dir, "log", "-1", "--format=%an <%ae> / %cn <%ce>", rev), "Sova <sova@localhost> / Sova <sova@localhost>", rev);
+  });
 });

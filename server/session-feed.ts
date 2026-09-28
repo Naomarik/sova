@@ -1,4 +1,5 @@
 import type { SessionFeedMessage, SessionMarks, SessionSummary } from "../shared/protocol";
+import { attentionChanged } from "./attention-memo";
 
 /**
  * The session feed: WS /ws/watch?feed=sessions (shared/protocol.ts SessionFeedMessage). The server
@@ -69,11 +70,13 @@ export function diffMarks(prev: ReadonlyMap<string, SessionMarks>, list: readonl
 /**
  * What of a row the marks can't carry but the sidebar shows: that it is listed at all, its live
  * record, whether it runs, its last activity, and a baton session's state (holder, Needs you,
- * waiting referrals: those change in the org's registry and roster, not the session file). A change to any of these is `list_changed` (the
+ * waiting referrals: those change in the org's registry and roster, not the session file), and
+ * its organization (an archived project leaves the Organizations region, §app.organizations/archive;
+ * that changes in projects.json, not the session file). A change to any of these is `list_changed` (the
  * client re-reads the list); a session a TUI just created is a new path here.
  */
 export function rowSignature(s: SessionSummary): string {
-  return JSON.stringify([s.live?.pid ?? null, s.live?.status ?? null, s.busy, s.activity?.state ?? null, s.lastActiveAt, s.archived, s.baton ?? null]);
+  return JSON.stringify([s.live?.pid ?? null, s.live?.status ?? null, s.busy, s.activity?.state ?? null, s.lastActiveAt, s.archived, s.baton ?? null, s.org ?? null]);
 }
 
 /** Did the listed rows change beyond the marks: a path added or removed, or a signature changed. */
@@ -172,7 +175,12 @@ export class SessionFeed {
     if (changes.length) this.publish({ type: "marks", sessions: changes });
     const rows = new Map(list.map((s) => [s.path, rowSignature(s)]));
     // The first diff is the baseline (a client that connects re-reads the list itself).
-    if (this.rows && listChanged(this.rows, rows)) this.publish({ type: "list_changed" });
+    if (this.rows && listChanged(this.rows, rows)) {
+      // What changed a row (a Get Link, a share-page reply, a hand-off) may be on the attention
+      // digest too, which is memoized: its next read, the one list_changed prompts, is fresh.
+      attentionChanged();
+      this.publish({ type: "list_changed" });
+    }
     this.rows = rows;
   }
 }

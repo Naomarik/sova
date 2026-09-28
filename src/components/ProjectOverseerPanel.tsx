@@ -1,6 +1,18 @@
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, Show } from "solid-js";
-import type { IdeaRecord, OverseerAction, OverseerTodosInfo } from "../../shared/protocol";
-import { AUTONOMY_LEVELS, AUTONOMY_MEANING, type Autonomy, type ItemCodeInput, type ItemCodeResult, type ItemSendInput, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
+import { TODO_TEXT_MAX, type IdeaRecord, type OverseerAction, type OverseerTodosInfo } from "../../shared/protocol";
+import {
+  ALLOWANCE_MAX,
+  AT_ONCE_MAX,
+  capProblem,
+  DEFAULT_PO_CAPS,
+  DEFAULT_SOON_LOOK_SEC,
+  DEFAULT_WATCH_GAP_MIN,
+  GAP_CHOICES,
+  isAtOnce,
+  SOON_CHOICES,
+  type ProjectOverseerCaps,
+} from "../../shared/project-overseer";
+import { AUTONOMY_LEVELS, AUTONOMY_MEANING, type Autonomy, type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendInput, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { OrgDetail } from "../../shared/orgs";
 import {
   addProjectOverseerIdea,
@@ -8,6 +20,7 @@ import {
   ApiError,
   codeProjectItem,
   getProjectOverseer,
+  getSessionSummaryById,
   listModels,
   mergeCodingWorktree,
   openProjectOverseer,
@@ -19,13 +32,15 @@ import {
   removeCodingWorktree,
   runProjectOverseer,
   sendProjectItem,
+  startProjectCoding,
 } from "../lib/api";
-import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, isDelegate, mergeGate, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
+import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, folderNote, mergeGate, mergeNote, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
 import { relativeTime, tildePath } from "../lib/format";
+import { hostLabel, orgHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll } from "../lib/poll";
-import { actionLine, gapArea, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, openIdeas, operatorIdeaId, pendingLine, STARTED_KIND, tokens } from "../lib/project-overseer-view";
-import { announce, home, toast } from "../lib/ui-state";
+import { actionLine, allowanceLine, gapArea, gapWords, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
+import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon } from "./ui";
 
@@ -53,9 +68,13 @@ export function ProjectOverseerPanel(props: {
   projectId: string;
   /** Whether the overseer is working now, after every read: its acts (a promotion) change the page around it. */
   onBusy?(busy: boolean): void;
+  /** The project is archived (§app.organizations/archive): its start gestures are disabled, "Archived". */
+  archived?: boolean;
 }) {
   const o = () => props.org.id;
   const p = () => props.projectId;
+  /** The peer the org is attached on (null: this host): its models, and the host its words name. */
+  const host = () => orgHostOf(o());
   const info = createPoll(() => getProjectOverseer(o(), p()), POLL_MS);
   const actions = createPoll(() => projectOverseerActions(o(), p(), 30), POLL_MS);
   const ideas = createPoll(() => projectOverseerIdeas(o(), p()), POLL_MS * 3);
@@ -106,11 +125,23 @@ export function ProjectOverseerPanel(props: {
             Working
           </Chip>
         </Show>
-        <button type="button" class="button button-sm button-ghost" aria-disabled={busy() || info.data()?.busy ? "true" : undefined} title="Look at the project now, as the watch loop would." onClick={() => void run(() => runProjectOverseer(o(), p()), "The overseer is looking now.")}>
+        <button
+          type="button"
+          class="button button-sm button-ghost"
+          aria-disabled={busy() || info.data()?.busy || props.archived ? "true" : undefined}
+          title={props.archived ? "Archived" : "Look at the project now, as the watch loop would."}
+          onClick={() => !props.archived && void run(() => runProjectOverseer(o(), p()), "The overseer is looking now.")}
+        >
           Run Now
         </button>
-        <button type="button" class="button button-sm" aria-disabled={busy() ? "true" : undefined} onClick={openChat}>
-          <Icon name="chat" small />
+        <button
+          type="button"
+          class="button button-sm"
+          aria-disabled={busy() || (props.archived && !info.data()?.exists) ? "true" : undefined}
+          title={props.archived && !info.data()?.exists ? "Archived" : undefined}
+          onClick={() => !(props.archived && !info.data()?.exists) && openChat()}
+        >
+          <Icon name="eye" small />
           {info.data()?.exists ? "Open Overseer" : "Start Overseer"}
           <Show when={info.data()?.unread}>{(n) => <span class="chip chip-count">{n()}</span>}</Show>
         </button>
@@ -121,13 +152,13 @@ export function ProjectOverseerPanel(props: {
         {(i) => (
           <>
             <StatusLine info={i()} />
-            {/* Attached here from a clone (a restore or a move): nothing runs on its own until the operator says so on this host. */}
+            {/* Attached on the org's host from a clone (a restore or a move): nothing runs on its own until the operator says so there. */}
             <Show when={i().paused}>
               {(since) => (
                 <Banner
                   tone="warn"
-                  title="Paused at L0 on this host"
-                  body={`This organization was attached here ${relativeTime(since())}. Until you set its level, the overseer only proposes and its watch loop waits.`}
+                  title={`Paused at L0 on ${host() ? hostLabel(host()!) : "this host"}`}
+                  body={`This organization was attached ${host() ? `on ${hostLabel(host()!)}` : "here"} ${relativeTime(since())}. Until you set its level, the overseer only proposes and its watch loop waits.`}
                   action={
                     <button type="button" class="button button-sm" aria-disabled={busy() ? "true" : undefined} onClick={() => setAutonomy(i().settings.autonomy)}>
                       Resume at {i().settings.autonomy}
@@ -149,21 +180,40 @@ export function ProjectOverseerPanel(props: {
                 <span class="toggle-box" />
               </label>
               <p class="field-hint" id="project-watch-hint">
-                After a new decision, a finished session or a conflict, it looks on its own at most once every 10 minutes.
+                {watchHint(i().settings.watchGapMin, i().settings.soonLookSec)}
               </p>
               <SessionModel
                 info={i()}
+                host={host()}
                 kind="gathering"
                 label="Gathering sessions"
                 save={async (patch) => info.set(await patchProjectOverseer(o(), p(), patch))}
               />
-              <SessionModel info={i()} kind="coding" label="Coding sessions" save={async (patch) => info.set(await patchProjectOverseer(o(), p(), patch))}>
+              <SessionModel info={i()} host={host()} kind="coding" label="Coding sessions" save={async (patch) => info.set(await patchProjectOverseer(o(), p(), patch))}>
                 <CodingMode info={i()} onSave={(key) => run(() => patchProjectOverseer(o(), p(), { codingMode: codingModeOf(key) }), key === "auto" ? "Coding sessions' mode: Automatic." : `Coding sessions run ${codingModeLabel(key)}.`)} />
               </SessionModel>
-              <TokenBudget info={i()} onSave={(n) => void run(() => patchProjectOverseer(o(), p(), { tokenBudget: n }), "Budget saved.")} />
             </div>
+            <ExtraInstructions
+              saved={i().settings.extraSystemPrompt}
+              save={async (text) => {
+                const next = await patchProjectOverseer(o(), p(), { extraSystemPrompt: text });
+                info.set(next);
+                const done = text.trim() ? "Extra instructions saved." : "Extra instructions removed.";
+                toast(done);
+                announce(done);
+              }}
+            />
+            <Limits info={i()} host={host()} save={(patch) => run(() => patchProjectOverseer(o(), p(), patch), "Limits saved.")} />
             <Started info={i()} />
-            <CodingSessions info={i()} merge={(w) => mergeCodingWorktree(o(), p(), w.sessionId)} remove={(w) => removeCodingWorktree(o(), p(), w.sessionId)} onInfo={info.set} />
+            <CodingSessions
+              info={i()}
+              archived={props.archived}
+              start={() => startProjectCoding(o(), p())}
+              merge={(w) => mergeCodingWorktree(o(), p(), w.sessionId)}
+              remove={(w) => removeCodingWorktree(o(), p(), w.sessionId)}
+              onInfo={info.set}
+              onStarted={() => info.refetch()}
+            />
           </>
         )}
       </Show>
@@ -171,6 +221,7 @@ export function ProjectOverseerPanel(props: {
       <Activity actions={actions.data()} error={actions.error()} />
       <Ideas
         org={props.org}
+        archived={props.archived}
         ideas={ideas.data() ? openIdeas(ideas.data()!.ideas) : undefined}
         error={ideas.error()}
         add={async (title) => {
@@ -188,6 +239,7 @@ export function ProjectOverseerPanel(props: {
       />
       <Todos
         org={props.org}
+        archived={props.archived}
         info={todos.data()}
         error={todos.error()}
         onLinks={setLinks}
@@ -224,6 +276,10 @@ function StatusLine(props: { info: ProjectOverseerInfo }) {
       <Show when={u().pending.length}>
         <p class="orgs-line project-muted">Waiting to look at: {pendingLine(u().pending)}</p>
       </Show>
+      <For each={[allowanceLine("Today on its own", u().allowance.today), allowanceLine("Your last message", u().allowance.message)].filter((l): l is string => !!l)}>
+        {(line) => <p class="orgs-line project-muted">{line}</p>}
+      </For>
+      <For each={waitingLines(u().held, i().settings)}>{(line) => <p class="orgs-line project-waiting">{line}</p>}</For>
     </>
   );
 }
@@ -261,7 +317,7 @@ const SAME = "";
  * doesn't offer is refused under the select (§app.project-overseer/identity); a model change that
  * leaves the saved level unsupported moves it to the level pi would run, and says so.
  */
-function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "coding"; label: string; save(patch: ProjectOverseerPatch): Promise<void>; children?: JSX.Element }) {
+function SessionModel(props: { info: ProjectOverseerInfo; host: string | null; kind: "gathering" | "coding"; label: string; save(patch: ProjectOverseerPatch): Promise<void>; children?: JSX.Element }) {
   const [err, setErr] = createSignal<string | null>(null);
   const [saving, setSaving] = createSignal(false);
   /** One save: its toast, or its refusal under the fields with the select back on what is saved. */
@@ -282,7 +338,8 @@ function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "c
       setSaving(false);
     }
   };
-  const [models] = createResource(() => listModels());
+  // The org's host's models (its keys, favorites and policy), as its session pane lists them.
+  const [models] = createResource(() => ({ host: props.host }), ({ host }) => listModels(host));
   const modelKey = (): "codingModel" | "gatheringModel" => (props.kind === "coding" ? "codingModel" : "gatheringModel");
   const thinkingKey = (): "codingThinking" | "gatheringThinking" => (props.kind === "coding" ? "codingThinking" : "gatheringThinking");
   const model = () => props.info.settings[modelKey()] ?? null;
@@ -348,31 +405,262 @@ function SessionModel(props: { info: ProjectOverseerInfo; kind: "gathering" | "c
   );
 }
 
-function TokenBudget(props: { info: ProjectOverseerInfo; onSave(n: number): void }) {
-  const [value, setValue] = createSignal(String(props.info.settings.tokenBudget));
-  const u = () => props.info.usage;
+/** The most characters of the extra instructions (the server's EXTRA_PROMPT_MAX). */
+const EXTRA_MAX = 8000;
+
+/**
+ * Extra instructions (§app.project-overseer/identity): the operator's own words, added last to the
+ * overseer's prompt, after the organization's About text. One PATCH on Save; Cancel puts the saved
+ * text back; a blank save removes them.
+ */
+function ExtraInstructions(props: { saved: string; save(text: string): Promise<void> }) {
+  const [draft, setDraft] = createSignal<string | null>(null);
+  const [problem, setProblem] = createSignal<string | null>(null);
+  const [saving, setSaving] = createSignal(false);
+  const text = () => draft() ?? props.saved;
+  const dirty = () => draft() !== null && draft() !== props.saved;
+  const over = () => text().length > EXTRA_MAX;
+  const submit = async () => {
+    if (!dirty() || saving()) return;
+    if (over()) {
+      setProblem("Extra instructions can be at most 8,000 characters.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await props.save(text());
+      setDraft(null);
+      setProblem(null);
+    } catch (err) {
+      const m = errText(err);
+      setProblem(/at most 8000 characters/.test(m) ? "Extra instructions can be at most 8,000 characters." : m);
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
-    <div>
-      <form
-        class="orgs-inline"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const n = Math.round(Number(value()));
-          if (Number.isFinite(n) && n >= 0) props.onSave(n);
-        }}
-      >
-        <label class="field">
-          <span class="field-label">Coding token budget</span>
-          <input class="input input-mono" inputmode="numeric" value={value()} onInput={(e) => setValue(e.currentTarget.value)} aria-describedby="project-budget-hint" />
-        </label>
-        <button type="submit" class="button">
-          Save Budget
-        </button>
-      </form>
-      <p class="field-hint orgs-inline-hint" id="project-budget-hint">
-        Spent {tokens(u().codingTokens)} of {tokens(u().tokenBudget)}, workers included. At L3 it starts no coding session beyond it.
+    <form
+      class="field project-extra"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <label class="field-label" for="project-extra-text">
+        Extra instructions
+      </label>
+      <p class="field-hint" id="project-extra-hint">
+        Added last to this overseer's prompt, after the organization's About text, and they win over it. It reads them at its next run.
       </p>
-    </div>
+      <textarea
+        id="project-extra-text"
+        class="input textarea"
+        rows={4}
+        value={text()}
+        aria-describedby={problem() ? "project-extra-hint project-extra-error" : "project-extra-hint"}
+        aria-invalid={problem() || over() ? "true" : undefined}
+        onInput={(e) => {
+          setDraft(e.currentTarget.value);
+          setProblem(null);
+        }}
+      />
+      <Show when={problem()}>
+        {(p) => (
+          <p class="field-error" id="project-extra-error">
+            {p()}
+          </p>
+        )}
+      </Show>
+      <div class="button-row project-extra-foot">
+        <span class={over() ? "field-error orgs-mono" : "field-hint orgs-mono"}>
+          {text().length.toLocaleString("en-US")} / 8,000
+        </span>
+        <span class="orgs-grow" />
+        <button
+          type="button"
+          class="button button-sm button-ghost"
+          disabled={!dirty() || saving()}
+          onClick={() => {
+            setDraft(null);
+            setProblem(null);
+          }}
+        >
+          Cancel
+        </button>
+        <button type="submit" class="button button-sm" disabled={!dirty() || saving()}>
+          Save
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** The Limits form's values: a limit is a number, NaN while its field is empty or not a number, or null (Unlimited). */
+interface LimitsDraft {
+  caps: Record<keyof ProjectOverseerCaps, number | null>;
+  watchGapMin: number;
+  soonLookSec: number | null;
+}
+const limitsOf = (s: ProjectOverseerInfo["settings"]): LimitsDraft => ({ caps: { ...s.caps }, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec });
+// A hint that names a host takes the org's host (a peer's day ends at its own midnight).
+const LIMIT_GROUPS: { legend: string; hint?: string | ((host: string) => string); keys: (keyof ProjectOverseerCaps)[] }[] = [
+  { legend: "Each message you send", keys: ["gatherPerTurn", "promotePerTurn", "createPerTurn", "promptsPerTurn"] },
+  { legend: "On its own, each day", hint: (host) => `Resets at midnight on ${host}.`, keys: ["gatherPerDay", "promotePerDay", "createPerDay", "promptsPerDay", "unattendedPerDay"] },
+  { legend: "At once", hint: "These never go Unlimited: they are what stops a burst.", keys: ["gatheringsOpen", "codingRunning"] },
+];
+/** A field's own label (its group's legend says which allowance). */
+const FIELD_LABEL: Record<keyof ProjectOverseerCaps, string> = {
+  gatherPerTurn: "Gathering sessions started",
+  promotePerTurn: "Decisions promoted",
+  createPerTurn: "Coding sessions started",
+  promptsPerTurn: "Prompts to coding sessions",
+  gatherPerDay: "Gathering sessions started",
+  promotePerDay: "Decisions promoted",
+  createPerDay: "Coding sessions started",
+  promptsPerDay: "Prompts to coding sessions",
+  unattendedPerDay: "Looks",
+  gatheringsOpen: "Gathering sessions open",
+  codingRunning: "Coding sessions running",
+};
+const numberOf = (v: string): number => (v.trim() === "" ? Number.NaN : Number(v));
+
+/**
+ * The project's limits (§app.project-overseer/limits): each message's allowance, the day's on its
+ * own, at once, and the pace. One form, one PATCH. Unlimited is a checkbox
+ * beside the field, never a blank field; the at-once limits have none.
+ */
+function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(patch: ProjectOverseerPatch): Promise<boolean> }) {
+  const saved = createMemo(() => JSON.stringify(limitsOf(props.info.settings)));
+  const [draft, setDraft] = createSignal<LimitsDraft>(limitsOf(props.info.settings));
+  // A save here or elsewhere brings the form to what is saved.
+  createEffect(on(saved, (json) => setDraft(JSON.parse(json) as LimitsDraft), { defer: true }));
+  /** The number a field had before Unlimited was ticked, to bring back when it is unticked. */
+  const kept = new Map<string, number>();
+  const [problem, setProblem] = createSignal<string | null>(null);
+  const setCap = (k: keyof ProjectOverseerCaps, v: number | null) => setDraft((d) => ({ ...d, caps: { ...d.caps, [k]: v } }));
+  const unlimited = (key: string, on: boolean, cur: number | null, fallback: number, set: (v: number | null) => void) => {
+    if (on) {
+      if (cur !== null && Number.isFinite(cur)) kept.set(key, cur);
+      set(null);
+    } else set(kept.get(key) ?? fallback);
+  };
+  const submit = async (e: Event) => {
+    e.preventDefault();
+    const d = draft();
+    const why = limitsProblem(d);
+    setProblem(why);
+    if (why) return;
+    await props.save({ caps: d.caps as ProjectOverseerCaps, watchGapMin: d.watchGapMin, soonLookSec: d.soonLookSec });
+  };
+  const gaps = createMemo(() => [...new Set([...GAP_CHOICES, draft().watchGapMin])].sort((a, b) => a - b));
+  const soons = createMemo(() => {
+    const cur = draft().soonLookSec;
+    const nums = new Set<number>(cur === null ? [] : [cur]);
+    for (const x of SOON_CHOICES) if (x !== null) nums.add(x);
+    return [...[...nums].sort((a, b) => a - b), null];
+  });
+  return (
+    <form class="project-limits" onSubmit={submit} aria-labelledby="project-limits-legend">
+      <h3 class="orgs-h3" id="project-limits-legend">
+        Limits
+      </h3>
+      <p class="field-hint project-limits-hint">Past a limit it stops and tells you. Your own coding sessions and Send to Person aren't counted.</p>
+      <For each={LIMIT_GROUPS}>
+        {(g) => (
+          <fieldset class="project-limits-group">
+            <legend class="project-limits-legend">{g.legend}</legend>
+            <Show when={g.hint}>
+              {(h) => {
+                const hint = h();
+                return <p class="field-hint project-limits-hint">{typeof hint === "string" ? hint : hint(props.host ? hostLabel(props.host) : "this host")}</p>;
+              }}
+            </Show>
+            <div class="overseer-caps">
+              <For each={g.keys}>
+                {(k) => {
+                  const atOnce = isAtOnce(k);
+                  const v = () => draft().caps[k];
+                  const id = `project-limit-${k}`;
+                  return (
+                    <div class="field project-limit">
+                      <label class="field-label" for={id}>
+                        {FIELD_LABEL[k]}
+                      </label>
+                      <input
+                        class="input text-num"
+                        id={id}
+                        type="number"
+                        inputmode="numeric"
+                        min="0"
+                        max={atOnce ? AT_ONCE_MAX[k as keyof typeof AT_ONCE_MAX] : ALLOWANCE_MAX}
+                        step="1"
+                        value={v() === null || Number.isNaN(v()) ? "" : String(v())}
+                        disabled={v() === null}
+                        placeholder={v() === null ? "Unlimited" : undefined}
+                        aria-invalid={v() !== null && capProblem(k, v()) ? "true" : undefined}
+                        onInput={(e) => setCap(k, numberOf(e.currentTarget.value))}
+                      />
+                      <Show when={!atOnce}>
+                        <label class="toggle project-limit-unlimited">
+                          <input type="checkbox" checked={v() === null} onChange={(e) => unlimited(k, e.currentTarget.checked, v(), DEFAULT_PO_CAPS[k] ?? 0, (x) => setCap(k, x))} />
+                          <span class="toggle-box" />
+                          <span>Unlimited</span>
+                        </label>
+                      </Show>
+                    </div>
+                  );
+                }}
+              </For>
+            </div>
+          </fieldset>
+        )}
+      </For>
+      <fieldset class="project-limits-group">
+        <legend class="project-limits-legend">Pace</legend>
+        <div class="orgs-fields">
+          <label class="field">
+            <span class="field-label">Looks at most every</span>
+            <select class="select" onChange={(e) => setDraft((d) => ({ ...d, watchGapMin: Number(e.currentTarget.value) }))}>
+              <For each={gaps()}>
+                {(m) => (
+                  <option value={m} selected={m === draft().watchGapMin}>
+                    {gapWords(m)}
+                  </option>
+                )}
+              </For>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">After a session finishes, it looks within</span>
+            <select class="select" onChange={(e) => setDraft((d) => ({ ...d, soonLookSec: e.currentTarget.value === "off" ? null : Number(e.currentTarget.value) }))}>
+              <For each={soons()}>
+                {(sec) => (
+                  <option value={sec === null ? "off" : sec} selected={sec === draft().soonLookSec}>
+                    {sec === null ? "Off" : soonWords(sec)}
+                  </option>
+                )}
+              </For>
+            </select>
+          </label>
+        </div>
+      </fieldset>
+      <Show when={problem()}>{(why) => <p class="field-error">{why()}</p>}</Show>
+      <div class="project-limits-actions">
+        <button type="submit" class="button">
+          Save Limits
+        </button>
+        <button
+          type="button"
+          class="button button-ghost"
+          onClick={() => {
+            setProblem(null);
+            setDraft({ caps: { ...DEFAULT_PO_CAPS }, watchGapMin: DEFAULT_WATCH_GAP_MIN, soonLookSec: DEFAULT_SOON_LOOK_SEC });
+          }}
+        >
+          Reset Limits
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -405,7 +693,6 @@ function CodingMode(props: { info: ProjectOverseerInfo; onSave(key: CodingModeKe
       </select>
       <span class="field-hint" id="project-coding-mode-hint">
         Every coding session this project starts runs in it, yours included. One started now: <span class="orgs-mono">{modeWords(now())}</span>.
-        <Show when={isDelegate(key())}> Their workers' tokens count against the budget.</Show>
       </span>
     </label>
   );
@@ -446,11 +733,46 @@ function Started(props: { info: ProjectOverseerInfo }) {
  * coding-worktrees): each runs in a worktree and branch of its own, cut from the root's branch, or
  * in the root when it can't. Merging the branch back, and removing the worktree, are the operator's.
  */
-function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorktree): Promise<ProjectOverseerInfo>; remove(w: CodingWorktree): Promise<ProjectOverseerInfo>; onInfo(i: ProjectOverseerInfo): void }) {
+function CodingSessions(props: {
+  info: ProjectOverseerInfo;
+  /** The project is archived: New Coding Session is disabled, "Archived". */
+  archived?: boolean;
+  /** New Coding Session (§app.project-overseer/new-coding-session): tied to no item, nothing sent. */
+  start(): Promise<CodingStartResult>;
+  merge(w: CodingWorktree): Promise<ProjectOverseerInfo>;
+  remove(w: CodingWorktree): Promise<ProjectOverseerInfo>;
+  onInfo(i: ProjectOverseerInfo): void;
+  onStarted(): void;
+}) {
   const wt = () => props.info.worktrees;
   const rows = createMemo(() => worktreeOrder(wt().sessions));
   const [confirming, setConfirming] = createSignal<string | null>(null);
   const [working, setWorking] = createSignal<string | null>(null);
+  const [starting, setStarting] = createSignal(false);
+  /** New Coding Session's own refusal, under the heading. */
+  const [startError, setStartError] = createSignal<string | null>(null);
+  const start = async () => {
+    if (starting() || props.archived) return;
+    setStarting(true);
+    try {
+      const r = await props.start();
+      props.onStarted();
+      // Started, but its mode isn't set: it stays on this page, listed, to be opened and set by hand.
+      if (r.modeNotSet) {
+        setStartError(r.modeNotSet);
+        return;
+      }
+      setStartError(null);
+      toast(r.worktree ? `Coding session started on ${r.worktree.branch}.` : "Coding session started in the project root.");
+      // Empty until the operator writes, so the list hides it: the app adopts it, as New Session's.
+      const s = await getSessionSummaryById(r.sessionId).catch(() => null);
+      if (!s || !adoptSession(s)) location.hash = sessionHref(r.path);
+    } catch (x) {
+      setStartError(unchangedError(errText(x), "No session was started."));
+    } finally {
+      setStarting(false);
+    }
+  };
   /** A refusal stays under its own row. */
   const [errors, setErrors] = createSignal<Record<string, string>>({});
   const act = async (w: CodingWorktree, fn: () => Promise<ProjectOverseerInfo>, done: string) => {
@@ -470,9 +792,24 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
     }
   };
   return (
-    <Show when={rows().length || !wt().available}>
-      <h3 class="orgs-h3">Coding sessions</h3>
+    <>
+      <div class="orgs-head">
+        <h3 class="orgs-h3">Coding sessions</h3>
+        <button
+          type="button"
+          class="button button-sm"
+          aria-disabled={starting() || props.archived ? "true" : undefined}
+          title={props.archived ? "Archived" : undefined}
+          onClick={() => void start()}
+        >
+          <Icon name="terminal" small /> New Coding Session
+        </button>
+      </div>
+      <Show when={startError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
       <Show when={!wt().available && wt().reason}>{(r) => <p class="orgs-line project-muted">Coding sessions run in the project root: {r()}</p>}</Show>
+      <Show when={!rows().length}>
+        <p class="orgs-empty">None yet. Yours and the overseer's are listed here.</p>
+      </Show>
       <ul class="list">
         <For each={rows()}>
           {(row) => {
@@ -481,10 +818,10 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
             return (
               <li class="list-row orgs-row project-worktree">
                 <span class="list-main">
-                  <Show when={row.path} fallback={<span class="list-title">{row.title}</span>}>
+                  <Show when={row.path} fallback={<span class="list-title">{row.title || UNTITLED_CODING}</span>}>
                     {(path) => (
-                      <a class="list-title" href={sessionHref(path())}>
-                        {row.title}
+                      <a class="list-title" href={sessionHref(path())} onClick={(e) => !row.title && openUntitled(e, row.sessionId)}>
+                        {row.title || UNTITLED_CODING}
                       </a>
                     )}
                   </Show>
@@ -495,24 +832,20 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
                         <>
                           {" · "}
                           <span class="orgs-mono">{b()}</span>
-                          {row.path === null ? " · on another host" : ""}
                         </>
                       )}
                     </Show>
                   </span>
                   <Show when={row.state === "root" && row.inRoot}>{(why) => <span class="list-meta">In the project root: {why()}</span>}</Show>
-                  <Show when={row.state === "merged" || row.mergedAt}>
-                    <span class="list-meta">
-                      Merged into <span class="orgs-mono">{row.target}</span>
-                      <Show when={row.mergedAt}>{(at) => <> <time title={at()}>{relativeTime(at())}</time></>}</Show>
-                    </span>
+                  <Show when={mergeNote(row)}>
+                    {(lead) => (
+                      <span class="list-meta">
+                        {lead()} <span class="orgs-mono">{row.target}</span>
+                        <Show when={row.mergedAt}>{(at) => <> <time title={at()}>{relativeTime(at())}</time></>}</Show>
+                      </span>
+                    )}
                   </Show>
-                  <Show when={row.state === "removed"}>
-                    <span class="list-meta">Worktree removed</span>
-                  </Show>
-                  <Show when={row.state === "missing"}>
-                    <span class="list-meta">Worktree folder missing</span>
-                  </Show>
+                  <Show when={folderNote(row)}>{(note) => <span class="list-meta">{note()}</span>}</Show>
                 </span>
                 <Show when={offersMerge(row) || offersRemove(row)}>
                   <div class="button-row project-worktree-actions">
@@ -576,7 +909,21 @@ function CodingSessions(props: { info: ProjectOverseerInfo; merge(w: CodingWorkt
           }}
         </For>
       </ul>
-    </Show>
+    </>
+  );
+}
+
+/** A coding session nobody has written in yet (New Coding Session, before its first message). */
+const UNTITLED_CODING = "Untitled coding session";
+
+/** Opens an untitled coding session: the list hides an empty one, so the app adopts it (else the plain link). */
+function openUntitled(e: MouseEvent, sessionId: string): void {
+  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  const href = (e.currentTarget as HTMLAnchorElement).getAttribute("href") ?? "";
+  void getSessionSummaryById(sessionId).then(
+    (s) => adoptSession(s) || (location.hash = href),
+    () => (location.hash = href),
   );
 }
 
@@ -614,6 +961,8 @@ function Activity(props: { actions: OverseerAction[] | undefined; error: string 
 
 interface ItemCallbacks {
   org: OrgDetail;
+  /** The project is archived: nothing new starts from an item. */
+  archived?: boolean;
   onLinks(l: Links): void;
   send(input: ItemSendInput): Promise<ItemSendResult>;
   code(input: ItemCodeInput): Promise<ItemCodeResult>;
@@ -733,7 +1082,7 @@ function Todos(
       >
         <label class="field orgs-grow">
           <span class="field-label">New to-do item</span>
-          <input class="input" value={draft()} onInput={(e) => setDraft(e.currentTarget.value)} maxlength={300} />
+          <input class="input" value={draft()} onInput={(e) => setDraft(e.currentTarget.value)} maxlength={TODO_TEXT_MAX} />
         </label>
         <button type="submit" class="button">
           Add Item
@@ -803,10 +1152,23 @@ function ItemActions(props: ItemCallbacks & { item: Item }) {
             </a>
           )}
         </Show>
-        <button type="button" class="button button-sm button-ghost" aria-expanded={sending()} onClick={() => setSending(!sending())}>
+        <button
+          type="button"
+          class="button button-sm button-ghost"
+          aria-expanded={sending()}
+          aria-disabled={props.archived ? "true" : undefined}
+          title={props.archived ? "Archived" : undefined}
+          onClick={() => !props.archived && setSending(!sending())}
+        >
           Send to Person…
         </button>
-        <button type="button" class="button button-sm button-ghost" aria-disabled={working() ? "true" : undefined} onClick={() => void code()}>
+        <button
+          type="button"
+          class="button button-sm button-ghost"
+          aria-disabled={working() || props.archived ? "true" : undefined}
+          title={props.archived ? "Archived" : undefined}
+          onClick={() => !props.archived && void code()}
+        >
           <Icon name="terminal" small /> Start Coding Session
         </button>
       </div>

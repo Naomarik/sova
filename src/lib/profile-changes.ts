@@ -4,8 +4,12 @@
 
 import type { NamedChange, PersonStatus, ProfileChange } from "../../shared/orgs";
 
-/** Who wrote a profile change, in words. */
+/** Who wrote a profile change, in words, by kind. */
 export const WRITER: Record<ProfileChange["by"]["kind"], string> = { operator: "you", wrapup: "wrap-up", referral: "referral", overseer: "overseer" };
+
+/** Who wrote one change: the kind's word, and "you, via the Overseer" for the operator's change the
+    global Overseer made for them (§app.overseer/org-attribution). */
+export const writerWord = (by: Pick<ProfileChange["by"], "kind" | "via">): string => (by.kind === "operator" && by.via === "overseer" ? "you, via the Overseer" : (WRITER[by.kind] ?? by.kind));
 
 /** A person's status chip: dot and word. */
 export const STATUS_CHIP: Record<PersonStatus, { word: string; tone?: "success" | "warn" }> = {
@@ -55,6 +59,7 @@ export function groupChanges(changes: readonly NamedChange[], gapMs = 5000): Cha
       last &&
       g.personId === c.personId &&
       g.by.kind === c.by.kind &&
+      g.by.via === c.by.via &&
       g.by.sessionId === c.by.sessionId &&
       !c.revertOf &&
       !last.revertOf &&

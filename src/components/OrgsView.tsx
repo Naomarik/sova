@@ -1,8 +1,9 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
 import { MESSAGES_CAP, MESSAGES_DEFAULT, MESSAGES_MIN, OPERATOR, type BatonStartResult, type BatonView, type BatonViewItem, type OfferLink } from "../../shared/baton";
-import type { NamedChange, OrgDetail, Person, PersonInput, ProfileChange } from "../../shared/orgs";
+import { ORG_ABOUT_MAX, type NamedChange, type OrgChange, type OrgDetail, type Person, type PersonInput, type ProfileChange } from "../../shared/orgs";
 import {
   addOrgProject,
+  unarchiveOrgProject,
   addPerson,
   ApiError,
   approvePerson,
@@ -12,26 +13,33 @@ import {
   createOrg,
   getOrg,
   getOrgs,
+  getOrgCosts,
   openProjectOverseer,
+  patchOrg,
   patchPerson,
+  revertOrgAbout,
   revertPersonChange,
   setOperatorName,
   setOrgRemote,
   startBaton,
   getBatonSettings,
 } from "../lib/api";
+import { commitNowWords } from "../lib/commit-now";
+import { usd } from "../lib/costs";
 import { duration, relativeTime, stampTime } from "../lib/format";
 import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
 import { proposedAreasLine } from "../lib/baton-strip";
-import { groupChanges, revertible, STATUS_CHIP, valueText, WRITER } from "../lib/profile-changes";
+import { groupChanges, revertible, STATUS_CHIP, valueText, writerWord } from "../lib/profile-changes";
+import { aboutChangeWord, aboutCount, aboutLength, aboutOverCap, aboutPreview } from "../lib/org-about";
 import { orgPageRoute } from "../lib/org-page-route";
 import { createOrgSource } from "../lib/org-source";
 import { useMinuteNow } from "../lib/minute-clock";
-import { orgHref, orgTabHref, personHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
+import { orgHref, orgSessionHref, orgTabHref, personHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
 import { orgTabsOf } from "../lib/org-tabs";
 import { toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { LinksBanner } from "./LinksBanner";
+import { OwnerCard } from "./OwnerCard";
 import { PersonForm } from "./PersonForm";
 import { PersonPage } from "./PersonPage";
 import { ProjectPage } from "./ProjectPage";
@@ -41,7 +49,6 @@ import "../projects.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-const sessionHref = (path: string) => `#/s/${encodeURIComponent(path)}`;
 
 const STATE_WORDS: Record<string, { word: string; tone: "info" | "warn" | "success" | undefined }> = {
   open: { word: "Open", tone: "info" },
@@ -89,7 +96,7 @@ export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElem
 function OverseerDoor(props: { orgId: string; projectId: string; titleRef(el: HTMLHeadingElement): void }) {
   const [failed, setFailed] = createSignal<string | null>(null);
   openProjectOverseer(props.orgId, props.projectId).then(
-    (info) => (info.path ? location.replace(`#/s/${encodeURIComponent(info.path)}`) : setFailed("It has no conversation yet.")),
+    (info) => (info.path ? location.replace(orgSessionHref(props.orgId, info.path)) : setFailed("It has no conversation yet.")),
     (err) => setFailed(errText(err)),
   );
   return (
@@ -112,6 +119,23 @@ function OrgList(props: { titleRef(el: HTMLHeadingElement): void }) {
   const [name, setName] = createSignal("");
   const [dir, setDir] = createSignal("");
   const [attachDir, setAttachDir] = createSignal("");
+  /** Another host holds the repo being attached: its sentence, until Attach Anyway or Cancel (§app.organizations/holder). */
+  const [held, setHeld] = createSignal<string | null>(null);
+  const attach = (confirm: boolean) =>
+    void act(async () => {
+      try {
+        const org = await attachOrg(attachDir().trim(), confirm);
+        setHeld(null);
+        toast("Organization attached.");
+        location.hash = orgHref(org.id);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 409 && (err.body as { code?: unknown } | undefined)?.code === "held") {
+          setHeld(err.message);
+          return;
+        }
+        throw err;
+      }
+    }, undefined);
   const [operator, setOperator] = createSignal("");
   let nameInput: HTMLInputElement | undefined;
   createEffect(on(() => info()?.operator.name, (n) => n && setOperator(n)));
@@ -221,23 +245,47 @@ function OrgList(props: { titleRef(el: HTMLHeadingElement): void }) {
         class="card orgs-section orgs-form"
         onSubmit={(e) => {
           e.preventDefault();
-          if (attachDir().trim()) void act(async () => {
-            const org = await attachOrg(attachDir().trim());
-            location.hash = orgHref(org.id);
-          }, "Organization attached.");
+          if (attachDir().trim()) attach(false);
         }}
       >
         <h2 class="orgs-h2">Attach a Restored Repo</h2>
         <label class="field">
           <span class="field-label">Workspace repo</span>
-          <input class="input input-mono" value={attachDir()} onInput={(e) => setAttachDir(e.currentTarget.value)} placeholder="/path/to/cloned/workspace" />
+          <input
+            class="input input-mono"
+            value={attachDir()}
+            onInput={(e) => {
+              setAttachDir(e.currentTarget.value);
+              setHeld(null);
+            }}
+            placeholder="/path/to/cloned/workspace"
+          />
           <span class="field-hint">A clone of an organization's workspace repo. Links are not in the repo: send new ones after attaching. Its project overseers start paused at L0 until you set their level here.</span>
         </label>
-        <div class="button-row">
-          <button type="submit" class="button">
-            Attach Repo
-          </button>
-        </div>
+        <Show
+          when={held()}
+          fallback={
+            <div class="button-row">
+              <button type="submit" class="button">
+                Attach Repo
+              </button>
+            </div>
+          }
+        >
+          {(h) => (
+            <>
+              <Banner tone="warn" title={h()} />
+              <div class="button-row">
+                <button type="button" class="button button-destructive" onClick={() => attach(true)}>
+                  Attach Anyway
+                </button>
+                <button type="button" class="button button-ghost" onClick={() => setHeld(null)}>
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+        </Show>
       </form>
 
       <form
@@ -269,12 +317,12 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
   const [error, setError] = createSignal<string | null>(null);
   const [links, setLinks] = createSignal<OfferLink[] | null>(null);
   const [linkWarning, setLinkWarning] = createSignal<string | undefined>();
-  const act = async (fn: () => Promise<OrgDetail | unknown>, done?: string): Promise<boolean> => {
+  const act = async (fn: () => Promise<OrgDetail | unknown>, done?: string | ((r: unknown) => string)): Promise<boolean> => {
     try {
       const r = await fn();
       org.set(r && typeof r === "object" && "roster" in r ? (r as OrgDetail) : await getOrg(props.id));
       setError(null);
-      if (done) toast(done);
+      if (done) toast(typeof done === "string" ? done : done(r));
       return true;
     } catch (err) {
       setError(errText(err));
@@ -320,10 +368,12 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
                   />
                 </Match>
                 <Match when={tab() === "people"}>
+                  <OwnerCard org={o()} act={act} />
                   <PeopleSection org={o()} act={act} />
                   <ChangesSection org={o()} act={act} />
                 </Match>
                 <Match when={tab() === "projects"}>
+                  <AboutCard org={o()} act={act} />
                   <ProjectsSection org={o()} act={act} />
                 </Match>
                 <Match when={tab() === "workspace"}>
@@ -338,7 +388,8 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
   );
 }
 
-type Act = (fn: () => Promise<OrgDetail | unknown>, done?: string) => Promise<boolean>;
+/** `done`: the toast, or how to say it from the answer (Commit Now says what it did). */
+type Act = (fn: () => Promise<OrgDetail | unknown>, done?: string | ((r: unknown) => string)) => Promise<boolean>;
 
 /** The org page's tab strip: a link per tab (the tab is in the URL), a count, a dot for what waits.
     Left/Right move focus along the strip (wrapping), Home/End jump; Enter or Space selects. */
@@ -403,7 +454,7 @@ function GitCard(props: { org: OrgDetail; act: Act }) {
         <h2 class="orgs-h2" id="orgs-git">
           Workspace Repo
         </h2>
-        <button type="button" class="button button-sm" onClick={() => void props.act(() => commitOrg(props.org.id), "Committed.")}>
+        <button type="button" class="button button-sm" onClick={() => void props.act(() => commitOrg(props.org.id), (r) => commitNowWords((r as OrgDetail | undefined)?.commit))}>
           Commit Now
         </button>
       </div>
@@ -489,7 +540,9 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
     if (props.start) location.replace(orgTabHref(props.org.id, "sessions"));
   };
   // A select with no matching option shows blank: the first option is the default, as it looks.
-  const pid = () => projectId() || props.org.projectList[0]?.id || "";
+  // Archived projects are not offered (§app.organizations/archive).
+  const liveProjects = () => props.org.projectList.filter((p) => !p.archived);
+  const pid = () => projectId() || liveProjects()[0]?.id || "";
   /** Nobody ticked = you start; 1 = a hand-off; 2 or more = an offer. */
   const target = (): string | string[] => (to().length === 0 ? OPERATOR : to().length === 1 ? to()[0]! : to());
   const nameOf = (id: string) => props.org.roster.find((p) => p.id === id)?.name ?? "Their";
@@ -534,7 +587,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
             {(b) => (
               <li class="list-row orgs-row">
                 <span class="list-main">
-                  <a class="list-title" href={sessionHref(b.path)}>
+                  <a class="list-title" href={orgSessionHref(props.org.id, b.path)}>
                     {b.publicTitle}
                   </a>
                   <span class="list-meta">
@@ -551,7 +604,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
         </ul>
       </Show>
       <Show
-        when={props.org.projectList.length}
+        when={liveProjects().length}
         fallback={
           <p class="orgs-empty">
             Add a project on the <a href={orgTabHref(props.org.id, "projects")}>Projects</a> tab to start a hand-off session in it.
@@ -573,7 +626,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
             <label class="field">
               <span class="field-label">Project</span>
               <select class="select" value={pid()} onChange={(e) => setProjectId(e.currentTarget.value)}>
-                <For each={props.org.projectList}>{(p) => <option value={p.id} selected={p.id === pid()}>{p.name}</option>}</For>
+                <For each={liveProjects()}>{(p) => <option value={p.id} selected={p.id === pid()}>{p.name}</option>}</For>
               </select>
             </label>
             <fieldset class="baton-strip-people">
@@ -835,12 +888,12 @@ function ChangesSection(props: { org: OrgDetail; act: Act }) {
                     {g.added ? " added" : ""}
                     <span class="list-meta">
                     {" "}
-                    · by {WRITER[g.by.kind] ?? g.by.kind} · <time title={g.key}>{relativeTime(g.key)}</time>
+                    · by {writerWord(g.by)} · <time title={g.key}>{relativeTime(g.key)}</time>
                     <Show when={pathOf(g.by.sessionId)}>
                       {(path) => (
                         <>
                           {" · "}
-                          <a href={sessionHref(path())}>Session</a>
+                          <a href={orgSessionHref(props.org.id, path())}>Session</a>
                         </>
                       )}
                     </Show>
@@ -877,17 +930,174 @@ function ChangesSection(props: { org: OrgDetail; act: Act }) {
 
 // ---- projects ---------------------------------------------------------------------------------------
 
+/** About this organization (§app.organizations/about): the operator's text every project overseer of
+    the org reads. `draft` is null while nothing is typed, so the page's re-reads show the saved text
+    and never overwrite one being edited. */
+function AboutCard(props: { org: OrgDetail; act: Act }) {
+  const [draft, setDraft] = createSignal<string | null>(null);
+  const [problem, setProblem] = createSignal<string | null>(null);
+  const [saving, setSaving] = createSignal(false);
+  const saved = () => props.org.about ?? "";
+  const text = () => draft() ?? saved();
+  const dirty = () => draft() !== null && draft() !== saved();
+  const history = () => props.org.aboutHistory ?? [];
+  const save = async () => {
+    setSaving(true);
+    // Said before the draft goes: after it, text() is the saved text again.
+    const done = text().trim() ? "Saved. Project overseers read it at their next run." : "Cleared.";
+    try {
+      const next = await patchOrg(props.org.id, { about: text() });
+      setProblem(null);
+      setDraft(null);
+      await props.act(async () => next, done);
+    } catch (err) {
+      setProblem(errText(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const revert = (c: OrgChange) => void props.act(() => revertOrgAbout(props.org.id, c.at), "Reverted.");
+  return (
+    <section class="card orgs-section" aria-labelledby="orgs-about">
+      <h2 class="orgs-h2" id="orgs-about">
+        About this organization
+      </h2>
+      <p class="orgs-line project-muted" id="orgs-about-hint">
+        Every project overseer in this organization reads this at its next run, and the Overseer when it looks it up for you. Nothing else does: not hand-off sessions, share pages, wrap-ups or
+        coding sessions.
+      </p>
+      <form
+        class="orgs-about-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (dirty() && !saving()) void save();
+        }}
+      >
+        <textarea
+          class="input textarea orgs-about-text"
+          rows={6}
+          maxlength={ORG_ABOUT_MAX}
+          value={text()}
+          aria-labelledby="orgs-about"
+          aria-describedby={problem() ? "orgs-about-hint orgs-about-error" : "orgs-about-hint"}
+          aria-invalid={problem() ? "true" : undefined}
+          placeholder="Who they are, how they work, what to be careful with."
+          onInput={(e) => {
+            setDraft(e.currentTarget.value);
+            setProblem(null);
+          }}
+        />
+        <Show when={problem()}>
+          {(p) => (
+            <p class="field-error" id="orgs-about-error">
+              {p()}
+            </p>
+          )}
+        </Show>
+        <div class="orgs-about-foot">
+          <span class="field-hint orgs-mono">{aboutCount(text())}</span>
+          <Show when={aboutOverCap(text())}>
+            <span class="field-hint orgs-about-over">Only the first 4,000 characters are used.</span>
+          </Show>
+          <span class="orgs-grow" />
+          <button
+            type="button"
+            class="button button-ghost"
+            disabled={!dirty() || saving()}
+            onClick={() => {
+              setDraft(null);
+              setProblem(null);
+            }}
+          >
+            Cancel
+          </button>
+          <button type="submit" class="button button-primary" disabled={!dirty() || saving()}>
+            Save
+          </button>
+        </div>
+      </form>
+      <Show when={history().length}>
+        <details class="orgs-history orgs-history-section">
+          <summary>History ({history().length})</summary>
+          <ul class="orgs-history-list">
+            <For each={history()}>
+              {(c) => (
+                <li class="orgs-change orgs-change-group">
+                  <div class="orgs-change-main">
+                    <span>
+                      {aboutChangeWord(c)}
+                      <span class="list-meta">
+                        {" · "}
+                        <time title={stampTime(c.at)}>{relativeTime(c.at)}</time>
+                        {` · ${aboutLength(c.to)}`}
+                        {c.by.via === "overseer" ? " · by you, via the Overseer" : ""}
+                      </span>
+                    </span>
+                    <span class="orgs-about-preview">{aboutPreview(c.to)}</span>
+                    <details class="orgs-history">
+                      <summary>Before and after</summary>
+                      <div class="orgs-about-diff">
+                        <span class="field-label">Before</span>
+                        <p class="orgs-about-full">{c.from || "(empty)"}</p>
+                        <span class="field-label">After</span>
+                        <p class="orgs-about-full">{c.to || "(empty)"}</p>
+                      </div>
+                    </details>
+                  </div>
+                  <button
+                    type="button"
+                    class="button button-sm button-ghost"
+                    disabled={c.from === saved()}
+                    title={c.from === saved() ? "The text is already this." : undefined}
+                    aria-label={`Revert the change of ${stampTime(c.at)}`}
+                    onClick={() => revert(c)}
+                  >
+                    <Icon name="undo" small /> Revert
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </details>
+      </Show>
+    </section>
+  );
+}
+
 function ProjectsSection(props: { org: OrgDetail; act: Act }) {
   const [name, setName] = createSignal("");
   const [root, setRoot] = createSignal("");
+  // Each project's cost at API prices (§app/project-costs/org-rollup); the list stands without it.
+  const orgId = createMemo(() => props.org.id);
+  const [costs] = createResource(orgId, (id) => getOrgCosts(id).catch(() => null));
+  const costOf = (pid: string) => costs()?.projects.find((c) => c.projectId === pid);
+  // Archived projects leave the list for a disclosure under it (§app.organizations/archive).
+  const live = () => props.org.projectList.filter((p) => !p.archived);
+  const archived = () => props.org.projectList.filter((p) => p.archived);
   return (
     <section class="card orgs-section" aria-labelledby="orgs-projects">
       <h2 class="orgs-h2" id="orgs-projects">
         Projects
       </h2>
-      <Show when={props.org.projectList.length} fallback={<p class="orgs-empty">No projects yet. A project is a folder that hand-off sessions and its overseer work in.</p>}>
+      <Show when={props.org.projectList.length > 0 && costs()}>
+        {(c) => (
+          <p class="orgs-line orgs-projects-cost">
+            All projects: <span class="cost-figure">{usd(c().totalUsd)}</span> at API prices.
+          </p>
+        )}
+      </Show>
+      <Show
+        when={live().length}
+        fallback={
+          <p class="orgs-empty">
+            {archived().length
+              ? `${archived().length === 1 ? "The 1 project here is" : `All ${archived().length} projects here are`} archived. Unarchive one below, or add a project.`
+              : "No projects yet. A project is a folder that hand-off sessions and its overseer work in."}
+          </p>
+        }
+      >
         <ul class="list orgs-project-list">
-          <For each={props.org.projectList}>
+          <For each={live()}>
             {(p) => (
               <li>
                 {/* The whole row opens the project page: its overseer, requirements and decisions. */}
@@ -899,12 +1109,42 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
                       {p.root}
                     </span>
                   </span>
+                  <Show when={costOf(p.id)}>
+                    {(c) => (
+                      <span class="cost-figure text-muted orgs-project-cost">{usd(c().totalUsd)}</span>
+                    )}
+                  </Show>
                   <Icon name="chevron-right" class="orgs-row-go" />
                 </a>
               </li>
             )}
           </For>
         </ul>
+      </Show>
+      <Show when={archived().length}>
+        <details class="orgs-history orgs-history-section">
+          <summary>Archived Projects ({archived().length})</summary>
+          <ul class="list orgs-project-list">
+            <For each={archived()}>
+              {(p) => (
+                <li class="orgs-archived-row">
+                  <a class="list-row list-row-interactive orgs-row orgs-project-row" href={projectHref(props.org.id, p.id)}>
+                    <Icon name="folder" />
+                    <span class="list-main">
+                      <span class="list-title">{p.name}</span>
+                      <span class="list-meta">
+                        archived <time title={p.archived!.at}>{relativeTime(p.archived!.at)}</time>
+                      </span>
+                    </span>
+                  </a>
+                  <button type="button" class="button button-sm button-ghost" onClick={() => void props.act(() => unarchiveOrgProject(props.org.id, p.id), `${p.name} is back.`)}>
+                    Unarchive
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </details>
       </Show>
       <form
         class="orgs-inline orgs-project-form"

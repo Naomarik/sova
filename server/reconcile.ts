@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { OPERATOR, type BatonOwner, type BatonStartInput } from "../shared/baton";
 import {
   CONFLICT_P,
+  OWNER_AREA_NONE,
   RECONCILE_DEFAULT,
   RECONCILE_OFF,
   REQUIREMENTS_NS,
@@ -22,12 +23,16 @@ import { batonById, closeBaton, createBaton, namesOf } from "./baton";
 import { commitSpec, specSnapshot } from "./project-worktrees";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 import { onBatonEvent } from "./baton-events";
-import { DecisionError, type DecisionProvider, type Question } from "./decide";
+import type { CostStarter } from "../shared/costs";
+import { DecisionError, type DecisionProvider, type DecisionResult, type Question } from "./decide";
+import { appendUsage, ledgerPaths } from "./project-costs-ledger";
 import { isExcluded } from "./decide-settings";
 import {
   areaKeyOf,
   isLive,
   operatorDecision,
+  ownerAreaChoices,
+  pickOwnerArea,
   projectOf,
   readConflicts,
   readDecisionStore,
@@ -41,8 +46,12 @@ import {
   PROJECT_DRAFT,
   areaId,
   currentClaims,
+  currentBlock,
   currentRecordIds,
+  decisionPart,
   manifestRecord,
+  proseHash,
+  renderRecord,
   projectDraftExists,
   promoteEdit,
   recordIdOf,
@@ -79,7 +88,7 @@ export interface ReconcileDeps {
   excluded: (root: string) => boolean;
   /** Settings → Decisions "Reconcile decisions". */
   enabled: () => boolean;
-  startBaton: (input: BatonStartInput & { owner?: BatonOwner; mintLink?: boolean }) => { sessionId: string; path: string };
+  startBaton: (input: BatonStartInput & { owner?: BatonOwner; mintLink?: boolean; settle?: { conflictId: string; area: string } }) => { sessionId: string; path: string };
   /** Close a baton the way the operator's Close does (share pages told, wrap-up scheduled). */
   endBaton: (sessionId: string) => Promise<void>;
   now: () => Date;
@@ -170,11 +179,13 @@ const markChecked = (x: DecisionRow, y: DecisionRow) => {
   y.checkedWith = [...new Set([...(y.checkedWith ?? []), x.id])];
 };
 
-/** The record a promoted row should have in the current spec, and whether the spec has it. */
+/** Whether the current spec still has a promoted row's record as the decisions layer would write
+    it: only the fields it owns are compared (§app.requirements/decisions), so a builder's
+    `evidence`, `code` or relabel never makes it promotable again. */
 function upToDate(d: DecisionRow, byId: Map<string, DecisionRow>, current: Record<string, unknown>): boolean {
-  if (!d.recordId) return false;
+  if (!d.recordId || !(d.recordId in current)) return false;
   const also = foldedRows(d, byId);
-  if (JSON.stringify(current[d.recordId]) !== JSON.stringify(manifestRecord(d, undefined, also))) return false;
+  if (JSON.stringify(decisionPart(current[d.recordId])) !== JSON.stringify(decisionPart(manifestRecord(d, undefined, also)))) return false;
   // Every promoted decision it replaced must say so in the spec, too.
   for (const s of byId.values())
     if (s.supersededBy === d.id && s.promotedAt && s.recordId && s.recordId in current) {
@@ -201,15 +212,40 @@ export function ownersOf(roster: Person[], areaKey: string, stakeholder?: string
   return main ? { owners: [main], via: "stakeholder" } : { owners: [], via: null };
 }
 
-/** Whether the author may decide the row's area: the operator; an active person whose operator-set
-    `decides` covers it (a self-asserted say does not count); or, in an area no one on the roster
-    decides, the project's main stakeholder. */
-export function authorOwnsArea(orgId: string, roster: Person[], d: Pick<DecisionRow, "by" | "areaKey">, trusted = decidesTrusted, stakeholder?: string | null): boolean {
+/** The main stakeholder alone (while active): who decides a decision whose owner area is "none". */
+function stakeholderOnly(roster: Person[], stakeholder?: string | null): { owners: Person[]; via: "stakeholder" | null } {
+  const main = stakeholder ? roster.find((p) => p.id === stakeholder && p.status === "active") : undefined;
+  return main ? { owners: [main], via: "stakeholder" } : { owners: [], via: null };
+}
+
+/** The area key whose owners decide (§app.requirements/owner-area): the owner area's, null for
+    "none", else (recorded before owner areas) the topic's. */
+const authorityKey = (ownerArea: string | undefined, areaKey: string): string | null =>
+  ownerArea === undefined ? areaKey : areaKeyOf(ownerArea) === OWNER_AREA_NONE ? null : areaKeyOf(ownerArea);
+
+const ownersFor = (roster: Person[], key: string | null, stakeholder?: string | null) => (key === null ? stakeholderOnly(roster, stakeholder) : ownersOf(roster, key, stakeholder));
+
+/** Whether the author may decide the row: the operator; an active person whose operator-set
+    `decides` covers its owner area (else, for a decision recorded before owner areas, its topic
+    area; a self-asserted say does not count); or the project's main stakeholder, in an area no one
+    on the roster decides or for an owner area of "none". */
+export function authorOwnsArea(orgId: string, roster: Person[], d: Pick<DecisionRow, "by" | "areaKey" | "ownerArea">, trusted = decidesTrusted, stakeholder?: string | null): boolean {
   if (d.by === OPERATOR) return true;
-  const { owners, via } = ownersOf(roster, d.areaKey, stakeholder);
+  const key = authorityKey(d.ownerArea, d.areaKey);
+  const { owners, via } = ownersFor(roster, key, stakeholder);
   const p = owners.find((x) => x.id === d.by);
   if (!p) return false;
-  return via === "stakeholder" || trusted(orgId, p, d.areaKey);
+  return via === "stakeholder" || trusted(orgId, p, key!);
+}
+
+/** A conflict's owner area: the one its sides name (one side's when the other was recorded before
+    owner areas); two different ones are `differ`; none named, nothing. */
+export function ownerAreaOfPair(x: Pick<DecisionRow, "ownerArea">, y: Pick<DecisionRow, "ownerArea">): { ownerArea?: string; differ?: [string, string] } {
+  const a = x.ownerArea;
+  const b = y.ownerArea;
+  if (a === undefined) return b === undefined ? {} : { ownerArea: b };
+  if (b === undefined) return { ownerArea: a };
+  return areaKeyOf(a) === areaKeyOf(b) ? { ownerArea: a } : { differ: [a, b] };
 }
 
 function settleStates(store: DecisionStore, conflicts: Conflict[], root?: string, orgId?: string, stakeholder?: string | null): void {
@@ -229,7 +265,23 @@ function settleStates(store: DecisionStore, conflicts: Conflict[], root?: string
       const peers = live.filter((o) => o.id !== d.id && o.areaKey === d.areaKey);
       d.state = d.checkedWith && peers.every((o) => checked(d, o)) ? "drafted" : "pending";
     }
+    delete d.editedInSpec;
+    delete d.build;
+    if (d.state === "promoted" && root && current && d.recordId) {
+      if (proseHash(currentBlock(root, d.recordId) ?? "") !== expectedText(d, byId)) d.editedInSpec = true;
+      d.build = builtOf(current[d.recordId]) ? "built" : "not-built";
+    }
   }
+}
+
+/** The prose hash a promoted row's record should have: as promoted or kept, else (promoted before
+    that was recorded) as the reconciler writes it. */
+const expectedText = (d: DecisionRow, byId: Map<string, DecisionRow>): string => d.promotedText ?? proseHash(renderRecord(d, undefined, foldedRows(d, byId)));
+
+/** Built, as the spec layer recorded it: `code` paths and `evidence` reviewed or verified. */
+function builtOf(rec: unknown): boolean {
+  const r = (rec ?? {}) as { code?: unknown; evidence?: unknown };
+  return Array.isArray(r.code) && r.code.length > 0 && (r.evidence === "reviewed" || r.evidence === "verified");
 }
 
 /** Give every drafted row a record id, unique in the current spec and among the rows. */
@@ -291,6 +343,8 @@ function specStatus(orgId: string, projectId: string, store: DecisionStore): Spe
     draft: projectDraftExists(root) ? PROJECT_DRAFT : null,
     promoted: [...current].filter((id) => id.startsWith(`§${REQUIREMENTS_NS}.`)).length,
     drafted: store.decisions.filter((d) => d.state === "drafted").length,
+    built: store.decisions.filter((d) => d.state === "promoted" && d.build === "built").length,
+    notBuilt: store.decisions.filter((d) => d.state === "promoted" && d.build === "not-built").length,
     ...(frozen && last !== undefined ? { editedOutside: specHash(root) !== last } : {}),
   };
 }
@@ -303,6 +357,7 @@ function info(orgId: string, projectId: string, store: DecisionStore, conflicts:
     lastRun: store.lastRun,
     running: running.has(`${orgId}/${projectId}`),
     names: namesOf(orgId),
+    ownerAreas: ownerAreaChoices(readRoster(orgId)),
   };
 }
 
@@ -508,13 +563,25 @@ export function decidesTrusted(orgId: string, person: Person, areaKey: string): 
  * in an area no one on the roster decides, the project's main stakeholder (even when they wrote a
  * side: one person contradicting themselves); else the operator. Pure over the roster.
  */
-export function routeConflict(orgId: string, roster: Person[], areaKey: string, area: string, authors: string[], trusted = decidesTrusted, stakeholder?: string | null): Route {
-  const { owners, via } = ownersOf(roster, areaKey, stakeholder);
-  if (!owners.length) return { to: OPERATOR, reason: `Nobody on the roster decides ${area}.` };
+export function routeConflict(
+  orgId: string,
+  roster: Person[],
+  areaKey: string,
+  area: string,
+  authors: string[],
+  trusted = decidesTrusted,
+  stakeholder?: string | null,
+  owner: { ownerArea?: string; differ?: [string, string] } = {},
+): Route {
+  if (owner.differ) return { to: OPERATOR, reason: `The two decisions name different owner areas: ${owner.differ[0]} and ${owner.differ[1]}.` };
+  const key = authorityKey(owner.ownerArea, areaKey);
+  const label = key === null || owner.ownerArea === undefined ? area : owner.ownerArea;
+  const { owners, via } = ownersFor(roster, key, stakeholder);
+  if (!owners.length) return { to: OPERATOR, reason: `Nobody on the roster decides ${label}.` };
   if (via === "stakeholder") return { to: owners[0]!.id, reason: `${owners[0]!.name} is this project's main stakeholder.` };
   const pick = owners.find((p) => !authors.includes(p.id)) ?? owners[0]!;
-  if (!trusted(orgId, pick, areaKey)) return { to: OPERATOR, reason: `${pick.name}'s say over ${area} was not set by ${operatorName()} (self-asserted).`, selfAsserted: true };
-  return { to: pick.id, reason: `${pick.name} decides ${area}.` };
+  if (!trusted(orgId, pick, key!)) return { to: OPERATOR, reason: `${pick.name}'s say over ${label} was not set by ${operatorName()} (self-asserted).`, selfAsserted: true };
+  return { to: pick.id, reason: `${pick.name} decides ${label}.` };
 }
 
 function batonFor(c: Conflict, a: DecisionRow, b: DecisionRow, area: string): BatonStartInput {
@@ -526,7 +593,7 @@ function batonFor(c: Conflict, a: DecisionRow, b: DecisionRow, area: string): Ba
     publicTitle: clipText(`Settle: ${area}`, 120),
     goal: clipText(
       `Two recorded decisions about ${area} contradict each other. Find out from the person you are talking to which one holds, ` +
-        `or what the decision is instead. Record the answer with record_decision in the area "${area}", with their exact words, then finish with goal_done.\n\n` +
+        `or what the decision is instead. Record the answer with record_decision in the area "${area}"${c.ownerArea ? ` and the owner area "${c.ownerArea}"` : ""}, with their exact words, then finish with goal_done.\n\n` +
         `${side("A", a)}\n${side("B", b)}`,
       2000,
     ),
@@ -624,6 +691,48 @@ function applyOutcome(c: Conflict, a: DecisionRow, b: DecisionRow, resolver: Dec
   c.resolvedAt = now.toISOString();
 }
 
+/** The usage ref a decide answer is priced by: pi's own "provider/model"; Claude Code's resolved id
+    (else its alias, which the price table maps); Jev as itself (it has no public price). Pure. */
+export function usageRefOf(r: Pick<DecisionResult, "provider" | "model" | "usage">): { provider: string; model: string } {
+  if (r.provider === "claude-code") return r.usage?.model ? { provider: "claude", model: r.usage.model } : { provider: "claude-code-cli", model: r.model };
+  if (r.provider === "pi") {
+    const slash = r.model.indexOf("/");
+    if (slash > 0) return { provider: r.model.slice(0, slash), model: r.usage?.model ?? r.model.slice(slash + 1) };
+  }
+  return { provider: r.provider, model: r.model };
+}
+
+/** The provider, with every answer's usage appended to the project's usage.jsonl
+    (§app.project-costs/ledger). A failed answer reports none, so it records nothing. */
+function recordingUsage(inner: DecisionProvider, orgId: string, projectId: string, by: CostStarter, now: () => Date): DecisionProvider {
+  return {
+    id: inner.id,
+    label: inner.label,
+    async decide(req) {
+      const r = await inner.decide(req);
+      const u = r.usage;
+      if (u && u.inputTokens + u.outputTokens + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) > 0) {
+        try {
+          appendUsage(ledgerPaths(orgId, projectId), {
+            at: now().toISOString(),
+            kind: "reconcile",
+            by,
+            ...usageRefOf(r),
+            input: u.inputTokens,
+            output: u.outputTokens,
+            cacheRead: u.cacheRead ?? 0,
+            cacheWrite: u.cacheWrite ?? 0,
+            ...(u.cacheWrite1h ? { cacheWrite1h: u.cacheWrite1h } : {}),
+          });
+        } catch (err) {
+          console.warn(`[reconcile] usage not recorded: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      return r;
+    },
+  };
+}
+
 /** POST …/reconcile, and the project overseer's sova_reconcile. */
 export function reconcileProject(orgId: string, projectId: string, opts: ReconcileOptions = {}): Promise<DecisionsInfo> {
   return exclusive(orgId, projectId, async () => {
@@ -646,8 +755,9 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
     settleStates(store, conflicts, project.root, orgId, project.stakeholder);
     try {
       if (d.excluded(project.root)) throw new DecisionError("unavailable", "This project's folder is excluded in Settings → Decisions.");
-      const provider = d.provider();
-      if (!provider) throw new DecisionError("unavailable", "No decision provider is ready (Settings → Decisions).");
+      const chain = d.provider();
+      if (!chain) throw new DecisionError("unavailable", "No decision provider is ready (Settings → Decisions).");
+      const provider = recordingUsage(chain, orgId, projectId, opts.auto ? "sova" : typeof opts.owner === "object" && opts.owner.overseerOf === projectId ? "overseer" : "operator", d.now);
       const dedupe = `reconcile:${projectId}`;
 
       // 2. Resolutions: the first decision recorded in an open conflict's baton session.
@@ -729,12 +839,14 @@ export function reconcileProject(orgId: string, projectId: string, opts: Reconci
             if (p < CONFLICT_P) markChecked(x, y);
             continue;
           }
-          const route = routeConflict(orgId, roster, areaKey, area, [x.by, y.by], decidesTrusted, project.stakeholder);
+          const owner = ownerAreaOfPair(x, y);
+          const route = routeConflict(orgId, roster, areaKey, area, [x.by, y.by], decidesTrusted, project.stakeholder, owner);
           const c: Conflict = {
             id: shortId("cf_"),
             orgId,
             projectId,
             areaKey,
+            ...(owner.ownerArea ? { ownerArea: owner.ownerArea } : {}),
             a: x.id,
             b: y.id,
             p,
@@ -791,7 +903,8 @@ function startConflictBaton(d: ReconcileDeps, c: Conflict, byId: Map<string, Dec
   if (!a || !b) throw new OrgError("The conflict's decisions are gone", 409);
   const area = a.area;
   // No link is minted here (nobody could be shown it): Needs-you asks the operator to send one.
-  const created = d.startBaton({ ...batonFor(c, a, b, area), ...choice, ...(owner ? { owner } : {}), mintLink: false });
+  // Marked as this conflict's settle session, on every route (Reconcile, re-route, the overseer's, the automatic run).
+  const created = d.startBaton({ ...batonFor(c, a, b, area), ...choice, ...(owner ? { owner } : {}), mintLink: false, settle: { conflictId: c.id, area } });
   c.batonSessionId = created.sessionId;
   // Its path is derived from the id on each read (readConflicts), never stored in the repo.
   c.batonPath = created.path;
@@ -871,6 +984,57 @@ export function routeConflictNow(orgId: string, projectId: string, conflictId: s
   });
 }
 
+/**
+ * PATCH …/decisions/:did {ownerArea}: the operator says who decides a decision
+ * (§app.requirements/owner-area). Kept with who and when; authority is recomputed, and an open
+ * conflict it is a side of is routed again by its owner area: to someone else, the session asking
+ * is closed and a new one starts, owned as that one was.
+ */
+export function setOwnerArea(orgId: string, projectId: string, decisionId: string, value: unknown): Promise<DecisionsInfo> {
+  return exclusive(orgId, projectId, async () => {
+    const d = await currentDeps();
+    const project = projectOf(orgId, projectId);
+    const { store } = syncDecisions(orgId, projectId);
+    const conflicts = readConflicts(orgId, projectId);
+    const row = store.decisions.find((x) => x.id === decisionId);
+    if (!row) throw new OrgError("Unknown decision", 404);
+    if (row.supersededBy) throw new OrgError("That decision was superseded: its owner area no longer decides anything.", 409);
+    const roster = readRoster(orgId);
+    const pick = pickOwnerArea(roster, value);
+    if (!pick.ok) throw new OrgError(pick.error);
+    if (row.ownerArea !== pick.ownerArea) {
+      row.ownerAreaHistory = [...(row.ownerAreaHistory ?? []), { at: d.now().toISOString(), by: OPERATOR, name: operatorName(), from: row.ownerArea ?? null, to: pick.ownerArea }];
+      row.ownerArea = pick.ownerArea;
+      const c = openConflictOf(conflicts, row.id);
+      const byId = new Map(store.decisions.map((x) => [x.id, x]));
+      const a = c && byId.get(c.a);
+      const b = c && byId.get(c.b);
+      if (c && a && b) {
+        const owner = ownerAreaOfPair(a, b);
+        if (owner.ownerArea) c.ownerArea = owner.ownerArea;
+        else delete c.ownerArea;
+        const route = routeConflict(orgId, roster, c.areaKey, a.area, [a.by, b.by], decidesTrusted, project.stakeholder, owner);
+        const moved = route.to !== c.routedTo;
+        c.routedTo = route.to;
+        c.routeReason = route.reason;
+        if (route.selfAsserted) c.selfAsserted = true;
+        else delete c.selfAsserted;
+        const previous = c.batonSessionId;
+        if (moved && previous) {
+          const old = batonById(previous)?.row;
+          startConflictBaton(d, c, byId, old?.owner);
+          // The earlier session asked someone else: close it so two people are never asked the same thing.
+          if (old && old.state !== "closed") await d.endBaton(old.sessionId);
+        }
+      }
+      writeDecisionStore(orgId, projectId, store);
+      writeConflicts(orgId, projectId, conflicts);
+    }
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
+    return info(orgId, projectId, store, conflicts);
+  });
+}
+
 /** POST …/conflicts/:cid/resolve: the operator keeps a side, both, or states the decision. */
 export function resolveConflict(orgId: string, projectId: string, conflictId: string, input: ConflictResolveInput): Promise<DecisionsInfo> {
   return exclusive(orgId, projectId, async () => {
@@ -888,7 +1052,7 @@ export function resolveConflict(orgId: string, projectId: string, conflictId: st
     if ("statement" in input) {
       const statement = typeof input.statement === "string" ? input.statement.trim() : "";
       if (!statement || statement.length > 500) throw new OrgError("statement must be 1–500 characters");
-      const r = operatorDecision(orgId, projectId, { area: a.area, areaKey: c.areaKey, statement, now, markerId: shortId("") });
+      const r = operatorDecision(orgId, projectId, { area: a.area, areaKey: c.areaKey, ...(c.ownerArea ? { ownerArea: c.ownerArea } : {}), statement, now, markerId: shortId("") });
       store.decisions.push(r);
       applyOutcome(c, a, b, r, "neither", now);
     } else if (input.keep === "a" || input.keep === "b" || input.keep === "both") applyOutcome(c, a, b, null, input.keep, now);
@@ -963,7 +1127,10 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
           promoted.push(r.id);
         }
         store.lastPromotedSpec = specHash(project.root);
+        const byId = new Map(store.decisions.map((x) => [x.id, x]));
+        for (const r of rows) if (promoted.includes(r.id)) markPromotedText(project.root, r, byId);
         if (snap && promoted.length) commit = await commitSpec(snap, promotionMessage(rows.filter((r) => promoted.includes(r.id)))).catch((err) => ({ skipped: `Not committed: ${err instanceof Error ? err.message : String(err)}` }));
+        if (commit && "sha" in commit) for (const r of rows) if (promoted.includes(r.id)) r.promotedCommit = commit.sha;
       } catch (err) {
         const reason = err instanceof SpecToolError || err instanceof Error ? err.message : String(err);
         for (const r of rows) refused.push({ id: r.id, reason });
@@ -975,6 +1142,55 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
     await refreshDraft(orgId, projectId, store).catch(() => []);
     emit({ type: "promoted", orgId, projectId, ids: promoted, by: opts.by });
     return { info: info(orgId, projectId, store, conflicts), promoted, refused, ...(draft ? { draft } : {}), ...(commit ? { commit } : {}) };
+  });
+}
+
+/** Keep what a promotion wrote as the row's `promotedText`: the record's prose now current. */
+function markPromotedText(root: string, r: DecisionRow, byId: Map<string, DecisionRow>): void {
+  if (!r.recordId) return;
+  r.promotedText = proseHash(currentBlock(root, r.recordId) ?? renderRecord(r, undefined, foldedRows(r, byId)));
+  delete r.textKept;
+}
+
+/**
+ * POST …/decisions/:did/text {action}: a promoted decision whose record's prose was edited in the
+ * spec (§app.requirements/decisions). `keep`: the spec's words stand (the row takes their hash,
+ * and who kept them). `restore`: the person's words are promoted again, prose only; the record's
+ * other fields stay, and it is committed like any promotion.
+ */
+export function settleSpecText(orgId: string, projectId: string, decisionId: string, action: unknown): Promise<DecisionsInfo> {
+  return exclusive(orgId, projectId, async () => {
+    const d = await currentDeps();
+    const project = projectOf(orgId, projectId);
+    const { store } = syncDecisions(orgId, projectId);
+    const conflicts = readConflicts(orgId, projectId);
+    if (action !== "keep" && action !== "restore") throw new OrgError('Expected { action: "keep" | "restore" }');
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
+    const row = store.decisions.find((x) => x.id === decisionId);
+    if (!row) throw new OrgError("Unknown decision", 404);
+    if (row.state !== "promoted" || !row.editedInSpec || !row.recordId) throw new OrgError("Its words in the spec are as they were promoted.", 409);
+    const byId = new Map(store.decisions.map((x) => [x.id, x]));
+    if (action === "keep") {
+      row.promotedText = proseHash(currentBlock(project.root, row.recordId) ?? "");
+      row.textKept = { at: d.now().toISOString(), by: OPERATOR, name: operatorName() };
+    } else {
+      const also = foldedRows(row, byId);
+      const edit: SpecEdit = { rows: [row], supersededBy: new Map(), also: new Map(also.length ? [[row.recordId, also]] : []) };
+      const snap = await specSnapshot(project.root).catch(() => null);
+      const verification = () => `${verificationFor(store, row.recordId!, conflicts)} Restored: its prose had been edited in the spec since it was promoted.`;
+      const out = await promoteEdit(project.root, edit, verification, d.now(), { proseOnly: true }).catch((err) => {
+        throw new OrgError(err instanceof Error ? err.message : String(err), 409);
+      });
+      if (out.promoted.length) {
+        store.lastPromotedSpec = specHash(project.root);
+        markPromotedText(project.root, row, byId);
+        const commit = snap ? await commitSpec(snap, promotionMessage([row])).catch(() => null) : null;
+        if (commit && "sha" in commit) row.promotedCommit = commit.sha;
+      }
+    }
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
+    writeDecisionStore(orgId, projectId, store);
+    return info(orgId, projectId, store, conflicts);
   });
 }
 

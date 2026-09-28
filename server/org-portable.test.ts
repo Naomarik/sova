@@ -9,6 +9,8 @@ import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-portable-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
@@ -85,8 +87,9 @@ describe("the overseer's started list moves from the host-local memo into the re
     assert.deepEqual(store.readStarted(p).map((s) => s.sessionId), ["s-gather", "s-code", "s-later"]);
   });
 
-  test("a coding session's spend is kept, so the budget still counts it where the file is missing", () => {
-    store.recordTokens(p, new Map([["s-code", 1234]]));
+  test("a legacy tokens count on a row still reads (the cost shows it as unpriced where the file is missing)", () => {
+    const raw = JSON.parse(readFileSync(p.started, "utf8"));
+    writeFileSync(p.started, JSON.stringify({ ...raw, sessions: raw.sessions.map((s: { sessionId: string }) => (s.sessionId === "s-code" ? { ...s, tokens: 1234 } : s)) }));
     assert.equal(store.readStarted(p).find((s) => s.sessionId === "s-code")?.tokens, 1234);
   });
 });
@@ -104,6 +107,7 @@ describe("clone + attach = the whole organization", async () => {
   const pA = store.projectOverseerPaths(a.id, project.id);
   store.noteStarted(pA, c1.sessionId, "gathering");
   await po.patchProjectOverseer(a.id, project.id, { autonomy: "L2" });
+  orgs.patchOrg(a.id, { about: "Northwind closes its books on the 5th." });
   const tokens = [c1.token!, again.token];
   // Tony opened his link once (§app.baton/visits): the log is in the repo and moves with it.
   const UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Mobile/15E148 Safari/604.1";
@@ -129,7 +133,7 @@ describe("clone + attach = the whole organization", async () => {
 
   test("the repo holds every file of the org's state", () => {
     const files = git(bDir, "ls-files").split("\n");
-    const want = ["org.json", "roster.json", "roster-history.jsonl", "projects.json", "baton.json", "visits.jsonl", `sessions/${c1.path.split("/").pop()}`];
+    const want = ["org.json", "about.md", "org-history.jsonl", "roster.json", "roster-history.jsonl", "projects.json", "baton.json", "visits.jsonl", `sessions/${c1.path.split("/").pop()}`];
     for (const f of want) assert.ok(files.includes(f), f);
     for (const f of ["overseer.json", "state.json", "started.json"]) assert.ok(files.includes(`projects/${project.id}/overseer/${f}`), f);
     assert.ok(files.some((f) => f.startsWith("sessions/") && f.endsWith(`_${overseer.id}.jsonl`)), "the overseer's transcript");
@@ -141,6 +145,9 @@ describe("clone + attach = the whole organization", async () => {
     assert.deepEqual(orgs.readRoster(b.id)[0]!.skills, ["SAP"]);
     assert.ok(orgs.readHistory(b.id).some((h) => h.field === "skills" && h.by.kind === "wrapup" && h.by.quote === "I run SAP"), "the history came along");
     assert.equal(baton.batonById(c1.sessionId)?.row.publicTitle, "Payroll day");
+    assert.equal(orgs.readOrgAbout(b.id), "Northwind closes its books on the 5th.", "the About text came along");
+    assert.deepEqual(orgs.readOrgHistory(b.id).map((c) => c.to), ["Northwind closes its books on the 5th."], "and its history");
+    assert.match(po.renderProjectOverseerPrompt(b.id, project.id, []), /Northwind closes its books on the 5th\./, "its overseer here reads it");
     const info = await po.projectOverseerInfo(b.id, project.id);
     assert.equal(info.exists, true);
     assert.equal(info.id, overseer.id);

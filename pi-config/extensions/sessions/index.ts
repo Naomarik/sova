@@ -9,7 +9,7 @@ import { checkFocusable, discoverFocusTarget, focusTarget, type FocusTarget } fr
 import { subscribeWorkers, type WorkerSummary, type WorkerUsageTotal } from "./workers.ts";
 import { SessionsOverlay } from "./ui.ts";
 import { clean, SessionStore, parseOutline, type Presence, type PresenceOutline } from "./state.ts";
-import { countWorkers, fit, RECORD_BUDGET, SCHEMA_VERSION, SESSION_MODES, workerModes, WORKER_EFFORT_MAX, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, type Activity, type SessionMeta, type SessionState } from "./schema.ts";
+import { countWorkers, fit, presenceWorkers, RECORD_BUDGET, SCHEMA_VERSION, SESSION_MODES, workerModes, WORKER_EFFORT_MAX, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, type Activity, type SessionMeta, type SessionState } from "./schema.ts";
 
 const OUTLINE_SNAPSHOT = "topic-outline:snapshot";
 const OUTLINE_REQUEST = "topic-outline:request";
@@ -195,7 +195,7 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
       ...(lastPromptAt ? { lastPromptAt } : {}) };
     const value: Presence = { type: "presence", version: 1, status, since, completed,
       preview: clean(preview, 2000), outline: outlineCache ? structuredClone(outlineCache) : undefined, target,
-      workers: workers.slice(0, 40).map(w => ({
+      workers: presenceWorkers(workers).map(w => ({
         id: clean(w.id, 100), name: clean(w.name, 80), status: clean(w.status, 40),
         model: w.model ? clean(w.model, 80) : undefined, preview: w.preview ? clean(w.preview, 180) : undefined,
         backend: w.backend ? clean(w.backend, 32) : undefined,

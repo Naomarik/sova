@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { EntryKind, TranscriptItem } from "../../shared/protocol";
 import { emptyLive } from "./live";
-import { liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, visibleCount, type HideKinds } from "./hidden-rows";
+import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, visibleCount, type HideKinds } from "./hidden-rows";
 
 const row = (id: string, kind: EntryKind, extra: Partial<TranscriptItem> = {}): TranscriptItem => ({ id, kind, raw: {}, ...extra });
 const call = (id: string, callId?: string) => row(id, "tool-call", { text: "bash", toolCallId: callId });
@@ -112,4 +112,25 @@ test("visibleCount: hidden rows don't count, each kind on its own", () => {
   assert.equal(visibleCount(items, TOOLS), 3);
   assert.equal(visibleCount(items, THINKING), 4);
   assert.equal(visibleCount(items, BOTH), 2);
+});
+
+test("Hide tool calls never folds an Overseer card: confirm and link calls stay, with their results", () => {
+  const card = (id: string, name: string, callId: string) => row(id, "tool-call", { text: name, toolCallId: callId });
+  const items = [
+    row("u1", "user"),
+    call("c1", "a"),
+    result("r1", "a"),
+    card("c2", "sova_confirm", "b"),
+    result("r2", "b"),
+    card("c3", "sova_link", "c"),
+    result("r3", "c"),
+    card("c4", "sova_unlink", "d"),
+  ];
+  const s = splitHidden(items, TOOLS);
+  assert.deepEqual(s.shown.map((it) => it.id), ["u1", "c2", "r2", "c3", "r3", "c4"]);
+  assert.deepEqual(s.hidden.map((it) => it.id), ["c1", "r1"]);
+  assert.equal(s.calls, 1);
+  assert.equal(visibleCount(items, TOOLS), 6);
+  assert.equal(isHiddenBlock({ type: "toolCall", id: "b", name: "sova_confirm", argsText: "" }, TOOLS), false);
+  assert.equal(isHiddenBlock({ type: "toolCall", id: "a", name: "sova_navigate", argsText: "" }, TOOLS), true);
 });

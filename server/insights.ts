@@ -10,6 +10,7 @@ import type {
   OutlineSnapshot,
   OutlineTopic,
   RewindInfo,
+  SessionHiddenWorkers,
   SessionInsight,
   SessionOutline,
   SessionSkills,
@@ -34,7 +35,7 @@ import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { forceRefresh } from "../pi-config/extensions/usage-status/fetch.ts";
 import { readAuthStatus } from "./auth-status";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
-import { readLiveRecords, type RawLiveRecord } from "./live";
+import { readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
 import { modelProvider, sharedWorkerWindowResolver } from "./models";
 import { resolveSessionPath } from "./paths";
 import { collectSkills, hasSkills } from "./skills";
@@ -43,7 +44,7 @@ import { describeWorktrees, worktreesOf } from "./worktrees-state";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
 import { workerSkills } from "./worker-skills";
 import { defaultAdapters } from "./worker-adapters";
-import { WorkerRestorer } from "./worker-restore";
+import { WorkerRestorer, workersFromRecords } from "./worker-restore";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { handoverSuccessor, retireReason, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
 import { LEGACY_REGISTRY_ENTRY_TYPE, readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
@@ -531,6 +532,7 @@ function decodeExplanation(data: unknown): ExplanationInfo | null {
   const note = str(data.note);
   if (error) x.error = error;
   else if (note) x.note = note;
+  if (data.status === "interrupted") x.status = "interrupted";
   return x;
 }
 
@@ -1022,6 +1024,9 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
     ? withWorkerContext(decodeWorkers(presence, live.pid === process.pid), contextReader, resolveWindow, claudeSpawnModels(facts.workerRecords.all))
     : restored && restored.workers.length > 0 ? restored.workers : null;
   const usageTotal = live ? decodeUsageTotal(presence) : restored?.usageTotal;
+  // The record lists at most 40 of the workers it counts: the pane offers the rest on request.
+  const counted = live ? workerCountsOf(live.rec)?.total : undefined;
+  const workerTotal = workers && counted !== undefined && counted > workers.length ? counted : undefined;
   // Teams first: joinTeams gives each member its teamId, and a member's spend is a "team" row. Built
   // after, the hosted view filed members under subagents while the file view (which knows the
   // team from the record) said team.
@@ -1037,6 +1042,7 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
     ...(facts.rewinds.length > 0 ? { rewinds: facts.rewinds } : {}),
     teams,
     workers: workers ?? [],
+    ...(workerTotal !== undefined ? { workerTotal } : {}),
     ...(hasSkills(facts.skills) ? { skills: facts.skills } : {}),
     ...(skillsLoaded ? { workerSkills: skillsLoaded } : {}),
     ...(usageTotal ? { usageTotal } : {}),
@@ -1045,6 +1051,29 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
     ...(await worktreeRows(facts, workers)),
     ...(await linkRows(facts.sessionId, path)),
   };
+}
+
+/** The active branch's workers the live record doesn't list (SessionHiddenWorkers). Read only
+    when the pane asks: the facts are the insight's own parse, cached per (mtime, size), and no
+    worker transcript is opened. `path` must already be validated. Never throws. */
+export async function getHiddenWorkers(path: string): Promise<SessionHiddenWorkers> {
+  const facts = await sessionFacts(path);
+  let live: RawLiveRecord | undefined;
+  try {
+    live = readLiveRecords({ includeOwn: true }).find((r) => r.sessionFile === path);
+  } catch {
+    live = undefined;
+  }
+  // Without a live record the insight already lists every worker on the branch.
+  if (!live) return { workers: [], listed: 0, total: 0 };
+  const listed = decodeWorkers(isRec(live.rec.presence) ? live.rec.presence : undefined);
+  let workers: WorkerInfo[] = [];
+  try {
+    workers = workersFromRecords(facts.workerRecords.all, facts.workerRecords.active, new Set(listed.map((w) => w.id)), await sharedWorkerWindowResolver());
+  } catch {
+    workers = []; // unreadable records: nothing more to offer
+  }
+  return { workers, listed: listed.length, total: listed.length + workers.length };
 }
 
 async function worktreeRows(facts: SessionFacts, workers: WorkerInfo[] | null): Promise<Pick<SessionInsight, "worktrees">> {

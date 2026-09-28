@@ -10,7 +10,8 @@ import { orgHref, rememberStartParent, startForHref } from "../lib/orgs-route";
 import { announce, toast } from "../lib/ui-state";
 import { LinksBanner } from "./LinksBanner";
 import { createMemo, onCleanup } from "solid-js";
-import { retryWrapup } from "../lib/api";
+import { retryWrapup, setBatonHiddenFromOwner } from "../lib/api";
+import { firstName } from "../lib/person-page";
 import { Banner, Chip } from "./ui";
 import "../orgs.css";
 
@@ -60,13 +61,14 @@ export function BatonStrip(props: {
     onCleanup(() => clearInterval(t));
   });
   const [retrying, setRetrying] = createSignal(false);
-  const act = async (fn: () => Promise<unknown>, done: string): Promise<boolean> => {
+  const act = async (fn: () => Promise<unknown>, done: string | ((r: unknown) => string)): Promise<boolean> => {
     try {
       const r = await fn();
       if (r && typeof r === "object" && "session" in r) mutate(r as BatonInfo);
       setError(null);
-      toast(done);
-      announce(done);
+      const said = typeof done === "string" ? done : done(r);
+      toast(said);
+      announce(said);
       await refetch();
       requestListRefresh();
       return true;
@@ -140,6 +142,23 @@ export function BatonStrip(props: {
                 Hand On…
               </button>
             </Show>
+            {/* Hide From / Show To the org's owner (§app.owner-page/controls): this conversation on their page. */}
+            <Show when={i().owner}>
+              {(o) => (
+                <button
+                  type="button"
+                  class="button button-sm button-ghost"
+                  aria-pressed={i().session.hiddenFromOwner ? "true" : "false"}
+                  onClick={() => {
+                    const hide = !i().session.hiddenFromOwner;
+                    const first = firstName(o().name);
+                    void act(() => setBatonHiddenFromOwner(sid(), hide), hide ? `Hidden from ${first}'s owner page.` : `Shown on ${first}'s owner page.`);
+                  }}
+                >
+                  {i().session.hiddenFromOwner ? `Show To ${firstName(o().name)}` : `Hide From ${firstName(o().name)}`}
+                </button>
+              )}
+            </Show>
             <Show when={i().session.state !== "closed"}>
               <button
                 type="button"
@@ -156,6 +175,9 @@ export function BatonStrip(props: {
               </button>
             </Show>
           </div>
+          <Show when={i().owner && i().session.hiddenFromOwner}>
+            <p class="baton-strip-areas">Hidden from {firstName(i().owner!.name)}'s owner page.</p>
+          </Show>
           <Show when={open(i()) && spent(i())}>
             <ExtendRow info={i()} act={act} />
           </Show>
@@ -290,7 +312,7 @@ export function BatonStrip(props: {
 }
 
 /** At the message limit: raise it by N so the conversation can go on (bounded like any limit). */
-function ExtendRow(props: { info: BatonInfo; act(fn: () => Promise<unknown>, done: string): Promise<boolean> }) {
+function ExtendRow(props: { info: BatonInfo; act(fn: () => Promise<unknown>, done: string | ((r: unknown) => string)): Promise<boolean> }) {
   const room = () => MESSAGES_CAP - props.info.session.budget.messagesMax;
   const [by, setBy] = createSignal(20);
   const valid = () => Number.isInteger(by()) && by() >= 1 && by() <= room();
@@ -318,7 +340,7 @@ function ExtendRow(props: { info: BatonInfo; act(fn: () => Promise<unknown>, don
           type="button"
           class="button button-sm"
           disabled={!valid()}
-          onClick={() => void props.act(() => extendBaton(props.info.session.sessionId, by()), `Limit raised to ${props.info.session.budget.messagesMax + by()} messages.`)}
+          onClick={() => void props.act(() => extendBaton(props.info.session.sessionId, by()), (r) => `Limit raised to ${(r as BatonInfo).session.budget.messagesMax} messages.`)}
         >
           Extend
         </button>

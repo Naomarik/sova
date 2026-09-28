@@ -53,21 +53,21 @@ export function kindRows(rows: readonly { kind: CostKind; usd: number }[]): { ki
   return KIND_ORDER.filter((k) => (sums.get(k) ?? 0) > 0).map((kind) => ({ kind, usd: sums.get(kind)! }));
 }
 
-// "sova" is the spec's third starter (the reconciler's automatic runs), said when the wire carries it.
-const STARTER_ORDER: readonly string[] = ["overseer", "operator", "sova"];
-const STARTER_WORDS: Record<string, string> = { overseer: "the overseer", operator: "you", sova: "Sova on its own" };
+// "sova" is the reconciler's automatic runs.
+const STARTER_ORDER: readonly CostStarter[] = ["overseer", "operator", "sova"];
+const STARTER_WORDS: Record<CostStarter, string> = { overseer: "the overseer", operator: "you", sova: "Sova on its own" };
 
 /** "Started by the overseer $8.10 · by you $4.02 · by Sova on its own $0.36", as parts (each amount is its own figure): only starters with a cost, in a fixed order; empty when none has. */
 export function starterParts(rows: readonly { by: CostStarter; usd: number }[]): { words: string; usd: string }[] {
   return rows
-    .filter((r) => r.usd > 0 && STARTER_WORDS[r.by])
+    .filter((r) => r.usd > 0)
     .sort((a, b) => STARTER_ORDER.indexOf(a.by) - STARTER_ORDER.indexOf(b.by))
     .map((r, i) => ({ words: `${i === 0 ? "Started by" : "by"} ${STARTER_WORDS[r.by]}`, usd: usd(r.usd) }));
 }
 
 /** A top session's second line: "Coding sessions · started by you". */
 export function topMeta(kind: CostKind, by: CostStarter): string {
-  return `${KIND_LABEL[CARD_KIND[kind]]} · ${(by as string) === "sova" ? "run by Sova" : `started by ${STARTER_WORDS[by] ?? by}`}`;
+  return `${KIND_LABEL[CARD_KIND[kind]]} · ${by === "sova" ? "run by Sova" : `started by ${STARTER_WORDS[by]}`}`;
 }
 
 const sum = (t: CostTokens) => t.input + t.output + t.cacheRead + t.cacheWrite;

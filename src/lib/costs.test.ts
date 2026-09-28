@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { CostModelRow, CostStarter } from "../../shared/costs";
+import type { CostModelRow } from "../../shared/costs";
 import { allModels, costNotes, emptyLine, hasEstimate, KIND_LABEL, KIND_ORDER, kindRows, moneyWord, modelRows, starterParts, topMeta, usd } from "./costs";
 
 test("dollars: symbol first, comma thousands, 2 decimals; under a cent is <$0.01, never $0.00; ≈ marks an estimate", () => {
@@ -30,10 +30,9 @@ test("kinds read in the scope's order, whatever their size, only those with a co
 });
 
 test("who started it: one line, only starters with a cost, in a fixed order; none at all is no line", () => {
-  const sova = "sova" as CostStarter; // the spec's third starter, said when the wire carries it
   assert.deepEqual(
     starterParts([
-      { by: sova, usd: 0.36 },
+      { by: "sova", usd: 0.36 },
       { by: "operator", usd: 4.02 },
       { by: "overseer", usd: 8.1 },
     ]),
@@ -47,7 +46,7 @@ test("who started it: one line, only starters with a cost, in a fixed order; non
   assert.deepEqual(starterParts([]), []);
   assert.equal(topMeta("coding-operator", "operator"), "Coding sessions · started by you");
   assert.equal(topMeta("gathering", "overseer"), "Gathering and offers · started by the overseer");
-  assert.equal(topMeta("reconcile", sova), "Reconciler · run by Sova");
+  assert.equal(topMeta("reconcile", "sova"), "Reconciler · run by Sova");
 });
 
 const t = (input = 0, output = 0, cacheRead = 0, cacheWrite = 0, cacheWrite1h = 0) => ({ input, output, cacheRead, cacheWrite, cacheWrite1h });

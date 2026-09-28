@@ -1,5 +1,6 @@
 // Run: npx tsx --test server/compression.test.ts
-// Transfer compression: permessage-deflate on /ws/chat and /ws/watch, gzip on /api/*. Uses a
+// Transfer compression: permessage-deflate on /ws/chat and /ws/watch, gzip on /api/*, for every
+// client but a browser on this machine connecting directly (server/compression.ts). Uses a
 // throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written, and the server
 // is imported with PORT=0 so it binds an ephemeral port instead of the dev port.
 import assert from "node:assert/strict";
@@ -41,6 +42,7 @@ const pngPath = `/tmp/sova-compression-test-${randomUUID()}.png`;
 writeFileSync(pngPath, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(4096, 7)]));
 
 const { app, server } = await import("./index");
+const { isDirectLocal } = await import("./compression");
 if (!server.listening) await new Promise((r) => server.once("listening", r));
 const port = (server.address() as AddressInfo).port;
 
@@ -54,8 +56,8 @@ const transcriptUrl = `/api/transcript?path=${encodeURIComponent(sessionPath)}`;
 
 /** Open /ws/watch on the session and read its snapshot, with the handshake's extensions and the
     bytes that crossed the socket for it. */
-async function watchSnapshot(perMessageDeflate: boolean) {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/watch?path=${encodeURIComponent(sessionPath)}`, { perMessageDeflate });
+async function watchSnapshot(perMessageDeflate: boolean, headers: Record<string, string> = {}) {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/watch?path=${encodeURIComponent(sessionPath)}`, { perMessageDeflate, headers });
   let extensions = "";
   ws.once("upgrade", (res) => void (extensions = String(res.headers["sec-websocket-extensions"] ?? "")));
   const [raw] = await new Promise<[string]>((resolve, reject) => {
@@ -69,10 +71,28 @@ async function watchSnapshot(perMessageDeflate: boolean) {
   return result;
 }
 
+// What tailscale serve adds when it forwards the phone to 127.0.0.1 (ipn/ipnlocal/serve.go).
+const TAILSCALE = { "X-Forwarded-Host": "host.example.ts.net:8443", "X-Forwarded-Proto": "https", "X-Forwarded-For": "100.64.0.7" };
+
+describe("isDirectLocal", () => {
+  const req = (remoteAddress: string | undefined, headers: Record<string, string> = {}) => ({ socket: remoteAddress === undefined ? null : { remoteAddress }, headers });
+  test("a loopback peer with no proxy headers is direct-local, in every address form", () => {
+    for (const a of ["127.0.0.1", "127.8.9.10", "::1", "::ffff:127.0.0.1", "::FFFF:127.0.0.1"]) assert.equal(isDirectLocal(req(a, { host: "localhost", "accept-encoding": "gzip" })), true, a);
+  });
+  test("any proxy marker on a loopback peer makes it remote", () => {
+    for (const h of ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "forwarded", "x-real-ip", "via", "tailscale-user-login", "tailscale-funnel-request"])
+      assert.equal(isDirectLocal(req("127.0.0.1", { [h]: "x" })), false, h);
+    assert.equal(isDirectLocal(req("::1", { "tailscale-user-login": "someone@example.com" })), false);
+  });
+  test("a non-loopback peer, or no socket at all, is never direct-local", () => {
+    for (const a of ["100.64.0.7", "192.168.1.5", "::ffff:10.0.0.1", "fd7a::1", "128.0.0.1", "", undefined]) assert.equal(isDirectLocal(req(a)), false, String(a));
+  });
+});
+
 describe("WebSocket permessage-deflate", () => {
-  test("a client that offers it gets it, without context takeover either way, and the same snapshot", async () => {
-    const plain = await watchSnapshot(false);
-    const deflated = await watchSnapshot(true);
+  test("through a proxy it is negotiated, without context takeover either way, and carries the same snapshot", async () => {
+    const plain = await watchSnapshot(false, TAILSCALE);
+    const deflated = await watchSnapshot(true, TAILSCALE);
     assert.equal(plain.extensions, "");
     assert.match(deflated.extensions, /^permessage-deflate/);
     assert.match(deflated.extensions, /server_no_context_takeover/);
@@ -85,10 +105,18 @@ describe("WebSocket permessage-deflate", () => {
     assert.ok(plain.bytesRead > plain.length, `plain read ${plain.bytesRead} ≥ its ${plain.length}-byte frame`);
     assert.ok(deflated.bytesRead < plain.bytesRead / 3, `deflated read ${deflated.bytesRead} vs plain ${plain.bytesRead}`);
   });
+
+  test("a direct client on this machine offering it is declined; one proxy header is enough to get it", async () => {
+    const direct = await watchSnapshot(true);
+    assert.equal(direct.extensions, "");
+    assert.ok(direct.bytesRead > direct.length, "sent uncompressed");
+    assert.match((await watchSnapshot(true, { "X-Forwarded-For": "100.64.0.7" })).extensions, /^permessage-deflate/);
+    assert.match((await watchSnapshot(true, { "Tailscale-User-Login": "someone@example.com" })).extensions, /^permessage-deflate/);
+  });
 });
 
 describe("REST gzip", () => {
-  test("Accept-Encoding gzip gets a gzip transcript that decodes to the identity one", async () => {
+  test("Accept-Encoding gzip gets a gzip transcript that decodes to the identity one (in-process: no socket, not direct-local)", async () => {
     const identity = await app.request(transcriptUrl);
     assert.equal(identity.status, 200);
     assert.equal(identity.headers.get("content-encoding"), null);
@@ -104,11 +132,13 @@ describe("REST gzip", () => {
     assert.deepEqual(JSON.parse(gunzipSync(body).toString()), JSON.parse(text));
   });
 
-  test("over a real socket too (the Node listener, not app.request)", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}${transcriptUrl}`, { headers: { "Accept-Encoding": "gzip" } });
-    assert.equal(res.headers.get("content-encoding"), "gzip");
-    const items = ((await res.json()) as { items: TranscriptItem[] }).items; // fetch decodes it
-    assert.equal(items.length, 40);
+  test("over a real socket: gzip through a proxy, identity for a direct client on this machine", async () => {
+    const proxied = await fetch(`http://127.0.0.1:${port}${transcriptUrl}`, { headers: { "Accept-Encoding": "gzip", ...TAILSCALE } });
+    assert.equal(proxied.headers.get("content-encoding"), "gzip");
+    assert.equal(((await proxied.json()) as { items: TranscriptItem[] }).items.length, 40); // fetch decodes it
+    const direct = await fetch(`http://127.0.0.1:${port}${transcriptUrl}`, { headers: { "Accept-Encoding": "gzip" } });
+    assert.equal(direct.headers.get("content-encoding"), null);
+    assert.equal(((await direct.json()) as { items: TranscriptItem[] }).items.length, 40);
   });
 
   test("an image is sent as is, whatever the client accepts", async () => {

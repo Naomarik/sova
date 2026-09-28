@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import type { Server } from "node:http";
+import type { IncomingMessage, Server } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
@@ -8,6 +8,7 @@ import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { compress } from "hono/compress";
+import { isDirectLocal } from "./compression";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
@@ -120,8 +121,12 @@ const app = new Hono();
 // already carry a Content-Encoding, 206s, HEAD, Cache-Control: no-transform, and types it doesn't
 // deem compressible (images, text/event-stream). Its 1 KB threshold reads Content-Length, which
 // c.json doesn't set, so small JSON is gzipped too (~20 bytes more). The static app, /ext and
-// /peer aren't under it.
-app.use("/api/*", compress());
+// /peer aren't under it. Not for a browser on this machine connecting directly (isDirectLocal).
+const gzip = compress();
+app.use("/api/*", (c, next) => {
+  const incoming = (c.env as { incoming?: IncomingMessage } | undefined)?.incoming;
+  return incoming && isDirectLocal(incoming) ? next() : gzip(c, next);
+});
 
 app.onError((err, c) => {
   console.error("[api]", err);

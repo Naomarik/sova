@@ -3,6 +3,7 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { ChatClientMessage, ChatServerMessage, SessionFeedMessage, WatchServerMessage } from "../shared/protocol";
+import { isDirectLocal } from "./compression";
 import { acquireChat, BusyError, ConfigError, type ChatClient } from "./chat-manager";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
@@ -134,6 +135,8 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
     socket.destroy();
     return;
   }
+  // A browser on this machine, not through a proxy: decline permessage-deflate (server/compression.ts).
+  if (isDirectLocal(req)) delete req.headers["sec-websocket-extensions"];
   wss.handleUpgrade(req, socket, head, (ws) => {
     // /ws/watch?feed=sessions: no session at all, the list's pushed overlays.
     if (route === "/ws/watch" && url.searchParams.get("feed") === "sessions") {

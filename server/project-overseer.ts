@@ -38,6 +38,7 @@ import { listModels } from "./models";
 import { workingSubagents } from "./live";
 import { mergeMode } from "./mode-state";
 import { baseCodingMode, codingModeChoice, describeCodingMode, type ModeRequest } from "./project-coding-mode";
+import { baseAbilities, overseerAbilities } from "./gathering-abilities";
 import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, WorktreeRefusal } from "./project-worktrees";
 import {
   archivedOverseerRefusal,
@@ -379,6 +380,7 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
     history,
     settings,
     codingModeNow: baseCodingMode(settings.codingMode, project.root),
+    gatheringAbilitiesNow: baseAbilities(settings.gatheringAbilities),
     worktrees: { available: !("reason" in repo), ...("reason" in repo ? { reason: repo.reason } : {}), sessions: trees },
     effective: effectiveAutonomy(settings, readRoster(orgId), overseerPausedSince(orgId, projectId)),
     paused: overseerPausedSince(orgId, projectId),
@@ -516,6 +518,7 @@ function toolHost(rt: Rt): PoToolHost {
         goal: input.goal,
         question: input.question,
         ...(await gatheringChoice(orgId, projectId, input)),
+        abilities: input.abilities,
         owner: { overseerOf: projectId },
         mintLink: false,
       });
@@ -532,6 +535,7 @@ function toolHost(rt: Rt): PoToolHost {
     decideReferral: async (personId, approve) => decidePerson(orgId, personId, approve, { kind: "overseer", sessionId: readPoState(paths)?.current ?? "" }),
     sessions: () => listSessions(),
     transcript: async (path) => normalizeEntries(await readActiveBranch(path)),
+    gatheringAbilities: (arg) => overseerAbilities(arg, baseAbilities(settings().gatheringAbilities)),
     codingMode(req) {
       const s = settings();
       return codingModeChoice(req, baseCodingMode(s.codingMode, projectOf(orgId, projectId).root), s.codingMode);

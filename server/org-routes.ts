@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { CommitNowOutcome, OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
 import { attentionChanged } from "./attention-memo";
 import { readConflicts } from "./decisions";
-import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, linkTimes, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf, setHiddenFromOwner } from "./baton";
+import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, linkTimes, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf, setAbilities, setHiddenFromOwner } from "./baton";
 import { moveBaton, offerBaton, scheduleWrapup } from "./baton-loadout";
 import { readBatonSettings, writeBatonSettings } from "./baton-settings";
 import { BusyError } from "./chat-manager";
@@ -584,6 +584,15 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const result = writeBatonSettings(await body(c));
       if ("error" in result) throw new OrgError(result.error, 400);
       return c.json(result);
+    }),
+  );
+  // What it can do, the operator's change from the strip (§app.baton/abilities): from its next run.
+  app.post(
+    "/api/baton/:sid/abilities",
+    handle(async (c) => {
+      const sid = p(c, "sid");
+      setAbilities(sid, await body(c));
+      return c.json(infoOf(sid));
     }),
   );
   app.post(

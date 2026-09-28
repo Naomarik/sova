@@ -177,7 +177,7 @@ export function ShareApp() {
           <Show when={streaming()}>
             <article class="share-msg share-msg-reply" aria-label="Facilitator, writing">
               <span class="share-who">Facilitator · writing</span>
-              <Reply text={streaming()} />
+              <Reply text={streaming()} streaming />
             </article>
           </Show>
           <div ref={listEnd} />

@@ -34,6 +34,7 @@ import {
   sendProjectItem,
   startProjectCoding,
 } from "../lib/api";
+import { ABILITIES_KEYS, abilitiesKey, abilitiesLabel, abilitiesOfKey, abilitiesWords, type AbilitiesKey } from "../lib/gathering-abilities";
 import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, folderNote, mergeGate, mergeNote, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
 import { relativeTime, tildePath } from "../lib/format";
 import { hostLabel, orgHostOf } from "../lib/mesh";
@@ -188,7 +189,9 @@ export function ProjectOverseerPanel(props: {
                 kind="gathering"
                 label="Gathering sessions"
                 save={async (patch) => info.set(await patchProjectOverseer(o(), p(), patch))}
-              />
+              >
+                <GatheringAbilitiesField info={i()} onSave={(key) => run(() => patchProjectOverseer(o(), p(), { gatheringAbilities: abilitiesOfKey(key) }), `Gathering sessions: ${abilitiesLabel(key)}.`)} />
+              </SessionModel>
               <SessionModel info={i()} host={host()} kind="coding" label="Coding sessions" save={async (patch) => info.set(await patchProjectOverseer(o(), p(), patch))}>
                 <CodingMode info={i()} onSave={(key) => run(() => patchProjectOverseer(o(), p(), { codingMode: codingModeOf(key) }), key === "auto" ? "Coding sessions' mode: Automatic." : `Coding sessions run ${codingModeLabel(key)}.`)} />
               </SessionModel>
@@ -661,6 +664,38 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(pa
         </button>
       </div>
     </form>
+  );
+}
+
+/**
+ * What its gathering sessions can do (§app.baton/abilities): every start gets it unless it says
+ * otherwise. Automatic is draw on, read links off; the overseer may never turn read links on beyond it.
+ */
+function GatheringAbilitiesField(props: { info: ProjectOverseerInfo; onSave(key: AbilitiesKey): Promise<boolean> }) {
+  const key = () => abilitiesKey(props.info.settings.gatheringAbilities ?? null);
+  return (
+    <label class="field">
+      <span class="field-label">Gathering sessions can</span>
+      <select
+        class="select"
+        aria-describedby="project-gathering-abilities-hint"
+        onChange={async (e) => {
+          const el = e.currentTarget;
+          if (!(await props.onSave(el.value as AbilitiesKey))) el.value = key();
+        }}
+      >
+        <For each={ABILITIES_KEYS}>
+          {(k) => (
+            <option value={k} selected={k === key()}>
+              {abilitiesLabel(k)}
+            </option>
+          )}
+        </For>
+      </select>
+      <span class="field-hint" id="project-gathering-abilities-hint">
+        Every gathering session this project starts gets this, unless its start says otherwise. One started now: {abilitiesWords(props.info.gatheringAbilitiesNow)}.
+      </span>
+    </label>
   );
 }
 

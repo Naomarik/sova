@@ -24,6 +24,7 @@ import type { OrgProject, Person } from "../shared/orgs";
 import type { OverseerState } from "../shared/protocol";
 import { EXTRA_PROMPT_MAX, HISTORY_MAX, readOverseerState, writeAtomic, writeOverseerState } from "./overseer-store";
 import { orgDir, OrgError, orgOfSessionPath, readProjects } from "./orgs";
+import { checkAbilitiesPatch, parseAbilities } from "./gathering-abilities";
 import { checkCodingModePatch, parseCodingMode } from "./project-coding-mode";
 import type { WorktreeRecord } from "./project-worktrees";
 import { stateRoot } from "./state-root";
@@ -103,6 +104,7 @@ export function defaultPoSettings(): ProjectOverseerSettings {
     codingMode: null,
     gatheringModel: null,
     gatheringThinking: null,
+    gatheringAbilities: null,
     caps: { ...DEFAULT_PO_CAPS },
     watchGapMin: DEFAULT_WATCH_GAP_MIN,
     soonLookSec: DEFAULT_SOON_LOOK_SEC,
@@ -144,6 +146,7 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
     codingMode: parseCodingMode(raw.codingMode),
     gatheringModel: typeof raw.gatheringModel === "string" && raw.gatheringModel.trim() ? raw.gatheringModel.trim() : null,
     gatheringThinking: typeof raw.gatheringThinking === "string" && raw.gatheringThinking.trim() ? raw.gatheringThinking.trim() : null,
+    gatheringAbilities: parseAbilities(raw.gatheringAbilities),
     caps,
     watchGapMin: gapProblem(raw.watchGapMin) === null ? (raw.watchGapMin as number) : d.watchGapMin,
     soonLookSec: "soonLookSec" in raw && soonProblem(raw.soonLookSec) === null ? (raw.soonLookSec as number | null) : d.soonLookSec,
@@ -218,6 +221,11 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: 
     const m = checkCodingModePatch(patch.codingMode);
     if (m && "error" in m) throw new OrgError(m.error);
     next.codingMode = m;
+  }
+  if (patch.gatheringAbilities !== undefined) {
+    const a = checkAbilitiesPatch(patch.gatheringAbilities);
+    if (a && "error" in a) throw new OrgError(a.error);
+    next.gatheringAbilities = a;
   }
   if (patch.watchGapMin !== undefined) {
     const why = gapProblem(patch.watchGapMin);

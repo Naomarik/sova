@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
-import { MESSAGES_CAP, MESSAGES_DEFAULT, MESSAGES_MIN, OPERATOR, type BatonStartResult, type BatonView, type BatonViewItem, type OfferLink } from "../../shared/baton";
+import { AUTOMATIC_ABILITIES, MESSAGES_CAP, MESSAGES_DEFAULT, MESSAGES_MIN, OPERATOR, type BatonStartResult, type GatheringAbilities, type BatonView, type BatonViewItem, type OfferLink } from "../../shared/baton";
 import { ORG_ABOUT_MAX, type NamedChange, type OrgChange, type OrgDetail, type Person, type PersonInput, type ProfileChange } from "../../shared/orgs";
 import {
   addOrgProject,
@@ -23,6 +23,7 @@ import {
   setOrgRemote,
   startBaton,
   getBatonSettings,
+  getProjectOverseer,
 } from "../lib/api";
 import { commitNowWords } from "../lib/commit-now";
 import { usd } from "../lib/costs";
@@ -543,6 +544,14 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
   // Archived projects are not offered (§app.organizations/archive).
   const liveProjects = () => props.org.projectList.filter((p) => !p.archived);
   const pid = () => projectId() || liveProjects()[0]?.id || "";
+  /** What it can do (§app.baton/abilities): the project's set until the operator ticks otherwise. */
+  const [chosen, setChosen] = createSignal<Partial<GatheringAbilities>>({});
+  // Read while the form is open, for the project it names.
+  const [projectSet] = createResource(
+    () => (starting() && pid() ? { o: props.org.id, p: pid() } : false),
+    ({ o, p }) => getProjectOverseer(o, p).then((i) => i.gatheringAbilitiesNow).catch(() => null),
+  );
+  const ability = (k: keyof GatheringAbilities): boolean => chosen()[k] ?? projectSet()?.[k] ?? AUTOMATIC_ABILITIES[k];
   /** Nobody ticked = you start; 1 = a hand-off; 2 or more = an offer. */
   const target = (): string | string[] => (to().length === 0 ? OPERATOR : to().length === 1 ? to()[0]! : to());
   const nameOf = (id: string) => props.org.roster.find((p) => p.id === id)?.name ?? "Their";
@@ -562,6 +571,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
         ...(model().trim() ? { model: model().trim() } : {}),
         ...(limit().trim() ? { messagesMax: Number(limit()) } : {}),
         ...(parent() ? { parentSessionId: parent() } : {}),
+        abilities: { draw: ability("draw"), readLinks: ability("readLinks") },
       });
     }, Array.isArray(who) ? `Offered to ${who.length} people.` : "Hand-off session started.");
     if (!ok || !started) return;
@@ -573,6 +583,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
     setBriefing("");
     setGoal("");
     setLimit("");
+    setChosen({});
     setTo([]);
     closeForm();
   };
@@ -625,7 +636,14 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
             <h3 class="orgs-h3">Start a Hand-off Session</h3>
             <label class="field">
               <span class="field-label">Project</span>
-              <select class="select" value={pid()} onChange={(e) => setProjectId(e.currentTarget.value)}>
+              <select
+                class="select"
+                value={pid()}
+                onChange={(e) => {
+                  setProjectId(e.currentTarget.value);
+                  setChosen({});
+                }}
+              >
                 <For each={liveProjects()}>{(p) => <option value={p.id} selected={p.id === pid()}>{p.name}</option>}</For>
               </select>
             </label>
@@ -686,6 +704,19 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
               />
               <span class="field-hint">Messages in, from everyone. At the limit the session comes back to you, and you can extend it.</span>
             </label>
+            <fieldset class="baton-strip-people">
+              <legend class="field-label">It can:</legend>
+              <label class="toggle">
+                <input type="checkbox" checked={ability("draw")} onChange={(e) => setChosen((c) => ({ ...c, draw: e.currentTarget.checked }))} />
+                <span class="toggle-box" />
+                <span>Draw</span>
+              </label>
+              <label class="toggle">
+                <input type="checkbox" checked={ability("readLinks")} onChange={(e) => setChosen((c) => ({ ...c, readLinks: e.currentTarget.checked }))} />
+                <span class="toggle-box" />
+                <span>Read links</span>
+              </label>
+            </fieldset>
             <div class="button-row">
               <button type="submit" class="button button-primary">
                 {to().length > 1 ? `Offer to ${to().length}` : "Start Session"}

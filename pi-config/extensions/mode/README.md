@@ -174,7 +174,13 @@ writer**).
     that merged with the worktree tool, ran `promote --write`, or in which the
     current spec of any of those trees changed (a worker's promotion) gets one
     hidden `spec-check` message naming the list and one more request, never a
-    second; any other run gets a warning. A line `Spec check override: <why>`
+    second; any other run gets a warning, on screen and as a hidden
+    `spec-check` note with the next prompt, so the model sees it. A worktree
+    created or attached during the run is snapshotted when `worktrees:state`
+    announces it, before its worker writes. A `manifest.json` Git holds in
+    conflict (`UU`/`AA`) is named, once per conflict, in the census digest and
+    in the check, with the `merge-manifest --write` command. A line
+    `Spec check override: <why>`
     above the last line accepts a list the agent shows is wrong.
     `PI_SPEC_CHECK=0` turns it off.
 

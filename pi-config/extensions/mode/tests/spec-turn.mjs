@@ -103,7 +103,9 @@ const settingsManager = SettingsManager.inMemory ? SettingsManager.inMemory() : 
 const sessionManager = SessionManager.inMemory(cwd);
 const { session } = await createAgentSession({ cwd, agentDir, resourceLoader, settingsManager, sessionManager });
 const seen = (req) => JSON.stringify(req.messages);
-const checks = () => sessionManager.getBranch().filter((e) => e.type === "custom_message" && e.customType === "spec-check");
+const specChecks = () => sessionManager.getBranch().filter((e) => e.type === "custom_message" && e.customType === "spec-check");
+/** Re-prompts (a blocking turn); the warnings that ride the next prompt say "Your previous reply". */
+const checks = () => specChecks().filter((e) => /This turn/.test(e.content));
 try {
 	const model = session.modelRuntime.getModel("scripted", "scripted-1");
 	await session.setModel(model);
@@ -128,6 +130,8 @@ try {
 	at = requests.length;
 	script.push({ tool: "bash", args: { command: "printf '3\\n' > src/App.tsx" } }, { text: "Again.\nAlso changes: none" });
 	await session.prompt("once more");
+	assert.match(seen(requests[at]), /\[spec check\] Your previous reply: your reply has no `Also changes:` line/, "the warning reached the model with the next prompt");
+	assert.equal(specChecks().filter((e) => e.display === false && /Your previous reply/.test(e.content)).length, 1, "one hidden warning");
 	assert.doesNotMatch(seen(requests[at + 1]).split("once more")[1] ?? "", /\[spec census\]/, "no digest for a file already reported");
 
 	// A pure question: no line needed, no re-prompt.
@@ -182,6 +186,40 @@ try {
 	assert.equal(checks().length, 2);
 	assert.match(checks()[1].content, /changed the current spec in wt/);
 	assert.match(checks()[1].content, /computed from Git: §app\/shell/);
+
+	// The live B2 sequence: the worktree is created during the run (worktrees:state arrives mid-run), and
+	// the worker commits its promotion there later in the same run. Still exactly one re-prompt.
+	const wt2 = path.join(scratch, "wt2");
+	const wt2Git = (...args) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", wt2, ...args]).status, 0, `git ${args.join(" ")}`);
+	const createWorktree = () => {
+		mkdirSync(wt2, { recursive: true });
+		wt2Git("init", "-q");
+		for (const rel of [".sova/spec/manifest.json", ".sova/spec/claims/app/shell.md", "src/App.tsx"]) {
+			mkdirSync(path.dirname(path.join(wt2, rel)), { recursive: true });
+			writeFileSync(path.join(wt2, rel), spawnSync("git", ["-C", cwd, "show", `HEAD:${rel}`], { encoding: "utf8" }).stdout);
+		}
+		wt2Git("add", "-A");
+		wt2Git("commit", "-qm", "base");
+		hostPi.events.emit("worktrees:state", { version: 1, active: [wt, wt2] });
+	};
+	const worker2Lands = () => {
+		writeFileSync(path.join(wt2, "src/App.tsx"), "worker\n");
+		wt2Git("commit", "-qam", "code");
+		writeFileSync(path.join(wt2, ".sova/spec/claims/app/shell.md"), "# §app/shell\n\nShell, second worker wording.\n");
+		wt2Git("commit", "-qam", "spec: promoted by a worker");
+	};
+	at = requests.length;
+	const before2 = checks().length;
+	script.push(
+		{ effect: createWorktree, tool: "bash", args: { command: "true" } },
+		{ effect: worker2Lands, text: "The worker committed code and spec. Tell me when you want it merged." },
+		{ text: "Done.\nAlso changes: §app/shell — second worker wording" },
+	);
+	await session.prompt("create a worktree and have a worker do it there");
+	assert.equal(requests.length, at + 3, "exactly one continuation for a worktree created mid-run");
+	assert.equal(checks().length, before2 + 1);
+	assert.match(checks().at(-1).content, /changed the current spec in wt2/);
+	assert.match(checks().at(-1).content, /computed from Git: §app\/shell/);
 
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";

@@ -8,6 +8,10 @@ import test from "node:test";
 import {
 	ALSO_CHANGES_OVERRIDE,
 	CensusHook,
+	censusStep,
+	freshCensusState,
+	manifestConflict,
+	unmergedPaths,
 	checkAlsoChanges,
 	commandRoot,
 	coreDir,
@@ -288,5 +292,43 @@ test("treeTurn: a worker's commit of a promotion in a tracked tree is a change t
 		assert.deepEqual(drafted, { changed: true, specChanged: false, foreign: ["§app/shell"] }, "a draft edit (ignored by Git) still counts");
 	} finally {
 		rmSync(tree, { recursive: true, force: true });
+	}
+});
+
+test("a manifest.json in a Git conflict: the census says to run merge-manifest, once per conflict; treeTurn carries it", async () => {
+	assert.deepEqual(unmergedPaths("UU .sova/spec/manifest.json\0 M src/a.ts\0AA b\0"), [".sova/spec/manifest.json", "b"]);
+	assert.equal(manifestConflict({ top: "/r", head: "a", files: {}, unmerged: ["sub/.sova/spec/manifest.json"] }), "sub/.sova/spec/manifest.json");
+	assert.equal(manifestConflict({ top: "/r", head: "a", files: {} }), undefined);
+	mkdirSync(scratchRoot, { recursive: true });
+	const repo = mkdtempSync(join(scratchRoot, "spec-conflict-"));
+	try {
+		const put = (rel: string, text: string) => {
+			mkdirSync(dirname(join(repo, rel)), { recursive: true });
+			writeFileSync(join(repo, rel), text);
+		};
+		const git = (...args: string[]) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", repo, ...args], { encoding: "utf8" });
+		const manifest = (id: string) => JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, claims: { [id]: { kind: "note" } } }, null, 1);
+		put(".sova/spec/manifest.json", manifest("§a/base"));
+		git("init", "-q", "-b", "master");
+		git("add", "-A");
+		git("commit", "-qm", "base");
+		git("checkout", "-qb", "side");
+		put(".sova/spec/manifest.json", manifest("§a/side"));
+		git("commit", "-qam", "side");
+		git("checkout", "-q", "master");
+		put(".sova/spec/manifest.json", manifest("§a/main"));
+		git("commit", "-qam", "main");
+		const tree = await treeStart(repo);
+		let state = (await censusStep(freshCensusState(), { cwd: repo, toolName: "", input: undefined }, CORE)).state;
+		assert.notEqual(git("merge", "side").status, 0, "the merge conflicts");
+		const first = await censusStep(state, { cwd: repo, toolName: "bash", input: { command: "git merge side" } }, CORE);
+		assert.match(first.result.text ?? "", /\.sova\/spec\/manifest\.json is in conflict: run `node ".*sova-spec-draft\.mjs" merge-manifest --root .* --write --json` first/);
+		assert.match(first.result.text ?? "", /Never take a side with git checkout or git show/);
+		state = first.state;
+		assert.equal((await censusStep(state, { cwd: repo, toolName: "read", input: {} }, CORE)).result.text, undefined, "said once per conflict");
+		const turn = await treeTurn(tree!, CORE);
+		assert.match(turn.conflict ?? "", /merge-manifest/);
+	} finally {
+		rmSync(repo, { recursive: true, force: true });
 	}
 });

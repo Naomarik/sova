@@ -955,6 +955,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		trees: TreeStart[];
 		/** Branch length at the run's start: later entries may carry a worker's report. */
 		branchAt: number;
+		/** Snapshots of worktrees the session started tracking during the run (created or attached mid-run). */
+		pending: Promise<void>[];
 		changed: boolean;
 		merged: boolean;
 		promoted: boolean;
@@ -962,17 +964,30 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		roots: Map<string, string>;
 		/** Foreign § the worktrees extension computed for this run's merges. */
 		mergeForeign: string[];
-	} = { trees: [], branchAt: 0, changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
+	} = { trees: [], branchAt: 0, pending: [], changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
 	let specReprompted = false;
 	const resetSpecRun = () => {
-		specRun = { trees: [], branchAt: 0, changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
+		specRun = { trees: [], branchAt: 0, pending: [], changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
 		specReprompted = false;
 	};
 	/** worktrees/state.ts WORKTREES_STATE_EVENT, spelled again: the active worktrees this session tracks. */
 	let trackedWorktrees: string[] = [];
 	pi.events?.on("worktrees:state", (data: unknown) => {
 		const e = data as { version?: unknown; active?: unknown } | undefined;
-		if (e?.version === 1 && Array.isArray(e.active)) trackedWorktrees = e.active.filter((p): p is string => typeof p === "string");
+		if (e?.version !== 1 || !Array.isArray(e.active)) return;
+		const next = e.active.filter((p): p is string => typeof p === "string");
+		// A worktree created or attached during a run is snapshotted now, before its worker writes: its
+		// commits and promotions are this run's too.
+		if (running && specOn()) {
+			const run = specRun;
+			for (const dir of next.filter((p) => !trackedWorktrees.includes(p)))
+				run.pending.push(
+					treeStart(dir).then((tree) => {
+						if (tree && !run.trees.some((t) => t.view.top === tree.view.top)) run.trees.push(tree);
+					}),
+				);
+		}
+		trackedWorktrees = next;
 	});
 	pi.events?.emit("worktrees:discover", { version: 1 });
 
@@ -1023,13 +1038,16 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	pi.on("agent_before_settle", async (event, ctx) => {
 		if (!specOn() || process.env.PI_SPEC_CHECK === "0" || event.outcome !== "completed") return;
 		try {
+			await Promise.all(specRun.pending);
 			let changed = specRun.changed;
 			const landed: string[] = [];
+			const conflicts: string[] = [];
 			const ids = new Set(specRun.mergeForeign);
 			// Each tree, the session's and every tracked worktree: a worker's edit, commit or promotion
 			// there is this turn's too. A current spec that changed is a promotion landing: blocking.
 			for (const tree of specRun.trees) {
 				const t = await treeTurn(tree, SPEC_CORE);
+				if (t.conflict) conflicts.push(t.conflict);
 				if (!t.changed) continue;
 				changed = true;
 				if (t.specChanged) landed.push(basename(tree.view.top));
@@ -1046,12 +1064,11 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				changed = true;
 				for (const id of reported) ids.add(id);
 			}
-			if (!changed) return;
 			const foreign = [...ids].sort();
-			const check = checkAlsoChanges(lastReplyText, { required: true, foreign });
-			if (check.ok) return;
+			const check = checkAlsoChanges(lastReplyText, { required: changed, foreign });
+			if (check.ok && !conflicts.length) return;
 			const blocking = specRun.merged || specRun.promoted || landed.length > 0;
-			if (blocking && !specReprompted) {
+			if (blocking && !check.ok && !specReprompted) {
 				specReprompted = true;
 				const what = [
 					specRun.merged ? "merged a worktree" : "",
@@ -1060,15 +1077,15 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				]
 					.filter(Boolean)
 					.join(" and ");
-				return {
-					entries: [...event.entries, { type: "custom_message" as const, customType: SPEC_CHECK_MESSAGE, display: false, content: repromptText(check, foreign, what) }],
-					continue: true,
-				};
+				const content = [repromptText(check, foreign, what), ...conflicts].join("\n");
+				return { entries: [...event.entries, { type: "custom_message" as const, customType: SPEC_CHECK_MESSAGE, display: false, content }], continue: true };
 			}
-			if (ctx.hasUI) {
-				const list = foreign.length ? ` Foreign § from Git: ${foreign.join(", ")}.` : "";
-				ctx.ui.notify(`${CHECK_TAG} ${describeProblem(check)}.${list}`, "warning");
-			}
+			// Elsewhere a warning: on screen now, and to the model with its next prompt, so it can correct itself.
+			const list = foreign.length ? ` Foreign § from Git: ${foreign.join(", ")}.` : "";
+			const lines = check.ok ? [] : [`${CHECK_TAG} Your previous reply: ${describeProblem(check)}.${list} If that turn changed them, say so; end your next reply that edits, commits, promotes or merges with them named.`];
+			const note = [...lines, ...conflicts].join("\n");
+			if (ctx.hasUI) ctx.ui.notify(note, "warning");
+			pi.sendMessage({ customType: SPEC_CHECK_MESSAGE, content: note, display: false }, { deliverAs: "nextTurn" });
 		} catch {
 			// The check is best-effort; the run settles as it would.
 		}

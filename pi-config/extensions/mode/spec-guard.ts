@@ -81,6 +81,34 @@ export interface GitView {
 	head: string | null;
 	/** path → mtime (ms; 0 for a deleted file). */
 	files: Record<string, number>;
+	/** Paths Git holds unmerged (a merge conflict in progress). */
+	unmerged?: string[];
+}
+
+const UNMERGED = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
+
+/** Unmerged paths out of `git status --porcelain -z`. */
+export function unmergedPaths(z: string): string[] {
+	const parts = z.split("\0");
+	const paths: string[] = [];
+	for (let i = 0; i < parts.length; i++) {
+		const entry = parts[i];
+		if (entry.length < 4) continue;
+		if (UNMERGED.has(entry.slice(0, 2))) paths.push(entry.slice(3));
+		if (entry[0] === "R" || entry[0] === "C") i++;
+	}
+	return paths;
+}
+
+/** The spec manifest Git holds in conflict in this view, as a top-relative path, if any. */
+export function manifestConflict(view: GitView | undefined): string | undefined {
+	return view?.unmerged?.find((p) => p === `${SPEC_REL}/manifest.json` || p.endsWith(`/${SPEC_REL}/manifest.json`));
+}
+
+/** What to do about a conflicted manifest: the sanctioned command, spelled out. */
+export function manifestConflictNote(top: string, manifest: string, core: string): string {
+	const root = join(top, dirname(dirname(dirname(manifest))) === "." ? "" : dirname(dirname(dirname(manifest))));
+	return `${DIGEST_TAG} ${manifest} is in conflict: run \`node "${join(core, "sova-spec-draft.mjs")}" merge-manifest --root ${root} --write --json\` first, then stage it; on a refusal (manifest-conflict) re-apply one side in a new draft. Never take a side with git checkout or git show.`;
 }
 
 /** Paths out of `git status --porcelain -z`: a rename's entry carries its source as a second field. */
@@ -108,7 +136,8 @@ export async function gitView(cwd: string, io: SpecIO = localIO, signal?: AbortS
 		const head = await io.exec("git", ["rev-parse", "--verify", "-q", "HEAD"], { ...opts, cwd: root });
 		const files: Record<string, number> = {};
 		for (const p of parsePorcelain(status.stdout)) files[p] = (await io.mtime(join(root, p))) ?? 0;
-		return { top: root, head: head.code === 0 ? head.stdout.trim() : null, files };
+		const unmerged = unmergedPaths(status.stdout);
+		return { top: root, head: head.code === 0 ? head.stdout.trim() : null, files, ...(unmerged.length ? { unmerged } : {}) };
 	} catch {
 		return undefined;
 	}
@@ -235,6 +264,8 @@ export interface CensusState {
 	foreign: string[];
 	/** A failure was reported once. */
 	failed: boolean;
+	/** The manifest conflict now in progress was already reported (absent in older state files). */
+	conflict?: boolean;
 }
 
 export const freshCensusState = (): CensusState => ({ base: null, top: null, known: [], reported: false, foreign: [], failed: false });
@@ -307,13 +338,25 @@ function underRoot(top: string, root: string, path: string): string | undefined 
 
 /**
  * One step of the census: look at the tree, and when paths are new since `state`, run the census and
- * return the digest. Returns the next state (a new object); never throws or rejects.
+ * return the digest. A manifest.json Git holds in conflict is reported once per conflict, first, with
+ * the sanctioned command. Returns the next state (a new object); never throws or rejects.
  */
 export async function censusStep(state: CensusState, call: CensusCall, core: string, io: SpecIO = localIO): Promise<{ state: CensusState; result: CensusResult }> {
+	const seen: { view?: GitView } = {};
+	const step = await censusDelta(state, call, core, io, seen);
+	const manifest = manifestConflict(seen.view);
+	if (!manifest || !seen.view) return step.state.conflict ? { state: { ...step.state, conflict: false }, result: step.result } : step;
+	if (step.state.conflict) return step;
+	const note = manifestConflictNote(seen.view.top, manifest, core);
+	return { state: { ...step.state, conflict: true }, result: { ...step.result, text: step.result.text ? `${note}\n${step.result.text}` : note } };
+}
+
+async function censusDelta(state: CensusState, call: CensusCall, core: string, io: SpecIO, seen: { view?: GitView }): Promise<{ state: CensusState; result: CensusResult }> {
 	const next: CensusState = { ...state, known: [...state.known], foreign: [...state.foreign] };
 	try {
 		const view = await gitView(call.cwd, io, call.signal);
 		if (!view) return { state, result: {} };
+		seen.view = view;
 		if (next.top !== view.top) {
 			// First look at this tree: its current changes are the baseline, not the task's.
 			Object.assign(next, freshCensusState(), { base: view.head, top: view.top, known: Object.keys(view.files) });
@@ -625,6 +668,8 @@ export interface TreeTurn {
 	specChanged: boolean;
 	/** The foreign § it changed (current spec since the run's HEAD, and each edited draft); undefined when not computable. */
 	foreign?: string[];
+	/** Its manifest.json is in a Git conflict now: what to do (manifestConflictNote). */
+	conflict?: string;
 }
 
 export async function treeStart(dir: string, io: SpecIO = localIO): Promise<TreeStart | undefined> {
@@ -638,9 +683,11 @@ export async function treeStart(dir: string, io: SpecIO = localIO): Promise<Tree
 export async function treeTurn(start: TreeStart, core: string, io: SpecIO = localIO): Promise<TreeTurn> {
 	try {
 		const end = await gitView(start.view.top, io);
+		const manifest = manifestConflict(end);
+		const conflict = manifest && end ? { conflict: manifestConflictNote(end.top, manifest, core) } : {};
 		const drafts = start.root ? draftsTouched(start.drafts, await draftStamps(start.root, io)) : [];
 		const changed = viewChanged(start.view, end) || drafts.length > 0;
-		if (!changed || !end) return { changed, specChanged: false, foreign: [] };
+		if (!changed || !end) return { changed, specChanged: false, foreign: [], ...conflict };
 		const specRel = start.root ? relative(start.view.top, join(start.root, SPEC_REL)) : SPEC_REL;
 		const isSpec = (p: string) => p.startsWith(`${specRel}/`) && !p.startsWith(`${specRel}/drafts/`);
 		let specChanged = Object.entries(end.files).some(([p, m]) => isSpec(p) && start.view.files[p] !== m);
@@ -649,7 +696,7 @@ export async function treeTurn(start: TreeStart, core: string, io: SpecIO = loca
 			const diff = await io.exec("git", ["diff", "--name-only", "-z", base, end.head], { cwd: end.top, timeout: TOOL_TIMEOUT_MS });
 			specChanged = diff.code === 0 && diff.stdout.split("\0").some(isSpec);
 		}
-		if (!start.root || !base) return { changed, specChanged };
+		if (!start.root || !base) return { changed, specChanged, ...conflict };
 		const ids = new Set<string>();
 		let known = false;
 		const current = specChanged ? await foreignBetween(start.root, base, undefined, core, io) : [];
@@ -664,7 +711,7 @@ export async function treeTurn(start: TreeStart, core: string, io: SpecIO = loca
 				for (const id of edited) ids.add(id);
 			}
 		}
-		return { changed, specChanged, ...(known ? { foreign: [...ids].sort() } : {}) };
+		return { changed, specChanged, ...(known ? { foreign: [...ids].sort() } : {}), ...conflict };
 	} catch {
 		return { changed: false, specChanged: false };
 	}

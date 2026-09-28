@@ -156,7 +156,10 @@ Don't import a highlight.js stylesheet. These rules are the whole theme, and the
 
 A fenced block whose info string is `vis <kind>` is a **drawing**, not code. Sova draws it with its
 own Solid/SVG code (`src/vis/`): no diagram or chart dependency, and **model HTML or SVG never
-enters the app's DOM**. Assistant-text rows only (§chat/markdown's scope).
+enters the app's DOM**. Assistant-text rows only (§chat/markdown's scope), and the replies on share
+and owner pages, which draw only `chart`, `flow`, `matrix`, `timeline`, `tree`, `steps` and
+`layers`, with no Source or Copy and no frames, and show one quiet line instead of a broken
+block's source (§app.baton/outsider-view).
 
 - **Kinds.** One registry (`src/vis/registry.ts`) lists every fence word; nothing else is drawn:
 

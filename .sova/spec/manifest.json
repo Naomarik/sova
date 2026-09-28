@@ -1311,7 +1311,8 @@
       "evidence": "verified",
       "code": [
         "src/lib/theme.ts",
-        "index.html"
+        "index.html",
+        "src/lib/theme.test.ts"
       ]
     },
     "§design.ground-rules/voice": {

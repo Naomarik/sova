@@ -140,6 +140,9 @@
 /* An option or recommendation in two lines: its label, bold, then what it costs or why, set in a
    little under it in full ink — a step above the question's context. */
 .align-q-line { display: block; font-weight: var(--fw-semibold); }
+/* The recommendation's label is a <strong> inside an already-semibold line; keep it at the
+   options' weight instead of bolder-than-semibold. */
+.align-q-line strong { font-weight: inherit; }
 .align-q-desc { display: block; padding-left: var(--space-3); margin-top: 1px; color: var(--color-ink); }
 .align-q-kicker {
   margin-right: 6px;

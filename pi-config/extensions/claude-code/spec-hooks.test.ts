@@ -150,6 +150,26 @@ test("stop on a normal turn: a line naming a § the census never saw touched is 
 	assert.equal(await runHook("stop", event(root, { last_assistant_message: "Done.\nAlso changes: §app/x — tweak" }), o), undefined, "one send-back per turn");
 });
 
+test("a draft edit alone (gitignored, no git delta) makes the turn a writing one, and the foreign § it edits must be named", async () => {
+	const { root, stateDir } = project();
+	fs.writeFileSync(path.join(root, ".gitignore"), ".sova/spec/drafts/\n.hook-state/\n");
+	git(root, "add", ".gitignore");
+	git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "ignore drafts");
+	const o = { core: CORE, stateDir };
+	await runHook("turn", event(root, {}), o);
+	const made = spawnSync(process.execPath, [path.join(CORE, "sova-spec-draft.mjs"), "new", "feat", "--write", "--root", root, "--json"], { encoding: "utf8" });
+	assert.equal(made.status, 0, made.stdout + made.stderr);
+	write(root, ".sova/spec/drafts/feat/spec/claims/app/x.md", "# §app/x\n\nX does a different thing.\n");
+	assert.equal(git(root, "status", "--porcelain"), "", "git sees nothing");
+	const out = await runHook("stop", event(root, { last_assistant_message: "Drafted.\nAlso changes: none" }), o) as any;
+	assert.equal(out?.decision, "block");
+	assert.match(out.reason, /§app\/x/);
+	assert.equal(readState(statePath(stateDir, "s1")!).turn.wrote, true);
+	await runHook("turn", event(root, { prompt_id: "p2" }), o);
+	write(root, ".sova/spec/drafts/feat/spec/claims/app/x.md", "# §app/x\n\nX does another thing.\n");
+	assert.equal(await runHook("stop", event(root, { prompt_id: "p2", last_assistant_message: "Drafted.\nAlso changes: §app/x — reworded" }), o), undefined);
+});
+
 test("the script entry: reads the event on stdin, prints Claude's JSON, and never fails a worker", () => {
 	const { root, stateDir } = project();
 	const run = (ev: string, input: unknown) => spawnSync(process.execPath, [SPEC_HOOK_SCRIPT, ev, "--core", CORE, "--state", stateDir], { input: JSON.stringify(input), encoding: "utf8" });

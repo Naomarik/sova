@@ -18,7 +18,9 @@
  *   foreign list is the authority: every § in it must be named, and the reply is sent back (block)
  *   until it is or it carries the override line, at most MERGE_BLOCKS times. Elsewhere a miss is a
  *   warning, sent back once and then let through: a turn that wrote without the exact line, one
- *   that wrote nothing with it, or a line naming a § the census never saw touched.
+ *   that wrote nothing with it, a line omitting a foreign § the turn's draft edits, or one naming a
+ *   § the census never saw touched. Drafts are gitignored, so their edits are found by mtime
+ *   (draftStamps at the turn's start) and their foreign § by `foreign --spec` (draftForeign).
  *
  * Node builtins and mode/spec-guard.ts only (both run under node's type stripping: erasable TS).
  * A hook that fails says nothing and exits 0: it never stops a worker.
@@ -27,7 +29,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-	CHECK_TAG, censusStep, checkAlsoChanges, describeProblem, findSpecRoot, foreignBetween, freshCensusState, gitCommits, gitMerges, gitView,
+	CHECK_TAG, censusStep, checkAlsoChanges, describeProblem, draftForeign, draftStamps, draftsTouched, findSpecRoot, foreignBetween, freshCensusState, gitCommits, gitMerges, gitView,
 	lastLine, localIO, parseAlsoChanges, promoteWrites, repromptText, viewChanged, type CensusState, type GitView, type SpecIO,
 } from "../mode/spec-guard.ts";
 
@@ -90,6 +92,9 @@ export interface TurnState {
 	id?: string;
 	/** The work tree at the last look (the turn's start, then after each tool). */
 	view?: GitView;
+	/** The spec root and each draft's newest spec/ mtime at the turn's start: drafts are gitignored, so git never shows their edits. */
+	root?: string;
+	drafts?: Record<string, number>;
 	/** HEAD when the turn started: the base of what it landed. */
 	head?: string | null;
 	/** The turn changed a file, committed, promoted or merged. */
@@ -168,7 +173,8 @@ const union = (a: readonly string[], b: readonly string[]): string[] => [...new 
 export async function onTurn(input: HookInput, ctx: HookContext): Promise<HookOutput> {
 	const cwd = input.cwd ?? process.cwd();
 	const view = await gitView(cwd, ctx.io);
-	ctx.state.turn = { ...freshTurn(), id: input.prompt_id, view, head: view?.head };
+	const root = await findSpecRoot(cwd, (p) => ctx.io.exists(p));
+	ctx.state.turn = { ...freshTurn(), id: input.prompt_id, view, head: view?.head, ...(root ? { root, drafts: await draftStamps(root, ctx.io) } : {}) };
 	ctx.state.census = (await censusStep(ctx.state.census, { cwd, toolName: "", input: undefined }, ctx.core, ctx.io)).state;
 	return undefined;
 }
@@ -206,15 +212,28 @@ export async function onPost(input: HookInput, ctx: HookContext): Promise<HookOu
 	return { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: step.result.text } };
 }
 
-export function onStop(input: HookInput, ctx: HookContext): HookOutput {
+/** The foreign § the drafts this turn edited change (a draft edit is a write git can't see). */
+async function draftEdits(turn: TurnState, ctx: HookContext): Promise<string[] | undefined> {
+	if (!turn.root || !turn.drafts) return undefined;
+	const touched = draftsTouched(turn.drafts, await draftStamps(turn.root, ctx.io));
+	if (!touched.length) return undefined;
+	let foreign: string[] = [];
+	for (const name of touched) foreign = union(foreign, (await draftForeign(turn.root, name, ctx.core, ctx.io)) ?? []);
+	return foreign;
+}
+
+export async function onStop(input: HookInput, ctx: HookContext): Promise<HookOutput> {
 	const turn = ctx.state.turn;
 	const reply = input.last_assistant_message ?? "";
 	const block = (reason: string): HookOutput => { turn.blocks++; return { decision: "block", reason }; };
+	const drafted = await draftEdits(turn, ctx);
+	if (drafted) turn.wrote = true;
 	if (turn.landed) {
 		// The computed list is the authority: sent back until it is named (or overridden), boundedly.
-		const check = checkAlsoChanges(reply, { required: true, foreign: turn.foreign });
+		const foreign = union(turn.foreign, drafted ?? []);
+		const check = checkAlsoChanges(reply, { required: true, foreign });
 		if (check.ok || turn.blocks >= MERGE_BLOCKS) return undefined;
-		return block(repromptText(check, turn.foreign, "promoted or merged"));
+		return block(repromptText(check, foreign, "promoted or merged"));
 	}
 	// Elsewhere a warning: sent back once (stop_hook_active marks the retry), then let through.
 	if (input.stop_hook_active || turn.blocks >= 1) return undefined;
@@ -223,12 +242,13 @@ export function onStop(input: HookInput, ctx: HookContext): HookOutput {
 		return ids === undefined ? undefined
 			: block(`${CHECK_TAG} This turn changed no files, so its reply carries no \`Also changes:\` line; drop it. If it is right because you did change files, repeat your reply unchanged.`);
 	}
-	const check = checkAlsoChanges(reply, { required: true, foreign: [] });
+	// Census foreign § may be plumbing (none is fine); a foreign § the turn's draft edits is not.
+	const check = checkAlsoChanges(reply, { required: true, foreign: drafted ?? [] });
 	if (!check.ok) {
 		return block(`${CHECK_TAG} This turn changed files: ${describeProblem(check)}. End your reply with exactly "Also changes: §X — <what>" or "Also changes: none" as its last line, nothing after it. If it is right as written, repeat your reply unchanged.`);
 	}
 	// The census's foreign list, when it ran: a named § it never saw touched is a new claim or a guess.
-	const seen = ctx.state.census.foreign;
+	const seen = union(ctx.state.census.foreign, drafted ?? []);
 	const unseen = seen.length ? (ids ?? []).filter((id) => !seen.includes(id)) : [];
 	if (unseen.length) {
 		return block(`${CHECK_TAG} Your last line names ${unseen.join(", ")}, which the census never saw this session's changes touch (it saw ${seen.join(", ")}). It names foreign § only, never your new claims. Fix it, or repeat your reply unchanged if it is right.`);
@@ -241,7 +261,7 @@ export async function runHook(event: string, input: HookInput, o: { core: string
 	const file = input.session_id ? statePath(o.stateDir, input.session_id) : undefined;
 	if (!file) return undefined;
 	const ctx: HookContext = { core: o.core, state: readState(file), io: o.io ?? localIO };
-	const out = event === "turn" ? await onTurn(input, ctx) : event === "post" ? await onPost(input, ctx) : event === "stop" ? onStop(input, ctx) : undefined;
+	const out = event === "turn" ? await onTurn(input, ctx) : event === "post" ? await onPost(input, ctx) : event === "stop" ? await onStop(input, ctx) : undefined;
 	writeState(file, ctx.state);
 	if (out) fs.appendFileSync(file.replace(/\.json$/, ".log.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), event, tool: input.tool_name, out })}\n`, { mode: 0o600 });
 	return out;

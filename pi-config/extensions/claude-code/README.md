@@ -224,8 +224,10 @@ per Claude session:
   or a `git merge` that moves HEAD (`sova-spec.mjs foreign` over it) records the turn's foreign §.
 - `Stop`: after a promote or merge, the last line must name every computed foreign § (or carry the
   override line); the reply is sent back up to twice. Otherwise a warning, sent back once: a
-  writing turn without the exact `Also changes:` line, a non-writing turn with one, or a named §
-  the census never saw touched.
+  writing turn without the exact `Also changes:` line, a non-writing turn with one, a line omitting
+  a foreign § the turn's draft edits, or a named § the census never saw touched. Drafts are
+  gitignored: a draft edit (found by mtime) counts as writing, and its foreign § come from
+  `foreign --spec` against the draft's base commit.
 
 A hook that fails prints nothing and exits 0.
 

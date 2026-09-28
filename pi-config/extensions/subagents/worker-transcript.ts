@@ -87,6 +87,30 @@ export interface TokenCounts {
 	turns?: number;
 }
 
+/**
+ * One counted message, as a usage accumulator's `onCount` sees it: after deduplication and the
+ * fork/sidechain rules, so a caller pricing per message counts exactly what the total counts.
+ */
+export interface CountedMessage {
+	/** When it was written (ms epoch), when the record says. */
+	at?: number;
+	/** "provider/model" (pi) or "claude/<model>" (claude-code), as the row's model. */
+	model: string;
+	/** The model came from the session (the last one seen), not the entry itself: a tool result's usage. */
+	inferredModel?: boolean;
+	/** The model that actually answered, when recorded (pi `responseModel`; Claude's `message.model` is already that). */
+	responseModel?: string;
+	counts: TokenCounts;
+	/** The 1-hour part of `counts.cacheWrite`, when the record splits cache writes by TTL (else absent). */
+	cacheWrite1h?: number;
+	/** "fast" when the provider says the message ran in fast mode. */
+	speed?: string;
+	/** Server-side web searches the message made. */
+	webSearches?: number;
+	/** What carried the usage: an assistant reply, a tool result, a pi `usage` entry (its kind), a compaction or branch summary. */
+	source: "assistant" | "toolResult" | "usage" | "compaction" | "branch_summary";
+}
+
 export interface WorkerUsageRow extends TokenCounts {
 	/** "provider/model" (pi) or "claude/<model>" (claude-code). */
 	model: string;

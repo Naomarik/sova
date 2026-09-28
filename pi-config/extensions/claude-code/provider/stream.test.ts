@@ -134,6 +134,27 @@ test("usage comes from the stream and costs nothing", async () => {
 	});
 });
 
+test("the answering model and the 1-hour cache writes are recorded; a later usage without the split keeps it", async () => {
+	const raw = [
+		{ type: "system", subtype: "init", session_id: "s" },
+		{ type: "stream_event", event: { type: "message_start", message: { model: "claude-opus-5-5", usage: { input_tokens: 5, output_tokens: 1, cache_read_input_tokens: 100, cache_creation_input_tokens: 90, cache_creation: { ephemeral_1h_input_tokens: 90, ephemeral_5m_input_tokens: 0 } } } } },
+		{ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } } },
+		{ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ok" } } },
+		{ type: "stream_event", event: { type: "content_block_stop", index: 0 } },
+		{ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { input_tokens: 5, output_tokens: 9, cache_read_input_tokens: 100, cache_creation_input_tokens: 90 } } },
+		{ type: "stream_event", event: { type: "message_stop" } },
+		{ type: "result", subtype: "success", is_error: false },
+	];
+	const { bridge } = fakeBridge(raw.map((f) => parseClaudeFrame(f)).filter((f): f is ClaudeFrame => !!f));
+	const message = finalMessage(last(await collect(streamClaudeCode(bridge, model("opus[1m]"), context()))));
+	assert.equal(message.model, "opus[1m]", "the pi model stays the alias");
+	assert.equal(message.responseModel, "claude-opus-5-5");
+	assert.equal(message.usage.cacheWrite, 90);
+	assert.equal(message.usage.cacheWrite1h, 90);
+	assert.equal(message.usage.output, 9);
+	assert.equal(message.usage.cost.total, 0);
+});
+
 test("a multi-step turn's summed result usage does not replace the last step's", async () => {
 	// The final step of a seven-step CLI turn: its `result.usage` is the sum over
 	// all seven API calls. The message's usage, and so the context fill, is the last call's.

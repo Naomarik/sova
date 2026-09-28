@@ -944,6 +944,11 @@ export const addOrgProject = (id: string, name: string, root: string) => request
 /** Set or clear a project's main stakeholder (a roster person's id, or null for none). */
 export const setProjectStakeholder = (id: string, pid: string, stakeholder: string | null) =>
   request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}`, jsonInit("PATCH", { stakeholder }));
+/** Archive a project (§app.organizations/archive): 409 naming what is open; Unarchive brings it back. */
+export const archiveOrgProject = (id: string, pid: string) =>
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/archive`, jsonInit("POST", {}));
+export const unarchiveOrgProject = (id: string, pid: string) =>
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/unarchive`, jsonInit("POST", {}));
 
 // ---- the org's owner and the Owner page (§app/owner-page; routes in shared/owner.ts) ----
 /** Set the org's owner (an active roster person's id), or none. */

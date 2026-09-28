@@ -1,7 +1,21 @@
 import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, type JSX, on, onCleanup, Show } from "solid-js";
 import { OWNER_AREA_NONE, type Conflict, type DecisionRow, type DecisionsInfo, type PromoteResult } from "../../shared/decisions";
 import type { OrgDetail, OrgProject } from "../../shared/orgs";
-import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, redraftProject, resolveConflict, routeConflict, setOwnerArea, setProjectStakeholder, setSpecFrozen } from "../lib/api";
+import {
+  ApiError,
+  archiveOrgProject,
+  getDecisions,
+  getOrg,
+  promoteDecisions,
+  reconcileProject,
+  redraftProject,
+  resolveConflict,
+  routeConflict,
+  setOwnerArea,
+  setProjectStakeholder,
+  setSpecFrozen,
+  unarchiveOrgProject,
+} from "../lib/api";
 import { alsoCarriesLine, areaGroups, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
 import { promotionCommitLine } from "../lib/coding-worktrees";
 import { relativeTime } from "../lib/format";
@@ -75,10 +89,48 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
     }
   };
 
+  // Archive Project (§app.organizations/archive): a confirm under the head, the server's refusal under it.
+  const [confirmArchive, setConfirmArchive] = createSignal(false);
+  const [archiveError, setArchiveError] = createSignal<string | null>(null);
+  const [archiving, setArchiving] = createSignal(false);
+  const archived = () => project()?.archived ?? null;
+  const setArchived = async (on: boolean) => {
+    const p = project();
+    if (!p || archiving()) return;
+    setArchiving(true);
+    try {
+      mutateOrg(await (on ? archiveOrgProject(props.orgId, p.id) : unarchiveOrgProject(props.orgId, p.id)));
+      setConfirmArchive(false);
+      setArchiveError(null);
+      const done = on ? `${p.name} archived.` : `${p.name} is back.`;
+      toast(done);
+      announce(done);
+    } catch (err) {
+      setArchiveError(errText(err));
+    } finally {
+      setArchiving(false);
+    }
+  };
+
   return (
     <InsightsPage
       title={project()?.name ?? "Project"}
       titleTip
+      actions={
+        <Show when={project() && !archived()}>
+          <button
+            type="button"
+            class="button button-destructive"
+            aria-expanded={confirmArchive()}
+            onClick={() => {
+              setConfirmArchive(!confirmArchive());
+              setArchiveError(null);
+            }}
+          >
+            Archive Project
+          </button>
+        </Show>
+      }
       meta={
         <Show when={org()}>
           {(o) => (
@@ -107,7 +159,44 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       busy={info.loading && !info()}
       titleRef={props.titleRef}
     >
-      <Show when={org()}>{(o) => <ProjectOverseerPanel org={o()} projectId={props.projectId} onBusy={setOverseerBusy} />}</Show>
+      <Show when={confirmArchive() && !archived() ? project() : null}>
+        {(p) => (
+          <div class="project-archive-confirm">
+            <Banner
+              tone="warn"
+              title={`${p().name} leaves the Projects list and its overseer stops looking. Nothing is deleted; Unarchive brings it back.`}
+              action={
+                <div class="button-row">
+                  <button type="button" class="button button-sm button-destructive" aria-disabled={archiving() ? "true" : undefined} onClick={() => void setArchived(true)}>
+                    Archive Project
+                  </button>
+                  <button type="button" class="button button-sm button-ghost" onClick={() => setConfirmArchive(false)}>
+                    Cancel
+                  </button>
+                </div>
+              }
+            />
+            <Show when={archiveError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+          </div>
+        )}
+      </Show>
+      <Show when={archived() ? project() : null}>
+        {(p) => (
+          <div class="project-archive-confirm">
+            <Banner
+              tone="info"
+              title={`${p().name} was archived${p().archived?.via === "overseer" ? " by you, via the Overseer" : ""} ${relativeTime(p().archived!.at)}. Its overseer is paused and nothing new starts here. Nothing was deleted.`}
+              action={
+                <button type="button" class="button button-sm" aria-disabled={archiving() ? "true" : undefined} onClick={() => void setArchived(false)}>
+                  Unarchive
+                </button>
+              }
+            />
+            <Show when={archiveError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+          </div>
+        )}
+      </Show>
+      <Show when={org()}>{(o) => <ProjectOverseerPanel org={o()} projectId={props.projectId} onBusy={setOverseerBusy} archived={!!archived()} />}</Show>
       <Show when={`${props.orgId}/${props.projectId}`} keyed>
         <ProjectCostCard orgId={props.orgId} projectId={props.projectId} tick={costTick()} />
       </Show>
@@ -227,7 +316,7 @@ function Stakeholder(props: { org: OrgDetail; project: OrgProject; onSet(id: str
                   </>
                 ) : (
                   <>
-                    Set by you <time title={x.at}>{relativeTime(x.at)}</time>.
+                    Set by you{x.via === "overseer" ? ", via the Overseer" : ""} <time title={x.at}>{relativeTime(x.at)}</time>.
                   </>
                 );
               })()}

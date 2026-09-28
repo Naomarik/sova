@@ -37,3 +37,7 @@ test("an update's log line says who posted it", () => {
   assert.equal(updateMeta({ by: "overseer", at: at(-1) }, NOW), "Posted by the overseer yesterday");
   assert.equal(updateMeta({ by: "operator", at: new Date(NOW - 3 * 3_600_000).toISOString() }, NOW), "Posted when you asked 3h ago");
 });
+
+test("an owner set through the Overseer: \"Set by you, via the Overseer\"", () => {
+  assert.equal(ownerChangeLine([{ at: at(-2), from: null, to: "p_kim00001", why: "operator", via: "overseer" }], NOW), "Set by you, via the Overseer 2d ago.");
+});

@@ -61,6 +61,9 @@
 .project-autonomy-level { flex: none; color: var(--color-ink); }
 .project-autonomy-meaning { color: var(--color-ink-2); }
 .project-overseer-settings { display: flex; flex-direction: column; gap: var(--space-2); }
+.project-extra { margin: var(--space-3) 0; }
+.project-extra-foot { align-items: center; }
+.project-archive-confirm { display: flex; flex-direction: column; gap: var(--space-2); }
 /* Limits (§app.project-overseer/limits): groups divided by a rule, each a grid of fields. */
 .project-limits { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-3); }
 .project-limits-group { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; margin: 0; padding: var(--space-3) 0 0; border: 0; border-top: var(--stroke-thin) solid var(--color-border); }

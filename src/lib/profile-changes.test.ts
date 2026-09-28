@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { NamedChange } from "../../shared/orgs";
-import { groupChanges, revertible, valueText } from "./profile-changes";
+import { groupChanges, revertible, valueText, writerWord } from "./profile-changes";
 
 const ch = (at: string, personId: string, field: NamedChange["field"], to: unknown, kind: NamedChange["by"]["kind"] = "operator", extra: Partial<NamedChange> = {}): NamedChange => ({
   at,
@@ -52,4 +52,14 @@ test("the creating name line and undone changes can't be reverted; the rest can"
   assert.equal(revertible({ field: "name", from: "Bobby", at: "c" }, undone), true);
   assert.equal(revertible({ field: "voice", from: null, at: "b" }, undone), false);
   assert.equal(revertible({ field: "voice", from: null, at: "d" }, undone), true);
+});
+
+test("the writer word: you, via the Overseer, only for the operator's change made through it (§app.overseer/org-attribution)", () => {
+  assert.equal(writerWord({ kind: "operator" }), "you");
+  assert.equal(writerWord({ kind: "operator", via: "overseer" }), "you, via the Overseer");
+  assert.equal(writerWord({ kind: "overseer" }), "overseer");
+  assert.equal(writerWord({ kind: "wrapup" }), "wrap-up");
+  const via = { kind: "operator" as const, via: "overseer" as const };
+  const groups = groupChanges([ch("2026-09-28T10:00:01.000Z", "p1", "role", "a", "operator", { by: via }), ch("2026-09-28T10:00:00.000Z", "p1", "skills", ["b"], "operator")]);
+  assert.equal(groups.length, 2, "the user's own change and one via the Overseer are separate acts");
 });

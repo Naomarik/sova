@@ -1378,8 +1378,9 @@ export function Sidebar(props: {
   /** Paths waiting on the operator, for the org heads' warn dot. */
   const orgWaiting = createMemo(() => new Set(orgNeedsYou().map((r) => r.session.path)));
   const waitingIn = (rows: readonly SessionSummary[]) => rows.filter((r) => orgWaiting().has(r.path)).length;
-  /** ONE rule for the region and its spine door: any org row among the hits. */
-  const showOrgs = () => !!props.sessions && orgHits().length > 0;
+  /** ONE rule for the region and its spine door: any org row among the hits (an archived project's
+      counts only while it waits on you, in the region's own Needs you). */
+  const showOrgs = () => !!props.sessions && (orgs().length > 0 || orgNeedsYou().length > 0);
   const [orgsStored, setOrgsStored] = createSignal(storedOrgsOpen(readKey(sessionStorage, ORGS_KEY)));
   const orgsOpen = () =>
     orgsRegionOpenRule({

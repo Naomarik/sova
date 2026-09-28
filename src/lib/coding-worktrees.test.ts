@@ -85,6 +85,7 @@ test("the merge line: merged into its target; merged before, with commits since;
 test("row words", () => {
   assert.equal(startedBy(wt()), "Started by the overseer");
   assert.equal(startedBy(wt({ startedBy: "operator" })), "Started by you");
+  assert.equal(startedBy(wt({ startedBy: "operator", via: "overseer" })), "Started by you, via the Overseer");
   const order = worktreeOrder([wt({ sessionId: "a", createdAt: "2026-09-27T09:00:00Z" }), wt({ sessionId: "b", createdAt: "2026-09-27T11:00:00Z" })]).map((w) => w.sessionId);
   assert.deepEqual(order, ["b", "a"]);
 });

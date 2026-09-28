@@ -5,6 +5,7 @@ import type { AttentionItem, SessionOrg, SessionSummary } from "../../shared/pro
 import {
   eyeLabel,
   doneOpen,
+  inArchivedProject,
   inOrgRegion,
   NO_PROJECT,
   orgRowState,
@@ -275,4 +276,21 @@ test("orgProjectItems: projects to pick a main stakeholder for, newest first, na
   assert.deepEqual(orgProjectItems(digest, "port").map((x) => x.id), ["a"]);
   assert.deepEqual(orgProjectItems(digest, "acme").map((x) => x.id), ["b", "a"]);
   assert.deepEqual(orgProjectItems(undefined), []);
+});
+
+test("an archived project has no heading, eye or row, and no count; its waiting session stays in the region's Needs you (§app.organizations/archive)", () => {
+  const archived = (o: Partial<SessionOrg>) => org({ projectId: "p2", projectName: "Old site", projectArchived: true, ...o });
+  const rows = [
+    session("a", { org: org() }),
+    session("b", { org: archived({}) }),
+    session("c", { org: archived({ kind: "overseer" }) }),
+    session("d", { org: archived({}), baton: { needsYou: { from: "Tony", question: "Which host?", since: 5 } } as never }),
+  ];
+  assert.equal(inArchivedProject(rows[1]!), true);
+  const sections = orgSections(rows);
+  assert.deepEqual(sections.map((o) => o.projects.map((p) => p.name)), [["Rakiba site"]]);
+  assert.equal(regionCount(sections), 1);
+  const waiting = orgNeedsYouRows({ items: [] }, rows);
+  assert.deepEqual(waiting.map((r) => r.session.id), ["d"]);
+  assert.deepEqual(orgSections(rows.slice(1)), [], "an org with only archived projects has no section");
 });

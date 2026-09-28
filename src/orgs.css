@@ -337,3 +337,6 @@
 }
 .org-state-label > .text-num { margin-left: auto; color: var(--color-ink-muted); font-weight: var(--fw-regular); }
 .org-done { border-top: var(--stroke-thin) solid var(--color-border); }
+/* An archived project (§app.organizations/archive): its row, then Unarchive beside it. */
+.orgs-archived-row { display: flex; align-items: center; gap: var(--space-2); }
+.orgs-archived-row > .list-row { flex: 1; min-width: 0; }

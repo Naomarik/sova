@@ -226,7 +226,8 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   `projects.json`): its documentation is written only by the reconciler's promotion.
 - Sova cannot stop a coding session's own file tools from editing `claims/`; instead, a frozen
   project records a hash of its current spec after every promotion and reports `editedOutside`
-  when the spec no longer matches it.
+  when the spec no longer matches it. The hash covers the whole spec, so a builder recording
+  `evidence` or `code` reports it too: in a frozen project only promotion writes the spec.
 
 ## §app.requirements/promotion — Piecemeal, explicit promotion
 

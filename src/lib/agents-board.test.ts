@@ -73,8 +73,10 @@ test("state: a question outranks work, work outranks what the last turn left, th
   assert.equal(boardState(sess("a", { workers: { working: 1, total: 1 } }), null, false).state, "working", "no live record: the list's counts");
   const failed = boardState(sess("a", { turnError: { message: "429" } }), null, false);
   assert.deepEqual(failed, { state: "needs-you", reason: "Last turn failed: 429" });
-  assert.equal(boardState(sess("a", { signals: { kinds: ["asks-you"], at: 5 } } as Partial<SessionSummary>), null, false).state, "needs-you");
-  assert.equal(boardState(sess("a", { signals: { kinds: ["asks-you"], at: 5 }, seenAt: 6 } as Partial<SessionSummary>), null, false).state, "idle", "seen since: nothing new");
+  assert.equal(boardState(sess("a", { signals: { kinds: ["looping"], at: 5 } } as Partial<SessionSummary>), null, false).state, "needs-you");
+  assert.equal(boardState(sess("a", { signals: { kinds: ["looping"], at: 5 }, seenAt: 6 } as Partial<SessionSummary>), null, false).state, "idle", "seen since: nothing new");
+  const asking = { align: { openDocs: 1, openQuestions: 2, questionDocs: 1, lead: { id: "al_1", title: "Export" } } };
+  assert.deepEqual(boardState(sess("a", { ...asking, seenAt: 99 }), null, false), { state: "needs-you", reason: "2 open questions in al_1 Export" }, "open questions need you until answered");
   assert.equal(boardState(sess("a", { archived: true }), null, false).state, "archived");
   assert.equal(boardState(sess("a", { archived: true }), agent("/s/a.jsonl"), false).state, "idle", "an archived session something runs in is not shown as archived");
 });

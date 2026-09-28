@@ -48,7 +48,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   coordinator and monitor every new team gets (absent = off), written by Sova's Settings → Teams and
   read by the subagents extension at team creation), worktrees: the session's `worktrees` custom
   entry (the tracked set, whole snapshot, newest on the branch wins) and its `worktree-merge`
-  extension message (the merge card), read by Sova and by the subagents spawn gate.
+  extension message (the merge card), read by Sova and by the subagents spawn gate; mode's `align`
+  tool: each result's `details` (`{v: 1, doc?, changes, line, exempt?}`, the touched alignment's
+  whole snapshot, newest per id on the branch wins), read by Sova for the card, the composer chip
+  and the session list, and its hidden `align-state` / `align-nudge` custom messages, which Sova
+  must keep hidden (`display: false`); an older session's `align-doc` custom entries are read-only.
   Not covered by Sova's tsconfig, with these exceptions: the server imports
   `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts` and `spec.ts` (`server/mode-state.ts`,
   `server/delegate.ts`, `server/spec-settings.ts`; hence `allowImportingTsExtensions`),
@@ -62,7 +66,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   strict parse, reader and atomic writer for Settings → Teams), `server/worktrees-state.ts` imports
   `pi-config/extensions/worktrees/state.ts` (builtins only: the `worktrees` entry, its fold, the
   merge card's details) and `git.ts` (builtins only: the extension's own "is this branch merged"
-  probe, git by argv), `server/insights.ts` imports
+  probe, git by argv), `server/transcript.ts` and `server/align-state.ts` import
+  `pi-config/extensions/mode/align.ts` (builtins only: the `align` tool's details shape, its strict
+  check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
+  the session list's `SessionSummary.align` read what the extension writes, with its own code),
+  `server/insights.ts` imports
   `pi-config/extensions/usage-status/fetch.ts`, `server/worker-context.ts` and `server/delegate.ts`
   import `pi-config/extensions/claude-code/context-window.ts` (imports nothing: the one Claude Code
   window rule, `[1m]` or natively 1M else 200k, and the list rule that adds `opus[1m]` and

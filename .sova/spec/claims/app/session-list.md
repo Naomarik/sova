@@ -97,24 +97,26 @@
                      unread dot   7px accent dot                 "New activity. "  otherwise, when `unread` is set
                    The error takes the dot's place, never sits beside it: an errored reply since you
                    looked is new activity too. Both come from the server and clear on a visit alike.
-                   Then at most ONE needs-you mark (§app.decisions/attention-signals), the most urgent
-                   kind first:
-                     asks-you     chat,         --color-accent   "Asks you. "
+                   Then at most ONE needs-you mark, the most urgent kind first:
+                     questions    chat + count, --color-accent   "3 open questions. "  (§chat.alignment/session-mark)
                      looping      refresh,      --status-warn    "May be looping. "  (a subagent's: "A subagent may be stuck. ")
-                   The kind comes from the server (the session's `signals.kinds`, and its subagents'
-                   `workerSignals` counts); kind precedence first, then the session's own signal over
-                   its subagents'. The glyph sits in a span whose `title` says the fact in one sentence
-                   ("The last reply asks you something.", "The last turn looks like it went in
-                   circles.", "A subagent looks stuck.").
-                   Kinds differ in glyph as well as tone. The session's own mark is gone once the session
-                   is seen after it was classified, and no mark shows while this tab runs a turn there.
+                   Open questions come from the session's `align` counts; looping from the server's
+                   attention signals (the session's `signals.kinds`, and its subagents'
+                   `workerSignals` counts, §app.decisions/attention-signals); kind precedence first,
+                   then the session's own signal over its subagents'. The glyph sits in a span whose
+                   `title` says the fact in one sentence ("3 open questions in 2 alignments", "The
+                   last turn looks like it went in circles.", "A subagent looks stuck.").
+                   Kinds differ in glyph as well as tone. The looping mark is gone once the session
+                   is seen after it was classified; open questions stay until they are answered, the user moves on, or align is turned off. No
+                   mark shows while this tab runs a turn there.
                    Every line-1 mark is hidden on the open session,
                    so this row (the open one) has none; on another row line 1 reads:
                    <p class="list-title"><span class="session-unread" aria-hidden="true"></span><span
                      class="visually-hidden">New activity. </span><span class="session-signal-wrap"
-                     title="The last reply asks you something."><span class="icon icon-sm session-signal
-                     session-signal-asks" style="--icon:url(/icons/chat.svg)" aria-hidden="true"></span></span><span
-                     class="visually-hidden">Asks you. </span>{title}</p>
+                     title="3 open questions in 2 alignments"><span class="icon icon-sm session-signal
+                     session-signal-questions" style="--icon:url(/icons/chat.svg)" aria-hidden="true"></span><span
+                     class="session-signal-count text-num" aria-hidden="true">3</span></span><span
+                     class="visually-hidden">3 open questions. </span>{title}</p>
                    The subagent marks come only from `workerSignals`, which the server sends only while
                    they apply. -->
               <p class="list-title">Add a watch endpoint for TUI sessions</p>
@@ -618,8 +620,8 @@ label a person reads says "sessions pane".
 ## §app.session-list/needs-you — Needs you
 
 The very top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
-errored turn, a subagent that ended in an error, or a finished turn that asks you something or is
-stuck. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
+errored turn, a subagent that ended in an error, an idle session with open alignment questions
+(§chat.alignment/session-mark), or a stuck subagent. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
 from `GET /api/overseer/attention`, the list the Overseer's "{a} need you" counts — less the
 organization sessions (§app.session-list/ordinary-surfaces), which wait in the Organizations
 region's own Needs you (§app.session-list/organizations). **The Overseer's count still includes
@@ -657,7 +659,7 @@ and the region has **no actions of its own** beyond its twist.
 - **Order: newest first**, by each session's newest act item (`since`); ties break on path.
 - **Rows** are the same `SessionRow` as everywhere else — rail, marks, meta line, accessible name —
   with one difference: **line 2 is the digest's sentence** for the session's newest act item
-  ("Asks you: …", "Waiting on a dialog.", "429 rate limited", "1 subagent ended in an error."), in place of the gist
+  ("3 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited", "1 subagent ended in an error."), in place of the gist
   or the draft preview, and shown even with summaries hidden in Settings › General. Its `title` is
   every act sentence the session has, newest first. An act item with no sentence leaves line 2 as
   the row draws it elsewhere. The rules live in `src/lib/needs-you.ts`.

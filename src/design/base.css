@@ -5461,19 +5461,27 @@ a.subagent-row { text-decoration: none; }
    and the Decisions tab's key and provider lines.
    ============================================================================= */
 
-/* A finished turn that needs you: one glyph after the unread dot (or the turn-error mark), before
+/* A session that needs you: one glyph after the unread dot (or the turn-error mark), before
    the draft pencil. It is inline text like the pencil, not an indicator, so line 1 stays the
-   title's. One mark per row, the most urgent kind: asks, then looping. The kind differs in shape
-   as well as tone, so hue never carries it alone: asks-you is a speech bubble in the accent (the
-   accent's one spend, "this needs you"), looping the refresh arrows in warn. The glyph is aria-hidden; the hidden word beside it names the kind.
-   A wrapping span may carry the tooltip; it adds no box of its own. */
+   title's. One mark per row, the most urgent kind: open alignment questions (§chat.alignment/
+   session-mark), then looping. The kind differs in shape as well as tone, so hue never carries it
+   alone: open questions are a speech bubble in the accent (the accent's one spend, "this needs
+   you") followed by their count, looping the refresh arrows in warn. The glyph is aria-hidden; the
+   hidden words beside it name the kind. A wrapping span may carry the tooltip; it adds no box of its own. */
 .list-title .session-signal {
   width: 1em;
   height: 1em;
   margin-right: var(--space-1);
   vertical-align: -0.125em;
 }
-.session-signal-asks    { color: var(--color-accent); }
+.session-signal-questions { color: var(--color-accent); }
+.list-title .session-signal-count {
+  margin-right: var(--space-1);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  color: var(--color-accent);
+}
+.list-title .session-signal-questions { margin-right: 2px; }
 .session-signal-looping { color: var(--status-warn); }
 
 /* The tag's status word joins line 3's facts, "2h ago · done · model", in the meta's own

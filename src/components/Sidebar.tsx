@@ -504,13 +504,21 @@ function SessionRow(props: {
                 <span class="visually-hidden">New activity. </span>
               </Match>
             </Switch>
-            {/* What the last finished turn says about you (Settings → Decisions): one mark, the most
-                urgent kind, its shape and word per kind. Gone once you've seen the session. */}
+            {/* What the session waits on you for: its open alignment questions (a count, until they are
+                answered), else what the last finished turn says (Settings → Decisions, gone once you've
+                seen the session). One mark, the most urgent kind, its shape and word per kind. */}
             <Show when={needsYou()}>
               {(m) => (
                 <>
                   <span class="session-signal-wrap" title={signalTitle(m())}>
                     <Icon name={SIGNAL_ICON[m().kind]} small class={SIGNAL_CLASS[m().kind]} />
+                    <Show when={m().kind === "questions" && m().align}>
+                      {(a) => (
+                        <span class="session-signal-count text-num" aria-hidden="true">
+                          {a().openQuestions}
+                        </span>
+                      )}
+                    </Show>
                   </span>
                   <span class="visually-hidden">{signalWords(m())}</span>
                 </>
@@ -527,7 +535,7 @@ function SessionRow(props: {
           {/* A never-sent session kept in the list by its stored draft: line 2 says so, in the place
               a summary would take, so the row is as tall as its neighbours. The pencil is
               decorative; the hidden word is what the row's accessible name says. */}
-          {/* In Needs you, line 2 is why the session is there ("Asks you: …"), in place of the
+          {/* In Needs you, line 2 is why the session is there ("2 open questions in al_3 …"), in place of the
               draft preview or the gist: that sentence is the region's reason to exist. */}
           <Show when={props.detail}>
             {(d) => (

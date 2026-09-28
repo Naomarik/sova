@@ -20,14 +20,14 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Folder head, an agent at work in it | Busy's dot, wordless, pulsing · `title`: "An agent is working in this folder" · hidden clause in the heading: ", an agent is working here" |
 | Row unread dot (line 1) | wordless accent dot · hidden: "New activity. " |
 | Row turn-error mark (line 1, in the unread dot's place; §app.overseer/seen) | wordless alert circle in error · hidden: "Turn failed. " · `title`: "The last turn stopped with an error: {message}" · without a message: "The last turn stopped with an error." |
-| Row needs-you mark (line 1, after the unread dot or turn-error mark; one per row, §app.decisions/attention-signals) | wordless glyph · hidden: asks-you "Asks you. " · looping "May be looping. " · a stuck subagent "A subagent may be stuck. " · `title`: "The last reply asks you something." · "The last turn looks like it went in circles." · "A subagent looks stuck." |
+| Row needs-you mark (line 1, after the unread dot or turn-error mark; one per row, §chat.alignment/session-mark, §app.decisions/attention-signals) | open questions: speech bubble + `{n}` · hidden "{n} open questions. " (1: "1 open question. ") · `title` "{n} open questions in {m} alignments" (1 alignment: "{n} open questions in {al_N} {title}") · otherwise a wordless glyph · hidden: looping "May be looping. " · a stuck subagent "A subagent may be stuck. " · `title`: "The last turn looks like it went in circles." · "A subagent looks stuck." |
 | Row meta title, when tagged | Topic: {topic word} · status: {status word} (tagged automatically) · without a topic: Status: {status word} (tagged automatically) |
 | Row status word (line 3, between time and model) | done · in progress · abandoned · blocked (lowercase) |
 | Topic words (search; §app.decisions/session-tags) | feature · bug fix · refactor · tests · docs · infra · research · planning · review · data · config · experiment · chore · other |
 | Untitled row | Untitled (muted) |
 | Draft row (a never-sent session with a stored draft) | title Untitled (muted) · line 2: `pencil` icon, then the draft's first non-empty line, about 80 characters · image-only: `1 image` / `2 images` · accessible name and `title`: Draft: {preview} |
 | Needs you region head (§app.session-list/needs-you) | Needs you · {n} where n = its rows · `title`: "The {n} sessions waiting on you, newest first." (1: "The 1 session waiting on you.") |
-| Needs you row, line 2 | the digest's sentence for the session's newest act item, verbatim ("Asks you: …", "Waiting on a dialog.", "1 subagent ended in an error.") · `title`: every act sentence, newest first |
+| Needs you row, line 2 | the digest's sentence for the session's newest act item, verbatim ("2 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "1 subagent ended in an error.") · `title`: every act sentence, newest first |
 | Needs you cut note | Some sessions may not be listed: this list stops at the 30 most urgent items. |
 | Needs you spine door | wordless `alert-circle` over {n} · `aria-label` and `title`: Needs you · {n} sessions (1: "1 session") |
 | Overseer entry button (eye) | wordless · badge: {unread}, "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
@@ -98,6 +98,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Wake nudge card, closed | `Wake nudge {id}` · {reason, or blank} · `fired {HH:MM}` (· `{late} late`, only when overdue) |
 | Wake nudge card, open | the fired message, verbatim, all four lines |
 | Wake nudge in Inputs Only / the Timeline | {reason}, or `Wake nudge {id}` when it carries none |
+| Alignment card (§chat.alignment/card) | eyebrow `{al_N} · Alignment · v{rev}` · chips Aligning · Confirmed · Implementing · Done · Dropped · meta `{k} of {n} open` (none: `No questions yet`; none left open: `All {n} decided`) · `· {change line}` · question chips Open · Decided · Dropped · `Recommended: {choice} — {why}` · `Decided: {text} · you` / `· accepted recommendation` · `Dropped: {why}` · sections `Findings · {n}` · `Approach · {n}` · `Rejected · {n}` |
+| Alignment revision row | `{al_N} v{rev} {title} · {change line}` · change words (the extension's `changeLine`, joined by " · "): created · created from file · +q11 +f4 · q3, title edited · −f2 −a1 · q1, q3 decided · q1, q2 accepted · q3 reopened · q3 dropped · → implementing · → done · → open · dropped |
+| Alignment exempt row | No alignment needed: {why} |
 
 ## §design.copy-deck/message-actions — Message actions (§chat.transcript/message-actions)
 
@@ -146,6 +149,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Placeholder, streaming | ≥768: Steer the current turn…—Enter sends, Shift+Enter adds a line · <768: Steer the current turn… |
 | Buttons | `Send` · streaming: `Steer` + `Stop` · after Stop is pressed: "Stopping…" in run status |
 | Run status | `Working` + detail: `· thinking` / `· writing` / `· running {tool}` · stopping: `Stopping…` · while ≥ 1 worker runs, the subagents trigger beside it with the counts only: `2 subagents` · `1 subagent · 2 team members` |
+| Alignment chip (§chat.alignment/chip) | `{n} aligns · {open}/{total}` (1: `1 align · …`) · `aria-label` "{n} open alignments, {open} of {total} questions open — show alignments" · menu rows: {title}, then "{summary} · {k} of {m} open" (nothing open: "{summary} · {status}") · off-screen toast: "That alignment isn't in the transcript on screen." |
 | Reason: TUI-live | Read only while this session is open in the TUI. |
 | Reason: busy (server `code:"busy"`) | pi is busy with another turn. Send when it finishes. |
 | Reason: connecting / reconnecting / gave up | see Connection above |
@@ -470,7 +474,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Refused fallback (under the row, error) | {server reason}. Your saved fallback model is unchanged. |
 | Fallback notes (under the row, warn) | {server note, without its "Fallback model:" label}. · Not verified, because {backend} couldn't list its models ({why}): Fallback model. |
 | Options failed (banner-warn) | **Couldn't check which models are offered.** Your saved choice stays, marked not verified. [Check Again] |
-| Features (legend) | Features · Flag sessions that need you — After each finished turn, checks whether it asks you something or is going in circles, and marks the row. The Overseer lists them too. · Tag sessions — Gives each session a topic and a status word you can search. |
+| Features (legend) | Features · Flag sessions going in circles — After a long turn, checks whether it went in circles, and marks the row. The Overseer lists them too. · Tag sessions — Gives each session a topic and a status word you can search. |
 | Unavailable (replaces a switched-on feature's hint, warn) | Unavailable: Jev is off and no fallback model is set. Nothing is checked. · Unavailable: Jev can't answer ({reason}) and no fallback model is set. Nothing is checked until one of them can. |
 | Features note (under the switches, warn, when they don't already say it) | {server reason} The features stay unavailable and send nothing until one is. |
 | Never send (legend) | Never send · switch Never send TUI sessions — Sessions started in the pi terminal stay on this machine. · Folders — One per line. Sessions in these folders, and their subfolders, are never checked. · issue: "{line}" isn't a full path. Start it with / or ~/. · That's {n} folders. Use at most 100. |

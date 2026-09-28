@@ -199,6 +199,7 @@ export type EntryKind =
   | "info" // session_info, model_change, compaction, labels, branch summaries etc.
   | "report" // subagent reports and other long extension messages (custom_message); see `report`
   | "worktree-merge" // a merge the session recorded (pi-config worktrees extension); see `worktreeMerge`
+  | "align" // an `align` tool result that changed an alignment, or an exemption (pi-config mode extension); see `align`
   | "unknown";
 
 /** A normalized transcript row. `raw` carries the full parsed JSONL entry for advanced rendering. */
@@ -256,7 +257,62 @@ export interface TranscriptItem {
   /** kind "worktree-merge" only: the `worktree-merge` extension message's details (§chat.worktrees/merge-card).
       `text` is the one line the model read ("Merged feat/x into master at abc1234, 5 commits, +120 −30"). */
   worktreeMerge?: WorktreeMergeInfo;
+  /** kind "align" only: the `align` tool result's `details`, checked by the extension's own
+      `normalizeAlignDetails` (pi-config/extensions/mode/align.ts, §chat.alignment/state): the
+      touched document's snapshot after the call, or an exemption. `toolCallId` pairs it with its
+      call, whose tool-call row renders nothing once this row is there. A failed call, a `get`, or
+      details that don't check out stay an ordinary tool-result. */
+  align?: AlignRowInfo;
   raw: unknown;
+}
+
+/** An alignment (§chat.alignment/document), as the `align` tool's snapshot carries it. The
+    extension's AlignDocument (pi-config/extensions/mode/align.ts) is this shape. */
+export interface AlignDocInfo {
+  id: string; // "al_3"
+  title: string;
+  summary: string;
+  findings: { id: string; text: string }[];
+  approach: { id: string; text: string }[];
+  rejected: { id: string; option: string; why: string }[];
+  questions: AlignQuestionInfo[];
+  /** The stored lifecycle; status is derived (alignStatus): implementing/done/dropped from here,
+      else "aligning" while a question is open or there are none, else "confirmed". */
+  phase: "open" | "implementing" | "done" | "dropped";
+  droppedWhy?: string;
+  next: { f: number; a: number; x: number; q: number };
+  rev: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlignQuestionInfo {
+  id: string; // "q3"
+  topic: string;
+  ask: string;
+  context?: string;
+  options?: { label: string; tradeoff: string }[];
+  recommendation: { choice: string; why: string };
+  decision?: { text: string; by: "user" | "accepted-recommendation"; at: string };
+  dropped?: { why: string; at: string };
+}
+
+export type AlignChangeInfo =
+  | { kind: "created"; fromFile?: true }
+  | { kind: "added" | "edited" | "removed"; ids: string[] }
+  | { kind: "decided" | "reopened" | "question-dropped"; q: string }
+  | { kind: "accepted"; qs: string[] }
+  | { kind: "status"; to: "implementing" | "done" | "open" }
+  | { kind: "dropped" };
+
+/** An `align` call's details: `doc` (the snapshot after a changing call) or `exempt`; `line` is the
+    changes in words ("q3 decided · +q11"). */
+export interface AlignRowInfo {
+  v: 1;
+  doc?: AlignDocInfo;
+  changes: AlignChangeInfo[];
+  line: string;
+  exempt?: { why: string };
 }
 
 /** A merge the session recorded: by its `worktree merge` tool, or detected after one of its turns. */
@@ -305,8 +361,8 @@ export interface ReportInfo {
   preview: string;
   /** The extension cut the message at 4000 characters ("[Use agent_transcript for more.]"). */
   truncated: boolean;
-  /** source "align-doc" only: the mode extension's align document (custom entry, full snapshot per
-      revision; only the newest on the branch becomes a row). `body` is its markdown verbatim,
+  /** source "align-doc" only: an OLDER session's align document (custom entry, full snapshot per
+      revision, from before the `align` tool; read-only; only the newest on the branch becomes a row). `body` is its markdown verbatim,
       open questions as "1. [ ] …" / "2. [x] … — decision" checklist items; `agent` is absent. */
   align?: AlignReportInfo;
   /** source "explain-doc" only: a forked /explain subagent finished and wrote its HTML page +
@@ -2366,7 +2422,7 @@ export type AttentionKind =
   | "context-full"    // context ≥85%
   | "working"         // running now
   | "stale"           // idle web session >3 days, not archived, no draft
-  | "asks-you"        // decisions: the last reply asks the user something (SessionSignals.kinds)
+  | "open-questions"  // an idle session's alignments have open questions (SessionSummary.align, §chat.alignment/session-mark)
   | "looping"         // decisions: the session or a worker is repeating itself
   | "baton-needs-you" // a baton session: the baton is with the operator, or a person needs their link
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
@@ -2658,8 +2714,8 @@ export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
 //                              404 no device)
 
 /** The act-tier kinds a phone notification can be about (server/attention.ts). */
-export type PushKind = "needs-input" | "asks-you" | "error" | "looping" | "baton-needs-you" | "worker-error";
-export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "asks-you", "error", "looping", "baton-needs-you", "worker-error"];
+export type PushKind = "needs-input" | "open-questions" | "error" | "looping" | "baton-needs-you" | "worker-error";
+export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "looping", "baton-needs-you", "worker-error"];
 
 /** `<stateRoot>/push.json`. */
 export interface PushSettings {
@@ -3109,8 +3165,10 @@ export interface DecisionProbeResult {
   chain: DecisionChainStatus;
 }
 
-/** Attention-signal kinds the thresholds (fixed in server/attention-signals.ts) derive from raw answers. */
-export type SignalKind = "asks-you" | "looping";
+/** Attention-signal kinds the thresholds (fixed in server/signals-store.ts) derive from raw answers.
+    Only "looping" is left: whether a session waits on the user's answers is its open alignment
+    questions (SessionSummary.align), never a model's guess. */
+export type SignalKind = "looping";
 
 /** One classified finished turn of a session (<stateRoot>/signals.json keeps the raw answers). */
 export interface SessionSignals {
@@ -3119,8 +3177,6 @@ export interface SessionSignals {
   /** Id of the last assistant entry on the active branch when classified (the cache key). */
   turnId: string;
   provider: DecisionProviderId;
-  /** P(the reply ends by asking the user something), 0..1. */
-  asksUser?: number;
   /** score in [0, 2]: 0 progressing … 2 clearly looping. */
   stuck?: { score: number; confidence: number };
   /** The kinds that fire under the server's thresholds; [] = none. The client never re-derives
@@ -3149,9 +3205,27 @@ export interface SessionTags {
   user?: string[];
 }
 
-// Declaration merge: the two overlays SessionSummary gains (listSessions sets them from the
-// stores, never from the (mtime,size) cache). Absent = not classified, feature off, or an older server.
+export interface SessionAlign {
+  openDocs: number;
+  openQuestions: number;
+  questionDocs: number;
+  lead?: { id: string; title: string };
+}
+
+// Declaration merge: what SessionSummary gains beyond its core fields. `signals`, `workerSignals`
+// and `tags` are overlays listSessions sets from the stores, never from the (mtime,size) cache;
+// `align` is read from the file itself and cached with the summary. Absent = not classified,
+// feature off, nothing waiting, or an older server.
 export interface SessionSummary {
+  /** The session's open alignments while it waits on the user (§chat.alignment/session-mark), folded
+      from its file's `align` tool results along the active branch (server/align-state.ts, read
+      incrementally), deterministic, no model. Present only while an alignment is open (not done
+      or dropped), align is on (the newest `mode` entry on the branch), and the newest align result
+      that changed a document comes after the user's last prompt (a wake nudge or link message is
+      not one): once the user has moved on, the questions stay on the card and the chip only.
+      `questionDocs` = the open alignments that have open questions; `lead` = the last-touched of
+      those, for the wording. */
+  align?: SessionAlign;
   signals?: SessionSignals;
   /** Worker checks of this session's subagents: how many look stuck; details are in the attention
       digest. (A worker that ended in an error is the digest's deterministic "worker-error".) */

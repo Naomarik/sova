@@ -47,3 +47,104 @@
 
 /* An earlier align-doc row (a live append brought a newer revision): no row, no thread gap. */
 .entry:has(> .align-superseded) { display: none; }
+
+/* ---- ALIGNMENTS (§chat.alignment/card): the `align` tool's card in the transcript, an earlier
+   revision's one-line row, and their question list. Read-only: nothing here is a control
+   except the native <details> twists. */
+
+.align-doc {
+  max-width: var(--measure);
+  padding: var(--space-3) var(--space-4);
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+.align-doc-head { display: grid; gap: var(--space-1); }
+.align-doc-eyebrow {
+  margin: 0;
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+.align-doc-eyebrow .text-mono { text-transform: none; letter-spacing: 0; }
+.align-doc-titlerow { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.align-doc-title {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--fs-heading-m);
+  line-height: var(--lh-heading-m);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.align-doc-meta { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.align-doc-summary { margin: 0; color: var(--color-ink-2); }
+.align-doc-dropped { margin: 0; color: var(--color-ink-2); }
+
+/* Body text is --fs-body in ink / ink-2 (AA on the card); muted is kept for ids, eyebrow, meta
+   and the decision's "· you" tail. An open question carries its recommendation in a tinted,
+   ruled block; a decided one keeps the plain line, one step quieter. */
+.align-questions { list-style: none; margin: 0; padding: 0; display: grid; }
+.align-q {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--color-border);
+}
+.align-q:last-child { padding-bottom: var(--space-1); }
+.align-q > p { margin: 0; overflow-wrap: anywhere; }
+.align-q-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.align-q-id { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.align-q-topic { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.align-q-ask { color: var(--color-ink); }
+.align-q-context { color: var(--color-ink-2); }
+.align-q-options {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: grid;
+  gap: var(--space-2);
+  color: var(--color-ink-2);
+}
+.align-q-options strong { color: var(--color-ink); }
+.align-q-rec,
+.align-q-decision { color: var(--color-ink-2); }
+.align-q-label { font-weight: var(--fw-semibold); color: var(--color-ink); }
+.align-q-by { color: var(--color-ink-muted); }
+.align-q[data-state="open"] .align-q-rec {
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-accent);
+  border-radius: 0 var(--r-xs) var(--r-xs) 0;
+  background: var(--color-accent-tint);
+  color: var(--color-ink);
+}
+.align-q[data-state="decided"] .align-q-ask,
+.align-q[data-state="decided"] .align-q-rec strong { color: var(--color-ink-2); }
+.align-q[data-state="decided"] .align-q-decision { color: var(--color-ink); }
+.align-q[data-state="dropped"] .align-q-ask { color: var(--color-ink-2); }
+
+/* Findings, approach, rejected: folded, since the questions are what the user answers. */
+.align-section { max-width: none; }
+.align-section > .disclosure-body,
+.align-rev > .disclosure-body { white-space: normal; }
+.align-list { margin: 0; padding-left: var(--space-5); display: grid; gap: var(--space-2); font-size: var(--fs-body); line-height: var(--lh-body); color: var(--color-ink-2); }
+.align-item-id { color: var(--color-ink-muted); }
+
+/* An earlier revision: one caption line; open, that revision's body under the disclosure rule. */
+.align-rev-summary { min-width: 0; }
+.align-rev-id { color: var(--color-ink-2); }
+.align-rev-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.align-rev > .disclosure-body { display: grid; gap: var(--space-2); max-width: var(--measure); }
+
+/* The composer's alignment chip (§chat.alignment/chip) sits right before the Inputs trigger; the
+   pair is pushed to the row's right end together. */
+.run-status-align { margin-left: auto; }
+@media (min-width: 768px) {
+  .model-menu.action-menu.align-menu { width: 340px; max-width: calc(100vw - var(--space-6)); }
+}
+.align-menu-item .mode-option-note { white-space: normal; }
+.align-menu-id { color: var(--color-ink-muted); }
+.align-doc code,
+.align-rev code { font-family: var(--font-mono); font-size: 0.92em; padding: 0 var(--space-1); border-radius: var(--r-xs); background: var(--color-sunken); overflow-wrap: anywhere; }

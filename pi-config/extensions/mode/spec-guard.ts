@@ -605,3 +605,97 @@ export async function draftForeign(
 		return undefined;
 	}
 }
+
+// ── A turn across trees ──────────────────────────────────────────────────────
+
+/** One work tree as a run found it: the session's own, or a worktree it tracks (a worker may write there). */
+export interface TreeStart {
+	view: GitView;
+	/** The spec root inside it, if any. */
+	root?: string;
+	/** Each draft's newest spec/ mtime (drafts are ignored by Git). */
+	drafts: Record<string, number>;
+}
+
+/** What a run did to one tree. */
+export interface TreeTurn {
+	/** Anything changed: HEAD, a changed path or its mtime, a draft. */
+	changed: boolean;
+	/** The current spec (not a draft) changed: a promotion landed there, committed or not. */
+	specChanged: boolean;
+	/** The foreign § it changed (current spec since the run's HEAD, and each edited draft); undefined when not computable. */
+	foreign?: string[];
+}
+
+export async function treeStart(dir: string, io: SpecIO = localIO): Promise<TreeStart | undefined> {
+	const view = await gitView(dir, io);
+	if (!view) return undefined;
+	const root = await findSpecRoot(view.top, (p) => io.exists(p));
+	return { view, ...(root ? { root } : {}), drafts: root ? await draftStamps(root, io) : {} };
+}
+
+/** Compare a tree with how the run found it. Never throws. */
+export async function treeTurn(start: TreeStart, core: string, io: SpecIO = localIO): Promise<TreeTurn> {
+	try {
+		const end = await gitView(start.view.top, io);
+		const drafts = start.root ? draftsTouched(start.drafts, await draftStamps(start.root, io)) : [];
+		const changed = viewChanged(start.view, end) || drafts.length > 0;
+		if (!changed || !end) return { changed, specChanged: false, foreign: [] };
+		const specRel = start.root ? relative(start.view.top, join(start.root, SPEC_REL)) : SPEC_REL;
+		const isSpec = (p: string) => p.startsWith(`${specRel}/`) && !p.startsWith(`${specRel}/drafts/`);
+		let specChanged = Object.entries(end.files).some(([p, m]) => isSpec(p) && start.view.files[p] !== m);
+		const base = start.view.head;
+		if (!specChanged && base && end.head && end.head !== base) {
+			const diff = await io.exec("git", ["diff", "--name-only", "-z", base, end.head], { cwd: end.top, timeout: TOOL_TIMEOUT_MS });
+			specChanged = diff.code === 0 && diff.stdout.split("\0").some(isSpec);
+		}
+		if (!start.root || !base) return { changed, specChanged };
+		const ids = new Set<string>();
+		let known = false;
+		const current = specChanged ? await foreignBetween(start.root, base, undefined, core, io) : [];
+		if (current) {
+			known = true;
+			for (const id of current) ids.add(id);
+		}
+		for (const name of drafts) {
+			const edited = await draftForeign(start.root, name, core, io, undefined, base);
+			if (edited) {
+				known = true;
+				for (const id of edited) ids.add(id);
+			}
+		}
+		return { changed, specChanged, ...(known ? { foreign: [...ids].sort() } : {}) };
+	} catch {
+		return { changed: false, specChanged: false };
+	}
+}
+
+const textOf = (content: unknown): string =>
+	typeof content === "string"
+		? content
+		: Array.isArray(content)
+			? content.map((c) => (c && typeof c === "object" && typeof (c as { text?: unknown }).text === "string" ? (c as { text: string }).text : "")).join("\n")
+			: "";
+
+/**
+ * `Also changes:` lines a worker's report carried into the parent's session: a custom message (a
+ * subagent's completion, a team report) or the result of a tool that runs workers. Returns the §
+ * they name, or undefined when none carried a line. Not the user's words, and not other tools' output.
+ */
+export function reportedAlsoChanges(entries: readonly unknown[]): string[] | undefined {
+	let found = false;
+	const ids = new Set<string>();
+	for (const entry of entries) {
+		const e = entry as { type?: string; customType?: string; content?: unknown; message?: { role?: string; toolName?: string; content?: unknown } };
+		let text = "";
+		if (e.type === "custom_message" && e.customType !== "spec-check") text = textOf(e.content);
+		else if (e.type === "message" && e.message?.role === "toolResult" && /agent|team|subagent|worker/i.test(e.message.toolName ?? "")) text = textOf(e.message.content);
+		for (const line of text.split("\n")) {
+			const named = parseAlsoChanges(line.trim());
+			if (named === undefined) continue;
+			found = true;
+			for (const id of named) ids.add(id);
+		}
+	}
+	return found ? [...ids].sort() : undefined;
+}

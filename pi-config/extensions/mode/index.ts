@@ -41,7 +41,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Text, type KeyId } from "@earendil-works/pi-tui";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { registerPaletteCategory, requestPaletteOpen } from "../command-palette/contracts.ts";
 import {
 	ALIGN_ENTRY_TYPE,
@@ -84,18 +84,16 @@ import {
 	checkAlsoChanges,
 	commandRoot,
 	describeProblem,
-	draftForeign,
-	draftStamps,
-	draftsTouched,
-	findSpecRoot,
 	foreignBetween,
 	gitCommits,
 	gitMerges,
 	gitView,
 	promoteWrites,
+	reportedAlsoChanges,
 	repromptText,
-	viewChanged,
-	type GitView,
+	treeStart,
+	treeTurn,
+	type TreeStart,
 } from "./spec-guard.ts";
 import {
 	activeOf,
@@ -953,9 +951,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	const specOn = () => hasMinor(active, "spec") && remoteTarget === undefined;
 	/** What this run did, for the line check. */
 	let specRun: {
-		start?: GitView;
-		/** Each draft's newest spec/ mtime at the run's start (drafts are ignored by Git). */
-		drafts?: Record<string, number>;
+		/** The session's tree and every worktree it tracks, as the run found them: a worker may write in any. */
+		trees: TreeStart[];
+		/** Branch length at the run's start: later entries may carry a worker's report. */
+		branchAt: number;
 		changed: boolean;
 		merged: boolean;
 		promoted: boolean;
@@ -963,12 +962,19 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		roots: Map<string, string>;
 		/** Foreign § the worktrees extension computed for this run's merges. */
 		mergeForeign: string[];
-	} = { changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
+	} = { trees: [], branchAt: 0, changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
 	let specReprompted = false;
 	const resetSpecRun = () => {
-		specRun = { changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
+		specRun = { trees: [], branchAt: 0, changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
 		specReprompted = false;
 	};
+	/** worktrees/state.ts WORKTREES_STATE_EVENT, spelled again: the active worktrees this session tracks. */
+	let trackedWorktrees: string[] = [];
+	pi.events?.on("worktrees:state", (data: unknown) => {
+		const e = data as { version?: unknown; active?: unknown } | undefined;
+		if (e?.version === 1 && Array.isArray(e.active)) trackedWorktrees = e.active.filter((p): p is string => typeof p === "string");
+	});
+	pi.events?.emit("worktrees:discover", { version: 1 });
 
 	// worktrees/index.ts: every merge, the tool's or one detected after plain git, with its foreign §.
 	pi.events?.on("worktrees:merged", (data: unknown) => {
@@ -1014,35 +1020,46 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		if (text) return { content: [...event.content, { type: "text" as const, text }] };
 	});
 
-	/**
-	 * The foreign § this run landed, from Git: merges (worktrees), the session's tree and each promoted
-	 * root; plus those each draft the run edited changes against its own base.
-	 */
-	async function specRunForeign(cwd: string, drafts: readonly string[]): Promise<string[]> {
-		const ids = new Set(specRun.mergeForeign);
-		const bases = new Map(specRun.roots);
-		const root = await findSpecRoot(cwd);
-		if (root && specRun.start?.head && !bases.has(root)) bases.set(root, specRun.start.head);
-		if (root) for (const name of drafts) for (const id of (await draftForeign(root, name, SPEC_CORE, undefined, undefined, specRun.start?.head ?? undefined)) ?? []) ids.add(id);
-		// Against the work tree: a promotion not committed yet lands all the same.
-		for (const [dir, base] of bases) for (const id of (await foreignBetween(dir, base, undefined, SPEC_CORE)) ?? []) ids.add(id);
-		return [...ids].sort();
-	}
-
 	pi.on("agent_before_settle", async (event, ctx) => {
 		if (!specOn() || process.env.PI_SPEC_CHECK === "0" || event.outcome !== "completed") return;
 		try {
-			const end = await gitView(ctx.cwd);
-			const root = await findSpecRoot(ctx.cwd);
-			const drafts = root ? draftsTouched(specRun.drafts, await draftStamps(root)) : [];
-			if (!specRun.changed && !viewChanged(specRun.start, end) && !drafts.length) return;
-			const foreign = await specRunForeign(ctx.cwd, drafts);
+			let changed = specRun.changed;
+			const landed: string[] = [];
+			const ids = new Set(specRun.mergeForeign);
+			// Each tree, the session's and every tracked worktree: a worker's edit, commit or promotion
+			// there is this turn's too. A current spec that changed is a promotion landing: blocking.
+			for (const tree of specRun.trees) {
+				const t = await treeTurn(tree, SPEC_CORE);
+				if (!t.changed) continue;
+				changed = true;
+				if (t.specChanged) landed.push(basename(tree.view.top));
+				for (const id of t.foreign ?? []) ids.add(id);
+			}
+			// A root a promote --write named outside those trees.
+			for (const [dir, base] of specRun.roots) {
+				if (specRun.trees.some((t) => t.root === dir)) continue;
+				for (const id of (await foreignBetween(dir, base, undefined, SPEC_CORE)) ?? []) ids.add(id);
+			}
+			// A worker's report that arrived in this run: its line counts, its § join the list.
+			const reported = reportedAlsoChanges(ctx.sessionManager.getBranch().slice(specRun.branchAt));
+			if (reported) {
+				changed = true;
+				for (const id of reported) ids.add(id);
+			}
+			if (!changed) return;
+			const foreign = [...ids].sort();
 			const check = checkAlsoChanges(lastReplyText, { required: true, foreign });
 			if (check.ok) return;
-			const blocking = specRun.merged || specRun.promoted;
+			const blocking = specRun.merged || specRun.promoted || landed.length > 0;
 			if (blocking && !specReprompted) {
 				specReprompted = true;
-				const what = [specRun.merged ? "merged a worktree" : "", specRun.promoted ? "ran promote --write" : ""].filter(Boolean).join(" and ");
+				const what = [
+					specRun.merged ? "merged a worktree" : "",
+					specRun.promoted ? "ran promote --write" : "",
+					landed.length && !specRun.promoted && !specRun.merged ? `changed the current spec in ${landed.join(", ")} (a promotion, yours or a worker's)` : "",
+				]
+					.filter(Boolean)
+					.join(" and ");
 				return {
 					entries: [...event.entries, { type: "custom_message" as const, customType: SPEC_CHECK_MESSAGE, display: false, content: repromptText(check, foreign, what) }],
 					continue: true,
@@ -1122,9 +1139,11 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			running = true;
 			resetSpecRun();
 			if (hasMinor(active, "spec") && remoteTarget === undefined) {
-				specRun.start = await gitView(ctx.cwd);
-				const root = await findSpecRoot(ctx.cwd);
-				if (root) specRun.drafts = await draftStamps(root);
+				specRun.branchAt = ctx.sessionManager.getBranch().length;
+				for (const dir of [ctx.cwd, ...trackedWorktrees]) {
+					const tree = await treeStart(dir);
+					if (tree && !specRun.trees.some((t) => t.view.top === tree.view.top)) specRun.trees.push(tree);
+				}
 				if (process.env.PI_SPEC_CENSUS_HOOK !== "0") await specCensus.prime(ctx.cwd);
 			}
 			fixHead();

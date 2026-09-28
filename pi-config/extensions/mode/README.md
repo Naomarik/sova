@@ -162,14 +162,17 @@ writer**).
     off.
   - **The `Also changes:` line.** When a run is about to settle after it
     edited, committed, promoted or merged (a tool call, a `worktrees:merged`
-    event, or the tree differing from the run's start), the last line is
+    event, the session's tree or any worktree it tracks (`worktrees:state`)
+    differing from the run's start, whoever changed it, or a worker's report
+    in the run carrying its own `Also changes:` line), the last line is
     checked against the foreign § computed from Git: the worktrees merge
     event's list, plus `sova-spec.mjs foreign --base <HEAD at the run's start>`
     for the session's tree and for each root a `promote --write` named, plus
     `foreign --spec <draft>` against its `base.commit` for each draft the run
     edited (drafts are ignored by Git, so their `spec/` mtimes are stamped at
     the run's start; a draft edit alone makes the line required). A run
-    that merged with the worktree tool or ran `promote --write` gets one
+    that merged with the worktree tool, ran `promote --write`, or in which the
+    current spec of any of those trees changed (a worker's promotion) gets one
     hidden `spec-check` message naming the list and one more request, never a
     second; any other run gets a warning. A line `Spec check override: <why>`
     above the last line accepts a list the agent shows is wrong.

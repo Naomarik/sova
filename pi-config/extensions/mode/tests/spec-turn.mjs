@@ -7,6 +7,8 @@
 // - a turn that ran promote --write and missed a foreign § computed from Git gets one hidden re-prompt
 //   naming it, and never a second; a reply that names it settles at once;
 // - a pure Q&A turn needs no line and gets no re-prompt;
+// - a worker's promotion committed in a tracked worktree (no tool call of the parent's) makes the turn a
+//   blocking one: one re-prompt naming the foreign § computed from that worktree;
 // - the active triple is published on the bus (mode:state), and again on mode:discover.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -60,6 +62,7 @@ function streamSimple(model, context, options) {
 	const stream = createAssistantMessageEventStream();
 	requests.push({ messages: context.messages });
 	const step = script.shift() ?? { text: "ok" };
+	step.effect?.();
 	const message = { role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: Date.now() };
 	(async () => {
 		options?.onPayload?.({});
@@ -154,6 +157,31 @@ try {
 	await session.prompt("promote again");
 	assert.equal(requests.length, at + 2, "a correct line needs no continuation");
 	assert.equal(checks().length, 1);
+
+	// A worker (simulated: the change lands while the parent waits) commits a promotion in a worktree
+	// the session tracks. The parent ran nothing itself, yet the turn lands a foreign §: one re-prompt.
+	const wt = path.join(scratch, "wt");
+	const wtGit = (...args) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", wt, ...args]).status, 0, `git ${args.join(" ")}`);
+	mkdirSync(wt, { recursive: true });
+	wtGit("init", "-q");
+	for (const rel of [".sova/spec/manifest.json", ".sova/spec/claims/app/shell.md", "src/App.tsx"]) {
+		mkdirSync(path.dirname(path.join(wt, rel)), { recursive: true });
+		writeFileSync(path.join(wt, rel), spawnSync("git", ["-C", cwd, "show", `HEAD:${rel}`], { encoding: "utf8" }).stdout);
+	}
+	wtGit("add", "-A");
+	wtGit("commit", "-qm", "base");
+	hostPi.events.emit("worktrees:state", { version: 1, active: [wt] });
+	at = requests.length;
+	const workerLands = () => {
+		writeFileSync(path.join(wt, ".sova/spec/claims/app/shell.md"), "# §app/shell\n\nShell, worker wording.\n");
+		wtGit("commit", "-qam", "spec: promoted by a worker");
+	};
+	script.push({ effect: workerLands, text: "The worker finished and promoted. Say when you want it merged." }, { text: "Done.\nAlso changes: §app/shell — worker wording" });
+	await session.prompt("have a worker do it in the worktree");
+	assert.equal(requests.length, at + 2, "exactly one continuation");
+	assert.equal(checks().length, 2);
+	assert.match(checks()[1].content, /changed the current spec in wt/);
+	assert.match(checks()[1].content, /computed from Git: §app\/shell/);
 
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";

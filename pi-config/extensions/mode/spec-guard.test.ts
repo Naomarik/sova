@@ -28,6 +28,9 @@ import {
 	promoteWrites,
 	ranCensus,
 	repromptText,
+	reportedAlsoChanges,
+	treeStart,
+	treeTurn,
 	stripAlsoChanges,
 	viewChanged,
 	type CensusView,
@@ -229,5 +232,61 @@ test("CensusHook on a real Git tree: bash-style writes are caught by the git del
 		assert.ok(committed.text?.includes("src/later.ts"), `a file created and committed in one call still counts: ${JSON.stringify(committed)}`);
 	} finally {
 		rmSync(project, { recursive: true, force: true });
+	}
+});
+
+test("reportedAlsoChanges: a worker's line in a custom message or a worker tool's result; never other tools or our own re-prompt", () => {
+	assert.equal(reportedAlsoChanges([]), undefined);
+	const complete = { type: "custom_message", customType: "subagent-complete", content: "Worker done.\nAlso changes: §chat.sandbox/toggle — new wording" };
+	assert.deepEqual(reportedAlsoChanges([complete]), ["§chat.sandbox/toggle"]);
+	assert.deepEqual(reportedAlsoChanges([{ type: "custom_message", customType: "team-report", content: [{ type: "text", text: "ok\nAlso changes: none" }] }]), [], "none is still a report");
+	const spawn = { type: "message", message: { role: "toolResult", toolName: "agent_spawn", content: [{ type: "text", text: "report\nAlso changes: §a/b — x" }] } };
+	assert.deepEqual(reportedAlsoChanges([spawn, complete]), ["§a/b", "§chat.sandbox/toggle"]);
+	const bash = { type: "message", message: { role: "toolResult", toolName: "bash", content: [{ type: "text", text: "Also changes: §x/y — grep hit" }] } };
+	assert.equal(reportedAlsoChanges([bash]), undefined);
+	assert.equal(reportedAlsoChanges([{ type: "custom_message", customType: "spec-check", content: "x\nAlso changes: §x/y — z" }]), undefined);
+	assert.equal(reportedAlsoChanges([{ type: "message", message: { role: "user", content: "Also changes: §x/y — z" } }]), undefined);
+});
+
+test("treeTurn: a worker's commit of a promotion in a tracked tree is a change that lands the current spec, with its foreign §", async () => {
+	mkdirSync(scratchRoot, { recursive: true });
+	const tree = mkdtempSync(join(scratchRoot, "spec-tree-"));
+	try {
+		const put = (rel: string, text: string) => {
+			mkdirSync(dirname(join(tree, rel)), { recursive: true });
+			writeFileSync(join(tree, rel), text);
+		};
+		const git = (...args: string[]) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", tree, ...args]).status, 0);
+		put(".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims: { "§app/shell": { kind: "surface", code: ["src/App.tsx"] } } }));
+		put(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell.\n");
+		put(".sova/spec/.gitignore", "/drafts/\n");
+		put("src/App.tsx", "1\n");
+		git("init", "-q");
+		git("add", "-A");
+		git("commit", "-qm", "base");
+		const quiet = await treeStart(join(tree, "src"));
+		assert.ok(quiet?.root === tree, "found from a subdirectory");
+		assert.deepEqual(await treeTurn(quiet!, CORE), { changed: false, specChanged: false, foreign: [] });
+
+		const start = await treeStart(tree);
+		put("src/App.tsx", "2\n");
+		git("commit", "-qam", "code");
+		const code = await treeTurn(start!, CORE);
+		assert.ok(code.changed && !code.specChanged, "a code commit alone lands no spec");
+
+		put(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell, v2.\n");
+		git("commit", "-qam", "spec");
+		const landed = await treeTurn(start!, CORE);
+		assert.deepEqual(landed, { changed: true, specChanged: true, foreign: ["§app/shell"] });
+
+		const before = await treeStart(tree);
+		const draft = spawnSync(process.execPath, [join(CORE, "sova-spec-draft.mjs"), "new", "feat", "--root", tree, "--write", "--json"], { encoding: "utf8" });
+		assert.equal(draft.status, 0);
+		await new Promise((r) => setTimeout(r, 20));
+		put(".sova/spec/drafts/feat/spec/claims/app/shell.md", "# §app/shell\n\nShell, v3.\n");
+		const drafted = await treeTurn(before!, CORE);
+		assert.deepEqual(drafted, { changed: true, specChanged: false, foreign: ["§app/shell"] }, "a draft edit (ignored by Git) still counts");
+	} finally {
+		rmSync(tree, { recursive: true, force: true });
 	}
 });

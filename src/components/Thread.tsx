@@ -970,8 +970,18 @@ export function ThreadScroller(props: {
   /** Until then a jump's own smooth scroll is under way: its first frames are still near the
       bottom, and must not read as the user coming back to follow it. */
   let jumpingUntil = 0;
+  /** The view's width at the last scroll event. */
+  let scrolledWidth = 0;
   const onScroll = () => {
     lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // The view narrowing or widening reflows the rows, and scroll anchoring's correction can come
+    // before `viewResized` and `measured` put a following view back at the end: not scrolling away.
+    const width = el.clientWidth;
+    if (width !== scrolledWidth) {
+      const first = scrolledWidth === 0;
+      scrolledWidth = width;
+      if (!first && follow) return;
+    }
     const near = lastGap < FOLLOW_PX;
     if (near && performance.now() < jumpingUntil) return;
     if (near === follow) return;
@@ -1020,6 +1030,8 @@ export function ThreadScroller(props: {
   // The characters a message line holds, for the rows' estimates (lib/tail-render `lineCols`), from
   // a probe as wide as a message: set only when it changes, since every row reads it. A new
   // transcript starts from the last one's, so a switch at the same width lays its rows out once.
+  // The rows not yet drawn change height with it, after `viewResized` has put a following view
+  // back at the end, so it goes back there again; scroll anchoring keeps any other view in place.
   let cols = lastCols;
   const measured =
     typeof ResizeObserver === "function"
@@ -1028,6 +1040,7 @@ export function ThreadScroller(props: {
           if (width <= 0 || lineCols(width) === cols) return;
           cols = lastCols = lineCols(width);
           el.style.setProperty("--entry-cols-measured", String(cols));
+          if (follow && !toggled) toBottom();
         })
       : null;
   onCleanup(() => measured?.disconnect());

@@ -11,18 +11,11 @@
     "§app.insights/aggregate-chips-live-vs-working": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/components/SessionView.tsx",
-        "src/design/base.css",
-        "server/roster-scan.ts",
-        "server/insights.ts",
-        "server/sessions-index.ts",
-        "server/sessions-context.test.ts",
-        "shared/protocol.ts",
-        "src/lib/known-before-mount.ts",
-        "src/lib/known-before-mount.test.ts"
+        "src/design/base.css"
       ]
     },
     "§app.insights/compaction-row": {
@@ -433,10 +426,6 @@
         "src/components/ChatView.tsx",
         "src/components/SessionView.tsx",
         "src/lib/known-before-mount.ts",
-        "server/roster-scan.ts",
-        "server/sessions-index.ts",
-        "server/sessions-context.test.ts",
-        "shared/protocol.ts",
         "src/lib/known-before-mount.test.ts"
       ]
     },
@@ -539,23 +528,15 @@
     },
     "§chat.composer/behavior": {
       "kind": "behavior",
+      "code": [
+        "src/components/Composer.tsx",
+        "src/components/ModelMenu.tsx"
+      ],
       "requires": [
         "§chat.images/composer-attachments"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
-      "code": [
-        "src/components/Composer.tsx",
-        "src/components/ChatView.tsx",
-        "src/components/ModelMenu.tsx",
-        "src/components/ComposerMenu.tsx",
-        "src/lib/models.ts",
-        "src/lib/models-ladders.test.ts",
-        "src/App.tsx",
-        "server/sessions-index.ts",
-        "server/sessions-context.test.ts",
-        "shared/protocol.ts"
-      ]
+      "evidence": "unreviewed"
     },
     "§chat.composer/composer-flyout": {
       "kind": "behavior",
@@ -575,7 +556,7 @@
     "§chat.composer/disabled-states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "unreviewed",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
@@ -599,8 +580,8 @@
     },
     "§chat.context-window/honesty": {
       "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "reviewed",
+      "authority": "migrated",
+      "evidence": "unreviewed",
       "code": [
         "server/models.ts",
         "server/models.test.ts"
@@ -631,12 +612,11 @@
     },
     "§chat.context-window/states": {
       "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "reviewed",
       "code": [
-        "src/components/ContextGauge.tsx",
-        "src/components/SessionView.tsx"
-      ]
+        "src/components/ContextGauge.tsx"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed"
     },
     "§chat.context-window/steps-toward-the-limit": {
       "kind": "behavior",
@@ -748,11 +728,11 @@
     },
     "§chat.mode-menu/states": {
       "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "reviewed",
       "code": [
         "src/components/ModeMenu.tsx"
-      ]
+      ],
+      "authority": "accepted",
+      "evidence": "verified"
     },
     "§chat.mode-menu/tokens": {
       "kind": "note",
@@ -764,13 +744,7 @@
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
-        "src/components/ChatView.tsx",
-        "src/components/ModeMenu.tsx",
-        "server/sessions-index.ts",
-        "server/mode-state.ts",
-        "shared/protocol.ts",
-        "src/lib/summary-diff.ts",
-        "src/lib/summary-diff.test.ts"
+        "src/components/ChatView.tsx"
       ]
     },
     "§chat.model-menu/content-and-order": {
@@ -1835,7 +1809,7 @@
         "§chat/sandbox"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "public/icons/shield.svg",
         "server/chat-manager.ts",
@@ -1845,10 +1819,7 @@
         "src/components/Composer.tsx",
         "src/components/ui.tsx",
         "src/design/base.css",
-        "src/lib/sandbox.ts",
-        "src/components/ComposerMenu.tsx",
-        "server/sessions-index.ts",
-        "server/sessions-context.test.ts"
+        "src/lib/sandbox.ts"
       ]
     },
     "§design.copy-deck/sandbox": {

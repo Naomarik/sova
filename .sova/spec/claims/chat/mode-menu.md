@@ -53,12 +53,8 @@ this slot (§app.overseer/quick-actions).
   no fixed cap: whatever fits reads in full, with the full text in `title` either way. Only real
   pressure in the foot shrinks it, and it shares that squeeze with the model indicator's 24ch cap
   beside it. The minors are their own span, so they ellipsize first and the major mode last.
-  Before the chat's first `mode` message arrives no row is checked (the default is not this chat's
-  state), and the label reads what the session list has for this session (`SessionSummary.mode`:
-  the newest `mode` entry in its file, else the default for sessions), so opening a session never
-  widens or narrows the trigger when that message lands; it reads just "Mode" only while the list
-  has no row for the session. The message replaces it, so a list read that disagrees (the file's
-  newest entry sits on a branch rewound away) is corrected then.
+  Before the chat's first `mode` message arrives it reads just "Mode" and no row is checked: the
+  default is not this chat's state.
 - **Name.** `aria-label` repeats the label with "Mode: " in front, so it survives when the label
   hides. A pending switch adds ", applies after this turn".
 - **Every width.** It never hides and never goes icon-only: the label is the fact. It narrows the
@@ -278,7 +274,7 @@ and after it. The model draws `vis` fences after turning it on and none after tu
 | State | Shows |
 |---|---|
 | Idle | Trigger label, and this chat's rows checked |
-| No `mode` message yet | Trigger reads the session list's mode for this session ("Mode" without a row), nothing checked (the default isn't this chat's state) |
+| No `mode` message yet | Trigger reads "Mode", nothing checked (the default isn't this chat's state) |
 | Saving | Rows `aria-disabled` (the cursor is `progress`) |
 | Mid-turn switch | Info banner "Applies after this turn." (trigger name adds it too) |
 | Chat can't switch | Warn banner "This chat can't switch." |

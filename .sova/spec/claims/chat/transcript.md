@@ -638,12 +638,7 @@ machine. Nothing that's held is virtualized.
   row's single image counts at the height its box will have
   (§chat.images/thread-thumbnails), two or more at an estimate of their rows of tiles. A
   row being pointed at, focused or revealed (§chat.transcript/message-actions) is always drawn
-  whole. So is every row in the view of a transcript that follows its end, from the frame it is
-  put there: when the view goes to the end (opening, new rows, a row growing), the rows then in
-  view are drawn at once, the view goes back to the end, and again while that brings rows not
-  yet drawn into view — all before the frame is painted, so opening a transcript never shows its
-  last rows at their estimates and then grows them in place. Such a row is skipped again, at the
-  height it was drawn at, once it has left the view.
+  whole.
 - **Jumps build their target first.** Whether an entry can be jumped to is asked of the rows the
   thread renders, not of what is built. Every jump builds the rows down from its target if the
   fill hasn't reached it, then scrolls and tints as before (§chat.timeline/jumping): a Timeline

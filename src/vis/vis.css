@@ -120,3 +120,45 @@
 .vis-arrowhead-open { fill: none; stroke: var(--color-ink-muted); stroke-width: 1.5; stroke-linejoin: round; }
 .vis-edge-label rect { fill: var(--color-surface); }
 .vis-edge-label text { fill: var(--color-ink-2); }
+
+/* ---- Emphasis (core/emphasis.ts, emphasis.tsx): one look for "look here" in every kind -------- */
+/* A marked item: its tone's colours, a heavier outline. SVG shapes and HTML rows alike. */
+.vis-em > rect, .vis-em > polygon, .vis-em > circle, .vis-em > path:not(.vis-cap) { stroke-width: 2.5; }
+.vis-em:is(li, tr, div, span, p) { background: var(--vis-fill); box-shadow: inset 3px 0 0 var(--vis-stroke); border-radius: var(--r-xs); }
+.vis-em-badge {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  margin-right: var(--space-1);
+  border-radius: var(--r-full);
+  background: var(--vis-stroke, var(--color-accent));
+  color: var(--color-on-accent);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.vis-em-badge-svg circle { fill: var(--vis-stroke); }
+.vis-svg .vis-em-badge-svg text { fill: var(--color-on-accent); font-weight: var(--fw-semibold); }
+.vis-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-3);
+  list-style: none;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.vis-notes li { display: flex; align-items: baseline; gap: var(--space-1); }
+.vis-notes li > .vis-em-badge { transform: translateY(3px); }
+
+/* ---- Step-through (stepper.tsx) and not-drawn-yet kinds (StubView.tsx) ----------------------- */
+.vis-stepper { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin-bottom: var(--space-2); }
+.vis-stepper-count { font-size: var(--fs-caption); color: var(--color-ink-muted); font-variant-numeric: tabular-nums; padding: 0 var(--space-2); }
+.vis-future { opacity: .18; }
+.vis-stub { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }

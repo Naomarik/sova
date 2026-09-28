@@ -1,6 +1,7 @@
 /** `vis flow` and `vis state`: nodes, edges, shapes and tones. See vis-mode.md § flow for the syntax the model is taught. */
 
-import { commaList, divider, fail, fields, id, isTone, lines, MAX_TEXT, modifiers, popTone, takeSettings, text, tokenize, unquote, type Arrow, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
+import { fail, id, lines, modifiers, takeSettings, tokenize, type Arrow, type Line, type Tone, type VisBase } from "../../core/grammar";
 
 export const SHAPES = ["box", "round", "store", "decision", "circle", "start", "end"] as const;
 export type Shape = (typeof SHAPES)[number];
@@ -29,15 +30,14 @@ export interface FlowSpec extends VisBase {
   edges: FlowEdge[];
 }
 
-
 const MAX_NODES = 30;
 const MAX_EDGES = 48;
 
-// ---- flow / state ------------------------------------------------------------------------
 
 function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
   const spec: FlowSpec = { kind: "flow", dir: "down", nodes: [], edges: [] };
-  const { rest, values } = takeSettings(ls, ["dir"], spec);
+  const { rest: settled, values } = takeSettings(ls, ["dir"], spec);
+  const { rest, marks } = takeMarks(settled);
   const dir = values.get("dir");
   if (dir) {
     if (dir.value !== "down" && dir.value !== "right") fail(dir.n, `dir: is down or right, not "${dir.value}"`);
@@ -93,6 +93,7 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
   if (spec.nodes.length === 0) fail(0, "nothing to draw: add nodes and edges (a -> b)");
   if (spec.nodes.length > MAX_NODES) fail(0, `${spec.nodes.length} nodes; at most ${MAX_NODES}: split it, or summarise`);
   if (spec.edges.length > MAX_EDGES) fail(0, `${spec.edges.length} edges; at most ${MAX_EDGES}`);
+  applyMarks(spec, marks, byIdOrLabel(spec.nodes.map((n) => ({ key: n.id, id: n.id, label: n.label }))), "node");
   return spec;
 }
 

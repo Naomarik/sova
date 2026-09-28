@@ -1,28 +1,28 @@
-/** `vis stack`: layers top to bottom, `label | item, item | note | tone`. */
+/** `vis layers`: layers top to bottom, `label | item, item | note | tone`. */
 
-import { commaList, divider, fail, fields, id, isTone, lines, MAX_TEXT, modifiers, popTone, takeSettings, text, tokenize, unquote, type Arrow, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
+import { commaList, fail, fields, lines, popTone, takeSettings, type Tone, type VisBase } from "../../core/grammar";
 
-export interface StackLayer {
+export interface Layer {
   label: string;
   items: string[];
   note?: string;
   tone?: Tone;
 }
-export interface StackSpec extends VisBase {
-  kind: "stack";
-  layers: StackLayer[];
+export interface LayersSpec extends VisBase {
+  kind: "layers";
+  layers: Layer[];
 }
-
 
 const MAX_LAYERS = 10;
 const MAX_ITEMS = 12;
 
-// ---- stack -------------------------------------------------------------------------------
 
-export function parseStack(body: string): StackSpec {
+export function parseLayers(body: string): LayersSpec {
   const ls = lines(body);
-  const spec: StackSpec = { kind: "stack", layers: [] };
-  const { rest } = takeSettings(ls, [], spec);
+  const spec: LayersSpec = { kind: "layers", layers: [] };
+  const { rest: settled } = takeSettings(ls, [], spec);
+  const { rest, marks } = takeMarks(settled);
   for (const line of rest) {
     const fs = fields(line);
     const tone = popTone(fs);
@@ -35,5 +35,6 @@ export function parseStack(body: string): StackSpec {
   }
   if (spec.layers.length === 0) fail(0, "nothing to draw: add layers like Server | Hono, ws");
   if (spec.layers.length > MAX_LAYERS) fail(0, `${spec.layers.length} layers; at most ${MAX_LAYERS}`);
+  applyMarks(spec, marks, byIdOrLabel(spec.layers.map((l, i) => ({ key: String(i), label: l.label }))), "layer");
   return spec;
 }

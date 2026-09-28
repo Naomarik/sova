@@ -1,6 +1,7 @@
 /** `vis sequence`: actors, messages, notes, dividers. */
 
-import { commaList, divider, fail, fields, id, isTone, lines, MAX_TEXT, modifiers, popTone, takeSettings, text, tokenize, unquote, type Arrow, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
+import { divider, fail, id, lines, modifiers, takeSettings, tokenize, type Arrow, type Tone, type VisBase } from "../../core/grammar";
 
 export interface Actor {
   id: string;
@@ -17,16 +18,15 @@ export interface SequenceSpec extends VisBase {
   steps: SeqStep[];
 }
 
-
 const MAX_ACTORS = 8;
 const MAX_STEPS = 40;
 
-// ---- sequence ----------------------------------------------------------------------------
 
 export function parseSequence(body: string): SequenceSpec {
   const ls = lines(body);
   const spec: SequenceSpec = { kind: "sequence", actors: [], steps: [] };
-  const { rest } = takeSettings(ls, [], spec);
+  const { rest: settled } = takeSettings(ls, [], spec);
+  const { rest, marks } = takeMarks(settled);
   const actors = new Map<string, Actor>();
   const use = (a: string) => {
     if (!actors.has(a)) actors.set(a, { id: a, label: a });
@@ -76,5 +76,13 @@ export function parseSequence(body: string): SequenceSpec {
   if (spec.actors.length < 2) fail(0, "a sequence needs at least 2 actors");
   if (spec.actors.length > MAX_ACTORS) fail(0, `${spec.actors.length} actors; at most ${MAX_ACTORS}`);
   if (spec.steps.length > MAX_STEPS) fail(0, `${spec.steps.length} steps; at most ${MAX_STEPS}`);
+  applyMarks(spec, marks, (t) => {
+    if (t.t === "number") {
+      const at = spec.steps.flatMap((s, i) => (s.type === "msg" ? [i] : []))[t.value - 1];
+      return at === undefined ? null : `step:${at}`;
+    }
+    const a = byIdOrLabel(spec.actors.map((x) => ({ key: `actor:${x.id}`, id: x.id, label: x.label })))(t);
+    return a;
+  }, "actor or message number");
   return spec;
 }

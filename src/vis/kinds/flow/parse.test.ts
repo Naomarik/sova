@@ -66,3 +66,10 @@ test("flow errors point at the line and say what to write", () => {
   assert.match(err("flow", "a -> ").message, /target id/);
   assert.match(err("flow", "").message, /nothing to draw/);
 });
+
+test("flow: mark a node by id or label", () => {
+  const r = parseVis("flow", 'node srv "Sova server"\na -> srv\nmark srv "bottleneck"\nmark "a" muted');
+  assert.ok(r.ok);
+  assert.deepEqual((r.spec as FlowSpec).emphasis, [{ key: "srv", tone: "accent", note: "bottleneck", n: 1 }, { key: "a", tone: "muted" }]);
+  assert.match(err("flow", "a -> b\nmark c").message, /no node c/);
+});

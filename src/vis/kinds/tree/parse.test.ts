@@ -20,7 +20,7 @@ test("tree: indentation or tree-drawing art, notes and tones", () => {
   assert.deepEqual(indented, art);
   assert.equal(indented.roots.length, 2);
   const lib = indented.roots[0]!.children[0]!;
-  assert.deepEqual(lib.children[0], { name: "vis.ts", note: "parser", tone: "accent", children: [] });
+  assert.deepEqual(lib.children[0], { key: "0.0.0", name: "vis.ts", note: "parser", tone: "accent", children: [] });
   assert.equal(indented.roots[0]!.children[1]!.tone, "warn");
   assert.match(err("tree", "a\n  b\n      c").message, /more than one level/);
   assert.match(err("tree", "a\n  b\n   c").message, /not a multiple of 2/);

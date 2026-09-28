@@ -1,11 +1,15 @@
-/** `vis chart` (and the `vis bar` / `vis hbar` / `vis line` shorthands): labelled rows of numbers. */
+/**
+ * `vis chart`: labelled rows of numbers. `type:` bar (default; grouped with `series:`), stacked,
+ * line, or scatter (each row: label, x, y). No pie or donut, by design.
+ */
 
-import { commaList, divider, fail, fields, id, isTone, lines, MAX_TEXT, modifiers, popTone, takeSettings, text, tokenize, unquote, type Arrow, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
+import { commaList, fail, isTone, lines, takeSettings, text, tokenize, type Tone, type VisBase } from "../../core/grammar";
 
-export type ChartType = "bar" | "hbar" | "line" | "stacked";
+export type ChartType = "bar" | "stacked" | "line" | "scatter";
 export interface ChartRow {
   label: string;
-  /** One per series; null is a gap. */
+  /** One per series (null is a gap); for scatter, [x, y]. */
   values: (number | null)[];
   tone?: Tone;
 }
@@ -20,21 +24,20 @@ export interface ChartSpec extends VisBase {
   rows: ChartRow[];
 }
 
-
 const MAX_ROWS = 40;
 const MAX_SERIES = 6;
 
-// ---- chart -------------------------------------------------------------------------------
 
-const CHART_TYPES: ChartType[] = ["bar", "hbar", "line", "stacked"];
+const CHART_TYPES: ChartType[] = ["bar", "stacked", "line", "scatter"];
 
-function parseChartLines(ls: Line[], preset: ChartType | null): ChartSpec {
-  const spec: ChartSpec = { kind: "chart", type: preset ?? "bar", scale: "linear", series: [], rows: [] };
-  const { rest, values } = takeSettings(ls, ["type", "unit", "x", "y", "series", "scale"], spec);
+export function parseChart(body: string): ChartSpec {
+  const ls = lines(body);
+  const spec: ChartSpec = { kind: "chart", type: "bar", scale: "linear", series: [], rows: [] };
+  const { rest: settled, values } = takeSettings(ls, ["type", "unit", "x", "y", "series", "scale"], spec);
+  const { rest, marks } = takeMarks(settled);
   const type = values.get("type");
   if (type) {
-    if (!CHART_TYPES.includes(type.value as ChartType)) fail(type.n, `type: is one of ${CHART_TYPES.join(", ")}`);
-    if (preset && type.value !== preset) fail(type.n, `vis ${preset} is already type: ${preset}`);
+    if (!CHART_TYPES.includes(type.value as ChartType)) fail(type.n, `type: is one of ${CHART_TYPES.join(", ")}${/pie|donut|doughnut/.test(type.value) ? " (no pie or donut: use bar)" : ""}`);
     spec.type = type.value as ChartType;
   }
   const scale = values.get("scale");
@@ -49,7 +52,8 @@ function parseChartLines(ls: Line[], preset: ChartType | null): ChartSpec {
   const series = values.get("series");
   if (series) spec.series = commaList(series.value, series.n);
   if (spec.series.length > MAX_SERIES) fail(series!.n, `${spec.series.length} series; at most ${MAX_SERIES}`);
-  const width = Math.max(1, spec.series.length);
+  if (spec.type === "scatter" && series) fail(series.n, "scatter takes no series: each row is label x y");
+  const width = spec.type === "scatter" ? 2 : Math.max(1, spec.series.length);
   for (const line of rest) {
     const toks = tokenize(line);
     const head = toks[0]!;
@@ -74,16 +78,16 @@ function parseChartLines(ls: Line[], preset: ChartType | null): ChartSpec {
       }
       vals.push(tok.v.endsWith("%") ? parseFloat(tok.v) : num);
     }
-    if (vals.length !== width) fail(line.n, `${vals.length} values; expected ${width}${spec.series.length ? ` (series: ${spec.series.join(", ")})` : " (add series: a, b for more than one)"}`);
-    if (tone && width > 1) fail(line.n, "a tone colours a single-series bar; with several series each series has its own colour");
+    if (vals.length !== width) fail(line.n, `${vals.length} values; expected ${width}${spec.type === "scatter" ? " (x y)" : spec.series.length ? ` (series: ${spec.series.join(", ")})` : " (add series: a, b for more than one)"}`);
+    if (spec.type === "scatter" && vals.includes(null)) fail(line.n, "a scatter point needs both x and y");
+    if (tone && width > 1 && spec.type !== "scatter") fail(line.n, "a tone colours a single-series bar; with several series each series has its own colour");
     if (spec.scale === "log" && vals.some((v) => v !== null && v <= 0)) fail(line.n, "scale: log needs values above 0");
     spec.rows.push({ label: text(label, line.n), values: vals, ...(tone ? { tone } : {}) });
   }
   if (spec.rows.length === 0) fail(0, 'nothing to draw: add rows like "Quicksort" 120');
   if (spec.rows.length > MAX_ROWS) fail(0, `${spec.rows.length} rows; at most ${MAX_ROWS}`);
   if (spec.type === "stacked" && spec.rows.some((r) => r.values.some((v) => v !== null && v < 0))) fail(0, "stacked bars need values of 0 or more");
+  applyMarks(spec, marks, byIdOrLabel(spec.rows.map((r, i) => ({ key: String(i), label: r.label }))), "row");
   return spec;
 }
 
-/** ```vis chart (type: from the body, default bar); ```vis bar / hbar / line preset the type. */
-export const parseChart = (preset: ChartType | null) => (body: string) => parseChartLines(lines(body), preset);

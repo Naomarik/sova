@@ -1,8 +1,11 @@
 /** `vis tree`: an indented (or tree-drawn) hierarchy with notes and tones. */
 
-import { commaList, divider, fail, fields, id, isTone, lines, MAX_TEXT, modifiers, popTone, takeSettings, text, tokenize, unquote, type Arrow, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { applyMarks, takeMarks } from "../../core/emphasis";
+import { fail, isTone, lines, modifiers, takeSettings, text, tokenize, type Tone, type VisBase } from "../../core/grammar";
 
 export interface TreeNode {
+  /** Its path of child indexes, "0.2.1": the emphasis key. */
+  key: string;
   name: string;
   note?: string;
   tone?: Tone;
@@ -13,17 +16,16 @@ export interface TreeSpec extends VisBase {
   roots: TreeNode[];
 }
 
-
 const MAX_ROWS = 80;
 
-// ---- tree --------------------------------------------------------------------------------
 
 const TREE_ART = /^((?:[│|] {3}| {4})*)([├└`]── ?)/;
 
 export function parseTree(body: string): TreeSpec {
   const ls = lines(body);
   const spec: TreeSpec = { kind: "tree", roots: [] };
-  const { rest } = takeSettings(ls, [], spec);
+  const { rest: settled } = takeSettings(ls, [], spec);
+  const { rest, marks } = takeMarks(settled);
   if (rest.length === 0) fail(0, "nothing to draw");
   if (rest.length > MAX_ROWS) fail(0, `${rest.length} rows; at most ${MAX_ROWS}`);
   const art = rest.some((l) => TREE_ART.test(l.raw));
@@ -56,6 +58,12 @@ export function parseTree(body: string): TreeSpec {
     else stack[depth - 1]!.children.push(node);
     stack.push(node);
   }
+  const walk = (ns: TreeNode[], prefix: string) => ns.forEach((n, i) => {
+    n.key = `${prefix}${i}`;
+    walk(n.children, `${n.key}.`);
+  });
+  walk(spec.roots, "");
+  applyMarks(spec, marks, (t) => (t.t === "id" || t.t === "label" ? (flatTree(spec.roots).find((n) => n.name === t.text)?.key ?? null) : null), "item");
   return spec;
 }
 
@@ -80,7 +88,7 @@ function treeNode(s: string, n: number): TreeNode {
       }
     }
   }
-  const node: TreeNode = { name: text(name, n), children: [] };
+  const node: TreeNode = { key: "", name: text(name, n), children: [] };
   if (restText) {
     const toks = tokenize({ n, raw: restText, text: restText });
     let k = 0;
@@ -91,3 +99,6 @@ function treeNode(s: string, n: number): TreeNode {
   if (!node.name) fail(n, "empty name");
   return node;
 }
+
+/** Every node, depth first. */
+export const flatTree = (ns: TreeNode[]): TreeNode[] => ns.flatMap((n) => [n, ...flatTree(n.children)]);

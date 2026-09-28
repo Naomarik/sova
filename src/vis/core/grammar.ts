@@ -12,10 +12,26 @@ export const isTone = (w: string): w is Tone => (TONES as readonly string[]).inc
 /** Longest free text (a label, a note, a title) any kind accepts. */
 export const MAX_TEXT = 200;
 
-/** What every spec carries: the optional heading and one-line caption the figure shows. */
+/**
+ * What every spec carries: the optional heading and one-line caption the figure shows, and the
+ * resolved `mark` lines (core/emphasis.ts) — the shell lists their notes, the View highlights them.
+ */
 export interface VisBase {
   title?: string;
   caption?: string;
+  emphasis?: Emphasis[];
+}
+
+/**
+ * One highlighted item. `key` is the kind's own key for it (a node id, a row index, a line number);
+ * `n` numbers the ones with a note, 1…, in the order they were written — the badge on the item and
+ * the entry in the figure's notes list share it.
+ */
+export interface Emphasis {
+  key: string;
+  tone: Tone;
+  note?: string;
+  n?: number;
 }
 
 export class VisError extends Error {

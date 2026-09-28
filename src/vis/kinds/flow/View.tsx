@@ -1,5 +1,8 @@
 import { For, Show, createMemo, type JSX } from "solid-js";
+import { emphasisMap } from "../../core/emphasis";
+import type { Emphasis } from "../../core/grammar";
 import { canvasMeasure } from "../../core/text";
+import { emClass, SvgEmBadge } from "../../emphasis";
 import { Lines, SvgScroll, useMarkerId } from "../../svg";
 import type { ViewProps } from "../../types";
 import { FLOW_FONT, layoutFlow, type PlacedFlowNode } from "./layout";
@@ -9,6 +12,7 @@ import "./flow.css";
 /** `vis flow` / `vis state`: boxes and arrows, laid out by lib/vis/flow-layout. */
 export default function FlowView(props: ViewProps<FlowSpec>) {
   const layout = createMemo(() => layoutFlow(props.spec, canvasMeasure));
+  const em = createMemo(() => emphasisMap(props.spec));
   const arrow = useMarkerId();
   return (
     <SvgScroll width={layout().width} height={layout().height} label={props.label}>
@@ -38,12 +42,12 @@ export default function FlowView(props: ViewProps<FlowSpec>) {
           </g>
         )}
       </For>
-      <For each={layout().nodes}>{(n) => <Node n={n} />}</For>
+      <For each={layout().nodes}>{(n) => <Node n={n} em={em().get(n.id)} />}</For>
     </SvgScroll>
   );
 }
 
-function Node(props: { n: PlacedFlowNode }) {
+function Node(props: { n: PlacedFlowNode; em: Emphasis | undefined }) {
   const n = props.n;
   const x0 = n.x - n.w / 2;
   const y0 = n.y - n.h / 2;
@@ -85,13 +89,14 @@ function Node(props: { n: PlacedFlowNode }) {
   const textH = n.lines.length * 17 + n.noteLines.length * 15;
   const top = n.y - textH / 2 + (n.shape === "store" ? 3 : 0);
   return (
-    <g class={`vis-node vis-tone-${n.tone ?? "none"}`}>
+    <g class={`vis-node ${props.em ? emClass(props.em) : `vis-tone-${n.tone ?? "none"}`}`}>
       <title>{n.full}</title>
       {shape}
       <Lines lines={n.lines} x={n.x} y={top + 17 / 2} size={FLOW_FONT.label} lh={17} top class="vis-node-label" />
       <Show when={n.noteLines.length}>
         <Lines lines={n.noteLines} x={n.x} y={top + n.lines.length * 17 + 15 / 2} size={FLOW_FONT.note} lh={15} top class="vis-node-note" />
       </Show>
+      <SvgEmBadge e={props.em} x={n.shape === "decision" ? n.x + n.w / 4 : x0 + n.w - 3} y={n.shape === "decision" ? y0 + n.h / 4 : y0 + 3} />
     </g>
   );
 }

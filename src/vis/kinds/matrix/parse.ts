@@ -1,32 +1,32 @@
-/** `vis compare`: `columns:` then `label | cell | cell` rows; cells are yes/no/partial marks or text. */
+/** `vis matrix`: `columns:` then `label | cell | cell` rows; cells are yes/no/partial marks or text. */
 
-import { commaList, divider, fail, fields, id, isTone, lines, MAX_TEXT, modifiers, popTone, takeSettings, text, tokenize, unquote, type Arrow, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
+import { commaList, fail, fields, lines, takeSettings, unquote, type VisBase } from "../../core/grammar";
 
-export type Mark = "yes" | "no" | "partial";
-export interface CompareCell {
-  mark?: Mark;
+export type CellMark = "yes" | "no" | "partial";
+export interface MatrixCell {
+  mark?: CellMark;
   text?: string;
 }
-export interface CompareSpec extends VisBase {
-  kind: "compare";
+export interface MatrixSpec extends VisBase {
+  kind: "matrix";
   columns: string[];
-  rows: { label: string; cells: CompareCell[] }[];
+  rows: { label: string; cells: MatrixCell[] }[];
 }
-
 
 const MAX_COLUMNS = 6;
 const MAX_ROWS = 24;
 
-// ---- compare -----------------------------------------------------------------------------
 
-const MARKS: Record<string, Mark> = { yes: "yes", no: "no", partial: "partial" };
+const MARKS: Record<string, CellMark> = { yes: "yes", no: "no", partial: "partial" };
 
-export function parseCompare(body: string): CompareSpec {
+export function parseMatrix(body: string): MatrixSpec {
   const ls = lines(body);
-  const spec: CompareSpec = { kind: "compare", columns: [], rows: [] };
-  const { rest, values } = takeSettings(ls, ["columns"], spec);
+  const spec: MatrixSpec = { kind: "matrix", columns: [], rows: [] };
+  const { rest: settled, values } = takeSettings(ls, ["columns"], spec);
+  const { rest, marks } = takeMarks(settled);
   const cols = values.get("columns");
-  if (!cols) fail(0, "compare needs columns: A, B, C");
+  if (!cols) fail(0, "matrix needs columns: A, B, C");
   spec.columns = commaList(cols!.value, cols!.n);
   if (spec.columns.length < 1 || spec.columns.length > MAX_COLUMNS) fail(cols!.n, `1 to ${MAX_COLUMNS} columns`);
   for (const line of rest) {
@@ -47,5 +47,6 @@ export function parseCompare(body: string): CompareSpec {
   }
   if (spec.rows.length === 0) fail(0, "nothing to draw: add rows like Label | yes | no");
   if (spec.rows.length > MAX_ROWS) fail(0, `${spec.rows.length} rows; at most ${MAX_ROWS}`);
+  applyMarks(spec, marks, byIdOrLabel(spec.rows.map((r, i) => ({ key: String(i), label: r.label }))), "row");
   return spec;
 }

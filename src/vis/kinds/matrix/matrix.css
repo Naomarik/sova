@@ -1,0 +1,10 @@
+/* `vis matrix` — DRAFT, not yet verified in a browser. Owner: the matrix member. */
+.vis-matrix-wrap { max-width: 100%; overflow-x: auto; }
+.vis-matrix { border-collapse: collapse; min-width: 100%; font-size: var(--fs-caption); }
+.vis-matrix th, .vis-matrix td { padding: var(--space-2) var(--space-3); border-bottom: var(--stroke-thin) solid var(--color-border); text-align: left; vertical-align: top; }
+.vis-matrix thead th { background: var(--color-sunken); font-weight: var(--fw-semibold); white-space: nowrap; }
+.vis-cell-mark { display: inline-block; width: 14px; height: 14px; margin-right: var(--space-1); vertical-align: -2px; background: currentColor; -webkit-mask: var(--mark) center / contain no-repeat; mask: var(--mark) center / contain no-repeat; }
+.vis-cell-mark-yes { color: var(--status-success); --mark: url(/icons/check.svg); }
+.vis-cell-mark-no { color: var(--status-error); --mark: url(/icons/close.svg); }
+.vis-cell-mark-partial { color: var(--status-warn); --mark: url(/icons/alert-circle.svg); }
+.vis-cell-empty { color: var(--color-ink-muted); }

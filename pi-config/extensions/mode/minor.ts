@@ -70,12 +70,20 @@ function specCoreShell(text: string): string {
 }
 
 /**
- * The vis mode's text is vis-mode.md beside this module, read once at load, with its HTML comments
- * (owner notes per section) stripped: the model gets the formats Sova's `vis` fence renderer parses.
+ * The vis mode's text is vis-mode.md beside this module, read once at load: every `## ` section
+ * carrying the stub marker (a kind not drawn yet) is dropped, then HTML comments (owner notes) are
+ * stripped. The model gets exactly the formats Sova's `vis` fence renderer draws.
  */
-export const VIS_INSTRUCTIONS = readFileSync(new URL("./vis-mode.md", import.meta.url), "utf8")
-	.replace(/<!--[\s\S]*?-->\n?/g, "")
-	.trim();
+export const VIS_INSTRUCTIONS = visPrompt(readFileSync(new URL("./vis-mode.md", import.meta.url), "utf8"));
+
+export function visPrompt(md: string): string {
+	return md
+		.split(/^(?=## )/m)
+		.filter((section) => !section.includes("<!-- stub -->"))
+		.join("")
+		.replace(/<!--[\s\S]*?-->\n?/g, "")
+		.trim();
+}
 
 const MINOR_INSTRUCTIONS: Record<MinorMode, string> = {
 	align: ALIGN_INSTRUCTIONS,

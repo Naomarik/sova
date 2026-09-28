@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL } from "./minor.ts";
+import { buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL, visPrompt } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { delegateDefaults, type DelegateSettings } from "./delegate.ts";
 import {
@@ -254,6 +254,9 @@ test("vis: vis-mode.md verbatim minus its owner comments, composed last", () => 
 	const vis = buildMinorPrompt("vis");
 	assert.match(vis, /^# Minor mode: vis\n/);
 	assert.doesNotMatch(vis, /<!--|owner:/, "owner notes never reach the model");
+	assert.doesNotMatch(vis, /^## (gitgraph|code)$/m, "a stub kind is never taught");
+	assert.match(vis, /^## Shared: emphasis$/m);
+	assert.equal(visPrompt("# A\n\n## x\n<!-- stub -->\nhidden\n\n## y\n<!-- note -->\nshown\n"), "# A\n\n## y\nshown");
 	assert.match(vis, /```vis flow\n/);
 	assert.equal(composePrompt(withMinor(withMinor(defaults(), "vis", true), "align", true), ALL_OK), `${buildMinorPrompt("align")}\n\n${vis}`);
 });

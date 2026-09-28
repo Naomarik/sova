@@ -24,7 +24,11 @@ const TONE: Record<Tone, string> = {
 const TICK = 11;
 const VALUE = 11;
 
-/** `vis chart`: bar, hbar, stacked and line, laid out at the width it is given. */
+/**
+ * `vis chart` — DRAFT (never rendered in a browser yet). Bar (grouped with series), stacked and line,
+ * laid out at the width it is given; bars turn horizontal when their labels can't fit under them.
+ * Scatter parses but isn't drawn yet. Emphasis (spec.emphasis, keyed by row index) isn't drawn yet.
+ */
 export default function ChartView(props: ViewProps<ChartSpec>) {
   let box!: HTMLDivElement;
   const [width, setWidth] = createSignal(560);
@@ -38,10 +42,10 @@ export default function ChartView(props: ViewProps<ChartSpec>) {
   // Vertical bars whose labels can't sit under them turn sideways: long names read better as rows.
   const type = createMemo(() => {
     const s = props.spec;
-    if (s.type !== "bar") return s.type;
+    if (s.type !== "bar" && s.type !== "stacked") return s.type;
     const band = (width() - 60) / s.rows.length;
     const widest = Math.max(...s.rows.map((r) => canvasMeasure(r.label, TICK)));
-    return widest > band * 1.9 || band < 22 ? "hbar" : "bar";
+    return widest > band * 1.9 || band < 22 ? "hbar" : s.type;
   });
   return (
     <div class="vis-chart" ref={box}>
@@ -69,7 +73,7 @@ export default function ChartView(props: ViewProps<ChartSpec>) {
       <Show when={props.spec.y || props.spec.unit}>
         <div class="vis-axis-title">{props.spec.y ?? props.spec.unit}</div>
       </Show>
-      {type() === "hbar" ? <HBars spec={props.spec} width={width()} label={props.label} /> : <Columns spec={props.spec} type={type() as "bar" | "stacked" | "line"} width={width()} label={props.label} />}
+      {type() === "scatter" ? <p class="vis-stub">Scatter charts aren't drawn yet. Source shows the points.</p> : type() === "hbar" ? <HBars spec={props.spec} width={width()} label={props.label} /> : <Columns spec={props.spec} type={type() as "bar" | "stacked" | "line"} width={width()} label={props.label} />}
       <Show when={props.spec.x}>
         <div class="vis-axis-title vis-axis-x">{props.spec.x}</div>
       </Show>

@@ -1,15 +1,15 @@
-/** `vis compare` view: an HTML table; marks are a glyph plus a hidden word, never hue alone. */
+/** `vis matrix` view: an HTML table; marks are a glyph plus a hidden word, never hue alone. */
 import { For, Show } from "solid-js";
 import type { ViewProps } from "../../types";
-import type { CompareSpec, Mark } from "./parse";
-import "./compare.css";
+import type { CellMark, MatrixSpec } from "./parse";
+import "./matrix.css";
 
-const MARK_TEXT: Record<Mark, string> = { yes: "Yes", no: "No", partial: "Partly" };
+const MARK_TEXT: Record<CellMark, string> = { yes: "Yes", no: "No", partial: "Partly" };
 
-export default function CompareView(props: ViewProps<CompareSpec>) {
+export default function MatrixView(props: ViewProps<MatrixSpec>) {
   return (
-    <div class="vis-compare-wrap" tabindex="0" role="region" aria-label={`${props.label} (scrolls sideways)`}>
-      <table class="vis-compare">
+    <div class="vis-matrix-wrap" tabindex="0" role="region" aria-label={`${props.label} (scrolls sideways)`}>
+      <table class="vis-matrix">
         <thead>
           <tr>
             <th scope="col">
@@ -27,7 +27,7 @@ export default function CompareView(props: ViewProps<CompareSpec>) {
                   {(c) => (
                     <td>
                       <Show when={c.mark}>
-                        <span class={`vis-mark vis-mark-${c.mark}`} aria-hidden="true" />
+                        <span class={`vis-cell-mark vis-cell-mark-${c.mark}`} aria-hidden="true" />
                         <span class="visually-hidden">{MARK_TEXT[c.mark!]}</span>
                       </Show>
                       <Show when={c.text}>

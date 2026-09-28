@@ -1,6 +1,7 @@
 /** `vis timeline`: `when | label | note | tone` rows and `== section ==` lines. */
 
-import { commaList, divider, fail, fields, id, isTone, lines, MAX_TEXT, modifiers, popTone, takeSettings, text, tokenize, unquote, type Arrow, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { applyMarks, takeMarks } from "../../core/emphasis";
+import { divider, fail, fields, lines, popTone, takeSettings, type Tone, type VisBase } from "../../core/grammar";
 
 export type TimelineItem = { type: "event"; when: string; label: string; note?: string; tone?: Tone } | { type: "section"; label: string };
 export interface TimelineSpec extends VisBase {
@@ -8,15 +9,14 @@ export interface TimelineSpec extends VisBase {
   items: TimelineItem[];
 }
 
-
 const MAX_ROWS = 40;
 
-// ---- timeline ----------------------------------------------------------------------------
 
 export function parseTimeline(body: string): TimelineSpec {
   const ls = lines(body);
   const spec: TimelineSpec = { kind: "timeline", items: [] };
-  const { rest } = takeSettings(ls, [], spec);
+  const { rest: settled } = takeSettings(ls, [], spec);
+  const { rest, marks } = takeMarks(settled);
   for (const line of rest) {
     const div = divider(line);
     if (div !== null) {
@@ -33,5 +33,10 @@ export function parseTimeline(body: string): TimelineSpec {
   const events = spec.items.filter((i) => i.type === "event").length;
   if (events === 0) fail(0, "nothing to draw: add rows like 2015 | React 0.14 | note");
   if (spec.items.length > MAX_ROWS) fail(0, `${spec.items.length} rows; at most ${MAX_ROWS}`);
+  applyMarks(spec, marks, (t) => {
+    if (t.t !== "id" && t.t !== "label" && t.t !== "number") return null;
+    const i = spec.items.findIndex((it) => it.type === "event" && (it.when === t.text || it.label === t.text));
+    return i < 0 ? null : String(i);
+  }, "row");
   return spec;
 }

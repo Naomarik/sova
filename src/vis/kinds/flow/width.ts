@@ -17,9 +17,5 @@ export function useWidth(): [Accessor<number>, (el: HTMLElement) => void] {
   return [width, (e) => (el = e)];
 }
 
-// Bumped when a web font finishes loading. canvasMeasure drops its cached widths then
-// (core/text.ts), so a layout that reads this re-measures its text in the real font.
-const [fonts, setFonts] = createSignal(0);
-if (typeof document !== "undefined" && document.fonts) document.fonts.addEventListener("loadingdone", () => setFonts((n) => n + 1));
-/** Read inside a layout memo: it re-runs once the fonts its text is measured in have loaded. */
-export const fontsLoaded = fonts;
+/** One signal and one listener for every kind: svg.tsx owns it. */
+export { fontsLoaded } from "../../svg";

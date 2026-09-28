@@ -1,8 +1,7 @@
-import { KINDS } from "./registry";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseVis, visKindWord } from "./parse";
-import { KIND_WORDS } from "./registry";
+import { KIND_WORDS, KINDS } from "./registry";
 
 const err = (kind: string, body: string) => {
   const r = parseVis(kind, body);

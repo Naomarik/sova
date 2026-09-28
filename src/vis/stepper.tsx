@@ -20,9 +20,13 @@ export function createStepper(count: Accessor<number>) {
           <button class="button button-sm button-ghost" type="button" disabled={at() === 0} onClick={() => setAt(Math.max(0, at()! - 1))}>
             Previous
           </button>
-          <span class="vis-stepper-count" aria-live="polite">
+          {/* One announced string; the visible count is "Step 3 of 8", or "3/8" at phone width. */}
+          <span class="visually-hidden" aria-live="polite">
+            Step {at()! + 1} of {count()}
+          </span>
+          <span class="vis-stepper-count" aria-hidden="true">
             <span class="vis-stepper-long">Step {at()! + 1} of {count()}</span>
-            <span class="vis-stepper-short" aria-hidden="true">{at()! + 1}/{count()}</span>
+            <span class="vis-stepper-short">{at()! + 1}/{count()}</span>
           </span>
           <button class="button button-sm button-ghost" type="button" disabled={at()! >= count() - 1} onClick={() => setAt(Math.min(count() - 1, at()! + 1))}>
             Next

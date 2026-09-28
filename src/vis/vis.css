@@ -177,7 +177,7 @@
 @container vis (max-width: 420px) {
   .vis-stepper { gap: 0; }
   .vis-stepper-count { padding: 0 var(--space-1); }
-  .vis-stepper-long { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .vis-stepper-long { display: none; }
   .vis-stepper-short { display: inline; }
 }
 .vis-future { opacity: .18; }

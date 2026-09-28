@@ -128,7 +128,7 @@ export function ownerAreaSchema(roster: readonly Person[]) {
   return {
     type: "string",
     enum: [...choices, OWNER_AREA_NONE],
-    description: `Who decides it: the one decision area from "Who decides what" that covers it, exactly as written there, or "${OWNER_AREA_NONE}" when none does.`,
+    description: `Who decides it: "${OWNER_AREA_NONE}" unless the decision itself is about one decision area from "Who decides what", then that area, exactly as written there. Never from who said it: a page's layout or design is not finance because a finance person asked for it.`,
   };
 }
 
@@ -441,7 +441,7 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolDefiniti
       name: "goal_done",
       label: "Goal done",
       description: "The goal is met and the answers are checked. Give a short summary of what was established. Ends the conversation.",
-      parameters: obj({ summary: str("What was established, in a few sentences. Everyone in the conversation sees it: say it in your own words (never the goal's), and name people by name only, never by role or job title.") }, ["summary"]) as any,
+      parameters: obj({ summary: str("What was established, in a few sentences. Everyone in the conversation sees it: say it in your own words (never the goal's), name people by name only, never by role or job title, and never say how the answers are recorded or under which area.") }, ["summary"]) as any,
       async execute(_id, params: any) {
         const summary = clip(params.summary, BRIEFING_MAX);
         if (!summary) throw new Error("Give a summary of what was established.");

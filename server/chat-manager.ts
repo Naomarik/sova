@@ -1631,6 +1631,25 @@ class ChatSession {
     return true;
   }
 
+  /**
+   * A note for the session's model, shown in the chat, that starts no turn (a project coding
+   * session started with no prompt gets its worktree paragraph this way). pi appends it to the file
+   * at once while idle, and it is context from the next turn on. False when this runtime may not
+   * write (a foreign writer, the TUI) or is mid-turn.
+   */
+  async appendNote(customType: string, text: string): Promise<boolean> {
+    if (this.disposed || this.foreignWrite || this.hasForeignWrites() || this.session.isStreaming) return false;
+    try {
+      assertNotLive(this.path);
+    } catch {
+      return false;
+    }
+    this.flushDeferredAppends(); // open-time entries go first, as in pinMode
+    await this.session.sendCustomMessage({ customType, content: text, display: true }, { triggerTurn: false });
+    markOwned(this.path);
+    return true;
+  }
+
   /** The sandbox extension's /sandbox command in this runtime (server/sandbox-state.ts). */
   private sandboxCommand() {
     return sandboxCommandOf(this.session.extensionRunner);

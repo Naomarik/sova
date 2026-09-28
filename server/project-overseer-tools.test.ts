@@ -6,12 +6,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { Person } from "../shared/orgs";
-import type { Autonomy, ProjectCodingMode, ProjectOverseerSettings } from "../shared/project-overseer";
+import type { Autonomy, CodingWorktree, ProjectCodingMode, ProjectOverseerSettings } from "../shared/project-overseer";
 import type { SessionSummary } from "../shared/protocol";
 
 const root = mkdtempSync(join(tmpdir(), "sova-po-tools-"));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
-const { projectOverseerTools, PoLimits, TOOL_NEEDS, autonomyRefusal, underRoot } = await import("./project-overseer-tools");
+const { projectOverseerTools, PoLimits, TOOL_NEEDS, autonomyRefusal, underRoot, buildState } = await import("./project-overseer-tools");
 const { defaultPoSettings, effectiveAutonomy, projectOverseerPaths, EMPTY_ROSTER_REASON, nextMidnight } = await import("./project-overseer-store");
 type HeldInput = import("./project-overseer-tools").HeldInput;
 const { AUTONOMY_LEVELS } = await import("../shared/project-overseer");
@@ -33,7 +33,7 @@ const person = (id: string, name: string, status: Person["status"] = "active"): 
 });
 
 let n = 0;
-function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]; settings?: Partial<ProjectOverseerSettings>; hasSpec?: boolean; now?: () => Date; open?: number } = {}) {
+function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]; settings?: Partial<ProjectOverseerSettings>; hasSpec?: boolean; now?: () => Date; open?: number; builds?: CodingWorktree[] } = {}) {
   const calls: string[] = [];
   /** What the refusals held for a later look, by key (the host keeps one per key). */
   const held = new Map<string, HeldInput>();
@@ -101,6 +101,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
       return { queued: false };
     },
     coding: () => [],
+    builds: async () => opts.builds ?? [],
     startedCoding: () => new Map([["in-tree", { removed: false }], ["gone-tree", { removed: true }]]),
     hold: (h: HeldInput) => void held.set(h.key, h),
     postOwnerUpdate: async (input: { text: string; attended: boolean }) => {
@@ -509,5 +510,83 @@ describe("two allowances: each message you send, and on its own each day", () =>
     assert.doesNotMatch(out, /Coding tokens|token budget|\$\d|cost/i);
     for (const t of f.tools) assert.doesNotMatch(`${t.description} ${t.promptSnippet ?? ""}`, /\btokens?\b|budget|\$\d/i, t.name);
     assert.match(out, /Looks on your own: at most 12 a day/);
+  });
+});
+
+/** A tool result's text. */
+const textOf = (r: { content: unknown[] }): string => (r.content[0] as { text: string }).text;
+
+/** A build row as the project page lists it (codingWorktrees). */
+const build = (over: Partial<CodingWorktree>): CodingWorktree => ({
+  sessionId: "b-1",
+  path: "/s/b-1.jsonl",
+  title: "Dashboard v2",
+  startedBy: "overseer",
+  branch: "sova/dashboard-v2-3f9a1c",
+  worktree: "/.worktrees/proj-dashboard-v2-3f9a1c",
+  base: "abc",
+  target: "master",
+  state: "open",
+  merged: false,
+  ahead: 2,
+  dirty: false,
+  running: false,
+  workers: 0,
+  createdAt: "2026-09-28T05:00:00.000Z",
+  ...over,
+});
+
+describe("builds: who started each coding session, its branch and whether it is merged (NEW-MS-2)", () => {
+  test("buildState words each case from git's answer", () => {
+    assert.equal(buildState(build({ merged: true, state: "merged" })), "merged into master");
+    assert.equal(buildState(build({ ahead: 2 })), "2 commits, not merged into master");
+    assert.equal(buildState(build({ ahead: 1 })), "1 commit, not merged into master");
+    assert.equal(buildState(build({ ahead: 0 })), "no commits yet");
+    assert.equal(buildState(build({ merged: false, newSinceMerge: 3, mergedAt: "x" })), "3 new commits since its last merge, not merged into master");
+    assert.equal(buildState(build({ state: "root", branch: null, inRoot: "it isn't a Git repository." })), "in the project root (it isn't a Git repository)");
+    assert.equal(buildState(build({ merged: true, state: "removed" })), "merged into master, worktree removed");
+    assert.equal(buildState(build({ dirty: true })), "2 commits, not merged into master, uncommitted changes in its worktree");
+  });
+
+  test("sova_list_sessions lists every build, the operator's included, with its branch and merge state; other root sessions apart", async () => {
+    const f = fake({
+      builds: [
+        build({ sessionId: "in-tree", title: "Wireframe", startedBy: "operator", merged: true, state: "merged" }),
+        build({ sessionId: "dup", title: "", startedBy: "overseer", ahead: 1, path: null }),
+      ],
+    });
+    const out = textOf(await f.run("sova_list_sessions"));
+    assert.match(out, /- in-tree "Wireframe" · started by the operator · idle · sova\/dashboard-v2-3f9a1c · merged into master/);
+    assert.match(out, /- dup "Untitled coding session" · started by you · idle · sova\/dashboard-v2-3f9a1c · 1 commit, not merged into master · on another host/);
+    assert.match(out, /## Other sessions in the project root\n- in-root "Inside"/);
+    assert.ok(!/- in-tree "Worktree"/.test(out), "a build is listed once, as a build");
+  });
+
+  test("sova_project has a Builds section with the same lines", async () => {
+    const f = fake({ builds: [build({ merged: true, state: "merged" })] });
+    const out = textOf(await f.run("sova_project"));
+    assert.match(out, /## Builds \(coding sessions, newest first; merged is read from git\)\n- b-1 "Dashboard v2" · started by you · idle · sova\/dashboard-v2-3f9a1c · merged into master/);
+    const none = textOf(await fake().run("sova_project"));
+    assert.match(none, /## Builds[^\n]*\n\(none yet\)/);
+  });
+});
+
+describe("the operator's to-dos are theirs (NEW-MS-1, NEW-MS-4)", () => {
+  test("sova_todos reads only in a turn the operator started", async () => {
+    await assert.rejects(() => fake({ autonomy: "L3" }).run("sova_todos"), /The to-do list is the operator's own: you read it only when the operator asks/);
+    const out = textOf(await fake({ attended: true }).run("sova_todos"));
+    assert.equal(out, "(none)");
+  });
+});
+
+describe("owner areas reach the promotion check (NEW-MS-5)", () => {
+  test("sova_decisions shows each decision's owner area and whether its author decides it", async () => {
+    const f = fake();
+    const row = { id: "s:1", areaKey: "layout", area: "Layout", ownerArea: "finance", authorOwnsArea: true, state: "drafted", name: "Tahir", statement: "Net profit first", quote: "net profit first" };
+    f.host.decisions = async () => ({ decisions: [row], conflicts: [], spec: { specRoot: "", exists: false, frozen: false, draft: null, promoted: 0, drafted: 1 }, lastRun: null, running: false, names: {}, ownerAreas: [] }) as never;
+    const out = textOf(await f.run("sova_decisions"));
+    assert.match(out, /owner area: finance · the author decides it/);
+    const promote = f.tools.find((t) => t.name === "sova_promote")!;
+    assert.match(promote.description, /check its owner area fits what it is about/);
   });
 });

@@ -3,7 +3,7 @@
 
 import { createSignal } from "solid-js";
 import { fetchDraft, putDraft } from "./api";
-import type { UploadResult } from "../../shared/protocol";
+import type { SessionSummary, UploadResult } from "../../shared/protocol";
 import type { ContextState } from "./context";
 import { draftCounts } from "./draft-mark";
 import { createDraftSaver, type DraftPayload } from "./draft-save";
@@ -39,6 +39,19 @@ export function announce(text: string) {
 }
 
 export const [home, setHome] = createSignal<string | null>(null);
+
+/** App's adoptCreated: opens a session made outside a view that could hand it over (the project
+    page's New Coding Session), so its route resolves while it is a hidden empty husk. */
+let adopter: ((s: SessionSummary) => void) | null = null;
+export const setAdopter = (fn: ((s: SessionSummary) => void) | null): void => {
+  adopter = fn;
+};
+/** Opens a session this tab just created; false when no app is there to adopt it. */
+export function adoptSession(s: SessionSummary): boolean {
+  if (!adopter) return false;
+  adopter(s);
+  return true;
+}
 
 /**
  * True while a workspace's group composer is focused or holds text. A pane composer that is

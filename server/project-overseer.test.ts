@@ -202,7 +202,7 @@ describe("its reach: the project root only", async () => {
   });
 });
 
-describe("the operator's queued items reach its next run", async () => {
+describe("the operator's to-dos and ideas are their own list, never a reason to look", async () => {
   const org = await orgs.createOrg({ name: "Queue", dir: join(root, "ws5") });
   mkdirSync(join(root, "proj5"));
   const project = orgs.addProject(org.id, { name: "Queue", root: join(root, "proj5") });
@@ -210,34 +210,24 @@ describe("the operator's queued items reach its next run", async () => {
   const p = store.projectOverseerPaths(org.id, project.id);
   const { Hono } = await import("hono");
   const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
-  const { updateTodo, readTodos } = await import("./overseer-todos");
+  const { readTodos } = await import("./overseer-todos");
   const app = new Hono();
   registerProjectOverseerRoutes(app);
   const post = (what: string, b: unknown) =>
     app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/${what}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
 
-  test("a to-do or idea the operator adds is a reason to look; the to-do's own words are in the prompt", async () => {
+  test("adding a to-do or an idea notes no reason; the prompt carries no to-do text; a look's message never points at them", async () => {
+    const before = store.readMemo(p).pending.length;
     assert.equal((await post("todos", { text: "Name in a note who owns the approval threshold" })).status, 201);
-    assert.ok(store.readMemo(p).pending.some((r) => /queued a to-do/.test(r)), "a reason to look");
     assert.equal((await post("ideas", { id: "§ops/duplicates", title: "Detect duplicate invoices" })).status, 201);
-    assert.ok(store.readMemo(p).pending.some((r) => /added an idea/.test(r)));
+    assert.equal(readTodos(p.todos).todos.length, 1, "the to-do was added");
+    assert.equal(store.readMemo(p).pending.length, before, "no reason to look");
     const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
-    assert.match(prompt, /- \[td_[^\]]+\] Name in a note who owns the approval threshold$/m);
-    assert.match(po.watchText([], "L1", 1), /1 open to-do item for you, listed in full in your prompt: work on it too\./);
-    assert.match(po.watchText([], "L1", 3), /3 open to-do items for you, listed in full in your prompt: work on them too\./);
-    assert.doesNotMatch(po.watchText([], "L1", 0), /to-do/);
-  });
-
-  test("bounded: the first 20 open ones in full, done ones left out, the rest counted", async () => {
-    for (let i = 1; i <= 24; i++) await post("todos", { text: `Queued item number ${i}` });
-    const first = readTodos(p.todos).todos[0]!;
-    updateTodo(first.id, { done: true }, p.todos);
-    const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
-    assert.doesNotMatch(prompt, /approval threshold/, "a done to-do is not carried");
-    assert.match(prompt, /24 open, 1 done\./);
-    assert.match(prompt, /Queued item number 20$/m);
-    assert.doesNotMatch(prompt, /Queued item number 21$/m);
-    assert.match(prompt, /… and 4 more \(sova_todos lists them all\)/);
+    assert.doesNotMatch(prompt, /approval threshold/, "the to-do's words stay out of the prompt");
+    assert.match(prompt, /to-do items are their own list/);
+    assert.match(prompt, /never because\s+a to-do or an idea exists/);
+    const look = po.watchText(["A gathering session reached its goal."], "L3");
+    assert.doesNotMatch(look, /to-do|todo|idea item/i);
   });
 });
 

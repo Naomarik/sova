@@ -1365,7 +1365,7 @@ no region (they are in the overseer's own History, §app.project-overseer/page).
     whoever started them — the operator's Reconcile or re-route, a project overseer's reconcile, or
     the run Sova starts itself after a resolution. Each row's line 2 names what is in conflict:
     "In conflict: {area}".
-  - **Builds**: its coding sessions (`org.kind` `coding`: the overseer's and Start Coding Session's).
+  - **Builds**: its coding sessions (`org.kind` `coding`: the overseer's, Start Coding Session's and New Coding Session's).
   - A workspace file no project claims (`other`) is a plain row under its project ("Other"), with no
     group.
 - **The three states** of a conversation or a settle session, each a label with its count, shown only
@@ -1652,7 +1652,7 @@ record whose transcript is gone.
 |---|---|
 | Loading (first fetch, after 300ms) | 6 × `<div class="skeleton skeleton-row">` inside `.sidebar-list`, separated by `--space-2`. Put `aria-busy="true"` on the `nav`. Nothing appears before 300ms |
 | Error | `.banner.banner-error` at `--space-3` inset, with `alert-circle`. Title: "Couldn't read your sessions." Body: "`~/.pi/agent/sessions` wasn't changed. Check the server is running, then retry." `.banner-action`: `<button class="button button-sm">Retry</button>`. If rows loaded earlier, keep them visible below the banner |
-| Empty (0 sessions on disk) | `.empty`. Title: "0 sessions in `~/.pi/agent/sessions`." Body: "Start one here, or run `pi` in a terminal. It'll show up in this list." One `.empty-action`: `New Session` (secondary) |
+| Empty (0 sessions on disk) | `.empty`. Title: "0 sessions in `{dir}`.", `{dir}` the sessions folder of the server's own agent dir (`GET /api/sessions/dir`), with the home folder as `~` (`~/.pi/agent/sessions` on a default host); until the server has said, "0 sessions yet." Body: "Start one here, or run `pi` in a terminal. It'll show up in this list." One `.empty-action`: `New Session` (secondary) |
 | No matches | `.empty`. Title: "0 of 48 match “{query}”." Body: "We search titles, folders, models, and tags." Action: `<button class="button">Clear Search</button>` |
 
 ## §app.session-list/tokens — Tokens

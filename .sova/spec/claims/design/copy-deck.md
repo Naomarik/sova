@@ -69,7 +69,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Empty top region note | 0 sessions open in a TUI, or started here and not archived. The archive below has the rest. |
 | Loading | skeleton only, no text |
 | Error banner | **Couldn't read your sessions.** `~/.pi/agent/sessions` wasn't changed. Check the server is running, then retry. · button: `Retry` |
-| Empty (0 on disk) | **0 sessions in `~/.pi/agent/sessions`.** Start one here, or run `pi` in a terminal. It'll show up in this list. · button: `New Session` |
+| Empty (0 on disk) | **0 sessions in `{the server's sessions folder}`.** (`~/.pi/agent/sessions` on a default host; before the server says: **0 sessions yet.**) Start one here, or run `pi` in a terminal. It'll show up in this list. · button: `New Session` |
 | No matches | **0 of {total} match “{query}”.** We search titles, folders, models, and tags. · button: `Clear Search` |
 
 ## §design.copy-deck/main-pane — Main pane
@@ -690,6 +690,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Merge | `Merge Branch` (secondary) · disabled reasons: "Session working" · "Workers running" · "On another host" · done (toast): "Merged sova/{name} into {target}." |
 | …refused (`.field-error` under the row) | "The project root has {branch} checked out, not {target}. Check out {target} there, then merge." · "The project root has uncommitted changes to tracked files. Commit or stash them, then merge." · "The project root is in the middle of a {merge/rebase/cherry-pick}. Finish it, then merge." · detached root: "The project root's checkout is on a detached HEAD, not {target}. Check out {target} there, then merge." · uncommitted in the worktree: "The worktree has uncommitted changes in {n} files ({first file}). Commit them in the session first, then merge." · nothing to merge: "sova/{name} has nothing to merge into {target}." · conflict: "sova/{name} conflicts with {target} in {n} files. Nothing was merged. Resolve it in the worktree, then merge again." · busy (server): "The session is working." · "Its workers are running." · another host: "On another host: its worktree is there." |
 | Remove | `Remove Worktree` (destructive, outlined) · disabled reasons as Merge's · confirm, merged: "The folder `{path}` and the merged branch `sova/{name}` go away. The session and its transcript stay." · unmerged: "The folder `{path}` goes away. The branch `sova/{name}` keeps its commits, and the session and its transcript stay." · buttons `Remove Worktree` · `Cancel` · done: "Worktree removed." · refused: "The worktree has uncommitted changes in {n} files ({first file}). Nothing was removed. Commit or discard them first." · twice: "Its worktree was already removed." |
+| List heading, empty | `Coding sessions` is always shown · "None yet. Yours and the overseer's are listed here." · a row with no title yet: "Untitled coding session" |
+| New Coding Session | `New Coding Session` (secondary, terminal icon) on the `Coding sessions` heading · toast as Start Coding Session's, then the session opens · mode not set (`.field-error` under the heading): "Started, but its mode could not be set. Set it from the chat's mode menu before you send." · refused (`.field-error`): "{reason} No session was started." |
 | Start Coding Session (toast) | "Coding session started on sova/{name}." · in the root: "Coding session started in the project root." · mode not set (`.field-error`): "Started, but not prompted: its mode could not be set. Open it and send the message yourself." · no worktree (`.field-error`): "No session was started: its worktree could not be made ({git's first line})." |
 | Promote (Decisions tab, after a promotion) | "Promoted {n}. Committed {short sha} on {branch}." · skipped: the reason as §app.requirements/promotion-commit words it ("Not committed: …") · no Git: no second sentence |
 | Overseer tool refusals (the model reads them; the activity list shows them) | "Delegate is off for this project's coding sessions; the operator can allow it on the project page." · "Align needs someone to answer its questions, and nobody answers a coding session's." · "Spec is on for this project's coding sessions; only the operator can turn it off on the project page." · "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: only spec is allowed." · "Its worktree was removed, so it has no folder to work in." |
@@ -698,7 +700,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Section | legend `Limits` · hint "Past a limit it stops and tells you. Your own Start Coding Session and Send to Person aren't counted." |
+| Section | legend `Limits` · hint "Past a limit it stops and tells you. Your own coding sessions and Send to Person aren't counted." |
 | Groups | `Each message you send` · `On its own, each day`, hint "Resets at midnight on this host." · `At once`, hint "These never go Unlimited: they are what stops a burst." · `Pace` |
 | Allowance fields | `Gathering sessions started` · `Decisions promoted` · `Coding sessions started` · `Prompts to coding sessions` · per day also `Looks` · each with a checkbox `Unlimited` |
 | At-once fields | `Gathering sessions open` (0–20) · `Coding sessions running` (0–10) · no Unlimited |

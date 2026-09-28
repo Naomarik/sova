@@ -27,7 +27,7 @@ import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-sto
 import { dropSessionTags, tagsFor } from "./session-tags";
 import { batonSummaryField } from "./baton";
 import { projectOverseerOfPath } from "./project-overseer-store";
-import { orgLookup } from "./org-sessions";
+import { orgCodingIds, orgLookup } from "./org-sessions";
 import { orgOfSessionPath, readIndex } from "./orgs";
 
 /** `baton` for a baton session's file (§app/baton), `projectOverseer` for a project overseer's
@@ -1052,6 +1052,7 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
   const refusals: { path: string; reason: string }[] = [];
   /** Ids whose file is really gone, so their group assignment goes too (one write after the loop). */
   const forgotten: string[] = [];
+  let codingIds: Set<string> | undefined;
   for (const target of targets) {
     // paths mode re-validates what the route already checked, so a direct caller gets the same rule.
     const path = req.mode === "paths" ? resolveSessionPath(target) : target;
@@ -1075,6 +1076,9 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     }
     const matches = req.mode === "age" ? st.mtimeMs < cutoff : req.mode === "husks" ? await isZeroInput(path, st.size) : true;
     if (!matches) continue;
+    // A project's coding session is empty until the operator's first message (New Coding Session):
+    // its started.json row names it, so it is never swept as a husk.
+    if (req.mode === "husks" && (codingIds ??= orgCodingIds()).has(idOf(path))) continue;
     // Overseer files (current and history) are never swept by age or as husks: a fresh Overseer
     // is a husk by definition, and its history is pruned by /clear itself (paths mode).
     if (req.mode !== "paths" && (await summarize(path))?.overseer) continue;

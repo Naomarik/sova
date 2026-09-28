@@ -618,7 +618,8 @@ is virtualized.
   action strip survive the end of a turn, a reconnect and a rewind; only changed and new rows
   are built.
 - **Switching back.** The last 3 sessions opened in the tab keep their rows and where they were
-  scrolled: at the end while following, else the row at the top of the view and its offset.
+  scrolled: at the end while following, else the row at the top of the view and its offset. So
+  do the sessions in Recent, fetched ahead (§chat.transcript/recent-preload).
   Switching back to one shows those rows at once, where they were (with Jump to Latest when not
   following), while its `hello` or snapshot is on the way, then reconciles them as above, which
   completes when its older rows have arrived. Any other open lands at the end. A reload keeps
@@ -650,6 +651,34 @@ what it did before.
   none of them (Vite's) counts as this machine.
 - **Not covered.** The built app's static files, extension sockets and routes (`/ext/`), a
   peer's sessions (`/peer/`) and the share listener are sent as before.
+
+## §chat.transcript/recent-preload — Recent sessions open at once
+
+The sessions in the sidebar's Recent (§app.session-list/recent) are kept in memory, so opening
+any of them paints its rows in the first frame, including one this tab hasn't opened yet. The
+view then reconciles them with its own `hello` or snapshot (§chat.transcript/rendering).
+
+- **What is kept.** The sessions Recent lists with no search typed, the last 3 sessions opened
+  (switching back to a session that isn't in Recent works as before), and every session a view
+  shows now. Anything else is dropped. Membership follows Recent live: its count setting, and
+  sessions moving in or out as they become active or archived.
+- **Fetched in the background.** A Recent session not yet in memory is fetched with the
+  read-only `GET /api/transcript`, the same rows the `hello` and the snapshot carry; fetching
+  never opens a chat runtime or writes anything. One session at a time, in Recent's order, once
+  every open view has painted its rows (or 10 s have passed), while the browser is idle. None
+  while a turn runs in a session on screen; none for a Recent session in the middle of its own
+  turn, until it ends. None at all when the browser asks to save data
+  (`navigator.connection.saveData`). Peer sessions are fetched through the host, as their views
+  are.
+- **Kept current.** A kept Recent session whose file changed (`lastActiveAt`) after its rows
+  were fetched, or after the last view showing it closed, is fetched again in the background. A
+  failed fetch is retried only once the file changes.
+- **A memory budget.** The Recent sessions kept beyond the last 3 opened and those on screen add
+  up to at most 40 MB of transcript JSON (about 50-60 MB of memory). Past it, the largest go
+  first. A session is not downloaded when the size its response announces can't fit, and one
+  already found too big is not fetched again while the others are kept. Such a session opens
+  the way any unkept one does: it lands at the end once its `hello` arrives.
+- **A reload keeps nothing.** Each page load fetches what Recent needs again.
 
 ## §chat.transcript/own-writes-across-restart — The server's own writes survive a restart
 

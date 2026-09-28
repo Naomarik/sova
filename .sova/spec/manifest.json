@@ -5636,6 +5636,25 @@
         "server/compression.ts",
         "server/compression.test.ts"
       ]
+    },
+    "§chat.transcript/recent-preload": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/rendering",
+        "§app.session-list/recent"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/recent-preload.ts",
+        "src/lib/recent-preload.test.ts",
+        "src/lib/transcript-cache.ts",
+        "src/lib/transcript-cache.test.ts",
+        "src/lib/api.ts",
+        "src/App.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/WatchView.tsx"
+      ]
     }
   },
   "boundary": {

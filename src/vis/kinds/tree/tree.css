@@ -1,6 +1,8 @@
-/* `vis tree`: nested lists with elbow connectors drawn by each child item. */
+/* `vis tree`: nested lists with elbow connectors drawn by each child item. Every line is 22px and
+   every level 20px: ./height.ts computes the drawing's height from the same numbers. */
 /* `.vis` in front: beats the chat's `.md ul` / `.md li + li` spacing. */
 .vis .vis-tree, .vis .vis-tree ul { list-style: none; margin: 0; padding: 0; }
+.vis .vis-tree { font-size: var(--fs-body); line-height: 22px; }
 .vis .vis-tree ul { padding-left: 20px; }
 .vis .vis-tree li { margin: 0; }
 .vis-tree ul > li { position: relative; }
@@ -24,14 +26,14 @@
   bottom: 0;
   border-left: var(--stroke-thin) solid var(--color-border-strong);
 }
-.vis-tree-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); padding: 2px var(--space-1); line-height: 22px; }
-.vis-tree-name { color: var(--vis-ink); font-weight: var(--fw-medium); overflow-wrap: anywhere; }
-.vis-tree-row:not(.vis-em) .vis-tree-name { color: var(--color-ink); }
+.vis-tree-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 var(--space-2); padding: 2px var(--space-1); line-height: 22px; }
+.vis-tree-name { min-width: 0; color: var(--vis-ink); font-weight: var(--fw-medium); overflow-wrap: anywhere; }
+.vis-tree-row:not(.vis-em) .vis-tree-name { min-width: 0; color: var(--color-ink); }
 .vis-tone-accent > .vis-tree-row .vis-tree-name, .vis-tone-ok > .vis-tree-row .vis-tree-name,
 .vis-tone-warn > .vis-tree-row .vis-tree-name, .vis-tone-error > .vis-tree-row .vis-tree-name,
 .vis-tone-info > .vis-tree-row .vis-tree-name { text-decoration: underline 2px var(--vis-stroke); text-underline-offset: 3px; }
-.vis-tone-muted > .vis-tree-row .vis-tree-name { color: var(--color-ink-muted); }
+.vis-tone-muted > .vis-tree-row .vis-tree-name { min-width: 0; color: var(--color-ink-muted); }
 .vis-tree-row.vis-em .vis-tree-name { font-weight: var(--fw-semibold); }
-.vis-tree-row > .vis-em-badge { margin-right: 0; align-self: center; }
-.vis-tree-note { font-size: var(--fs-caption); color: var(--color-ink-muted); line-height: var(--lh-caption); }
-.vis-mono { font-family: var(--font-mono); font-size: var(--fs-mono); }
+.vis-tree-row > .vis-em-badge { margin: 2px 0 0; }
+.vis-tree-note { min-width: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); line-height: 22px; overflow-wrap: anywhere; }
+.vis-tree .vis-mono { font-family: var(--font-mono); font-size: var(--fs-mono); }

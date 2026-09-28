@@ -1,15 +1,19 @@
-/* `vis layers`: stacked bands, top layer first; the label column folds above the items on a phone. */
+/* `vis layers`: stacked bands, top layer first; the label column folds above the items on a phone.
+   Every size here is fixed in px (line heights, paddings, the label column): ./height.ts computes the
+   drawing's height from the same numbers, so the figure can reserve its space before it draws. */
 /* `.vis` in front: beats the chat's `.md ol` / `.md li + li` spacing. */
 .vis .vis-layers, .vis .vis-layers-items { margin: 0; padding: 0; }
 .vis .vis-layers li { margin: 0; }
-.vis-layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
-.vis-layers-layer { display: grid; grid-template-columns: minmax(6em, 9em) 1fr; align-items: baseline; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1.5px solid var(--vis-stroke); border-radius: var(--r-sm); background: var(--vis-fill); }
-.vis-layers-layer.vis-em { border-width: 2.5px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--vis-stroke) 22%, transparent); border-radius: var(--r-sm); }
-.vis-layers-label { display: flex; align-items: center; font-weight: var(--fw-semibold); color: var(--vis-ink); overflow-wrap: anywhere; }
+.vis-layers { list-style: none; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--fs-body); line-height: 22px; }
+.vis-layers-layer { display: grid; grid-template-columns: 128px minmax(0, 1fr); align-items: start; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: var(--stroke-thin) solid var(--vis-stroke); border-radius: var(--r-sm); background: var(--vis-fill); }
+/* A mark rings the band from outside, so the band keeps its size. */
+.vis-layers-layer.vis-em { box-shadow: 0 0 0 1px var(--vis-stroke), 0 0 0 4px color-mix(in srgb, var(--vis-stroke) 22%, transparent); border-radius: var(--r-sm); }
+.vis-layers-label { display: flex; align-items: flex-start; min-width: 0; padding-top: 1px; font-weight: var(--fw-semibold); color: var(--vis-ink); overflow-wrap: anywhere; }
+.vis-layers-label > .vis-em-badge { margin-top: 2px; }
 .vis-layers-body { min-width: 0; }
-.vis-layers-items { display: flex; flex-wrap: wrap; gap: var(--space-1); list-style: none; margin: 0; padding: 0; }
-.vis-layers-items li { padding: 2px var(--space-2); border-radius: var(--r-xs); background: var(--color-surface); border: var(--stroke-thin) solid var(--color-border); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink); overflow-wrap: anywhere; }
-.vis-layers-note { display: block; margin-top: var(--space-1); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
-.vis-layers-items + .vis-layers-note { margin-top: var(--space-1); }
-.vis-layers-body > .vis-layers-note:first-child { margin-top: 0; }
-@container vis (max-width: 420px) { .vis-layers-layer { grid-template-columns: 1fr; gap: var(--space-1); padding: var(--space-2); } }
+.vis-layers-items { display: flex; flex-wrap: wrap; gap: var(--space-1); list-style: none; }
+.vis-layers-items li { max-width: 100%; box-sizing: border-box; padding: 2px var(--space-2); border-radius: var(--r-xs); background: var(--color-surface); border: var(--stroke-thin) solid var(--color-border); font-size: var(--fs-caption); line-height: 18px; color: var(--color-ink); overflow-wrap: anywhere; }
+.vis-layers-items li.vis-mono { font-family: var(--font-mono); font-size: var(--fs-mono); }
+.vis-layers-note { display: block; margin-top: var(--space-1); font-size: var(--fs-caption); line-height: 18px; color: var(--color-ink-muted); }
+.vis-layers-body > .vis-layers-note:first-child { margin-top: 3px; }
+@container vis (max-width: 420px) { .vis-layers-layer { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); padding: var(--space-2); } }

@@ -26,10 +26,10 @@
   min-width: 0;
   font-size: var(--fs-body);
   font-weight: var(--fw-semibold);
+  line-height: var(--lh-heading-s);
   color: var(--color-ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding-block: var(--space-1);
+  overflow-wrap: anywhere;
 }
 .vis-eyebrow {
   flex: 1;
@@ -54,6 +54,9 @@
   overflow-wrap: normal;
   overflow-x: auto;
   max-height: 420px;
+  /* The source is the syntax: `->` must read as typed, never as a ligature arrow. */
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
 }
 .vis-caption {
   padding: 0 var(--space-3) var(--space-3);
@@ -123,7 +126,8 @@
 
 /* ---- Emphasis (core/emphasis.ts, emphasis.tsx): one look for "look here" in every kind -------- */
 /* A marked item: its tone's colours, a heavier outline. SVG shapes and HTML rows alike. */
-.vis-em > rect, .vis-em > polygon, .vis-em > circle, .vis-em > path:not(.vis-cap) { stroke-width: 2.5; }
+/* Specific enough to beat a kind's own `.vis-<k>-node > rect` rule, whose CSS chunk loads later. */
+.vis-svg .vis-em > :is(rect, polygon, circle, path:not(.vis-cap)) { stroke-width: 2.5; }
 .vis-em:is(li, tr, div, span, p) { background: var(--vis-fill); box-shadow: inset 3px 0 0 var(--vis-stroke); border-radius: var(--r-xs); }
 .vis-em-badge {
   display: inline-grid;

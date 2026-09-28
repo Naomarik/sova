@@ -104,7 +104,7 @@ let seq = 0;
 const nid = () => (++seq).toString(16).padStart(8, "0");
 
 /** What record_decision leaves in a transcript: the person's message, then the tool call, then the entry. */
-function say(file: string, by: string, text: string, decision?: { area: string; statement: string; quote: string }): { userId: string; markerId?: string } {
+function say(file: string, by: string, text: string, decision?: { area: string; ownerArea?: string; statement: string; quote: string }): { userId: string; markerId?: string } {
   const userId = nid();
   const ts = new Date().toISOString();
   const lines: object[] = [
@@ -200,6 +200,52 @@ describe("routing", () => {
     assert.equal(owns("bob", "invoicing", "alp", () => false), false, "self-asserted");
     assert.equal(owns(OPERATOR, "anything", null), true);
     assert.equal(reconcile.authorOwnsArea("o", [person("alp", [], "left")], { by: "alp", areaKey: "page-copy" }, trusted, "alp"), false, "left: none");
+  });
+});
+
+describe("owner areas (§app.requirements/owner-area)", () => {
+  const person = (id: string, decides: string[], status = "active") => ({ id, name: id.toUpperCase(), status, decides }) as any;
+  const trusted = () => true;
+  const roster = [person("alp", ["Website", "branding"]), person("bob", ["invoicing", "website "]), person("gone", ["payroll"], "left")];
+  test("the choices: every active person's decision areas, once each as first spelled, then none", () => {
+    assert.deepEqual(decisions.ownerAreaChoices(roster), ["Website", "branding", "invoicing"]);
+    assert.deepEqual(decisions.ownerAreaChoices([]), []);
+  });
+  test("a pick is a roster area (any case or spacing, stored as the roster spells it) or none; anything else is refused naming the choices", () => {
+    assert.deepEqual(decisions.pickOwnerArea(roster, " website"), { ok: true, ownerArea: "Website" });
+    assert.deepEqual(decisions.pickOwnerArea(roster, "NONE"), { ok: true, ownerArea: "none" });
+    assert.deepEqual(decisions.pickOwnerArea(roster, "site"), { ok: false, error: '"site" is not an owner area. Use one of: "Website", "branding", "invoicing" or "none".' });
+    assert.deepEqual(decisions.pickOwnerArea(roster, "payroll"), { ok: false, error: '"payroll" is not an owner area. Use one of: "Website", "branding", "invoicing" or "none".' }, "a left person's area is no choice");
+    assert.deepEqual(decisions.pickOwnerArea([], ""), { ok: false, error: 'Give the owner area: "none" (no one on the roster has a decision area yet).' });
+  });
+  test("authorOwnsArea reads the owner area, not the topic; none is the stakeholder's; an older decision keeps the topic match", () => {
+    const owns = (d: { by: string; areaKey: string; ownerArea?: string }, stakeholder: string | null = null, t = trusted) => reconcile.authorOwnsArea("o", roster, d, t, stakeholder);
+    assert.equal(owns({ by: "alp", areaKey: "site-structure-pages", ownerArea: "Website" }), true, "the topic never matched a roster word; the owner area does");
+    assert.equal(owns({ by: "bob", areaKey: "site-structure-pages", ownerArea: "invoicing" }), true);
+    assert.equal(owns({ by: "alp", areaKey: "invoicing", ownerArea: "branding" }), true, "a topic that happens to be Bob's area is not what counts");
+    assert.equal(owns({ by: "alp", areaKey: "branding", ownerArea: "invoicing" }), false);
+    assert.equal(owns({ by: "alp", areaKey: "x", ownerArea: "none" }, "alp"), true, "none: the main stakeholder");
+    assert.equal(owns({ by: "bob", areaKey: "x", ownerArea: "none" }, "alp"), false);
+    assert.equal(owns({ by: "alp", areaKey: "x", ownerArea: "none" }, null), false, "none and no stakeholder: nobody");
+    assert.equal(owns({ by: "alp", areaKey: "x", ownerArea: "Website" }, null, () => false), false, "a self-asserted say still doesn't count");
+    assert.equal(owns({ by: "alp", areaKey: "x", ownerArea: "payroll" }, "alp"), true, "an area no active person decides falls to the stakeholder");
+    assert.equal(owns({ by: "alp", areaKey: "site-structure-pages" }), false, "recorded before owner areas: the topic is matched, as before");
+    assert.equal(owns({ by: "alp", areaKey: "website" }), true);
+    assert.equal(owns({ by: OPERATOR, areaKey: "x", ownerArea: "invoicing" }), true);
+  });
+  test("a conflict's owner area: the one its sides name; one side's when the other is older; two different ones go to the operator", () => {
+    assert.deepEqual(reconcile.ownerAreaOfPair({ ownerArea: "Website" }, { ownerArea: "website" }), { ownerArea: "Website" });
+    assert.deepEqual(reconcile.ownerAreaOfPair({}, { ownerArea: "none" }), { ownerArea: "none" });
+    assert.deepEqual(reconcile.ownerAreaOfPair({}, {}), {});
+    assert.deepEqual(reconcile.ownerAreaOfPair({ ownerArea: "Website" }, { ownerArea: "invoicing" }), { differ: ["Website", "invoicing"] });
+    const route = (owner: { ownerArea?: string; differ?: [string, string] }, authors: string[], stakeholder: string | null = null) =>
+      reconcile.routeConflict("o", roster, "site-structure-pages", "site structure / pages", authors, trusted, stakeholder, owner);
+    assert.deepEqual(route({ ownerArea: "invoicing" }, ["alp", "alp"]), { to: "bob", reason: "BOB decides invoicing." });
+    assert.deepEqual(route({ ownerArea: "Website" }, ["alp"]), { to: "bob", reason: "BOB decides Website." }, "an owner who wrote neither side");
+    assert.deepEqual(route({ ownerArea: "none" }, ["bob"], "alp"), { to: "alp", reason: "ALP is this project's main stakeholder." });
+    assert.deepEqual(route({ ownerArea: "none" }, ["bob"], null), { to: OPERATOR, reason: "Nobody on the roster decides site structure / pages." });
+    assert.deepEqual(route({ differ: ["Website", "invoicing"] }, ["alp", "bob"], "alp"), { to: OPERATOR, reason: "The two decisions name different owner areas: Website and invoicing." });
+    assert.equal(route({}, ["alp"], null).to, OPERATOR, "no owner area: the topic, which no one decides");
   });
 });
 
@@ -823,6 +869,84 @@ describe("a fold of a fold", async () => {
 });
 
 // The spec tool itself, against a project whose spec someone else already wrote: our records join it.
+// ---- owner areas end to end: a project with several owners ------------------------------------------------------------
+
+describe("a multi-owner project routes by owner area", async () => {
+  const org = await orgs.createOrg({ name: "Studio", dir: join(tmp, "ws-owner") });
+  const client = join(tmp, "client-owner");
+  mkdirSync(client);
+  const project = orgs.addProject(org.id, { name: "Site", root: client });
+  const alp = orgs.addPerson(org.id, { name: "Alperen", role: "Founder", decides: ["website", "branding"] });
+  const bob = orgs.addPerson(org.id, { name: "Bob Tan", role: "Accountant", decides: ["invoicing"] });
+  const s1 = baton.createBaton({ orgId: org.id, projectId: project.id, to: alp.id, publicTitle: "Site", goal: "g" });
+  const s2 = baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Billing", goal: "g" });
+  const id = (sid: string, m: { markerId?: string }) => `${sid}:${m.markerId}`;
+  const row = (info: { decisions: { id: string }[] }, x: string) => info.decisions.find((d) => d.id === x) as any;
+
+  test("free topics, roster owner areas: the owner's decisions are theirs, the overseer promotes them, and an older decision keeps the topic match", async () => {
+    const pages = id(s1.sessionId, say(s1.path, alp.id, "Two pages.", { area: "site structure / pages", ownerArea: "website", statement: "The site has two pages.", quote: "Two pages." }));
+    const old = id(s1.sessionId, say(s1.path, alp.id, "Blue.", { area: "page colours", statement: "Pages are blue.", quote: "Blue." }));
+    const byBob = id(s2.sessionId, say(s2.path, bob.id, "Footer.", { area: "site structure / pages", ownerArea: "website", statement: "The footer lists the office address.", quote: "Footer." }));
+    const info = await reconcile.reconcileProject(org.id, project.id, { route: false });
+    assert.equal(row(info, pages).ownerArea, "website");
+    assert.equal(row(info, pages).areaKey, "site-structure-pages", "the topic still files the spec");
+    assert.equal(row(info, pages).authorOwnsArea, true);
+    assert.equal(row(info, old).ownerArea, undefined, "nothing is backfilled");
+    assert.equal(row(info, old).authorOwnsArea, false, "an older decision: page-colours is no one's area");
+    assert.equal(row(info, byBob).authorOwnsArea, false, "Bob doesn't decide website");
+    const r = await reconcile.promoteDecisions(org.id, project.id, [pages, byBob], { by: "overseer" });
+    assert.deepEqual(r.promoted, [pages]);
+    assert.deepEqual(r.refused.map((x) => x.id), [byBob]);
+    assert.ok(specManifest(client).claims["§requirements/site-structure-pages"], "filed under its topic");
+  });
+
+  test("a contradiction goes to the owner area's owner, and the settle session names the owner area", async () => {
+    say(s1.path, alp.id, "a", { area: "payment terms", ownerArea: "invoicing", statement: "Invoices are due 30 days after issue.", quote: "30 days" });
+    say(s1.path, alp.id, "b", { area: "payment terms", ownerArea: "invoicing", statement: "Invoices are due 60 days after issue.", quote: "60 days" });
+    const info = await reconcile.reconcileProject(org.id, project.id);
+    const c = info.conflicts.find((k) => k.state === "open" && k.areaKey === "payment-terms")!;
+    assert.ok(c, JSON.stringify(info.conflicts));
+    assert.deepEqual([c.routedTo, c.routeReason, c.ownerArea], [bob.id, "Bob Tan decides invoicing.", "invoicing"]);
+    assert.match(baton.batonById(c.batonSessionId!)!.row.goal, /owner area "invoicing"/);
+  });
+
+  test("the operator changes a decision's owner area: kept with who and when, authority recomputed, its open conflict re-routed", async () => {
+    let info = reconcile.listDecisions(org.id, project.id);
+    const old = info.decisions.find((d) => d.area === "page colours")!;
+    await assert.rejects(reconcile.setOwnerArea(org.id, project.id, old.id, "site"), /"site" is not an owner area\. Use one of: "website", "branding", "invoicing" or "none"\./);
+    info = await reconcile.setOwnerArea(org.id, project.id, old.id, "Branding");
+    const changed = row(info, old.id);
+    assert.equal(changed.ownerArea, "branding");
+    assert.equal(changed.authorOwnsArea, true);
+    assert.equal(changed.ownerAreaHistory.length, 1);
+    assert.deepEqual({ ...changed.ownerAreaHistory[0], at: "" }, { at: "", by: OPERATOR, name: orgs.operatorName(), from: null, to: "branding" });
+    // Survives a sync from the transcripts.
+    assert.equal(row(reconcile.listDecisions(org.id, project.id), old.id).ownerArea, "branding");
+    // A side of an open conflict: re-routed by its new owner area.
+    const c = info.conflicts.find((k) => k.state === "open" && k.areaKey === "payment-terms")!;
+    const first = c.batonSessionId!;
+    info = await reconcile.setOwnerArea(org.id, project.id, c.a, "website");
+    let again = info.conflicts.find((k) => k.id === c.id)!;
+    assert.deepEqual([again.routedTo, again.routeReason], [OPERATOR, "The two decisions name different owner areas: website and invoicing."]);
+    assert.equal(baton.batonById(first)!.row.state, "closed", "the session asking Bob is over");
+    const second = again.batonSessionId!;
+    assert.notEqual(second, first);
+    info = await reconcile.setOwnerArea(org.id, project.id, c.b, "website");
+    again = info.conflicts.find((k) => k.id === c.id)!;
+    assert.deepEqual([again.routedTo, again.routeReason, again.ownerArea], [alp.id, "Alperen decides website.", "website"], "Alperen wrote both sides and is the only owner");
+    assert.equal(baton.batonById(again.batonSessionId!)!.row.holder, alp.id);
+    assert.equal(baton.batonById(second)!.row.state, "closed");
+    // The same route again changes nothing: no new session.
+    const third = again.batonSessionId;
+    info = await reconcile.setOwnerArea(org.id, project.id, c.b, "Website");
+    assert.equal(info.conflicts.find((k) => k.id === c.id)!.batonSessionId, third);
+  });
+
+  test("an unknown decision is refused", async () => {
+    await assert.rejects(reconcile.setOwnerArea(org.id, project.id, "nope", "none"), /Unknown decision/);
+  });
+});
+
 describe("an existing spec", () => {
   test("appends an area file without touching other claims", async () => {
     const root = join(tmp, "existing");

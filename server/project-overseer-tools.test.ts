@@ -65,10 +65,10 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     overseerId: () => "po-1",
     batons: () => Array.from({ length: opts.open ?? 0 }, (_, i) => ({ sessionId: `open-${i}`, owner: { overseerOf: "prj_bbbbbbbb" }, state: "open" }) as never),
     batonView: async () => null,
-    decisions: async () => ({ decisions: [], conflicts: [], spec: { specRoot: "", exists: false, frozen: false, draft: null, promoted: 0, drafted: 0 }, lastRun: null, running: false, names: {} }),
+    decisions: async () => ({ decisions: [], conflicts: [], spec: { specRoot: "", exists: false, frozen: false, draft: null, promoted: 0, drafted: 0 }, lastRun: null, running: false, names: {}, ownerAreas: [] }),
     reconcile: async () => {
       calls.push("reconcile");
-      return { decisions: [], conflicts: [], spec: { specRoot: "", exists: false, frozen: false, draft: null, promoted: 0, drafted: 0 }, lastRun: null, running: false, names: {} };
+      return { decisions: [], conflicts: [], spec: { specRoot: "", exists: false, frozen: false, draft: null, promoted: 0, drafted: 0 }, lastRun: null, running: false, names: {}, ownerAreas: [] };
     },
     promote: async (ids: string[]) => {
       calls.push(`promote:${ids.join(",")}`);

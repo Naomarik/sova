@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
-import type { Conflict, DecisionRow, DecisionsInfo, PromoteResult } from "../../shared/decisions";
+import { OWNER_AREA_NONE, type Conflict, type DecisionRow, type DecisionsInfo, type PromoteResult } from "../../shared/decisions";
 import type { OrgDetail, OrgProject } from "../../shared/orgs";
-import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, redraftProject, resolveConflict, routeConflict, setProjectStakeholder, setSpecFrozen } from "../lib/api";
+import { ApiError, getDecisions, getOrg, promoteDecisions, reconcileProject, redraftProject, resolveConflict, routeConflict, setOwnerArea, setProjectStakeholder, setSpecFrozen } from "../lib/api";
 import { alsoCarriesLine, areaGroups, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
 import { promotionCommitLine } from "../lib/coding-worktrees";
 import { relativeTime } from "../lib/format";
@@ -513,6 +513,54 @@ function Provenance(props: { orgId: string; row: DecisionRow }) {
   );
 }
 
+/** Who decides a decision (§app.requirements/owner-area): the operator changes it here, and the
+    server re-routes a conflict it is in. */
+function OwnerAreaField(props: CardProps & { row: DecisionRow }) {
+  let select: HTMLSelectElement | undefined;
+  const current = () => props.row.ownerArea ?? "";
+  // A roster area removed since it was picked still shows as picked.
+  const choices = createMemo(() => {
+    const all = props.info.ownerAreas;
+    const cur = props.row.ownerArea;
+    return cur && cur !== OWNER_AREA_NONE && !all.includes(cur) ? [...all, cur] : all;
+  });
+  const last = () => props.row.ownerAreaHistory?.at(-1);
+  const set = async (value: string) => {
+    const label = value === OWNER_AREA_NONE ? "None" : value;
+    const ok = await props.act("owner-area", () => setOwnerArea(props.orgId, props.projectId, props.row.id, value), `Owner area set to ${label}.`);
+    if (!ok && select) select.value = current();
+  };
+  return (
+    <label class="field project-owner-area">
+      <span class="field-label">Owner area</span>
+      <select ref={select} class="select" disabled={!!props.busy} onChange={(e) => void set(e.currentTarget.value)}>
+        <Show when={!props.row.ownerArea}>
+          <option value="" selected disabled>
+            Not set
+          </option>
+        </Show>
+        <option value={OWNER_AREA_NONE} selected={props.row.ownerArea === OWNER_AREA_NONE}>
+          None
+        </option>
+        <For each={choices()}>
+          {(a) => (
+            <option value={a} selected={a === props.row.ownerArea}>
+              {a}
+            </option>
+          )}
+        </For>
+      </select>
+      <Show when={last()}>
+        {(l) => (
+          <span class="field-hint">
+            Changed by {l().name} <time title={l().at}>{relativeTime(l().at)}</time>.
+          </span>
+        )}
+      </Show>
+    </label>
+  );
+}
+
 // ---- decisions by area, with piecemeal promotion -----------------------------------------------------
 
 function DecisionsCard(props: CardProps) {
@@ -609,13 +657,16 @@ function DecisionsCard(props: CardProps) {
                         <Show when={d.recordId}>
                           {(id) => <p class="orgs-mono project-muted">{id()}</p>}
                         </Show>
+                        <Show when={d.state !== "superseded"}>
+                          <OwnerAreaField {...props} row={d} />
+                        </Show>
                       </div>
                       <div class="project-chips">
                         <Chip tone={DECISION_STATE[d.state].tone} title={DECISION_STATE[d.state].hint}>
                           {DECISION_STATE[d.state].word}
                         </Chip>
                         <Show when={outsideTheirArea(d)}>
-                          <Chip tone="warn" title={`${d.name} doesn't decide ${d.area}. Select All Ready leaves it out; tick it to promote it anyway.`}>
+                          <Chip tone="warn" title={`${d.name} doesn't decide ${d.ownerArea && d.ownerArea !== OWNER_AREA_NONE ? d.ownerArea : d.area}. Select All Ready leaves it out; tick it to promote it anyway.`}>
                             Outside their area
                           </Chip>
                         </Show>

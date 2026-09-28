@@ -78,7 +78,11 @@ export interface BatonHandoffData {
 }
 export interface BatonDecisionData {
   v: 1;
+  /** The topic, in a few words: files the decision in the spec. */
   area: string;
+  /** Who decides it: one of the roster's decision areas as the roster spells it, or "none"
+      (shared/decisions.ts OWNER_AREA_NONE). Absent from decisions recorded before owner areas. */
+  ownerArea?: string;
   statement: string;
   quote: string;
   by: PersonRef;

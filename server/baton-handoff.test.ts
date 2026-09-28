@@ -58,7 +58,7 @@ const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0
 /** A baton chat whose model replies "ok" once `release()` is called, or stops when aborted.
     `start()`: with `holdStart`, a prompt waits in the SDK's input handlers (a turn that is starting,
     its run not yet begun) until it is called. */
-async function heldChat(path: string, opts: { holdStart?: boolean; seen?: unknown[][] } = {}) {
+async function heldChat(path: string, opts: { holdStart?: boolean; seen?: unknown[][]; tools?: unknown[][] } = {}) {
   const chat = await acquireChat(path);
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
@@ -74,10 +74,13 @@ async function heldChat(path: string, opts: { holdStart?: boolean; seen?: unknow
     s._runInputHandlers = async (...a) => (await started, run(...a));
   }
   const seen = opts.seen;
+  const tools = opts.tools;
   s._modelRuntime.hasConfiguredAuth = () => true;
   s.agent.state.model = STUB;
   s.agent.getApiKey = async () => "stub";
   s.agent.streamFunction = async (_m: unknown, context: { messages?: unknown[] }, opts?: { signal?: AbortSignal }) => {
+    // The tools the run can call (the transcript declares them to the model), each time it is called.
+    tools?.push((s.agent.state as unknown as { tools: { name: string; parameters: unknown }[] }).tools.map((t) => ({ name: t.name, parameters: structuredClone(t.parameters) })));
     // What the model reads, each time it is called.
     opts?.signal && seen?.push(structuredClone(context?.messages ?? []));
     // Aborted already when the model is called: a stop that came at the run's first event.
@@ -212,6 +215,26 @@ describe("someone marked left", () => {
       /Gus Gone has left the organization/,
     );
     assert.equal(orgs.readRoster(org.id).filter((p) => p.name === "Gus Gone").length, 1, "no second Gus");
+  });
+});
+
+describe("record_decision's owner areas follow the roster (§app.requirements/owner-area)", () => {
+  test("an area added mid-session is offered at the next run; the conversation's tools stay exactly its own", async () => {
+    const ana = orgs.addPerson(org.id, { name: "Ana Owner", role: "Lead", decides: ["website"] });
+    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: ana.id, publicTitle: "Areas", goal: "g" });
+    const calls: unknown[][] = [];
+    const { chat, release } = await heldChat(c.path, { tools: calls });
+    release();
+    const enumOf = (tools: unknown[]) => (tools as { name: string; parameters: any }[]).find((t) => t.name === "record_decision")!.parameters.properties.ownerArea.enum as string[];
+    says(chat, c.sessionId, ana.id, "first");
+    await until(() => calls.length === 1 && !chat.session.isStreaming);
+    assert.ok(enumOf(calls[0]!).includes("website"));
+    assert.ok(!enumOf(calls[0]!).includes("hosting"));
+    orgs.applyChange(org.id, ana.id, { decides: ["website", "hosting"] }, { kind: "operator" });
+    says(chat, c.sessionId, ana.id, "second");
+    await until(() => calls.length === 2 && !chat.session.isStreaming);
+    assert.ok(enumOf(calls[1]!).includes("hosting"), JSON.stringify(enumOf(calls[1]!)));
+    assert.deepEqual((calls[1] as { name: string }[]).map((t) => t.name).sort(), [...loadout.BATON_TOOLS].sort(), "the wrap-up's tool stays inactive");
   });
 });
 

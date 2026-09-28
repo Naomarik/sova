@@ -95,6 +95,7 @@
 /* The main stakeholder, at the top of the Requirements card: its banners above the select. */
 .project-stakeholder { display: flex; flex-direction: column; gap: var(--space-2); }
 .project-stakeholder-field { max-width: 28rem; }
+.project-owner-area { max-width: 18rem; }
 
 
 /* The Cost card (§app.project-costs/card). Money is mono with tabular digits and never wraps, so a

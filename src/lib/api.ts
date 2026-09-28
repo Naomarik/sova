@@ -947,6 +947,9 @@ export const redraftProject = (orgId: string, projectId: string) => request<Deci
 /** `bulk`: the ids are exactly what Select All Ready chose (the server holds bulk to the stricter rule). */
 export const promoteDecisions = (orgId: string, projectId: string, ids: string[], bulk: boolean) =>
   request<PromoteResult>(`${projectBase(orgId, projectId)}/promote`, jsonInit("POST", { ids, bulk }));
+/** Who decides a decision: a roster decision area or "none" (§app.requirements/owner-area). */
+export const setOwnerArea = (orgId: string, projectId: string, did: string, ownerArea: string) =>
+  request<DecisionsInfo>(`${projectBase(orgId, projectId)}/decisions/${encodeURIComponent(did)}`, jsonInit("PATCH", { ownerArea }));
 export const routeConflict = (orgId: string, projectId: string, cid: string, to?: string) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/route`, jsonInit("POST", to ? { to } : {}));
 export const resolveConflict = (orgId: string, projectId: string, cid: string, input: ConflictResolveInput) =>

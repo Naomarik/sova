@@ -318,7 +318,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     overseer's `overseer/` — `overseer.json`
     (autonomy, models, the coding sessions' mode, caps, watch, extra instructions), `state.json` (current
     conversation and history), `notes.md`, `actions.jsonl`, `ideas/`, `todos.json` and
-    `started.json` (the sessions it started, and the coding sessions the operator started with Start coding session, as
+    `started.json` (the sessions it started, and the coding sessions the operator started with Start Coding Session or New Coding Session, as
     `operator-coding` rows; each coding row names its title, its worktree's branch and this host's
     path to it, which is host-local, like the row's session path);
   - `visits.jsonl`, the visit log: each time a roster person opened one of their links, and each
@@ -417,7 +417,7 @@ apply the same rule, as the Overseer's flag does (§app.overseer/identity-and-cl
   overseer's `state.json` give the project, the kind and `finished`.
 - **Coding sessions the org's project started**: a session whose id is a row of some attached org's
   `projects/<pid>/overseer/started.json` with kind `coding` (the project overseer's `sova_create_session`)
-  or `operator-coding` (**Start coding session** on the project page, which now records its session there).
+  or `operator-coding` (**Start Coding Session** or **New Coding Session** on the project page, which record their session there).
   The overseer's concurrency caps still count `coding` rows only.
 - **`kind`**: a baton whose row has offers is an `offer`, any other baton a `gathering`; a file with
   THAT org's project-overseer marker is an `overseer` conversation, even one `state.json` no longer

@@ -27,7 +27,7 @@ the org page's Projects tab. The owner page and the project overseer never do.
     (§app.project-costs/recording).
 - **Who started it**, one of three: *the overseer* (a baton or coding session with a row the
   overseer wrote in `started.json`; its own conversations), *you* (the operator: a baton you started,
-  Start coding session, Reconcile Now) or *Sova on its own* (the reconciler's automatic runs). A
+  Start Coding Session, New Coding Session, Reconcile Now) or *Sova on its own* (the reconciler's automatic runs). A
   wrap-up follows its baton, and a worker follows the coding session that started it.
 - **Counted once.** Per file, a message is counted once (pi by entry id, Claude Code by
   `message.id`), with the fork boundary on for every file, so a fork never counts its parent's

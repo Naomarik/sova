@@ -231,9 +231,12 @@
     "§app.session-list/states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/lib/api.ts"
       ]
     },
     "§app.session-list/tokens": {
@@ -3651,7 +3654,7 @@
     "§app.baton/goal-and-loadout": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/baton.ts",
         "server/baton-loadout.ts",
@@ -4050,7 +4053,7 @@
     "§app.organizations/workspace-repo": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/workspace-git.ts",
         "server/orgs.ts",
@@ -4160,7 +4163,9 @@
         "src/lib/project-overseer-view.ts",
         "src/lib/api.ts",
         "src/lib/project-overseer-view.test.ts",
-        "server/project-overseer.test.ts"
+        "server/project-overseer.test.ts",
+        "server/project-overseer-prompt.md",
+        "server/project-overseer-tools.ts"
       ],
       "requires": [
         "§app.overseer/ideas",
@@ -4234,7 +4239,8 @@
         "server/wrapup-recovery.ts",
         "server/index.ts",
         "shared/project-overseer.ts",
-        "server/baton-loadout.ts"
+        "server/baton-loadout.ts",
+        "server/project-coding-runtime.test.ts"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels"
@@ -5812,7 +5818,7 @@
         "pi-config/extensions/subagents/adapters/pi.ts",
         "pi-config/extensions/claude-code/transcript-adapter.ts"
       ],
-      "evidence": "verified"
+      "evidence": "reviewed"
     },
     "§app/project-costs": {
       "kind": "surface",
@@ -6003,7 +6009,7 @@
     "§app.requirements/owner-area": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.requirements/routing",
         "§app.requirements/promotion",
@@ -6025,7 +6031,31 @@
         "server/baton-owner-area.test.ts",
         "server/reconcile.test.ts",
         "server/decisions-routes.test.ts",
-        "server/baton-handoff.test.ts"
+        "server/baton-handoff.test.ts",
+        "server/project-overseer-tools.ts"
+      ]
+    },
+    "§app.project-overseer/new-coding-session": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-overseer.ts",
+        "server/project-overseer-routes.ts",
+        "server/chat-manager.ts",
+        "server/org-sessions.ts",
+        "server/sessions-index.ts",
+        "server/project-overseer-tools.ts",
+        "shared/project-overseer.ts",
+        "src/lib/api.ts",
+        "src/lib/ui-state.ts",
+        "src/App.tsx",
+        "src/components/ProjectOverseerPanel.tsx",
+        "server/project-coding-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.project-overseer/coding-worktrees",
+        "§app.project-overseer/coding-mode"
       ]
     }
   },

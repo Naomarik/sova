@@ -58,6 +58,12 @@ once), **lease** (an offer's lock on its first taker).
   the "who decides what" list or which areas the holder decides, and
   never an organization, company or project beyond the title. The summary, hand-off questions and
   recorded decisions fall under the same rules, since everyone in the conversation sees them.
+  **How it speaks to the person**: to them, as "you", never about them in the third person; the
+  operator by name, never as "the operator" ("I'll pass this to Omar", never "to the operator");
+  never how decisions are recorded, filed or who decides them ("recorded as finance decisions",
+  owner or decision areas as categories of what they said); and it ends the conversation
+  (`goal_done`) only after the person has confirmed, in a message of their own, a summary of what
+  they said: the summary is asked for first, never announced and closed in one reply.
   The model's own earlier replies have the holder's secret profile phrases redacted
   (§app.organizations/privacy).
 - It has no mode (no mode extension loads); its composer has no mode switch.

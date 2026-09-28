@@ -15,7 +15,11 @@ import type { ChatServerMessage } from "../shared/protocol";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-mode-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
 const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-mode-cwd-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(cwd, { recursive: true, force: true }));
 writeFileSync(join(dir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../pi-config/extensions/mode")] }));
 const DEFAULT = { version: 1, mode: "delegate", strict: false, minorModes: ["align", "spec"] };
 writeFileSync(join(dir, "mode.json"), JSON.stringify(DEFAULT));

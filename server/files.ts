@@ -115,13 +115,22 @@ interface Deadline {
   /** Milliseconds left, never below 0. */
   remaining(): number;
   expired(): boolean;
+  /** A race's timer fired: the deadline has passed, whatever now() says. */
+  trip(): void;
 }
 
 function deadline(now: () => number, budgetMs: number): Deadline {
   const at = now() + budgetMs;
+  // Timers and now() are different clocks: a timer can fire a millisecond before now() reaches
+  // `at`. Once one has, the deadline stays expired, so a lost race can't be followed by an instant
+  // walk that answers (and caches) a listing.
+  let tripped = false;
   return {
-    remaining: () => Math.max(0, at - now()),
-    expired: () => at - now() <= 0,
+    remaining: () => (tripped ? 0 : Math.max(0, at - now())),
+    expired: () => tripped || at - now() <= 0,
+    trip: () => {
+      tripped = true;
+    },
   };
 }
 
@@ -139,6 +148,7 @@ function withDeadline<T>(p: Promise<T>, d: Deadline): Promise<{ ok: true; value:
     const timer = setTimeout(() => {
       if (done) return;
       done = true;
+      d.trip();
       settle({ ok: false });
     }, ms);
     timer.unref?.();

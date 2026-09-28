@@ -14,6 +14,8 @@ import { after, describe, test } from "node:test";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-coding-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(tmp, { recursive: true, force: true }));
 const agentDir = join(tmp, "agent");
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../pi-config/extensions/mode")] }));

@@ -26,6 +26,8 @@ after(async () => {
   await disposeAllChats();
   rmSync(root, { recursive: true, force: true });
 });
+// pi's model catalog and auth storage can still write here after after() ran: exit is last.
+process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));

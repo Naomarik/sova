@@ -14,6 +14,8 @@ import WebSocket from "ws";
 import { BATON_HANDOFF_ENTRY, BATON_SENT_ENTRY, MESSAGES_CAP, MESSAGES_DEFAULT, OPERATOR, type BatonViewItem } from "../shared/baton";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-share-msg-")));
+// A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
+process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 delete process.env.SOVA_SHARE_PUBLIC_URL;
 mkdirSync(join(root, "agent", "sessions", "live"), { recursive: true });

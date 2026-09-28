@@ -4573,6 +4573,8 @@
         "pi-config/extensions/worktrees/git.ts",
         "pi-config/extensions/worktrees/index.test.ts",
         "pi-config/extensions/worktrees/git.test.ts",
+        "pi-config/extensions/worktrees/spec.ts",
+        "pi-config/extensions/worktrees/spec.test.ts",
         "pi-config/extensions/worktrees/state.ts",
         "server/transcript.ts",
         "server/worktrees-state.ts",

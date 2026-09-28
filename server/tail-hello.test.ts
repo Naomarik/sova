@@ -25,7 +25,11 @@ const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { attachWebSockets } = await import("./ws");
 
+/** Sockets still closing: their server side writes seen.json (server/seen.ts) on close. */
+const closing: Promise<void>[] = [];
 after(async () => {
+  await Promise.all(closing);
+  await new Promise((r) => setTimeout(r, 100)); // the server's own close handlers
   await disposeAllChats();
   rmSync(agentDir, { recursive: true, force: true });
 });
@@ -209,6 +213,7 @@ async function frames(route: string, done: (got: string[]) => boolean, onOpen?: 
     });
     ws.on("error", reject);
   });
+  closing.push(new Promise((r) => ws.once("close", () => r())));
   ws.close();
   return got;
 }

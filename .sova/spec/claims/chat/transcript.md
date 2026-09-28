@@ -1170,14 +1170,11 @@ repository around the folder. Two of its figures:
 - **Tool card.** `--color-sunken`, `--r-lg`, and `--font-mono` / `--fs-mono`. Name `--fw-semibold`
   in `--color-ink`; arg `--color-ink-muted`. `pre` sits on `--color-surface` with `--r-sm`.
   Section labels use eyebrow styling (`--fs-micro`, `--ls-eyebrow`).
-- **Tool card file content.** `write` content, each `edit` pair ("Replaced" / "With", "· n of
-  m" when several), and `read` output are highlighted by file path (never auto-detected) in
-  `pre.toolcard-code`: back on `--color-sunken`, where the syntax colors were checked, with
-  `--color-ink` and no wrapping. The path shows above in `.toolcard-path` (mono, ink-muted).
-  Edit blocks add a 3px left rule: `.toolcard-code-del` in `--diff-del-ink`,
-  `.toolcard-code-add` in `--diff-add-ink`; the label carries the meaning. Copy Code on write
-  content and on each "With" block. Unknown extensions, errors, and args still streaming stay
-  plain.
+- **Tool card file content.** `write` content and each `edit` show as a diff
+  (§chat.changes/tool-card-diff, drawn per §chat.changes/diff-renderer). `read` output is
+  highlighted by file path (never auto-detected) in `pre.toolcard-code`: back on
+  `--color-sunken`, where the syntax colors were checked, with `--color-ink` and no wrapping.
+  Unknown extensions, errors, and args still streaming stay plain.
 - **Info row.** `--fs-caption` in `--color-ink-muted`, with rules in `--color-border`.
 - **Banners.**
   - Info: `--status-info-bg` with a `--status-info` icon.

@@ -70,8 +70,9 @@ over with `margin-left:auto`, beside the subagents trigger (§app/subagents-pane
   `src/lib/input-count.ts`. It drops the moment a rewind lands, because the branch is what it
   counts. The count stays visible: it is a fact about the session, whether or not the pane is open.
 - **Hidden at 0**, and hidden means *absent*: a session nobody has written to yet shows no control,
-  not a greyed one. It is absent the same way until the branch has arrived whole
-  (§chat.transcript/rendering): a count of the newest rows alone would be wrong. Visible text is "7 inputs" / "1 input"; the accessible name says where it
+  not a greyed one. It is absent the same way until the chat's `hello` has arrived. It counts the
+  whole branch from then on, the rows held plus the inputs the `hello` names among the rows it
+  didn't carry (§chat.transcript/rendering), with no older row fetched. Visible text is "7 inputs" / "1 input"; the accessible name says where it
   goes, singular throughout at one: "1 input in this chat — show it on the Timeline".
 - **The row renders whenever any of its three parts has something to say** — a running turn,
   workers, or inputs — so an idle session with messages still has one.
@@ -441,10 +442,14 @@ body lands on that message exactly as it would unfiltered, and the filter stays 
   usually does.
 - **A message the transcript doesn't show** — compacted away, or not on the branch on screen —
   can't be landed on, so the jump says so instead of scrolling nowhere: "That message isn't in
-  the transcript on screen." That is said only once the transcript has arrived whole. While its
-  older rows are still arriving, a jump to one of them waits and lands when they have, and after
-  half a second of waiting a toast says "Loading older messages…"; below 1280 the pane still closes
-  at once, so the landing is in view.
+  the transcript on screen." A jump to a message older than the rows the transcript holds fetches
+  every row down to it in one request and lands (§chat.transcript/rendering); after half a second
+  of waiting a toast says "Loading older messages…", and below 1280 the pane still closes at once,
+  so the landing is in view. The line above is said when the branch has no such row. The fetch
+  starts at the click. The pane never waits on the whole transcript either: it reads every row of
+  the branch without what only the thread draws (a reply's text, a tool's output, image bytes, a
+  report's body), a small fraction of the transcript's size, so on a slow link its list is there
+  and a jump's fetch has the link to itself.
 - **Density and gap rows aren't buttons.** They describe a stretch, and a stretch has no one
   message to land on. The input above the density line is the landing, and it is one row away.
   The rewind, past-summary and model/thinking/mode change markers aren't buttons either, for the

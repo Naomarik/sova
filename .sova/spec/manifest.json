@@ -649,8 +649,11 @@
     },
     "§chat.markdown/code-blocks": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/markdown.ts"
+      ]
     },
     "§chat.markdown/element-styling": {
       "kind": "behavior",
@@ -670,7 +673,10 @@
     "§chat.markdown/streaming": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/markdown.ts"
+      ]
     },
     "§chat.mode-menu/how-a-switch-reaches-the-chat": {
       "kind": "behavior",
@@ -1059,7 +1065,8 @@
         "pi-config/extensions/mode/state.ts",
         "server/mode-state.ts",
         "server/chat-manager.ts",
-        "server/project-overseer.ts"
+        "server/project-overseer.ts",
+        "server/mode-state.test.ts"
       ]
     },
     "§chat/model-menu": {
@@ -6028,6 +6035,105 @@
         "server/reconcile.test.ts",
         "server/decisions-routes.test.ts",
         "server/baton-handoff.test.ts"
+      ]
+    },
+    "§chat.markdown/visuals": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/code-blocks",
+        "§chat.markdown/streaming"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/markdown.ts",
+        "src/components/Markdown.tsx",
+        "pi-config/extensions/mode/minor.ts",
+        "pi-config/extensions/mode/vis-mode.md",
+        "src/vis/StubView.tsx",
+        "src/vis/Visual.tsx",
+        "src/vis/core/core.test.ts",
+        "src/vis/core/emphasis.test.ts",
+        "src/vis/core/emphasis.ts",
+        "src/vis/core/grammar.ts",
+        "src/vis/core/scale.ts",
+        "src/vis/core/text.ts",
+        "src/vis/emphasis.tsx",
+        "src/vis/guide.test.ts",
+        "src/vis/hydrate.tsx",
+        "src/vis/kinds/chart/View.tsx",
+        "src/vis/kinds/chart/chart.css",
+        "src/vis/kinds/chart/layout.test.ts",
+        "src/vis/kinds/chart/layout.ts",
+        "src/vis/kinds/chart/parse.test.ts",
+        "src/vis/kinds/chart/parse.ts",
+        "src/vis/kinds/chart/scale.test.ts",
+        "src/vis/kinds/chart/scale.ts",
+        "src/vis/kinds/code/View.tsx",
+        "src/vis/kinds/code/code.css",
+        "src/vis/kinds/code/layout.test.ts",
+        "src/vis/kinds/code/layout.ts",
+        "src/vis/kinds/code/lines.test.ts",
+        "src/vis/kinds/code/lines.ts",
+        "src/vis/kinds/code/parse.test.ts",
+        "src/vis/kinds/code/parse.ts",
+        "src/vis/kinds/flow/View.tsx",
+        "src/vis/kinds/flow/flow.css",
+        "src/vis/kinds/flow/layout.test.ts",
+        "src/vis/kinds/flow/layout.ts",
+        "src/vis/kinds/flow/parse.test.ts",
+        "src/vis/kinds/flow/parse.ts",
+        "src/vis/kinds/flow/width.ts",
+        "src/vis/kinds/frame/View.tsx",
+        "src/vis/kinds/frame/examples/binary-search.html",
+        "src/vis/kinds/frame/examples/hash-table.html",
+        "src/vis/kinds/frame/examples/unit-circle.svg",
+        "src/vis/kinds/frame/frame.css",
+        "src/vis/kinds/frame/height.test.ts",
+        "src/vis/kinds/frame/height.ts",
+        "src/vis/kinds/frame/parse.test.ts",
+        "src/vis/kinds/frame/parse.ts",
+        "src/vis/kinds/frame/srcdoc.ts",
+        "src/vis/kinds/layers/View.tsx",
+        "src/vis/kinds/layers/height.test.ts",
+        "src/vis/kinds/layers/height.ts",
+        "src/vis/kinds/layers/layers.css",
+        "src/vis/kinds/layers/parse.test.ts",
+        "src/vis/kinds/layers/parse.ts",
+        "src/vis/kinds/matrix/View.tsx",
+        "src/vis/kinds/matrix/height.test.ts",
+        "src/vis/kinds/matrix/height.ts",
+        "src/vis/kinds/matrix/matrix.css",
+        "src/vis/kinds/matrix/parse.test.ts",
+        "src/vis/kinds/matrix/parse.ts",
+        "src/vis/kinds/sequence/View.tsx",
+        "src/vis/kinds/sequence/layout.test.ts",
+        "src/vis/kinds/sequence/layout.ts",
+        "src/vis/kinds/sequence/parse.test.ts",
+        "src/vis/kinds/sequence/parse.ts",
+        "src/vis/kinds/sequence/sequence.css",
+        "src/vis/kinds/timeline/View.tsx",
+        "src/vis/kinds/timeline/height.test.ts",
+        "src/vis/kinds/timeline/height.ts",
+        "src/vis/kinds/timeline/parse.test.ts",
+        "src/vis/kinds/timeline/parse.ts",
+        "src/vis/kinds/timeline/timeline.css",
+        "src/vis/kinds/tree/View.tsx",
+        "src/vis/kinds/tree/height.test.ts",
+        "src/vis/kinds/tree/height.ts",
+        "src/vis/kinds/tree/measure.ts",
+        "src/vis/kinds/tree/parse.test.ts",
+        "src/vis/kinds/tree/parse.ts",
+        "src/vis/kinds/tree/tree.css",
+        "src/vis/markdown.test.ts",
+        "src/vis/parse.test.ts",
+        "src/vis/parse.ts",
+        "src/vis/registry.ts",
+        "src/vis/stepper.tsx",
+        "src/vis/svg.tsx",
+        "src/vis/types.ts",
+        "src/vis/views.ts",
+        "src/vis/vis.css"
       ]
     }
   },

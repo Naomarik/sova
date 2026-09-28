@@ -2,7 +2,7 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
-`delegate`, and any set of **minor modes** (today `align` and `spec`). What Delegate routes where is
+`delegate`, and any set of **minor modes** (today `align`, `spec` and `vis`, which teaches the inline visuals of §chat.markdown/visuals). What Delegate routes where is
 Settings → Modes (§app/settings-dialog), not this menu.
 
 Both are **per session**: each chat keeps its own, persisted in that session's own `mode`

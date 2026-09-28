@@ -19,6 +19,9 @@ export interface ThinkingControl {
   /** Why changing is blocked right now (agent running, composer disabled), else null. */
   blocked: Accessor<string | null>;
   choose(level: string): void;
+  /** What the session list says this session's level is (`SessionSummary.thinking`): the model
+      indicator reads it until `level` arrives. */
+  known?: Accessor<string | null>;
 }
 
 /** What the chat view exposes so the flyout can rewind to just before the last user message. */
@@ -36,6 +39,9 @@ export interface SandboxControl {
   /** A flip is on its way to the server. */
   pending: Accessor<boolean>;
   set(on: boolean): void;
+  /** What the session list says this session's sandbox is (`SessionSummary.sandbox`), until the
+      chat's hello: the foot's shield reads it, so it is there from the first frame. */
+  known?: Accessor<SandboxInfo | null>;
 }
 
 /** The flyout's three panels: the "+" button's root menu, the indicator's model panel, and the

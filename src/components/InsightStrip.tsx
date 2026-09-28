@@ -3,6 +3,7 @@ import type { ExplanationInfo, OutlineTopic, SessionOutline } from "../../shared
 import { newestTopics, topicTime } from "../../shared/outline-order";
 import { newestFirst } from "../lib/explain";
 import { explanationsHref } from "../lib/insights";
+import type { KnownOutline } from "../lib/known-before-mount";
 import { hasEntryRow, jumpWhenArrived, rowsOlder, transcriptRoot } from "../lib/jump";
 import { relativeTime, stampTime } from "../lib/format";
 import { Icon } from "./ui";
@@ -74,6 +75,10 @@ function Topic(props: { topic: OutlineTopic; now: number; open: boolean; path: s
  *
  * With explanations but no outline the row still discloses, labelled "Explained": the
  * Explanations link is what's inside. With neither, nothing renders.
+ *
+ * Until the session's insight lands, `known` stands in for the outline: the session list's
+ * snapshot, so the row is there at its full height from the view's first frame. It fills the
+ * collapsed row and the gist; the topics come with the insight.
  */
 export function InsightStrip(props: {
   /** The session this strip summarises: which transcript a topic's jump lands in. */
@@ -81,6 +86,8 @@ export function InsightStrip(props: {
   /** The session's id: the Explanations page's filter for it (`#/explanations/<id>`). */
   sessionId: string;
   outline: SessionOutline | null;
+  /** The outline as the session list has it, while `outline` is not loaded yet (null: none). */
+  known?: KnownOutline | null;
   explanations: ExplanationInfo[] | undefined;
   now: number;
   /** Opens the session pane's Timeline tab, where these topics are chapters on the session's axis. */
@@ -112,22 +119,24 @@ export function InsightStrip(props: {
   });
   const items = () => newestFirst(props.explanations ?? []);
   const latest = () => items()[0];
-  const topics = () => props.outline?.topics.length ?? 0;
+  /** The collapsed row's outline: the loaded one, else what the list knows of it. */
+  const head = () => (props.outline ? { now: props.outline.now, topics: props.outline.topics.length } : (props.known ?? null));
+  const topics = () => head()?.topics ?? 0;
   /** A summarizer is running now. */
   const updating = () => props.outline?.state === "updating" || props.outline?.state === "drafting";
   const generated = () => props.outline?.generatedAt ?? 0;
   const updated = () => (generated() > 0 ? new Date(generated()).toISOString() : null);
   return (
-    <Show when={props.outline || items().length > 0}>
+    <Show when={head() || items().length > 0}>
       <details class="outline" open={open()} onToggle={(e) => setOpen(e.currentTarget.open)}>
         <summary class="outline-summary">
           <Icon name="chevron-right" small class="icon-twist" />
-          <span class="outline-label">{props.outline ? "Current goal" : "Explained"}</span>
+          <span class="outline-label">{head() ? "Current goal" : "Explained"}</span>
           <Show when={updating()}>
             <span class="live-dot" />
           </Show>
           <Show
-            when={props.outline}
+            when={head()}
             // No outline: the row reads as the explain strip did — count, then the latest topic
             // in the line that ellipsizes.
             fallback={
@@ -176,6 +185,7 @@ export function InsightStrip(props: {
                 )}
               </Show>
             </Show>
+            <Show when={!props.outline && props.known?.gist}>{(g) => <p class="outline-overall">{g()}</p>}</Show>
             <Show when={props.outline}>
               {(o) => (
                 <>

@@ -71,8 +71,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
   the session list's `SessionSummary.align` read what the extension writes, with its own code),
   `server/insights.ts` imports
-  `pi-config/extensions/usage-status/fetch.ts`, `server/worker-context.ts` and `server/delegate.ts`
-  import `pi-config/extensions/claude-code/context-window.ts` (imports nothing: the one Claude Code
+  `pi-config/extensions/usage-status/fetch.ts`, `server/worker-context.ts`, `server/delegate.ts` and
+  `server/models.ts` import `pi-config/extensions/claude-code/context-window.ts` (imports nothing: the one Claude Code
   window rule, `[1m]` or natively 1M else 200k, and the list rule that adds `opus[1m]` and
   `claude-fable-5-1[1m]` after their listed base; the provider, `agent_models` and the subagents
   roster use the same file), and the worker-transcript protocol is imported by

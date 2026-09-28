@@ -132,8 +132,8 @@ export function startRecentPreload(sessions: () => readonly SessionSummary[] | u
       else {
         // The newest rows, on top of any older ones kept from a view that fetched them: those are
         // the new first row's ancestors, so they're still the rows above it (lib/older-rows).
-        const merged = helloRows(transcripts.peek(next.key)?.items, got.items, got.older, got.olderSummary).items;
-        transcripts.preload(next.key, merged, next.stamp, merged === got.items ? got.size : 0);
+        const merged = helloRows(transcripts.peek(next.key)?.items, got.items, got.older, got.olderSummary);
+        transcripts.preload(next.key, merged.items, next.stamp, merged.items === got.items ? got.size : 0, merged.older);
       }
     } catch {
       if (disposed) return;

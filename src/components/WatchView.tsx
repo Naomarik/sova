@@ -69,10 +69,10 @@ export function WatchView(props: {
   const cached = cachedTranscript(cacheKey);
   onCleanup(transcripts.show(cacheKey));
   const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
-  createEffect(on(items, (list) => list && cacheItems(cacheKey, list)));
   /** The rows above the list that it doesn't hold (lib/older-rows, as ChatView's). */
   const olderRows = createOlderRows({ path: props.path, items, setItems });
   const { older, whole } = olderRows;
+  createEffect(on([items, older], ([list, o]) => list && cacheItems(cacheKey, list, o)));
   /** The last snapshot's first row: rows that arrive above it are history, never "N new". */
   const [newFrom, setNewFrom] = createSignal<string | null>(null);
   // "Open in Session" from an Explanations card: land on that explanation's row once the snapshot

@@ -1,10 +1,12 @@
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
-import type { SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
+import type { SessionSummary, WorkerInfo } from "../../shared/protocol";
 import { agentsFeed } from "../lib/agents-feed";
 import { agentsHref, teamKey, teamPause, teamPulse } from "../lib/insights";
 import { relativeTime, shortModel } from "../lib/format";
 import { sourceBlocked } from "../lib/fanout";
 import { createPaneInsight } from "../lib/pane-insight";
+import { explanationsFeed } from "../lib/explanations-feed";
+import { busiestLiveTeam, headTeam, knownAgents, knownExplanations, knownOutline, knownWorkers } from "../lib/known-before-mount";
 import { PaneScopeProvider, type PaneScope } from "../lib/pane-scope";
 import { cwdLabel } from "../lib/remote-session";
 import type { RewindControl } from "../lib/inputs";
@@ -180,12 +182,16 @@ export function SessionView(props: {
   createEffect(on(pulse, () => void loadInsight(), { defer: true }));
 
   const working = () => sessionWorking(s());
+  /** The session as the #/agents poll has it, while the insight hasn't loaded: a running
+      session's teams and workers are known there before this view's own read (lib/known-before-mount). */
+  const polled = () => (insight.data ? undefined : knownAgents(agentsFeed(), path));
+  const teams = () => insight.data?.teams ?? polled()?.teams;
   /** The busiest live team: where the head chip links. */
-  const liveTeam = () =>
-    (insight.data?.teams ?? []).filter((t) => t.live).reduce<TeamInfo | null>((b, t) => (!b || t.working > b.working ? t : b), null);
-  const team = () => insight.data?.teams[0] ?? null;
+  const liveTeam = () => busiestLiveTeam(teams());
+  /** The head chip's team while nothing works; the list's until a read of this view's says. */
+  const team = () => headTeam(teams(), s().team);
   /** What's working, by kind: team members and plain subagents are different things. */
-  const split = () => workingSplit(working(), insight.data?.workers, insight.data?.teams);
+  const split = () => workingSplit(working(), insight.data ? insight.data.workers : polled()?.workers, teams());
 
   /**
    * The name this pane is known by, in the head and to AT. In a workspace it is the pre-assembled
@@ -222,11 +228,11 @@ export function SessionView(props: {
     <header class="session-head">
       {props.lead}
       <div class="session-head-main">
-        <h1 class="session-head-title" tabindex="-1" ref={props.titleRef} title={s().title} aria-describedby={contextDescribedBy(path, scope)}>
+        <h1 class="session-head-title" tabindex="-1" ref={props.titleRef} title={s().title} aria-describedby={contextDescribedBy(path, scope, s().context)}>
           {s().title}
         </h1>
         <p class="session-head-meta">
-          <ContextMetaPrefix path={path} />
+          <ContextMetaPrefix path={path} known={s().context} />
           {/* A peer's session names its host first: the folder and everything else are that host's. */}
           <Show when={hostOf(path)}>
             {(h) => (
@@ -250,15 +256,15 @@ export function SessionView(props: {
           </Show>
         </p>
       </div>
-      <ContextGauge path={path} />
+      <ContextGauge path={path} known={s().context} />
       <Show
         when={working() > 0}
         fallback={
           <Show when={!s().live && team()}>
             {(t) => (
-              <CountChip title={teamPause(t()) ? `${t().name} · ${teamPause(t())!.text}` : t().name}>
-                Team · {t().members.length}
-                {teamPause(t()) ? " · paused" : ""}
+              <CountChip title={t().paused ? `${t().name} · ${t().paused}` : t().name}>
+                Team · {t().members}
+                {t().paused ? " · paused" : ""}
               </CountChip>
             )}
           </Show>
@@ -340,7 +346,7 @@ export function SessionView(props: {
           <span class="workspace-pane-name" id={`pane-${props.paneId}-name`} title={paneTitle()}>
             {paneName()}
           </span>
-          <ContextGauge path={path} />
+          <ContextGauge path={path} known={s().context} />
           {/* Mid-turn, said at workspace level: split mode has N panes and
               no single place that says who is still working — the tab strip's dot covers tabs
               mode only. The pulse is the sanctioned one: work in flight. */}
@@ -378,7 +384,8 @@ export function SessionView(props: {
         path={path}
         sessionId={s().id}
         outline={insight.data?.outline ?? null}
-        explanations={insight.data?.explanations}
+        known={insight.data ? null : knownOutline(s())}
+        explanations={insight.data ? insight.data.explanations : knownExplanations(explanationsFeed(), s().id)}
         now={props.now}
         onOpenTimeline={() => props.showTimeline(path)}
       />
@@ -398,7 +405,7 @@ export function SessionView(props: {
                     onCreated={props.onCreated}
                     onAppend={reloadInsight}
                     workersWorking={working()}
-                    workersTotal={insight.data?.workers?.length ?? 0}
+                    workersTotal={insight.data ? (insight.data.workers?.length ?? 0) : knownWorkers(s())}
                     workersSplit={split()}
                     onShowWorkers={() => props.toggleSubagents(path)}
                     workersOpen={props.paneOn(path, "agents")}
@@ -479,7 +486,7 @@ export function SessionView(props: {
                       onNewSession={() => props.onNewSession(path)}
                       overseer={props.overseer}
                       projectOverseer={poControl && !poEarlier ? { onClear: poControl.clear, onReloaded: poControl.onReloaded } : undefined}
-                      teams={insight.data?.teams}
+                      teams={teams()}
                       fork={props.fork}
                       onFanOut={
                         // Never from a TUI-live session: Sova doesn't touch a file a terminal

@@ -5,8 +5,14 @@ import { sessionContext } from "../lib/ui-state";
 import { paneScopedId, usePaneId, type PaneScope } from "../lib/pane-scope";
 import { Icon } from "./ui";
 
-/** The shown state for a session, or null when there's nothing to show (no reply yet / unknown). */
-const stateOf = (path: string) => sessionContext()[path] ?? null;
+/** The shown state for a session, or null when there's nothing to show (no reply yet / unknown).
+    Until the open view has said (a missing key), what the session list read off the file's tail
+    (`known`), so the readout is there from the view's first frame instead of pushing the head's
+    meta line aside when the view's own value lands. */
+const stateOf = (path: string, known?: ContextInfo | null): ContextInfo | "compacted" | null => {
+  const map = sessionContext();
+  return path in map ? (map[path] ?? null) : (known ?? null);
+};
 
 const stepOf = (s: ContextInfo | "compacted") => (s === "compacted" ? "" : contextStep(s.tokens, s.window));
 
@@ -24,8 +30,8 @@ function fullText(s: ContextInfo | "compacted"): string {
 
 /** `aria-describedby` for the session title: only while a context sentence exists. The sentence
     is the gauge's, so in a workspace it carries that pane's id like every other. */
-export const contextDescribedBy = (path: string, scope?: PaneScope) =>
-  stateOf(path) ? (scope ? paneScopedId(scope, "context-desc") : "context-desc") : undefined;
+export const contextDescribedBy = (path: string, scope?: PaneScope, known?: ContextInfo | null) =>
+  stateOf(path, known) ? (scope ? paneScopedId(scope, "context-desc") : "context-desc") : undefined;
 
 /** The readout itself, one copy of the markup for every place that shows it. Its visible parts
     are aria-hidden: the caller gives AT the one sentence. */
@@ -56,10 +62,10 @@ function Gauge(props: { s: ContextInfo | "compacted"; class?: string }) {
  * visible copies are aria-hidden; AT gets the one #context-desc sentence. CSS collapses it by the
  * head's width (full → percent → moves to the meta line).
  */
-export function ContextGauge(props: { path: string }) {
+export function ContextGauge(props: { path: string; known?: ContextInfo | null }) {
   const paneId = usePaneId();
   return (
-    <Show when={stateOf(props.path)}>
+    <Show when={stateOf(props.path, props.known)}>
       {(s) => (
         <>
           <Gauge s={s()} />
@@ -86,9 +92,9 @@ export function ContextReadout(props: { state: ContextInfo | "compacted"; class?
 }
 
 /** The meta-line copy for narrow heads ("24% · ~/cwd"); CSS shows it only under 520px. */
-export function ContextMetaPrefix(props: { path: string }) {
+export function ContextMetaPrefix(props: { path: string; known?: ContextInfo | null }) {
   return (
-    <Show when={stateOf(props.path)}>
+    <Show when={stateOf(props.path, props.known)}>
       {(s) => (
         <>
           <span class={`context-meta ${stepOf(s())}`.trim()} aria-hidden="true">

@@ -42,7 +42,8 @@ import { appendItems } from "../lib/explain";
 import { isObj, str } from "../lib/message";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
 import { HOST_MOVE_GRACE_MS, hostOf, mayBeHostMove, meshOn, recheckHost, sessionViewKey } from "../lib/mesh";
-import { cachedTranscript, cacheItems, cacheSpot, transcripts } from "../lib/transcript-cache";
+import { cachedTranscript, cacheItems, cacheSpot, keptOlder, transcripts } from "../lib/transcript-cache";
+import { inputsPending, knownInputs, knownWorkers, workersShown } from "../lib/known-before-mount";
 import { openFailureView } from "../lib/open-failure";
 import {
   closeRemoteStatus,
@@ -147,6 +148,8 @@ export interface OverseerSender {
 
 /** ui_request kinds UiDialog can show; anything else needs the terminal UI. */
 const UI_DIALOG_METHODS = ["select", "confirm", "input", "editor"];
+/** How long a first connect goes unsaid in the composer foot: most land well inside it. */
+const CONNECTING_SHOWN_AFTER_MS = 500;
 
 /**
  * Full-duplex chat with a webapp-owned session. When the server refuses to let us write
@@ -237,13 +240,21 @@ export function ChatView(props: {
   const cached = cachedTranscript(cacheKey);
   onCleanup(transcripts.show(cacheKey));
   const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
-  createEffect(on(items, (list) => list && cacheItems(cacheKey, list)));
   /** The rows above the list that it doesn't hold (lib/older-rows): the hello says how many and
       what the complete-list readers need of them, and they're fetched when wanted. Until this
       connection's hello, a list kept from the last visit says nothing about what's above it:
       nothing says a row isn't there, and nothing counts the whole list. */
   const olderRows = createOlderRows({ path: props.path, items, setItems });
   const { older, whole } = olderRows;
+  createEffect(on([items, older], ([list, o]) => list && cacheItems(cacheKey, list, o)));
+  /** The branch's inputs: this connection's hello says; before it, the rows kept from the last
+      visit (or a preload) count with what was above them, and the hello corrects it. null: not
+      known yet. */
+  const inputCount = () => {
+    const list = items();
+    const o = older() ?? keptOlder(cached, list);
+    return o ? inputTotal(list ?? [], o) : null;
+  };
   /** The last hello's first row: rows that arrive above it are history, never "N new". */
   const [newFrom, setNewFrom] = createSignal<string | null>(null);
   // "Open in Session" from an Explanations card: once the transcript is here (hello), land on that
@@ -346,6 +357,9 @@ export function ChatView(props: {
   const [modeState, setModeState] = createSignal<ModeState | null>(null);
   /** This chat's sandbox (WS "sandbox"), null while its runtime has no sandbox extension. */
   const [sandbox, setSandboxState] = createSignal<SandboxInfo | null>(null);
+  /** A hello has arrived: from then on the sandbox is the socket's to say (a runtime without the
+      extension sends none), not the session list's. */
+  const [sandboxSaid, setSandboxSaid] = createSignal(false);
   const [sandboxPending, setSandboxPending] = createSignal(false);
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show, `note` one
       that was refused (a /compact), whose row then says why instead of "Ran". */
@@ -355,6 +369,14 @@ export function ChatView(props: {
   /** The same message's list, so the status row can split the count against this session's teams. */
   const [workerList, setWorkerList] = createSignal<WorkerInfo[]>([]);
   const workersSplit = () => workingSplit(workersWorking(), workerList(), props.teams);
+  /** A "workers" message has arrived since the last hello: from then on the workers are the
+      socket's to say. The hello clears the list, but its runtime's first "workers" can come a
+      while after it (none at all while the runtime has no live record yet). */
+  const [workersSaid, setWorkersSaid] = createSignal(false);
+  /** How many subagents the settled-workers trigger offers: until the socket says, what the
+      session list counts (lib/known-before-mount), so the status row is there from the first
+      frame and doesn't blink at the hello; never the working count, which only the socket gives. */
+  const workersTotal = () => workersShown(workersSaid(), workerList().length, knownWorkers(props.summary?.() ?? { live: null }));
   /** A compaction is in flight: a manual /compact runs with no turn, so `live.running` misses it. */
   const [compacting, setCompacting] = createSignal(false);
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
@@ -545,6 +567,7 @@ export function ChatView(props: {
           });
           setModel(msg.model);
           setSandboxState(null); // a "sandbox" message follows when the runtime has the extension
+          setSandboxSaid(true);
           batch(() => {
             setThinking(msg.thinking);
             setPendingThinking(null);
@@ -552,7 +575,10 @@ export function ChatView(props: {
           });
           setSessionContext(props.path, contextStateFor(msg.context ?? null, msg.items));
           setWorkersWorking(0); // a runtime without workers sends no "workers" after hello
-          setWorkerList([]);
+          batch(() => {
+            setWorkerList([]);
+            setWorkersSaid(false);
+          });
           props.onWorkers?.([], null);
           // "links" comes after hello only when there are any: until one does, the pane reads the
           // polled insight, never a list from before the reconnect.
@@ -560,8 +586,11 @@ export function ChatView(props: {
           props.onModel(msg.model);
           break;
         case "workers":
-          setWorkersWorking(msg.working);
-          setWorkerList(msg.workers);
+          batch(() => {
+            setWorkersWorking(msg.working);
+            setWorkerList(msg.workers);
+            setWorkersSaid(true);
+          });
           props.onWorkers?.(msg.workers, usageTotal(msg));
           break;
         case "links":
@@ -1097,6 +1126,13 @@ export function ChatView(props: {
       action strip, so reading the list itself there rebuilt every strip's buttons on each change
       of the list (an append, a turn-end reload, each chunk of a tail-first hello's history). */
   const listHere = createMemo(() => !!items());
+  /** The first connect has taken long enough to say so. A quick one, the usual case, never shows
+      "Connecting…" in the composer foot, where it would squeeze the model indicator and the mode
+      switch for the frames until the hello (§chat.composer/disabled-states). */
+  const [connectSlow, setConnectSlow] = createSignal(false);
+  const connectSlowTimer = setTimeout(() => setConnectSlow(true), CONNECTING_SHOWN_AFTER_MS);
+  onCleanup(() => clearTimeout(connectSlowTimer));
+  const connecting = (): ComposerReason => ({ icon: "clock", text: "Connecting…", ...(connectSlow() ? {} : { quiet: true }) });
   const blocked = (): ComposerReason | null => {
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
@@ -1104,14 +1140,14 @@ export function ChatView(props: {
     if (baton) return baton;
     switch (socket.status()) {
       case "connecting":
-        return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : { icon: "clock", text: "Connecting…" };
+        return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : connecting();
       case "reconnecting":
         return { icon: "clock", text: "Reconnecting. Your draft is kept." };
       case "failed":
       case "closed":
         return { icon: "clock", text: "Not connected." };
     }
-    if (!listHere()) return { icon: "clock", text: "Connecting…" };
+    if (!listHere()) return connecting();
     if (syncing()) return { icon: "clock", text: "Saving this turn…" };
     if (pendingModel()) return { icon: "clock", text: "Switching model…" };
     // Any compaction: this chat's /compact (asked, or already running), pi's automatic one, or an
@@ -1239,6 +1275,7 @@ export function ChatView(props: {
   };
   const thinkingControl: ThinkingControl = {
     level: thinking,
+    known: () => props.summary?.()?.thinking ?? null,
     pending: pendingThinking,
     blocked: thinkingBlocked,
     choose: (level: string) => {
@@ -1254,6 +1291,7 @@ export function ChatView(props: {
   /** The composer flyout's model panel; the header no longer carries a model trigger. */
   const modelControl: ModelControl = {
     model,
+    known: () => props.summary?.()?.model ?? null,
     pending: pendingModel,
     blocked: () => {
       if (live.running) return { title: "Model changes wait until this turn finishes.", body: "Stop or wait, then pick one." };
@@ -1263,10 +1301,11 @@ export function ChatView(props: {
     choose: chooseModel,
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
-  const modeControl: ModeControl = { state: modeState, path: props.path };
+  const modeControl: ModeControl = { state: modeState, path: props.path, known: () => props.summary?.()?.mode ?? null };
   /** The flyout's Sandbox row: the extension answers with a toast and a "sandbox" message. */
   const sandboxControl: SandboxControl = {
     state: sandbox,
+    known: () => (sandboxSaid() ? null : (props.summary?.()?.sandbox ?? null)),
     pending: sandboxPending,
     set: (on) => {
       setSandboxPending(true);
@@ -1647,7 +1686,7 @@ export function ChatView(props: {
         stopping={live.stopping}
         detail={live.activity ?? runDetail(live)}
         workersWorking={workersWorking()}
-        workersTotal={workerList().length}
+        workersTotal={workersTotal()}
         workersSplit={workersSplit()}
         onShowWorkers={props.onShowWorkers}
         workersOpen={props.workersOpen}
@@ -1677,7 +1716,8 @@ export function ChatView(props: {
             : undefined
         }
         onShowTimeline={props.onShowTimeline}
-        inputCount={older() ? inputTotal(items() ?? [], older()!) : 0}
+        inputCount={inputCount() ?? 0}
+        inputsPending={inputsPending(inputCount(), items(), !!props.summary?.() && knownInputs(props.summary()!))}
         aligns={aligns()}
         onJumpAlign={jumpToAlign}
         autofocus={props.autofocus}

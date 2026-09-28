@@ -10,6 +10,7 @@
 // own hello or snapshot is on the way; it then reconciles as above.
 
 import type { TranscriptItem } from "../../shared/protocol";
+import type { Older } from "./older-rows";
 
 /** Sessions whose rows and scroll position are kept for switching back. */
 export const CACHED_SESSIONS = 3;
@@ -82,8 +83,18 @@ export type ScrollSpot = { follow: true } | { follow: false; rowId: string; offs
 
 export interface CachedTranscript {
   items: TranscriptItem[];
+  /** What was above `items` (lib/older-rows), when known: a pair, only true of these rows. */
+  older: Older | null;
   spot: ScrollSpot | null;
 }
+
+/**
+ * What the kept pair says is above `list`: its `older`, only while `list` is still the kept rows
+ * themselves. For the counts a switch back shows before the view's hello; nothing else may take
+ * kept rows for the whole list.
+ */
+export const keptOlder = (kept: CachedTranscript | undefined, list: readonly TranscriptItem[] | null): Older | null =>
+  kept && list && kept.items === list ? kept.older : null;
 
 /**
  * The kept transcripts, by view key. A key stays while any of these holds it, and goes the moment
@@ -116,10 +127,15 @@ export class TranscriptStore {
     this.touch(key);
     return this.entries.get(key);
   }
-  /** A view's latest rows. The view is open, so this counts as one. */
-  setItems(key: string, items: TranscriptItem[]): void {
+  /**
+   * A view's latest rows, with what its hello said is above them (null: not yet, and then the
+   * kept `older` stays only while the rows are the kept ones). The view is open, so this counts
+   * as one.
+   */
+  setItems(key: string, items: TranscriptItem[], older: Older | null = null): void {
     const had = this.entries.get(key);
-    this.entries.set(key, { items, spot: had?.spot ?? null, stamp: null, size: had?.size ?? 0 });
+    const pair = older ?? (had?.items === items ? had.older : null);
+    this.entries.set(key, { items, older: pair, spot: had?.spot ?? null, stamp: null, size: had?.size ?? 0 });
     this.touch(key);
   }
   setSpot(key: string, spot: ScrollSpot): void {
@@ -133,9 +149,9 @@ export class TranscriptStore {
    * may be the branch's newest only, with older ones a view fetched kept above them
    * (lib/recent-preload); a view opening them learns what's above from its own hello.
    */
-  preload(key: string, items: TranscriptItem[], stamp: string, size: number): boolean {
+  preload(key: string, items: TranscriptItem[], stamp: string, size: number, older: Older | null = null): boolean {
     if (!this.pinned.has(key) || this.showing(key)) return false;
-    this.entries.set(key, { items, spot: this.entries.get(key)?.spot ?? null, stamp, size });
+    this.entries.set(key, { items, older, spot: this.entries.get(key)?.spot ?? null, stamp, size });
     if (size > 0) this.known.set(key, size);
     this.trim();
     return this.entries.has(key);
@@ -257,8 +273,8 @@ export const transcripts = new TranscriptStore();
 /** The rows and scroll spot kept for a session view (`key`: its view key), if any; opening it. */
 export const cachedTranscript = (key: string): CachedTranscript | undefined => transcripts.open(key);
 
-/** Keeps a session's latest rows. */
-export const cacheItems = (key: string, items: TranscriptItem[]): void => transcripts.setItems(key, items);
+/** Keeps a session's latest rows, and what is above them once a hello has said. */
+export const cacheItems = (key: string, items: TranscriptItem[], older: Older | null = null): void => transcripts.setItems(key, items, older);
 
 /** Keeps where a session was scrolled when its view went away. */
 export const cacheSpot = (key: string, spot: ScrollSpot): void => transcripts.setSpot(key, spot);

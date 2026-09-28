@@ -22,7 +22,7 @@ import {
 import type { ModeApplies, ModeInfo } from "../shared/protocol";
 
 export type { ModeState };
-export { MINOR_MODES };
+export { MINOR_MODES, MODE_ENTRY_TYPE, restoreActive };
 
 export const MODE_FILE_NAME = "mode.json";
 export const modeFile = () => join(getAgentDir(), MODE_FILE_NAME);

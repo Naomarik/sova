@@ -62,6 +62,9 @@ const PANE_ID = "session-pane";
 export interface ComposerReason {
   icon: IconName;
   text: string;
+  /** Blocks all the same, but the foot doesn't say it (yet): a first connect that is still quick,
+      whose "Connecting…" would only flash in the foot and squeeze the model and mode for a frame. */
+  quiet?: boolean;
 }
 
 /** `KB` under 1 MB, rounded; otherwise one decimal. */
@@ -125,6 +128,9 @@ export function Composer(props: {
   onJumpAlign?: (entry: AlignEntry) => void;
   /** User messages on this chat's active branch; the status row's inputs trigger, hidden at 0. */
   inputCount?: number;
+  /** The branch has inputs whose count isn't known yet (lib/known-before-mount): the inputs
+      trigger's box is held, empty, until `inputCount` says. */
+  inputsPending?: boolean;
   autofocus?: boolean;
   /** This session's slash commands; the "/" autocomplete is off without them. */
   commands?: SlashCommand[];
@@ -232,7 +238,10 @@ export function Composer(props: {
   /** TUI-live, connecting, reconnecting: nothing attaches and nothing sends. */
   const disabled = () => !!reason();
   /** What the foot says: the state's reason, else that an attachment is still uploading. */
-  const shownReason = (): ComposerReason | null => reason() ?? (uploading() > 0 ? { icon: "clock", text: "Uploading…" } : null);
+  const shownReason = (): ComposerReason | null => {
+    const r = reason();
+    return r ? (r.quiet ? null : r) : uploading() > 0 ? { icon: "clock", text: "Uploading…" } : null;
+  };
   // The key hint lives in the placeholder, and only at unfolded width: a touch-first device has
   // no Enter key to speak of. Live, so a resize across 768px swaps it in place.
   const unfolded = matchMedia("(min-width: 768px)");
@@ -249,18 +258,24 @@ export function Composer(props: {
 
   // ---- Model indicator: this session's model and thinking level, and
   // the second trigger for the flyout that changes them. -----------------------------------
+  /** What the session runs: the chat's own word once its hello says, and until then what the
+      session list read off the file (`known`), so the indicator is final from the first frame. */
+  const runningRef = () => props.model?.model() ?? props.model?.known?.() ?? null;
   /** What the session runs, or the target it's switching to — the flyout's Model row, shortened. */
-  const modelRef = () => props.model?.pending() ?? props.model?.model() ?? null;
-  /** The level to show, or null when this model's ladder isn't a choice. */
+  const modelRef = () => props.model?.pending() ?? runningRef();
+  /** The level to show, or null when this model's ladder isn't a choice. Before the hello, the
+      list's level, if the ladder has it (pi clamps a level the model lacks: the hello will say). */
   const levelShown = () => {
     const thinking = props.thinking;
-    if (!thinking || thinkingLevelsFor(props.model?.model(), hostOf(props.path)).length <= 1) return null;
-    return thinking.pending() ?? thinking.level();
+    const ladder = thinking ? thinkingLevelsFor(runningRef(), hostOf(props.path)) : [];
+    if (!thinking || ladder.length <= 1) return null;
+    const known = thinking.known?.() ?? null;
+    return thinking.pending() ?? thinking.level() ?? (known && ladder.includes(known) ? known : null);
   };
   // The thinking ladder decides whether the level is worth showing, and it only arrives with the
   // model catalog — load it as soon as a session has a thinking control, not when the flyout opens.
   createEffect(() => {
-    if (props.thinking && props.model?.model() && !modelList(hostOf(props.path))) void ensureModels(hostOf(props.path)).catch(() => {});
+    if (props.thinking && runningRef() && !modelList(hostOf(props.path))) void ensureModels(hostOf(props.path)).catch(() => {});
   });
   /** Open by the indicator, closed by it again: one control, one state. */
   const indicatorOpen = () => !!menu()?.open() && menu()?.anchor() === indicator;
@@ -306,6 +321,10 @@ export function Composer(props: {
     const n = props.inputCount ?? 0;
     return n > 0 && props.onShowTimeline ? { n, text: inputsText(n), label: showInputsOnTimelineLabel(n) } : null;
   };
+
+  /** The inputs trigger is coming: its count arrives with the hello, and until then its box holds
+      the row at its height, so the transcript above doesn't move when it lands. */
+  const inputsHeld = () => !inputsRow() && !!props.inputsPending && !!props.onShowTimeline;
 
   /** The alignment chip, while an alignment is open (and there is somewhere to jump). */
   const alignRow = () => (props.onJumpAlign && (props.aligns ?? []).some((e) => isOpenDoc(e.doc)) ? props.aligns! : null);
@@ -722,7 +741,7 @@ export function Composer(props: {
     <>
         {/* One row, whichever of the three has something to say (they can coexist: the inputs
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
-        <Show when={controls().status || workersRow() || inputsRow() || alignRow()}>
+        <Show when={controls().status || workersRow() || inputsRow() || inputsHeld() || alignRow()}>
           <p class="run-status">
             <Show when={controls().status}>
               <span class="live-dot" />
@@ -784,6 +803,16 @@ export function Composer(props: {
                   <Icon name="chevron-right" small />
                 </button>
               )}
+            </Show>
+            <Show when={inputsHeld()}>
+              <span
+                class="run-status-link"
+                aria-hidden="true"
+                style={{ visibility: "hidden", "margin-left": alignRow() ? 0 : "auto", "margin-right": 0 }}
+              >
+                {inputsText(1)}
+                <Icon name="chevron-right" small />
+              </span>
             </Show>
           </p>
         </Show>
@@ -1121,7 +1150,7 @@ export function Composer(props: {
               )}
             </Show>
           </span>
-          <Show when={sandboxBadge(props.sandbox?.state() ?? null)}>
+          <Show when={sandboxBadge(props.sandbox?.state() ?? props.sandbox?.known?.() ?? null)}>
             {(b) => (
               <span class={`composer-sandbox composer-sandbox-${b().tone}`} title={b().label}>
                 <Icon name="shield" small />

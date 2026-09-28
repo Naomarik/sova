@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
-import { cachedTranscript, cacheItems, cacheSpot, CACHED_SESSIONS, forgetTranscript, overBudget, reconcileItems, sameItem, TranscriptStore } from "./transcript-cache";
+import { inputTotal, type Older, WHOLE } from "./older-rows";
+import { cachedTranscript, cacheItems, cacheSpot, CACHED_SESSIONS, forgetTranscript, keptOlder, overBudget, reconcileItems, sameItem, TranscriptStore } from "./transcript-cache";
 
 const row = (id: string, text = id, extra: Partial<TranscriptItem> = {}): TranscriptItem => ({
   id,
@@ -172,4 +173,52 @@ test("a Recent session a view filled is measured when it leaves the opened set",
   st.setItems("other", [row("o")]);
   assert.deepEqual(st.trim(), ["v"], "v, over 100 characters serialized, is the largest");
   assert.deepEqual(st.keys().sort(), ["other", "p"]);
+});
+
+// ---- What is above the kept rows (switching back's counts before the hello) ----
+
+const above = (inputs: string[]): Older => ({ left: inputs.length + 2, summary: { inputs, messages: inputs.length * 2, replies: true } });
+
+test("a switch back counts the last visit's inputs with its kept rows until the hello", () => {
+  const store = new TranscriptStore();
+  const list = [row("u1", "u1", { kind: "user" }), row("a1")];
+  store.setItems("k", list, above(["u0", "u-1"]));
+  const kept = store.open("k");
+  // Before the hello the view holds the kept rows themselves, and `older` is null.
+  const o = keptOlder(kept, kept!.items);
+  assert.ok(o);
+  assert.equal(inputTotal(kept!.items, o), 3);
+  // The view writes its rows back before its hello: the kept pair stays.
+  store.setItems("k", kept!.items, null);
+  assert.deepEqual(store.peek("k")!.older, above(["u0", "u-1"]));
+});
+
+test("the kept older describes only the rows kept with it", () => {
+  const store = new TranscriptStore();
+  const list = [row("u1", "u1", { kind: "user" })];
+  store.setItems("k", list, above(["u0"]));
+  const kept = store.open("k");
+  assert.equal(keptOlder(kept, [...list, row("a1")]), null, "other rows: nothing is known above them");
+  assert.equal(keptOlder(undefined, list), null);
+  assert.equal(keptOlder(kept, null), null);
+  store.setItems("k", [...list, row("a1")], null);
+  assert.equal(store.peek("k")!.older, null, "new rows without a hello's word drop the pair");
+});
+
+test("a hello's older replaces the kept one, and a kept older is never another view's", () => {
+  const store = new TranscriptStore();
+  const list = [row("u1", "u1", { kind: "user" })];
+  store.setItems("a", list, above(["u0"]));
+  store.setItems("a", list, WHOLE);
+  assert.equal(store.peek("a")!.older, WHOLE);
+  assert.equal(keptOlder(store.open("b"), list), null);
+});
+
+test("preloaded rows keep what their fetch said is above them", () => {
+  const store = new TranscriptStore();
+  store.pin(["p"]);
+  assert.equal(store.preload("p", [row("x")], "2026-09-27T00:00:00Z", 10, above(["u0"])), true);
+  assert.deepEqual(store.peek("p")!.older, above(["u0"]));
+  store.preload("p", [row("x")], "2026-09-27T00:00:01Z", 10);
+  assert.equal(store.peek("p")!.older, null);
 });

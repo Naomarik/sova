@@ -16,6 +16,9 @@ export interface ModelControl {
   /** Why changing is blocked right now (agent running, composer disabled), else null. */
   blocked: Accessor<{ title: string; body?: string } | null>;
   choose(ref: string): void;
+  /** What the session list says this session runs (`SessionSummary.model`): the composer's model
+      indicator reads it until `model` arrives, so the foot is at its width from the first frame. */
+  known?: Accessor<string | null>;
 }
 
 const baseOptionId = (ref: string) => `mo-${ref.replace(/[^a-zA-Z0-9_-]/g, "-")}`;

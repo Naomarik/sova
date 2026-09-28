@@ -6411,6 +6411,61 @@
       "kind": "note",
       "authority": "accepted",
       "evidence": "verified"
+    },
+    "§chat.markdown/vis-flow-sections": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/flow/parse.ts",
+        "src/vis/kinds/flow/parse.test.ts",
+        "src/vis/kinds/flow/sections.ts",
+        "src/vis/kinds/flow/sections.test.ts",
+        "src/vis/kinds/flow/View.tsx",
+        "src/vis/kinds/flow/flow.css",
+        "src/vis/kinds/flow/layout.ts",
+        "pi-config/extensions/mode/vis-mode.md"
+      ]
+    },
+    "§chat.markdown/vis-parts": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/chart/Parts.tsx",
+        "src/vis/kinds/chart/parts.css",
+        "src/vis/kinds/chart/parts.ts",
+        "src/vis/kinds/chart/parts.test.ts",
+        "src/vis/kinds/chart/parse.ts",
+        "src/vis/kinds/chart/View.tsx",
+        "src/vis/kinds/chart/layout.ts",
+        "pi-config/extensions/mode/vis-mode.md"
+      ]
+    },
+    "§chat.markdown/vis-steps": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/steps/parse.ts",
+        "src/vis/kinds/steps/parse.test.ts",
+        "src/vis/kinds/steps/height.ts",
+        "src/vis/kinds/steps/height.test.ts",
+        "src/vis/kinds/steps/View.tsx",
+        "src/vis/kinds/steps/steps.css",
+        "src/vis/registry.ts",
+        "src/vis/views.ts",
+        "pi-config/extensions/mode/vis-mode.md"
+      ]
     }
   },
   "boundary": {

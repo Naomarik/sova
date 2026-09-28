@@ -167,8 +167,10 @@ enters the app's DOM**. Assistant-text rows only (§chat/markdown's scope).
   | `vis sequence` | actors, lifelines and numbered messages, with step-through | actor id, message number |
   | `vis layers` | a stack of labelled layers | layer label |
   | `vis tree` | an indented hierarchy | item name |
-  | `vis chart` | bar (grouped via `series:`, stacked), line, scatter; linear or log axis | row label |
+  | `vis flow` sections | side-by-side panels (§chat.markdown/vis-flow-sections) | node id or label |
+  | `vis chart` | bar (grouped via `series:`, stacked), line, scatter; linear or log axis; parts (§chat.markdown/vis-parts) | row label |
   | `vis timeline` | dated events in order | the row's date or label |
+  | `vis steps` | scenario chains with a status per row (§chat.markdown/vis-steps) | row label |
   | `vis matrix` | a comparison grid (yes / no / partial / text cells) | row label |
   | `vis code` | an annotated snippet: highlighted, numbered, marked lines with notes | line number or range |
   | `vis html`, `vis svg` | free-form, in a sandboxed frame (below) | — |
@@ -224,6 +226,72 @@ enters the app's DOM**. Assistant-text rows only (§chat/markdown's scope).
   when it is turned on mid-session (§chat.mode-menu/minor-toggle-keeps-prompt): when to draw (at most
   1–2 per reply, small, captioned, next to prose that says what to notice), the shared rules, and
   one section per kind. A kind flagged `stub` in the registry is never taught.
+
+## §chat.markdown/vis-parts — `vis chart` `type: parts`: a whole and its parts
+
+One bar split into the chart's rows, in order, for a part-of-whole question (a request against the
+context window, a share of a limit). HTML, drawn by `src/vis/kinds/chart/Parts.tsx`.
+
+- **Syntax.** `type: parts`, then one row per part: `label value [tone]`. Optional `unit:` and
+  `of: <capacity>`. `mark` a part by its label.
+- **Head.** Number first, as the design system's Meter: with `of:`, "89.3k of 200k tokens ·
+  45%" (the total in semibold mono, the rest muted); without, "908 KB in total".
+- **Bar.** 20px, the parts in order, 1px apart, each as long as its share; a part with a value above 0
+  keeps at least 3px, so a tiny part stays visible. With `of:` the bar is a track (1px strong border,
+  sunken ground) and the unused rest is its empty part. The bar is `aria-hidden`: the legend carries
+  the numbers. A marked part gets an ink outline inside its own box.
+- **Legend.** One row per part under the bar: swatch, label, value, share, the numbers right-aligned
+  in mono columns; with `of:` a last "Free" row (dashed swatch, muted label) for the unused rest.
+  Shares are of the capacity, else of the total: `<1%` under 1, one decimal under 10, else whole.
+  Once the whole reaches 10k every value from 1000 reads in k (9k beside 14k).
+- **Colour.** A part's tone colours it; parts without one take the chart's series colours in turn
+  (accent, warn, success, error, info, muted). A mark tints the part's legend row, adds the note's
+  number there and outlines the segment; it never recolours the part.
+- **Errors.** A negative part, a part without a number, parts adding up to 0, parts adding up to more
+  than `of:` (at the `of:` line), `of:` on any other type or not a number above 0, `series:`,
+  `scale: log`, `x:`/`y:`, more than 12 parts.
+- **Height.** Estimated from the same metrics before it draws (§chat.markdown/visuals, No layout shift).
+
+## §chat.markdown/vis-flow-sections — `vis flow` sections: panels side by side
+
+A `== label ==` line in a `vis flow` or `vis state` starts a **panel**; the nodes and edges after it
+belong to that panel. For two small graphs to compare (before/after, A vs B).
+
+- **Layout.** Each panel is laid out on its own by flow's layout. The panels sit side by side,
+  top-aligned, with a 1px rule between them, when all of them fit the pane at natural size;
+  otherwise they stack, a rule between them, each re-fitted to the width as a lone flow is (a phone
+  always stacks them). Each panel has its label above it as a heading (caption size, semibold).
+- **Ids** stay unique across the fence. A node belongs to the panel that declares it, else the one
+  that first uses it. `mark` targets any node in any panel.
+- **Errors.** An edge between panels ("crosses from section A to B: sections are separate drawings"),
+  a node declared in a panel after another panel used it, nodes or edges before the first section
+  line, an empty or unlabelled section, a repeated section label, more than 4 sections.
+- **No regression.** A flow without `==` lines parses and draws exactly as before (no `sections`).
+- Frames or clusters inside one connected graph are not part of this.
+- **Chain tones** (any `vis flow` or `vis state`, panels or not). A tone word right after an edge's
+  target (after its optional quoted edge label) tones that node: `a -> miss "dead" error`; a node
+  given two different tones (by a `node` line or another chain) is an error naming both.
+
+## §chat.markdown/vis-steps — `vis steps`: scenario chains
+
+A kind for scenarios or journeys as chains, each with a status. HTML, `src/vis/kinds/steps/`.
+
+- **Syntax.** One row per line: `"Label" [tone] | step -> step -> …`. The label is a "quoted label"
+  or bare words; a step is a "quoted label" or bare words, and steps join with `->` only.
+  `== lane ==` lines group the rows under a heading. No ids. `mark` a row by its label.
+- **Row.** A status mark, then the label (semibold), then the steps as chips (sunken, 1px border)
+  each after the first led by an arrow; the chips wrap with the pane, an arrow staying with the
+  chip it leads to. Beside a 144px label column; at a figure width of 420px or less the label sits
+  above its chain. Rows are bordered bands 4px apart; a marked row takes the shared emphasis tint
+  and the note's number before its label.
+- **Status.** `ok`, `warn`, `error` and `info` rows show their tone's icon (check, alert, x, info) in
+  the tone's colour, so status never rests on hue alone; `accent` a filled dot, `muted` a dotted ring
+  (and a muted label), no tone an empty ring.
+- **Lane heads.** Caption size, semibold, 8px more space above all but the first.
+- **Errors.** A row without `|`, an empty label or step, a step mixing a quoted label and bare
+  words, an arrow other than `->`, an empty or unlabelled lane, more than 10 steps in a row, 16 rows
+  or 6 lanes.
+- **Height.** Estimated from steps.css' fixed metrics before it draws.
 
 ## §chat.markdown/accessibility — Accessibility
 

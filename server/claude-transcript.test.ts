@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import { clearClaudeSessionCache, normalizeClaudeEntries, resolveClaudeSession } from "./claude-transcript";
+import { clearClaudeSessionCache, editDetailsOf, normalizeClaudeEntries, piToolArgs, resolveClaudeSession } from "./claude-transcript";
 import { normalizeEntry } from "./transcript";
 
 // --- real CC 2.1.278 lines -------------------------------------------------
@@ -252,5 +252,67 @@ describe("normalizeClaudeEntries", () => {
   test("row ids stay unique across a whole file", () => {
     const items = normalizeClaudeEntries(parse([USER_LINE, TEXT_LINE, TOOL_USE_LINE, TOOL_RESULT_LINE, BASH_LINE]));
     assert.equal(new Set(items.map((i) => i.id)).size, items.length);
+  });
+});
+
+describe("Edit / MultiEdit / Write", () => {
+  // The CC shapes as CLI 2.1.270–2.1.282 write them (tool_use input, and the result line's toolUseResult).
+  const HUNK = { oldStart: 3, oldLines: 3, newStart: 3, newLines: 3, lines: [" a", "-b", "+B", " c"] };
+  const use = (name: string, input: unknown) => ({
+    type: "assistant",
+    uuid: `u-${name}`,
+    timestamp: "2026-09-28T10:00:00.000Z",
+    message: { model: "claude-opus-5-5", role: "assistant", content: [{ type: "tool_use", id: `t-${name}`, name, input }] },
+  });
+  const result = (name: string, toolUseResult: unknown, isError = false) => ({
+    type: "user",
+    uuid: `r-${name}`,
+    timestamp: "2026-09-28T10:00:01.000Z",
+    message: { role: "user", content: [{ tool_use_id: `t-${name}`, type: "tool_result", content: isError ? "<tool_use_error>no match</tool_use_error>" : "The file has been updated.", ...(isError ? { is_error: true } : {}) }] },
+    toolUseResult,
+  });
+  const argsOf = (it: { raw: unknown }) => (it.raw as any).message.content[0];
+  const detailsOf = (it: { raw: unknown }) => (it.raw as any).message.details;
+
+  test("Edit maps onto pi's edit arguments and carries structuredPatch, not originalFile", () => {
+    const [call, res] = normalizeClaudeEntries([
+      use("Edit", { file_path: "/home/user/p/a.ts", old_string: "b", new_string: "B", replace_all: true }),
+      result("Edit", { filePath: "/home/user/p/a.ts", oldString: "b", newString: "B", originalFile: "a\nb\nc\n", structuredPatch: [HUNK], userModified: false, replaceAll: true }),
+    ]);
+    assert.equal(call!.text, "edit");
+    assert.deepEqual(argsOf(call!), { type: "toolCall", id: "t-Edit", name: "edit", arguments: { path: "/home/user/p/a.ts", edits: [{ oldText: "b", newText: "B" }], replaceAll: true } });
+    assert.deepEqual(detailsOf(res!), { structuredPatch: [HUNK] });
+    assert.equal(JSON.stringify(res!.raw).includes("originalFile"), false);
+  });
+
+  test("MultiEdit is an edit with every entry; Write keeps path and content", () => {
+    const [multi, write] = normalizeClaudeEntries([
+      use("MultiEdit", { file_path: "/p/a.ts", edits: [{ old_string: "x", new_string: "y" }, { old_string: "z", new_string: "w", replace_all: true }] }),
+      use("Write", { file_path: "/p/b.ts", content: "hi\n" }),
+    ]);
+    assert.deepEqual(argsOf(multi!).arguments, { path: "/p/a.ts", edits: [{ oldText: "x", newText: "y" }, { oldText: "z", newText: "w" }] });
+    assert.equal(argsOf(multi!).name, "edit");
+    assert.deepEqual(argsOf(write!).arguments, { path: "/p/b.ts", content: "hi\n" });
+    assert.equal(argsOf(write!).name, "write");
+  });
+
+  test("a Write that created the file says so; one that overwrote it carries its hunks", () => {
+    const [created] = normalizeClaudeEntries([result("W1", { type: "create", filePath: "/p/b.ts", content: "hi\n", structuredPatch: [], originalFile: null, userModified: false })]);
+    assert.deepEqual(detailsOf(created!), { structuredPatch: [], created: true });
+    const [updated] = normalizeClaudeEntries([result("W2", { type: "update", filePath: "/p/b.ts", content: "B\n", structuredPatch: [HUNK], originalFile: "b\n" })]);
+    assert.deepEqual(detailsOf(updated!), { structuredPatch: [HUNK] });
+  });
+
+  test("errors, other tools' results and unknown shapes carry no details", () => {
+    const [err] = normalizeClaudeEntries([result("E", { filePath: "/p/a.ts", structuredPatch: [HUNK] }, true)]);
+    assert.equal(detailsOf(err!), undefined);
+    assert.equal(detailsOf(normalizeClaudeEntries(parse([TOOL_RESULT_LINE]))[0]!), undefined);
+    assert.equal(editDetailsOf({ filePath: "/p", structuredPatch: [{ ...HUNK, lines: [1] }] }), undefined);
+    assert.equal(editDetailsOf({ structuredPatch: [HUNK] }), undefined);
+    assert.equal(editDetailsOf("Error: file not read"), undefined);
+    // Malformed inputs pass through untouched rather than half-mapped.
+    const odd = { file_path: "/p", edits: [{ old_string: "x" }] };
+    assert.equal(piToolArgs("MultiEdit", odd), odd);
+    assert.deepEqual(piToolArgs("Bash", { command: "ls" }), { command: "ls" });
   });
 });

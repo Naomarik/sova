@@ -30,6 +30,8 @@ import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { WakeCard } from "./WakeCard";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
+import { ShowChangesCard } from "./ChangesViewer";
+import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
 import { Banner, Chip, Icon } from "./ui";
 import { BriefRow, ConfirmCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow } from "./OverseerCards";
 import { confirmAnswer, confirmDetails, detailsOf, isBriefText } from "../lib/overseer";
@@ -445,6 +447,11 @@ export function HistoryItems(props: {
     for (const it of props.items) if (it.kind === "tool-result" && it.toolCallId) byCall.set(it.toolCallId, it);
     return byCall;
   });
+  /** A show_changes call's checked details, once it succeeded (§chat.changes/show-changes-card). */
+  const showChangesOf = (callId: string | undefined) => {
+    const r = callId ? results().get(callId) : undefined;
+    return r && !toolResultView(r.raw, r.text).isError ? normalizeShowChangesDetails(detailsOf(r.raw)) : undefined;
+  };
   const calls = createMemo(() => {
     const ids = new Set<string>();
     for (const it of props.items) if (it.kind === "tool-call" && it.toolCallId) ids.add(it.toolCallId);
@@ -709,6 +716,11 @@ export function HistoryItems(props: {
                   <PathText text={item.text ?? ""} attachments={item.attachments} />
                 </InfoRow>
               </Match>
+              {/* A show_changes result whose details check out reads as a card that opens the
+                  changes viewer (§chat.changes/show-changes-card); anything else, a tool card. */}
+              <Match when={item.kind === "tool-call" && item.text === SHOW_CHANGES_TOOL && showChangesOf(item.toolCallId)}>
+                {(details) => <ShowChangesCard details={details()} />}
+              </Match>
               <Match when={item.kind === "tool-call"}>
                 {(() => {
                   const view = () => {
@@ -742,6 +754,7 @@ export function HistoryItems(props: {
                     <ToolCard
                       name={item.text ?? "tool"}
                       args={toolCallArgs(item.raw, item.toolCallId)}
+                      details={resultDetails()}
                       status={status()}
                       output={view()?.output}
                       images={item.toolCallId ? results().get(item.toolCallId)?.images : undefined}
@@ -848,6 +861,7 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
                       name={b().name}
                       args={b().args ?? tool()?.args}
                       argsText={b().argsText}
+                      details={tool()?.details}
                       status={status()}
                       output={tool()?.output}
                       images={tool()?.images}

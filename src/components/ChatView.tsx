@@ -113,6 +113,7 @@ import { SessionSetupCard } from "./SessionSetup";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
+import { ChangesSession } from "./ChangesViewer";
 import { type ForkMarker, HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
@@ -1576,6 +1577,7 @@ export function ChatView(props: {
           {(list) => (
             <OverseerThreadContext.Provider value={props.overseer ? { answer: (text, card) => send(text, false, [], card) } : null}>
             <AlignAnswerContext.Provider value={alignAnswer}>
+              <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.summary?.()?.cwd; } }}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -1588,6 +1590,7 @@ export function ChatView(props: {
                 older={olderRows.api}
                 liveAlignIds={liveAlignIds()}
               />
+              </ChangesSession.Provider>
               <LiveEntries
                 live={live}
                 author={props.author}

@@ -213,6 +213,9 @@
   --diff-add-ink: #4FC98D;
   --diff-del-bg:  #4E2823;
   --diff-del-ink: #FF7A70;
+  /* Word marks inside a changed line; text on them is --color-ink (6.7:1 add, 9.0:1 del). */
+  --diff-add-emph: #23603F;
+  --diff-del-emph: #6B3129;
   --diff-gutter:  var(--brand-sunken-dk);
 
   /* Neutral black only. In dark these barely read — surface lightness does
@@ -262,6 +265,9 @@
   --diff-add-ink: #15704A;
   --diff-del-bg:  #FBEAE9;
   --diff-del-ink: #B8302B;
+  /* Word marks; --color-ink on them is 13.5:1 add, 12.3:1 del. */
+  --diff-add-emph: #C6E8D4;
+  --diff-del-emph: #F5CDC9;
   --diff-gutter:  var(--brand-sunken);
 
   --shadow-1: 0 1px 2px rgba(23, 23, 28, .06);

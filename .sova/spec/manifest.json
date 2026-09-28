@@ -636,7 +636,10 @@
     "§chat.context-window/width-budget": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified",
+      "code": [
+        "src/design/base.css"
+      ]
     },
     "§chat.images/composer-attachments": {
       "kind": "behavior",
@@ -2891,7 +2894,7 @@
     "§app.overseer/ideas-panel": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/OverseerIdeas.tsx",
         "src/components/OverseerView.tsx",
@@ -3259,24 +3262,6 @@
         "pi-config/extensions/subagents/index.ts"
       ]
     },
-    "§app.overseer/finished-menu": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "src/components/OverseerView.tsx",
-        "src/components/ActionMenu.tsx",
-        "src/lib/overseer.ts",
-        "src/lib/api.ts",
-        "src/design/base.css",
-        "src/lib/overseer.test.ts",
-        "src/App.tsx"
-      ],
-      "requires": [
-        "§app.overseer/attention-digest",
-        "§app.overseer/identity-and-clear"
-      ]
-    },
     "§app.settings-dialog/decisions-autosave": {
       "kind": "behavior",
       "authority": "accepted",
@@ -3298,7 +3283,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
@@ -6571,6 +6556,51 @@
         "src/vis/registry.ts",
         "src/vis/views.ts",
         "pi-config/extensions/mode/vis-mode.md"
+      ]
+    },
+    "§app.overseer/drafts-menu": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/OverseerView.tsx",
+        "src/components/ActionMenu.tsx",
+        "src/lib/overseer.ts",
+        "src/lib/api.ts",
+        "src/design/base.css",
+        "src/lib/overseer.test.ts",
+        "src/App.tsx"
+      ],
+      "requires": [
+        "§app.overseer/attention-digest",
+        "§app.overseer/identity-and-clear"
+      ]
+    },
+    "§app.overseer/head-layout": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/OverseerView.tsx",
+        "src/design/base.css",
+        "src/overseer-ideas.css",
+        "src/overseer-todos.css",
+        "src/components/ActionMenu.tsx"
+      ],
+      "requires": [
+        "§app.overseer/identity-and-clear",
+        "§app.overseer/proactivity",
+        "§app.overseer/ideas-panel",
+        "§app.overseer/todos-panel",
+        "§app.overseer/drafts-menu"
+      ]
+    },
+    "§design.copy-deck/overseer-head": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/OverseerView.tsx"
       ]
     },
     "§chat.changes/diff-renderer": {

@@ -783,6 +783,15 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Status strip, lines 2–3 | the project page's readout ("Today on its own: …") and waiting sentences (§design.copy-deck/project-limits) · below 480px: `Details` toggles them |
 | Read-only line (earlier conversation) | "An earlier conversation. Read only." |
 
+## §design.copy-deck/overseer-head — The Overseer · page head (§app.overseer/head-layout)
+
+| Where | Copy |
+|---|---|
+| ⋯ menu | `aria-label` "Overseer actions" · `title` "Overseer actions" · `Proactivity…`, note the current mode (`Off` / `List Only` / `Brief Me`; `aria-label` "Proactivity: {mode}. Change it.") · `History…`, note "{n} earlier" while any (`aria-label` "History, {n} earlier conversations", 1: "conversation") · `Clear`, note "Start a new conversation. This one moves to History." (`aria-label` "Clear: start a new conversation") · an earlier conversation: `History…` only |
+| Proactivity screen | `Off` · `List Only` · `Brief Me`, each with its hint (§app.overseer/proactivity) as its note, the current one checked (`aria-label` "{mode}, {hint}" + " Chosen.") · done (announced): "Proactivity: {mode}. {hint}" · failed (toast): "Proactivity unchanged. {why}" |
+| History screen | its earlier conversations, each "{title}" ("No messages" when untitled) with its age · none: "No earlier conversations yet." |
+| Clear | done (announced): "Cleared. The previous conversation is in History." · failed (toast): "Couldn't clear the Overseer. {why}" |
+
 ## §design.copy-deck/overseer-orgs — The Overseer in organizations (§app.overseer/org-tools, §app.organizations/archive)
 
 | Where | Copy |

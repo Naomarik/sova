@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DecisionRow } from "../../shared/decisions";
-import { alsoCarriesLine, areaGroups, conflictSides, decisionsLine, emptySelection, keepPromotable, outsideTheirArea, promotable, refName, refreshSelection, selectAllReady, toggleSelection } from "./decisions-view";
+import { alsoCarriesLine, areaGroups, builtLine, conflictSides, decisionsLine, emptySelection, keepPromotable, outsideTheirArea, promotable, refName, refreshSelection, selectAllReady, toggleSelection } from "./decisions-view";
 
 const row = (id: string, areaKey: string, state: DecisionRow["state"], area = areaKey): DecisionRow => ({
   id,
@@ -109,4 +109,11 @@ test("Also carries: every statement folded in, through a fold of a fold, earlier
   const one = { ...row("x", "lunch", "drafted"), folded: ["y"] };
   assert.equal(alsoCarriesLine(one, new Map([[one.id, one], ["y", row("y", "lunch", "superseded")]])), "Also carries 1 more statement of the same decision, with its quote.");
   assert.doesNotMatch(alsoCarriesLine(a, byId)!, /earlier/, "a confirmation can come later");
+});
+
+test("the Requirements card's build counts: nothing when nothing is promoted", () => {
+  assert.equal(builtLine({ built: 4, notBuilt: 9 }), " · 4 built, 9 not built yet");
+  assert.equal(builtLine({ built: 0, notBuilt: 2 }), " · 0 built, 2 not built yet");
+  assert.equal(builtLine({ built: 0, notBuilt: 0 }), "");
+  assert.equal(builtLine({}), "");
 });

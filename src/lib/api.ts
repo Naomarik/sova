@@ -1010,6 +1010,9 @@ export const promoteDecisions = (orgId: string, projectId: string, ids: string[]
 /** Who decides a decision: a roster decision area or "none" (§app.requirements/owner-area). */
 export const setOwnerArea = (orgId: string, projectId: string, did: string, ownerArea: string) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/decisions/${encodeURIComponent(did)}`, jsonInit("PATCH", { ownerArea }));
+/** A promoted decision edited in the spec: keep the spec's words, or promote the person's again. */
+export const settleSpecText = (orgId: string, projectId: string, did: string, action: "keep" | "restore") =>
+  request<DecisionsInfo>(`${projectBase(orgId, projectId)}/decisions/${encodeURIComponent(did)}/text`, jsonInit("POST", { action }));
 export const routeConflict = (orgId: string, projectId: string, cid: string, to?: string) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/route`, jsonInit("POST", to ? { to } : {}));
 export const resolveConflict = (orgId: string, projectId: string, cid: string, input: ConflictResolveInput) =>

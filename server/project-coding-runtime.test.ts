@@ -6,7 +6,7 @@
 // session was created, its worktree cut and its mode set — which is what is checked.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -130,8 +130,13 @@ describe("a project's coding sessions", async () => {
     assert.ok(memo.soonAt, "a look soon");
     git(w.path, "add", "login.txt");
     git(w.path, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "login");
+    store.writeMemo(p, { ...store.readMemo(p), pending: [], soonAt: undefined } as never);
     info = await po.mergeCodingWorktree(org.id, project.id, started.sessionId);
     assert.equal(readFileSync(join(client, "login.txt"), "utf8"), "login\n");
+    // Merged: the overseer is told, soon, so it never waits on a merge that already happened (NEW-MS-3).
+    const merged = store.readMemo(p);
+    assert.deepEqual(merged.pending, [`The operator merged "Build the login page" (${w.branch}) into master.`]);
+    assert.ok(merged.soonAt, "a look soon");
     assert.deepEqual([rowOf()?.state, rowOf()?.merged, !!rowOf()?.mergedAt], ["merged", true, true]);
     // The session is sent more work and commits again: git, not the record, says it is merged.
     const firstMerge = rowOf()!.mergedAt;
@@ -233,6 +238,90 @@ describe("a project's coding sessions", async () => {
       assert.equal(made.notPrompted, "Started, but not prompted: its mode could not be set.");
       assert.ok(store.readStarted(p).some((r) => r.sessionId === made.sessionId), "listed and counted");
       assert.doesNotMatch(readFileSync(made.path, "utf8"), /"role":"user"/, "no prompt reached it");
+    } finally {
+      writeFileSync(settingsFile, had);
+    }
+  });
+
+  test("New Coding Session: a worktree, pinned, the commit paragraph as a note, nothing sent, no reason to look", async () => {
+    writeDefault("delegate", ["align", "spec"]);
+    const { Hono } = await import("hono");
+    const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
+    const { readTodos } = await import("./overseer-todos");
+    const { convertToLlm } = await import("@earendil-works/pi-coding-agent");
+    const app = new Hono();
+    registerProjectOverseerRoutes(app);
+    const p = store.projectOverseerPaths(org.id, project.id);
+    await po.ensureProjectOverseer(org.id, project.id);
+    store.writeMemo(p, { ...store.readMemo(p), pending: [], soonAt: undefined } as never);
+    const todosBefore = JSON.stringify(readTodos(p.todos));
+    const res = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(res.status, 201);
+    const made = (await res.json()) as { path: string; sessionId: string; worktree?: { branch: string; path: string }; modeNotSet?: string };
+    assert.equal(made.modeNotSet, undefined);
+    assert.match(made.worktree?.branch ?? "", /^sova\/coding-[0-9a-f]{6}$/);
+    const row = store.readStarted(p).find((r) => r.sessionId === made.sessionId)!;
+    assert.deepEqual([row.kind, row.title, row.worktree?.branch], ["operator-coding", undefined, made.worktree!.branch], "the operator's, untitled, in its worktree");
+    const lines = readFileSync(made.path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    assert.equal(lines[0].cwd, made.worktree!.path);
+    assert.deepEqual(modeEntries(made.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec"] }, "the project's mode, not the host's default");
+    assert.ok(!lines.some((e) => e.type === "message"), "nothing was sent: no user message, no reply");
+    const notes = lines.filter((e) => e.type === "custom_message" && e.customType === po.CODING_WORKTREE_NOTE);
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0].content, po.codingWorktreeParagraph({ branch: made.worktree!.branch, target: "master" }));
+    assert.equal(notes[0].display, true);
+    // Persisted, and the model gets it: reopened from the file, it is in the context as a user message.
+    await disposeHeldChat(made.path, "test: reopen");
+    const chat = await acquireChat(made.path);
+    const llm = convertToLlm(chat.session.sessionManager.buildSessionContext().messages);
+    assert.ok(llm.some((m) => m.role === "user" && JSON.stringify(m.content).includes(`on the branch ${made.worktree!.branch}`)), JSON.stringify(llm));
+    assert.deepEqual(store.readMemo(p).pending, [], "no reason to look");
+    assert.equal(JSON.stringify(readTodos(p.todos)), todosBefore, "no to-do touched");
+    const info = await po.projectOverseerInfo(org.id, project.id);
+    const listed = info.worktrees.sessions.find((s) => s.sessionId === made.sessionId);
+    assert.deepEqual(listed && { startedBy: listed.startedBy, title: listed.title, branch: listed.branch }, { startedBy: "operator", title: "", branch: made.worktree!.branch });
+    // The overseer sees it, as the operator's.
+    const list = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_list_sessions")!;
+    const out = ((await list.execute("t", {}, undefined, undefined, undefined as never)).content[0] as { text: string }).text;
+    assert.ok(out.includes(`- ${made.sessionId} "Untitled coding session" · started by the operator · idle · ${made.worktree!.branch} · no commits yet`), out);
+    // Clean Up's husk sweep never takes it; an ordinary empty session of the same age is taken.
+    const { cleanupSessions, idOf } = await import("./sessions-index");
+    const husk = join(agentDir, "sessions", "--tmp-husk--", "2026-09-28T00-00-00-000Z_01a0e999-0000-7000-8000-000000000001.jsonl");
+    mkdirSync(dirname(husk), { recursive: true });
+    writeFileSync(husk, `${JSON.stringify({ type: "session", version: 3, id: "01a0e999-0000-7000-8000-000000000001", timestamp: new Date().toISOString(), cwd: tmp })}\n`);
+    await disposeHeldChat(made.path, "test: sweep");
+    const old = new Date(Date.now() - 3_600_000);
+    utimesSync(husk, old, old);
+    utimesSync(made.path, old, old);
+    const swept = await cleanupSessions({ mode: "husks", dryRun: true });
+    assert.ok(swept.deletedIds.includes(idOf(husk)), "the control husk is a candidate");
+    assert.ok(!swept.deletedIds.includes(made.sessionId), "the project's coding session is not");
+    rmSync(husk);
+  });
+
+  test("New Coding Session in a plain folder: in the root, with the reason and no note; an unknown project is 404", async () => {
+    const { Hono } = await import("hono");
+    const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
+    const app = new Hono();
+    registerProjectOverseerRoutes(app);
+    const made = await po.startCoding(org.id, plain.id, {});
+    assert.deepEqual([made.worktree, made.note], [undefined, "it isn't a Git repository."]);
+    assert.equal(JSON.parse(readFileSync(made.path, "utf8").split("\n")[0]!).cwd, plainRoot);
+    assert.doesNotMatch(readFileSync(made.path, "utf8"), /sova-coding-worktree|"type":"message"/);
+    const res = await app.request(`/api/orgs/${org.id}/projects/prj_zzzzzzzz/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(res.status, 404);
+  });
+
+  test("New Coding Session whose mode can't be set: started and listed, and it says so", async () => {
+    const settingsFile = join(agentDir, "settings.json");
+    const had = readFileSync(settingsFile, "utf8");
+    writeFileSync(settingsFile, JSON.stringify({ extensions: [] }));
+    try {
+      const made = await po.startCoding(org.id, project.id, {});
+      assert.equal(made.modeNotSet, "Started, but its mode could not be set. Set it from the chat's mode menu before you send.");
+      const info = await po.projectOverseerInfo(org.id, project.id);
+      assert.ok(info.worktrees.sessions.some((s) => s.sessionId === made.sessionId), "listed");
+      assert.doesNotMatch(readFileSync(made.path, "utf8"), /sova-coding-worktree|"type":"message"/, "no note, nothing sent");
     } finally {
       writeFileSync(settingsFile, had);
     }

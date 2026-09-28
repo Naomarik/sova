@@ -465,9 +465,16 @@ export interface UploadResult {
   size: number;
 }
 
+/** GET /api/sessions/dir: the sessions folder this server lists (its agent dir's `sessions`), with its home folder so a page can show it as `~/…`. */
+export interface SessionsDirInfo {
+  sessionsDir: string;
+  home: string;
+}
+
 // ---------------------------------------------------------------------------
 // REST (JSON)
 //
+// GET  /api/sessions/dir        -> SessionsDirInfo
 // GET  /api/sessions            -> SessionSummary[]
 // POST /api/sessions { cwd }    -> SessionSummary   (creates a NEW empty webapp-owned session)
 // POST /api/sessions { target, remoteCwd } -> SessionSummary   (remote session: creates the local placeholder

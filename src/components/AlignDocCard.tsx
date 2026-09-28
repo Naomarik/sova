@@ -1,7 +1,7 @@
 import { For, Show } from "solid-js";
 import type { AlignDocInfo, AlignQuestionInfo, AlignRowInfo } from "../../shared/protocol";
 import { ALIGN_STATUS_CHIP, alignStatusOf, openLabel, QUESTION_CHIP, questionStateOf } from "../lib/align";
-import { Icon } from "./ui";
+import { Chip, Icon } from "./ui";
 import "../design/align-viewer.css";
 
 let seq = 0;
@@ -62,7 +62,11 @@ function AlignRevision(props: { doc: AlignDocInfo; line: string }) {
 
 export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
   const titleId = `align-doc-${++seq}`;
-  const status = () => ALIGN_STATUS_CHIP[alignStatusOf(props.doc)];
+  // "Aligning" is every open document's default: only a later status earns a chip.
+  const status = () => {
+    const s = alignStatusOf(props.doc);
+    return s === "aligning" ? undefined : ALIGN_STATUS_CHIP[s];
+  };
   return (
     <article class="card align-doc" aria-labelledby={titleId}>
       <header class="align-doc-head">
@@ -73,7 +77,7 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
           <h3 class="align-doc-title" id={titleId}>
             {props.doc.title}
           </h3>
-          <span class="align-state">• {status().label}</span>
+          <Show when={status()}>{(st) => <Chip tone={st().tone}>{st().label}</Chip>}</Show>
         </div>
         <p class="align-doc-meta">
           <span class="text-num">{openLabel(props.doc)}</span>
@@ -109,13 +113,18 @@ function AlignDocBody(props: { doc: AlignDocInfo }) {
 function AlignQuestion(props: { q: AlignQuestionInfo }) {
   const state = () => questionStateOf(props.q);
   const chip = () => QUESTION_CHIP[state()];
-  return (
-    <li class="align-q" data-state={state()}>
-      <p class="align-q-head">
-        <span class="text-mono align-q-id">{props.q.id}</span>
-        <strong class="align-q-topic">{props.q.topic}</strong>
-        <span class="align-state">• {chip().label}</span>
-      </p>
+  const head = (twist: boolean) => (
+    <>
+      <Show when={twist}>
+        <Icon name="chevron-right" small class="icon-twist" />
+      </Show>
+      <span class="text-mono align-q-id">{props.q.id}</span>
+      <strong class="align-q-topic">{props.q.topic}</strong>
+      <Chip tone={chip().tone}>{chip().label}</Chip>
+    </>
+  );
+  const body = () => (
+    <>
       <p class="align-q-ask"><Inline text={props.q.ask} /></p>
       <Show when={props.q.context}>
         <p class="align-q-context"><Inline text={props.q.context ?? ""} /></p>
@@ -134,6 +143,26 @@ function AlignQuestion(props: { q: AlignQuestionInfo }) {
       <p class="align-q-rec">
         <span class="align-q-label">Recommended:</span> <strong><Inline text={props.q.recommendation.choice} /></strong> — <Inline text={props.q.recommendation.why} />
       </p>
+    </>
+  );
+  // An open question is what the user answers, so it stays whole; a settled one folds to its head
+  // and its outcome, and opens to the ask, options and recommendation it was settled from.
+  return (
+    <li class="align-q" data-state={state()}>
+      <Show
+        when={state() !== "open"}
+        fallback={
+          <>
+            <p class="align-q-head">{head(false)}</p>
+            {body()}
+          </>
+        }
+      >
+        <details class="align-q-fold">
+          <summary class="align-q-head align-q-summary">{head(true)}</summary>
+          <div class="align-q-body">{body()}</div>
+        </details>
+      </Show>
       <Show when={props.q.decision}>
         {(d) => (
           <p class="align-q-decision">

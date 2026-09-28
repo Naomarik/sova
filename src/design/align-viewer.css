@@ -80,8 +80,6 @@
   color: var(--color-ink);
   overflow-wrap: anywhere;
 }
-/* The document's status and each question's state: a plain word after a bullet, no chip. */
-.align-state { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); white-space: nowrap; }
 .align-doc-meta { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 .align-doc-summary { margin: 0; color: var(--color-ink); }
 .align-doc-dropped { margin: 0; color: var(--color-ink); }
@@ -99,6 +97,13 @@
 .align-q:last-child { padding-bottom: var(--space-1); }
 .align-q > p { margin: 0; overflow-wrap: anywhere; }
 .align-q-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+/* A decided or dropped question folds to its head (and its outcome, outside the fold). */
+.align-q-summary { cursor: pointer; list-style: none; }
+.align-q-summary::-webkit-details-marker { display: none; }
+.align-q-summary .icon-twist { flex: none; margin-left: calc(-1 * var(--space-1)); transition: transform var(--dur-fast) var(--ease-standard); }
+.align-q-fold[open] > .align-q-summary .icon-twist { transform: rotate(90deg); }
+.align-q-body { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+.align-q-body > p { margin: 0; overflow-wrap: anywhere; }
 .align-q-id { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .align-q-topic { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .align-q-ask { color: var(--color-ink); }

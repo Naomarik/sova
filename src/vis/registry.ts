@@ -32,25 +32,36 @@ export interface KindEntry<S extends VisBase = VisBase> {
    * model never hears of it; guide.test.ts checks), and its View may be `() => import("./StubView")`.
    */
   stub?: boolean;
+  /**
+   * The drawing's height in px when `.vis-body`'s content box is `width` wide: the shell reserves
+   * it before the View mounts, so nothing below moves. Pure (the kind's parse/layout side).
+   */
+  size?: (spec: S, width: number) => number;
 }
 
-type Opts = { framed?: boolean; stub?: boolean };
+type Opts = { framed?: boolean; stub?: boolean; size?: KindEntry["size"] };
+type ViewName = keyof typeof import("./views");
+/** One View out of views.ts: every kind shares that one chunk, loaded the first time any is drawn. */
+const view =
+  (name: ViewName) =>
+  () =>
+    import("./views").then((m) => ({ default: m[name] as Component<ViewProps<VisBase>> }));
 const kind = <S extends VisBase>(parse: KindEntry<S>["parse"], view: KindEntry<S>["view"], label: string, opts: Opts = {}): KindEntry =>
   ({ parse, view, label, ...opts }) as unknown as KindEntry;
 
 // One line per fence word, in the order the guide presents them. `state` reuses flow's parser and View.
 export const KINDS: Record<string, KindEntry> = {
-  flow: kind(parseFlow, () => import("./kinds/flow/View"), "Diagram"),
-  sequence: kind(parseSequence, () => import("./kinds/sequence/View"), "Sequence"),
-  state: kind(parseState, () => import("./kinds/flow/View"), "State machine"),
-  layers: kind(parseLayers, () => import("./kinds/layers/View"), "Layers"),
-  tree: kind(parseTree, () => import("./kinds/tree/View"), "Tree"),
-  chart: kind(parseChart, () => import("./kinds/chart/View"), "Chart"),
-  timeline: kind(parseTimeline, () => import("./kinds/timeline/View"), "Timeline"),
-  matrix: kind(parseMatrix, () => import("./kinds/matrix/View"), "Matrix"),
-  code: kind(parseCode, () => import("./kinds/code/View"), "Code"),
-  html: kind(parseHtml, () => import("./kinds/frame/View"), "Interactive", { framed: true }),
-  svg: kind(parseSvg, () => import("./kinds/frame/View"), "Drawing", { framed: true }),
+  flow: kind(parseFlow, view("flow"), "Diagram"),
+  sequence: kind(parseSequence, view("sequence"), "Sequence"),
+  state: kind(parseState, view("flow"), "State machine"),
+  layers: kind(parseLayers, view("layers"), "Layers"),
+  tree: kind(parseTree, view("tree"), "Tree"),
+  chart: kind(parseChart, view("chart"), "Chart"),
+  timeline: kind(parseTimeline, view("timeline"), "Timeline"),
+  matrix: kind(parseMatrix, view("matrix"), "Matrix"),
+  code: kind(parseCode, view("code"), "Code"),
+  html: kind(parseHtml, view("frame"), "Interactive", { framed: true }),
+  svg: kind(parseSvg, view("frame"), "Drawing", { framed: true }),
 };
 
 export const KIND_WORDS = Object.keys(KINDS);

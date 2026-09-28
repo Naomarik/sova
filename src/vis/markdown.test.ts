@@ -36,6 +36,7 @@ test("while streaming, an open vis fence is a Drawing line, never half a drawing
   const r = renderMarkdown("Here:\n\n```vis flow\na -> b\nb -> c", true);
   assert.equal(r.visuals.length, 0);
   assert.match(r.html, /class="md-vis-pending".*Drawing flow….*2 lines/s);
+  assert.match(r.html, /<div class="md-vis-pending">/, "a block box, so vis.css can give it the reserved height");
   const done = renderMarkdown("Here:\n\n```vis flow\na -> b\nb -> c\n```", true);
   assert.equal(done.visuals.length, 1, "closed mid-stream: drawn");
 });

@@ -1,4 +1,4 @@
-import { For, Show, createSignal, lazy, type Component } from "solid-js";
+import { For, Show, Suspense, createSignal, lazy, onMount, type Component } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { highlight } from "../lib/markdown";
 import { announce, copyText } from "../lib/ui-state";
@@ -19,6 +19,31 @@ function viewFor(kind: string): Component<ViewProps<VisBase>> {
     views.set(entry.view, view);
   }
   return view;
+}
+
+/** Before a kind's View first arrives, what the drawing will need: the kind's own estimate. */
+const DEFAULT_RESERVE = 160;
+
+/**
+ * Holds the drawing's place while its View loads: a blank box as tall as the kind estimates for
+ * this width, so the notes, caption and everything after the figure are already where they'll stay.
+ * Measured in onMount, which runs after the figure is in the page and before it is painted.
+ */
+function Reserve(props: { kind: string; spec: VisBase }) {
+  const [height, setHeight] = createSignal(DEFAULT_RESERVE);
+  let el!: HTMLDivElement;
+  onMount(() => {
+    const size = KINDS[props.kind]!.size;
+    const width = el.getBoundingClientRect().width;
+    if (size && width > 0) {
+      try {
+        setHeight(Math.max(0, Math.round(size(props.spec, width))));
+      } catch {
+        // An estimate that throws only costs the reserve its accuracy.
+      }
+    }
+  });
+  return <div ref={el} class="vis-reserve" style={{ height: `${height()}px` }} aria-hidden="true" />;
 }
 
 /** Prose from a fence (a caption, a note): `backticks` become inline code, the rest stays text. */
@@ -66,7 +91,9 @@ export function Visual(props: { kind: string; spec: VisBase; fence: string; body
       </Show>
       {/* Hidden, not unmounted: an interactive frame keeps its state across a look at the source. */}
       <div class="vis-body" hidden={source()}>
-        <Dynamic component={viewFor(props.kind)} spec={s} label={label} />
+        <Suspense fallback={<Reserve kind={props.kind} spec={s} />}>
+          <Dynamic component={viewFor(props.kind)} spec={s} label={label} />
+        </Suspense>
       </div>
       <Show when={notes.length && !source()}>
         <ol class="vis-notes" aria-label="Notes">

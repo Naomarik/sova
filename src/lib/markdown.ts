@@ -279,7 +279,9 @@ function parseCached(kind: string, body: string): ParseResult {
 const renderVis = (t: { content: string; info: string; markup: string }, kind: string, env: RenderEnv, open: boolean) => {
   if (open) {
     const lines = t.content.split("\n").length - 1;
-    return `<p class="md-vis-pending"><span class="md-vis-pending-dot" aria-hidden="true"></span>Drawing ${esc(kind || "a visual")}… <span class="md-vis-pending-count">${lines} ${lines === 1 ? "line" : "lines"}</span></p>\n`;
+    // A fixed-height box, not a one-line note: the drawing that replaces it is usually about this
+    // tall, so the text streaming in below it doesn't leap when the fence closes.
+    return `<div class="md-vis-pending"><p class="md-vis-pending-line"><span class="md-vis-pending-dot" aria-hidden="true"></span>Drawing ${esc(kind || "a visual")}… <span class="md-vis-pending-count">${lines} ${lines === 1 ? "line" : "lines"}</span></p></div>\n`;
   }
   const r = parseCached(kind, t.content);
   if (!r.ok) {

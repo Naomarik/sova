@@ -7,7 +7,7 @@ import { Lines, SvgScroll, useMarkerId } from "../../svg";
 import type { ViewProps } from "../../types";
 import { FLOW_FONT, fitFlow, layoutFlow, type PlacedFlowNode } from "./layout";
 import type { FlowSpec } from "./parse";
-import { useWidth } from "./width";
+import { fontsLoaded, useWidth } from "./width";
 import "./flow.css";
 
 /**
@@ -17,7 +17,7 @@ import "./flow.css";
  */
 export default function FlowView(props: ViewProps<FlowSpec>) {
   const [width, measure] = useWidth();
-  const natural = createMemo(() => layoutFlow(props.spec, canvasMeasure));
+  const natural = createMemo(() => (fontsLoaded(), layoutFlow(props.spec, canvasMeasure)));
   const layout = createMemo(() => fitFlow(props.spec, canvasMeasure, width(), natural()));
   const em = createMemo(() => emphasisMap(props.spec));
   const arrow = useMarkerId();

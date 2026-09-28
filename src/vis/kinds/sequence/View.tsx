@@ -5,7 +5,7 @@ import { emClass, SvgEmBadge } from "../../emphasis";
 import { createStepper } from "../../stepper";
 import { Lines, SvgScroll, useMarkerId } from "../../svg";
 import type { ViewProps } from "../../types";
-import { useWidth } from "../flow/width";
+import { fontsLoaded, useWidth } from "../flow/width";
 import { SELF_LOOP, SEQ_FONT, SEQ_LINE, layoutSequence, seqFit } from "./layout";
 import type { SequenceSpec } from "./parse";
 import "./sequence.css";
@@ -20,7 +20,7 @@ import "./sequence.css";
 export default function SequenceView(props: ViewProps<SequenceSpec>) {
   const [width, measure] = useWidth();
   // Fit the pane, counting SvgScroll's shrink to 80%; past that, it scrolls.
-  const layout = createMemo(() => layoutSequence(props.spec, canvasMeasure, seqFit(width())));
+  const layout = createMemo(() => (fontsLoaded(), layoutSequence(props.spec, canvasMeasure, seqFit(width()))));
   const em = createMemo(() => emphasisMap(props.spec));
   const stepper = createStepper(() => layout().steps);
   const solid = useMarkerId();

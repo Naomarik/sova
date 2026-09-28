@@ -636,7 +636,8 @@ describe("decisions → conflicts → draft → promotion", async () => {
     const ledger = await import("./project-costs-ledger");
     const lp = ledger.ledgerPaths(org.id, project.id);
     const rowsBefore = ledger.readUsageLedger(lp);
-    assert.ok(rowsBefore.length > 0 && rowsBefore.every((r) => r.by === "operator" && r.provider === "jev" && r.input === 10), "every answer so far is in usage.jsonl");
+    assert.ok(rowsBefore.length > 0 && rowsBefore.every((r) => r.by !== "overseer" && r.provider === "jev" && r.input === 10), "every answer so far is in usage.jsonl");
+    assert.ok(rowsBefore.some((r) => r.by === "operator"), "Reconcile Now is the operator's");
     const info = await reconcile.reconcileProject(org.id, project.id, { owner: overseer });
     const added = ledger.readUsageLedger(lp).slice(rowsBefore.length);
     assert.ok(added.length > 0 && added.every((r) => r.by === "overseer"), "the overseer's run is its own");
@@ -657,6 +658,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
       assert.deepEqual(baton.batonById(c!.batonSessionId!)!.row.owner, overseer, "still the overseer's, not the operator's");
       // The automatic post-resolution session is a settle session like any other.
       assert.deepEqual(baton.batonById(c!.batonSessionId!)!.row.conflict, { id: c!.id, area: "gritting" });
+      assert.equal(ledger.readUsageLedger(lp).at(-1)?.by, "sova", "an automatic run is Sova's own, whoever owns what it opens");
     } finally {
       stop();
     }

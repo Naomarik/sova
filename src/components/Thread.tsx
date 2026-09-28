@@ -8,7 +8,8 @@ import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
-import { ensureRendered, entryIdOf, JUMP_EVENT, registerRows, registerTranscript } from "../lib/jump";
+import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, LOADING_OLDER, registerRows, registerTranscript } from "../lib/jump";
+import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
 import { carriedStart, chunkStart, FIRST_CHUNK, type ImagesAt, initialStart, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
@@ -413,8 +414,9 @@ export function HistoryItems(props: {
   actions?: MessageActionsProvider;
   /** Build every row at once, even inside a transcript (the hidden-rows disclosure's own list). */
   whole?: boolean;
-  /** Older rows are still arriving (lib/tail-hello): a jump to a row not here yet waits for them. */
-  arriving?: boolean;
+  /** Rows above the list that the view doesn't hold yet (lib/older-rows): fetched as the reader
+      nears the top, or down to a jump's target. */
+  older?: OlderRowsApi;
 }) {
   /**
    * The items the thread may render: the settings-change rows are dropped before anything else,
@@ -520,7 +522,7 @@ export function HistoryItems(props: {
   const start = createMemo<number>((prev) => (scroller ? carriedStart(firstId(), (id) => rowAt().get(id) ?? -1, rows().length, prev) : 0), 0);
   // The window is held by a row that is on the list: once its row is gone (or there was none, an
   // empty list), it is held again by the row it starts at now, so rows that arrive above later
-  // (lib/tail-hello) go to the fill instead of being built at once.
+  // (lib/older-rows) go to the fill instead of being built at once.
   if (scroller)
     createEffect(() => {
       const id = firstId();
@@ -553,22 +555,32 @@ export function HistoryItems(props: {
     };
     createEffect(() => start() > 0 && schedule());
     onCleanup(() => cancel?.());
-    // Waiters for the older rows: called once they have all arrived, dropped with the thread.
-    const waiters = new Set<() => void>();
-    createEffect(
-      on(
-        () => !!props.arriving,
-        (arriving) => {
-          if (arriving) return;
-          const now = [...waiters];
-          waiters.clear();
-          // Outside this effect: a waiter's jump builds rows (`ensure`), and a build started from
-          // inside a reactive update reaches the DOM only after it, too late for the jump to find them.
-          if (now.length) queueMicrotask(() => now.forEach((fn) => fn()));
-        },
-      ),
-    );
-    onCleanup(() => waiters.clear());
+    // Older rows not held yet: once every row held is built and the view is within
+    // NEAR_TOP_VIEWS viewports of the top, the next chunk is fetched; it lands above the window,
+    // where the fill builds it with the view held still, as any row not built yet.
+    if (props.older) {
+      const older = props.older;
+      let later: ReturnType<typeof setTimeout> | undefined;
+      const check = () => {
+        const left = older.left();
+        if (left === null || left <= 0 || start() > 0 || root.scrollTop >= NEAR_TOP_VIEWS * root.clientHeight) return;
+        // A jump's smooth scroll is under way (it may have landed near the top): rows landing above
+        // now would cut it short, as the fill knows too. Look again once it's over.
+        if (scroller.jumping()) {
+          clearTimeout(later);
+          later = setTimeout(check, 300);
+          return;
+        }
+        older.more();
+      };
+      root.addEventListener("scroll", check, { passive: true });
+      onCleanup(() => {
+        clearTimeout(later);
+        root.removeEventListener("scroll", check);
+      });
+      // After a change to what's held or built, when the frame has settled (a short list sits at the top).
+      createEffect(on([start, () => older.left(), () => rows().length], () => requestAnimationFrame(check)));
+    }
     registerRows(root, {
       has: (entryId) => rowIndexFor(ids(), entryId) >= 0,
       ensure: (entryId) => {
@@ -577,17 +589,25 @@ export function HistoryItems(props: {
         if (i < start()) buildFrom(i);
         return true;
       },
-      arriving: () => !!props.arriving,
-      whenArrived: (fn) => {
-        waiters.add(fn);
-        return () => void waiters.delete(fn);
+      older: () => {
+        const left = props.older?.left();
+        return left === null || (left ?? 0) > 0;
       },
+      load: (target) => props.older?.load(target) ?? Promise.resolve("missing" as const),
     });
     onCleanup(() => registerRows(root, null));
   }
 
   return (
     <>
+      {/* Held while there are older rows to fetch, so its line appearing never moves the view; the
+          line shows only when a fetch is slow. It goes with the fill's last build, not before:
+          that build keeps the view where it is (ScrollerApi.prepend), its going included. */}
+      <Show when={scroller && props.older && ((props.older.left() ?? 0) > 0 || start() > 0)}>
+        <div class="older-edge" role="status">
+          <Show when={props.older!.slow()}>{LOADING_OLDER}</Show>
+        </div>
+      </Show>
       <For each={built()}>
         {(item, local) => {
           const index = indexOf ? () => indexOf().get(item) ?? local() : local;
@@ -936,6 +956,21 @@ export function LiveEntries(props: {
   );
 }
 
+/** A view's rows above its list (lib/older-rows), as its thread reads them. */
+export interface OlderRowsApi {
+  /** How many; null until the view's hello or snapshot says. */
+  left(): number | null;
+  /** The next chunk above, unless one is on its way. */
+  more(): void;
+  /** The rows down to a jump's target, in one request. */
+  load(target: RowTarget): Promise<"here" | "missing" | "stale">;
+  /** A scroll-up fetch is taking long enough to say so. */
+  slow(): boolean;
+}
+
+/** Within this many viewports of the top of the rows held, the next older chunk is fetched. */
+const NEAR_TOP_VIEWS = 2;
+
 /** What a transcript offers the rows inside it (tail-first rendering, lib/tail-render). */
 interface ScrollerApi {
   /** The transcript element: jumps find its rows through it (lib/jump `registerRows`). */
@@ -962,6 +997,8 @@ function whenIdle(fn: () => void): () => void {
 const FOLLOW_PX = 80;
 /** How long a jump's smooth scroll may take before a scroll near the bottom means following again. */
 const JUMP_SETTLE_MS = 1000;
+/** A jump's scroll is over once no scroll event has come for this long. */
+const JUMP_QUIET_MS = 150;
 
 /**
  * The transcript scroll region. Follows new content while the user is near the bottom; scrolling
@@ -1003,7 +1040,18 @@ export function ThreadScroller(props: {
   /** Until then a jump's own smooth scroll is under way: its first frames are still near the
       bottom, and must not read as the user coming back to follow it. */
   let jumpingUntil = 0;
+  /** A jump's scroll hasn't come to rest yet: a long smooth scroll outlasts JUMP_SETTLE_MS, and rows
+      built above meanwhile would leave it short of its target. Over at `scrollend`, or once no
+      scroll has come for JUMP_QUIET_MS (which also covers a jump that didn't need to scroll). */
+  let jumpScrolling = false;
+  let jumpQuiet: ReturnType<typeof setTimeout> | undefined;
+  const jumpScrolled = () => {
+    clearTimeout(jumpQuiet);
+    jumpQuiet = setTimeout(() => (jumpScrolling = false), JUMP_QUIET_MS);
+  };
+  onCleanup(() => clearTimeout(jumpQuiet));
   const onScroll = () => {
+    if (jumpScrolling) jumpScrolled();
     lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
     const near = lastGap < FOLLOW_PX;
     if (near && performance.now() < jumpingUntil) return;
@@ -1063,7 +1111,7 @@ export function ThreadScroller(props: {
       const want = el.scrollHeight - fromEnd;
       if (Math.abs(el.scrollTop - want) >= 1) el.scrollTop = want;
     },
-    jumping: () => performance.now() < jumpingUntil,
+    jumping: () => performance.now() < jumpingUntil || jumpScrolling,
   };
   createEffect(on(() => props.resume, resumeFollowing, { defer: true }));
 
@@ -1104,12 +1152,25 @@ export function ThreadScroller(props: {
       lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
       return true;
     };
-    if (!place()) return false;
-    follow = false;
-    setAway(props.count);
-    // The rows around it are drawn at their real heights in the next frame: place it again then.
-    requestAnimationFrame(() => requestAnimationFrame(place));
-    return true;
+    const settleThere = () => {
+      follow = false;
+      setAway(props.count);
+      // The rows around it are drawn at their real heights in the next frame: place it again then.
+      requestAnimationFrame(() => requestAnimationFrame(place));
+    };
+    if (place()) {
+      settleThere();
+      return true;
+    }
+    // A row the list doesn't hold (kept rows dropped by the hello): fetched down to it
+    // (lib/older-rows), and placed then, unless the view has been moved from the end meanwhile.
+    const load = loadRow(el, { entry: r.rowId });
+    if (load)
+      void load.then((x) => {
+        if (x !== "here" || !follow || lastGap > 2) return;
+        queueMicrotask(() => place() && settleThere());
+      });
+    return false;
   };
 
   const newCount = () => {
@@ -1132,8 +1193,11 @@ export function ThreadScroller(props: {
           node.addEventListener("click", onClick, true);
           node.addEventListener("toggle", markToggle, true);
           viewResized?.observe(node);
+          node.addEventListener("scrollend", () => (jumpScrolling = false));
           node.addEventListener(JUMP_EVENT, () => {
             jumpingUntil = performance.now() + JUMP_SETTLE_MS;
+            jumpScrolling = true;
+            jumpScrolled();
             if (!follow) return;
             follow = false;
             setAway(props.count);

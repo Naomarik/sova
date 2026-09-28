@@ -1,12 +1,13 @@
 import { batch, createEffect, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
 import type { SessionSummary, TranscriptItem, WatchContext, WatchServerMessage } from "../../shared/protocol";
-import { createFork, fetchTranscriptWithContext, wsUrl } from "../lib/api";
+import { createFork, fetchTranscriptRows, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
 import { landExplainJump } from "../lib/jump";
-import { type Arriving, helloItems, historyApplier, historyItems, newRows, tailFirst } from "../lib/tail-hello";
+import { newestOnly, newRows } from "../lib/older-rows";
+import { createOlderRows } from "../lib/older-rows-view";
 import { hostOf, sessionViewKey } from "../lib/mesh";
-import { cachedTranscript, cacheItems, cacheSpot, reconcileItems, transcripts } from "../lib/transcript-cache";
+import { cachedTranscript, cacheItems, cacheSpot, transcripts } from "../lib/transcript-cache";
 import { copyText, hideThinking, hideTools, setSessionContext, toast } from "../lib/ui-state";
 import { openCreated, stageFork } from "../lib/fork-stage";
 import { usePaneAnnounce } from "../lib/pane-scope";
@@ -69,51 +70,46 @@ export function WatchView(props: {
   onCleanup(transcripts.show(cacheKey));
   const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
   createEffect(on(items, (list) => list && cacheItems(cacheKey, list)));
-  /** The snapshot's older rows still on their way (lib/tail-hello); null once they're all here. */
-  const [arriving, setArriving] = createSignal<Arriving | null>(null);
-  /** The list is this connection's whole branch (as ChatView's `whole`). */
-  const [whole, setWhole] = createSignal(false);
+  /** The rows above the list that it doesn't hold (lib/older-rows, as ChatView's). */
+  const olderRows = createOlderRows({ path: props.path, items, setItems });
+  const { older, whole } = olderRows;
   /** The last snapshot's first row: rows that arrive above it are history, never "N new". */
   const [newFrom, setNewFrom] = createSignal<string | null>(null);
   // "Open in Session" from an Explanations card: land on that explanation's row once the snapshot
   // is here. Only a jump waiting for this session is claimed, and only once; one whose row isn't
-  // here yet waits until the list is whole.
-  createEffect(on([items, whole], ([list, w]) => list && landExplainJump({ path: props.path, sessionId: props.sessionId }, list, toast, w)));
-  /** The chunks didn't add up: the whole branch from disk instead. */
-  const reload = () =>
-    void fetchTranscriptWithContext(props.path)
-      .then((r) => {
-        history.drop();
-        setItems((prev) => reconcileItems(prev, r.items));
-        setArriving(null);
-        setWhole(true);
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  // here is fetched, down to it.
+  createEffect(on([items, older], ([list, o]) => list && landExplainJump({ path: props.path, sessionId: props.sessionId }, list, toast, whole(), o ? olderRows.api.load : undefined)));
   const [error, setError] = createSignal<string | null>(null);
   const [lastUpdate, setLastUpdate] = createSignal<string | null>(null);
 
   // Context fill: the model's window comes from the snapshot's own context (pi files name the
   // reply's model); the fill itself follows the watched items (last assistant usage on the branch;
   // a compaction after it → null). Only a snapshot that names no window (no reply yet, compacted,
-  // an unknown model, a server that predates it) asks the transcript response for one, once: that
-  // download is the whole transcript again.
+  // an unknown model, a server that predates it) asks the transcript's newest rows for one, once.
+  // While the list holds no reply and rows above it aren't fetched, the fill is the server's own
+  // (the snapshot's or the last append's): it read the whole branch.
   const [contextWindow, setContextWindow] = createSignal<number | null | undefined>(undefined);
   let askedWindow = false;
   const askWindow = () => {
     if (askedWindow) return;
     askedWindow = true;
-    void fetchTranscriptWithContext(props.path)
+    void fetchTranscriptRows(props.path, { tail: true })
       .then((r) => {
+        if ("code" in r) throw new Error(r.code);
         if (!contextWindow()) setContextWindow(r.context?.window ?? null);
-        if (!items()) setSessionContext(props.path, contextStateFor(r.context, r.items));
+        if (!items()) setSessionContext(props.path, contextStateFor(r.context ?? null, r.items));
       })
       .catch(() => contextWindow() === undefined && setContextWindow(null)); // the meter just stays without a window
   };
   const windowOf = (ctx: WatchContext | undefined) => (ctx && ctx !== "compacted" ? ctx.window : null);
+  const [serverContext, setServerContext] = createSignal<WatchContext | undefined>(undefined);
   createEffect(() => {
     const list = items();
     const window = contextWindow();
-    if (list && window !== undefined) setSessionContext(props.path, contextFromItems(list, window));
+    if (!list || window === undefined) return;
+    const mine = contextFromItems(list, window);
+    const theirs = serverContext();
+    setSessionContext(props.path, mine === null && (older()?.left ?? 0) > 0 && theirs !== undefined ? theirs : mine);
   });
 
   let unannounced = 0;
@@ -190,59 +186,28 @@ export function WatchView(props: {
     note: (entryId) => (actionNote()?.entryId === entryId ? actionNote()!.text : null),
   };
 
-  // The snapshot's older rows, applied a few at a time (lib/tail-hello).
-  const history = historyApplier((chunks) => {
-    let list = items();
-    let next: ReturnType<typeof historyItems> | null = null;
-    for (const c of chunks) {
-      if (!list) return;
-      next = historyItems(list, next ? next.arriving : arriving(), c.items, c.left);
-      if (next.broken) {
-        setArriving(null);
-        reload();
-        return;
-      }
-      list = next.items;
-    }
-    if (!next) return;
-    const done = next;
-    batch(() => {
-      setItems(done.items);
-      setArriving(done.arriving);
-      if (!done.arriving) setWhole(true);
-    });
-  });
-  onCleanup(history.drop);
-  const socket = createReconnectingSocket<WatchServerMessage>(tailFirst(wsUrl("/ws/watch", props.path)), {
+  const socket = createReconnectingSocket<WatchServerMessage>(newestOnly(wsUrl("/ws/watch", props.path)), {
     onMessage(msg) {
       switch (msg.type) {
         case "snapshot": {
-          // May repeat if the file is rewritten: always replace. Newest rows first: older rows
-          // may follow as `history` (lib/tail-hello).
+          // May repeat if the file is rewritten: always replace. The newest rows; the rest are
+          // fetched when wanted (lib/older-rows), and rows kept above the first are its ancestors.
           setError(null);
-          history.drop();
           const w = windowOf(msg.context);
           if (w) setContextWindow(w);
           else askWindow();
-          const next = helloItems(items(), msg.items, msg.older);
           batch(() => {
-            setItems(next.items);
-            setArriving(next.arriving);
-            // Rows kept above the hello's first row are that row's ancestors, entries that never
-            // change: a list that was whole stays whole while the same rows arrive again (a
-            // rewind, a reconnect), so its counts and Fan Out don't blink.
-            setWhole(!next.arriving || (next.arriving.mode === "buffer" && whole()));
+            if (msg.context !== undefined) setServerContext(msg.context);
+            olderRows.hello(msg);
             setNewFrom(msg.items[0]?.id ?? null);
           });
           setLastUpdate(new Date().toISOString());
           break;
         }
-        case "history":
-          history.push(msg);
-          break;
         case "append": {
           const w = windowOf(msg.context);
           if (w && !contextWindow()) setContextWindow(w);
+          if (msg.context !== undefined) setServerContext(msg.context);
           setItems((prev) => [...(prev ?? []), ...msg.items]);
           setLastUpdate(new Date().toISOString());
           noteAppended(msg.items.length);
@@ -306,7 +271,7 @@ export function WatchView(props: {
                 hideThinking={hideThinking(props.path)}
                 fork={props.fork}
                 actions={watchActions}
-                arriving={!!arriving()}
+                older={olderRows.api}
               />
             </Show>
           )}

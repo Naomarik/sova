@@ -3,7 +3,7 @@ import type { ExplanationInfo, OutlineTopic, SessionOutline } from "../../shared
 import { newestTopics, topicTime } from "../../shared/outline-order";
 import { newestFirst } from "../lib/explain";
 import { explanationsHref } from "../lib/insights";
-import { hasEntryRow, jumpWhenArrived, rowsArriving, transcriptRoot } from "../lib/jump";
+import { hasEntryRow, jumpWhenArrived, rowsOlder, transcriptRoot } from "../lib/jump";
 import { relativeTime, stampTime } from "../lib/format";
 import { toast } from "../lib/ui-state";
 import { Icon } from "./ui";
@@ -20,10 +20,10 @@ function Topic(props: { topic: OutlineTopic; now: number; open: boolean; path: s
   // the strip is open mounts with `open` already true, so it is checked too.
   const [target, setTarget] = createSignal(false);
   createEffect(() => {
-    // While the transcript's older rows are still arriving, the row may be among them: offered,
-    // and the jump waits for them.
+    // While the transcript may have older rows it doesn't hold, the row may be among them:
+    // offered, and the jump fetches them down to it.
     const root = () => transcriptRoot(props.path);
-    if (props.open) setTarget(!!props.topic.entryId && (hasEntryRow(props.topic.entryId, root()) || rowsArriving(root())));
+    if (props.open) setTarget(!!props.topic.entryId && (hasEntryRow(props.topic.entryId, root()) || rowsOlder(root())));
   });
   const jump = () => {
     // Gone since the strip opened (compacted away): the button goes rather than scrolling nowhere.

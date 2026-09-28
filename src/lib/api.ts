@@ -38,6 +38,7 @@ import type {
   ThemeList,
   TmpAttachment,
   TranscriptItem,
+  TranscriptRows,
   UploadResult,
   UsageInsight,
   WebSettings,
@@ -656,8 +657,27 @@ export const fetchTranscriptWithContext = (path: string) =>
     context: r.context ?? null,
   }));
 
+/** What GET /api/transcript's rows can ask for (TranscriptRows in shared/protocol.ts). */
+export type RowsAsk = { tail: true } | { before: string; from?: string; explain?: string; chars?: number } | { from: string };
+
+/** Rows of a session's branch (lib/older-rows), or why not: the branch moved under the list, or the
+    target isn't on it. */
+export async function fetchTranscriptRows(path: string, ask: RowsAsk, leaf?: string | null): Promise<TranscriptRows | { code: "moved" | "missing" }> {
+  const q = new URLSearchParams({ path });
+  for (const [k, v] of Object.entries(ask)) q.set(k, v === true ? "1" : String(v));
+  if (leaf) q.set("leaf", leaf);
+  try {
+    const r = await request<TranscriptRows>(`/api/transcript?${q}`);
+    return { ...r, items: noteAttachmentsHost(path, r.items) };
+  } catch (err) {
+    const code = err instanceof ApiError ? (err.body as { code?: unknown } | undefined)?.code : undefined;
+    if (code === "moved" || code === "missing") return { code };
+    throw err;
+  }
+}
+
 /**
- * The transcript for keeping in memory (lib/recent-preload): the same read-only GET, with its size
+ * A transcript's newest rows for keeping in memory (lib/recent-preload): the same read-only GET, with its size
  * (the body's length, else the JSON's characters) for the memory budget. `fits` sees the
  * announced length before the body comes: when it says no, the download stops there and the
  * answer is just the size.
@@ -665,9 +685,11 @@ export const fetchTranscriptWithContext = (path: string) =>
 export async function fetchTranscriptForCache(
   path: string,
   fits: (size: number) => boolean,
-): Promise<{ items: TranscriptItem[]; size: number } | { tooBig: number }> {
+): Promise<(TranscriptRows & { size: number }) | { tooBig: number }> {
   const aborter = new AbortController();
-  const res = await fetch(routeUrl(`/api/transcript?path=${encodeURIComponent(path)}`), { signal: aborter.signal });
+  // The newest rows only, as a view's hello carries them (TranscriptRows): the view fetches the
+  // rest when it wants them (lib/older-rows).
+  const res = await fetch(routeUrl(`/api/transcript?path=${encodeURIComponent(path)}&tail=1`), { signal: aborter.signal });
   if (!res.ok) throw new ApiError(`${res.status} ${res.statusText}`, res.status);
   const announced = Number(res.headers.get("content-length")) || 0;
   if (announced && !fits(announced)) {
@@ -675,7 +697,14 @@ export async function fetchTranscriptForCache(
     return { tooBig: announced };
   }
   const text = await res.text();
-  return { items: noteAttachmentsHost(path, (JSON.parse(text) as { items: TranscriptItem[] }).items), size: announced || text.length };
+  const rows = JSON.parse(text) as TranscriptRows;
+  // A server that predates the rows sends the whole branch: nothing above it.
+  return {
+    items: noteAttachmentsHost(path, rows.items),
+    older: rows.older ?? 0,
+    olderSummary: rows.olderSummary ?? { inputs: [], messages: 0, replies: false },
+    size: announced || text.length,
+  };
 }
 
 /** The composer draft stored for a session; `text: null` when there is none. The server has

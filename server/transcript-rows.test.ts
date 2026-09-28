@@ -155,6 +155,7 @@ describe("GET /api/transcript rows", () => {
   test("from alone: that row to the end (a view refreshing what it holds)", async () => {
     const r = await get(path, { from: whole[100]!.id });
     assert.deepEqual(r.body.items, whole.slice(r.body.older));
+    assert.ok("context" in r.body, "the fill, as a turn-end refresh needs it");
     assert.ok(r.body.older <= 100);
   });
 

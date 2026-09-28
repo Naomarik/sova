@@ -128,13 +128,15 @@ export class TranscriptStore {
   }
   /**
    * Rows fetched in the background for a pinned session, as of the session's activity `stamp`,
-   * `size` characters of JSON. Refused (false) unless the key is still pinned and no view shows
-   * it: a view's own rows are newer than any fetch.
+   * `size` characters of JSON (0: not known, measured when trimming). Refused (false) unless the
+   * key is still pinned and no view shows it: a view's own rows are newer than any fetch. The rows
+   * may be the branch's newest only, with older ones a view fetched kept above them
+   * (lib/recent-preload); a view opening them learns what's above from its own hello.
    */
   preload(key: string, items: TranscriptItem[], stamp: string, size: number): boolean {
     if (!this.pinned.has(key) || this.showing(key)) return false;
     this.entries.set(key, { items, spot: this.entries.get(key)?.spot ?? null, stamp, size });
-    this.known.set(key, size);
+    if (size > 0) this.known.set(key, size);
     this.trim();
     return this.entries.has(key);
   }

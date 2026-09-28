@@ -52,8 +52,8 @@ export function rowIndexFor(ids: readonly (string | null)[], entryId: string): n
 
 /**
  * The id that holds the window's start at row `i`: that row's own, at index 0 too. Holding "none"
- * there would mean "everything is built", and rows that arrive later above it (a tail-first hello's
- * history, lib/tail-hello) would then be built all at once, in one long task per chunk, outside the
+ * there would mean "everything is built", and rows that arrive later above it (older rows fetched
+ * on demand, lib/older-rows) would then be built all at once, in one long task per chunk, outside the
  * scroll anchoring; held by id, they land above the window and the idle fill builds them.
  */
 export const windowId = (ids: readonly { id: string }[], i: number): string | null => ids[i]?.id ?? null;

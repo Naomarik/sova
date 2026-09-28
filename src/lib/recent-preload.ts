@@ -14,6 +14,7 @@
 import { createEffect, createMemo, onCleanup } from "solid-js";
 import type { SessionSummary } from "../../shared/protocol";
 import { fetchTranscriptForCache } from "./api";
+import { helloRows } from "./older-rows";
 import { hostOf, sessionViewKey } from "./mesh";
 import { recentCount, recentSessions } from "./recent";
 import { transcripts, type TranscriptStore } from "./transcript-cache";
@@ -128,7 +129,12 @@ export function startRecentPreload(sessions: () => readonly SessionSummary[] | u
       const got = await fetchTranscriptForCache(next.path, (size) => transcripts.wouldKeep(next.key, size));
       if (disposed) return;
       if ("tooBig" in got) transcripts.noteSize(next.key, got.tooBig);
-      else transcripts.preload(next.key, got.items, next.stamp, got.size);
+      else {
+        // The newest rows, on top of any older ones kept from a view that fetched them: those are
+        // the new first row's ancestors, so they're still the rows above it (lib/older-rows).
+        const merged = helloRows(transcripts.peek(next.key)?.items, got.items, got.older, got.olderSummary).items;
+        transcripts.preload(next.key, merged, next.stamp, merged === got.items ? got.size : 0);
+      }
     } catch {
       if (disposed) return;
       failed.set(next.key, next.stamp); // again once the file moves

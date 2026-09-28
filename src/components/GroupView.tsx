@@ -35,7 +35,7 @@ import {
 import { announce, home, setGroupComposerActive, toast } from "../lib/ui-state";
 import { cwdLabel } from "../lib/remote-session";
 import { failureLines, partialClosing, partialTitle } from "../lib/fanout";
-import { ensureRendered, JUMP_EVENT, transcriptRoot, whenRowsArrive } from "../lib/jump";
+import { ensureRendered, JUMP_EVENT, loadRow, transcriptRoot } from "../lib/jump";
 import { clearPartial, pendingPartial } from "./FanoutDialog";
 import { sessionWorking, type UsageTotalView } from "../lib/workers";
 import type { PaneInsight, TabId } from "./SessionPane";
@@ -350,9 +350,14 @@ export function GroupView(props: {
     // Built first if the pane hasn't reached it yet (tail-first rendering, lib/tail-render).
     const root = transcriptRoot(path);
     const row = ensureRendered(seed.leafId, root);
-    // Not there while the pane's older rows are still arriving (lib/tail-hello): not missing yet,
-    // it aligns once they have.
-    if (!row) return whenRowsArrive(root, () => alignArrived(path)) ? "waiting" : false;
+    // Not there while the pane may have older rows it doesn't hold (lib/older-rows): not missing
+    // yet; they're fetched down to it, and it aligns once they're here.
+    if (!row) {
+      const load = loadRow(root, { entry: seed.leafId });
+      if (!load) return false;
+      void load.then((r) => r === "here" && queueMicrotask(() => alignArrived(path)));
+      return "waiting";
+    }
     // As every jump does: the pane stops following first, so rows still being built below (the
     // ones this just built, or older rows landing) can't pull it back to the end mid-scroll.
     root?.dispatchEvent(new Event(JUMP_EVENT));

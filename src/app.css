@@ -48,6 +48,16 @@ html, body, #root { height: 100%; }
    many a row (lib/tail-render `imagesEstimate`). */
 .thread { --entry-line-est: 23px; --entry-narrow: 0; }
 @container (width < 600px) { .thread { --entry-line-est: 42px; --entry-narrow: 1; } }
+/* The top of a transcript with older rows still to fetch (Thread `older-edge`): a line's height
+   held while there are any, so its text appearing (a slow fetch) never moves the view. */
+.older-edge {
+  min-height: calc(var(--fs-caption) * 2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
 
 /* Archive date sections: each a <details> whose summary is
    the eyebrow label (twist, name, count), collapsed by default; a rule between sections. */

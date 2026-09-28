@@ -1632,12 +1632,12 @@ export type ChatServerMessage =
       thinking = the session's active thinking level (one of off…max), clamped to its model. */
   /** `isCompacting` = a compaction (manual or pi's automatic one) is running as this is sent, so a
       client that connects mid-compaction shows it; absent from servers that predate it. */
-  /** `older` (only to a client that asked with `?tail=1`): `items` is the branch's newest whole
-      entries, and this many rows come before them; they follow as `history` messages right after
-      the messages that follow every hello (below), before anything else. Absent or 0: `items` is
-      the whole branch, as for every client that didn't ask. */
-  /** `olderSummary` and `prefetch` (only with `?tail=rest`, and only when `older` > 0): see
-      OlderSummary and TranscriptRows. */
+  /** `older` (only to a client that asked with `?tail=1` or `?tail=rest`): `items` is the branch's
+      newest whole entries, and this many rows come before them. With `?tail=1` they follow as
+      `history` messages right after the messages that follow every hello (below), before anything
+      else; with `?tail=rest` nothing follows, and `olderSummary` sums them up (`prefetch`: fetch
+      them all now; see OlderSummary and TranscriptRows). Absent or 0: `items` is the whole branch,
+      as for every client that didn't ask. */
   | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean }
   /** The older rows of a `hello` with `older` (see HistoryMessage). After attach they come after
       `links`; after a rewind, regenerate or compaction, after the requester's `rewound`,
@@ -1820,7 +1820,8 @@ export interface TranscriptRows {
   older: number;
   /** About those rows (OlderSummary). */
   olderSummary: OlderSummary;
-  /** `tail=1` only: the context fill, as the whole-branch response carries it. */
+  /** `tail=1` and `from` alone (the answers that reach the end): the context fill, as the
+      whole-branch response carries it. */
   context?: ContextInfo | null;
 }
 

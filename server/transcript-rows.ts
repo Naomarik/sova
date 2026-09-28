@@ -96,7 +96,8 @@ const MAX_CHARS = 8 * 1024 * 1024;
 
 /**
  * The TranscriptRows answer for `path` (a session file that exists). `context` resolves the fill
- * for a `tail` answer, as the whole-branch response does.
+ * for an answer that reaches the end of the branch (`tail`, `from` alone), as the whole-branch
+ * response does.
  */
 export async function transcriptRows(
   path: string,
@@ -125,7 +126,8 @@ export async function transcriptRows(
     const chars = Math.min(MAX_CHARS, Math.max(MIN_CHARS, q.chars ?? HISTORY_CHUNK_CHARS));
     from = chunkStart(rows.items, rows.sizes, end, chars);
   }
-  const ctx = q.tail ? `,"context":${JSON.stringify(await context(rows.branch))}` : "";
+  // The fill, as the whole-branch response carries it, for the answers that reach the end.
+  const ctx = q.tail || !q.before ? `,"context":${JSON.stringify(await context(rows.branch))}` : "";
   const summary = JSON.stringify(summarize(rows.items.slice(0, from)));
   return { status: 200, body: `{"items":[${rows.json.slice(from, end).join(",")}],"older":${from},"olderSummary":${summary}${ctx}}` };
 }

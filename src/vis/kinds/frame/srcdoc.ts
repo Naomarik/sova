@@ -74,11 +74,13 @@ code,pre,kbd{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size
  * Posts `{type, id, height}` whenever the document's size changes, `{type, id, failed: true}` the
  * first time a script throws, and applies theme updates the parent sends as `{type, css}`. The id
  * ties a message to its frame; the parent also checks the message's source window. A top-level
- * `<svg>` with a viewBox and no width is drawn at its natural size, never scaled up.
+ * `<svg>` with a viewBox and no width is drawn at its natural size, never scaled up. The parent owns
+ * the height, so the document never shows a vertical scrollbar (one appearing for a frame's worth
+ * of growth would narrow the page and stay) unless it is taller than the frame's cap.
  */
 const reporter = (id: string) => `(function(){
 var id=${JSON.stringify(id)},last=-1;
-function h(){var b=document.body,e=document.documentElement;if(!b)return;var v=Math.ceil(Math.max(b.scrollHeight,b.getBoundingClientRect().height,e.getBoundingClientRect().height));if(v!==last){last=v;parent.postMessage({type:${JSON.stringify(FRAME_MESSAGE)},id:id,height:v},"*")}}
+function h(){var b=document.body,e=document.documentElement;if(!b)return;var v=Math.ceil(Math.max(b.scrollHeight,b.getBoundingClientRect().height,e.getBoundingClientRect().height));e.style.overflowY=v>${MAX_FRAME_HEIGHT}?"auto":"hidden";if(v!==last){last=v;parent.postMessage({type:${JSON.stringify(FRAME_MESSAGE)},id:id,height:v},"*")}}
 var failed=false;addEventListener("error",function(){if(failed)return;failed=true;parent.postMessage({type:${JSON.stringify(FRAME_MESSAGE)},id:id,failed:true},"*")});
 addEventListener("load",h);
 addEventListener("DOMContentLoaded",function(){var l=document.querySelectorAll("body>svg,body>.sova-svg>svg");for(var i=0;i<l.length;i++){var s=l[i],v=s.viewBox&&s.viewBox.baseVal;if(v&&v.width&&!s.getAttribute("width"))s.style.maxWidth=v.width+"px"}h();if(window.ResizeObserver)new ResizeObserver(h).observe(document.body)});

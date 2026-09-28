@@ -37,6 +37,8 @@ test("srcdoc: CSP and the motion gate come before the model's document, which go
   assert.doesNotMatch(FRAME_CSP, /allow-same-origin|https?:/);
   // An svg's own width attribute is its natural size: only a width-less svg is stretched to fit.
   assert.match(buildSrcdoc("svg", "<svg/>", "id2", ""), /\.sova-svg>svg:not\(\[width\]\)\{width:100%\}/);
+  // No vertical scrollbar below the height cap: the parent sizes the frame.
+  assert.match(doc, /overflowY=v>1400\?"auto":"hidden"/);
 });
 
 // The guide's free-form examples (examples/*): each parses, fits the budget with room to spare,

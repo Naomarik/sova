@@ -172,7 +172,7 @@ document.getElementById("step").onclick=function(){
 draw();
 </script>
 ```
-- Colours only from the theme, so light and dark both work: `var(--color-ink)`, `--color-ink-2`, `--color-ink-muted`, `--color-surface`, `--color-sunken`, `--color-border`, `--color-border-strong`, `--color-accent`, `--color-accent-tint`, `--status-success|warn|error|info` and each with `-bg`. Buttons, inputs and selects are already styled; the body has padding.
+- Colours only from the theme, so light and dark both work: `var(--color-ink)`, `--color-ink-2`, `--color-ink-muted`, `--color-surface`, `--color-sunken`, `--color-border`, `--color-border-strong`, `--color-accent`, `--color-accent-tint`, `--status-success|warn|error|info` and each with `-bg`. The theme picks the hues, so in prose name a colour by what it marks ("the newest term") or draw a legend, never by hue ("orange"). Buttons, inputs and selects are already styled; the body has padding.
 - Fit a 360px-wide phone (flex-wrap, grid with `fr`); keep it under about 500px tall.
 - Nothing moves until the reader clicks or presses a key in it: give motion a Play or Step button (in SVG, `begin="play.click"` on the animations, with a `<g id="play" role="button">`). No `setTimeout` loops.
 - It runs sandboxed: no network, no storage, no `alert`, no form submits. Handle clicks with `onclick`.

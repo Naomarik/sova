@@ -30,34 +30,59 @@ Done and dropped are terminal; everything else is **open** for the chip and the 
 The tool is in the agent's loadout only while the align minor mode is on; turning align off removes
 it. One call applies a batch of operations to one document, **atomically**: every op is checked
 first, and one bad op (an unknown id, a missing field, a field the op doesn't take) fails the whole
-call with a reason and changes nothing. A field name borrowed from another tool gets a hint at the
-one meant (`newText`, pi's own edit field, on an `edit` op: "did you mean `text`?"). With more than
-one open alignment, a call must name its document.
+call with a reason and changes nothing. With more than one open alignment, a call must name its
+document.
+
+The tool's schema has **one branch per op**, each listing exactly the fields that op takes, with the
+ones it needs marked required and nothing else allowed; the checks the tool runs itself use the same
+table, so a call that fails the schema would fail the tool too, and pi's own argument check refuses
+a missing or unknown field before the tool runs. The ops:
 
 - **create** `{title, summary, findings?, approach?, rejected?, questions?}` — a new document,
   `al_N`. Every question needs a topic, an ask and a recommendation.
-- **create** `{fromFile}` — the same document read from a JSON file (the create fields, nothing
-  else), at an absolute path (a relative one is from the session's cwd), so a planning worker can
-  write the alignment and the agent imports it without retyping. Only a regular file up to 256 KB
-  is read (a pipe, a device or a directory is refused before any read, so the server never blocks
-  on one). The file is validated strictly: malformed JSON (named by position only, never quoting the
-  file), an unknown key or a wrong type is refused with the path of the bad field. In a **remote
-  session** (tools on a target) the file would be on the target, so `fromFile` is refused with a
-  reason, and the agent creates the alignment inline.
-- **add** `{findings?, approach?, rejected?, questions?}`, **edit** `{id, …fields}` (a question's
-  topic, ask, context, options or recommendation; a finding's or step's text; a rejected
-  alternative's option or why; without `id`, the title or summary), **remove** `{ids}` (findings,
-  steps and rejected alternatives; a question is dropped instead, so its id keeps its meaning).
-- **decide** `{q, decision}` records the user's answer; **accept** `{q: "open" | [ids]}` takes the
-  recommendation as the decision, recorded as accepted — never over a decided question (the user's
-  answer is not replaced; reopen it first) and never one id named twice; **reopen** `{q}` clears a decision or a
-  drop; **drop** `{q, why}` drops a question, and `{why}` alone drops the document.
+- **import** `{path}` — a new document read from a JSON file (the create fields, nothing else), at
+  an **absolute** path (`~/` counts; a relative path is refused), so a planning worker can write the
+  alignment and the agent imports it without retyping. The file's shape is described on the `path`
+  field. Only a regular file up to 256 KB is read (a pipe, a device or a directory is refused before
+  any read, so the server never blocks on one). The file is validated strictly: malformed JSON
+  (named by position only, never quoting the file), an unknown key or a wrong type is refused with
+  the path of the bad field. In a **remote session** (tools on a target) the file would be on the
+  target, so `import` is refused with a reason, and the agent uses `create` with the file's fields.
+  create or import comes first in its call, once.
+- **add** `{findings?, approach?, rejected?, questions?}` (at least one); **edit** `{id, text}`
+  replaces a finding's or step's whole text; **edit_question** `{q, topic?, ask?, context?,
+  options?, recommendation?}` (at least one; `context: ""` and `options: []` remove them);
+  **edit_rejected** `{id, option?, why?}`; **edit_doc** `{title?, summary?}`; **remove** `{ids}`
+  (findings, steps and rejected alternatives; a question is dropped instead, so its id keeps its
+  meaning).
+- **decide** `{q, decision}` records the user's own answer; **accept** `{qs: [ids]}` takes the
+  recommendation as the decision for exactly those questions, recorded as accepted, and
+  **accept_all** `{}` for every open one — never over a decided question (the user's answer is not
+  replaced; reopen it first) and never one id named twice; **reopen** `{q}` clears a decision or a
+  drop; **drop_question** `{q, reason}` drops a question; **drop_alignment** `{reason}` drops the
+  document.
 - **status** `{to: implementing | done | open}` — the lifecycle moves the data can't show.
   Implementing and done need every question decided or dropped first (an `accept` earlier in the
   same call does it). A document that is done or dropped takes nothing but `status open`.
-- **exempt** `{why}` — alone in its call, touching no document: the agent records why a work
+- **exempt** `{reason}` — alone in its call, touching no document: the agent records why a work
   request needs no alignment.
 - **get** — the document (or, with none named, every open one) as markdown, read-only.
+
+The tool's description and the ops' own descriptions tell the model how a reply maps onto ops:
+decide what the user answered, accept only what they told it to take the recommendation on, leave
+every other question open, and never set implementing while a question is open ("1 yes, 2 your
+rec" is `decide q1` and `accept [q2]`, with q3 still open).
+
+A name borrowed from elsewhere gets a hint at the one meant: a field (`newText` or `replacement`
+for `text`, `file` or `fromFile` for `path`, `why` for `reason` and back, `id` for `q`, `q` for
+`qs`, `status` for `to`), an op (`delete` → `remove`, `add_question` → `add {questions}`, `drop` →
+`drop_question` or `drop_alignment`), an older shape of an op that kept its name (`create` with
+`fromFile` → `import`, `accept` with `"open"` → `accept_all`, `edit` of a question, a rejected
+alternative or the title → `edit_question`, `edit_rejected`, `edit_doc`), and a bare op without the
+wrapper ("wrap ops in {ops: [...]}").
+
+A session written with the older op names (before this schema) still reads the same: the state is
+the results' snapshots (§chat.alignment/state), never the calls' arguments.
 
 The tool's answer is a compact echo of what is still open: the touched document's id, title,
 status and "k of n open", one line per open question with its recommendation, and one line naming
@@ -84,13 +109,15 @@ any more, and they count toward no chip, row or digest.
 
 - **Instructions.** The align prompt block tells the agent to record every alignment with the tool
   and never as reply text (no freeform plan, no numbered list of decisions in prose), to have a
-  planning worker write the alignment JSON for `create` with `fromFile` at an absolute path outside
+  planning worker write the alignment JSON for `import` at an absolute path outside
   the repository that the agent names (with Delegate on, the delegate block's no-edit rule for
   planning workers names this one file as its exception; in a remote session the worker reports the
   JSON and the agent creates inline), to change a document only
-  through ops and never by re-creating it, to record answers with `decide`/`accept`, to use
-  `exempt` for a work request that needs no alignment, and to mark `implementing` before building
-  and `done` when finished. With Delegate on, the bridge paragraph says the same for the planning
+  through ops and never by re-creating it, to record answers with `decide` (what the user answered) and
+  `accept` (only what they told it to take the recommendation on, leaving the rest open), to use
+  `exempt` for a work request that needs no alignment, and to mark `implementing` before building —
+  never while a question is open; a go-ahead with questions still open takes the recommendations for
+  them first, an answer to only some is not a go-ahead — and `done` when finished. With Delegate on, the bridge paragraph says the same for the planning
   worker hand-off. The tool's own description and guidelines carry the core of it too, since they
   sit in pi's tools section.
 - **A hidden note on each user prompt.** While align is on and an alignment is open, each prompt the

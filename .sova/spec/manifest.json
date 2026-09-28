@@ -5661,6 +5661,7 @@
       "code": [
         "pi-config/extensions/mode/minor.ts",
         "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/align-tool.ts",
         "pi-config/extensions/mode/align.ts",
         "pi-config/extensions/mode/index.ts",
         "pi-config/extensions/mode/index.test.ts",
@@ -5727,7 +5728,8 @@
         "pi-config/extensions/mode/index.ts",
         "pi-config/extensions/mode/tests/smoke.mjs",
         "pi-config/extensions/mode/tests/align-turn.mjs",
-        "pi-config/extensions/mode/align-file.ts"
+        "pi-config/extensions/mode/align-file.ts",
+        "pi-config/extensions/mode/tests/align-old-ops.jsonl"
       ],
       "requires": [
         "§chat.alignment/document"

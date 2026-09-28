@@ -6622,7 +6622,8 @@
       "code": [
         "src/lib/changes-tree.ts",
         "src/lib/changes-tree.test.ts",
-        "src/components/ChangesViewer.tsx"
+        "src/components/ChangesViewer.tsx",
+        "src/components/ChangesViewer.css"
       ],
       "requires": []
     },

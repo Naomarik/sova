@@ -22,8 +22,12 @@ with its status and counts, and opens that file. The viewer opens on the first s
 first file when there are no steps.
 
 The diff's header names the path (a rename reads "old → new"), its lines added and removed, and a
-Unified / Split switch; Split is available while the diff pane is at least 700px wide, and the
-choice is the one the diff renderer remembers (§chat.changes/diff-renderer). A file row
+Unified / Split switch; Split is available while the diff pane is at least 520px wide, and the
+choice is the one the diff renderer remembers (§chat.changes/diff-renderer). When the pane is
+narrower only because the left pane is showing, Split stays tappable, says "Needs a wider pane —
+hides the file list", and a tap hides the left pane and switches to Split; when even the whole
+width is narrower, Split is disabled with the reason "Too narrow for two sides, even without the
+file list". A file row
 can be marked **Viewed**; the mark lives only while the viewer is open. A file's patch is read
 when the file (or a step holding it) is first shown, and to place hunks into steps; a file too
 large to read whole says so and shows its counts.
@@ -44,7 +48,9 @@ A folder folds and unfolds with its chevron; a folded folder shows how many file
 their lines added and removed. **Expand All** and **Collapse All** above the tree act on every
 folder. A file row shows its status letter (M modified, A added, D deleted, R renamed, and T or B
 for a type change or binary), its name, a check when it is marked Viewed, its counts, and the
-numbers of the steps that hold its hunks, each a round badge that opens its step.
+numbers of the steps that hold its hunks, each a round badge that opens its step. The tree and
+the steps list are dense, so more of a change fits on one screen: rows are 32px tall on a touch
+screen and 28px with a mouse, below the 44px touch minimum by design.
 
 ## §chat.changes/steps — The change as steps
 
@@ -174,8 +180,9 @@ aren't neighbours in the file are separated by a plain "⋯" rule.
 changed line beside the line it became and a blank filler opposite a line with no partner. Split
 is available only when the diff itself is at least as wide as its surface's threshold (900px in
 a tool card, where the transcript column allows it only at its widest; the changes viewer sets
-its own); below that the Split button is disabled with the reason "Too narrow for two sides" and
-the diff shows Unified. The choice is one setting for every diff, remembered on this device.
+its own, and may offer a way to widen, §chat.changes/viewer); below that the Split button is
+disabled with the reason "Too narrow for two sides" and the diff shows Unified. The choice is one
+setting for every diff, remembered on this device.
 
 **Keys.** With the diff focused, n moves to the next hunk and p to the previous one.
 

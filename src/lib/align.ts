@@ -151,11 +151,23 @@ export const alignChipText = (c: { docs: number; open: number; total: number }):
 export const alignChipLabel = (c: { docs: number; open: number; total: number }): string =>
   `${c.docs} open ${c.docs === 1 ? "alignment" : "alignments"}, ${c.open} of ${c.total} ${c.total === 1 ? "question" : "questions"} open — show alignments`;
 
-/** A menu row's second line: "{summary} · 2 of 5 open", or the status when nothing is open. */
-export function alignMenuNote(doc: AlignDocInfo): string {
-  const open = openCount(doc);
-  const tail = open > 0 ? `${open} of ${liveCount(doc)} open` : ALIGN_STATUS_CHIP[alignStatusOf(doc)].label.toLowerCase();
-  return `${doc.summary} · ${tail}`;
+/**
+ * The chip menu's rows: the open documents, those with an open question first, each group the
+ * last touched first (the entries come oldest-touched first).
+ */
+export function alignMenuRows(entries: readonly AlignEntry[]): AlignEntry[] {
+  const rows = entries.filter((e) => isOpenDoc(e.doc)).reverse();
+  return [...rows.filter((e) => openCount(e.doc) > 0), ...rows.filter((e) => openCount(e.doc) === 0)];
+}
+
+/** A menu row's accessible name: "al_3 Autonomy: 5 of 7 questions decided — jump to its card". */
+export function alignMenuLabel(doc: AlignDocInfo): string {
+  const live = liveCount(doc);
+  const state =
+    live === 0
+      ? `${ALIGN_STATUS_CHIP[alignStatusOf(doc)].label.toLowerCase()}, no questions`
+      : `${live - openCount(doc)} of ${live} ${live === 1 ? "question" : "questions"} decided`;
+  return `${doc.id} ${doc.title}: ${state} — jump to its card`;
 }
 
 // ── An older session's align document (read-only) ────────────────────────────

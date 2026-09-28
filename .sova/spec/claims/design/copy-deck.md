@@ -150,7 +150,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Placeholder, streaming | ≥768: Steer the current turn…—Enter sends, Shift+Enter adds a line · <768: Steer the current turn… |
 | Buttons | `Send` · streaming: `Steer` + `Stop` · after Stop is pressed: "Stopping…" in run status |
 | Run status | `Working` + detail: `· thinking` / `· writing` / `· running {tool}` · stopping: `Stopping…` · while ≥ 1 worker runs, the subagents trigger beside it with the counts only: `2 subagents` · `1 subagent · 2 team members` |
-| Alignment chip (§chat.alignment/chip) | `{n} aligns · {open}/{total}` (1: `1 align · …`) · `aria-label` "{n} open alignments, {open} of {total} questions open — show alignments" · menu rows: {title}, then "{summary} · {k} of {m} open" (nothing open: "{summary} · {status}") · off-screen toast: "That alignment isn't in the transcript on screen." |
+| Alignment chip (§chat.alignment/chip) | `{n} aligns · {open}/{total}` (1: `1 align · …`) · `aria-label` "{n} open alignments, {open} of {total} questions open — show alignments" · menu rows: {id} {title}, then "{decided}/{live}" (no live questions: the status word) · row `aria-label` "{id} {title}: {decided} of {live} questions decided — jump to its card" (no live questions: "{id} {title}: {status}, no questions — jump to its card") · off-screen toast: "That alignment isn't in the transcript on screen." |
 | Staged recommendations (§chat.alignment/card) | `Taking your recommendation: {al_N} {q1}, {q3}` (alignments joined by "; ") · group label "Staged recommendations" · `Clear Picks` |
 | Reason: TUI-live | Read only while this session is open in the TUI. |
 | Reason: busy (server `code:"busy"`) | pi is busy with another turn. Send when it finishes. |

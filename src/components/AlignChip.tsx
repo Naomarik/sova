@@ -1,6 +1,6 @@
-import { createSignal, For, onCleanup } from "solid-js";
-import { alignChipCounts, alignChipLabel, alignChipText, alignMenuNote, isOpenDoc, type AlignEntry } from "../lib/align";
-import { Icon } from "./ui";
+import { createSignal, For, onCleanup, Show } from "solid-js";
+import { ALIGN_STATUS_CHIP, alignChipCounts, alignChipLabel, alignChipText, alignMenuLabel, alignMenuRows, alignStatusOf, liveCount, openCount, type AlignEntry } from "../lib/align";
+import { Chip, Icon } from "./ui";
 
 /** The gap the panel keeps from every viewport edge, and the one it keeps from its trigger. */
 const EDGE_GAP = 8;
@@ -8,8 +8,9 @@ const TRIGGER_GAP = 4;
 
 /**
  * The composer's alignment chip (§chat.alignment/chip): "2 aligns · 5/15", a menu button in the
- * run-status row, right before the Inputs trigger. Its menu lists each open alignment (title,
- * summary, open count); choosing one jumps to that alignment's newest card. The panel is the
+ * run-status row, right before the Inputs trigger. Its menu lists each open alignment on one line
+ * (id, title, a progress bar and "{decided}/{live}", or its status word when it has no questions);
+ * choosing one jumps to that alignment's newest card. The panel is the
  * shared `.model-menu.action-menu` popover (top layer, light dismiss, Escape for free), placed
  * above or below the trigger, whichever fits.
  */
@@ -18,8 +19,8 @@ export function AlignChip(props: { entries: AlignEntry[]; onJump(entry: AlignEnt
   let menu!: HTMLDivElement;
   const [open, setOpen] = createSignal(false);
   const counts = () => alignChipCounts(props.entries);
-  /** Newest first: the one the user touched last is the likeliest answer. */
-  const rows = () => props.entries.filter((e) => isOpenDoc(e.doc)).reverse();
+  /** Those still asking first, then newest first: the one the user touched last is the likeliest answer. */
+  const rows = () => alignMenuRows(props.entries);
 
   const place = () => {
     if (!menu.isConnected || !menu.matches(":popover-open")) return;
@@ -68,35 +69,55 @@ export function AlignChip(props: { entries: AlignEntry[]; onJump(entry: AlignEnt
         aria-label="Open alignments"
         onToggle={(e) => setOpen((e as ToggleEvent).newState === "open")}
         onKeyDown={(e) => {
-          if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-          e.preventDefault();
           const items = [...menu.querySelectorAll<HTMLElement>("[role=menuitem]")];
           const i = items.indexOf(document.activeElement as HTMLElement);
-          items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
+          const to =
+            e.key === "ArrowDown" ? (i + 1) % items.length
+            : e.key === "ArrowUp" ? (i + items.length - 1) % items.length
+            : e.key === "Home" ? 0
+            : e.key === "End" ? items.length - 1
+            : -1;
+          if (to < 0) return;
+          e.preventDefault();
+          items[to]?.focus();
         }}
       >
         <For each={rows()}>
-          {(entry) => (
-            <div
-              class="mode-option group-option align-menu-item"
-              role="menuitem"
-              tabindex="0"
-              aria-label={`${entry.doc.id} ${entry.doc.title}: ${alignMenuNote(entry.doc)} — jump to its card`}
-              onClick={() => choose(entry)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter" && e.key !== " ") return;
-                e.preventDefault();
-                choose(entry);
-              }}
-            >
-              <span class="mode-option-text">
-                <span class="mode-option-id">
-                  <span class="text-mono align-menu-id">{entry.doc.id}</span> {entry.doc.title}
+          {(entry) => {
+            const live = () => liveCount(entry.doc);
+            const decided = () => live() - openCount(entry.doc);
+            const tone = () => (decided() < live() ? "warn" : "success");
+            return (
+              <div
+                class="align-menu-item"
+                role="menuitem"
+                tabindex="0"
+                aria-label={alignMenuLabel(entry.doc)}
+                onClick={() => choose(entry)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" && e.key !== " ") return;
+                  e.preventDefault();
+                  choose(entry);
+                }}
+              >
+                <span class="text-mono align-menu-id">{entry.doc.id}</span>
+                <span class="align-menu-title" title={entry.doc.title}>
+                  {entry.doc.title}
                 </span>
-                <span class="mode-option-note">{alignMenuNote(entry.doc)}</span>
-              </span>
-            </div>
-          )}
+                <Show
+                  when={live() > 0}
+                  fallback={<Chip tone={ALIGN_STATUS_CHIP[alignStatusOf(entry.doc)].tone}>{ALIGN_STATUS_CHIP[alignStatusOf(entry.doc)].label}</Chip>}
+                >
+                  <span class="align-menu-bar" aria-hidden="true">
+                    <span class={`align-menu-fill align-menu-fill-${tone()}`} style={{ width: `${(decided() / live()) * 100}%` }} />
+                  </span>
+                  <Chip tone={tone()} count>
+                    {decided()}/{live()}
+                  </Chip>
+                </Show>
+              </div>
+            );
+          }}
         </For>
       </div>
     </>

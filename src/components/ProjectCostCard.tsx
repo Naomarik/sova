@@ -109,7 +109,7 @@ function CostBody(props: { cost: ProjectCost; orgId: string }) {
               <For each={models()}>
                 {(r) => (
                   <tr>
-                    <th scope="row" class="text-mono" title={r.name ? r.model : undefined}>
+                    <th scope="row" class={r.name ? undefined : "text-mono"} title={r.name ? r.model : undefined}>
                       {r.name ?? r.model}
                     </th>
                     <ModelCells row={r} />

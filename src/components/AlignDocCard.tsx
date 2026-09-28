@@ -166,11 +166,13 @@ function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: Alig
   const take = () => (state() === "open" ? props.answer : null);
   const recLine = () => (
     <>
-      <span class="align-q-label">Recommended:</span>{" "}
-      <Show when={rec() !== undefined} fallback={<strong><Inline text={props.q.recommendation.choice} /></strong>}>
-        <span class="text-mono align-q-letter">{optionLetter(rec()!)}</span> — <strong><Inline text={props.q.options![rec()!]!.label} /></strong>
-      </Show>{" "}
-      — <Inline text={props.q.recommendation.why} />
+      <span class="align-q-line">
+        <span class="align-q-kicker">Recommended</span>
+        <Show when={rec() !== undefined} fallback={<strong><Inline text={props.q.recommendation.choice} /></strong>}>
+          <span class="text-mono align-q-letter">{optionLetter(rec()!)}</span> — <strong><Inline text={props.q.options![rec()!]!.label} /></strong>
+        </Show>
+      </span>
+      <span class="align-q-desc"><Inline text={props.q.recommendation.why} /></span>
     </>
   );
   const by = (d: NonNullable<AlignQuestionInfo["decision"]>) => (d.by === "user" ? "you" : "accepted recommendation");
@@ -233,7 +235,8 @@ function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: Alig
               <li>
                 <span class="text-mono align-q-letter">{optionLetter(i())}</span>
                 <span>
-                  <strong><Inline text={o.label} /></strong> — <Inline text={o.tradeoff} />
+                  <strong class="align-q-line"><Inline text={o.label} /></strong>
+                  <span class="align-q-desc"><Inline text={o.tradeoff} /></span>
                 </span>
               </li>
             )}

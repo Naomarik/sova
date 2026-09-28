@@ -123,7 +123,7 @@
 .align-q-id { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .align-q-topic { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .align-q-ask { color: var(--color-ink); }
-.align-q-context { color: var(--color-ink); }
+.align-q-context { color: var(--color-ink-2); }
 /* Lettered a, b, c… so the user can answer "3a"; the letter sits in the bullet's place, in a
    column of its own so wrapped lines align under the text. */
 .align-q-options {
@@ -137,13 +137,25 @@
 .align-q-options > li { display: grid; grid-template-columns: var(--space-5) 1fr; align-items: baseline; }
 .align-q-letter { font-size: inherit; font-weight: var(--fw-semibold); color: var(--color-ink-2); }
 .align-q-options strong { color: var(--color-ink); }
+/* An option or recommendation in two lines: its label, bold, then what it costs or why, set in a
+   little under it in full ink — a step above the question's context. */
+.align-q-line { display: block; font-weight: var(--fw-semibold); }
+.align-q-desc { display: block; padding-left: var(--space-3); margin-top: 1px; color: var(--color-ink); }
+.align-q-kicker {
+  margin-right: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
 .align-q-rec,
 .align-q-decision { color: var(--color-ink); }
 .align-q-label { font-weight: var(--fw-semibold); color: var(--color-ink); }
 .align-q-by { color: var(--color-ink-muted); }
 .align-q[data-state="decided"] .align-q-ask,
 .align-q[data-state="decided"] .align-q-rec,
-.align-q[data-state="decided"] .align-q-rec .align-q-label { color: var(--color-ink-2); }
+.align-q[data-state="decided"] .align-q-rec .align-q-desc { color: var(--color-ink-2); }
 .align-q[data-state="decided"] .align-q-decision { color: var(--color-ink); }
 .align-q[data-state="dropped"] .align-q-ask { color: var(--color-ink-2); }
 /* A recommendation to take: the line is the checkbox's label, and the box sits in the options'

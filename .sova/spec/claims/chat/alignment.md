@@ -195,13 +195,17 @@ an `align` call: it is the message, not its working.
       <p class="align-q-ask">How often may it start a run on its own?</p>
       <p class="align-q-context">…context…</p>
       <ol class="align-q-options">
-        <li><span class="text-mono align-q-letter">a</span> <span><strong>1 per 10 min</strong> — trade-off</span></li>
-        <li><span class="text-mono align-q-letter">b</span> <span><strong>1 per hour</strong> — trade-off</span></li>
+        <li><span class="text-mono align-q-letter">a</span> <span><strong class="align-q-line">1 per 10 min</strong>
+          <span class="align-q-desc">trade-off</span></span></li>
+        <li><span class="text-mono align-q-letter">b</span> <span><strong class="align-q-line">1 per hour</strong>
+          <span class="align-q-desc">trade-off</span></span></li>
       </ol>
-      <p class="align-q-rec">Recommended: <span class="align-q-letter">a</span> — <strong>1 per 10 min</strong> — why</p>
+      <p class="align-q-rec"><span class="align-q-line"><span class="align-q-kicker">Recommended</span>
+        <span class="align-q-letter">a</span> — <strong>1 per 10 min</strong></span>
+        <span class="align-q-desc">why</span></p>
       <!-- or, answerable (below): the same line as a checkbox's label -->
       <label class="toggle align-q-rec align-q-take"><input type="checkbox"><span class="toggle-box"></span>
-        <span><span class="visually-hidden">Take the recommendation for q3. </span>Recommended: …</span></label>
+        <span><span class="visually-hidden">Take the recommendation for q3. </span>…the same two lines…</span></label>
     </li>
     <li class="align-q" data-state="decided|dropped">
       <details class="align-q-fold">
@@ -233,17 +237,19 @@ an `align` call: it is the message, not its working.
 - **Card** is capped at `--measure`, `--space-3`/`--space-4` padding; the eyebrow is `micro`
   uppercase muted, the title `heading-s` semibold, the meta a muted caption. Questions are separated
   by a `--color-border` rule. The summary, ask, context, options, recommendation, decision and the
-  folded sections are body text in full ink, for legibility; only a decided question's ask and
-  recommendation, and a dropped question's ask, step down one level. Inline code spans and bold runs in these fields
+  folded sections are body text in full ink, for legibility, except a question's context, one
+  level down (ink-2) so it sits below the options' trade-offs; a decided question's ask and
+  recommendation, and a dropped question's ask, step down one level too. Inline code spans and bold runs in these fields
   render; no other markdown.
 
 - **Status chip**, dot and word, only once the document is past aligning: Confirmed (success),
   Implementing (accent), Done (success), Dropped (neutral). An aligning document shows none.
 - **Questions** show their parts distinctly: the ask, the context, the options as a list lettered
   a, b, c… (the letter in the bullet's place, in its own column so a wrapped line aligns under the
-  text) of label and trade-off, the recommendation as a plain line after the options (no fill, no
-  rule, no colour) — "Recommended: b — {label} — {why}" when it names an option
-  (§chat.alignment/document), else "Recommended: {choice} — {why}" — and the decision (with "you"
+  text), each its label in bold on one line and its trade-off on the next, set in slightly (no
+  separator), then the recommendation after the options (no fill, no rule) in the same two lines:
+  first, bold, a small-caps accent "Recommended" then "b — {label}" when it names an option
+  (§chat.alignment/document), else "{choice}"; below it, set in the same, its why — and the decision (with "you"
   or "accepted recommendation") once there is one. Each
   question's head carries its state as a chip: Open, Decided, or Dropped with its why.
 - **Only open questions are expanded.** A decided or dropped question is folded by default to
@@ -263,8 +269,8 @@ an `align` call: it is the message, not its working.
   Overseer, a project overseer or a baton session. Even there, only the **newest revision** of an
   **open** alignment (not done or dropped) with **at least one open question** answers; every
   earlier revision, an older session's `align-doc` card and a settled document stay read-only.
-- **Take a recommendation (tick).** Each open question's "Recommended: …" line becomes the label
-  of a checkbox (`label.toggle`, the whole line the target; the box sits in the options' letter
+- **Take a recommendation (tick).** Each open question's recommendation becomes the label
+  of a checkbox (`label.toggle`, both lines the target; the box sits in the options' letter
   column), named "Take the recommendation for {qN}." for assistive tech. A tick stages nothing on
   the server: ticks live in memory per session, like the draft, until the next send. They show
   above the composer as one removable row (§chat.composer/anatomy) and go out with the next

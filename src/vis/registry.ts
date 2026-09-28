@@ -10,9 +10,11 @@ import type { Component } from "solid-js";
 import type { VisBase } from "./core/grammar";
 import type { ViewProps } from "./types";
 import { parseChart } from "./kinds/chart/parse";
+import { estimateHeight as codeHeight } from "./kinds/code/layout";
 import { parseCode } from "./kinds/code/parse";
 import { estimateHeight as flowHeight } from "./kinds/flow/layout";
 import { parseFlow, parseState } from "./kinds/flow/parse";
+import { estimateHeight as frameHeight } from "./kinds/frame/height";
 import { parseHtml, parseSvg } from "./kinds/frame/parse";
 import { parseLayers } from "./kinds/layers/parse";
 import { parseMatrix } from "./kinds/matrix/parse";
@@ -61,9 +63,9 @@ export const KINDS: Record<string, KindEntry> = {
   chart: kind(parseChart, view("chart"), "Chart"),
   timeline: kind(parseTimeline, view("timeline"), "Timeline"),
   matrix: kind(parseMatrix, view("matrix"), "Matrix"),
-  code: kind(parseCode, view("code"), "Code"),
-  html: kind(parseHtml, view("frame"), "Interactive", { framed: true }),
-  svg: kind(parseSvg, view("frame"), "Drawing", { framed: true }),
+  code: kind(parseCode, view("code"), "Code", { size: codeHeight }),
+  html: kind(parseHtml, view("frame"), "Interactive", { framed: true, size: frameHeight }),
+  svg: kind(parseSvg, view("frame"), "Drawing", { framed: true, size: frameHeight }),
 };
 
 export const KIND_WORDS = Object.keys(KINDS);

@@ -9,7 +9,7 @@
  * its mark has a note, a badge position.
  */
 
-import { wrap, type Measure } from "../../core/text";
+import { canvasMeasure, wrap, type Measure } from "../../core/text";
 import type { ChartSpec } from "./parse";
 import { linearAxis, logAxis, tickCount, valueLabel, type Axis } from "./scale";
 
@@ -370,3 +370,51 @@ function labelSpots(x: number, y: number, near: number): [number, number, "start
 }
 
 export const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/** The width a chart lays out at: the body's width, kept between these. Below the minimum it scales down. */
+export const CHART_MIN = 260;
+export const CHART_MAX = 720;
+export const chartWidth = (width: number) => Math.max(CHART_MIN, Math.min(CHART_MAX, Math.floor(width)));
+
+/** The value axis' name above the plot: `y (unit)`, or either alone. */
+export function axisTitle(spec: ChartSpec): string | undefined {
+  if (spec.y && spec.unit && spec.unit !== "%") return `${spec.y} (${spec.unit})`;
+  return spec.y ?? spec.unit;
+}
+
+/** HTML metrics chart.css sets (tokens: fs-caption 12.5 × lh-caption 1.45; fs-micro 11 × lh-micro 1.3; space-1 4, space-2 8, space-3 12). */
+export const CHART_CSS = { legendLine: 12.5 * 1.45, legendGapX: 12, legendGapY: 4, legendBelow: 8, swatch: 22 + 4, axisLine: 11 * 1.3, axisGap: 4 };
+
+/**
+ * Where the series legend breaks into rows at `width`: the indices that start a new row. The View
+ * draws those breaks itself, so the legend's height is this function's, not the browser's wrapping.
+ */
+export function legendBreaks(spec: ChartSpec, width: number, measure: Measure = canvasMeasure): number[] {
+  const breaks: number[] = [];
+  let x = 0;
+  spec.series.forEach((name, i) => {
+    const w = CHART_CSS.swatch + measure(name, 12.5);
+    if (x > 0 && x + CHART_CSS.legendGapX + w > width) {
+      breaks.push(i);
+      x = w;
+    } else x += (x > 0 ? CHART_CSS.legendGapX : 0) + w;
+  });
+  return breaks;
+}
+
+/**
+ * The height ChartView renders when its box is `width` px wide: legend, axis name, the SVG (laid out
+ * at chartWidth(width), shrunk to fit below CHART_MIN) and the x axis' name. Exact wherever the
+ * measure is (canvas in the browser).
+ */
+export function estimateHeight(spec: ChartSpec, width: number, measure: Measure = canvasMeasure): number {
+  const W = chartWidth(width);
+  let h = layoutChart(spec, W, measure).H * Math.min(1, width / W);
+  if (spec.series.length > 1) {
+    const rows = legendBreaks(spec, width, measure).length + 1;
+    h += rows * CHART_CSS.legendLine + (rows - 1) * CHART_CSS.legendGapY + CHART_CSS.legendBelow;
+  }
+  if (axisTitle(spec)) h += CHART_CSS.axisLine + CHART_CSS.axisGap;
+  if (spec.x) h += CHART_CSS.axisGap + CHART_CSS.axisLine;
+  return h;
+}

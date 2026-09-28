@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { estimateWidth } from "../../core/text";
 import { parseVis } from "../../parse";
-import { chartMode, FONT, layoutChart, overlaps, textBox, type ChartLayout } from "./layout";
+import { axisTitle, CHART_CSS, chartMode, chartWidth, estimateHeight, FONT, layoutChart, legendBreaks, overlaps, textBox, type ChartLayout } from "./layout";
 import type { ChartSpec } from "./parse";
 
 const chart = (body: string) => {
@@ -131,4 +131,23 @@ test("chart layout: a small scatter labels every point on a phone, clear of the 
     for (const r of g.rings)
       for (const v of g.values) assert.ok(!overlaps({ x: r.x - 10, y: r.y - 10, w: 20, h: 20 }, textBox(v, estimateWidth)), `"${v.text}" touches a ring at ${W}`);
   }
+});
+
+test("chart estimateHeight: the layout's own height plus the legend and axis names, the same every time", () => {
+  for (const [name, body] of Object.entries(SAMPLES)) {
+    const spec = chart(body);
+    for (let w = 296; w <= 900; w += 26) {
+      const h = estimateHeight(spec, w, estimateWidth);
+      assert.equal(h, estimateHeight(spec, w, estimateWidth), `${name}@${w} deterministic`);
+      const W = chartWidth(w);
+      const svg = layoutChart(spec, W, estimateWidth).H * Math.min(1, w / W);
+      const legend = spec.series.length > 1 ? (legendBreaks(spec, w, estimateWidth).length + 1) * CHART_CSS.legendLine + legendBreaks(spec, w, estimateWidth).length * CHART_CSS.legendGapY + CHART_CSS.legendBelow : 0;
+      const titles = (axisTitle(spec) ? CHART_CSS.axisLine + CHART_CSS.axisGap : 0) + (spec.x ? CHART_CSS.axisLine + CHART_CSS.axisGap : 0);
+      assert.ok(Math.abs(h - (svg + legend + titles)) < 1e-9, `${name}@${w}: ${h} is the layout's ${svg} + ${legend} + ${titles}`);
+      assert.ok(h > 100 && h < 700, `${name}@${w}: ${h}px is sane`);
+    }
+  }
+  // Below the minimum layout width the drawing scales down with the width.
+  const small = chart(SAMPLES.bar!);
+  assert.ok(estimateHeight(small, 200, estimateWidth) < estimateHeight(small, 260, estimateWidth));
 });

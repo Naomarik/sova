@@ -2,9 +2,9 @@ import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-j
 import { emphasisMap } from "../../core/emphasis";
 import { canvasMeasure } from "../../core/text";
 import { emClass, SvgEmBadge } from "../../emphasis";
-import { Lines } from "../../svg";
+import { fontsLoaded, Lines } from "../../svg";
 import type { ViewProps } from "../../types";
-import { FONT, layoutChart, type Bar } from "./layout";
+import { axisTitle as titleOf, chartWidth, FONT, layoutChart, legendBreaks, type Bar } from "./layout";
 import type { ChartSpec } from "./parse";
 import "./chart.css";
 
@@ -16,16 +16,19 @@ import "./chart.css";
  */
 export default function ChartView(props: ViewProps<ChartSpec>) {
   let box!: HTMLDivElement;
+  // The first layout happens in onMount, before the browser paints: the box is in the page by then.
   const [width, setWidth] = createSignal(560);
-  const fit = () => setWidth(Math.max(260, Math.min(720, Math.floor(box.clientWidth || 560))));
+  const fit = () => setWidth(Math.floor(box.clientWidth || 560));
   onMount(() => {
     const ro = new ResizeObserver(fit);
     ro.observe(box);
     fit();
     onCleanup(() => ro.disconnect());
   });
-  const g = createMemo(() => layoutChart(props.spec, width(), canvasMeasure));
+  // Re-measured once the web font loads, so the drawing matches estimateHeight's (canvas) text widths.
+  const g = createMemo(() => (fontsLoaded(), layoutChart(props.spec, chartWidth(width()), canvasMeasure)));
   const em = createMemo(() => emphasisMap(props.spec));
+  const breaks = createMemo(() => (fontsLoaded(), legendBreaks(props.spec, width(), canvasMeasure)));
   const multi = () => props.spec.series.length > 1;
   const single = () => !multi();
   /** A bar's colour: its series, else a mark's tone, else the row's own tone, else the accent. */
@@ -41,17 +44,17 @@ export default function ChartView(props: ViewProps<ChartSpec>) {
     const tone = em().get(String(row))?.tone ?? props.spec.rows[row]!.tone;
     return tone ? `vis-chart-toned vis-tone-${tone}` : "vis-chart-s0";
   };
-  const axisTitle = () => {
-    const s = props.spec;
-    if (s.y && s.unit && s.unit !== "%") return `${s.y} (${s.unit})`;
-    return s.y ?? s.unit;
-  };
+  const axisTitle = () => titleOf(props.spec);
   return (
     <div class="vis-chart" ref={box}>
       <Show when={multi()}>
         <ul class="vis-legend" aria-label="Series">
           <For each={props.spec.series}>
             {(name, i) => (
+              <>
+              <Show when={breaks().includes(i())}>
+                <li class="vis-legend-break" aria-hidden="true" />
+              </Show>
               <li>
                 <svg width="22" height="12" aria-hidden="true" class={`vis-chart-s${i()}`}>
                   {g().mode === "line" ? (
@@ -65,6 +68,7 @@ export default function ChartView(props: ViewProps<ChartSpec>) {
                 </svg>
                 {name}
               </li>
+              </>
             )}
           </For>
         </ul>
@@ -72,7 +76,7 @@ export default function ChartView(props: ViewProps<ChartSpec>) {
       <Show when={axisTitle()}>
         <div class="vis-axis-title">{axisTitle()}</div>
       </Show>
-      <svg class="vis-svg vis-chart-svg" viewBox={`0 0 ${g().W} ${g().H}`} width="100%" role="img" aria-label={props.label}>
+      <svg class="vis-svg vis-chart-svg" viewBox={`0 0 ${g().W} ${g().H}`} width={g().W} style={{ "max-width": "100%" }} role="img" aria-label={props.label}>
         <For each={g().bands}>
           {(b) => <rect class={`vis-chart-band vis-tone-${em().get(String(b.row))!.tone}`} x={b.x} y={b.y} width={b.w} height={b.h} rx="4" />}
         </For>

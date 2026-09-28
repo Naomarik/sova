@@ -3,10 +3,12 @@
  * row or column is tinted and its header carries the note's number. From three columns up, a phone
  * gets one card per row (column names inline) instead of a table that scrolls sideways.
  */
-import { For, Show, createMemo } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { emphasisMap } from "../../core/emphasis";
 import { EmBadge, emClass } from "../../emphasis";
 import type { ViewProps } from "../../types";
+import { fontsLoaded } from "../../svg";
+import { clearWidths, MATRIX_NARROW, matrixColumns } from "./height";
 import type { CellMark, MatrixSpec } from "./parse";
 import "./matrix.css";
 
@@ -15,9 +17,26 @@ const MARK_TEXT: Record<CellMark, string> = { yes: "Yes", no: "No", partial: "Pa
 export default function MatrixView(props: ViewProps<MatrixSpec>) {
   const em = createMemo(() => emphasisMap(props.spec));
   const col = (i: number) => em().get(`c${i}`);
+  // Column shares from the text's widths: measured again once the web font loads.
+  let wrapEl!: HTMLDivElement;
+  const [width, setWidth] = createSignal(560);
+  // The first measure happens in onMount, before the browser paints.
+  onMount(() => {
+    const fit = () => setWidth(Math.floor(wrapEl.clientWidth || 560));
+    const ro = new ResizeObserver(fit);
+    ro.observe(wrapEl);
+    fit();
+    onCleanup(() => ro.disconnect());
+  });
+  const cards = () => width() <= MATRIX_NARROW && props.spec.columns.length >= 3;
+  const cols = createMemo(() => (fontsLoaded() && clearWidths(), matrixColumns(props.spec, width())));
   return (
-    <div class="vis-matrix-wrap" classList={{ "vis-matrix-many": props.spec.columns.length >= 3 }} tabindex="0" role="region" aria-label={`${props.label} (scrolls sideways)`}>
-      <table class="vis-matrix">
+    <div ref={wrapEl} class="vis-matrix-wrap" classList={{ "vis-matrix-many": props.spec.columns.length >= 3 }} tabindex="0" role="region" aria-label={`${props.label} (scrolls sideways)`}>
+      {/* Cards (matrix.css' container query, the same width test) take no table width. */}
+      <table class="vis-matrix" style={cards() ? undefined : { width: `${cols().reduce((a, b) => a + b, 0)}px` }}>
+        <colgroup>
+          <For each={cols()}>{(px) => <col style={{ width: `${px}px` }} />}</For>
+        </colgroup>
         <thead>
           <tr>
             <td class="vis-matrix-corner" />

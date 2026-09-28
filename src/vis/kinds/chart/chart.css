@@ -1,10 +1,16 @@
 /* `vis chart`. Colour is by class: a series (`vis-chart-s<n>`) or a tone (`vis-chart-toned` plus
    `vis-tone-*`, whose --vis-stroke is the colour) sets --chart-c; shapes read it. Tokens only. */
+/* layout.ts' estimateHeight mirrors these metrics (CHART_CSS): change both together. */
 .vis-chart { min-width: 0; }
-.vis-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0 0 var(--space-2); padding: 0; list-style: none; font-size: var(--fs-caption); color: var(--color-ink-2); }
-.vis-legend li { display: inline-flex; align-items: center; gap: var(--space-1); }
-.vis-axis-title { font-size: var(--fs-micro); color: var(--color-ink-muted); margin-bottom: var(--space-1); }
+/* Rows break where layout.ts' legendBreaks says (a full-width 4px item), never by themselves. */
+.vis .vis-legend { display: flex; flex-wrap: wrap; gap: 0 var(--space-3); margin: 0 0 var(--space-2); padding: 0; list-style: none; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
+.vis-legend .vis-legend-break { flex-basis: 100%; height: var(--space-1); }
+.vis .vis-legend li { margin: 0; }
+.vis-legend li { display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap; }
+.vis-legend svg { display: block; flex: none; }
+.vis-axis-title { font-size: var(--fs-micro); line-height: var(--lh-micro); color: var(--color-ink-muted); margin-bottom: var(--space-1); }
 .vis-axis-x { text-align: center; margin: var(--space-1) 0 0; }
+.vis-chart-svg { height: auto; }
 
 .vis-chart-s0 { --chart-c: var(--color-accent); }
 .vis-chart-s1 { --chart-c: var(--status-warn); }

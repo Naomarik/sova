@@ -1,16 +1,18 @@
-/* `vis matrix`: a table of criteria (rows) against options (columns). Tokens only. */
-.vis-matrix-wrap { max-width: 100%; overflow-x: auto; }
+/* `vis matrix`: a table of criteria (rows) against options (columns). Tokens only. height.ts mirrors
+   these metrics: change both together. */
+.vis-matrix-wrap { max-width: 100%; overflow-x: auto; container: vis-matrix / inline-size; }
 .vis-matrix-wrap:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: var(--r-xs); }
-.vis-matrix { border-collapse: collapse; width: 100%; font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.vis .vis-matrix { table-layout: fixed; border-collapse: collapse; min-width: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); }
 .vis-matrix th, .vis-matrix td { padding: var(--space-2) var(--space-3); border-bottom: var(--stroke-thin) solid var(--color-border); text-align: left; vertical-align: top; }
 /* Chat markdown styles every th (sunken, nowrap): only the column headers keep that look here. */
-.vis .vis-matrix th { background: transparent; white-space: normal; overflow-wrap: normal; }
+.vis .vis-matrix th { background: transparent; }
+.vis .vis-matrix th, .vis .vis-matrix td { white-space: normal; overflow-wrap: anywhere; }
 .vis .vis-matrix thead th { background: var(--color-sunken); }
-.vis-matrix thead th { font-weight: var(--fw-semibold); color: var(--color-ink); white-space: nowrap; border-bottom-color: var(--color-border-strong); }
-.vis-matrix tbody th { font-weight: var(--fw-medium); color: var(--color-ink); min-width: 8em; }
+.vis-matrix thead th { font-weight: var(--fw-semibold); color: var(--color-ink); border-bottom-color: var(--color-border-strong); }
+.vis-matrix tbody th { font-weight: var(--fw-medium); color: var(--color-ink); }
 .vis-matrix tbody tr:last-child > * { border-bottom: 0; }
 .vis-matrix td { color: var(--color-ink-2); }
-.vis-matrix-cell { display: inline-flex; align-items: flex-start; gap: var(--space-1); }
+.vis-matrix-cell { display: flex; min-width: 0; align-items: flex-start; gap: var(--space-1); }
 .vis-matrix-col { display: none; }
 .vis-cell-mark { flex: none; width: 16px; height: 16px; margin-top: 1px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .vis-cell-mark-half { fill: currentColor; stroke: none; }
@@ -30,7 +32,7 @@
 .vis-matrix .vis-em-badge { vertical-align: 1px; }
 
 /* A phone with three or more columns: one card per row, each cell named by its column. */
-@container vis (max-width: 420px) {
+@container vis-matrix (max-width: 404px) {
   .vis-matrix-many { overflow: visible; }
   .vis-matrix-many .vis-matrix, .vis-matrix-many tbody, .vis-matrix-many tr, .vis-matrix-many th, .vis-matrix-many td { display: block; }
   .vis-matrix-many thead { display: none; }

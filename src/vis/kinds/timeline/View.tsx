@@ -12,6 +12,7 @@ import "./timeline.css";
 export default function TimelineView(props: ViewProps<TimelineSpec>) {
   const em = createMemo(() => emphasisMap(props.spec));
   return (
+    <div class="vis-timeline-box">
     <ol class="vis-timeline" aria-label={props.label}>
       <For each={props.spec.items}>
         {(it, i) => {
@@ -44,5 +45,6 @@ export default function TimelineView(props: ViewProps<TimelineSpec>) {
         }}
       </For>
     </ol>
+    </div>
   );
 }

@@ -1086,7 +1086,16 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
           </p>
         )}
       </Show>
-      <Show when={live().length} fallback={<p class="orgs-empty">No projects yet. A project is a folder that hand-off sessions and its overseer work in.</p>}>
+      <Show
+        when={live().length}
+        fallback={
+          <p class="orgs-empty">
+            {archived().length
+              ? `${archived().length === 1 ? "The 1 project here is" : `All ${archived().length} projects here are`} archived. Unarchive one below, or add a project.`
+              : "No projects yet. A project is a folder that hand-off sessions and its overseer work in."}
+          </p>
+        }
+      >
         <ul class="list orgs-project-list">
           <For each={live()}>
             {(p) => (

@@ -486,6 +486,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
         if (open.length) throw new OrgError(`Stop these first: ${open.join("; ")}.`, 409);
       }
       setProjectArchived(id, pid, true, operatorBy(c));
+      nudgeMarks(); // its sessions leave the Organizations region: re-diff the list now
       return c.json(await orgPage(id));
     }),
   );
@@ -494,6 +495,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       setProjectArchived(id, p(c, "pid"), false, operatorBy(c));
+      nudgeMarks();
       return c.json(await orgPage(id));
     }),
   );

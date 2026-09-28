@@ -256,3 +256,19 @@ test("confirm rows: ideas and todos come first and are never collapsed; only ses
   // 9 sessions: hiding 1 saves nothing, so no toggle.
   assert.equal(confirmRows(Array.from({ length: 9 }, (_, i) => session(i)), false).collapsible, false);
 });
+
+test("a card's project and person rows keep their org and status; one without its org or name is dropped", () => {
+  const d = confirmDetails({
+    title: "Start?",
+    options: ["Start"],
+    items: [
+      { kind: "project", id: "prj_1", orgId: "org_1", name: "Ledger", orgName: "Harbor Works", note: "Its site." },
+      { kind: "person", id: "p_1", orgId: "org_1", name: "Tony", orgName: "Harbor Works", status: "proposed" },
+      { kind: "person", id: "p_2", name: "No org" },
+    ],
+  });
+  assert.deepEqual(d?.items, [
+    { kind: "project", id: "prj_1", orgId: "org_1", name: "Ledger", orgName: "Harbor Works", note: "Its site." },
+    { kind: "person", id: "p_1", orgId: "org_1", name: "Tony", orgName: "Harbor Works", status: "proposed" },
+  ]);
+});

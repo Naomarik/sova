@@ -22,6 +22,7 @@ import {
 } from "./prompt.ts";
 import { routeAll, routeWriter, type Discovery } from "./routing.ts";
 import { specDefaults, type SpecSettings } from "./spec.ts";
+import { ALSO_CHANGES_OVERRIDE as SPEC_CHECK_OVERRIDE, DIGEST_TAG } from "./spec-guard.ts";
 import {
 	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
@@ -395,8 +396,9 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 		assert.match(draftUsage, new RegExp(`[<|] ?${cmd}[ >]`), `${cmd} is a draft command`);
 		assert.match(spec, new RegExp(`\`${cmd}\\b`), `${cmd} is named`);
 	}
-	// The core's four commands only read; --budget only inside the scope form (elsewhere a usage error).
-	assert.match(spec, /only reads; command is `check`, `census`, `scope '<§id>' \[--budget <bytes>\]` or `impact '<§id>'`; `--spec <dir>` reads a draft instead\./);
+	// The core's five commands only read; --budget only inside the scope form (elsewhere a usage error).
+	assert.match(spec, /only reads; command is `check`, `census`, `foreign --base <rev>`, `scope '<§id>' \[--budget <bytes>\]` or `impact '<§id>'`; `--spec <dir>` reads a draft instead\./);
+	assert.doesNotMatch(usage("sova-spec.mjs", "foreign"), /unknown command/, "foreign is a core command");
 	assert.equal(spec.match(/--budget/g)?.length, 1);
 	// A project's copy is foreign code: inspected and asked about, never run blind.
 	assert.match(spec, /A project's own copy is foreign code: read it and ask before running it/);
@@ -420,8 +422,8 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /Promote only what is implemented and verified\. A refusal is resolved, never forced\./);
 	assert.match(spec, /Write `"requires": \[\]` only after investigating; otherwise omit the key/);
 	// Mandatory: every behavior change is spec'd, and only a declared no-behavior change is exempt.
-	assert.match(spec, /Every behavior change is spec'd\. Exempt from drafts, not census: work changing no behavior \(refactor, tests, tooling\); say you claim the exemption\./);
-	assert.match(spec, /Behavior no claim covers gets a new claim in a feature draft before coding\./, "the claim comes before the code");
+	assert.match(spec, /Every behavior change is spec'd\. Exempt from drafts, not census: work changing no behavior \(refactor, tests, tooling\), decided from `scope` output, never memory; say you claim the exemption\./);
+	assert.match(spec, /Behavior no claim covers gets a new claim in a feature draft before coding\. Write its sentence before the first code edit; `new` alone isn't enough\./, "the claim comes before the code");
 	assert.ok(spec.indexOf("Before coding:") < spec.indexOf("before coding.") && spec.indexOf("before coding.") < spec.indexOf("Documentation changes only through drafts"), "the new claim is a before-coding step");
 	// Only what the task changed is claimed; neighbours are linked, never spec'd.
 	assert.match(spec, /Claim only files the task changed \(each record's `code`\); unchanged dependencies are not spec'd; `requires` names only existing claims\./);
@@ -441,11 +443,15 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /wherever you put the claim/);
 	assert.match(spec, /never a gap it already had, even one you rely on/);
 	assert.match(spec, /"Also changes: none"/);
-	assert.match(spec, /Before finishing:\n(- .*\n)*- Your reply's last line, exempt work included, is exactly "Also changes: §X — <what>" or "Also changes: none", nothing after; notes \(the exemption, a gap\) go above it\. It names foreign § only, never your new claims; an addition under one is that §'s change\./, "the handoff line is a finishing step, exempt work included");
+	assert.match(spec, /Before finishing:\n(- .*\n)*- Your reply's last line on a turn that edited, committed, promoted or merged, exempt work included, is exactly "Also changes: §X — <what>; §Y — <what>" or "Also changes: none", nothing after; a turn that only answered writes none\. It names foreign § only, never your new claims; an addition under one is that §'s change, and a § the user asked for is still foreign\./, "the handoff line is a finishing step on change turns, exempt work included; none on a Q&A turn");
+	assert.match(spec, /A merge or promote turn names every foreign § it lands, even if already reported, workers' included: copy the list `worktree merge` or `promote --write` prints/, "merge and promote turns copy the computed list");
+	assert.match(spec, /"Spec check override: <why>"/);
+	assert.ok(spec.includes(SPEC_CHECK_OVERRIDE), "the prompt spells the override the check accepts");
+	assert.ok(spec.includes(`A \`${DIGEST_TAG}\` note on a tool result is this census`), "the automatic census is named by its tag");
 	assert.match(spec, /While coding, exempt work included, run `census --changed` \(/);
 	assert.match(spec, /Trusted tools: start each bash command with exactly this, never a guessed path:\n\n```sh\n/, "the recipe, not a hard-coded agent dir");
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never flags/);
-	assert.ok(spec.split(/\s+/).length <= 740, "short enough to ride every turn");
+	assert.ok(spec.split(/\s+/).length <= 860, "short enough to ride every turn");
 });
 
 test("mode helpers", () => {

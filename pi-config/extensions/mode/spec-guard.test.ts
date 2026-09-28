@@ -1,0 +1,210 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+import {
+	ALSO_CHANGES_OVERRIDE,
+	CensusHook,
+	checkAlsoChanges,
+	commandRoot,
+	coreDir,
+	DIGEST_TAG,
+	digest,
+	draftsCreated,
+	foreignBetween,
+	gitCommits,
+	gitMerges,
+	lastLine,
+	localIO,
+	NO_DRAFT_NOTE,
+	parseAlsoChanges,
+	parsePorcelain,
+	promoteWrites,
+	ranCensus,
+	repromptText,
+	stripAlsoChanges,
+	viewChanged,
+	type CensusView,
+	type SpecIO,
+} from "./spec-guard.ts";
+import { SPEC_CORE_SHELL } from "./minor.ts";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const CORE = resolve(here, "../spec/core");
+const scratchRoot = process.env.MODE_TEST_SCRATCH ?? join(homedir(), ".cache", "mode-tests");
+
+test("coreDir resolves like spec-mode.md's $core line", () => {
+	assert.equal(coreDir({}, "/home/u"), "/home/u/.pi/agent/extensions/spec/core");
+	assert.equal(coreDir({ PI_CODING_AGENT_DIR: "/x/agent" }, "/home/u"), "/x/agent/extensions/spec/core");
+	assert.equal(coreDir({ PI_CODING_AGENT_DIR: "~/a" }, "/home/u"), "/home/u/a/extensions/spec/core");
+	assert.ok(SPEC_CORE_SHELL.includes("/extensions/spec/core"), "the prompt's line names the same directory");
+});
+
+test("parsePorcelain: plain entries, and a rename's source is skipped", () => {
+	assert.deepEqual(parsePorcelain(" M src/a.ts\0?? new file.md\0R  b2.ts\0b.ts\0 D gone.ts\0"), ["src/a.ts", "new file.md", "b2.ts", "gone.ts"]);
+	assert.deepEqual(parsePorcelain(""), []);
+});
+
+test("viewChanged: HEAD, the path set, or a changed file's mtime", () => {
+	const v = { top: "/r", head: "a", files: { x: 1 } };
+	assert.ok(!viewChanged(v, { ...v, files: { x: 1 } }));
+	assert.ok(viewChanged(v, { ...v, head: "b" }));
+	assert.ok(viewChanged(v, { ...v, files: { x: 2 } }), "an already-dirty file edited again");
+	assert.ok(viewChanged(v, { ...v, files: { x: 1, y: 1 } }));
+	assert.ok(!viewChanged(undefined, v));
+});
+
+test("command detection: promote --write, git commit / merge, --root, draft names, a census already run", () => {
+	assert.ok(promoteWrites('node "$core/sova-spec-draft.mjs" promote feat --id \'§a/b\' --plan abc --write --root . --json'));
+	assert.ok(!promoteWrites('node "$core/sova-spec-draft.mjs" promote feat --id \'§a/b\' --json'), "a preview writes nothing");
+	assert.ok(gitCommits("git add x && git commit -qm y"));
+	assert.ok(gitCommits("git -C /r commit -m y"));
+	assert.ok(!gitCommits("git log --oneline"));
+	assert.ok(gitMerges("git merge --no-ff feat/x"));
+	assert.ok(!gitMerges("git merge-base --is-ancestor a b"));
+	assert.equal(commandRoot("node x promote f --root /w/t --write"), "/w/t");
+	assert.equal(commandRoot("node x promote f --root '/w/a b' --write"), "/w/a b");
+	assert.equal(commandRoot("node x promote f --write"), undefined);
+	assert.deepEqual(draftsCreated(['node "$core/sova-spec-draft.mjs" new feat-a --write --root .', 'node "$core/sova-spec-draft.mjs" new dry --root .']), ["feat-a"]);
+	assert.ok(ranCensus("bash", { command: 'node "$core/sova-spec.mjs" census --changed --json' }));
+	assert.ok(!ranCensus("edit", { path: "a" }));
+});
+
+test("parseAlsoChanges: none, ids, markdown emphasis; anything else is not the line", () => {
+	assert.deepEqual(parseAlsoChanges("Also changes: none"), []);
+	assert.deepEqual(parseAlsoChanges("Also changes: §chat.alignment/card — lettered options; §design.copy-deck/sidebar — count only"), [
+		"§chat.alignment/card",
+		"§design.copy-deck/sidebar",
+	]);
+	assert.deepEqual(parseAlsoChanges("**Also changes: none**"), []);
+	assert.equal(parseAlsoChanges("Also changes: the card"), undefined);
+	assert.equal(parseAlsoChanges("Also changed: none"), undefined);
+	assert.equal(lastLine("a\nAlso changes: none\n\n  "), "Also changes: none");
+});
+
+test("checkAlsoChanges: not required passes; required needs the last line naming every computed §", () => {
+	const foreign = ["§a/one", "§b/two"];
+	assert.ok(checkAlsoChanges("just an answer", { required: false, foreign }).ok);
+	assert.equal(checkAlsoChanges("done", { required: true, foreign: [] }).problem, "missing");
+	assert.equal(checkAlsoChanges("Also changes: none\nreport at /x.md", { required: true, foreign: [] }).problem, "not-last");
+	assert.equal(checkAlsoChanges("done\nAlso changes: nothing much", { required: true, foreign: [] }).problem, "malformed");
+	assert.ok(checkAlsoChanges("done\nAlso changes: none", { required: true, foreign: [] }).ok);
+	const omits = checkAlsoChanges("done\nAlso changes: §a/one — x", { required: true, foreign });
+	assert.equal(omits.problem, "omits");
+	assert.deepEqual(omits.missing, ["§b/two"]);
+	assert.equal(checkAlsoChanges("done\nAlso changes: none", { required: true, foreign }).problem, "none-but-changed");
+	assert.ok(checkAlsoChanges("done\nAlso changes: §a/one — x; §b/two — y; §c/own — z", { required: true, foreign }).ok, "naming more is fine");
+	const over = checkAlsoChanges(`done\n${ALSO_CHANGES_OVERRIDE} §b/two was created by this task's earlier merge\nAlso changes: §a/one — x`, { required: true, foreign });
+	assert.ok(over.ok && over.overridden);
+	assert.ok(!checkAlsoChanges(`done\n${ALSO_CHANGES_OVERRIDE} no\n`, { required: true, foreign }).ok, "an override never replaces the line itself");
+	const text = repromptText(omits, foreign, "merged a worktree");
+	assert.ok(text.includes("Also changes: §a/one — <what changed>; §b/two — <what changed>"));
+	assert.ok(text.includes(ALSO_CHANGES_OVERRIDE));
+});
+
+test("stripAlsoChanges drops the closing line (and an override above it), nothing else", () => {
+	assert.equal(stripAlsoChanges("Done.\n\nAlso changes: none\n"), "Done.");
+	assert.equal(stripAlsoChanges(`Done.\n${ALSO_CHANGES_OVERRIDE} created here\nAlso changes: §a/b — x`), "Done.");
+	assert.equal(stripAlsoChanges("Also changes: none, it said\nDone."), "Also changes: none, it said\nDone.");
+	assert.equal(stripAlsoChanges("Done."), "Done.");
+});
+
+const censusView = (over: Partial<CensusView> = {}): CensusView => ({
+	foreignNote: "flag only a contradiction",
+	foreign: [],
+	claimed: [],
+	unclaimed: [],
+	mappedOutside: [],
+	childUnderForeign: [],
+	...over,
+});
+
+test("digest: the first in-boundary change, each new file, new foreign §; says when there is no draft", () => {
+	const v = censusView({ foreign: ["§app/shell"], claimed: [{ path: "src/App.tsx", claims: ["§app/shell"] }], unclaimed: ["src/new.ts"] });
+	const first = digest(v, ["src/App.tsx"], { reported: false, foreign: [] }, false);
+	assert.ok(first?.startsWith(`${DIGEST_TAG} 2 changed file(s) in the boundary, 1 unclaimed; 1 foreign § touched.`));
+	assert.ok(first?.includes(NO_DRAFT_NOTE));
+	assert.ok(first?.includes("New: src/App.tsx → §app/shell"));
+	assert.ok(first?.includes("Foreign §: §app/shell"));
+	assert.equal(digest(v, ["docs/notes.md"], { reported: true, foreign: ["§app/shell"] }, true), undefined, "nothing new in the boundary: silent");
+	const again = digest(v, ["src/new.ts"], { reported: true, foreign: ["§app/shell"] }, true);
+	assert.ok(again?.includes("New: src/new.ts → unclaimed"));
+	assert.ok(!again?.includes(NO_DRAFT_NOTE) && !again?.includes("Foreign §:"));
+	const outside = digest(censusView({ mappedOutside: [{ path: "pi-config/x.ts", claims: ["§app/worker"] }] }), ["pi-config/x.ts"], { reported: false, foreign: [] }, true);
+	assert.ok(outside?.includes("pi-config/x.ts → outside the boundary, mapped by §app/worker"));
+	assert.equal(digest(censusView(), ["README.md"], { reported: false, foreign: [] }, false), undefined, "no in-boundary change: silent");
+});
+
+test("foreignBetween wraps `sova-spec.mjs foreign`; unusable output is undefined", async () => {
+	const calls: string[][] = [];
+	const io = (stdout: string): SpecIO => ({
+		...localIO,
+		exists: () => true,
+		exec: async (_cmd, args) => {
+			calls.push(args);
+			return { stdout, code: 0 };
+		},
+	});
+	assert.deepEqual(await foreignBetween("/r", "abc", undefined, "/core", io(JSON.stringify({ exit: 0, foreign: ["§a/b"] }))), ["§a/b"]);
+	assert.deepEqual(calls[0], ["/core/sova-spec.mjs", "foreign", "--base", "abc", "--root", "/r", "--json"]);
+	await foreignBetween("/r", "abc", "def", "/core", io("{}"));
+	assert.deepEqual(calls[1].slice(3, 6), ["abc", "--head", "def"]);
+	assert.equal(await foreignBetween("/r", "abc", undefined, "/core", io(JSON.stringify({ exit: 2, foreign: [] }))), undefined);
+	assert.equal(await foreignBetween("/r", "abc", undefined, "/core", io("not json")), undefined);
+});
+
+test("CensusHook on a real Git tree: bash-style writes are caught by the git delta; one digest per new file", async () => {
+	mkdirSync(scratchRoot, { recursive: true });
+	const project = mkdtempSync(join(scratchRoot, "spec-guard-"));
+	try {
+		const put = (rel: string, text: string) => {
+			mkdirSync(dirname(join(project, rel)), { recursive: true });
+			writeFileSync(join(project, rel), text);
+		};
+		const git = (...args: string[]) =>
+			assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", project, ...args]).status, 0, `git ${args.join(" ")}`);
+		put(
+			".sova/spec/manifest.json",
+			JSON.stringify({
+				formatVersion: 1,
+				grammar: { claimsRoot: "claims/", directoryKinds: ["section"] },
+				boundary: { include: ["src"], exclude: [] },
+				claims: { "§app/shell": { kind: "surface", code: ["src/App.tsx"] } },
+			}),
+		);
+		put(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell.\n");
+		put("src/App.tsx", "1\n");
+		put("README.md", "r\n");
+		git("init", "-q");
+		git("add", "-A");
+		git("commit", "-qm", "base");
+
+		const hook = new CensusHook({ core: () => CORE });
+		const after = (toolName = "bash") => hook.after({ cwd: project, toolName, input: { command: "cat > f <<EOF" } });
+		assert.deepEqual(await hook.prime(project), {}, "the baseline says nothing");
+		put("README.md", "changed\n");
+		assert.deepEqual(await after(), {}, "a change outside the boundary is silent");
+		put("src/App.tsx", "2\n");
+		const first = await after("read");
+		assert.ok(first.text?.startsWith(DIGEST_TAG), `first in-boundary change: ${JSON.stringify(first)}`);
+		assert.ok(first.text?.includes("§app/shell"));
+		assert.ok(first.text?.includes(NO_DRAFT_NOTE));
+		put("src/App.tsx", "3\n");
+		assert.deepEqual(await after(), {}, "the same file again: silent");
+		put("src/extra.ts", "x\n");
+		const fresh = await after();
+		assert.ok(fresh.text?.includes("New: src/extra.ts → unclaimed"), JSON.stringify(fresh));
+		git("add", "-A");
+		git("commit", "-qm", "work");
+		put("src/later.ts", "y\n");
+		git("add", "-A");
+		git("commit", "-qm", "more");
+		const committed = await after();
+		assert.ok(committed.text?.includes("src/later.ts"), `a file created and committed in one call still counts: ${JSON.stringify(committed)}`);
+	} finally {
+		rmSync(project, { recursive: true, force: true });
+	}
+});

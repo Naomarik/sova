@@ -123,6 +123,15 @@ export function activeOf(state: Pick<ModeState, "mode" | "strict" | "minorModes"
 }
 
 /**
+ * The session's active triple on `pi.events`, for extensions that act on it (subagents: a spec brief
+ * for the workers a spec-on session spawns). Emitted on every change and again on MODE_DISCOVER_EVENT,
+ * so load order never matters.
+ */
+export const MODE_STATE_EVENT = "mode:state";
+export const MODE_DISCOVER_EVENT = "mode:discover";
+export type ModeStateEvent = ModeActive;
+
+/**
  * A stored snapshot, or undefined for anything this version does not understand: a legacy delta
  * marker with no snapshot, a newer `version`, or a malformed payload. Never throws.
  */

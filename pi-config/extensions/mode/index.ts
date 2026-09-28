@@ -78,13 +78,32 @@ import { applyModeSection, buildModeNote, composePrompt, DEFAULT_ROUTES, statusL
 import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import { SPEC_FILE_NAME, SPEC_WRITER_LABEL, specBackends, specKey, specReader } from "./spec.ts";
 import {
+	bashCommands,
+	CensusHook,
+	CHECK_TAG,
+	checkAlsoChanges,
+	commandRoot,
+	describeProblem,
+	findSpecRoot,
+	foreignBetween,
+	gitCommits,
+	gitMerges,
+	gitView,
+	promoteWrites,
+	repromptText,
+	viewChanged,
+	type GitView,
+} from "./spec-guard.ts";
+import {
 	activeOf,
 	DEFAULT_ALIGN_VIEWER_SHORTCUT,
 	DEFAULT_MODE_SHORTCUT,
 	hasMinor,
 	loadState,
+	MODE_DISCOVER_EVENT,
 	MODE_ENTRY_TYPE,
 	MODE_NOTE_TYPE,
+	MODE_STATE_EVENT,
 	MODES,
 	parseMode,
 	restoreActive,
@@ -101,6 +120,10 @@ import {
 const STATE_FILE = join(getAgentDir(), "mode.json");
 const DELEGATE_FILE = join(getAgentDir(), DELEGATE_FILE_NAME);
 const SPEC_FILE = join(getAgentDir(), SPEC_FILE_NAME);
+/** The trusted spec tools, where spec-mode.md's `$core` line resolves them (install.sh links them there). */
+const SPEC_CORE = join(getAgentDir(), "extensions", "spec", "core");
+/** The spec check's hidden re-prompt on a merge/promote turn. */
+const SPEC_CHECK_MESSAGE = "spec-check";
 
 /**
  * How long one backend's discovery stands before a Delegate turn refreshes it in the background:
@@ -363,12 +386,19 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		}
 	}
 
+	/** This session's active triple on the bus (state.ts MODE_STATE_EVENT). */
+	function publishActive(): void {
+		pi.events?.emit(MODE_STATE_EVENT, activeOf(active));
+	}
+	pi.events?.on(MODE_DISCOVER_EVENT, () => publishActive());
+
 	async function setMode(next: Mode, ctx: ExtensionContext): Promise<void> {
 		if (next === active.mode) {
 			renderStatus(ctx);
 			return;
 		}
 		active = { ...active, mode: next };
+		publishActive();
 		appendSwitch({ mode: next });
 		if (next === "delegate") {
 			if (active.strict) applyStrictTools();
@@ -395,6 +425,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			return;
 		}
 		active = withMinor(active, minor, on);
+		publishActive();
 		appendSwitch({ minor, on });
 		if (minor === "spec") recomputeRoutes();
 		syncHostSection();
@@ -465,6 +496,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			}
 		}
 		active = next;
+		publishActive();
 		let restoredHead: ReturnType<typeof restoreHead> = { head: undefined, told: undefined, guides: [] };
 		try {
 			restoredHead = restoreHead(ctx.sessionManager.getBranch());
@@ -776,6 +808,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				const changed = strict !== active.strict;
 				if (changed) {
 					active = { ...active, strict };
+					publishActive();
 					appendSwitch({ strict });
 					if (active.mode === "delegate") {
 						if (strict) applyStrictTools();
@@ -905,6 +938,114 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		restoreAlign(ctx);
 	});
 
+	// ── Spec on: the mechanical checks (spec-guard.ts) ──
+	// After any tool call, bash included, the census runs on a Git delta: the first changed file in the
+	// spec boundary and each new file get a `[spec census]` digest appended to that tool result. At the
+	// end of a run that edited, committed, promoted or merged, the reply's last line must be an
+	// `Also changes:` line naming every foreign § computed from Git: a run that merged with the worktree
+	// tool or ran promote --write is re-prompted once, any other gets a warning. Silent without a spec,
+	// Git or the tools, in a remote session, and on any error. PI_SPEC_CENSUS_HOOK=0 turns the census
+	// off, PI_SPEC_CHECK=0 the line check (a trial arm's control).
+	const specCensus = new CensusHook({ core: () => SPEC_CORE });
+	const specOn = () => hasMinor(active, "spec") && remoteTarget === undefined;
+	/** What this run did, for the line check. */
+	let specRun: {
+		start?: GitView;
+		changed: boolean;
+		merged: boolean;
+		promoted: boolean;
+		/** Spec roots a promote --write named, with HEAD before it ran. */
+		roots: Map<string, string>;
+		/** Foreign § the worktrees extension computed for this run's merges. */
+		mergeForeign: string[];
+	} = { changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
+	let specReprompted = false;
+	const resetSpecRun = () => {
+		specRun = { changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
+		specReprompted = false;
+	};
+
+	// worktrees/index.ts: every merge, the tool's or one detected after plain git, with its foreign §.
+	pi.events?.on("worktrees:merged", (data: unknown) => {
+		const e = data as { version?: unknown; how?: unknown; foreign?: unknown } | undefined;
+		if (e?.version !== 1) return;
+		specRun.changed = true;
+		if (e.how === "tool") specRun.merged = true;
+		if (Array.isArray(e.foreign)) specRun.mergeForeign.push(...e.foreign.filter((id): id is string => typeof id === "string"));
+	});
+
+	pi.on("tool_call", async (event, ctx) => {
+		if (!specOn() || event.toolName !== "bash") return;
+		const command = (event.input as { command?: unknown } | undefined)?.command;
+		if (typeof command !== "string" || !promoteWrites(command)) return;
+		// The promote's base: HEAD of the spec root it writes, before it runs (it may commit in the same call).
+		const root = resolve(ctx.cwd, commandRoot(command) ?? ".");
+		if (specRun.roots.has(root)) return;
+		const view = await gitView(root);
+		if (view?.head) specRun.roots.set(root, view.head);
+	});
+
+	pi.on("tool_result", async (event, ctx) => {
+		if (!specOn()) return;
+		if (!event.isError) {
+			const command = event.toolName === "bash" ? (event.input as { command?: unknown } | undefined)?.command : undefined;
+			if (event.toolName === "edit" || event.toolName === "write") specRun.changed = true;
+			if (typeof command === "string") {
+				if (gitCommits(command) || gitMerges(command)) specRun.changed = true;
+				if (promoteWrites(command)) specRun.changed = specRun.promoted = true;
+			}
+			if (event.toolName === "worktree" && (event.input as { action?: unknown } | undefined)?.action === "merge") specRun.changed = specRun.merged = true;
+		}
+		if (process.env.PI_SPEC_CENSUS_HOOK === "0") return;
+		const { text, failure } = await specCensus.after({
+			cwd: ctx.cwd,
+			toolName: event.toolName,
+			input: event.input,
+			signal: ctx.signal,
+			commands: bashCommands(ctx.sessionManager.getBranch()),
+			sessionStart: ctx.sessionManager.getHeader()?.timestamp,
+		});
+		if (failure && ctx.hasUI) ctx.ui.notify(failure, "warning");
+		if (text) return { content: [...event.content, { type: "text" as const, text }] };
+	});
+
+	/** The foreign § this run landed, from Git: merges (worktrees), the session's tree and each promoted root. */
+	async function specRunForeign(cwd: string): Promise<string[]> {
+		const ids = new Set(specRun.mergeForeign);
+		const bases = new Map(specRun.roots);
+		const root = await findSpecRoot(cwd);
+		if (root && specRun.start?.head && !bases.has(root)) bases.set(root, specRun.start.head);
+		// Against the work tree: a promotion not committed yet lands all the same.
+		for (const [dir, base] of bases) for (const id of (await foreignBetween(dir, base, undefined, SPEC_CORE)) ?? []) ids.add(id);
+		return [...ids].sort();
+	}
+
+	pi.on("agent_before_settle", async (event, ctx) => {
+		if (!specOn() || process.env.PI_SPEC_CHECK === "0" || event.outcome !== "completed") return;
+		try {
+			const end = await gitView(ctx.cwd);
+			if (!specRun.changed && !viewChanged(specRun.start, end)) return;
+			const foreign = await specRunForeign(ctx.cwd);
+			const check = checkAlsoChanges(lastReplyText, { required: true, foreign });
+			if (check.ok) return;
+			const blocking = specRun.merged || specRun.promoted;
+			if (blocking && !specReprompted) {
+				specReprompted = true;
+				const what = [specRun.merged ? "merged a worktree" : "", specRun.promoted ? "ran promote --write" : ""].filter(Boolean).join(" and ");
+				return {
+					entries: [...event.entries, { type: "custom_message" as const, customType: SPEC_CHECK_MESSAGE, display: false, content: repromptText(check, foreign, what) }],
+					continue: true,
+				};
+			}
+			if (ctx.hasUI) {
+				const list = foreign.length ? ` Foreign § from Git: ${foreign.join(", ")}.` : "";
+				ctx.ui.notify(`${CHECK_TAG} ${describeProblem(check)}.${list}`, "warning");
+			}
+		} catch {
+			// The check is best-effort; the run settles as it would.
+		}
+	});
+
 	pi.on("session_shutdown", async () => {
 		alignDocs = [];
 		legacyAlign = null;
@@ -965,9 +1106,14 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	// change): the base sections carry the current block before the run's first request. A run an
 	// extension's message started (no before_agent_start) gets its mode note here, steered in ahead of
 	// its first request; a continuation of a run (after a compaction or a nudge) keeps the run's mode.
-	pi.on("agent_start", async () => {
+	pi.on("agent_start", async (_event, ctx) => {
 		if (!running) {
 			running = true;
+			resetSpecRun();
+			if (hasMinor(active, "spec") && remoteTarget === undefined) {
+				specRun.start = await gitView(ctx.cwd);
+				if (process.env.PI_SPEC_CENSUS_HOOK !== "0") await specCensus.prime(ctx.cwd);
+			}
 			fixHead();
 			const modeNote = takeNote();
 			if (modeNote) pi.sendMessage(modeNote);
@@ -978,6 +1124,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	pi.on("session_start", async (event, ctx) => {
 		lastCtx = ctx;
 		running = false;
+		specCensus.reset();
 		restoreActiveState(event?.reason, ctx);
 		restoreAlign(ctx);
 		if (viewerShortcutClash && ctx.hasUI) {

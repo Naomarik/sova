@@ -140,15 +140,45 @@ writer**).
   the agent directory (`<agent dir>/extensions/spec/core/`, resolved like pi's
   own agent dir: an exact `~` or a leading `~/` is home), always through that
   `sh` recipe, never a guessed path. A copy inside the
-  project is read and asked about first. The reply ends with one exact line,
+  project is read and asked about first. A reply on a turn that edited,
+  committed, promoted or merged ends with one exact line,
   `Also changes: §X — <what>` or `Also changes: none`, nothing after it: it
-  names foreign § only, never the task's new claims, and notes (the
-  exemption, a gap) go above it. A request, hook, helper or CSS class is
-  plumbing and never flags. Prompt-only: no widget, command or
-  entry of its own. See `../spec/README.md`.
+  names foreign § only, never the task's new claims (a § the user asked for
+  is still foreign), and notes (the exemption, a gap) go above it; a turn
+  that only answered writes none. A request, hook, helper or CSS class is
+  plumbing and never flags. No widget, command or entry of its own, but two
+  mechanical checks (`spec-guard.ts`, plain node, shared with the Claude Code
+  workers' hooks), silent without a spec, Git or the trusted tools, and in a
+  remote session:
+  - **Census on a Git delta.** After any tool call, bash included, the work
+    tree's `git status` (paths and mtimes) is compared with what the session
+    saw; the first look (a run's start) is the baseline. When a path is new
+    (a commit's files count too), `census --changed --base <session-start
+    HEAD>` runs (`--spec` the draft this session created, else the newest one
+    created since the session started) and, on the first in-boundary change,
+    each new file in the boundary or mapped outside it, or a new foreign §, a
+    short `[spec census]` digest is appended to that tool result, with a
+    "No draft yet" line while there is none. `PI_SPEC_CENSUS_HOOK=0` turns it
+    off.
+  - **The `Also changes:` line.** When a run is about to settle after it
+    edited, committed, promoted or merged (a tool call, a `worktrees:merged`
+    event, or the tree differing from the run's start), the last line is
+    checked against the foreign § computed from Git: the worktrees merge
+    event's list, plus `sova-spec.mjs foreign --base <HEAD at the run's start>`
+    for the session's tree and for each root a `promote --write` named. A run
+    that merged with the worktree tool or ran `promote --write` gets one
+    hidden `spec-check` message naming the list and one more request, never a
+    second; any other run gets a warning. A line `Spec check override: <why>`
+    above the last line accepts a list the agent shows is wrong.
+    `PI_SPEC_CHECK=0` turns it off.
+
+  See `../spec/README.md`.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the
-next prompt. Unknown names hand-edited into `minorModes` are dropped on load.
+next prompt. The active triple (`mode`, `strict`, `minorModes`) is published
+on `pi.events` as `mode:state` (`state.ts` `MODE_STATE_EVENT`) on every change,
+and again on `mode:discover`: the subagents extension reads it to brief the
+workers a spec-on session spawns. Unknown names hand-edited into `minorModes` are dropped on load.
 Toggle them from the palette's Mode category or with `/mode <minor> [on|off]`.
 
 ### Alignments
@@ -488,4 +518,6 @@ node tests/smoke.mjs          # real index.ts against a fake pi host, no model r
 node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
 node tests/note-turn.mjs      # real pi session + scripted provider: a minor toggle keeps the head; notes, reopen, compaction
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
+node --test spec-guard.test.ts # the spec checks: git delta census digest (real Git + spec tools), the Also-changes line, command detection
+node tests/spec-turn.mjs      # real pi session + scripted provider: the census digest on a bash write, warn vs one re-prompt, mode:state
 ```

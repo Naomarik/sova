@@ -18,7 +18,7 @@ runs the tools itself.
 
 | Path | What it is |
 | --- | --- |
-| `core/sova-spec.mjs` | The read-only core: `check`, `census`, `scope`, `impact` |
+| `core/sova-spec.mjs` | The read-only core: `check`, `census`, `foreign`, `scope`, `impact` |
 | `core/README.md` | The core's reference: commands, exit codes, the manifest format it reads, evidence states |
 | `core/sova-spec-draft.mjs` | Drafts: full-copy proposals of `.sova/spec`, their evidence, and guarded promotion into the current docs |
 | `DRAFTS.md` | The draft workflow's reference |
@@ -29,7 +29,7 @@ runs the tools itself.
 ## Core (read-only)
 
 ```sh
-node core/sova-spec.mjs <check | census [--changed [--base <rev>] [--related]] | scope '<§id>' [--budget <bytes>] | impact '<§id>'> [--root DIR] [--spec DIR] [--json]
+node core/sova-spec.mjs <check | census [--changed [--base <rev>] [--related]] | foreign --base <rev> [--head <rev>] | scope '<§id>' [--budget <bytes>] | impact '<§id>'> [--root DIR] [--spec DIR] [--json]
 ```
 
 `census --changed` checks one task's files instead of the whole boundary. It
@@ -68,6 +68,17 @@ unchanged. The rule counts a request, hook, helper or CSS class as plumbing, and
 says the reply's last line names these foreign §, never the task's new claims.
 Plain `census` and `check` are as before.
 
+`census --changed` also lists, as `mappedOutside`, changed files outside the
+boundary that some claim's `code` maps (a `pi-config` file, say), with their §;
+those § join `foreign`. The boundary itself is not widened.
+
+`foreign --base <rev>` lists the foreign § the current spec changed from
+`<rev>` to `--head <rev>` (default: the working tree, so an uncommitted
+promotion counts): each § whose prose or record changed, was deleted, or gained
+a new child, minus the § created in that range. It is the list a merge or
+promote turn's `Also changes:` line must name; `worktree merge` and
+`promote --write` print it for their own range.
+
 Quote IDs, because `§` is not a shell word character. `scope` and `impact` read a
 bare namespace like `§app.shell` as `§app/shell`, with an `id-alias` note. `--budget` is accepted by
 `scope` only; with any other command it's a usage error. `--spec` reads another
@@ -105,6 +116,7 @@ node core/sova-spec-draft.mjs evidence NAME --id '<§id>' --by WHO --verificatio
 node core/sova-spec-draft.mjs promote NAME (--id '<§id>' | --all) [--meta KEY] [--file PATH] \
   [--plan SHA] --root DIR [--write] [--json]
 node core/sova-spec-draft.mjs recover --root DIR [--write] [--json]
+node core/sova-spec-draft.mjs merge-manifest --root DIR [--write] [--json]
 ```
 
 1. **`new`** copies the whole current manifest and claims tree into
@@ -133,6 +145,10 @@ node core/sova-spec-draft.mjs recover --root DIR [--write] [--json]
    draft doesn't touch are kept.
 5. **`recover`** rolls back an interrupted promotion. Until it runs, every
    other write refuses.
+6. **`merge-manifest`** resolves a Git merge conflict in `manifest.json` record
+   by record (index stages base, ours, theirs) and refuses any key both sides
+   changed differently. It is the only sanctioned way to settle that conflict;
+   [PROMOTE.md](PROMOTE.md) has the rule.
 
 When to draft, and how to keep a baseline apart from a feature, is in
 [`../mode/spec-mode.md`](../mode/spec-mode.md). Evidence is bytes, revisions and the recorder's statement.
@@ -227,6 +243,25 @@ component is checked and the final open refuses symlinks. Even so, a parent
 directory swapped for a symlink between the check and the open is not fully
 prevented. Nothing here is a filesystem sandbox or safe against a hostile
 writer on the same machine.
+
+## What the minor mode checks by itself
+
+With spec on, `../mode/spec-guard.ts` runs these tools for the agent (in pi
+from `../mode/index.ts`; in Claude Code workers from the hooks the subagents
+spawn path installs):
+
+- after any tool call, bash included, a `git status` delta that shows a first
+  changed file in the boundary, or a new one, runs `census --changed` and
+  appends a short `[spec census]` digest to that tool result, saying so when
+  the session has no draft yet;
+- at the end of a turn that edited, committed, promoted or merged, the reply's
+  last line must be `Also changes: …` naming every § `foreign` computes for
+  the turn. A turn that ran `worktree merge` or `promote --write` is sent back
+  once with the computed list; elsewhere a miss is a warning. A line
+  `Spec check override: <why>` right above the last line accepts a list the
+  agent shows is wrong.
+
+`PI_SPEC_CENSUS_HOOK=0` and `PI_SPEC_CHECK=0` turn them off in pi.
 
 ## Where the minor mode finds them (path and trust)
 

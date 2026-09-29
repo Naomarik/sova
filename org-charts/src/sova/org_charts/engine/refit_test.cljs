@@ -595,3 +595,21 @@
     (core/send! eng "par" :hold/cancel {:by "operator" :id "gather/start#0"} {:now t0})
     (is (nil? (:confirm (:held (first (:steps (core/send! eng "par" :gather/start (assoc env :to ["a"]) {:now (+ t0 1)}))))))
       "one target: a gather, which it doesn't")))
+
+(deftest a-watcher-that-exists-nowhere-is-dropped-not-thrown
+  (let [store (atom {})
+        eng   (parent (new-eng {:load-cold (fn [sid] (get @store sid))}))]
+    (core/send! eng "par" :kid/spawn (assoc overseer :name "ana") {:now t0})
+    ;; a clone: the kid's snapshot names "par" as its watcher, but "par" (host-local) did not travel
+    (let [text (core/dump eng "kid/ana")
+          eng2 (new-eng {:load-cold (fn [_] nil)})]
+      (core/load! eng2 "kid/ana" text)
+      (let [r (core/resume! eng2 ["kid/ana"] {:now (+ t0 1)})]
+        (is (= [{:from "kid/ana" :watcher "par"}] (:dangling r)) "reported, not thrown")
+        (is (= [] (:sova/watchers (core/data eng2 "kid/ana"))) "and taken off the watchers")
+        (is (contains? (:snapshots r) "kid/ana")))
+      (testing "later moves notify no one and throw nothing"
+        (is (empty? (:dangling (core/send! eng2 "kid/ana" :kid/grow {} {:now (+ t0 2)})))))
+      (testing "an explicit watch of a session that exists nowhere still throws"
+        (is (= core/unknown-session-type
+              (:type (ex-data (thrown #(core/send! eng "par" :kid/watch {:target "kid/nobody"} {:now (+ t0 3)}))))))))))

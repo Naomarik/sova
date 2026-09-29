@@ -670,6 +670,25 @@
     (reset! (cx eng) {})
     (reset! captured [])))
 
+(defn- drop-dangling!
+  "`watcher` exists nowhere: take it off `source`'s watchers (saved, logged as `:sova/unwatched`
+   with `:dangling true`) and report it under the call's `:dangling`."
+  [eng source watcher]
+  (cx! eng :dangling {:from source :watcher watcher})
+  (if-not (and source (loaded? eng source))
+    []
+    (let [wm  (wmem-of eng source)
+          ws  (vec (get-in wm [data-key :sova/watchers]))
+          ws' (vec (remove #{watcher} ws))
+          c   (configuration eng source)]
+      (if (= ws ws')
+        []
+        (do (save! eng source (assoc-in wm [data-key :sova/watchers] ws'))
+            [{:session-id source :chart (chart-name-of eng source) :at ((:clock (engine eng)))
+              :event :sova/unwatched :data {:watcher watcher :dangling true} :by "system"
+              :before c :after c :changed {"sova/watchers" [ws ws']} :effects [] :outbox [] :holds []
+              :holds-ended [] :running (running? eng source) :microsteps 0 :saved true :feed :quiet}])))))
+
 (defn- drain!
   "Deliver every deliverable event (restricted to `pred-event` when given), one at a time in
    (time, ordinal) order. Events for sessions this engine cannot load are reported undelivered."
@@ -679,10 +698,20 @@
       (if (> guard 10000)
         (throw (ex-info "drain did not settle (a send loop?)" {:processed guard}))
         (if-let [evt (q/take-due! queue (constantly true) pred-event)]
-          (let [target (:target evt)]
-            (if (ensure-loaded! eng target)
-              (recur (into log (process-one eng target evt)) undelivered (inc guard))
-              (recur log (conj undelivered target) (inc guard))))
+          (let [target (:target evt)
+                link?  (= :link/moved (:name evt))
+                ok     (if link?
+                         ;; a watcher that exists nowhere (a host-local session a clone doesn't carry,
+                         ;; a deleted one) is a dangling link, never a reason to fail the step
+                         (try (ensure-loaded! eng target)
+                              (catch :default e
+                                (if (= unknown-session-type (:type (ex-data e))) ::dangling (throw e))))
+                         (ensure-loaded! eng target))]
+            (cond
+              (= ok ::dangling)
+              (recur (into log (drop-dangling! eng (::sc/source-session-id evt) target)) undelivered (inc guard))
+              ok (recur (into log (process-one eng target evt)) undelivered (inc guard))
+              :else (recur log (conj undelivered target) (inc guard))))
           [log undelivered])))))
 
 (defn- save-state [eng]
@@ -730,6 +759,7 @@
      :spawned     (vec (:spawned c))
      :loaded      (vec (distinct (:loaded c)))
      :absorbed    (vec (distinct (:absorbed c)))
+     :dangling    (vec (distinct (:dangling c)))
      :stale       (vec (:stale c))
      :errors      @captured
      ;; One snapshot per session this call moved (a step, or a pending event added or removed):

@@ -4,12 +4,22 @@ import { ApiError, cancelVoiceInstall, installVoice, repairVoice, transcribeVoic
 import { announce } from "../lib/ui-state";
 import { captureSupported, startCapture, type Recorder } from "../lib/voice/capture";
 import { backendWithDevice, diskSize, megabytes, micErrorSentence, readyLine, STEP_LABEL, STEP_STATE_WORD, stepFigure, unsupportedReason } from "../lib/voice/format";
+import { voiceDeviceInfo } from "../lib/voice/device";
 import { adoptVoice, refreshVoice, voiceLog, voiceStatus, voiceStatusError, watchVoice } from "../lib/voice/status";
 import { SPEECH_RMS } from "../lib/voice/wav";
 import { Banner, Icon, trapFocus } from "./ui";
+import { VoiceCalibration } from "./VoiceCalibration";
+import { VoiceModels } from "./VoiceModels";
 import "../design/voice.css";
 
 const time24 = (at: number) => new Date(at).toLocaleTimeString("en-GB", { hour12: false });
+
+/** What Uninstall removes besides whisper.cpp: transcribe.cpp once Parakeet brought it, then the models. */
+const modelsOnDisk = (s: VoiceStatus) => {
+  const kept = s.models.filter((m) => m.state === "ready" || m.state === "downloading" || m.state === "verifying" || m.state === "failed");
+  const engine = kept.some((m) => m.engine === "transcribe") ? "transcribe.cpp, " : "";
+  return `${engine}${kept.length === 1 ? "the model" : `${kept.length} models`}`;
+};
 
 /** What setup will do, in one or two sentences (§design.copy-deck/settings-voice). */
 function intro(s: VoiceStatus): string {
@@ -87,7 +97,7 @@ function MicTest() {
       return;
     }
     try {
-      const out = await transcribeVoice(clip.wav);
+      const out = await transcribeVoice(clip.wav, voiceDeviceInfo());
       setResult(out.text ? `Heard: “${out.text}” (${(out.ms / 1000).toFixed(1)} s)` : "Heard nothing.");
     } catch (err) {
       setResult(`Couldn't transcribe the clip. ${(err as Error).message}`);
@@ -282,20 +292,24 @@ export function VoiceSetupView(props: { context: "sheet" | "settings" }) {
                   <Banner tone="error" title="whisper-server stopped 3 times in a minute." body="Repair to try again." />
                 </Show>
                 <MicTest />
-                <div class="voice-actions">
-                  <button type="button" class="button" aria-disabled={busy() ? "true" : undefined} title="Checks every file again and reruns the self-test." onClick={() => void act(repairVoice, "Repairing voice.")}>
-                    <Icon name="wrench" small />
-                    Repair
-                  </button>
-                  <button type="button" class="button button-destructive" onClick={() => setConfirmUninstall(true)}>
-                    Uninstall Voice
-                  </button>
+                <VoiceModels st={st()} busy={busy()} act={act} />
+                <VoiceCalibration st={st()} busy={busy()} act={act} />
+                <div class="voice-section">
+                  <div class="voice-actions">
+                    <button type="button" class="button" aria-disabled={busy() ? "true" : undefined} title="Checks every file again, every model included, and reruns the self-test." onClick={() => void act(repairVoice, "Repairing voice.")}>
+                      <Icon name="wrench" small />
+                      Repair
+                    </button>
+                    <button type="button" class="button button-destructive" onClick={() => setConfirmUninstall(true)}>
+                      Uninstall Voice
+                    </button>
+                  </div>
                 </div>
                 <Show when={confirmUninstall()}>
                   <Banner
                     tone="warn"
                     title="Uninstall voice?"
-                    body={`The voice folder${st().diskBytes !== undefined ? ` (${diskSize(st().diskBytes!)})` : ""} goes away: whisper.cpp, the model, and the logs. System packages stay installed.`}
+                    body={`The voice folder${st().diskBytes !== undefined ? ` (${diskSize(st().diskBytes!)})` : ""} goes away: whisper.cpp, ${modelsOnDisk(st())}, the calibration clips, and the logs. System packages stay installed.`}
                     action={
                       <span class="cluster">
                         <button type="button" class="button button-sm button-ghost" onClick={() => setConfirmUninstall(false)}>

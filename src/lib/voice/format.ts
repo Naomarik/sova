@@ -1,6 +1,6 @@
 // Voice copy and figures (§design.copy-deck/composer, §design.copy-deck/settings-voice), pure.
 
-import type { VoiceBackend, VoiceStatus, VoiceStep, VoiceStepId, VoiceStepState } from "../../../shared/protocol";
+import type { VoiceBackend, VoiceCatalogModel, VoiceDecodeSettings, VoiceEngine, VoiceStatus, VoiceStep, VoiceStepId, VoiceStepState } from "../../../shared/protocol";
 
 /** Seconds as m:ss. */
 export function clock(sec: number): string {
@@ -56,7 +56,10 @@ export function readyLine(s: VoiceStatus): string {
   if (!inst) return "";
   const parts = ["Ready", backendWithDevice(inst.backend, inst.device)];
   if (inst.selftestMs > 0) parts.push(`self-test ${(inst.selftestMs / 1000).toFixed(1)} s`);
-  parts.push("large-v3-turbo q5_0");
+  const active = s.models?.find((m) => m.id === s.activeModel);
+  // "whisper.cpp large-v3-turbo q5_0"; "transcribe.cpp Parakeet TDT 0.6B v2 · q8_0" (§design.copy-deck/settings-voice).
+  if (!active) parts.push("whisper.cpp large-v3-turbo q5_0");
+  else parts.push(`${ENGINE_LABEL[active.engine]} ${active.engine === "transcribe" ? modelName(active) : `${active.label} ${active.quant}`}`);
   if (s.diskBytes !== undefined) parts.push(`${diskSize(s.diskBytes)} on disk`);
   parts.push(s.runtime.running ? "Loaded" : s.runtime.starting ? "Loading" : "Not loaded");
   return parts.join(" · ");
@@ -88,3 +91,74 @@ export function recordingText(sec: number, capSec: number): string {
 }
 
 export const MAX_RECORD_SEC = 300;
+
+// ---- models and calibration (§app.settings-dialog/voice-models, §app.settings-dialog/voice-calibration) ----
+
+export const ENGINE_LABEL: Record<VoiceEngine, string> = { whisper: "whisper.cpp", transcribe: "transcribe.cpp" };
+
+/** "large-v3-turbo · q5_0", "Parakeet TDT 0.6B v2 · q8_0". */
+export const modelName = (m: Pick<VoiceCatalogModel, "label" | "quant">): string => `${m.label} · ${m.quant}`;
+
+/** "English only" or "English and 99 more". */
+export const languagesWord = (l: VoiceCatalogModel["languages"]): string => (l === "en" ? "English only" : "English and 99 more");
+
+/** A 0–1 word error as "1.8%". */
+export const percentWer = (wer: number): string => `${(Math.round(wer * 1000) / 10).toFixed(1)}%`;
+
+/** Milliseconds per clip as "0.42 s". */
+export const perClip = (ms: number): string => `${(ms / 1000).toFixed(2)} s`;
+
+/** Time left, rounded the way a person says it: "About 40 s left.", "About 3 min left." */
+export function etaSentence(sec: number): string {
+  if (sec < 60) return `About ${Math.max(5, Math.round(sec / 5) * 5)} s left.`;
+  return `About ${Math.round(sec / 60)} min left.`;
+}
+
+const PROMPT_WORD: Record<VoiceDecodeSettings["prompt"], string> = { none: "no prompt", list: "hotword list", sentence: "hotword sentence" };
+
+/** A setting in words: "beam 5 · hotword sentence · voice detection on · no fallback". */
+export function settingsWords(s: VoiceDecodeSettings): string {
+  return [`beam ${s.beamSize}`, PROMPT_WORD[s.prompt], s.vad ? "voice detection on" : "voice detection off", s.temperatureInc > 0 ? "fallback" : "no fallback"].join(" · ");
+}
+
+/** "40 s", "2 min": a sweep estimate. */
+export const roughTime = (sec: number): string => (sec < 60 ? `${Math.max(10, Math.round(sec / 10) * 10)} s` : `${Math.round(sec / 60)} min`);
+
+const bare = (w: string) => w.replace(/[^\p{L}\p{N}']+/gu, "");
+const norm = (w: string) => bare(w).toLowerCase();
+
+/** The one jargon word scored case-sensitively (as the jargon count does): only "Sova" needs its capital. */
+const CASED = "Sova";
+
+export interface DiffWord {
+  word: string;
+  /** same: heard as read; missed: in the reference, not heard (−); extra: heard, not in the reference (+);
+      case: "Sova" heard in the wrong case (~), a jargon miss that word error ignores. */
+  op: "same" | "missed" | "extra" | "case";
+}
+
+/** The reference and what was heard, word by word (case and punctuation ignored for the match). */
+export function wordDiff(reference: string, heard: string): DiffWord[] {
+  const a = reference.split(/\s+/).filter((w) => norm(w));
+  const b = heard.split(/\s+/).filter((w) => norm(w));
+  const na = a.map(norm);
+  const nb = b.map(norm);
+  // Longest common subsequence, then walk it.
+  const L = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) L[i]![j] = na[i] === nb[j] ? L[i + 1]![j + 1]! + 1 : Math.max(L[i + 1]![j]!, L[i]![j + 1]!);
+  const out: DiffWord[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    if (na[i] === nb[j]) {
+      out.push({ word: b[j]!, op: bare(a[i]!) === CASED && bare(b[j]!) !== CASED ? "case" : "same" });
+      i++;
+      j++;
+    } else if (L[i + 1]![j]! >= L[i]![j + 1]!) out.push({ word: a[i++]!, op: "missed" });
+    else out.push({ word: b[j++]!, op: "extra" });
+  }
+  while (i < a.length) out.push({ word: a[i++]!, op: "missed" });
+  while (j < b.length) out.push({ word: b[j++]!, op: "extra" });
+  return out;
+}
+

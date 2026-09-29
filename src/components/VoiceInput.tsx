@@ -1,6 +1,7 @@
 import { createEffect, createSignal, onCleanup, Show, type Accessor } from "solid-js";
 import { Portal } from "solid-js/web";
 import { ApiError, transcribeVoice, warmVoice } from "../lib/api";
+import { voiceDeviceInfo } from "../lib/voice/device";
 import { toast } from "../lib/ui-state";
 import { captureSupported, startCapture, type Clip, type Recorder } from "../lib/voice/capture";
 import {
@@ -106,7 +107,7 @@ export function createVoiceInput(target: VoiceTarget): VoiceControl {
       }
     }));
     try {
-      const out = await transcribeVoice(clip.wav, target.hint?.() ?? null);
+      const out = await transcribeVoice(clip.wav, voiceDeviceInfo(), target.hint?.() ?? null);
       kept = null;
       const n = out.text ? insert(out.text) : 0;
       if (n === 0) {

@@ -5,6 +5,7 @@
 import { createSignal, onCleanup } from "solid-js";
 import type { VoiceLogLine, VoiceStatus } from "../../../shared/protocol";
 import { getVoiceStatus } from "../api";
+import { voiceDeviceInfo } from "./device";
 
 const [status, setStatus] = createSignal<VoiceStatus | null>(null);
 const [error, setError] = createSignal<string | null>(null);
@@ -18,7 +19,7 @@ let withSize = 0;
 /** Read the status now (one request at a time); appends the new log lines. */
 export function refreshVoice(): Promise<VoiceStatus | null> {
   if (inflight) return inflight;
-  inflight = getVoiceStatus(since, withSize > 0)
+  inflight = getVoiceStatus(since, withSize > 0, voiceDeviceInfo())
     .then((s) => {
       if (s.log.seq < since) {
         // The server restarted: its log starts over.
@@ -53,6 +54,10 @@ export function adoptVoice(s: VoiceStatus): void {
   setStatus(s);
 }
 
+/** Setup, a model job, or a calibration sweep is running: poll every second. */
+const jobRunning = (s: VoiceStatus | null): boolean =>
+  !!s && (s.state === "installing" || (!!s.modelJob && !s.modelJob.outcome) || !!s.sweep || s.calibration?.run?.phase === "running");
+
 let watchers = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 const tick = () => {
@@ -60,7 +65,7 @@ const tick = () => {
   if (watchers === 0) return;
   void refreshVoice().finally(() => {
     if (watchers === 0 || document.hidden) return;
-    timer = setTimeout(tick, status()?.state === "installing" ? 1000 : 10_000);
+    timer = setTimeout(tick, jobRunning(status()) ? 1000 : 10_000);
   });
 };
 const onVisible = () => {

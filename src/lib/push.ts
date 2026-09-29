@@ -75,12 +75,13 @@ export async function deviceIdOf(endpoint: string): Promise<string> {
 
 export type PushSupport = "ok" | "insecure" | "unsupported" | "ios-home-screen" | "no-worker";
 
-const standalone = (): boolean =>
+/** This page is the installed (home-screen) app, not a browser tab. */
+export const isInstalledApp = (): boolean =>
   (navigator as Navigator & { standalone?: boolean }).standalone === true || window.matchMedia?.("(display-mode: standalone)").matches === true;
 
 /** Whether this browser can subscribe, and if not, the one reason to say. */
 export function pushSupport(): PushSupport {
-  if (isAppleMobile(navigator.userAgent, navigator.maxTouchPoints ?? 0) && !standalone()) return "ios-home-screen";
+  if (isAppleMobile(navigator.userAgent, navigator.maxTouchPoints ?? 0) && !isInstalledApp()) return "ios-home-screen";
   if (!window.isSecureContext) return "insecure";
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return "unsupported";
   // The service worker registers in production builds only (sw-register.ts).

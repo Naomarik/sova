@@ -1,4 +1,5 @@
 import type {
+  VoiceDeviceInfo,
   VoiceStatus,
   VoiceTranscript,
   AutoTitleResponse,
@@ -1132,9 +1133,10 @@ export const removeCodingWorktree = (orgId: string, projectId: string, sessionId
 
 // ---- voice input (§chat/voice, §app.settings-dialog/voice) ---------------------------------------
 
-/** The voice status, with the setup log after `since`; `size` also measures the voice folder. */
-export const getVoiceStatus = (since = 0, size = false) =>
-  request<VoiceStatus>(`/api/voice?since=${since}${size ? "&size=1" : ""}`, { cache: "no-store" });
+/** The voice status, with the setup log after `since`; `size` also measures the voice folder. `device`: this
+    device's voice id (§chat.voice/decoding), which adds its settings and calibration. */
+export const getVoiceStatus = (since = 0, size = false, device?: VoiceDeviceInfo) =>
+  request<VoiceStatus>(`/api/voice?since=${since}${size ? "&size=1" : ""}${device ? `&${deviceQuery(device)}` : ""}`, { cache: "no-store" });
 /** Start (or resume) setup: the detected GPU backend, or the CPU. */
 export const installVoice = (backend: "gpu" | "cpu" = "gpu") => request<VoiceStatus>("/api/voice/install", jsonInit("POST", { backend }));
 export const cancelVoiceInstall = () => request<VoiceStatus>("/api/voice/install/cancel", jsonInit("POST"));
@@ -1142,10 +1144,30 @@ export const repairVoice = () => request<VoiceStatus>("/api/voice/repair", jsonI
 export const uninstallVoice = () => request<{ freed: number }>("/api/voice", jsonInit("DELETE"));
 /** Load whisper while the user speaks; failures surface on the transcribe. */
 export const warmVoice = () => fetch("/api/voice/warm", { method: "POST" }).catch(() => {});
-/** A 16 kHz mono WAV → its text. `hint`: the session folder's name, a prompt word. */
-export const transcribeVoice = (wav: Uint8Array, hint?: string | null) =>
-  request<VoiceTranscript>(`/api/voice/transcribe${hint ? `?hint=${encodeURIComponent(hint)}` : ""}`, {
-    method: "POST",
-    headers: { "Content-Type": "audio/wav" },
-    body: wav as Uint8Array<ArrayBuffer>,
-  });
+/** `device=<id>&label=<label>[&app=1]`: the id decides; the label and flag only refresh the host's record. */
+const deviceQuery = (d: VoiceDeviceInfo) => `device=${encodeURIComponent(d.id)}&label=${encodeURIComponent(d.label)}${d.app ? "&app=1" : ""}`;
+const wavInit = (method: string, wav: Uint8Array): RequestInit => ({ method, headers: { "Content-Type": "audio/wav" }, body: wav as Uint8Array<ArrayBuffer> });
+/** A 16 kHz mono WAV → its text, decoded with `device`'s settings. `hint`: the session folder's name, a prompt word. */
+export const transcribeVoice = (wav: Uint8Array, device: VoiceDeviceInfo, hint?: string | null) =>
+  request<VoiceTranscript>(`/api/voice/transcribe?${deviceQuery(device)}${hint ? `&hint=${encodeURIComponent(hint)}` : ""}`, wavInit("POST", wav));
+
+// Models (§app.settings-dialog/voice-models): one job at a time; the status says how it goes.
+const modelPath = (id: string) => `/api/voice/models/${encodeURIComponent(id)}`;
+export const downloadVoiceModel = (id: string) => request<VoiceStatus>(`${modelPath(id)}/download`, jsonInit("POST"));
+export const cancelVoiceModelDownload = () => request<VoiceStatus>("/api/voice/models/cancel", jsonInit("POST"));
+export const useVoiceModel = (id: string) => request<VoiceStatus>(`${modelPath(id)}/use`, jsonInit("POST"));
+export const deleteVoiceModel = (id: string) => request<{ freed: number }>(modelPath(id), jsonInit("DELETE"));
+
+// Calibration (§app.settings-dialog/voice-calibration): always one device's.
+const calPath = (path: string, device: string) => `/api/voice/calibration${path}?device=${encodeURIComponent(device)}`;
+/** Upload sentence `n`'s take, replacing an earlier one. */
+export const putCalibrationClip = (device: VoiceDeviceInfo, n: number, wav: Uint8Array) =>
+  request<VoiceStatus>(`/api/voice/calibration/clips/${n}?${deviceQuery(device)}`, wavInit("PUT", wav));
+export const deleteCalibrationClips = (device: string) => request<VoiceStatus>(calPath("/clips", device), jsonInit("DELETE"));
+export const runCalibration = (info: VoiceDeviceInfo) => request<VoiceStatus>(calPath("/run", info.id), jsonInit("POST", { device: info }));
+export const stopCalibration = (device: string) => request<VoiceStatus>(calPath("/stop", device), jsonInit("POST"));
+/** Save a results row as this device's settings for the active model. */
+export const applyCalibration = (info: VoiceDeviceInfo, key: string) => request<VoiceStatus>(calPath("/apply", info.id), jsonInit("POST", { device: info, key }));
+export const revertCalibration = (info: VoiceDeviceInfo) => request<VoiceStatus>(calPath("/revert", info.id), jsonInit("POST", { device: info }));
+/** Forget a device: its settings, clips and runs. */
+export const forgetVoiceDevice = (id: string) => request<VoiceStatus>(`/api/voice/devices/${encodeURIComponent(id)}`, jsonInit("DELETE"));

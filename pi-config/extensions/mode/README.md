@@ -168,7 +168,9 @@ writer**).
     in instead". Both look at the trees the call works in (`cd`, `git -C`).
     Evidence commits `census --changed` reports as orphaned (`orphanedEvidence`)
     that the guard didn't already name are relayed once; a manifest conflict
-    during a rebase says to abort it rather than run merge-manifest.
+    during a rebase says to abort it rather than run merge-manifest. A
+    promote call's `driftWarnings` (a removed quantity another § still states)
+    are relayed on its result as a `[spec check]` warning, never a block.
     `PI_SPEC_CENSUS_HOOK=0` turns it off.
   - **The `Also changes:` line.** When a run is about to settle after it
     edited, committed, promoted or merged (a tool call, a `worktrees:merged`

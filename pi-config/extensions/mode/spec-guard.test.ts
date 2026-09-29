@@ -39,6 +39,8 @@ import {
 	treeStart,
 	treeTurn,
 	workerReported,
+	driftNote,
+	driftWarningsIn,
 	currentSpecPath,
 	sanctionedSpecWrite,
 	SpecWriteGuard,
@@ -598,4 +600,18 @@ test("SpecWriteGuard (M2-B-s2-1's shape): a rebase after evidence and a hand edi
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+test("driftNote: promote's driftWarnings (--json or text form) are relayed as a warning; other calls and an empty list stay silent", () => {
+	const w = 'the draft removed "≥80%" from §a/x, but §a/y still says it: read them; if the fact changed, change it there too (each is a foreign §)';
+	const json = JSON.stringify({ name: "d", ids: ["§a/x"], driftWarnings: [w, 'a "quoted ] bracket"'], meta: [] }, null, 2);
+	assert.deepEqual(driftWarningsIn(`noise [1]\n${json}`), [w, 'a "quoted ] bracket"']);
+	assert.deepEqual(driftWarningsIn(`promote d: §a/x (written)\n  warn drift: ${w}\n`), [w]);
+	const promote = { command: 'node "$core/sova-spec-draft.mjs" promote d --plan abc --write --json' };
+	const note = driftNote("bash", promote, [{ type: "text", text: json }]);
+	assert.match(note ?? "", /^\[spec check\] promote's drift warnings \(a warning, not a block\): \(1\) the draft removed "≥80%" from §a\/x, but §a\/y still says it/);
+	assert.match(note ?? "", /For each: change the stale § in a draft and promote \(name it in `Also changes:`\), or say why it stays\.$/);
+	assert.equal(driftNote("bash", promote, [{ type: "text", text: JSON.stringify({ driftWarnings: [] }) }]), undefined);
+	assert.equal(driftNote("bash", { command: "cat out.json" }, [{ type: "text", text: json }]), undefined);
+	assert.equal(driftNote("read", promote, [{ type: "text", text: json }]), undefined);
 });

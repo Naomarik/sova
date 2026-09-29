@@ -1099,3 +1099,45 @@ export class SpecWriteGuard {
 		return trees;
 	}
 }
+
+// ── promote's drift warnings ─────────────────────────────────────────────────
+
+/** The JSON array starting at `text[i]` (a `[`), or undefined. */
+function jsonArrayAt(text: string, i: number): unknown[] | undefined {
+	let depth = 0;
+	let quoted = false;
+	for (let j = i; j < text.length; j++) {
+		const ch = text[j];
+		if (quoted) {
+			if (ch === "\\") j++;
+			else if (ch === '"') quoted = false;
+		} else if (ch === '"') quoted = true;
+		else if (ch === "[") depth++;
+		else if (ch === "]" && --depth === 0) {
+			try {
+				const value = JSON.parse(text.slice(i, j + 1));
+				return Array.isArray(value) ? value : undefined;
+			} catch {
+				return undefined;
+			}
+		}
+	}
+	return undefined;
+}
+
+/** promote's `driftWarnings` in a tool's output: the `--json` field, or the text form's `warn drift:` lines. */
+export function driftWarningsIn(text: string): string[] {
+	const out: string[] = [];
+	for (const m of text.matchAll(/"driftWarnings"\s*:\s*\[/g)) for (const w of jsonArrayAt(text, m.index + m[0].length - 1) ?? []) if (typeof w === "string") out.push(w);
+	for (const m of text.matchAll(/^\s*warn drift: (.+)$/gm)) out.push(m[1].trim());
+	return [...new Set(out)];
+}
+
+/** For a promote call's result (preview or --write): its drift warnings, relayed as a warning (never a block). */
+export function driftNote(toolName: string, input: unknown, content: unknown): string | undefined {
+	const command = toolName.toLowerCase() === "bash" ? (input as { command?: unknown } | undefined)?.command : undefined;
+	if (typeof command !== "string" || !/sova-spec-draft\.mjs["']?\s+promote\b/.test(command)) return undefined;
+	const warnings = driftWarningsIn(textOf(content));
+	if (!warnings.length) return undefined;
+	return `${CHECK_TAG} promote's drift warnings (a warning, not a block): ${warnings.map((w, i) => `(${i + 1}) ${w}`).join(" ")}\nFor each: change the stale § in a draft and promote (name it in \`Also changes:\`), or say why it stays.`;
+}

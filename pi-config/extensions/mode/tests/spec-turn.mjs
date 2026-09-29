@@ -10,7 +10,7 @@
 // - a worker's promotion committed in a tracked worktree (no tool call of the parent's) makes the turn a
 //   blocking one: one re-prompt naming the foreign § computed from that worktree;
 // - a hand write of the current spec (write tool, shell) and a reset past a draft's evidence commit are
-//   said in the digest of the call that made them;
+//   said in the digest of the call that made them; promote's drift warnings are relayed, never a block;
 // - the active triple is published on the bus (mode:state), and again on mode:discover.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -472,6 +472,14 @@ try {
 	assert.match(seen(requests[at + 1]), new RegExp(`\\[spec census\\] never rebase after evidence \\(PROMOTE\\.md\\): draft ev's evidence commit ${evidenced.slice(0, 12)} \\(§app/shell\\) is no longer on this branch\\. Restore the branch`));
 	assert.equal(seen(requests[at + 1]).split("is no longer on this branch").length, 2, "said once: the census does not repeat the guard's line");
 	git("reset", "-q", "--hard", evidenced);
+
+	// promote's drift warnings reach the model with that tool result, as a warning: no continuation.
+	at = requests.length;
+	const drifted = `: sova-spec-draft.mjs promote feat --write; printf '  warn drift: the draft removed 80%% from §app/shell, but §app/other still says it\\n'`;
+	script.push({ tool: "bash", args: { command: drifted } }, { text: "Promoted.\nAlso changes: none" });
+	await session.prompt("promote the drift");
+	assert.match(seen(requests[at + 1]), /\[spec check\] promote's drift warnings \(a warning, not a block\): \(1\) the draft removed 80% from §app\/shell, but §app\/other still says it/);
+	assert.equal(requests.length, at + 2, "not a block");
 
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";

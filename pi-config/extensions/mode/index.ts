@@ -81,6 +81,7 @@ import {
 	bashCommands,
 	CensusHook,
 	SpecWriteGuard,
+	driftNote,
 	CHECK_TAG,
 	checkAlsoChanges,
 	commandDirs,
@@ -1075,7 +1076,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			sessionStart: ctx.sessionManager.getHeader()?.timestamp,
 		});
 		if (failure && ctx.hasUI) ctx.ui.notify(failure, "warning");
-		const text = [forbidden, census].filter(Boolean).join("\n");
+		const text = [forbidden, driftNote(event.toolName, event.input, event.content), census].filter(Boolean).join("\n");
 		if (text) return { content: [...event.content, { type: "text" as const, text }] };
 	});
 

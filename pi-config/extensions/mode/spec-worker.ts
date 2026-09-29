@@ -12,7 +12,7 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { homedir } from "node:os";
-import { bashCommands, CensusHook, coreDir, SpecWriteGuard } from "./spec-guard.ts";
+import { bashCommands, CensusHook, coreDir, driftNote, SpecWriteGuard } from "./spec-guard.ts";
 
 export default function specWorker(pi: ExtensionAPI): void {
 	const census = new CensusHook({ core: () => coreDir(process.env, homedir()) });
@@ -42,7 +42,7 @@ export default function specWorker(pi: ExtensionAPI): void {
 			sessionStart: ctx.sessionManager.getHeader()?.timestamp,
 		});
 		if (failure && ctx.hasUI) ctx.ui.notify(failure, "warning");
-		const text = [forbidden, digest].filter(Boolean).join("\n");
+		const text = [forbidden, driftNote(event.toolName, event.input, event.content), digest].filter(Boolean).join("\n");
 		if (text) return { content: [...event.content, { type: "text" as const, text }] };
 	});
 }

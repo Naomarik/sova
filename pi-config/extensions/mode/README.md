@@ -191,6 +191,11 @@ writer**).
     above the last line accepts a list the agent shows is wrong.
     `PI_SPEC_CHECK=0` turns it off.
 
+  - **In pi workers.** Workers start with `--no-extensions`, so the mode
+    extension is absent there; the subagents spawn path loads
+    `spec-worker.ts` (`-e`) into every code-writing pi worker a spec-on
+    session spawns: the same census digest, nothing else.
+
   See `../spec/README.md`.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the
@@ -539,4 +544,5 @@ node tests/note-turn.mjs      # real pi session + scripted provider: a minor tog
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
 node --test spec-guard.test.ts # the spec checks: git delta census digest (real Git + spec tools), the Also-changes line, command detection
 node tests/spec-turn.mjs      # real pi session + scripted provider: the census digest on a bash write, warn vs one re-prompt, mode:state
+node tests/spec-worker.mjs    # real pi session loading only spec-worker.ts (a pi worker's -e): the census digest on its first edit
 ```

@@ -1235,6 +1235,25 @@
                         (not (#{:feed :quiet} (feed-kw (:sova/feed t)))))]
          [nm (:id t) (event-names-of t)])))
 
+(defn reentry-hazards
+  "External transitions that leave and re-enter a whole parallel state although they target their
+   own source's descendant: an external transition's domain skips its source, and when the source's
+   parent is a parallel region set, SCXML climbs to the next compound ancestor, so EVERY region is
+   exited and entered again from its initial state (entry effects run twice). Such a transition
+   almost always meant `:type :internal`. `[[chart transition-id events source]]`."
+  [charts]
+  (vec (for [[nm {:keys [chart]}] (sort-by key charts)
+             t (sort-by #(get (::sc/id-ordinals chart) (:id %)) (vals (::sc/elements-by-id chart)))
+             :let [src (:parent t)
+                   p   (chart/get-parent chart src)]
+             :when (and (= :transition (:node-type t))
+                        (seq (:target t))
+                        (not= :internal (:type t))
+                        (not (pseudo-transition? chart t))
+                        (= :parallel (:node-type (chart/element chart p)))
+                        (every? #(and (not= % src) (chart/descendant? chart % src)) (:target t)))]
+         [nm (:id t) (event-names-of t) src])))
+
 (defn chart-info
   "What a chart declares: version, storage, exported keys, acts (checks by name), states,
    transitions (with their `:sova/*` tags), invocations and corrections."

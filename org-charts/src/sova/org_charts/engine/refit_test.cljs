@@ -6,6 +6,8 @@
     [cljs.test :refer [deftest is testing]]
     [clojure.string :as str]
     [sova.org-charts.engine.core :as core]
+    [com.fulcrologic.statecharts.chart :as chart]
+    [com.fulcrologic.statecharts.elements :as elements]
     [sova.org-charts.engine.hold-policy :as policy]
     [sova.org-charts.engine.refit-probe :as rp]))
 
@@ -538,3 +540,31 @@
     (let [step (first (:steps (core/send! eng "par" :item/reopen (assoc overseer :reason "wrong phase") {:now (+ t0 1)})))]
       (is (in? eng "par" :idle))
       (is (= :feed (:feed step)) "R12: declared :quiet, still :feed"))))
+
+;; ---- answered effects never come back; the re-entry lint ---------------------------------------------
+
+(deftest an-answered-effect-is-never-in-a-later-outbox
+  (let [eng (parent (new-eng))
+        r1  (core/send! eng "par" :gather/start (assoc overseer :to "a" :attended true) {:now t0})
+        k   (:key (first (:outbox r1)))]
+    (core/send! eng "par" :effect/done {:key k} {:now (+ t0 1)})
+    (let [r2 (core/send! eng "par" :gather/close {:by "operator"} {:now (+ t0 2)})
+          r3 (core/send! eng "par" :gather/start (assoc overseer :to "b" :attended true) {:now (+ t0 3)})]
+      (is (empty? (:outbox r2)))
+      (is (= ["gather"] (map :kind (:outbox r3))))
+      (is (not= k (:key (first (:outbox r3)))))
+      (is (= #{(:key (first (:outbox r3)))} (set (keys (:sova/pending (core/data eng "par")))))))))
+
+(def lint-chart
+  (chart/statechart {}
+    (elements/state {:id :top}
+      (elements/parallel {:id :regions}
+        (elements/state {:id :a :initial :a1}
+          (elements/transition {:event :bad :target :a2})
+          (elements/transition {:event :good :target :a2 :type :internal})
+          (elements/state {:id :a1})
+          (elements/state {:id :a2}))
+        (elements/state {:id :b})))))
+
+(deftest the-reentry-lint-finds-external-self-descendant-transitions-under-a-parallel
+  (is (= [["lint" [:bad] :a]] (map (fn [[c _ e s]] [c e s]) (core/reentry-hazards {"lint" {:chart lint-chart :version 1}})))))

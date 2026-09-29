@@ -783,6 +783,15 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       await settleWorld();
     } else for (const r of results) await fact("reconcile/result", S.decision(String(r.id)), "reconcile/result", r);
   };
+  /** A build's merge was the operator's Merge Branch (a synthetic click, or its reason in the next look or pending memo). */
+  const mergeClicked = (s: Step) => {
+    if (trace.events.some((e) => e.kind === "operator" && e.act === "merge" && e.id === s.id)) return true;
+    for (const e of trace.events.slice(trace.events.indexOf(s) + 1)) {
+      if (e.kind === "obs" && e.pending?.includes("merged")) return true;
+      if (e.kind === "turn" && e.by === "watch") return !!e.reasons?.some((r) => r.kind === "merged");
+    }
+    return false;
+  };
   const buildFact = async (s: Step) => {
     const id = s.id!;
     const prev = builds.get(id);
@@ -794,7 +803,12 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
     if (!world.exists(sid)) return;
     if (s.running === true && !prev?.running) await fact("turn/started", sid, "turn/started");
     if (s.running === false && prev?.running) await fact("turn/ended", sid, "turn/ended", { failed: !!s.lastFailed });
-    if (s.merged && !prev?.merged) await send("build/merge", sid, "build/merge", {}, env("operator"));
+    if (s.merged && !prev?.merged) {
+      if (mergeClicked(s)) await send("build/merge", sid, "build/merge", {}, env("operator"));
+      // No Merge Branch click (today notes one, soon, never dropped): the branch was merged in git (the session's
+      // own agent, or outside Sova): the build reads it from git.
+      else await fact("git merged", sid, "git/probe", { branch: "merged" });
+    }
     if (s.newSinceMerge) await fact("git/probe", sid, "git/probe", { newSinceMerge: s.newSinceMerge });
   };
   /** Let every effect and invocation report of the last steps land. */

@@ -2663,18 +2663,35 @@ a.group-option { color: inherit; text-decoration: none; }
 
 /* ---- RUN STATUS + JUMP TO LATEST. Sit on the composer's top edge. ------- */
 
+/* One line at every width, the same 20px whatever it carries: the triggers' net height, so the
+   composer doesn't move between idle and working or as the step changes. The margin is its own,
+   not the global `p` rule's. Working is the dot plus the step's icon; the words are the tooltip
+   and the accessible name. Stopping and the rare states keep their words, and they are the one
+   part that gives way (ellipsis) when the row is short of room. */
 .run-status {
+  --run-status-pad: calc(var(--space-3) / 2);  /* the gap, and each trigger's inline padding and offset */
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--run-status-pad);
+  height: calc(var(--control-sm) - 2 * var(--space-2));
+  margin: 0 0 var(--space-4);
   font-size: var(--fs-caption);
   color: var(--color-ink-2);
   min-width: 0;
 }
-.run-status-detail {
-  font-family: var(--font-mono);
-  font-size: var(--fs-mono);
-  color: var(--color-ink-muted);
+.run-status-state,
+.run-status-workers {
+  position: relative;             /* holds the visually hidden words */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+.run-status-state:has(> .run-status-words) { flex: 0 1 auto; min-width: 0; }
+.run-status-state .icon,
+.run-status-workers .icon { color: var(--color-ink-muted); }
+.run-status-words {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2716,15 +2733,24 @@ a.group-option { color: inherit; text-decoration: none; }
   margin: 0 auto;
 }
 .composer-row { display: flex; align-items: flex-end; gap: var(--space-2); }
+/* The block padding is what's left of --control-md after one body line and the two borders, split
+   evenly: one line is exactly 44px with its text centred, at every text size. The border counts as
+   drawn: a width of 1px or more snaps down to whole px (1.5 draws as 1), and the 8px line is the
+   fallback where round() isn't supported. */
 .composer-input {
   flex: 1;
   min-height: var(--control-md);
   max-height: var(--composer-max);
   padding: var(--space-2) var(--space-3);
+  padding: calc((var(--control-md) - var(--fs-body) * var(--lh-body) - 2 * round(down, var(--stroke-icon), 1px)) / 2) var(--space-3);
   resize: none;
   overflow-y: auto;
   field-sizing: content;          /* native auto-grow where supported; JS fallback per the composer spec */
 }
+/* Empty, the box is one line: a placeholder longer than the box ("Steer the current turn…" beside
+   Steer and Stop) is cut, not wrapped, so a turn starting doesn't make the composer taller. */
+.composer-input:placeholder-shown { field-sizing: fixed; }
+.composer-input::placeholder { white-space: nowrap; }
 .composer-actions { display: flex; align-items: flex-end; gap: var(--space-2); flex: none; }
 .composer-foot {
   display: flex;
@@ -4353,6 +4379,15 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   transition:
     background-color var(--dur-fast) var(--ease-standard),
     color            var(--dur-fast) var(--ease-standard);
+}
+/* Every trigger keeps its own width: squeezed, its words ran into the next one. In the row a
+   trigger's parts sit 4px apart and its padding is the row's 6px, so a working row with all three
+   triggers fits a 344px screen. */
+.run-status > .run-status-link {
+  flex: none;
+  gap: var(--space-1);
+  margin-left: calc(var(--run-status-pad) * -1);
+  padding: 0 var(--run-status-pad);
 }
 .run-status-link::after {
   content: "";

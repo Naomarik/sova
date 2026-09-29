@@ -55,10 +55,14 @@ import { sandboxBadge } from "../lib/sandbox";
 import type { ModelControl } from "./ModelMenu";
 import { ModeMenu, type ModeControl } from "./ModeMenu";
 import { Icon, type IconName } from "./ui";
+import type { RunDetail, RunStep } from "../lib/live";
 import { hostOf } from "../lib/mesh";
 
 /** The session pane's element id: ONE pane, five tabs, so every trigger controls the same id. */
 const PANE_ID = "session-pane";
+
+/** The run-status row's icon for what the turn is doing (§chat.transcript/streaming). */
+const STEP_ICON: Record<RunStep, IconName> = { thinking: "bulb", writing: "pencil", tool: "wrench" };
 
 export interface ComposerReason {
   icon: IconName;
@@ -84,8 +88,10 @@ export function Composer(props: {
   /** A compaction runs (§chat.slash-commands/compact): Stop and the status row, but no Steer. */
   compacting?: boolean;
   stopping: boolean;
-  /** "running bash" / "thinking" / "writing" / "Compacting context" … */
-  detail: string | null;
+  /** What the turn is doing: the row shows its icon, the words go to the tooltip and the name. */
+  detail: RunDetail | null;
+  /** A rare state that keeps its words on the row: "Compacting context", "Retrying after a provider error". */
+  activity?: string | null;
   /** Subagents working now; after the turn settles they get their own status row. */
   workersWorking?: number;
   /** Every subagent this session has, working or settled, so the row survives going idle. */
@@ -282,6 +288,7 @@ export function Composer(props: {
     if (working > 0)
       return {
         live: true,
+        n: working,
         text: props.running ? workersRunningLabel(working, props.workersSplit) : workersWorkingLabel(working, props.workersSplit),
         label: showWorkersLabel(working, props.workersSplit),
       };
@@ -289,8 +296,15 @@ export function Composer(props: {
     const total = props.workersTotal ?? 0;
     if (total === 0 || !props.onShowWorkers) return null; // settled workers are only worth a row you can open
     const text = `${total} ${total === 1 ? "subagent" : "subagents"}`;
-    return { live: false, text, label: `${text} — show subagents` };
+    return { live: false, n: total, text, label: `${text} — show subagents` };
   };
+  /** The subagents trigger shows a count; its tooltip is the words, plus the team when there is one. */
+  const workersTitle = (words: string) => [words, teamNote(props.workersSplit)].filter(Boolean).join("\n");
+
+  /** The run-status words: the tooltip and accessible name of the icon, or, for Stopping and the
+      rare states, the row's own text. */
+  const stateWords = () =>
+    props.stopping ? "Stopping…" : props.activity ?? (props.detail ? `Working · ${props.detail.text}` : "Working");
 
   /** A status-row trigger is expanded only when the pane shows ITS tab — the pane open on any
       other tab is not this control's disclosure. `paneTab` answers when App knows the tab; null
@@ -728,13 +742,24 @@ export function Composer(props: {
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
         <Show when={controls().status || workersRow() || inputsRow() || inputsHeld() || alignRow()}>
           <p class="run-status">
+            {/* Icon-only, so the row stays one line at every width: the dot says Working, the icon
+                what it's doing, and the words are the tooltip and the accessible name. Stopping and the
+                rare states keep their words. */}
             <Show when={controls().status}>
-              <span class="live-dot" />
-              <Show when={!props.stopping} fallback="Stopping…">
-                Working
-                <Show when={props.detail}>
-                  <span class="run-status-detail">· {props.detail}</span>
-                </Show>
+              <Show
+                when={!props.stopping && !props.activity}
+                fallback={
+                  <span class="run-status-state" title={stateWords()}>
+                    <span class="live-dot" />
+                    <span class="run-status-words">{stateWords()}</span>
+                  </span>
+                }
+              >
+                <span class="run-status-state" title={stateWords()}>
+                  <span class="live-dot" />
+                  <Show when={props.detail}>{(d) => <Icon name={STEP_ICON[d().step]} small />}</Show>
+                  <span class="visually-hidden">{stateWords()}</span>
+                </span>
               </Show>
             </Show>
             <Show when={workersRow()}>
@@ -743,10 +768,12 @@ export function Composer(props: {
                   <Show
                     when={props.onShowWorkers}
                     fallback={
-                      <>
+                      <span class="run-status-workers" title={workersTitle(row().text)}>
                         <span class="live-dot" />
-                        <span title={teamNote(props.workersSplit)}>{row().text}</span>
-                      </>
+                        <Icon name="worker" small />
+                        <span class="text-num" aria-hidden="true">{row().n}</span>
+                        <span class="visually-hidden">{row().text}</span>
+                      </span>
                     }
                   >
                     {(show) => (
@@ -754,7 +781,7 @@ export function Composer(props: {
                         type="button"
                         class="run-status-link"
                         aria-label={row().label}
-                        title={teamNote(props.workersSplit)}
+                        title={workersTitle(row().label)}
                         aria-expanded={tabExpanded(props.workersOpen, "agents") ? "true" : "false"}
                         aria-controls={PANE_ID}
                         onClick={() => show()()}
@@ -762,7 +789,8 @@ export function Composer(props: {
                         <Show when={row().live}>
                           <span class="live-dot" />
                         </Show>
-                        {row().text}
+                        <Icon name="worker" small />
+                        <span class="text-num">{row().n}</span>
                         <Icon name="chevron-right" small />
                       </button>
                     )}
@@ -778,7 +806,7 @@ export function Composer(props: {
                 <button
                   type="button"
                   class="run-status-link"
-                  style={{ "margin-left": alignRow() ? 0 : "auto", "margin-right": 0 }}
+                  style={{ "margin-left": alignRow() ? "calc(var(--run-status-pad) * -1)" : "auto", "margin-right": 0 }}
                   aria-label={row().label}
                   aria-expanded={props.inputsOpen ? "true" : "false"}
                   aria-controls={PANE_ID}
@@ -793,7 +821,7 @@ export function Composer(props: {
               <span
                 class="run-status-link"
                 aria-hidden="true"
-                style={{ visibility: "hidden", "margin-left": alignRow() ? 0 : "auto", "margin-right": 0 }}
+                style={{ visibility: "hidden", "margin-left": alignRow() ? "calc(var(--run-status-pad) * -1)" : "auto", "margin-right": 0 }}
               >
                 {inputsText(1)}
                 <Icon name="chevron-right" small />

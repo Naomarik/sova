@@ -8,7 +8,7 @@ import type { IncomingHttpHeaders, Server } from "node:http";
 import { connect, createServer as createTcpServer, type AddressInfo, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after, afterEach, beforeEach, describe, test } from "node:test";
 import WebSocket from "ws";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-share-security-")));
@@ -21,6 +21,8 @@ const edge = await import("./share/edge");
 const { validateSnapshot } = await import("./share/registry-validation");
 const { callerNode, gatewayGate } = await import("./mesh/gate");
 const { setIdentity } = await import("./mesh/localapi");
+const { addressIdentity } = await import("./mesh/address-identity");
+type PeerEntry = import("./mesh/peers").PeerEntry;
 const { REFUSED_HEADER } = await import("./mesh/hello");
 const { REGISTRY_LIMITS, INGRESS_STRIP_HEADERS } = await import("../shared/public-links");
 
@@ -130,6 +132,12 @@ test("trustedClient local-proxy: never returns anything but an IP or the socket'
     assert.ok(got === "127.0.0.1" || ip.test(got), `${JSON.stringify(xff)} → ${got}`);
     assert.ok(!/[\s,]/.test(got), `${JSON.stringify(xff)} → no separators: ${got}`);
   }
+});
+
+test("trustedClient local-proxy: the LAST hop is the client (the one the loopback front appended)", () => {
+  assert.equal(trustedClient(req("127.0.0.1", "198.51.100.1, 203.0.113.9"), LOCAL), "203.0.113.9");
+  assert.equal(trustedClient(req("127.0.0.1", ["198.51.100.1", "203.0.113.9"]), LOCAL), "203.0.113.9", "the array form");
+  assert.equal(trustedClient(req("127.0.0.1", "203.0.113.9, junk"), LOCAL), "127.0.0.1", "a malformed last hop: the socket");
 });
 
 test("trustedClient admitted: only a single-valued X-Forwarded-For, and only when the gate admitted the connection", () => {
@@ -496,6 +504,23 @@ test("edge default client: a loopback front's well-formed X-Forwarded-For still 
   }
 });
 
+test("edge: exact statuses — absolute-form and * 400, dotted or encoded 404, CONNECT 405", async () => {
+  const { server, reached } = probeServer();
+  const s = await bound(server);
+  try {
+    assert.equal(await rawStatus(s.port, get(`http://share.example.com/h/${TOKEN}`)), 400, "absolute-form");
+    assert.equal(await rawStatus(s.port, get("*", "OPTIONS")), 400, "asterisk-form");
+    for (const t of [`/bad/%2e%2e/h/${TOKEN}`, `/bad/../h/${TOKEN}`, `/h/./${TOKEN}`, `//h/${TOKEN}`]) {
+      const want = t.startsWith("//") ? 400 : 404;
+      assert.equal(await rawStatus(s.port, get(t)), want, t);
+    }
+    assert.equal(await rawStatus(s.port, get("share.example.com:443", "CONNECT")), 405, "CONNECT");
+    assert.deepEqual(reached, []);
+  } finally {
+    s.close();
+  }
+});
+
 // ---- validateSnapshot ---------------------------------------------------------------------------
 
 const NOW = 1_800_000_000_000;
@@ -662,15 +687,16 @@ test("validateSnapshot: never throws, over a table of hostile bodies (a parsed J
 /** What the fake LocalAPI's whois answers, by the caller's address:port. */
 let whois: (addr: string) => Promise<{ nodeId: string; name: string; tags: string[]; login: string } | null> = async () => null;
 let whoisCalls = 0;
-setIdentity({
-  status: async () => {
+const fakeIdentity = {
+  status: async (): Promise<never> => {
     throw new Error("status is not used by the gate");
   },
-  whois: (addr) => {
+  whois: (addr: string) => {
     whoisCalls++;
     return whois(addr);
   },
-});
+};
+setIdentity(fakeIdentity);
 const node = (nodeId: string) => async () => ({ nodeId, name: "x", tags: [], login: "me" });
 
 /** A connected server-side socket (a real remoteAddress and port), and its cleanup. */
@@ -712,14 +738,15 @@ test("callerNode: the whois StableID of a connection; null when whois knows nobo
   }
 });
 
-test("callerNode: asks whois with the connection's address and port, once per socket", async () => {
+test("callerNode: asks a non-LocalAPI identity (address mode, a fake) on every call, with the connection's address and port", async () => {
+  // Per-socket caching applies only to the real LocalAPI identity, which a hermetic test can't reach.
   const asked: string[] = [];
   whois = async (addr) => (asked.push(addr), { nodeId: "nGW", name: "x", tags: [], login: "me" });
   const c = await accepted();
   try {
     await callerNode(c.socket);
     await callerNode(c.socket);
-    assert.equal(asked.length, 1, "cached per socket");
+    assert.equal(asked.length, 2, "not cached for a non-LocalAPI identity");
     assert.equal(asked[0], `127.0.0.1:${c.socket.remotePort}`);
   } finally {
     c.close();
@@ -802,7 +829,8 @@ test("gatewayGate: with pinned addresses (address identity), the connection's ad
     assert.equal(await gatewayGate(() => ({ nodeId: "nGW", addresses: ["::ffff:127.0.0.1"] }))(c.socket), true, "compared canonically");
     assert.equal(await gatewayGate(() => ({ nodeId: "nGW", addresses: ["100.64.0.2"] }))(c.socket), false, "the right node from the wrong address");
     assert.equal(await gatewayGate(() => ({ nodeId: "nOTHER", addresses: ["127.0.0.1"] }))(c.socket), false, "the right address, the wrong node");
-    assert.equal(await gatewayGate(() => ({ nodeId: "nGW", addresses: [] }))(c.socket), true, "no pinned addresses: StableID alone");
+    assert.equal(await gatewayGate(() => ({ nodeId: "nGW", addresses: [] }))(c.socket), false, "an empty pin list denies");
+    assert.equal(await gatewayGate(() => ({ nodeId: "nGW" }))(c.socket), true, "addresses absent (LocalAPI mode): StableID alone");
   } finally {
     c.close();
   }
@@ -852,4 +880,68 @@ test("gatewayGate on the edge: a non-gateway caller gets 403 with the refused ma
   } finally {
     s.close();
   }
+});
+
+// ---- B1: address identity, re-asked on every call (M2 review) -----------------------------------
+
+describe("gatewayGate with the real address-identity adapter", () => {
+  const SELF = "100.64.0.9"; // SOVA_PEER_HOST: this host, a different tailnet IP
+  const SRC = "100.64.0.2"; // the gateway's tailnet source address
+  let peers: PeerEntry[] = [];
+  const gatewayPeer = (): PeerEntry => ({ id: "vps", label: "VPS", nodeId: "nGW", dnsName: SRC });
+  /** A fake accepted socket at the tailnet source: only remoteAddress and remotePort are read. */
+  const fakeSocket = (port = 40000) => ({ remoteAddress: SRC, remotePort: port }) as unknown as Socket;
+  let quiet: typeof console.warn;
+  let nextPort = 41000;
+  const fresh = () => fakeSocket(nextPort++);
+
+  beforeEach(() => {
+    peers = [gatewayPeer()];
+    setIdentity(addressIdentity(() => peers, { SOVA_PEER_HOST: SELF }));
+    quiet = console.warn;
+    console.warn = () => {};
+  });
+  afterEach(() => {
+    setIdentity(fakeIdentity);
+    console.warn = quiet;
+  });
+
+  test("(d) control: a unique mapping admits, on a fresh and a reused socket", async () => {
+    const gate = gatewayGate(() => ({ nodeId: "nGW" }));
+    const reused = fakeSocket();
+    assert.equal(await gate(reused), true);
+    assert.equal(await gate(reused), true, "reused");
+    assert.equal(await gate(fresh()), true, "fresh");
+  });
+
+  test("(a) a second peer with the same address makes the mapping ambiguous: the same socket is refused", async () => {
+    const gate = gatewayGate(() => ({ nodeId: "nGW" }));
+    const reused = fakeSocket();
+    assert.equal(await gate(reused), true, "unique first");
+    peers.push({ id: "phone", label: "Phone", nodeId: "nPHONE", dnsName: SRC });
+    assert.equal(await gate(reused), false, "the same socket, now ambiguous");
+    assert.equal(await gate(fresh()), false, "a fresh socket too (control)");
+  });
+
+  test("(b) the peer's address removed from its entry: the same socket is refused", async () => {
+    const gate = gatewayGate(() => ({ nodeId: "nGW" }));
+    const reused = fakeSocket();
+    assert.equal(await gate(reused), true, "unique first");
+    peers = [{ ...gatewayPeer(), dnsName: "vps.example.ts.net" }];
+    assert.equal(await gate(reused), false, "the same socket, the mapping gone");
+    assert.equal(await gate(fresh()), false, "a fresh socket too");
+  });
+
+  test("(c) pins [source], then pins [] (an empty list): refused; absent pins are no pin check", async () => {
+    let pins: string[] | undefined = [SRC];
+    const gate = gatewayGate(() => ({ nodeId: "nGW", ...(pins === undefined ? {} : { addresses: pins }) }));
+    const reused = fakeSocket();
+    assert.equal(await gate(reused), true, "pinned to the source");
+    pins = [];
+    assert.equal(await gate(reused), false, "an empty pin list denies");
+    pins = ["100.64.0.77"];
+    assert.equal(await gate(reused), false, "pinned elsewhere");
+    pins = undefined;
+    assert.equal(await gate(reused), true, "no pins: StableID alone");
+  });
 });

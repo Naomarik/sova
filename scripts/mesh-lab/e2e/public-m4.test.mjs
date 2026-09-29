@@ -112,7 +112,8 @@ describe("b's ingress", () => {
 
   test("the gateway reaches it, and only the share paths exist there", () => {
     const base = `http://${tailnetIp(B)}:${SHARE_PORT}`;
-    assert.equal(curlFrom(A, `${base}/h/${"A".repeat(43)}`).status, 404, "an unknown token is the share app's 404, not a refusal");
+    // The page shell answers 200 for any well-shaped token (it asks the API), so the 404 control is the API's.
+    assert.equal(curlFrom(A, `${base}/api/h/${"A".repeat(43)}`).status, 404, "an unknown token is the share app's 404, not a refusal");
     for (const path of ["/api/sessions", "/api/health", "/", "/index.html", "/ws/chat", "/api/peer/hello", `/bad/../h/${"A".repeat(43)}`]) {
       const r = curlFrom(A, base + path);
       assert.equal(r.status, 404, `${path}: ${r.status}`);
@@ -155,15 +156,17 @@ describe("a link minted on b", () => {
     assert.ok(r.messages.some((m) => m.includes('"view"')), JSON.stringify(r.messages));
   });
 
-  test("an oversized client message on the hop closes it (SHARE_WS_MAX_PAYLOAD, before forwarding)", () => {
+  // A close check only: the lab can't see whether the frame was forwarded first. M5's hermetic
+  // tests own the "enforced before forwarding" proof (SHARE_WS_MAX_PAYLOAD).
+  test("an oversized client message on the hop closes the socket", () => {
     const t = tokenOf(minted.link);
     const r = wsFrom("plain", `${FRONT(A).replace("http", "ws")}/ws/h?token=${t}`, { holdMs: 4000, send: ["x".repeat(4096)] });
     assert.equal(r.opened, true);
     assert.ok(r.closeCode !== null && r.closeCode !== 1000, `closed abnormally: ${r.closeCode}`);
   });
 
-  test("an unknown token through a stays 404", () => {
-    assert.equal(curlFrom("plain", `${FRONT(A)}/h/${"Q".repeat(43)}`).status, 404);
+  test("an unknown token through a stays 404 (the API; the shell answers 200 for any shape)", () => {
+    assert.equal(curlFrom("plain", `${FRONT(A)}/api/h/${"Q".repeat(43)}`).status, 404);
   });
 
   test("once revoked on b, it stops opening through a", async () => {

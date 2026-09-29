@@ -114,6 +114,15 @@ test("viaGatewayIdentity in address mode pins the peer's tailnet addresses", () 
   }
 });
 
+test("viaGatewayIdentity in address mode is null when the gateway peer has no tailnet address", () => {
+  const r = gw.setGatewayDeps({ addressMode: () => true, peers: () => [{ ...GATEWAY, dnsName: "vps.example.ts.net", url: "http://vps.example.ts.net:4801" }, OTHER] });
+  try {
+    assert.equal(gw.viaGatewayIdentity(), null);
+  } finally {
+    r();
+  }
+});
+
 test("refreshGateway: hello gives the public URL, info the acceptance; viaGatewayStatus caches it", async () => {
   assert.equal(gw.viaGatewayStatus()?.publicUrl ?? null, null, "nothing learnt yet");
   const s = await gw.refreshGateway();

@@ -167,7 +167,14 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `$(scripts/fake-claude-path.sh)` first on `PATH`, point `CLAUDE_CONFIG_DIR` at a fixture directory
   under `.agent/` (the `default` login; the real `~/.claude` stays untouched), and set
   `SOVA_CLAUDE_ACCOUNTS_DEV=1` so `.agent/claude-accounts-dev.json` (`{"forceLimit": [ids],
-  "forceAuth": [ids]}`) can force a login to fail and drive failover end to end.
+  "forceAuth": [ids]}`) can force a login to fail and drive failover end to end. The pool of logins
+  across devices has its own multi-host run, `node scripts/claude-pool-e2e/run.mjs` (three Sova
+  containers on an `--internal` Docker network in address-identity mode, fake `claude`, no
+  Tailscale; `--down` removes it, `--keep` leaves desk on 127.0.0.1:4821): it needs the mesh lab's
+  `sovamesh-plain:lab` image. `SOVA_CLAUDE_POOL_IDLE_MS` / `_CUT_MS` / `_TICK_MS` shorten the pool's
+  30-minute idle, drain bounds and 5 s tick for such runs. Run the unit tests with
+  `CLAUDE_CONFIG_DIR` unset (`env -u CLAUDE_CONFIG_DIR pnpm test`): a session that itself runs on
+  an added Claude login inherits it, and phase-1 readers then read that real login's files.
 - `pnpm run typecheck` — must pass. `pnpm run build` — must pass.
 - `pnpm run prices:update` — regenerate the checked-in price seed `shared/model-prices/seed.json` from models.dev and print
   the changes and any unpriced model (`--from <api.json>` offline, `--check` writes nothing). Aliases are hand-kept in

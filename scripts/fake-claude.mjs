@@ -13,7 +13,9 @@
 //   claude -p --input-format stream-json …   answers initialize, interrupt, and each user message
 //                                  with one text reply naming the login it ran on; a login dir
 //                                  holding FAKE_LIMIT answers with a usage limit instead, one
-//                                  holding FAKE_AUTH with a failed sign-in.
+//                                  holding FAKE_AUTH with a failed sign-in. A message containing
+//                                  "[fake-slow <ms>]" streams its first words, then waits <ms>
+//                                  before it finishes (a turn still running).
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -93,14 +95,24 @@ if (args[0] === "auth" && args[1] === "login") {
       return;
     }
     const text = `Fake answer from login ${who}.`;
+    const said = JSON.stringify(frame.message?.content ?? "");
+    const slow = Number(/\[fake-slow (\d+)\]/.exec(said)?.[1] ?? 0);
     out({ type: "stream_event", event: { type: "message_start", message: { model: "fake", usage: { input_tokens: 10, output_tokens: 0 } } }, session_id: sessionId });
     out({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }, session_id: sessionId });
+    if (slow) {
+      out({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Working… " } }, session_id: sessionId });
+      setTimeout(() => finish(), slow);
+      return;
+    }
+    finish();
+    function finish() {
     out({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } }, session_id: sessionId });
     out({ type: "stream_event", event: { type: "content_block_stop", index: 0 }, session_id: sessionId });
     out({ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { input_tokens: 10, output_tokens: 8 } }, session_id: sessionId });
     out({ type: "stream_event", event: { type: "message_stop" }, session_id: sessionId });
     out({ type: "assistant", message: { model: "fake", role: "assistant", content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 8 } }, parent_tool_use_id: null, session_id: sessionId });
     out({ type: "result", subtype: "success", is_error: false, result: text, num_turns: 1, session_id: sessionId, usage: { input_tokens: 10, output_tokens: 8 }, ...correlate });
+    }
   });
   rl.on("close", () => process.exit(0));
 } else {

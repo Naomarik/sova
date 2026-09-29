@@ -1180,7 +1180,7 @@ export function registerSubagents(
 						...prepared,
 						systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, workerSpecBrief(SPEC_CORE_DIR)].filter(Boolean).join("\n\n"),
 						// Its git operations go to this session's ledger, so the parent counts a worker's commit in its own tree.
-						settingsJson: withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir: path.join(agentDir(), SPEC_HOOK_STATE), ledger: ledgerPath(agentDir(), sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey)) })),
+						settingsJson: withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir: path.join(agentDir(), SPEC_HOOK_STATE), ledger: ledgerPath(agentDir(), ctx.sessionManager.getSessionId?.() || unsavedSessionKey) })),
 					} as typeof prepared;
 				}
 				return { spec, cwd, model: spec.model, tools: remote ? [] : spec.tools, systemPrompt: spec.systemPrompt,
@@ -1253,7 +1253,7 @@ export function registerSubagents(
 				treeConfig,
 				// A spec-on pi worker (the census hook, or its worktree's whole mode extension) logs its git
 				// operations to this session's ledger (mode/spec-guard.ts LEDGER_ENV).
-				ledger: specOn && !remote && (specWorker || treeConfig) ? ledgerPath(agentDir(), sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey)) : undefined,
+				ledger: specOn && !remote && (specWorker || treeConfig) ? ledgerPath(agentDir(), ctx.sessionManager.getSessionId?.() || unsavedSessionKey) : undefined,
 			};
 		});
 		const resuming = request.resume;

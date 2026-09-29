@@ -185,7 +185,7 @@ test("viaGatewayIdentity in address mode is null when the gateway peer has no ta
 });
 
 test("refreshGateway: hello gives the public URL, info the acceptance; viaGatewayStatus caches it", async () => {
-  assert.equal(gw.viaGatewayStatus()?.publicUrl ?? null, null, "nothing learnt yet");
+  assert.equal(gw.viaGatewayStatus(), null, "nothing learnt yet");
   const s = await gw.refreshGateway();
   assert.deepEqual(s, { publicUrl: PUBLIC_URL, label: "VPS", reachable: true, accepting: true });
   assert.deepEqual(gw.viaGatewayStatus(), s);
@@ -201,6 +201,14 @@ test("refreshGateway: a 404 not-gateway is not accepting; a failed hello or info
   helloReply = async () => null;
   infoReply = async () => null;
   assert.equal((await gw.refreshGateway())?.reachable, false);
+});
+
+test("viaGatewayStatus: null until the selected gateway was asked, and null when the via gateway is no peer", async () => {
+  assert.equal(gw.viaGatewayStatus(), null, "routed, nothing asked yet");
+  await gw.refreshGateway();
+  assert.deepEqual(gw.viaGatewayStatus(), { publicUrl: PUBLIC_URL, label: "VPS", reachable: true, accepting: true });
+  setting = { version: 1, route: { via: { nodeId: "nGONE" } } };
+  assert.equal(gw.viaGatewayStatus(), null, "via names no peer");
 });
 
 test("viaGatewayStatus is null unless the route is via", async () => {

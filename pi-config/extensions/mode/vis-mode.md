@@ -43,7 +43,7 @@ mark sdk "one writer per session file"
 - With no string after any line's first id, a string after a target is always the edge's label (§ state).
 - Edges: `a -> b`, dashed `a --> b`, both ways `a <-> b`; chains `a -> b -> c`. `dir: right` (drawn down on a phone). Under 12 nodes, short labels.
 - `group "Label" id id …` frames nodes that belong together (a process, a machine, a scope); edges cross the frame. A node is in one group at most.
-- Two small flows side by side (before/after): `== Label ==` lines start panels, each laid out alone, with its own ids (the same id in two panels is two nodes).
+- Two separate small flows side by side (before/after): `== Label ==` lines start panels, each laid out alone, with its own ids.
 ```vis flow
 == Before ==
 app "App" -> db "Database"
@@ -114,7 +114,7 @@ mark "Bubble sort" warn "quadratic"
 ```
 - A row: a label (quote it if it has spaces), one number per series (`-` for none), then an optional tone (single series only). Negatives and `12%` are fine; no thousands commas. At most 40 rows, 6 series.
 - Scatter rows are `label x y [tone]`, with no `series:`.
-- `type: parts`: one bar split into its rows, for a whole and its parts (a request vs the context window, a share of a limit); `of:` a capacity draws the unused rest.
+- `type: parts`: one bar split into its rows, for a whole and its parts; `of:` a capacity draws the unused rest.
 ```vis chart
 type: parts
 unit: tokens
@@ -216,7 +216,7 @@ document.getElementById("s").onclick=function(){if(v[i]>v[i+1]){var t=v[i];v[i]=
 draw();
 </script>
 ```
-- Colours only from the theme, so light and dark both work: `var(--color-ink)`, `--color-ink-2`, `--color-ink-muted`, `--color-surface`, `--color-sunken`, `--color-border`, `--color-border-strong`, `--color-accent`, `--color-accent-tint`, `--status-success|warn|error|info` and each with `-bg`. The theme picks the hues, so in prose name a colour by what it marks ("the newest term") or draw a legend, never by hue ("orange"). Buttons, inputs and selects are already styled; the body has padding.
+- Colours only from the theme, so light and dark both work: `var(--color-ink)`, `--color-ink-2`, `--color-ink-muted`, `--color-surface`, `--color-sunken`, `--color-border`, `--color-border-strong`, `--color-accent`, `--color-accent-tint`, `--status-success|warn|error|info` and each with `-bg`. In prose name a colour by what it marks, never by hue. Buttons, inputs and selects are already styled; the body has padding.
 - Fit a 360px-wide phone (flex-wrap, grid with `fr`); keep it under about 500px tall.
 - Nothing moves until the reader clicks or presses a key in it: give motion a Play or Step button (in SVG, `begin="play.click"` on the animations, with a `<g id="play" role="button">`). No `setTimeout` loops.
 - Check a large draft with the `vis_check` tool before you post it.

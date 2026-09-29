@@ -957,9 +957,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	// end of a run the reply is checked (also-changes.ts grammar): a run that edited, committed, promoted
 	// or merged ends with an `Also changes:` line naming every foreign § computed from Git, the task's own
 	// claims subtracted; a landing (a merge, a promote, a commit that changed the current spec, this
-	// session's or a worker's from the ledger) also passes the landing gate (Plumbing / Deferred lines) and
-	// is re-prompted up to LANDING_REPROMPTS times; a Q&A run that wrote the line is re-prompted once; any
-	// other run gets a warning. Silent without a spec, Git or the tools, and in a remote session; a check
+	// session's or a worker's from the ledger) also passes the landing gate (Plumbing / Deferred lines; no
+	// Deferred line on the default branch) and is re-prompted up to LANDING_REPROMPTS times; a Q&A run that
+	// wrote the line is re-prompted once; any other run gets a warning. Silent without a spec, Git or the tools, and in a remote session; a check
 	// that fails says so. PI_SPEC_CENSUS_HOOK=0 turns the census off, PI_SPEC_CHECK=0 the line check.
 	const specCensus = new CensusHook({ core: () => SPEC_CORE });
 	const specWrites = new SpecWriteGuard();

@@ -144,8 +144,9 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 	}
 
 	/** The spec report of a merge; best-effort, so a failure never fails the merge. */
-	async function reportOf(path: string, branch: string, before: string, after: string, branchSha: string): Promise<MergeSpecReport | undefined> {
-		return specReport(git, { path, branch, before, after, branchSha }).catch(() => undefined);
+	async function reportOf(path: string, branch: string, before: string, after: string, branchSha: string, target: string): Promise<MergeSpecReport | undefined> {
+		const onDefault = target === (await defaultTarget(git, path).catch(() => undefined));
+		return specReport(git, { path, branch, before, after, branchSha, onDefault }).catch(() => undefined);
 	}
 
 	/** The note the model reads: the merge line, then the spec lines when the project has a spec. */
@@ -213,7 +214,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 			try {
 				const { sha, ...stats } = await landedStats(git, t.path, was.targetSha, p.targetSha, p.branchSha);
 				markMerged(t, { target: p.target, sha, how: "detected" });
-				card({ path: t.path, branch: t.branch, target: p.target, sha, ...stats, how: "detected" }, await reportOf(t.path, t.branch, was.targetSha, p.targetSha, p.branchSha), { before: was.targetSha, after: p.targetSha });
+				card({ path: t.path, branch: t.branch, target: p.target, sha, ...stats, how: "detected" }, await reportOf(t.path, t.branch, was.targetSha, p.targetSha, p.branchSha, p.target), { before: was.targetSha, after: p.targetSha });
 			} catch {
 				// Best-effort: an unreadable merge is still shown as merged by the pane's own check.
 			}
@@ -289,7 +290,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						await approve(ctx, "Merge a worktree?", `Merge ${t.branch} (${t.path}) into ${target}.`);
 						const { before, branchSha, ...m } = await mergeWorktree(git, { tree: t, target });
 						markMerged(t, { target: m.target, sha: m.sha, how: "tool" });
-						const spec = await reportOf(t.path, t.branch, before, m.sha, branchSha);
+						const spec = await reportOf(t.path, t.branch, before, m.sha, branchSha, target);
 						card({ ...m, how: "tool" }, spec, { before, after: m.sha });
 						const specText = spec ? `\n${specLines(spec).join("\n")}` : "";
 						return done(`${mergeNote(m)} (${m.fastForward ? "fast-forward" : "merge commit"}).${specText}\n${listing()}`, { merge: m, trees: set?.trees ?? [], ...(spec ? { spec } : {}) });

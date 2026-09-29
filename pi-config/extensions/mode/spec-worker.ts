@@ -11,7 +11,8 @@
  * - The turn-end line check, as the Claude Code Stop hook's: a run that edited, committed, promoted or
  *   merged ends with an `Also changes:` line naming every foreign § its own operations and its tree's
  *   changes computed from Git (the task's own claims out); a landing (a merge, a promote, a commit that
- *   changed the current spec) also passes the landing gate (Plumbing / Deferred lines). A landing is
+ *   changed the current spec) also passes the landing gate (Plumbing / Deferred lines; no Deferred line on the
+ *   default branch). A landing is
  *   re-prompted up to LANDING_REPROMPTS times, any other wrong line (a line on a Q&A run included) once.
  * - The ledger: each of its own git operations that moved a HEAD (or promoted) is appended to the
  *   parent's ledger (SOVA_SPEC_LEDGER), so the parent's check counts it wherever it landed.

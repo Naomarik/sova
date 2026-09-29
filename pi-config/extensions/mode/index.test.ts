@@ -446,16 +446,16 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /never a gap it already had, even one you rely on/);
 	assert.match(spec, /"Also changes: none"/);
 	assert.match(spec, /Before finishing:\n(- .*\n)*- Your reply's last line on a turn that edited, committed, promoted or merged, exempt work included, is exactly "Also changes: §X — <what>; §Y — <what>" or "Also changes: none", nothing after; a turn that only answered writes no such line\. Items are separated by ";", each led by the § it names \(", \/d" after "§a\.b\/c" is "§a\.b\/d"\); a § inside a description isn't named\. It names foreign § only, never your new claims; an addition under one is that §'s change, and a § the user asked for is still foreign\./, "the handoff line is a finishing step on change turns, exempt work included; none on a Q&A turn; its grammar");
-	assert.match(spec, /One that leaves draft records unpromoted names their stale § on a "Deferred: §X — <why>" line above the last line\./);
+	assert.match(spec, /One that leaves draft records unpromoted names their stale § on a "Deferred: §X — <why>" line above the last line; on the default branch it promotes them instead\./, "q14: no Deferred exit at a master landing");
 	assert.match(spec, /A merge or promote turn names every foreign § it lands, even if already reported, workers' included: copy the list `worktree merge` or `promote --write` prints/, "merge and promote turns copy the computed list");
 	assert.match(spec, /"Spec check override: <why>"/);
-	assert.match(spec, /"Deferred: §X — <why>" line above the last line\. "Spec check override: <why>" right above the last line excuses only an omission you show is wrong\./, "the override never adds a §");
+	assert.match(spec, /on the default branch it promotes them instead\. "Spec check override: <why>" right above the last line excuses only an omission you show is wrong\./, "the override never adds a §");
 	assert.ok(spec.includes(SPEC_CHECK_OVERRIDE), "the prompt spells the override the check accepts");
 	assert.ok(spec.includes(`A \`${DIGEST_TAG}\` note on a tool result is this census`), "the automatic census is named by its tag");
 	assert.match(spec, /While coding, exempt work included, run `census --changed` \(/);
 	assert.match(spec, /Trusted tools: start each bash command with exactly this, never a guessed path:\n\n```sh\n/, "the recipe, not a hard-coded agent dir");
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never flags/);
-	assert.ok(spec.split(/\s+/).length <= 1000, "short enough to ride every turn");
+	assert.ok(spec.split(/\s+/).length <= 1020, "short enough to ride every turn");
 	assert.match(spec, /and no changed file outside it that no claim maps unless a "Plumbing: <path> — <why>" line above the last line names it \(never UI text, colour, CLI output or footer rendering\)/, "the boundary is not an exemption");
 });
 

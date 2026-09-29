@@ -68,4 +68,7 @@ test("landingGate: core's --landing shapes; Plumbing and Deferred lines clear th
 	const reply = "Merged.\nPlumbing: pi-config/x/index.ts, src/gone.ts — dead helper removed\nDeferred: §app.links/public — copy review pending\nAlso changes: none";
 	assert.deepEqual(landingGate(reply, lists), { ok: true, missingPlumbing: [], missingDeferral: [] });
 	assert.ok(landingGate("x", {}).ok);
+	// q14: on the default branch a Deferred line clears nothing; only the override line passes.
+	assert.deepEqual(landingGate(reply, lists, { onDefault: true }).missingDeferral, ["§app.links/public"]);
+	assert.ok(landingGate(reply.replace("\nAlso changes", "\nSpec check override: the user ruled it stays stale\nAlso changes"), lists, { onDefault: true }).ok);
 });

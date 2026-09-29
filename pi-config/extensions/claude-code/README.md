@@ -241,7 +241,9 @@ plain-JSON state per Claude session:
   override line, which excuses only an omission); a § named beyond a list Git fully computed is an
   extra, never excused, except a § whose code changed under unchanged prose (advisory). The landing
   gate: each changed file no claim in the current spec maps needs a `Plumbing: <path> — <why>` line,
-  and each draft record still unpromoted (status read again at Stop) a `Deferred: §X — <why>` line.
+  and each draft record still unpromoted (status read again at Stop) a `Deferred: §X — <why>` line,
+  except after a landing on the default branch, where no Deferred line passes it: only a promotion or
+  the override line.
   The line is parsed by `mode/also-changes.ts`, the one grammar. The reply is sent back up to twice. Otherwise a warning, sent back once: a
   writing turn without the exact `Also changes:` line, a non-writing turn with one, a line omitting
   a foreign § the turn's draft edits, or a named § the census never saw touched. Drafts are

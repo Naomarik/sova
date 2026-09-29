@@ -12,7 +12,7 @@
 // - a hand write of the current spec (write tool, shell) and a reset past a draft's evidence commit are
 //   said in the digest of the call that made them; promote's drift warnings are relayed, never a block;
 // - a Q&A line is re-prompted once; two merges in one turn list both; an unmapped file needs a Plumbing
-//   line and an unpromoted draft a Deferred line; a worker's ledger commit in the own tree counts;
+//   line and an unpromoted draft a Deferred line (at a landing on main only the override); a worker's ledger commit in the own tree counts;
 // - the active triple is published on the bus (mode:state), and again on mode:discover.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -531,8 +531,8 @@ try {
 	assert.match(checks().at(-1).content, /tools\/x\.sh changed and no claim maps it: .*"Plumbing: <path> — <why>"/);
 
 	// M1 (the public-links shape): code under a foreign § changes on a branch whose draft is never
-	// promoted. The merge needs a Deferred line naming the stale §; naming the mapped-untouched § on the
-	// last line is no extra.
+	// promoted. The merge lands on main, the default branch (q14): a Deferred line naming the stale § is
+	// re-prompted, and only the override line passes; naming the mapped-untouched § on the last line is no extra.
 	const wtC = path.join(scratch, "wtC");
 	git("worktree", "add", "-q", "-b", "featC", wtC);
 	const draftTool = path.join(agentDir, "extensions/spec/core/sova-spec-draft.mjs");
@@ -544,13 +544,13 @@ try {
 	const beforeC = checks().length;
 	script.push(
 		{ tool: "bash", args: { command: "git merge --no-ff --no-edit featC" } },
-		{ text: "Merged.\nAlso changes: none" },
 		{ text: "Merged.\nDeferred: §app/shell — the public-links wording waits for the copy review\nAlso changes: §app/shell — its code now serves public links" },
+		{ text: "Merged.\nDeferred: §app/shell — the public-links wording waits for the copy review\nSpec check override: the user ruled §app/shell stays stale until the copy review\nAlso changes: §app/shell — its code now serves public links" },
 	);
 	await session.prompt("merge featC");
-	assert.equal(requests.length, at + 3, "one re-prompt");
+	assert.equal(requests.length, at + 3, "one re-prompt: the Deferred line didn't pass the landing on main, the override did");
 	assert.equal(checks().length, beforeC + 1);
-	assert.match(checks().at(-1).content, /draft records left unpromoted: §app\/shell: promote what shipped, or say which § stay stale on a line "Deferred: §X — <why>"/);
+	assert.match(checks().at(-1).content, /lands on the default branch with draft records unpromoted: §app\/shell: .*a "Deferred:" line doesn't pass a landing on the default branch/);
 	git("worktree", "remove", "--force", wtC);
 
 	// M4: a worker commits a promotion in the session's OWN checkout and says so in the ledger; a third

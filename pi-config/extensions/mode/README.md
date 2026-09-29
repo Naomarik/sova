@@ -198,8 +198,10 @@ writer**).
       (and the ledger) for later, so a background promotion forces no line.
     - **The landing gate** (`foreign --landing`): each changed file no claim
       maps needs a `Plumbing: <path> — <why>` line, each unpromoted draft
-      record's § a `Deferred: §X — <why>` line; § whose mapped code changed
-      with their text untouched may be named without being extras.
+      record's § a `Deferred: §X — <why>` line, except at a landing on the
+      default branch, where only a promotion or the override line passes
+      it; § whose mapped code changed with their text untouched may be named
+      without being extras.
     - A landing run is re-prompted (hidden `spec-check` message) up to twice,
       as the Stop hook; a line on a Q&A run once; any other wrong line gets a
       warning, on screen and as a hidden note with the next prompt. A

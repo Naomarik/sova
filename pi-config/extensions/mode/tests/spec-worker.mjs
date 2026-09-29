@@ -4,7 +4,8 @@
 // project. No model requests. The worker's first edit carries the `[spec census]` digest (with the
 // no-draft note), the same file again none, and a new unmapped file outside the boundary its own line.
 // The turn-end check (M4): an edit run without the line is re-prompted once; a promote with a wrong line
-// up to twice, naming Git's list, and the promote lands in the parent's ledger; a Q&A line once.
+// up to twice, naming Git's list, and the promote lands in the parent's ledger; a merge into master with a
+// draft left unpromoted takes the override, never a Deferred line (q14); a Q&A line once.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -45,7 +46,7 @@ put(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell.\n");
 put(".sova/spec/.gitignore", "/drafts/\n");
 put("src/App.tsx", "1\n");
 put("tools/footer.ts", "1\n");
-git("init", "-q");
+git("init", "-q", "-b", "master");
 git("add", "-A");
 git("commit", "-qm", "base");
 
@@ -125,6 +126,27 @@ try {
 	const entries = readFileSync(ledger, "utf8").trim().split("\n").map((l) => JSON.parse(l));
 	assert.equal(entries.at(-1).kind, "promote");
 	assert.equal(entries.at(-1).actor.runtime, "pi");
+
+	// q14: the worker merges a branch whose draft was never promoted into its checkout's master, the default
+	// branch. A Deferred line naming the stale § doesn't pass; the override line does.
+	git("commit", "-qam", "promoted");
+	const wtD = path.join(scratch, "wtD");
+	git("worktree", "add", "-q", "-b", "featD", wtD);
+	const draftTool = path.join(agentDir, "extensions/spec/core/sova-spec-draft.mjs");
+	assert.equal(spawnSync("node", [draftTool, "new", "links", "--write", "--root", wtD, "--json"]).status, 0, "draft new");
+	writeFileSync(path.join(wtD, ".sova/spec/drafts/links/spec/claims/app/shell.md"), "# §app/shell\n\nShell, with public links.\n");
+	writeFileSync(path.join(wtD, "src/App.tsx"), "public links\n");
+	assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", wtD, "commit", "-qam", "public links"]).status, 0);
+	at = requests.length;
+	const deferred = "Merged.\nDeferred: §app/shell — the links wording waits for review\nAlso changes: §app/shell — its code now serves public links";
+	script.push(
+		{ tool: "bash", args: { command: "git merge --no-ff --no-edit featD" } },
+		{ text: deferred },
+		{ text: deferred.replace("\nAlso changes", "\nSpec check override: the parent ruled §app/shell stays stale until review\nAlso changes") },
+	);
+	await session.prompt("merge featD into master");
+	assert.equal(requests.length, at + 3, "one re-prompt: the Deferred line didn't pass the landing on master, the override did");
+	assert.match(seen(requests[at + 2]), /lands on the default branch with draft records unpromoted: §app\/shell: .*a \\"Deferred:\\" line doesn't pass/);
 
 	// A Q&A run that writes the line: once.
 	at = requests.length;

@@ -21,7 +21,8 @@
  *   (the task's own claims out) and the landing gate's lists.
  * - Stop (`stop`): the reply's last line against the turn. After a promote or a merge the computed
  *   foreign list is the authority: every § in it must be named, each changed file no claim maps needs a
- *   `Plumbing:` line, and each draft record left unpromoted a `Deferred:` line; the reply is sent back
+ *   `Plumbing:` line, and each draft record left unpromoted a `Deferred:` line (on the default branch a promotion,
+ *   or the override line: no Deferred line passes a landing there); the reply is sent back
  *   (block) until it does, at most MERGE_BLOCKS times. Elsewhere a miss is a
  *   warning, sent back once and then let through: a turn that wrote without the exact line, one
  *   that wrote nothing with it, a line omitting a foreign § the turn's draft edits, or one naming a
@@ -131,6 +132,8 @@ export interface TurnLanding {
 	unmapped: string[];
 	unpromoted: { draft: string; worktree?: string; ids: string[] }[];
 	advisory: string[];
+	/** It landed on the default branch: its unpromoted records take a promotion (or the override), never a Deferred line. */
+	onDefault?: boolean;
 }
 export interface HookState {
 	version: 1;
@@ -353,6 +356,7 @@ export async function landOps(command: string, cwd: string, response: unknown, c
 			unmapped: [...new Set([...l.unmappedChanged.map((u) => u.path), ...(promoted?.unmapped ?? [])])].sort(),
 			unpromoted: [...l.unpromotedDrafts, ...(promoted?.unpromoted ?? [])],
 			advisory: [...new Set([...l.mappedUntouched.map((m) => m.id), ...(promoted?.advisory ?? [])])].sort(),
+			...(j.onDefault ? { onDefault: true } : {}),
 		});
 	}
 }
@@ -373,10 +377,11 @@ function landingOf(stdout: unknown): { unmapped: string[]; unpromoted: TurnLandi
 
 /**
  * The gate's lists as they stand at Stop: a file some claim in the current spec now maps is no longer unmapped,
- * and a draft record promoted since the landing is no longer unpromoted (each draft's status read again).
+ * and a draft record promoted since the landing is no longer unpromoted (each draft's status read again). Records
+ * still unpromoted after a landing on the default branch are `unpromotedAtDefault`: no Deferred line passes them.
  */
-export async function gateNow(landings: readonly TurnLanding[], core: string, io: SpecIO): Promise<{ unmapped: string[]; unpromoted: string[]; advisory: string[] }> {
-	const unmapped = new Set<string>(), unpromoted = new Set<string>(), advisory = new Set<string>();
+export async function gateNow(landings: readonly TurnLanding[], core: string, io: SpecIO): Promise<{ unmapped: string[]; unpromoted: string[]; unpromotedAtDefault: string[]; advisory: string[] }> {
+	const unmapped = new Set<string>(), unpromoted = new Set<string>(), atDefault = new Set<string>(), advisory = new Set<string>();
 	const mapped = new Map<string, Set<string>>();
 	const statusOf = new Map<string, Set<string> | undefined>();
 	for (const l of landings) {
@@ -405,10 +410,10 @@ export async function gateNow(landings: readonly TurnLanding[], core: string, io
 				statusOf.set(key, open);
 			}
 			const open = statusOf.get(key);
-			for (const id of d.ids) if (!open || open.has(id)) unpromoted.add(id);
+			for (const id of d.ids) if (!open || open.has(id)) (l.onDefault ? atDefault : unpromoted).add(id);
 		}
 	}
-	return { unmapped: [...unmapped].sort(), unpromoted: [...unpromoted].sort(), advisory: [...advisory].sort() };
+	return { unmapped: [...unmapped].sort(), unpromoted: [...unpromoted].sort(), unpromotedAtDefault: [...atDefault].sort(), advisory: [...advisory].sort() };
 }
 
 /**
@@ -465,11 +470,12 @@ export async function onStop(input: HookInput, ctx: HookContext): Promise<HookOu
 	if (turn.landed) {
 		// The computed list is the authority: sent back until it is named (or an omission overridden), boundedly.
 		// When Git computed all of it, a § named beyond it (and beyond the advisory § whose code changed) is an extra,
-		// which no override excuses. The landing gate: unmapped files need a Plumbing line, unpromoted records a Deferred one.
+		// which no override excuses. The landing gate: unmapped files need a Plumbing line, unpromoted records a Deferred
+		// one, except at a landing on the default branch, where only a promotion or the override line passes them.
 		const foreign = union(turn.foreign, drafted ?? []);
 		if (turn.blocks >= MERGE_BLOCKS) return undefined;
 		const gate = await gateNow(turn.landings ?? [], ctx.core, ctx.io);
-		const check = checkAlsoChanges(reply, { required: true, foreign, exact: !turn.partial, advisory: gate.advisory, unmapped: gate.unmapped, unpromoted: gate.unpromoted });
+		const check = checkAlsoChanges(reply, { required: true, foreign, exact: !turn.partial, advisory: gate.advisory, unmapped: gate.unmapped, unpromoted: gate.unpromoted, unpromotedAtDefault: gate.unpromotedAtDefault });
 		if (check.ok) return undefined;
 		return block(repromptText(check, foreign, "promoted or merged"));
 	}

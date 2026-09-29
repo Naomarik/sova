@@ -21,9 +21,9 @@
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { posix } from "node:path";
-import { ALSO_CHANGES_OVERRIDE, deferredIds, lastLine, looksLikeAlsoChanges, parseAlsoChanges, parseAlsoChangesLine, plumbingPaths } from "./also-changes.ts";
+import { ALSO_CHANGES_OVERRIDE, deferredIds, lastLine, looksLikeAlsoChanges, overrideLine, parseAlsoChanges, parseAlsoChangesLine, plumbingPaths } from "./also-changes.ts";
 
-export { ALSO_CHANGES_OVERRIDE, DEFERRED_LINE, deferredIds, lastLine, looksLikeAlsoChanges, parseAlsoChanges, parseAlsoChangesLine, PLUMBING_LINE, plumbingPaths, stripAlsoChanges } from "./also-changes.ts";
+export { ALSO_CHANGES_OVERRIDE, DEFERRED_LINE, deferredIds, lastLine, overrideLine, looksLikeAlsoChanges, parseAlsoChanges, parseAlsoChangesLine, PLUMBING_LINE, plumbingPaths, stripAlsoChanges } from "./also-changes.ts";
 
 const { dirname, join, relative } = posix;
 
@@ -571,6 +571,8 @@ export interface AlsoChangesCheck {
 	unmapped: string[];
 	/** Unpromoted draft records' § that no `Deferred:` line names (the landing gate). */
 	undeferred: string[];
+	/** Unpromoted draft records' § at a landing on the default branch: no `Deferred:` line passes them, only the override. */
+	stale: string[];
 	/** The reply carries the override line. */
 	overridden: boolean;
 }
@@ -590,6 +592,8 @@ export interface AlsoChangesOptions {
 	unmapped?: readonly string[];
 	/** Landing gate: unpromoted draft records' §; each needs a `Deferred:` line (or a promotion). */
 	unpromoted?: readonly string[];
+	/** Landing gate on the default branch: unpromoted draft records' § there; each needs a promotion (or the override line). */
+	unpromotedAtDefault?: readonly string[];
 }
 
 /**
@@ -597,18 +601,21 @@ export interface AlsoChangesOptions {
  * where the line must not appear (spec-mode.md). The line is parsed by also-changes.ts (a format error is
  * its own problem, never a wrong list). Every computed foreign § must be named; with `exact`, a § beyond
  * the list and `advisory` is an extra. On a landing, each unmapped changed file needs a `Plumbing:` line
- * and each unpromoted record's § a `Deferred:` line.
+ * and each unpromoted record's § a `Deferred:` line, except at a landing on the default branch
+ * (`unpromotedAtDefault`), where only a promotion or the override line passes it.
  * The override line (ALSO_CHANGES_OVERRIDE) excuses only an OMISSION: a computed § the agent shows it must
  * not name (one this task created, in an earlier commit, promotion or merge). It never excuses an extra.
  */
 export function checkAlsoChanges(reply: string, options: AlsoChangesOptions): AlsoChangesCheck {
-	const overridden = reply.split("\n").some((l) => l.trim().startsWith(ALSO_CHANGES_OVERRIDE) && l.trim().length > ALSO_CHANGES_OVERRIDE.length + 1);
+	const overridden = overrideLine(reply);
 	const plumbing = plumbingPaths(reply);
 	const deferred = deferredIds(reply);
 	const unmapped = (options.unmapped ?? []).filter((p) => !plumbing.includes(p));
-	const undeferred = (options.unpromoted ?? []).filter((id) => !deferred.includes(id));
-	const base: AlsoChangesCheck = { ok: true, missing: [], extra: [], unmapped, undeferred, overridden };
-	const gate = (check: AlsoChangesCheck): AlsoChangesCheck => ({ ...check, ok: check.ok && !unmapped.length && !undeferred.length });
+	const stale = overridden ? [] : [...new Set(options.unpromotedAtDefault ?? [])].sort();
+	const atDefault = new Set(options.unpromotedAtDefault ?? []);
+	const undeferred = (options.unpromoted ?? []).filter((id) => !atDefault.has(id) && !deferred.includes(id));
+	const base: AlsoChangesCheck = { ok: true, missing: [], extra: [], unmapped, undeferred, stale, overridden };
+	const gate = (check: AlsoChangesCheck): AlsoChangesCheck => ({ ...check, ok: check.ok && !unmapped.length && !undeferred.length && !stale.length });
 	const line = lastLine(reply);
 	if (!options.required) {
 		const written = reply.split("\n").some((l) => looksLikeAlsoChanges(l));
@@ -646,6 +653,8 @@ export const unmappedText = (paths: readonly string[]): string =>
 	`${capped(paths, FILE_CAP)} changed and no claim maps ${paths.length === 1 ? "it" : "them"}: spec each that changes user-visible behavior (a claim listing it in \`code\`, promoted), or name it on a line "Plumbing: <path> — <why>" above the last line; UI text, colour, CLI output and footer rendering are never plumbing`;
 export const undeferredText = (ids: readonly string[]): string =>
 	`draft records left unpromoted: ${capped(ids, ID_CAP)}: promote what shipped, or say which § stay stale on a line "Deferred: §X — <why>" above the last line`;
+export const staleText = (ids: readonly string[]): string =>
+	`this lands on the default branch with draft records unpromoted: ${capped(ids, ID_CAP)}: promote them now (a draft that conflicts is re-applied in a new draft from the current spec); a "Deferred:" line doesn't pass a landing on the default branch, only a line "${ALSO_CHANGES_OVERRIDE} <why>" above the last line`;
 
 /** What's wrong, for the re-prompt and the warning: the line's problem, the extras, then the landing gate. */
 export function describeProblem(check: AlsoChangesCheck): string {
@@ -656,6 +665,7 @@ export function describeProblem(check: AlsoChangesCheck): string {
 	if (check.extra.length) parts.push(extraText(check.extra));
 	if (check.unmapped.length) parts.push(unmappedText(check.unmapped));
 	if (check.undeferred.length) parts.push(undeferredText(check.undeferred));
+	if (check.stale.length) parts.push(staleText(check.stale));
 	return parts.join("; ");
 }
 
@@ -1072,6 +1082,8 @@ export interface OpJudgement {
 	foreign?: string[];
 	/** The landing gate's lists, for a landing. */
 	lists?: RangeLists;
+	/** It landed on the default branch (checked out there): its unpromoted drafts can't be deferred. */
+	onDefault?: boolean;
 }
 
 /**
@@ -1087,6 +1099,7 @@ export async function judgeOp(op: OpLanding, core: string, io: SpecIO = localIO,
 	const tip = defaultTip ?? (main ? (await git(["rev-parse", "--verify", "-q", `refs/heads/${main}`])).stdout.trim() : "");
 	const branch = (await git(["symbolic-ref", "-q", "--short", "HEAD"])).stdout.trim();
 	const moved = op.after !== op.before;
+	const onDefault = Boolean(main && branch === main);
 	let absorbing = false;
 	if ((op.kind === "merge" || op.kind === "ff") && moved && tip && branch && branch !== main) {
 		const merges = (await git(["rev-list", "--first-parent", "--parents", `${op.before}..${op.after}`])).stdout.trim().split("\n").filter(Boolean);
@@ -1110,12 +1123,12 @@ export async function judgeOp(op: OpLanding, core: string, io: SpecIO = localIO,
 	}
 	if (op.kind === "promote" && !moved) {
 		const lists = await rangeLists(root, op.before, undefined, core, io, { ownBases, landing: true });
-		return { landing: true, specChanged: true, foreign: lists?.foreign, ...(lists ? { lists } : {}) };
+		return { landing: true, specChanged: true, foreign: lists?.foreign, ...(lists ? { lists } : {}), onDefault };
 	}
 	const landing = op.kind === "promote" || ((op.kind === "merge" || op.kind === "ff") && !absorbing) || (op.kind === "commit" && specChanged);
 	if (!landing || !moved) return { landing, specChanged, ...(foreign ? { foreign } : {}) };
 	const lists = await rangeLists(root, op.before, op.after, core, io, { ownBases, landing: true });
-	return { landing, specChanged, ...(foreign ? { foreign } : {}), ...(lists ? { lists } : {}) };
+	return { landing, specChanged, ...(foreign ? { foreign } : {}), ...(lists ? { lists } : {}), onDefault };
 }
 
 /** What a run's check has gathered so far: shared by the parent (index.ts) and pi workers (spec-worker.ts). */
@@ -1126,6 +1139,8 @@ export interface TurnTally {
 	advisory: Set<string>;
 	unmapped: Set<string>;
 	unpromoted: Set<string>;
+	/** Unpromoted § at a landing on the default branch: never deferred. */
+	unpromotedAtDefault: Set<string>;
 	/** Landings described for the re-prompt ("commit by ag_07 in repo", …). */
 	landed: string[];
 	errors: string[];
@@ -1143,6 +1158,7 @@ export const freshTally = (changed = false, landing = false): TurnTally => ({
 	advisory: new Set(),
 	unmapped: new Set(),
 	unpromoted: new Set(),
+	unpromotedAtDefault: new Set(),
 	landed: [],
 	errors: [],
 	conflicts: [],
@@ -1191,7 +1207,7 @@ export async function tallyOps(t: TurnTally, ops: readonly OpLanding[], defaultT
 				const mapped = root ? await mappedNow(root, io) : new Set<string>();
 				for (const e of j.lists.unmappedChanged) if (!mapped.has(e.path)) t.unmapped.add(e.path);
 			}
-			for (const d of j.lists?.unpromotedDrafts ?? []) for (const id of d.ids) t.unpromoted.add(id);
+			for (const d of j.lists?.unpromotedDrafts ?? []) for (const id of d.ids) (j.onDefault ? t.unpromotedAtDefault : t.unpromoted).add(id);
 			for (const m of j.lists?.mappedUntouched ?? []) t.advisory.add(m.id);
 		}
 		tallyForeign(t, j.foreign);
@@ -1222,7 +1238,7 @@ export function tallyCheck(t: TurnTally, reply: string, options: { relay?: boole
 		foreign,
 		exact: t.exact && t.gitBased,
 		advisory: [...t.advisory],
-		...(t.landing ? { unmapped: [...t.unmapped].sort(), unpromoted: [...t.unpromoted].sort() } : {}),
+		...(t.landing ? { unmapped: [...t.unmapped].sort(), unpromoted: [...t.unpromoted].sort(), unpromotedAtDefault: [...t.unpromotedAtDefault].sort() } : {}),
 	});
 	return { check, foreign, required };
 }

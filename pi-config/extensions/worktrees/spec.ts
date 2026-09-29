@@ -46,6 +46,8 @@ export interface MergeSpecRequest {
 	before: string;
 	after: string;
 	branchSha: string;
+	/** The target is the repo's default branch: its unpromoted records can't be deferred. */
+	onDefault?: boolean;
 }
 
 type Node = (args: string[], cwd: string) => Promise<{ code: number; stdout: string }>;
@@ -91,7 +93,12 @@ export async function mergeSpecReport(git: Git, req: MergeSpecRequest, opts: { c
 		if (landing.unmappedChanged.length)
 			warnings.push(`${landing.unmappedChanged.length} changed file${landing.unmappedChanged.length === 1 ? "" : "s"} no claim maps (${landing.unmappedChanged.map((u) => `${u.path}${u.status === "D" ? " deleted" : ""}`).join(", ")}): spec each one whose change a user sees with a claim listing it in \`code\`, or name it on a line "Plumbing: <path> — <why>" above your last line`);
 		for (const d of landing.unpromotedDrafts)
-			warnings.push(`draft ${d.draft} has ${d.ids.length} unpromoted record${d.ids.length === 1 ? "" : "s"} (${d.ids.join(", ")}): promote what shipped, or name the § left stale on a line "Deferred: ${d.ids.join(", ")} — <why>" above your last line`);
+			warnings.push(
+				`draft ${d.draft} has ${d.ids.length} unpromoted record${d.ids.length === 1 ? "" : "s"} (${d.ids.join(", ")}): ` +
+					(req.onDefault
+						? `this landed on the default branch, so promote ${d.ids.length === 1 ? "it" : "them"} now (a draft that conflicts is re-applied in a new draft from the current spec); a "Deferred:" line doesn't pass here`
+						: `promote what shipped, or name the § left stale on a line "Deferred: ${d.ids.join(", ")} — <why>" above your last line`),
+			);
 		for (const h of landing.handResolved)
 			warnings.push(`merge ${short(h.commit)} resolved ${h.ids.join(", ")} by hand (it differs from both parents; see git show --cc ${short(h.commit)}): check it says what both sides meant`);
 	} else if (Array.isArray(f?.foreign)) warnings.push("the merge's unmapped files and unpromoted drafts could not be computed; check them yourself");

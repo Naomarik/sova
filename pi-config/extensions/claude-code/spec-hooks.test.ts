@@ -377,7 +377,7 @@ test("the s2-3 comma line: a § inside a description is not named, so it is no e
 	assert.equal(await runHook("stop", event(root, { last_assistant_message: line }), o), undefined);
 });
 
-test("the landing gate: an unmapped file needs a Plumbing line and an unpromoted draft record a Deferred line (public-links shape)", async () => {
+test("the landing gate: an unmapped file needs a Plumbing line; an unpromoted draft record at a landing on main takes the override, never a Deferred line (public-links shape)", async () => {
 	const { root, wt, stateDir } = withWorktree();
 	const o = { core: CORE, stateDir };
 	const draft = path.join(CORE, "sova-spec-draft.mjs");
@@ -391,11 +391,34 @@ test("the landing gate: an unmapped file needs a Plumbing line and an unpromoted
 	await runHook("post", event(wt, { tool_name: "Bash", tool_input: { command: `cd ${root} && git merge --ff-only feat` } }), o);
 	const l = readState(statePath(stateDir, "s1")!).turn.landings![0]!;
 	assert.deepEqual([l.unmapped, l.unpromoted.map((d) => d.ids), l.advisory], [["scripts/links.sh"], [["§app/x"]], []]);
+	// q14: this landed on main, the default branch, so the Deferred line passes nothing; only the override does.
+	const deferred = "Merged.\nDeferred: §app/x — the links prose waits for review\nAlso changes: §app/x — reworded";
+	const stale = await runHook("stop", event(wt, { last_assistant_message: deferred }), o) as any;
+	assert.equal(stale?.decision, "block");
+	assert.match(stale.reason, /scripts\/links\.sh changed and no claim maps it/);
+	assert.match(stale.reason, /lands on the default branch with draft records unpromoted: §app\/x: .*a "Deferred:" line doesn't pass/);
+	assert.equal(readState(statePath(stateDir, "s1")!).turn.blocks, 1, "under MERGE_BLOCKS: the next Stop is really checked");
+	const ok = deferred.replace("\nDeferred", "\nPlumbing: scripts/links.sh — a dev helper\nDeferred").replace("\nAlso changes", "\nSpec check override: the user ruled §app/x stays stale until the copy review\nAlso changes");
+	assert.equal(await runHook("stop", event(wt, { last_assistant_message: ok, stop_hook_active: true }), o), undefined);
+});
+
+test("q14: the same landing into a non-default branch (a team integration branch): the Deferred line passes", async () => {
+	const { root, wt, stateDir } = withWorktree();
+	const o = { core: CORE, stateDir };
+	const draft = path.join(CORE, "sova-spec-draft.mjs");
+	assert.equal(spawnSync(process.execPath, [draft, "new", "links", "--write", "--root", wt]).status, 0);
+	write(wt, ".sova/spec/drafts/links/spec/claims/app/x.md", "# §app/x\n\nX links out.\n");
+	write(wt, "src/a.txt", "links\n");
+	git(wt, ...C, "add", "-A"); git(wt, ...C, "commit", "-qm", "links, spec deferred");
+	git(root, "checkout", "-q", "-b", "team/links");
+	await runHook("turn", event(wt, {}), o);
+	git(root, "merge", "-q", "--ff-only", "feat");
+	await runHook("post", event(wt, { tool_name: "Bash", tool_input: { command: `cd ${root} && git merge --ff-only feat` } }), o);
+	const l = readState(statePath(stateDir, "s1")!).turn.landings![0]!;
+	assert.deepEqual([l.unpromoted.map((d) => d.ids), l.onDefault], [[["§app/x"]], undefined]);
 	const bare = await runHook("stop", event(wt, { last_assistant_message: "Merged.\nAlso changes: §app/x — reworded" }), o) as any;
-	assert.equal(bare?.decision, "block");
-	assert.match(bare.reason, /scripts\/links\.sh changed and no claim maps it/);
-	assert.match(bare.reason, /left unpromoted: §app\/x/);
-	const ok = "Merged.\nPlumbing: scripts/links.sh — a dev helper\nDeferred: §app/x — the links prose waits for review\nAlso changes: §app/x — reworded";
+	assert.match(bare?.reason ?? "", /left unpromoted: §app\/x: promote what shipped, or say which § stay stale on a line "Deferred: §X — <why>"/);
+	const ok = "Merged.\nDeferred: §app/x — the links prose waits for review\nAlso changes: §app/x — reworded";
 	assert.equal(await runHook("stop", event(wt, { last_assistant_message: ok, stop_hook_active: true }), o), undefined);
 });
 

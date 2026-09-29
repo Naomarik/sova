@@ -36,7 +36,8 @@ then `Deleted § (still foreign): §x, §y → §z` when the merge deleted or re
 under unchanged §: §a (files); …` (advisory), then one `Spec warning: …` line each for: changed
 files no claim maps (each needs a claim or a `Plumbing: <path> — <why>` line), a draft with
 unpromoted records in the merged worktree or a worktree whose branch the merge brings in (`pending`,
-or `conflict` never promoted; promote, or a `Deferred: §… — <why>` line), a merge commit that
+or `conflict` never promoted; promote, or a `Deferred: §… — <why>` line, except into the default
+branch, where only a promotion passes the check), a merge commit that
 resolved § by hand (it differs from both parents; `git show --cc`), an evidence commit a draft names
 that the branch doesn't contain (a rebase after evidence), and code commits after the branch's last
 spec commit (one touching `.sova/spec/` or named by evidence; merges skipped; none when the branch

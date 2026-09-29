@@ -25,7 +25,10 @@ const HIDDEN_ITEM = new RegExp(`(?:^|[.!?]\\s+)(${FULL_ID})\\s*(?::|\\s[—–-]
 export const ALSO_CHANGES_OVERRIDE = "Spec check override:";
 /** `Plumbing: <path> — <why>`: a changed file no claim maps that changes no user-visible behavior. */
 export const PLUMBING_LINE = "Plumbing:";
-/** `Deferred: §X, §Y — <why>`: draft records left unpromoted at a landing, the § they leave stale named. */
+/**
+ * `Deferred: §X, §Y — <why>`: draft records left unpromoted at a landing, the § they leave stale named.
+ * Never at a landing on the default branch: there only the override line passes them.
+ */
 export const DEFERRED_LINE = "Deferred:";
 
 export interface AlsoChangesItem {
@@ -136,6 +139,10 @@ export function plumbingPaths(reply: string): string[] {
 	return out;
 }
 
+/** The reply carries the override line, with a reason. */
+export const overrideLine = (reply: string): boolean =>
+	reply.split("\n").some((l) => l.trim().startsWith(ALSO_CHANGES_OVERRIDE) && l.trim().length > ALSO_CHANGES_OVERRIDE.length + 1);
+
 /** § the reply's `Deferred: §X[, §Y | /suffix] — <why>` lines name (a reason is required). */
 export function deferredIds(reply: string): string[] {
 	const out: string[] = [];
@@ -154,7 +161,7 @@ export interface LandingGate {
 	ok: boolean;
 	/** Unmapped changed paths no `Plumbing:` line names. */
 	missingPlumbing: string[];
-	/** Unpromoted records' § no `Deferred:` line names. */
+	/** Unpromoted records' § no `Deferred:` line names (on the default branch: all of them, unless overridden). */
 	missingDeferral: string[];
 }
 
@@ -162,13 +169,19 @@ export interface LandingGate {
  * The landing gate on a reply (merge and promote turns): each changed file no claim maps needs a
  * `Plumbing: <path> — <why>` line (or a claim mapping it, which removes it from `unmappedChanged`), and
  * each unpromoted draft record's § a `Deferred: §X — <why>` line. Shapes as core's `foreign --landing`.
+ * `onDefault`: the landing is on the default branch, where a Deferred line clears nothing and only the
+ * override line passes the unpromoted records.
  */
-export function landingGate(reply: string, lists: { unmappedChanged?: readonly { path: string }[] | readonly string[]; unpromotedDrafts?: readonly { ids: readonly string[] }[] }): LandingGate {
+export function landingGate(
+	reply: string,
+	lists: { unmappedChanged?: readonly { path: string }[] | readonly string[]; unpromotedDrafts?: readonly { ids: readonly string[] }[] },
+	options: { onDefault?: boolean } = {},
+): LandingGate {
 	const plumbing = plumbingPaths(reply);
 	const deferred = deferredIds(reply);
 	const paths = (lists.unmappedChanged ?? []).map((e) => (typeof e === "string" ? e : e.path));
 	const ids = [...new Set((lists.unpromotedDrafts ?? []).flatMap((d) => d.ids))];
 	const missingPlumbing = [...new Set(paths)].filter((p) => !plumbing.includes(p));
-	const missingDeferral = ids.filter((id) => !deferred.includes(id));
+	const missingDeferral = options.onDefault ? (overrideLine(reply) ? [] : ids) : ids.filter((id) => !deferred.includes(id));
 	return { ok: !missingPlumbing.length && !missingDeferral.length, missingPlumbing, missingDeferral };
 }

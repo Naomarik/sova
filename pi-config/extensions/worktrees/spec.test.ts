@@ -37,9 +37,9 @@ function repo(withSpec = true) {
 	return { main, tree, done: () => rmSync(root, { recursive: true, force: true }) };
 }
 
-async function merge(r: { tree: string }) {
+async function merge(r: { tree: string }, extra: { onDefault?: boolean } = {}) {
 	const m = await mergeWorktree(runGit, { tree: { path: r.tree, branch: "feat/x" }, target: "master" });
-	return mergeSpecReport(runGit, { path: r.tree, branch: "feat/x", before: m.before, after: m.sha, branchSha: m.branchSha });
+	return mergeSpecReport(runGit, { path: r.tree, branch: "feat/x", before: m.before, after: m.sha, branchSha: m.branchSha, ...extra });
 }
 
 test("a merge's foreign §, code after the last spec commit, unpromoted drafts and orphaned evidence", async () => {
@@ -152,6 +152,22 @@ test("the landing gate's lists: an unmapped file, code under an unchanged §, an
 		assert.deepEqual(rep.landing.unpromotedDrafts.map((d) => [d.draft, d.ids]), [["links", ["§app.list/mark"]]]);
 		assert.match(rep.warnings[0]!, /^1 changed file no claim maps \(scripts\/links\.sh\): .*"Plumbing: <path> — <why>"/);
 		assert.match(rep.warnings[1]!, /^draft links has 1 unpromoted record \(§app\.list\/mark\): .*"Deferred: §app\.list\/mark — <why>"/);
+	} finally {
+		r.done();
+	}
+});
+
+test("q14: into the default branch, an unpromoted draft's note asks for a promotion and no Deferred line", async () => {
+	const r = repo();
+	try {
+		execFileSync(process.execPath, [DRAFT, "new", "links", "--write", "--root", r.tree]);
+		put(r.tree, ".sova/spec/drafts/links/spec/claims/app/list.md", LIST.replace("A speech bubble and the count.", "The count, and a link out."));
+		put(r.tree, "src/list.ts", "v2 links\n");
+		sh(r.tree, "commit", "-qam", "links, spec deferred");
+		const rep = await merge(r, { onDefault: true });
+		const note = rep?.warnings.find((w) => w.startsWith("draft links"));
+		assert.match(note ?? "", /^draft links has 1 unpromoted record \(§app\.list\/mark\): this landed on the default branch, so promote it now .*a "Deferred:" line doesn't pass here$/);
+		assert.doesNotMatch(note ?? "", /"Deferred: §app/);
 	} finally {
 		r.done();
 	}

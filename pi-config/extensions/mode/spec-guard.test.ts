@@ -40,6 +40,7 @@ import {
 	treeTurn,
 	workerReported,
 	freshTally,
+	tallyCheck,
 	tallyOps,
 	judgeOp,
 	ownBasesFor,
@@ -805,5 +806,102 @@ test("tallyOps: an unmapped file a claim of the current spec maps by settle time
 		assert.deepEqual([...later.unmapped], [], "mapped by the current spec now");
 	} finally {
 		rmSync(repo, { recursive: true, force: true });
+	}
+});
+
+/**
+ * R3-B-s3-1r's merge-4: two feature branches, each with a draft never promoted, merged into the target with a
+ * reply whose Deferred line names all four stale § above "Also changes: none". Into master that is blocked
+ * (q14): only a promotion or the override line passes. Into an integration branch the Deferred line still passes.
+ */
+async function s31rMerge(target: string): Promise<{ t: ReturnType<typeof freshTally>; base: string }> {
+	mkdirSync(scratchRoot, { recursive: true });
+	const base = mkdtempSync(join(scratchRoot, "spec-s31r-"));
+	const repo = join(base, "repo");
+	mkdirSync(repo);
+	const at = (dir: string) => (...args: string[]) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", dir, ...args], { encoding: "utf8" });
+	const git = at(repo);
+	const put = (dir: string, rel: string, text: string) => {
+		mkdirSync(dirname(join(dir, rel)), { recursive: true });
+		writeFileSync(join(dir, rel), text);
+	};
+	const claims = {
+		"§app/notifications": { kind: "surface", authority: "accepted" },
+		"§app.notifications/delivery": { kind: "behavior", authority: "accepted", requires: [], code: ["server/push.ts"] },
+		"§app.notifications/settings": { kind: "behavior", authority: "accepted", requires: [], code: ["src/PushSettings.tsx"] },
+		"§app.notifications/send-test": { kind: "behavior", authority: "accepted", requires: [], code: ["shared/protocol.ts"] },
+		"§app/settings-dialog": { kind: "surface", authority: "accepted" },
+		"§app.settings-dialog/save-bar": { kind: "behavior", authority: "accepted", requires: [], code: ["src/SaveBar.tsx"] },
+	};
+	put(repo, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src", "server", "shared"], exclude: [] }, claims }, null, 2));
+	const NOTIF = "# §app/notifications\n\nNotifications.\n\n## §app.notifications/delivery\n\nPushes go out at once.\n\n## §app.notifications/settings\n\nOne toggle.\n\n## §app.notifications/send-test\n\nA test button sends one.\n";
+	put(repo, ".sova/spec/claims/app/notifications.md", NOTIF);
+	put(repo, ".sova/spec/claims/app/settings-dialog.md", "# §app/settings-dialog\n\nSettings.\n\n## §app.settings-dialog/save-bar\n\nSave and Cancel.\n");
+	for (const f of ["server/push.ts", "src/PushSettings.tsx", "shared/protocol.ts", "src/SaveBar.tsx"]) put(repo, f, "1\n");
+	put(repo, ".gitignore", ".sova/spec/drafts/\n");
+	git("init", "-q", "-b", "master");
+	git("add", "-A");
+	git("commit", "-qm", "base");
+	if (target !== "master") git("checkout", "-q", "-b", target);
+	const draftTool = join(CORE, "sova-spec-draft.mjs");
+	const feature = (name: string, draftEdit: (spec: string) => void, code: string[]) => {
+		const wt = join(base, name);
+		git("worktree", "add", "-q", "-b", `feat/${name}`, wt);
+		assert.equal(spawnSync(process.execPath, [draftTool, "new", name, "--write", "--root", wt, "--json"]).status, 0, "draft new");
+		draftEdit(join(wt, ".sova/spec/drafts", name, "spec"));
+		for (const f of code) put(wt, f, `${name}\n`);
+		at(wt)("commit", "-qam", name);
+		return wt;
+	};
+	[
+		feature("quiet-hold", (spec) => put(spec, "claims/app/notifications.md", NOTIF.replace("Pushes go out at once.", "Pushes wait out quiet hours.").replace("One toggle.", "A toggle and quiet hours.")), ["server/push.ts", "src/PushSettings.tsx"]),
+		feature("no-send-test", (spec) => {
+			put(spec, "claims/app/notifications.md", NOTIF.replace("A test button sends one.", "No test button.").replace("One toggle.", "One toggle, no test."));
+			put(spec, "claims/app/settings-dialog.md", "# §app/settings-dialog\n\nSettings.\n\n## §app.settings-dialog/save-bar\n\nSave only.\n");
+		}, ["shared/protocol.ts", "src/SaveBar.tsx"]),
+	];
+	const ops = [];
+	for (const name of ["quiet-hold", "no-send-test"]) {
+		const before = git("rev-parse", "HEAD").stdout.trim();
+		assert.equal(git("merge", "--no-ff", "--no-edit", `feat/${name}`).status, 0, `merge ${name}`);
+		ops.push({ top: repo, before, after: git("rev-parse", "HEAD").stdout.trim(), kind: "merge" as const, actor: "self" });
+	}
+	const tip = git("rev-parse", "master").stdout.trim();
+	const t = freshTally(true, true);
+	await tallyOps(t, ops, () => tip, CORE);
+	return { t, base };
+}
+
+const S31R_REPLY =
+	"Merged both.\nDeferred: §app.notifications/delivery, §app.notifications/settings, §app.notifications/send-test, §app.settings-dialog/save-bar — you asked for the merge without waiting on the spec, and both drafts now conflict with master's notifications spec, so they need writing again on current master.\nAlso changes: none";
+const S31R_IDS = ["§app.notifications/delivery", "§app.notifications/send-test", "§app.notifications/settings", "§app.settings-dialog/save-bar"];
+
+test("q14 (R3-B-s3-1r replay): code merged into master with drafts unpromoted: a Deferred line naming the 4 § is blocked; the override passes", async () => {
+	const { t, base } = await s31rMerge("master");
+	try {
+		assert.deepEqual([...t.unpromotedAtDefault].sort(), S31R_IDS, "the landing on master holds both drafts' records");
+		assert.deepEqual([...t.unpromoted], []);
+		const { check } = tallyCheck(t, S31R_REPLY);
+		assert.equal(check.ok, false, "a Deferred line doesn't pass a master landing");
+		assert.deepEqual(check.stale, S31R_IDS);
+		assert.match(describeProblem(check), /lands on the default branch with draft records unpromoted: .*a "Deferred:" line doesn't pass a landing on the default branch, only a line "Spec check override: <why>"/);
+		const overridden = S31R_REPLY.replace("\nAlso changes: none", "\nSpec check override: the user ruled these § stay stale on master until the redraft\nAlso changes: none");
+		assert.equal(tallyCheck(t, overridden).check.ok, true, "only the override line passes it");
+	} finally {
+		rmSync(base, { recursive: true, force: true });
+	}
+});
+
+test("q14: the same shape merged into a non-default branch (a team integration branch): the Deferred line still passes", async () => {
+	const { t, base } = await s31rMerge("team/notifications");
+	try {
+		assert.deepEqual([...t.unpromoted].sort(), S31R_IDS);
+		assert.deepEqual([...t.unpromotedAtDefault], []);
+		const { check } = tallyCheck(t, S31R_REPLY);
+		assert.equal(check.ok, true, describeProblem(check));
+		const bare = tallyCheck(t, "Merged both.\nAlso changes: none").check;
+		assert.deepEqual([bare.ok, bare.undeferred], [false, S31R_IDS], "without it the records still block");
+	} finally {
+		rmSync(base, { recursive: true, force: true });
 	}
 });

@@ -104,3 +104,16 @@
   (let [x (born {:name "Old Timer" :status "left"})]
     (is (h/in? x sid :left))
     (is (= "left" (:status (h/data x sid))))))
+
+(deftest F-093-an-overseer-approved-referral-stays-self-asserted
+  ;; decidesTrusted: a decides entry a referral introduced counts only after an OPERATOR status→active line.
+  (let [{:keys [person changed]} (rp/apply-change nil carla "referral" #{})
+        x    (-> (h/new-host) (h/start! "person" sid {:org-id "o1" :id "p1" :person person :changed changed
+                                                      :by {:kind "referral" :session-id "s1" :quote "Ask Carla"}}))
+        hist (fn [y] (last (filter #(= "roster-history" (name (:kind %))) (h/outbox y sid))))]
+    (is (= "referral" (get-in (hist x) [:by :kind])) "the creation lines say referral")
+    (let [y (h/send! x sid :person/approve {:by "overseer" :attended true :by-kind "overseer"})]
+      (is (h/in? y sid :active))
+      (is (= "overseer" (get-in (hist y) [:by :kind])) "an overseer's approval says overseer, never operator")
+      (is (= [{:field :status :from "proposed" :to "active"}] (map #(select-keys % [:field :from :to]) (:lines (hist y))))))
+    (is (= "operator" (get-in (hist (h/send! x sid :person/approve {:by "operator" :by-kind "operator"})) [:by :kind])))))

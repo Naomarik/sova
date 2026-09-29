@@ -191,6 +191,21 @@ describe("org host", () => {
     await host.close();
   });
 
+  test("nextDueAt and fireDue drive timers on a virtual clock", async () => {
+    const at = place();
+    let now = 1_000_000;
+    const host = await open(at, { clock: () => now });
+    await host.start("p/1", "host-probe", {}, operator);
+    await host.act("p/1", "wait", {}, operator);
+    assert.equal(host.nextDueAt(), now + 50);
+    assert.deepEqual(host.fireDue().steps, [], "not due yet");
+    now += 50;
+    assert.deepEqual(host.fireDue().steps.map((s) => s.event), ["tick"]);
+    assert.deepEqual(host.configuration("p/1"), ["top", "idle"]);
+    assert.equal(host.nextDueAt(), null);
+    await host.close();
+  });
+
   test("timers fire on their own from nextDueAt", async () => {
     const at = place();
     const host = await open(at);

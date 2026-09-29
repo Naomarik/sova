@@ -549,6 +549,18 @@ export class OrgHost {
     commitJournal(this.paths.journal, j, this.durable);
   }
 
+  /** The earliest pending delayed event (the host's own timer follows it). */
+  nextDueAt(): number | null {
+    return this.engine.nextDueAt();
+  }
+
+  /** Fire everything due at `clock()` now (a virtual-clock replay; in production the host's timer does
+      this itself). Throws busy while resuming. */
+  fireDue(): StepResult {
+    if (this.resuming) throw new OrgHostBusyError();
+    return this.step(() => this.engine.fireDue(this.clock()));
+  }
+
   // ---- reads -------------------------------------------------------------------------------------------
 
   trial(sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope): ActResult {

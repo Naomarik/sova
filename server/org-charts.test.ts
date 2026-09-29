@@ -28,7 +28,7 @@ function has(e: OrgCharts, sid: string, ...ids: string[]): boolean {
 describe("org-charts engine (vendored ESM)", () => {
   test("the bundle lists its charts, each with a positive integer version", () => {
     const names = chartVersions().map((c) => c.name);
-    assert.ok(names.includes("spike-project") && names.includes("work-item") && names.includes("person"), "the refit's registry ships beside the spike's charts");
+    assert.deepEqual(names.sort(), ["baton", "build", "conflict", "decision", "item", "org", "person", "project", "reconciler", "residence", "watch"], "the refit's eleven charts, nothing else");
     assert.ok(!names.includes(PROBE), "the shipped module has no test chart");
     assert.throws(() => createShipped().start("p", PROBE), /Unknown chart/, "the probe exists only where it is registered");
     assert.throws(() => createShipped({ charts: { project: PROBE_CHARTS["engine-probe"] } }), /Chart project is already registered/);

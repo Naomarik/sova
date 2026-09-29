@@ -29,7 +29,7 @@ import * as vendored from "./vendor/org-charts.js";
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
 
-/** A registered chart's name ("person", "baton", …; the spike's "project" and "work-item"). */
+/** A registered chart's name ("org", "person", "baton", "item", …: the refit's registry). */
 export type ChartName = string;
 
 /** An effect intent a chart appended to its outbox; the host runs it after the snapshot is saved. */

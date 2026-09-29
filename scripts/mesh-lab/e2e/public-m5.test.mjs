@@ -79,7 +79,8 @@ describe("b awake", () => {
     assert.equal(fromPlain(pathOf(hLink)).status, 200);
     assert.equal(fromPlain(pathOf(iLink)).status, 200);
     const unknown = "Q".repeat(43);
-    assert.equal(fromPlain(`/h/${unknown}`).status, 404);
+    // The page shell answers 200 for any token (no validity oracle, §mesh.public/routing); its API says 404.
+    assert.equal(fromPlain(`/h/${unknown}`).status, 200);
     assert.equal(fromPlain(`/api/h/${unknown}`).status, 404);
     assert.equal(fromPlain(`/api/i/${unknown}`).status, 404);
   });

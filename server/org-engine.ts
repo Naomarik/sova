@@ -1,5 +1,7 @@
 import { OrgError } from "./orgs";
-import type { Envelope } from "./org-envelope";
+import type { ActBy, Envelope } from "./org-envelope";
+import { projectOfSession, stampEnvelope } from "./org-stamp";
+import { defaultPoSettings, projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 
 /**
  * The org engines of this host (design §2 "one org, one queue"): one OrgHost (server/org-host/, the
@@ -88,7 +90,11 @@ export interface OpenOptions {
   stateDir: string;
 }
 
-type Opener = (opts: OpenOptions) => Promise<OrgHostApi>;
+/** The host's `stamp` option (engine API): a fresh envelope for an act the engine delivers itself
+    (a chart's drive, a held act at its release). `by` is the act's original actor (default "chart"). */
+export type Stamp = (sid: string, event: string, payload: Record<string, unknown>, who?: { by?: ActBy; overseerId?: string }) => Envelope;
+
+type Opener = (opts: OpenOptions & { stamp: Stamp }) => Promise<OrgHostApi>;
 
 let opener: Opener = async () => {
   throw new Error("The org engine is not available on this server.");
@@ -122,7 +128,14 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
   const pending = opening.get(opts.orgId);
   if (pending) return pending;
   const p = (async () => {
-    const host = await opener(opts);
+    let self: OrgHostApi | null = null;
+    const stamp: Stamp = (sid, _event, _payload, who) => {
+      if (!self) throw new Error("The org engine stamped before it opened.");
+      const pid = projectOfSession(self, sid);
+      return stampEnvelope(self, opts.orgId, pid, { by: who?.by ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => readPoSettings(projectOverseerPaths(opts.orgId, projectId, opts.workspaceDir)), defaultPoSettings());
+    };
+    const host = await opener({ ...opts, stamp });
+    self = host;
     for (const fn of openedHooks) fn(host, opts.orgId);
     host.onChange((change) => {
       for (const fn of changeHooks)

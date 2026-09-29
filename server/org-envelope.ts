@@ -11,8 +11,8 @@ import { PER_DAY, PER_TURN, PO_LIMIT_KINDS, type Allowance, type Autonomy, type 
  * ledgers and the chart states it counts, and passes them in.
  */
 
-/** Who acts. `wrapup`: a wrap-up turn's profile writes; `model`: a gathering model's tool call. */
-export type ActBy = "operator" | "overseer" | "system" | "model" | "person" | "wrapup";
+/** Who acts. `chart`: the charts on their own (a drive, a released hold); `wrapup`: a wrap-up turn's profile writes; `model`: a gathering model's tool call. */
+export type ActBy = "operator" | "overseer" | "chart" | "system" | "model" | "person" | "wrapup";
 
 /** The confirm card a global Overseer act carries (§app.overseer/org-people-facing): every target it lists. */
 export interface EnvelopeCard {

@@ -80,6 +80,17 @@ describe("org engines: one host per org", () => {
     assert.ok(isOrgHostOpen("org_j"));
   });
 
+  test("the host gets a stamp: a chart's own act (or a named actor's), unattended, from the project's settings file", async () => {
+    const f = fakeHost();
+    let stamp: ((sid: string, e: string, p: Record<string, unknown>, who?: { by?: "overseer" }) => { by: string; attended: boolean; holdMs: number }) | null = null;
+    setOrgHostOpener(async (o) => ((stamp = o.stamp), f.host));
+    assert.equal(stamp, null);
+    await openOrgHost({ orgId: "org_s", workspaceDir: "/nonexistent-ws", stateDir: "/state" });
+    const e = stamp!("watch/org_s/prj_s", "gather/start", {});
+    assert.deepEqual([e.by, e.attended, e.holdMs], ["chart", false, 600_000]);
+    assert.equal(stamp!("item/org_s/prj_s/g_1", "gather/start", {}, { by: "overseer" }).by, "overseer");
+  });
+
   test("changes fan out with the org id; a throwing listener stops nothing", async () => {
     const f = fakeHost();
     setOrgHostOpener(async () => f.host);

@@ -39,8 +39,8 @@ event data (envelope + payload).
   explain order: **level → act :pre → state (not-here) → transition :checks → :cond** (then
   `:sova/refusal` attr of the transition, else "That can't be done now.").
 - `(dsl/correction {:event :item/reopen :needs "L1" :target … :checks [...]} & content)` — q9.
-  Same as `act`, tagged `:sova/correction true`; a blank `:reason` in the event data refuses with
-  `dsl/reason-required` = "A correction needs a reason: say why." (checked right after the level).
+  Same as `act`, tagged `:sova/correction true`; a blank `:reason` refuses with
+  `dsl/reason-required` = "A correction needs a reason: say why." unless `by` is operator.
   Declare it in `:acts` like any act (needs/tool).
 - `(dsl/effect kind (fn [data] {...}))` — executable content: an effect intent. The engine assigns
   `:key` (`<sid>@<generation>.<n>`, unique forever, the idempotency key) and keeps it in the session's
@@ -56,6 +56,29 @@ event data (envelope + payload).
   the hold is still there (and the session is still `In :while-in`, when given), the effect moves to
   the outbox and the chart receives `:hold/released {:id :kind :key}`; if `:while-in` no longer
   holds it receives `:hold/lapsed {:id :kind}`. Default ms is data `:sova/hold-ms`, else 600000.
+- **Act holds (q10, r4/r6) — the main kind.** An act whose `:acts` meta has `:hold true` (plus
+  `:what (fn [data] "…")`, `:counts "gather"`, `:count (fn [data] n)` for promote's ids) is, when
+  `engine/hold_policy.cljc` `held?` says so (THE one switch: `overseer-unattended-held?`; `by` chart
+  always; operator clicks and attended turns never; envelope `:hold-ms` 0 = never), checked in full
+  (level → pre → state → checks → cond) and then NOT taken: the engine stores
+  `:sova/holds {id {:id :act true :event :data :kind :what :since :until :by :overseer-id :project-id :counts :reserve}}`
+  and arms `:sova/hold-due`. At `:until` it calls the host's `stamp(sid, event, payload, {by, overseerId, projectId})`
+  for a fresh envelope and re-delivers the act with `:sova/released id` through the full path (never
+  re-held). Then the session receives `:hold/released {:id}` (taken) or `:hold/dropped {:id :sentence
+  :stage :check}` (refused now; the act's own refused step is in the log).
+- **Reservations (F2).** For every act with `:counts`, the engine adds the pending act holds of the same
+  project (`:project-id`, else `:scope`) and kind to the envelope before any check:
+  `allowance[kind].used += n` and the at-once count (`gather` → `:gatherings-open`, `create` →
+  `:coding-running`, `hold_policy/at-once-field`). A hold being released no longer counts itself. The
+  ledger counts a use only when the act is taken (the chart's taken transition). **The host's stamp
+  must NOT add pending holds itself** (the engine does).
+- **Drive (r3).** `(dsl/drive {:event :gather/start :target (fn [d] sid) :data (fn [d] payload)})`:
+  after the step the engine calls `stamp(target, event, payload, {by: "chart", projectId})` and delivers
+  the act with `by` chart, not attended, through the normal path (held by the policy).
+- **Cancel.** `:hold/cancel {:id :reason}` (`dsl/hold-cancel-correction`); the reason is required
+  unless `by` operator. The session then receives `:hold/cancelled {:id :kind :event}`.
+- `(dsl/held kind f opts)` — an *effect-only* hold (the effect waits, no state is held back); at its
+  end `:hold/released` or, when `:while-in` is no longer active, `:hold/lapsed`.
 - `(dsl/cancel-hold (fn [data] id))` — executable content removing a hold (its timer is cancelled);
   the chart then receives nothing more for it. Use inside a `correction` on `:hold/cancel {:id :reason}`;
   `(dsl/hold-cancel-correction {:needs "L0"})` is that transition, ready to place on the top state.
@@ -91,7 +114,7 @@ Before an external event (`send`) the engine delivers every delayed send due at 
 | `trial(sid, event, data)` | the same call on a copy, rolled back: `{taken, refusal (sentence string), refusalInfo:{sentence,tail,stage,check,status,code}, transitions, refused, before, configuration, steps, outbox, holds, spawned, sends}` |
 | `explain(sid, event, data)` | refusal or null (no step) |
 | `enabledEvents(sid, envelope)` | `[{event, enabled, refusal?}]` for every act the chart declares + events on active transitions |
-| `setState(sid, {states, data, reason}, envelope)` | q9 free set-state: attended/operator turns only, reason required; runs exits/entries |
+| `setState(sid, {states, patch, reason}, envelope)` | q9/r5 free set-state: ONLY `by` overseer ∧ attended ∧ via ≠ overseer (operator page and global Overseer refused), reason required; runs exits/entries |
 | `resume(sids)` | `sova/resumed` to each, then link/moved per link; past-due timers are NOT fired: call `fireDue(now)` after |
 | `fireDue(now)` | deliver everything due |
 | `nextDueAt()` | earliest pending delayed event |
@@ -99,7 +122,8 @@ Before an external event (`send`) the engine delivers every delayed send due at 
 | `holds()` | every held act of every loaded session |
 | `chartInfo(name)` / `charts()` | registry: version, storage, exported, acts with metadata, transitions, corrections, states (visualizer node/edge export) |
 
-Options: `loadCold(sid) → text | null` (sync; null = unknown session: a send to it throws
+Options: `stamp(sid, event, payload, ctx) → envelope` (sync; held-act release and drive),
+`loadCold(sid) → text | null` (sync; null = unknown session: a send to it throws
 `sova/unknown-session` and the call rolls back; a throw from loadCold — e.g. a broken snapshot —
 rolls the call back with that error), `clock`, `maxMicrosteps`, `charts` (runtime JS charts, tests).
 

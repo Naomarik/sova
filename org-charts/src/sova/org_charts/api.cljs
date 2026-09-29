@@ -8,7 +8,8 @@
     [sova.org-charts.charts.registry :as registry]
     [sova.org-charts.engine.bounded :as bounded]
     [sova.org-charts.engine.core :as core]
-    [sova.org-charts.engine.js-chart :as js-chart]))
+    [sova.org-charts.engine.js-chart :as js-chart]
+    [sova.org-charts.engine.rebuild :as rebuild]))
 
 (def charts
   "The shipped charts: the refit's registry (charts/registry.cljc). The engine's test chart
@@ -201,3 +202,12 @@
   "A snapshot's EDN text at its chart's current version (throws when it can't be migrated)."
   [text]
   (core/migrate-text charts text))
+
+(defn verify-session
+  "`org-charts rebuild --verify`: replay session `sid`'s log `rows` (as the host's log reader gives
+   them) on a scratch engine and compare with its snapshot text (null: none). opts: `charts` (JS
+   charts, as `createEngine`). → {session, chart, rows, same, differences: [{what, replayed,
+   snapshot, why}], divergence}. Writes nothing."
+  ([sid rows snapshot-text] (verify-session sid rows snapshot-text nil))
+  ([sid rows snapshot-text opts]
+   ((guarded (fn [] (->js (rebuild/verify-session (runtime-charts charts opts) sid (->clj rows) snapshot-text)))))))

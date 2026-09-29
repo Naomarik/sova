@@ -1083,8 +1083,10 @@
       (when-not (ensure-loaded! eng sid) (unknown-session! sid))
       (let [states (vec (distinct (map keyword states)))
             ev     (evts/new-event {:name :sova/set-state
-                                    :data (merge (select-keys envelope [:by :via :attended])
-                                            {:states (mapv id-str states) :reason reason :at ((:clock (engine eng)))})})
+                                    :data (cond-> (merge (select-keys envelope [:by :via :attended])
+                                                    {:states (mapv id-str states) :reason reason :at ((:clock (engine eng)))})
+                                            ;; logged (scrubbed), so a log replay can apply it
+                                            (seq patch) (assoc :patch patch))})
             c      (chart-of eng sid)
             r      (cond
                      (not (and (= "overseer" (some-> (:by envelope) id-str)) (true? (:attended envelope))
@@ -1200,6 +1202,40 @@
      :configuration (chart/in-document-order c (::sc/configuration wmem))
      :data          (get wmem data-key)
      :running       (boolean (::sc/running? wmem))}))
+
+(defn- outline-of [sid wmem queue]
+  (let [d (get wmem data-key)]
+    {:configuration (vec (sort (map id-str (::sc/configuration wmem))))
+     :running       (boolean (::sc/running? wmem))
+     :links         (into (sorted-map) (map (fn [[k v]] [(id-str k) v])) (:sova/links d))
+     :watchers      (vec (sort (map id-str (:sova/watchers d))))
+     ;; its own timers (a send it made to itself, a hold's end); what others sent it is theirs
+     :timers        (vec (sort-by (juxt :at :event)
+                           (keep (fn [{:keys [event delivery-time]}]
+                                   (when (= sid (::sc/source-session-id event))
+                                     {:event (id-str (:name event)) :at delivery-time}))
+                             queue)))
+     :holds         (vec (sort-by :id (map (fn [[id h]] {:id (id-str id) :until (:until h) :event (some-> (:event h) id-str)})
+                                        (:sova/holds d))))}))
+
+(defn outline
+  "What a log replay compares (engine/rebuild): a snapshot text's states, running flag, links,
+   watchers, own timers and holds, migrated to the current chart."
+  [charts text]
+  (let [{:keys [session-id wmem queue]} (migrate-snapshot charts (read-snapshot text))]
+    (outline-of session-id wmem queue)))
+
+(defn session-outline
+  "`outline` of loaded session `sid`."
+  [eng sid]
+  (when-let [wm (wmem-of eng sid)]
+    (outline-of sid wm (q/snapshot-session (:queue (engine eng)) sid))))
+
+(defn replay-watch!
+  "Log replay only (engine/rebuild): `watcher` starts (or stops) watching `target`, as a logged
+   `sova/watched` (`sova/unwatched`) row of `target` says."
+  [eng watcher target add? {:keys [now]}]
+  (call eng now {:due-first true} (fn [] (watch! eng watcher target add?))))
 
 (defn load!
   "Replace (or add) session `sid` from snapshot `text`, migrating an older chart version. Nothing

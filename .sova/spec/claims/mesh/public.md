@@ -96,6 +96,17 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
   gives up after 8 seconds. A pass writes `verifiedAt`; a failure drops it and the address reads
   `unreachable` until a Verify passes. With no address it answers "No public address is set."
 
+## §mesh.public/front-cdn — A web server behind a CDN
+
+- The existing web server's guide also covers a CDN or proxy that terminates TLS for the public
+  hostname in front of that server, such as Cloudflare's proxy. The server then listens on the
+  port the CDN connects to, not 443 with a certificate of its own. Without more, X-Forwarded-For
+  would carry the CDN's address. So the note says to restore the visitor's address first with
+  nginx's realip module: `set_real_ip_from` for each of the CDN's published ranges, and
+  `real_ip_header` for its client-address header (`CF-Connecting-IP` for Cloudflare). The note also
+  says never to forward that header unchecked, because anyone who reaches the server directly can
+  set it.
+
 ## §mesh.public/registry — Which host minted a token
 
 - **Push.** A routed host sends its gateway its whole live set as a `RegistrySnapshot`, `PUT

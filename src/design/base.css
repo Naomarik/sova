@@ -5267,6 +5267,14 @@ a.subagent-row { text-decoration: none; }
 .sidebar-search-row { display: flex; align-items: center; gap: var(--space-2); }
 .sidebar-search-row > .search { flex: 1; min-width: 0; }
 
+/* Folded, the search row and the count row are one line: the eye, the count, Select and a search
+   icon. Opened, the field takes the line beside Close Search, and the count stays in it hidden
+   (the field's description and live count), so `position: relative` keeps it inside the line. */
+.sidebar-toolbar { position: relative; display: flex; align-items: center; gap: var(--space-2); min-height: var(--tap-min); }
+.sidebar-toolbar > .search { flex: 1; min-width: 0; }
+.sidebar-toolbar > .search-count { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-toolbar > .button-icon { flex: none; }
+
 /* The entry button. `position: relative` anchors its one mark: the count of
    Overseer messages you haven't read, top-right. It is aria-hidden: the button's
    name says it in words. Who needs you is the sidebar's Needs you region, not the eye. */

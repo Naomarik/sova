@@ -1,7 +1,8 @@
 (ns sova.org-charts.engine.matrix
   "The generic state × event × envelope matrix (design §10 bar M), for any registered chart.
 
-   `run` explores the configurations a session reaches from each start by sending the `:drive`
+   An act's or drive event's payload may be a fn of the session's data at the checkpoint (fresh ids
+   per state). `run` explores the configurations a session reaches from each start by sending the `:drive`
    events (facts, link notifications, timer advances) and every act that is accepted under some
    envelope, then, for every reached state × act × envelope, SENDS the act on a checkpoint of the
    engine and asserts:
@@ -39,7 +40,8 @@
     (catch :default e {:error (ex-message e)})))
 
 (defn- drive-one [eng now item]
-  (let [[k x y] item]
+  (let [[k x] item
+        x (if (fn? x) (x (core/data eng sid)) x)]
     (try
       (if (= k :fire)
         (core/fire-due! eng (+ now x))
@@ -89,9 +91,10 @@
                       (doseq [act acts
                               [ename envelope] envelopes]
                         (core/rewind! eng cp)
-                        (let [[event payload] act
+                        (let [[event p] act
+                              payload (if (fn? p) (p (core/data eng sid)) p)
                               r   (core/explain eng sid event (merge payload envelope) {:now now})
-                              out (attempt eng now act envelope)]
+                              out (attempt eng now [event payload] envelope)]
                           (vswap! cells inc)
                           (cond
                             (:error out)

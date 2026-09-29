@@ -52,3 +52,11 @@
                        :drive [[:kid/watch {:target "kid/nowhere"}]]})]
     (is (empty? (:failures r)) "a watch of a session that exists nowhere does not throw")
     (is (pos? (:cells r)))))
+
+(deftest payloads-may-be-fns-of-the-state
+  (let [r (matrix/run {:charts rp/charts :chart "refit-parent" :level-check rp/level-check
+                       :acts [[:kid/spawn (fn [d] {:name (str "k" (count (:sova/children d)))})]]
+                       :envelopes {"operator" {:by "operator"}}
+                       :key (fn [d] (count (:sova/children d))) :max-configs 3})]
+    (is (empty? (:failures r)) "a fresh id per state: no spawn of an existing id")
+    (is (= 3 (:configs r)))))

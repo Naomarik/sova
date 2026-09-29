@@ -498,3 +498,8 @@
       (is (= [:hold/approve :gather/start :hold/released] (map :event (:steps r))))
       (is (in? eng "par" :gathering))
       (is (nil? (core/next-due-at eng)) "its timer is gone"))))
+
+(deftest the-switches-are-as-decided
+  (is (true? policy/overseer-unattended-held?) "r4/r6, decided (q11)")
+  (is (false? policy/operator-acts-wait-for-hours?) "r7, decided (q13)")
+  (is (true? policy/unreviewed-holds-wait?) "q12"))

@@ -26,7 +26,7 @@ export const CARRIED_RULES: readonly CarriedRule[] = [
 	{ anchor: "Documentation changes only through drafts", sentences: 1 },
 	{ anchor: "Documenting what the code already does", sentences: 1 },
 	{ anchor: "`node \"$core/sova-spec.mjs\" census --changed --root <project root> --json` must report", sentences: 2 },
-	{ anchor: "Your reply's last line", sentences: 5 },
+	{ anchor: "Your reply's last line", sentences: 7 },
 	{ anchor: "The task's go-ahead authorizes", sentences: 2 },
 ];
 
@@ -72,7 +72,7 @@ export function workerSpecBrief(coreDir: string, text: string = SPEC_INSTRUCTION
 	return [
 		"## Spec discipline (the spawning session has spec mode on)",
 		"This project documents behavior in `.sova/spec/`. The rules below are quoted from its spec mode; they bind your part of the task.",
-		`Trusted tools: start each bash command that runs them with exactly \`core=${shellQuote(coreDir)}\`. <project root> is \`git rev-parse --show-toplevel\` of your working directory. Read-only: \`node "$core/sova-spec.mjs" <check|census|scope '<§id>'|impact '<§id>'> --root <project root> --json\`.`,
+		`Trusted tools: start each bash command that runs them with exactly \`core=${shellQuote(coreDir)}\`. <project root> is \`git rev-parse --show-toplevel\` of your working directory. Read-only: \`node "$core/sova-spec.mjs" <check|census|scope '<§id>'|impact '<§id>'|foreign --base <rev>> --root <project root> --json\`.`,
 		...rules.map((rule) => `- ${rule}`),
 	].join("\n");
 }

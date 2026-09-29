@@ -189,6 +189,7 @@
          :unload        (fn [sid] (core/unload! eng sid))
          :coldSessions  (fn [now minAge] (->js (if (some? minAge) (core/cold-sessions eng now minAge) (core/cold-sessions eng now))))
          :sessions      (fn [] (->js (core/session-ids eng)))
+         :peek          (guarded (fn [text] (->js (core/peek-snapshot charts text))))
          :generation    (fn [sid] (core/generation eng sid))}))
 
 (defn chart-list*

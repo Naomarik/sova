@@ -229,7 +229,7 @@ an `align` call: it is the message, not its working.
   <div class="card-foot align-doc-foot">
     <button type="button" class="button button-sm" aria-disabled="true|absent" aria-describedby="align-doc-{n}-hint"
             title="{reason}">Go With Recommendations</button>
-    <span class="align-doc-foot-hint" id="align-doc-{n}-hint">Or tick some and answer the rest below. | {reason}</span>
+    <span class="align-doc-foot-hint" id="align-doc-{n}-hint">Or pick some answers and type the rest below. | {reason}</span>
   </div>
 </article>
 <!-- an earlier revision -->
@@ -304,7 +304,7 @@ an `align` call: it is the message, not its working.
   `accept` of exactly those questions, and each option ("2b": q2's option b) and typed answer as a
   `decide`.
 - **Go With Recommendations.** The card's foot has one button (secondary, `button-sm`), with the
-  hint "Or tick some and answer the rest below." beside it. It sends only its own message:
+  hint "Or pick some answers and type the rest below." beside it. It sends only its own message:
   `{al_N}: go with your recommendations for every open question, and go ahead.` — which the agent
   reads as `accept_all` then status `implementing`. It is `aria-disabled`, with the reason as its
   title and in place of the hint, while the composer's send is blocked (that reason,

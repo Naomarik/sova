@@ -25,7 +25,7 @@ import { registerDecisionRoutes } from "./decisions-routes";
 import { startShareListener, stopShareListener } from "./share/listener";
 import { flushOpenVisits } from "./visits";
 import { disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
-import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
+import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { stateRoot } from "./state-root";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
 import { setFavorite } from "./model-favorites";
@@ -103,6 +103,7 @@ import { onTagsChanged } from "./session-tags";
 import { startSessionTags, tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
 import { readLiveRecords } from "./live";
+import { resourceMonitor, startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
 import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
 
@@ -861,6 +862,23 @@ app.get("/api/insights/session/workers", async (c) => {
   return c.json(await getHiddenWorkers(path), 200, { "Cache-Control": "no-store" });
 });
 
+// Resource monitor (§app/resource-monitor): the latest background sample, and its history (5s from
+// the in-memory hour, 30s from the disk log). Read-only.
+app.get("/api/monitor", (c) => {
+  const snap = resourceMonitor()?.snapshot();
+  return snap ? c.json(snap, 200, { "Cache-Control": "no-store" }) : c.json({ error: "No sample yet" }, 503);
+});
+
+app.get("/api/monitor/history", async (c) => {
+  const res = c.req.query("res") ?? "5s";
+  if (res !== "5s" && res !== "30s") return c.json({ error: "res must be 5s or 30s" }, 400);
+  const since = Number(c.req.query("since") ?? 0);
+  if (!Number.isFinite(since) || since < 0) return c.json({ error: "since must be epoch ms" }, 400);
+  const monitor = resourceMonitor();
+  if (!monitor) return c.json({ error: "Monitor not running" }, 503);
+  return c.json(await monitor.history(since, res), 200, { "Cache-Control": "no-store" });
+});
+
 // The git worktrees each listed session touches (server/worktrees.ts). Paths that aren't sessions
 // come back with trees: []; git failures are a tree's `error`, never a 500.
 app.get("/api/insights/worktrees", async (c) => {
@@ -1226,6 +1244,12 @@ attachWebSockets(server);
 setOverseerDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
 startProjectOverseerLoop();
+// Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).
+startResourceMonitor({
+  logDir: join(stateRoot(), "monitor"),
+  liveDir: LIVE_DIR,
+  held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.session.sessionId, cwd: c.session.sessionManager.getCwd() })),
+});
 // Every attached org's workspace repo: committed at most hourly when anything changed, then pushed.
 const workspaceCommits = new WorkspaceCommitter(attachedWorkspaces);
 workspaceCommits.start();
@@ -1304,6 +1328,7 @@ async function shutdown() {
   for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
   usagePoller.stop();
   priceRefresh.stop();
+  stopResourceMonitor();
   meshLinks.stop();
   stopMesh();
   stopShareListener();

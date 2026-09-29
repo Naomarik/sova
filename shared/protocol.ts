@@ -3594,7 +3594,8 @@ export interface MonitorBucket {
 
 export interface MonitorSampler {
   intervalMs: number;
-  /** Wall time of the last tick and the average over the ring, in ms. */
+  /** The last tick's own cost and the average over the last hour, in ms: the server thread's
+      CPU time spent in the tick (wall time on Node < 23.9), waits excluded. */
   lastTickMs: number;
   avgTickMs: number;
   /** Ticks skipped because the previous one was still running. */

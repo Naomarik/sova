@@ -10,11 +10,12 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import {
-	ACCOUNTS_DEV_ENV, ClaudeLogins, LEASES_DIR_NAME, LEASE_STALE_MS, readLoginUse, DEFAULT_LIMIT_COOLDOWN_MS, SHARED_ENTRIES, accountsPath, deviceOrder, ensureLoginDir, groupByAccount,
+	ACCOUNTS_DEV_ENV, ClaudeLogins, LEASES_DIR_NAME, LEASE_STALE_MS, readLoginUse, DEFAULT_LIMIT_COOLDOWN_MS, SHARED_ENTRIES, accountsPath, claudeBaseEnv, claudeJsonPath,
+	defaultClaudeDir, deviceOrder, ensureLoginDir, groupByAccount,
 	loginDir, loginEntryFor, parseAccounts, planLabel, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
 	thisDeviceId, updateAccounts, writeAccounts, type ClaudeAccountsFile, type ClaudeLoginRecord,
 } from "./accounts.ts";
-import { classifyClaudeFailure, ClaudeFailureDetector } from "./transport.ts";
+import { claudeEnv, classifyClaudeFailure, ClaudeFailureDetector } from "./transport.ts";
 
 const FIXTURES = fileURLToPath(new URL("./tests/fixtures/failures/", import.meta.url));
 const events = (name: string) => fs.readFileSync(path.join(FIXTURES, name), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
@@ -87,6 +88,72 @@ test("a login's directory is 0700 and links the shared entries to default's, pro
 	assert.equal(fs.readFileSync(path.join(dir, "settings.json"), "utf8"), "{\"own\":true}");
 	assert.throws(() => loginDir(s.agentDir, "../escape"), /Not a login id/);
 });
+
+test("an inherited CLAUDE_CONFIG_DIR naming a login's directory is not default: ~/.claude is, and the login's links stay", (t) => {
+	const s = sandbox(t);
+	assert.ok(os.homedir().startsWith(process.env.SOVA_TEST_HOME ?? "\0"), "the throwaway home");
+	const home = path.join(os.homedir(), ".claude");
+	writeAccounts(s.agentDir, { version: 1, logins: [login(A, "acct-1")], devices: { local: { order: [A] } } });
+	const dirA = ensureLoginDir(s.agentDir, A, home);
+	const links = () => SHARED_ENTRIES.map((n) => { try { return fs.readlinkSync(path.join(dirA, n)); } catch { return null; } });
+	const before = links();
+	assert.equal(before[0], path.join(home, "projects"));
+	// As a pi started inside a Sova-spawned worker on A: its agent dir, and CLAUDE_CONFIG_DIR = A's dir.
+	const env = { PI_CODING_AGENT_DIR: s.agentDir, CLAUDE_CONFIG_DIR: dirA } as NodeJS.ProcessEnv;
+	const logins = new ClaudeLogins({ agentDir: s.agentDir, env });
+	assert.equal(logins.defaultDir, home);
+	assert.equal(defaultClaudeDir(env), home);
+	assert.equal(claudeJsonPath(logins.defaultDir, true, env), path.join(os.homedir(), ".claude.json"));
+	// Through a link to the agent dir, and a trailing slash, it is still A's directory.
+	const alias = path.join(s.root, "alias");
+	fs.symlinkSync(s.agentDir, alias);
+	assert.equal(defaultClaudeDir({ PI_CODING_AGENT_DIR: s.agentDir, CLAUDE_CONFIG_DIR: `${path.join(alias, "claude-accounts", A)}/` }), home);
+	// Under pi's default ~/.pi/agent too, whatever the effective agent dir is.
+	const piDefault = path.join(os.homedir(), ".pi", "agent", "claude-accounts", B);
+	assert.equal(defaultClaudeDir({ PI_CODING_AGENT_DIR: s.agentDir, CLAUDE_CONFIG_DIR: piDefault }), home);
+	// Claude Code's own directory elsewhere is still default's.
+	assert.equal(defaultClaudeDir({ PI_CODING_AGENT_DIR: s.agentDir, CLAUDE_CONFIG_DIR: s.claudeDir }), s.claudeDir);
+	// Using A repairs its links against ~/.claude's entries, never against itself.
+	assert.equal(logins.select().id, A);
+	assert.deepEqual(links(), before, "A's shared links are untouched");
+	// A spawn on default starts without the login's directory; one on A sets it explicitly.
+	assert.equal(claudeBaseEnv(env).CLAUDE_CONFIG_DIR, undefined);
+	assert.equal(claudeBaseEnv({ ...env, CLAUDE_CONFIG_DIR: s.claudeDir }).CLAUDE_CONFIG_DIR, s.claudeDir);
+	const inherited = process.env.CLAUDE_CONFIG_DIR;
+	process.env.CLAUDE_CONFIG_DIR = piDefault;
+	try {
+		assert.equal(claudeEnv({}).CLAUDE_CONFIG_DIR, undefined, "a default spawn does not run on the inherited login");
+		assert.equal(claudeEnv({ CLAUDE_CONFIG_DIR: dirA }).CLAUDE_CONFIG_DIR, dirA);
+	} finally {
+		if (inherited === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = inherited;
+	}
+});
+
+test("a login's directory: a wrong link is re-pointed; a link into the login itself is refused", (t) => {
+	const s = sandbox(t);
+	const dir = ensureLoginDir(s.agentDir, A, s.claudeDir);
+	// A projects link to another directory (a symlink to a directory) is replaced, not kept.
+	const elsewhere = path.join(s.root, "elsewhere");
+	fs.mkdirSync(elsewhere);
+	fs.writeFileSync(path.join(elsewhere, "keep.jsonl"), "{}\n");
+	fs.unlinkSync(path.join(dir, "projects"));
+	fs.symlinkSync(elsewhere, path.join(dir, "projects"));
+	ensureLoginDir(s.agentDir, A, s.claudeDir);
+	assert.equal(fs.readlinkSync(path.join(dir, "projects")), path.join(s.claudeDir, "projects"));
+	assert.ok(fs.existsSync(path.join(elsewhere, "keep.jsonl")), "the old target's contents are untouched");
+	// Default's directory given as a login's own (or another login's): refused before any write.
+	const dirB = loginDir(s.agentDir, B);
+	assert.throws(() => ensureLoginDir(s.agentDir, B, dirB), /cannot be a login's directory/);
+	assert.ok(!fs.existsSync(dirB), "nothing is created for the refused login");
+	assert.throws(() => ensureLoginDir(s.agentDir, A, dir), /cannot be a login's directory/);
+	assert.equal(fs.readlinkSync(path.join(dir, "projects")), path.join(s.claudeDir, "projects"));
+	// A shared entry of default's that resolves into the login's own directory is not linked.
+	fs.mkdirSync(path.join(dir, "own-agents"));
+	fs.symlinkSync(path.join(dir, "own-agents"), path.join(s.claudeDir, "agents"));
+	ensureLoginDir(s.agentDir, A, s.claudeDir);
+	assert.ok(!fs.existsSync(path.join(dir, "agents")) && !isLink(path.join(dir, "agents")), "no link back into the login");
+});
+const isLink = (p: string): boolean => { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } };
 
 test("identity comes from oauthAccount and never carries a token", (t) => {
 	const s = sandbox(t);

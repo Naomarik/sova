@@ -8,10 +8,14 @@ removes exactly that.
 
 ## §mesh.phone/claude-store — Claude Code's login where the phone's `claude` reads it
 
-The mesh syncs the Claude Code login into the `.claude` directory that the phone's `claude` actually
-reads. A native `claude` reads the one in Sova's isolated home. When `claude` in Termux is a short
+The installer finds the `.claude` directory that the phone's `claude` actually reads and gives it to
+Sova (`SOVA_SYNC_CLAUDE_DIR`). The mesh no longer syncs Claude Code's own login
+(§mesh.sync/logins), so that directory holds the phone's own last-resort login and nothing is synced
+into it; logins from the pool (§app.claude-logins/pool) arrive in Sova's agent dir instead and reach
+`claude` as `CLAUDE_CONFIG_DIR`. Known gap: nobody has checked that such a directory (a Termux path)
+reaches `claude` when it runs inside a proot-distro container. A native `claude` reads the one in Sova's isolated home. When `claude` in Termux is a short
 wrapper script that runs Claude Code inside a proot-distro container (`proot-distro login <distro>`,
-optionally `--user <user>`, with `HOME=<home>`), the installer syncs the login into that container's
+optionally `--user <user>`, with `HOME=<home>`), the installer picks that container's
 `<home>/.claude` instead, as seen from Termux; without `HOME=` in the wrapper the user's home comes from
 the container's own user list. `--claude-dir` names the directory explicitly. When the wrapper can't
 be read with certainty (the distro, user or home is not a plain word, the container is missing, it sets

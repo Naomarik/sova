@@ -7,8 +7,8 @@ import "../design/align-viewer.css";
 let seq = 0;
 
 /**
- * Taking recommendations from the card (§chat.alignment/card), in a chat Sova holds: only ChatView
- * provides it, so watch views and worker transcripts stay read-only. Ticks and the button only
+ * Answering from the card (§chat.alignment/card), in a chat Sova holds: only ChatView provides it,
+ * so watch views and worker transcripts stay read-only. Ticks, option picks and the button only
  * compose an ordinary message; the agent records it with its `align` tool.
  */
 export interface AlignAnswer {
@@ -16,9 +16,14 @@ export interface AlignAnswer {
   on(): boolean;
   /** The newest revision of an alignment on the branch: only its card takes answers. */
   current(doc: string): AlignDocInfo | undefined;
+  /** Whether the recommendation is staged for `q`. */
   picked(doc: string, q: string): boolean;
   toggle(doc: string, q: string, on: boolean): void;
-  /** Why ticking can't stage anything here, else null. */
+  /** The option staged for `q` by index (the recommended one when its recommendation is), else undefined. */
+  pickedOption(doc: string, q: string): number | undefined;
+  /** Stages option `index` as `q`'s answer, or with null clears `q`'s pick. */
+  pick(doc: string, q: string, index: number | null): void;
+  /** Why ticking or picking can't stage anything here, else null. */
   tickBlocked(): string | null;
   /** Why "Go With Recommendations" can't send now, else null. */
   goBlocked(): string | null;
@@ -160,6 +165,7 @@ function AlignDocBody(props: { doc: AlignDocInfo; answer?: AlignAnswer | null })
 const plain = (text: string) => text.replace(/\*\*([^*\n]+)\*\*/g, "$1").replace(/`([^`\n]+)`/g, "$1");
 
 function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: AlignAnswer | null }) {
+  const radioName = `align-q-${++seq}`;
   const state = () => questionStateOf(props.q);
   const chip = () => QUESTION_CHIP[state()];
   const rec = () => recommendedOption(props.q);
@@ -231,15 +237,52 @@ function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: Alig
       <Show when={props.q.options?.length}>
         <ol class="align-q-options" aria-label="Options">
           <For each={props.q.options}>
-            {(o, i) => (
-              <li>
-                <span class="text-mono align-q-letter">{optionLetter(i())}</span>
+            {(o, i) => {
+              const text = () => (
                 <span>
                   <strong class="align-q-line"><Inline text={o.label} /></strong>
                   <span class="align-q-desc"><Inline text={o.tradeoff} /></span>
                 </span>
-              </li>
-            )}
+              );
+              return (
+                <li>
+                  {/* On an answerable card an open question's option is a radio's label: the whole
+                      row is the target, picked it takes the selection tint and accent edge, and a click on the picked one
+                      clears it. */}
+                  <Show
+                    when={take()}
+                    fallback={
+                      <>
+                        <span class="text-mono align-q-letter">{optionLetter(i())}</span>
+                        {text()}
+                      </>
+                    }
+                  >
+                    {(a) => {
+                      const on = () => a().pickedOption(props.doc, props.q.id) === i();
+                      return (
+                        <label class="align-q-pick" title={a().tickBlocked() ?? undefined}>
+                          <input
+                            type="radio"
+                            class="visually-hidden"
+                            name={radioName}
+                            checked={on()}
+                            disabled={!!a().tickBlocked()}
+                            aria-label={`Answer ${props.q.id} with ${optionLetter(i())}: ${plain(o.label)}`}
+                            onClick={(e) => {
+                              a().pick(props.doc, props.q.id, on() ? null : i());
+                              e.currentTarget.checked = on();
+                            }}
+                          />
+                          <span class="text-mono align-q-letter" aria-hidden="true">{optionLetter(i())}</span>
+                          {text()}
+                        </label>
+                      );
+                    }}
+                  </Show>
+                </li>
+              );
+            }}
           </For>
         </ol>
       </Show>

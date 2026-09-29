@@ -13,7 +13,9 @@ Sova behaves as it did before the mesh existed, except for the Mesh card, the `#
 Mesh section of Settings: no new listening port, no Tailscale call, no timer, no outbound request, no
 write to `auth.json`, to Claude Code credentials or to any settings file (apart from what the user
 asks for in Settings → Accounts, §app.claude-logins/add-remove, which works the same with the mesh
-off). Every existing route and
+off, and the lease a process running `claude` on an added login keeps in that login's directory,
+§app.claude-logins/drain). There is no pool of Claude logins: every login on the host is its own
+(§app.claude-logins/migration). Every existing route and
 WebSocket answers byte-for-byte as before, protocol additions are optional fields or new types
 only, and a `SessionSummary` carries no host or peer field.
 

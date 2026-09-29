@@ -162,13 +162,10 @@ ellipsis.
     left rail (`.session-rail-count`), under the row's state, when `live?.workers?.working ≥ 1`.
     Hidden at 0 or when absent. `.session-rail-count-live` pulses the icon only, and only on a
     row with no Busy dot, whose pulse would otherwise be a second moving thing.
-  - **Session head:** a link chip before Live. With a live team it stays worded —
-    `<a class="chip chip-count" href="#/agents/{teamId}">Team · {n} working</a>`, pointing at
-    the busiest live team when there are several. Without a team it matches the rail's
-    vocabulary: `<a class="chip chip-count session-head-working" href="#/agents">{n}<span
-    class="icon icon-sm" style="--icon:url(/icons/worker.svg)"></span></a>`,
-    `aria-label`/`title` "{n} subagents working now",
-    the word carried by the label rather than the box. The icon inside a `.chip-count` is 12px.
+  - **Session head:** no chip at all, working or not, team or not. The count is already the
+    sidebar row's rail count and the Agents foot row's, and the head's row goes to the title and
+    the context readout (§chat.context-window/width-budget). The Agents page, the composer's
+    subagents trigger and the subagents pane keep their own counts.
   - The count inside a sidebar session row is **never** a link, because an `<a>` can't nest in
     the row's link — and now it sits outside the link, in the rail, as a `tabindex="-1"` button.
     The foot's Agents row is still the way to the page from the sidebar.

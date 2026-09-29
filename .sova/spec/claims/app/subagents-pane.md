@@ -512,7 +512,11 @@ like any other. CC's JSONL is normalized into the same `TranscriptItem` rows, ea
 pi-shaped synthetic `raw`, so every row renders through the existing components: prose, thinking
 (redacted signature-only blocks are dropped), tool calls paired with their results (CC's `Bash`,
 `Read`, `Edit`, `Write`, `Glob`, `Grep` map to pi's names and icons; anything else keeps CC's
-name), compaction boundaries as info rows. Image blocks (`{type:"image", source:{type:"base64",
+name), compaction boundaries as info rows. A worker whose Claude login leaves the device
+(§app.claude-logins/drain) moves to the next login with `--resume` of its own session, so this
+view keeps following the same file (every login keeps its transcripts in Claude Code's own
+`projects/`); the worker's own transcript gets the line `Claude: moved {A} → {B} (the login left
+this device)`. Image blocks (`{type:"image", source:{type:"base64",
 media_type, data}}`), in a tool result or a prompt, become the row's `images` as data URLs, the
 same field a pi row fills, so a worker's image results show in its tool cards as a pi session's
 do (§chat.images/thread-thumbnails); they never become placeholder text. Sidechains (a

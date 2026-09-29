@@ -302,10 +302,10 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Label (head ≥720px) | Context |
-| Value | `{tokens} / {window} · {pct}%` (e.g. `237k / 1M · 24%`) · window unknown: `{tokens}` |
-| Narrow (head <720px, and the meta line <520px) | `{pct}%` · window unknown: `{tokens}` |
-| Compacted | compacted |
+| Head ≥720px, beside the ring | `{tokens} / {window}` (e.g. `222k / 1M`) · window unknown: `{tokens}`, no ring |
+| Head <720px, beside the ring | `{tokens}` (e.g. `222k`) · window unknown: `{tokens}`, no ring |
+| Percent | never shown in the head; only in the Title / AT sentence below |
+| Compacted | compacted (no ring) |
 | Title / AT, with a window | Context: {tokens, comma thousands} of {window} tokens ({pct}%), as of the last reply. |
 | Title / AT, window unknown | Context: {tokens} tokens, as of the last reply. This model's limit is unknown. |
 | Title / AT, compacted | Context was compacted. The next reply reports the new size. |
@@ -399,7 +399,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Teams empty, some sessions live | **{n} pi sessions running. None of them has a team.** (n = 1: **1 pi session running. It has no team.**) Teams you create in pi show up here while their session runs. |
 | Teams empty, none live | not shown: the whole Agents page is the 0-live empty state above |
 | Subagents empty | Section omitted |
-| Aggregate chips | sidebar rail: `{n}` + worker icon · session head, linked: Team · {n} working (→ `#/agents/{teamId}`) or `{n}` + worker icon, `.session-head-working` (→ `#/agents`), its words in `title`/`aria-label`: "{n} subagents working now" |
+| Aggregate chips | sidebar rail: `{n}` + worker icon · session head: none |
 | Current goal summary | Current goal · {now} · {n} topics (1 topic) |
 | Current goal state line | Updated {rel} · stale adds: " · behind the latest messages" · failed-keeping-last adds: " · the last update failed, so this is the previous summary" · updating/drafting: "Updating" + live dot |
 | Current goal jump | Jump to Message |

@@ -173,6 +173,36 @@
   font-size: inherit;
 }
 .align-q-take > .toggle-box { margin-top: calc((1lh - 18px) / 2); }
+/* An option to pick: the whole row is the target (a visually hidden radio), and it looks like a
+   read-only option — the same plain letter in the same column. Its padding reaches into the card's
+   gutter and the gap between rows (a negative margin of the same size), so the row makes the tap
+   minimum without moving the text off the read-only rhythm. Picked, it takes a faint tint, a thin
+   accent edge and an accent letter and label: nothing moves. */
+.align-q-options > li:has(> .align-q-pick) { display: block; }
+.align-q-pick {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--space-5) 1fr;
+  align-items: baseline;
+  min-height: var(--tap-min);
+  margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.align-q-pick:hover { background: var(--color-sunken); }
+.align-q-pick:has(> input:checked) {
+  background: color-mix(in srgb, var(--color-accent-tint) 60%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0; /* square where the edge runs, so it stays a straight bar */
+}
+.align-q-pick:has(> input:focus-visible) { outline: var(--focus-ring); outline-offset: 0; }
+.align-q-pick:has(> input:disabled) { cursor: default; }
+.align-q-pick:has(> input:disabled:not(:checked)):hover { background: none; }
+.align-q-pick > input:checked ~ .align-q-letter,
+.align-q-pick > input:checked ~ span .align-q-line,
+.align-q-pick > input:checked ~ span .align-q-line strong { color: var(--color-accent); }
 /* The card's foot: one button to go with every recommendation, and its hint or its reason. */
 .align-doc-foot.card-foot { padding: var(--space-3) 0 0; margin-top: var(--space-1); }
 .align-doc-foot-hint { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
@@ -196,8 +226,8 @@
 .run-status > .run-status-align { margin-left: calc(var(--run-status-pad) * -1); }
 .run-status > .run-status-align:first-child { margin-left: auto; }
 .run-status > :has(+ .run-status-align) { margin-right: auto; }
-/* The ticked recommendations staged above the composer (§chat.composer/anatomy): one removable row,
-   sent with the next message. */
+/* The answers picked on a card (recommendations ticked, options clicked), staged above the composer
+   (§chat.composer/anatomy): one removable row, sent with the next message. */
 .align-picks {
   display: flex;
   align-items: center;

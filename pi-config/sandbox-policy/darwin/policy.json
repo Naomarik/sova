@@ -16,6 +16,7 @@
     "~/.npmrc",
     "~/.pypirc",
     "~/.claude/.credentials.json",
+    "$AGENT_DIR/claude-accounts",
     "$AGENT_DIR/auth.json"
   ],
   "readOnlyWithinWritable": [".git/hooks", ".git/config", ".envrc"],

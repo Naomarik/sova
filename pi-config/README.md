@@ -148,7 +148,7 @@ machine needs the logins for the providers it uses:
 | `openai-codex` models | ChatGPT Plus/Pro OAuth | `auth.json`, key `openai-codex` | `/login` in pi |
 | `deepseek` provider (built-in catalog: `deepseek-flash`, `deepseek-v4-pro`), and the DeepSeek balance in `usage-status` | DeepSeek API key | `auth.json`, key `deepseek` | `/login` in pi, or `DEEPSEEK_API_KEY` |
 | Local `ollama` provider | none (placeholder key; Ollama at `localhost:11434`) | | |
-| `claude-code`, the Claude side of `mode`, the `topic-outline` Claude summarizer | Claude Code login | Managed by the `claude` CLI (`~/.claude/.credentials.json` on Linux) | Install [Claude Code](https://claude.com/claude-code) and log in once inside `claude` |
+| `claude-code`, the Claude side of `mode`, the `topic-outline` Claude summarizer | Claude Code login | Managed by the `claude` CLI (`~/.claude/.credentials.json` on Linux); further logins in `~/.pi/agent/claude-accounts/<id>/` (see `extensions/claude-code/README.md`, Logins) | Install [Claude Code](https://claude.com/claude-code) and log in once inside `claude`; add more logins in Sova's Settings → Accounts |
 
 pi writes `auth.json` with mode `600`; keep it that way (`chmod 600 ~/.pi/agent/auth.json`).
 The `claude-code` extension spawns `claude` from `PATH`. The topic-outline summarizer runs

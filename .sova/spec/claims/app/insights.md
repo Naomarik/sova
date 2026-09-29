@@ -89,6 +89,18 @@ Usage glance needs the room.
     are flagged). Otherwise it shows its 7-day window, and failing that, its longest. Ollama
     shows Monthly. Z.ai shows its plan window (5-hour), never MCP uses. An active window gets
     no marker in the glance ("C 55%"); the tooltip names it: "Claude 7-day Fable 55%".
+  - **Which Claude login.** A device can hold several Claude logins (§app/claude-logins), and `C`
+    reads one of them: **the open chat's recorded login** (its newest `claude-login` entry, as the
+    chat's `claude_login` message names it, §app.claude-logins/active-login), else **the login in
+    use for new chats** (`claudeLogins[].inUse`: the first ready one in the device's order) — for a
+    chat that has not recorded one yet, a TUI-watched session, a workspace pane that isn't a chat,
+    and every page with no session open. Only with neither (an older server without
+    `claudeLogins`, or no login ready) does it read `providers`' `claude`, Claude Code's own
+    login. Its reading is that login's card on the Usage page, so the number follows a failover
+    in the same poll. The visible segment stays `C 61%`: the glance has no room for a name. With
+    more than one login, the row's `title` and `aria-label` name it after "Claude", by its card
+    title (its email, else its label): "Usage: Claude (spare@example.com) 7-day 61%, OpenAI
+    7-day 14%". With one login nothing is named, as before.
   - **Missing data.** A provider that isn't `ok`, or has neither windows nor a balance, is left
     out. With nothing at all, the row reads "Usage".
   - **High.** At 80% or more, the item takes `.usage-glance-item-high`: semibold ink, and **no
@@ -240,6 +252,13 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 </article>
 ```
 
+- **Summary lead.** Above the grid, one `.usage-lead` line: one sentence per provider that needs
+  attention, in payload order ("Claude's 5-hour window is rate-limited — resets in 1h 58m.",
+  "DeepSeek is out of credit."), or "All providers under limits." when none does. Claude's
+  sentence reads the same login the sidebar foot's `C` does (§app.insights/sidebar-foot, **Which
+  Claude login**): with no chat open, the login in use for new chats, never a limited login that
+  no chat is on. With more than one login it names it: "Claude (spare@example.com)'s 7-day
+  window is at 90%."
 - **Cards.** There's one card per `providers[]` entry, in the order given: Claude, OpenAI,
   Ollama Cloud, Z.ai, DeepSeek. Z.ai follows the system like every other provider: no brand color, and
   the title is "Z.ai"; so does DeepSeek, titled "DeepSeek".

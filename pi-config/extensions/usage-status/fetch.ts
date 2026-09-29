@@ -528,6 +528,19 @@ export function claudeLoginIds(logins: Pick<ClaudeLogins, "order"> = new ClaudeL
 	}
 }
 
+/**
+ * The login a session that recorded none yet will start on: the first ready one in this device's
+ * order (what the footer reads before the first Claude turn), or undefined when the registry can't
+ * say — the footer then reads Claude Code's own login, as before.
+ */
+export function firstReadyLogin(logins: Pick<ClaudeLogins, "selectId"> = new ClaudeLogins()): string | undefined {
+	try {
+		return logins.selectId();
+	} catch {
+		return undefined;
+	}
+}
+
 /** Whether this host marked a login as needing sign-in: such a login is never fetched. */
 function needsSignIn(logins: Pick<ClaudeLogins, "readinessOf">, id: string): boolean {
 	try {

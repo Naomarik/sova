@@ -279,8 +279,7 @@ export function extraUsageMeter(p: UsageProvider): { pct: number } | { on: true 
 }
 
 /** A not-ok provider's sentence in the summary lead; null for `na` and for anything readable. */
-function stateSentence(p: UsageProvider): string | null {
-  const name = PROVIDER_NAME[p.id];
+function stateSentence(p: UsageProvider, name = PROVIDER_NAME[p.id]): string | null {
   switch (p.state) {
     case "nologin":
       return `${name} isn't signed in.`;
@@ -298,9 +297,8 @@ function stateSentence(p: UsageProvider): string | null {
 }
 
 /** The one sentence a provider adds to the summary lead, by the head chip's order; null = nothing to say. */
-function providerSentence(p: UsageProvider, now: number): string | null {
-  const name = PROVIDER_NAME[p.id];
-  const state = stateSentence(p);
+function providerSentence(p: UsageProvider, now: number, name = PROVIDER_NAME[p.id]): string | null {
+  const state = stateSentence(p, name);
   if (state) return state;
   if (p.state !== "ok" && p.state !== "error") return null;
   if (p.balance && !p.balance.available) return `${name} is out of credit.`;
@@ -319,12 +317,36 @@ function providerSentence(p: UsageProvider, now: number): string | null {
 }
 
 /**
- * The Usage page's summary lead: one sentence per provider that needs attention, in payload
- * order, space-joined; "All providers under limits." when none does. Null without data.
+ * The Claude reading the foot and the summary lead speak for (§app.insights/sidebar-foot): the
+ * login `loginId` names (the open chat's recorded login), else the one in use for new chats (the
+ * first ready in this device's order), else `providers`' own claude — Claude Code's own login,
+ * which is all an older server sends. `name` is "Claude", or with several logins
+ * "Claude ({the login's card title})", so the words say whose reading it is.
  */
-export function usageSummary(u: UsageInsight | undefined, now: number): string | null {
+export function claudeReading(u: UsageInsight, loginId?: string | null): { usage: UsageProvider; name: string } | null {
+  const own = u.providers.find((p) => p.id === "claude");
+  const logins = u.claudeLogins ?? [];
+  const login = (loginId ? logins.find((l) => l.id === loginId) : undefined) ?? logins.find((l) => l.inUse);
+  const usage = login?.usage ?? own;
+  if (!usage) return null;
+  const name = login && logins.length > 1 ? `${PROVIDER_NAME.claude} (${claudeLoginTitle(login)})` : PROVIDER_NAME.claude;
+  return { usage, name };
+}
+
+/** `providers` with Claude's entry swapped for the reading `claudeReading` chose, and its name. */
+function readings(u: UsageInsight, loginId?: string | null): { p: UsageProvider; name: string }[] {
+  const claude = claudeReading(u, loginId);
+  return u.providers.map((p) => (p.id === "claude" && claude ? { p: claude.usage, name: claude.name } : { p, name: PROVIDER_NAME[p.id] }));
+}
+
+/**
+ * The Usage page's summary lead: one sentence per provider that needs attention, in payload
+ * order, space-joined; "All providers under limits." when none does. Null without data. Claude's
+ * sentence reads the login `claudeReading` chooses, never a login no chat is on.
+ */
+export function usageSummary(u: UsageInsight | undefined, now: number, loginId?: string | null): string | null {
   if (!u?.available) return null;
-  const sentences = u.providers.map((p) => providerSentence(p, now)).filter((x): x is string => x !== null);
+  const sentences = readings(u, loginId).map(({ p, name }) => providerSentence(p, now, name)).filter((x): x is string => x !== null);
   return sentences.length ? sentences.join(" ") : "All providers under limits.";
 }
 
@@ -368,11 +390,12 @@ export interface GlancePart {
 
 /**
  * One part per provider with something to show — a readable window, or a credit provider's
- * balance — in provider order; providers without data are left out.
+ * balance — in provider order; providers without data are left out. Claude's part reads the
+ * login `claudeReading` chooses for `loginId` (the open chat's recorded login, if any).
  */
-export function usageGlance(u: UsageInsight | undefined): GlancePart[] {
+export function usageGlance(u: UsageInsight | undefined, loginId?: string | null): GlancePart[] {
   if (!u?.available) return [];
-  return u.providers.flatMap((p): GlancePart[] => {
+  return readings(u, loginId).flatMap(({ p, name }): GlancePart[] => {
     const abbr = PROVIDER_ABBR[p.id];
     if (p.state === "ok" && p.balance) {
       const stale = u.stale;
@@ -380,12 +403,12 @@ export function usageGlance(u: UsageInsight | undefined): GlancePart[] {
       // emphasis a balance has is "this can't fund calls".
       const amount = moneyCompact(p.balance.total, p.balance.currency);
       const exact = money(p.balance.total, p.balance.currency);
-      return [{ id: p.id, abbr, amount, high: !p.balance.available, stale, full: `${PROVIDER_NAME[p.id]} balance ${exact}` }];
+      return [{ id: p.id, abbr, amount, high: !p.balance.available, stale, full: `${name} balance ${exact}` }];
     }
     const w = glanceWindow(p);
     if (!w) return [];
     const stale = u.stale;
-    const full = `${PROVIDER_NAME[p.id]} ${windowLabel(w)} ${pct(w)}%`;
+    const full = `${name} ${windowLabel(w)} ${pct(w)}%`;
     return [{ id: p.id, abbr, pct: pct(w), high: w.pct >= 80, stale, full }];
   });
 }

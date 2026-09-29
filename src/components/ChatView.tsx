@@ -173,6 +173,9 @@ export function ChatView(props: {
   /** This runtime's subagents (WS "workers"; [] after each hello), for the subagents pane. The
       Σ is the runtime's session-lifetime worker token total, null while no server reports one. */
   onWorkers?(workers: WorkerInfo[], usage: UsageTotalView | null): void;
+  /** This chat's Claude login (WS "claude_login"; null after each hello), for the sidebar foot's
+      usage glance. */
+  onClaudeLogin?(login: ChatClaudeLogin | null): void;
   /** Toggles the subagents pane from the composer's subagents row. */
   onShowWorkers?(): void;
   /** The pane is open for this session ON THE AGENTS TAB (the subagents trigger's aria-expanded). */
@@ -567,6 +570,7 @@ export function ChatView(props: {
           setModel(msg.model);
           setSandboxState(null); // a "sandbox" message follows when the runtime has the extension
           setClaudeLogin(null); // a "claude_login" message follows when this host has several logins
+          props.onClaudeLogin?.(null);
           batch(() => {
             setThinking(msg.thinking);
             setPendingThinking(null);
@@ -758,6 +762,7 @@ export function ChatView(props: {
           break;
         case "claude_login":
           setClaudeLogin(msg.login);
+          props.onClaudeLogin?.(msg.login);
           break;
         case "event":
           queue.push(msg.event);

@@ -58,7 +58,19 @@
       "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/insights.ts",
+        "src/lib/insights.test.ts",
+        "src/App.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/SessionView.tsx",
+        "src/components/GroupView.tsx"
+      ],
+      "requires": [
+        "§app.claude-logins/active-login",
+        "§app.insights/usage-cards",
+        "§app.resource-monitor/entry-button",
+        "§app/settings-dialog"
       ]
     },
     "§app.insights/subagent-cards": {
@@ -117,7 +129,8 @@
         "server/insights.ts",
         "shared/protocol.ts",
         "src/design/base.css",
-        "server/insights-claude-logins.test.ts"
+        "server/insights-claude-logins.test.ts",
+        "src/App.tsx"
       ]
     },
     "§app.insights/usage-page-and-agents-page": {
@@ -7043,7 +7056,9 @@
         "src/design/base.css",
         "pi-config/extensions/usage-status/index.ts",
         "server/claude-login-state.test.ts",
-        "src/lib/claude-login.test.ts"
+        "src/lib/claude-login.test.ts",
+        "pi-config/extensions/usage-status/fetch.ts",
+        "pi-config/extensions/usage-status/fetch.test.ts"
       ]
     },
     "§app.claude-logins/add-remove": {

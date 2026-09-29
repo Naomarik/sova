@@ -616,3 +616,22 @@ test("driftNote: promote's driftWarnings (--json or text form) are relayed as a 
 	assert.equal(driftNote("bash", { command: "cat out.json" }, [{ type: "text", text: json }]), undefined);
 	assert.equal(driftNote("read", promote, [{ type: "text", text: json }]), undefined);
 });
+
+test("checkAlsoChanges: a format error is its own problem; a line on a Q&A turn is forbidden; advisory § are no extras; the landing gate", () => {
+	const bad = checkAlsoChanges("Merged.\nAlso changes: §app/shell: moved. §app/nav: wraps", { required: true, foreign: ["§app/shell"], exact: true });
+	assert.equal(bad.problem, "malformed");
+	assert.match(describeProblem(bad), /breaks the format: separate items with ";" \(§app\/nav reads as a new item inside a description\)/);
+	const qa = checkAlsoChanges("It renders the shell.\nAlso changes: none", { required: false, forbidden: true, foreign: [] });
+	assert.equal(qa.ok, false);
+	assert.equal(qa.problem, "forbidden");
+	assert.ok(checkAlsoChanges("It renders the shell.", { required: false, forbidden: true, foreign: [] }).ok);
+	assert.ok(checkAlsoChanges("x\nAlso changes: §a/one — y; §m/mapped — its code changed", { required: true, foreign: ["§a/one"], exact: true, advisory: ["§m/mapped"] }).ok);
+	const gate = { required: true, foreign: [], exact: true, unmapped: ["pi-config/x/index.ts"], unpromoted: ["§app.links/public"] };
+	const blocked = checkAlsoChanges("Merged.\nAlso changes: none", gate);
+	assert.equal(blocked.ok, false);
+	assert.equal(blocked.problem, undefined, "the line itself is right");
+	assert.deepEqual([blocked.unmapped, blocked.undeferred], [["pi-config/x/index.ts"], ["§app.links/public"]]);
+	assert.match(describeProblem(blocked), /pi-config\/x\/index\.ts changed and no claim maps it: .*"Plumbing: <path> — <why>".*never plumbing; draft records left unpromoted: §app\.links\/public: promote what shipped, or say which § stay stale on a line "Deferred: §X — <why>"/);
+	const excused = checkAlsoChanges("Merged.\nPlumbing: pi-config/x/index.ts — log wording only in a debug path\nDeferred: §app.links/public — waits for copy review\nAlso changes: none", gate);
+	assert.ok(excused.ok);
+});

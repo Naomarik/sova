@@ -21,13 +21,14 @@
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { posix } from "node:path";
+import { ALSO_CHANGES_OVERRIDE, deferredIds, lastLine, looksLikeAlsoChanges, parseAlsoChanges, parseAlsoChangesLine, plumbingPaths } from "./also-changes.ts";
+
+export { ALSO_CHANGES_OVERRIDE, DEFERRED_LINE, deferredIds, lastLine, looksLikeAlsoChanges, parseAlsoChanges, parseAlsoChangesLine, PLUMBING_LINE, plumbingPaths, stripAlsoChanges } from "./also-changes.ts";
 
 const { dirname, join, relative } = posix;
 
 export const DIGEST_TAG = "[spec census]";
 export const CHECK_TAG = "[spec check]";
-/** The line a reply writes, right above its last line, when the computed foreign list is wrong. */
-export const ALSO_CHANGES_OVERRIDE = "Spec check override:";
 export const TOOL_TIMEOUT_MS = 5000;
 /** Files and ids shown before "+N more". */
 export const FILE_CAP = 8;
@@ -488,83 +489,85 @@ export class CensusHook {
 
 // ── The `Also changes:` line ─────────────────────────────────────────────────
 
-const SECTION_ID = /§[A-Za-z0-9][\w.\-/]*[\w-]/g;
+// The grammar and its parser: also-changes.ts (shared with the Claude Code hook and the harness scorer).
 
-/** The reply's last non-empty line, trimmed. */
-export function lastLine(text: string): string {
-	const lines = text.trimEnd().split("\n");
-	return (lines[lines.length - 1] ?? "").trim();
-}
-
-/** `Also changes: none` → []; `Also changes: §a — x; §b — y` → the ids; anything else → undefined. */
-export function parseAlsoChanges(line: string): string[] | undefined {
-	const m = /^Also changes: (.+)$/.exec(line.replace(/^[*_`]+|[*_`]+$/g, ""));
-	if (!m) return undefined;
-	const body = m[1].trim();
-	if (body === "none") return [];
-	const ids = body.match(SECTION_ID);
-	return ids && ids.length ? [...new Set(ids)] : undefined;
-}
-
-/**
- * The reply without its closing `Also changes:` line (and an override line right above it): for readers
- * that show or classify a reply (feeds, summaries, previews), where the line is bookkeeping, not content.
- */
-export function stripAlsoChanges(text: string): string {
-	const lines = text.trimEnd().split("\n");
-	if (!lines.length || parseAlsoChanges(lines[lines.length - 1].trim()) === undefined) return text;
-	lines.pop();
-	if (lines.length && lines[lines.length - 1].trim().startsWith(ALSO_CHANGES_OVERRIDE)) lines.pop();
-	return lines.join("\n").trimEnd();
-}
-
-export type AlsoChangesProblem = "missing" | "not-last" | "malformed" | "omits" | "none-but-changed" | "extra";
+export type AlsoChangesProblem = "missing" | "not-last" | "malformed" | "forbidden" | "omits" | "none-but-changed" | "extra";
 
 export interface AlsoChangesCheck {
 	ok: boolean;
+	/** What is wrong with the line itself, if anything. */
 	problem?: AlsoChangesProblem;
+	/** The grammar error, for `malformed`. */
+	format?: string;
 	/** Computed foreign § the line doesn't name. */
 	missing: string[];
 	/** § the line names that the computed list doesn't (checked only when the list is `exact`). */
 	extra: string[];
+	/** Changed files no claim maps that no `Plumbing:` line names (the landing gate). */
+	unmapped: string[];
+	/** Unpromoted draft records' § that no `Deferred:` line names (the landing gate). */
+	undeferred: string[];
 	/** The reply carries the override line. */
 	overridden: boolean;
 }
 
+export interface AlsoChangesOptions {
+	/** The turn edited, committed, promoted or merged: the line is required. */
+	required: boolean;
+	/** Computed from Git; every one must be named. */
+	foreign: readonly string[];
+	/** That list is complete: a § the line names beyond it (and beyond `advisory`) is an extra. */
+	exact?: boolean;
+	/** § the line may name without being extras (mapped code changed, text untouched: advisory). */
+	advisory?: readonly string[];
+	/** A turn that must not carry the line (a Q&A turn): a line there is a problem. */
+	forbidden?: boolean;
+	/** Landing gate: changed files no claim maps; each needs a mapping claim or a `Plumbing:` line. */
+	unmapped?: readonly string[];
+	/** Landing gate: unpromoted draft records' §; each needs a `Deferred:` line (or a promotion). */
+	unpromoted?: readonly string[];
+}
+
 /**
- * Check a reply's last line. `required`: the turn edited, committed, promoted or merged; a turn that
- * didn't needs no line (and spec-mode.md says not to write one). `foreign`: computed from Git; every one
- * must be named. `exact`: that list is complete, so a § the line names beyond it is an extra (a claim
- * this diff doesn't change, or the task's own new one).
- * The override line above the last line (ALSO_CHANGES_OVERRIDE) excuses only an OMISSION: a computed §
- * the agent shows it must not name (one this task created in an earlier merge, say). It never excuses an
- * extra: a § whose behavior changed gets its claim updated in a draft and promoted, never just named.
+ * Check a reply. `required`: the turn edited, committed, promoted or merged; `forbidden`: a Q&A turn,
+ * where the line must not appear (spec-mode.md). The line is parsed by also-changes.ts (a format error is
+ * its own problem, never a wrong list). Every computed foreign § must be named; with `exact`, a § beyond
+ * the list and `advisory` is an extra. On a landing, each unmapped changed file needs a `Plumbing:` line
+ * and each unpromoted record's § a `Deferred:` line.
+ * The override line (ALSO_CHANGES_OVERRIDE) excuses only an OMISSION: a computed § the agent shows it must
+ * not name (one this task created, in an earlier commit, promotion or merge). It never excuses an extra.
  */
-export function checkAlsoChanges(reply: string, options: { required: boolean; foreign: readonly string[]; exact?: boolean }): AlsoChangesCheck {
+export function checkAlsoChanges(reply: string, options: AlsoChangesOptions): AlsoChangesCheck {
 	const overridden = reply.split("\n").some((l) => l.trim().startsWith(ALSO_CHANGES_OVERRIDE) && l.trim().length > ALSO_CHANGES_OVERRIDE.length + 1);
-	const pass: AlsoChangesCheck = { ok: true, missing: [], extra: [], overridden };
-	if (!options.required) return pass;
+	const plumbing = plumbingPaths(reply);
+	const deferred = deferredIds(reply);
+	const unmapped = (options.unmapped ?? []).filter((p) => !plumbing.includes(p));
+	const undeferred = (options.unpromoted ?? []).filter((id) => !deferred.includes(id));
+	const base: AlsoChangesCheck = { ok: true, missing: [], extra: [], unmapped, undeferred, overridden };
+	const gate = (check: AlsoChangesCheck): AlsoChangesCheck => ({ ...check, ok: check.ok && !unmapped.length && !undeferred.length });
 	const line = lastLine(reply);
-	const ids = parseAlsoChanges(line);
-	if (ids === undefined) {
-		const problem: AlsoChangesProblem = /^\W*Also changes\b/.test(line)
-			? "malformed"
-			: reply.split("\n").some((l) => parseAlsoChanges(l.trim()) !== undefined)
-				? "not-last"
-				: "missing";
-		return { ok: false, problem, missing: [...options.foreign], extra: [], overridden };
+	if (!options.required) {
+		const written = reply.split("\n").some((l) => looksLikeAlsoChanges(l));
+		return options.forbidden && written ? { ...base, ok: false, problem: "forbidden" } : base;
 	}
+	const parsed = parseAlsoChangesLine(line);
+	if (!parsed?.ok) {
+		const problem: AlsoChangesProblem = parsed ? "malformed" : reply.split("\n").some((l) => looksLikeAlsoChanges(l)) ? "not-last" : "missing";
+		return { ...base, ok: false, problem, ...(parsed && !parsed.ok ? { format: parsed.error } : {}), missing: [...options.foreign] };
+	}
+	const ids = parsed.ids;
 	const missing = options.foreign.filter((id) => !ids.includes(id));
-	const extra = options.exact ? ids.filter((id) => !options.foreign.includes(id)) : [];
-	if (!missing.length && !extra.length) return pass;
+	const extra = options.exact ? ids.filter((id) => !options.foreign.includes(id) && !(options.advisory ?? []).includes(id)) : [];
+	if (!missing.length && !extra.length) return gate(base);
 	const problem: AlsoChangesProblem = missing.length ? (ids.length ? "omits" : "none-but-changed") : "extra";
-	return { ok: overridden && !extra.length, problem, missing, extra, overridden };
+	return gate({ ...base, ok: overridden && !extra.length, problem, missing, extra });
 }
 
 const PROBLEM_TEXT: Record<AlsoChangesProblem, string> = {
 	missing: "your reply has no `Also changes:` line",
 	"not-last": "your `Also changes:` line is not the very last line",
-	malformed: 'your last line is not exactly "Also changes: §X — <what>; …" or "Also changes: none"',
+	malformed: "your `Also changes:` line breaks the format",
+	forbidden: "this turn changed nothing, so it takes no `Also changes:` line: drop it",
 	omits: "your `Also changes:` line omits",
 	"none-but-changed": "your line says none, but it lands",
 	extra: "",
@@ -574,25 +577,37 @@ const PROBLEM_TEXT: Record<AlsoChangesProblem, string> = {
 export const extraText = (ids: readonly string[]): string =>
 	`${ids.join(", ")} ${ids.length === 1 ? "isn't" : "aren't"} changed by this diff: if its user-visible behavior changed, update its claim in a draft and promote; otherwise drop it from the line`;
 
-/** What's wrong, for the re-prompt and the warning: the omission (if any), then the extras (if any). */
+/** The landing gate's sentences: unmapped files and unpromoted records. */
+export const unmappedText = (paths: readonly string[]): string =>
+	`${capped(paths, FILE_CAP)} changed and no claim maps ${paths.length === 1 ? "it" : "them"}: spec each that changes user-visible behavior (a claim listing it in \`code\`, promoted), or name it on a line "Plumbing: <path> — <why>" above the last line; UI text, colour, CLI output and footer rendering are never plumbing`;
+export const undeferredText = (ids: readonly string[]): string =>
+	`draft records left unpromoted: ${capped(ids, ID_CAP)}: promote what shipped, or say which § stay stale on a line "Deferred: §X — <why>" above the last line`;
+
+/** What's wrong, for the re-prompt and the warning: the line's problem, the extras, then the landing gate. */
 export function describeProblem(check: AlsoChangesCheck): string {
-	if (!check.problem) return "";
 	const parts: string[] = [];
 	if (check.problem === "omits" || check.problem === "none-but-changed") parts.push(`${PROBLEM_TEXT[check.problem]} ${check.missing.join(", ")}`);
-	else if (check.problem !== "extra") parts.push(PROBLEM_TEXT[check.problem]);
+	else if (check.problem === "malformed") parts.push(`${PROBLEM_TEXT.malformed}: ${check.format ?? "see the format"} (${ALSO_CHANGES_FORMAT})`);
+	else if (check.problem && check.problem !== "extra") parts.push(PROBLEM_TEXT[check.problem]);
 	if (check.extra.length) parts.push(extraText(check.extra));
+	if (check.unmapped.length) parts.push(unmappedText(check.unmapped));
+	if (check.undeferred.length) parts.push(undeferredText(check.undeferred));
 	return parts.join("; ");
 }
 
-/** The hidden message that re-prompts a merge/promote turn once. */
+/** The format, in one phrase, for a malformed line. */
+export const ALSO_CHANGES_FORMAT = 'items separated by ";", each starting with the § it names ("Also changes: §a.b/c, /d — <what>; §e/f — <what>"), or "Also changes: none"';
+
+/** The hidden message that re-prompts a landing turn. */
 export function repromptText(check: AlsoChangesCheck, foreign: readonly string[], what: string): string {
+	if (check.problem === "forbidden") return `${CHECK_TAG} ${describeProblem(check)}. Reply again, briefly, without that line.`;
 	const list = foreign.length ? foreign.join(", ") : "none";
 	const shape = foreign.length ? `Also changes: ${foreign.map((id) => `${id} — <what changed>`).join("; ")}` : "Also changes: none";
 	return [
 		`${CHECK_TAG} This turn ${what}. The foreign § it lands, computed from Git: ${list}.`,
 		`${describeProblem(check)}.`,
-		`Reply again, briefly, ending with exactly this last line, nothing after it: "${shape}". A § the user asked you to change is still foreign.`,
-		`If a computed § must not be named (for example one this task created in an earlier merge), say why on a line "${ALSO_CHANGES_OVERRIDE} <why>" right above the last line; it never excuses naming a § the list lacks.`,
+		`Reply again, briefly, ending with exactly this last line, nothing after it: "${shape}". A § the user asked you to change is still foreign; § this task created are not.`,
+		`If a computed § must not be named (one this task created, in an earlier commit, promotion or merge), say why on a line "${ALSO_CHANGES_OVERRIDE} <why>" right above the last line; it never excuses naming a § the list lacks.`,
 	].join("\n");
 }
 

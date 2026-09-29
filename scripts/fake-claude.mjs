@@ -31,7 +31,7 @@ if (args[0] === "--version") {
 
 if (args[0] === "auth" && args[1] === "login") {
   process.stdout.write("Opening browser to sign in…\n");
-  process.stdout.write("If the browser didn't open, visit: https://claude.example.invalid/oauth/authorize?code=true&fake=1\n");
+  process.stdout.write("If the browser didn't open, visit: https://claude.example.invalid/fake-sign-in?code=true&fake=1\n");
   process.stdout.write("Paste code here if prompted > ");
   const rl = createInterface({ input: process.stdin });
   rl.on("line", (line) => {

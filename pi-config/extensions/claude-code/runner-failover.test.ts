@@ -48,7 +48,7 @@ class FakeChild extends EventEmitter {
 }
 
 const A = "l-0000000a", B = "l-0000000b";
-const SESSION = "6c852daa-6abf-4bbd-9ef5-8950d9330968";
+const SESSION = "00000000-0000-4000-8000-00000000f41b";
 
 function setup(t: { after: (fn: () => void) => void }, sameAccount = false) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "claude-runner-failover-"));

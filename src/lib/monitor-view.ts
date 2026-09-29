@@ -503,8 +503,8 @@ export function chargedTo(r: Pick<TransientRow, "group" | "workerId">, labels: M
 /** A worker's name by history group key and worker id, when anything knows it. */
 export type WorkerNameOf = (group: string, workerId: string) => string | undefined;
 
-/** Worker names per history group, then per worker id, as a history may carry them. */
-export type WorkerLabels = Record<string, Record<string, string>>;
+/** Worker names per history group, then per worker id, as the history carries them. */
+export type WorkerLabels = NonNullable<MonitorHistory["workerLabels"]>;
 
 /**
  * Names a worker from the history's own labels (which outlive the worker and a restart), else

@@ -59,8 +59,8 @@ export function ResourceMonitor(props: { onClose(): void; titleOf?: TitleOf }) {
   const takeWorkerLabels = (...hs: Array<MonitorHistory | null | undefined>) => {
     const add: WorkerLabels = {};
     for (const h of hs) {
-      const w = (h as { workerLabels?: WorkerLabels } | null | undefined)?.workerLabels;
-      if (w && typeof w === "object") for (const [g, ids] of Object.entries(w)) add[g] = { ...add[g], ...ids };
+      const w = h?.workerLabels;
+      if (w) for (const [g, ids] of Object.entries(w)) add[g] = { ...add[g], ...ids };
     }
     if (Object.keys(add).length) setWorkerLabels((cur) => {
       const next = { ...cur };

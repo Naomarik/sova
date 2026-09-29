@@ -190,6 +190,21 @@ test("B3: a promote without --json after merging master in counts only what it w
 	assert.deepEqual([turn.landed, turn.foreign], [true, ["§app/x"]]);
 });
 
+test("a Git-computed list: a § named beyond it is an extra, sent back even behind an override", async () => {
+	const { root, stateDir, c } = b3();
+	const o = { core: CORE, stateDir };
+	git(root, "checkout", "-q", "main");
+	await runHook("turn", event(root, {}), o);
+	git(root, ...c, "merge", "-q", "--no-edit", "feat");
+	await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "git merge --no-edit feat" } }), o);
+	assert.deepEqual(readState(statePath(stateDir, "s1")!).turn.foreign, ["§app/x"]);
+	const reply = `Merged.\n${ALSO_CHANGES_OVERRIDE} §app/w changed too\nAlso changes: §app/x — reworded; §app/w — reworded`;
+	const out = await runHook("stop", event(root, { last_assistant_message: reply }), o) as any;
+	assert.equal(out?.decision, "block");
+	assert.match(out.reason, /§app\/w isn't changed by this diff/);
+	assert.equal(await runHook("stop", event(root, { last_assistant_message: "Merged.\nAlso changes: §app/x — reworded", stop_hook_active: true }), o), undefined);
+});
+
 test("stop on a normal turn: a line naming a § the census never saw touched is sent back once", async () => {
 	const { root, stateDir } = project();
 	const o = { core: CORE, stateDir };

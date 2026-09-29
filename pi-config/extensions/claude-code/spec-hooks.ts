@@ -104,6 +104,8 @@ export interface TurnState {
 	landed: boolean;
 	/** Foreign § that promote or merge landed, computed (never the model's own list). */
 	foreign: string[];
+	/** A promote or merge whose list couldn't be computed: `foreign` may be short, so extras aren't judged. */
+	partial?: boolean;
 	/** Stop-hook send-backs this turn. */
 	blocks: number;
 }
@@ -201,12 +203,15 @@ export async function onPost(input: HookInput, ctx: HookContext): Promise<HookOu
 			const base = before?.head ?? turn.head;
 			const computed = listed ?? (base ? await foreignBetween(root, base, undefined, ctx.core, ctx.io) : undefined);
 			turn.landed = turn.wrote = true;
+			if (!computed) turn.partial = true;
 			turn.foreign = union(turn.foreign, computed ?? []);
 		}
 		// A merge lands only on the default branch; merging master INTO a feature branch brings master's own § in.
 		if (root && gitMerges(command) && before?.head && view.head && view.head !== before.head && (await landsOnTarget(view.top, ctx.io))) {
 			turn.landed = turn.wrote = true;
-			turn.foreign = union(turn.foreign, (await foreignBetween(root, before.head, view.head, ctx.core, ctx.io)) ?? []);
+			const merged = await foreignBetween(root, before.head, view.head, ctx.core, ctx.io);
+			if (!merged) turn.partial = true;
+			turn.foreign = union(turn.foreign, merged ?? []);
 		}
 	}
 	const step = await censusStep(state.census, { cwd, toolName: tool, input: input.tool_input ?? {}, commands: state.commands, sessionStart: state.sessionStart }, ctx.core, ctx.io);
@@ -230,7 +235,11 @@ async function draftEdits(turn: TurnState, ctx: HookContext): Promise<string[] |
 	const touched = draftsTouched(turn.drafts, await draftStamps(turn.root, ctx.io));
 	if (!touched.length) return undefined;
 	let foreign: string[] = [];
-	for (const name of touched) foreign = union(foreign, (await draftForeign(turn.root, name, ctx.core, ctx.io)) ?? []);
+	for (const name of touched) {
+		const ids = await draftForeign(turn.root, name, ctx.core, ctx.io);
+		if (!ids) turn.partial = true;
+		foreign = union(foreign, ids ?? []);
+	}
 	return foreign;
 }
 
@@ -241,9 +250,10 @@ export async function onStop(input: HookInput, ctx: HookContext): Promise<HookOu
 	const drafted = await draftEdits(turn, ctx);
 	if (drafted) turn.wrote = true;
 	if (turn.landed) {
-		// The computed list is the authority: sent back until it is named (or overridden), boundedly.
+		// The computed list is the authority: sent back until it is named (or an omission overridden), boundedly.
+		// When Git computed all of it, a § named beyond it is an extra, which no override excuses.
 		const foreign = union(turn.foreign, drafted ?? []);
-		const check = checkAlsoChanges(reply, { required: true, foreign });
+		const check = checkAlsoChanges(reply, { required: true, foreign, exact: !turn.partial });
 		if (check.ok || turn.blocks >= MERGE_BLOCKS) return undefined;
 		return block(repromptText(check, foreign, "promoted or merged"));
 	}

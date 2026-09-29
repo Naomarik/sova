@@ -225,7 +225,8 @@ per Claude session:
   branch (spec-guard's `defaultBranch`: `origin/HEAD`, else `master`, else `main`; `sova-spec.mjs foreign` over that branch's move) records the
   turn's foreign §. Merging master into a feature branch lands nothing: those § are master's own.
 - `Stop`: after a promote or merge, the last line must name every computed foreign § (or carry the
-  override line); the reply is sent back up to twice. Otherwise a warning, sent back once: a
+  override line, which excuses only an omission); a § named beyond a list Git fully computed is an
+  extra, never excused. The reply is sent back up to twice. Otherwise a warning, sent back once: a
   writing turn without the exact `Also changes:` line, a non-writing turn with one, a line omitting
   a foreign § the turn's draft edits, or a named § the census never saw touched. Drafts are
   gitignored: a draft edit (found by mtime) counts as writing, and its foreign § come from

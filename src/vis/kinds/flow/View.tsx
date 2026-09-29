@@ -6,7 +6,7 @@ import { emClass, SvgEmBadge } from "../../emphasis";
 import { Lines, SvgScroll, useMarkerId } from "../../svg";
 import type { ViewProps } from "../../types";
 import { htmlMeasure } from "../tree/measure";
-import { FLOW_FONT, fitFlow, layoutFlow, type FlowLayout, type PlacedFlowNode } from "./layout";
+import { FLOW_FONT, GROUP, fitFlow, layoutFlow, type FlowLayout, type PlacedFlowNode } from "./layout";
 import type { FlowSpec } from "./parse";
 import { layoutSections, naturalSections } from "./sections";
 import { fontsLoaded, useWidth } from "./width";
@@ -16,7 +16,7 @@ import "./flow.css";
  * `vis flow` / `vis state`: boxes and arrows, laid out by ./layout. A drawing that would have to
  * scroll in its pane (a phone) is laid out again to fit (fitFlow); ./layout's estimateHeight is
  * the height this draws at, for the shell's reserved box. A flow with `== sections ==` draws one
- * drawing per panel, side by side or stacked (./sections).
+ * drawing per panel, side by side or stacked (./sections). `group` frames sit under the edges.
  */
 export default function FlowView(props: ViewProps<FlowSpec>) {
   const [width, measure] = useWidth();
@@ -47,7 +47,7 @@ export default function FlowView(props: ViewProps<FlowSpec>) {
   );
 }
 
-/** One laid-out graph: edges, their labels, then the nodes on top. */
+/** One laid-out graph: group frames, edges, their labels, then the nodes on top. */
 function FlowDrawing(props: { layout: FlowLayout; em: Map<string, Emphasis>; label: string }) {
   const arrow = useMarkerId();
   return (
@@ -57,6 +57,17 @@ function FlowDrawing(props: { layout: FlowLayout; em: Map<string, Emphasis>; lab
           <path d="M0,1 L9,5 L0,9 z" class="vis-arrowhead" />
         </marker>
       </defs>
+      <For each={props.layout.groups ?? []}>
+        {(g) => (
+          <g class="vis-flow-group">
+            <title>{g.label}</title>
+            <rect x={g.x} y={g.y} width={g.w} height={g.h} rx="8" />
+            <text x={g.x + GROUP.pad} y={g.y + GROUP.title / 2 + 2} dominant-baseline="central" font-size={String(GROUP.font)}>
+              {g.title}
+            </text>
+          </g>
+        )}
+      </For>
       <g class="vis-edges">
         <For each={props.layout.edges}>
           {(e) => (

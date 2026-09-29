@@ -25,7 +25,10 @@ export interface SectionsLayout {
   panels: PlacedSection[];
 }
 
-const sub = (spec: FlowSpec, i: number): FlowSpec => ({ kind: "flow", dir: spec.dir, nodes: spec.sections![i]!.nodes, edges: spec.sections![i]!.edges });
+const sub = (spec: FlowSpec, i: number): FlowSpec => {
+  const sec = spec.sections![i]!;
+  return { kind: "flow", dir: spec.dir, nodes: sec.nodes, edges: sec.edges, ...(sec.groups ? { groups: sec.groups } : {}) };
+};
 
 /** Each panel's natural layout: the View's memo, so a resize only re-fits. */
 export function naturalSections(spec: FlowSpec, measure: Measure = canvasMeasure): FlowLayout[] {

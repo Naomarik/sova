@@ -258,7 +258,7 @@ test("in a spec project the merge note names the foreign § and warnings, and wo
 		assert.match(out.content[0].text, /\(fast-forward\)\.\nForeign § this merge changes: §app\/list\nSpec warning: draft d has 1 unpromoted record/);
 		assert.equal(f.messages[0]!.content, `Merged feat/s into master at ${tip.slice(0, 7)}, 1 commit, +1 −0\nForeign § this merge changes: §app/list\nSpec warning: draft d has 1 unpromoted record (§a/b): promote what shipped, or say why not`);
 		assert.deepEqual(Object.keys(f.messages[0]!.details as object).sort(), ["added", "branch", "commits", "fastForward", "how", "path", "removed", "sha", "target", "version"], "the card's details are unchanged");
-		assert.deepEqual(seen, [{ version: 1, path: t, branch: "feat/s", target: "master", sha: tip, how: "tool", spec: true, foreign: ["§app/list"], warnings: ["draft d has 1 unpromoted record (§a/b): promote what shipped, or say why not"] }]);
+		assert.deepEqual(seen, [{ version: 1, path: t, branch: "feat/s", target: "master", sha: tip, how: "tool", spec: true, foreign: ["§app/list"], warnings: ["draft d has 1 unpromoted record (§a/b): promote what shipped, or say why not"], before, after: tip, worktree: t }]);
 	} finally {
 		r.done();
 	}

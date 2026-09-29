@@ -8,8 +8,8 @@ node sova-spec.mjs check                [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs scope  §ns/name      [--root DIR] [--spec DIR] [--json] [--budget BYTES]
 node sova-spec.mjs impact §ns/name      [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs census               [--root DIR] [--spec DIR] [--json]
-node sova-spec.mjs census --changed [--base REV] [--related] [--root DIR] [--spec DIR] [--json]
-node sova-spec.mjs foreign --base REV [--head REV | --spec DIR] [--root DIR] [--json]
+node sova-spec.mjs census --changed [--base REV] [--related] [--own-base REV]... [--root DIR] [--spec DIR] [--json]
+node sova-spec.mjs foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...] [--root DIR] [--json]
 ```
 
 `--spec` picks which spec graph to read. It's a directory relative to the project root, and it
@@ -124,7 +124,9 @@ to the project root. New fields are only ever added. Other tools read this outpu
   lie outside the boundary.
 - **census --changed**: checks only the files a task changed. Those are the files that differ between
   `--base` (default `HEAD`) and the working tree, plus untracked files that aren't ignored.
-  Deletions are dropped. Git runs as read-only plumbing, without a shell. The boundary rules are
+  Deleted files are kept: `deleted: [path]` lists them; a deleted file a record maps is a `claimed`
+  (or `mappedOutside`) entry with `deleted: true`, so its ids are touched; a deleted unmapped file has
+  nothing to claim and is never `unclaimed`. Git runs as read-only plumbing, without a shell. The boundary rules are
   the same. `census` then holds `mode: "changed"`, `base: {rev, commit}`, `changed` (the count),
   `claimed: [{path, claims}]`, `unclaimed`, `outside` (changed files beyond the boundary, which
   aren't failures), `mappedOutside: [{path, claims}]` (the `outside` files some record's `code`
@@ -154,7 +156,8 @@ to the project root. New fields are only ever added. Other tools read this outpu
   `--related`, each `touched` entry has `created: true|false` and each touched id that is not
   created is a `touched-foreign` note `{id}`; human output marks entries `; created` or `; foreign`.
   Human output prints the summary before the touched list. Notes never change the exit code; plain
-  `census` and `check` are unchanged.
+  `census` and `check` are unchanged. With `--own-base REV` (repeatable), the task's own ids (absent
+  at every one of those revisions) are never foreign; the census gets `own` and `ownBases`.
 - **foreign --base REV [--head REV]**: the § a range of history changes, for a merge's or a
   promotion's `Also changes:` line. It reads `.sova/spec` at each revision from Git objects
   (read-only `ls-tree` and `cat-file --batch`; no checkout), or from the working tree when
@@ -169,7 +172,24 @@ to the project root. New fields are only ever added. Other tools read this outpu
   `--head` is a usage error. Human output ends `Foreign § changed: §a, §b` (or `none`).
   For a merge, `--base` is the TARGET's tip before the merge and `--head` its tip after, never the
   branch's start: a branch that merged the target in carries the target's own § (another task's),
-  and they are not what the merge lands.
+  and they are not what the merge lands. A deleted id whose body (all but its heading) reappears under
+  a created id carries `renamedTo`; it stays foreign.
+- **The task's own claims (`--own-base REV`, repeatable).** An id absent from the spec at every
+  own base (the task's fork point from the default branch, the default branch's tip when the task's
+  run started, a worktree's recorded base) is the task's own: created by it, in this range or an
+  earlier one. Own ids leave `foreign` and `changes`; `own: [id]` lists those the range touched or
+  created and `ownBases: [{rev, commit}]` the bases. Master's own new claims exist on its tip, so
+  they are never own.
+- **Landing lists (`--landing`).** What a merge or promotion lands besides §: `unmappedChanged:
+  [{path, status, inBoundary}]` (files the range changed, deletions included, `A|M|D|T`, no renames,
+  minus `.sova/`, that no claim's `code` maps in the head spec, or in the `--spec` draft);
+  `mappedUntouched: [{id, files}]` (ids, neither foreign, created nor own, whose mapped code the range
+  changed: advisory); `unpromotedDrafts: [{draft, worktree, ids}]` (draft records `pending`, or in
+  `conflict` without the draft ever promoting them, in each worktree whose HEAD the range brings in:
+  an ancestor of head and not of base, never the default branch's own checkout; with no `--head`, the
+  root's drafts; and each `--drafts DIR` project root; read with `sova-spec-draft.mjs status`, at most
+  20 drafts); `handResolved: [{commit, ids}]` (when head is a merge commit, ids whose text or record
+  differs from every parent's: a hand resolution, see `git show --cc`). None of them changes the exit.
 - **§a.b ids.** `scope` and `impact` read `§a.b` (not a § identifier) as `§a/b`, with an `id-alias`
   note; an unknown result is `unknown-id` as usual.
 

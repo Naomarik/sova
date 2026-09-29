@@ -1,6 +1,6 @@
 // The merge's spec report against throwaway repositories and the real spec tools (extensions/spec/core).
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -88,8 +88,11 @@ test("a clean spec'd merge reports its foreign § and no warnings; code-only bra
 		put(r.tree, "src/list.ts", "v2\n");
 		sh(r.tree, "commit", "-qam", "code only");
 		const rep = await merge(r);
-		assert.deepEqual(rep, { foreign: [], warnings: [] });
-		assert.deepEqual(specLines(rep!), ["Foreign § this merge changes: none"]);
+		assert.deepEqual([rep?.foreign, rep?.warnings, rep?.deleted], [[], [], []]);
+		// Code under an unchanged § is advisory: shown, never a warning.
+		assert.deepEqual(rep?.landing?.mappedUntouched, [{ id: "§app.list/mark", files: ["src/list.ts"] }]);
+		assert.equal(rep?.top, r.main);
+		assert.deepEqual(specLines(rep!), ["Foreign § this merge changes: none", "Code changed under unchanged §: §app.list/mark (src/list.ts): read each; name one on your last line only if its behavior changed"]);
 	} finally {
 		r.done();
 	}
@@ -107,7 +110,7 @@ test("B3: master changed other § and the branch merged master in; the note name
 		sh(r.tree, "commit", "-qam", "feat: code and spec");
 		sh(r.tree, "merge", "-q", "--no-edit", "master");
 		const rep = await merge(r);
-		assert.deepEqual(rep, { foreign: ["§app.list/mark"], warnings: [] });
+		assert.deepEqual([rep?.foreign, rep?.warnings], [["§app.list/mark"], []]);
 	} finally {
 		r.done();
 	}
@@ -130,5 +133,52 @@ test("a project without a spec, or without the spec tools, gets no report", asyn
 		assert.equal(await mergeSpecReport(runGit, { path: s.tree, branch: "feat/x", before: m.before, after: m.sha, branchSha: m.branchSha }, { coreDir: "/nonexistent" }), undefined);
 	} finally {
 		s.done();
+	}
+});
+
+test("the landing gate's lists: an unmapped file, code under an unchanged §, an unpromoted draft (the public-links shape)", async () => {
+	const r = repo();
+	try {
+		execFileSync(process.execPath, [DRAFT, "new", "links", "--write", "--root", r.tree]);
+		put(r.tree, ".sova/spec/drafts/links/spec/claims/app/list.md", LIST.replace("A speech bubble and the count.", "The count, and a link out."));
+		put(r.tree, "src/list.ts", "v2 links\n");
+		put(r.tree, "scripts/links.sh", "echo\n");
+		sh(r.tree, "add", "-A");
+		sh(r.tree, "commit", "-qm", "links, spec deferred");
+		const rep = await merge(r);
+		assert.ok(rep?.landing);
+		assert.deepEqual(rep.landing.unmappedChanged, [{ path: "scripts/links.sh", status: "A", inBoundary: false }]);
+		assert.deepEqual(rep.landing.mappedUntouched, [{ id: "§app.list/mark", files: ["src/list.ts"] }]);
+		assert.deepEqual(rep.landing.unpromotedDrafts.map((d) => [d.draft, d.ids]), [["links", ["§app.list/mark"]]]);
+		assert.match(rep.warnings[0]!, /^1 changed file no claim maps \(scripts\/links\.sh\): .*"Plumbing: <path> — <why>"/);
+		assert.match(rep.warnings[1]!, /^draft links has 1 unpromoted record \(§app\.list\/mark\): .*"Deferred: §app\.list\/mark — <why>"/);
+	} finally {
+		r.done();
+	}
+});
+
+test("F8: a draft already promoted is not 'unpromoted' when master later changed the same §", async () => {
+	const r = repo();
+	try {
+		execFileSync(process.execPath, [DRAFT, "new", "done", "--write", "--root", r.tree]);
+		put(r.tree, ".sova/spec/drafts/done/spec/claims/app/list.md", LIST.replace("A speech bubble and the count.", "Only the count."));
+		put(r.tree, "src/list.ts", "v2\n");
+		sh(r.tree, "commit", "-qam", "code");
+		const ev = (...a: string[]) => execFileSync(process.execPath, [DRAFT, ...a, "--root", r.tree, "--json"], { encoding: "utf8" });
+		ev("evidence", "done", "--id", "§app.list/mark", "--by", "t", "--verification", "ran", "--commit", "HEAD", "--write");
+		const plan = JSON.parse(ev("promote", "done", "--id", "§app.list/mark")).plan;
+		ev("promote", "done", "--id", "§app.list/mark", "--plan", plan, "--write");
+		sh(r.tree, "commit", "-qam", "spec");
+		// Another task changes the same § on master; the branch merges it in, taking master's text.
+		put(r.main, ".sova/spec/claims/app/list.md", LIST.replace("A speech bubble and the count.", "The count, in bold."));
+		sh(r.main, "commit", "-qam", "master: mark");
+		try { sh(r.tree, "merge", "-q", "--no-edit", "master"); } catch { sh(r.tree, "checkout", "--theirs", ".sova/spec/claims/app/list.md"); sh(r.tree, "commit", "-qam", "merge master"); }
+		const st = JSON.parse(spawnSync(process.execPath, [DRAFT, "status", "done", "--root", r.tree, "--json"], { encoding: "utf8" }).stdout);
+		assert.deepEqual(st.ids.map((i: { current: string }) => i.current), ["conflict"], "the old check counted this as unpromoted");
+		const rep = await merge(r);
+		assert.deepEqual(rep?.landing?.unpromotedDrafts, []);
+		assert.ok(!rep?.warnings.some((w) => /unpromoted/.test(w)), rep?.warnings.join("\n"));
+	} finally {
+		r.done();
 	}
 });

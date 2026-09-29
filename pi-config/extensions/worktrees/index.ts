@@ -62,6 +62,13 @@ export interface WorktreesMergedEvent {
 	spec: boolean;
 	foreign: string[];
 	warnings: string[];
+	/** The target's tip before and after the merge, its checkout's top level, and the merged worktree. */
+	before?: string;
+	after?: string;
+	top?: string;
+	worktree?: string;
+	/** The core's landing lists (unmapped files, code under unchanged §, unpromoted drafts, hand resolutions). */
+	landing?: MergeSpecReport["landing"];
 }
 
 const Action = StringEnum(["create", "attach", "detach", "merge", "list"] as const);
@@ -146,12 +153,13 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 		return [mergeNote(d), ...(spec ? specLines(spec) : [])].join("\n");
 	}
 
-	function card(d: Omit<WorktreeMergeDetails, "version">, spec: MergeSpecReport | undefined): void {
+	function card(d: Omit<WorktreeMergeDetails, "version">, spec: MergeSpecReport | undefined, range?: { before: string; after: string }): void {
 		const details: WorktreeMergeDetails = { version: 1, ...d };
 		// Not a turn of its own: while a run streams, pi holds it until the turn ends (never between a
 		// tool call and its result); after the run it is appended at once.
 		pi.sendMessage<WorktreeMergeDetails>({ customType: WORKTREE_MERGE_MESSAGE, content: noteOf(details, spec), display: true, details }, { triggerTurn: false });
-		const event: WorktreesMergedEvent = { version: 1, path: d.path, branch: d.branch, target: d.target, sha: d.sha, how: d.how, spec: !!spec, foreign: spec?.foreign ?? [], warnings: spec?.warnings ?? [] };
+		const event: WorktreesMergedEvent = { version: 1, path: d.path, branch: d.branch, target: d.target, sha: d.sha, how: d.how, spec: !!spec, foreign: spec?.foreign ?? [], warnings: spec?.warnings ?? [],
+			...(range ? { before: range.before, after: range.after } : {}), ...(spec?.top ? { top: spec.top } : {}), worktree: d.path, ...(spec?.landing ? { landing: spec.landing } : {}) };
 		pi.events?.emit(WORKTREES_MERGED_EVENT, event);
 	}
 
@@ -205,7 +213,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 			try {
 				const { sha, ...stats } = await landedStats(git, t.path, was.targetSha, p.targetSha, p.branchSha);
 				markMerged(t, { target: p.target, sha, how: "detected" });
-				card({ path: t.path, branch: t.branch, target: p.target, sha, ...stats, how: "detected" }, await reportOf(t.path, t.branch, was.targetSha, p.targetSha, p.branchSha));
+				card({ path: t.path, branch: t.branch, target: p.target, sha, ...stats, how: "detected" }, await reportOf(t.path, t.branch, was.targetSha, p.targetSha, p.branchSha), { before: was.targetSha, after: p.targetSha });
 			} catch {
 				// Best-effort: an unreadable merge is still shown as merged by the pane's own check.
 			}
@@ -282,7 +290,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						const { before, branchSha, ...m } = await mergeWorktree(git, { tree: t, target });
 						markMerged(t, { target: m.target, sha: m.sha, how: "tool" });
 						const spec = await reportOf(t.path, t.branch, before, m.sha, branchSha);
-						card({ ...m, how: "tool" }, spec);
+						card({ ...m, how: "tool" }, spec, { before, after: m.sha });
 						const specText = spec ? `\n${specLines(spec).join("\n")}` : "";
 						return done(`${mergeNote(m)} (${m.fastForward ? "fast-forward" : "merge commit"}).${specText}\n${listing()}`, { merge: m, trees: set?.trees ?? [], ...(spec ? { spec } : {}) });
 					}

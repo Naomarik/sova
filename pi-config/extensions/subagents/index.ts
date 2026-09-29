@@ -97,6 +97,7 @@ import {
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
 import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.ts";
+import { LEDGER_ENV, ledgerPath } from "../mode/spec-guard.ts";
 import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
@@ -1178,11 +1179,12 @@ export function registerSubagents(
 					prepared = {
 						...prepared,
 						systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, workerSpecBrief(SPEC_CORE_DIR)].filter(Boolean).join("\n\n"),
-						settingsJson: withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir: path.join(agentDir(), SPEC_HOOK_STATE) })),
+						// Its git operations go to this session's ledger, so the parent counts a worker's commit in its own tree.
+						settingsJson: withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir: path.join(agentDir(), SPEC_HOOK_STATE), ledger: ledgerPath(agentDir(), sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey)) })),
 					} as typeof prepared;
 				}
 				return { spec, cwd, model: spec.model, tools: remote ? [] : spec.tools, systemPrompt: spec.systemPrompt,
-					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp };
+					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp, ledger: undefined };
 			}
 			if (spec.backendOptions !== undefined) throw new Error("backendOptions are not supported by the pi backend.");
 			const definition = spec.agentType !== undefined ? loadDefinition(spec.agentType) : undefined;
@@ -1249,6 +1251,9 @@ export function registerSubagents(
 				flags: piFlags,
 				remoteMcp: undefined,
 				treeConfig,
+				// A spec-on pi worker (the census hook, or its worktree's whole mode extension) logs its git
+				// operations to this session's ledger (mode/spec-guard.ts LEDGER_ENV).
+				ledger: specOn && !remote && (specWorker || treeConfig) ? ledgerPath(agentDir(), sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey)) : undefined,
 			};
 		});
 		const resuming = request.resume;
@@ -1264,7 +1269,7 @@ export function registerSubagents(
 		const launched: string[] = [];
 		const earlySettled = new Set<Worker>();
 		try {
-			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig }] of prepared.entries()) {
+			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig, ledger }] of prepared.entries()) {
 				for (let i = 0; i < (spec.count ?? 1); i++) {
 					const base = spec.name ?? spec.agentType ?? "agent";
 					const id = resuming ? resuming.id : `ag_${String(++counter).padStart(2, "0")}`;
@@ -1275,8 +1280,9 @@ export function registerSubagents(
 					// server's own environment, never the CLI's.
 					const memberVars = teamMember ? memberEnv(request.team!, teamMember, id) : undefined;
 					// A worker on its worktree's agent dir: pi resolves everything there (never written to disk).
-					const env = treeConfig ? { ...memberVars, ...treeConfig.env } : memberVars;
 					const tooling = teamMember ? memberTooling(spec.backend ?? "pi") : "none";
+					const baseEnv = treeConfig ? { ...memberVars, ...treeConfig.env } : tooling === "pi" ? memberVars : undefined;
+					const env = ledger ? { ...baseEnv, [LEDGER_ENV]: ledger } : baseEnv;
 					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
 					// Hosted: the runner's spawnImpl starts a detached host instead of the worker itself.
 					const hostedWorker = !resuming && hosting.active();
@@ -1313,7 +1319,7 @@ export function registerSubagents(
 							...(flags ? { flags } : {}),
 							...backendPrepared,
 							backend: spec.backend ?? "pi",
-							...(env && (tooling === "pi" || treeConfig) ? { env } : {}),
+							...(env ? { env } : {}),
 							...(treeConfig ? { sessionDir: treeConfig.sessionDir, approve: true } : {}),
 							...(Object.keys(mcpServers).length ? { mcpServers } : {}),
 							...hosted,

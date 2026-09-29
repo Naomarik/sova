@@ -11,6 +11,7 @@ import { placeholderDir } from "../remote/argv.ts";
 import { REMOTE_MCP_ENV, REMOTE_MCP_SERVER_NAME, REMOTE_SESSION_EVENT, decodeRemoteMcpIdentity } from "../remote/workers.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT } from "../mode/state.ts";
 import { SPEC_HOOK_SCRIPT } from "../claude-code/spec-hooks.ts";
+import { LEDGER_ENV } from "../mode/spec-guard.ts";
 import { workerSpecBrief } from "./spec-brief.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
 import { CLAUDE_CODE_PROVIDER_FLAG, SubagentRunner } from "./runner.ts";
@@ -3682,6 +3683,10 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		// pi workers run with --no-extensions: the census hook comes in by -e, a sibling of subagents/.
 		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, SPEC_WORKER_EXTENSION]);
 		assert.equal(SPEC_WORKER_EXTENSION, fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "mode", "spec-worker.ts")));
+		// Its git operations go to this session's ledger (M4); spec off, none.
+		const ledger = h.workers[1].env?.[LEDGER_ENV];
+		assert.ok(typeof ledger === "string" && ledger.startsWith(path.join(NO_AGENT_DIR, "sova", "spec-ledger") + path.sep) && ledger.endsWith(".jsonl"), String(ledger));
+		assert.equal(h.workers[0].env?.[LEDGER_ENV], undefined);
 		await h.call("agent_spawn", { prompt: "reader", tools: ["read", "grep"] });
 		assert.equal(h.workers[2].systemPrompt, undefined, "a worker that cannot write gets no brief");
 		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION], "nor the census hook");
@@ -3694,6 +3699,7 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		assert.equal(post.matcher, "*", "after ANY tool, Bash included");
 		assert.ok(post.hooks[0].command.includes(SPEC_HOOK_SCRIPT) && post.hooks[0].command.includes(" post --core "));
 		assert.ok(post.hooks[0].command.includes(path.join(NO_AGENT_DIR, SPEC_HOOK_STATE)), "state under the agent dir");
+		assert.ok(post.hooks[0].command.includes(` --ledger ${ledger}`), "the hooks write the same ledger");
 		await h.call("agent_spawn", { prompt: "claude reader", backend: "claude-code", tools: ["Read"] });
 		assert.ok(!("settingsJson" in created[2]) && created[2].systemPrompt === undefined, "a read-only claude worker gets neither");
 
@@ -3711,6 +3717,8 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		assert.ok(created[4].systemPrompt.endsWith(brief) && JSON.parse(created[4].settingsJson).hooks, "a claude member");
 		assert.ok(h.workers.at(-1).systemPrompt.endsWith(brief), "a pi member");
 		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION], "a pi member gets the census hook too");
+		assert.equal(h.workers.at(-1).env?.[LEDGER_ENV], ledger, "and the ledger, beside its member identity");
+		assert.ok(Object.keys(h.workers.at(-1).env).length > 1);
 
 		h.bus.emit(MODE_STATE_EVENT, { ...SPEC_ON, version: 2 });
 		h.bus.emit(MODE_STATE_EVENT, SPEC_OFF);

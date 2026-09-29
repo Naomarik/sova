@@ -327,9 +327,15 @@ test("the security stubs fail closed: trustedClient believes no forwarded header
   assert.equal(await gatewayGate(() => ({ nodeId: "n1" }))(new Socket()), false);
 });
 
-test("shareState follows shareInfo until the setting lands", () => {
-  assert.deepEqual(listener.shareState({}), { state: "off", source: "setting", publicUrl: null });
-  assert.deepEqual(listener.shareState({ SOVA_SHARE_PUBLIC_URL: "https://share.example.com/" }), { state: "configured", source: "env", publicUrl: "https://share.example.com" });
+test("shareState: off with its warning, the env pin configured but unverified (the setting's cases: public-links.test.ts)", () => {
+  assert.deepEqual(listener.shareState({}), { state: "off", source: "setting", publicUrl: null, warning: contract.LINK_WARNINGS.off, warningCode: "off" });
+  assert.deepEqual(listener.shareState({ SOVA_SHARE_PUBLIC_URL: "https://share.example.com/" }), {
+    state: "configured",
+    source: "env",
+    publicUrl: "https://share.example.com",
+    warning: contract.LINK_WARNINGS.unverified,
+    warningCode: "unverified",
+  });
 });
 
 test("every copy string is written: no placeholder left in the frozen contract", () => {

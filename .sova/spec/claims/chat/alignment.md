@@ -8,7 +8,8 @@ can hold several alignments at once, one per concern. The user never edits one: 
 chat, and the agent records the answer. Sova shows each alignment as a card in the transcript, a
 chip in the composer, and a count on the session's row. It works the same in the TUI and in Sova,
 for sessions Sova holds and sessions it only watches, with one web-only shortcut: in a chat Sova
-holds, the card can tick recommendations to take and go with all of them (§chat.alignment/card).
+holds, the card can tick recommendations to take, pick an option as a question's answer, and go
+with all of the recommendations (§chat.alignment/card).
 Those only compose an ordinary message for the agent to record, exactly as if it were typed; the
 TUI user types the same words.
 
@@ -200,6 +201,10 @@ an `align` call: it is the message, not its working.
         <li><span class="text-mono align-q-letter">b</span> <span><strong class="align-q-line">1 per hour</strong>
           <span class="align-q-desc">trade-off</span></span></li>
       </ol>
+      <!-- or, answerable (below): each option's <li> holds a radio's label, the whole row the target:
+      <li><label class="align-q-pick"><input type="radio" class="visually-hidden" name="align-q-{n}"
+          aria-label="Answer q3 with b: 1 per hour"><span class="text-mono align-q-letter" aria-hidden="true">b</span>
+        <span>…the same two lines…</span></label></li> -->
       <p class="align-q-rec"><span class="align-q-line"><span class="align-q-kicker">Recommended</span>
         <span class="align-q-letter">a</span> — <strong>1 per 10 min</strong></span>
         <span class="align-q-desc">why</span></p>
@@ -262,7 +267,7 @@ an `align` call: it is the message, not its working.
   context, options and recommendation it was settled from, then the outcome line in full. The
   fold is per card render and is not remembered.
 - **Nothing on the card writes alignment state.** Only the agent's `align` calls do
-  (§chat.alignment/state). The card's two controls below only compose an ordinary user message,
+  (§chat.alignment/state). The card's controls below only compose an ordinary user message,
   which the agent records like any typed answer (§chat.alignment/model).
 - **Answerable card.** Only in a chat Sova holds (the chat view, never a live watch, the Overseer's
   watch or a worker transcript), with the **align** minor mode on in that chat, and not in the
@@ -271,25 +276,41 @@ an `align` call: it is the message, not its working.
   earlier revision, an older session's `align-doc` card and a settled document stay read-only.
 - **Take a recommendation (tick).** Each open question's recommendation becomes the label
   of a checkbox (`label.toggle`, both lines the target; the box sits in the options' letter
-  column), named "Take the recommendation for {qN}." for assistive tech. A tick stages nothing on
-  the server: ticks live in memory per session, like the draft, until the next send. They show
-  above the composer as one removable row (§chat.composer/anatomy) and go out with the next
-  message. A tick whose question stops being open in a newer revision, or whose alignment ends,
-  drops. Ticking is disabled only where the composer is blocked because the chat is archived,
-  with that reason as the hover title; a passing block (reconnecting, saving a turn) leaves it on.
-- **The message the ticks send**, one line per alignment, in the order the alignments were last
-  touched and each's questions in card order: `{al_N}: take your recommendation on {q1}, {q2} and
-  {q3}.` At Send, that line (or lines), a blank line, then the typed text make **one** message;
-  Send works with ticks and no text. A refused send keeps both. The agent reads it as `accept` of
-  exactly those questions and records typed answers with `decide`.
+  column), named "Take the recommendation for {qN}." for assistive tech.
+- **Answer with an option (pick).** Each open question's options become rows to pick: the whole
+  row is the target (at least `--tap-min` tall), a visually hidden radio named "Answer {qN} with
+  {letter}: {label}". An unpicked row looks like a read-only option, the same plain letter in the
+  same column and the same spacing; the picked row takes a faint selection tint, a thin accent edge
+  at its left and its letter and label in accent, with nothing moving; a row shows a sunken fill on
+  hover and the focus ring on the whole row. Picking an option answers the question with it; it does not change
+  the recommendation. Clicking the picked row clears it. A question holds **one pick**: ticking
+  its recommendation replaces an option picked for it, and picking an option replaces the tick.
+  The option the recommendation names (§chat.alignment/document) **is** the recommendation: picking
+  it ticks the recommendation, and ticking the recommendation shows that option picked, both ways.
+- **Picks are staged, not sent.** A tick or a pick stages nothing on the server: picks live in
+  memory per session, like the draft, until the next send. They show above the composer as one
+  removable row (§chat.composer/anatomy) and go out with the next message. A pick whose question
+  stops being open in a newer revision, or whose alignment ends, drops; so does an option pick
+  whose option is gone or relabelled, and one the recommendation comes to name reads as the
+  recommendation. Ticking and picking are disabled only where the composer is blocked because the
+  chat is archived, with that reason as the hover title; a passing block (reconnecting, saving a
+  turn) leaves them on, and during a turn they go with the next send like any draft.
+- **The message the picks send**, one line per alignment, in the order the alignments were last
+  touched and each's questions in card order: the ticked ones as `{al_N}: take your recommendation
+  on {q1}, {q2} and {q3}.`, then the picked options as the user would type them, each with its
+  label: `My answers: 2b — Parquet; 4a — 1 per 10 min.` (`{al_N}: my answers: …` when nothing is
+  ticked). At Send, that line (or lines), a blank line, then the typed text make **one** message;
+  Send works with picks and no text. A refused send keeps both. The agent reads the first part as
+  `accept` of exactly those questions, and each option ("2b": q2's option b) and typed answer as a
+  `decide`.
 - **Go With Recommendations.** The card's foot has one button (secondary, `button-sm`), with the
   hint "Or tick some and answer the rest below." beside it. It sends only its own message:
   `{al_N}: go with your recommendations for every open question, and go ahead.` — which the agent
   reads as `accept_all` then status `implementing`. It is `aria-disabled`, with the reason as its
   title and in place of the hint, while the composer's send is blocked (that reason,
   §chat.composer/disabled-states), while a turn runs ("Wait for the turn to end."), and while the
-  composer holds a draft — typed text, an attachment or ticks ("Send or clear your draft first.").
-  After it sends, that alignment's ticks clear and focus moves to the composer.
+  composer holds a draft — typed text, an attachment or picks ("Send or clear your draft first.").
+  After it sends, that alignment's picks clear and focus moves to the composer.
 - While a run streams, the call's card appears as soon as its result arrives, from the result's
   own snapshot; the settled transcript renders the same card.
 

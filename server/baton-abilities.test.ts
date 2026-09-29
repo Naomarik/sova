@@ -34,13 +34,13 @@ after(async () => {
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
 const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const tahir = await orgs.addPerson(org.id, { name: "Tahir", role: "Finance" });
+const dana = await orgs.addPerson(org.id, { name: "Dana Kerr", role: "Finance" });
 const app = new Hono();
 registerOrgRoutes(app);
 const post = (path: string, body?: unknown) => app.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
 const poPaths = projectOverseerPaths(org.id, project.id);
 const setProject = (a: { draw: boolean; readLinks: boolean } | null) => writePoSettings(poPaths, { ...readPoSettings(poPaths), gatheringAbilities: a });
-const start = (abilities?: object) => baton.createBaton({ orgId: org.id, projectId: project.id, to: tahir.id, publicTitle: "Dashboard", goal: "What the dashboard shows", ...(abilities ? { abilities } : {}) });
+const start = (abilities?: object) => baton.createBaton({ orgId: org.id, projectId: project.id, to: dana.id, publicTitle: "Dashboard", goal: "What the dashboard shows", ...(abilities ? { abilities } : {}) });
 
 async function until(cond: () => boolean, ms = 3000): Promise<void> {
   const end = Date.now() + ms;
@@ -73,9 +73,9 @@ async function stubChat(path: string, runs: { tools: string[]; prompt: string }[
   return chat;
 }
 function says(chat: Awaited<ReturnType<typeof stubChat>>, sessionId: string, text: string) {
-  const noted = baton.noteMessage(sessionId, tahir.id);
-  loadout.recordNoted(chat, tahir.id, noted);
-  void chat.acceptPrompt(text, undefined, "server", undefined, { sentByBaton: { by: tahir.id } }).turn.catch(() => {});
+  const noted = baton.noteMessage(sessionId, dana.id);
+  loadout.recordNoted(chat, dana.id, noted);
+  void chat.acceptPrompt(text, undefined, "server", undefined, { sentByBaton: { by: dana.id } }).turn.catch(() => {});
 }
 const entriesOf = (path: string) => readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
 
@@ -94,10 +94,10 @@ describe("the project's setting and each start (§app.baton/abilities)", () => {
     assert.deepEqual(baton.batonById(start().sessionId)!.row.abilities, { draw: false, readLinks: true });
     assert.deepEqual(baton.batonById(start({ draw: true }).sessionId)!.row.abilities, { draw: true, readLinks: true });
     setProject(null);
-    const res = await post("/api/baton", { orgId: org.id, projectId: project.id, to: tahir.id, publicTitle: "T", goal: "g", abilities: { readLinks: true } });
+    const res = await post("/api/baton", { orgId: org.id, projectId: project.id, to: dana.id, publicTitle: "T", goal: "g", abilities: { readLinks: true } });
     assert.equal(res.status, 201);
     assert.deepEqual(baton.batonById(((await res.json()) as { sessionId: string }).sessionId)!.row.abilities, { draw: true, readLinks: true }, "the operator may turn read links on");
-    const bad = await post("/api/baton", { orgId: org.id, projectId: project.id, to: tahir.id, publicTitle: "T", goal: "g", abilities: { draw: "no" } });
+    const bad = await post("/api/baton", { orgId: org.id, projectId: project.id, to: dana.id, publicTitle: "T", goal: "g", abilities: { draw: "no" } });
     assert.equal(bad.status, 400);
     assert.match(((await bad.json()) as { error: string }).error, /abilities\.draw must be true or false/);
   });

@@ -116,9 +116,13 @@ describe("transcript rows and the digest", () => {
   });
 
   test("Needs you: the baton with the operator, or a person without a link — act tier", () => {
+    // A fixed clock one hour after lastActiveAt: against Date.now() the session turns stale (an extra
+    // fyi item) three days after this date, which is not what this test is about.
+    const lastActiveAt = "2026-09-26T00:00:00.000Z";
+    const now = Date.parse(lastActiveAt) + 3_600_000;
     const s = (baton: SessionSummary["baton"]): SessionSummary =>
-      ({ id: "s", path: "/p.jsonl", cwd: "/w", title: "T", createdAt: "", lastActiveAt: "2026-09-26T00:00:00.000Z", model: null, live: null, busy: false, origin: "web", archived: false, baton }) as SessionSummary;
-    const items = (b: SessionSummary["baton"]) => sessionItems({ summary: s(b), dialogs: [], queued: 0, failedWorkers: 0, activitySince: 0 }, Date.now());
+      ({ id: "s", path: "/p.jsonl", cwd: "/w", title: "T", createdAt: "", lastActiveAt, model: null, live: null, busy: false, origin: "web", archived: false, baton }) as SessionSummary;
+    const items = (b: SessionSummary["baton"]) => sessionItems({ summary: s(b), dialogs: [], queued: 0, failedWorkers: 0, activitySince: 0 }, now);
     assert.deepEqual(
       items({ holder: "Omar", state: "needs-you", needsYou: { from: "Maria", question: "Bonuses?", since: 5 } }).map((i) => [i.tier, i.kind, i.detail, i.since]),
       [["act", "baton-needs-you", "Maria → you: Bonuses?", 5]],

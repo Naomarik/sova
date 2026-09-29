@@ -120,3 +120,8 @@
               (h/send! bsid :effect/done {:kind "set-mode"}))]
     (is (= "Build it\n\nYou work in your own git worktree on the branch sova/t-abc123. Commit your work on this branch before you end your turn: uncommitted changes can't be merged. Before you end your turn, also merge main into your branch and resolve any conflicts."
            (:prompt (last (h/outbox x bsid)))))))
+
+(deftest stakeholder-same-person-adds-no-line
+  (let [x (h/send! (project) psid :stakeholder/set (assoc op :person-id "p1" :target {:status "active"}))
+        y (h/send! x psid :stakeholder/set (assoc op :person-id "p1" :target {:status "active"}))]
+    (is (= 1 (count (:stakeholder-history (h/data y psid)))))))

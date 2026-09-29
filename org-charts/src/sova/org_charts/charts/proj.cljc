@@ -69,10 +69,11 @@
 
 (defn set-stakeholder-ops [data]
   (let [to (:person-id (b/evt data))]
-    [(ops/assign :stakeholder-history (stake-history data (cond-> {:at (b/now-ms data) :from (:stakeholder data) :to to :why "operator"}
-                                                           (via data) (assoc :via "overseer"))))
-     (ops/assign :stakeholder to)
-     (ops/delete :stakeholder-cleared)]))
+    ;; a save that changes nothing adds no line (noteStakeholder), but it answers Needs you
+    (cond-> [(ops/assign :stakeholder to) (ops/assign :stakeholder-cleared nil)]
+      (not= to (:stakeholder data))
+      (conj (ops/assign :stakeholder-history (stake-history data (cond-> {:at (b/now-ms data) :from (:stakeholder data) :to to :why "operator"}
+                                                                   (via data) (assoc :via "overseer"))))))))
 
 (defn stakeholder-left? [_ data]
   (let [m (b/moved data)]

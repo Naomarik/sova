@@ -1,6 +1,7 @@
 import { createEffect, createResource, createSignal, For, Show } from "solid-js";
-import { FRONT_LABELS, type PublicLinksInfo, type ShareFront, type VerifyResult } from "../../shared/public-links";
-import { agoTime } from "../lib/format";
+import { FRONT_LABELS, type ShareFront, type VerifyResult } from "../../shared/public-links";
+import { agoTime, relativeTime } from "../lib/format";
+import { meshPeers } from "../lib/mesh";
 import {
   acceptPublicLinksInfo,
   draftIssue,
@@ -18,17 +19,23 @@ import {
   stateChip,
   verifyPublicLinks,
   type PublicLinksDraft,
-  type RouteChoice,
+  type PublicLinksInfoRouted,
+  type RoutedHost,
 } from "../lib/public-links";
 import { copyText } from "../lib/ui-state";
 import { Banner, Chip, CopyButton } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
-/** The route choices this build offers; "Through {gateway}" arrives with the routed half (M6b). */
-const ROUTES: { id: RouteChoice; label: string; hint: string }[] = [
-  { id: "off", label: "Off", hint: "Links work only on your own devices." },
-  { id: "self", label: "This host is the gateway", hint: "This host serves every public link, including those from hosts that go through it." },
-];
+/** One "Where links open" radio: Off, This host is the gateway, or Through one advertising peer. */
+interface RouteOption {
+  key: string;
+  route: "off" | "self" | "via";
+  nodeId?: string;
+  label: string;
+  hint: string;
+}
+
+const throughHint = (g: string) => `Links from this host open at ${g}'s address. ${g} must be on for them to open.`;
 
 /**
  * Settings → Public links (§mesh.public/setting): where the people you send a link open it. Off, or
@@ -45,7 +52,7 @@ export function PublicLinksSettingsSection() {
     if (i) acceptPublicLinksInfo(i);
   });
   /** What the server said last: the GET, or the answer to a save since. */
-  const info = (): PublicLinksInfo | undefined => publicLinksInfo() ?? loaded();
+  const info = (): PublicLinksInfoRouted | undefined => publicLinksInfo() ?? loaded();
   const pinned = () => info()?.pinnedByEnv ?? [];
   const pinOf = (field: keyof typeof PIN_OF) => (pinned().includes(PIN_OF[field]) ? PIN_OF[field] : null);
 
@@ -88,6 +95,45 @@ export function PublicLinksSettingsSection() {
     if (next) acceptPublicLinksInfo(next);
   };
 
+  /** Off, the gateway, then one Through per advertising peer; a saved via no longer advertised keeps its radio. */
+  const routes = (): RouteOption[] => {
+    const out: RouteOption[] = [
+      { key: "off", route: "off", label: "Off", hint: "Links work only on your own devices." },
+      { key: "self", route: "self", label: "This host is the gateway", hint: "This host serves every public link, including those from hosts that go through it." },
+    ];
+    for (const g of info()?.gateways ?? []) out.push({ key: `via:${g.nodeId}`, route: "via", nodeId: g.nodeId, label: `Through ${g.peer}`, hint: throughHint(g.peer) });
+    const r = saved()?.route;
+    if (typeof r === "object" && !out.some((o) => o.nodeId === r.via.nodeId)) {
+      const name = info()?.share.via ?? r.via.nodeId;
+      out.push({ key: `via:${r.via.nodeId}`, route: "via", nodeId: r.via.nodeId, label: `Through ${name}`, hint: throughHint(name) });
+    }
+    return out;
+  };
+  const checked = (o: RouteOption) => draft()?.route === o.route && (o.route !== "via" || draft()?.viaNodeId === o.nodeId);
+  /** The chosen gateway's name, for the advice line. */
+  const viaName = () => {
+    const id = draft()?.viaNodeId;
+    return info()?.gateways?.find((g) => g.nodeId === id)?.peer ?? info()?.share.via ?? id ?? "";
+  };
+  /** The saved setting routes through the gateway the form shows: the share state is about it. */
+  const viaSaved = () => {
+    const r = saved()?.route;
+    return typeof r === "object" && r.via.nodeId === draft()?.viaNodeId;
+  };
+
+  /** The accept list's rows: every peer, then a saved StableID with no peer any more (by its nodeId). */
+  const acceptRows = () => {
+    const rows = meshPeers().map((p) => ({ nodeId: p.nodeId, name: p.label || p.id }));
+    const list = draft()?.acceptFrom;
+    for (const id of list === "all" || !list ? [] : list) if (!rows.some((r) => r.nodeId === id)) rows.push({ nodeId: id, name: id });
+    return rows;
+  };
+  const toggleAccept = (nodeId: string, on: boolean) => {
+    const list = draft()?.acceptFrom;
+    const cur = list === "all" || !list ? [] : list;
+    edit({ acceptFrom: on ? [...cur.filter((x) => x !== nodeId), nodeId] : cur.filter((x) => x !== nodeId) });
+  };
+
   /** The front's steps, when the server generated them for the draft's front. */
   const guide = () => info()?.front ?? null;
   /** The form's front differs from the saved setting the guide was generated for. */
@@ -128,10 +174,17 @@ export function PublicLinksSettingsSection() {
 
       <fieldset class="field public-links-route">
         <legend class="field-label">Where links open</legend>
-        <For each={ROUTES}>
+        <For each={routes()}>
           {(r) => (
             <label class="toggle public-links-choice">
-              <input type="radio" name="public-links-route" value={r.id} checked={draft()?.route === r.id} disabled={off()} onChange={() => edit({ route: r.id })} />
+              <input
+                type="radio"
+                name="public-links-route"
+                value={r.key}
+                checked={checked(r)}
+                disabled={off()}
+                onChange={() => edit(r.route === "via" ? { route: "via", viaNodeId: r.nodeId! } : { route: r.route })}
+              />
               <span class="toggle-box" aria-hidden="true" />
               <span class="public-links-choice-main">
                 <span class="public-links-choice-name">{r.label}</span>
@@ -232,6 +285,48 @@ export function PublicLinksSettingsSection() {
             </div>
           </div>
 
+          <fieldset class="field public-links-accept">
+            <legend class="field-label">Accept links from</legend>
+            <div class="public-links-accept-modes">
+              <label class="toggle public-links-choice">
+                <input type="radio" name="public-links-accept" checked={draft()?.acceptFrom === "all"} disabled={off()} onChange={() => edit({ acceptFrom: "all" })} />
+                <span class="toggle-box" aria-hidden="true" />
+                <span class="public-links-choice-name">All hosts</span>
+              </label>
+              <label class="toggle public-links-choice">
+                <input
+                  type="radio"
+                  name="public-links-accept"
+                  checked={Array.isArray(draft()?.acceptFrom)}
+                  disabled={off()}
+                  onChange={() => edit({ acceptFrom: [] })}
+                />
+                <span class="toggle-box" aria-hidden="true" />
+                <span class="public-links-choice-name">These hosts</span>
+              </label>
+            </div>
+            <Show when={Array.isArray(draft()?.acceptFrom)}>
+              <ul class="public-links-accept-list">
+                <For each={acceptRows()}>
+                  {(row) => (
+                    <li>
+                      <label class="toggle public-links-check">
+                        <input
+                          type="checkbox"
+                          checked={(draft()?.acceptFrom as string[]).includes(row.nodeId)}
+                          disabled={off()}
+                          onChange={(e) => toggleAccept(row.nodeId, e.currentTarget.checked)}
+                        />
+                        <span class="toggle-box" aria-hidden="true" />
+                        <span class="public-links-choice-name">{row.name}</span>
+                      </label>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+          </fieldset>
+
           <Show when={guideStale()}>
             <section class="public-links-front" aria-labelledby="public-links-front-title">
               <h4 class="public-links-front-title" id="public-links-front-title">
@@ -299,6 +394,56 @@ export function PublicLinksSettingsSection() {
               />
             )}
           </Show>
+
+          <section class="public-links-routed" aria-labelledby="public-links-routed-title">
+            <h4 class="public-links-front-title" id="public-links-routed-title">
+              Hosts sending links here
+            </h4>
+            <Show when={(info()?.routed ?? []).length > 0} fallback={<p class="settings-intro">No other host sends its links here yet.</p>}>
+              <ul class="list public-links-routed-list">
+                <For each={info()?.routed ?? []}>{(h) => <RoutedRow host={h} />}</For>
+              </ul>
+            </Show>
+          </section>
+        </div>
+      </Show>
+
+      <Show when={draft()?.route === "via"}>
+        <div class="stack public-links-gateway">
+          <p class="settings-intro">Links open only while {viaName()} is on. Keep a client's organization on an always-on host.</p>
+          <div class="field settings-field public-links-port">
+            <label class="field-label" for="public-links-ingress">
+              Ingress port
+            </label>
+            <input
+              id="public-links-ingress"
+              class="input input-mono"
+              type="number"
+              min="1"
+              max="65535"
+              autocomplete="off"
+              value={draft()?.ingressPort ?? ""}
+              disabled={off()}
+              aria-invalid={issue()?.field === "ingressPort" ? "true" : undefined}
+              aria-describedby="public-links-ingress-hint"
+              onInput={(e) => edit({ ingressPort: e.currentTarget.value })}
+            />
+            <Show when={issue()?.field === "ingressPort"}>
+              <span class="field-error" id="public-links-ingress-hint">
+                {issue()!.text}
+              </span>
+            </Show>
+          </div>
+          <Show when={viaSaved() && info()?.share}>
+            {(sh) => (
+              <>
+                <Show when={(sh().warningCode === "unreachable" || sh().warningCode === "not-accepted") && sh().warning}>
+                  {(w) => <Banner tone="warn" title={w()} />}
+                </Show>
+                <Show when={sh().warningCode === "sleeps" && sh().warning}>{(w) => <p class="field-hint">{w()}</p>}</Show>
+              </>
+            )}
+          </Show>
         </div>
       </Show>
 
@@ -311,3 +456,21 @@ export function PublicLinksSettingsSection() {
 
 /** "https://share.example.com" as the step line names it. */
 const hostOf = (url: string): string => url || "your public address";
+
+/** One host sending its links here: its name, how many, up or down (or not accepted), and its last push. Read-only. */
+function RoutedRow(props: { host: RoutedHost }) {
+  const h = () => props.host;
+  return (
+    <li class="list-row public-links-routed-row">
+      <span class="list-main">
+        <span class="list-title">{h().peer ?? h().nodeId}</span>
+        <span class="list-meta">
+          {h().links === 1 ? "1 link" : `${h().links} links`} · {h().lastPushAt === null ? "Never pushed" : `Last push ${relativeTime(h().lastPushAt!)}`}
+        </span>
+      </span>
+      <Show when={h().accepted} fallback={<Chip tone="warn">Not accepted</Chip>}>
+        <Chip tone={h().up ? "success" : undefined}>{h().up ? "Up" : "Down"}</Chip>
+      </Show>
+    </li>
+  );
+}

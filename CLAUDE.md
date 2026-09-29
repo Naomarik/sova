@@ -30,7 +30,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   extensions into this directory, so an edit here changes the user's LIVE TUI on its next `/reload`,
   and every
   runtime Sova embeds. Treat it like `shared/protocol.ts`: coordinate before changing any contract
-  Sova parses (sessions live registry `sessions/live/*.json`, usage-status cache, subagents
+  Sova parses (sessions live registry `sessions/live/*.json`, usage-status cache (`claude` is
+  always Claude Code's own login; each added Claude login's reading is in the additive
+  `claudeAccounts`, keyed by login id), subagents
   teams/snapshots, topic-outline state, command-palette `model-favorites.json`, the model policy
   `model-policy.json` (extensions/model-policy: what may be used at all, and what subagents may be
   given — read by the TUI, the palette, subagent spawning and Sova alike), mode `mode.json` =
@@ -86,7 +88,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
   the session list's `SessionSummary.align` read what the extension writes, with its own code),
   `server/insights.ts` imports
-  `pi-config/extensions/usage-status/fetch.ts`, `server/worker-context.ts` and `server/delegate.ts`
+  `pi-config/extensions/usage-status/fetch.ts` (which imports `claude-code/accounts.ts`, builtins
+  only, to fetch each login's usage; `server/auth-status.ts` and `server/claude-login-state.ts`
+  import `accounts.ts` too), `server/worker-context.ts` and `server/delegate.ts`
   import `pi-config/extensions/claude-code/context-window.ts` (imports nothing: the one Claude Code
   window rule, `[1m]` or natively 1M else 200k, and the list rule that adds `opus[1m]` and
   `claude-fable-5-1[1m]` after their listed base; the provider, `agent_models` and the subagents

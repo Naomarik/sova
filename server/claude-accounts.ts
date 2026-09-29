@@ -17,6 +17,7 @@ import {
   isLoginId,
   loginDir,
   newLoginId,
+  planLabel,
   readAccounts,
   readAccountsState,
   readIdentityFile,
@@ -25,6 +26,7 @@ import {
   type ClaudeAccountsFile,
   type ClaudeLoginIdentity,
 } from "../pi-config/extensions/claude-code/accounts.ts";
+import type { ClaudeLoginIdentity as WireIdentity } from "../shared/protocol";
 import type { ClaudeAccountsInfo, ClaudeLoginFlowState, ClaudeLoginRow } from "../shared/protocol";
 import { readPeers } from "./mesh/peers";
 
@@ -64,6 +66,13 @@ interface Flow {
   waiters: Set<() => void>;
 }
 
+/** An identity as the browser gets it: with the plan as people say it ("Max 20x"), never the raw billing type alone. */
+export function wireIdentity(identity: ClaudeLoginIdentity | null): WireIdentity | null {
+  if (!identity) return null;
+  const label = planLabel(identity);
+  return label ? { ...identity, planLabel: label } : { ...identity };
+}
+
 export type ServiceResult = { status: 200; body: ClaudeAccountsInfo | ClaudeLoginFlowState } | { status: 400 | 404 | 409; body: { error: string } };
 
 export class ClaudeAccountsService {
@@ -101,7 +110,7 @@ export class ClaudeAccountsService {
     return {
       id,
       ...(record?.label ? { label: record.label } : {}),
-      identity: this.logins.identityOf(id, accounts),
+      identity: wireIdentity(this.logins.identityOf(id, accounts)),
       enabled: id === DEFAULT_LOGIN_ID ? (accounts.devices[this.logins.device] ?? accounts.devices[LOCAL_DEVICE_ID])?.defaultEnabled !== false : record?.enabled === true,
       standing,
       signedIn: credentialsMtime(this.logins.dirOf(id)) !== undefined,
@@ -118,10 +127,20 @@ export class ClaudeAccountsService {
       logins: this.logins.order(accounts).map((id) => this.row(id, accounts)),
       elsewhere: accounts.logins
         .filter((l) => !assignedHere(l.device, device))
-        .map((l) => ({ id: l.id, device: l.device, ...(l.label ? { label: l.label } : {}), identity: l.identity })),
+        .map((l) => ({ id: l.id, device: l.device, ...(l.label ? { label: l.label } : {}), identity: wireIdentity(l.identity) })),
       ...(read.state === "malformed" ? { error: `${read.file}: ${read.errors.join("; ")}` } : {}),
       flow: this.flow?.state ?? null,
     };
+  }
+
+  /** The login this host's next new chat runs on: the first usable one in its order (nothing is touched). */
+  inUse(): string {
+    return this.logins.selectId();
+  }
+
+  /** A login's directory (Claude Code's own for `default`). */
+  dirOf(id: string): string {
+    return this.logins.dirOf(id);
   }
 
   // -- changing ------------------------------------------------------------------------------

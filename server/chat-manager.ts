@@ -35,6 +35,7 @@ import { toContextInfo, workerWindowResolver } from "./models";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
+import { claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry } from "./claude-login-state";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
@@ -1450,6 +1451,7 @@ class ChatSession {
         const items = normalizeEntry((event as { entry: Record<string, any> }).entry);
         if (items.length) this.broadcast({ type: "append", items });
         onSandboxAppend(this.sandboxHost, (event as { entry: unknown }).entry);
+        if (isClaudeLoginEntry((event as { entry: unknown }).entry)) this.broadcast(claudeLoginMessage(this.session.sessionManager.getBranch()));
       }
       if (event.type === "message_end" && this.senderMarks.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
         this.markSend((event as { message: { content?: unknown } }).message);
@@ -1753,6 +1755,8 @@ class ChatSession {
     client.send({ type: "queue", items: this.queue.snapshot() });
     client.send(this.modeMessage());
     this.sendSandbox((m) => client.send(m));
+    const login = claudeLoginAfterHello(this.session.sessionManager.getBranch());
+    if (login) client.send(login);
     const snap = this.workersSnapshot();
     if (snap) client.send(snap);
     pushLinks(this, client);
@@ -2485,6 +2489,8 @@ class ChatSession {
     this.modeState = resolveChatMode(this.session.sessionManager.getBranch());
     this.broadcast(this.modeMessage());
     this.sendSandbox((m) => this.broadcast(m)); // the extension re-restores on session_tree too
+    const login = claudeLoginAfterHello(this.session.sessionManager.getBranch()); // the new branch's newest entry
+    if (login) this.broadcast(login);
     pushLinks(this); // after every hello, as attach() does
     return () => sendHistory(cut, tails, (c) => this.clients.has(c));
   }

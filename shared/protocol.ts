@@ -830,6 +830,8 @@ export interface ClaudeLoginIdentity {
   orgName?: string;
   plan?: string;
   rateLimitTier?: string;
+  /** The plan as people say it ("Max 20x", "Pro"), from the tier or the plan; absent when neither names one. */
+  planLabel?: string;
 }
 /** A login's standing on this host: usable, out until a limit resets, or out until signed in again. */
 export type ClaudeLoginStanding =
@@ -867,6 +869,19 @@ export interface ClaudeAccountsInfo {
   /** The registry could not be read: only `default` is used, and nothing is written. */
   error?: string;
   flow: ClaudeLoginFlowState | null;
+}
+/** The chat's Claude login, as the composer foot shows it. */
+export interface ChatClaudeLogin {
+  id: string;
+  /** Its label, else its email, else "default" / its id. */
+  name: string;
+  email?: string;
+  planLabel?: string;
+  /** true: from the session's own `claude-login` entry; false: not recorded yet, so the login this
+      host would choose for the session's next start. */
+  recorded: boolean;
+  /** This host lists more than one login: only then is the choice worth showing. */
+  several: boolean;
 }
 /** PUT /api/claude/accounts/order */
 export interface ClaudeLoginOrderRequest { order: string[] }
@@ -1789,6 +1804,11 @@ export type ChatServerMessage =
   /** THIS chat's sandbox, sent after hello and on every change, ONLY when its runtime has the
       sandbox extension's /sandbox command. Absent = no extension: no row, no shield. */
   | ({ type: "sandbox" } & SandboxInfo)
+  /** THIS chat's Claude login (§app.claude-logins/active-login): the newest `claude-login` entry on
+      its branch, else the login this host would start it on now. Sent after hello only when this
+      host has more than one login (a hello clears the last one), and whenever a `claude-login`
+      entry is appended. `null`: this host has no Claude login it could name. */
+  | { type: "claude_login"; login: ChatClaudeLogin | null }
   /** Slash commands available in this session (sent right after hello, and again after a runtime
       reload). Same enumeration as pi rpc get_commands: extension commands, prompt templates, skills,
       after Sova's own builtin `compact` (first; an extension command of the same name is left out,
@@ -2074,6 +2094,36 @@ export interface UsageInsight {
   nextFetchAt: number | null;
   stale: boolean; // now - fetchedAt > 10 min (nothing refreshed the cache: neither this server's poller nor a TUI)
   providers: UsageProvider[]; // fixed order: claude, openai, ollama, zai, deepseek
+  /** Every Claude login on this host, in its order, `default` (whose usage is `providers`' claude)
+      included (§app.insights/usage-cards). Absent from an older server; the page then shows the
+      one Claude card from `providers`. */
+  claudeLogins?: UsageClaudeLogin[];
+}
+/** One Claude login's card on the Usage page. Identity and standing only: never a token. */
+export interface UsageClaudeLogin {
+  /** `default` (Claude Code's own directory) or `l-` and 8 hex digits. */
+  id: string;
+  label?: string;
+  email?: string;
+  /** Logins with the same account share its usage limits; the page groups them. */
+  accountUuid?: string;
+  orgName?: string;
+  /** "Max 20x", "Pro", … (ClaudeLoginIdentity.planLabel). */
+  planLabel?: string;
+  /** When it was added (absent for `default`): names a login that has no label. */
+  addedAt?: number;
+  /** false: never chosen automatically (Settings → Accounts, Use). */
+  enabled: boolean;
+  /** Its directory holds `.credentials.json`. */
+  signedIn: boolean;
+  standing: ClaudeLoginStanding;
+  /** The login this host's next new chat runs on: the first usable one in its order. */
+  inUse: boolean;
+  /** Its reading: `id` "claude", like the provider card. A login marked as needing sign-in is not
+      fetched, so it keeps the last reading it had (or none: state "error"). */
+  usage: UsageProvider;
+  /** When `usage` was fetched (added logins; `default`'s is the file's `fetchedAt`). */
+  fetchedAt?: number;
 }
 
 /** `restored`: a worker a server restart took down, rebuilt from its durable record and transcript.

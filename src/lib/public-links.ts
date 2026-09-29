@@ -39,45 +39,19 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export const getPublicLinks = () => call<PublicLinksInfoRouted>("/api/public-links");
+export const getPublicLinks = () => call<PublicLinksInfo>("/api/public-links");
 export const putPublicLinks = (patch: PublicLinksPatch) =>
-  call<PublicLinksInfoRouted>("/api/public-links", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
+  call<PublicLinksInfo>("/api/public-links", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 export const verifyPublicLinks = () => call<VerifyResult>("/api/public-links/verify", { method: "POST" });
-
-// ---- the routed half's fields (M6b) --------------------------------------------------------------
-
-/** A host that routes its links through this gateway, as GET /api/public-links reports it
-    (`routed`, only for route "self"). Interim: the operator approved these two optional
-    PublicLinksInfo fields; M5 adds them to shared/public-links.ts and M1 serves them, and these
-    local copies go away then. */
-export interface RoutedHost {
-  nodeId: string;
-  /** Its id in peers.json, or null when it isn't a peer here. */
-  peer: string | null;
-  /** Live links it has registered here. */
-  links: number;
-  up: boolean;
-  /** When its last snapshot arrived, ms epoch. */
-  lastPushAt: number | null;
-  /** Whether acceptFrom lets its links in. */
-  accepted: boolean;
-}
-/** A peer whose hello advertises a gateway: one "Through {gateway}" choice. */
-export interface GatewayChoice {
-  nodeId: string;
-  peer: string;
-  publicUrl: string;
-}
-export type PublicLinksInfoRouted = PublicLinksInfo & { routed?: RoutedHost[]; gateways?: GatewayChoice[] };
 
 // ---- what the app knows now ---------------------------------------------------------------------
 
-const [info, setInfo] = createSignal<PublicLinksInfoRouted | null>(null);
+const [info, setInfo] = createSignal<PublicLinksInfo | null>(null);
 /** The last GET or PUT answer, for the Mesh card's chip; null until one (or on a server without the route). */
 export const publicLinksInfo = info;
 
 /** Read the setting into `publicLinksInfo`. A server without the route (older, or M1 not landed) reads as nothing. */
-export async function loadPublicLinks(): Promise<PublicLinksInfoRouted | null> {
+export async function loadPublicLinks(): Promise<PublicLinksInfo | null> {
   try {
     const next = await getPublicLinks();
     setInfo(next);
@@ -197,7 +171,7 @@ export const samePublicLinks = (d: PublicLinksDraft, f: PublicLinksFile): boolea
 /** The env pins the last answer reported; the fields they decide can't be edited. */
 let pins: readonly string[] = [];
 
-const store = createDraftStore<PublicLinksDraft, PublicLinksFile, PublicLinksInfoRouted>({
+const store = createDraftStore<PublicLinksDraft, PublicLinksFile, PublicLinksInfo>({
   tab: "public-links",
   label: "Public links",
   toDraft: publicLinksDraftOf,
@@ -215,7 +189,7 @@ const store = createDraftStore<PublicLinksDraft, PublicLinksFile, PublicLinksInf
 });
 
 /** A GET answer arrived: the draft store and the card's chip follow it. */
-export function acceptPublicLinksInfo(next: PublicLinksInfoRouted): void {
+export function acceptPublicLinksInfo(next: PublicLinksInfo): void {
   pins = next.pinnedByEnv;
   setInfo(next);
   store.setSaved(next.file);
@@ -261,7 +235,7 @@ export function sourceLabel(s: ShareState, pinned: readonly string[]): string {
 }
 
 /** The Mesh card's chip, or null when this host has no public links. */
-export function meshChipText(i: PublicLinksInfoRouted | null): string | null {
+export function meshChipText(i: PublicLinksInfo | null): string | null {
   if (!i) return null;
   const r = i.file.route;
   if (r === "self") return "Public links: gateway";

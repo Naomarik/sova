@@ -1,5 +1,5 @@
 import { createEffect, createResource, createSignal, For, Show } from "solid-js";
-import { FRONT_LABELS, type ShareFront, type VerifyResult } from "../../shared/public-links";
+import { FRONT_LABELS, type PublicLinksInfo, type RoutedHost, type ShareFront, type VerifyResult } from "../../shared/public-links";
 import { agoTime, relativeTime } from "../lib/format";
 import { meshPeers } from "../lib/mesh";
 import {
@@ -19,8 +19,6 @@ import {
   stateChip,
   verifyPublicLinks,
   type PublicLinksDraft,
-  type PublicLinksInfoRouted,
-  type RoutedHost,
 } from "../lib/public-links";
 import { copyText } from "../lib/ui-state";
 import { Banner, Chip, CopyButton } from "./ui";
@@ -52,7 +50,7 @@ export function PublicLinksSettingsSection() {
     if (i) acceptPublicLinksInfo(i);
   });
   /** What the server said last: the GET, or the answer to a save since. */
-  const info = (): PublicLinksInfoRouted | undefined => publicLinksInfo() ?? loaded();
+  const info = (): PublicLinksInfo | undefined => publicLinksInfo() ?? loaded();
   const pinned = () => info()?.pinnedByEnv ?? [];
   const pinOf = (field: keyof typeof PIN_OF) => (pinned().includes(PIN_OF[field]) ? PIN_OF[field] : null);
 

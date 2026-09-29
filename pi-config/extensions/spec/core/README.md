@@ -129,7 +129,9 @@ to the project root. New fields are only ever added. Other tools read this outpu
   `claimed: [{path, claims}]`, `unclaimed`, `outside` (changed files beyond the boundary, which
   aren't failures), `mappedOutside: [{path, claims}]` (the `outside` files some record's `code`
   maps: never unclaimed, never a warning, but their ids are touched and foreign like any claimed
-  file's, since the boundary is not widened) and `symlinks`. Each unclaimed file is a `changed-unclaimed` warning. With no
+  file's, since the boundary is not widened), `orphanedEvidence: [{draft, commit, ids}]` (commit
+  evidence in `.sova/spec/drafts/*/draft.json` that `HEAD` doesn't contain, as after a rebase; one
+  `evidence-orphaned` note each, never a warning) and `symlinks`. Each unclaimed file is a `changed-unclaimed` warning. With no
   boundary it still lists the claimed files, but `unclaimed` and `outside` are null.
 - **census --changed --related**: adds `touched: [{id, kind, labels?, created, file, lines, files, requires,
   consumers: [{id, depth}]}]`, one entry per id that claims a changed file, sorted by id. `files`

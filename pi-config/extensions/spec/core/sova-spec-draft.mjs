@@ -572,6 +572,20 @@ function phrases(text) {
   return out;
 }
 const MAX_ELSEWHERE = 5, MAX_REMOVED = 30;
+// Quantities: a number with a comparator or a unit ("≥80%", "90%", "20s", "480px"). A bare number says too little.
+const tokens = (text) => text.split("\n").filter((l) => !/^#{1,2}\s+§/.test(l)).join("\n").toLowerCase()
+  .replace(/§[^\s)]*/g, " ").match(/[≥≤<>~±]?\d+(?:\.\d+)?(?:%|px|ms|s\b|min\b|kb\b|mb\b|x\b)?|[a-z][a-z0-9'-]*/g) ?? [];
+const isQuantity = (t) => /\d/.test(t) && /^[≥≤<>~±]|[^\d.]$/.test(t);
+const QTY_WINDOW = 8, RARE_SHARE = 0.1;
+// The content words within QTY_WINDOW tokens of each occurrence of a quantity.
+function nearWords(toks, qty) {
+  const out = new Set();
+  toks.forEach((t, i) => {
+    if (t !== qty) return;
+    for (const w of toks.slice(Math.max(0, i - QTY_WINDOW), i + QTY_WINDOW + 1)) if (w.length >= 4 && !STOP.has(w) && !/\d/.test(w)) out.add(w);
+  });
+  return out;
+}
 const declText = (tree, d) => d && tree.files.get(d.file) ? tree.files.get(d.file).buf.toString("utf8").split(/\r?\n/).slice(d.lines[0] - 1, d.lines[1]).join("\n") + "\n" : null;
 
 // Drift a draft can carry unnoticed: (1) a phrase it removed from one § that other § still say (the same fact written
@@ -580,6 +594,11 @@ async function drift(root, a, g, baseRev) {
   const removedElsewhere = [], cited = new Map(); // § cited on a line the draft changed → the § whose text changed
   const texts = new Map([...a.pc.decls].map(([id, d]) => [id, declText(a.prop, d)]));
   const grams = new Map([...texts].map(([id, t]) => [id, phrases(t ?? "")]));
+  const toks = new Map([...texts].map(([id, t]) => [id, tokens(t ?? "")]));
+  // A word ties two quantities together only if it is rare in the spec (in at most RARE_SHARE of the §).
+  const df = new Map();
+  for (const ts of toks.values()) for (const w of new Set(ts)) df.set(w, (df.get(w) ?? 0) + 1);
+  const rare = (w) => (df.get(w) ?? 0) <= Math.max(2, RARE_SHARE * toks.size);
   for (const [id, d] of [...a.pc.decls].sort(([x], [y]) => (x < y ? -1 : 1))) {
     const b = a.bc.decls.get(id);
     if (!b || b.textSha256 === d.textSha256) continue;
@@ -592,6 +611,18 @@ async function drift(root, a, g, baseRev) {
       if (kept.some((k) => phrase.includes(k.phrase))) continue; // a longer phrase around one already reported
       const alsoIn = [...grams].filter(([o, gs]) => o !== id && gs.has(phrase)).map(([o]) => o).sort();
       if (alsoIn.length && alsoIn.length <= MAX_ELSEWHERE) kept.push({ id, phrase, alsoIn });
+    }
+    // A quantity the draft removed ("≥80%" → "≥90%") that another § still states about the same thing: the same
+    // quantity with a rare content word in common near it, one for a comparison ("≥80%"), two for a bare unit
+    // ("80%"), so the context meter's "80%" never matches a usage meter's.
+    const wasToks = tokens(declText(a.base, b) ?? ""), nowToks = new Set(toks.get(id));
+    for (const qty of uniqSorted(wasToks.filter((t) => isQuantity(t) && !nowToks.has(t)))) {
+      const near = nearWords(wasToks, qty);
+      const hits = [...toks].filter(([o, ts]) => o !== id && ts.includes(qty))
+        .map(([o, ts]) => ({ o, shared: [...nearWords(ts, qty)].filter((w) => near.has(w) && rare(w)) }))
+        .filter((h) => h.shared.length >= (/^[≥≤<>]/.test(qty) ? 1 : 2));
+      if (hits.length && hits.length <= MAX_ELSEWHERE)
+        kept.push({ id, phrase: qty, alsoIn: hits.map((h) => h.o).sort(), near: uniqSorted(hits.flatMap((h) => h.shared)) });
     }
     removedElsewhere.push(...kept);
   }
@@ -615,6 +646,9 @@ async function drift(root, a, g, baseRev) {
   return { base, removedElsewhere: removedElsewhere.slice(0, MAX_REMOVED), proseUnchanged };
 }
 
+const removedText = (r) => `the draft removed "${r.phrase}" from ${r.id}, but ${r.alsoIn.join(", ")} still say${r.alsoIn.length === 1 ? "s" : ""} it${r.near ? ` (near ${r.near.join(", ")})` : ""}: read them; if the fact changed, change it there too (each is a foreign §)`;
+const citedText = (r, base) => `the draft edited a line of ${r.citedBy.join(", ")} that cites ${r.id}, and ${r.files.join(", ")} changed since ${base.slice(0, 12)}, but ${r.id}'s prose is as it was: read it; if what it says changed, edit it in this draft (it is a foreign §)`;
+
 async function cmdCheck(root, o) {
   const { rel, d } = await loadDraft(root, o.name), g = await gitInfo(root);
   const j = await runCore(root, `${rel}/spec`);
@@ -626,10 +660,10 @@ async function cmdCheck(root, o) {
   }
   const dr = a && a.bc.exit !== 2 ? await drift(root, a, g, o.base) : null;
   for (const r of dr?.removedElsewhere ?? [])
-    findings.push({ severity: "warn", code: "removed-phrase-elsewhere", id: r.id, message: `the draft removed "${r.phrase}" from ${r.id}, but ${r.alsoIn.join(", ")} still say it: read them; if the fact changed, change it there too (each is a foreign §)` });
+    findings.push({ severity: "warn", code: "removed-phrase-elsewhere", id: r.id, message: removedText(r) });
   for (const r of dr?.proseUnchanged ?? [])
     findings.push(r.citedBy
-      ? { severity: "warn", code: "cited-prose-unchanged", id: r.id, message: `the draft edited a line of ${r.citedBy.join(", ")} that cites ${r.id}, and ${r.files.join(", ")} changed since ${dr.base.slice(0, 12)}, but ${r.id}'s prose is as it was: read it; if what it says changed, edit it in this draft (it is a foreign §)` }
+      ? { severity: "warn", code: "cited-prose-unchanged", id: r.id, message: citedText(r, dr.base) }
       : { severity: "note", code: "code-changed-prose-unchanged", id: r.id, message: `${r.files.join(", ")} changed since ${dr.base.slice(0, 12)} and the draft leaves ${r.id}'s prose as it was: read it; if what it says changed, edit it in this draft` });
   if (dr && !dr.base && g.git) findings.push({ severity: "note", code: "drift-base-unknown", message: "the draft records no base commit (made before drafts recorded one): pass --base REV to check code changed since then" });
   // Evidence that names a commit this line no longer has (a rebase after evidence): the record's claim is orphaned.
@@ -750,7 +784,9 @@ async function plan(root, o) {
   for (const id of [...ids].filter((x) => a.changed.has(x)).sort()) {
     const ev = await evidenceState(root, a, g, a.changed.get(id));
     evidence.push({ id, ...ev });
-    if (ev.state !== "valid") refuse(ev.state === "none" ? "evidence-missing" : "evidence-stale", `${id}: ${ev.reasons.join("; ")}`);
+    const gone = ev.reasons.find((r) => /is not an ancestor of HEAD|no longer exists/.test(r));
+    if (gone) refuse("evidence-not-ancestor", `${id}: evidence commit ${ev.commit.slice(0, 12)} was rewritten (rebase?) or is not on this line: never rebase after evidence; re-record evidence on the current commit, or merge master in instead`);
+    else if (ev.state !== "valid") refuse(ev.state === "none" ? "evidence-missing" : "evidence-stale", `${id}: ${ev.reasons.join("; ")}`);
   }
 
   // Candidate = current tree with only the selected units replaced.
@@ -785,8 +821,11 @@ async function plan(root, o) {
   }
   const planSha = sha(JSON.stringify({ draft: o.name, targets }));
   const also = alsoChanges(a, [...ids].filter((x) => a.changed.has(x)));
+  // Drift the draft carries, shown at promotion too (never a refusal): nobody has to have run `check`.
+  const dr = a.bc.exit !== 2 && a.pc.exit !== 2 ? await drift(root, a, g, undefined).catch(() => null) : null;
+  const driftWarnings = dr ? [...dr.removedElsewhere.map(removedText), ...dr.proseUnchanged.filter((r) => r.citedBy).map((r) => citedText(r, dr.base))] : [];
   return { a, cand, targets, planSha, refusals, out: {
-    name: o.name, ids: [...ids].sort(), alsoChanges: also.map((x) => x.id), alsoChangesDetail: also, meta: meta.map((m) => m.key), files: files.map((f) => ({ path: f.path, merge: f.merge, ids: f.ids })),
+    name: o.name, ids: [...ids].sort(), alsoChanges: also.map((x) => x.id), alsoChangesDetail: also, driftWarnings, meta: meta.map((m) => m.key), files: files.map((f) => ({ path: f.path, merge: f.merge, ids: f.ids })),
     records: records.map((r) => ({ id: r.id, merge: r.merge })), evidence, candidate, bootstrap,
     targets: targets.map((t) => ({ ...t, action: t.before === null ? "create" : t.after === null ? "delete" : "replace" })), plan: planSha, refusals } };
 }
@@ -1015,6 +1054,7 @@ function human(out) {
     for (const e of out.evidence) L.push(`  evidence ${e.id} ${e.state}${e.state !== "valid" ? `: ${e.reasons.join("; ")}` : ""}`);
     for (const t of out.targets) L.push(`  ${t.action.padEnd(7)} ${SPEC}/${t.path}`);
     for (const r of out.refusals ?? []) L.push(`  refused ${r.code}: ${r.message}`);
+    for (const w of out.driftWarnings ?? []) L.push(`  warn drift: ${w}`);
     if (out.alsoChanges) L.push(`Also changes must name: ${out.alsoChanges.join(", ") || "none"} (foreign § this promotion changes)`);
     if (!out.written && !(out.refusals ?? []).length) L.push(`plan ${out.plan} — write with: promote ${out.name} … --plan ${out.plan} --write`);
   }

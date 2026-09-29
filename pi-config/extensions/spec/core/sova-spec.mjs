@@ -598,6 +598,27 @@ const FOREIGN_RULE = "flag any where a user sees a change, even one your new cla
 const foreignSummary = (foreign) => foreign.length && add("note", "foreign-summary",
   `${FOREIGN_RULE.replace("any", "any foreign §")}: ${foreign.length} touched (${foreign.join(", ")})`, { ids: foreign });
 
+// Evidence commits the project's drafts name that HEAD no longer contains: a rebase (or reset) rewrote them.
+// Read-only: each draft.json, then `git merge-base --is-ancestor`. → [{draft, commit, ids}], one note each.
+function orphaned(root) {
+  const dir = join(root, DEFAULT_SPEC, "drafts"), out = [];
+  let names;
+  try { names = readdirSync(dir).filter((n) => /^[a-z0-9][a-z0-9_-]{0,63}$/.test(n)).sort(); } catch { return out; }
+  for (const draft of names) {
+    let d;
+    try { if (isLink(join(dir, draft)) || isLink(join(dir, draft, "draft.json"))) continue; d = JSON.parse(readFileSync(join(dir, draft, "draft.json"), "utf8")); } catch { continue; }
+    const by = new Map();
+    for (const e of Array.isArray(d?.evidence) ? d.evidence : [])
+      if (e?.mode === "commit" && /^[0-9a-f]{40,64}$/.test(e.commit ?? "")) by.set(e.commit, [...(by.get(e.commit) ?? []), ...(e.ids ?? []).map((i) => i?.id).filter((x) => typeof x === "string")]);
+    for (const [commit, ids] of by) {
+      if (git(root, ["merge-base", "--is-ancestor", commit, "HEAD"]).status === 0) continue;
+      out.push({ draft, commit, ids: [...new Set(ids)].sort() });
+      add("note", "evidence-orphaned", `draft ${draft}'s evidence commit ${commit.slice(0, 12)} (${[...new Set(ids)].sort().join(", ")}) is not in HEAD: a rebase rewrote it; never rebase after evidence (merge master in instead), and re-record evidence on the commit HEAD has`, { file: `${DEFAULT_SPEC}/drafts/${draft}/draft.json` });
+    }
+  }
+  return out;
+}
+
 function censusChanged(ctx, { base, related }, claimed) {
   const ch = changedFiles(ctx.root, base);
   if (!ch) return { census: null };
@@ -615,13 +636,14 @@ function censusChanged(ctx, { base, related }, claimed) {
     else if (s.why === "symlink") symlinks.push(p);
   }
   const head = { mode: "changed", base: { rev: base, commit: ch.commit }, changed: ch.paths.length };
+  const orphanedEvidence = orphaned(ctx.root);
   // Without a boundary no population is named: claims are still shown, nothing is judged unclaimed.
   const hits = files.filter((p) => claimed.has(p)).map(entry);
   const rel = relatedOf(ctx, [...hits, ...mappedOutside], related);
   // The rule, then the foreign ids, near the top, so a truncated head still carries both.
   Object.assign(head, { foreignNote: FOREIGN_RULE.replace("any", "any of these"), foreign: rel.foreign, childUnderForeign: rel.childUnderForeign });
   const touched = related ? { touched: rel.touched } : {};
-  if (!bd) { foreignSummary(rel.foreign); return { census: { ...head, boundary: null, claimed: hits, unclaimed: null, outside: null, ...touched } }; }
+  if (!bd) { foreignSummary(rel.foreign); return { census: { ...head, boundary: null, claimed: hits, unclaimed: null, outside: null, orphanedEvidence, ...touched } }; }
   const unclaimed = files.filter((p) => !claimed.has(p));
   for (const p of unclaimed) add("warn", "changed-unclaimed", `${p} changed and no record's code claims it`, { file: p });
   if (symlinks.length) add("note", "census-symlinks", `${symlinks.length} changed symlink(s) inside the boundary were not followed`);
@@ -635,6 +657,7 @@ function censusChanged(ctx, { base, related }, claimed) {
       unclaimed,
       outside: paths.filter((p) => !bd.inBoundary(p)),
       mappedOutside,
+      orphanedEvidence,
       symlinks,
       ...touched,
     },
@@ -763,7 +786,7 @@ function human(out) {
       `in boundary ${c.files}, claimed ${c.claimed.length}, unclaimed ${c.unclaimed.length}, outside ${c.outside.length}`);
     L.push(...c.claimed.map((e) => `  claimed ${e.path} (${e.claims.join(", ")})`), ...(c.unclaimed ?? []).map((f) => `  unclaimed ${f}`),
       ...(c.outside ?? []).map((f) => `  outside boundary ${f}`), ...(c.mappedOutside ?? []).map((e) => `  mapped outside boundary ${e.path} (${e.claims.join(", ")})`),
-      ...(c.symlinks ?? []).map((f) => `  symlink not followed ${f}`));
+      ...(c.symlinks ?? []).map((f) => `  symlink not followed ${f}`), ...(c.orphanedEvidence ?? []).map((e) => `  orphaned evidence ${e.commit.slice(0, 12)} (draft ${e.draft}: ${e.ids.join(", ")})`));
     const sum = out.findings.find((f) => f.code === "foreign-summary");
     if (sum) L.push(`${sum.severity} ${sum.code}: ${sum.message}`);
     if (c.touched) L.push("touched § (read each; flag only a visible change in its area):", ...c.touched.map((t) => {

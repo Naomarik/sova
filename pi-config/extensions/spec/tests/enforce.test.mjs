@@ -196,6 +196,60 @@ test("draft check: an evidence commit that is not an ancestor of HEAD is a warni
   assert.equal(j.exit, 1);
 });
 
+test("draft check and promote: a quantity the draft changed that another § states about the same thing (M2's ≥80%)", () => {
+  const root = mkdtempSync(join(tmpdir(), "sova-enforce-"));
+  roots.push(root);
+  const claims = {
+    "§app/usage": { kind: "behavior", authority: "accepted", requires: [], code: ["src/usage.ts"] },
+    "§design/deviations": { kind: "note", authority: "accepted" },
+    "§chat/context": { kind: "behavior", authority: "accepted", requires: [] },
+  };
+  write(root, ".sova/spec/manifest.json", M(claims));
+  write(root, ".sova/spec/claims/app/usage.md", "# §app/usage\n\nFill color. The fill is neutral; it gets `.meter-fill-warn` at ≥80% and a Near limit chip. A window at 80% or more is high.\n");
+  write(root, ".sova/spec/claims/design/deviations.md", "# §design/deviations\n\n`.meter-fill` is muted. At ≥80% the fill turns `--status-warn`.\n");
+  write(root, ".sova/spec/claims/chat/context.md", "# §chat/context\n\nThe ring stays filled; `.context-warn` at ≥80% and `.context-error` at ≥95%, the same thresholds the session list uses for its own ring.\n\nA context window at 80% warns.\n");
+  write(root, ".gitignore", ".sova/spec/drafts/\n");
+  write(root, "src/usage.ts", "v1\n");
+  ok(root, "init", "-q"); ok(root, "add", "-A"); ok(root, "commit", "-qm", "base");
+  assert.equal(draft(root, "new", "q", "--write").exit, 0);
+  write(root, ".sova/spec/drafts/q/spec/claims/app/usage.md", read(root, ".sova/spec/claims/app/usage.md").replace("≥80%", "≥90%").replace("at 80%", "at 90%"));
+  const j = draft(root, "check", "q");
+  assert.deepEqual(j.drift.removedElsewhere, [{ id: "§app/usage", phrase: "≥80%", alsoIn: ["§design/deviations"], near: ["fill"] }], "the context meter's ≥80% and 80% are not the same fact");
+  assert.equal(j.exit, 1);
+  write(root, "src/usage.ts", "v2\n");
+  ok(root, "commit", "-qam", "code");
+  assert.equal(draft(root, "evidence", "q", "--id", "§app/usage", "--by", "t", "--verification", "ran it", "--commit", "HEAD", "--write").exit, 0);
+  const p = draft(root, "promote", "q", "--id", "§app/usage");
+  assert.equal(p.exit, 0, "drift never refuses a promotion");
+  assert.equal(p.driftWarnings.length, 1);
+  assert.match(p.driftWarnings[0], /removed "≥80%" from §app\/usage, but §design\/deviations still says it \(near fill\)/);
+});
+
+test("rebase after evidence: promote refuses with evidence-not-ancestor; census --changed reports the orphaned evidence", () => {
+  const root = repo();
+  ok(root, "checkout", "-qb", "feat");
+  assert.equal(draft(root, "new", "rb", "--write").exit, 0);
+  write(root, ".sova/spec/drafts/rb/spec/claims/chat/bridge.md", "# §chat/bridge\n\nThe bridge resumes a forked session.\n");
+  write(root, "tools/bridge.ts", "v2\n");
+  ok(root, "commit", "-qam", "bridge");
+  const c = ok(root, "rev-parse", "HEAD");
+  assert.equal(draft(root, "evidence", "rb", "--id", "§chat/bridge", "--by", "t", "--verification", "ran it", "--commit", c, "--write").exit, 0);
+  assert.equal(draft(root, "promote", "rb", "--id", "§chat/bridge").exit, 0, "valid before the rebase");
+  assert.deepEqual(core(root, "census", "--changed").census.orphanedEvidence, []);
+  ok(root, "checkout", "-q", "master");
+  write(root, "src/list.ts", "v2\n");
+  ok(root, "commit", "-qam", "master moves");
+  ok(root, "checkout", "-q", "feat");
+  ok(root, "rebase", "-q", "master");
+  const p = draft(root, "promote", "rb", "--id", "§chat/bridge");
+  assert.equal(p.exit, 1);
+  const r = p.refusals.find((x) => x.code === "evidence-not-ancestor");
+  assert.match(r.message, new RegExp(`evidence commit ${c.slice(0, 12)} was rewritten \\(rebase\\?\\).*never rebase after evidence; re-record evidence on the current commit, or merge master in instead`));
+  const k = core(root, "census", "--changed");
+  assert.deepEqual(k.census.orphanedEvidence, [{ draft: "rb", commit: c, ids: ["§chat/bridge"] }]);
+  assert.ok(k.findings.some((f) => f.code === "evidence-orphaned" && f.severity === "note"));
+});
+
 // ---------------------------------------------------------------- promote alsoChanges
 test("promote: alsoChanges names the foreign § the promotion changes, never the draft's new ones", () => {
   const root = repo();

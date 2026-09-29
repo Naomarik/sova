@@ -66,7 +66,12 @@ The machine can't tell which label is correct.
    the draft against the baseline, or against current with `diff --against current`. None of
    these writes, and current stays byte-identical. `check` also reports drift (`drift`):
    - `removed-phrase-elsewhere` (warn): a two- or three-word phrase the draft removed from one §
-     that one to five other § still say. The same fact written twice and edited once.
+     that one to five other § still say. The same fact written twice and edited once. Also a
+     quantity it removed (a number with a comparator or unit: `≥80%`, `90%`, `20s`) that another
+     § states with a rare word near both (in at most a tenth of the §; one word for a comparison,
+     two for a bare unit, reported as `near`), so a different meter's `80%` stays quiet. Rarity is
+     the only tie, so it can miss a restatement worded differently, and on a very small spec it
+     is weaker.
    - `cited-prose-unchanged` (warn) and `code-changed-prose-unchanged` (note): a § whose mapped
      `code` changed since the draft's base commit (`base.commit`, recorded by `new` in a Git
      project; `--base REV` overrides) while the draft leaves its prose as it was. It warns when a
@@ -98,7 +103,11 @@ The machine can't tell which label is correct.
    print `alsoChanges`: the foreign § the promotion changes, i.e. every selected ID current already
    has, plus each current H1 that gains a new H2 (`alsoChangesDetail: [{id, change, children?}]`,
    `change` one of `text`, `record`, `text+record`, `deleted`, `file`, `child-added`). That list,
-   not memory, is what the reply's `Also changes:` line names.
+   not memory, is what the reply's `Also changes:` line names. They also print `driftWarnings`,
+   the `check` warnings above (never a refusal), so drift shows even when nobody ran `check`.
+   Evidence on a commit that is gone or not an ancestor of `HEAD` (a rebase after evidence) is
+   refused as `evidence-not-ancestor`: never rebase after evidence; re-record evidence on the
+   current commit, or merge master in instead.
 
 ## What promotion checks, all before any write
 

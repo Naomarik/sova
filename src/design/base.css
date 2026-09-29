@@ -2665,11 +2665,14 @@ a.group-option { color: inherit; text-decoration: none; }
 
 /* One line at every width, the same 20px whatever it carries: the triggers' net height, so the
    composer doesn't move between idle and working or as the step changes. The margin is its own,
-   not the global `p` rule's. Working is the dot plus the step's icon; the words are the tooltip
-   and the accessible name. Stopping and the rare states keep their words, and they are the one
-   part that gives way (ellipsis) when the row is short of room. */
+   not the global `p` rule's. Two forms, by the composer's width (below): wide says it in words,
+   "● Working · running bash" and "● 1 subagent ›"; narrow is the dot plus the step's icon and a
+   worker icon plus a count, the words visually hidden. Stopping and the rare states keep their
+   words in both. In the wide form the detail is the part that gives way (ellipsis); in the narrow
+   one only the rare states' words do. */
 .run-status {
-  --run-status-pad: calc(var(--space-3) / 2);  /* the gap, and each trigger's inline padding and offset */
+  --run-status-pad: var(--space-2);  /* the gap, and each trigger's inline padding and offset */
+  --run-status-part-gap: var(--space-2);  /* between a trigger's parts */
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -2685,12 +2688,59 @@ a.group-option { color: inherit; text-decoration: none; }
   position: relative;             /* holds the visually hidden words */
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  flex: none;
+  gap: var(--space-2);
+  min-width: 0;
 }
-.run-status-state:has(> .run-status-words) { flex: 0 1 auto; min-width: 0; }
+.run-status-state { flex: 0 1 auto; }
+.run-status-workers { flex: none; }
+.run-status-say {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  white-space: nowrap;
+}
+.run-status-detail {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .run-status-state .icon,
 .run-status-workers .icon { color: var(--color-ink-muted); }
+.run-status .run-status-narrow { display: none; }
+
+/* The narrow form, below 569px of composer: the narrowest content width where the whole wide row
+   fits untruncated, measured with "● Working · running agent_spawn", "● 1 subagent ›",
+   "1 align · 8/8" and "3 inputs ›" at the Medium text size. It contracts, so the container query
+   gets a @media floor (the skill's union). */
+@container composer (max-width: 568.98px) {
+  .run-status { --run-status-pad: calc(var(--space-3) / 2); --run-status-part-gap: var(--space-1); }
+  .run-status .run-status-wide { display: none; }
+  .run-status .run-status-narrow { display: inline-block; }
+  .run-status-state,
+  .run-status-workers { gap: var(--space-1); }
+  .run-status-state:not(:has(> .run-status-words)) { flex: none; }
+  .run-status-say {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+}
+@media (max-width: 568.98px) {
+  .run-status { --run-status-pad: calc(var(--space-3) / 2); --run-status-part-gap: var(--space-1); }
+  .run-status .run-status-wide { display: none; }
+  .run-status .run-status-narrow { display: inline-block; }
+  .run-status-state,
+  .run-status-workers { gap: var(--space-1); }
+  .run-status-state:not(:has(> .run-status-words)) { flex: none; }
+  .run-status-say {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+}
 .run-status-words {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4380,12 +4430,12 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
     background-color var(--dur-fast) var(--ease-standard),
     color            var(--dur-fast) var(--ease-standard);
 }
-/* Every trigger keeps its own width: squeezed, its words ran into the next one. In the row a
-   trigger's parts sit 4px apart and its padding is the row's 6px, so a working row with all three
-   triggers fits a 344px screen. */
+/* Every trigger keeps its own width: squeezed, its words ran into the next one. Its padding and
+   offset are the row's (8px wide; 6px narrow, with its parts 4px apart, so a working row with all
+   three triggers fits a 344px screen). */
 .run-status > .run-status-link {
   flex: none;
-  gap: var(--space-1);
+  gap: var(--run-status-part-gap);
   margin-left: calc(var(--run-status-pad) * -1);
   padding: 0 var(--run-status-pad);
 }

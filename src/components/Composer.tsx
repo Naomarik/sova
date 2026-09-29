@@ -742,9 +742,10 @@ export function Composer(props: {
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
         <Show when={controls().status || workersRow() || inputsRow() || inputsHeld() || alignRow()}>
           <p class="run-status">
-            {/* Icon-only, so the row stays one line at every width: the dot says Working, the icon
-                what it's doing, and the words are the tooltip and the accessible name. Stopping and the
-                rare states keep their words. */}
+            {/* Two forms, picked by the composer's width in CSS (§chat.transcript/streaming): wide,
+                "Working · running bash" in words; narrow, the dot and the step's icon, the same words
+                visually hidden, so they're read once either way. Stopping and the rare states keep
+                their words in both. */}
             <Show when={controls().status}>
               <Show
                 when={!props.stopping && !props.activity}
@@ -757,8 +758,11 @@ export function Composer(props: {
               >
                 <span class="run-status-state" title={stateWords()}>
                   <span class="live-dot" />
-                  <Show when={props.detail}>{(d) => <Icon name={STEP_ICON[d().step]} small />}</Show>
-                  <span class="visually-hidden">{stateWords()}</span>
+                  <Show when={props.detail}>{(d) => <Icon name={STEP_ICON[d().step]} small class="run-status-narrow" />}</Show>
+                  <span class="run-status-say">
+                    Working
+                    <Show when={props.detail}>{(d) => <span class="run-status-detail">· {d().text}</span>}</Show>
+                  </span>
                 </span>
               </Show>
             </Show>
@@ -770,9 +774,9 @@ export function Composer(props: {
                     fallback={
                       <span class="run-status-workers" title={workersTitle(row().text)}>
                         <span class="live-dot" />
-                        <Icon name="worker" small />
-                        <span class="text-num" aria-hidden="true">{row().n}</span>
-                        <span class="visually-hidden">{row().text}</span>
+                        <Icon name="worker" small class="run-status-narrow" />
+                        <span class="text-num run-status-narrow" aria-hidden="true">{row().n}</span>
+                        <span class="run-status-say">{row().text}</span>
                       </span>
                     }
                   >
@@ -789,8 +793,9 @@ export function Composer(props: {
                         <Show when={row().live}>
                           <span class="live-dot" />
                         </Show>
-                        <Icon name="worker" small />
-                        <span class="text-num">{row().n}</span>
+                        <Icon name="worker" small class="run-status-narrow" />
+                        <span class="text-num run-status-narrow">{row().n}</span>
+                        <span class="run-status-wide">{row().text}</span>
                         <Icon name="chevron-right" small />
                       </button>
                     )}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { VoiceStatus } from "../../../shared/protocol";
-import { backgroundSentence, clock, jobPercent, micErrorSentence, readyLine, recordingText, stepFigure, unsupportedReason } from "./format";
+import { backgroundSentence, clock, etaSentence, jobPercent, languagesWord, micErrorSentence, modelName, percentWer, perClip, readyLine, recordingText, roughTime, settingsWords, stepFigure, unsupportedReason, wordDiff } from "./format";
 import { spacedInsert, splice, targetRange, wordCount } from "./insert";
 import { encodeWav, joinBatches, levelOf } from "./wav";
 
@@ -105,6 +105,65 @@ describe("voice copy", () => {
       runtime: { running: false, starting: false, crashedOut: false },
       diskBytes: 575e6,
     } as unknown as VoiceStatus;
-    assert.equal(readyLine(s), "Ready · Vulkan · AMD Radeon 8060S Graphics · self-test 0.4 s · large-v3-turbo q5_0 · 575 MB on disk · Not loaded");
+    // Before the server reports a catalog: the default model, engine named (§design.copy-deck/settings-voice).
+    assert.equal(readyLine(s), "Ready · Vulkan · AMD Radeon 8060S Graphics · self-test 0.4 s · whisper.cpp large-v3-turbo q5_0 · 575 MB on disk · Not loaded");
+  });
+  it("ready line names the active model and its engine", () => {
+    const base = {
+      installed: { backend: "vulkan", device: "AMD Radeon 8060S Graphics", whisper: "v1.9.4", model: "m", selftestMs: 0, selftestText: "", installedAt: 0 },
+      runtime: { running: true, starting: false, crashedOut: false },
+      models: [
+        { id: "ggml-large-v3-turbo-q5_0", label: "large-v3-turbo", quant: "q5_0", engine: "whisper" },
+        { id: "ggml-large-v3-q5_0", label: "large-v3", quant: "q5_0", engine: "whisper" },
+        { id: "parakeet-tdt-0.6b-v2-q8_0", label: "Parakeet TDT 0.6B v2", quant: "q8_0", engine: "transcribe" },
+      ],
+    };
+    assert.equal(readyLine({ ...base, activeModel: "ggml-large-v3-q5_0" } as unknown as VoiceStatus), "Ready · Vulkan · AMD Radeon 8060S Graphics · whisper.cpp large-v3 q5_0 · Loaded");
+    assert.equal(readyLine({ ...base, activeModel: "parakeet-tdt-0.6b-v2-q8_0" } as unknown as VoiceStatus), "Ready · Vulkan · AMD Radeon 8060S Graphics · transcribe.cpp Parakeet TDT 0.6B v2 · q8_0 · Loaded");
+  });
+});
+
+describe("model and calibration copy", () => {
+  it("model names, languages and figures", () => {
+    assert.equal(modelName({ label: "large-v3-turbo", quant: "q8_0" }), "large-v3-turbo · q8_0");
+    assert.equal(modelName({ label: "Parakeet TDT 0.6B v2", quant: "q8_0" }), "Parakeet TDT 0.6B v2 · q8_0");
+    assert.equal(languagesWord("en"), "English only");
+    assert.equal(languagesWord("multi"), "English and 99 more");
+    assert.equal(percentWer(0.018), "1.8%");
+    assert.equal(percentWer(0), "0.0%");
+    assert.equal(percentWer(0.12345), "12.3%");
+    assert.equal(perClip(412), "0.41 s");
+  });
+
+  it("time left is rounded the way a person says it", () => {
+    assert.equal(etaSentence(2), "About 5 s left.");
+    assert.equal(etaSentence(41), "About 40 s left.");
+    assert.equal(etaSentence(59), "About 60 s left.");
+    assert.equal(etaSentence(200), "About 3 min left.");
+    assert.equal(roughTime(72), "1 min");
+    assert.equal(roughTime(25), "30 s");
+    assert.equal(roughTime(3), "10 s");
+  });
+
+  it("a setting in words", () => {
+    assert.equal(settingsWords({ beamSize: 5, prompt: "sentence", vad: true, vadThreshold: 0.5, vadSpeechPadMs: 150, temperatureInc: 0 }), "beam 5 · hotword sentence · voice detection on · no fallback");
+    assert.equal(settingsWords({ beamSize: 1, prompt: "list", vad: false, vadThreshold: 0.5, vadSpeechPadMs: 30, temperatureInc: 0.2 }), "beam 1 · hotword list · voice detection off · fallback");
+  });
+
+  it("the per-clip diff marks missed (−) and extra (+) words, ignoring case and punctuation", () => {
+    const d = wordDiff("Open a new worktree for the voice branch.", "open a new work tree for the voice branch");
+    assert.deepEqual(
+      d.map((w) => (w.op === "same" ? w.word : `${w.op === "missed" ? "−" : "+"}${w.word}`)).join(" "),
+      "open a new −worktree +work +tree for the voice branch",
+    );
+    assert.deepEqual(wordDiff("Sova.", ""), [{ word: "Sova.", op: "missed" }]);
+    assert.deepEqual(wordDiff("", "um"), [{ word: "um", op: "extra" }]);
+    // Read one way the diff is the reference, read the other it's what was heard: no word lost or doubled.
+    const ref = "Ask the Overseer to review what the subagent changed in Sova.";
+    const heard = "Ask the overseer review what a sub agent changed in Silva today";
+    const out = wordDiff(ref, heard);
+    const lc = (xs: string[]) => xs.map((w) => w.toLowerCase().replace(/\.$/, ""));
+    assert.deepEqual(lc(out.filter((w) => w.op !== "extra").map((w) => w.word)), lc(ref.split(" ")));
+    assert.deepEqual(lc(out.filter((w) => w.op !== "missed").map((w) => w.word)), lc(heard.split(" ")));
   });
 });

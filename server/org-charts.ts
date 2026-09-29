@@ -69,6 +69,12 @@ export interface Hold {
   counts?: string;
   reserve?: number;
   whileIn?: string;
+  /** r7: "hours" when it waits for the person's working hours (until the window opens). */
+  wait?: "hours";
+  /** q12: its kind is in the project's confirm list: it waits past `until` for approve or cancel. */
+  confirm?: boolean;
+  /** q12: past its end and still unreviewed (the stall clock runs from `until`). */
+  waiting?: boolean;
 }
 
 /** One processed event (the transition log entry, before privacy scrubbing). */
@@ -92,8 +98,14 @@ export interface Step {
   /** Holds this step started, and the ids of holds that ended (cancelled). */
   holds?: Hold[];
   holdsEnded?: string[];
-  /** The act was held instead of taken. */
+  /** The act was held instead of taken (a q10 hold, an r7 hours wait). */
   held?: Hold;
+  /** r8a: the step's feed class (refusals, corrections, holds and starts are always feed). */
+  feed?: "feed" | "quiet";
+  /** The session's project (its data's projectId, else the envelope's). */
+  projectId?: string | null;
+  /** r7: the operator's act went at once although the person is off hours until then. */
+  offHours?: number;
   /** The act was refused (nothing changed). */
   refused?: Refusal | null;
   /** Nothing happened (not an act): no save. */

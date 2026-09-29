@@ -34,6 +34,7 @@ export const HOST_CHARTS = {
     storage: "portable",
     chart: HOST_CHART,
     acts: { "gather/start": { needs: null, hold: true, counts: "gather", what: "Gathering" } },
+    redact: { secretish: "drop" },
   },
   "host-local-probe": { version: 1, storage: "host-local", chart: HOST_CHART },
 };

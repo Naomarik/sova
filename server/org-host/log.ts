@@ -54,7 +54,12 @@ export interface LogRow {
   refused?: string;
   refusedStage?: string;
   refusedCheck?: string;
-  held?: { id: string; until: number; what?: string | null };
+  held?: { id: string; until: number; what?: string | null; wait?: string; confirm?: boolean };
+  /** r8a: "feed" or "quiet" (the project feed shows feed rows only). */
+  feed?: "feed" | "quiet";
+  /** The session's project, when it belongs to one. */
+  project?: string | null;
+  offHours?: number;
   /** The journal that wrote it (replay appends a row once). */
   j?: string;
   [extra: string]: Json | undefined;
@@ -134,7 +139,14 @@ export function rowOfStep(org: string, step: Step, rules: Record<string, RedactR
     if (step.refused.stage) row.refusedStage = step.refused.stage;
     if (step.refused.check) row.refusedCheck = step.refused.check;
   }
-  if (step.held) row.held = { id: step.held.id, until: step.held.until, what: step.held.what ?? null };
+  if (step.held) {
+    row.held = { id: step.held.id, until: step.held.until, what: step.held.what ?? null };
+    if (step.held.wait) row.held.wait = step.held.wait;
+    if (step.held.confirm) row.held.confirm = true;
+  }
+  row.feed = step.feed ?? "feed";
+  row.project = step.projectId ?? null;
+  if (step.offHours != null) row.offHours = step.offHours;
   return row;
 }
 

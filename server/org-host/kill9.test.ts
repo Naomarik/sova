@@ -23,9 +23,13 @@ function round(root: string, seed: number, killAfterMs: number): Promise<string>
     const child = spawn(process.execPath, ["--import", "tsx", CHILD, root, String(seed)], { stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     let err = "";
+    let killing = false;
     child.stdout.on("data", (b: Buffer) => {
       out += b.toString();
-      if (out.includes("\n")) setTimeout(() => child.kill("SIGKILL"), killAfterMs);
+      if (out.includes("acted\n") && !killing) {
+        killing = true;
+        setTimeout(() => child.kill("SIGKILL"), killAfterMs);
+      }
     });
     child.stderr.on("data", (b: Buffer) => (err += b.toString()));
     child.on("exit", (code, signal) => {
@@ -50,7 +54,7 @@ test(`kill -9 at random moments, ${ROUNDS} times: every open loads everything, e
     // quiesce: pending effects answered, holds and timers due
     for (let k = 0; k < 50; k++) await new Promise((r) => setTimeout(r, 10));
     const rows = host.log.rows();
-    assert.ok(rows.length > ROUNDS * 3, `the children made acts (${rows.length} rows)`);
+    assert.ok(rows.filter((r) => r.event !== "sova/started" && r.event !== "sova/resumed").length >= ROUNDS * 5, `every child committed 5 acts before its kill (${rows.length} rows)`);
     assert.ok(rows.some((r) => r.event === "effect/done") && rows.some((r) => r.held), "effects were answered and acts held");
     const ids = rows.filter((r) => r.j).map((r) => `${r.j}|${r.session}|${r.event}|${r.at}`);
     assert.equal(new Set(ids).size, ids.length, "no row appended twice");

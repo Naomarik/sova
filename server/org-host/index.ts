@@ -71,6 +71,22 @@ export interface InvocationRunner {
   stop(inv: Invocation): void;
 }
 
+/** One entry of a project's feed (q12). */
+export interface FeedEntry {
+  at: number;
+  session: string | null;
+  chart: string | null;
+  event: string;
+  by: string | null;
+  before: string[];
+  after: string[];
+  effects: string[];
+  feed: "feed" | "quiet";
+  refused?: string;
+  held?: LogRow["held"];
+  reason?: string;
+}
+
 export interface SessionInfo {
   id: string;
   chart: string;
@@ -167,9 +183,10 @@ export class OrgHost {
   private closed = false;
 
   readonly effects = {
+    /** Every effect of `kind` still pending (e.g. from before a crash) runs as its handler registers. */
     register: (kind: string, fn: (effect: Effect) => Promise<unknown>): void => {
       this.effectHandlers.set(kind, fn);
-      if (!this.resuming) this.runPending(kind);
+      this.runPending(kind);
     },
   };
 
@@ -183,6 +200,27 @@ export class OrgHost {
     rows: (filter: RowFilter = {}): LogRow[] => readRows([this.paths.portableLog, this.paths.localLog], filter, this.logProblems),
     row: (at: number): LogRow | null => this.log.rows({ since: at, until: at })[0] ?? null,
   };
+
+  /** q12/r8a: a project's feed, the transitions of its sessions as the log holds them (redacted by the
+      same rules), feed-class rows only unless `includeQuiet`. It raises nothing: the overseer reads it. */
+  feed(projectId: string, opts: { since?: number; limit?: number; includeQuiet?: boolean; newestFirst?: boolean } = {}): FeedEntry[] {
+    const rows = readRows([this.paths.portableLog, this.paths.localLog], { since: opts.since, newestFirst: opts.newestFirst }, this.logProblems)
+      .filter((r) => r.project === projectId && (opts.includeQuiet || r.feed !== "quiet"));
+    return (opts.limit != null ? rows.slice(0, opts.limit) : rows).map((r) => ({
+      at: r.at,
+      session: r.session,
+      chart: r.chart,
+      event: r.event,
+      by: r.by,
+      before: r.before,
+      after: r.after,
+      effects: r.effects,
+      feed: r.feed ?? "feed",
+      ...(r.refused ? { refused: r.refused } : {}),
+      ...(r.held ? { held: r.held } : {}),
+      ...(r.reason ? { reason: r.reason } : {}),
+    }));
+  }
 
   static async open(opts: OrgHostOptions): Promise<OrgHost> {
     const host = new OrgHost(opts);
@@ -237,11 +275,10 @@ export class OrgHost {
     }
     this.resuming = false;
     for (const w of this.readyWaiters.splice(0)) w();
-    // handlers are registered right after open resolves: run what is pending (and any invocation
-    // resume entered) then
+    // runners are registered right after open resolves: start any invocation resume entered then.
+    // (Pending effects run as each kind's handler registers: `effects.register`.)
     setImmediate(() => {
       for (const inv of started) this.runInvocation(inv);
-      this.runPending();
     });
     this.arm();
   }
@@ -277,8 +314,9 @@ export class OrgHost {
     const name = chart ?? "";
     let r = this.redact.get(name);
     if (!r) {
-      const info = chartInfoOf(name);
-      r = { ...DEFAULT_REDACT, ...((info?.redact ?? {}) as Record<string, RedactRule>) };
+      const runtime = (this.opts.charts as Record<string, { redact?: Record<string, RedactRule> }> | undefined)?.[name]?.redact;
+      const info = runtime ? null : chartInfoOf(name);
+      r = { ...DEFAULT_REDACT, ...((runtime ?? info?.redact ?? {}) as Record<string, RedactRule>) };
       this.redact.set(name, r);
     }
     return r;
@@ -366,12 +404,12 @@ export class OrgHost {
 
   // ---- effects and invocations -------------------------------------------------------------------
 
-  private runPending(kind?: string): void {
+  private runPending(kind: string): void {
     if (this.closed || this.journalProblem) return;
     for (const sid of this.engine.sessions()) {
       const pending = (this.engine.data(sid)?.["sova/pending"] ?? {}) as Record<string, JsonObject>;
       for (const [key, e] of Object.entries(pending)) {
-        if (kind && e["kind"] !== kind) continue;
+        if (e["kind"] !== kind) continue;
         this.runEffect({ ...(e as Record<string, unknown>), key, sessionId: sid } as Effect);
       }
     }
@@ -495,7 +533,7 @@ export class OrgHost {
   async logAct(row: Record<string, unknown>): Promise<void> {
     const at = this.uniqueAt(typeof row["at"] === "number" ? (row["at"] as number) : this.clock());
     const chart = typeof row["chart"] === "string" ? (row["chart"] as string) : null;
-    const full = { ...(scrub(row, this.rulesOf(chart)) as Record<string, Json>), at, org: this.orgId } as LogRow;
+    const full = { feed: "feed", ...(scrub(row, this.rulesOf(chart)) as Record<string, Json>), at, org: this.orgId } as LogRow;
     const j: Journal = { id: journalId(this.clock()), at, snapshots: [], rows: [{ file: this.logFileFor(chart, at), row: full }] };
     commitJournal(this.paths.journal, j, this.durable);
   }

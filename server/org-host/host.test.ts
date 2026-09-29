@@ -250,4 +250,89 @@ describe("org host", () => {
     assert.equal((await again.act("p/1", "count", {}, operator)).taken, true);
     await again.close();
   });
+
+  test("markers in every private key (a chart's own included) reach no row: taken, refused and held acts", async () => {
+    const at = place();
+    const host = await open(at);
+    await host.start("p/1", "host-probe", {}, operator);
+    const M = { about: "MARK-about", message: "MARK-message", text: "MARK-text", email: "MARK-email", phone: "MARK-phone", token: "MARK-token", secretish: "MARK-secretish", quote: "MARK-quote" };
+    const payload = { ...M, patch: { contact: { email: "MARK-nested" } } };
+    assert.equal((await host.act("p/1", "count", payload, operator)).taken, true);
+    assert.equal((await host.act("p/1", "gather/start", payload, { by: "overseer", attended: false, holdMs: 60_000 })).held?.id, "gather/start#0");
+    await host.act("p/1", "gather/start", {}, operator);
+    const refused = await host.act("p/1", "gather/start", payload, operator);
+    assert.equal(refused.taken, false);
+    const raw = readdirSync(host.paths.portableLog).map((f) => readFileSync(join(host.paths.portableLog, f), "utf8")).join("");
+    const reads = JSON.stringify(host.log.rows());
+    for (const m of [...Object.values(M), "MARK-nested"]) {
+      assert.ok(!raw.includes(m), `${m} is in no log segment`);
+      assert.ok(!reads.includes(m), `${m} is in no log read`);
+    }
+    const row = host.log.rows({ session: "p/1" }).find((r) => r.event === "count")!;
+    const env = row.envelope as Record<string, unknown>;
+    for (const k of ["about", "message", "text", "quote"]) assert.deepEqual(Object.keys(env[k] as object).sort(), ["len", "sha"], `${k} is a digest`);
+    assert.equal(env["email"], "[contact]");
+    assert.equal(env["phone"], "[contact]");
+    assert.ok(!("token" in env) && !("secretish" in env), "dropped keys, the chart's own included");
+    await host.close();
+  });
+
+  test("a refused act appends exactly one row, with its sentence and no tail", async () => {
+    const at = place();
+    const host = await open(at);
+    await host.start("p/1", "host-probe", {}, operator);
+    await host.act("p/1", "gather/start", {}, operator);
+    const before = host.log.rows().length;
+    const r = await host.act("p/1", "gather/start", {}, operator);
+    assert.equal(r.taken, false);
+    const rows = host.log.rows();
+    assert.equal(rows.length, before + 1);
+    assert.equal(rows.at(-1)?.refused, r.refusal?.sentence);
+    assert.equal(rows.at(-1)?.refusedStage, "state");
+    await host.close();
+  });
+
+  test("onChange hears every committed batch with the sessions it touched", async () => {
+    const at = place();
+    const host = await open(at);
+    const heard: { sessions: string[]; events: string[] }[] = [];
+    host.onChange((c) => heard.push({ sessions: c.sessions, events: c.steps.map((s) => s.event) }));
+    await host.start("p/1", "host-probe", {}, operator);
+    await host.act("p/1", "count", {}, operator);
+    assert.deepEqual(heard, [
+      { sessions: ["p/1"], events: ["sova/started"] },
+      { sessions: ["p/1"], events: ["count"] },
+    ]);
+    await host.close();
+  });
+
+  test("a timer that came due while the host was closed fires during open, before any timer tick", async () => {
+    const at = place();
+    const host = await open(at);
+    await host.start("p/1", "host-probe", {}, operator);
+    await host.act("p/1", "wait", {}, operator);
+    await host.close();
+    await tick(80);
+    const again = await open(at);
+    assert.deepEqual(again.configuration("p/1"), ["top", "idle"], "fired inside open");
+    assert.equal(again.log.rows({ session: "p/1" }).at(-1)?.event, "tick");
+    await again.close();
+  });
+
+  test("a project's feed: its sessions' feed rows (quiet ones on request), redacted like the log", async () => {
+    const at = place();
+    const host = await open(at);
+    await host.start("p/1", "host-probe", { projectId: "prj1" }, operator);
+    await host.start("p/2", "host-probe", { projectId: "prj2" }, operator);
+    await host.act("p/1", "count", { contact: { email: "MARK-feed@example.org" } }, operator);
+    await host.act("p/1", "gather/start", {}, operator);
+    await host.act("p/2", "gather/start", {}, operator);
+    const feed = host.feed("prj1");
+    assert.deepEqual(feed.map((e) => e.event), ["sova/started", "count", "gather/start"]);
+    assert.ok(feed.every((e) => e.session === "p/1"));
+    assert.ok(!JSON.stringify(host.feed("prj1", { includeQuiet: true })).includes("MARK-feed"));
+    assert.deepEqual(host.feed("prj1", { limit: 1, newestFirst: true }).map((e) => e.event), ["gather/start"]);
+    await host.close();
+  });
 });
+

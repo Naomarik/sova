@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { MAX_TEXT } from "./core/grammar";
 import type { FlowSpec } from "./kinds/flow/parse";
+import type { MatrixSpec } from "./kinds/matrix/parse";
 import { FRAME_HARD_CHARS, FRAME_SOFT_CHARS } from "./kinds/frame/parse";
 import { parseVis, visKindWord } from "./parse";
 import { KIND_WORDS, KINDS } from "./registry";
@@ -45,6 +46,8 @@ test("the guide's flow and state examples mean what the text says", () => {
   assert.deepEqual(main.edges.map((e) => [e.from, e.to, e.label ?? null]), [["web", "srv", "WS /ws/chat"], ["srv", "sdk", null], ["sdk", "srv", "events"], ["srv", "done", null], ["done", "web", "yes"]]);
   assert.deepEqual(main.nodes.map((n) => n.shape), ["box", "box", "store", "decision"]);
   for (const quoted of ['srv "Sova server" "WS /ws/chat"', 'sdk --> srv "events"', 'done "Reply streamed?" decision']) assert.ok(GUIDE.includes(`\`${quoted}\``), `the bullets quote the example: ${quoted}`);
+  // Groups: the main example frames the server and the session it holds.
+  assert.deepEqual(main.groups, [{ label: "One process", nodes: ["srv", "sdk"] }]);
   // Panels: the same ids in both panels are two nodes each.
   assert.deepEqual(panels.sections!.map((p) => p.nodes.map((n) => n.label)), [["App", "Database"], ["App", "Cache", "Database"]]);
   // State: no inline label anywhere, so each string after a target is its edge's event.
@@ -74,6 +77,13 @@ test("the shared sections exist: emphasis and the free-form limits", () => {
   assert.equal(FRAME_HARD_CHARS, 16 * 1024);
   assert.match(GUIDE, /at most 200 characters/);
   assert.equal(MAX_TEXT, 200);
+});
+
+test("the guide teaches several targets per mark and matrix cell tones, with examples that mean it", () => {
+  assert.match(GUIDE, /`mark a, b, c "the scope set"`/);
+  const matrix = [...GUIDE.matchAll(/^```vis matrix\n([\s\S]*?)^```$/gm)].map(([, body]) => parseVis("matrix", body!));
+  const cells = matrix.flatMap((r) => (r.ok ? (r.spec as MatrixSpec).rows.flatMap((row) => row.cells) : []));
+  assert.ok(cells.some((c) => c.tone === "ok") && cells.some((c) => c.tone === "warn"), "the matrix example tones a text cell");
 });
 
 // server/baton-vis-guide.ts rewrites this one line for gathering sessions, by its start.

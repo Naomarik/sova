@@ -23,7 +23,7 @@ Rules for every kind:
 
 ## Shared: emphasis
 <!-- owner: foundation. core/emphasis.ts implements this; every kind calls it. -->
-To point at the one thing that matters, add a `mark` line (at the start of a line, anywhere after the settings): `mark <target> [tone] ["short note"]`. The target is what names an item in that kind — an id, a "quoted label", a line number or a range like `3-5`; each kind below says which. The item is highlighted (tone defaults to accent); a note gets a number on the item and is listed under the drawing. Mark at most 1–3 things; a note is a phrase (under 120 characters), not a sentence. A mark whose target names nothing is dropped.
+To point at the one thing that matters, add a `mark` line (at the start of a line, anywhere after the settings): `mark <target> [tone] ["short note"]`. The target is what names an item in that kind — an id, a "quoted label", a line number or a range like `3-5`; each kind below says which. The item is highlighted (tone defaults to accent); a note gets a number on the item and is listed under the drawing. Mark at most 1–3 things; a note is a phrase (under 120 characters), not a sentence. A mark whose target names nothing is dropped. Several targets share one mark and its note: `mark a, b, c "the scope set"`.
 
 ## Shared: free-form limits
 <!-- owner: foundation. Enforced by kinds/frame/parse.ts (size) and srcdoc.ts (motion gate, CSP). -->
@@ -39,12 +39,14 @@ web "Browser tab" -> srv "Sova server" "WS /ws/chat" -> sdk "pi session" store
 sdk --> srv "events"
 srv -> done "Reply streamed?" decision
 done -> web "yes"
+group "One process" srv sdk
 mark sdk "one writer per session file"
 ```
 - Inline: once any line has a string right after its first id, the first string after a node that has no label yet is its label; the next string is the edge's (`srv "Sova server" "WS /ws/chat"`). After a node already labelled, a string is the edge's label (`sdk --> srv "events"`). A shape and a tone may follow: `done "Reply streamed?" decision`.
 - `node <id> "Label" ["second line"] [shape] [tone]` for a second line; shapes: `box` (default) `round` `store` `decision` `circle`. After a target with a `node` line, a string is the edge's label.
 - With no string after any line's first id, a string after a target is always the edge's label (§ state).
 - Edges: `a -> b`, dashed `a --> b`, both ways `a <-> b`; chains `a -> b -> c`. `dir: right` (drawn down on a phone). Under 12 nodes, short labels. `mark` a node by id or label.
+- `group "Label" id id …` frames nodes that belong together (a process, a machine, a scope); edges cross the frame. A node is in one group at most.
 - Two small flows side by side (before/after): `== Label ==` lines start panels, each laid out alone, with its own ids (the same id in two panels is two nodes).
 ```vis flow
 == Before ==
@@ -180,11 +182,12 @@ mark "Unpaid" "tap to filter"
 
 ## matrix
 <!-- owner: data member. Emphasis target: row label (key = index) or column name (key = c<index>). -->
-Options against criteria; also capabilities by level or role (a matrix, not a flow). `columns: A, B`, then `criterion | cell | cell`; a cell is `yes`, `no`, `partial` (optionally followed by a "note"), or short text. At most 6 columns.
+Options against criteria; also capabilities by level or role (a matrix, not a flow). `columns: A, B`, then `criterion | cell | cell`; a cell is `yes`, `no`, `partial` (optionally followed by a "note"), or short text that may end with a tone (`72% warn`; quote text ending in a tone word). At most 6 columns.
 ```vis matrix
 columns: Merge, Rebase
 Keeps original commits | yes | no "new SHAs"
 Linear history | no | yes
+Conflicts to resolve | once ok | per commit warn
 mark "Keeps original commits" "why rebase needs a force-push"
 ```
 - `mark` a row by its criterion, or a column by its name.

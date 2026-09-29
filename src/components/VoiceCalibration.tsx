@@ -481,6 +481,7 @@ export function VoiceCalibration(props: { st: VoiceStatus; busy: boolean; act: A
   const summary = (): string => {
     const c = calibrated();
     if (c) return `Calibrated ${shortDate(c.at)} on ${c.clips} clips · ${percentWer(c.wer)} word error · ${perClip(c.medianMs)} per clip.`;
+    if (active() && !active()!.tunable) return "Parakeet has no settings, so nothing is saved.";
     const name = active() ? modelName(active()!) : props.st.activeModel;
     return `${name} uses the defaults on this device. Calibrating takes a few minutes: you read 6 sentences, then we try ${estimate(props.st, 6).settings === 8 ? 8 : 24} settings on them.`;
   };

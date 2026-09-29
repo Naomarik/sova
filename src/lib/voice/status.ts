@@ -52,6 +52,11 @@ export function adoptVoice(s: VoiceStatus): void {
     since = s.log.seq;
   }
   setStatus(s);
+  // A press that started a job polls at 1 s now, not after the 10 s idle wait already pending.
+  if (watchers > 0 && jobRunning(s) && !document.hidden) {
+    clearTimeout(timer);
+    timer = setTimeout(tick, 1000);
+  }
 }
 
 /** Setup, a model job, or a calibration sweep is running: poll every second. */

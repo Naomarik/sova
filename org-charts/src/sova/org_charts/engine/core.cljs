@@ -1104,7 +1104,7 @@
   "What a chart declares: version, storage, exported keys, acts (checks by name), states,
    transitions (with their `:sova/*` tags), invocations and corrections."
   [charts nm]
-  (when-let [{:keys [chart version storage exported acts]} (get charts nm)]
+  (when-let [{:keys [chart version storage exported acts redact]} (get charts nm)]
     (let [els (vals (::sc/elements-by-id chart))
           ord (::sc/id-ordinals chart)
           by  (fn [t] (sort-by #(get ord (:id %)) (filter #(= t (:node-type %)) els)))
@@ -1113,6 +1113,7 @@
        :version     version
        :storage     (or storage :portable)
        :exported    (vec exported)
+       :redact      (into (sorted-map) (map (fn [[k v]] [k (if (keyword? v) (name v) v)])) redact)
        :acts        (into (sorted-map)
                       (map (fn [[e m]]
                              [e (-> (plain (dissoc m :pre))

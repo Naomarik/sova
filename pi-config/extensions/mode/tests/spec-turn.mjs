@@ -244,6 +244,21 @@ try {
 	assert.equal(checks().length, reprompts);
 	assert.equal(warns(), warnsBefore, "no warning for a planning turn or a worker's none");
 
+	// A worker's report naming a § while no tree changed in this run (B2 merge-4 class): the line is
+	// required, but the list is Git's (empty): "none" passes, with no warning.
+	const warnsBefore2 = warns();
+	script.push({ text: "The worker reported.\nAlso changes: none" });
+	await session.sendCustomMessage({ customType: "subagent-complete", content: "Merged master into the branch.\nAlso changes: §app/shell — earlier wording", display: true }, { triggerTurn: true });
+	script.push({ text: "Nothing else." });
+	await session.prompt("anything else?");
+	assert.equal(warns(), warnsBefore2, "a report's § never join Git's list");
+	// The same report and a reply without any line: the line was required, so a warning.
+	script.push({ text: "The worker reported." });
+	await session.sendCustomMessage({ customType: "subagent-complete", content: "Done.\nAlso changes: §app/shell — x", display: true }, { triggerTurn: true });
+	script.push({ text: "Ok." });
+	await session.prompt("and?");
+	assert.equal(warns(), warnsBefore2 + 1, "a named report still makes the line required");
+
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";
 	at = requests.length;

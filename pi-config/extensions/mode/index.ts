@@ -1058,12 +1058,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				if (specRun.trees.some((t) => t.root === dir)) continue;
 				for (const id of (await foreignBetween(dir, base, undefined, SPEC_CORE)) ?? []) ids.add(id);
 			}
-			// A worker's report that arrived in this run: its line counts, its § join the list.
-			const reported = reportedAlsoChanges(ctx.sessionManager.getBranch().slice(specRun.branchAt));
-			if (reported) {
-				changed = true;
-				for (const id of reported) ids.add(id);
-			}
+			// A worker's report naming a § that arrived in this run makes it a change turn (the line is
+			// required), but Git stays the authority for the list: a report names the worker's whole task,
+			// not what this turn landed (B2 merge-4: a merge of master into the branch landed nothing).
+			if (reportedAlsoChanges(ctx.sessionManager.getBranch().slice(specRun.branchAt))) changed = true;
 			const foreign = [...ids].sort();
 			const check = checkAlsoChanges(lastReplyText, { required: changed, foreign });
 			if (check.ok && !conflicts.length) return;

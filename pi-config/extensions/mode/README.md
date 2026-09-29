@@ -164,10 +164,14 @@ writer**).
     edited, committed, promoted or merged (a tool call, a `worktrees:merged`
     event, the session's tree or any worktree it tracks (`worktrees:state`)
     differing from the run's start, whoever changed it, or a worker's report
-    in the run carrying its own `Also changes:` line), the last line is
+    in the run naming a § in its own `Also changes:` line; a report's § never
+    join the list, and a report of `none` makes no change turn), the last line is
     checked against the foreign § computed from Git: the worktrees merge
     event's list, plus `sova-spec.mjs foreign --base <HEAD at the run's start>`
     for the session's tree and for each root a `promote --write` named, plus
+    for each tree the spec that landed there: on the default branch its whole
+    diff; on another branch a merge that brought the default branch in is
+    absorbed, not landed (its § drop out), plus
     `foreign --spec <draft>` against its `base.commit` for each draft the run
     edited (drafts are ignored by Git, so their `spec/` mtimes are stamped at
     the run's start; a draft edit alone makes the line required). A run

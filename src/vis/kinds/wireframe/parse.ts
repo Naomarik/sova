@@ -209,11 +209,12 @@ export function parseWireframe(body: string): WireframeSpec {
     } else warn(l.n, `unknown setting "${key}:", ignored (this kind takes title: caption: device:)`);
   }
 
-  // Marks at any indentation; `mark item "Label" "note"` (a block word before the label) drops the word.
+  // Marks at any indentation; `mark item "Label" "note"` (a block word before the label) drops the
+  // word, and so does `mark button "Save", "Cancel"` (the word before a list of targets).
   const { rest, marks } = takeMarks(
     blockLines.map((l) => {
       if (!/^\s*mark(\s|$)/.test(l.raw)) return l;
-      const m = /^mark\s+([A-Za-z]+)\s+("(?:[^"\\]|\\.)*"(?:\s+\w+)*\s+".*)$/.exec(l.text);
+      const m = /^mark\s+([A-Za-z]+)\s+("(?:[^"\\]|\\.)*"(?:(?:\s+\w+)*\s+".*|\s*,.*))$/.exec(l.text);
       const t = m && blockWord(m[1]!).known ? `mark ${m[2]}` : l.text;
       return { ...l, raw: t, text: t };
     }),
@@ -472,7 +473,7 @@ export function parseWireframe(body: string): WireframeSpec {
   const flatOf = (bs: WBlock[]): WBlock[] => bs.flatMap((b) => [b, ...flatOf(b.children)]);
   const screenFlat = screens.map((s) => flatOf(s.blocks));
   const flat = screenFlat.flat();
-  const markLine = new Map<MarkTarget, number>(marks.map((m) => [m.target, m.line]));
+  const markLine = new Map<MarkTarget, number>(marks.flatMap((m) => m.targets.map((t) => [t, m.line] as const)));
   const find = (pool: WBlock[], t: MarkTarget, x: string) =>
     pool.find((b) => b.texts[0] === t.text) ?? pool.find((b) => b.texts.some((s) => norm(s) === x)) ?? pool.find((b) => b.items?.some((s) => norm(s) === x));
   const resolve = (t: MarkTarget): string | null => {

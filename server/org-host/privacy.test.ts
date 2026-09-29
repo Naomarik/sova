@@ -1,14 +1,18 @@
 // Run: pnpm exec tsx --test server/org-host/privacy.test.ts. The contact marker test (design §5.5
 // Privacy), end to end on the shipped person chart: a contact value planted at start and changed by a
 // person/edit reaches no log segment, no log read and no journal's rows; the snapshot is the only
-// portable place that holds it. Plus the scrub rules for nested paths and field-change records.
+// portable place that holds it. The same for what a log replay needs (r9): spawn data, a host start's
+// data, a set-state's patch and an invocation's report. Plus the scrub rules for nested paths and
+// field-change records.
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
+import type { EngineOptions } from "../org-charts";
 import { OrgHost } from "./index";
 import { DEFAULT_REDACT, scrub, scrubChanged } from "./log";
+import { HOST_CHARTS } from "./test-chart";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -76,4 +80,55 @@ test("the contact marker: planted and changed through person/edit, it is in the 
   const repoFiles = filesUnder(workspaceDir);
   const holding = repoFiles.filter((f) => markers.some((m) => readFileSync(f, "utf8").includes(m)));
   assert.deepEqual(holding.map((f) => f.slice(workspaceDir.length + 1)), ["charts/person/person%2Fo1%2Fp1.edn"]);
+});
+
+test("what a log replay needs (r9) is redacted like the rest: spawn data, a start's data, a set-state patch, a report", async () => {
+  const root = mkdtempSync(join(tmpdir(), "org-host-privacy-"));
+  dirs.push(root);
+  const M = {
+    spawnEmail: "spawn.marker@example.org",
+    spawnPhone: "+1 555 0100 991",
+    startEmail: "start.marker@example.org",
+    startAbout: "START-ABOUT-MARKER likes tea",
+    patchAbout: "PATCH-ABOUT-MARKER the About text",
+    patchMessage: "PATCH-MESSAGE-MARKER what she wrote",
+    patchEmail: "patch.marker@example.org",
+    reportText: "REPORT-TEXT-MARKER the person's words",
+    reportPhone: "+1 555 0100 992",
+  };
+  const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, charts: HOST_CHARTS as unknown as EngineOptions["charts"] });
+  host.invocations.register("sova/look", {
+    start: (_inv, report) => void setTimeout(() => report("finished", undefined, { text: M.reportText, contact: { phone: M.reportPhone } }), 5),
+    stop: () => {},
+  });
+  // spawn data: the shipped org chart spawns the person with its contact
+  await host.start("org/o1", "org", { id: "o1", name: "Acme", slug: "acme", createdAt: 1 }, { by: "operator" });
+  const added = await host.act("org/o1", "person/add", { personId: "p1", person: { name: "Ana Ruiz", contact: { email: M.spawnEmail, phone: M.spawnPhone } }, namesTaken: [] }, { by: "operator" });
+  assert.equal(added.taken, true, added.refusal?.sentence);
+  assert.equal((host.data("person/o1/p1")?.["contact"] as Record<string, string>)["email"], M.spawnEmail, "the person was spawned with it");
+  // a host start's data, a set-state's patch and a look's report, on a project's session (so the feed shows them)
+  await host.start("p/1", "host-probe", { projectId: "prj1", contact: { email: M.startEmail }, about: M.startAbout }, { by: "operator" });
+  const set = await host.setState("p/1", { states: ["timed"], patch: { about: M.patchAbout, message: M.patchMessage, contact: { email: M.patchEmail } }, reason: "stuck" }, { by: "overseer", attended: true });
+  assert.equal(set.taken, true, set.refusal?.sentence);
+  assert.equal(host.data("p/1")?.["about"], M.patchAbout, "the patch went in");
+  await host.act("p/1", "tick", {}, { by: "operator" });
+  await host.act("p/1", "look", {}, { by: "operator" });
+  await new Promise((r) => setTimeout(r, 40));
+  assert.deepEqual(host.configuration("p/1"), ["top", "idle"], "the report came back");
+  const rows = host.log.rows();
+  assert.ok(rows.some((x) => x.event === "sova/started" && x.session === "person/o1/p1"), "the spawn is logged");
+  assert.ok(rows.some((x) => x.event === "sova/started" && x.session === "p/1" && x.start), "a start's data is logged");
+  assert.ok(rows.some((x) => x.event === "sova/set-state" && (x.envelope as Record<string, unknown>)["patch"]), "a patch is logged");
+  assert.ok(rows.some((x) => x.event === "look/finished" && (x.envelope as Record<string, unknown>)["text"]), "a report's data is logged");
+  const feed = host.feed("prj1", { includeQuiet: true });
+  assert.ok(feed.length >= 3);
+  await host.close();
+
+  const logText = [...filesUnder(host.paths.portableLog), ...filesUnder(host.paths.localLog)].map((f) => readFileSync(f, "utf8")).join("\n");
+  for (const [what, m] of Object.entries(M)) {
+    assert.ok(!logText.includes(m), `${what} is not in any log segment`);
+    assert.ok(!JSON.stringify(rows).includes(m), `${what} is not in a log read`);
+    assert.ok(!JSON.stringify(feed).includes(m), `${what} is not in the project feed`);
+  }
+  assert.ok(logText.includes('"[contact]"') && logText.includes('"sha"'), "the values are there as markers and digests");
 });

@@ -122,9 +122,9 @@ export function rootLabel(s: GitRepoSummary, home: string | null): string {
 
 const inflight = new Map<string, Promise<GitSummary>>();
 
-/** GET /api/sessions/git. Callers asking about the same session at once (the pane and the info
-    modal both open) share one request; `fresh` (the Refresh button) asks the server to skip its
-    cache, and a plain read joins a fresh one already running rather than starting its own. */
+/** GET /api/sessions/git. Callers asking about the same session at once share one request;
+    `fresh` (the Refresh button) asks the server to skip its cache, and a plain read joins a fresh
+    one already running rather than starting its own. */
 export function loadGitSummary(path: string, fresh = false): Promise<GitSummary> {
   const key = `${fresh ? "fresh" : "any"}:${path}`;
   const running = inflight.get(key) ?? (fresh ? undefined : inflight.get(`fresh:${path}`));

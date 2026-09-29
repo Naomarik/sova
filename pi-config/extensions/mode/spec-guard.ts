@@ -7,6 +7,8 @@
  *   each new file, run the read-only `sova-spec.mjs census --changed` and hand back a short digest tagged
  *   `[spec census]` for the caller to append to that tool result. A bash heredoc edit is caught like an
  *   edit call. Without a task draft the digest says so.
+ * - **Forbidden writes** (SpecWriteGuard): the current spec written by hand, or commits a draft's evidence
+ *   names rewritten (a rebase after evidence), are said in the same digest by the call that did it.
  * - **The `Also changes:` line** (checkAlsoChanges): the last line of a reply on a turn that edited,
  *   committed, promoted or merged, checked against the foreign § computed from Git (`sova-spec.mjs foreign`,
  *   the worktrees merge event). The caller blocks (one re-prompt) on merge/promote turns, warns elsewhere.
@@ -909,4 +911,151 @@ export function workerReported(entries: readonly unknown[]): boolean {
 		if (e.type === "custom_message") return /subagent|team|worker/i.test(e.customType ?? "") && e.customType !== "spec-check";
 		return e.type === "message" && e.message?.role === "toolResult" && /agent|team|subagent|worker/i.test(e.message.toolName ?? "");
 	});
+}
+
+// ── Writes the draft discipline forbids ──────────────────────────────────────
+
+/** A current-spec file (manifest.json or claims/**), never a draft's: only the draft tools and a git merge write it. */
+export function currentSpecPath(path: string): boolean {
+	return /(?:^|\/)\.sova\/spec\/(?:manifest\.json$|claims\/)/.test(path);
+}
+
+/** A shell command allowed to write the current spec: a draft tool (promote, merge-manifest, recover) or git itself. */
+export function sanctionedSpecWrite(command: string): boolean {
+	return /sova-spec-draft\.mjs/.test(command) || /\bgit\b(?:\s+-[Cc]\s+\S+)*\s+(?:merge|checkout|restore|reset|rebase|pull|cherry-pick|revert|stash|switch|am)\b/.test(command);
+}
+
+export const directWriteNote = (paths: readonly string[]): string =>
+	`${DIGEST_TAG} you wrote the current spec directly (${capped(paths, FILE_CAP)}): undo it; change claims in a draft and promote (manifest conflicts: merge-manifest).`;
+
+/** One draft's commit evidence: the commit and the § it verifies. */
+export interface EvidenceCommit {
+	draft: string;
+	commit: string;
+	ids: string[];
+}
+
+/** Every commit a draft's evidence names, at a spec root. Unreadable drafts are skipped. */
+export async function evidenceCommits(root: string, io: SpecIO = localIO): Promise<EvidenceCommit[]> {
+	const out: EvidenceCommit[] = [];
+	let names: string[];
+	try {
+		names = await io.readDir(join(root, SPEC_REL, "drafts"));
+	} catch {
+		return out;
+	}
+	for (const draft of names) {
+		try {
+			const d = JSON.parse(await io.readFile(join(root, SPEC_REL, "drafts", draft, "draft.json"))) as { evidence?: unknown };
+			for (const e of Array.isArray(d.evidence) ? (d.evidence as { mode?: unknown; commit?: unknown; ids?: unknown }[]) : [])
+				if (e?.mode === "commit" && typeof e.commit === "string") {
+					const ids = Array.isArray(e.ids) ? e.ids.map((i) => (i as { id?: unknown })?.id).filter((id): id is string => typeof id === "string") : [];
+					const had = out.find((x) => x.draft === draft && x.commit === e.commit);
+					if (had) had.ids.push(...ids.filter((id) => !had.ids.includes(id)));
+					else out.push({ draft, commit: e.commit, ids });
+				}
+		} catch {
+			// Not a draft, or unreadable.
+		}
+	}
+	return out;
+}
+
+export function rewriteNote(lost: readonly EvidenceCommit[], old: string, rebasing: boolean): string {
+	const what = lost.map((e) => `draft ${e.draft}'s evidence commit ${e.commit.slice(0, 12)}${e.ids.length ? ` (${capped(e.ids, ID_CAP)})` : ""}`).join("; ");
+	const fix = rebasing ? "Abort (`git rebase --abort`)" : `Restore the branch (\`git reset --hard ${old.slice(0, 12)}\`)`;
+	return `${DIGEST_TAG} never rebase after evidence (PROMOTE.md): ${what} is no longer on this branch. ${fix} and merge master in instead.`;
+}
+
+/** The current-spec files Git shows changed in a tree, with their mtimes. */
+async function specFiles(top: string, io: SpecIO, signal?: AbortSignal): Promise<Record<string, number>> {
+	const r = await io.exec("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", `:(glob)**/${SPEC_REL}/manifest.json`, `:(glob)**/${SPEC_REL}/claims/**`], {
+		cwd: top,
+		timeout: TOOL_TIMEOUT_MS,
+		signal,
+	});
+	const files: Record<string, number> = {};
+	if (r.code === 0) for (const p of parsePorcelain(r.stdout)) files[p] = (await io.mtime(join(top, p))) ?? 0;
+	return files;
+}
+
+interface GuardTree {
+	top: string;
+	head: string;
+	spec: Record<string, number>;
+	evidence: EvidenceCommit[];
+}
+
+/**
+ * Two writes the draft discipline forbids, said the moment they happen, in the `[spec census]` digest:
+ * the current spec changed by hand (an edit or write call on it, or a shell command that is no draft
+ * tool and no git operation), and commits a draft's evidence names rewritten (a rebase, reset or amend:
+ * the evidence commit was on the branch before the call and isn't after). `before` looks at the trees a
+ * call works in, `after` compares; both never throw. One instance per session; calls keyed by id.
+ */
+export class SpecWriteGuard {
+	private readonly io: SpecIO;
+	private readonly open = new Map<string, Promise<GuardTree[]>>();
+
+	constructor(options: { io?: SpecIO } = {}) {
+		this.io = options.io ?? localIO;
+	}
+
+	before(id: string, call: CensusCall): Promise<void> {
+		const command = call.toolName.toLowerCase() === "bash" ? (call.input as { command?: unknown } | undefined)?.command : undefined;
+		if (typeof command !== "string") return Promise.resolve();
+		const look = this.look(commandDirs(command, call.cwd), command, call.signal).catch((): GuardTree[] => []);
+		this.open.set(id, look);
+		return look.then(() => undefined);
+	}
+
+	async after(id: string, call: CensusCall): Promise<string | undefined> {
+		try {
+			const tool = call.toolName.toLowerCase();
+			const input = call.input as { path?: unknown; file_path?: unknown; command?: unknown } | undefined;
+			if (tool === "edit" || tool === "write" || tool === "multiedit") {
+				const path = typeof input?.path === "string" ? input.path : typeof input?.file_path === "string" ? input.file_path : undefined;
+				return path && currentSpecPath(path.startsWith("/") ? path : join(call.cwd, path)) ? directWriteNote([path]) : undefined;
+			}
+			const pending = this.open.get(id);
+			this.open.delete(id);
+			const command = typeof input?.command === "string" ? input.command : undefined;
+			if (!pending || command === undefined) return undefined;
+			const notes: string[] = [];
+			for (const tree of await pending) {
+				const git = (args: string[]) => this.io.exec("git", args, { cwd: tree.top, timeout: TOOL_TIMEOUT_MS, signal: call.signal });
+				if (!sanctionedSpecWrite(command)) {
+					const now = await specFiles(tree.top, this.io, call.signal);
+					const written = Object.keys(now).filter((p) => tree.spec[p] !== now[p]);
+					if (written.length) notes.push(directWriteNote(written));
+				}
+				if (!tree.evidence.length) continue;
+				const head = await git(["rev-parse", "--verify", "-q", "HEAD"]);
+				const now = head.code === 0 ? head.stdout.trim() : "";
+				if (!now || now === tree.head) continue;
+				const lost: EvidenceCommit[] = [];
+				for (const e of tree.evidence)
+					if ((await git(["merge-base", "--is-ancestor", e.commit, tree.head])).code === 0 && (await git(["merge-base", "--is-ancestor", e.commit, now])).code !== 0) lost.push(e);
+				if (!lost.length) continue;
+				const dirs = await Promise.all(["rebase-merge", "rebase-apply"].map(async (d) => (await git(["rev-parse", "--git-path", d])).stdout.trim()));
+				let rebasing = false;
+				for (const d of dirs) if (d && (await this.io.exists(d.startsWith("/") ? d : join(tree.top, d)))) rebasing = true;
+				notes.push(rewriteNote(lost, tree.head, rebasing));
+			}
+			return notes.length ? notes.join("\n") : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	private async look(dirs: readonly string[], command: string, signal?: AbortSignal): Promise<GuardTree[]> {
+		const trees: GuardTree[] = [];
+		for (const dir of dirs) {
+			const at = await headAt(dir, this.io);
+			if (!at || trees.some((t) => t.top === at.top)) continue;
+			const root = /\bgit\b/.test(command) ? await findSpecRoot(dir, (p) => this.io.exists(p)) : undefined;
+			trees.push({ top: at.top, head: at.head, spec: await specFiles(at.top, this.io, signal), evidence: root ? await evidenceCommits(root, this.io) : [] });
+		}
+		return trees;
+	}
 }

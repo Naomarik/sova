@@ -158,8 +158,15 @@ writer**).
     created since the session started) and, on the first in-boundary change,
     each new file in the boundary or mapped outside it, or a new foreign §, a
     short `[spec census]` digest is appended to that tool result, with a
-    "No draft yet" line while there is none. `PI_SPEC_CENSUS_HOOK=0` turns it
-    off.
+    "No draft yet" line while there is none. The same digest says, on the call
+    that did it, when the current spec (`manifest.json`, `claims/**`) was
+    written by hand: an edit or write call on it, or a shell command that is
+    neither a draft tool nor git and changed it; and when a git operation
+    rewrote a commit a draft's evidence names (a rebase, reset or amend: the
+    commit was on the branch before the call and isn't after), with the way
+    back (`git rebase --abort`, or `git reset --hard <old>`) and "merge master
+    in instead". Both look at the trees the call works in (`cd`, `git -C`).
+    `PI_SPEC_CENSUS_HOOK=0` turns it off.
   - **The `Also changes:` line.** When a run is about to settle after it
     edited, committed, promoted or merged (a tool call, a `worktrees:merged`
     event, the session's tree or any worktree it tracks (`worktrees:state`)
@@ -194,7 +201,8 @@ writer**).
   - **In pi workers.** Workers start with `--no-extensions`, so the mode
     extension is absent there; the subagents spawn path loads
     `spec-worker.ts` (`-e`) into every code-writing pi worker a spec-on
-    session spawns: the same census digest, nothing else.
+    session spawns: the same census digest (forbidden writes included), nothing
+    else.
 
   See `../spec/README.md`.
 
@@ -543,6 +551,6 @@ node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt
 node tests/note-turn.mjs      # real pi session + scripted provider: a minor toggle keeps the head; notes, reopen, compaction
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
 node --test spec-guard.test.ts # the spec checks: git delta census digest (real Git + spec tools), the Also-changes line, command detection
-node tests/spec-turn.mjs      # real pi session + scripted provider: the census digest on a bash write, warn vs one re-prompt, mode:state
+node tests/spec-turn.mjs      # real pi session + scripted provider: the census digest on a bash write, a hand write of the spec, a reset past evidence, warn vs one re-prompt, mode:state
 node tests/spec-worker.mjs    # real pi session loading only spec-worker.ts (a pi worker's -e): the census digest on its first edit
 ```

@@ -80,6 +80,7 @@ import { SPEC_FILE_NAME, SPEC_WRITER_LABEL, specBackends, specKey, specReader } 
 import {
 	bashCommands,
 	CensusHook,
+	SpecWriteGuard,
 	CHECK_TAG,
 	checkAlsoChanges,
 	commandDirs,
@@ -953,6 +954,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	// Git or the tools, in a remote session, and on any error. PI_SPEC_CENSUS_HOOK=0 turns the census
 	// off, PI_SPEC_CHECK=0 the line check (a trial arm's control).
 	const specCensus = new CensusHook({ core: () => SPEC_CORE });
+	const specWrites = new SpecWriteGuard();
 	const specOn = () => hasMinor(active, "spec") && remoteTarget === undefined;
 	/** What this run did, for the line check. */
 	let specRun: {
@@ -1020,6 +1022,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 
 	pi.on("tool_call", async (event, ctx) => {
 		if (!specOn()) return;
+		if (process.env.PI_SPEC_CENSUS_HOOK !== "0") await specWrites.before(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
 		// An operation of this session's that can move a HEAD: note each tree's HEAD just before it.
 		const input = event.input as { command?: unknown; action?: unknown } | undefined;
 		const cmd = event.toolName === "bash" && typeof input?.command === "string" ? input.command : undefined;
@@ -1061,7 +1064,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			}
 		}
 		if (process.env.PI_SPEC_CENSUS_HOOK === "0") return;
-		const { text, failure } = await specCensus.after({
+		const forbidden = await specWrites.after(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
+		const { text: census, failure } = await specCensus.after({
 			cwd: ctx.cwd,
 			toolName: event.toolName,
 			input: event.input,
@@ -1070,6 +1074,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			sessionStart: ctx.sessionManager.getHeader()?.timestamp,
 		});
 		if (failure && ctx.hasUI) ctx.ui.notify(failure, "warning");
+		const text = [forbidden, census].filter(Boolean).join("\n");
 		if (text) return { content: [...event.content, { type: "text" as const, text }] };
 	});
 

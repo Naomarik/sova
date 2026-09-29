@@ -9,6 +9,8 @@
 // - a pure Q&A turn needs no line and gets no re-prompt;
 // - a worker's promotion committed in a tracked worktree (no tool call of the parent's) makes the turn a
 //   blocking one: one re-prompt naming the foreign § computed from that worktree;
+// - a hand write of the current spec (write tool, shell) and a reset past a draft's evidence commit are
+//   said in the digest of the call that made them;
 // - the active triple is published on the bus (mode:state), and again on mode:discover.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -450,6 +452,25 @@ try {
 	assert.equal(checks().length, before9 + 1);
 	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./, "the third party's §app/other on master is not listed");
 	assert.match(checks().at(-1).content, /§app\/other isn't changed by this diff: if its user-visible behavior changed, update its claim in a draft and promote; otherwise drop it from the line/);
+
+	// Forbidden writes, said by the call that made them: the current spec written by hand (the write tool,
+	// then a shell append), and a reset past a commit a draft's evidence names.
+	at = requests.length;
+	script.push(
+		{ tool: "write", args: { path: ".sova/spec/claims/app/shell.md", content: "# §app/shell\n\nShell, by hand.\n" } },
+		{ tool: "bash", args: { command: "printf 'x\\n' >> .sova/spec/claims/app/shell.md" } },
+		{ text: "Wrote it.\nAlso changes: §app/shell — by hand" },
+	);
+	await session.prompt("fix the shell claim");
+	for (const i of [1, 2]) assert.match(seen(requests[at + i]), /\[spec census\] you wrote the current spec directly \(\.sova\/spec\/claims\/app\/shell\.md\): undo it; change claims in a draft and promote \(manifest conflicts: merge-manifest\)\./);
+	git("checkout", "--", ".sova/spec/claims/app/shell.md");
+	const evidenced = spawnSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+	put(".sova/spec/drafts/ev/draft.json", JSON.stringify({ evidence: [{ mode: "commit", commit: evidenced, ids: [{ id: "§app/shell" }] }] }));
+	at = requests.length;
+	script.push({ tool: "bash", args: { command: "git reset -q --hard HEAD~1" } }, { text: "Reset.\nAlso changes: none" });
+	await session.prompt("drop the last commit");
+	assert.match(seen(requests[at + 1]), new RegExp(`\\[spec census\\] never rebase after evidence \\(PROMOTE\\.md\\): draft ev's evidence commit ${evidenced.slice(0, 12)} \\(§app/shell\\) is no longer on this branch\\. Restore the branch`));
+	git("reset", "-q", "--hard", evidenced);
 
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";

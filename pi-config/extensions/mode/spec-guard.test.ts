@@ -39,6 +39,9 @@ import {
 	treeStart,
 	treeTurn,
 	workerReported,
+	currentSpecPath,
+	sanctionedSpecWrite,
+	SpecWriteGuard,
 	stripAlsoChanges,
 	viewChanged,
 	type CensusView,
@@ -498,4 +501,77 @@ test("checkAlsoChanges exact: a § beyond the computed list is an extra the over
 	assert.ok(omitted.ok, "the override still excuses an omission");
 	const both = checkAlsoChanges("x\nAlso changes: §b/two — z", { required: true, foreign, exact: true });
 	assert.equal(describeProblem(both), `your \`Also changes:\` line omits §a/one; ${extraText(["§b/two"])}`);
+});
+
+test("SpecWriteGuard (M2-B-s2-1's shape): a rebase after evidence and a hand edit of the manifest are said at once; a merge, git and the draft tools are not", async () => {
+	assert.ok(currentSpecPath("/w/.sova/spec/manifest.json") && currentSpecPath(".sova/spec/claims/app/x.md") && currentSpecPath("sub/.sova/spec/claims/a.md"));
+	assert.ok(!currentSpecPath("/w/.sova/spec/drafts/d/spec/manifest.json") && !currentSpecPath("/w/.sova/spec/drafts/d/spec/claims/a.md") && !currentSpecPath("/w/src/claims/a.ts"));
+	assert.ok(sanctionedSpecWrite('node "$core/sova-spec-draft.mjs" merge-manifest --root . --write') && sanctionedSpecWrite("git checkout master -- .sova/spec/manifest.json"));
+	assert.ok(!sanctionedSpecWrite("sed -i s/a/b/ .sova/spec/manifest.json") && !sanctionedSpecWrite("git add .sova && cp x .sova/spec/manifest.json"));
+	mkdirSync(scratchRoot, { recursive: true });
+	const dir = mkdtempSync(join(scratchRoot, "spec-writes-"));
+	const repo = join(dir, "repo");
+	const wt = join(dir, "wt");
+	try {
+		const put = (at: string, rel: string, text: string) => {
+			mkdirSync(dirname(join(at, rel)), { recursive: true });
+			writeFileSync(join(at, rel), text);
+		};
+		const git = (at: string, ...args: string[]) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", at, ...args], { encoding: "utf8" });
+		const head = (at: string) => git(at, "rev-parse", "HEAD").stdout.trim();
+		const manifest = (evidence: string) => JSON.stringify({ formatVersion: 1, claims: { "§a/x": { kind: "behavior", evidence } } }, null, 1);
+		mkdirSync(repo);
+		put(repo, ".sova/spec/manifest.json", manifest("unreviewed"));
+		put(repo, ".sova/spec/.gitignore", "drafts/\n");
+		put(repo, "src/a.ts", "1\n");
+		git(repo, "init", "-q", "-b", "master");
+		git(repo, "add", "-A");
+		git(repo, "commit", "-qm", "base");
+		git(repo, "worktree", "add", "-q", "-b", "feat", wt);
+		put(wt, "src/a.ts", "2\n");
+		git(wt, "commit", "-qam", "code");
+		const code = head(wt);
+		put(wt, ".sova/spec/drafts/d/draft.json", JSON.stringify({ evidence: [{ mode: "commit", commit: code, ids: [{ id: "§a/x" }] }] }));
+		put(wt, ".sova/spec/manifest.json", manifest("verified"));
+		git(wt, "commit", "-qam", "spec: promote d");
+		put(repo, ".sova/spec/manifest.json", manifest("reviewed"));
+		git(repo, "commit", "-qam", "master moves");
+
+		const guard = new SpecWriteGuard();
+		const bash = async (id: string, command: string, run: () => void) => {
+			const call = { cwd: dir, toolName: "bash", input: { command } };
+			await guard.before(id, call);
+			run();
+			return guard.after(id, call);
+		};
+		// The merge PROMOTE.md asks for: evidence stays on the branch, nothing to say.
+		const merged = await bash("m", `cd ${wt} && git merge master`, () => git(wt, "merge", "master"));
+		assert.equal(merged, undefined);
+		git(wt, "merge", "--abort");
+		// The rebase: it stops on the manifest, and the evidence commit is already off the branch.
+		const tip = head(wt);
+		const rebased = await bash("r", `cd ${wt} && git rebase master`, () => assert.notEqual(git(wt, "rebase", "master").status, 0));
+		assert.equal(
+			rebased,
+			`${DIGEST_TAG} never rebase after evidence (PROMOTE.md): draft d's evidence commit ${code.slice(0, 12)} (§a/x) is no longer on this branch. Abort (\`git rebase --abort\`) and merge master in instead.`,
+		);
+		// Resolving the conflict by hand is a direct write; so is a shell write; a draft's own files are not.
+		const edit = await guard.after("e", { cwd: dir, toolName: "edit", input: { path: join(wt, ".sova/spec/manifest.json") } });
+		assert.equal(edit, `${DIGEST_TAG} you wrote the current spec directly (${join(wt, ".sova/spec/manifest.json")}): undo it; change claims in a draft and promote (manifest conflicts: merge-manifest).`);
+		assert.equal(await guard.after("e2", { cwd: wt, toolName: "write", input: { path: ".sova/spec/drafts/d/spec/manifest.json" } }), undefined);
+		const shell = await bash("s", `cd ${wt} && printf x >> .sova/spec/claims/a.md`, () => put(wt, ".sova/spec/claims/a.md", "x"));
+		assert.match(shell ?? "", /you wrote the current spec directly \(\.sova\/spec\/claims\/a\.md\)/);
+		assert.equal(await bash("p", `cd ${wt} && node "$core/sova-spec-draft.mjs" promote d --write`, () => put(wt, ".sova/spec/claims/a.md", "y")), undefined, "the draft tools write the current spec");
+		assert.equal(await bash("c", `cd ${wt} && git checkout master -- .sova/spec/manifest.json`, () => git(wt, "checkout", "master", "--", ".sova/spec/manifest.json")), undefined);
+		git(wt, "rebase", "--abort");
+		assert.equal(head(wt), tip);
+		// A reset (no rebase under way) past the evidence: restore the branch.
+		const reset = await bash("h", `git -C ${wt} reset -q --hard HEAD~2`, () => git(wt, "reset", "-q", "--hard", "HEAD~2"));
+		assert.match(reset ?? "", new RegExp(`evidence commit ${code.slice(0, 12)} \\(§a/x\\) is no longer on this branch\\. Restore the branch \\(\`git reset --hard ${tip.slice(0, 12)}\`\\) and merge master in instead\\.`));
+		// A commit on top keeps the evidence: silent.
+		git(wt, "reset", "-q", "--hard", tip);
+		assert.equal(await bash("k", `cd ${wt} && git commit -q --allow-empty -m more`, () => git(wt, "commit", "-q", "--allow-empty", "-m", "more")), undefined);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

@@ -3403,7 +3403,8 @@
         "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
-        "pi-config/extensions/subagents/README.md"
+        "pi-config/extensions/subagents/README.md",
+        "server/team-defaults.test.ts"
       ]
     },
     "§teams.defaults/handover": {
@@ -3717,7 +3718,8 @@
         "src/lib/summarizer-draft.ts",
         "src/lib/summarizer-form.ts",
         "src/lib/settings-draft.ts",
-        "server/topic-outline-settings.ts"
+        "server/topic-outline-settings.ts",
+        "server/topic-outline-settings.test.ts"
       ]
     },
     "§app.baton/attribution": {

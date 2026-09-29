@@ -35,6 +35,7 @@ import {
 	reportedAlsoChanges,
 	treeStart,
 	treeTurn,
+	workerReported,
 	stripAlsoChanges,
 	viewChanged,
 	type CensusView,
@@ -416,4 +417,27 @@ test("a merge commit into master (no fast-forward) lands the branch's §: the ta
 	} finally {
 		rmSync(repo, { recursive: true, force: true });
 	}
+});
+
+test("treeTurn reports a comparison that failed instead of staying silent; workerReported spots a relay", async () => {
+	const io: SpecIO = {
+		...localIO,
+		exists: () => false,
+		readDir: () => {
+			throw new Error("none");
+		},
+		mtime: () => 1,
+		exec: async (_cmd, args) => {
+			if (args[0] === "rev-parse" && args[1] === "--show-toplevel") return { stdout: "/r\n", code: 0 };
+			if (args[0] === "status") return { stdout: " M x\0", code: 0 };
+			if (args[0] === "rev-parse") return { stdout: "b\n", code: 0 };
+			throw new Error("git exploded");
+		},
+	};
+	const turn = await treeTurn({ view: { top: "/r", head: "a", files: {} }, root: "/r", drafts: {} }, "/core", io);
+	assert.equal(turn.changed, false);
+	assert.match(turn.error ?? "", /\/r: git exploded/);
+	assert.ok(workerReported([{ type: "custom_message", customType: "subagent-complete", content: "done" }]));
+	assert.ok(workerReported([{ type: "message", message: { role: "toolResult", toolName: "agent_spawn" } }]));
+	assert.ok(!workerReported([{ type: "custom_message", customType: "spec-check", content: "x" }, { type: "message", message: { role: "toolResult", toolName: "bash" } }]));
 });

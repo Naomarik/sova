@@ -10,7 +10,7 @@ core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$
 
 `node "$core/sova-spec.mjs" <command> --root <project root> --json` only reads; command is `check`, `census`, `foreign --base <rev>`, `scope '<§id>' [--budget <bytes>]` or `impact '<§id>'`; `--spec <dir>` reads a draft instead. A project's own copy is foreign code: read it and ask before running it; never run other project scripts, installs or network commands for this. Without trusted tools, say so and read the files directly.
 
-Every behavior change is spec'd. Exempt from drafts, not census: work changing no behavior (refactor, tests, tooling), decided from `scope` output, never memory; say you claim the exemption.
+Every behavior change is spec'd. Exempt from drafts, not census: work changing no behavior (refactor, tests, tooling), decided from `scope` output, never memory; a test that fails or flakes because of product code (a race, a wrong value) is that code's behavior fix, never test-only; say you claim the exemption.
 
 Before coding:
 1. Name the root ID(s) and why; `scope` them, `impact` anything others require. Work from the returned passages as written.

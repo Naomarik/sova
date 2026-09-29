@@ -90,6 +90,7 @@ import {
 	gitView,
 	promoteWrites,
 	reportedAlsoChanges,
+	workerReported,
 	repromptText,
 	treeStart,
 	treeTurn,
@@ -955,6 +956,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		trees: TreeStart[];
 		/** Branch length at the run's start: later entries may carry a worker's report. */
 		branchAt: number;
+		/** The session's own tree (its top), as opposed to the worktrees it tracks. */
+		cwdTop?: string;
 		/** Snapshots of worktrees the session started tracking during the run (created or attached mid-run). */
 		pending: Promise<void>[];
 		changed: boolean;
@@ -970,6 +973,13 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		specRun = { trees: [], branchAt: 0, pending: [], changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
 		specReprompted = false;
 	};
+	/**
+	 * Each tree as the last run left it, by top: the next run compares against this, so what a worker
+	 * wrote while the session was idle (it runs in the background) is that next run's change. Always for
+	 * a tracked worktree (workers' ground); for the session's own tree only in a run that relays a worker's
+	 * report, so a user's own edits between runs are never the model's.
+	 */
+	const settledTrees = new Map<string, TreeStart>();
 	/** worktrees/state.ts WORKTREES_STATE_EVENT, spelled again: the active worktrees this session tracks. */
 	let trackedWorktrees: string[] = [];
 	pi.events?.on("worktrees:state", (data: unknown) => {
@@ -1045,14 +1055,21 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			const ids = new Set(specRun.mergeForeign);
 			// Each tree, the session's and every tracked worktree: a worker's edit, commit or promotion
 			// there is this turn's too. A current spec that changed is a promotion landing: blocking.
-			for (const tree of specRun.trees) {
+			const errors: string[] = [];
+			const relay = workerReported(ctx.sessionManager.getBranch().slice(specRun.branchAt));
+			const cwdTop = specRun.cwdTop;
+			for (const fresh of specRun.trees) {
+				const carried = settledTrees.get(fresh.view.top);
+				const tree = carried && (fresh.view.top !== cwdTop || relay) ? carried : fresh;
 				const t = await treeTurn(tree, SPEC_CORE);
+				if (t.error) errors.push(t.error);
 				if (t.conflict) conflicts.push(t.conflict);
 				if (!t.changed) continue;
 				changed = true;
 				if (t.specChanged) landed.push(basename(tree.view.top));
 				for (const id of t.foreign ?? []) ids.add(id);
 			}
+			if (errors.length) reportCheckFailure(ctx, errors.join("; "));
 			// A root a promote --write named outside those trees.
 			for (const [dir, base] of specRun.roots) {
 				if (specRun.trees.some((t) => t.root === dir)) continue;
@@ -1084,8 +1101,29 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			const note = [...lines, ...conflicts].join("\n");
 			if (ctx.hasUI) ctx.ui.notify(note, "warning");
 			pi.sendMessage({ customType: SPEC_CHECK_MESSAGE, content: note, display: false }, { deliverAs: "nextTurn" });
+		} catch (error) {
+			// The run settles as it would, but a check that could not run says so.
+			reportCheckFailure(ctx, error instanceof Error ? error.message : String(error));
+		}
+	});
+
+	/** A failure inside the check: on screen, and in the session as an entry, never silent. */
+	function reportCheckFailure(ctx: ExtensionContext, message: string): void {
+		const text = `${CHECK_TAG} the check itself failed: ${message}`;
+		try {
+			if (ctx.hasUI) ctx.ui.notify(text, "warning");
+			pi.appendEntry("spec-check-error", { message: text });
 		} catch {
-			// The check is best-effort; the run settles as it would.
+			// Reporting is best-effort too.
+		}
+	}
+
+	// A settled run's trees are the next run's baseline (settledTrees).
+	pi.on("agent_settled", async () => {
+		if (!specOn()) return;
+		for (const tree of specRun.trees) {
+			const now = await treeStart(tree.view.top).catch(() => undefined);
+			if (now) settledTrees.set(now.view.top, now);
 		}
 	});
 
@@ -1157,6 +1195,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				specRun.branchAt = ctx.sessionManager.getBranch().length;
 				for (const dir of [ctx.cwd, ...trackedWorktrees]) {
 					const tree = await treeStart(dir);
+					if (dir === ctx.cwd) specRun.cwdTop = tree?.view.top;
 					if (tree && !specRun.trees.some((t) => t.view.top === tree.view.top)) specRun.trees.push(tree);
 				}
 				if (process.env.PI_SPEC_CENSUS_HOOK !== "0") await specCensus.prime(ctx.cwd);

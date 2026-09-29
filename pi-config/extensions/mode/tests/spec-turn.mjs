@@ -295,6 +295,38 @@ try {
 	assert.match(checks().at(-1).content, /computed from Git: §app\/shell, §design\/deck\./, "Git's list, not the truncated line");
 	assert.match(checks().at(-1).content, /omits §design\/deck/);
 
+	// M1-B-v21-1: the worker runs in the background. It promotes and commits in a tracked worktree while
+	// the session is idle, between runs; its report then starts a run that has no line. The relay run
+	// compares against the tree as the last run left it: one re-prompt naming the landed §.
+	const wt5 = path.join(scratch, "wt5");
+	const wt5Git = (...args) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", wt5, ...args]).status, 0, `git ${args.join(" ")}`);
+	mkdirSync(wt5, { recursive: true });
+	wt5Git("init", "-q");
+	for (const rel of [".sova/spec/manifest.json", ".sova/spec/claims/app/shell.md", "src/App.tsx"]) {
+		mkdirSync(path.dirname(path.join(wt5, rel)), { recursive: true });
+		writeFileSync(path.join(wt5, rel), spawnSync("git", ["-C", cwd, "show", `HEAD:${rel}`], { encoding: "utf8" }).stdout);
+	}
+	wt5Git("add", "-A");
+	wt5Git("commit", "-qm", "base");
+	hostPi.events.emit("worktrees:state", { version: 1, active: [wt, wt2, wt3, wt4, wt5] });
+	script.push({ text: "The worker is running; I'll check its work when it reports." });
+	await session.prompt("have a worker do it in wt5");
+	const before5 = checks().length;
+	// The session is idle: the worker writes now.
+	writeFileSync(path.join(wt5, ".sova/spec/claims/app/shell.md"), "# §app/shell\n\nShell, background worker.\n");
+	wt5Git("commit", "-qam", "spec: promoted by a background worker");
+	at = requests.length;
+	script.push({ text: "The worker finished. Tell me when you want it merged." }, { text: "Done.\nAlso changes: §app/shell — background worker" });
+	await session.sendCustomMessage({ customType: "subagent-complete", content: "### ag_02 finished\n[Final answer: 3,938 chars, whole in /tmp/x]", display: true }, { triggerTurn: true });
+	assert.equal(requests.length, at + 2, "one continuation for the relay run");
+	assert.equal(checks().length, before5 + 1);
+	assert.match(checks().at(-1).content, /changed the current spec in wt5/);
+	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./);
+	// The next run starts from where that one settled: nothing new, no re-prompt.
+	script.push({ text: "Nothing new." });
+	await session.prompt("status?");
+	assert.equal(checks().length, before5 + 1);
+
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";
 	at = requests.length;

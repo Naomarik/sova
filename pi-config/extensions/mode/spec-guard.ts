@@ -670,6 +670,8 @@ export interface TreeTurn {
 	foreign?: string[];
 	/** Its manifest.json is in a Git conflict now: what to do (manifestConflictNote). */
 	conflict?: string;
+	/** The comparison itself failed: the check must say so, never stay silent. */
+	error?: string;
 }
 
 export async function treeStart(dir: string, io: SpecIO = localIO): Promise<TreeStart | undefined> {
@@ -767,8 +769,8 @@ export async function treeTurn(start: TreeStart, core: string, io: SpecIO = loca
 			}
 		}
 		return { changed, specChanged, ...(known ? { foreign: [...ids].sort() } : {}), ...conflict };
-	} catch {
-		return { changed: false, specChanged: false };
+	} catch (error) {
+		return { changed: false, specChanged: false, error: `${start.view.top}: ${error instanceof Error ? error.message : String(error)}` };
 	}
 }
 
@@ -801,4 +803,16 @@ export function reportedAlsoChanges(entries: readonly unknown[]): string[] | und
 		}
 	}
 	return found ? [...ids].sort() : undefined;
+}
+
+/**
+ * Whether a worker's report arrived among these entries: a custom message from the subagents or teams
+ * extension, or a worker tool's result. Such a run relays work done while the session was idle.
+ */
+export function workerReported(entries: readonly unknown[]): boolean {
+	return entries.some((entry) => {
+		const e = entry as { type?: string; customType?: string; message?: { role?: string; toolName?: string } };
+		if (e.type === "custom_message") return /subagent|team|worker/i.test(e.customType ?? "") && e.customType !== "spec-check";
+		return e.type === "message" && e.message?.role === "toolResult" && /agent|team|subagent|worker/i.test(e.message.toolName ?? "");
+	});
 }

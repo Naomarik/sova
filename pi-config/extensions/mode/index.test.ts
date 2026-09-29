@@ -422,7 +422,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /Promote only what is implemented and verified\. A refusal is resolved, never forced\./);
 	assert.match(spec, /Write `"requires": \[\]` only after investigating; otherwise omit the key/);
 	// Mandatory: every behavior change is spec'd, and only a declared no-behavior change is exempt.
-	assert.match(spec, /Every behavior change is spec'd\. Exempt from drafts, not census: work changing no behavior \(refactor, tests, tooling\), decided from `scope` output, never memory; say you claim the exemption\./);
+	assert.match(spec, /Every behavior change is spec'd\. Exempt from drafts, not census: work changing no behavior \(refactor, tests, tooling\), decided from `scope` output, never memory; a test that fails or flakes because of product code \(a race, a wrong value\) is that code's behavior fix, never test-only; say you claim the exemption\./, "a flaky test's product cause is no test-only exemption");
 	assert.match(spec, /Behavior no claim covers gets a new claim in a feature draft before coding\. Write its sentence before the first code edit; `new` alone isn't enough\./, "the claim comes before the code");
 	assert.ok(spec.indexOf("Before coding:") < spec.indexOf("before coding.") && spec.indexOf("before coding.") < spec.indexOf("Documentation changes only through drafts"), "the new claim is a before-coding step");
 	// Only what the task changed is claimed; neighbours are linked, never spec'd.
@@ -453,7 +453,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /While coding, exempt work included, run `census --changed` \(/);
 	assert.match(spec, /Trusted tools: start each bash command with exactly this, never a guessed path:\n\n```sh\n/, "the recipe, not a hard-coded agent dir");
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never flags/);
-	assert.ok(spec.split(/\s+/).length <= 920, "short enough to ride every turn");
+	assert.ok(spec.split(/\s+/).length <= 940, "short enough to ride every turn");
 });
 
 test("mode helpers", () => {

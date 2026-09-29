@@ -102,9 +102,26 @@
 
 ;; ---- running ----------------------------------------------------------------------------------------
 
+;; The world (engine matrix `:world`): per chart, exactly the existing sessions of its fixture it sends
+;; to, watches or drives (what it spawns is real, not absorbed). Anything else, a malformed id
+;; included, fails its cell.
+(def worlds
+  {"person"     #{}
+   "org"        #{"person/o1/p1"}
+   "residence"  #{"org/o1"}
+   "project"    #{"person/o1/p1"}
+   "watch"      #{"project/o1/pr1"}
+   "baton"      #{"person/o1/p1" "person/o1/p2" "project/o1/pr1" "reconciler/o1/pr1" "watch/o1/pr1"}
+   "decision"   #{"project/o1/pr1" "reconciler/o1/pr1"}
+   "reconciler" #{"watch/o1/pr1"}
+   "conflict"   #{"baton/o1/s9" "person/o1/p1" "watch/o1/pr1"}
+   "item"       #{"baton/o1/b1" "decision/o1/pr1/d1" "item/o1/pr1/g_2" "person/o1/p1" "watch/o1/pr1"}
+   "build"      #{"project/o1/pr1" "watch/o1/pr1"}})
+
 (defn run [chart sid spec]
   (matrix/run (merge {:charts registry/charts :chart chart :sid sid :level-check lv/level-check
-                      :envelopes envelopes :sentences in-catalogue? :max-configs 4000}
+                      :envelopes envelopes :sentences in-catalogue? :max-configs 4000
+                      :world (get worlds chart #{})}
                 spec)))
 
 (defn clean! [label r]
@@ -188,7 +205,7 @@
                  [:wrapup/finished {}] [:wrapup/stopped {:detail "x"}]]
          :acts [[:baton/hand-to {:target bob :chosen true :question "Q"}] [:baton/hand-to {:target {:id "operator"} :question "Q"}]
                 [:baton/goal-done {:summary "S"}] [:baton/message {:from "p1" :active true}] [:baton/message {:from "p2" :active true}]
-                [:baton/message {:from "operator"}] [:baton/take-back {}] [:baton/handoff {:target bob :question "Q"}]
+                [:baton/message {:from "operator"}] [:baton/send {:text "T"}] [:baton/send {:text " "}] [:baton/take-back {}] [:baton/handoff {:target bob :question "Q"}]
                 [:baton/offer {:targets [ana bob] :question "Q"}] [:baton/withdraw {}] [:baton/close {:reason "r" :owner-project "pr1"}]
                 [:baton/extend {:by 5}] [:baton/extend {:by 1000}] [:baton/wrapup-retry {}]
                 [:baton/record-decision {:decision-id "s1:e1" :area "A" :statement "S" :quote "Q" :owner-areas []}]]
@@ -255,3 +272,7 @@
        :acts [[:build/prompt {:text "go"}] [:build/prompt {:text " "}] [:build/merge {}] [:build/remove-worktree {}]
               [:correct/merged {:commit "c" :reason "r"}]]
        :max-configs 6000})))
+
+(deftest every-chart-has-its-own-world
+  (is (= (set (keys registry/charts)) (set (keys worlds))))
+  (is (not-any? #(contains? % "watch/o1/") (vals worlds)) "a blank project (the ledger bug) is in no world"))

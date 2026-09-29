@@ -158,6 +158,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Reason: connecting / reconnecting / gave up | see Connection above |
 | Busy fallback, when the message was already typed and rejected | the draft stays in the textarea (not cleared), plus the busy reason. No banner |
 | Turn error banner (in thread) | **The turn stopped with an error.** {message}. Your messages are kept. Send again to retry. |
+| Mic (§chat/voice) | `aria-label`/`title`: Dictate · recording: Stop Recording · transcribing: Transcribing · setting up: `Dictate — setting up voice, {n}%` · not set up: `title` "Dictate · Voice isn't set up on this host yet" · unsupported: `title` "Voice needs HTTPS or localhost." (no microphone API: "This browser can't record audio.") |
+| Dictation strip | Starting the mic… · `Recording {m:ss}` · `Recording {m:ss} · {s} s left` · `Transcribing {m:ss}…` · Cancel Recording · group label "Dictation" |
+| Dictation errors (strip; `Try Again` where the clip is kept, then Dismiss) | Mic blocked: "The browser blocked the microphone. Allow it for this site, then try again." · no mic: "No microphone found." · other: "Couldn't start the microphone. {message}." · nothing heard: "Didn't catch any speech. Nothing was inserted." · empty transcript: "Heard audio but no words. Nothing was inserted." · failed: "Couldn't transcribe the clip. {reason}. Your recording is kept." · voice removed meanwhile: "Voice isn't set up on this host anymore." |
+| Dictation, backgrounded (toast and announcement) | Recording stopped when the app went to the background. Transcribed {m:ss}. |
+| Dictation announcements | Recording. · Recording cancelled. · Transcribing. · `Inserted {n} words.` (1: `Inserted 1 word.`) · `{s} seconds left.` at 0:30 |
 | SR announcements | Working. · Reply finished. · The turn stopped with an error. (once per error, and it replaces that turn's "Reply finished." — an errored turn still settles, and two endings would read as two turns) |
 
 ## §design.copy-deck/composer-flyout — Composer flyout
@@ -550,6 +555,29 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Missing theme fell back (banner) | `{id}` isn't there anymore, so you're back on Dark. |
 | Loading | skeleton rows — no copy |
 
+
+## §design.copy-deck/settings-voice — Settings · Voice (§app.settings-dialog/voice)
+
+| Where | Copy |
+|---|---|
+| Tab | Voice |
+| Sheet title (from the mic) · tab heading | Set up voice · Voice |
+| Before setup | "Dictation runs on this Sova host, not in the browser. Setup builds whisper.cpp for {Vulkan · device} (a few minutes), downloads the 574 MB speech model, and tests it. Audio never leaves this host." · no GPU backend: "Dictation runs on this Sova host, not in the browser. Setup uses a prebuilt whisper.cpp for the CPU (no prebuilt: builds whisper.cpp for the CPU (a few minutes)), downloads the 574 MB speech model, and tests it. No GPU backend was found, so each clip takes longer; the self-test shows how long. Audio never leaves this host." · primary `Set Up Voice` |
+| Unsupported host | Voice setup supports Linux and macOS hosts. This host runs {os}. |
+| Steps | Detect this host · Check packages · Get whisper.cpp · Build whisper.cpp · Get the model · Self-test · Finish · state words: Waiting · Running · Done · Skipped · Failed |
+| Step notes | `{done} of {total} MB` · `{n}%` · Copied from {folder} · Already done · Prebuilt CPU binary |
+| Installing | `Setting up voice · step {i} of 7` · `Cancel Setup` |
+| Needs packages | **This host needs {n} packages to build whisper.cpp.** Run this on the Sova host, then check again. Sova never runs sudo. · `Copy Command` (after: "Copied.") · `Check Again` (primary) · `Use CPU Instead` · no known package manager: "Install these, then check again: {list}." |
+| Failed | **Setup stopped at {step, lowercase}.** {error}. Everything before it is kept. · `Retry` · `Use CPU Instead` · `Show Log` / `Hide Log` |
+| Cancelled | Setup cancelled. Everything done so far is kept; Set Up Voice picks up where it stopped. |
+| Ready status line | a success chip `Ready`, then `{Vulkan · device} · self-test {s} s · large-v3-turbo q5_0 · {size} on disk · {Loaded \| Loading \| Not loaded}` |
+| Ready (sheet) | Voice is ready. Tap the mic to dictate. · `Close` |
+| Test Microphone | `Test Microphone` · recording: `Stop ({s} s)` · then `Transcribing…` · result: "Heard: “{text}” ({s} s)" · nothing: "Heard nothing." |
+| Repair | `Repair` — "Checks every file again and reruns the self-test." |
+| Uninstall | `Uninstall Voice` · confirm (banner-warn): **Uninstall voice?** "The voice folder ({size}) goes away: whisper.cpp, the model, and the logs. System packages stay installed." · `Cancel` · `Uninstall` (destructive) |
+| Crashed too often | whisper-server stopped 3 times in a minute. Repair to try again. |
+| Load failed (banner-error) | **Couldn't read the voice status.** {message} |
+| A press refused (banner-error) | **That didn't work.** {server message} — e.g. "Setup is already running." |
 
 ## §design.copy-deck/timeline-tab — Timeline tab (§chat/timeline)
 

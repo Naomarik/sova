@@ -557,8 +557,12 @@
     },
     "§chat.composer/accessibility": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Composer.tsx",
+        "src/components/VoiceInput.tsx"
+      ]
     },
     "§chat.composer/anatomy": {
       "kind": "behavior",
@@ -576,7 +580,9 @@
         "src/design/base.css",
         "src/app.css",
         "src/components/AlignChip.tsx",
-        "src/design/align-viewer.css"
+        "src/design/align-viewer.css",
+        "src/components/VoiceInput.tsx",
+        "src/design/voice.css"
       ]
     },
     "§chat.composer/behavior": {
@@ -585,7 +591,8 @@
         "src/components/Composer.tsx",
         "src/components/ModelMenu.tsx",
         "src/lib/input-mode.ts",
-        "src/lib/input-mode.test.ts"
+        "src/lib/input-mode.test.ts",
+        "src/components/VoiceInput.tsx"
       ],
       "requires": [
         "§chat.images/composer-attachments"
@@ -605,7 +612,8 @@
         "src/components/ChatView.tsx",
         "src/components/ComposerMenu.tsx",
         "src/lib/api.ts",
-        "src/lib/sandbox.ts"
+        "src/lib/sandbox.ts",
+        "src/components/Composer.tsx"
       ]
     },
     "§chat.composer/disabled-states": {
@@ -615,7 +623,8 @@
       "code": [
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
-        "src/components/SessionView.tsx"
+        "src/components/SessionView.tsx",
+        "src/components/VoiceInput.tsx"
       ]
     },
     "§chat.composer/tokens": {
@@ -1231,7 +1240,11 @@
     "§design.copy-deck/composer": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/VoiceInput.tsx",
+        "src/lib/voice/format.ts"
+      ]
     },
     "§design.copy-deck/composer-flyout": {
       "kind": "note",
@@ -1372,7 +1385,8 @@
         "public/icons/apple-touch-icon.png",
         "public/icons/activity.svg",
         "public/icons/bulb.svg",
-        "public/icons/wrench.svg"
+        "public/icons/wrench.svg",
+        "public/icons/mic.svg"
       ]
     },
     "§design.ground-rules/motion": {
@@ -1605,7 +1619,8 @@
         "src/components/GroupComposer.tsx",
         "src/lib/group-prompt.ts",
         "src/lib/group-prompt.test.ts",
-        "src/lib/input-mode.ts"
+        "src/lib/input-mode.ts",
+        "src/components/VoiceInput.tsx"
       ]
     },
     "§workspace.groups/tokens": {
@@ -7376,6 +7391,158 @@
         "scripts/mesh-vps/deploy.sh",
         "scripts/mesh-termux/deploy.sh",
         "server/index.ts"
+      ]
+    },
+    "§app.settings-dialog/voice": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/voice/install.ts",
+        "server/voice/install.test.ts",
+        "server/voice/platform.ts",
+        "server/voice/platform.test.ts",
+        "server/voice/download.ts",
+        "server/voice/download.test.ts",
+        "server/voice/pins.ts",
+        "server/voice/selftest.wav",
+        "server/voice/service.ts",
+        "scripts/voice.ts",
+        "src/components/VoiceSetup.tsx",
+        "src/lib/voice/status.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/settings-nav.test.ts",
+        "src/design/voice.css",
+        "package.json"
+      ],
+      "requires": [
+        "§app/settings-dialog",
+        "§chat.voice/runtime",
+        "§design.copy-deck/settings-voice"
+      ]
+    },
+    "§chat.voice/button": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/VoiceInput.tsx",
+        "src/components/Composer.tsx",
+        "src/components/GroupComposer.tsx",
+        "public/icons/mic.svg",
+        "src/design/voice.css",
+        "src/lib/voice/format.ts",
+        "src/lib/voice/status.ts",
+        "src/components/ui.tsx"
+      ],
+      "requires": [
+        "§app.settings-dialog/voice",
+        "§design.copy-deck/composer"
+      ]
+    },
+    "§chat.voice/capture": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/voice/capture.ts",
+        "src/lib/voice/wav.ts",
+        "public/voice-capture-worklet.js",
+        "src/lib/api.ts",
+        "src/lib/voice/voice.test.ts"
+      ],
+      "requires": []
+    },
+    "§chat.voice/insertion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/voice/insert.ts",
+        "src/components/VoiceInput.tsx",
+        "src/lib/voice/voice.test.ts"
+      ],
+      "requires": [
+        "§chat.composer/behavior"
+      ]
+    },
+    "§chat.voice/mobile-lifecycle": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/voice/capture.ts",
+        "src/components/VoiceInput.tsx",
+        "src/lib/voice/format.ts"
+      ],
+      "requires": [
+        "§chat.voice/capture",
+        "§chat.voice/insertion"
+      ]
+    },
+    "§chat.voice/runtime": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/voice/runtime.ts",
+        "server/voice/runtime.test.ts",
+        "scripts/fake-whisper-server.mjs",
+        "server/voice/service.ts",
+        "server/index.ts"
+      ],
+      "requires": []
+    },
+    "§chat.voice/states": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/VoiceInput.tsx",
+        "src/design/voice.css",
+        "src/lib/voice/format.ts",
+        "src/lib/voice/wav.ts",
+        "src/lib/voice/voice.test.ts"
+      ],
+      "requires": [
+        "§chat.voice/button",
+        "§design.copy-deck/composer"
+      ]
+    },
+    "§chat.voice/transcribe": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/voice/service.ts",
+        "server/voice/wav.ts",
+        "server/voice/wav.test.ts",
+        "server/voice/service.test.ts",
+        "server/voice/pins.ts",
+        "server/index.ts",
+        "shared/protocol.ts"
+      ],
+      "requires": [
+        "§chat.voice/runtime"
+      ]
+    },
+    "§chat/voice": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/VoiceInput.tsx",
+        "server/voice/service.ts"
+      ]
+    },
+    "§design.copy-deck/settings-voice": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/VoiceSetup.tsx",
+        "src/lib/voice/format.ts"
       ]
     }
   },

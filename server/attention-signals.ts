@@ -272,7 +272,7 @@ export function withoutFooter(text: string): string {
 /** What makes a reply's end look like it asks: a question mark, or an asking phrase. Loose on
     purpose: it only decides whether a model is asked. */
 const ASK_RE =
-  /\?(?=[\s"'”’)*_`\]]|$)|\b(?:should i|shall i|want me to|do you want|would you like|tell me|let me know|say (?:if|when|which|whether|go)|if you(?:'d|’d)? (?:want|like|prefer)|your call|up to you|confirm(?: and|,| to| it| that| this)|once you (?:say|confirm|approve|decide|answer)|say yes|your go\b|which (?:one|option|do you)|can i|may i|ok(?:ay)? to|waiting (?:for|on) your?|your (?:answer|go-ahead|ok|approval|decision))\b/i;
+  /\?(?=[\s"'”’)*_`\]]|$)|\b(?:should i|shall i|want me to|do you want|would you like|tell me|let me know|say (?:if|when|which|whether|go)|if you(?:'d|’d)? (?:want|like|prefer)|your call|up to you|confirm(?: and|,| to| it| that| this)|(?:once|after|when) you (?:say|confirm|approve|decide|answer)|say yes|your go\b|which (?:one|option|do you)|can i|may i|ok(?:ay)? to|waiting (?:for|on) your?|your (?:answer|go-ahead|ok|approval|decision))\b/i;
 
 /** Counted in code: does the end of a reply (its last ASK_LOOK_CHARS, footer cut) look like it asks? */
 export function looksLikeAsk(reply: string): boolean {

@@ -241,6 +241,7 @@ describe("looksLikeAsk: the mechanical pre-filter (labelled cases from the Jev a
     "Both worktrees are still on disk and I haven't pushed; say if you want either done.\n\nAlso changes: none",
     "I've written up my reading of the task as al_1 (01a0edc0, A1). Confirm and I'll start.",
     "The branch is ready. Once you say yes I'll merge it.",
+    "Notes: nothing has been implemented yet. The spec draft comes after you confirm.\n\nAlso changes: none", // 01a0def5
     "Shall I merge it into master? Once you say yes I'll run the merge.",
     "**Still waiting on you:** 1. the port 2. the key",
     "Want me to take it on?\n\nAlso changes: §app/x — y; §app/z — w",

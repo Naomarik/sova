@@ -278,7 +278,7 @@
    :overseer/clear    {:needs nil :people-facing true :card (fn [d] {:projects [(:id d)]})}
    :stakeholder/set   {:needs nil}
    :gap/file          {:needs "L0" :tool "sova_idea"}
-   :baton/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :confirm-kind "gather"
+   :baton/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :confirm-kind b/start-kind
                        :card (fn [d] (b/start-card (:id d) d))
                        :what (fn [d] (str "A gathering session \"" (:public-title (b/evt d)) "\""))}
    :build/start       {:needs "L3" :tool "sova_create_session" :code-facing true :counts "create" :hold true :confirm-kind "build"

@@ -42,6 +42,12 @@
     {:projects [project-id]
      :people   (vec (remove #{"operator"} (map #(if (map? %) (:id %) %) (or (seq (:targets e)) (some-> (:to e) vector)))))}))
 
+(defn start-kind
+  "A gathering start's confirm kind (r8(4)): an offer to two or more people (an open pool) is
+   \"offer\", a start to one person or the operator \"gather\"."
+  [data]
+  (if (>= (count (:targets (evt data))) 2) "offer" "gather"))
+
 (defn- sid-of
   "A session id from its parts; a blank part is a chart bug (a send to `watch/o1/` would reach no
    session), so it throws and the call rolls back instead of going nowhere."

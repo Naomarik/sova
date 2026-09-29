@@ -369,7 +369,7 @@
       (final {:id :dropped}))))
 
 (def acts
-  {:gather/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :confirm-kind "gather"
+  {:gather/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :confirm-kind b/start-kind
                         :card (fn [d] (b/start-card (:project-id d) d))
                         :what (fn [d] (str "A gathering on " (:idea-id d) " (\"" (:public-title (e d)) "\")"))}
    :gather/plan        {:needs "L0" :tool "sova_start_gathering"}

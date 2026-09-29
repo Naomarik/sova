@@ -62,7 +62,7 @@ interface Rig {
   set(o: Partial<{ engine: "whisper" | "transcribe"; cpu: boolean; vad: boolean; busy: string | null; dictation: boolean }>): void;
 }
 
-function rig(o: { transcribe?: (wav: Uint8Array, req: TranscribeRequest) => Promise<{ text: string; ms: number }>; vad?: boolean } = {}): Rig {
+function rig(o: { transcribe?: (wav: Uint8Array, req: TranscribeRequest) => Promise<{ text: string; ms: number }>; vad?: boolean; vadFetch?: boolean } = {}): Rig {
   const root = mkdtempSync(join(tmpdir(), "voice-cal-"));
   const dir = join(root, "calibration");
   const settingsFile = join(root, "settings.json");
@@ -78,6 +78,7 @@ function rig(o: { transcribe?: (wav: Uint8Array, req: TranscribeRequest) => Prom
     busy: () => st.busy,
     ensureVad: async () => {
       events.push("ensureVad");
+      if (o.vadFetch === false) return false;
       st.vad = true;
       return true;
     },
@@ -333,6 +334,21 @@ describe("a sweep", () => {
     await r.cal.whenDone();
     assert.deepEqual(r.events, ["ensureVad", "restartEngine"]);
     assert.ok(r.calls.some((c) => c.fields.vad === "true" && c.fields.vad_speech_pad_ms === "150"));
+  });
+
+  it("when Silero can't be fetched, the voice-detection rows are dropped before the first clip and the run says so", async () => {
+    const r = rig({ vad: false, vadFetch: false });
+    record(r, A, [1, 2, 3, 4]);
+    const run = r.cal.start({ id: A });
+    await r.cal.whenDone();
+    assert.deepEqual(r.events, ["ensureVad"], "no engine restart without Silero");
+    assert.equal(run.phase, "done");
+    assert.equal(run.vadSkipped, 12);
+    assert.equal(run.rows.length, 12);
+    assert.equal(run.progress.settings, 12);
+    assert.ok(run.rows.every((x) => !x.settings.vad && x.scored === 4));
+    assert.equal(r.calls.length, 12 * 4 + 4);
+    assert.ok(r.calls.every((c) => !("vad" in c.fields)));
   });
 
   it("a clip over the time limit scores as nothing heard; the run goes on", async () => {

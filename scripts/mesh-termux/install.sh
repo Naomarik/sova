@@ -192,7 +192,7 @@ curl -fsSL --retry 3 -o "$BASE/dl/source.tar.gz.part" "$SOURCE_URL" || die "down
 mv "$BASE/dl/source.tar.gz.part" "$BASE/dl/source.tar.gz"
 SUM=$(sha256sum "$BASE/dl/source.tar.gz" | cut -d' ' -f1)
 COMMIT=$(gzip -dc "$BASE/dl/source.tar.gz" | git get-tar-commit-id 2>/dev/null || true)
-if [ -f "$BASE/app/dist/index.html" ] && [ -f "$BASE/app/node_modules/.modules.yaml" ] && [ "$(cat "$BASE/app/.source-sha256" 2>/dev/null)" = "$SUM" ]; then
+if [ -f "$BASE/app/dist/index.html" ] && [ -f "$BASE/app/dist-share/index.html" ] && [ -f "$BASE/app/node_modules/.modules.yaml" ] && [ "$(cat "$BASE/app/.source-sha256" 2>/dev/null)" = "$SUM" ]; then
   log "app: already built from this source (${COMMIT:-sha256 $SUM})"
 else
   rm -rf "$BASE/app.new" && mkdir -p "$BASE/app.new"
@@ -204,6 +204,10 @@ else
   log "vite build"
   env $RUN_ENV nice -n 10 node node_modules/vite/bin/vite.js build --logLevel warn >"$BASE/tmp/vite-build.log" 2>&1 || { tail -20 "$BASE/tmp/vite-build.log" >&2; die "vite build failed (log: $BASE/tmp/vite-build.log)"; }
   [ -f dist/index.html ] || die "vite build produced no dist/index.html"
+  # the share page's own build (dist-share/): the share listener serves /h/ and /i/ from it, also through a gateway
+  log "vite build --mode share"
+  env $RUN_ENV nice -n 10 node node_modules/vite/bin/vite.js build --mode share --logLevel warn >"$BASE/tmp/vite-build-share.log" 2>&1 || { tail -20 "$BASE/tmp/vite-build-share.log" >&2; die "share page build failed (log: $BASE/tmp/vite-build-share.log)"; }
+  [ -f dist-share/index.html ] || die "vite build --mode share produced no dist-share/index.html"
   printf '%s\n' "$SUM" > .source-sha256
   printf '{"commit":"%s","ref":"%s","sha256":"%s","installedAt":"%s"}\n' "$COMMIT" "$REF" "$SUM" "$(date -u +%FT%TZ)" > BUILD_COMMIT
   cd "$BASE"

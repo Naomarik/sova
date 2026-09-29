@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { DecisionError, type Question } from "./decide";
-import { createJevProvider, jevFailure, JEV_MAX_TOKENS } from "./decide-jev";
+import { createJevProvider, jevFailure, JEV_BACKGROUND_TIMEOUT_MS, JEV_MAX_TOKENS, JEV_TIMEOUT_MS } from "./decide-jev";
 
 const KEY = "tsk-fake-" + "k".repeat(60);
 const qs: Record<string, Question> = {
@@ -110,6 +110,18 @@ describe("errors (observed bodies, plan §1.4)", () => {
       new Promise((_r, reject) => init.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }))))) as unknown as typeof fetch;
     const e2 = await failure(createJevProvider({ key: () => KEY, fetch: hang, timeoutMs: 20 }).decide({ purpose: "probe", state: "x", questions: qs }));
     assert.equal(e2.failure, "timeout");
+  });
+
+  test("background purposes (tags, worker, merge-followup) get the longer deadline; the rest the short one", async () => {
+    const hang = ((_u: string, init: RequestInit) =>
+      new Promise((_r, reject) => init.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }))))) as unknown as typeof fetch;
+    const jev = createJevProvider({ key: () => KEY, fetch: hang, timeoutMs: 20, backgroundTimeoutMs: 60 });
+    for (const [purpose, ms] of [["attention", 20], ["probe", 20], ["tags", 60], ["worker", 60], ["merge-followup", 60]] as const) {
+      const e = await failure(jev.decide({ purpose: purpose as never, state: "x", questions: qs }));
+      assert.equal(e.message, `Jev did not answer within ${ms} ms`, purpose);
+    }
+    assert.equal(JEV_TIMEOUT_MS, 8_000);
+    assert.equal(JEV_BACKGROUND_TIMEOUT_MS, 15_000);
   });
 
   test("an oversized state and a missing key never call fetch", async () => {

@@ -463,8 +463,8 @@ export function DecisionSettingsSection() {
           <legend class="settings-delegate-legend">Features</legend>
           {switchRow(
             "decisions-attention",
-            "Flag sessions going in circles",
-            "After a long turn, checks whether it went in circles, and marks the row. The Overseer lists them too.",
+            "Flag sessions that need you",
+            "After a turn, checks whether the reply asks you something or a long turn went in circles, notices a team gone quiet and whether a merge left work open, and marks the row. The Overseer lists them too.",
             () => draft()!.features.attention,
             (on) => edit((c) => (c.features.attention = on)),
             unanswered,

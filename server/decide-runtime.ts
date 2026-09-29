@@ -1,3 +1,5 @@
+import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { DecisionKeyInfo, DecisionSettings, WorkerChoice } from "../shared/protocol";
 import { getModelRuntime } from "./chat-manager";
 import { DecisionError, estimateTokens, type DecisionProvider, type DecisionProviderId, type DecisionRequest, type DecisionResult } from "./decide";
@@ -8,6 +10,7 @@ import { readJevKey, last4 } from "./decide-secret";
 import { readDecisionSettings } from "./decide-settings";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import { serverRedactor } from "./overseer-redact";
+import { stateRoot } from "./state-root";
 
 // The one wiring of the decision seam: the chain built from Settings → Decisions and the stored
 // key, the key's status, and the gate every feature request passes (redaction + a size cap).
@@ -15,6 +18,42 @@ import { serverRedactor } from "./overseer-redact";
 
 /** Hard cap on a request's state after redaction (JSON characters ≈ 8k tokens). */
 export const MAX_STATE_CHARS = 32_000;
+/** The call ledger (`<stateRoot>/decisions-calls.jsonl`) moves to `.1` when a line would pass this. */
+export const CALLS_MAX_BYTES = 4 * 1024 * 1024;
+export const callsFile = () => join(stateRoot(), "decisions-calls.jsonl");
+
+/** One ledger line: what a call cost and how it went. Never the state, questions, answers or key. */
+export interface CallLine {
+  at: number;
+  purpose: string;
+  ok: boolean;
+  /** Who answered (ok) or who failed last (not ok); absent when no provider was reached. */
+  provider?: string;
+  model?: string;
+  /** The failure's name when not ok. */
+  failure?: string;
+  latencyMs: number;
+  usage?: { inputTokens: number; outputTokens: number; cacheRead?: number; cacheWrite?: number };
+  /** The provider the answer fell back from. */
+  fellBackFrom?: string;
+}
+
+/** Append one line, rotating at `max` bytes (one older file kept). Never throws. */
+export function appendCall(file: string, line: CallLine, max = CALLS_MAX_BYTES): void {
+  try {
+    const text = `${JSON.stringify(line)}\n`;
+    let size = 0;
+    try {
+      size = statSync(file).size;
+    } catch {
+      mkdirSync(dirname(file), { recursive: true });
+    }
+    if (size > 0 && size + text.length > max) renameSync(file, `${file}.1`);
+    appendFileSync(file, text);
+  } catch {
+    // The ledger is observability: a failed write never fails a decision.
+  }
+}
 
 type KeyState = { fingerprint: string; status: DecisionKeyInfo["status"]; checkedAt?: number; message?: string };
 
@@ -25,6 +64,8 @@ export interface DecisionRuntimeDeps {
   llm?: LlmProviderDeps;
   now?: () => number;
   log?: (line: string) => void;
+  /** The call ledger's file; null: none. Default `<stateRoot>/decisions-calls.jsonl`. */
+  callsFile?: string | null;
 }
 
 export interface DecisionRuntime {
@@ -103,17 +144,45 @@ export function createDecisionRuntime(deps: DecisionRuntimeDeps = {}): DecisionR
     },
   });
   const theChain = chain;
+  const ledger = deps.callsFile === undefined ? callsFile : () => deps.callsFile ?? null;
+  const record = (line: CallLine) => {
+    const file = ledger();
+    if (file) appendCall(file, line);
+  };
 
   const provider: DecisionProvider = {
     id: "chain",
     label: theChain.label,
-    decide(req: DecisionRequest): Promise<DecisionResult> {
+    async decide(req: DecisionRequest): Promise<DecisionResult> {
+      const started = now();
       // Redact before anything leaves the process, whichever provider answers.
       const state = serverRedactor().redactDeep(req.state);
       const size = typeof state === "string" ? state.length : JSON.stringify(state).length;
-      if (size > MAX_STATE_CHARS)
-        return Promise.reject(new DecisionError("too-large", `state is ${size} characters (cap ${MAX_STATE_CHARS}, ≈${estimateTokens(state)} tokens)`));
-      return theChain.decide({ ...req, state });
+      if (size > MAX_STATE_CHARS) {
+        record({ at: started, purpose: req.purpose, ok: false, failure: "too-large", latencyMs: 0 });
+        throw new DecisionError("too-large", `state is ${size} characters (cap ${MAX_STATE_CHARS}, ≈${estimateTokens(state)} tokens)`);
+      }
+      try {
+        const r = await theChain.decide({ ...req, state });
+        const u = r.usage;
+        record({
+          at: started,
+          purpose: req.purpose,
+          ok: true,
+          provider: r.provider,
+          model: r.model,
+          latencyMs: r.latencyMs,
+          ...(u
+            ? { usage: { inputTokens: u.inputTokens, outputTokens: u.outputTokens, ...(u.cacheRead ? { cacheRead: u.cacheRead } : {}), ...(u.cacheWrite ? { cacheWrite: u.cacheWrite } : {}) } }
+            : {}),
+          ...(r.fellBackFrom ? { fellBackFrom: r.fellBackFrom.provider } : {}),
+        });
+        return r;
+      } catch (err) {
+        const e = err instanceof DecisionError ? err : undefined;
+        record({ at: started, purpose: req.purpose, ok: false, ...(e?.provider ? { provider: e.provider } : {}), failure: e?.failure ?? "server", latencyMs: now() - started });
+        throw err;
+      }
     },
   };
 

@@ -79,7 +79,7 @@ export function boardState(
   if (activity === "error") return { state: "needs-you", reason: s.activity?.error ? `Stopped on an error: ${s.activity.error}` : "Stopped on an error." };
   if (s.turnError) return { state: "needs-you", reason: s.turnError.message ? `Last turn failed: ${s.turnError.message}` : "Last turn failed." };
   const mark = rowNeedsYou(s, { selected: null, busy: false });
-  if (mark) return { state: "needs-you", reason: mark.kind === "questions" ? signalTitle(mark) : mark.worker ? "A subagent may be stuck." : "May be looping." };
+  if (mark) return { state: "needs-you", reason: mark.kind !== "looping" ? signalTitle(mark) : mark.worker ? "A subagent may be stuck." : "May be looping." };
   const live = s.live !== null || s.activity !== undefined || agent !== null;
   return { state: s.archived && !live ? "archived" : "idle", reason: null };
 }

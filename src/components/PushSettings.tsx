@@ -21,7 +21,6 @@ const KIND: Record<PushKind, { label: string; hint: string }> = {
   "needs-input": { label: "Needs input", hint: "A dialog is open." },
   "open-questions": { label: "Open questions", hint: "An alignment has questions waiting on your answer." },
   error: { label: "Error", hint: "The last turn stopped with an error." },
-  looping: { label: "Subagent stuck", hint: "A subagent looks stuck." },
   "baton-needs-you": { label: "Baton", hint: "A baton session waits on you." },
   "worker-error": { label: "Subagent error", hint: "A subagent ended in an error." },
 };

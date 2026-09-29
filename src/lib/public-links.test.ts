@@ -83,3 +83,22 @@ test("the words: state chip, source, Mesh card chip", () => {
   assert.equal(meshChipText(info(gw)), "Public links: gateway");
   assert.equal(meshChipText(info({ version: 1, route: { via: { nodeId: "n9" } } }, { via: "vps" })), "Public links: through vps");
 });
+
+test("routed half: a via route needs a gateway and a valid ingress port; its patch names the node", () => {
+  const d = { ...publicLinksDraftOf(off), route: "via" as const };
+  assert.equal(draftIssue(d)?.field, "via");
+  assert.equal(draftIssue({ ...d, viaNodeId: "n9", ingressPort: "0" })?.field, "ingressPort");
+  assert.equal(draftIssue({ ...d, viaNodeId: "n9" }), null);
+  assert.deepEqual(publicLinksChanges({ ...d, viaNodeId: "n9" }, off), { route: { via: { nodeId: "n9" } } });
+  assert.deepEqual(publicLinksChanges({ ...d, viaNodeId: "n9", ingressPort: "4900" }, off), { route: { via: { nodeId: "n9" } }, ingressPort: 4900 });
+  const via: PublicLinksFile = { version: 1, route: { via: { nodeId: "n9" } } };
+  assert.deepEqual(publicLinksChanges({ ...publicLinksDraftOf(via), viaNodeId: "n8" }, via), { route: { via: { nodeId: "n8" } } });
+  assert.deepEqual(publicLinksChanges(publicLinksDraftOf(via), via), {});
+});
+
+test("the accept list: order doesn't count as a change; all ↔ a list does", () => {
+  const two: PublicLinksFile = { ...gw, gateway: { ...gw.gateway!, acceptFrom: ["a", "b"] } };
+  assert.deepEqual(publicLinksChanges({ ...publicLinksDraftOf(two), acceptFrom: ["b", "a"] }, two), {});
+  assert.deepEqual(publicLinksChanges({ ...publicLinksDraftOf(two), acceptFrom: "all" }, two), { gateway: { ...two.gateway!, acceptFrom: "all" } });
+  assert.deepEqual(publicLinksChanges({ ...publicLinksDraftOf(two), acceptFrom: ["a"] }, two), { gateway: { ...two.gateway!, acceptFrom: ["a"] } });
+});

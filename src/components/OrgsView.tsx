@@ -351,10 +351,11 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
       busy={org.pending()}
       titleRef={props.titleRef}
     >
+      {/* Outside the org's Show: a down host can't answer the org's own fetch. */}
+      <Show when={orgHostOffline(orgHostOf(props.id), meshPeers())}>{(w) => <Banner tone="warn" title={w()} />}</Show>
       <Show when={org.data()}>
         {(o) => (
           <>
-            <Show when={orgHostOffline(orgHostOf(props.id), meshPeers())}>{(w) => <Banner tone="warn" title={w()} />}</Show>
             <For each={o().problems}>{(p) => <Banner tone="warn" title="The workspace repo has a problem." body={p} />}</For>
             <Show when={links()}>{(l) => <LinksBanner links={l()} warning={linkWarning()} onDismiss={() => setLinks(null)} />}</Show>
             <OrgTabs org={o()} tab={tab()} />

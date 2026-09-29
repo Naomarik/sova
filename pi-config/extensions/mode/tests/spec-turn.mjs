@@ -470,6 +470,7 @@ try {
 	script.push({ tool: "bash", args: { command: "git reset -q --hard HEAD~1" } }, { text: "Reset.\nAlso changes: none" });
 	await session.prompt("drop the last commit");
 	assert.match(seen(requests[at + 1]), new RegExp(`\\[spec census\\] never rebase after evidence \\(PROMOTE\\.md\\): draft ev's evidence commit ${evidenced.slice(0, 12)} \\(§app/shell\\) is no longer on this branch\\. Restore the branch`));
+	assert.equal(seen(requests[at + 1]).split("is no longer on this branch").length, 2, "said once: the census does not repeat the guard's line");
 	git("reset", "-q", "--hard", evidenced);
 
 	// PI_SPEC_CHECK=0 turns the line check off.

@@ -166,6 +166,9 @@ writer**).
     commit was on the branch before the call and isn't after), with the way
     back (`git rebase --abort`, or `git reset --hard <old>`) and "merge master
     in instead". Both look at the trees the call works in (`cd`, `git -C`).
+    Evidence commits `census --changed` reports as orphaned (`orphanedEvidence`)
+    that the guard didn't already name are relayed once; a manifest conflict
+    during a rebase says to abort it rather than run merge-manifest.
     `PI_SPEC_CENSUS_HOOK=0` turns it off.
   - **The `Also changes:` line.** When a run is about to settle after it
     edited, committed, promoted or merged (a tool call, a `worktrees:merged`

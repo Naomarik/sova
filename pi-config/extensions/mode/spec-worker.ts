@@ -31,9 +31,10 @@ export default function specWorker(pi: ExtensionAPI): void {
 
 	pi.on("tool_result", async (event, ctx) => {
 		if (process.env.PI_SPEC_CENSUS_HOOK === "0") return;
-		const forbidden = await writes.after(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
+		const { text: forbidden, lost } = await writes.after(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
 		const { text: digest, failure } = await census.after({
 			cwd: ctx.cwd,
+			orphansSaid: lost,
 			toolName: event.toolName,
 			input: event.input,
 			signal: ctx.signal,

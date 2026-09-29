@@ -1064,9 +1064,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			}
 		}
 		if (process.env.PI_SPEC_CENSUS_HOOK === "0") return;
-		const forbidden = await specWrites.after(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
+		const { text: forbidden, lost } = await specWrites.after(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
 		const { text: census, failure } = await specCensus.after({
 			cwd: ctx.cwd,
+			orphansSaid: lost,
 			toolName: event.toolName,
 			input: event.input,
 			signal: ctx.signal,

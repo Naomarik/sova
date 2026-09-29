@@ -113,6 +113,20 @@ export function manifestConflictNote(top: string, manifest: string, core: string
 	return `${DIGEST_TAG} ${manifest} is in conflict: run \`node "${join(core, "sova-spec-draft.mjs")}" merge-manifest --root ${root} --write --json\` first, then stage it. If it refuses (manifest-conflict): take master's manifest and matching claims (git checkout master -- …), re-apply the branch's spec changes in a new draft, and promote. Never take a side before merge-manifest has run.`;
 }
 
+/** Whether a rebase is under way in the work tree at `top` (its rebase-merge or rebase-apply dir exists). */
+export async function rebaseUnderway(top: string, io: SpecIO = localIO, signal?: AbortSignal): Promise<boolean> {
+	for (const d of ["rebase-merge", "rebase-apply"]) {
+		const r = await io.exec("git", ["rev-parse", "--git-path", d], { cwd: top, timeout: TOOL_TIMEOUT_MS, signal });
+		const path = r.code === 0 ? r.stdout.trim() : "";
+		if (path && (await io.exists(path.startsWith("/") ? path : join(top, path)))) return true;
+	}
+	return false;
+}
+
+/** A manifest conflict inside a rebase: merge-manifest is for merges; the rebase itself is the mistake. */
+export const REBASE_CONFLICT_NOTE =
+	"A rebase is under way: abort it (`git rebase --abort`) and merge master in instead (never rebase after evidence, PROMOTE.md); run merge-manifest on that merge's conflict.";
+
 /** Paths out of `git status --porcelain -z`: a rename's entry carries its source as a second field. */
 export function parsePorcelain(z: string): string[] {
 	const parts = z.split("\0");
@@ -228,6 +242,8 @@ export interface CensusView {
 	/** Changed files outside the boundary (mapped or not); null without a boundary. */
 	outside?: string[] | null;
 	childUnderForeign: { id: string; parent: string }[];
+	/** Draft evidence commits HEAD lacks (a rebase or reset rewrote them). */
+	orphanedEvidence?: EvidenceCommit[];
 }
 
 const pathClaims = (value: unknown): { path: string; claims: string[] }[] =>
@@ -253,6 +269,9 @@ export function parseCensus(stdout: string): CensusView | undefined {
 		mappedOutside: pathClaims(c.mappedOutside),
 		outside: Array.isArray(c.outside) ? (c.outside as string[]) : null,
 		childUnderForeign: Array.isArray(c.childUnderForeign) ? (c.childUnderForeign as { id: string; parent: string }[]) : [],
+		orphanedEvidence: Array.isArray(c.orphanedEvidence)
+			? (c.orphanedEvidence as EvidenceCommit[]).filter((e) => e && typeof e.draft === "string" && typeof e.commit === "string").map((e) => ({ draft: e.draft, commit: e.commit, ids: Array.isArray(e.ids) ? e.ids : [] }))
+			: [],
 	};
 }
 
@@ -271,6 +290,8 @@ export interface CensusState {
 	failed: boolean;
 	/** The manifest conflict now in progress was already reported (absent in older state files). */
 	conflict?: boolean;
+	/** Orphaned evidence commits already said (by the census or the write guard). */
+	orphans?: string[];
 }
 
 export const freshCensusState = (): CensusState => ({ base: null, top: null, known: [], reported: false, foreign: [], failed: false });
@@ -285,6 +306,8 @@ export interface CensusCall {
 	commands?: readonly string[];
 	/** When the session started (ISO), for the newest-draft fallback. */
 	sessionStart?: string;
+	/** Evidence commits the write guard already said were rewritten, on this call. */
+	orphansSaid?: readonly string[];
 }
 
 export interface CensusResult {
@@ -361,12 +384,13 @@ export async function censusStep(state: CensusState, call: CensusCall, core: str
 	const manifest = manifestConflict(seen.view);
 	if (!manifest || !seen.view) return step.state.conflict ? { state: { ...step.state, conflict: false }, result: step.result } : step;
 	if (step.state.conflict) return step;
-	const note = manifestConflictNote(seen.view.top, manifest, core);
+	const rebasing = await rebaseUnderway(seen.view.top, io, call.signal).catch(() => false);
+	const note = rebasing ? `${DIGEST_TAG} ${manifest} is in conflict. ${REBASE_CONFLICT_NOTE}` : manifestConflictNote(seen.view.top, manifest, core);
 	return { state: { ...step.state, conflict: true }, result: { ...step.result, text: step.result.text ? `${note}\n${step.result.text}` : note } };
 }
 
 async function censusDelta(state: CensusState, call: CensusCall, core: string, io: SpecIO, seen: { view?: GitView }): Promise<{ state: CensusState; result: CensusResult }> {
-	const next: CensusState = { ...state, known: [...state.known], foreign: [...state.foreign] };
+	const next: CensusState = { ...state, known: [...state.known], foreign: [...state.foreign], orphans: [...new Set([...(state.orphans ?? []), ...(call.orphansSaid ?? [])])] };
 	try {
 		const view = await gitView(call.cwd, io, call.signal);
 		if (!view) return { state, result: {} };
@@ -411,11 +435,15 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 		}
 		if (!r.view) return { state: next, result: {} };
 		const freshRel = fresh.map((p) => underRoot(view.top, root, p)).filter((p): p is string => p !== undefined);
-		const text = digest(r.view, freshRel, next, Boolean(spec));
-		if (!text) return { state: next, result: {} };
-		next.reported = true;
-		next.foreign = [...new Set([...next.foreign, ...r.view.foreign])];
-		return { state: next, result: { text } };
+		const orphans = (r.view.orphanedEvidence ?? []).filter((e) => !next.orphans?.includes(e.commit));
+		const said = digest(r.view, freshRel, next, Boolean(spec));
+		if (said) {
+			next.reported = true;
+			next.foreign = [...new Set([...next.foreign, ...r.view.foreign])];
+		}
+		if (orphans.length) next.orphans = [...(next.orphans ?? []), ...orphans.map((e) => e.commit)];
+		const text = [orphans.length ? orphanNote(orphans) : undefined, said].filter(Boolean).join("\n");
+		return { state: next, result: text ? { text } : {} };
 	} catch (error) {
 		if (next.failed) return { state: next, result: {} };
 		next.failed = true;
@@ -961,11 +989,18 @@ export async function evidenceCommits(root: string, io: SpecIO = localIO): Promi
 	return out;
 }
 
+const lostText = (lost: readonly EvidenceCommit[]): string =>
+	`${DIGEST_TAG} never rebase after evidence (PROMOTE.md): ${lost.map((e) => `draft ${e.draft}'s evidence commit ${e.commit.slice(0, 12)}${e.ids.length ? ` (${capped(e.ids, ID_CAP)})` : ""}`).join("; ")} is no longer on this branch.`;
+
+/** The write guard's line, on the call that rewrote the commits: the exact way back. */
 export function rewriteNote(lost: readonly EvidenceCommit[], old: string, rebasing: boolean): string {
-	const what = lost.map((e) => `draft ${e.draft}'s evidence commit ${e.commit.slice(0, 12)}${e.ids.length ? ` (${capped(e.ids, ID_CAP)})` : ""}`).join("; ");
 	const fix = rebasing ? "Abort (`git rebase --abort`)" : `Restore the branch (\`git reset --hard ${old.slice(0, 12)}\`)`;
-	return `${DIGEST_TAG} never rebase after evidence (PROMOTE.md): ${what} is no longer on this branch. ${fix} and merge master in instead.`;
+	return `${lostText(lost)} ${fix} and merge master in instead.`;
 }
+
+/** The census's line for evidence HEAD lacks (census `orphanedEvidence`), when the write guard didn't say it. */
+export const orphanNote = (lost: readonly EvidenceCommit[]): string =>
+	`${lostText(lost)} A rebase under way: abort it (\`git rebase --abort\`); either way merge master in instead, and re-record evidence on the commit HEAD has.`;
 
 /** The current-spec files Git shows changed in a tree, with their mtimes. */
 async function specFiles(top: string, io: SpecIO, signal?: AbortSignal): Promise<Record<string, number>> {
@@ -1009,7 +1044,14 @@ export class SpecWriteGuard {
 		return look.then(() => undefined);
 	}
 
-	async after(id: string, call: CensusCall): Promise<string | undefined> {
+	/** The note for this call, if any, and the evidence commits it said were rewritten (for the census's dedupe). */
+	async after(id: string, call: CensusCall): Promise<{ text?: string; lost: string[] }> {
+		const lost: string[] = [];
+		const text = await this.check(id, call, lost);
+		return { text, lost };
+	}
+
+	private async check(id: string, call: CensusCall, said: string[]): Promise<string | undefined> {
 		try {
 			const tool = call.toolName.toLowerCase();
 			const input = call.input as { path?: unknown; file_path?: unknown; command?: unknown } | undefined;
@@ -1037,10 +1079,8 @@ export class SpecWriteGuard {
 				for (const e of tree.evidence)
 					if ((await git(["merge-base", "--is-ancestor", e.commit, tree.head])).code === 0 && (await git(["merge-base", "--is-ancestor", e.commit, now])).code !== 0) lost.push(e);
 				if (!lost.length) continue;
-				const dirs = await Promise.all(["rebase-merge", "rebase-apply"].map(async (d) => (await git(["rev-parse", "--git-path", d])).stdout.trim()));
-				let rebasing = false;
-				for (const d of dirs) if (d && (await this.io.exists(d.startsWith("/") ? d : join(tree.top, d)))) rebasing = true;
-				notes.push(rewriteNote(lost, tree.head, rebasing));
+				said.push(...lost.map((e) => e.commit));
+				notes.push(rewriteNote(lost, tree.head, await rebaseUnderway(tree.top, this.io, call.signal)));
 			}
 			return notes.length ? notes.join("\n") : undefined;
 		} catch {

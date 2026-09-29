@@ -519,11 +519,13 @@ test("SpecWriteGuard (M2-B-s2-1's shape): a rebase after evidence and a hand edi
 		};
 		const git = (at: string, ...args: string[]) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", at, ...args], { encoding: "utf8" });
 		const head = (at: string) => git(at, "rev-parse", "HEAD").stdout.trim();
-		const manifest = (evidence: string) => JSON.stringify({ formatVersion: 1, claims: { "§a/x": { kind: "behavior", evidence } } }, null, 1);
+		const manifest = (evidence: string) =>
+			JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims: { "§a/x": { kind: "behavior", evidence, code: ["src/a.ts"] } } }, null, 1);
 		mkdirSync(repo);
 		put(repo, ".sova/spec/manifest.json", manifest("unreviewed"));
 		put(repo, ".sova/spec/.gitignore", "drafts/\n");
 		put(repo, "src/a.ts", "1\n");
+		put(repo, ".sova/spec/claims/a/x.md", "# §a/x\n\nX.\n");
 		git(repo, "init", "-q", "-b", "master");
 		git(repo, "add", "-A");
 		git(repo, "commit", "-qm", "base");
@@ -542,7 +544,7 @@ test("SpecWriteGuard (M2-B-s2-1's shape): a rebase after evidence and a hand edi
 			const call = { cwd: dir, toolName: "bash", input: { command } };
 			await guard.before(id, call);
 			run();
-			return guard.after(id, call);
+			return (await guard.after(id, call)).text;
 		};
 		// The merge PROMOTE.md asks for: evidence stays on the branch, nothing to say.
 		const merged = await bash("m", `cd ${wt} && git merge master`, () => git(wt, "merge", "master"));
@@ -550,15 +552,30 @@ test("SpecWriteGuard (M2-B-s2-1's shape): a rebase after evidence and a hand edi
 		git(wt, "merge", "--abort");
 		// The rebase: it stops on the manifest, and the evidence commit is already off the branch.
 		const tip = head(wt);
-		const rebased = await bash("r", `cd ${wt} && git rebase master`, () => assert.notEqual(git(wt, "rebase", "master").status, 0));
+		const census = new CensusHook({ core: () => CORE });
+		const relay = new CensusHook({ core: () => CORE });
+		for (const h of [census, relay]) await h.prime(wt);
+		const call = { cwd: dir, toolName: "bash", input: { command: `cd ${wt} && git rebase master` } };
+		await guard.before("r", call);
+		assert.notEqual(git(wt, "rebase", "master").status, 0);
+		const guarded = await guard.after("r", call);
+		const rebased = guarded.text;
+		assert.deepEqual(guarded.lost, [code]);
+		// The census sees the same orphan (census --changed orphanedEvidence): said once, by the guard when it
+		// saw the call; relayed by the census when it didn't (a worker's rebase, a later look).
+		assert.doesNotMatch((await census.after({ cwd: wt, toolName: "bash", input: call.input, orphansSaid: guarded.lost })).text ?? "", /is no longer on this branch/);
+		// Mid-rebase the manifest is in conflict (the census can't read it): the conflict note says abort, not merge-manifest.
+		const midway = (await relay.after({ cwd: wt, toolName: "bash", input: call.input })).text ?? "";
+		assert.match(midway, /\.sova\/spec\/manifest\.json is in conflict\. A rebase is under way: abort it \(`git rebase --abort`\) and merge master in instead/);
+		assert.doesNotMatch(midway, /merge-manifest --root/);
 		assert.equal(
 			rebased,
 			`${DIGEST_TAG} never rebase after evidence (PROMOTE.md): draft d's evidence commit ${code.slice(0, 12)} (§a/x) is no longer on this branch. Abort (\`git rebase --abort\`) and merge master in instead.`,
 		);
 		// Resolving the conflict by hand is a direct write; so is a shell write; a draft's own files are not.
-		const edit = await guard.after("e", { cwd: dir, toolName: "edit", input: { path: join(wt, ".sova/spec/manifest.json") } });
+		const edit = (await guard.after("e", { cwd: dir, toolName: "edit", input: { path: join(wt, ".sova/spec/manifest.json") } })).text;
 		assert.equal(edit, `${DIGEST_TAG} you wrote the current spec directly (${join(wt, ".sova/spec/manifest.json")}): undo it; change claims in a draft and promote (manifest conflicts: merge-manifest).`);
-		assert.equal(await guard.after("e2", { cwd: wt, toolName: "write", input: { path: ".sova/spec/drafts/d/spec/manifest.json" } }), undefined);
+		assert.equal((await guard.after("e2", { cwd: wt, toolName: "write", input: { path: ".sova/spec/drafts/d/spec/manifest.json" } })).text, undefined);
 		const shell = await bash("s", `cd ${wt} && printf x >> .sova/spec/claims/a.md`, () => put(wt, ".sova/spec/claims/a.md", "x"));
 		assert.match(shell ?? "", /you wrote the current spec directly \(\.sova\/spec\/claims\/a\.md\)/);
 		assert.equal(await bash("p", `cd ${wt} && node "$core/sova-spec-draft.mjs" promote d --write`, () => put(wt, ".sova/spec/claims/a.md", "y")), undefined, "the draft tools write the current spec");
@@ -566,7 +583,14 @@ test("SpecWriteGuard (M2-B-s2-1's shape): a rebase after evidence and a hand edi
 		git(wt, "rebase", "--abort");
 		assert.equal(head(wt), tip);
 		// A reset (no rebase under way) past the evidence: restore the branch.
+		const later = new CensusHook({ core: () => CORE });
+		await later.prime(wt);
 		const reset = await bash("h", `git -C ${wt} reset -q --hard HEAD~2`, () => git(wt, "reset", "-q", "--hard", "HEAD~2"));
+		// A census that didn't see the guard's line relays census --changed orphanedEvidence, once.
+		const relayed = (await later.after({ cwd: wt, toolName: "bash", input: {} })).text ?? "";
+		assert.match(relayed, new RegExp(`never rebase after evidence \\(PROMOTE\\.md\\): draft d's evidence commit ${code.slice(0, 12)} \\(§a/x\\) is no longer on this branch\\. A rebase under way: abort it \\(\`git rebase --abort\`\\); either way merge master in instead, and re-record evidence on the commit HEAD has\\.`));
+		put(wt, "src/c.ts", "c\n");
+		assert.doesNotMatch((await later.after({ cwd: wt, toolName: "bash", input: {} })).text ?? "", /is no longer on this branch/, "said once");
 		assert.match(reset ?? "", new RegExp(`evidence commit ${code.slice(0, 12)} \\(§a/x\\) is no longer on this branch\\. Restore the branch \\(\`git reset --hard ${tip.slice(0, 12)}\`\\) and merge master in instead\\.`));
 		// A commit on top keeps the evidence: silent.
 		git(wt, "reset", "-q", "--hard", tip);

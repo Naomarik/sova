@@ -216,6 +216,42 @@ test("promote: alsoChanges names the foreign § the promotion changes, never the
   assert.deepEqual(w.alsoChanges, ["§app.list/mark", "§app/list"]);
 });
 
+// ---------------------------------------------------------------- B3: the branch merged master in, then lands
+test("B3: after the branch merges master in, promote alsoChanges and the merge's foreign are only the branch's §", () => {
+  const root = repo();
+  ok(root, "checkout", "-qb", "feat");
+  write(root, ".sova/spec/claims/app/list.md", LIST.replace("Rows sort by recency.", "Rows sort by recency, newest first."));
+  ok(root, "commit", "-qam", "feat: rows");
+  assert.equal(draft(root, "new", "late", "--write").exit, 0);
+  const now = read(root, ".sova/spec/claims/app/list.md");
+  write(root, ".sova/spec/drafts/late/spec/claims/app/list.md", now.replace("a speech bubble followed by the count", "the count alone"));
+  // Meanwhile master (another task) changes other §.
+  ok(root, "checkout", "-q", "master");
+  write(root, ".sova/spec/claims/design/copy.md", "# §design/copy\n\nOpen questions: the count.\n");
+  editManifest(root, ".sova/spec/manifest.json", (c) => { c["§chat/bridge"].evidence = "verified"; });
+  ok(root, "commit", "-qam", "master: copy and bridge");
+  const before = ok(root, "rev-parse", "master");
+  ok(root, "checkout", "-q", "feat");
+  ok(root, "merge", "-q", "--no-edit", "master");
+  write(root, "src/list.ts", "v2\n");
+  ok(root, "commit", "-qam", "feat: count alone");
+  const ev = draft(root, "evidence", "late", "--id", "§app.list/mark", "--by", "t", "--verification", "ran it", "--commit", "HEAD", "--write");
+  assert.equal(ev.exit, 0, JSON.stringify(ev.findings));
+  const p = draft(root, "promote", "late", "--id", "§app.list/mark");
+  assert.equal(p.exit, 0, JSON.stringify([p.findings, p.refusals]));
+  assert.deepEqual(p.alsoChanges, ["§app.list/mark"], "master's §design/copy and §chat/bridge are not this promotion's");
+  assert.equal(draft(root, "promote", "late", "--id", "§app.list/mark", "--plan", p.plan, "--write").exit, 0);
+  ok(root, "commit", "-qam", "spec: count alone");
+  ok(root, "checkout", "-q", "master");
+  ok(root, "merge", "-q", "--no-edit", "feat");
+  // The target before the merge vs after it: only what the branch changed.
+  const j = core(root, "foreign", "--base", before, "--head", "master");
+  assert.deepEqual(j.foreign, ["§app.list/mark", "§app.list/rows"]);
+  // The branch's own start is the wrong base: it would add master's § the branch absorbed.
+  const wrong = core(root, "foreign", "--base", ok(root, "merge-base", "feat", `${before}~1`), "--head", "master");
+  assert.ok(wrong.foreign.includes("§design/copy"), "why callers must pass the target's tip before the merge");
+});
+
 // ---------------------------------------------------------------- merge-manifest
 function conflicted() {
   const root = repo();

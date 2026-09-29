@@ -13,7 +13,8 @@
  * - PostToolUse (`post`, any tool, Bash included): the census step (censusStep, the same one the pi
  *   session runs) on a git-status delta, its `[spec census]` digest returned as additionalContext;
  *   notes whether the turn wrote, and the foreign § a `promote --write` lists (`alsoChanges`) or a
- *   `git merge` brought in (`sova-spec.mjs foreign` over the merge).
+ *   `git merge` into the default branch landed (`sova-spec.mjs foreign`, that branch before vs after; a merge of
+ *   master into a feature branch lands nothing).
  * - Stop (`stop`): the reply's last line against the turn. After a promote or a merge the computed
  *   foreign list is the authority: every § in it must be named, and the reply is sent back (block)
  *   until it is or it carries the override line, at most MERGE_BLOCKS times. Elsewhere a miss is a
@@ -194,13 +195,16 @@ export async function onPost(input: HookInput, ctx: HookContext): Promise<HookOu
 	if (command && view) {
 		const root = await findSpecRoot(cwd, (p) => ctx.io.exists(p));
 		if (root && promoteWrites(command)) {
-			// The promote's own list; without --json output, what the spec changed since the turn began.
+			// The promote's own list; without --json output, what the spec changed since just before it (never since the
+			// turn began: a `git merge master` earlier in the turn brought master's § in, and they are not this promote's).
 			const listed = alsoChangesOf((input.tool_response as { stdout?: unknown } | undefined)?.stdout);
-			const computed = listed ?? (turn.head ? await foreignBetween(root, turn.head, undefined, ctx.core, ctx.io) : undefined);
+			const base = before?.head ?? turn.head;
+			const computed = listed ?? (base ? await foreignBetween(root, base, undefined, ctx.core, ctx.io) : undefined);
 			turn.landed = turn.wrote = true;
 			turn.foreign = union(turn.foreign, computed ?? []);
 		}
-		if (root && gitMerges(command) && before?.head && view.head && view.head !== before.head) {
+		// A merge lands only on the default branch; merging master INTO a feature branch brings master's own § in.
+		if (root && gitMerges(command) && before?.head && view.head && view.head !== before.head && (await landsOnTarget(view.top, ctx.io))) {
 			turn.landed = turn.wrote = true;
 			turn.foreign = union(turn.foreign, (await foreignBetween(root, before.head, view.head, ctx.core, ctx.io)) ?? []);
 		}
@@ -210,6 +214,15 @@ export async function onPost(input: HookInput, ctx: HookContext): Promise<HookOu
 	if (step.result.failure) return { systemMessage: step.result.failure };
 	if (!step.result.text) return undefined;
 	return { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: step.result.text } };
+}
+
+/** The checkout at `top` is on the default target branch: `master` where the repository has it, else `main`. */
+export async function landsOnTarget(top: string, io: SpecIO): Promise<boolean> {
+	const opts = { cwd: top, timeout: 10_000 };
+	const branch = await io.exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], opts).catch(() => undefined);
+	if (!branch || branch.code !== 0) return false;
+	const hasMaster = (await io.exec("git", ["rev-parse", "--verify", "--quiet", "refs/heads/master"], opts).catch(() => undefined))?.code === 0;
+	return branch.stdout.trim() === (hasMaster ? "master" : "main");
 }
 
 /** The foreign § the drafts this turn edited change (a draft edit is a write git can't see). */

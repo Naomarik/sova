@@ -138,6 +138,58 @@ test("a git merge that lands claim text: the foreign list comes from `sova-spec.
 	assert.equal(await runHook("stop", event(root, { last_assistant_message: "Merged.\nAlso changes: §app/x — reworded", stop_hook_active: true }), o), undefined);
 });
 
+/** B3's shape: base has §app/x and §app/w; feat rewords §app/x; main (master) rewords §app/w meanwhile. */
+function b3(): { root: string; stateDir: string; c: string[] } {
+	const p = project();
+	const c = ["-c", "user.email=t@t", "-c", "user.name=t"];
+	const m = JSON.parse(fs.readFileSync(path.join(p.root, ".sova/spec/manifest.json"), "utf8"));
+	m.claims["§app/w"] = { kind: "note" };
+	write(p.root, ".sova/spec/manifest.json", JSON.stringify(m));
+	write(p.root, ".sova/spec/claims/app/w.md", "# §app/w\n\nW is a note.\n");
+	git(p.root, ...c, "add", ".");
+	git(p.root, ...c, "commit", "-qm", "w");
+	git(p.root, "checkout", "-qb", "feat");
+	write(p.root, ".sova/spec/claims/app/x.md", "# §app/x\n\nX does a better thing.\n");
+	git(p.root, ...c, "commit", "-qam", "feat: reword x");
+	git(p.root, "checkout", "-q", "main");
+	write(p.root, ".sova/spec/claims/app/w.md", "# §app/w\n\nW is another note.\n");
+	git(p.root, ...c, "commit", "-qam", "main: reword w");
+	git(p.root, "checkout", "-q", "feat");
+	return { ...p, c };
+}
+
+test("B3: merging master into the branch lands nothing; the merge into master lands only the branch's §", async () => {
+	const { root, stateDir, c } = b3();
+	const o = { core: CORE, stateDir };
+	await runHook("turn", event(root, {}), o);
+	git(root, ...c, "merge", "-q", "--no-edit", "main");
+	await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "git merge --no-edit main" } }), o);
+	let turn = readState(statePath(stateDir, "s1")!).turn;
+	assert.deepEqual([turn.landed, turn.foreign], [false, []], "master's §app/w is not this branch's");
+	git(root, "checkout", "-q", "main");
+	await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "git checkout main" } }), o);
+	git(root, ...c, "merge", "-q", "--no-edit", "feat");
+	await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "git merge --no-edit feat" } }), o);
+	turn = readState(statePath(stateDir, "s1")!).turn;
+	assert.deepEqual([turn.landed, turn.foreign], [true, ["§app/x"]]);
+	assert.equal(await runHook("stop", event(root, { last_assistant_message: "Merged.\nAlso changes: §app/x — reworded" }), o), undefined);
+});
+
+test("B3: a promote without --json after merging master in counts only what it wrote, not master's §", async () => {
+	const { root, stateDir, c } = b3();
+	const o = { core: CORE, stateDir };
+	git(root, "checkout", "-q", "main");
+	git(root, "branch", "-qf", "feat", "main~1");
+	git(root, "checkout", "-q", "feat");
+	await runHook("turn", event(root, {}), o);
+	git(root, ...c, "merge", "-q", "--no-edit", "main");
+	await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "git merge --no-edit main" } }), o);
+	write(root, ".sova/spec/claims/app/x.md", "# §app/x\n\nX does a promoted thing.\n");
+	await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: `node "$core/sova-spec-draft.mjs" promote feat --plan abc --write --root ${root}` } }), o);
+	const turn = readState(statePath(stateDir, "s1")!).turn;
+	assert.deepEqual([turn.landed, turn.foreign], [true, ["§app/x"]]);
+});
+
 test("stop on a normal turn: a line naming a § the census never saw touched is sent back once", async () => {
 	const { root, stateDir } = project();
 	const o = { core: CORE, stateDir };

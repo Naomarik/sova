@@ -95,6 +95,24 @@ test("a clean spec'd merge reports its foreign § and no warnings; code-only bra
 	}
 });
 
+test("B3: master changed other § and the branch merged master in; the note names only the branch's §", async () => {
+	const r = repo();
+	try {
+		const m = JSON.parse(readFileSync(join(r.main, ".sova/spec/manifest.json"), "utf8"));
+		m.claims["§app/list"].evidence = "verified";
+		put(r.main, ".sova/spec/manifest.json", `${JSON.stringify(m, null, 2)}\n`);
+		sh(r.main, "commit", "-qam", "master: another task's spec");
+		put(r.tree, ".sova/spec/claims/app/list.md", LIST.replace("A speech bubble and", "Only"));
+		put(r.tree, "src/list.ts", "v2\n");
+		sh(r.tree, "commit", "-qam", "feat: code and spec");
+		sh(r.tree, "merge", "-q", "--no-edit", "master");
+		const rep = await merge(r);
+		assert.deepEqual(rep, { foreign: ["§app.list/mark"], warnings: [] });
+	} finally {
+		r.done();
+	}
+});
+
 test("a project without a spec, or without the spec tools, gets no report", async () => {
 	const r = repo(false);
 	try {

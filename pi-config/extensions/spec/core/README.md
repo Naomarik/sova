@@ -165,6 +165,9 @@ to the project root. New fields are only ever added. Other tools read this outpu
   children?}]` (`change` joins `text`, `record`, `child-added` with `+`, or is `deleted`),
   `created: [id]`. A bad revision is `bad-rev` and no Git is `not-git`, both exit 2; `--spec` with
   `--head` is a usage error. Human output ends `Foreign § changed: §a, §b` (or `none`).
+  For a merge, `--base` is the TARGET's tip before the merge and `--head` its tip after, never the
+  branch's start: a branch that merged the target in carries the target's own § (another task's),
+  and they are not what the merge lands.
 - **§a.b ids.** `scope` and `impact` read `§a.b` (not a § identifier) as `§a/b`, with an `id-alias`
   note; an unknown result is `unknown-id` as usual.
 

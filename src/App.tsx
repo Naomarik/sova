@@ -1,7 +1,7 @@
 import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { SessionSummary, WorkerInfo } from "../shared/protocol";
+import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../shared/protocol";
 import { reuseUnchanged } from "./lib/summary-diff";
 import { setAgentsFeedSource } from "./lib/agents-feed";
 import { setExplanationsFeedSource } from "./lib/explanations-feed";
@@ -764,6 +764,15 @@ export function App() {
       setChatWorkers(path, "list", reconcile(workers, { key: "id" }));
       setChatWorkers(path, "usage", usage);
     });
+  /** Each open chat's RECORDED Claude login id, by path; an unrecorded one is left out, so the
+      usage readouts fall back to the login in use for new chats (§app.insights/sidebar-foot). */
+  const [chatLogins, setChatLogins] = createStore<Record<string, string | undefined>>({});
+  const noteClaudeLogin = (path: string, login: ChatClaudeLogin | null) => setChatLogins(path, login?.recorded ? login.id : undefined);
+  /** The Claude login the usage readouts follow: the focused chat's, when it recorded one. */
+  const usageLogin = () => {
+    const p = focusedPath();
+    return p ? (chatLogins[p] ?? null) : null;
+  };
   createEffect(on(() => location.hash.replace(/\/[^/]*$/, ""), () => setSubagents(null), { defer: true }));
   /** Each mounted session view's insight store, published for the pane (a sibling of <main>). */
   const [paneInsights, setPaneInsights] = createSignal<Record<string, PaneInsight>>({});
@@ -870,6 +879,7 @@ export function App() {
     onArchiveChanged: onArchived,
     onInsight: noteInsight,
     onWorkers: noteWorkers,
+    onClaudeLogin: noteClaudeLogin,
     onRewindControl: setRewindControl,
     onRewound: noteRewound,
     onCreated: adoptCreated,
@@ -956,6 +966,7 @@ export function App() {
           selected={route()}
           now={now()}
           usage={usage.data()}
+          claudeLogin={usageLogin()}
           agents={agents.data()}
           insightsPage={footPage()}
           onRefresh={refresh}
@@ -989,7 +1000,7 @@ export function App() {
                   )}
                 </Match>
                 <Match when={insightsRoute()?.page === "usage"}>
-                  <UsageView usage={usage} now={now()} titleRef={(el) => (insightsTitleEl = el)} />
+                  <UsageView usage={usage} now={now()} claudeLogin={usageLogin()} titleRef={(el) => (insightsTitleEl = el)} />
                 </Match>
                 <Match when={insightsRoute()?.page === "agents"}>
                   <AgentsView
@@ -1072,6 +1083,7 @@ export function App() {
                       onArchiveChanged={wiring.onArchiveChanged}
                       onInsight={wiring.onInsight}
                       onWorkers={wiring.onWorkers}
+                      onClaudeLogin={wiring.onClaudeLogin}
                       onRewindControl={wiring.onRewindControl}
                       onRewound={wiring.onRewound}
                       paneOn={wiring.paneOn}

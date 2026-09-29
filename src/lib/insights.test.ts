@@ -12,6 +12,7 @@ import {
   claudeLoginStanding,
   claudeLoginSubtitle,
   claudeLoginTitle,
+  claudeReading,
   extraUsageMeter,
   meterReset,
   money,
@@ -371,4 +372,54 @@ test("logins of one account sit together, in the order the first of them has", (
     login({ id: "l-0000000a", accountUuid: "acct-1" }),
   ];
   assert.deepEqual(ids(claudeLoginGroups(logins)), [["l-0000000b"], ["default", "l-0000000a"], ["l-0000000c"]]);
+});
+
+// §app.insights/sidebar-foot: which Claude login the foot and the summary lead read.
+const LIMITED = provider({ id: "claude", windows: [{ label: "5h", pct: 100 }, { label: "7d", pct: 40 }] });
+const SPARE_READING = provider({ id: "claude", windows: [{ label: "5h", pct: 30 }, { label: "7d", pct: 61, active: true }] });
+const twoLogins = (): UsageInsight => ({
+  ...usage([LIMITED, provider({ id: "openai", windows: [{ label: "7d", pct: 14 }] })]),
+  claudeLogins: [
+    login({ id: "default", email: "own@example.com", usage: LIMITED }),
+    login({ id: "l-0000000a", email: "spare@example.com", inUse: true, usage: SPARE_READING }),
+  ],
+});
+
+test("claudeReading: the chat's recorded login, else the one in use for new chats, else providers' claude", () => {
+  const u = twoLogins();
+  assert.equal(claudeReading(u, "default")!.usage, LIMITED, "a chat recorded on the default login");
+  assert.equal(claudeReading(u, "l-0000000a")!.usage, SPARE_READING);
+  assert.equal(claudeReading(u)!.usage, SPARE_READING, "no chat: the login in use for new chats");
+  assert.equal(claudeReading(u, null)!.usage, SPARE_READING);
+  assert.equal(claudeReading(u, "l-0000dead")!.usage, SPARE_READING, "a login no longer listed here");
+  // No login in use (none ready), or an older server without claudeLogins: Claude Code's own.
+  const none: UsageInsight = { ...u, claudeLogins: u.claudeLogins!.map((l) => ({ ...l, inUse: false })) };
+  assert.equal(claudeReading(none)!.usage, LIMITED);
+  const older: UsageInsight = { ...u, claudeLogins: undefined };
+  assert.deepEqual(claudeReading(older, "l-0000000a"), { usage: LIMITED, name: "Claude" });
+  assert.equal(claudeReading(usage([provider({ id: "openai" })])), null);
+});
+
+test("usageGlance: C reads the chosen login, and only several logins name it in the full text", () => {
+  const u = twoLogins();
+  const c = usageGlance(u)[0]!;
+  assert.deepEqual({ abbr: c.abbr, pct: c.pct, high: c.high, full: c.full }, { abbr: "C", pct: 61, high: false, full: "Claude (spare@example.com) 7-day 61%" });
+  const onDefault = usageGlance(u, "default")[0]!;
+  assert.deepEqual({ pct: onDefault.pct, high: onDefault.high, full: onDefault.full }, { pct: 40, high: false, full: "Claude (own@example.com) 7-day 40%" });
+  // The other providers are untouched.
+  assert.equal(usageGlance(u)[1]!.full, "OpenAI 7-day 14%");
+  // One login: unchanged, no name.
+  const one: UsageInsight = { ...u, claudeLogins: [login({ id: "default", email: "own@example.com", inUse: true, usage: LIMITED })] };
+  assert.equal(usageGlance(one)[0]!.full, "Claude 7-day 40%");
+});
+
+test("usageSummary: Claude's sentence speaks for the login in use, not a limited default no chat is on", () => {
+  const u = twoLogins();
+  assert.equal(usageSummary(u, NOW), "All providers under limits.");
+  assert.equal(usageSummary(u, NOW, "default"), "Claude (own@example.com)'s 5-hour window is rate-limited.");
+  const nearly: UsageInsight = { ...u, claudeLogins: u.claudeLogins!.map((l) => (l.inUse ? { ...l, usage: provider({ id: "claude", windows: [{ label: "7d", pct: 90 }] }) } : l)) };
+  assert.equal(usageSummary(nearly, NOW), "Claude (spare@example.com)'s 7-day window is at 90%.");
+  // One login: the sentence keeps its plain name.
+  const one: UsageInsight = { ...u, claudeLogins: [login({ id: "default", inUse: true, usage: LIMITED })] };
+  assert.equal(usageSummary(one, NOW), "Claude's 5-hour window is rate-limited.");
 });

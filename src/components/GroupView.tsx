@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
-import type { GroupSeed, SessionGroup, SessionSummary, WorkerInfo } from "../../shared/protocol";
+import type { ChatClaudeLogin, GroupSeed, SessionGroup, SessionSummary, WorkerInfo } from "../../shared/protocol";
 import { GROUP_LABEL_MAX } from "../../shared/protocol";
 import { setSessionArchived, unassignSessionById } from "../lib/api";
 import { groupHref } from "../lib/group-route";
@@ -105,6 +105,7 @@ export interface PaneWiring {
   onArchiveChanged(path: string, archived: boolean): void;
   onInsight(path: string, insight: PaneInsight | null): void;
   onWorkers(path: string, workers: WorkerInfo[] | null, usage: UsageTotalView | null): void;
+  onClaudeLogin(path: string, login: ChatClaudeLogin | null): void;
   onRewindControl(path: string, control: RewindControl | null): void;
   onRewound(info: { path: string; entryId: string }): void;
   /** A session a pane just created (a Fork): the app adopts and opens it. */
@@ -1196,6 +1197,7 @@ export function GroupView(props: {
                     onArchiveChanged={props.wiring.onArchiveChanged}
                     onInsight={props.wiring.onInsight}
                     onWorkers={props.wiring.onWorkers}
+                    onClaudeLogin={props.wiring.onClaudeLogin}
                     onRewindControl={props.wiring.onRewindControl}
                     onRewound={props.wiring.onRewound}
                     paneOn={props.wiring.paneOn}

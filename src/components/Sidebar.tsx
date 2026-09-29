@@ -1043,6 +1043,9 @@ export function Sidebar(props: {
   onArchiveChanged(path: string, archived: boolean): void;
   onNew(): void;
   usage: UsageInsight | undefined;
+  /** The open chat's recorded Claude login, whose reading the glance's C shows; absent: the login
+      in use for new chats. */
+  claudeLogin?: string | null;
   agents: AgentsInsight | undefined;
   /** The insights page that's open (`#/usage` or `#/agents`), for aria-current on its foot row. */
   insightsPage: "usage" | "agents" | null;
@@ -1531,7 +1534,7 @@ export function Sidebar(props: {
     writeKey(sessionStorage, archiveDateKey(d.id), open ? "1" : "0");
   };
   const liveCount = () => all().filter((s) => s.live).length;
-  const glance = createMemo(() => usageGlance(props.usage));
+  const glance = createMemo(() => usageGlance(props.usage, props.claudeLogin));
   /** The foot's usage glance in full words, for its tooltip and accessible name. */
   const glanceText = () => (glance().length ? `Usage: ${glance().map((p) => p.full).join(", ")}` : "");
 

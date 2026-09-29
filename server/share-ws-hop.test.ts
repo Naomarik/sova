@@ -55,6 +55,8 @@ async function upstream(mode: { current: Mode }, delayMs = 300) {
   const live = new Set<Socket>();
   let upgrades = 0;
   const received: string[] = [];
+  /** The host's side of each accepted hop, newest last: a test closes it as the origin would. */
+  const hosts: WebSocket[] = [];
   const server = createServer((_q, r) => r.writeHead(404).end());
   server.on("upgrade", (req, socket: Socket, head) => {
     upgrades++;
@@ -69,6 +71,7 @@ async function upstream(mode: { current: Mode }, delayMs = 300) {
     }
     const go = () =>
       wss.handleUpgrade(req, socket, head, (ws) => {
+        hosts.push(ws);
         ws.on("message", (d) => received.push(String(d)));
         // After the page is accepted at the gateway, so the cap ends a live hop.
         if (typeof m === "object") setTimeout(() => ws.send("x".repeat(m.big)), 100);
@@ -82,6 +85,7 @@ async function upstream(mode: { current: Mode }, delayMs = 300) {
     port: b.port,
     live,
     received,
+    hosts,
     get upgrades() {
       return upgrades;
     },
@@ -312,6 +316,58 @@ test("B1: closeWhere closes both ends, hops still dialing included", async () =>
     gw.hop.closeWhere((k) => k === KEY);
     assert.equal(await openClosed, 4503);
     assert.equal(await dialing, 503);
+    await recovers(gw, up, mode);
+  } finally {
+    gw.close();
+    up.close();
+  }
+});
+
+test("drainWhere: the host's own close within the grace passes through (4410); the page's messages stop going up", async () => {
+  const mode = { current: "accept" as Mode };
+  const up = await upstream(mode);
+  const gw = await gateway(up.port);
+  try {
+    const page = await openPage(gw.port);
+    const got: string[] = [];
+    page.on("message", (d) => got.push(String(d)));
+    const pageClosed = closed(page);
+    page.send("before");
+    await until(() => up.received.includes("before"));
+    gw.hop.drainWhere((k) => k === KEY, 2000);
+    page.send("while draining");
+    await sleep(100);
+    assert.equal(page.readyState, WebSocket.OPEN, "not cut at once");
+    up.hosts.at(-1)!.send('{"type":"error","code":"gone"}');
+    up.hosts.at(-1)!.close(4410, "gone");
+    assert.equal(await pageClosed, 4410);
+    assert.deepEqual(got, ['{"type":"error","code":"gone"}'], "the host's last word reached the page");
+    assert.ok(!up.received.includes("while draining"), "nothing from the page went up once draining");
+    await recovers(gw, up, mode);
+  } finally {
+    gw.close();
+    up.close();
+  }
+});
+
+test("drainWhere: no close from the host within the grace is 4503; a second drain doesn't extend it; a dialing hop ends at once", async () => {
+  const mode = { current: "accept" as Mode };
+  const up = await upstream(mode, 400);
+  const gw = await gateway(up.port);
+  try {
+    const page = await openPage(gw.port);
+    const pageClosed = closed(page);
+    mode.current = "delay";
+    const dialing = wsStatus(gw.port);
+    await until(() => up.upgrades === 2 && gw.hop.count(KEY) === 2);
+    const t = Date.now();
+    gw.hop.drainWhere((k) => k === KEY, 300);
+    assert.equal(await dialing, 503);
+    await sleep(200);
+    gw.hop.drainWhere((k) => k === KEY, 5000);
+    assert.equal(await pageClosed, 4503);
+    const took = Date.now() - t;
+    assert.ok(took >= 280 && took < 1500, `closed after the first grace: ${took} ms`);
     await recovers(gw, up, mode);
   } finally {
     gw.close();

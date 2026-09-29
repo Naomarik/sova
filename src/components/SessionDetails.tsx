@@ -126,8 +126,9 @@ export function SessionDetails(props: {
 
       {/* 4 · Worktrees. The ones this session tracks (the worktrees extension's entry on the
           branch), read with the insight; the pane only shows them, the agent's tool changes them.
-          Present from the first paint: a placeholder while the insight loads, then the rows or the
-          empty line. Only a failed first load (the banner above says so) leaves it out. */}
+          Present from the first paint: a placeholder while the insight loads, as tall as the empty
+          line (most sessions track none), then the rows or that line. Only a failed first load (the
+          banner above says so) leaves it out. */}
       <Show
         when={insight()}
         fallback={
@@ -136,7 +137,9 @@ export function SessionDetails(props: {
               <h3 class="text-eyebrow" id={id("worktrees")}>
                 Worktrees
               </h3>
-              <span class="skeleton skeleton-line" aria-hidden="true" />
+              <p class="usage-note text-skeleton" aria-hidden="true">
+                <Bone width="45%" />
+              </p>
             </section>
           </Show>
         }
@@ -384,17 +387,42 @@ function RepositorySection(props: { path: string; cwd?: string; now: number; cha
           {(message) => <p class="usage-note">Couldn't read this session's repository. Nothing was changed. {message()}</p>}
         </Match>
         <Match when={!git()}>
-          {/* About a read repository's height (its root, four facts, the commit's subject, the
-              changed-path fold, the "Read" line), so what sits below doesn't jump when git answers. */}
+          {/* A clean repository's layout, built from the same elements: its root, three facts, the
+              last commit with a two-line subject, and the "Read" line. So what sits below doesn't
+              jump when git answers; only uncommitted changes (the fold and Review Changes) add height. */}
           <div class="git-skeleton" aria-hidden="true">
-            <span class="skeleton skeleton-line" />
-            <span class="skeleton skeleton-line" />
-            <span class="skeleton skeleton-line" />
-            <span class="skeleton skeleton-line" />
-            <span class="skeleton skeleton-line" />
-            <span class="skeleton skeleton-line" />
-            <span class="skeleton skeleton-line" />
-            <span class="skeleton skeleton-line" />
+            <p class="text-mono text-skeleton" aria-hidden="true">
+              <Bone width="60%" />
+            </p>
+            <dl class="stack-2" style={{ margin: 0 }} aria-hidden="true">
+              <For each={["30%", "45%", "25%"]}>
+                {(width) => (
+                  <div class="spread">
+                    <dt class="text-caption text-skeleton">
+                      <Bone width={width} />
+                    </dt>
+                  </div>
+                )}
+              </For>
+              <div class="git-commit">
+                <div class="spread">
+                  <dt class="text-caption text-skeleton">
+                    <Bone width="35%" />
+                  </dt>
+                </div>
+                <dd class="git-commit-subject text-caption">
+                  <span class="text-skeleton">
+                    <Bone width="100%" />
+                  </span>
+                  <span class="text-skeleton">
+                    <Bone width="55%" />
+                  </span>
+                </dd>
+              </div>
+            </dl>
+            <p class="usage-note text-skeleton" aria-hidden="true">
+              <Bone width="25%" />
+            </p>
           </div>
         </Match>
         <Match when={git()?.state === "none" && git()}>
@@ -440,6 +468,16 @@ function RepositorySection(props: { path: string; cwd?: string; now: number; cha
         </p>
       </Show>
     </section>
+  );
+}
+
+/** One placeholder bar over a line of text: the line keeps the height its real text would have. */
+function Bone(props: { width: string }) {
+  return (
+    <>
+      &nbsp;
+      <span class="skeleton" style={{ width: props.width }} />
+    </>
   );
 }
 

@@ -127,23 +127,21 @@ Usage glance needs the room.
   Any segment at 0 is dropped, and with nothing live at all the row reads the plain word
   "Agents". The numbers come from `activeAgentCounts` in `src/lib/workers.ts`, and each one is
   narrower than it looks:
-  - **An active agent** is a worker in a *fresh* host session whose status is not settled:
-    `workerCounts.working + workerCounts.waiting` — **working** is starting, running or
-    stopping, **waiting** is a worker that finished its task and is still attached. `done`,
-    `error` and `killed` never count, and a stale heartbeat never counts. The counts are read
+  - **An active agent** is a worker in a *fresh* host session that is working:
+    `workerCounts.working` — starting, running or stopping. A **waiting** worker (finished its
+    task, still attached), `done`, `error` and `killed` never count, and a stale heartbeat never counts. The counts are read
     from `workerCounts`, not the `workers` array, because the array drops evicted workers.
   - **A host session** is any live record except a headless worker pi (`mode: "rpc"` without
     `embedded`); Sova's own embedded rpc runtimes *are* sessions, because they host agents.
   - **sessions** is how many fresh host sessions hold at least one active agent — not how many
     are running.
-  - **teams** is `activeTeams(…).length`, unchanged.
+  - **teams** is `activeTeamCount`: a fresh host session's teams with at least one member working.
 - **The row's full sentence** lives in its `title` and `aria-label`: "6 active agents in 4
   sessions, 2 teams". The row itself has room for figures, not for the word "active".
-- **"Agents" and "working" are different windows, on purpose.** This row is the first place the
-  app says *agent*, and it counts working **and** waiting. The Agents page still summarises the
-  same machines as "{w} working" — `AgentsInsight.totals.working` — which excludes the waiting
-  ones. The foot answers "how much is attached to me right now"; the page answers "how much is
-  moving". Two numbers, two questions; neither is a rounding of the other.
+- **"Agents" and "working" are the same window.** This row is the first place the
+  app says *agent*, and it counts working only. The Agents page summarises the
+  same machines as "{w} working" — `AgentsInsight.totals.working` — which also excludes the waiting
+  ones, so both answer "how much is moving".
 
 The rows take no color and no chip, because the pages carry the status. Each truncates with an
 ellipsis.
@@ -165,7 +163,7 @@ ellipsis.
   - **Session head:** no chip at all, working or not, team or not. The count is already the
     sidebar row's rail count and the Agents foot row's, and the head's row goes to the title and
     the context readout (§chat.context-window/width-budget). The Agents page, the composer's
-    subagents trigger and the subagents pane keep their own counts.
+    subagents trigger and the session pane keep their own counts.
   - The count inside a sidebar session row is **never** a link, because an `<a>` can't nest in
     the row's link — and now it sits outside the link, in the rail, as a `tabindex="-1"` button.
     The foot's Agents row is still the way to the page from the sidebar.
@@ -224,9 +222,8 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 - **Polling** (frontend's call on intervals). Update in place and keep scroll position and
   focus. Don't show a skeleton again after the first load. The board keys its rows by session
   path, so a poll keeps an open row open and a rename field focused.
-- **Loading** (first load, after 300ms). The Usage page shows 5 `.skeleton` blocks (one per
-  provider it can show) at 120px
-  tall with `--r-lg`. The Agents page shows 1 skeleton list until the session list has loaded.
+- **Loading** (first load, after 300ms). The Usage page shows a skeleton list of 5 groups (one per
+  provider it can show), one row each. The Agents page shows 1 skeleton list until the session list has loaded.
   Put `aria-busy` on `.insights-inner`.
 - **Request error.** Show `.banner-error` at the top of `.insights-inner` with Retry: "Couldn't
   load usage." or "Couldn't load agents." Any data already loaded stays visible below it. The

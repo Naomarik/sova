@@ -145,7 +145,8 @@ The session pane's Session tab (§app.subagents-pane/tabs) shows a read-only **W
 section right after Repository: a count line ("2 active · 1 merged · 1 dropped"), then one row per
 worktree in recorded order, dropped and merged ones included. When the branch tracks none the
 section stays, with one line: "This session tracks no worktrees." While the insight's first load
-is out the section shows its heading over a placeholder line, never that sentence. A row
+is out the section shows its heading over a placeholder line as tall as that sentence (most
+sessions track none), never the sentence itself. A row
 names the branch and the path, and carries a status chip — Active, Dropped, or Merged with "into
 <target> at <sha>" — plus, when true, Missing (the directory is gone), `.agent`, the number of
 this session's workers with a live process inside it, and "Shared with session <id>" linking the

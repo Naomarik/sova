@@ -185,7 +185,7 @@ is on an older host, and it maximizes inside its own iframe instead.
   tab order; and the iframe (`.ext-frame-max`) is `position: fixed; inset: 0` over the whole
   viewport. `data-view` stays `session`.
 - **Stacking.** The iframe's `z-index` is 40. That is above the app's own chrome (the pane resizer
-  at 5, the subagents pane at 10) and below Sova's scrim and modals (50, 51), toasts (60) and the
+  at 5, the session pane at 10) and below Sova's scrim and modals (50, 51), toasts (60) and the
   skip link (100), so Sova's dialogs and toasts still show over a maximized extension.
 - **It restores** on `sova:restore`, on any `hashchange` of the page (a navigation, including to
   another sub-route of the same extension), before the Reload button reloads the iframe, and when

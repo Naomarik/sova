@@ -467,3 +467,40 @@ describe("the routes", () => {
     assert.equal(listener.shareState({}).state, "unreachable");
   });
 });
+
+test("PUT routing through a gateway answers with the gateway's address and state, not off; with no answer, as it stands after 3 s (§mesh.public/via-answer)", async () => {
+  const gw = await import("./share/gateway-client");
+  const PEER = { id: "gw", nodeId: "nGATEWAYCNTRL", label: "gw", dnsName: "gw.example.invalid", url: "http://100.64.0.9:4801" };
+  let answer: "now" | "never" = "now";
+  const undo = gw.setGatewayDeps({
+    peers: () => [PEER],
+    endpoint: async () => "http://gw.example.invalid",
+    recordUrl: () => {},
+    call: async (url: string) =>
+      answer === "never"
+        ? new Promise(() => {})
+        : url.endsWith("/api/peer/hello")
+          ? { status: 200, body: { mesh: 1, shareGateway: { publicUrl: "https://gw.example.com" } } }
+          : { status: 200, body: { publicUrl: "https://gw.example.com", accepting: true, seq: null } },
+  } as never);
+  const via = put({ route: { via: { nodeId: "nGATEWAYCNTRL" } } });
+  try {
+    store.patchPublicLinks({ route: "off" });
+    gw.resetGatewayClient();
+    const now = await (await app().request("/api/public-links", via)).json();
+    assert.deepEqual([now.share.state, now.share.source, now.share.publicUrl, now.share.warningCode], ["verified", "gateway", "https://gw.example.com", undefined]);
+
+    store.patchPublicLinks({ route: "off" });
+    gw.resetGatewayClient();
+    answer = "never";
+    const t = Date.now();
+    const slow = await (await app().request("/api/public-links", via)).json();
+    const took = Date.now() - t;
+    assert.equal(slow.share.state, "off", "nothing learnt: the state as it stands");
+    assert.ok(took >= 2900 && took < 4500, `answered after the 3 s wait: ${took} ms`);
+  } finally {
+    undo();
+    gw.resetGatewayClient();
+    store.patchPublicLinks({ route: "off" });
+  }
+});

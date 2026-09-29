@@ -26,7 +26,7 @@ unfolded (≥768)                                  folded (<768)
 ```
 
 - **A third view.** `data-view` has a third value, `workspace` (§workspace/groups): the main column is
-  `.app-workspace` instead of `.app-main`, holding N panes and one group composer. The sidebar,
+  `.workspace` instead of `.app-main`, holding N panes and one group composer. The sidebar,
   the resizer and the portals are unchanged, the second column keeps the same width and floor,
   and below 768px the workspace is the one column, tabs-only.
 - **Columns.** `.app` is `height: 100dvh`. At 768px and up the grid is `--sidebar-width` (320px
@@ -218,12 +218,12 @@ sidebar list escapes `.app`'s clip and makes the document scroll) — and it wri
   `is-resizing`, and `html.is-resizing, html.is-resizing *` force `cursor: col-resize` and
   `user-select: none` — the pointer leaves the 12px strip on the first move, so the cursor and
   the selection guard have to hold across the transcript it runs over.
-- **Clamp.** `300 … min(560, viewport − 440 − the Subagents pane)`. The floor is the head's: at
+- **Clamp.** `300 … min(560, viewport − 440 − the session pane)`. The floor is the head's: at
   a 320px pane it has 295px inside (the 1px `border-right` is inside the width), and brand 63 +
   New Session 144 + the collapse toggle 44 + three 8px gaps take 275, so the head needs
   275 + 2 × 12 of padding + 1 = **300** — measured, the toggle overhangs the padding by 1px at
   299. The old floor of 240 predates the toggle and would clip it. 440 is `--main-min`, the
-  transcript's floor; the Subagents term is its real width **only while it is a static third
+  transcript's floor; the session pane term is its real width **only while it is a static third
   column** (≥1280px), because below that it overlays the main pane and reserves nothing. The
   clamp is re-applied on `resize` and `orientationchange`, so shrinking the window pulls an
   over-wide pane back rather than squeezing the transcript out.
@@ -236,7 +236,7 @@ sidebar list escapes `.app`'s clip and makes the document scroll) — and it wri
   when it collapsed, within the load; a reload expands to 320.
 - **One knob, three consumers.** `--sidebar-width` (while collapsed, holding `--spine-width`,
   §app.shell/spine-column) feeds the `.app` grid's first column, the
-  Subagents pane's `width: min(--subagents-width, 100% − --sidebar-width − --space-8)`, and
+  session pane's `width: min(--subagents-width, 100% − --sidebar-width − --space-8)`, and
   `--measure`'s `clamp(72ch, 100vw − --sidebar-width − …, 110ch)` (§chat/transcript "Column width"). So
   dragging the pane reflows the transcript's line length **live**, under the pointer, and the
   reading column is never quietly wrong about how much room it has.
@@ -257,9 +257,9 @@ else about the shell changes.
 
 - **One knob, not a second grid.** The app writes `--spine-width`'s value into the inline
   `--sidebar-width` on `<html>`, the same property the resizer writes. The `.app` grid, the
-  Subagents pane's `min(--subagents-width, 100% − --sidebar-width − --space-8)`, its third-column
+  session pane's `min(--subagents-width, 100% − --sidebar-width − --space-8)`, its third-column
   grid at 1280px and `--measure`'s clamp all read `--sidebar-width`, so the transcript's column
-  widens and the Subagents pane gets its room with **no** collapsed-state rule in the CSS. A rule
+  widens and the session pane gets its room with **no** collapsed-state rule in the CSS. A rule
   that restated the width per consumer would be a second source for it, and the first to drift.
 - **`data-spine="on"` on `.app`** while collapsed; absent, not `"off"`, when expanded. It is a
   hook for the state, not a layout switch — the column width comes from the knob above.

@@ -52,8 +52,8 @@
              accept="image/png,image/jpeg,image/gif,image/webp">
       <label class="visually-hidden" for="composer-input">Message</label>
       <textarea class="input textarea composer-input" id="composer-input" rows="1"
-                placeholder="Ask pi to…—Enter sends, Shift+Enter adds a line" enterkeyhint="send"
-                aria-describedby="composer-reason"></textarea>   <!-- touch mode: "Ask pi to…", enterkeyhint="enter" -->
+                placeholder="Enter sends, Shift+Enter adds a line" enterkeyhint="send"
+                aria-describedby="composer-reason"></textarea>   <!-- touch mode: no placeholder, enterkeyhint="enter" -->
       <div class="composer-actions">
         <button class="button button-primary" type="submit">
           <span class="icon" style="--icon: url(/icons/arrow-right.svg)" aria-hidden="true"></span><span class="button-label">Send</span>
@@ -133,9 +133,9 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
   - Ignore `Enter` while `event.isComposing` (IME).
   - `enterkeyhint` is "enter" in touch mode and "send" otherwise.
   - **The key hint is in the placeholder** exactly when `Enter` sends (touch mode off), at any
-    width: "Ask pi to…—Enter sends, Shift+Enter adds a line", and while streaming "Steer the
-    current turn…—Enter sends, Shift+Enter adds a line". In touch mode it's the short string alone
-    ("Ask pi to…" / "Steer the current turn…"), swapped in place when the mode changes. A read-only
+    width: "Enter sends, Shift+Enter adds a line", and while streaming "Steer the
+    current turn… Enter sends, Shift+Enter adds a line". In touch mode it's the short string alone
+    (none / "Steer the current turn…"), swapped in place when the mode changes. A read-only
     composer keeps the short string.
   - Empty or whitespace-only text doesn't send, and Send is `aria-disabled` with no reason text,
     because the reason is obvious.
@@ -197,7 +197,7 @@ the skill's copy ladder.
 | Chat socket connecting (first connect) | enabled (typing is fine) | Send `aria-disabled` | `clock` — "Connecting…" |
 | Chat socket dropped | enabled | Send `aria-disabled` | `clock` — "Reconnecting. Your draft is kept." |
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
-| Server `error` with `code:"busy"` | enabled | Send `aria-disabled` until the next `agent_settled` | `attention` — "pi is busy with another turn. Send when it finishes." |
+| Server `error` with `code:"busy"` (the session reopens read only) | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
 
 The mic (§chat.voice/button) follows the textarea, not Send: it is hidden when the session is live
 in a TUI, and works in every other row above, because dictating is typing. On its own it is

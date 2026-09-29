@@ -455,6 +455,26 @@ for (const [what, withdraw] of [
     assert.ok(o.open[0]!.destroyed || o.open[0]!.socket?.destroyed !== false, "the upstream side is closed too");
   });
 
+test("/ws/h: a row its host withdrew, the host still accepted: the host's own 4410 reaches the page, not 4503", async () => {
+  const o = await wsOrigin();
+  clearPeerReach();
+  const file = join(root, `reg-${++n}.json`);
+  const reg = new GatewayRegistry({ file: () => file, validate: passing });
+  const ctx = () => ({ now: Date.now(), local: new Set<string>(), live: () => true });
+  reg.commit("n1", { v: 1, seq: 1, links: [row(T("a"))], assets: [], ingressPort: o.port }, GATEWAY.publicUrl, ctx());
+  const hooks = createGatewayRouter({ registry: reg, setting: () => GATEWAY, publicUrl: () => GATEWAY.publicUrl, peers: () => [PEER], resolve: LOOPBACK, strip, sweepMs: 0 });
+  after(() => hooks.dispose());
+  const port = await listen(createShareServer({ ...hooks, client: (req) => req.socket.remoteAddress ?? "unknown" }));
+  const a = await open(`ws://127.0.0.1:${port}/ws/h?token=${T("a")}`);
+  assert.ok("ws" in a);
+  const closedA = new Promise<number>((res) => a.ws.once("close", (code) => res(code)));
+  // A revoke on the host: its snapshot without `a` lands first, its own close right after.
+  reg.commit("n1", { v: 1, seq: 2, links: [], assets: [], ingressPort: o.port }, GATEWAY.publicUrl, ctx());
+  await new Promise((res) => setTimeout(res, 150));
+  o.sockets.at(-1)!.close(4410, "gone");
+  assert.equal(await closedA, 4410);
+});
+
 test("an open HTTP hop is cut at once when its host's snapshot withdraws the row", async () => {
   const o = await streamingOrigin();
   const g = await gateway({ port: o.port, links: [row(T("k"))] });

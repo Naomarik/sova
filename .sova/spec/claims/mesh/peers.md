@@ -64,8 +64,8 @@ is shown as `skewed`: listed, but its sessions can't be opened or created until 
 ## §mesh.peers/health — Peer status
 
 While the mesh is on, the host polls each peer's `hello` and reports each as `up`, `down` or
-`skewed` with when it was last seen. A peer that stops answering is `down` after a few missed
-polls; its absence never breaks this host's own sessions or pages.
+`skewed` with when it was last seen. A peer that stops answering is `down` on the first
+failed hello; its absence never breaks this host's own sessions or pages.
 
 ## §mesh.peers/discovery — Discovery hints
 

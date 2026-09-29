@@ -122,8 +122,8 @@ or why it can't be resumed).
   transcript's model, else its last snapshot's, else the model it was spawned with, and a Claude
   worker's name keeps the context variant it was spawned with (`[1m]`, read "1M"). So a Claude
   worker reads `haiku-4.5` running, restored and resumed alike, whether the session is hosted by
-  this server or only read from its file. On `#/agents`, a team whose members are all
-  restored is counted "· {n} restored" beside the Teams head, not as active.
+  this server or only read from its file. A team whose members are all
+  restored is not counted as active.
 - **Transcripts stay readable.** The pane opens a restored worker's transcript from the record's
   reference exactly as it does a live one (`?path=` for a pi file, `?claude=` for a Claude
   session id).

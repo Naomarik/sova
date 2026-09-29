@@ -5,6 +5,7 @@ import { advertisedGateways } from "./mesh/hello";
 import { PROXIED_HEADER } from "./mesh/proxy";
 import { patchPublicLinks, pinnedByEnv, readPublicLinks, writeServerFields } from "./public-links";
 import { frontGuide, verifyPublicUrl } from "./share/front";
+import { refreshGateway } from "./share/gateway-client";
 import { noteVerify, shareState } from "./share/listener";
 import { routedHosts } from "./share/registry";
 import { publicLinksChanged } from "./share/setting-events";
@@ -20,6 +21,9 @@ const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
 const local = (c: Context) => !(c.env as { meshPeer?: unknown } | undefined)?.meshPeer && !c.req.header(PROXIED_HEADER);
 const small = bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
 const NO_STORE = { "Cache-Control": "no-store" };
+/** How long a PUT that routes this host through a gateway waits for that gateway's first answer
+    (§mesh.public/via-answer), so the reply shows its address rather than `off`. */
+export const VIA_ANSWER_WAIT_MS = 3000;
 
 /** Where GET and PUT learn the gateway's routed hosts (server/share/registry.ts) and the peers
     advertising a gateway (server/mesh/hello.ts); tests pass their own. */
@@ -53,6 +57,11 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
     const r = patchPublicLinks(body);
     if ("error" in r) return c.json({ error: r.error }, 400);
     publicLinksChanged(r.file);
+    if (typeof r.file.route === "object") {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([refreshGateway().catch(() => null), new Promise((res) => (timer = setTimeout(res, VIA_ANSWER_WAIT_MS)))]);
+      clearTimeout(timer);
+    }
     return c.json(await publicLinksInfo(r.file, sources), 200, NO_STORE);
   });
 

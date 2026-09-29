@@ -1,4 +1,4 @@
-# §app/subagents-pane — Subagents pane
+# §app/subagents-pane — Session detail pane
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 The composer's "2 subagents working…" row opens a pane beside the session: this session's
@@ -8,8 +8,7 @@ list holds every worker the session's live record carries, live ones first, and 
 active branch's workers one click away (§app.subagents-pane/hidden-workers).
 
 It is **this session only**. `#/agents` (§app/insights) stays the cross-session surface: every running pi,
-its teams and solo workers, as cards with no transcripts. The session head's "{n} working" chip
-keeps linking there. The pane is for watching; the page is for finding.
+its teams and solo workers, as cards with no transcripts. The pane is for watching; the page is for finding.
 
 ## §app.subagents-pane/trigger — Trigger
 
@@ -113,11 +112,11 @@ trigger reads the same list count until its insight lands.
   <main class="app-main">…§chat/transcript head, thread, composer…</main>
   <aside class="app-subagents" id="session-pane" aria-label="Session detail">
     <header class="subagents-head">
-      <h2 class="subagents-title">Subagents</h2>
+      <h2 class="subagents-title">Session detail</h2>
       <span class="chip chip-count">2 working</span>            <!-- omitted at 0 -->
       <button type="button" class="chip chip-count subagents-usage" aria-label="53.2k tokens — show usage"
               title="41.9k in · 11.3k out · 402k cache read · 61.8k cache write · $0.72">53.2k tokens</button>
-      <button class="button button-icon button-ghost subagents-close" aria-label="Close subagents">
+      <button class="button button-icon button-ghost subagents-close" aria-label="Close session detail">
         <span class="icon" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
       </button>
     </header>
@@ -154,17 +153,18 @@ leaving the page closes it. There the pane sits beside the board rather than a s
 ## §app.subagents-pane/head — Head
 
 `.subagents-head` matches `.session-head`: 56px, surface, a bottom border, so the two heads read
-as one band across the window. The title is `heading-s`. The count chip is the neutral §app/insights
-aggregate, `{n} working`, with no dot and no pulse, left out at 0. Close is a ghost icon button
-pushed right, `aria-label="Close subagents"`. Its chevron points right: it sends the pane back
-the way it came.
+as one band across the window. The title, "Session detail", is `heading-s`. The count chip is
+the neutral §app/insights aggregate, `{n} working`, with no dot and no pulse, left out at 0. Close
+is a ghost icon button pushed right, `aria-label="Close session detail"`. Its chevron points
+right: it sends the pane back the way it came.
 
 **The token Σ** sits beside the working count as a second neutral chip, `{n} tokens` in mono
 (`.subagents-usage`), left out when nothing has been spent. It is the **session's** spend, the
 same figure the Usage tab headlines (§app.subagents-pane/tabs): the main thread on the active
-branch plus this session's listed workers (`SessionUsage.total`). Before the insight carries one,
-it falls back to the workers' **session-lifetime** total: every worker this session ever started,
-on any branch, including the ones the manager's retention cap and the live record's 40-row cap
+branch plus this session's listed workers (`SessionUsage.total`). **Until the insight has loaded
+the chip is left out**, so it never shows one figure and then another. Only a loaded insight with
+no session usage at all (an older server) falls back to the workers' **session-lifetime** total:
+every worker this session ever started, on any branch, including the ones the manager's retention cap and the live record's 40-row cap
 dropped, so it is normally larger than the rows add up to. While the runtime runs that lifetime
 total never goes down. After a server restart it is **rebuilt from the workers' transcripts**
 (§app.worker-restore/usage-from-transcripts), which may give a different total than the one shown
@@ -199,8 +199,11 @@ strip, empty or not: a tab that came and went would move the strip under the rea
 - **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
   Command), Context, Repository, Worktrees (§chat.worktrees/pane), Identity (with Move into group,
   Group with parent and, for web sessions, Archive), Compactions, Changes. Repository and Worktrees
-  load after Identity, which sits below them, so both hold a placeholder of about their settled
-  height while they load: Identity's buttons don't move under a reader about to press one.
+  load after Identity, which sits below them, so both hold a placeholder while they load, sized
+  to the common case: Repository's is a clean repository's layout (its root, three facts, a
+  two-line last commit and the Read line), and Worktrees' is as tall as its empty line. Then
+  Identity's buttons don't move under a reader about to press one; uncommitted changes, and each
+  tracked worktree, still add their height when they land.
 - **Usage** is what the session has spent, off the same insight the pane polls. First the
   headline, `{n} tokens in and out · $x` (input + output; cache in its `title`). Then a table with
   one row per model × origin, the main thread first and then the biggest spender: Model · Where
@@ -304,13 +307,13 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   the same split-and-cost `title` as the head's Σ). A worker that has spent nothing yet shows
   none, and so does a worker from a pi-config that doesn't publish counts: the meta line then
   reads exactly as it did before. It is one worker's spend, never the Σ.
-  "As of" is `endedAt`, else `lastActivity`, mono 24-hour, the full ISO time in `title`. **Only a
+  "As of" is `endedAt`, else `lastActivity`, mono 12-hour, the full ISO time in `title`. **Only a
   live-sourced Working or Starting chip pulses**, so each row has one pulsing thing at most.
   **Restored** workers (§app.worker-restore/restore) are the ones the session recorded before a
   server restart: no process runs them and they never pulse. One that was idle at the restart
   reads Restored, one that was mid-task reads Interrupted (warn: the turn it was on never
   finished), and one that had ended keeps its ending's chip. Usage rebuilt from a snapshot says
-  so in the `title` ("$0.41 as of {HH:MM}"), and a worker whose usage can't be read shows
+  so in the meta line's visible "as of {time}" (the tokens' `title` has no time), and a worker whose usage can't be read shows
   "usage unavailable" in the tokens' place, never 0. While
   the pane's connection is down, nothing pulses and every row reads "as of" the last update.
 - **Context ring.** Each row shows how full that worker's **own** context is

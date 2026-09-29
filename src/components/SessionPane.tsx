@@ -101,12 +101,15 @@ export function SessionPane(props: {
   onCleanup(() => run++);
 
   const working = () => (props.chatWorkers ?? props.insight.data?.workers ?? []).filter((w) => w.working).length;
-  /** The session's own spend, the Usage tab's headline; before the insight has one, the workers'
-      lifetime Σ the chat socket reports, else the insight's. */
+  /** The session's own spend, the Usage tab's headline. Nothing until the insight has loaded: the
+      workers' lifetime Σ first and the session's total a moment later read as one number jumping.
+      Only a loaded insight with no usage at all (an older server) falls back to that lifetime Σ,
+      the chat socket's, else the insight's. */
   const total = (): { usage: UsageView; workers?: number } | null => {
-    const session = props.insight.data?.usage?.total;
-    if (session && usageHeadline(session) > 0) return { usage: session };
-    const lifetime = props.chatUsage ?? usageTotal(props.insight.data);
+    const data = props.insight.data;
+    if (!data) return null;
+    if (data.usage) return usageHeadline(data.usage.total) > 0 ? { usage: data.usage.total } : null;
+    const lifetime = props.chatUsage ?? usageTotal(data);
     return lifetime ? { usage: lifetime, workers: lifetime.workers } : null;
   };
   // Settled once, on open: a default that followed the working count would move the tab under

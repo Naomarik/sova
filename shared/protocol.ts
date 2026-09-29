@@ -1074,7 +1074,8 @@ export interface GitRepoSummary {
   clean: boolean;
   /** The commit HEAD points at; null in an unborn repository or when git log failed. The newest
       of `commits`, sent on its own because a reader that only ever needs the last one (the session
-      info modal) shouldn't have to take a list apart; a test pins the two to the same commit. */
+      pane's Session tab, its Repository section) shouldn't have to take a list apart; a test pins
+      the two to the same commit. */
   lastCommit: GitCommit | null;
   /** The repository's recent commits, newest first, at most `RECENT_COMMITS` of them
       (server/git-summary.ts) — the new-session card's log. This server always sends it. Absent
@@ -2063,6 +2064,10 @@ export interface OlderSummary {
   messages: number;
   /** Whether any is a reply's row (assistant text or a tool call). */
   replies: boolean;
+  /** The alignments open among them (§chat.alignment/chip): each document's newest revision there
+      and its row, only those not done or dropped, the last touched last. Absent when none (and
+      from older servers). A newer revision in the rows after them takes its place. */
+  aligns?: { doc: AlignDocInfo; rowId: string }[];
 }
 
 /**

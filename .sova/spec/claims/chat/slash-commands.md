@@ -202,7 +202,7 @@ and again when the count changes, at most once a second. When there are none, an
 - **Unknown commands.** A `/word` that isn't in the list is sent and rendered as an ordinary
   message, with the optimistic bubble.
 - **Local commands.** A few commands Sova answers itself and never sends: a bare `/new`
-  (below), and a bare `/agents` / `/subagents`, which opens the subagents pane (§app.subagents-pane/trigger).
+  (below), and a bare `/agents` / `/subagents`, which opens the session pane (§app.subagents-pane/trigger).
   Those two are still listed and inserted like any other command — the runtime registers them —
   but Enter runs them here, clears the draft, and adds no row to the thread: the pane opening is
   the result. Once the whole text is a bare local command the menu closes, and Enter runs it

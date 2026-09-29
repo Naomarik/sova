@@ -101,12 +101,12 @@
                     class="session-rail-item session-rail-state session-rail-tui chip chip-accent"
                     aria-label="Open in a TUI. Pid 8124, status working."
                     title="Open in a TUI · pid 8124 · working">TUI</button>
-            <!-- only when n > 0; .session-rail-count-live pulses the icon, never the figure -->
+            <!-- only when n > 0; a bare figure, no icon; .session-rail-count-live pulses the figure
+                 unless Busy already pulses -->
             <button type="button" tabindex="-1"
                     class="session-rail-item session-rail-count session-rail-count-live"
                     aria-label="3 subagents working now" title="3 subagents working now">
-              <span class="text-num">3</span><span class="icon icon-sm"
-                    style="--icon:url(/icons/worker.svg)"></span>
+              <span class="text-num">3</span>
             </button>
           </div>
           <a class="list-row list-row-interactive session-row" href="#/s/…" aria-current="page">
@@ -147,8 +147,7 @@
               <!-- line 2: the "now" line, then the outline's topic count -->
               <div class="list-line list-summary-row">
                 <p class="list-summary" title="…">Wiring /ws/watch to the session tailer</p>
-                <span class="chip chip-count session-topics" title="7 topics in this session">
-                  <span class="text-num">7</span></span>
+                <span class="session-topics text-num" title="7 topics in this session">7</span>
               </div>
               <!-- line 3: time, the tag's status word when there is one (§app.decisions/session-tags:
                    done, in progress, abandoned, blocked — lowercase, the meta's own muted voice, no
@@ -277,7 +276,7 @@ label a person reads says "sessions pane".
   expanded, as it always has, because folded it is the whole screen. Widen the window and the
   spine comes back.
 - **One knob.** While collapsed the app writes `--spine-width` into the inline `--sidebar-width`
-  on `<html>`, and `.app` carries `data-spine="on"` (absent when expanded). The grid, the Subagents
+  on `<html>`, and `.app` carries `data-spine="on"` (absent when expanded). The grid, the session
   pane's width and `--measure` all read `--sidebar-width`, so they follow with no rule of their
   own, and `.pane-resizer` is not rendered while the stored choice is collapsed (§app.shell/spine-column).
 - **The head** — Expand, New Session, and Search sessions. New Session opens the New Session
@@ -493,7 +492,7 @@ label a person reads says "sessions pane".
   The line ends with the **context ring** (§chat/context-window): a 12px ring whose arc is the share of the window
   the last reply left filled, `.context-warn` at ≥80% and `.context-error` at ≥95% — the same
   `contextStep` the head's gauge uses, so a row and the session it opens step together. Its
-  `title` is the head's exact sentence. It and the subagents pane's worker ring are the only
+  `title` is the head's exact sentence. It and the session pane's worker ring are the only
   places in the product where the context fill is a shape instead of a number, and
   §chat.context-window/sidebar-ring writes that exception down.
 - **Lines 2 and 3 are `.list-line`.** Each is a flex wrapper: the text block flexes and truncates,
@@ -763,7 +762,7 @@ already saying it, and "0 recent" above "0 sessions" says it twice.
 
 ## §app.session-list/groups — Groups
 
-Groups are the user's **own** sections, above every other region: named folders they make and file
+Groups are the user's **own** sections, below Needs you and Recent and above every other region: named folders they make and file
 sessions into by dragging a row onto one. They live server-side in
 `~/.pi/agent/sova/session-groups.json` (`server/session-groups.ts`), keyed by session id like the
 archive, so every tab and every Sova server sees the same groups and clearing browser storage
@@ -932,8 +931,6 @@ the group's members side by side, each a whole chat, with one composer that writ
 label ("Nothing is in it yet. Drag a session here first."), said before the press rather than
 discovered as a blank workspace. The
 section is still the place you file sessions into; the workspace is the place you read them in.
-While that workspace is open, the group's `<summary>` takes `aria-current="true"` and its name
-takes the selected row's tint, so the sidebar says which group you are inside.
 - **Fanning out is not entered from here.** The Groups region's one action is making an empty
 group to curate; a fanout — which makes the group AND its members in one gesture — is a
 creation action and lives beside `New Session` on the overview (§workspace.fanout/entry-points).
@@ -1279,10 +1276,9 @@ example when its TUI closes and `live` becomes null. If it's the selected row, i
 **Archiving.** Sessions started from Sova (`origin === "web"`) can be archived by hand, so
 the top region doesn't keep every one of them forever.
 
-- **Where.** An Archive Session icon button (`archive.svg`) last in the session head (§chat/transcript), only
+- **Where.** An Archive Session button (`archive.svg`) in the Session pane (§chat/transcript), only
   on web sessions. Rows are links, so it can't live in them: a button inside `<a>` is invalid and
-  splits the row's single target. It's the only archive control in the app, so it stays at every
-  head width (§chat/transcript, §chat/context-window "Width budget").
+  splits the row's single target.
 - **What it does.** `POST /api/sessions/archive { path, archived }`, then a list refresh. The id
   goes into `~/.pi/agent/sova/archived-sessions.json`; the session file is never written, except
   that an empty husk outside any organization's workspace is deleted instead

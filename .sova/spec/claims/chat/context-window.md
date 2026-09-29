@@ -20,9 +20,9 @@ the top step by a glyph too, so it never rests on hue alone.
 
 **A ring is a bar**, and the rule above says the context readout is never one standing alone.
 Two list rows get one alone anyway: the session row (§app/session-list, line 3) and the
-subagents pane's worker row (§app.subagents-pane/worker-rows, line 1). The heads borrow the same
+session pane's worker row (§app.subagents-pane/worker-rows, line 1). The heads borrow the same
 ring but never alone: the session heads put the token count beside it
-(§chat.context-window/markup), and the subagents pane's view head the percent in words
+(§chat.context-window/markup), and the session pane's view head the percent in words
 (§app.subagents-pane/transcript-view). This is the exception, stated once, with what buys it,
 and it covers exactly those rows:
 
@@ -195,9 +195,8 @@ Two more head rules cover every head, not just chat:
 - **Floor.** `.session-head-main` has `min-width: 72px`. Whatever else lands in the head later,
   the title and meta line can't collapse to nothing. Extra chips overflow before the title
   disappears, and each new head chip needs its own narrow rule.
-- **Mode trigger** (chat, §chat/mode-menu). Under 520px of head width it's icon-only: 44px, with its name in
-  `aria-label`. Under 360px it's hidden, since the title can't spare 44px more (at 360 the title
-  keeps about 76px). There, `/mode {name}` in the composer still switches.
+- **Mode trigger** (chat, §chat/mode-menu). Not in the head: it lives in the composer (§chat/composer),
+  so it takes nothing from this budget.
 
 ## §chat.context-window/tokens — Tokens
 

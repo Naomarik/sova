@@ -60,6 +60,13 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
 - `pinnedByEnv` lists the `SOVA_SHARE_*` variables that are set (a refused `SOVA_SHARE_PUBLIC_URL`
   isn't): they win over the setting, and the panel shows their fields as set by the environment.
 
+## §mesh.public/via-answer — Routing through a gateway answers with it
+
+A `PUT /api/public-links` that routes this host through a gateway waits up to 3 seconds for the
+gateway's first answer to its hello and info before it replies. The reply then carries the
+gateway's address and state (`verified` when it accepts) rather than `off` with "Turn on public
+links". When nothing answers in time, it replies with the state as it stands.
+
 ## §mesh.public/gateway — This host is the gateway
 
 - With `route: "self"`, the share listener serves links minted here and links registered by
@@ -95,6 +102,17 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
   login, or nothing is fetched; a redirect fails ("the front must forward, not redirect"), and it
   gives up after 8 seconds. A pass writes `verifiedAt`; a failure drops it and the address reads
   `unreachable` until a Verify passes. With no address it answers "No public address is set."
+
+## §mesh.public/front-cdn — A web server behind a CDN
+
+- The existing web server's guide also covers a CDN or proxy that terminates TLS for the public
+  hostname in front of that server, such as Cloudflare's proxy. The server then listens on the
+  port the CDN connects to, not 443 with a certificate of its own. Without more, X-Forwarded-For
+  would carry the CDN's address. So the note says to restore the visitor's address first with
+  nginx's realip module: `set_real_ip_from` for each of the CDN's published ranges, and
+  `real_ip_header` for its client-address header (`CF-Connecting-IP` for Cloudflare). The note also
+  says never to forward that header unchecked, because anyone who reaches the server directly can
+  set it.
 
 ## §mesh.public/registry — Which host minted a token
 
@@ -163,7 +181,9 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
   the row's ingress port. Authorization is judged again after each wait and for as long as a hop
   stays open: a hop whose host no longer holds the hash (setting gone, peer removed or not
   accepted, row withdrawn or expired, port or address moved) is closed, checked on every registry
-  commit, setting change and each second. A hop is tried once; a POST is never retried or
+  commit, setting change and each second. One exception: a `/ws/h` hop whose own host withdrew the
+  row first waits up to 3 s for that host's own close (§mesh.public/withdrawn-hop). A hop is tried
+  once; a POST is never retried or
   replayed. At most 256 HTTP hops and 256 `/ws/h` hops (4 per link) are open at once.
 - A hop's answer passes through without cookies or `x-sova-*` headers and always with
   `Cache-Control: no-store`, `Referrer-Policy: no-referrer` and `nosniff`. The minting host keeps
@@ -176,6 +196,18 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
 - A hashed `/h/assets/<name>` comes from the gateway's own share build first, else from the first
   live host whose snapshot listed the name, typed by its extension (js, css, woff2, svg, png; any
   other is never fetched), capped at 5 MB while streaming.
+
+## §mesh.public/withdrawn-hop — A link its own host withdrew
+
+- The gateway may see a hash leave the registry while its host stays live and accepted, because
+  that host's newer snapshot no longer lists it (revoked or expired). Open `/ws/h` hops on that
+  hash are then not cut at once. The gateway stops passing on the page's messages, and waits up to
+  3 seconds for the host's own close. That close passes through as it is: after a revoke, 4410
+  gone, so the page says the link is no longer active, not that it is reconnecting. Only when no
+  close comes in time does the gateway close the page's socket with 4503.
+- A hop that loses its route any other way closes at once, as before. Other ways include the
+  gateway setting going away, the peer being removed or no longer accepted, or the row moving to
+  another port or host.
 
 ## §mesh.public/offline — A known link whose host is down
 

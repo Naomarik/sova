@@ -90,7 +90,7 @@ Start: `{orgId, id, name, root, createdAt, origin}`; spawns `reconciler/<org>/<p
 | `owner-update/post` | overseer (L1, held unattended) · op | `{text}` + `ownerActive`, `leak`, `buildFinishedAt` | today's order: owner, blank, 2,000, leak, then unattended only: 24 h ("An update was posted {…}: at most one a day."), milestone; effect `owner-update {text, run}` |
 | `gap/file` | overseer (L0 `sova_idea add §gap/…`) | `{gapId (g_…), ideaId}` | spawns `item/<org>/<p>/<gapId>` |
 | `milestone/noted` | baton · decision · build | `{kind, shown}` | |
-| `baton/start` | op · overseer (L1, `gap: "none"`, held) · GO | BatonStartInput + `sessionId` | "{project} is archived. Unarchive it first." (409); caps; spawns a baton |
+| `baton/start` | op · overseer (L1, `gap: "none"`, held) · GO (card: the project and every person) | BatonStartInput + `sessionId` | "{project} is archived. Unarchive it first." (409); caps; spawns a baton |
 | `build/start` | op · overseer (L3, `gap: "none"`, attended only: q7) · GO | `{sessionId, title?, prompt?, model?, thinking?, mode?, opItem?, folder?}` | q7: "Without a gap, a coding session starts only in a turn the operator started: …"; spawns a build |
 
 Owner-update withdraw (`updates.jsonl`) is plain data: its route, no chart event.
@@ -172,7 +172,7 @@ resolvedBy}`. Settled: "That conflict is resolved" (409).
 
 Start: `{orgId, projectId, id, ideaId, stallAfterMs?}` (spawned when the overseer files a `§gap/…` idea).
 Acts: `gather/start {sessionId, to|targets, publicTitle, question, goal, briefing, …}` (overseer L1, held;
-op), `gather/plan {…same}` (overseer L0: a planned gathering), `build/start {sessionId, title?, prompt?,
+op; GO: card lists the project and every person), `gather/plan {…same}` (overseer L0: a planned gathering), `build/start {sessionId, title?, prompt?,
 decisions?}` (overseer L3, held; op), `gap/drop {fromIdea?}` (L0 `sova_idea`; op), `item/hold`,
 `item/resume` (op only), corrections `correct/reopen`, `correct/skip-stall`, `correct/relink {session,
 toItem}` (L1, `sova_correct`), `hold/cancel {id, reason}` (L0). Host/chart events: `link/moved` (its

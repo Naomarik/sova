@@ -125,3 +125,17 @@
   (let [x (h/send! (project) psid :stakeholder/set (assoc op :person-id "p1" :target {:status "active"}))
         y (h/send! x psid :stakeholder/set (assoc op :person-id "p1" :target {:status "active"}))]
     (is (= 1 (count (:stakeholder-history (h/data y psid)))))))
+
+(deftest F-185-the-global-overseers-gathering-start-needs-its-card
+  (let [x   (project)
+        go  {:by "operator" :via "overseer" :session-id "s1" :public-title "T" :goal "G" :question "Q"}
+        one (assoc go :to "p1")
+        two (assoc go :targets ["p1" "p2"])]
+    (is (= "This reaches people or ends something: ask with sova_confirm, listing the project pr1, p1 in its items, and act in the turn the user's click starts."
+           (h/refusal x psid :baton/start one)))
+    (is (some? (h/refusal x psid :baton/start (assoc one :card {:projects ["pr1"]}))) "every person must be on it")
+    (is (nil? (h/refusal x psid :baton/start (assoc one :card {:projects ["pr1"] :people ["p1"]}))))
+    (is (some? (h/refusal x psid :baton/start (assoc two :card {:projects ["pr1"] :people ["p1"]}))))
+    (is (nil? (h/refusal x psid :baton/start (assoc two :card {:projects ["pr1"] :people ["p1" "p2"]}))))
+    (is (nil? (h/refusal x psid :baton/start (assoc go :to "operator" :card {:projects ["pr1"]}))) "the operator is never a card item")
+    (is (nil? (h/refusal x psid :baton/start (assoc one :by "operator" :via nil))) "the operator's own page asks nothing")))

@@ -34,6 +34,14 @@
 ;; ---- session ids --------------------------------------------------------------------------------
 ;; `<chart>/<org>[/<project>]/<id>`: one engine per org, so the org id is in every id.
 
+(defn start-card
+  "A gathering start's confirm-card targets (sova_gather start): its project and every person it goes
+   to (`:to` or `:targets`), never the operator."
+  [project-id data]
+  (let [e (evt data)]
+    {:projects [project-id]
+     :people   (vec (remove #{"operator"} (map #(if (map? %) (:id %) %) (or (seq (:targets e)) (some-> (:to e) vector)))))}))
+
 (defn org-sid [org] (str "org/" org))
 (defn residence-sid [org] (str "residence/" org))
 (defn person-sid [org pid] (str "person/" org "/" pid))

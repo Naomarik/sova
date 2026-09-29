@@ -209,7 +209,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-182 | Projection and redaction | host | GO redaction |
 | F-183 | Writes | chart | GO writes = operator events with `via: overseer` |
 | F-184 | Attribution "you, via the Overseer" | chart | `via` in envelope → history rows (`owner-history`, `stakeholder-history`, `archived.via`, `roster-history by.via`) |
-| F-185 | People-facing acts ask first (`sova_gather`) | chart | acts' `:people-facing` + `:card` (registry) — the card check (`rules/levels card-check`) |
+| F-185 | People-facing acts ask first (`sova_gather`) | chart | acts' `:people-facing` + `:card` (registry) — the card check (`rules/levels card-check`); `start`: project `baton/start` and item `gather/start` list the project and every person (`base/start-card`, never the operator) |
 | F-186 | Running project overseers (`sova_project_overseer`) | chart | operator events via GO |
 | F-187 | GO prompt rules (E) | host | GO prompt |
 | F-190 | Which sessions are organizational | proj | org sessions = baton/build sessions |

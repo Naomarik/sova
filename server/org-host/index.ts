@@ -104,7 +104,7 @@ export interface HostChange {
 }
 
 export interface HostProblem {
-  kind: "snapshot" | "journal" | "log";
+  kind: "snapshot" | "journal" | "log" | "resume";
   file: string;
   why: string;
   sessionId?: string;
@@ -174,6 +174,8 @@ export class OrgHost {
   private readonly index = new Map<string, { file: string; chart: string }>();
   private readonly broken = new Map<string, HostProblem>();
   private journalProblem: JournalProblem | null = null;
+  /** Sessions whose resume (or the past-due timers) threw at open: reported, boot went on. */
+  private readonly stuck: HostProblem[] = [];
   private readonly logProblems: LogProblem[] = [];
   private resuming = true;
   private readyWaiters: (() => void)[] = [];
@@ -271,15 +273,34 @@ export class OrgHost {
     }
     const started: InvocationRecord[] = [];
     if (!this.journalProblem) {
-      for (let i = 0; i < sids.length; i += chunk) {
-        await new Promise<void>((r) => setImmediate(r));
-        const r = this.engine.resume(sids.slice(i, i + chunk), { now: this.clock() });
+      // One session never aborts an org's boot: a chunk that throws is resumed one session at a
+      // time, and a session whose resume still throws is a problem (it stays readable).
+      const resume = (part: string[]): void => {
+        const r = this.engine.resume(part, { now: this.clock() });
         this.commit(r);
         started.push(...r.invocations);
+      };
+      for (let i = 0; i < sids.length; i += chunk) {
+        await new Promise<void>((r) => setImmediate(r));
+        const part = sids.slice(i, i + chunk);
+        try {
+          resume(part);
+        } catch {
+          for (const sid of part)
+            try {
+              resume([sid]);
+            } catch (err) {
+              this.stuck.push({ kind: "resume", file: this.index.get(sid)?.file ?? sid, why: message(err), sessionId: sid });
+            }
+        }
       }
-      const r = this.engine.fireDue(this.clock());
-      this.commit(r);
-      started.push(...r.invocations);
+      try {
+        const r = this.engine.fireDue(this.clock());
+        this.commit(r);
+        started.push(...r.invocations);
+      } catch (err) {
+        this.stuck.push({ kind: "resume", file: this.paths.journal, why: `past-due timers: ${message(err)}` });
+      }
     }
     this.resuming = false;
     for (const w of this.readyWaiters.splice(0)) w();
@@ -640,6 +661,7 @@ export class OrgHost {
     return [
       ...(this.journalProblem ? [{ kind: "journal" as const, ...this.journalProblem }] : []),
       ...this.broken.values(),
+      ...this.stuck,
       ...this.logProblems.map((p) => ({ kind: "log" as const, ...p })),
     ];
   }

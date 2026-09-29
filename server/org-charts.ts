@@ -160,6 +160,8 @@ export interface StepResult {
   loaded: string[];
   /** Answers for ended runs or answered effects, dropped. */
   stale: JsonObject[];
+  /** Link notifications to a watcher that exists nowhere: dropped, the watcher taken off its source. */
+  dangling: { from: string | null; watcher: string }[];
   errors: EngineError[];
   /** The snapshot of every session this call moved: write them together, once per call. */
   snapshots: Record<string, string>;

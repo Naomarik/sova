@@ -12,6 +12,8 @@ export const HOST_CHART = [
     "state",
     { id: "top", initial: "idle" },
     ["transition", { event: "count" }, ["script", { expr: (d: Data) => assign({ n: ((d["n"] as number) ?? 0) + 1 }) }]],
+    // a session told to ping someone on resume (a send to a session that may exist nowhere)
+    ["transition", { event: "sova/resumed", cond: (d: Data) => typeof d["pingOnResume"] === "string" }, ["send", { event: "ping", targetexpr: (d: Data) => d["pingOnResume"] }]],
     ["transition", { event: "renew", "sova/feed": "quiet" }, ["script", { expr: (d: Data) => assign({ renewals: ((d["renewals"] as number) ?? 0) + 1 }) }]],
     ["transition", { event: "effect/failed", target: "idle" }, ["script", { expr: (d: Data) => assign({ failed: ((d["failed"] as number) ?? 0) + 1 }) }]],
     [

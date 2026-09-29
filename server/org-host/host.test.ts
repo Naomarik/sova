@@ -392,5 +392,21 @@ describe("org host", () => {
     assert.deepEqual(host.configuration("l/1"), ["top", "idle"]);
     await host.close();
   });
+
+  test("one session's resume that throws never aborts the org's boot: it is a problem, the rest resume", async () => {
+    const at = place();
+    const host = await open(at);
+    await host.start("p/1", "host-probe", { pingOnResume: "nobody/x" }, operator);
+    await host.start("p/2", "host-probe", {}, operator);
+    await host.act("p/2", "wait", {}, operator);
+    await host.close();
+    await tick(80);
+    const again = await open(at);
+    assert.deepEqual(again.problems().map((p) => [p.kind, p.sessionId]), [["resume", "p/1"]]);
+    assert.match(again.problems()[0]!.why, /Unknown session: nobody\/x/);
+    assert.deepEqual(again.configuration("p/2"), ["top", "idle"], "the others resumed and their timers fired");
+    assert.equal((await again.act("p/2", "count", {}, operator)).taken, true, "the org works");
+    await again.close();
+  });
 });
 

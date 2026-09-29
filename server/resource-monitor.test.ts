@@ -382,3 +382,33 @@ test("the runtime listener: registers its session, takes worker pids off the eve
   assert.equal(m.snapshot()!.sessions.find((x) => x.sessionPath === "/s/listener.jsonl"), undefined);
   assert.equal(m.snapshot()!.unownedWorkers[0]!.id, "unowned:200");
 });
+
+test("stop() writes the 30s window in progress as one line, once; a restart's history keeps it", async () => {
+  let now = BOOT * 1000 + 2_000_000;
+  const fx = fixture("flush", [{ pid: SERVER, ppid: 1, argv: ["node"] }], { unit: false });
+  const logDir = join(root, "flush-log");
+  const m = new ResourceMonitor({ procRoot: fx.proc, logDir, serverPid: SERVER, now: () => now, eventLoop: false, platform: "linux", hosted: () => [] });
+  for (let i = 0; i < 3; i++) {
+    await m.tick(); // half a window: nothing on disk yet
+    now += 5000;
+  }
+  assert.equal(readdirSync(join(root)).includes("flush-log"), false);
+  m.stop();
+  m.stop();
+  const lines = readdirSync(logDir).flatMap((f) => readFileSync(join(logDir, f), "utf8").trim().split("\n"));
+  assert.equal(lines.length, 1, "one line, and a second stop adds nothing");
+  // A fresh process (the restart) reads it back.
+  const after = new ResourceMonitor({ procRoot: fx.proc, logDir, serverPid: SERVER, now: () => now, eventLoop: false, platform: "linux", hosted: () => [] });
+  assert.equal((await after.history(0, "30s")).points.length, 1);
+});
+
+test("titleOf (Sova's title, from memory) wins over pi's session name", async () => {
+  const fx = fixture("title", [{ pid: SERVER, ppid: 1, argv: ["node"] }, { pid: 200, ppid: SERVER, argv: ["claude", "-p"] }], { unit: false });
+  const asked: string[] = [];
+  const m = new ResourceMonitor({ procRoot: fx.proc, logDir: join(root, "title-log"), serverPid: SERVER, eventLoop: false, platform: "linux",
+    hosted: () => [hostedA({ title: "pi name" })], titleOf: (p) => (asked.push(p), p === "/s/a.jsonl" ? "Renamed in Sova" : undefined) });
+  await m.tick();
+  assert.equal(m.snapshot()!.sessions[0]!.title, "Renamed in Sova");
+  assert.equal((await m.history(0, "5s")).groups["/s/a.jsonl"]!.label, "Renamed in Sova");
+  assert.deepEqual(asked, ["/s/a.jsonl"]);
+});

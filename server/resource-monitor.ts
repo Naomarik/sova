@@ -167,8 +167,8 @@ export interface MonitorOptions {
   idleEvery?: number;
   /** Start the event-loop delay histogram (off in tests that drive ticks by hand). */
   eventLoop?: boolean;
-  /** Sova's display title for a session (asked at most once a minute per session, off the tick). */
-  titleOf?: (path: string) => Promise<string | undefined>;
+  /** Sova's display title for a session, from memory only (it is asked each tick; no I/O). */
+  titleOf?: (path: string) => string | undefined;
 }
 
 interface ProcState {
@@ -267,8 +267,7 @@ export class ResourceMonitor {
   private lastPiWorkerMiss = 0;
   private snap: MonitorSnapshot | null = null;
   private readonly idleEvery: number;
-  private readonly titleOf?: (path: string) => Promise<string | undefined>;
-  private titles = new Map<string, { title?: string; at: number }>();
+  private readonly titleOf?: (path: string) => string | undefined;
   /** The last tick's busy ms per phase, with its process and new-process counts (diagnostics). */
   lastPhases: Record<string, number> = {};
 
@@ -350,7 +349,8 @@ export class ResourceMonitor {
     this.timer.unref();
   }
 
-  /** Stop sampling; the 30s window in progress goes to disk now, so a restart loses none of it. */
+  /** Stop sampling; the 30s window in progress goes to disk now (one synchronous append, no
+      retry), so a restart loses none of it. Safe to call more than once. */
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
@@ -365,19 +365,7 @@ export class ResourceMonitor {
     }
   }
 
-  /** Sova's title for each session row: cached, refreshed at most once a minute, never awaited. */
-  private refreshTitles(paths: string[], at: number): void {
-    if (!this.titleOf) return;
-    let asked = 0;
-    for (const path of paths) {
-      const t = this.titles.get(path);
-      if ((t && at - t.at < 60_000) || asked >= 5) continue;
-      asked++;
-      this.titles.set(path, { ...(t?.title ? { title: t.title } : {}), at });
-      this.titleOf(path).then((title) => this.titles.set(path, { ...(title ? { title } : {}), at }), () => {});
-    }
-    if (this.titles.size > 500) for (const [k, v] of this.titles) if (at - v.at > 3_600_000) this.titles.delete(k);
-  }
+
 
   snapshot(): MonitorSnapshot | null {
     return this.snap;
@@ -813,14 +801,15 @@ export class ResourceMonitor {
       const workers = [...s.workers].map(([id, ps]) => workerRow(id, ps, h?.workers.find((w) => w.id === id)))
         .sort((a, b) => b.cpuPct - a.cpuPct || b.rssBytes - a.rssBytes);
       const all = [...s.own, ...[...s.workers.values()].flat()];
+      // Sova's display title (renames included) from memory, else pi's own session name.
+      const title = this.titleOf?.(path) ?? h?.title;
       const own = sum(s.own);
       sessionRows.push({
-        sessionPath: path, ...((h?.title ?? this.titles.get(path)?.title) ? { title: h?.title ?? this.titles.get(path)!.title! } : {}), ...(h?.cwd ? { cwd: h.cwd } : {}), hosted: !!h,
+        sessionPath: path, ...(title ? { title } : {}), ...(h?.cwd ? { cwd: h.cwd } : {}), hosted: !!h,
         ...sum(all), own: s.own.slice(0, 5), ownCpuPct: own.cpuPct, ownRssBytes: own.rssBytes, workers,
       });
     }
     sessionRows.sort((a, b) => b.cpuPct - a.cpuPct || b.rssBytes - a.rssBytes);
-    this.refreshTitles(sessionRows.map((r) => r.sessionPath!), at);
     const unownedWorkers = [...unowned].map(([id, ps]) => workerRow(id, ps, undefined));
 
     const bucket = (ps: MonitorProc[]): MonitorBucket => ({ ...sum(ps), procs: ps.slice(0, 20) });
@@ -918,7 +907,17 @@ const CORES = availableParallelism();
 let instance: ResourceMonitor | null = null;
 
 export function startResourceMonitor(opts: MonitorOptions): ResourceMonitor {
-  instance ??= new ResourceMonitor(opts);
+  if (!instance) {
+    instance = new ResourceMonitor(opts);
+    // The 30s window in progress goes to disk the moment the process is told to end: one
+    // synchronous append of ~1-2 KB, no retry, before the server's own shutdown handler runs
+    // (registered earlier, so first). These listeners only flush; ending the process stays the
+    // server's job. stop() is idempotent: a second call finds nothing pending.
+    const flush = () => instance?.stop();
+    process.once("SIGTERM", flush);
+    process.once("SIGINT", flush);
+    process.once("beforeExit", flush);
+  }
   instance.start();
   return instance;
 }

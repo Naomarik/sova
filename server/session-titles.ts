@@ -59,6 +59,9 @@ function save(next: Record<string, string>): void {
   titles = next;
 }
 
+/** The titles as last read or written by this process, with no file read (for per-tick use). */
+export const memoSessionTitles = (): Readonly<Record<string, string>> => titles;
+
 /** Every stored title. Reads the file, so a listing sees another server instance's writes. */
 export function readSessionTitles(): Record<string, string> {
   titles = load();

@@ -37,7 +37,7 @@ import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { decodeWorkers, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
 import { startPriceRefresh } from "./model-prices";
-import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
+import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
@@ -1249,6 +1249,7 @@ startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),
   liveDir: LIVE_DIR,
   held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.session.sessionId, cwd: c.session.sessionManager.getCwd() })),
+  titleOf: cachedTitleOf,
 });
 // Every attached org's workspace repo: committed at most hourly when anything changed, then pushed.
 const workspaceCommits = new WorkspaceCommitter(attachedWorkspaces);

@@ -12,7 +12,7 @@ import { RECENT_WRITE_MS } from "./write-guard";
 import { isArchived, setArchived } from "./archived-sessions";
 import { dropGroupAssignments, readAssignments } from "./session-groups";
 import { draftCounts, draftPreview, dropDrafts, readDrafts } from "./drafts";
-import { dropSessionTitles, readSessionTitles } from "./session-titles";
+import { dropSessionTitles, memoSessionTitles, readSessionTitles } from "./session-titles";
 import { removeSessionAttachments } from "./attachments";
 import { cwdOverride, disposeHeldChat, getModelRuntime, isSessionBusy, pendingDialogCount } from "./chat-manager";
 import { isUnread, isViewing, readSeen, turnErrorShows } from "./seen";
@@ -719,6 +719,13 @@ function outlineOverlay(s: BaseSummary, outline: unknown): { outlineNow?: string
 function withTitle(s: BaseSummary, titles: Record<string, string>): BaseSummary {
   const override = titles[s.id];
   return override && override !== s.title ? { ...s, title: override, originalTitle: s.title } : s;
+}
+
+/** A session's display title from what is already in memory (the cached summary and the titles
+    as last read), with no I/O; undefined when the session was never summarized here. */
+export function cachedTitleOf(path: string): string | undefined {
+  const hit = cache.get(path);
+  return hit ? withTitle(hit.summary, memoSessionTitles() as Record<string, string>).title : undefined;
 }
 
 /** ms epoch of a session's last assistant reply, from the cached tail read; undefined when unknown. */

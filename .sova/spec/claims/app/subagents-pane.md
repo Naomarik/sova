@@ -8,8 +8,7 @@ list holds every worker the session's live record carries, live ones first, and 
 active branch's workers one click away (§app.subagents-pane/hidden-workers).
 
 It is **this session only**. `#/agents` (§app/insights) stays the cross-session surface: every running pi,
-its teams and solo workers, as cards with no transcripts. The session head's "{n} working" chip
-keeps linking there. The pane is for watching; the page is for finding.
+its teams and solo workers, as cards with no transcripts. The pane is for watching; the page is for finding.
 
 ## §app.subagents-pane/trigger — Trigger
 
@@ -308,13 +307,13 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   the same split-and-cost `title` as the head's Σ). A worker that has spent nothing yet shows
   none, and so does a worker from a pi-config that doesn't publish counts: the meta line then
   reads exactly as it did before. It is one worker's spend, never the Σ.
-  "As of" is `endedAt`, else `lastActivity`, mono 24-hour, the full ISO time in `title`. **Only a
+  "As of" is `endedAt`, else `lastActivity`, mono 12-hour, the full ISO time in `title`. **Only a
   live-sourced Working or Starting chip pulses**, so each row has one pulsing thing at most.
   **Restored** workers (§app.worker-restore/restore) are the ones the session recorded before a
   server restart: no process runs them and they never pulse. One that was idle at the restart
   reads Restored, one that was mid-task reads Interrupted (warn: the turn it was on never
   finished), and one that had ended keeps its ending's chip. Usage rebuilt from a snapshot says
-  so in the `title` ("$0.41 as of {HH:MM}"), and a worker whose usage can't be read shows
+  so in the meta line's visible "as of {time}" (the tokens' `title` has no time), and a worker whose usage can't be read shows
   "usage unavailable" in the tokens' place, never 0. While
   the pane's connection is down, nothing pulses and every row reads "as of" the last update.
 - **Context ring.** Each row shows how full that worker's **own** context is

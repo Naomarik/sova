@@ -195,9 +195,8 @@ Two more head rules cover every head, not just chat:
 - **Floor.** `.session-head-main` has `min-width: 72px`. Whatever else lands in the head later,
   the title and meta line can't collapse to nothing. Extra chips overflow before the title
   disappears, and each new head chip needs its own narrow rule.
-- **Mode trigger** (chat, §chat/mode-menu). Under 520px of head width it's icon-only: 44px, with its name in
-  `aria-label`. Under 360px it's hidden, since the title can't spare 44px more (at 360 the title
-  keeps about 76px). There, `/mode {name}` in the composer still switches.
+- **Mode trigger** (chat, §chat/mode-menu). Not in the head: it lives in the composer (§chat/composer),
+  so it takes nothing from this budget.
 
 ## §chat.context-window/tokens — Tokens
 

@@ -55,7 +55,7 @@
     "§app.insights/sidebar-foot": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -64,7 +64,9 @@
         "src/App.tsx",
         "src/components/ChatView.tsx",
         "src/components/SessionView.tsx",
-        "src/components/GroupView.tsx"
+        "src/components/GroupView.tsx",
+        "src/lib/workers.ts",
+        "server/insights.ts"
       ],
       "requires": [
         "§app.claude-logins/active-login",
@@ -148,11 +150,13 @@
     "§app.insights/usage-page-and-agents-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/AgentsView.tsx",
         "src/lib/agents-board.ts",
-        "src/App.tsx"
+        "src/App.tsx",
+        "src/components/UsageView.tsx",
+        "src/components/InsightsPage.tsx"
       ]
     },
     "§app.session-list/accessibility": {
@@ -167,7 +171,7 @@
     "§app.session-list/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -221,7 +225,7 @@
     "§app.session-list/groups": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/design/base.css",
         "src/components/Groups.tsx",
@@ -244,7 +248,7 @@
         "§app.session-list/recent"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/storage-keys.ts",
@@ -257,7 +261,8 @@
         "src/components/ChatView.tsx",
         "src/lib/api.ts",
         "src/lib/drag-archive.ts",
-        "server/archive-org-guard.test.ts"
+        "server/archive-org-guard.test.ts",
+        "src/components/SessionDetails.tsx"
       ]
     },
     "§app.session-list/search": {
@@ -493,7 +498,7 @@
     "§app.subagents-pane/worker-rows": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.worker-restore/restore",
         "§app.subagents-pane/context-fill",
@@ -551,7 +556,7 @@
     "§app/shell": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/App.tsx"
       ]
@@ -561,7 +566,8 @@
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
-        "src/components/SubagentPane.tsx"
+        "src/components/SubagentPane.tsx",
+        "src/components/SessionView.tsx"
       ]
     },
     "§chat.composer/accessibility": {
@@ -582,7 +588,7 @@
         "§chat.images/composer-attachments"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
@@ -607,7 +613,7 @@
         "§chat.images/composer-attachments"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§chat.composer/composer-flyout": {
       "kind": "behavior",
@@ -628,7 +634,7 @@
     "§chat.composer/disabled-states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
@@ -726,10 +732,11 @@
     "§chat.context-window/width-budget": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/design/base.css",
-        "src/app.css"
+        "src/app.css",
+        "src/components/Composer.tsx"
       ]
     },
     "§chat.images/composer-attachments": {
@@ -1065,7 +1072,7 @@
     "§chat.transcript/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/Thread.tsx",
         "server/transcript.ts",
@@ -1168,7 +1175,7 @@
     "§chat.transcript/transcript-items": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/transcript.ts",
         "src/lib/change-rows.ts",
@@ -1183,7 +1190,8 @@
         "server/explanations.test.ts",
         "src/lib/explain.ts",
         "src/lib/explain.test.ts",
-        "src/components/SessionPane.tsx"
+        "src/components/SessionPane.tsx",
+        "pi-config/extensions/stamp/format.ts"
       ]
     },
     "§chat/composer": {
@@ -1207,7 +1215,7 @@
     "§chat/markdown": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/lib/markdown.ts",
         "src/components/Markdown.tsx",
@@ -1249,10 +1257,13 @@
     "§design.copy-deck/composer": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/VoiceInput.tsx",
-        "src/lib/voice/format.ts"
+        "src/lib/voice/format.ts",
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/SessionView.tsx"
       ]
     },
     "§design.copy-deck/composer-flyout": {
@@ -1381,7 +1392,7 @@
     "§design.ground-rules/icons": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "public/favicon.svg",
         "public/manifest.webmanifest",
@@ -1395,7 +1406,10 @@
         "public/icons/activity.svg",
         "public/icons/bulb.svg",
         "public/icons/wrench.svg",
-        "public/icons/mic.svg"
+        "public/icons/mic.svg",
+        "src/components/ui.tsx",
+        "src/vis/icons.ts",
+        "src/vis/kinds/wireframe/icons.ts"
       ]
     },
     "§design.ground-rules/motion": {
@@ -2011,7 +2025,7 @@
         "§app.worker-restore/usage-from-transcripts"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "pi-config/extensions/subagents/index.ts",
         "pi-config/extensions/subagents/registry.ts",
@@ -2190,9 +2204,10 @@
     "§mesh.peers/health": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
-        "server/mesh/index.ts"
+        "server/mesh/index.ts",
+        "server/mesh/hello.ts"
       ]
     },
     "§mesh.peers/hello": {
@@ -4969,7 +4984,7 @@
     "§app.organizations/person-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.organizations/org-page",
         "§app.organizations/roster",
@@ -4995,7 +5010,8 @@
         "src/lib/api.ts",
         "src/lib/orgs-route.ts",
         "src/components/InsightsPage.tsx",
-        "server/person-page.test.ts"
+        "server/person-page.test.ts",
+        "src/lib/minute-clock.ts"
       ]
     },
     "§app.organizations/org-sessions": {
@@ -5676,7 +5692,7 @@
     "§app.owner-page/page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.baton/share-listener",
         "§app.owner-page/content"
@@ -5689,7 +5705,9 @@
         "src/share/thread.css",
         "server/share/listener.ts",
         "server/share/routes.ts",
-        "server/owner-page.test.ts"
+        "server/owner-page.test.ts",
+        "src/design/tokens.css",
+        "src/share/index.html"
       ]
     },
     "§app.owner-page/rejected": {
@@ -6739,7 +6757,7 @@
     "§design.copy-deck/overseer-head": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/OverseerView.tsx"
       ]

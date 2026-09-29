@@ -287,7 +287,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   {name} was added."
 - **Live.** The page re-reads every 10 seconds while the browser tab shows (paused while hidden,
   at once when shown again), reconciled in place so an open form, an open modal and `Show All`
-  keep their state; ages move on every 30 seconds. A person who leaves, is approved or declined
+  keep their state; ages move on every 60 seconds. A person who leaves, is approved or declined
   elsewhere updates head, banner and actions without a reload. Focus moves to the title only when
   the page changes (another person, or from the org page), never on a re-read.
 - **Width.** Under 768px of pane width (folded) every row stacks: meta lines wrap and never

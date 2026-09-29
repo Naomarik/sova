@@ -204,13 +204,20 @@ export function bashCommands(branch: readonly unknown[]): string[] {
 
 /**
  * The task's draft, as a project-relative `--spec` dir: the last draft this session created (from its
- * shell commands), else the newest draft created at or after the session start, else none.
+ * shell commands), else the newest draft created at or after the session start, else, in a linked
+ * worktree (a task's own tree, its drafts the task's whoever made them: a worker's census sees the
+ * parent's draft, F7), the newest draft there; else none.
  */
 export async function pickDraft(root: string, commands: readonly string[], sessionStart: string | undefined, io: SpecIO = localIO): Promise<string | undefined> {
 	const specOf = (name: string) => `${SPEC_REL}/drafts/${name}/spec`;
 	const has = async (name: string) => Boolean(await io.exists(join(root, specOf(name), "manifest.json")));
 	for (const name of draftsCreated(commands).reverse()) if (await has(name)) return specOf(name);
-	const since = sessionStart ? Date.parse(sessionStart) : NaN;
+	const opts = { cwd: root, timeout: TOOL_TIMEOUT_MS };
+	const gitDir = (await io.exec("git", ["rev-parse", "--absolute-git-dir"], opts).catch(() => undefined))?.stdout.trim();
+	const common = (await io.exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], opts).catch(() => undefined))?.stdout.trim();
+	const linked = Boolean(gitDir && common && gitDir !== common);
+	const parsed = sessionStart ? Date.parse(sessionStart) : NaN;
+	const since = linked ? 0 : parsed;
 	if (Number.isNaN(since)) return undefined;
 	let names: string[];
 	try {
@@ -458,9 +465,25 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 	}
 }
 
-/** One session's census in one process: calls are serialized, so parallel tool results can't both report the same change. */
+/** The directories a tool call writes in: a shell command's (commandDirs), an edit's file's, and the cwd. */
+export function callDirs(call: Pick<CensusCall, "cwd" | "toolName" | "input">): string[] {
+	const tool = call.toolName.toLowerCase();
+	const input = call.input as { command?: unknown; path?: unknown; file_path?: unknown } | undefined;
+	const dirs = [call.cwd];
+	if (tool === "bash" && typeof input?.command === "string") dirs.push(...commandDirs(input.command, call.cwd));
+	const file = typeof input?.path === "string" ? input.path : typeof input?.file_path === "string" ? input.file_path : undefined;
+	if (file && tool !== "bash" && tool !== "read") dirs.push(dirname(file.startsWith("/") ? file : join(call.cwd, file)));
+	return [...new Set(dirs)];
+}
+
+/**
+ * One session's census in one process, per work tree: each tree a call writes in (callDirs) has its own
+ * state, its baseline taken before the call first touches it (`before`), so a parent editing a worktree
+ * by bash (`cd <wt> && …`) gets that tree's digest (F6). Calls are serialized, so parallel tool results
+ * can't both report the same change.
+ */
 export class CensusHook {
-	private state: CensusState = freshCensusState();
+	private states = new Map<string, CensusState>();
 	private chain: Promise<unknown> = Promise.resolve();
 	private readonly io: SpecIO;
 	private readonly core: () => string;
@@ -472,24 +495,59 @@ export class CensusHook {
 
 	/** A new session (or a switch to another): nothing seen yet. */
 	reset(): void {
-		this.state = freshCensusState();
+		this.states = new Map();
+	}
+
+	private async topOf(dir: string, signal?: AbortSignal): Promise<string | undefined> {
+		const r = await this.io.exec("git", ["rev-parse", "--show-toplevel"], { cwd: dir, timeout: TOOL_TIMEOUT_MS, signal }).catch(() => undefined);
+		return r && r.code === 0 ? r.stdout.trim() : undefined;
+	}
+
+	private serial<T>(work: () => Promise<T>, fallback: T): Promise<T> {
+		const next = this.chain.then(work).catch(() => fallback);
+		this.chain = next;
+		return next;
+	}
+
+	/** Take a tree's baseline if it has none yet. */
+	private async baseline(dir: string, signal?: AbortSignal): Promise<void> {
+		const top = await this.topOf(dir, signal);
+		if (!top || this.states.has(top)) return;
+		const { state } = await censusStep(freshCensusState(), { cwd: dir, toolName: "", input: undefined, signal }, this.core(), this.io);
+		this.states.set(top, state);
 	}
 
 	/** Take the baseline now (a run's start), so the run's first edit is already a delta. */
 	prime(cwd: string): Promise<CensusResult> {
-		return this.after({ cwd, toolName: "", input: undefined });
+		return this.serial(async () => {
+			await this.baseline(cwd);
+			return {};
+		}, {});
+	}
+
+	/** Before a call: the baseline of each tree it will write in and the session hasn't seen yet. */
+	before(call: CensusCall): Promise<void> {
+		return this.serial(async () => {
+			for (const dir of callDirs(call)) await this.baseline(dir, call.signal);
+		}, undefined);
 	}
 
 	after(call: CensusCall): Promise<CensusResult> {
-		const next = this.chain
-			.then(async () => {
-				const { state, result } = await censusStep(this.state, call, this.core(), this.io);
-				this.state = state;
-				return result;
-			})
-			.catch((): CensusResult => ({}));
-		this.chain = next;
-		return next;
+		return this.serial(async () => {
+			const texts: string[] = [];
+			let failure: string | undefined;
+			const done = new Set<string>();
+			for (const dir of callDirs(call)) {
+				const top = await this.topOf(dir, call.signal);
+				if (!top || done.has(top)) continue;
+				done.add(top);
+				const { state, result } = await censusStep(this.states.get(top) ?? freshCensusState(), { ...call, cwd: dir }, this.core(), this.io);
+				this.states.set(top, state);
+				if (result.text) texts.push(result.text);
+				failure ??= result.failure;
+			}
+			return { ...(texts.length ? { text: texts.join("\n") } : {}), ...(failure ? { failure } : {}) };
+		}, {} as CensusResult);
 	}
 }
 

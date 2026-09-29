@@ -150,12 +150,15 @@ writer**).
   mechanical checks (`spec-guard.ts`, plain node, shared with the Claude Code
   workers' hooks), silent without a spec, Git or the trusted tools, and in a
   remote session:
-  - **Census on a Git delta.** After any tool call, bash included, the work
-    tree's `git status` (paths and mtimes) is compared with what the session
-    saw; the first look (a run's start) is the baseline. When a path is new
+  - **Census on a Git delta.** After any tool call, bash included, each work
+    tree the call writes in (the cwd, a command's `cd`/`git -C`/`--root`, an
+    edit's file) has its `git status` (paths and mtimes) compared with what the
+    session saw; its baseline is taken at the run's start or just before the
+    first call that touches it. When a path is new
     (a commit's files count too), `census --changed --base <session-start
-    HEAD>` runs (`--spec` the draft this session created, else the newest one
-    created since the session started) and, on the first in-boundary change,
+    HEAD> --own-base …` runs (`--spec` the draft this session created, else
+    the newest one created since the session started, else in a linked
+    worktree its newest) and, on the first in-boundary change,
     each new file in the boundary or mapped outside it, or a new foreign §, a
     short `[spec census]` digest is appended to that tool result, with a
     "No draft yet" line while there is none. The same digest says, on the call
@@ -174,42 +177,44 @@ writer**).
     promote call's `driftWarnings` (a removed quantity another § still states)
     are relayed on its result as a `[spec check]` warning, never a block.
     `PI_SPEC_CENSUS_HOOK=0` turns it off.
-  - **The `Also changes:` line.** When a run is about to settle after it
-    edited, committed, promoted or merged (a tool call, a `worktrees:merged`
-    event, the session's tree or any worktree it tracks (`worktrees:state`)
-    differing from the run's start, whoever changed it, or a worker's report
-    in the run naming a § in its own `Also changes:` line; a report's § never
-    join the list, and a report of `none` makes no change turn), the last line is
-    checked against the foreign § computed from Git: the worktrees merge
-    event's list, plus `sova-spec.mjs foreign --base <HEAD at the run's start>`
-    for the session's tree and for each root a `promote --write` named, plus
-    for the session's own tree only what its own operations landed (for each
-    commit, merge or promotion it ran there, HEAD just before vs just after;
-    another actor's commit meanwhile is never the turn's) plus its uncommitted
-    changes; for each tracked worktree the spec that landed there: on the default branch its whole
-    diff; on another branch a merge that brought the default branch in is
-    absorbed, not landed (its § drop out), plus
-    `foreign --spec <draft>` against its `base.commit` for each draft the run
-    edited (drafts are ignored by Git, so their `spec/` mtimes are stamped at
-    the run's start; a draft edit alone makes the line required). A run
-    that merged with the worktree tool, ran `promote --write`, or in which the
-    current spec of any of those trees changed (a worker's promotion) gets one
-    hidden `spec-check` message naming the list and one more request, never a
-    second; any other run gets a warning, on screen and as a hidden
-    `spec-check` note with the next prompt, so the model sees it. A worktree
-    created or attached during the run is snapshotted when `worktrees:state`
-    announces it, before its worker writes. A `manifest.json` Git holds in
-    conflict (`UU`/`AA`) is named, once per conflict, in the census digest and
-    in the check, with the `merge-manifest --write` command. A line
-    `Spec check override: <why>`
-    above the last line accepts a list the agent shows is wrong.
-    `PI_SPEC_CHECK=0` turns it off.
+  - **The `Also changes:` line.** One grammar and parser (`also-changes.ts`, no
+    imports; the Claude Code Stop hook and the A/B scorer use it too): items
+    separated by `;`, each led by the § it names (`, /d` completes from the
+    preceding full id), a § inside a description never named, a broken line a
+    format error of its own. At the end of a run (`agent_before_settle`):
+    - **Landings**, each judged on its own range (`judgeOp`): this session's
+      commits, merges (worktree tool, bash, fast-forward; a `worktrees:merged`
+      event's `before`/`after`/`top`) and promotes; an interrupted run's
+      (checked with the next run); and its workers' from the ledger
+      (`SOVA_SPEC_LEDGER`, one JSONL file per parent session, appended by
+      `spec-worker.ts` and the Claude Code hooks), taken in a run that relays
+      a worker or changes something itself. A merge that only brought the
+      default branch into another branch is absorbed, not landed.
+    - **The list** is the union of their `sova-spec.mjs foreign` lists, the
+      task's own claims out (`--own-base`: absent at the default tip at run
+      start and at the fork point), plus the session tree's uncommitted
+      changes and edited drafts. Tracked worktrees join only in a relay run,
+      from where the last run that took them left them; a Q&A run leaves them
+      (and the ledger) for later, so a background promotion forces no line.
+    - **The landing gate** (`foreign --landing`): each changed file no claim
+      maps needs a `Plumbing: <path> — <why>` line, each unpromoted draft
+      record's § a `Deferred: §X — <why>` line; § whose mapped code changed
+      with their text untouched may be named without being extras.
+    - A landing run is re-prompted (hidden `spec-check` message) up to twice,
+      as the Stop hook; a line on a Q&A run once; any other wrong line gets a
+      warning, on screen and as a hidden note with the next prompt. A
+      `manifest.json` Git holds in conflict is named with the `merge-manifest`
+      command. `Spec check override: <why>` above the last line excuses an
+      omission only, never an extra. A check that fails says so, to the model
+      too. `PI_SPEC_CHECK=0` turns it off.
 
   - **In pi workers.** Workers start with `--no-extensions`, so the mode
     extension is absent there; the subagents spawn path loads
-    `spec-worker.ts` (`-e`) into every code-writing pi worker a spec-on
-    session spawns: the same census digest (forbidden writes included), nothing
-    else.
+    `spec-worker.ts` (`-e`) into every code-writing pi worker and member a
+    spec-on session spawns: the same census digest (forbidden writes
+    included), the same turn-end line check over its own operations and tree
+    (landings re-prompted twice, anything else once), and a ledger entry per
+    git operation for the parent.
 
   See `../spec/README.md`.
 
@@ -557,7 +562,8 @@ node tests/smoke.mjs          # real index.ts against a fake pi host, no model r
 node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
 node tests/note-turn.mjs      # real pi session + scripted provider: a minor toggle keeps the head; notes, reopen, compaction
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
-node --test spec-guard.test.ts # the spec checks: git delta census digest (real Git + spec tools), the Also-changes line, command detection
-node tests/spec-turn.mjs      # real pi session + scripted provider: the census digest on a bash write, a hand write of the spec, a reset past evidence, warn vs one re-prompt, mode:state
-node tests/spec-worker.mjs    # real pi session loading only spec-worker.ts (a pi worker's -e): the census digest on its first edit
+node --test also-changes.test.ts # the Also-changes grammar (s2-3's line, suffix ids, format errors), Plumbing/Deferred lines, landingGate
+node --test spec-guard.test.ts # the spec checks: census per tree (real Git + spec tools), judgeOp (M3-B-s2-2's own claim), the ledger, command detection
+node tests/spec-turn.mjs      # real pi session + scripted provider: census digest, forbidden writes, landings (two merges, Plumbing, Deferred, a worker's ledger commit), Q&A line, re-prompts, mode:state
+node tests/spec-worker.mjs    # real pi session loading only spec-worker.ts (a pi worker's -e): the census digest; the turn-end check (edit, promote x2, Q&A line) and its ledger entry
 ```

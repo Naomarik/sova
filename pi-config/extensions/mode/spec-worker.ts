@@ -81,7 +81,10 @@ export default function specWorker(pi: ExtensionAPI): void {
 
 	pi.on("tool_call", async (event, ctx) => {
 		run.tools = true;
-		if (process.env.PI_SPEC_CENSUS_HOOK !== "0") await writes.before(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
+		if (process.env.PI_SPEC_CENSUS_HOOK !== "0") {
+			await writes.before(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
+			await census.before({ cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
+		}
 		const cmd = event.toolName === "bash" ? (event.input as { command?: unknown } | undefined)?.command : undefined;
 		if (typeof cmd !== "string" || !(gitCommits(cmd) || gitMerges(cmd) || promoteWrites(cmd))) return;
 		const kind: OpLanding["kind"] = promoteWrites(cmd) ? "promote" : gitMerges(cmd) ? "merge" : "commit";

@@ -727,3 +727,49 @@ test("the workers' ledger: append, read since, malformed lines skipped", () => {
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("F6/F7: the census follows the tree a call writes in (a parent's `cd <worktree> && …`, an edit's path); a worktree's draft is its workers' too", async () => {
+	mkdirSync(scratchRoot, { recursive: true });
+	const dir = mkdtempSync(join(scratchRoot, "spec-f6-"));
+	const repo = join(dir, "repo");
+	const wt = join(dir, "wt");
+	try {
+		const put = (at: string, rel: string, text: string) => {
+			mkdirSync(dirname(join(at, rel)), { recursive: true });
+			writeFileSync(join(at, rel), text);
+		};
+		const git = (at: string, ...args: string[]) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", at, ...args]).status, 0, args.join(" "));
+		mkdirSync(repo);
+		put(repo, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims: { "§app/shell": { kind: "surface", code: ["src/App.tsx"] } } }));
+		put(repo, ".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell.\n");
+		put(repo, "src/App.tsx", "1\n");
+		put(repo, "src/Other.tsx", "1\n");
+		git(repo, "init", "-q", "-b", "master");
+		git(repo, "add", "-A");
+		git(repo, "commit", "-qm", "base");
+		git(repo, "worktree", "add", "-q", "-b", "feat", wt);
+		const hook = new CensusHook({ core: () => CORE });
+		await hook.prime(repo);
+		const bash = { cwd: repo, toolName: "bash", input: { command: `cd ${wt} && printf '2\\n' > src/App.tsx` } };
+		await hook.before(bash);
+		writeFileSync(join(wt, "src/App.tsx"), "2\n");
+		const r = await hook.after(bash);
+		assert.match(r.text ?? "", /\[spec census\] 1 changed file\(s\) in the boundary/, "the worktree's first edit is a delta, not its baseline");
+		assert.match(r.text ?? "", /src\/App\.tsx → §app\/shell/);
+		const edit = { cwd: repo, toolName: "edit", input: { path: join(wt, "src/Other.tsx") } };
+		await hook.before(edit);
+		writeFileSync(join(wt, "src/Other.tsx"), "2\n");
+		assert.match((await hook.after(edit)).text ?? "", /New: src\/Other\.tsx → unclaimed/);
+		// F7: a draft the parent made in the worktree is the worker's too (its session started later, its
+		// commands never created it): no false "No draft yet".
+		assert.equal(spawnSync("node", [join(CORE, "sova-spec-draft.mjs"), "new", "task", "--write", "--root", wt, "--json"]).status, 0);
+		const worker = new CensusHook({ core: () => CORE });
+		await worker.prime(wt);
+		writeFileSync(join(wt, "src/New.tsx"), "new\n");
+		const w = await worker.after({ cwd: wt, toolName: "bash", input: { command: "true" }, commands: [], sessionStart: new Date(Date.now() + 60_000).toISOString() });
+		assert.match(w.text ?? "", /changed file\(s\) in the boundary/);
+		assert.doesNotMatch(w.text ?? "", /No draft yet/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});

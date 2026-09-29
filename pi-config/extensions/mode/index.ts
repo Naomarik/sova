@@ -1049,7 +1049,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	pi.on("tool_call", async (event, ctx) => {
 		if (!specOn()) return;
 		specRun.tools = true;
-		if (process.env.PI_SPEC_CENSUS_HOOK !== "0") await specWrites.before(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
+		if (process.env.PI_SPEC_CENSUS_HOOK !== "0") {
+			await specWrites.before(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
+			await specCensus.before({ cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
+		}
 		// An operation of this session's that can move a HEAD or land the spec: each tree's HEAD just before it.
 		const input = event.input as { command?: unknown; action?: unknown } | undefined;
 		const cmd = event.toolName === "bash" && typeof input?.command === "string" ? input.command : undefined;

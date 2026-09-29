@@ -1,7 +1,7 @@
 // Presentation rules for the insights surfaces (docs/insights-research.md "## UX"): labels,
 // status words and chips, derived from the /api/insights/* payloads. No fetching here.
 
-import type { AgentsInsight, TeamEvent, TeamInfo, TeamMember, UsageAuth, UsageBalance, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
+import type { AgentsInsight, TeamEvent, TeamInfo, TeamMember, UsageAuth, UsageBalance, UsageClaudeLogin, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
 import type { Tone } from "../components/ui";
 import { clockTime, duration, relativeTime, shortDate, stampTime, thousands } from "./format";
 import { isHostSession } from "./workers";
@@ -206,6 +206,69 @@ export function planLabel(p: UsageProvider): string | null {
   if (!raw) return null;
   const name = raw.charAt(0).toUpperCase() + raw.slice(1);
   return /plan$/i.test(name) ? name : `${name} plan`;
+}
+
+// ---- Claude logins (§app.insights/usage-cards): one card per login, grouped by account ----------
+
+/** A login card's title: its email, else its label, else what `default` is. */
+export function claudeLoginTitle(l: UsageClaudeLogin): string {
+  return l.email ?? l.label ?? (l.id === "default" ? "Claude Code's own login" : l.id);
+}
+
+/** What tells a login from another of the same email: "Claude Code's own login", its label, else when it was added. */
+export function claudeLoginName(l: UsageClaudeLogin, now = Date.now()): string {
+  if (l.id === "default") return "Claude Code's own login";
+  if (l.label) return l.label;
+  return l.addedAt !== undefined ? `Login added ${shortDate(l.addedAt, now)}` : "Added login";
+}
+
+/**
+ * The caption under the title: "Claude · Max 20x", then, when the title is the email, the login's
+ * own name: `default`'s or its label always, when it was added only beside another login of its
+ * account (`shared`), where the email alone can't tell them apart.
+ */
+export function claudeLoginSubtitle(l: UsageClaudeLogin, now = Date.now(), shared = false): string {
+  const name = l.id === "default" || l.label || shared ? claudeLoginName(l, now) : null;
+  return ["Claude", l.planLabel, l.email && name !== l.email ? name : null].filter(Boolean).join(" · ");
+}
+
+const LIMIT_WINDOWS: Record<string, string> = { five_hour: "5h limit", seven_day: "Weekly limit", seven_day_opus: "Weekly Opus limit", seven_day_sonnet: "Weekly Sonnet limit" };
+
+/** The login's standing on this host, in Settings → Accounts' words. */
+export function claudeLoginStanding(l: UsageClaudeLogin, now: number): { tone?: Tone; text: string; title?: string } {
+  if (!l.signedIn && l.id !== "default") return { tone: "error", text: "Not signed in" };
+  const s = l.standing;
+  if (s.state === "limited") return { tone: "warn", text: `Limited until ${stampTime(s.until, now)}`, title: LIMIT_WINDOWS[s.window ?? ""] ?? "Usage limit" };
+  if (s.state === "auth") return { tone: "error", text: "Sign in again", ...(s.message ? { title: s.message } : {}) };
+  if (!l.enabled) return { text: "Off", title: "Never chosen automatically (Settings → Accounts)" };
+  return { tone: "success", text: "Ready" };
+}
+
+/** Why a login card has no meters, when that is about the login rather than the provider's answer. */
+export function claudeLoginNote(l: UsageClaudeLogin): string | null {
+  if (l.usage.windows.length > 0) return null;
+  if (l.standing.state === "auth") return "Not fetched while this login needs signing in again. Its usage shows once Claude Code has signed it in.";
+  if (l.id !== "default" && l.fetchedAt === undefined && l.usage.state === "error" && l.usage.error === "not read yet") return "Not read yet. Its usage shows at the next refresh.";
+  return null;
+}
+
+/**
+ * The cards in account groups: logins sharing an `accountUuid` share its usage limits, so they sit
+ * together, in the order the first of them has on this device. A login with no account is its own group.
+ */
+export function claudeLoginGroups(logins: UsageClaudeLogin[]): UsageClaudeLogin[][] {
+  const groups: UsageClaudeLogin[][] = [];
+  const byAccount = new Map<string, UsageClaudeLogin[]>();
+  for (const l of logins) {
+    const g = l.accountUuid ? byAccount.get(l.accountUuid) : undefined;
+    if (g) g.push(l);
+    else {
+      const fresh = [l];
+      groups.push(fresh);
+      if (l.accountUuid) byAccount.set(l.accountUuid, fresh);
+    }
+  }
+  return groups;
 }
 
 /** Claude's extra-usage meter, when it's switched on: a quota fill when there's a reading, else "On". */

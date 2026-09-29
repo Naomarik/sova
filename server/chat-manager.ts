@@ -35,6 +35,7 @@ import { toContextInfo, workerWindowResolver } from "./models";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
+import { claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry } from "./claude-login-state";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
@@ -42,6 +43,7 @@ import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
 import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
+import { monitorExtension } from "./resource-monitor";
 import { visCheckExtension, type VisCheckHost } from "./vis-check";
 
 const GUARD_POLL_MS = 3000;
@@ -92,6 +94,10 @@ export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: b
   return noExtensions ? new Map() : sessionFlags(cwd, outline, claudeCode);
 }
 
+/** The extensions every ordinary session loads beyond pi-config's: the resource monitor's listener.
+    A caller that passes its own list for an ordinary session starts from this one. */
+const DEFAULT_EXTENSION_FACTORIES = [{ name: "sova-resource-monitor", factory: monitorExtension }];
+
 /**
  * Build services for a webapp runtime.
  *
@@ -111,7 +117,11 @@ async function servicesForCwd(
     cwd,
     modelRuntime,
     extensionFlagValues: extensionFlagsFor(cwd, outline, !!resourceLoaderOptions?.noExtensions),
-    ...(resourceLoaderOptions ? { resourceLoaderOptions } : {}),
+    // An ordinary session gets the resource monitor's listener (which session this runtime hosts,
+    // its workers' pids, when its tools run; §app.resource-monitor/attribution). A special loadout
+    // (Overseer, baton, project overseer) keeps exactly its own: it runs no shell and no workers,
+    // and the monitor finds its Claude Code provider through the held sessions instead.
+    resourceLoaderOptions: resourceLoaderOptions ?? { extensionFactories: [...DEFAULT_EXTENSION_FACTORIES] },
   });
 }
 
@@ -1470,6 +1480,7 @@ class ChatSession {
         const items = normalizeEntry((event as { entry: Record<string, any> }).entry);
         if (items.length) this.broadcast({ type: "append", items });
         onSandboxAppend(this.sandboxHost, (event as { entry: unknown }).entry);
+        if (isClaudeLoginEntry((event as { entry: unknown }).entry)) this.broadcast(claudeLoginMessage(this.session.sessionManager.getBranch()));
       }
       if (event.type === "message_end" && this.senderMarks.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
         this.markSend((event as { message: { content?: unknown } }).message);
@@ -1773,6 +1784,8 @@ class ChatSession {
     client.send({ type: "queue", items: this.queue.snapshot() });
     client.send(this.modeMessage());
     this.sendSandbox((m) => client.send(m));
+    const login = claudeLoginAfterHello(this.session.sessionManager.getBranch());
+    if (login) client.send(login);
     const snap = this.workersSnapshot();
     if (snap) client.send(snap);
     pushLinks(this, client);
@@ -2505,6 +2518,8 @@ class ChatSession {
     this.modeState = resolveChatMode(this.session.sessionManager.getBranch());
     this.broadcast(this.modeMessage());
     this.sendSandbox((m) => this.broadcast(m)); // the extension re-restores on session_tree too
+    const login = claudeLoginAfterHello(this.session.sessionManager.getBranch()); // the new branch's newest entry
+    if (login) this.broadcast(login);
     pushLinks(this); // after every hello, as attach() does
     return () => sendHistory(cut, tails, (c) => this.clients.has(c));
   }
@@ -2869,12 +2884,12 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     // allowlist, no topic outline (nobody lists it), and its model from overseer.json.
     const kind = specialFor(sessionManager, path);
     const special = kind ? (kind.entry ? await kind.entry.loadout(path) : await overseerLoadout(path)) : null;
-    // An ordinary chat also gets the vis feedback extension (server/vis-check.ts); the special
-    // loadouts keep exactly their own.
+    // An ordinary chat gets the default extensions plus the vis feedback extension
+    // (server/vis-check.ts); the special loadouts keep exactly their own.
     const services = special
       ? await servicesForCwd(cwd, modelRuntime, false, special.resourceLoaderOptions)
       : await servicesForCwd(cwd, modelRuntime, !isFanoutMember(sessionManager), {
-          extensionFactories: [visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null))],
+          extensionFactories: [...DEFAULT_EXTENSION_FACTORIES, visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null))],
         });
     for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);
     // A session with no messages yet starts from the saved new-session defaults (web-defaults.ts):

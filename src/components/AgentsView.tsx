@@ -26,7 +26,7 @@ import {
   WORKTREES_POLL_MS,
   worktreePathsKey,
 } from "../lib/agents-board";
-import { clockTime, compactModel, relativeTime, shortModel, tildePath } from "../lib/format";
+import { clockTime, compactModel, relativeTime, shortModel, stampAgo, tildePath } from "../lib/format";
 import { agentsHref, memberBadges, memberStatus, type MemberStatus, orderedMembers, splitTeamEvents, teamAnchor, teamFresh, teamHeadingId, teamKey, teamPause } from "../lib/insights";
 import type { Poll } from "../lib/poll";
 import { orgProjectOf } from "../lib/drag-archive";
@@ -194,7 +194,12 @@ function TreesCell(props: { trees: WorktreeStatus[] | undefined; down: boolean }
   );
 }
 
-/** One worker, one line: name, badges, id and model in mono, the preview while working, status. */
+/** The started stamp's hover: the full local date and time. */
+const fullStamp = (t: number) =>
+  new Date(t).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
+
+/** One worker, one line: name, badges, then in mono its id, model, when it started and its turns;
+    the preview while working, status. */
 function WorkerLine(props: {
   name: string;
   badges?: { label: string; title?: string }[];
@@ -202,10 +207,14 @@ function WorkerLine(props: {
   worker: WorkerInfo | null;
   id: string;
   model?: string | null;
+  /** ms: its first spawn (a history team's member: when it joined). Nothing shows when unknown. */
+  startedAt?: number;
+  now: number;
   status: MemberStatus;
   owns?: string[];
 }) {
   const w = () => props.worker;
+  const turns = () => w()?.turns;
   return (
     <li class="board-worker" title={props.owns?.length ? `Owns: ${props.owns.join(", ")}` : undefined}>
       <span class="board-worker-name">{props.name}</span>
@@ -214,8 +223,22 @@ function WorkerLine(props: {
         <Chip>Ejected</Chip>
       </Show>
       <span class="board-worker-meta text-mono">
-        {props.id}
-        <Show when={shortModel(props.model)}>{(m) => <> · {m()}</>}</Show>
+        <span>{props.id}</span>
+        <Show when={shortModel(props.model)}>{(m) => <> · <span>{m()}</span></>}</Show>
+        <Show when={props.startedAt}>
+          {(t) => (
+            <>
+              {" · "}
+              <span>
+                <time datetime={iso(t())} title={`Started ${fullStamp(t())}`}>{stampAgo(t(), props.now)}</time>
+              </span>
+            </>
+          )}
+        </Show>
+        <Show when={turns() !== undefined}>
+          {" · "}
+          <span title="Model replies so far">{turns() === 1 ? "1 turn" : `${turns()} turns`}</span>
+        </Show>
       </span>
       <span class="board-worker-preview" title={w()?.working ? w()?.preview : undefined}>
         {w()?.working ? (w()?.preview ?? "") : ""}
@@ -280,6 +303,8 @@ function TeamBlock(props: { team: TeamInfo; ctx: BoardCtx }) {
               worker={m.worker}
               id={m.workerId}
               model={m.worker?.model ?? m.model}
+              startedAt={m.worker?.startedAt ?? (m.addedAt > 0 ? m.addedAt : undefined)}
+              now={props.ctx.now}
               status={memberStatus(m, live())}
               owns={m.ownedPaths}
             />
@@ -633,6 +658,8 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
                     worker={w}
                     id={w.id}
                     model={w.model}
+                    startedAt={w.startedAt}
+                    now={props.ctx.now}
                     status={memberStatus({ workerId: w.id, role: w.name, orchestrator: false, backend: w.backend ?? "", ownedPaths: [], addedAt: 0, worker: w }, !!r().agent?.fresh)}
                   />
                 )}

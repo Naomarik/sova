@@ -60,8 +60,10 @@ import { announce, home } from "../lib/ui-state";
 import { DecisionSettingsSection } from "./DecisionSettings";
 import { DelegateSettingsSection } from "./DelegateSettings";
 import { MeshSettingsSection } from "./MeshSettings";
+import { AccountsSettingsSection } from "./AccountsSettings";
 import { SpecSettingsSection } from "./SpecSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
+import { PublicLinksSettingsSection } from "./PublicLinksSettings";
 import { PushSettingsSection } from "./PushSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { BatonSettingsSection } from "./BatonSettings";
@@ -70,12 +72,13 @@ import { TypographySection } from "./TypographySection";
 import { Banner, Icon, trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
-/** The tab rail. Eleven screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Twelve screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 const TABS = [
   { id: "general", label: "General", icon: "settings" as const },
   { id: "models", label: "Models", icon: "sliders" as const },
+  { id: "accounts", label: "Accounts", icon: "refresh" as const },
   { id: "modes", label: "Modes", icon: "worker" as const },
   { id: "teams", label: "Teams", icon: "command" as const },
   { id: "overseer", label: "Overseer", icon: "eye" as const },
@@ -84,6 +87,7 @@ const TABS = [
   { id: "organizations", label: "Organizations", icon: "network" as const },
   { id: "themes", label: "Themes", icon: "image" as const },
   { id: "mesh", label: "Mesh", icon: "branch" as const },
+  { id: "public-links", label: "Public links", icon: "external" as const },
   { id: "experimental", label: "Experimental", icon: "terminal" as const },
 ] as const satisfies readonly { id: SettingsTab; label: string; icon: string }[];
 type TabId = (typeof TABS)[number]["id"];
@@ -219,6 +223,13 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
               <ModelsPanel />
             </div>
           </Show>
+          {/* Mounted only while its tab is: the logins and their standing are read when it opens,
+              and closing Settings cancels a sign-in still waiting for its code. */}
+          <Show when={tab() === "accounts"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-accounts" aria-labelledby="settings-tab-accounts">
+              <AccountsSettingsSection />
+            </div>
+          </Show>
           {/* Mounted only while its tab is: the backend discovery (a Claude Code CLI call) runs
               when the tab opens, not with the dialog. */}
           <Show when={tab() === "modes"}>
@@ -267,6 +278,13 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "mesh"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-mesh" aria-labelledby="settings-tab-mesh" data-mesh-ui>
               <MeshSettingsSection />
+            </div>
+          </Show>
+          {/* Mounted only while its tab is: the setting is read when the tab opens. Not a mesh tab:
+              a host that is its own gateway works with the mesh off. */}
+          <Show when={tab() === "public-links"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-public-links" aria-labelledby="settings-tab-public-links">
+              <PublicLinksSettingsSection />
             </div>
           </Show>
           {/* Same lifecycle as the other panels: mounted only while its tab is, so the settings

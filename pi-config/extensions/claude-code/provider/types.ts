@@ -108,6 +108,11 @@ export interface ClaudeSessionBridge {
 	 * it (cwd is part of the turn fingerprint).
 	 */
 	setSessionCwd?(sessionId: string, cwd: string): void;
+	/**
+	 * The login a pi session last recorded (its newest `claude-login` entry; undefined = `default`),
+	 * and where the bridge reports a change of login, as the entry to append (accounts.ts).
+	 */
+	setSessionLogin?(sessionId: string, recorded: string | undefined, onChange: (entry: import("../accounts.ts").ClaudeLoginEntry) => void): void;
 }
 
 /** The payload handed to `options.onPayload`; a returned replacement is applied. */

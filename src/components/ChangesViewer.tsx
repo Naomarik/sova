@@ -93,6 +93,9 @@ export function ChangesDialog(props: ChangesSource & { onClose(): void }) {
         aria-modal="true"
         aria-labelledby={titleId}
         ref={(el) => trapFocus(el)}
+        // Also on the dialog: a Portal hands delegated events on to its owner, so without this the
+        // session pane's own Esc handler (an ancestor there) runs first and closes the whole pane.
+        onKeyDown={onKey}
       >
         <ChangesViewer {...props} titleId={titleId} onClose={props.onClose} />
       </div>

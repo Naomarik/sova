@@ -7,7 +7,7 @@ const EDGE_GAP = 8;
 const TRIGGER_GAP = 4;
 
 /**
- * The composer's alignment chip (§chat.alignment/chip): "2 aligns · 5/15", a menu button in the
+ * The composer's alignment chip (§chat.alignment/chip): "2 aligns · 10/15 decided", a menu button in the
  * run-status row, right before the Inputs trigger. Its menu lists each open alignment on one line
  * (id, title, a progress bar and "{decided}/{live}", or its status word when it has no questions);
  * choosing one jumps to that alignment's newest card. The panel is the
@@ -49,7 +49,7 @@ export function AlignChip(props: { entries: AlignEntry[]; onJump(entry: AlignEnt
         aria-haspopup="menu"
         aria-expanded={open() ? "true" : "false"}
         aria-label={alignChipLabel(counts())}
-        title="Open alignments · questions open of all"
+        title="Open alignments · questions decided of all"
         onClick={() => {
           if (open()) return menu.hidePopover();
           menu.showPopover();

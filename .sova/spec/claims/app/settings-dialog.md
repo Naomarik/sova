@@ -7,7 +7,7 @@ each other (§design/ground-rules and §design/deviations record the deviation).
 the session stays behind, closed by the scrim, Esc, or its Close button (Cancel while anything
 is unsaved, §app.settings-dialog/save-bar).
 
-The rail is the structure: each settings screen is one tab — General, Models, Modes, Teams,
+The rail is the structure: each settings screen is one tab — General, Models, Accounts, Modes, Teams,
 Overseer, Decisions, Summaries, Organizations, Themes, Mesh, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear

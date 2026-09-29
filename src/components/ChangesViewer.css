@@ -227,6 +227,9 @@ button.changes-step-chip[aria-pressed="true"] { background: var(--color-accent);
   flex-direction: column;
   gap: var(--space-4);
 }
+/* Its content never shrinks to fit it: a diff clips (overflow: hidden, so its min-height is 0) and
+   would squeeze to the pane's height, leaving the pane nothing to scroll. */
+.changes-main-body > * { flex: none; }
 .changes-main-body:focus,
 .changes-side:focus { outline: none; }
 

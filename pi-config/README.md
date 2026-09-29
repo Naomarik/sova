@@ -148,7 +148,7 @@ machine needs the logins for the providers it uses:
 | `openai-codex` models | ChatGPT Plus/Pro OAuth | `auth.json`, key `openai-codex` | `/login` in pi |
 | `deepseek` provider (built-in catalog: `deepseek-flash`, `deepseek-v4-pro`), and the DeepSeek balance in `usage-status` | DeepSeek API key | `auth.json`, key `deepseek` | `/login` in pi, or `DEEPSEEK_API_KEY` |
 | Local `ollama` provider | none (placeholder key; Ollama at `localhost:11434`) | | |
-| `claude-code`, the Claude side of `mode`, the `topic-outline` Claude summarizer | Claude Code login | Managed by the `claude` CLI (`~/.claude/.credentials.json` on Linux) | Install [Claude Code](https://claude.com/claude-code) and log in once inside `claude` |
+| `claude-code`, the Claude side of `mode`, the `topic-outline` Claude summarizer | Claude Code login | Managed by the `claude` CLI (`~/.claude/.credentials.json` on Linux); further logins in `~/.pi/agent/claude-accounts/<id>/` (see `extensions/claude-code/README.md`, Logins) | Install [Claude Code](https://claude.com/claude-code) and log in once inside `claude`; add more logins in Sova's Settings → Accounts |
 
 pi writes `auth.json` with mode `600`; keep it that way (`chmod 600 ~/.pi/agent/auth.json`).
 The `claude-code` extension spawns `claude` from `PATH`. The topic-outline summarizer runs
@@ -183,11 +183,12 @@ cd extensions/sessions && node --test test.mjs
 cd extensions/spec && node --test tests/*.test.mjs
 cd extensions/codefold && node tests/run.mjs
 cd extensions/stamp && node --test format.test.ts index.test.ts
+cd extensions/usage-status && node --test fetch.test.ts
 cd extensions/remote && node --test argv.test.ts
 cd extensions/link && node --test client.test.ts && node tests/run.mjs
 cd extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.unit.test.ts && node tests/run.mjs
 cd extensions/worktrees && node --test state.test.ts git.test.ts && node tests/run.mjs
-cd extensions/show-changes && node --test details.test.ts git.test.ts && node tests/run.mjs
+cd extensions/show-changes && node --test details.test.ts git.test.ts coverage.test.ts && node tests/run.mjs
 cd extensions/explain && node tests/run.mjs && node tests/smoke.mjs
 cd extensions/topic-outline && node test.mjs
 cd extensions/btw && node --test btw.test.ts && node ../claude-code/provider/typecheck.mjs ../../btw/btw.ts

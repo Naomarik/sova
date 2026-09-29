@@ -242,6 +242,8 @@ label a person reads says "sessions pane".
     <div class="spine-foot">
       <a class="button button-icon spine-item" href="#/usage"
          aria-label="{the usage glance sentence, else Usage}" title="{the same}">…gauge…</a>
+      <!-- §app.resource-monitor/entry-button -->
+      <button class="button button-icon spine-item" type="button" aria-label="Resource monitor" title="Resource monitor">…activity…</button>
       <a class="button button-icon spine-item" href="#/agents"
          aria-label="{the agents sentence, else Agents}" title="{the same}">…worker…</a>
       <button class="button button-icon spine-item" type="button" aria-label="Settings" title="Settings">…settings…</button>
@@ -325,8 +327,10 @@ label a person reads says "sessions pane".
   n ≥ 1, with `.spine-stats` omitted when both are 0. They are **facts, not doorways**: nothing
   opens. Pointer users get the sentence as the `title`; a tap raises the same sentence as a toast,
   the rail's precedent (§app.session-list/accessibility — there is no hover on touch).
-- **The foot** — Usage (`#/usage`), Agents (`#/agents`) and Settings, the expanded foot's three
-  doorways. The glance sentences are not dropped at 64px, only unprinted: Usage's `title` and
+- **The foot** — Usage (`#/usage`), Resource monitor, Agents (`#/agents`) and Settings, the
+  expanded foot's two doorways and two buttons, in that order: the monitor sits right after the
+  gauge, as it sits beside the Usage glance. Resource monitor opens the monitor modal, exactly as
+  the foot's button does (§app.resource-monitor/entry-button). The glance sentences are not dropped at 64px, only unprinted: Usage's `title` and
   `aria-label` are the usage glance in full words (`glanceText()`), and Agents' are the agents
   sentence (`agentsSentence()`, e.g. "3 active agents in 2 sessions, 1 team"). Each falls back to
   "Usage" / "Agents" only when its sentence is empty — no usage cache to read, no live agents.
@@ -335,8 +339,8 @@ label a person reads says "sessions pane".
 - **Layout.** Five groups top to bottom — head, tiles, regions, tallies, foot — each a column
   of 44px items centred with `--space-1` between and `--space-2` above and below, split by
   `--color-border` rules. The tiles are the scroll region (`.pane`) and take the height that's
-  left; the other four are pinned. They cost 673px with every item shown (each of the four region doors and two tallies is a 44px
-  item and its 4px gap; 625px measured at 1400×1000 with three doors, plus one door's 48px), so the tiles keep a floor of one tile (60px), and on a window shorter than that the whole spine scrolls instead.
+  left; the other four are pinned. They cost 721px with every item shown (each of the four region doors, two tallies and four foot items is a 44px
+  item and its 4px gap; 625px measured at 1400×1000 with three doors and three foot items, plus one door's 48px and the monitor item's 48px), so the tiles keep a floor of one tile (60px), and on a window shorter than that the whole spine scrolls instead.
   Neither scrollbar is drawn: a 10px bar in a 64px column pushes every item off the shared axis.
   **The cost:** nothing shows that the tiles scroll, beyond the tile cut at the edge. Recent is 5
   by default and 20 at most, and every tile is also a row in the expanded pane.
@@ -698,8 +702,7 @@ and the region has **no actions of its own** beyond its twist.
 - **Freshness.** App reads the digest once for the page, on the Overseer entry button's 10-second
   cadence (paused while the tab is hidden, again on window focus, and at once when a view's action
   asks for the session list — a baton strip's Get Link, hand-off, Take Back or Approve), and hands
-  the same read to this region and to the Overseer head's menus (§app.overseer/finished-menu). The
-  server keeps a digest for 3 seconds; an org or baton write that lands drops it, so the read right
+  that read to this region. The server keeps a digest for 3 seconds; an org or baton write that lands drops it, so the read right
   after one says what it changed.
 - **The spine** carries its door, "Needs you · {n} sessions", shown exactly when the region is
   (§app.session-list/spine).

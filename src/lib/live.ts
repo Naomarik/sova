@@ -90,16 +90,25 @@ export interface LiveState {
 
 export const emptyLive = (): LiveState => ({ entries: [], tools: {}, running: false, activity: null, stopping: false });
 
-/** Run-status detail: "running bash" / "thinking" / "writing", or null between blocks. */
-export function runDetail(s: LiveState): string | null {
+/** Which of the run-status row's three icons the turn shows (§chat.transcript/streaming). */
+export type RunStep = "thinking" | "writing" | "tool";
+
+/** Run-status detail: the step, and its words ("running bash" / "thinking" / "writing") for the
+    tooltip and the accessible name. Null between blocks. */
+export interface RunDetail {
+  step: RunStep;
+  text: string;
+}
+
+export function runDetail(s: LiveState): RunDetail | null {
   const running = Object.values(s.tools).find((t) => t.status === "running");
-  if (running) return `running ${running.name}`;
+  if (running) return { step: "tool", text: `running ${running.name}` };
   const last = streamingAssistant(s);
   if (!last) return null;
   const block = [...last.blocks].reverse().find(Boolean);
-  if (block?.type === "thinking") return "thinking";
-  if (block?.type === "text") return "writing";
-  if (block?.type === "toolCall") return `running ${block.name}`;
+  if (block?.type === "thinking") return { step: "thinking", text: "thinking" };
+  if (block?.type === "text") return { step: "writing", text: "writing" };
+  if (block?.type === "toolCall") return { step: "tool", text: `running ${block.name}` };
   return null;
 }
 

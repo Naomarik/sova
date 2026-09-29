@@ -21,6 +21,8 @@
  * WS   /ws/h?token=<token>           ShareServerMessage stream (hello, view, streaming)
  */
 
+import type { LinkWarningCode, ShareState } from "./public-links";
+
 /** `customType` of the marker a baton session's file carries (data `BatonMarkerData`). */
 export const BATON_ENTRY = "sova-baton";
 /** Beside every user message: who sent it (data `BatonSentData`). */
@@ -282,9 +284,11 @@ export interface BatonStartResult {
   link?: string;
   /** One link per invitee when started as an offer. Shown once. */
   links?: OfferLink[];
-  /** Set when a link was minted but no share listener is known on this host: the link is only a
-      path, and nobody outside can open it until one is configured. Say so to the operator. */
+  /** Set when a minted link may not open from outside (no public address, one not verified, a
+      gateway that didn't confirm it): the text to show the operator (§design.copy-deck/public-links). */
   linkWarning?: string;
+  /** Which of those it is. */
+  linkWarningCode?: LinkWarningCode;
 }
 
 /** An offer as the operator's strip shows it. */
@@ -326,8 +330,9 @@ export interface BatonInfo {
   /** personId → when their newest live link of the current hand-off (or open offer) was minted (ISO):
       a strip still showing an older one says "Replaced by a newer link." */
   linkAt: Record<string, string>;
-  /** Whether a share listener is bound on this host, and where (for building a full URL). */
-  share: { bound: boolean; publicUrl: string | null };
+  /** Whether a share listener is bound on this host, and the effective public address (for
+      building a full URL); `state`: where links point and whether they open from outside. */
+  share: { bound: boolean; publicUrl: string | null; state?: ShareState };
   /** The current offer, else the last one; null when none was ever made. */
   offer: OfferInfo | null;
   proposed: ProposedPerson[];

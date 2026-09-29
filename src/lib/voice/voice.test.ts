@@ -158,6 +158,14 @@ describe("model and calibration copy", () => {
     );
     assert.deepEqual(wordDiff("Sova.", ""), [{ word: "Sova.", op: "missed" }]);
     assert.deepEqual(wordDiff("", "um"), [{ word: "um", op: "extra" }]);
+    // Only "Sova" is scored by case (as the jargon count is): heard lower or upper case it's a ~ word,
+    // not a word error; other jargon in another case, and non-jargon, stay "same".
+    const marks = (ref: string, heard: string) => wordDiff(ref, heard).map((w) => (w.op === "same" ? w.word : `${{ missed: "−", extra: "+", case: "~" }[w.op]}${w.word}`)).join(" ");
+    assert.equal(marks("Changed in Sova.", "changed in sova."), "changed in ~sova.");
+    assert.equal(marks("Changed in Sova.", "Changed in SOVA."), "Changed in ~SOVA.");
+    assert.equal(marks("Changed in Sova.", "Changed in Sova."), "Changed in Sova.");
+    assert.equal(marks("Ask the Overseer, then the subagent.", "Ask the overseer, then the SUBAGENT."), "Ask the overseer, then the SUBAGENT.");
+    assert.equal(marks("Changed in Sova.", "changed in silver."), "changed in −Sova. +silver.");
     // Read one way the diff is the reference, read the other it's what was heard: no word lost or doubled.
     const ref = "Ask the Overseer to review what the subagent changed in Sova.";
     const heard = "Ask the overseer review what a sub agent changed in Silva today";

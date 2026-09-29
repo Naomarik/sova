@@ -798,7 +798,7 @@ test("census --changed: claimed change passes with its §IDs; outside and spec e
   assert.equal(j.exit, 0, JSON.stringify(j.findings));
 });
 
-test("census --changed: unclaimed tracked and untracked changes → changed-unclaimed per file, exit 1; deletions and ignored files dropped", () => {
+test("census --changed: unclaimed tracked and untracked changes → changed-unclaimed per file, exit 1; a deletion is listed as deleted, never unclaimed; ignored files dropped", () => {
   const root = repo();
   write(root, "lib/other.js", "2\n");
   write(root, "lib/new.js", "new\n");
@@ -807,7 +807,8 @@ test("census --changed: unclaimed tracked and untracked changes → changed-uncl
   const j = run(root, "census", "--changed");
   assert.deepEqual(j.census.unclaimed, ["lib/new.js", "lib/other.js"]);
   assert.deepEqual(j.findings.filter((f) => f.code === "changed-unclaimed").map((f) => f.file), ["lib/new.js", "lib/other.js"]);
-  assert.ok(!JSON.stringify(j.census).includes("gone.js") && !JSON.stringify(j.census).includes("debug.log"));
+  assert.deepEqual(j.census.deleted, ["lib/gone.js"]);
+  assert.ok(!JSON.stringify(j.census.unclaimed).includes("gone.js") && !JSON.stringify(j.census).includes("debug.log"));
   assert.equal(j.exit, 1);
   const h = spawnSync(process.execPath, [CLI, "census", "--changed", "--root", root], { encoding: "utf8" });
   assert.equal(h.status, 1);
@@ -913,7 +914,7 @@ test("census --changed: without --related, no touched list or per-§ notes; the 
   write(root, "lib/claimed.js", "2\n");
   const j = run(root, "census", "--changed");
   assert.equal(j.census.touched, undefined);
-  assert.deepEqual(Object.keys(j.census), ["mode", "base", "changed", "foreignNote", "foreign", "childUnderForeign", "boundary", "files", "claimed", "unclaimed", "outside", "mappedOutside", "orphanedEvidence", "symlinks"]);
+  assert.deepEqual(Object.keys(j.census), ["mode", "base", "changed", "foreignNote", "foreign", "childUnderForeign", "boundary", "files", "claimed", "unclaimed", "outside", "mappedOutside", "deleted", "orphanedEvidence", "symlinks"]);
   assert.deepEqual(codes(j), ["foreign-summary"]);
 });
 

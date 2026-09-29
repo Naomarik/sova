@@ -57,10 +57,10 @@ const uniqSorted = (a) => [...new Set(a)].sort();
 // ---------------------------------------------------------------- args
 const FLAGS = { new: ["purpose", "write"], status: [], diff: ["against"], check: ["base"],
   evidence: ["id", "by", "verification", "commit", "snapshot", "doc-only", "path", "log", "write"],
-  promote: ["id", "all", "meta", "file", "plan", "write"], recover: ["write"], "merge-manifest": ["base", "ours", "theirs", "write"] };
-const BOOL = new Set(["json", "write", "snapshot", "doc-only", "all"]), MULTI = new Set(["id", "path", "meta", "file"]);
+  promote: ["id", "all", "meta", "file", "plan", "write", "own-base"], recover: ["write"], "merge-manifest": ["base", "ours", "theirs", "write"] };
+const BOOL = new Set(["json", "write", "snapshot", "doc-only", "all"]), MULTI = new Set(["id", "path", "meta", "file", "own-base"]);
 function parseArgs(argv) {
-  const o = { pos: [], id: [], path: [], meta: [], file: [], seen: new Set() };
+  const o = { pos: [], id: [], path: [], meta: [], file: [], "own-base": [], seen: new Set() };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith("--")) { o.pos.push(a); continue; }
@@ -103,12 +103,13 @@ function parseArgs(argv) {
     if (o.all && (o.id.length || o.meta.length || o.file.length)) throw new Fail(2, "usage", "--all selects everything; do not combine it with --id/--meta/--file");
     if (o.plan !== undefined && !HEX.test(o.plan)) throw new Fail(2, "usage", "--plan takes the 64-hex plan printed by the preview");
     for (const k of o.meta) if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(k) || k === "claims") throw new Fail(2, "usage", `--meta ${k}: a top-level manifest key other than claims`);
+    for (const r of o["own-base"]) if (!/^[A-Za-z0-9][A-Za-z0-9._/~^@{}-]{0,199}$/.test(r)) throw new Fail(2, "usage", "--own-base is not a plain revision name");
   }
   return o;
 }
 const USAGE = "usage: sova-spec-draft <new NAME [--purpose T] | status NAME | diff NAME [--against base|current] | check NAME | " +
   "evidence NAME --id §x --by WHO --verification T (--commit REV|--snapshot|--doc-only) [--path P] [--log FILE] | " +
-  "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] | check NAME [--base REV] | recover | " +
+  "promote NAME (--id §x|--all) [--meta K] [--file P] [--plan SHA] [--own-base REV]... | check NAME [--base REV] | recover | " +
   "merge-manifest [--base F --ours F --theirs F]> --root DIR [--write] [--json]";
 
 // ---------------------------------------------------------------- paths and bytes
@@ -820,20 +821,68 @@ async function plan(root, o) {
     } finally { await rm(tmp, { recursive: true, force: true }); }
   }
   const planSha = sha(JSON.stringify({ draft: o.name, targets }));
-  const also = alsoChanges(a, [...ids].filter((x) => a.changed.has(x)));
+  const bases = ownBases(root, g, o), own = ownPredicate(root, g, bases);
+  const also = alsoChanges(a, [...ids].filter((x) => a.changed.has(x)), own);
   // Drift the draft carries, shown at promotion too (never a refusal): nobody has to have run `check`.
   const dr = a.bc.exit !== 2 && a.pc.exit !== 2 ? await drift(root, a, g, undefined).catch(() => null) : null;
   const driftWarnings = dr ? [...dr.removedElsewhere.map(removedText), ...dr.proseUnchanged.filter((r) => r.citedBy).map((r) => citedText(r, dr.base))] : [];
-  return { a, cand, targets, planSha, refusals, out: {
+  return { a, g, bases, cand, targets, planSha, refusals, out: {
     name: o.name, ids: [...ids].sort(), alsoChanges: also.map((x) => x.id), alsoChangesDetail: also, driftWarnings, meta: meta.map((m) => m.key), files: files.map((f) => ({ path: f.path, merge: f.merge, ids: f.ids })),
     records: records.map((r) => ({ id: r.id, merge: r.merge })), evidence, candidate, bootstrap,
     targets: targets.map((t) => ({ ...t, action: t.before === null ? "create" : t.after === null ? "delete" : "replace" })), plan: planSha, refusals } };
 }
 
-// The foreign § a promotion of `ids` changes: each one current already has, and each current H1 that gains a new H2.
-// This, not memory, is what the reply's "Also changes:" line names.
-function alsoChanges(a, ids) {
-  const inCur = (id) => recOf(a.cur, id) !== undefined, dirKinds = a.prop.manifest?.grammar?.directoryKinds ?? ["section"];
+const samePath = (x, y) => { try { return realpathSync(x) === realpathSync(y); } catch { return false; } };
+// The default branch: origin/HEAD, else master, else main. → name | null
+function defaultBranch(root) {
+  const o = git(root, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+  if (o.status === 0 && o.out.trim()) return o.out.trim().replace(/^origin\//, "");
+  for (const b of ["master", "main"]) if (git(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${b}`]).status === 0) return b;
+  return null;
+}
+// Where the task's own claims are judged from: the --own-base revisions given, else the fork point from the default
+// branch and that branch's tip. A claim absent at every one is the task's own (created by it, in this promotion or an
+// earlier one), never foreign; master's own new claims are on its tip, so they stay foreign. → [commit]
+function ownBases(root, g, o) {
+  if (!g.git) return [];
+  if (o["own-base"].length) return o["own-base"].map((r) => { const c = resolveCommit(root, r); if (!c) throw new Fail(1, "bad-rev", `--own-base ${r} does not name a commit`); return c; });
+  const target = defaultBranch(root), tip = target && resolveCommit(root, `refs/heads/${target}`);
+  if (!tip) return [];
+  const fork = git(root, ["merge-base", "HEAD", tip]);
+  return uniqSorted([tip, ...(fork.status === 0 ? [fork.out.trim()] : [])]);
+}
+// The claim ids at each base, read from Git. → id => boolean (own)
+function ownPredicate(root, g, bases) {
+  if (!bases.length) return () => false;
+  const sets = bases.map((c) => {
+    const r = git(root, ["show", `${c}:${g.prefix ? `${g.prefix}/` : ""}${SPEC}/manifest.json`]);
+    if (r.status !== 0) return new Set();
+    try { return new Set(Object.keys(JSON.parse(r.out)?.claims ?? {})); } catch { return new Set(); }
+  });
+  return (id) => sets.every((k) => !k.has(id));
+}
+// What the promotion lands besides §, from the core's `foreign --landing` over the task's range (its fork point, else
+// the draft's base commit, to the working tree) with the draft's graph as the head: unmapped changed files, § whose
+// code changed under unchanged prose, and draft records left unpromoted. → {unmappedChanged, mappedUntouched, unpromotedDrafts} | {}
+function landingOf(root, g, a, bases) {
+  if (!g.git) return {};
+  const target = defaultBranch(root), tip = target && resolveCommit(root, `refs/heads/${target}`);
+  const fork = tip && git(root, ["merge-base", "HEAD", tip]);
+  const head = resolveCommit(root, "HEAD");
+  const from = fork?.status === 0 && fork.out.trim() !== head ? fork.out.trim() : a.d.base.commit ?? head;
+  if (!from) return {};
+  const r = spawnSync(process.execPath, [CORE, "foreign", "--base", from, "--spec", `${a.rel}/spec`, "--landing", ...bases.flatMap((b) => ["--own-base", b]), "--root", root, "--json"],
+    { cwd: root, encoding: "utf8", maxBuffer: MAX_CORE_STDOUT, stdio: ["ignore", "pipe", "pipe"] });
+  let j;
+  try { j = JSON.parse(r.stdout); } catch { return { landingError: `core foreign --landing printed no JSON (status ${r.status})` }; }
+  if (!Array.isArray(j.unmappedChanged)) return { landingError: j.findings?.map((f) => f.message).join("; ") || "no landing data" };
+  return { unmappedChanged: j.unmappedChanged, mappedUntouched: j.mappedUntouched, unpromotedDrafts: j.unpromotedDrafts };
+}
+
+// The foreign § a promotion of `ids` changes: each one current already has, and each current H1 that gains a new H2,
+// never the task's own claims (`own`: absent at every own base). This, not memory, is what the reply's "Also changes:" line names.
+function alsoChanges(a, ids, own = () => false) {
+  const inCur = (id) => recOf(a.cur, id) !== undefined && !own(id), dirKinds = a.prop.manifest?.grammar?.directoryKinds ?? ["section"];
   const kinds = new Map(), mark = (id, k) => kinds.set(id, [...(kinds.get(id) ?? []), k]);
   const children = new Map();
   for (const id of uniqSorted(ids)) {
@@ -841,6 +890,7 @@ function alsoChanges(a, ids) {
     if (inCur(id)) { if (c.deleted) mark(id, "deleted"); else { if (c.text) mark(id, "text"); if (c.record) mark(id, "record"); } continue; }
     const [ns] = id.slice(1).split("/"), parts = ns.split(".");
     const parent = parts.length > 1 && !dirKinds.includes(parts[0]) ? `§${parts[0]}/${parts[1]}` : null;
+    if (own(id) && recOf(a.cur, id) !== undefined) continue; // an own claim promoted earlier: its parent gained it then
     if (parent && inCur(parent) && !c.deleted) children.set(parent, [...(children.get(parent) ?? []), id]);
   }
   for (const p of children.keys()) mark(p, "child-added");
@@ -850,7 +900,10 @@ function alsoChanges(a, ids) {
 async function cmdPromote(root, o) {
   if (!o.write) {
     const p = await plan(root, o);
-    return { exit: p.refusals.length ? 1 : 0, written: false, ...p.out };
+    // A preview: this promotion's own selected records are about to land, so they are not "left unpromoted".
+    const l = landingOf(root, p.g, p.a, p.bases);
+    if (l.unpromotedDrafts) l.unpromotedDrafts = l.unpromotedDrafts.map((d) => d.draft === o.name && samePath(d.worktree, root) ? { ...d, ids: d.ids.filter((id) => !p.out.ids.includes(id)) } : d).filter((d) => d.ids.length);
+    return { exit: p.refusals.length ? 1 : 0, written: false, ...p.out, ...l };
   }
   return withLock(root, async () => {
     await refusePending(root);
@@ -862,7 +915,7 @@ async function cmdPromote(root, o) {
     const cur = await loadDraft(root, o.name);
     cur.d.promotions.push({ at: new Date().toISOString(), plan: p.planSha, ids: p.out.ids, meta: p.out.meta, files: p.targets.map((t) => t.path) });
     await saveDraft(root, cur.rel, cur.d);
-    return { exit: 0, written: true, ...p.out };
+    return { exit: 0, written: true, ...p.out, ...landingOf(root, p.g, p.a, p.bases) };
   });
 }
 

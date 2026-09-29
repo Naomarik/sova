@@ -5,7 +5,7 @@ import { readPublicLinks, sharePin } from "../public-links";
 import { createShareServer } from "./edge";
 import { viaGatewayStatus } from "./gateway-client";
 import type { ShareLinksOutcome } from "./links-events";
-import { gatewayHooks } from "./router";
+import { gatewayHooks, type GatewayRouter } from "./router";
 import { onPublicLinksChanged } from "./setting-events";
 
 /**
@@ -34,7 +34,9 @@ interface BindTarget {
   port: number;
 }
 
-let bound: { server: Server; state: ShareListenerState; want: BindTarget } | null = null;
+let bound: { server: Server; router: GatewayRouter; state: ShareListenerState; want: BindTarget } | null = null;
+/** Builds each bound server's hooks: the gateway's router (M5); tests pass their own. */
+let makeHooks: () => GatewayRouter = gatewayHooks;
 let unsubscribe: (() => void) | null = null;
 /** Every bind and close runs in this order, one at a time. */
 let chain: Promise<unknown> = Promise.resolve();
@@ -51,7 +53,14 @@ export function bindTarget(file: PublicLinksFile, env: NodeJS.ProcessEnv = proce
   return port <= 65535 ? { host, port } : null;
 }
 
-function close(server: Server): Promise<void> {
+/** Cut the router's open hops (dispose: nothing routes through it again), then close the
+    server; resolves once the port is free. */
+function close(server: Server, router: GatewayRouter): Promise<void> {
+  try {
+    router.dispose();
+  } catch (err) {
+    console.warn(`[share] router dispose failed: ${(err as Error)?.name ?? "error"}`);
+  }
   return new Promise((resolve) => {
     server.close(() => resolve());
     server.closeAllConnections();
@@ -59,21 +68,23 @@ function close(server: Server): Promise<void> {
 }
 
 function bind(want: BindTarget, gen: number): Promise<ShareListenerState | null> {
-  const server = createShareServer(gatewayHooks());
+  const router = makeHooks();
+  const server = createShareServer(router);
   return new Promise((resolve) => {
     server.once("error", (err) => {
       console.warn(`[share] listener not up on ${want.host}:${want.port}: ${err.message}`);
+      void close(server, router);
       resolve(null);
     });
     server.listen(want.port, want.host, () => {
       if (gen !== generation) {
-        // Stopped while binding: never leave a socket behind.
-        void close(server);
+        // Stopped while binding: never leave a socket or a router behind.
+        void close(server, router);
         resolve(null);
         return;
       }
       const actual = (server.address() as { port: number }).port;
-      bound = { server, state: { host: want.host, port: actual }, want };
+      bound = { server, router, state: { host: want.host, port: actual }, want };
       console.log(`[share] share listener on http://${want.host.includes(":") ? `[${want.host}]` : want.host}:${actual}`);
       resolve(bound.state);
     });
@@ -88,9 +99,9 @@ function rebind(want: BindTarget | null): Promise<ShareListenerState | null> {
     if (gen !== generation) return null;
     if (bound && want && bound.want.host === want.host && bound.want.port === want.port) return bound.state;
     if (bound) {
-      const old = bound.server;
+      const old = bound;
       bound = null;
-      await close(old);
+      await close(old.server, old.router);
     }
     if (!want || gen !== generation) return null;
     return bind(want, gen);
@@ -101,7 +112,8 @@ function rebind(want: BindTarget | null): Promise<ShareListenerState | null> {
 
 /** Bind from the setting and the environment (null when nothing is bound), and follow the
     setting's changes from now on. */
-export function startShareListener(env: NodeJS.ProcessEnv = process.env): Promise<ShareListenerState | null> {
+export function startShareListener(env: NodeJS.ProcessEnv = process.env, opts: { hooks?: () => GatewayRouter } = {}): Promise<ShareListenerState | null> {
+  makeHooks = opts.hooks ?? gatewayHooks;
   unsubscribe?.();
   unsubscribe = onPublicLinksChanged((file) => rebind(bindTarget(file, env)).then(() => undefined));
   sharePin(env); // a refused pin says so at startup, not first at a mint
@@ -113,8 +125,7 @@ export function stopShareListener(): void {
   unsubscribe?.();
   unsubscribe = null;
   if (!bound) return;
-  bound.server.close();
-  bound.server.closeAllConnections();
+  void close(bound.server, bound.router);
   bound = null;
 }
 

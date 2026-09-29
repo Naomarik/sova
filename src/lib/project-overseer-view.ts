@@ -155,6 +155,13 @@ export function limitsProblem(d: { caps: Record<keyof ProjectOverseerCaps, numbe
 
 /** A gap in minutes as the page says it: "10 min", "1 hour". */
 export const gapWords = (min: number): string => (min % 60 === 0 ? `${min / 60} ${min === 60 ? "hour" : "hours"}` : `${min} min`);
+/** The hold before an act reaches a person or the code (§app.project-overseer/holds): "No hold", "10 min", "1 hour". */
+export const holdWords = (min: number): string => (min === 0 ? "No hold" : gapWords(min));
+/** The hold field's hint: what the choice means for the operator. */
+export const holdHint = (min: number): string =>
+  min === 0
+    ? "What it starts on its own that reaches a person or the code goes ahead at once."
+    : `What it starts on its own that reaches a person or the code waits ${gapWords(min)} in Needs you, where you can cancel it.`;
 /** A delay in seconds: "30 s", "1 min". */
 export const soonWords = (sec: number): string => (sec % 60 === 0 ? `${sec / 60} min` : `${sec} s`);
 

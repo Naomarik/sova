@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { IdeaRecord } from "../../shared/protocol";
 import { IDEA_ID_RE } from "../../shared/protocol";
-import { actionLine, allowanceLine, gapArea, headState, historyTitle, itemSendInput, lastRunLine, lastRunTail, levelName, startedWords, statusLines, waitingToLook, limitsProblem, openIdeas, operatorIdeaId, pendingLine, tokens, toolWords, waitingLines, watchHint } from "./project-overseer-view";
+import { actionLine, allowanceLine, gapArea, headState, holdHint, holdWords, historyTitle, itemSendInput, lastRunLine, lastRunTail, levelName, startedWords, statusLines, waitingToLook, limitsProblem, openIdeas, operatorIdeaId, pendingLine, tokens, toolWords, waitingLines, watchHint } from "./project-overseer-view";
 import { AUTONOMY_MEANING, DEFAULT_PO_CAPS, type Autonomy } from "../../shared/project-overseer";
 
 const idea = (id: string, status: IdeaRecord["status"], tags: string[] = []): IdeaRecord => ({
@@ -219,4 +219,12 @@ test("history rows and started rows", () => {
   assert.equal(historyTitle("Overseer · Rakiba site"), "Overseer · Rakiba site");
   assert.equal(startedWords({ kind: "gathering", state: "open" }), "Gathering · open");
   assert.equal(startedWords({ kind: "coding", state: "working" }), "Coding · working");
+});
+
+test("holdWords and holdHint: no hold at 0, else the minutes and where to cancel", () => {
+  assert.equal(holdWords(0), "No hold");
+  assert.equal(holdWords(10), "10 min");
+  assert.equal(holdWords(60), "1 hour");
+  assert.equal(holdHint(0), "What it starts on its own that reaches a person or the code goes ahead at once.");
+  assert.equal(holdHint(10), "What it starts on its own that reaches a person or the code waits 10 min in Needs you, where you can cancel it.");
 });

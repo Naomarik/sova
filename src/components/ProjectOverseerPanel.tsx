@@ -6,8 +6,11 @@ import {
   capProblem,
   DEFAULT_PO_CAPS,
   DEFAULT_SOON_LOOK_SEC,
+  DEFAULT_HOLD_MIN,
   DEFAULT_WATCH_GAP_MIN,
   GAP_CHOICES,
+  HOLD_CHOICES,
+  holdProblem,
   isAtOnce,
   SOON_CHOICES,
   type ProjectOverseerCaps,
@@ -40,7 +43,7 @@ import { relativeTime, tildePath } from "../lib/format";
 import { hostLabel, orgHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll } from "../lib/poll";
-import { actionLine, allowanceLine, gapArea, gapWords, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
+import { actionLine, allowanceLine, gapArea, gapWords, holdHint, holdWords, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon } from "./ui";
@@ -503,8 +506,9 @@ interface LimitsDraft {
   caps: Record<keyof ProjectOverseerCaps, number | null>;
   watchGapMin: number;
   soonLookSec: number | null;
+  holdMin: number;
 }
-const limitsOf = (s: ProjectOverseerInfo["settings"]): LimitsDraft => ({ caps: { ...s.caps }, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec });
+const limitsOf = (s: ProjectOverseerInfo["settings"]): LimitsDraft => ({ caps: { ...s.caps }, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec, holdMin: s.holdMin });
 // A hint that names a host takes the org's host (a peer's day ends at its own midnight).
 const LIMIT_GROUPS: { legend: string; hint?: string | ((host: string) => string); keys: (keyof ProjectOverseerCaps)[] }[] = [
   { legend: "Each message you send", keys: ["gatherPerTurn", "promotePerTurn", "createPerTurn", "promptsPerTurn"] },
@@ -550,12 +554,13 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(pa
   const submit = async (e: Event) => {
     e.preventDefault();
     const d = draft();
-    const why = limitsProblem(d);
+    const why = limitsProblem(d) ?? holdProblem(d.holdMin);
     setProblem(why);
     if (why) return;
-    await props.save({ caps: d.caps as ProjectOverseerCaps, watchGapMin: d.watchGapMin, soonLookSec: d.soonLookSec });
+    await props.save({ caps: d.caps as ProjectOverseerCaps, watchGapMin: d.watchGapMin, soonLookSec: d.soonLookSec, holdMin: d.holdMin });
   };
   const gaps = createMemo(() => [...new Set([...GAP_CHOICES, draft().watchGapMin])].sort((a, b) => a - b));
+  const holds = createMemo(() => [...new Set<number>([...HOLD_CHOICES, draft().holdMin])].sort((a, b) => a - b));
   const soons = createMemo(() => {
     const cur = draft().soonLookSec;
     const nums = new Set<number>(cur === null ? [] : [cur]);
@@ -645,6 +650,25 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(pa
               </For>
             </select>
           </label>
+          <label class="field">
+            <span class="field-label">Hold before it reaches people or the code</span>
+            <select
+              class="select"
+              aria-describedby="project-hold-hint"
+              onChange={(e) => setDraft((d) => ({ ...d, holdMin: Number(e.currentTarget.value) }))}
+            >
+              <For each={holds()}>
+                {(m) => (
+                  <option value={m} selected={m === draft().holdMin}>
+                    {holdWords(m)}
+                  </option>
+                )}
+              </For>
+            </select>
+            <span class="field-hint" id="project-hold-hint">
+              {holdHint(draft().holdMin)}
+            </span>
+          </label>
         </div>
       </fieldset>
       <Show when={problem()}>{(why) => <p class="field-error">{why()}</p>}</Show>
@@ -657,7 +681,7 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(pa
           class="button button-ghost"
           onClick={() => {
             setProblem(null);
-            setDraft({ caps: { ...DEFAULT_PO_CAPS }, watchGapMin: DEFAULT_WATCH_GAP_MIN, soonLookSec: DEFAULT_SOON_LOOK_SEC });
+            setDraft({ caps: { ...DEFAULT_PO_CAPS }, watchGapMin: DEFAULT_WATCH_GAP_MIN, soonLookSec: DEFAULT_SOON_LOOK_SEC, holdMin: DEFAULT_HOLD_MIN });
           }}
         >
           Reset Limits

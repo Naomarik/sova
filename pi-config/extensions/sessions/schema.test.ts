@@ -7,6 +7,7 @@ import type { LiveRecord, SessionMeta, WorkerEntry } from "./schema.ts";
 const NOW = 1789804800000;
 const example = (name: string) => JSON.parse(readFileSync(new URL(`./public/examples/${name}.json`, import.meta.url), "utf8"));
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+const bytes = (record: LiveRecord) => Buffer.byteLength(JSON.stringify(record));
 const meta: SessionMeta = { id: "p1-00000000", cwd: "/tmp", model: "m", pid: 1, startedAt: 1, lastActivity: 1 };
 
 test("v1 example parses as legacy with free-text status", () => {
@@ -232,6 +233,37 @@ test("worker usage: bad counts read as 0, a bad object is dropped, the total kee
   const bad = parsePresence({ ...base, workers: [], workerUsage: { input: 5, output: 5, cacheRead: 0, cacheWrite: 0, workers: -2 } });
   assert.deepEqual(bad?.workerUsage, { input: 5, output: 5, cacheRead: 0, cacheWrite: 0, workers: 0 }, "a bad lifetime count reads as 0");
   assert.equal(parsePresence({ ...base, workers: [], workerUsage: 7 })?.workerUsage, undefined, "a non-object total is dropped");
+});
+
+test("worker turns: a top-level count, dropped when not a non-negative integer, kept when fit() drops usage", () => {
+  const base = { type: "presence", version: 1, status: "Idle", since: 1, completed: 0, preview: "" };
+  const p = parsePresence({ ...base,
+    workers: [
+      { id: "a", name: "a", status: "running", turns: 7 },
+      { id: "b", name: "b", status: "done", turns: 0 },
+      { id: "c", name: "c", status: "done", turns: -1 },
+      { id: "d", name: "d", status: "done", turns: 2.5 },
+      { id: "e", name: "e", status: "done", turns: "3" },
+      { id: "f", name: "f", status: "done" },
+    ] });
+  assert.ok(p);
+  assert.deepEqual(p.workers.map(w => w.turns), [7, 0, undefined, undefined, undefined, undefined]);
+  assert.ok(!("turns" in p.workers[5]), "absent stays absent: unknown is never 0");
+
+  const record = example("v2") as LiveRecord;
+  const usage = { input: 1_234_567, output: 234_567, cacheRead: 9_876_543, cacheWrite: 345_678, cost: 12.345678 };
+  // Nothing fit() gives up before workers' usage, so the budget lands on the usage step.
+  delete record.presence!.outline;
+  delete record.presence!.activity;
+  record.presence!.preview = "";
+  record.presence!.workers = [{ id: "live", name: "live", status: "running", turns: 12, usage: { ...usage } }];
+  const withUsage = bytes(record);
+  delete record.presence!.workers[0].usage;
+  const without = bytes(record);
+  record.presence!.workers[0].usage = { ...usage };
+  const r = fit(clone(record), Math.floor((withUsage + without) / 2));
+  assert.equal(r.presence!.workers[0].usage, undefined, "usage went first");
+  assert.equal(r.presence!.workers[0].turns, 12, "turns rides outside usage and survives");
 });
 
 test("fit() drops settled rows' usage before any row, and live usage before any live row", () => {

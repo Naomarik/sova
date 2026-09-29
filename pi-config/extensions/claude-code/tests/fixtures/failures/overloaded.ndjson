@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"s-7"}
+{"type":"assistant","message":{"model":"<synthetic>","role":"assistant","content":[{"type":"text","text":"API Error: 529 Overloaded"}],"stop_reason":"stop_sequence","usage":{"input_tokens":0,"output_tokens":0}},"parent_tool_use_id":null,"error":"overloaded","uuid":"u-1","session_id":"s-7"}
+{"type":"result","subtype":"success","is_error":true,"result":"API Error: 529 Overloaded","num_turns":1,"session_id":"s-7"}

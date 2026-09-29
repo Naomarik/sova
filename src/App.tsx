@@ -63,9 +63,11 @@ import { OverviewOrgsCard } from "./components/OverviewOrgsCard";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
 import { MeshDetails } from "./components/MeshDetails";
 import { closeMeshDetails, meshDetailsOpen } from "./lib/mesh-details";
+import { ResourceMonitor } from "./components/ResourceMonitor";
+import { closeMonitor, monitorOpen } from "./lib/monitor-nav";
 import { FanoutDialog, type FanoutSource } from "./components/FanoutDialog";
 import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./components/GroupView";
-import { type AttentionFeed, OverseerView } from "./components/OverseerView";
+import { OverseerView } from "./components/OverseerView";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
 import { SessionView } from "./components/SessionView";
 import { BrandLink, sessionHref, Sidebar } from "./components/Sidebar";
@@ -307,27 +309,13 @@ export function App() {
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
   setExplanationsFeedSource(explanations.data);
   const overseer = createPoll(getOverseer, OVERSEER_POLL_MS);
-  /** The attention digest, read once for the page: the sidebar's Needs you region and the Overseer
-      head's menus both list from it, on the entry button's cadence. `reading` is a read in flight. */
-  const [attentionReading, setAttentionReading] = createSignal(false);
-  const attentionPoll = createPoll(async () => {
-    setAttentionReading(true);
-    try {
-      return await getAttention();
-    } finally {
-      setAttentionReading(false);
-    }
-  }, OVERSEER_POLL_MS);
-  const attention: AttentionFeed = {
-    data: attentionPoll.data,
-    error: attentionPoll.error,
-    reading: attentionReading,
-    refetch: attentionPoll.refetch,
-  };
+  /** The attention digest, read once for the page on the entry button's cadence: the sidebar's
+      Needs you region, the home card and the app badge all read it. */
+  const attention = createPoll(getAttention, OVERSEER_POLL_MS);
   // The app badge (an installed app, with notifications allowed): the sessions that need you, kept
   // current from the digest this page already reads; zero clears it (lib/push.ts).
   const badgeCount = createMemo(() => {
-    const d = attentionPoll.data();
+    const d = attention.data();
     return d ? actSessionCount(d) : null;
   });
   createEffect(() => {
@@ -993,7 +981,6 @@ export function App() {
                       error={overseer.error()}
                       onInfo={overseer.set}
                       refetch={overseer.refetch}
-                      attention={attention}
                       historyId={r().historyId}
                       sessions={list() ?? []}
                       wiring={wiring}
@@ -1248,6 +1235,10 @@ export function App() {
       {/* Opened from the sidebar's host menu or #/mesh; only while the mesh is on. */}
       <Show when={meshDetailsOpen() && meshOn()}>
         <MeshDetails onClose={closeMeshDetails} />
+      </Show>
+      {/* Opened from the sidebar foot's monitor button or the spine; it polls only while open. */}
+      <Show when={monitorOpen()}>
+        <ResourceMonitor onClose={closeMonitor} titleOf={(path) => list()?.find((x) => x.path === path)?.title} />
       </Show>
       <Show when={staleChange()}>
         {(change) => <StaleTabBanner change={change()} onDismiss={() => setStaleChange(null)} />}

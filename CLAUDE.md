@@ -30,7 +30,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   extensions into this directory, so an edit here changes the user's LIVE TUI on its next `/reload`,
   and every
   runtime Sova embeds. Treat it like `shared/protocol.ts`: coordinate before changing any contract
-  Sova parses (sessions live registry `sessions/live/*.json`, usage-status cache, subagents
+  Sova parses (sessions live registry `sessions/live/*.json`, usage-status cache (`claude` is
+  always Claude Code's own login; each added Claude login's reading is in the additive
+  `claudeAccounts`, keyed by login id), subagents
   teams/snapshots, topic-outline state, command-palette `model-favorites.json`, the model policy
   `model-policy.json` (extensions/model-policy: what may be used at all, and what subagents may be
   given — read by the TUI, the palette, subagent spawning and Sova alike), mode `mode.json` =
@@ -46,7 +48,17 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   session writes the spec itself), written by Settings → Modes → Spec and re-read the same way by
   every session with spec on, in either major mode), subagents `team-defaults.json` = the standing
   coordinator and monitor every new team gets (absent = off), written by Sova's Settings → Teams and
-  read by the subagents extension at team creation), worktrees: the session's `worktrees` custom
+  read by the subagents extension at team creation), claude-code's Claude logins
+  (`pi-config/extensions/claude-code/accounts.ts`, builtins only: the registry
+  `claude-accounts.json` `{version: 1, logins, devices}`, each login's directory
+  `claude-accounts/<id>/` (0700; `projects/`, `settings.json`, `CLAUDE.md`, `agents`, `commands`,
+  `skills`, `plugins` symlinked to Claude Code's own directory so `--resume` and every transcript
+  reader keep one `projects/`), this host's standing of each login `claude-accounts-state.json`,
+  the per-device order and the one resolver login → `CLAUDE_CONFIG_DIR` that every `claude` spawn
+  uses; written by Sova's Settings → Accounts, read by the chat provider, workers, model discovery
+  and the topic-outline summarizer at each spawn; and the session's hidden `claude-login` custom
+  entry `{v: 1, login, label?, from?, fromLabel?, reason?, resetsAt?, text?}`, written by the provider and read
+  by Sova, which renders one with `from` as a note row), worktrees: the session's `worktrees` custom
   entry (the tracked set, whole snapshot, newest on the branch wins) and its `worktree-merge`
   extension message (the merge card), read by Sova and by the subagents spawn gate; mode's `align`
   tool: each result's `details` (`{v: 1, doc?, changes, line, exempt?}`, the touched alignment's
@@ -65,7 +77,10 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   writer of `model-favorites.json`, with its lock, re-read and atomic rename, for the TUI palette
   and Sova's picker alike), `server/team-defaults.ts` imports
   `pi-config/extensions/subagents/team-defaults.ts` (builtins only: the file's types, defaults,
-  strict parse, reader and atomic writer for Settings → Teams), `server/worktrees-state.ts` imports
+  strict parse, reader and atomic writer for Settings → Teams), `server/claude-accounts.ts` imports
+  `pi-config/extensions/claude-code/accounts.ts` (builtins only, see above: Settings → Accounts, and
+  the login the server's own `claude` spawns — model discovery, `--version` — run on),
+  `server/worktrees-state.ts` imports
   `pi-config/extensions/worktrees/state.ts` (builtins only: the `worktrees` entry, its fold, the
   merge card's details) and `git.ts` (builtins only: the extension's own "is this branch merged"
   probe, git by argv), `server/transcript.ts` and `server/align-state.ts` import
@@ -73,7 +88,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
   the session list's `SessionSummary.align` read what the extension writes, with its own code),
   `server/insights.ts` imports
-  `pi-config/extensions/usage-status/fetch.ts`, `server/worker-context.ts` and `server/delegate.ts`
+  `pi-config/extensions/usage-status/fetch.ts` (which imports `claude-code/accounts.ts`, builtins
+  only, to fetch each login's usage; `server/auth-status.ts` and `server/claude-login-state.ts`
+  import `accounts.ts` too), `server/worker-context.ts` and `server/delegate.ts`
   import `pi-config/extensions/claude-code/context-window.ts` (imports nothing: the one Claude Code
   window rule, `[1m]` or natively 1M else 200k, and the list rule that adds `opus[1m]` and
   `claude-fable-5-1[1m]` after their listed base; the provider, `agent_models` and the subagents
@@ -102,8 +119,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `pi-config/extensions/claude-code/transport.ts` (builtins only) to pin the server's Claude
   model-discovery argv to the extension's, and `src/lib/show-changes-coverage.test.ts` imports
   `pi-config/extensions/show-changes/coverage.ts` (imports nothing) to pin the tool's hunk matching
-  to `src/lib/changes-steps.ts`'s; beyond that, `context-window.ts` and the protocol set
-  above, the server never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
+  to `src/lib/changes-steps.ts`'s; beyond that, `context-window.ts`, `accounts.ts` and the
+  protocol set above, the server never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
   Sova has no sshfs/mount support: a remote session's cwd is always its local placeholder, and
@@ -131,6 +148,12 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   server: a Sova server on the real `~/.pi` still writes (seen marks, summaries, titles, signals, worker restores),
   and there is no read-only mode yet. Copy the sessions you need into the hermetic `.agent`, or view them through the live server.
 - Hermetic gaps: 4810 by default (one server per port; `SOVA_PORT` for a second), and a symlinked `node_modules` can break `pnpm run` in a worktree.
+- Claude logins in a hermetic run: `scripts/fake-claude.mjs` stands in for the `claude` CLI (auth
+  login/logout/status, `--version`, a minimal stream-json turn; never contacts Anthropic). Put
+  `$(scripts/fake-claude-path.sh)` first on `PATH`, point `CLAUDE_CONFIG_DIR` at a fixture directory
+  under `.agent/` (the `default` login; the real `~/.claude` stays untouched), and set
+  `SOVA_CLAUDE_ACCOUNTS_DEV=1` so `.agent/claude-accounts-dev.json` (`{"forceLimit": [ids],
+  "forceAuth": [ids]}`) can force a login to fail and drive failover end to end.
 - `pnpm run typecheck` — must pass. `pnpm run build` — must pass.
 - `pnpm run prices:update` — regenerate the checked-in price seed `shared/model-prices/seed.json` from models.dev and print
   the changes and any unpriced model (`--from <api.json>` offline, `--check` writes nothing). Aliases are hand-kept in

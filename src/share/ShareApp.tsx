@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { SHARE_TEXT_MAX, type BatonView, type GoneWhy, type ShareServerMessage } from "../../shared/baton";
+import { HOP_LOST_CLOSE, RECONNECT_BACKOFF_MS } from "../../shared/public-links";
 import { Item, LinkedText, Reply } from "./thread";
 import { visitTab } from "./visit-tab";
 
@@ -28,6 +29,10 @@ const GONE_WHY: Record<GoneWhy, Problem> = {
   withdrawn: { title: "This question went to someone else.", body: "Nothing more is needed from you." },
 };
 const gone = (why: unknown): Problem => (typeof why === "string" && Object.hasOwn(GONE_WHY, why) ? GONE_WHY[why as GoneWhy] : GONE);
+/** The host behind a public gateway is offline (a 503, or the hop closed with HOP_LOST_CLOSE):
+    the page stays, the draft stays, and it keeps trying (§mesh.public/offline). */
+const RECONNECTING = "Reconnecting. Your draft is kept.";
+const NOT_SENT_OFFLINE = "Not sent. The page is offline; your message is still here.";
 const UNKNOWN: Problem = { title: "This link doesn't open a conversation.", body: "Check that you copied the whole link, or ask the person who sent it for a new one." };
 
 export function ShareApp() {
@@ -39,6 +44,12 @@ export function ShareApp() {
   const [sending, setSending] = createSignal(false);
   const [sendError, setSendError] = createSignal<string | null>(null);
   const [elsewhere, setElsewhere] = createSignal(false);
+  const [offline, setOffline] = createSignal(false);
+  /** The host answers again: drop the offline note, and the send error it caused. */
+  const online = () => {
+    setOffline(false);
+    setSendError((e) => (e === NOT_SENT_OFFLINE ? null : e));
+  };
   let listEnd: HTMLDivElement | undefined;
 
   const apply = (v: BatonView) => {
@@ -55,7 +66,11 @@ export function ShareApp() {
     if (!res) return;
     if (res.status === 410) return setProblem(gone(((await res.json().catch(() => ({}))) as { why?: unknown }).why));
     if (res.status === 404) return setProblem(UNKNOWN);
-    if (res.ok) apply((await res.json()) as BatonView);
+    if (res.status === 503) return setOffline(true);
+    if (res.ok) {
+      online();
+      apply((await res.json()) as BatonView);
+    }
   };
 
   let socket: WebSocket | null = null;
@@ -66,7 +81,10 @@ export function ShareApp() {
     if (!TOKEN || stopped) return;
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/h?token=${TOKEN}&v=${VISIT}`);
     socket = ws;
-    ws.onopen = () => (backoff = 2000);
+    ws.onopen = () => {
+      backoff = 2000;
+      online();
+    };
     ws.onmessage = (e) => {
       let msg: ShareServerMessage;
       try {
@@ -83,11 +101,16 @@ export function ShareApp() {
       // The `gone` frame before this close carried the reason; keep it.
       if (e.code === 4410) return setProblem((p) => p ?? GONE);
       if (e.code === 4000) return setElsewhere(true);
+      // The host went offline: back off from 5 s to 60 s until it answers again. While offline, a
+      // refused upgrade (the gateway's 503) shows here only as an abnormal close, so it keeps the
+      // offline pace.
+      if (e.code === HOP_LOST_CLOSE) setOffline(true);
+      if (offline()) backoff = Math.max(backoff, RECONNECT_BACKOFF_MS.first);
       retry = setTimeout(() => {
         void load();
         connect();
       }, backoff);
-      backoff = Math.min(backoff * 2, 30_000);
+      backoff = Math.min(backoff * 2, offline() ? RECONNECT_BACKOFF_MS.max : 30_000);
     };
   };
 
@@ -114,6 +137,12 @@ export function ShareApp() {
         body: JSON.stringify({ text }),
       });
       if (res.status === 410) return setProblem(gone(((await res.json().catch(() => ({}))) as { why?: unknown }).why));
+      // Never resent on its own: the text stays in the composer for the person to send again.
+      if (res.status === 503) {
+        setOffline(true);
+        setSendError(NOT_SENT_OFFLINE);
+        return;
+      }
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         setSendError(body.error ?? "Your message didn't go through. Try again.");
@@ -160,6 +189,11 @@ export function ShareApp() {
           <p class="share-status" role="status" aria-live="polite">
             {statusLine()}
           </p>
+          <Show when={offline()}>
+            <p class="share-note" role="status">
+              {RECONNECTING}
+            </p>
+          </Show>
           <Show when={elsewhere()}>
             <p class="share-note">This link is open in another tab or device, so updates go there. Reload to bring them here.</p>
           </Show>

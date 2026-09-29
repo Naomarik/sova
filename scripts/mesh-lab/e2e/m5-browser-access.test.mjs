@@ -5,7 +5,7 @@
 // host follows with a newer stamp. The newest stamp wins a race and an older announcement never
 // overrides it; a host changed while partitioned is picked up when it comes back; the settings
 // route refuses an exclusion that would leave no host with a browser address.
-//   scripts/mesh-lab/lab e2e m5-browser-access      (restores every host to on, unpartitioned, at the end)
+//   scripts/mesh-lab/lab e2e m5-browser-access      (pairs every lab host first; restores every host to on, unpartitioned, at the end)
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { chaos, curlFrom, lab, laptopFetch, PEER_PORT, readAgentFile, requireLab, tailnetIp, waitFor } from "./lib.mjs";
@@ -69,6 +69,8 @@ before(() => {
   H = cfg.hosts;
   assert.ok(H.length >= 3, "M5 needs 3 hosts");
   [A, , C] = H;
+  // Every host must know every other; an earlier harness may have paired only some (public-m5 pairs a,b).
+  lab("pair", H.join(","));
 });
 
 after(async () => {

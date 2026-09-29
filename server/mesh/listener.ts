@@ -1,16 +1,17 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { getRequestListener } from "@hono/node-server";
 import { refuse } from "../extensions";
 import { REFUSED_HEADER } from "./hello";
 import { judgedPath } from "./paths";
-import { getIdentity, whoisAddr } from "./localapi";
+import { callerNode } from "./gate";
 import type { PeerEntry } from "./peers";
 
 // The peer listener: a second HTTP server on this node's tailnet addresses, running only while
 // the mesh is on. It has ONE check, on every request and every upgrade: the caller's Tailscale
-// StableID (LocalAPI whois of the connection's source address) must be a peer in peers.json.
+// StableID (LocalAPI whois of the connection's source address, callerNode in ./gate, which the
+// share ingress's gate uses too) must be a peer in peers.json; membership is re-checked on every
+// request against the current peers.json, so a removed peer loses a kept-alive connection too.
 // Everything else is 403. What passes is dispatched into the same Hono app as the main listener,
 // with the calling peer in `c.env.meshPeer`, so every route answers a peer exactly as it answers
 // the local browser; a peer never reaches /api/mesh/*, /peer/*, /ext/* or the static files.
@@ -42,31 +43,6 @@ export function peerMayReach(pathname: string): boolean {
   // /api/mesh to Hono. /api/peer/* stays reachable: those routes are for peers.
   const path = judgedPath(pathname);
   return !!path && path.startsWith("/api/") && !/^\/api\/mesh(?:\/|$)/.test(path);
-}
-
-// The caller's StableID per TCP connection (null: not a tailnet node). Membership is re-checked
-// on every request against the current peers.json, so a removed peer loses a kept-alive
-// connection too.
-const whoisBySocket = new WeakMap<Socket, Promise<string | null>>();
-
-function callerNode(socket: Socket): Promise<string | null> {
-  let hit = whoisBySocket.get(socket);
-  if (!hit) {
-    const addr = socket.remoteAddress;
-    const port = socket.remotePort;
-    hit =
-      addr && port
-        ? getIdentity()
-            .whois(whoisAddr(addr, port))
-            .then((w) => w?.nodeId ?? null)
-            .catch((err) => {
-              console.warn(`[mesh] whois ${addr}:${port} failed: ${(err as Error).message}`);
-              return null;
-            })
-        : Promise.resolve(null);
-    whoisBySocket.set(socket, hit);
-  }
-  return hit;
 }
 
 const REFUSAL = { error: "not a peer" };

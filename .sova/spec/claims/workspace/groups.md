@@ -392,7 +392,7 @@ member at once.
     <div class="composer-row">
       <label class="visually-hidden" for="group-composer-input">Message every member</label>
       <textarea class="input textarea composer-input" id="group-composer-input" rows="1"
-                placeholder="Ask all 4 members…—Enter sends, Shift+Enter adds a line"
+                placeholder="Ask all 4 members…—Enter sends, Shift+Enter adds a line" enterkeyhint="send"
                 aria-describedby="group-composer-reason"></textarea>
       <div class="composer-actions">
         <button class="button button-primary" type="submit">
@@ -509,7 +509,9 @@ member at once.
   the box is a convenience — visible, editable, and never the source of the retry. If the user
   edits it and presses Send to All instead, that is a new message to everyone, which is exactly
   what it looks like.
-- **Enter sends, Shift+Enter adds a line**, the same keys, and the same IME rule.
+- **The same keys as a pane composer** (§chat.composer/behavior): Enter sends, Shift+Enter adds a
+  line, Ctrl/⌘+Enter always sends, the same IME rule, and the same touch mode — tapped, Enter adds
+  a line and Send to All sends. The placeholder carries the key hint exactly when Enter sends.
 
 ### Refusal
 

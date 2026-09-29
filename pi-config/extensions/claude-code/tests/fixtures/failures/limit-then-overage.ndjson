@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","session_id":"s-3"}
+{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1790000000,"rateLimitType":"five_hour"},"uuid":"u-1","session_id":"s-3"}
+{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","isUsingOverage":true},"uuid":"u-2","session_id":"s-3"}
+{"type":"stream_event","event":{"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":0}}}}
+{"type":"result","subtype":"success","is_error":false,"result":"done","num_turns":1,"session_id":"s-3"}

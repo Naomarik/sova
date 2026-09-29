@@ -114,7 +114,7 @@ enforce them, and the reference reader enforces them again.
 `sessionId` (64, v2, optional), `effort` (32, v2, optional), `modes` (string[], ≤ 8 names of 32, v2,
 optional), `startedAt`/`lastActivity`/`endedAt`
 (ms epoch, v2), `outcome` (`success`|`error`|`aborted`, v2), `usage` (WorkerUsage, v2),
-and, for a restored worker (v2, all optional): `restored` (`true`), `usageSource`
+`turns` (non-negative integer, v2, optional), and, for a restored worker (v2, all optional): `restored` (`true`), `usageSource`
 (`transcript`|`snapshot`|`none`), `usageAsOf` (ms epoch), `interruptedAt` (ms epoch),
 `resumable` (boolean).
 `sessionFile` is the absolute path of that worker's own transcript JSONL, never its
@@ -131,6 +131,10 @@ absent means the writer didn't publish one (records written before it existed).
 `modes` names the mode extension's minor modes the worker was given at its start (today only
 `spec` reaches workers). Absent when it was given none, or the writer didn't publish it; an
 empty, over-long or malformed list is dropped whole.
+`turns` counts the model replies the worker has had so far, across resumes (a restored worker's
+comes from its transcript or last snapshot). It sits beside `usage`, not in it, so the size
+trimmer's drop of `usage` keeps it. Absent means unknown (an older writer, nothing counted), never 0;
+a non-integer or negative value is dropped.
 A **restored** worker was rebuilt after a restart from the owner session's durable
 worker record; no process runs for it. Its status is `restored` while it was alive
 at the restart (`interruptedAt` set when it died mid-turn), or its recorded ending

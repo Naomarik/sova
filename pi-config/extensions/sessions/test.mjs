@@ -153,9 +153,9 @@ test('presence carries per-worker token counts and the session-lifetime total', 
     h.pi.events.emit('subagents:workers-snapshot', { version: 1,
       workerUsage: { input: 900, output: 300, cacheRead: 5000, cacheWrite: 400, cost: 1.5, workers: 7 },
       workers: [
-        { id: 'ag_01', name: 'a', status: 'running', usage: { input: 100, output: 20, cacheRead: 900, cacheWrite: 50, cost: 0.25 } },
-        { id: 'ag_02', name: 'b', status: 'done', usage: { input: -1, output: 'x', cacheRead: Infinity, cacheWrite: 7.9 } },
-        { id: 'ag_03', name: 'c', status: 'running', usage: 'nope' },
+        { id: 'ag_01', name: 'a', status: 'running', turns: 5, usage: { input: 100, output: 20, cacheRead: 900, cacheWrite: 50, cost: 0.25 } },
+        { id: 'ag_02', name: 'b', status: 'done', turns: -3, usage: { input: -1, output: 'x', cacheRead: Infinity, cacheWrite: 7.9 } },
+        { id: 'ag_03', name: 'c', status: 'running', turns: 0, usage: 'nope' },
       ] });
     await tick();
     const p = h.latest();
@@ -164,6 +164,9 @@ test('presence carries per-worker token counts and the session-lifetime total', 
     assert.deepEqual(a.usage, { input: 100, output: 20, cacheRead: 900, cacheWrite: 50, cost: 0.25 });
     assert.deepEqual(b.usage, { input: 0, output: 0, cacheRead: 0, cacheWrite: 7 }, 'bad counts read as 0, no cost key');
     assert.ok(!('usage' in JSON.parse(JSON.stringify(c))), 'a non-object usage is dropped');
+    // Model replies reach the written record, top-level; a bad count is dropped, a known 0 kept.
+    assert.deepEqual([a.turns, c.turns], [5, 0]);
+    assert.ok(!('turns' in JSON.parse(JSON.stringify(b))), 'a negative count is unknown, never written');
     assert.deepEqual(p.workerUsage, { input: 900, output: 300, cacheRead: 5000, cacheWrite: 400, cost: 1.5, workers: 7 });
     assert.ok(p.workerUsage.workers > p.workers.length, 'the total counts evicted workers too');
   } finally { await h.emit('session_shutdown'); }

@@ -67,6 +67,7 @@ function decodeSnapshot(data: unknown): WorkersSnapshot | undefined {
 			...(time(w.endedAt) ? { endedAt: w.endedAt } : {}),
 			...((WORKER_OUTCOMES as readonly unknown[]).includes(w.outcome) ? { outcome: w.outcome as WorkerEntry["outcome"] } : {}),
 			...(usageOf(w.usage) ? { usage: usageOf(w.usage) } : {}),
+			...(Number.isSafeInteger(w.turns) && (w.turns as number) >= 0 ? { turns: w.turns as number } : {}),
 			// Restored workers (rebuilt after a restart; no process): see schema.ts WorkerEntry.
 			...(w.restored === true ? { restored: true as const } : {}),
 			...((WORKER_USAGE_SOURCES as readonly unknown[]).includes(w.usageSource) ? { usageSource: w.usageSource as WorkerEntry["usageSource"] } : {}),

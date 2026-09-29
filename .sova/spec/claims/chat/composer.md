@@ -10,8 +10,10 @@
     <span class="icon" style="--icon: url(/icons/image.svg)"></span><span>Drop images to attach</span>
   </div>
   <form class="composer-inner" aria-label="Message the agent">
-    <!-- while streaming only -->
-    <p class="run-status"><span class="live-dot"></span>Working<span class="run-status-detail">· running bash</span></p>
+    <!-- while streaming only: the dot, the step's icon (shown in the narrow form only) and the words
+         (shown in the wide form, visually hidden in the narrow one), §chat.transcript/streaming;
+         Stopping and the rare states show their words in both -->
+    <p class="run-status"><span class="run-status-state" title="Working · running bash"><span class="live-dot"></span><span class="icon icon-sm run-status-narrow" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="run-status-say">Working<span class="run-status-detail">· running bash</span></span></span></p>
     <!-- or, idle with ≥ 1 worker working: the subagents trigger, button.run-status-link (§app/subagents-pane) -->
     <!-- with an open alignment: the alignment chip, a menu button immediately left of the Inputs
          trigger, both at the row's right end (§chat.alignment/chip) -->
@@ -39,8 +41,8 @@
              accept="image/png,image/jpeg,image/gif,image/webp">
       <label class="visually-hidden" for="composer-input">Message</label>
       <textarea class="input textarea composer-input" id="composer-input" rows="1"
-                placeholder="Ask pi to…—Enter sends, Shift+Enter adds a line"
-                aria-describedby="composer-reason"></textarea>   <!-- ≥768; "Ask pi to…" below -->
+                placeholder="Ask pi to…—Enter sends, Shift+Enter adds a line" enterkeyhint="send"
+                aria-describedby="composer-reason"></textarea>   <!-- touch mode: "Ask pi to…", enterkeyhint="enter" -->
       <div class="composer-actions">
         <button class="button button-primary" type="submit">
           <span class="icon" style="--icon: url(/icons/arrow-right.svg)" aria-hidden="true"></span><span class="button-label">Send</span>
@@ -63,6 +65,12 @@
         <span class="composer-model-level">high</span>
         <span class="icon icon-sm composer-model-caret" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
       </button>
+      <!-- a Claude Code model on a device with several Claude logins: the chat's login, not a
+           control; see §app.claude-logins/active-login -->
+      <span class="composer-login" title="This chat runs on this Claude login: …" aria-label="Claude login: own@example.com">
+        <span class="composer-login-full">own@example.com</span>
+        <span class="composer-login-short">own</span>
+      </span>
       <span class="composer-reason" id="composer-reason"><!-- reason when disabled; else empty --></span>
       <!-- chat sessions only: the mode switch, pushed to the right edge; see §chat/mode-menu -->
       <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu" …>…</button>
@@ -103,22 +111,28 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
   scrolls. `field-sizing: content` handles it in Chromium. As a fallback, on input set
   `style.height = "auto"` and then `style.height = scrollHeight + "px"`.
 - **Keys.**
-  - `Enter` sends.
-  - `Shift+Enter` inserts a newline.
+  - **Touch mode.** How the textarea was last pressed decides what `Enter` does. A `pointerdown`
+    on it with `pointerType` "touch" turns touch mode on; a mouse or pen press turns it off.
+    Focus by keyboard or by code leaves it as it was, and it starts off. There is no media query,
+    no user-agent sniffing, no viewport width and no setting: a tap means an on-screen keyboard,
+    whose Enter key is for lines, and the Send button is right there.
+  - `Enter` sends, except in touch mode, where it inserts a newline and Send sends.
+  - `Ctrl+Enter` / `⌘+Enter` always sends, on every device. `Shift+Enter` always inserts a
+    newline.
   - Ignore `Enter` while `event.isComposing` (IME).
-  - **The key hint is in the placeholder**, at 768px and up only: "Ask pi to…—Enter sends,
-    Shift+Enter adds a line", and while streaming "Steer the current turn…—Enter sends,
-    Shift+Enter adds a line". Below 768px it's the short string alone ("Ask pi to…" /
-    "Steer the current turn…"): a touch-first device has no Enter key to speak of. The band is
-    watched live, so a resize across 768px swaps the placeholder in place. A read-only composer
-    keeps the short string.
+  - `enterkeyhint` is "enter" in touch mode and "send" otherwise.
+  - **The key hint is in the placeholder** exactly when `Enter` sends (touch mode off), at any
+    width: "Ask pi to…—Enter sends, Shift+Enter adds a line", and while streaming "Steer the
+    current turn…—Enter sends, Shift+Enter adds a line". In touch mode it's the short string alone
+    ("Ask pi to…" / "Steer the current turn…"), swapped in place when the mode changes. A read-only
+    composer keeps the short string.
   - Empty or whitespace-only text doesn't send, and Send is `aria-disabled` with no reason text,
     because the reason is obvious.
 - **Send.** Sends `{type:"prompt"}`. Clear the textarea only after the socket accepts the message.
   Show the user bubble optimistically and resume auto-follow.
 - **While streaming.** Send stays available and its label changes to `Steer`, which sends
-  `{type:"steer"}`. The placeholder becomes "Steer the current turn…" (plus the key hint at ≥768,
-  see Keys). `Stop`
+  `{type:"steer"}`. The placeholder becomes "Steer the current turn…" (plus the key hint when Enter
+  sends, see Keys). `Stop`
   (`.button-destructive`, outlined, never filled, one word so the button stays narrow) sends
   `{type:"abort"}`. Show it only while streaming, after Steer. `Esc` does **not** abort, to prevent
   accidental stops.
@@ -352,7 +366,12 @@ Sandbox row.
 
 Composer ground is `--color-surface` with a top border in `--color-border`, and padding
 `--space-3` / `--space-4` plus `env(safe-area-inset-bottom)`. The textarea uses `.input`: 44px
-min, `--r-md`, `--color-border-strong` border, and an accent focus border. Send is
+min, `--r-md`, `--color-border-strong` border, and an accent focus border. Its block padding is what's
+left of `--control-md` after one body line (`--fs-body` × `--lh-body`) and the two borders as
+drawn (the 1.5px stroke snaps down to 1px), split evenly, so an empty or one-line box is exactly
+44px with its text centred at every text size; each added line grows it by one line height. Empty,
+it stays one line: a placeholder longer than the box ("Steer the current turn…" beside Steer and
+Stop) is cut, not wrapped, so a turn starting never makes the composer taller. Send is
 `.button-primary` (`--color-accent` / `--color-on-accent`). Stop is `.button-destructive`
 (`--status-error` border and label, `--status-error-bg` on hover). The reason is `--fs-caption` in
 `--color-ink-2`. The model indicator borrows the pair the foot uses — the id `--fs-mono` in `--color-ink-2`, everything else

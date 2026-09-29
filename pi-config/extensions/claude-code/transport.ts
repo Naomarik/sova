@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import type { ClaudeAccountFailure } from "./accounts.ts";
 
 // ---------------------------------------------------------------------------
 // Event shapes
@@ -138,6 +139,115 @@ export function resultError(e: Record<string, any>): string {
 	if (text(e.subtype) && e.subtype !== "success") return `Claude task failed: ${text(e.subtype)}`;
 	return "Claude task failed";
 }
+// ---------------------------------------------------------------------------
+// Account failures (a usage limit, a failed sign-in)
+// ---------------------------------------------------------------------------
+
+/** Assistant `error` codes (the CLI's SDKAssistantMessageError, 2.1.282) that mean the login is out of quota. */
+const LIMIT_ERRORS = new Set(["rate_limit", "billing_error"]);
+/** …and that mean its sign-in no longer works. */
+const AUTH_ERRORS = new Set(["authentication_failed", "oauth_org_not_allowed", "account_on_hold"]);
+const LIMIT_TEXT = /usage limit reached|hit your (?:usage )?limit|out of (?:extra )?usage|limit will reset/i;
+const AUTH_TEXT = /not logged in|please run \/login|invalid api key|oauth token (?:has )?(?:expired|been revoked|revoked)|authentication_error|failed to authenticate|invalid bearer token|\b401\b/i;
+/** The legacy "Claude AI usage limit reached|<epoch seconds>" result carries its reset time. */
+const LEGACY_RESET = /limit reached\|(\d{9,13})/i;
+/** api_retry attempts for a failed sign-in before the failure is called: the first may be a token refresh. */
+const AUTH_RETRIES_BEFORE_FAILURE = 2;
+
+const epochMs = (value: unknown): number | undefined =>
+	typeof value === "number" && Number.isFinite(value) && value > 0 ? (value < 1e12 ? value * 1000 : value) : undefined;
+
+/**
+ * Follows one turn's events and says whether it failed for its LOGIN: a usage limit (`limit`) or a
+ * sign-in that no longer works (`auth`). Nothing else — an overloaded API, a bad request, a tool
+ * error — is an account failure. `observe` returns a failure only when it is certain before the
+ * result (repeated sign-in retries: the CLI would otherwise retry for minutes); `settle` decides
+ * at the result. An aborted result never is one.
+ */
+export class ClaudeFailureDetector {
+	private limit?: { resetsAt?: number; window?: string };
+	private hinted?: ClaudeAccountFailure;
+	private authRetries = 0;
+	reset(): void { this.limit = undefined; this.hinted = undefined; this.authRetries = 0; }
+	/** True for the synthetic assistant message that carries an account failure: it is not an answer. */
+	isFailureMessage(e: Record<string, any>): boolean {
+		if (e.type !== "assistant") return false;
+		if (typeof e.error === "string" && (LIMIT_ERRORS.has(e.error) || AUTH_ERRORS.has(e.error))) return true;
+		return e.message?.model === "<synthetic>" && this.textFailure(textBlocksText(e.message?.content)) !== undefined;
+	}
+	observe(e: Record<string, any>): ClaudeAccountFailure | undefined {
+		if (e.type === "rate_limit_event" && record(e.rate_limit_info)) {
+			const info = e.rate_limit_info;
+			if (info.status === "rejected") {
+				this.limit = {
+					...(epochMs(info.resetsAt) ? { resetsAt: epochMs(info.resetsAt) } : {}),
+					...(typeof info.rateLimitType === "string" ? { window: info.rateLimitType } : {}),
+				};
+			} else if (typeof info.status === "string") this.limit = undefined; // e.g. moved onto extra usage
+			return undefined;
+		}
+		if (e.type === "assistant" && this.isFailureMessage(e)) {
+			const text = textBlocksText(e.message?.content).trim().slice(0, 200);
+			const kind = typeof e.error === "string" ? (AUTH_ERRORS.has(e.error) ? "auth" : "limit") : this.textFailure(text)!;
+			this.hinted = { kind, ...(text ? { message: text } : {}) };
+			return undefined;
+		}
+		if (e.type === "system" && e.subtype === "api_retry" && (e.error === "authentication_failed" || e.error_status === 401)) {
+			if (++this.authRetries >= AUTH_RETRIES_BEFORE_FAILURE) return { kind: "auth", message: "Claude kept failing to authenticate" };
+		}
+		return undefined;
+	}
+	settle(e: Record<string, any>): ClaudeAccountFailure | undefined {
+		if (e.type !== "result") return undefined;
+		const terminal = typeof e.terminal_reason === "string" ? e.terminal_reason : "";
+		const failed = e.is_error === true || (typeof e.subtype === "string" && e.subtype !== "success");
+		if (terminal.startsWith("aborted") || !failed) { this.reset(); return undefined; }
+		const text = resultError(e);
+		const fromText = this.textFailure(text);
+		let failure: ClaudeAccountFailure | undefined;
+		if (this.hinted?.kind === "auth" || (!this.hinted && !this.limit && fromText === "auth")) failure = { kind: "auth" };
+		else if (this.hinted?.kind === "limit" || this.limit || fromText === "limit") {
+			const legacy = LEGACY_RESET.exec(text)?.[1];
+			const resetsAt = this.limit?.resetsAt ?? (legacy ? epochMs(Number(legacy)) : undefined);
+			failure = { kind: "limit", ...(resetsAt ? { resetsAt } : {}), ...(this.limit?.window ? { window: this.limit.window } : {}) };
+		}
+		const message = this.hinted?.message ?? text;
+		this.reset();
+		return failure && { ...failure, ...(message ? { message: message.slice(0, 200) } : {}) };
+	}
+	private textFailure(text: string): "limit" | "auth" | undefined {
+		if (LIMIT_TEXT.test(text)) return "limit";
+		if (AUTH_TEXT.test(text)) return "auth";
+		return undefined;
+	}
+}
+/** Classify a whole recorded stream (fixtures, tests): the failure its first failed result carries. */
+export function classifyClaudeFailure(events: readonly Record<string, any>[]): ClaudeAccountFailure | undefined {
+	const detector = new ClaudeFailureDetector();
+	for (const e of events) {
+		const early = detector.observe(e);
+		if (early) return early;
+		if (e.type === "result") {
+			const failure = detector.settle(e);
+			if (failure) return failure;
+		}
+	}
+	return undefined;
+}
+/**
+ * The events a login forced to fail by the development switch answers a user message with, shaped
+ * like the CLI's own (2.1.282): a rejected rate_limit_event (limit only), the synthetic assistant
+ * error message, then an error result correlated to the message.
+ */
+export function simulatedFailureEvents(failure: ClaudeAccountFailure, userUuid?: string): Record<string, any>[] {
+	const text = failure.kind === "limit" ? "You've hit your limit (simulated by claude-accounts-dev.json)" : "Not logged in · Please run /login (simulated by claude-accounts-dev.json)";
+	return [
+		...(failure.kind === "limit" ? [{ type: "rate_limit_event", rate_limit_info: { status: "rejected", ...(failure.resetsAt ? { resetsAt: Math.floor(failure.resetsAt / 1000) } : {}), rateLimitType: failure.window ?? "five_hour" }, uuid: randomUUID() }] : []),
+		{ type: "assistant", message: { model: "<synthetic>", role: "assistant", content: [{ type: "text", text }], stop_reason: "stop_sequence", usage: { input_tokens: 0, output_tokens: 0 } }, parent_tool_use_id: null, error: failure.kind === "limit" ? "rate_limit" : "authentication_failed", uuid: randomUUID() },
+		{ type: "result", subtype: "success", is_error: true, result: text, num_turns: 0, duration_ms: 0, usage: { input_tokens: 0, output_tokens: 0 }, ...(userUuid ? { user_message_uuid: userUuid } : {}) },
+	];
+}
+
 /** Preserve configured CLI authentication/routing (including API keys), but do
  * not inherit Claude's nested-session markers from the host shell. `extra` is
  * applied last, so a caller's variable is what the CLI sees. */
@@ -480,6 +590,11 @@ export interface ClaudeTransportOptions {
 	/** @internal Signal the owned detached process group (test seam). */
 	signalGroupImpl?: (pid: number, signal: NodeJS.Signals) => void;
 	hooks: ClaudeTransportHooks;
+	/**
+	 * The development switch (accounts.ts forcedFailure): every user message is answered with this
+	 * failure (simulatedFailureEvents) instead of being written to the CLI.
+	 */
+	simulateFailure?: ClaudeAccountFailure;
 }
 
 export class ClaudeTransport {
@@ -492,6 +607,7 @@ export class ClaudeTransport {
 	private readonly hooks: ClaudeTransportHooks;
 	private readonly spawnImpl?: SpawnImpl;
 	private readonly signalGroupImpl?: (pid: number, signal: NodeJS.Signals) => void;
+	private readonly simulateFailure?: ClaudeAccountFailure;
 	private readonly closedState = deferred<void>();
 	private proc?: ChildProcess;
 	private closed = false;
@@ -510,6 +626,7 @@ export class ClaudeTransport {
 	constructor(options: ClaudeTransportOptions) {
 		this.timings = options.timings; this.limits = options.limits; this.hooks = options.hooks;
 		this.spawnImpl = options.spawnImpl; this.signalGroupImpl = options.signalGroupImpl;
+		this.simulateFailure = options.simulateFailure;
 		this.whenClosed = this.closedState.promise;
 	}
 
@@ -553,6 +670,16 @@ export class ClaudeTransport {
 	send(value: unknown): boolean {
 		const input = this.proc?.stdin;
 		if (!input || input.destroyed || input.writableEnded || !input.writable || this.closed || this.leaderExited) return false;
+		if (this.simulateFailure && record(value) && value.type === "user") {
+			const failure = this.simulateFailure;
+			const uuid = typeof value.uuid === "string" ? value.uuid : undefined;
+			const timer = setTimeout(() => {
+				this.timers.delete(timer);
+				for (const event of simulatedFailureEvents(failure, uuid)) if (!this.closed) this.event(event);
+			}, 20);
+			this.timers.add(timer);
+			return true;
+		}
 		try {
 			const line = JSON.stringify(value) + "\n";
 			// Bound queued pipe writes too; write(false) means buffered, not rejected.

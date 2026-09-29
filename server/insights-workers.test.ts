@@ -57,6 +57,22 @@ test("decodeWorkers carries the modes a worker was given, whole or not at all", 
   assert.deepEqual((JSON.parse(JSON.stringify(workers[0])) as WorkerInfo).modes, ["spec"]);
 });
 
+test("decodeWorkers carries a worker's turns (model replies): a non-negative integer, else unknown", () => {
+  const workers = decodeWorkers({ workers: [
+    { id: "ag_01", name: "a", status: "running", turns: 12 },
+    { id: "ag_02", name: "b", status: "running", turns: 0 },
+    { id: "ag_03", name: "c", status: "running" },
+    { id: "ag_04", name: "d", status: "running", turns: -2 },
+    { id: "ag_05", name: "e", status: "running", turns: 1.5 },
+    { id: "ag_06", name: "f", status: "running", turns: "4" },
+    // Beside usage, not in it: a record whose usage was trimmed keeps its count.
+    { id: "ag_07", name: "g", status: "running", turns: 3, usage: "trimmed" },
+  ] }) as WorkerInfo[];
+  assert.deepEqual(workers.map((w) => w.turns), [12, 0, undefined, undefined, undefined, undefined, 3]);
+  for (const w of workers.slice(2, 6)) assert.ok(!("turns" in w), `${w.id}: unknown is absent, never 0`);
+  assert.equal(workers[6]!.usage, undefined);
+});
+
 test("decodeWorkers names each worker's provider: the ref's, the catalog's, or claude code", () => {
   // A bare id resolves through pi's cached catalogs — models-store.json in this throwaway dir.
   writeFileSync(join(agentDir, "models-store.json"), JSON.stringify({ zai: { models: [{ id: "glm-5.3" }] } }));

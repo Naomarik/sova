@@ -357,7 +357,7 @@ test("a message sent while a reply streams doesn't split the reply in two", () =
   update({ type: "thinking_delta", contentIndex: 0, delta: "Definitive timeline" });
   addPendingPrompt(set, "this session is weird", [], [], "c1");
   // The row below the reply doesn't hide what the reply is doing.
-  assert.equal(runDetail(s), "thinking");
+  assert.deepEqual(runDetail(s), { step: "thinking", text: "thinking" });
   update({ type: "thinking_delta", contentIndex: 0, delta: " for today" });
   update({ type: "toolcall_start", contentIndex: 1, id: "t1", toolName: "bash" });
   applyEvent(set, {
@@ -552,4 +552,21 @@ test("a baton sender marker names the live row it follows: the newest started ro
   // A marker with no live row waiting for one names nothing (the row is history already).
   applyEvent(set, { type: BATON_SENT_EVENT, by: "p_other001" });
   assert.deepEqual((s.entries.filter((e) => e.kind === "user") as { by?: string }[]).map((u) => u.by), ["operator", "p_bob00001"]);
+});
+
+test("runDetail names the step the run-status row draws as an icon, with its words", () => {
+  const [s, set] = store();
+  const update = (ev: Record<string, unknown>) => applyEvent(set, { type: "message_update", assistantMessageEvent: ev });
+  assert.equal(runDetail(s), null);
+  applyEvent(set, messageStart("zai", "glm-5.3"));
+  assert.equal(runDetail(s), null, "between blocks: no step");
+  update({ type: "thinking_start", contentIndex: 0 });
+  assert.deepEqual(runDetail(s), { step: "thinking", text: "thinking" });
+  update({ type: "toolcall_start", contentIndex: 1, id: "t1", toolName: "read" });
+  assert.deepEqual(runDetail(s), { step: "tool", text: "running read" });
+  applyEvent(set, { type: "tool_execution_start", toolCallId: "t9", toolName: "agent_spawn", args: {} });
+  assert.deepEqual(runDetail(s), { step: "tool", text: "running agent_spawn" }, "a running tool wins over the last block");
+  applyEvent(set, { type: "tool_execution_end", toolCallId: "t9", toolName: "agent_spawn", result: { content: [] } });
+  update({ type: "text_start", contentIndex: 2 });
+  assert.deepEqual(runDetail(s), { step: "writing", text: "writing" });
 });

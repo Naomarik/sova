@@ -1,7 +1,7 @@
 import type { Server } from "node:http";
 import { LINK_WARNINGS, type LinkWarningCode, type PublicLinksFile, type ShareState } from "../../shared/public-links";
 import { readPeers } from "../mesh/peers";
-import { readPublicLinks } from "../public-links";
+import { readPublicLinks, sharePin } from "../public-links";
 import { createShareServer } from "./edge";
 import { viaGatewayStatus } from "./gateway-client";
 import type { ShareLinksOutcome } from "./links-events";
@@ -104,6 +104,7 @@ function rebind(want: BindTarget | null): Promise<ShareListenerState | null> {
 export function startShareListener(env: NodeJS.ProcessEnv = process.env): Promise<ShareListenerState | null> {
   unsubscribe?.();
   unsubscribe = onPublicLinksChanged((file) => rebind(bindTarget(file, env)).then(() => undefined));
+  sharePin(env); // a refused pin says so at startup, not first at a mint
   return rebind(bindTarget(readPublicLinks(), env));
 }
 
@@ -155,7 +156,7 @@ function ownState(source: ShareState["source"], publicUrl: string, file: PublicL
     SOVA_SHARE_PUBLIC_URL (a pin), this host's own gateway setting, the via gateway (live, else
     lastKnownUrl), the bound address, off. */
 export function shareState(env: NodeJS.ProcessEnv = process.env, file: PublicLinksFile = readPublicLinks()): ShareState {
-  const pin = env.SOVA_SHARE_PUBLIC_URL?.trim().replace(/\/+$/, "");
+  const pin = sharePin(env);
   if (pin) return ownState("env", pin, file);
   if (file.route === "self" && file.gateway) return ownState("setting", file.gateway.publicUrl, file);
   if (typeof file.route === "object") {

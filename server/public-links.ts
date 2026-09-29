@@ -183,5 +183,36 @@ export function recordLastKnownUrl(url: string): PublicLinksFile {
 /** The SOVA_SHARE_* variables that are set, and so win over the setting. */
 export const SHARE_ENV = ["SOVA_SHARE_PUBLIC_URL", "SOVA_SHARE_HOST", "SOVA_SHARE_PORT"] as const;
 export function pinnedByEnv(env: NodeJS.ProcessEnv = process.env): string[] {
-  return SHARE_ENV.filter((k) => !!env[k]?.trim());
+  return SHARE_ENV.filter((k) => (k === "SOVA_SHARE_PUBLIC_URL" ? sharePin(env) !== null : !!env[k]?.trim()));
+}
+
+/** The pins already warned about, so a refused one is logged once, not per request. */
+const warnedPins = new Set<string>();
+
+/**
+ * The SOVA_SHARE_PUBLIC_URL pin as an origin, or null (no pin). It follows parsePublicUrl's rule
+ * except that http is allowed (tailnet deployments pin one): no backslash, whitespace or control
+ * character, no credentials, query or fragment, no path but "/". A refused pin is logged once and
+ * counts as no pin, so the setting decides; it never throws.
+ */
+export function sharePin(env: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = env.SOVA_SHARE_PUBLIC_URL;
+  const text = raw?.trim();
+  if (!text) return null;
+  let origin: string | null = null;
+  // As written: scheme://authority, then at most "/" (the parser would drop "/." or an empty "?").
+  const shape = /^https?:\/\/([^/?#@]+)\/?$/i.test(text);
+  if (shape && !/[\\\s\x00-\x1f\x7f]/.test(text)) {
+    try {
+      const u = new URL(text);
+      if ((u.protocol === "https:" || u.protocol === "http:") && !u.username && !u.password && !u.search && !u.hash && u.pathname === "/") origin = u.origin;
+    } catch {
+      origin = null;
+    }
+  }
+  if (origin === null && !warnedPins.has(text)) {
+    warnedPins.add(text);
+    console.warn("[share] SOVA_SHARE_PUBLIC_URL ignored: it must be just an http:// or https:// address (no path, query, login, spaces or backslashes). Links use the Public links setting instead.");
+  }
+  return origin;
 }

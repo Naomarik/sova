@@ -80,27 +80,31 @@ import { SPEC_FILE_NAME, SPEC_WRITER_LABEL, specBackends, specKey, specReader } 
 import {
 	bashCommands,
 	CensusHook,
-	SpecWriteGuard,
-	driftNote,
 	CHECK_TAG,
 	checkAlsoChanges,
 	commandDirs,
-	headAt,
-	opsTurn,
-	type OpRange,
-	commandRoot,
 	describeProblem,
-	foreignBetween,
+	DIGEST_TAG,
+	driftNote,
 	gitCommits,
 	gitMerges,
-	gitView,
+	headAt,
+	freshTally,
+	LANDING_REPROMPTS,
+	ledgerPath,
+	type OpLanding,
 	promoteWrites,
+	readLedger,
 	reportedAlsoChanges,
-	workerReported,
 	repromptText,
+	SpecWriteGuard,
+	tallyCheck,
+	tallyForeign,
+	tallyOps,
+	tallyTree,
 	treeStart,
-	treeTurn,
 	type TreeStart,
+	workerReported,
 } from "./spec-guard.ts";
 import {
 	activeOf,
@@ -949,46 +953,62 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	// ── Spec on: the mechanical checks (spec-guard.ts) ──
 	// After any tool call, bash included, the census runs on a Git delta: the first changed file in the
 	// spec boundary and each new file get a `[spec census]` digest appended to that tool result. At the
-	// end of a run that edited, committed, promoted or merged, the reply's last line must be an
-	// `Also changes:` line naming every foreign § computed from Git: a run that merged with the worktree
-	// tool or ran promote --write is re-prompted once, any other gets a warning. Silent without a spec,
-	// Git or the tools, in a remote session, and on any error. PI_SPEC_CENSUS_HOOK=0 turns the census
-	// off, PI_SPEC_CHECK=0 the line check (a trial arm's control).
+	// end of a run the reply is checked (also-changes.ts grammar): a run that edited, committed, promoted
+	// or merged ends with an `Also changes:` line naming every foreign § computed from Git, the task's own
+	// claims subtracted; a landing (a merge, a promote, a commit that changed the current spec, this
+	// session's or a worker's from the ledger) also passes the landing gate (Plumbing / Deferred lines) and
+	// is re-prompted up to LANDING_REPROMPTS times; a Q&A run that wrote the line is re-prompted once; any
+	// other run gets a warning. Silent without a spec, Git or the tools, and in a remote session; a check
+	// that fails says so. PI_SPEC_CENSUS_HOOK=0 turns the census off, PI_SPEC_CHECK=0 the line check.
 	const specCensus = new CensusHook({ core: () => SPEC_CORE });
 	const specWrites = new SpecWriteGuard();
 	const specOn = () => hasMinor(active, "spec") && remoteTarget === undefined;
 	/** What this run did, for the line check. */
 	let specRun: {
-		/** The session's tree and every worktree it tracks, as the run found them: a worker may write in any. */
+		/** The session's tree and every worktree it tracks, as the run found them. */
 		trees: TreeStart[];
 		/** Branch length at the run's start: later entries may carry a worker's report. */
 		branchAt: number;
 		/** The session's own tree (its top), as opposed to the worktrees it tracks. */
 		cwdTop?: string;
-		/** This session's own git operations (commit, merge, promote, worktree merge) per tree top: HEAD before and after. */
-		ops: Map<string, OpRange[]>;
-		/** Operations under way, by tool call: each tree's HEAD just before. */
-		opening: Map<string, { top: string; before: string }[]>;
+		/** This session's own git operations (commit, merge, promote, worktree merge): HEAD before and after. */
+		ops: OpLanding[];
+		/** Operations under way, by tool call: each tree's HEAD just before, and the kind. */
+		opening: Map<string, { top: string; before: string; kind: OpLanding["kind"] }[]>;
 		/** Snapshots of worktrees the session started tracking during the run (created or attached mid-run). */
 		pending: Promise<void>[];
+		/** This session edited, committed, promoted or merged. */
 		changed: boolean;
+		/** A tool call ran (a background writer's changes to the own tree count only then). */
+		tools: boolean;
 		merged: boolean;
 		promoted: boolean;
-		/** Spec roots a promote --write named, with HEAD before it ran. */
-		roots: Map<string, string>;
-		/** Foreign § the worktrees extension computed for this run's merges. */
+		/** worktrees:merged events without a range: their own foreign lists. */
 		mergeForeign: string[];
-	} = { trees: [], branchAt: 0, pending: [], ops: new Map(), opening: new Map(), changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
-	let specReprompted = false;
+		mergeRanges: number;
+		/** Trees this run's check took whole (they settle to their state now); others keep their baseline. */
+		taken: Set<string>;
+	} = freshSpecRun();
+	let specReprompts = 0;
+	/** Operations of an interrupted run, checked with the next one (F11). */
+	let carriedOps: OpLanding[] = [];
+	/** Ledger entries at or after this time are not yet checked. */
+	let ledgerSince = 0;
+	function freshSpecRun(): typeof specRun {
+		return { trees: [], branchAt: 0, pending: [], ops: [], opening: new Map(), changed: false, tools: false, merged: false, promoted: false, mergeForeign: [], mergeRanges: 0, taken: new Set() };
+	}
 	const resetSpecRun = () => {
-		specRun = { trees: [], branchAt: 0, pending: [], ops: new Map(), opening: new Map(), changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
-		specReprompted = false;
+		specRun = freshSpecRun();
+		specReprompts = 0;
+	};
+	/** This session's ledger: its workers append their git operations (SOVA_SPEC_LEDGER, set by the spawn path). */
+	const ledgerFile = (ctx: ExtensionContext): string | undefined => {
+		const id = ctx.sessionManager.getSessionId?.();
+		return id ? ledgerPath(getAgentDir(), id) : undefined;
 	};
 	/**
-	 * Each tree as the last run left it, by top: the next run compares against this, so what a worker
-	 * wrote while the session was idle (it runs in the background) is that next run's change. Always for
-	 * a tracked worktree (workers' ground); for the session's own tree only in a run that relays a worker's
-	 * report, so a user's own edits between runs are never the model's.
+	 * Each tree as the last run left it, by top: a relay run (a worker's report) compares tracked worktrees
+	 * against this, so what a worker wrote while the session was idle is that run's.
 	 */
 	const settledTrees = new Map<string, TreeStart>();
 	/** worktrees/state.ts WORKTREES_STATE_EVENT, spelled again: the active worktrees this session tracks. */
@@ -997,8 +1017,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		const e = data as { version?: unknown; active?: unknown } | undefined;
 		if (e?.version !== 1 || !Array.isArray(e.active)) return;
 		const next = e.active.filter((p): p is string => typeof p === "string");
-		// A worktree created or attached during a run is snapshotted now, before its worker writes: its
-		// commits and promotions are this run's too.
+		// A worktree created or attached during a run is snapshotted now, before its worker writes.
 		if (running && specOn()) {
 			const run = specRun;
 			for (const dir of next.filter((p) => !trackedWorktrees.includes(p)))
@@ -1012,42 +1031,43 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	});
 	pi.events?.emit("worktrees:discover", { version: 1 });
 
-	// worktrees/index.ts: every merge, the tool's or one detected after plain git, with its foreign §.
+	// worktrees/index.ts: every merge, the tool's or one detected after plain git. With the target's range
+	// (top, before, after) it is judged like any landing; without, its own list is taken.
 	pi.events?.on("worktrees:merged", (data: unknown) => {
-		const e = data as { version?: unknown; how?: unknown; foreign?: unknown } | undefined;
+		const e = data as { version?: unknown; how?: unknown; foreign?: unknown; top?: unknown; before?: unknown; after?: unknown } | undefined;
 		if (e?.version !== 1) return;
 		specRun.changed = true;
 		if (e.how === "tool") specRun.merged = true;
-		if (Array.isArray(e.foreign)) specRun.mergeForeign.push(...e.foreign.filter((id): id is string => typeof id === "string"));
+		if (typeof e.top === "string" && typeof e.before === "string" && typeof e.after === "string" && e.before && e.after) {
+			if (!specRun.ops.some((o) => o.top === e.top && o.before === e.before && o.after === e.after)) specRun.ops.push({ top: e.top, before: e.before, after: e.after, kind: "merge", actor: "self" });
+			specRun.mergeRanges++;
+		} else if (Array.isArray(e.foreign)) specRun.mergeForeign.push(...e.foreign.filter((id): id is string => typeof id === "string"));
 	});
+
+	const opKind = (cmd: string): OpLanding["kind"] => (promoteWrites(cmd) ? "promote" : gitMerges(cmd) ? "merge" : "commit");
 
 	pi.on("tool_call", async (event, ctx) => {
 		if (!specOn()) return;
+		specRun.tools = true;
 		if (process.env.PI_SPEC_CENSUS_HOOK !== "0") await specWrites.before(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
-		// An operation of this session's that can move a HEAD: note each tree's HEAD just before it.
+		// An operation of this session's that can move a HEAD or land the spec: each tree's HEAD just before it.
 		const input = event.input as { command?: unknown; action?: unknown } | undefined;
 		const cmd = event.toolName === "bash" && typeof input?.command === "string" ? input.command : undefined;
-		const dirs = cmd && (gitCommits(cmd) || gitMerges(cmd) || promoteWrites(cmd)) ? commandDirs(cmd, ctx.cwd) : event.toolName === "worktree" && input?.action === "merge" ? [ctx.cwd] : [];
-		const opening: { top: string; before: string }[] = [];
+		const toolMerge = event.toolName === "worktree" && input?.action === "merge";
+		const dirs = cmd && (gitCommits(cmd) || gitMerges(cmd) || promoteWrites(cmd)) ? commandDirs(cmd, ctx.cwd) : toolMerge ? [ctx.cwd] : [];
+		const kind: OpLanding["kind"] = cmd ? opKind(cmd) : "merge";
+		const opening: { top: string; before: string; kind: OpLanding["kind"] }[] = [];
 		for (const dir of dirs) {
 			const at = await headAt(resolve(ctx.cwd, dir));
-			if (at && !opening.some((o) => o.top === at.top)) opening.push({ top: at.top, before: at.head });
+			if (at && !opening.some((o) => o.top === at.top)) opening.push({ top: at.top, before: at.head, kind });
 		}
 		if (opening.length) specRun.opening.set(event.toolCallId, opening);
-		if (event.toolName !== "bash") return;
-		const command = cmd;
-		if (typeof command !== "string" || !promoteWrites(command)) return;
-		// The promote's base: HEAD of the spec root it writes, before it runs (it may commit in the same call).
-		const root = resolve(ctx.cwd, commandRoot(command) ?? ".");
-		if (specRun.roots.has(root)) return;
-		const view = await gitView(root);
-		if (view?.head) specRun.roots.set(root, view.head);
 	});
 
 	pi.on("tool_result", async (event, ctx) => {
 		if (!specOn()) return;
+		const command = event.toolName === "bash" ? (event.input as { command?: unknown } | undefined)?.command : undefined;
 		if (!event.isError) {
-			const command = event.toolName === "bash" ? (event.input as { command?: unknown } | undefined)?.command : undefined;
 			if (event.toolName === "edit" || event.toolName === "write") specRun.changed = true;
 			if (typeof command === "string") {
 				if (gitCommits(command) || gitMerges(command)) specRun.changed = true;
@@ -1055,13 +1075,18 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			}
 			if (event.toolName === "worktree" && (event.input as { action?: unknown } | undefined)?.action === "merge") specRun.changed = specRun.merged = true;
 		}
-		// The operation's range in each tree it touched: HEAD just before vs just after (failed ones too).
+		// The operation's range in each tree it touched: HEAD just before vs just after (failed ones too). A
+		// promote lands even when HEAD stays (the work tree is its head).
 		const opening = specRun.opening.get(event.toolCallId);
 		if (opening) {
 			specRun.opening.delete(event.toolCallId);
 			for (const o of opening) {
 				const at = await headAt(o.top);
-				if (at && at.head !== o.before) specRun.ops.set(o.top, [...(specRun.ops.get(o.top) ?? []), { before: o.before, after: at.head }]);
+				const promoted = o.kind === "promote" && !event.isError;
+				if (at && (at.head !== o.before || promoted)) {
+					specRun.ops.push({ top: o.top, before: o.before, after: at.head, kind: o.kind, actor: "self" });
+					if (event.toolName === "worktree") specRun.mergeRanges++;
+				}
 			}
 		}
 		if (process.env.PI_SPEC_CENSUS_HOOK === "0") return;
@@ -1076,70 +1101,64 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			sessionStart: ctx.sessionManager.getHeader()?.timestamp,
 		});
 		if (failure && ctx.hasUI) ctx.ui.notify(failure, "warning");
-		const text = [forbidden, driftNote(event.toolName, event.input, event.content), census].filter(Boolean).join("\n");
+		// A failure reaches the model too (F12): a census it expected and didn't get must not read as "all clear".
+		const text = [forbidden, driftNote(event.toolName, event.input, event.content), census, failure ? `${DIGEST_TAG} ${failure}` : undefined].filter(Boolean).join("\n");
 		if (text) return { content: [...event.content, { type: "text" as const, text }] };
 	});
 
 	pi.on("agent_before_settle", async (event, ctx) => {
-		if (!specOn() || process.env.PI_SPEC_CHECK === "0" || event.outcome !== "completed") return;
+		if (!specOn() || process.env.PI_SPEC_CHECK === "0") return;
+		if (event.outcome !== "completed") {
+			// An interrupted run's landings are checked with the next run (F11).
+			carriedOps = [...carriedOps, ...specRun.ops];
+			return;
+		}
 		try {
 			await Promise.all(specRun.pending);
-			let changed = specRun.changed;
-			const landed: string[] = [];
-			const conflicts: string[] = [];
-			const ids = new Set(specRun.mergeForeign);
-			// The list is exact (a § the line names beyond it is an extra) when Git computed every part of
-			// it and at least one part exists: a worktree merge's list, or a changed tree's.
-			let exact = true;
-			let gitBased = specRun.merged;
-			// Each tree, the session's and every tracked worktree: a worker's edit, commit or promotion
-			// there is this turn's too. A current spec that changed is a promotion landing: blocking.
-			const errors: string[] = [];
-			const relay = workerReported(ctx.sessionManager.getBranch().slice(specRun.branchAt));
-			const cwdTop = specRun.cwdTop;
-			for (const fresh of specRun.trees) {
-				const carried = settledTrees.get(fresh.view.top);
-				const tree = carried && (fresh.view.top !== cwdTop || relay) ? carried : fresh;
-				// The session's own tree: its HEAD's movement counts only through this session's own
-				// operations there (HEAD just before vs just after each commit, merge, promotion), plus its
-				// uncommitted changes (since the last run settled, in a run that relays a worker). Another
-				// actor's commit on that branch is never this turn's. Workers' ground is the tracked worktrees:
-				// each is compared whole, from where the last run left it.
-				const t = fresh.view.top === cwdTop ? await opsTurn(tree, specRun.ops.get(fresh.view.top) ?? [], SPEC_CORE) : await treeTurn(tree, SPEC_CORE);
-				if (t.error) errors.push(t.error);
-				if (t.conflict) conflicts.push(t.conflict);
-				if (!t.changed) continue;
-				changed = true;
-				if (t.foreign) gitBased = true;
-				else exact = false;
-				if (t.specChanged) landed.push(basename(tree.view.top));
-				for (const id of t.foreign ?? []) ids.add(id);
+			const entries = ctx.sessionManager.getBranch().slice(specRun.branchAt);
+			const relay = workerReported(entries);
+			const t = freshTally(specRun.changed, specRun.merged || specRun.promoted);
+			// 1. Operations: this session's, an interrupted run's, and its workers' from the ledger. Workers'
+			// are taken in a run that relays one or changes something itself; a Q&A run leaves them for later,
+			// so a background promotion never forces a line on it.
+			const ops: OpLanding[] = [...carriedOps, ...specRun.ops];
+			const file = ledgerFile(ctx);
+			const ledger = file ? readLedger(file, ledgerSince) : [];
+			if ((relay || specRun.changed || carriedOps.length > 0) && ledger.length) {
+				for (const e of ledger) ops.push({ top: e.top, before: e.before, after: e.after, kind: e.kind, actor: e.actor?.session ?? e.actor?.runtime ?? "worker" });
+				ledgerSince = Math.max(...ledger.map((e) => e.at)) + 1;
 			}
-			if (errors.length) reportCheckFailure(ctx, errors.join("; "));
-			// A root a promote --write named outside those trees.
-			for (const [dir, base] of specRun.roots) {
-				if (specRun.trees.some((t) => t.root === dir)) continue;
-				const listed = await foreignBetween(dir, base, undefined, SPEC_CORE);
-				if (!listed) exact = false;
-				for (const id of listed ?? []) ids.add(id);
-			}
-			// A worker's report naming a § that arrived in this run makes it a change turn (the line is
-			// required), but Git stays the authority for the list: a report names the worker's whole task,
-			// not what this turn landed (B2 merge-4: a merge of master into the branch landed nothing).
-			if (reportedAlsoChanges(ctx.sessionManager.getBranch().slice(specRun.branchAt))) changed = true;
-			const foreign = [...ids].sort();
-			const check = checkAlsoChanges(lastReplyText, { required: changed, foreign, exact: exact && gitBased });
+			carriedOps = [];
+			await tallyOps(t, ops, (top) => specRun.trees.find((tree) => tree.view.top === top)?.defaultTip, SPEC_CORE);
+			if (specRun.merged && !specRun.mergeRanges) tallyForeign(t, specRun.mergeForeign);
+			// 2. The session's own tree beyond its operations: uncommitted changes and edited drafts (a run that
+			// ran a tool, or relays a worker). A current spec that changed there is a promotion landing.
+			const cwdStart = specRun.trees.find((tree) => tree.view.top === specRun.cwdTop);
+			if (cwdStart) specRun.taken.add(cwdStart.view.top);
+			for (const op of ops) specRun.taken.add(op.top);
+			if (cwdStart && (specRun.tools || relay)) await tallyTree(t, relay ? (settledTrees.get(cwdStart.view.top) ?? cwdStart) : cwdStart, SPEC_CORE, undefined, { commits: false, promoted: specRun.promoted });
+			// 3. A relay run: each tracked worktree against where the last run left it (workers without a
+			// ledger). Other runs leave tracked worktrees out of the list: a tree that didn't land this turn
+			// is no part of it (F9).
+			if (relay)
+				for (const fresh of specRun.trees) {
+					if (fresh.view.top === specRun.cwdTop) continue;
+					specRun.taken.add(fresh.view.top);
+					await tallyTree(t, settledTrees.get(fresh.view.top) ?? fresh, SPEC_CORE, undefined, { label: " (a worker's promotion)" });
+				}
+			if (t.errors.length) reportCheckFailure(ctx, t.errors.join("; "));
+			// A worker's report naming a § makes it a change run (the line is required); Git stays the authority for the list.
+			if (reportedAlsoChanges(entries)) t.changed = true;
+			const { check, foreign } = tallyCheck(t, lastReplyText, { relay });
+			const { landing, landed, conflicts } = t;
 			if (check.ok && !conflicts.length) return;
-			const blocking = specRun.merged || specRun.promoted || landed.length > 0;
-			if (blocking && !check.ok && !specReprompted) {
-				specReprompted = true;
-				const what = [
-					specRun.merged ? "merged a worktree" : "",
-					specRun.promoted ? "ran promote --write" : "",
-					landed.length && !specRun.promoted && !specRun.merged ? `changed the current spec in ${landed.join(", ")} (a promotion, yours or a worker's)` : "",
-				]
-					.filter(Boolean)
-					.join(" and ");
+			const limit = landing ? LANDING_REPROMPTS : check.problem === "forbidden" ? 1 : 0;
+			if (!check.ok && specReprompts < limit) {
+				specReprompts++;
+				const what =
+					[specRun.merged ? "merged a worktree" : "", specRun.promoted ? "ran promote --write" : "", ops.some((o) => o.actor === "self" && o.kind === "merge") && !specRun.merged ? "merged" : "", ...landed]
+						.filter(Boolean)
+						.join(" and ") || "landed";
 				const content = [repromptText(check, foreign, what), ...conflicts].join("\n");
 				return { entries: [...event.entries, { type: "custom_message" as const, customType: SPEC_CHECK_MESSAGE, display: false, content }], continue: true };
 			}
@@ -1155,22 +1174,26 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		}
 	});
 
-	/** A failure inside the check: on screen, and in the session as an entry, never silent. */
+	/** A failure inside the check: on screen, in the session as an entry, and to the model; never silent. */
 	function reportCheckFailure(ctx: ExtensionContext, message: string): void {
 		const text = `${CHECK_TAG} the check itself failed: ${message}`;
 		try {
 			if (ctx.hasUI) ctx.ui.notify(text, "warning");
 			pi.appendEntry("spec-check-error", { message: text });
+			pi.sendMessage({ customType: SPEC_CHECK_MESSAGE, content: `${text}. Check your \`Also changes:\` line against \`foreign\` by hand.`, display: false }, { deliverAs: "nextTurn" });
 		} catch {
 			// Reporting is best-effort too.
 		}
 	}
 
-	// A settled run's trees are the next run's baseline (settledTrees).
+	// A settled run's trees are the next run's baseline (settledTrees): the trees its check took, and any
+	// seen for the first time. A tracked worktree a Q&A run left out keeps its baseline, so a worker's
+	// landing there is still the relay run's.
 	pi.on("agent_settled", async () => {
 		if (!specOn()) return;
 		for (const tree of specRun.trees) {
-			const now = await treeStart(tree.view.top).catch(() => undefined);
+			if (settledTrees.has(tree.view.top) && !specRun.taken.has(tree.view.top)) continue;
+			const now = settledTrees.has(tree.view.top) ? await treeStart(tree.view.top).catch(() => undefined) : tree;
 			if (now) settledTrees.set(now.view.top, now);
 		}
 	});

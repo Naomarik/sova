@@ -293,6 +293,8 @@ export interface CensusState {
 	conflict?: boolean;
 	/** Orphaned evidence commits already said (by the census or the write guard). */
 	orphans?: string[];
+	/** Revs the task's own claims are absent at (ownBasesFor at the first look): census --own-base. */
+	ownBases?: string[];
 }
 
 export const freshCensusState = (): CensusState => ({ base: null, top: null, known: [], reported: false, foreign: [], failed: false });
@@ -398,7 +400,10 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 		seen.view = view;
 		if (next.top !== view.top) {
 			// First look at this tree: its current changes are the baseline, not the task's.
-			Object.assign(next, freshCensusState(), { base: view.head, top: view.top, known: Object.keys(view.files) });
+			const main = await defaultBranch(view.top, io);
+			const tip = main ? (await io.exec("git", ["rev-parse", "--verify", "-q", `refs/heads/${main}`], { cwd: view.top, timeout: TOOL_TIMEOUT_MS })).stdout.trim() : "";
+			const ownBases = await ownBasesFor(view.top, view.head, tip || undefined, io);
+			Object.assign(next, freshCensusState(), { base: view.head, top: view.top, known: Object.keys(view.files), ...(ownBases.length ? { ownBases } : {}) });
 			return { state: next, result: {} };
 		}
 		const known = new Set(next.known);
@@ -422,7 +427,8 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 		const tool = join(core, "sova-spec.mjs");
 		if (!root || !(await io.exists(tool))) return { state: next, result: {} };
 		const census = async (spec?: string) => {
-			const args = [tool, "census", "--changed", "--json", "--root", root, ...(next.base ? ["--base", next.base] : []), ...(spec ? ["--spec", spec] : [])];
+			const own = (next.ownBases ?? []).flatMap((rev) => ["--own-base", rev]);
+			const args = [tool, "census", "--changed", "--json", "--root", root, ...(next.base ? ["--base", next.base] : []), ...own, ...(spec ? ["--spec", spec] : [])];
 			const r = await io.exec("node", args, { cwd: root, timeout: TOOL_TIMEOUT_MS, signal: call.signal });
 			return { view: parseCensus(r.stdout), ran: r.stdout.trim() !== "" };
 		};
@@ -644,11 +650,68 @@ export function commandRoot(command: string): string | undefined {
 	return m ? (m[2] ?? m[3] ?? m[4]) : undefined;
 }
 
+/** What core's `foreign` says about a range (`--landing` adds the gate lists; `--own-base` the task's own). */
+export interface RangeLists {
+	foreign: string[];
+	/** The task's own ids the range touched or created (already out of `foreign`). */
+	own: string[];
+	unmappedChanged: { path: string; status?: string; inBoundary?: boolean }[];
+	mappedUntouched: { id: string; files?: string[] }[];
+	unpromotedDrafts: { draft: string; worktree?: string; ids: string[] }[];
+	handResolved: { commit: string; ids: string[] }[];
+}
+
+export interface RangeOptions {
+	/** Revs the task's own claims are absent at (fork point, default tip at run start): subtracted. */
+	ownBases?: readonly string[];
+	/** Ask for the landing gate's lists too. */
+	landing?: boolean;
+	/** A draft's `spec/` dir (relative to the root) as the head. */
+	spec?: string;
+	signal?: AbortSignal;
+}
+
+const arr = <T>(v: unknown, ok: (x: unknown) => boolean): T[] => (Array.isArray(v) ? (v.filter(ok) as T[]) : []);
+
 /**
- * The foreign § the current spec at `root` changed from `base` to `head` (the work tree without it):
- * `sova-spec.mjs foreign`; with `spec` (a draft's `spec/` dir, relative to the root) the draft is the head.
- * undefined when it can't say (no tool, a bad rev, no spec).
+ * The foreign § (and, with `landing`, the gate lists) the current spec at `root` changed from `base` to
+ * `head` (the work tree without it; with `spec`, a draft is the head): `sova-spec.mjs foreign`, the task's
+ * own ids subtracted when `ownBases` are given. undefined when it can't say (no tool, a bad rev, no spec).
  */
+export async function rangeLists(root: string, base: string, head: string | undefined, core: string, io: SpecIO = localIO, options: RangeOptions = {}): Promise<RangeLists | undefined> {
+	const tool = join(core, "sova-spec.mjs");
+	if (!(await io.exists(tool))) return undefined;
+	const args = [
+		tool,
+		"foreign",
+		"--base",
+		base,
+		...(head ? ["--head", head] : options.spec ? ["--spec", options.spec] : []),
+		...[...new Set(options.ownBases ?? [])].flatMap((rev) => ["--own-base", rev]),
+		...(options.landing ? ["--landing"] : []),
+		"--root",
+		root,
+		"--json",
+	];
+	const r = await io.exec("node", args, { cwd: root, timeout: TOOL_TIMEOUT_MS, signal: options.signal });
+	try {
+		const out = JSON.parse(r.stdout) as Record<string, unknown>;
+		if (out.exit === 2 || !Array.isArray(out.foreign)) return undefined;
+		const own = arr<string>(out.own, (x) => typeof x === "string");
+		return {
+			foreign: arr<string>(out.foreign, (x) => typeof x === "string").filter((id) => !own.includes(id)),
+			own,
+			unmappedChanged: arr(out.unmappedChanged, (x) => typeof (x as { path?: unknown })?.path === "string"),
+			mappedUntouched: arr(out.mappedUntouched, (x) => typeof (x as { id?: unknown })?.id === "string"),
+			unpromotedDrafts: arr<{ draft: string; ids: string[] }>(out.unpromotedDrafts, (x) => Array.isArray((x as { ids?: unknown })?.ids)),
+			handResolved: arr(out.handResolved, (x) => Array.isArray((x as { ids?: unknown })?.ids)),
+		};
+	} catch {
+		return undefined;
+	}
+}
+
+/** Just the foreign § of a range (see rangeLists). */
 export async function foreignBetween(
 	root: string,
 	base: string,
@@ -657,18 +720,24 @@ export async function foreignBetween(
 	io: SpecIO = localIO,
 	signal?: AbortSignal,
 	spec?: string,
+	ownBases?: readonly string[],
 ): Promise<string[] | undefined> {
-	const tool = join(core, "sova-spec.mjs");
-	if (!(await io.exists(tool))) return undefined;
-	const args = [tool, "foreign", "--base", base, ...(head ? ["--head", head] : spec ? ["--spec", spec] : []), "--root", root, "--json"];
-	const r = await io.exec("node", args, { cwd: root, timeout: TOOL_TIMEOUT_MS, signal });
-	try {
-		const out = JSON.parse(r.stdout) as { exit?: unknown; foreign?: unknown };
-		if (out.exit === 2 || !Array.isArray(out.foreign)) return undefined;
-		return out.foreign.filter((id): id is string => typeof id === "string");
-	} catch {
-		return undefined;
+	return (await rangeLists(root, base, head, core, io, { signal, spec, ownBases }))?.foreign;
+}
+
+/**
+ * The revs the task's own claims are absent at: the default branch's tip when the run (or session)
+ * started, and the fork point of `head` from it. A claim absent at both is the task's (created on its
+ * branch, whenever); one master added (present at the tip) stays foreign.
+ */
+export async function ownBasesFor(top: string, head: string | null | undefined, defaultTip: string | undefined, io: SpecIO = localIO): Promise<string[]> {
+	if (!defaultTip) return [];
+	const bases = [defaultTip];
+	if (head) {
+		const fork = await io.exec("git", ["merge-base", head, defaultTip], { cwd: top, timeout: TOOL_TIMEOUT_MS });
+		if (fork.code === 0 && fork.stdout.trim()) bases.push(fork.stdout.trim());
 	}
+	return [...new Set(bases)];
 }
 
 /** Newest mtime under a directory, 0 when empty or unreadable. */
@@ -723,12 +792,13 @@ export async function draftForeign(
 	io: SpecIO = localIO,
 	signal?: AbortSignal,
 	fallbackBase?: string,
+	ownBases?: readonly string[],
 ): Promise<string[] | undefined> {
 	try {
 		const draft = JSON.parse(await io.readFile(join(root, SPEC_REL, "drafts", name, "draft.json"))) as { base?: { commit?: unknown } };
 		const base = typeof draft.base?.commit === "string" && draft.base.commit ? draft.base.commit : fallbackBase;
 		if (!base) return undefined;
-		return await foreignBetween(root, base, undefined, core, io, signal, `${SPEC_REL}/drafts/${name}/spec`);
+		return await foreignBetween(root, base, undefined, core, io, signal, `${SPEC_REL}/drafts/${name}/spec`, ownBases);
 	} catch {
 		return undefined;
 	}
@@ -743,6 +813,8 @@ export interface TreeStart {
 	root?: string;
 	/** Each draft's newest spec/ mtime (drafts are ignored by Git). */
 	drafts: Record<string, number>;
+	/** The default branch's tip when the run found the tree: an own-claim base (ownBasesFor). */
+	defaultTip?: string;
 }
 
 /** What a run did to one tree. */
@@ -763,7 +835,9 @@ export async function treeStart(dir: string, io: SpecIO = localIO): Promise<Tree
 	const view = await gitView(dir, io);
 	if (!view) return undefined;
 	const root = await findSpecRoot(view.top, (p) => io.exists(p));
-	return { view, ...(root ? { root } : {}), drafts: root ? await draftStamps(root, io) : {} };
+	const main = root ? await defaultBranch(view.top, io) : undefined;
+	const tip = main ? (await io.exec("git", ["rev-parse", "--verify", "-q", `refs/heads/${main}`], { cwd: view.top, timeout: TOOL_TIMEOUT_MS })).stdout.trim() : "";
+	return { view, ...(root ? { root } : {}), drafts: root ? await draftStamps(root, io) : {}, ...(tip ? { defaultTip: tip } : {}) };
 }
 
 /** The repo's default branch: origin/HEAD's target, else `master`, else `main`; undefined when none exists. */
@@ -791,7 +865,7 @@ export async function landedSpec(
 	isSpec: (path: string) => boolean,
 	core: string,
 	io: SpecIO = localIO,
-	options: { committed?: boolean } = {},
+	options: { committed?: boolean; ownBases?: readonly string[] } = {},
 ): Promise<{ specChanged: boolean; foreign?: string[] }> {
 	const git = (args: string[]) => io.exec("git", args, { cwd: top, timeout: TOOL_TIMEOUT_MS });
 	const touches = async (from: string, to: string) => {
@@ -799,7 +873,7 @@ export async function landedSpec(
 		return diff.code === 0 && diff.stdout.split("\0").some(isSpec);
 	};
 	// committed: the range base..head itself (one operation's), never the work tree.
-	const all = async () => foreignBetween(root, base, options.committed && head ? head : undefined, core, io);
+	const all = async () => foreignBetween(root, base, options.committed && head ? head : undefined, core, io, undefined, undefined, options.ownBases);
 	if (!head || head === base) return dirtySpec ? { specChanged: true, foreign: await all() } : { specChanged: false, foreign: [] };
 	const main = await defaultBranch(top, io);
 	const branch = (await git(["symbolic-ref", "-q", "--short", "HEAD"])).stdout.trim();
@@ -817,12 +891,12 @@ export async function landedSpec(
 		if (!commit || !parent || !(await touches(parent, commit))) continue;
 		const absorbing = Boolean(merged && tip && (await git(["merge-base", "--is-ancestor", merged, tip])).code === 0);
 		if (!absorbing) ownTouched = true;
-		for (const id of (await foreignBetween(root, parent, commit, core, io)) ?? []) (absorbing ? absorbed : own).add(id);
+		for (const id of (await foreignBetween(root, parent, commit, core, io, undefined, undefined, options.ownBases)) ?? []) (absorbing ? absorbed : own).add(id);
 	}
 	if (!ownTouched) return { specChanged: false, foreign: [] };
 	const every = await all();
 	if (!every || !absorbed.size) return { specChanged: true, ...(every ? { foreign: every } : {}) };
-	const uncommitted = dirtySpec ? ((await foreignBetween(root, head, undefined, core, io)) ?? []) : [];
+	const uncommitted = dirtySpec ? ((await foreignBetween(root, head, undefined, core, io, undefined, undefined, options.ownBases)) ?? []) : [];
 	return { specChanged: true, foreign: every.filter((id) => !absorbed.has(id) || own.has(id) || uncommitted.includes(id)) };
 }
 
@@ -845,7 +919,8 @@ export async function treeTurn(start: TreeStart, core: string, io: SpecIO = loca
 		const dirtySpec = Object.entries(end.files).some(([p, m]) => isSpec(p) && start.view.files[p] !== m);
 		const base = start.view.head;
 		if (!start.root || !base) return { changed, specChanged: dirtySpec, ...conflict };
-		const landed = await landedSpec(end.top, start.root, base, end.head, dirtySpec, isSpec, core, io);
+		const ownBases = await ownBasesFor(end.top, end.head, start.defaultTip, io);
+		const landed = await landedSpec(end.top, start.root, base, end.head, dirtySpec, isSpec, core, io, { ownBases });
 		const specChanged = landed.specChanged;
 		const ids = new Set<string>();
 		let known = false;
@@ -854,7 +929,7 @@ export async function treeTurn(start: TreeStart, core: string, io: SpecIO = loca
 			for (const id of landed.foreign) ids.add(id);
 		}
 		for (const name of drafts) {
-			const edited = await draftForeign(start.root, name, core, io, undefined, base);
+			const edited = await draftForeign(start.root, name, core, io, undefined, base, ownBases);
 			if (edited) {
 				known = true;
 				for (const id of edited) ids.add(id);
@@ -912,6 +987,167 @@ export async function opsTurn(start: TreeStart, ranges: readonly OpRange[], core
 		return { ...base, changed: true, error: `${start.view.top}: ${error instanceof Error ? error.message : String(error)}` };
 	}
 }
+
+/** One git operation that may land spec or code: the session's own (ops) or a worker's (the ledger). */
+export interface OpLanding {
+	top: string;
+	before: string;
+	/** HEAD after; equal to `before` for an uncommitted promote (the work tree is the head). */
+	after: string;
+	kind: "commit" | "merge" | "ff" | "promote" | "rebase" | "reset";
+	/** Who ran it: "self" for this session, else the worker's actor. */
+	actor?: string;
+}
+
+/** What one operation landed. */
+export interface OpJudgement {
+	/** A landing: a merge that isn't the default branch absorbed, a promote, or a commit that changed the current spec. */
+	landing: boolean;
+	specChanged: boolean;
+	/** Foreign § it landed (own subtracted); undefined when not computable. */
+	foreign?: string[];
+	/** The landing gate's lists, for a landing. */
+	lists?: RangeLists;
+}
+
+/**
+ * Judge one operation's range in its tree. A merge (or fast-forward) lands unless it only brought the
+ * default branch into another branch (absorbed: every merged-in side is on the default tip). A promote
+ * always lands. A commit lands when it changed the current spec (a committed promotion). The lists come
+ * from the range itself (before..after, or the work tree for an uncommitted promote), own claims out.
+ */
+export async function judgeOp(op: OpLanding, core: string, io: SpecIO = localIO, defaultTip?: string): Promise<OpJudgement> {
+	const root = await findSpecRoot(op.top, (p) => io.exists(p));
+	const git = (args: string[]) => io.exec("git", args, { cwd: op.top, timeout: TOOL_TIMEOUT_MS });
+	const main = await defaultBranch(op.top, io);
+	const tip = defaultTip ?? (main ? (await git(["rev-parse", "--verify", "-q", `refs/heads/${main}`])).stdout.trim() : "");
+	const branch = (await git(["symbolic-ref", "-q", "--short", "HEAD"])).stdout.trim();
+	const moved = op.after !== op.before;
+	let absorbing = false;
+	if ((op.kind === "merge" || op.kind === "ff") && moved && tip && branch && branch !== main) {
+		const merges = (await git(["rev-list", "--first-parent", "--parents", `${op.before}..${op.after}`])).stdout.trim().split("\n").filter(Boolean);
+		const sides = merges.map((l) => l.split(" ")[2]).filter(Boolean);
+		if (!sides.length) absorbing = (await git(["merge-base", "--is-ancestor", op.after, tip])).code === 0;
+		else {
+			absorbing = true;
+			for (const side of sides) if ((await git(["merge-base", "--is-ancestor", side, tip])).code !== 0) absorbing = false;
+		}
+	}
+	if (!root) return { landing: (op.kind === "merge" || op.kind === "ff" || op.kind === "promote") && !absorbing, specChanged: false };
+	const ownBases = await ownBasesFor(op.top, op.after, tip || undefined, io);
+	const specRel = relative(op.top, join(root, SPEC_REL));
+	const isSpec = (p: string) => p.startsWith(`${specRel}/`) && !p.startsWith(`${specRel}/drafts/`);
+	let specChanged = false;
+	let foreign: string[] | undefined = [];
+	if (moved) {
+		const landed = await landedSpec(op.top, root, op.before, op.after, false, isSpec, core, io, { committed: true, ownBases });
+		specChanged = landed.specChanged;
+		foreign = landed.foreign;
+	}
+	if (op.kind === "promote" && !moved) {
+		const lists = await rangeLists(root, op.before, undefined, core, io, { ownBases, landing: true });
+		return { landing: true, specChanged: true, foreign: lists?.foreign, ...(lists ? { lists } : {}) };
+	}
+	const landing = op.kind === "promote" || ((op.kind === "merge" || op.kind === "ff") && !absorbing) || (op.kind === "commit" && specChanged);
+	if (!landing || !moved) return { landing, specChanged, ...(foreign ? { foreign } : {}) };
+	const lists = await rangeLists(root, op.before, op.after, core, io, { ownBases, landing: true });
+	return { landing, specChanged, ...(foreign ? { foreign } : {}), ...(lists ? { lists } : {}) };
+}
+
+/** What a run's check has gathered so far: shared by the parent (index.ts) and pi workers (spec-worker.ts). */
+export interface TurnTally {
+	changed: boolean;
+	landing: boolean;
+	ids: Set<string>;
+	advisory: Set<string>;
+	unmapped: Set<string>;
+	unpromoted: Set<string>;
+	/** Landings described for the re-prompt ("commit by ag_07 in repo", …). */
+	landed: string[];
+	errors: string[];
+	conflicts: string[];
+	/** Git computed every part of the list … */
+	exact: boolean;
+	/** … and at least one part exists. */
+	gitBased: boolean;
+}
+
+export const freshTally = (changed = false, landing = false): TurnTally => ({
+	changed,
+	landing,
+	ids: new Set(),
+	advisory: new Set(),
+	unmapped: new Set(),
+	unpromoted: new Set(),
+	landed: [],
+	errors: [],
+	conflicts: [],
+	exact: true,
+	gitBased: false,
+});
+
+/** Add a computed foreign list (undefined: not computable, so the list is no longer exact). */
+export function tallyForeign(t: TurnTally, foreign: readonly string[] | undefined): void {
+	if (!foreign) t.exact = false;
+	else t.gitBased = true;
+	for (const id of foreign ?? []) t.ids.add(id);
+}
+
+/** Judge each operation (judgeOp) into the tally: a landing adds its gate lists. */
+export async function tallyOps(t: TurnTally, ops: readonly OpLanding[], defaultTips: (top: string) => string | undefined, core: string, io: SpecIO = localIO): Promise<void> {
+	for (const op of ops) {
+		let j: OpJudgement;
+		try {
+			j = await judgeOp(op, core, io, defaultTips(op.top));
+		} catch (error) {
+			t.errors.push(`${op.top}: ${error instanceof Error ? error.message : String(error)}`);
+			continue;
+		}
+		t.changed = true;
+		if (j.landing) {
+			t.landing = true;
+			const where = op.top.split("/").pop() ?? op.top;
+			if (op.actor && op.actor !== "self") t.landed.push(`${op.kind} by ${op.actor} in ${where}`);
+			else if (op.kind === "commit") t.landed.push(`changed the current spec in ${where}`);
+			for (const e of j.lists?.unmappedChanged ?? []) t.unmapped.add(e.path);
+			for (const d of j.lists?.unpromotedDrafts ?? []) for (const id of d.ids) t.unpromoted.add(id);
+			for (const m of j.lists?.mappedUntouched ?? []) t.advisory.add(m.id);
+		}
+		tallyForeign(t, j.foreign);
+	}
+}
+
+/** One tree against a baseline (treeTurn) into the tally; a current spec that changed there is a landing unless `promoted` covers it. */
+export async function tallyTree(t: TurnTally, start: TreeStart, core: string, io: SpecIO = localIO, options: { commits?: boolean; promoted?: boolean; label?: string } = {}): Promise<void> {
+	const r = await treeTurn(start, core, io, { commits: options.commits });
+	if (r.error) t.errors.push(r.error);
+	if (r.conflict) t.conflicts.push(r.conflict);
+	if (!r.changed) return;
+	t.changed = true;
+	tallyForeign(t, r.foreign);
+	if (r.specChanged && !options.promoted) {
+		t.landing = true;
+		t.landed.push(`changed the current spec in ${start.view.top.split("/").pop()}${options.label ?? ""}`);
+	}
+}
+
+/** The reply against the tally: required on a change or landing, forbidden on a Q&A run (not a relay). */
+export function tallyCheck(t: TurnTally, reply: string, options: { relay?: boolean } = {}): { check: AlsoChangesCheck; foreign: string[]; required: boolean } {
+	const foreign = [...t.ids].sort();
+	const required = t.changed || t.landing;
+	const check = checkAlsoChanges(reply, {
+		required,
+		forbidden: !required && !options.relay,
+		foreign,
+		exact: t.exact && t.gitBased,
+		advisory: [...t.advisory],
+		...(t.landing ? { unmapped: [...t.unmapped].sort(), unpromoted: [...t.unpromoted].sort() } : {}),
+	});
+	return { check, foreign, required };
+}
+
+/** Re-prompts a run gets: landings as the Claude Code Stop hook's MERGE_BLOCKS; a Q&A line once. */
+export const LANDING_REPROMPTS = 2;
 
 const textOf = (content: unknown): string =>
 	typeof content === "string"

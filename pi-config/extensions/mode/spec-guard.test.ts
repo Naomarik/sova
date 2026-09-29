@@ -39,6 +39,11 @@ import {
 	treeStart,
 	treeTurn,
 	workerReported,
+	judgeOp,
+	ownBasesFor,
+	appendLedger,
+	readLedger,
+	ledgerPath,
 	driftNote,
 	driftWarningsIn,
 	currentSpecPath,
@@ -634,4 +639,91 @@ test("checkAlsoChanges: a format error is its own problem; a line on a Q&A turn 
 	assert.match(describeProblem(blocked), /pi-config\/x\/index\.ts changed and no claim maps it: .*"Plumbing: <path> — <why>".*never plumbing; draft records left unpromoted: §app\.links\/public: promote what shipped, or say which § stay stale on a line "Deferred: §X — <why>"/);
 	const excused = checkAlsoChanges("Merged.\nPlumbing: pi-config/x/index.ts — log wording only in a debug path\nDeferred: §app.links/public — waits for copy review\nAlso changes: none", gate);
 	assert.ok(excused.ok);
+});
+
+test("M3-B-s2-2's own-claim sequence: a claim the branch created stays the task's through a master merge, a relabel and the ff merge", async () => {
+	mkdirSync(scratchRoot, { recursive: true });
+	const dir = mkdtempSync(join(scratchRoot, "spec-own-"));
+	const repo = join(dir, "repo");
+	const wt = join(dir, "wt");
+	try {
+		const git = (at: string, ...args: string[]) => {
+			const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", at, ...args], { encoding: "utf8" });
+			assert.equal(r.status, 0, `${args.join(" ")}: ${r.stderr}`);
+			return r.stdout.trim();
+		};
+		const put = (at: string, rel: string, text: string) => {
+			mkdirSync(dirname(join(at, rel)), { recursive: true });
+			writeFileSync(join(at, rel), text);
+		};
+		type Claim = { kind: string; evidence?: string; code?: string[] };
+		const spec = (at: string, claims: Record<string, Claim>, prose: Record<string, string>) => {
+			put(at, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims }, null, 1));
+			for (const [file, text] of Object.entries(prose)) put(at, `.sova/spec/claims/${file}`, text);
+		};
+		const base: Record<string, Claim> = { "§app/insights": { kind: "surface" }, "§app.insights/cards": { kind: "behavior", code: ["src/cards.ts"] } };
+		const insights = (extra: string) => `# §app/insights\n\nInsights.\n\n## §app.insights/cards\n\nCards at 80%.\n${extra}`;
+		mkdirSync(repo);
+		spec(repo, base, { "app/insights.md": insights("") });
+		put(repo, "src/cards.ts", "80\n");
+		git(repo, "init", "-q", "-b", "master");
+		git(repo, "add", "-A");
+		git(repo, "commit", "-qm", "base");
+		git(repo, "worktree", "add", "-q", "-b", "feat", wt);
+		// Turn 1 (branch): code, then a promotion that edits §cards and CREATES §app.insights/summary.
+		put(wt, "src/cards.ts", "90\n");
+		git(wt, "commit", "-qam", "code");
+		const summary = "\n## §app.insights/summary\n\nThe lead calls out 90%.\n";
+		spec(wt, { ...base, "§app.insights/summary": { kind: "behavior", evidence: "unreviewed" } }, { "app/insights.md": insights(summary).replace("Cards at 80%", "Cards at 90%") });
+		git(wt, "commit", "-qam", "spec: promote");
+		// Master moves: another task adds §app.insights/poll (master's own new claim: foreign).
+		spec(repo, { ...base, "§app.insights/poll": { kind: "behavior" } }, { "app/insights.md": insights("\n## §app.insights/poll\n\nPoll floor 20 s.\n") });
+		git(repo, "commit", "-qam", "master: poll floor");
+		const tipAtRunStart = git(repo, "rev-parse", "master");
+		// The merge turn: merge master in (resolve the claims file by hand for the fixture), relabel §summary, ff-merge.
+		spawnSync("git", ["-C", wt, "merge", "--no-edit", "master"], { encoding: "utf8" });
+		spec(wt, { ...base, "§app.insights/summary": { kind: "behavior", evidence: "unreviewed" }, "§app.insights/poll": { kind: "behavior" } }, {
+			"app/insights.md": insights(`${summary}\n## §app.insights/poll\n\nPoll floor 20 s.\n`).replace("Cards at 80%", "Cards at 90%"),
+		});
+		git(wt, "add", "-A");
+		git(wt, "-c", "core.editor=true", "commit", "-qm", "merge master");
+		const merged = git(wt, "rev-parse", "HEAD");
+		spec(wt, { ...base, "§app.insights/summary": { kind: "behavior", evidence: "verified" }, "§app.insights/poll": { kind: "behavior" } }, {
+			"app/insights.md": insights(`${summary}\n## §app.insights/poll\n\nPoll floor 20 s.\n`).replace("Cards at 80%", "Cards at 90%"),
+		});
+		git(wt, "commit", "-qam", "spec: relabel summary evidence");
+		const relabel = git(wt, "rev-parse", "HEAD");
+		git(repo, "merge", "--ff-only", "-q", "feat");
+		const bases = await ownBasesFor(repo, relabel, tipAtRunStart);
+		assert.deepEqual(bases, [tipAtRunStart], "after merging master in, the fork point is master's tip");
+		// The landing (master before..after): §cards and the parent's child-added; never §summary (own), never §poll (master's).
+		const landing = await judgeOp({ top: repo, before: tipAtRunStart, after: relabel, kind: "ff", actor: "self" }, CORE, localIO, tipAtRunStart);
+		assert.equal(landing.landing, true);
+		assert.ok(landing.foreign?.includes("§app.insights/cards"), JSON.stringify(landing.foreign));
+		assert.ok(!landing.foreign?.includes("§app.insights/summary"), "the task's own claim is not foreign");
+		assert.ok(!landing.foreign?.includes("§app.insights/poll"), "master's claim didn't land here");
+		// The relabel alone (a commit range on the branch after the master merge): §summary is still own.
+		const relabelOp = await judgeOp({ top: wt, before: merged, after: relabel, kind: "commit", actor: "self" }, CORE, localIO, tipAtRunStart);
+		assert.deepEqual(relabelOp.foreign, [], "a relabel of the task's own claim lands no foreign §");
+		assert.ok(relabelOp.lists === undefined || !relabelOp.lists.foreign.includes("§app.insights/summary"));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("the workers' ledger: append, read since, malformed lines skipped", () => {
+	mkdirSync(scratchRoot, { recursive: true });
+	const dir = mkdtempSync(join(scratchRoot, "spec-ledger-"));
+	try {
+		const file = ledgerPath(dir, "01a0/../x y");
+		assert.equal(file, join(dir, "sova", "spec-ledger", "01a0_.._x_y.jsonl"));
+		appendLedger(file, { v: 1, at: 10, actor: { runtime: "pi", session: "s1" }, top: "/r", before: "a", after: "b", kind: "commit" });
+		writeFileSync(file, `${readFileSync(file, "utf8")}{broken\n`);
+		appendLedger(file, { v: 1, at: 20, actor: { runtime: "claude-code" }, top: "/r", before: "b", after: "c", kind: "promote" });
+		assert.deepEqual(readLedger(file).map((e) => e.after), ["b", "c"]);
+		assert.deepEqual(readLedger(file, 11).map((e) => e.kind), ["promote"]);
+		assert.deepEqual(readLedger(join(dir, "none.jsonl")), []);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

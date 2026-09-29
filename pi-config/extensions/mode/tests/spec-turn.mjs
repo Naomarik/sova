@@ -11,6 +11,8 @@
 //   blocking one: one re-prompt naming the foreign § computed from that worktree;
 // - a hand write of the current spec (write tool, shell) and a reset past a draft's evidence commit are
 //   said in the digest of the call that made them; promote's drift warnings are relayed, never a block;
+// - a Q&A line is re-prompted once; two merges in one turn list both; an unmapped file needs a Plumbing
+//   line and an unpromoted draft a Deferred line; a worker's ledger commit in the own tree counts;
 // - the active triple is published on the bus (mode:state), and again on mode:discover.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -142,15 +144,15 @@ try {
 	await session.prompt("what does App.tsx do?");
 	assert.equal(requests.length, at + 1);
 
-	// promote --write that changes a foreign §'s text: one re-prompt naming it.
+	// promote --write that changes a foreign §'s text: re-prompts naming it, two at most (the Stop hook's MERGE_BLOCKS).
 	git("add", "-A");
 	git("commit", "-qm", "work");
 	at = requests.length;
 	const promote = `: sova-spec-draft.mjs promote feat --write; printf '# §app/shell\\n\\nShell, v2.\\n' > .sova/spec/claims/app/shell.md`;
-	script.push({ tool: "bash", args: { command: promote } }, { text: "Promoted.\nAlso changes: none" }, { text: "Promoted.\nAlso changes: none" });
+	script.push({ tool: "bash", args: { command: promote } }, { text: "Promoted.\nAlso changes: none" }, { text: "Promoted.\nAlso changes: none" }, { text: "Promoted.\nAlso changes: none" });
 	await session.prompt("promote it");
-	assert.equal(requests.length, at + 3, "exactly one continuation");
-	assert.equal(checks().length, 1);
+	assert.equal(requests.length, at + 4, "exactly two continuations");
+	assert.equal(checks().length, 2);
 	assert.equal(checks()[0].display, false, "hidden from the transcript");
 	assert.match(checks()[0].content, /promote --write/);
 	assert.match(checks()[0].content, /computed from Git: §app\/shell/);
@@ -162,10 +164,11 @@ try {
 	script.push({ tool: "bash", args: { command: promote2 } }, { text: "Promoted.\nAlso changes: §app/shell — v3 wording" });
 	await session.prompt("promote again");
 	assert.equal(requests.length, at + 2, "a correct line needs no continuation");
-	assert.equal(checks().length, 1);
+	assert.equal(checks().length, 2);
 
-	// A worker (simulated: the change lands while the parent waits) commits a promotion in a worktree
-	// the session tracks. The parent ran nothing itself, yet the turn lands a foreign §: one re-prompt.
+	// A worker commits a promotion in a worktree the session tracks while the parent answers a question
+	// (M5/F9): that Q&A turn gets no line forced. Its report then starts a relay run, which lands the
+	// foreign §: one re-prompt.
 	const wt = path.join(scratch, "wt");
 	const wtGit = (...args) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", wt, ...args]).status, 0, `git ${args.join(" ")}`);
 	mkdirSync(wt, { recursive: true });
@@ -182,15 +185,20 @@ try {
 		writeFileSync(path.join(wt, ".sova/spec/claims/app/shell.md"), "# §app/shell\n\nShell, worker wording.\n");
 		wtGit("commit", "-qam", "spec: promoted by a worker");
 	};
-	script.push({ effect: workerLands, text: "The worker finished and promoted. Say when you want it merged." }, { text: "Done.\nAlso changes: §app/shell — worker wording" });
-	await session.prompt("have a worker do it in the worktree");
-	assert.equal(requests.length, at + 2, "exactly one continuation");
+	script.push({ effect: workerLands, text: "It renders the shell." });
+	await session.prompt("while the worker runs: what does App.tsx do?");
+	assert.equal(requests.length, at + 1, "a background promotion forces no line on a Q&A turn");
 	assert.equal(checks().length, 2);
-	assert.match(checks()[1].content, /changed the current spec in wt/);
-	assert.match(checks()[1].content, /computed from Git: §app\/shell/);
+	at = requests.length;
+	script.push({ text: "The worker finished and promoted. Say when you want it merged." }, { text: "Done.\nAlso changes: §app/shell — worker wording" });
+	await session.sendCustomMessage({ customType: "subagent-complete", content: "### ag_01 finished", display: true }, { triggerTurn: true });
+	assert.equal(requests.length, at + 2, "exactly one continuation");
+	assert.equal(checks().length, 3);
+	assert.match(checks().at(-1).content, /changed the current spec in wt/);
+	assert.match(checks().at(-1).content, /computed from Git: §app\/shell/);
 
 	// The live B2 sequence: the worktree is created during the run (worktrees:state arrives mid-run), and
-	// the worker commits its promotion there later in the same run. Still exactly one re-prompt.
+	// the worker commits its promotion there; its report's relay run gets exactly one re-prompt.
 	const wt2 = path.join(scratch, "wt2");
 	const wt2Git = (...args) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", wt2, ...args]).status, 0, `git ${args.join(" ")}`);
 	const createWorktree = () => {
@@ -214,11 +222,13 @@ try {
 	const before2 = checks().length;
 	script.push(
 		{ effect: createWorktree, tool: "bash", args: { command: "true" } },
-		{ effect: worker2Lands, text: "The worker committed code and spec. Tell me when you want it merged." },
+		{ effect: worker2Lands, text: "The worker is on it." },
+		{ text: "The worker committed code and spec. Tell me when you want it merged." },
 		{ text: "Done.\nAlso changes: §app/shell — second worker wording" },
 	);
 	await session.prompt("create a worktree and have a worker do it there");
-	assert.equal(requests.length, at + 3, "exactly one continuation for a worktree created mid-run");
+	await session.sendCustomMessage({ customType: "subagent-complete", content: "### ag_02 finished", display: true }, { triggerTurn: true });
+	assert.equal(requests.length, at + 4, "exactly one continuation for a worktree created mid-run");
 	assert.equal(checks().length, before2 + 1);
 	assert.match(checks().at(-1).content, /changed the current spec in wt2/);
 	assert.match(checks().at(-1).content, /computed from Git: §app\/shell/);
@@ -288,11 +298,13 @@ try {
 	const before4 = checks().length;
 	script.push(
 		{ effect: create4, tool: "bash", args: { command: "true" } },
-		{ effect: worker4, text: "Worker report: Also changes: §app/shell — 4 [Final answer: 3,938 chars, whole in /tmp/x]\nAlso changes: §app/shell — 4" },
+		{ effect: worker4, text: "The worker is on it." },
+		{ text: "Worker report: Also changes: §app/shell — 4 [Final answer: 3,938 chars, whole in /tmp/x]\nAlso changes: §app/shell — 4" },
 		{ text: "Done.\nAlso changes: §app/shell — 4; §design/deck — 4" },
 	);
 	await session.prompt("have a worker do both in a new worktree");
-	assert.equal(requests.length, at + 3, "one continuation");
+	await session.sendCustomMessage({ customType: "subagent-complete", content: "### ag_04\nAlso changes: §app/shell — 4 [Final answer: 3,938 chars, whole in /tmp/x]", display: true }, { triggerTurn: true });
+	assert.equal(requests.length, at + 4, "one continuation");
 	assert.equal(checks().length, before4 + 1);
 	assert.match(checks().at(-1).content, /computed from Git: §app\/shell, §design\/deck\./, "Git's list, not the truncated line");
 	assert.match(checks().at(-1).content, /omits §design\/deck/);
@@ -417,7 +429,7 @@ try {
 	await session.prompt("merge feat8 into master");
 	assert.equal(requests.length, at + 3, "one re-prompt");
 	assert.equal(checks().length, before8 + 1);
-	assert.match(checks().at(-1).content, /changed the current spec in /);
+	assert.match(checks().at(-1).content, /This turn merged\./);
 	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./, "the third party's §app/other, before or after the merge, is not this turn's");
 	git("worktree", "remove", "--force", wt8);
 
@@ -480,6 +492,88 @@ try {
 	await session.prompt("promote the drift");
 	assert.match(seen(requests[at + 1]), /\[spec check\] promote's drift warnings \(a warning, not a block\): \(1\) the draft removed 80% from §app\/shell, but §app\/other still says it/);
 	assert.equal(requests.length, at + 2, "not a block");
+
+	// M6 (F4): a Q&A turn that writes the line is re-prompted once to drop it.
+	at = requests.length;
+	script.push({ text: "It renders the shell.\nAlso changes: none" }, { text: "It renders the shell." });
+	await session.prompt("what does the shell render?");
+	assert.equal(requests.length, at + 2, "one re-prompt for a line on a Q&A turn");
+	assert.match(specChecks().at(-1).content, /this turn changed nothing, so it takes no `Also changes:` line: drop it/);
+
+	const main = spawnSync("git", ["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" }).stdout.trim();
+	const branch = (name, change) => {
+		git("checkout", "-q", "-b", name);
+		change();
+		git("add", "-A");
+		git("commit", "-qm", name);
+		git("checkout", "-q", main);
+	};
+	// M5: two merges in one turn: the list is the union of both landings, and (M1) a changed file no claim
+	// maps needs a Plumbing line.
+	branch("featA", () => put(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell, featA.\n"));
+	branch("featB", () => {
+		put(".sova/spec/claims/app/other.md", "# §app/other\n\nOther, featB.\n");
+		put("tools/x.sh", "echo build\n");
+	});
+	at = requests.length;
+	const beforeAB = checks().length;
+	script.push(
+		{ tool: "bash", args: { command: "git merge --no-ff --no-edit featA" } },
+		{ tool: "bash", args: { command: "git merge --no-ff --no-edit featB" } },
+		{ text: "Merged both.\nAlso changes: §app/shell — featA wording" },
+		{ text: "Merged both.\nPlumbing: tools/x.sh — a build helper, no user-visible output\nAlso changes: §app/shell — featA wording; §app/other — featB wording" },
+	);
+	await session.prompt("merge featA and featB");
+	assert.equal(requests.length, at + 4, "one re-prompt, then the right line settles");
+	assert.equal(checks().length, beforeAB + 1);
+	assert.match(checks().at(-1).content, /computed from Git: §app\/other, §app\/shell\./, "both merges' §");
+	assert.match(checks().at(-1).content, /omits §app\/other/);
+	assert.match(checks().at(-1).content, /tools\/x\.sh changed and no claim maps it: .*"Plumbing: <path> — <why>"/);
+
+	// M1 (the public-links shape): code under a foreign § changes on a branch whose draft is never
+	// promoted. The merge needs a Deferred line naming the stale §; naming the mapped-untouched § on the
+	// last line is no extra.
+	const wtC = path.join(scratch, "wtC");
+	git("worktree", "add", "-q", "-b", "featC", wtC);
+	const draftTool = path.join(agentDir, "extensions/spec/core/sova-spec-draft.mjs");
+	assert.equal(spawnSync("node", [draftTool, "new", "links", "--write", "--root", wtC, "--json"], { encoding: "utf8" }).status, 0, "draft new");
+	writeFileSync(path.join(wtC, ".sova/spec/drafts/links/spec/claims/app/shell.md"), "# §app/shell\n\nShell, with public links.\n");
+	writeFileSync(path.join(wtC, "src/App.tsx"), "public links\n");
+	assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", wtC, "commit", "-qam", "public links"]).status, 0);
+	at = requests.length;
+	const beforeC = checks().length;
+	script.push(
+		{ tool: "bash", args: { command: "git merge --no-ff --no-edit featC" } },
+		{ text: "Merged.\nAlso changes: none" },
+		{ text: "Merged.\nDeferred: §app/shell — the public-links wording waits for the copy review\nAlso changes: §app/shell — its code now serves public links" },
+	);
+	await session.prompt("merge featC");
+	assert.equal(requests.length, at + 3, "one re-prompt");
+	assert.equal(checks().length, beforeC + 1);
+	assert.match(checks().at(-1).content, /draft records left unpromoted: §app\/shell: promote what shipped, or say which § stay stale on a line "Deferred: §X — <why>"/);
+	git("worktree", "remove", "--force", wtC);
+
+	// M4: a worker commits a promotion in the session's OWN checkout and says so in the ledger; a third
+	// party's commit right after is not in the ledger. The relay run lists the worker's § only.
+	const sid = sessionManager.getSessionId();
+	const ledger = path.join(agentDir, "sova", "spec-ledger", `${sid.replace(/[^\w.-]/g, "_")}.jsonl`);
+	const headNow = () => spawnSync("git", ["-C", cwd, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+	const topNow = spawnSync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).stdout.trim();
+	const w0 = headNow();
+	put(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell, own-tree worker.\n");
+	git("commit", "-qam", "spec: a worker's promotion in the root");
+	mkdirSync(path.dirname(ledger), { recursive: true });
+	writeFileSync(ledger, `${JSON.stringify({ v: 1, at: Date.now(), actor: { runtime: "pi", session: "ag_07" }, top: topNow, before: w0, after: headNow(), kind: "commit" })}\n`, { flag: "a" });
+	put(".sova/spec/claims/app/other.md", "# §app/other\n\nOther, third party.\n");
+	git("commit", "-qam", "spec: a third party");
+	at = requests.length;
+	const beforeD = checks().length;
+	script.push({ text: "The worker finished.\nAlso changes: none" }, { text: "The worker finished.\nAlso changes: §app/shell — own-tree worker wording" });
+	await session.sendCustomMessage({ customType: "subagent-complete", content: "### ag_07 finished", display: true }, { triggerTurn: true });
+	assert.equal(requests.length, at + 2, "one re-prompt for the worker's own-tree commit");
+	assert.equal(checks().length, beforeD + 1);
+	assert.match(checks().at(-1).content, /commit by ag_07 in project/);
+	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./, "the third party's §app/other is not listed");
 
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";

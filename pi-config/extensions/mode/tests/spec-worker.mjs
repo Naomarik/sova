@@ -3,9 +3,11 @@
 // loads only this file, a scripted provider, the real spec tools through the agent dir, a scratch Git
 // project. No model requests. The worker's first edit carries the `[spec census]` digest (with the
 // no-draft note), the same file again none, and a new unmapped file outside the boundary its own line.
+// The turn-end check (M4): an edit run without the line is re-prompted once; a promote with a wrong line
+// up to twice, naming Git's list, and the promote lands in the parent's ledger; a Q&A line once.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +22,9 @@ mkdirSync(path.join(agentDir, "extensions"), { recursive: true });
 symlinkSync(path.resolve(here, "../../spec"), path.join(agentDir, "extensions/spec"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 delete process.env.PI_SPEC_CENSUS_HOOK;
+delete process.env.PI_SPEC_CHECK;
+const ledger = path.join(scratch, "parent-ledger.jsonl");
+process.env.SOVA_SPEC_LEDGER = ledger;
 
 const cwd = path.join(scratch, "worktree");
 const put = (rel, text) => {
@@ -97,15 +102,36 @@ try {
 	await session.setModel(session.modelRuntime.getModel("scripted", "scripted-1"));
 
 	// The worker's first edit, a bash heredoc in the boundary: the digest rides that tool result.
-	script.push({ tool: "bash", args: { command: "cat > src/App.tsx <<'EOF'\n2\nEOF" } }, { tool: "bash", args: { command: "printf '3\\n' > src/App.tsx" } }, { tool: "bash", args: { command: "printf '2\\n' > tools/footer.ts" } }, { text: "Done." });
+	script.push({ tool: "bash", args: { command: "cat > src/App.tsx <<'EOF'\n2\nEOF" } }, { tool: "bash", args: { command: "printf '3\\n' > src/App.tsx" } }, { tool: "bash", args: { command: "printf '2\\n' > tools/footer.ts" } }, { text: "Done." }, { text: "Done.\nAlso changes: none" });
 	await session.prompt("change the shell and the footer");
-	assert.equal(requests.length, 4);
+	assert.equal(requests.length, 5, "one re-prompt for an edit run without the line");
+	assert.match(seen(requests[4]), /your reply has no `Also changes:` line/);
 	assert.match(toolText(requests[1]), /\[spec census\] 1 changed file\(s\) in the boundary/, "the first edit carries the digest");
 	assert.match(toolText(requests[1]), /No draft yet/);
 	assert.match(toolText(requests[1]), /§app\/shell/);
 	assert.doesNotMatch(toolText(requests[2]), /\[spec census\]/, "the same file again: no digest");
 	assert.match(toolText(requests[3]), /tools\/footer\.ts is outside the boundary and no claim maps it/, "a new unmapped file outside the boundary: its line");
 	assert.ok(seen(requests[3]).includes("spec census"));
+
+	// A promote with a wrong line: re-prompted twice with Git's list, then let through; the ledger has it.
+	git("add", "-A");
+	git("commit", "-qm", "work");
+	let at = requests.length;
+	const promote = `: sova-spec-draft.mjs promote feat --write; printf '# §app/shell\\n\\nShell, v2.\\n' > .sova/spec/claims/app/shell.md`;
+	script.push({ tool: "bash", args: { command: promote } }, { text: "Promoted.\nAlso changes: none" }, { text: "Promoted.\nAlso changes: none" }, { text: "Promoted.\nAlso changes: none" });
+	await session.prompt("promote it");
+	assert.equal(requests.length, at + 4, "two re-prompts on a landing, then through");
+	assert.match(seen(requests[at + 2]), /The foreign § it lands, computed from Git: §app\/shell\./);
+	const entries = readFileSync(ledger, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+	assert.equal(entries.at(-1).kind, "promote");
+	assert.equal(entries.at(-1).actor.runtime, "pi");
+
+	// A Q&A run that writes the line: once.
+	at = requests.length;
+	script.push({ text: "It renders the shell.\nAlso changes: none" }, { text: "It renders the shell." });
+	await session.prompt("what does it render?");
+	assert.equal(requests.length, at + 2);
+	assert.match(seen(requests[at + 1]), /takes no `Also changes:` line/);
 	console.log("spec-worker: ok");
 } finally {
 	session.dispose?.();

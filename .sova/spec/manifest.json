@@ -7135,7 +7135,9 @@
         "server/claude-accounts.ts",
         "server/claude-models.ts",
         "server/claude-status.ts",
-        "pi-config/extensions/claude-code/provider/login-failover.test.ts"
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+        "pi-config/extensions/claude-code/transport.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts"
       ]
     },
     "§app/claude-logins": {

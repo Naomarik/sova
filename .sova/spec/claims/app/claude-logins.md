@@ -10,7 +10,10 @@ program that signs in, refreshes and signs out: Sova runs `claude` in the login'
 never reads or writes a token itself.
 
 Claude Code's own directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR` when the server has one) is
-the implicit login `default`. It is always present, never moved, never in the pool
+the implicit login `default`. A `$CLAUDE_CONFIG_DIR` that names an added login's directory (anything
+under `claude-accounts/` of the agent dir or of pi's default `~/.pi/agent`, followed through links)
+is not: that is what every `claude` Sova runs on an added login passes down to its tools, so a
+process started under one (a pi, a Sova) takes `~/.claude` for `default`. It is always present, never moved, never in the pool
 (§app.claude-logins/pool), never written by any of this, and always the device's last resort. With no other login added, everything behaves as before: every `claude` process runs on
 `default`; a Claude Code chat's first turn records that it runs on `default` in a hidden entry,
 which nothing shows.
@@ -33,7 +36,8 @@ is the subscription (`subscriptionType`, else the organization type without its 
 such as `max`), never the billing type (`stripe_subscription`); every surface shows it as people
 say it, from the rate-limit tier when it names one ("Max 20x"), else from the plan ("Max",
 "Pro"), and shows no plan for anything else. The identity names no token. `default`'s identity is read the same way from Claude Code's own
-`.claude.json` (`~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json`), and never stored.
+`.claude.json` (`~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json` when that directory is
+`default`'s), and never stored.
 
 A login's directory is `<agent dir>/claude-accounts/<id>/`, mode 0700, derived from the id and
 never stored. Inside it, `projects/`, `settings.json`, `CLAUDE.md`, `agents/`, `commands/`,
@@ -41,7 +45,10 @@ never stored. Inside it, `projects/`, `settings.json`, `CLAUDE.md`, `agents/`, `
 when it exists there; `projects/` always, created there if missing). So every login writes its
 Claude session records into the one shared `projects/`: `--resume` after a switch finds the
 session, and every transcript and usage reader keeps reading one place. The links are repaired
-whenever a login is used.
+whenever a login is used: a repair replaces a link that points elsewhere (the link itself, never
+what it pointed to), leaves a real file or directory alone, never makes a link whose target lies
+inside the login's own directory, and refuses a `default` directory that is itself under
+`claude-accounts/`, before writing anything.
 
 **Devices.** A login is assigned to at most one device (`device`): the device that holds it. While
 the mesh is on, `null` means this host keeps it free for lending (§app.claude-logins/keeper) and
@@ -95,8 +102,8 @@ sign-in-again row has **Clear**, which forgets that standing. Every change is sa
 ## §app.claude-logins/spawn-selection — Every `claude` process runs on one login
 
 Every `claude` process Sova or its extensions start runs on exactly one login, by setting
-`CLAUDE_CONFIG_DIR` to that login's directory (or leaving the environment as it was, for
-`default`): the Claude Code chat provider's child for a session, claude-code workers (including a
+`CLAUDE_CONFIG_DIR` to that login's directory (or, for `default`, leaving the environment as it
+was, less an inherited `CLAUDE_CONFIG_DIR` that names an added login's directory): the Claude Code chat provider's child for a session, claude-code workers (including a
 worker's detached host), model discovery (the extension's and the server's), the server's
 `claude --version` check, and the topic-outline summarizer.
 

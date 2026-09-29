@@ -592,8 +592,30 @@ html, body, #root { height: 100%; }
 .git-skeleton > .skeleton-line:first-child { width: 60%; }
 .git-skeleton > .skeleton-line:last-child { width: 30%; margin-bottom: 0; }
 
-/* §chat.worktrees/pane: a tracked worktree's status and what runs there, wrapping as one group. */
-.worktree-row { align-items: flex-start; }
+/* The folder's uncommitted changes, named, with the viewer's control at the end of the line; the
+   control wraps below the text when both don't fit. */
+.git-review {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding-top: var(--space-2);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.git-review-text { flex: 1 1 12rem; min-width: 0; }
+.git-review-text p { margin: 0; }
+.git-review-title { color: var(--color-ink); font-weight: var(--fw-medium); }
+
+/* §chat.worktrees/pane: a tracked worktree's status and what runs there, wrapping as one group.
+   Review Changes sits at the row's end, or wraps below the chips on a narrow pane. */
+.worktree-row { align-items: flex-start; flex-wrap: wrap; row-gap: var(--space-2); }
+.worktree-row > .list-main { flex: 1 1 18rem; }
+.worktree-row-action,
+.git-review-action { flex: none; }
+@media (pointer: coarse) {
+  .worktree-row-action,
+  .git-review-action { min-height: var(--tap-min); }
+}
 .worktree-row .list-title { font-weight: var(--fw-medium); }
 .worktree-facts {
   display: flex;

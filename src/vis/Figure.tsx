@@ -41,9 +41,10 @@ function Prose(props: { text: string }) {
  * The shell every drawing sits in: its title (or the kind's eyebrow) with the caller's `actions`
  * beside it, `before` (the chat's Source view), the kind's `view`, the numbered notes of its `mark`
  * lines, and the caption. `hidden` hides the drawing and its notes without unmounting it. Used by
- * the chat's <Visual> and the share page's figure, which has no actions.
+ * the chat's <Visual> and the share page's figure, which has no actions. `warnings` (the chat's)
+ * adds one muted line after the caption listing what the parser cut or dropped (parse.ts).
  */
-export function Figure(props: { kind: string; spec: VisBase; view: Component<ViewProps<VisBase>>; actions?: JSX.Element; before?: JSX.Element; hidden?: boolean }) {
+export function Figure(props: { kind: string; spec: VisBase; view: Component<ViewProps<VisBase>>; actions?: JSX.Element; before?: JSX.Element; hidden?: boolean; warnings?: boolean }) {
   const entry = KINDS[props.kind]!;
   const s = props.spec;
   const label = s.title ?? s.caption ?? entry.label;
@@ -81,6 +82,9 @@ export function Figure(props: { kind: string; spec: VisBase; view: Component<Vie
         <figcaption class="vis-caption">
           <Prose text={s.caption!} />
         </figcaption>
+      </Show>
+      <Show when={props.warnings && s.warnings?.length}>
+        <p class="vis-warning">Drawn with warnings: {s.warnings!.map((w) => (w.line > 0 ? `line ${w.line}: ${w.message}` : w.message)).join("; ")}.</p>
       </Show>
     </figure>
   );

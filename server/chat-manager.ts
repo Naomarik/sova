@@ -42,6 +42,7 @@ import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
 import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
+import { visCheckExtension, type VisCheckHost } from "./vis-check";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
@@ -1336,6 +1337,25 @@ class ChatSession {
     } catch {
       return true;
     }
+  }
+
+  /** What the vis feedback extension asks this chat (server/vis-check.ts): its vis mode is this
+      chat's own mode, a message queued behind the run goes before any retry, and a runtime that may
+      no longer write the file adds nothing to it. */
+  visCheckHost(): VisCheckHost {
+    return {
+      visOn: () => this.modeState.minorModes.includes("vis"),
+      queued: () => this.queue.size > 0 || this.session.agent.hasQueuedMessages(),
+      writable: () => {
+        if (this.disposed || this.foreignWrite) return false;
+        try {
+          assertNotLive(this.path);
+        } catch {
+          return false;
+        }
+        return !this.hasForeignWrites();
+      },
+    };
   }
 
   /**
@@ -2835,6 +2855,9 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     sessionManager.appendModelChange = appendModelChange;
     sessionManager.appendThinkingLevelChange = appendThinkingLevelChange;
   };
+  // The chat that hosts this runtime, once bound: the vis extension is built before it exists, and
+  // until bind() has resolved the chat's mode it reads the mode from the branch itself.
+  const visHost: { chat?: ChatSession } = {};
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
     // The outline opt-in is declined for a FANOUT MEMBER, and the FILE says so, not a flag
     // threaded through acquireChat: its creation wrote the FANOUT_MEMBER_ENTRY marker beside the
@@ -2846,9 +2869,13 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     // allowlist, no topic outline (nobody lists it), and its model from overseer.json.
     const kind = specialFor(sessionManager, path);
     const special = kind ? (kind.entry ? await kind.entry.loadout(path) : await overseerLoadout(path)) : null;
+    // An ordinary chat also gets the vis feedback extension (server/vis-check.ts); the special
+    // loadouts keep exactly their own.
     const services = special
       ? await servicesForCwd(cwd, modelRuntime, false, special.resourceLoaderOptions)
-      : await servicesForCwd(cwd, modelRuntime, !isFanoutMember(sessionManager));
+      : await servicesForCwd(cwd, modelRuntime, !isFanoutMember(sessionManager), {
+          extensionFactories: [visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null))],
+        });
     for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);
     // A session with no messages yet starts from the saved new-session defaults (web-defaults.ts):
     // resolve the stored model ref against models with configured auth and let the SDK clamp the
@@ -2904,6 +2931,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       await chat.dispose();
       throw err;
     }
+    visHost.chat = chat;
     chat.deferredAppends = deferred;
     const kind = specialFor(sessionManager, path);
     if (kind && kind.kind !== "overseer") {

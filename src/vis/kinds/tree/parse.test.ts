@@ -13,6 +13,14 @@ const err = (kind: string, body: string) => {
   assert.equal(r.ok, false, `expected an error for:\n${body}`);
   return r as { ok: false; line: number; message: string };
 };
+/** A fence that still draws: its first warning (parse.ts). */
+const warning = (kind: string, body: string) => {
+  const r = parseVis(kind, body);
+  if (!r.ok) assert.fail(`expected a drawing with a warning, got line ${r.line}: ${r.message}`);
+  assert.ok(r.warnings.length, `expected a warning for:\n${body}`);
+  assert.deepEqual(r.spec.warnings, r.warnings, "the spec carries the same warnings");
+  return r.warnings[0]!;
+};
 
 test("tree: indentation or tree-drawing art, notes and tones", () => {
   const indented = ok<TreeSpec>("tree", 'src/\n  lib/\n    vis.ts "parser" accent\n  main.tsx warn\nREADME.md');
@@ -32,7 +40,7 @@ test("tree: mark an item by name (first match, depth first) or quoted name", () 
     { key: "0.0", tone: "accent", note: "the entry", n: 1 },
     { key: "1", tone: "muted" },
   ]);
-  assert.match(err("tree", "a\nmark b").message, /no item b/);
+  assert.match(warning("tree", "a\nmark b").message, /no item b, dropped/);
   // An indented "mark …" line is an item, not a mark.
   assert.equal(ok<TreeSpec>("tree", "a\n  mark b").roots[0]!.children[0]!.name, "mark b");
 });

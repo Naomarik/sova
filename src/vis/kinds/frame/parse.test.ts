@@ -18,12 +18,25 @@ test("html and svg keep their source; leading title/caption lines are ours", () 
   assert.ok(parseVis("svg", '<svg viewBox="0 0 10 10"></svg>').ok);
 });
 
-test("free-form limit: 8 KB of source", () => {
-  const big = `<div>${"x".repeat(8 * 1024)}</div>`;
-  const r = parseVis("html", big);
-  assert.equal(r.ok, false);
-  assert.match((r as { message: string }).message, /at most 8 KB/);
-  assert.ok(parseVis("html", `<div>${"x".repeat(8 * 1024 - 20)}</div>`).ok);
+test("free-form budget: characters, not bytes; over 8K draws with a 'large' warning, over 16K is an error", () => {
+  const html = (chars: number) => `<p>${"x".repeat(chars - 7)}</p>`;
+  const quiet = parseVis("html", html(8 * 1024));
+  assert.ok(quiet.ok);
+  assert.deepEqual(quiet.warnings, [], "8K characters exactly: no warning");
+  // Multibyte text counts once per character: 8K characters of "é" are 16 KB of UTF-8.
+  const accents = parseVis("html", `title: é\n<p>${"é".repeat(8 * 1024 - 7)}</p>`);
+  assert.ok(accents.ok);
+  assert.deepEqual(accents.warnings, []);
+  const large = parseVis("html", html(9 * 1024 + 300));
+  assert.ok(large.ok);
+  assert.deepEqual(large.warnings, [{ line: 0, message: "large: 9.3K characters of html (aim under 8K)" }]);
+  assert.deepEqual(large.spec.warnings, large.warnings);
+  assert.ok(parseVis("svg", `<svg viewBox="0 0 1 1">${" ".repeat(16 * 1024 - 30)}</svg>`).ok);
+  const r = err("html", html(16 * 1024 + 1));
+  assert.equal(r.line, 0);
+  assert.match(r.message, /16K characters of html; at most 16K \(aim under 8K\)/);
+  // The title/caption lines are ours, outside the budget.
+  assert.deepEqual((parseVis("html", `caption: ${"c".repeat(150)}\n${html(8 * 1024)}`) as { warnings: unknown[] }).warnings, []);
 });
 
 test("srcdoc: CSP and the motion gate come before the model's document, which goes in verbatim", () => {

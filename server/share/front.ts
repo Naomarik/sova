@@ -44,6 +44,7 @@ export function frontGuide(setting: ShareGatewaySetting): FrontGuide {
         ],
         notes: [
           `Another web server works the same way: terminate TLS for ${host}, forward everything to http://${upstream}, pass WebSocket upgrades, and set X-Forwarded-For to the client address (replace it, never append).`,
+          `Behind a CDN that terminates TLS for ${host} (such as Cloudflare's proxy): listen on the port the CDN connects to instead of 443, and restore the visitor's address first, or X-Forwarded-For carries the CDN's. In the server block, add set_real_ip_from for each of the CDN's published ranges, and real_ip_header with its client header (real_ip_header CF-Connecting-IP for Cloudflare). Trust that header only this way, and never forward it as it is: anyone who reaches this server directly can set it.`,
         ],
       };
     case "caddy":

@@ -25,6 +25,12 @@ test("guides: every front forwards to the share port, root steps marked", () => 
   assert.match(vhost.steps[0]!.text, /server_name share\.example\.com;/);
   assert.match(vhost.steps[0]!.text, /proxy_pass http:\/\/127\.0\.0\.1:4802;/);
   assert.match(vhost.steps[0]!.text, /X-Forwarded-For \$remote_addr;/);
+  // Behind a CDN that terminates TLS (Cloudflare's proxy), $remote_addr is the CDN's edge: the
+  // guide says how to restore the visitor's address, trusting only the CDN's ranges.
+  const cdn = (vhost.notes ?? []).filter((n) => n.includes("set_real_ip_from"));
+  assert.equal(cdn.length, 1, "one vhost note covers a CDN in front");
+  for (const part of ["share.example.com", "the port the CDN connects to", "real_ip_header CF-Connecting-IP", "published ranges", "never forward"])
+    assert.ok(cdn[0]!.includes(part), `the CDN note says ${JSON.stringify(part)}: ${cdn[0]}`);
 
   const caddy = frontGuide({ ...setting("caddy"), sharePort: 4999 });
   assert.deepEqual(

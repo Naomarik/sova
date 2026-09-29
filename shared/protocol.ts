@@ -4018,6 +4018,213 @@ export interface VoiceStatus {
   log: { seq: number; lines: VoiceLogLine[] };
   /** Bytes the voice folder holds, only when asked for (`?size=1`). */
   diskBytes?: number;
+  /** Bytes free on the voice folder's disk, only when asked for (`?size=1`). */
+  diskFree?: number;
+  /** The catalog (§app.settings-dialog/voice-models), each entry with its state on this host. */
+  models: VoiceModelState[];
+  /** The model every device dictates with (one per host). `model` above names it too. */
+  activeModel: string;
+  /** The latest model download or switch this server ran (one at a time, under the setup lock). */
+  modelJob?: VoiceModelJob;
+  /** The device named by `?device=<id>` (§chat.voice/decoding); absent without one. */
+  device?: VoiceThisDevice;
+  /** Every device with a record on this host (it uploaded clips or has saved settings), for Forget. */
+  devices: VoiceDeviceState[];
+  /** `?device=<id>`'s calibration: its sentences, its kept clips and its run on the active model. */
+  calibration?: VoiceCalibration;
+  /** A sweep running on this host, whichever device it belongs to: a model switch waits for it. */
+  sweep?: { device: string; deviceLabel: string; model: string };
+}
+
+/** What runs a catalog model: whisper.cpp's whisper-server, or transcribe.cpp (Parakeet). */
+export type VoiceEngine = "whisper" | "transcribe";
+
+export interface VoiceCatalogModel {
+  id: string;
+  /** "large-v3-turbo", "distil-large-v3.5", "parakeet-tdt-0.6b-v2". */
+  label: string;
+  /** "q5_0", "q8_0", "f16". */
+  quant: string;
+  /** The model file's size. */
+  bytes: number;
+  /** English only, or English and 98 more. */
+  languages: "en" | "multi";
+  engine: VoiceEngine;
+  /** The default model: what setup installs. */
+  recommended?: boolean;
+  /** Bytes the engine itself needs on first use, when it isn't installed yet (transcribe.cpp). */
+  engineBytes?: number;
+}
+
+export type VoiceModelStateName = "absent" | "downloading" | "verifying" | "needs-packages" | "ready" | "failed";
+
+export interface VoiceModelState extends VoiceCatalogModel {
+  state: VoiceModelStateName;
+  /** The model this host dictates with. */
+  active: boolean;
+  /** Calibration can tune its decoding (whisper); false: it can only score it (no prompt, beam or VAD). */
+  tunable: boolean;
+  /** Download or hash progress, bytes. */
+  progress?: { done: number; total: number };
+  /** Why the last download or switch of this model failed. */
+  error?: string;
+  /** state "needs-packages" (Parakeet without a C compiler): what is missing and the one command that installs it. */
+  missing?: { packages: string[]; command: string | null };
+  /** The folder a verified copy was taken from instead of downloading ("~/.cache/…"). */
+  importedFrom?: string;
+  /** The last self-test on this model: its warm time and what it heard. */
+  selftestMs?: number;
+  selftestText?: string;
+}
+
+export interface VoiceModelJob {
+  id: string;
+  model: string;
+  kind: "download" | "switch";
+  /** Where it is: the engine (transcribe.cpp's first use), an import, the download, the hash, the self-test. */
+  step: "engine" | "import" | "download" | "verify" | "selftest" | "switch";
+  progress?: { done: number; total: number };
+  startedAt: number;
+  finishedAt?: number;
+  /** Absent while running. */
+  outcome?: "ok" | "failed" | "cancelled";
+  error?: string;
+}
+
+/** Decoding settings for one device on one model (§chat.voice/decoding). Each is a per-request
+    field of whisper-server's /inference, so devices never restart the server for each other. */
+export interface VoiceDecodeSettings {
+  /** 1: greedy. Above 1: beam search that wide (`beam_size`). */
+  beamSize: number;
+  /** The temperature fallback step (`temperature_inc`): 0.2 re-decodes a stuck segment warmer, 0 turns fallback off. */
+  temperatureInc: number;
+  /** The biasing prompt: none, the hotword list ("Sova, pi, …."), or one sentence using the same words. */
+  prompt: "none" | "list" | "sentence";
+  /** Silero voice detection before decoding (`vad`), with its threshold and padding. */
+  vad: boolean;
+  vadThreshold: number;
+  vadSpeechPadMs: number;
+}
+
+/** The browser or installed app the user speaks into. The client makes the id once and keeps it. */
+export interface VoiceDeviceInfo {
+  id: string;
+  /** "iPhone · Safari", "Linux · Chrome". */
+  label: string;
+  /** The installed home-screen app, not a browser tab. */
+  app: boolean;
+}
+
+export interface VoiceCalibrationSummary {
+  at: number;
+  model: string;
+  clips: number;
+  /** Word error of the applied row and of the device's settings before the run, 0–1. */
+  wer: number;
+  baselineWer: number;
+  jargonHits: number;
+  jargonTotal: number;
+  medianMs: number;
+  /** The row applied (`VoiceCalibrationRow.key`). */
+  key: string;
+}
+
+/** The requesting device, as GET /api/voice?device=<id> sees it. */
+export interface VoiceThisDevice extends VoiceDeviceInfo {
+  /** The host has a record of it (it calibrated, or chose settings). */
+  known: boolean;
+  /** What its dictation sends on the active model: its saved settings or the defaults. */
+  settings: VoiceDecodeSettings;
+  /** Defaults, a completed sweep's best row, or a results row the user chose. */
+  source: "default" | "calibrated" | "chosen";
+  /** A calibration's apply can be undone (Revert to Previous). */
+  canRevert: boolean;
+  calibration?: VoiceCalibrationSummary;
+}
+
+export interface VoiceDeviceState extends VoiceDeviceInfo {
+  lastSeenAt: number;
+  /** Model ids it has saved settings for. */
+  calibrated: string[];
+}
+
+export interface VoiceCalibrationSentence {
+  n: number;
+  text: string;
+  /** The ~35 s passage: recommended, not required. */
+  long?: boolean;
+  /** The no-jargon control sentence. */
+  control?: boolean;
+}
+
+export interface VoiceCalibrationClip {
+  n: number;
+  sec: number;
+  at: number;
+}
+
+export interface VoiceCalibrationRow {
+  /** Stable id of the settings within a run ("p=list b=1 t=0.2 v=0"). */
+  key: string;
+  settings: VoiceDecodeSettings;
+  /** Word errors over reference words, 0–1, over the clips scored so far. */
+  wer: number;
+  errors: number;
+  words: number;
+  /** Jargon words heard as written ("Sova" only capitalized) out of those in the references. */
+  jargonHits: number;
+  jargonTotal: number;
+  medianMs: number;
+  /** Clips scored for this row (a stopped run can leave a row short). */
+  scored: number;
+  /** The device's settings when the run started. */
+  current: boolean;
+  /** What the device dictates with now. */
+  applied: boolean;
+  clips: { n: number; heard: string; errors: number; ms: number }[];
+}
+
+export interface VoiceCalibrationRun {
+  id: string;
+  model: string;
+  engine: VoiceEngine;
+  /** full: the GPU grid; quick: the CPU grid; score: one pass, the model has nothing to tune. */
+  grid: "full" | "quick" | "score";
+  phase: "running" | "done" | "stopped" | "failed";
+  progress: { setting: number; settings: number; clip: number; clips: number; done: number; total: number; etaSec?: number; pausedForDictation: boolean };
+  /** Ranked best first: lowest word error; within one word of it, more jargon hits; then faster. */
+  rows: VoiceCalibrationRow[];
+  best?: string;
+  /** The row the run applied to the device when it ended (auto-apply), or one chosen later. */
+  applied?: string;
+  /** The load average was high at the start or the end: timings may be slow. */
+  hostBusy?: boolean;
+  error?: string;
+  startedAt: number;
+  finishedAt?: number;
+}
+
+/** One device's calibration on this host: clips are kept under voice/calibration/<device id>/. */
+export interface VoiceCalibration {
+  sentences: VoiceCalibrationSentence[];
+  clips: VoiceCalibrationClip[];
+  /** Clips needed before a run. */
+  minClips: number;
+  /** Its run on the active model: the one running, or the last. */
+  run?: VoiceCalibrationRun;
+  /** The best row of its last run on every other model (Parakeet's score among them), to compare. */
+  scores: VoiceModelScore[];
+}
+
+export interface VoiceModelScore {
+  model: string;
+  at: number;
+  wer: number;
+  errors: number;
+  words: number;
+  jargonHits: number;
+  jargonTotal: number;
+  medianMs: number;
 }
 
 export interface VoiceTranscript {

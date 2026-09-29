@@ -7554,6 +7554,177 @@
         "server/files.ts",
         "server/files.test.ts"
       ]
+    },
+    "§design.copy-deck/public-links": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§mesh.public/forwarded-for": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/security.ts",
+        "server/share/router.ts",
+        "server/share/edge.ts",
+        "server/share/front.ts",
+        "server/share-security.test.ts"
+      ]
+    },
+    "§mesh.public/front": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/setting"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/front.ts",
+        "server/public-links-routes.ts",
+        "server/share-front.test.ts"
+      ]
+    },
+    "§mesh.public/gateway": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/setting",
+        "§mesh.peers/hello"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/registry.ts",
+        "server/share/gateway-routes.ts",
+        "server/mesh/hello.ts",
+        "server/public-links-routes.ts",
+        "server/share-registry.test.ts",
+        "server/share-offline.test.ts"
+      ]
+    },
+    "§mesh.public/ingress": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/setting",
+        "§mesh.peers/address-identity",
+        "§app.baton/share-listener"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/ingress.ts",
+        "server/mesh/gate.ts",
+        "server/share/edge.ts",
+        "server/share/gateway-client.ts",
+        "server/share-ingress.test.ts",
+        "server/share-security.test.ts"
+      ]
+    },
+    "§mesh.public/offline": {
+      "kind": "behavior",
+      "requires": [
+        "§design.copy-deck/public-links"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/offline.ts",
+        "server/share/router.ts",
+        "server/share/ws-hop.ts",
+        "src/share/ShareApp.tsx",
+        "src/share/OwnerApp.tsx",
+        "shared/public-links.ts",
+        "server/share-offline.test.ts",
+        "server/share-router.test.ts"
+      ]
+    },
+    "§mesh.public/panel": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/setting",
+        "§app.settings-dialog/save-bar",
+        "§design.copy-deck/public-links"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/PublicLinksSettings.tsx",
+        "src/lib/public-links.ts",
+        "src/lib/public-links.test.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/components/MeshView.tsx"
+      ]
+    },
+    "§mesh.public/registry": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/gateway",
+        "§mesh.public/setting"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/registry.ts",
+        "server/share/registry-validation.ts",
+        "server/share/registry-push.ts",
+        "server/share/gateway-routes.ts",
+        "server/share/gateway-client.ts",
+        "server/share/links-events.ts",
+        "shared/public-links.ts",
+        "server/share-registry.test.ts",
+        "server/share-ingress.test.ts",
+        "server/share-security.test.ts",
+        "server/share-edge.test.ts"
+      ]
+    },
+    "§mesh.public/routing": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/registry",
+        "§mesh.public/forwarded-for",
+        "§mesh.public/offline"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/router.ts",
+        "server/share/destination.ts",
+        "server/share/ws-hop.ts",
+        "server/share/edge.ts",
+        "server/share-router.test.ts",
+        "server/share-destination.test.ts",
+        "server/share-ws-hop.test.ts",
+        "server/share-offline.test.ts"
+      ]
+    },
+    "§mesh.public/setting": {
+      "kind": "behavior",
+      "requires": [
+        "§app.baton/share-listener"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/public-links.ts",
+        "server/public-links-routes.ts",
+        "server/share/listener.ts",
+        "server/share/runtime.ts",
+        "server/share/setting-events.ts",
+        "server/share/gateway-client.ts",
+        "shared/public-links.ts",
+        "server/public-links.test.ts",
+        "server/share-edge.test.ts"
+      ]
+    },
+    "§mesh/public": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/public-links.ts",
+        "server/share/runtime.ts"
+      ]
     }
   },
   "boundary": {

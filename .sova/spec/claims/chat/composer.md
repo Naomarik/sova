@@ -39,8 +39,8 @@
              accept="image/png,image/jpeg,image/gif,image/webp">
       <label class="visually-hidden" for="composer-input">Message</label>
       <textarea class="input textarea composer-input" id="composer-input" rows="1"
-                placeholder="Ask pi to…—Enter sends, Shift+Enter adds a line"
-                aria-describedby="composer-reason"></textarea>   <!-- ≥768; "Ask pi to…" below -->
+                placeholder="Ask pi to…—Enter sends, Shift+Enter adds a line" enterkeyhint="send"
+                aria-describedby="composer-reason"></textarea>   <!-- touch mode: "Ask pi to…", enterkeyhint="enter" -->
       <div class="composer-actions">
         <button class="button button-primary" type="submit">
           <span class="icon" style="--icon: url(/icons/arrow-right.svg)" aria-hidden="true"></span><span class="button-label">Send</span>
@@ -103,22 +103,28 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
   scrolls. `field-sizing: content` handles it in Chromium. As a fallback, on input set
   `style.height = "auto"` and then `style.height = scrollHeight + "px"`.
 - **Keys.**
-  - `Enter` sends.
-  - `Shift+Enter` inserts a newline.
+  - **Touch mode.** How the textarea was last pressed decides what `Enter` does. A `pointerdown`
+    on it with `pointerType` "touch" turns touch mode on; a mouse or pen press turns it off.
+    Focus by keyboard or by code leaves it as it was, and it starts off. There is no media query,
+    no user-agent sniffing, no viewport width and no setting: a tap means an on-screen keyboard,
+    whose Enter key is for lines, and the Send button is right there.
+  - `Enter` sends, except in touch mode, where it inserts a newline and Send sends.
+  - `Ctrl+Enter` / `⌘+Enter` always sends, on every device. `Shift+Enter` always inserts a
+    newline.
   - Ignore `Enter` while `event.isComposing` (IME).
-  - **The key hint is in the placeholder**, at 768px and up only: "Ask pi to…—Enter sends,
-    Shift+Enter adds a line", and while streaming "Steer the current turn…—Enter sends,
-    Shift+Enter adds a line". Below 768px it's the short string alone ("Ask pi to…" /
-    "Steer the current turn…"): a touch-first device has no Enter key to speak of. The band is
-    watched live, so a resize across 768px swaps the placeholder in place. A read-only composer
-    keeps the short string.
+  - `enterkeyhint` is "enter" in touch mode and "send" otherwise.
+  - **The key hint is in the placeholder** exactly when `Enter` sends (touch mode off), at any
+    width: "Ask pi to…—Enter sends, Shift+Enter adds a line", and while streaming "Steer the
+    current turn…—Enter sends, Shift+Enter adds a line". In touch mode it's the short string alone
+    ("Ask pi to…" / "Steer the current turn…"), swapped in place when the mode changes. A read-only
+    composer keeps the short string.
   - Empty or whitespace-only text doesn't send, and Send is `aria-disabled` with no reason text,
     because the reason is obvious.
 - **Send.** Sends `{type:"prompt"}`. Clear the textarea only after the socket accepts the message.
   Show the user bubble optimistically and resume auto-follow.
 - **While streaming.** Send stays available and its label changes to `Steer`, which sends
-  `{type:"steer"}`. The placeholder becomes "Steer the current turn…" (plus the key hint at ≥768,
-  see Keys). `Stop`
+  `{type:"steer"}`. The placeholder becomes "Steer the current turn…" (plus the key hint when Enter
+  sends, see Keys). `Stop`
   (`.button-destructive`, outlined, never filled, one word so the button stays narrow) sends
   `{type:"abort"}`. Show it only while streaming, after Steer. `Esc` does **not** abort, to prevent
   accidental stops.

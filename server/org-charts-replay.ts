@@ -272,7 +272,8 @@ const HOST_CHECKS = new Set(["validation", "per-id"]);
 /** The item phases a projection of the facts allows (several where the chart has a transient). */
 export function expectedPhases(it: ItemFacts): string[] {
   if (it.status === "dropped") return ["dropped"];
-  if (it.starting && !it.followUp) return ["gather-starting"];
+  // The call spawns its gathering in the same step (owned links, R4): no row lags behind it.
+  if (it.starting && !it.followUp) return ["gather-starting", "asking", "needs-operator"];
   const b = it.build;
   // A gathering still going: decisions recorded during it wait for its end (the item is still gathering).
   if (it.baton?.state === "open" && !it.followUp && !(it.build && it.decisions.length)) return ["asking"];
@@ -379,6 +380,8 @@ function stubEffect(e: HostEffect, now: number): Record<string, unknown> {
 class World {
   host!: OrgHost;
   looks: ChartLook[] = [];
+  /** The charts' own acts (r3 drive: by "chart"), taken: when, on which session, which event. */
+  driven: { at: number; sessionId: string; event: string; ids: string[] }[] = [];
   /** Reconciler runs waiting for their results (the facts of the instant give them). */
   reconcileRuns: { report: InvocationReport }[] = [];
   private stateDir: string;
@@ -409,6 +412,10 @@ class World {
       durable: false,
       // The traces predate holds (q10): every act goes at once (hold 0), as it did.
       stamp: (_sid, _event, _payload, who) => self.envelope({ by: ((who?.by as ActBy | undefined) ?? "chart") as ActBy, attended: false }),
+    });
+    this.host.onChange((c) => {
+      if (process.env.SOVA_REPLAY_DEBUG) for (const st of c.steps) if (st.by === "chart") console.log(`[drive] ${st.sessionId} ${st.event} ${st.refused ? "refused" : ""} ${JSON.stringify(st.data?.ids ?? null)} ${st.before.join(",")} -> ${st.after.join(",")}`);
+      for (const st of c.steps) if (st.by === "chart" && !st.refused && !st.held && (st.after.join() !== st.before.join() || Object.keys(st.changed ?? {}).length > 0 || (st.effects?.length ?? 0) > 0) && !["reason/noted", "ledger/take"].includes(st.event)) this.driven.push({ at: this.clock(), sessionId: st.sessionId, event: st.event, ids: Array.isArray(st.data?.ids) ? (st.data.ids as string[]) : [] });
     });
     const kinds = ["read-holder", "commit", "push", "pause-overseers", "revoke-owner-links", "revoke-person-links", "roster-history", "create-session", "mint-link", "mint-links", "revoke-links", "stop-reply", "baton-entry", "make-worktree", "set-mode", "first-prompt", "worktree-note", "merge", "remove-worktree", "promote", "draft", "route-conflict-of", "restore-text", "settle", "idea-status", "owner-update", "hold/started"];
     for (const k of kinds) this.host.effects.register(k, async (e) => stubEffect(e, this.clock()));
@@ -551,9 +558,12 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   const send = async (what: string, sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope | { by: ActBy }): Promise<ActResult | null> => {
     try {
       const out = await world.host.act(sid, event, payload, envelope as Envelope, { settle: true });
+      if (process.env.SOVA_REPLAY_DEBUG) console.log(`[replay] ${curDt} ${what} ${sid} ${event} → ${out.taken ? "taken" : `refused: ${out.refusal?.sentence}`}`);
       const r = out.result as { steps?: { microsteps?: number }[]; errors?: { message: string }[] } | null;
       for (const st of r?.steps ?? []) rep.coverage.maxMicrosteps = Math.max(rep.coverage.maxMicrosteps, st.microsteps ?? 0);
       if (errorsOf(r).length) diverge(`engine:${what}`, "no chart error", errorsOf(r).map((e) => e.message), null, "an action or guard threw inside the chart");
+      // The stores say it happened: a chart that refuses it is a divergence (a tool call's refusal is checkTool's).
+      if (!out.taken && out.refusal) diverge(`refused:${what}`, "taken", out.refusal.sentence, null, "the chart refused a step the stores show happened");
       return out;
     } catch (err) {
       diverge(`engine:${what}`, "no throw", err instanceof Error ? err.message : String(err), null, "the engine threw");
@@ -608,6 +618,14 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   const everPromoted = new Set<string>();
   const bugItems = new Set<string>();
 
+  /** The chart's own acts that concern gap `g`: on its item, its gatherings and builds, its decisions' reconciler. */
+  const drivenOn = (g: string) => {
+    const mine = new Set([S.item(g), ...[...batonGap].filter(([, x]) => x === g).map(([b]) => S.baton(b)), ...[...buildGap].filter(([, x]) => x === g).map(([c]) => S.build(c))]);
+    const itemData = world.data(S.item(g));
+    for (const k of Object.keys((itemData.builds as Record<string, unknown> | undefined) ?? {})) mine.add(k);
+    const ids = new Set(factsOf(g).decisions.map((d) => d.id));
+    return world.driven.filter((d) => mine.has(d.sessionId) || (d.sessionId === S.reconciler && d.event === "decision/promote" && d.ids.some((id) => ids.has(id)))).map((d) => ({ at: d.at - T0, session: d.sessionId, event: d.event }));
+  };
   const checkItems = () => {
     for (const g of gaps.keys()) {
       const sid = S.item(g);
@@ -630,6 +648,21 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
         continue;
       }
       const it = gaps.get(g)!;
+      // r3: the chart acted on its own (promoted its in-area decisions at L2, started its build at L3, moved or
+      // closed its gathering): it is ahead of today's stores, which waited for the overseer.
+      const drove = drivenOn(g);
+      if (drove.length) {
+        diverge("item-position", want, leaves(conf), "ruling", "r3 (q2 drive): the chart made this move itself, at the level in force; today it waited for the overseer's call", { ruling: "r3", driven: drove });
+        continue;
+      }
+      // The trace names no holder and the only person the stores know has left: the chart's person-left cascade
+      // hands the gathering to the operator (the replay's reconstruction, not the chart's choice).
+      const bid = it.baton?.id;
+      const last = bid ? ((world.data(S.baton(bid)).handoffs as { question?: string }[] | undefined) ?? []).at(-1) : undefined;
+      if (want.includes("asking") && conf.includes("needs-operator") && last?.question?.startsWith("(left the organization")) {
+        diverge("item-position", want, leaves(conf), "mining", "the trace names no holder; the only person its stores know has left, so the replay's gathering went to them and the person-left cascade handed it to the operator", { baton: bid });
+        continue;
+      }
       const promotedAll = it.decisions.length > 0 && it.decisions.filter((d) => d.state !== "superseded").every((d) => d.state === "promoted");
       if (it.build && !promotedAll && !["done", "dropped"].some((p) => want.includes(p)))
         diverge("item-position", want, leaves(conf), "cannot-express", it.decisions.some((d) => everPromoted.has(d.id))
@@ -659,7 +692,10 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   const firstHolder = (offer: boolean): Record<string, unknown> => {
     const act = activePeople();
     if (offer && act.length >= 2) return { targets: act.slice(0, 2), offerId: `off_${act.length}` };
-    return act.length ? { to: act[0] } : { to: "operator" };
+    // The traces name no holder: the first active person, else anyone the stores know (a gathering the
+    // stores show open is held by a person), else the operator.
+    const anyone = [...people.keys()][0];
+    return act.length ? { to: act[0] } : anyone ? { to: anyone } : { to: "operator" };
   };
   const batonStart = (id: string, offer: boolean) => ({ sessionId: id, ...firstHolder(offer), publicTitle: `Title ${id}`, goal: "Find out", question: "What?", briefing: "", messagesMax: 60, mintLink: false });
   const ensureItem = async (g: string, by: ActBy = "overseer") => {
@@ -712,14 +748,15 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       const built = s.build ?? finalBuild.get(id) ?? null;
       if (built || s.edited !== undefined) await fact("spec/facts", sid, "spec/facts", { recordPresent: true, fieldsMatch: true, editedInSpec: !!s.edited, build: built });
     } else if (s.state && s.state !== "pending" && !conf.includes(s.state === "conflict" ? "conflicted" : s.state)) {
-      pendingResults.push({ id, state: s.state, ...(s.supersededBy ? { supersededBy: s.supersededBy } : {}), authorOwnsArea: s.ownerArea ?? false });
+      pendingResults.push({ id, state: s.state, ...(s.supersededBy ? { supersededBy: s.supersededBy } : {}), authorOwnsArea: decisions.get(id)!.authorOwnsArea });
     }
   };
   const flushResults = async () => {
     if (!pendingResults.length) return;
     const results = pendingResults.splice(0);
-    // A run of the project's reconciler: its request (the host's, as the operator's click or the auto-run), its results.
-    await send("reconcile/request", S.reconciler, "reconcile/request", { delayMs: 0, by: "operator" }, env("operator"));
+    // A run of the project's reconciler: the one running (the overseer's sova_reconcile), else a request of the
+    // host's (the operator's click or the auto-run); then its results.
+    if (!world.reconcileRuns.length) await send("reconcile/request", S.reconciler, "reconcile/request", { delayMs: 0, by: "operator" }, env("operator"));
     const run = world.reconcileRuns.shift();
     if (run) {
       run.report("finished", undefined, { decisions: results, conflicts: [], resolved: [], compared: results.length, draftedIds: results.filter((r) => r.state === "drafted").map((r) => r.id) });
@@ -806,6 +843,9 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       const got = { event: v.event, refusal: v.refusal, at: leaves(v.before) };
       if (s.name === "sova_todos" && F.mergeReasonAndTodosOperatorOnly === false)
         return diverge("chart-vs-real", "taken", got, "drift", "sova_todos became operator-only in 77f3cdbf; this trace ran an older commit", { commits: ["77f3cdbf"] });
+      // r3: the chart already made this move itself (its drive); the overseer's own call then has nothing to do.
+      const done = world.driven.filter((d) => d.event === v.event && (d.sessionId === v.sid || (Array.isArray(v.payload.ids) && d.ids.some((id) => (v.payload.ids as string[]).includes(id)))));
+      if (done.length) return diverge("chart-vs-real", "taken", got, "ruling", "r3 (q2 drive): the chart made this move itself before the overseer's call", { ruling: "r3", driven: done.map((d) => ({ at: d.at - T0, session: d.sessionId, event: d.event })) });
       // q7: an unlinked build starts only in a turn the operator started; today's unattended ones needed no gap.
       if (v.event === "build/start" && v.sid === S.project && !s.attended)
         return diverge("chart-vs-real", "taken", got, "ruling", "q7: nothing is built that no one agreed on; an unattended build names its gap (C20), and this call named none", { ruling: "q7", act: v.event, attended: false });
@@ -935,8 +975,10 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
 
   // ---- the events -----------------------------------------------------------------------------------------
   const instantEnd = async () => {
+    const ran = pendingResults.length > 0;
     await flushResults();
     await settleWorld();
+    if (ran) checkItems();
   };
   for (const s of trace.events) {
     if (s.dt !== curDt) await instantEnd();
@@ -969,9 +1011,10 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       } else if (s.entity === "baton") await batonFact(s);
       else if (s.entity === "decision") await decisionFact(s);
       else if (s.entity === "build") await buildFact(s);
-      // conflict facts: their decisions' `conflict` results carry them.
+      // conflict facts: their decisions' `conflict` results carry them. A decision's new state reaches the
+      // charts with its reconciler run at the instant's end: the items are checked then.
       await settleWorld();
-      checkItems();
+      if (!pendingResults.length) checkItems();
       continue;
     }
     if (s.kind === "turn") {
@@ -1049,7 +1092,9 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       rep.coverage.expects++;
       const sid = s.session === "project" || !s.session ? S.watch : S.item(s.session);
       const conf = world.configuration(sid);
-      for (const st of s.in ?? []) conf.includes(st) ? pass() : diverge(`expect in ${st}`, st, conf, null, "the design's expectation for this edge case");
+      const drove = s.session && s.session !== "project" ? drivenOn(s.session) : [];
+      for (const st of s.in ?? [])
+        conf.includes(st) ? pass() : st === "asking" && conf.includes("needs-operator") && s.session && gaps.has(s.session) && ((world.data(S.baton(factsOf(s.session).baton?.id ?? "")).handoffs as { question?: string }[] | undefined) ?? []).at(-1)?.question?.startsWith("(left the organization") ? diverge(`expect in ${st}`, st, leaves(conf), "mining", "the trace names no holder; the only person its stores know has left (see item-position)", { gap: s.session }) : drove.length ? diverge(`expect in ${st}`, st, leaves(conf), "ruling", "r3 (q2 drive): the chart moved on by itself since this expectation was written (before r3)", { ruling: "r3", driven: drove }) : diverge(`expect in ${st}`, st, conf, null, "the design's expectation for this edge case");
       for (const st of s.notIn ?? []) !conf.includes(st) ? pass() : diverge(`expect not in ${st}`, `not ${st}`, conf, null, "the design's expectation for this edge case");
       if (s.reasonKinds || s.noReasonKinds) {
         const d = world.data(sid);

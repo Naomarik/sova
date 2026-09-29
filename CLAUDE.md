@@ -57,7 +57,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   the per-device order and the one resolver login → `CLAUDE_CONFIG_DIR` that every `claude` spawn
   uses; written by Sova's Settings → Accounts, read by the chat provider, workers, model discovery
   and the topic-outline summarizer at each spawn; and the session's hidden `claude-login` custom
-  entry `{v: 1, login, label?, from?, reason?, resetsAt?, text?}`, written by the provider and read
+  entry `{v: 1, login, label?, from?, fromLabel?, reason?, resetsAt?, text?}`, written by the provider and read
   by Sova, which renders one with `from` as a note row), worktrees: the session's `worktrees` custom
   entry (the tracked set, whole snapshot, newest on the branch wins) and its `worktree-merge`
   extension message (the merge card), read by Sova and by the subagents spawn gate; mode's `align`

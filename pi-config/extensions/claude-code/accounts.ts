@@ -6,7 +6,8 @@
  *
  * A LOGIN is one Claude Code config directory with its own `.credentials.json` (one refresh
  * chain). Several logins may share one Claude account (`accountUuid`). Claude Code's own
- * directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR`) is the implicit login `default`: never stored,
+ * directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR` unless that names an added login's directory) is
+ * the implicit login `default`: never stored,
  * never moved, never written here. Claude Code stays the only program that signs in, refreshes
  * and signs out; nothing here reads a token.
  *
@@ -160,14 +161,55 @@ export function defaultAgentDir(env: NodeJS.ProcessEnv = process.env): string {
 	if (raw.startsWith("~/")) return path.join(os.homedir(), raw.slice(2));
 	return raw;
 }
-/** Claude Code's own directory: `$CLAUDE_CONFIG_DIR`, else `~/.claude`. */
-export function defaultClaudeDir(env: NodeJS.ProcessEnv = process.env): string {
-	return env.CLAUDE_CONFIG_DIR?.trim() || path.join(os.homedir(), ".claude");
+/** `realpath` where the path exists, else the path resolved. */
+function realOrResolved(p: string): string {
+	try { return fs.realpathSync(p); } catch { return path.resolve(p); }
+}
+/** Whether `p` is `root` or inside it, comparing both as given and as resolved through links. */
+function within(p: string, root: string): boolean {
+	for (const r of new Set([path.resolve(root), realOrResolved(root)])) {
+		for (const q of new Set([path.resolve(p), realOrResolved(p)])) {
+			const rel = path.relative(r, q);
+			if (!rel.startsWith("..") && !path.isAbsolute(rel)) return true;
+		}
+	}
+	return false;
+}
+/**
+ * Whether `dir` lies under an added login's `claude-accounts/`: of `agentDir` when given, of the
+ * effective agent dir, and of pi's default `~/.pi/agent` (the dirs the sandbox protects).
+ */
+export function underLoginsDir(dir: string, env: NodeJS.ProcessEnv = process.env, agentDir?: string): boolean {
+	const agents = new Set([...(agentDir ? [agentDir] : []), defaultAgentDir(env), path.join(os.homedir(), ".pi", "agent")]);
+	return [...agents].some((a) => within(dir, path.join(a, ACCOUNTS_DIR_NAME)));
+}
+/**
+ * `$CLAUDE_CONFIG_DIR` as Claude Code's own directory, or undefined. An inherited one that names an
+ * added login's directory is not: a Sova-spawned `claude` (and any pi started under it) runs with
+ * that, and taking it for `default` would run `default` on a pool login without a lease.
+ */
+export function ownClaudeConfigDir(env: NodeJS.ProcessEnv = process.env, agentDir?: string): string | undefined {
+	const raw = env.CLAUDE_CONFIG_DIR?.trim();
+	return raw && !underLoginsDir(raw, env, agentDir) ? raw : undefined;
+}
+/** Claude Code's own directory: `$CLAUDE_CONFIG_DIR` (unless a login's directory), else `~/.claude`. */
+export function defaultClaudeDir(env: NodeJS.ProcessEnv = process.env, agentDir?: string): string {
+	return ownClaudeConfigDir(env, agentDir) ?? path.join(os.homedir(), ".claude");
 }
 /** Where Claude Code keeps `.claude.json` for a directory: inside it, except `~/.claude.json` for the unset default. */
-export function claudeJsonPath(dir: string, isDefault: boolean, env: NodeJS.ProcessEnv = process.env): string {
-	if (isDefault && !env.CLAUDE_CONFIG_DIR?.trim()) return path.join(os.homedir(), ".claude.json");
+export function claudeJsonPath(dir: string, isDefault: boolean, env: NodeJS.ProcessEnv = process.env, agentDir?: string): string {
+	if (isDefault && !ownClaudeConfigDir(env, agentDir)) return path.join(os.homedir(), ".claude.json");
 	return path.join(dir, ".claude.json");
+}
+/**
+ * The environment a `claude` spawn starts from: `env` without an inherited `CLAUDE_CONFIG_DIR`
+ * that names a login's directory, so a spawn on `default` (whose choice sets nothing) runs on
+ * Claude Code's own directory. A chosen login's `CLAUDE_CONFIG_DIR` is merged over this.
+ */
+export function claudeBaseEnv(env: NodeJS.ProcessEnv = process.env, agentDir?: string): NodeJS.ProcessEnv {
+	const out = { ...env };
+	if (out.CLAUDE_CONFIG_DIR !== undefined && !ownClaudeConfigDir(out, agentDir)) delete out.CLAUDE_CONFIG_DIR;
+	return out;
 }
 export const accountsPath = (agentDir: string): string => path.join(agentDir, ACCOUNTS_FILE_NAME);
 export const accountsStatePath = (agentDir: string): string => path.join(agentDir, ACCOUNTS_STATE_FILE_NAME);
@@ -357,23 +399,28 @@ export function loginEnabled(accounts: ClaudeAccountsFile, device: string, id: s
  * Create (0700) the login's directory and link the shared entries to `default`'s directory. Each
  * link is made only when its target exists, except `projects/`, which is created in `default`'s
  * directory if missing: every login must write its session records there. An existing link that
- * points elsewhere is replaced; a real file or directory is left alone.
+ * points elsewhere is replaced (unlinked, never removed recursively); a real file or directory is
+ * left alone. A `defaultDir` under `claude-accounts/` is refused before anything is written, and no
+ * link is made whose target resolves into the login's own directory.
  */
 export function ensureLoginDir(agentDir: string, id: string, defaultDir: string): string {
 	const dir = loginDir(agentDir, id);
+	if (within(defaultDir, path.join(agentDir, ACCOUNTS_DIR_NAME))) {
+		throw new Error(`Claude Code's own directory cannot be a login's directory: ${defaultDir}`);
+	}
 	fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 	try { fs.chmodSync(dir, 0o700); } catch { /* best effort */ }
 	for (const name of SHARED_ENTRIES) {
 		const target = path.join(defaultDir, name);
 		const link = path.join(dir, name);
 		if (name === "projects" && !fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
-		if (!fs.existsSync(target)) continue;
+		if (!fs.existsSync(target) || within(target, dir)) continue;
 		let stat: fs.Stats | undefined;
 		try { stat = fs.lstatSync(link); } catch { stat = undefined; }
 		if (stat && !stat.isSymbolicLink()) continue;
 		if (stat) {
 			if (fs.readlinkSync(link) === target) continue;
-			fs.rmSync(link, { force: true });
+			fs.unlinkSync(link);
 		}
 		fs.symlinkSync(target, link);
 	}
@@ -768,12 +815,12 @@ export class ClaudeLogins {
 	}
 	/** Whether the pool is on here (the mesh is): only logins held here are used. */
 	get pool(): boolean { return poolActive(this.agentDir); }
-	get defaultDir(): string { return defaultClaudeDir(this.env); }
+	get defaultDir(): string { return defaultClaudeDir(this.env, this.agentDir); }
 	get device(): string { return thisDeviceId(this.agentDir, this.env); }
 	accounts(): ClaudeAccountsFile { return readAccounts(this.agentDir).value; }
 	dirOf(id: string): string { return id === DEFAULT_LOGIN_ID ? this.defaultDir : loginDir(this.agentDir, id); }
 	identityOf(id: string, accounts = this.accounts()): ClaudeLoginIdentity | null {
-		if (id === DEFAULT_LOGIN_ID) return readIdentityFile(claudeJsonPath(this.defaultDir, true, this.env));
+		if (id === DEFAULT_LOGIN_ID) return readIdentityFile(claudeJsonPath(this.defaultDir, true, this.env, this.agentDir));
 		return accounts.logins.find((l) => l.id === id)?.identity ?? null;
 	}
 	/** The choice for an id this host may use, or undefined. */

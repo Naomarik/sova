@@ -10,6 +10,7 @@ import {
   DEFAULT_LOGIN_ID,
   LOCAL_DEVICE_ID,
   assignedHere,
+  claudeBaseEnv,
   claudeJsonPath,
   clearStanding,
   credentialsMtime,
@@ -456,6 +457,15 @@ export class ClaudeAccountsService {
   dispose(): void {
     if (this.flow && ["starting", "waiting", "finishing"].includes(this.flow.state.state)) this.endFlow(this.flow, { state: "failed", error: "Sova is shutting down" });
   }
+}
+
+/**
+ * What a server-side `claude` spawn's environment starts from: this process's, less an inherited
+ * CLAUDE_CONFIG_DIR that names an added login's directory (a server started under one would
+ * otherwise run `default` on that login).
+ */
+export function claudeBaseSpawnEnv(): NodeJS.ProcessEnv {
+  return claudeBaseEnv(process.env, getAgentDir());
 }
 
 /** The environment a server-side `claude` spawn runs with: this host's first usable login. */

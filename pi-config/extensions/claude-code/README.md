@@ -42,7 +42,10 @@ children, model discovery) runs on one Claude login, chosen by `accounts.ts`:
 
 - A login is one Claude Code config directory with its own `.credentials.json`.
   Claude Code's own directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR`) is the
-  implicit login `default`. Added logins live in
+  implicit login `default` — except an inherited `$CLAUDE_CONFIG_DIR` that names
+  an added login's directory (a process started under a `claude` on one, such
+  as a pi in a worker's shell): then `default` is `~/.claude`, and its spawns
+  drop that variable. Added logins live in
   `<agent dir>/claude-accounts/<id>/` (0700), with `projects/`, `settings.json`,
   `CLAUDE.md`, `agents`, `commands`, `skills` and `plugins` symlinked to
   `default`'s, so every login writes its session records into one `projects/`.

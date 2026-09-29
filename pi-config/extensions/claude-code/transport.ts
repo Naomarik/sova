@@ -14,7 +14,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { StringDecoder } from "node:string_decoder";
-import type { ClaudeAccountFailure } from "./accounts.ts";
+import { claudeBaseEnv, type ClaudeAccountFailure } from "./accounts.ts";
 
 // ---------------------------------------------------------------------------
 // Event shapes
@@ -249,10 +249,11 @@ export function simulatedFailureEvents(failure: ClaudeAccountFailure, userUuid?:
 }
 
 /** Preserve configured CLI authentication/routing (including API keys), but do
- * not inherit Claude's nested-session markers from the host shell. `extra` is
- * applied last, so a caller's variable is what the CLI sees. */
+ * not inherit Claude's nested-session markers from the host shell, nor a
+ * CLAUDE_CONFIG_DIR that names an added login's directory (accounts.ts). `extra`
+ * is applied last, so a caller's variable is what the CLI sees. */
 export function claudeEnv(extra?: Record<string, string>): NodeJS.ProcessEnv {
-	const env = { ...process.env };
+	const env = claudeBaseEnv(process.env);
 	delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT;
 	Object.assign(env, extra);
 	return env;

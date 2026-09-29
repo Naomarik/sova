@@ -139,7 +139,7 @@
   (with-redefs [policy/overseer-unattended-held? false]
     (is (not (policy/held-by? {:by "overseer"})) "flipped: the overseer's unattended calls go at once…")
     (is (policy/held-by? {:by "chart"}) "…chart-started acts stay held"))
-  (is (= [["refit-parent" "gather/start"]] (policy/held-acts rp/charts)))
+  (is (= [["refit-parent" "build/start"] ["refit-parent" "decision/promote"] ["refit-parent" "gather/start"]] (policy/held-acts rp/charts)))
   (is (not (policy/held? {:hold true} {:by "chart" :hold-ms 0} {})) "0 = no hold"))
 
 (deftest an-unattended-act-waits-in-a-hold-then-goes-ahead-under-a-fresh-envelope
@@ -352,6 +352,48 @@
     (is (= [:hold/cancel :item/reopen] (:corrections info)))
     (is (= ["door-named"] (get-in info [:acts :door/open :pre])))
     (is (some #(= {:id :timed :kind :state :parent :top} %) (:states info)))
-    (is (some #(and (= [:gather/start] (:event %)) (= ["day-allowance"] (:sova/checks %))) (:transitions info)))
+    (is (some #(and (= [:gather/start] (:event %)) (= ["gatherings-open" "day-allowance"] (:sova/checks %))) (:transitions info)))
     (is (= [{:state :timed :type :sova/look :id :look}] (:invocations info)))))
 
+
+;; ---- reservations by kind, at-once, counts (mutants E10, E12, E13) and the edges E21, E29 -------------
+
+(deftest reservations-are-per-kind-and-reach-the-at-once-count
+  (let [eng (parent (new-eng))
+        env (assoc unattended :allowance {:gather {:used 5 :max 6} :promote {:used 0 :max 1}}
+              :at-once {:gatherings-open 3 :gatherings-cap 5 :coding-running 0 :coding-cap 1})]
+    (is (some? (:held (first (:steps (core/send! eng "par" :gather/start (assoc env :to "a") {:now t0}))))))
+    (testing "a pending gather reserves nothing of promote or create (E10)"
+      (is (nil? (core/explain eng "par" :decision/promote (assoc env :ids ["d1"]) {:now t0})))
+      (is (nil? (core/explain eng "par" :build/start env {:now t0}))))
+    (testing "a pending gather takes an at-once slot (E12)"
+      (let [env2 (assoc env :allowance {:gather {:used 0 :max 6}} :at-once {:gatherings-open 4 :gatherings-cap 5})]
+        (is (= "5 of its gathering sessions are open, and the limit is 5 at once."
+              (:sentence (:refused (first (:steps (core/send! eng "par" :gather/start (assoc env2 :to "b") {:now (+ t0 1)})))))))))
+    (testing "a held create reserves coding-running, not gatherings-open"
+      (is (some? (:held (first (:steps (core/send! eng "par" :build/start env {:now (+ t0 2)}))))))
+      (is (= "1 of its coding sessions are running, and the limit is 1 at once."
+            (:sentence (core/explain eng "par" :build/start env {:now t0}))))
+      (is (nil? (core/explain eng "par" :gather/start (assoc env :allowance {:gather {:used 0 :max 6}} :at-once {:gatherings-open 3 :gatherings-cap 5}) {:now t0}))
+        "3 open + 1 pending gather = 4 < 5: the pending create took no gathering slot"))))
+
+(deftest a-held-promote-reserves-as-many-as-its-ids
+  (let [eng (parent (new-eng))
+        env (assoc unattended :allowance {:promote {:used 1 :max 5}})]
+    (is (some? (:held (first (:steps (core/send! eng "par" :decision/promote (assoc env :ids ["a" "b" "c"]) {:now t0}))))))
+    (is (= 3 (:reserve (first (core/holds eng)))))
+    (is (= "Today's allowance is used: 4 of 5 decisions promoted on its own."
+          (:sentence (:refused (first (:steps (core/send! eng "par" :decision/promote (assoc env :ids ["d" "e"]) {:now (+ t0 1)}))))))
+      "1 used + 3 pending + 2 > 5 (E13)")))
+
+(deftest the-operators-page-never-sets-state
+  (let [eng (parent (new-eng))
+        r   (core/set-state! eng "par" {:states [:timed] :reason "x"} {:by "operator" :attended true} {:now t0})]
+    (is (= core/attended-only (:sentence (:refused (first (:steps r))))) "E21")
+    (is (in? eng "par" :idle))))
+
+(deftest an-effect-hold-of-zero-ms-goes-straight-out
+  (let [eng (parent (new-eng))
+        r   (core/send! eng "par" :offer/make (assoc unattended :hold-ms 0) {:now t0})]
+    (is (= ["offer"] (map :kind (:outbox r))) "E29")
+    (is (empty? (core/holds eng)))))

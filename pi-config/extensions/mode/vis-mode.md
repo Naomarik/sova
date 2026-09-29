@@ -22,7 +22,8 @@ Rules for every kind:
 
 ## Shared: emphasis
 <!-- owner: foundation. core/emphasis.ts implements this; every kind calls it. -->
-To point at the one thing that matters, add a `mark` line (at the start of a line, anywhere after the settings): `mark <target> [tone] ["short note"]`. The target is what names an item in that kind — an id, a "quoted label", a line number or a range like `3-5`; each kind below says which. The item is highlighted (tone defaults to accent); a note gets a number on the item and is listed under the drawing. Mark at most 1–3 things; a note is a phrase (under 120 characters), not a sentence. A mark whose target names nothing is dropped. Several targets share one mark and its note: `mark a, b, c "the scope set"`.
+To point at what matters, add a `mark` line (at the start of a line, after the settings): `mark <target> [tone] ["short note"]`. The item is highlighted (tone defaults to accent); a note gets a number and is listed under the drawing. Mark at most 1–3 things; a note is a phrase under 120 characters. Several targets share one mark and its note: `mark a, b, c "the scope set"`.
+- Targets: flow and state, a node's id or label; sequence, an actor, a message's "label" or its number (1 = the first message; notes and dividers don't count); code, a line or a range `20-23` as displayed; matrix, a row's criterion or a column's name; wireframe, see its section; any other kind, a row's (layer's, item's) label.
 
 ## Shared: free-form limits
 <!-- owner: foundation. Enforced by kinds/frame/parse.ts (size) and srcdoc.ts (motion gate, CSP). -->
@@ -44,7 +45,7 @@ mark sdk "one writer per session file"
 - Inline: once any line has a string right after its first id, the first string after a node that has no label yet is its label; the next string is the edge's (`srv "Sova server" "WS /ws/chat"`). After a node already labelled, a string is the edge's label (`sdk --> srv "events"`). A shape and a tone may follow: `done "Reply streamed?" decision`.
 - `node <id> "Label" ["second line"] [shape] [tone]` for a second line; shapes: `box` (default) `round` `store` `decision` `circle`. After a target with a `node` line, a string is the edge's label.
 - With no string after any line's first id, a string after a target is always the edge's label (§ state).
-- Edges: `a -> b`, dashed `a --> b`, both ways `a <-> b`; chains `a -> b -> c`. `dir: right` (drawn down on a phone). Under 12 nodes, short labels. `mark` a node by id or label.
+- Edges: `a -> b`, dashed `a --> b`, both ways `a <-> b`; chains `a -> b -> c`. `dir: right` (drawn down on a phone). Under 12 nodes, short labels.
 - `group "Label" id id …` frames nodes that belong together (a process, a machine, a scope); edges cross the frame. A node is in one group at most.
 - Two small flows side by side (before/after): `== Label ==` lines start panels, each laid out alone, with its own ids (the same id in two panels is two nodes).
 ```vis flow
@@ -67,11 +68,10 @@ note c s "keys derived from the exchange"
 mark 2 "the server commits resources here"
 ```
 - `actor <id> ["Label"] [tone]` (optional; order = first use). `a -> b "msg"`, reply `a --> b "msg"`, self `a -> a "msg"`. `note a [b] "text"`, `== section ==`. At most 8 actors; 2–4 read best on a phone. Keep message labels to a few words.
-- `mark` an actor id, a message by its "exact label", or a message by number: 1 is the first message; notes and dividers aren't counted.
 
 ## state
 <!-- owner: process member (flow's parser, layout and View; `end` sinks to the last rank). Emphasis target: state id or label. -->
-A state machine: flow syntax, but nodes default to `round`; `node s0 start` / `node done end` are the entry and exit dots. Label each edge with its event (`idle -> busy "prompt"`), so name states by id or on `node` lines, never inline. `mark` a state by id.
+A state machine: flow syntax, but nodes default to `round`; `node s0 start` / `node done end` are the entry and exit dots. Label each edge with its event (`idle -> busy "prompt"`), so name states by id or on `node` lines, never inline.
 ```vis state
 node s0 start
 s0 -> idle
@@ -91,7 +91,7 @@ Server | Hono REST, /ws/chat | one process per checkout
 Disk | session JSONL | muted
 mark Server "holds every live session"
 ```
-- Quote an item that contains a comma. Leave the items empty (`Disk | | muted`) for a label-only layer. At most 10 layers, 12 items each. `mark` a layer by its label.
+- Quote an item that contains a comma. Leave the items empty (`Disk | | muted`) for a label-only layer. At most 10 layers, 12 items each.
 
 ## tree
 <!-- owner: structure member. kinds/tree: nested HTML lists with elbow connectors. Also accepts ├── └── │ tree-drawing lines. Emphasis target: item name, first match depth first (key = path "0.2.1"). -->
@@ -103,7 +103,7 @@ src/
   main.tsx
 mark markdown.ts "the vis hook lives here"
 ```
-- Quote a name that has spaces or quotes: `"My Docs" "shared"`. At most 80 lines: show the branch that matters and one `…` item for the rest. `mark` an item by its name (the first one wins).
+- Quote a name that has spaces or quotes: `"My Docs" "shared"`. At most 80 lines: show the branch that matters and one `…` item for the rest.
 
 ## chart
 <!-- owner: data member. kinds/chart: parse.ts, scale.ts (axes, ticks), layout.ts (geometry, tested), View.tsx. Emphasis target: row label (key = row index). -->
@@ -128,7 +128,6 @@ of: 200000
 "New input" 6000
 mark "New input" "only this part is uncached"
 ```
-- `mark` a row (a point) by its label.
 
 ## timeline
 <!-- owner: data member. Emphasis target: a row's when or label (key = item index). -->
@@ -138,11 +137,10 @@ Events in order: `when | label | note (optional) | tone (optional)`; `== section
 2016 | Vue 2 | reactive templates
 mark React "components as functions of state"
 ```
-- `mark` a row by its when or its label.
 
 ## steps
 <!-- owner: data member. kinds/steps: HTML rows of chips, a status mark per row, lanes as heads; the label folds above its chain on a phone. Emphasis target: row label (key = item index). -->
-Scenarios or journeys as chains, each with a status: `"Label" [tone] | step -> step -> …`, a step being a word or a "quoted label"; `== lane ==` groups rows. No ids. `mark` a row by its label.
+Scenarios or journeys as chains, each with a status: `"Label" [tone] | step -> step -> …`, a step being a word or a "quoted label"; `== lane ==` groups rows. No ids.
 ```vis steps
 == Asking people ==
 "Simple question" ok | You -> "Maria gets a link" -> "decision recorded"
@@ -189,7 +187,6 @@ Linear history | no | yes
 Conflicts to resolve | once ok | per commit warn
 mark "Keeps original commits" "why rebase needs a force-push"
 ```
-- `mark` a row by its criterion, or a column by its name.
 
 ## code
 <!-- owner: code member. kinds/code: View.tsx (hljs via lib/markdown, sticky numbered gutter, badges), lines.ts. Emphasis target: line number or range, as displayed. -->
@@ -206,7 +203,7 @@ for (let i = 0;
   i++) total += items[i];
 ```
 - `lang:` a fence word (ts, py, rust, sql, …). `start:` the first line's number, so the numbers match the file.
-- `mark` a line number or a range like `20-23`, as displayed; a range's note goes on its first line. Marks come before `---`: everything after it is code.
+- Marks come before `---`: everything after it is code.
 
 ## html / svg
 <!-- owner: code member (free-form). kinds/frame: srcdoc.ts (CSP, tokens, base CSS, height, motion gate, script-failure flag), View.tsx; fuller examples in kinds/frame/examples/ (tested). Emphasis: not applicable. -->

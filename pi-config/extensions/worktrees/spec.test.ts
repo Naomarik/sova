@@ -182,3 +182,50 @@ test("F8: a draft already promoted is not 'unpromoted' when master later changed
 		r.done();
 	}
 });
+
+test("a merge that deletes or renames § and resolves one by hand says so", async () => {
+	const r = repo();
+	try {
+		// Master and the branch both reword §app.list/mark; the merge resolves it with a third text.
+		put(r.main, ".sova/spec/claims/app/list.md", LIST.replace("A speech bubble and the count.", "Master's words."));
+		sh(r.main, "commit", "-qam", "master: mark");
+		put(r.tree, ".sova/spec/claims/app/list.md", LIST.replace("A speech bubble and the count.", "The branch's words."));
+		sh(r.tree, "commit", "-qam", "feat: mark");
+		try { sh(r.tree, "merge", "-q", "--no-edit", "master"); } catch { /* the conflict, resolved below */ }
+		put(r.tree, ".sova/spec/claims/app/list.md", LIST.replace("A speech bubble and the count.", "A third text."));
+		sh(r.tree, "add", "-A");
+		sh(r.tree, "commit", "-qm", "merge master by hand");
+		const before = sh(r.main, "rev-parse", "HEAD");
+		sh(r.main, "merge", "-q", "--no-ff", "--no-edit", "feat/x");
+		const after = sh(r.main, "rev-parse", "HEAD");
+		const rep = await mergeSpecReport(runGit, { path: r.tree, branch: "feat/x", before, after, branchSha: sh(r.tree, "rev-parse", "HEAD") });
+		assert.deepEqual(rep?.foreign, ["§app.list/mark"]);
+		assert.deepEqual(rep?.landing?.handResolved, [], "the landing merge is clean; the hand merge is on the branch");
+		// A rename, as the note shows it: the old id stays foreign.
+		const lines = specLines({ foreign: ["§app/list"], deleted: [{ id: "§app/list", renamedTo: "§app/rows" }], warnings: [], landing: { unmappedChanged: [], mappedUntouched: [], unpromotedDrafts: [], handResolved: [{ commit: after, ids: ["§app.list/mark"] }] } });
+		assert.deepEqual(lines.slice(0, 2), ["Foreign § this merge changes: §app/list", "Deleted § (still foreign): §app/list → §app/rows"]);
+	} finally {
+		r.done();
+	}
+});
+
+test("the note's hand-resolution warning: a landing merge commit whose § differ from both parents", async () => {
+	const r = repo();
+	try {
+		put(r.main, ".sova/spec/claims/app/list.md", LIST.replace("A speech bubble and the count.", "Master's words."));
+		sh(r.main, "commit", "-qam", "master: mark");
+		put(r.tree, ".sova/spec/claims/app/list.md", LIST.replace("A speech bubble and the count.", "The branch's words."));
+		sh(r.tree, "commit", "-qam", "feat: mark");
+		const before = sh(r.main, "rev-parse", "HEAD");
+		try { sh(r.main, "merge", "-q", "--no-edit", "feat/x"); } catch { /* the conflict */ }
+		put(r.main, ".sova/spec/claims/app/list.md", LIST.replace("A speech bubble and the count.", "A third text."));
+		sh(r.main, "add", "-A");
+		sh(r.main, "commit", "-qm", "merge by hand");
+		const after = sh(r.main, "rev-parse", "HEAD");
+		const rep = await mergeSpecReport(runGit, { path: r.tree, branch: "feat/x", before, after, branchSha: sh(r.tree, "rev-parse", "HEAD") });
+		assert.deepEqual(rep?.landing?.handResolved, [{ commit: after, ids: ["§app.list/mark"] }]);
+		assert.ok(rep?.warnings.some((w) => w.startsWith(`merge ${after.slice(0, 7)} resolved §app.list/mark by hand`) && w.includes(`git show --cc ${after.slice(0, 7)}`)), rep?.warnings.join("\n"));
+	} finally {
+		r.done();
+	}
+});

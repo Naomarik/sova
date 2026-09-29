@@ -7885,6 +7885,86 @@
         "pi-config/extensions/mode/vis-mode.md",
         "src/vis/icons.ts"
       ]
+    },
+    "§mesh.links/offer-rows": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/LinkedAgents.tsx",
+        "src/lib/links.ts",
+        "src/lib/links.test.ts",
+        "src/design/base.css",
+        "server/mesh/links.ts",
+        "shared/mesh-links.ts"
+      ],
+      "requires": [
+        "§mesh.links/agents-pane",
+        "§mesh.links/offers",
+        "§mesh.links/transfer"
+      ]
+    },
+    "§mesh.links/offers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/mesh-links.ts",
+        "server/mesh/links.ts",
+        "server/mesh/links.test.ts",
+        "server/mesh/links-routes.ts",
+        "server/mesh/links-offers.ts",
+        "server/mesh/links-transfer.ts",
+        "server/mesh/links-transfer.test.ts",
+        "server/link-sandbox.ts",
+        "server/link-sandbox.test.ts",
+        "server/mesh/tar-list.ts",
+        "server/mesh/tar-list.test.ts",
+        "server/index.ts",
+        "pi-config/extensions/sandbox/session-policy.ts",
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/sandbox/tests/session-policy.unit.test.ts",
+        "pi-config/extensions/sandbox/README.md",
+        "pi-config/extensions/link/index.ts",
+        "pi-config/extensions/link/client.ts",
+        "pi-config/extensions/link/README.md",
+        "pi-config/extensions/link/client.test.ts",
+        "pi-config/extensions/link/index.test.ts",
+        "pi-config/README.md"
+      ],
+      "requires": [
+        "§mesh.links/record",
+        "§mesh.links/delivery",
+        "§mesh.links/tools",
+        "§mesh.links/transcript",
+        "§chat/sandbox",
+        "§chat.worktrees/sandbox",
+        "§chat.worktrees/entry"
+      ]
+    },
+    "§mesh.links/transfer": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/mesh-links.ts",
+        "server/mesh/links-offers.ts",
+        "server/mesh/links-transfer.ts",
+        "server/mesh/links-transfer.test.ts",
+        "server/mesh/links.ts",
+        "server/mesh/links.test.ts",
+        "server/mesh/links-routes.ts",
+        "scripts/mesh-lab/e2e/m6-links-transfer.test.mjs",
+        "scripts/mesh-lab/e2e/links-lib.mjs",
+        "scripts/mesh-lab/README.md"
+      ],
+      "requires": [
+        "§mesh.links/offers",
+        "§mesh.peers/listener",
+        "§mesh.peers/address-identity",
+        "§mesh.peers/off",
+        "§mesh/phone"
+      ]
     }
   },
   "boundary": {

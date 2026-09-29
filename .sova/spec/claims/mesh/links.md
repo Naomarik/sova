@@ -2,14 +2,15 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 A **link** joins two or more Sova-hosted sessions (pi or claude-code backend), each on its own
-mesh host, into a remote team whose members can message each other and, later, hand each other
+mesh host, into a remote team whose members can message each other and hand each other
 files. A member is always a session its own host runs: never a remote target, never a TUI-live
 session, never a worker's session, and never an Overseer, project-overseer, baton or other
 organization's session (§app/baton, §app/project-overseer, §app.session-list/organizations). A session is still driven only by the host whose disk holds
 its file (§mesh/remote-sessions): every message and every file lands through the member's own
-host. A link moves messages, never session files; sessions still never sync
-(§mesh/sync). While the mesh is off no link can exist, and nothing here runs (§mesh.peers/off).
-Moving files between members is a later stage, not built yet: a link works without it.
+host. A link moves messages and the files its members offer (§mesh.links/offers), never session
+files; sessions still never sync (§mesh/sync). While the mesh is off no link can exist, and nothing
+here runs (§mesh.peers/off). A link works without ever moving a file: offers are something a member
+does, never part of making or keeping a link.
 
 ## §mesh.links/record — A link is a durable record on every member host
 
@@ -114,7 +115,7 @@ not the user's message and the main transcript never shows it:
 
 ## §mesh.links/tools — The link tools
 
-One pi-config extension, `link`, registers three tools at load, with a fixed schema, in every
+One pi-config extension, `link`, registers seven tools at load, with a fixed schema, in every
 session Sova hosts; a claude-code session gets the same tools through the provider's `mcp__sova__`
 bridge with no separate copy. They never appear or disappear when a link is made or ended, so a
 claude-code session's tool set never changes mid-conversation. Hosted by anything other than
@@ -126,6 +127,8 @@ are inert too.
 - **`link_send {to?, text}`**: deliver (§mesh.links/delivery). `to` is a member (by host, session
   id or label), several, or `all`; with two members it may be left out.
 - **`link_inbox {limit?}`**: this session's inbox records, newest last.
+- **`link_offer {paths, to?, dest?, exclude?, note?, link?}`**, **`link_accept {offer, dest}`**,
+  **`link_decline {offer, reason?}`** and **`link_offers {}`**: file offers (§mesh.links/offers).
 
 Each refuses, with a sentence saying so, when the session is in no link. The tools talk only to
 the session's own host, which does every peer hop; the extension knows nothing about the mesh.
@@ -182,3 +185,116 @@ the session as its `mode` entry even when they equal the default, as `sova_set_s
 them, so a later change to the default never moves it; a call that sets no mode writes none. It is an ordinary `/api/` route, so a peer
 reaches it on the peer listener (§mesh.peers/listener); that is how the Overseer configures a
 session it created on a peer (§app.overseer/links-tools).
+
+## §mesh.links/offers — File offers to members
+
+A member can make a **file offer** to one member, several, or all of them with `link_offer`; a
+recipient answers with `link_accept` or `link_decline`; `link_offers` shows every offer to and from
+the session with each recipient's state. No human confirms anything, on either host.
+
+- **The sender chooses exactly what goes.** `paths` are resolved against the sending session's
+  cwd (`~` and absolute paths allowed), must exist, and are listed and sized before anything moves;
+  the result names the offer (`of_` plus random hex), the file count and the bytes. There are no
+  default exclusions: build output, `node_modules` and `.git` go when the sender names them. An
+  optional `exclude` list is the sender's own choice: a pattern without `/` matches any path
+  component (`node_modules`, `*.log`), one with `/` matches the path from the offered root's name
+  (`proj/dist`); `*`, `?`, `**` and `[…]` work. What is listed is exactly what is packed, so the
+  count the sender sees is the count that lands. No size cap. Symlinks travel as links and are
+  never followed.
+- **`dest` is a directory.** Each offered path lands at `dest/<its name>`, as `cp -r a b dest/`
+  would put it. Two offered paths with the same name are refused, and so is `/`, which has none;
+  nothing is renamed on arrival.
+- **A worktree carries no history.** When an offered tree holds a `.git` that is a file whose
+  `gitdir:` is absolute, or points outside the offered paths (a git worktree's pointer,
+  §chat.worktrees/entry), the result and the offer message say so: the receiver gets no history,
+  so offer the main checkout or a `git bundle`. A submodule whose `.git` points inside an offered
+  superproject is not reported. It is never refused; the sender still decides what goes.
+- **With `dest`, the accept is implicit.** Every recipient is already accepted, and each
+  recipient's **host** checks `dest` and pulls the files into it at once, without a turn on the
+  recipient; the recipient then gets one inbox record and one message saying what landed where, or
+  why it failed. `dest` may be one directory for everyone or one per member, named as `to` names
+  them; an unknown member refuses the whole offer before anything is written. This is the default
+  the tool describes: name `dest` when you know it.
+- **Without `dest`, the recipient decides.** Each recipient gets an offer message (it wakes like any
+  link message) and answers `link_accept {offer, dest}` or `link_decline {offer, reason?}`. One
+  recipient's answer never waits on another's. An unanswered offer expires after 24 hours. A
+  recipient that can't take the message (open in a TUI, archived, its model off, busy, special) is
+  refused for that offer, final, as a message would be (§mesh.links/delivery): its link tools are
+  inert in a TUI, so it could never answer.
+- **`dest` is the recipient host's.** `~` is that host's home (`~user` is refused), a relative path
+  is under the member session's cwd, `..` is normalised and missing parents are created. Existing
+  files are overwritten. Nothing else is checked, except that Sova's own state is never written:
+  a `dest` inside Sova's state root or the sessions directory is refused, and so is a `dest` above
+  one of them when an offered path would land in it (offering `.pi` into `~`).
+- **A sandboxed session binds the server.** The server packs and unpacks on a session's behalf,
+  so while the **sending** session's sandbox is on (§chat/sandbox) it refuses to pack any path that
+  session's own tools couldn't read: an offered path that is hidden, or a tree that holds a hidden
+  path the `exclude` list doesn't drop, named so the sender can exclude it. While a **receiving**
+  session's sandbox is on, its host refuses, for that recipient, a `dest` its tools couldn't write
+  (its writable roots include its tracked worktrees, §chat.worktrees/sandbox), and, before
+  extracting, checks every path in the archive the same way, refusing on the first it couldn't
+  write or that would be written through a link already on disk. The server resolves the same
+  policy the sandbox extension does, from the session's own branch; when it can't, it refuses. With
+  the sandbox off, nothing here is restricted. **Known limit:** the check before extraction and
+  the extraction are two steps, so a sandboxed receiving agent that plants a symlink in `dest`
+  between them could have the files written through it, outside its sandbox. Extracting inside the
+  receiver's own sandbox would close this; it is not built.
+- **Files land even when the session can't take a message.** A `dest` the sender named is applied
+  while the recipient is mid-turn, unloaded or TUI-live; only the message about it waits for the
+  member's next step, or, for a TUI-live member, is skipped and left in the inbox.
+- **Notices are link messages.** The offer, the landing, a decline and the sender's wake are ordinary
+  link messages with the usual tag, so they are classified, hidden and counted exactly as
+  §mesh.links/transcript says; each is one inbox record, updated as the offer moves on.
+- **The sender is woken once**, when every recipient has finished (done, declined, failed, refused,
+  expired or cancelled) or at the first failure after an accept, whichever is first; each
+  recipient's progress before that is an inbox record only. Refusals the offer already returned
+  never wake it.
+- **Ending the link cancels its open offers** on every member host: no further pull is served and
+  every partial copy is deleted.
+- **A host on an older build** answers an offer as it answers any unknown route; that recipient is
+  refused for the offer as an old build, final, never retried, and the others go on.
+
+## §mesh.links/transfer — Pack once, each recipient pulls
+
+- **Pull, never push.** For a file offer, a recipient's host fetches the bytes from the sender's
+  peer listener, and the sender serves only the fixed list the offer named, only to a host that is
+  one of that offer's recipients and has accepted. A peer can't send bytes to a host that holds no
+  offer for them.
+- **Packed once, at offer time.** The sender packs the listed paths once, with the host's own `tar`
+  and Node's built-in zstd, into a spool file under Sova's state root, and records its size and
+  hash, whether or not anyone has accepted yet. Every recipient's pull streams that same file, so
+  every recipient gets identical bytes, and several pulls run at once. A pull that arrives while
+  packing is still running is told to come back. A host with no room to pack fails the offer with a
+  sentence saying so; there is no spool limit and no other way to serve it. The spool is deleted
+  when every recipient has finished, the offer expires or it is cancelled.
+- **Resumable.** The recipient's host downloads into a partial file under its own state root; a
+  pull cut off partway, or stalled for a minute, resumes from the byte it had received, including
+  after either host restarts. A pull still moving at the 24-hour mark keeps going until an hour
+  after its last byte.
+- **Verified, then unpacked.** Nothing lands in `dest` until every byte has arrived and matches the
+  sender's hash; a mismatch restarts the download once, then fails. The host then unpacks into
+  `dest` and deletes the partial file. A failed unpack leaves whatever it wrote; offering again
+  overwrites it.
+- **A server-to-server stream.** The transfer is a GET between the two hosts' Sova servers, never
+  through the page proxy, with no size limit.
+- **Per-recipient result.** The recipient's host reports each step (accepted, unpacking, `done`
+  with the bytes and the time, `failed` with the reason, declined, refused) back to the sender, or
+  holds the report until the sender's host is up; the sender's copy of the offer holds every
+  recipient's state and the bytes served to it, and each recipient's copy holds its own row.
+- **A phone needs nothing extra.** The phone installer (§mesh/phone) already puts `tar` and `git`
+  on a Termux host, and Node's zlib does the compression on every host, so a transfer, and using a
+  received `.git` there, needs no install beyond Sova. A host without `tar` refuses to offer.
+
+## §mesh.links/offer-rows — Offers in the Agents tab
+
+The Agents tab's linked-agents section (§mesh.links/agents-pane) shows offers read-only.
+
+- **A transfer chip on the member's row** for the newest unfinished offer with that member, either
+  way: waiting for an answer, sending or receiving with the bytes so far out of the total, or
+  unpacking. It sits beside the state chip.
+- **Status rows in the thread**, among the messages by time: one per offer with its direction, the
+  offered names, files, bytes, note and any worktree warning, and under it one line per recipient
+  with its state (offered, accepted, pulling with progress, unpacking, landed, declined, failed,
+  refused, expired or cancelled), bytes, `dest`, time and reason.
+- **Live while it moves.** The chat socket pushes the change while a transfer runs, at most every
+  two seconds, so the chip and the thread follow it without a reload.

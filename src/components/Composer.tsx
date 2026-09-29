@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import type { SlashCommand, UploadResult } from "../../shared/protocol";
 import { runControls } from "../lib/compact";
+import { createTouchMode, enterSends } from "../lib/input-mode";
 import { enterRunsLocal, insertCommand, localCommand, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import {
@@ -236,16 +237,12 @@ export function Composer(props: {
   const disabled = () => !!reason();
   /** What the foot says: the state's reason, else that an attachment is still uploading. */
   const shownReason = (): ComposerReason | null => reason() ?? (uploading() > 0 ? { icon: "clock", text: "Uploading…" } : null);
-  // The key hint lives in the placeholder, and only at unfolded width: a touch-first device has
-  // no Enter key to speak of. Live, so a resize across 768px swaps it in place.
-  const unfolded = matchMedia("(min-width: 768px)");
-  const [keyHint, setKeyHint] = createSignal(unfolded.matches);
-  const onBand = (e: MediaQueryListEvent) => setKeyHint(e.matches);
-  unfolded.addEventListener("change", onBand);
-  onCleanup(() => unfolded.removeEventListener("change", onBand));
+  // Tapped, Enter adds a line and Send sends; the placeholder's key hint shows exactly when
+  // Enter sends, so it swaps in place when the mode does.
+  const { touch, onPointerDown } = createTouchMode();
   const placeholder = () =>
     [props.running ? "Steer the current turn…" : "",
-      keyHint() && !props.readOnly ? "Enter sends, Shift+Enter adds a line" : ""]
+      !touch() && !props.readOnly ? "Enter sends, Shift+Enter adds a line" : ""]
       .filter(Boolean).join(" ");
   const canSend = () => !disabled() && uploading() === 0 && (text().trim().length > 0 || images().length > 0 || !!props.picks);
   createEffect(() => props.onDraft?.(text().trim().length > 0 || images().length > 0));
@@ -844,6 +841,7 @@ export function Composer(props: {
             ids={slashIds()}
             active={slashActive()}
             query={slashToken()?.query ?? ""}
+            touch={touch()}
             onPick={pickSlash}
             onHover={setSlashActive}
           />
@@ -967,6 +965,7 @@ export function Composer(props: {
             id={paneId("composer-input")}
             rows={1}
             placeholder={placeholder()}
+            enterkeyhint={touch() ? "enter" : "send"}
             aria-describedby={paneId("composer-reason")}
             aria-autocomplete={slashOpen() || mentionOpen() ? "list" : undefined}
             aria-controls={listboxControls() ?? undefined}
@@ -989,6 +988,7 @@ export function Composer(props: {
                 updateMention();
               }
             }}
+            onPointerDown={onPointerDown}
             onFocus={() => setFocused(true)}
             onBlur={() => {
               setFocused(false);
@@ -1004,7 +1004,9 @@ export function Composer(props: {
               addFiles(files, true);
             }}
             onKeyDown={(e) => {
-              if (slashOpen() && !e.isComposing && !enterRunsLocal(text(), e.key, e.shiftKey, localOpts())) {
+              // A bare local command runs on the Enter that would send; in touch mode it's a newline.
+              const runsLocal = enterSends(e, touch()) && enterRunsLocal(text(), e.key, e.shiftKey, localOpts());
+              if (slashOpen() && !e.isComposing && !runsLocal) {
                 const hasMatches = slashMatches().length > 0;
                 if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                   if (!hasMatches) return;
@@ -1038,8 +1040,8 @@ export function Composer(props: {
                   setMentionActive((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + n) % n);
                   return;
                 }
-                // Enter and Tab both complete: the next Enter, menu closed, sends. With no
-                // match, Enter falls through and sends the typed text as-is.
+                // Enter and Tab both complete: the next Enter, menu closed, does what Enter does.
+                // With no match, Enter falls through to that rule with the typed text as-is.
                 if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
                   if (hasMatches) {
                     e.preventDefault();
@@ -1056,7 +1058,7 @@ export function Composer(props: {
                   return;
                 }
               }
-              if (e.key === "Enter" && !e.shiftKey && !e.isComposing) void send(e);
+              if (enterSends(e, touch())) void send(e);
             }}
           />
           <div class="composer-actions">

@@ -524,7 +524,7 @@
         "§chat.images/composer-attachments"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
@@ -537,7 +537,9 @@
       "kind": "behavior",
       "code": [
         "src/components/Composer.tsx",
-        "src/components/ModelMenu.tsx"
+        "src/components/ModelMenu.tsx",
+        "src/lib/input-mode.ts",
+        "src/lib/input-mode.test.ts"
       ],
       "requires": [
         "§chat.images/composer-attachments"
@@ -824,13 +826,16 @@
     },
     "§chat.slash-commands/filtering-and-order": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/SlashMenu.tsx"
+      ]
     },
     "§chat.slash-commands/in-the-thread": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "src/lib/slash.ts",
         "src/components/Composer.tsx",
@@ -841,8 +846,12 @@
     },
     "§chat.slash-commands/keyboard-and-mouse": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Composer.tsx",
+        "src/lib/input-mode.ts"
+      ]
     },
     "§chat.slash-commands/markup": {
       "kind": "behavior",
@@ -1142,7 +1151,7 @@
     "§design.copy-deck/composer": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "unreviewed"
     },
     "§design.copy-deck/composer-flyout": {
       "kind": "note",
@@ -1239,7 +1248,7 @@
     },
     "§design.copy-deck/slash-commands": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§design.copy-deck/subagents-pane": {
@@ -1509,7 +1518,13 @@
         "§workspace.groups/member-states"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/GroupComposer.tsx",
+        "src/lib/group-prompt.ts",
+        "src/lib/group-prompt.test.ts",
+        "src/lib/input-mode.ts"
+      ]
     },
     "§workspace.groups/tokens": {
       "kind": "note",

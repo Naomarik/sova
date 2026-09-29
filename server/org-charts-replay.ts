@@ -220,6 +220,8 @@ const PROPOSE = {
 };
 
 /** The chart's atomic states (a configuration's leaves, for messages). */
+/** The reconciler's reasons today's filter took as the overseer's own while it ran (reasons.cljc own-kinds). */
+const OWN_KINDS = new Set(["reconcile/conflict", "reconcile/resolved", "reconcile/drafted", "reconcile/promoted"]);
 const LEAVES = new Set(["open", "gather-starting", "asking", "needs-operator", "unreconciled", "conflicted", "drafted", "spec-edited", "awaiting-build", "build-starting", "working", "idle", "failed", "merged", "done", "on-hold", "follow-up-starting", "follow-up-asking", "follow-up-needs-operator", "quiet", "waiting", "due", "held", "running", "paused", "live", "archived", "watch-off", "stalled", "dropped"]);
 /** Today's watch ticker (WATCH_TICK_MS in server/project-overseer.ts). */
 const TICK_MS = 20e3;
@@ -340,7 +342,7 @@ export const gapIdOf = (g: string) => `g_${g.replace(/^§gap\//, "").replace(/[^
 interface ChartLook {
   at: number;
   kinds: string[];
-  rows: { kind: string; at: number; item: string | null }[];
+  rows: { kind: string; at: number; item: string | null; by: string | null }[];
   matched: boolean;
   report: InvocationReport | null;
 }
@@ -422,7 +424,7 @@ class World {
     const look: InvocationRunner = {
       start: (inv, report) => {
         const p = (inv.params ?? {}) as { reasons?: unknown[] };
-        const rows = ((this.host.data(S.watch)?.runReasons as { kind?: string; at?: number; params?: { item?: string } }[] | undefined) ?? []).map((r) => ({ kind: String(r.kind), at: Number(r.at), item: r.params?.item ?? null }));
+        const rows = ((this.host.data(S.watch)?.runReasons as { kind?: string; at?: number; by?: string; params?: { item?: string } }[] | undefined) ?? []).map((r) => ({ kind: String(r.kind), at: Number(r.at), item: r.params?.item ?? null, by: r.by ?? null }));
         this.looks.push({ at: this.clock(), kinds: rows.length ? rows.map((r) => r.kind) : (p.reasons ?? []).map(String), rows, matched: false, report });
       },
       stop: () => {},
@@ -509,6 +511,9 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
 
   // Allowance ledgers: per operator message (attended) and per local day (unattended), as the trace's code kept them.
   let turn: { attended: boolean; by: string; used: Record<Kinds, number>; look: boolean } | null = null;
+  /** The real overseer's turns, [from, to) (to null while it runs): today's own-act filter dropped every reconciler reason inside one. */
+  const realTurns: { from: number; to: number | null }[] = [];
+  const realTurnAt = (t: number) => realTurns.some((x) => x.from <= t && (x.to === null || t < x.to));
   let legacyMessage: Record<Kinds, number> = { gather: 0, promote: 0, create: 0, prompt: 0 };
   const day = new Map<string, Record<Kinds, number>>();
   const dayKey = () => {
@@ -735,6 +740,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   };
   /** Decision state changes of this instant: one reconciler run reports them (the reconciler's own path). */
   const pendingResults: Record<string, unknown>[] = [];
+  const operatorPromotes: string[] = [];
   const decisionFact = async (s: Step) => {
     const id = s.id!;
     const prev = decisions.get(id);
@@ -756,7 +762,9 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
         diverge("decision-state", "drafted", leaves(conf), "mining", `decisions.json keeps only a decision's last state: ${id} is promoted with no drafted state dated before it; synced`);
         await fact("sync drafted", sid, "reconcile/result", { state: "drafted", authorOwnsArea: decisions.get(id)!.authorOwnsArea });
       }
-      if (!world.configuration(sid).includes("promoted")) await send("promote/done", sid, "promote/done", { textHash: "h", commit: "c0ffee" }, { by: "system" });
+      // The operator's promotion is their click on the reconciler (its reason is news); others' are their tools'.
+      if (!world.configuration(sid).includes("promoted") && s.by === "operator") operatorPromotes.push(id);
+      else if (!world.configuration(sid).includes("promoted")) await send("promote/done", sid, "promote/done", { textHash: "h", commit: "c0ffee" }, { by: "system" });
       const built = s.build ?? finalBuild.get(id) ?? null;
       if (built || s.edited !== undefined) await fact("spec/facts", sid, "spec/facts", { recordPresent: true, fieldsMatch: true, editedInSpec: !!s.edited, build: built });
     } else if (s.state && s.state !== "pending" && !conf.includes(s.state === "conflict" ? "conflicted" : s.state)) {
@@ -985,6 +993,8 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
     for (const k of new Set(match.kinds)) {
       if (realKinds.includes(k)) continue;
       if (k.startsWith("item/")) diverge("look-reasons", `no ${k}`, k, "chart-better", "an item's own reason (stall, reopen, answered-nothing, built) today has no reason for", { lookAt: match.at - T0, reasons: match.rows.filter((r) => r.kind === k).map((r) => ({ ...r, at: r.at - T0 })) });
+      else if (OWN_KINDS.has(k) && match.rows.filter((r) => r.kind === k).every((r) => r.by !== "overseer" && realTurnAt(r.at)))
+        diverge("look-reasons", `no ${k}`, k, "chart-better", "C2: today dropped every reconciler reason noted while the overseer ran; the chart drops only the overseer's own (this run was requested by another)", { design: "C2", reasons: match.rows.filter((r) => r.kind === k).map((r) => ({ ...r, at: r.at - T0 })) });
       else diverge("look-reasons", `no ${k}`, k, null, "the chart's look carried a reason the real look lacks");
     }
   };
@@ -1008,8 +1018,9 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
 
   // ---- the events -----------------------------------------------------------------------------------------
   const instantEnd = async () => {
-    const ran = pendingResults.length > 0;
+    const ran = pendingResults.length > 0 || operatorPromotes.length > 0;
     await flushResults();
+    if (operatorPromotes.length) await send("operator promote", S.reconciler, "decision/promote", { ids: operatorPromotes.splice(0) }, env("operator"));
     await settleWorld();
     if (ran) checkItems();
   };
@@ -1047,12 +1058,13 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       // conflict facts: their decisions' `conflict` results carry them. A decision's new state reaches the
       // charts with its reconciler run at the instant's end: the items are checked then.
       await settleWorld();
-      if (!pendingResults.length) checkItems();
+      if (!pendingResults.length && !operatorPromotes.length) checkItems();
       continue;
     }
     if (s.kind === "turn") {
       const prev = turn as { look: boolean } | null;
       turn = { attended: !!s.attended, by: s.by!, used: zero(), look: s.by === "watch" || (!!s.joins && !!prev?.look) };
+      if (!prev) realTurns.push({ from: now, to: null });
       if (s.by === "operator" && !s.joins) legacyMessage = zero();
       if (!s.levelWhy && s.level) autonomy = s.level;
       paused = s.levelWhy === "paused";
@@ -1070,6 +1082,8 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
         if (l) await endLook(l, s.stop ?? "stop");
       }
       await fact("turn/ended", S.watch, "turn/ended");
+      const open = realTurns.at(-1);
+      if (open && open.to === null) open.to = now;
       turn = null;
       continue;
     }

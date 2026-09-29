@@ -6424,7 +6424,8 @@
         "src/vis/golden.test.ts",
         "src/vis/golden.json",
         "server/vis-check.ts",
-        "server/vis-check.test.ts"
+        "server/vis-check.test.ts",
+        "src/vis/multimark.test.ts"
       ]
     },
     "§chat.mode-menu/minor-toggle-keeps-prompt": {
@@ -7840,6 +7841,46 @@
       "requires": [
         "§app.project-overseer/autonomy-levels",
         "§app.project-overseer/watch-loop"
+      ]
+    },
+    "§chat.markdown/vis-flow-groups": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals",
+        "§chat.markdown/vis-flow-sections"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/flow/parse.ts",
+        "src/vis/kinds/flow/parse.test.ts",
+        "src/vis/kinds/flow/layout.ts",
+        "src/vis/kinds/flow/layout.test.ts",
+        "src/vis/kinds/flow/sections.ts",
+        "src/vis/kinds/flow/View.tsx",
+        "src/vis/kinds/flow/flow.css",
+        "pi-config/extensions/mode/vis-mode.md",
+        "src/vis/guide.test.ts",
+        "src/vis/kinds/flow/groups.test.ts",
+        "src/vis/kinds/flow/layout-master.json"
+      ]
+    },
+    "§chat.markdown/vis-matrix-tones": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/matrix/parse.ts",
+        "src/vis/kinds/matrix/parse.test.ts",
+        "src/vis/kinds/matrix/View.tsx",
+        "src/vis/kinds/matrix/matrix.css",
+        "src/vis/kinds/matrix/height.ts",
+        "src/vis/kinds/matrix/height.test.ts",
+        "pi-config/extensions/mode/vis-mode.md",
+        "src/vis/icons.ts"
       ]
     }
   },

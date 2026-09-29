@@ -369,11 +369,11 @@
       (final {:id :dropped}))))
 
 (def acts
-  {:gather/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true
+  {:gather/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :confirm-kind "gather"
                         :card (fn [d] (b/start-card (:project-id d) d))
                         :what (fn [d] (str "A gathering on " (:idea-id d) " (\"" (:public-title (e d)) "\")"))}
    :gather/plan        {:needs "L0" :tool "sova_start_gathering"}
-   :build/start        {:needs "L3" :tool "sova_create_session" :code-facing true :counts "create" :hold true
+   :build/start        {:needs "L3" :tool "sova_create_session" :code-facing true :counts "create" :hold true :confirm-kind "build"
                         :what (fn [d] (str "A coding session for " (:idea-id d)))}
    :gap/drop           {:needs "L0" :tool "sova_idea"}
    :item/hold          {:needs nil}

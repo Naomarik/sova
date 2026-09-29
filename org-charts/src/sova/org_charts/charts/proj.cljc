@@ -163,6 +163,9 @@
     (state {:id :project :initial :regions}
       (dsl/hold-cancel-correction)
       (on-entry {}
+        ;; project-scoped data names its project as every other chart does: the watch's ledger and
+        ;; reasons (b/ledger, b/tell-watch) and the engine's drive stamp read :project-id
+        (script {:expr (fn [_ d] [(ops/assign :project-id (:id d))])})
         (dsl/spawn {:chart "reconciler" :link :project :if-exists :skip
                     :id (fn [d] (b/reconciler-sid (:org-id d) (:id d)))
                     :data (fn [d] {:org-id (:org-id d) :project-id (:id d)})})
@@ -275,12 +278,12 @@
    :overseer/clear    {:needs nil :people-facing true :card (fn [d] {:projects [(:id d)]})}
    :stakeholder/set   {:needs nil}
    :gap/file          {:needs "L0" :tool "sova_idea"}
-   :baton/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true
+   :baton/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :confirm-kind "gather"
                        :card (fn [d] (b/start-card (:id d) d))
                        :what (fn [d] (str "A gathering session \"" (:public-title (b/evt d)) "\""))}
-   :build/start       {:needs "L3" :tool "sova_create_session" :code-facing true :counts "create" :hold true
+   :build/start       {:needs "L3" :tool "sova_create_session" :code-facing true :counts "create" :hold true :confirm-kind "build"
                        :what (fn [d] (str "A coding session \"" (or (:title (b/evt d)) "untitled") "\""))}
-   :owner-update/post {:needs "L1" :tool "sova_owner_update" :people-facing true :hold true
+   :owner-update/post {:needs "L1" :tool "sova_owner_update" :people-facing true :hold true :confirm-kind "owner-update"
                        :what (fn [_] "An owner update")}
    :hold/cancel       {:needs "L0" :correction true}})
 

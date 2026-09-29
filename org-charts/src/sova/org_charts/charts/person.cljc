@@ -203,9 +203,9 @@
   "Acts and their metadata. `sova_roster` approve/decline is L2 for the overseer (never checked for
    the operator); the overseer's unattended approve reaches a person, so it is held (r4)."
   {:person/edit    {:needs nil}
-   :person/approve {:needs "L2" :tool "sova_roster" :people-facing true :hold true
+   :person/approve {:needs "L2" :tool "sova_roster" :people-facing true :hold true :confirm-kind "roster-approve"
                     :what (fn [d] (str "Approving " (name-of d)))}
-   :person/decline {:needs "L2" :tool "sova_roster" :people-facing true :hold true
+   :person/decline {:needs "L2" :tool "sova_roster" :people-facing true :hold true :confirm-kind "roster-decline"
                     :what (fn [d] (str "Declining " (name-of d)))}
    :person/leave   {:needs nil :people-facing true
                     :card (fn [d] {:people [(:id d)]})}

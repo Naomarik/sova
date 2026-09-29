@@ -42,17 +42,25 @@
     {:projects [project-id]
      :people   (vec (remove #{"operator"} (map #(if (map? %) (:id %) %) (or (seq (:targets e)) (some-> (:to e) vector)))))}))
 
-(defn org-sid [org] (str "org/" org))
-(defn residence-sid [org] (str "residence/" org))
-(defn person-sid [org pid] (str "person/" org "/" pid))
-(defn project-sid [org p] (str "project/" org "/" p))
-(defn watch-sid [org p] (str "watch/" org "/" p))
-(defn baton-sid [org sid] (str "baton/" org "/" sid))
-(defn decision-sid [org p did] (str "decision/" org "/" p "/" did))
-(defn conflict-sid [org p cid] (str "conflict/" org "/" p "/" cid))
-(defn reconciler-sid [org p] (str "reconciler/" org "/" p))
-(defn item-sid [org p gid] (str "item/" org "/" p "/" gid))
-(defn build-sid [org p sid] (str "build/" org "/" p "/" sid))
+(defn- sid-of
+  "A session id from its parts; a blank part is a chart bug (a send to `watch/o1/` would reach no
+   session), so it throws and the call rolls back instead of going nowhere."
+  [chart & parts]
+  (when (some #(str/blank? (some-> % str)) parts)
+    (throw (ex-info (str "Incomplete session id: " chart "/" (str/join "/" parts)) {:chart chart :parts parts})))
+  (str/join "/" (cons chart parts)))
+
+(defn org-sid [org] (sid-of "org" org))
+(defn residence-sid [org] (sid-of "residence" org))
+(defn person-sid [org pid] (sid-of "person" org pid))
+(defn project-sid [org p] (sid-of "project" org p))
+(defn watch-sid [org p] (sid-of "watch" org p))
+(defn baton-sid [org sid] (sid-of "baton" org sid))
+(defn decision-sid [org p did] (sid-of "decision" org p did))
+(defn conflict-sid [org p cid] (sid-of "conflict" org p cid))
+(defn reconciler-sid [org p] (sid-of "reconciler" org p))
+(defn item-sid [org p gid] (sid-of "item" org p gid))
+(defn build-sid [org p sid] (sid-of "build" org p sid))
 
 (defn chart-of-sid [sid] (first (str/split (str sid) #"/")))
 (defn last-part [sid] (last (str/split (str sid) #"/")))

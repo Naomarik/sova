@@ -8,3 +8,28 @@
 (deftest no-transition-re-enters-a-whole-parallel
   (is (empty? (core/reentry-hazards registry/charts))
     "an external transition to its own source's descendant under a parallel re-enters every region (use :type :internal)"))
+
+;; ---- r8(4) / F12: every held or person-reaching act has a confirm kind from the list ----------------
+
+(def confirm-kinds
+  "shared/project-overseer.ts CONFIRM_KINDS."
+  #{"message" "gather" "offer" "close" "promote" "build" "prompt" "owner-update" "roster-approve" "roster-decline"})
+
+(defn- acts [] (for [[chart {:keys [acts]}] registry/charts [ev m] acts] [chart ev m]))
+
+(deftest every-held-act-has-a-confirm-kind-from-the-list
+  (doseq [[chart ev m] (acts) :when (:hold m)]
+    (is (contains? confirm-kinds (:confirm-kind m)) (str chart " " ev ": " (pr-str (:confirm-kind m))))))
+
+(deftest every-confirm-kind-is-declared
+  (let [declared (set (keep (fn [[_ _ m]] (:confirm-kind m)) (acts)))]
+    (is (= confirm-kinds declared))
+    (is (every? confirm-kinds declared))))
+
+(deftest the-kind-of-each-act
+  (is (= {["baton" :baton/message] "message" ["baton" :baton/offer] "offer" ["baton" :baton/close] "close"
+          ["project" :baton/start] "gather" ["item" :gather/start] "gather"
+          ["project" :build/start] "build" ["item" :build/start] "build" ["build" :build/prompt] "prompt"
+          ["reconciler" :decision/promote] "promote" ["project" :owner-update/post] "owner-update"
+          ["person" :person/approve] "roster-approve" ["person" :person/decline] "roster-decline"}
+         (into {} (for [[chart ev m] (acts) :when (:confirm-kind m)] [[chart ev] (:confirm-kind m)])))))

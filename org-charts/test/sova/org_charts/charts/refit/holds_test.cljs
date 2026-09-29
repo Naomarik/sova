@@ -50,3 +50,18 @@
   (one-slot-left "at once: 4 of 5 open"
     (unattended {:used 0 :max 6} {:gatherings-open 4})
     "5 of its gathering sessions are open, and the limit is 5 at once."))
+
+(deftest F12-a-gathering-waits-past-its-hold-only-when-its-kind-is-on-the-confirm-list
+  (let [env (unattended {:used 0 :max 6} {})
+        run (fn [kinds]
+              (let [eng (item-engine)]
+                (core/send! eng sid :gather/start (merge (gather "p1" 1) env {:confirm-kinds kinds}) {:now t0})
+                {:held (first (core/holds eng)) :end (core/fire-due! eng (+ t0 600000)) :eng eng}))]
+    (let [{:keys [held end eng]} (run ["gather"])]
+      (is (true? (:confirm held)) "gather/start is of kind gather")
+      (is (= [:hold/waiting] (map :event (:steps end))) "at its end it waits for the overseer")
+      (is (= [true] (map :waiting (core/holds eng)))))
+    (let [{:keys [held end eng]} (run (remove #{"gather"} ["message" "gather" "offer" "close" "promote" "build" "prompt" "owner-update" "roster-approve" "roster-decline"]))]
+      (is (not (:confirm held)))
+      (is (not= [:hold/waiting] (map :event (:steps end))) "off the list: it goes ahead at its end")
+      (is (empty? (core/holds eng))))))

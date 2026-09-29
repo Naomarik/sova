@@ -208,7 +208,7 @@
                          :key (str "build/merge-refused:" (:session-id d) "@" (b/now-ms d))})))))))))
 
 (def acts
-  {:build/prompt          {:needs "L3" :tool "sova_send" :code-facing true :counts "prompt" :hold true
+  {:build/prompt          {:needs "L3" :tool "sova_send" :code-facing true :counts "prompt" :hold true :confirm-kind "prompt"
                            :what (fn [d] (str "A prompt to \"" (:title d) "\""))}
    :build/merge           {:needs nil}
    :build/remove-worktree {:needs nil}

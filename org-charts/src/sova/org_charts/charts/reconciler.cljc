@@ -241,7 +241,7 @@
 
 (def acts
   {:reconcile/request    {:needs "L1" :tool "sova_reconcile"}
-   :decision/promote     {:needs "L2" :tool "sova_promote" :code-facing true :counts "promote" :hold true
+   :decision/promote     {:needs "L2" :tool "sova_promote" :code-facing true :counts "promote" :hold true :confirm-kind "promote"
                           :what (fn [d] (let [n (count (promote-ids d))] (str "Promoting " n " decision" (when (not= 1 n) "s"))))}
    :draft/rewrite        {:needs nil}
    :correct/clear-failed {:needs "L1" :correction true :tool "sova_correct"}

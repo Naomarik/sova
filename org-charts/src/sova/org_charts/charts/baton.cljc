@@ -554,12 +554,12 @@
    :baton/goal-done       {:needs nil}
    :baton/record-decision {:needs nil}
    :baton/propose         {:needs nil}
-   :baton/message         {:needs nil}
+   :baton/message         {:needs nil :confirm-kind "message"}
    :baton/take-back       {:needs nil :people-facing true :card (fn [d] {:sessions [(:session-id d)]})}
    :baton/handoff         {:needs nil :people-facing true :card (fn [d] {:sessions [(:session-id d)] :people [(get-in (e d) [:target :id])]})}
-   :baton/offer           {:needs nil :people-facing true :card (fn [d] {:sessions [(:session-id d)] :people (mapv :id (:targets (e d)))})}
+   :baton/offer           {:needs nil :people-facing true :confirm-kind "offer" :card (fn [d] {:sessions [(:session-id d)] :people (mapv :id (:targets (e d)))})}
    :baton/withdraw        {:needs nil}
-   :baton/close           {:needs "L1" :tool "sova_close_gathering" :people-facing true :hold true
+   :baton/close           {:needs "L1" :tool "sova_close_gathering" :people-facing true :hold true :confirm-kind "close"
                            :what (fn [d] (str "Closing \"" (:public-title d) "\""))
                            :card (fn [d] {:sessions [(:session-id d)]})}
    :baton/extend          {:needs nil}

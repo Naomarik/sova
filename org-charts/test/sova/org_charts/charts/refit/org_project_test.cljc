@@ -3,6 +3,7 @@
    commit loop, archive, stakeholder, overseer conversations, owner updates and item-less starts."
   (:require
     #?(:clj [clojure.test :refer [deftest is testing]] :cljs [cljs.test :refer-macros [deftest is testing]])
+    [sova.org-charts.charts.base :as b]
     [sova.org-charts.charts.refit.host :as h]
     [sova.org-charts.charts.residence :as res]))
 
@@ -160,3 +161,16 @@
     (is (h/in? y sid :committing))
     (is (= (n here "read-holder") (n y "read-holder")) "the tenure region is not re-entered: no second read-holder")
     (is (= (n here "pause-overseers") (n y "pause-overseers")))))
+
+(deftest starts-from-a-real-project-session-take-the-projects-own-ledger
+  ;; server-2's replay: project data named its project only :id, so b/ledger sent to "watch/o1/"
+  (let [ledger (fn [y] (filter #(= :ledger/take (:event %)) (h/elsewhere y)))]
+    (is (= "pr1" (:project-id (h/data (project) psid))))
+    (let [y (h/send! (project) psid :baton/start (assoc op :session-id "s1" :to "p1" :public-title "T" :goal "G" :question "Q"))]
+      (is (= [["watch/o1/pr1" "gather"]] (map (juxt :target (comp :kind :data)) (ledger y)))))
+    (let [y (h/send! (project) psid :build/start (assoc op :session-id "c1"))]
+      (is (= [["watch/o1/pr1" "create"]] (map (juxt :target (comp :kind :data)) (ledger y)))))))
+
+(deftest a-session-id-with-a-blank-part-throws
+  (is (thrown? #?(:clj Exception :cljs js/Error) (b/watch-sid "o1" nil)))
+  (is (= "watch/o1/pr1" (b/watch-sid "o1" "pr1"))))

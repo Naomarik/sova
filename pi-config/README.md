@@ -183,6 +183,7 @@ cd extensions/sessions && node --test test.mjs
 cd extensions/spec && node --test tests/*.test.mjs
 cd extensions/codefold && node tests/run.mjs
 cd extensions/stamp && node --test format.test.ts index.test.ts
+cd extensions/usage-status && node --test fetch.test.ts
 cd extensions/remote && node --test argv.test.ts
 cd extensions/link && node --test client.test.ts && node tests/run.mjs
 cd extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.unit.test.ts && node tests/run.mjs

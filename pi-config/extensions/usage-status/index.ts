@@ -15,7 +15,8 @@ import { matchesKey, type TUI, truncateToWidth, visibleWidth } from "@earendil-w
 import * as fsSync from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { type CacheFile, describeErrors, errMessage, refreshCache, type Window } from "./fetch";
+import { ClaudeLogins, DEFAULT_LOGIN_ID, planLabel, recordedLogin } from "../claude-code/accounts.ts";
+import { type CacheFile, type ClaudeData, describeErrors, errMessage, refreshCache, type Window } from "./fetch";
 
 const HOME = os.homedir();
 
@@ -41,8 +42,11 @@ function severity(usedPct: number): Color {
 	return "success";
 }
 
-/** Detail levels: 1 = full labels, 0 = compact. */
-function buildUsage(theme: Theme, cache: CacheFile | undefined, level: number): string {
+/**
+ * Detail levels: 1 = full labels, 0 = compact. `login` is the session's Claude login (its newest
+ * `claude-login` entry): an added login shows its own reading, anything else Claude Code's own.
+ */
+function buildUsage(theme: Theme, cache: CacheFile | undefined, level: number, login?: string): string {
 	const dim = (s: string) => theme.fg("dim", s);
 	const pct = (p: number) => theme.fg(severity(p), `${Math.round(p)}%`);
 	const staleMark = (err: string | undefined) => (err ? dim(level >= 1 ? " …stale" : "…") : "");
@@ -73,8 +77,11 @@ function buildUsage(theme: Theme, cache: CacheFile | undefined, level: number): 
 
 	// Claude
 	let claude: string;
-	const c = cache.claude;
-	if (!c) claude = theme.fg("error", `claude: ${cache.errors.claude ?? "error"}`);
+	const account = login && login !== DEFAULT_LOGIN_ID ? cache.claudeAccounts?.[login] : undefined;
+	const c = account ? account.data : cache.claude;
+	const claudeError = account ? account.error : cache.errors.claude;
+	if (account?.skipped === "auth") claude = theme.fg("warning", "claude: needs sign-in");
+	else if (!c) claude = account && !claudeError ? dim("claude: not read yet") : theme.fg("error", `claude: ${claudeError ?? "error"}`);
 	else if (c.state === "nologin") claude = dim("claude: not logged in");
 	else if (c.state === "expired")
 		claude = theme.fg("warning", level >= 1 ? "claude: auth expired (run claude /login)" : "claude: auth expired");
@@ -85,7 +92,7 @@ function buildUsage(theme: Theme, cache: CacheFile | undefined, level: number): 
 		if (c.sevenDayOpus && level >= 1) parts.push(`${dim("opus")} ${pct(c.sevenDayOpus.pct)}`);
 		claude = `${theme.fg("muted", level >= 1 ? "claude" : "cl")} ${parts.length ? parts.join(" ") : dim("n/a")}`;
 	}
-	claude += c ? staleMark(cache.errors.claude) : "";
+	claude += c ? staleMark(claudeError) : "";
 
 	// Z.ai
 	let zai: string;
@@ -210,30 +217,44 @@ function renderUsageScreen(
 		else if (x?.state === "na") xRows.push(note("n/a"));
 		block("OpenAI Codex", x?.state === "ok" ? x.plan : undefined, Boolean(x), errors.openai, xRows);
 
-		const c = cache.claude;
-		const cRows: string[] = [];
-		if (c?.state === "ok") {
-			const shown = new Set<string>();
-			const add = (name: string, w: Window | undefined) => {
-				if (!w) return;
-				cRows.push(windowRow(name, w));
-				shown.add(name);
-			};
-			add("5h", c.fiveHour);
-			add("7d", c.sevenDay);
-			add("7d opus", c.sevenDayOpus);
-			for (const l of c.limits ?? []) {
-				const name = l.scope ? `${l.label} (${l.scope})` : l.label;
-				if (shown.has(name)) continue;
-				cRows.push(windowRow(name, l) + (l.active === false ? dim("  inactive") : ""));
-				shown.add(name);
-			}
-			if (c.extraUsage?.enabled)
-				cRows.push(`${label("extra usage")}${c.extraUsage.pct !== undefined ? pct(c.extraUsage.pct) : dim("  on")}`);
-			if (!cRows.length) cRows.push(note("n/a"));
-		} else if (c?.state === "nologin") cRows.push(note("not logged in"));
-		else if (c?.state === "expired") cRows.push(note("auth expired (run claude /login)", "warning"));
-		block("Claude", undefined, Boolean(c), errors.claude, cRows);
+		const claudeRows = (c: ClaudeData | undefined): string[] => {
+			const cRows: string[] = [];
+			if (c?.state === "ok") {
+				const shown = new Set<string>();
+				const add = (name: string, w: Window | undefined) => {
+					if (!w) return;
+					cRows.push(windowRow(name, w));
+					shown.add(name);
+				};
+				add("5h", c.fiveHour);
+				add("7d", c.sevenDay);
+				add("7d opus", c.sevenDayOpus);
+				for (const l of c.limits ?? []) {
+					const name = l.scope ? `${l.label} (${l.scope})` : l.label;
+					if (shown.has(name)) continue;
+					cRows.push(windowRow(name, l) + (l.active === false ? dim("  inactive") : ""));
+					shown.add(name);
+				}
+				if (c.extraUsage?.enabled)
+					cRows.push(`${label("extra usage")}${c.extraUsage.pct !== undefined ? pct(c.extraUsage.pct) : dim("  on")}`);
+				if (!cRows.length) cRows.push(note("n/a"));
+			} else if (c?.state === "nologin") cRows.push(note("not logged in"));
+			else if (c?.state === "expired") cRows.push(note("auth expired (run claude /login)", "warning"));
+			return cRows;
+		};
+		// Claude Code's own login, then each added login of this host, named by its email.
+		const logins = new ClaudeLogins();
+		const title = (id: string) => {
+			const identity = logins.identityOf(id);
+			return { name: identity?.email ? `Claude · ${identity.email}` : "Claude", plan: planLabel(identity) };
+		};
+		const own = cache.claudeAccounts ? title(DEFAULT_LOGIN_ID) : { name: "Claude", plan: undefined };
+		block(own.name, own.plan, Boolean(cache.claude), errors.claude, claudeRows(cache.claude));
+		for (const [id, a] of Object.entries(cache.claudeAccounts ?? {})) {
+			const t = title(id);
+			const rows = a.skipped === "auth" ? [note("needs sign-in: not fetched", "warning"), ...(a.data ? claudeRows(a.data) : [])] : claudeRows(a.data);
+			block(t.name, t.plan, Boolean(a.data) || a.skipped === "auth", a.error, rows);
+		}
 
 		const z = cache.zai;
 		const zRows: string[] = [];
@@ -393,7 +414,7 @@ function renderFooter(
 	ctx: ExtensionContext,
 	theme: Theme,
 	footerData: FooterData | undefined,
-	info: { branch: () => string | null; autoCompact: () => boolean },
+	info: { branch: () => string | null; autoCompact: () => boolean; claudeLogin: () => string | undefined },
 	cache: CacheFile | undefined,
 	width: number,
 ): string[] {
@@ -487,7 +508,7 @@ function renderFooter(
 	];
 	let statsLine: string | undefined;
 	for (const [level, r] of candidates) {
-		const usage = buildUsage(theme, cache, level);
+		const usage = buildUsage(theme, cache, level, info.claudeLogin());
 		if (fits(usage, r)) {
 			statsLine = layout(usage, r);
 			break;
@@ -496,7 +517,7 @@ function renderFooter(
 	if (statsLine === undefined) {
 		// Squeeze the compact usage into whatever room is left before the model.
 		const room = width - statsW - GAP - GAP - visibleWidth(rightNoProvider);
-		if (room >= 8) statsLine = layout(truncateToWidth(buildUsage(theme, cache, 0), room, dim("…")), rightNoProvider);
+		if (room >= 8) statsLine = layout(truncateToWidth(buildUsage(theme, cache, 0, info.claudeLogin()), room, dim("…")), rightNoProvider);
 	}
 	if (statsLine === undefined) {
 		// Built-in behavior: truncate stats first, then the right side.
@@ -533,6 +554,7 @@ function createFooter(ctx: ExtensionContext, getCache: () => CacheFile | undefin
 		const info = {
 			branch: ttl(() => readGitBranch(ctx.cwd)),
 			autoCompact: ttl(() => readAutoCompact(ctx.cwd, ctx.isProjectTrusted())),
+			claudeLogin: ttl(() => recordedLogin(ctx.sessionManager.getBranch())),
 		};
 		const unsubscribe = footerData?.onBranchChange(() => tui.requestRender());
 		let lastLines: string[] = [];

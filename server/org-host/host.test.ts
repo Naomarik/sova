@@ -334,5 +334,20 @@ describe("org host", () => {
     assert.deepEqual(host.feed("prj1", { limit: 1, newestFirst: true }).map((e) => e.event), ["gather/start"]);
     await host.close();
   });
+
+  test("a settled session goes cold after a day and an event loads it again", async () => {
+    const at = place();
+    let now = 1_000_000;
+    const host = await open(at, { clock: () => now });
+    await host.start("l/1", "host-local-probe", {}, operator);
+    await host.act("l/1", "gather/start", {}, operator);
+    assert.deepEqual(host.sweepCold(now + 1000), [], "not a day yet");
+    now += 86_400_000;
+    assert.deepEqual(host.sweepCold(), ["l/1"]);
+    assert.equal(host.configuration("l/1"), null, "unloaded");
+    assert.equal((await host.act("l/1", "gather/close", {}, operator)).taken, true, "loaded on demand");
+    assert.deepEqual(host.configuration("l/1"), ["top", "idle"]);
+    await host.close();
+  });
 });
 

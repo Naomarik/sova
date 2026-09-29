@@ -179,6 +179,7 @@ export class OrgHost {
   private readonly running = new Map<string, Promise<EffectOutcome>>();
   private readonly listeners: ((change: HostChange) => void)[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private sweeper: ReturnType<typeof setInterval> | null = null;
   private lastRowAt = 0;
   private closed = false;
 
@@ -250,8 +251,11 @@ export class OrgHost {
     this.journalProblem = problem;
     this.lastRowAt = lastAt([this.paths.portableLog, this.paths.localLog]);
     const sids: string[] = [];
+    let loaded = 0;
     for (const root of [this.paths.portable, this.paths.local]) {
       for (const { sid, chart, file } of scanSnapshots(root)) {
+        // loading is chunked like resume: no single blocking slice (C09)
+        if (++loaded % chunk === 0) await new Promise<void>((r) => setImmediate(r));
         this.index.set(sid, { file, chart });
         try {
           this.engine.load(sid, readFileSync(file, "utf8"));
@@ -281,6 +285,8 @@ export class OrgHost {
       for (const inv of started) this.runInvocation(inv);
     });
     this.arm();
+    this.sweeper = setInterval(() => this.sweepCold(), 3600_000);
+    this.sweeper.unref?.();
   }
 
   private ready(): Promise<void> {
@@ -620,8 +626,19 @@ export class OrgHost {
     return this.problems();
   }
 
+  /** Retention (design §5.3): unload settled sessions idle a day with nothing pending; their snapshots
+      are on disk, and an event or link notification to one loads it again first. */
+  sweepCold(now = this.clock(), minAge?: number): string[] {
+    if (this.closed || this.resuming) return [];
+    const cold = this.engine.coldSessions(now, minAge ?? null);
+    for (const sid of cold) this.engine.unload(sid);
+    return cold;
+  }
+
   async close(): Promise<void> {
     this.closed = true;
+    if (this.sweeper) clearInterval(this.sweeper);
+    this.sweeper = null;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
   }

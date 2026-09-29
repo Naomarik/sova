@@ -267,6 +267,8 @@ export interface OrgCharts {
   data(sessionId: string): JsonObject | null;
   chartOf(sessionId: string): ChartName | null;
   enabledEvents(sessionId: string, envelope?: JsonObject, opts?: CallOptions): EnabledEvent[];
+  /** Sessions that may be unloaded at `now` (settled per their chart's `cold?`, idle `minAge` ms, nothing pending). */
+  coldSessions(now: number, minAge?: number | null): string[];
   /** Every held act of every loaded session (or of one). */
   holds(sessionId?: string | null): Hold[];
   /** Earliest delayed send due across loaded sessions. */

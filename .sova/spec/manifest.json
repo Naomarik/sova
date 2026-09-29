@@ -3886,7 +3886,8 @@
         "src/share/thread.tsx",
         "src/share/thread.css",
         "src/vis/share-markdown.test.ts",
-        "src/vis/share-views.ts"
+        "src/vis/share-views.ts",
+        "src/share/vis-icons.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -6783,6 +6784,27 @@
       "kind": "note",
       "authority": "accepted",
       "evidence": "verified"
+    },
+    "§chat.markdown/vis-wireframe": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/wireframe/parse.ts",
+        "src/vis/kinds/wireframe/parse.test.ts",
+        "src/vis/kinds/wireframe/layout.ts",
+        "src/vis/kinds/wireframe/layout.test.ts",
+        "src/vis/kinds/wireframe/icons.ts",
+        "src/vis/kinds/wireframe/View.tsx",
+        "src/vis/kinds/wireframe/wireframe.css",
+        "src/vis/registry.ts",
+        "src/vis/views.ts",
+        "src/vis/share-views.ts",
+        "pi-config/extensions/mode/vis-mode.md"
+      ]
     }
   },
   "boundary": {

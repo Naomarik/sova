@@ -389,8 +389,9 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "server/claude-transcript.ts",
-        "server/claude-transcript.test.ts"
+        "pi-config/extensions/claude-code/runner.ts",
+        "server/claude-transcript.test.ts",
+        "server/claude-transcript.ts"
       ]
     },
     "§app.subagents-pane/head": {
@@ -2272,7 +2273,8 @@
         "src/components/MeshView.tsx",
         "server/sync/logins-merge.test.ts",
         "server/sync/logins-stores.test.ts",
-        "server/sync/logins.test.ts"
+        "server/sync/logins.test.ts",
+        "server/sync/index.test.ts"
       ]
     },
     "§mesh.ui/card": {
@@ -2294,6 +2296,7 @@
       "evidence": "verified",
       "code": [
         "src/components/MeshView.tsx",
+        "src/lib/claude-pool.ts",
         "src/lib/mesh.ts",
         "src/mesh.css"
       ]
@@ -7009,7 +7012,11 @@
         "server/claude-accounts.ts",
         "server/index.ts",
         "shared/protocol.ts",
-        "src/lib/settings-nav.test.ts"
+        "src/lib/settings-nav.test.ts",
+        "src/lib/claude-pool.ts",
+        "src/components/MeshView.tsx",
+        "server/claude-pool/index.ts",
+        "src/lib/claude-pool.test.ts"
       ],
       "requires": [
         "§app.claude-logins/add-remove",
@@ -7053,7 +7060,8 @@
         "src/components/AccountsSettings.tsx",
         "src/lib/api.ts",
         "server/claude-accounts.test.ts",
-        "scripts/fake-claude.mjs"
+        "scripts/fake-claude.mjs",
+        "server/claude-pool/agent.ts"
       ]
     },
     "§app.claude-logins/device-order": {
@@ -7069,7 +7077,8 @@
         "src/components/AccountsSettings.tsx",
         "src/lib/api.ts",
         "server/claude-accounts.test.ts",
-        "pi-config/extensions/claude-code/accounts.test.ts"
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "server/insights-claude-logins.test.ts"
       ]
     },
     "§app.claude-logins/failover": {
@@ -7089,7 +7098,8 @@
         "pi-config/extensions/claude-code/provider/login-failover.test.ts",
         "pi-config/extensions/claude-code/runner-failover.test.ts",
         "server/claude-accounts.test.ts",
-        "pi-config/extensions/claude-code/tests/fixtures/failures/limit-rejected.ndjson"
+        "pi-config/extensions/claude-code/tests/fixtures/failures/limit-rejected.ndjson",
+        "server/claude-pool/agent.ts"
       ]
     },
     "§app.claude-logins/registry": {
@@ -7101,7 +7111,8 @@
         "pi-config/extensions/claude-code/accounts.ts",
         "server/claude-accounts.ts",
         "pi-config/extensions/claude-code/accounts.test.ts",
-        "src/components/AccountsSettings.tsx"
+        "src/components/AccountsSettings.tsx",
+        "server/claude-pool/agent.ts"
       ]
     },
     "§app.claude-logins/spawn-selection": {
@@ -7178,6 +7189,120 @@
         "src/vis/views.ts",
         "src/vis/share-views.ts",
         "pi-config/extensions/mode/vis-mode.md"
+      ]
+    },
+    "§app.claude-logins/borrow-return": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/pool",
+        "§app.claude-logins/keeper",
+        "§app.claude-logins/drain"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-pool/agent.ts",
+        "server/claude-pool/creds.ts",
+        "server/claude-pool/journal.ts",
+        "server/claude-pool/index.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "server/claude-pool/agent.test.ts",
+        "scripts/claude-pool-e2e/run.mjs",
+        "scripts/fake-claude.mjs"
+      ]
+    },
+    "§app.claude-logins/drain": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/spawn-selection"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/models.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
+        "server/claude-pool/agent.test.ts",
+        "server/claude-pool/agent.ts"
+      ]
+    },
+    "§app.claude-logins/idle-pin": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/borrow-return"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-pool/agent.ts",
+        "server/claude-pool/index.ts",
+        "src/components/AccountsSettings.tsx",
+        "server/claude-pool/agent.test.ts"
+      ]
+    },
+    "§app.claude-logins/keeper": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/pool"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-pool/agent.ts",
+        "server/claude-pool/index.ts",
+        "src/components/AccountsSettings.tsx",
+        "server/claude-pool/agent.test.ts"
+      ]
+    },
+    "§app.claude-logins/migration": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/pool",
+        "§app.claude-logins/registry"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-pool/agent.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "server/claude-pool/agent.test.ts"
+      ]
+    },
+    "§app.claude-logins/pool": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/registry",
+        "§mesh.peers/off"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-pool/doc.ts",
+        "server/claude-pool/agent.ts",
+        "server/claude-pool/index.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "server/claude-pool/agent.test.ts",
+        "scripts/claude-pool-e2e/run.mjs"
+      ]
+    },
+    "§app.claude-logins/stuck": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/borrow-return"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-pool/agent.ts",
+        "server/claude-accounts.ts",
+        "src/lib/claude-pool.ts",
+        "src/components/AccountsSettings.tsx",
+        "server/claude-pool/agent.test.ts",
+        "src/lib/claude-pool.test.ts"
       ]
     }
   },

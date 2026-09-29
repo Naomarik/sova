@@ -16,7 +16,10 @@ where the extension grid has two).
 (editing `peers.json`), discovery hints, sync status per category, and setup instructions for a
 host with no peers. Every browser address on the page (the front door's own and each host's in the
 front door) is a link that opens it in a new tab, with a copy button beside it that confirms
-"Address copied".
+"Address copied". While the mesh is on, each host's line (this host's and every peer's) also names
+the Claude login it holds from the pool (§app.claude-logins/pool): "Claude: {email}" ("+N" when it
+holds more than one), or "No Claude login"; it opens Settings → Accounts, and its tooltip lists
+what the host holds or says that it borrows a login when it needs Claude.
 
 ## §mesh.ui/settings — Settings → Mesh
 

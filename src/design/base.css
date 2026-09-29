@@ -5748,6 +5748,18 @@ a.subagent-row { text-decoration: none; }
 .accounts-login-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .accounts-login-toggle { gap: var(--space-2); }
 .accounts-login-confirm { flex-basis: 100%; display: flex; flex-direction: column; gap: var(--space-2); }
+/* One block per account (§app.claude-logins/device-order): the account's head (email, plan, how
+   many logins share its quota, Up / Down for the account), then its logins as compact sub-rows
+   divided by hairlines instead of boxes of their own. */
+.accounts-accounts { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.accounts-account { border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); padding: var(--space-2) var(--space-3); }
+.accounts-account-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding-bottom: var(--space-2); }
+.accounts-account-name { color: var(--color-ink); font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
+.accounts-account-logins { list-style: none; margin: 0; padding: 0; }
+.accounts-account-logins .accounts-login { border: 0; border-top: 1px solid var(--color-border); border-radius: 0; background: none; padding: var(--space-2) 0; }
+.accounts-login-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); }
+.accounts-rename { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.accounts-rename .input { flex: 1 1 12rem; min-width: 0; }
 /* The pool (mesh on): the keeper choice, each row's holder + standing chips, its pin, and this
    device's own login under its own heading. */
 .accounts-keeper { display: flex; flex-direction: column; gap: var(--space-1); margin: 0 0 var(--space-3); }

@@ -2713,29 +2713,43 @@ a.group-option { color: inherit; text-decoration: none; }
 .run-status-workers .icon { color: var(--color-ink-muted); }
 .run-status .run-status-narrow { display: none; }
 
-/* The narrow form, below 569px of composer: the narrowest content width where the whole wide row
+/* The narrow form, below 620px of composer: the narrowest content width where the whole wide row
    fits untruncated, measured with "● Working · running agent_spawn", "● 1 subagent ›",
-   "1 align · 8/8" and "3 inputs ›" at the Medium text size. It contracts, so the container query
+   "1 align · 0/8 decided" and "3 inputs ›" at the Medium text size. It contracts, so the container query
    gets a @media floor (the skill's union). */
-@container composer (max-width: 568.98px) {
+@container composer (max-width: 619.98px) {
   .run-status { --run-status-pad: calc(var(--space-3) / 2); --run-status-part-gap: var(--space-1); }
   .run-status .run-status-wide { display: none; }
   .run-status .run-status-narrow { display: inline-block; }
   .run-status-state,
   .run-status-workers { gap: var(--space-1); }
   .run-status-state:not(:has(> .run-status-words)) { flex: none; }
+  /* The one trigger that may give way here: "1 align · 0/8 decided" is the widest, so at a 344px
+     screen its count ends in an ellipsis rather than pushing the row past the edge (its full text
+     stays its accessible name). */
+  .run-status > .run-status-link.run-status-align { flex: 0 1 auto; min-width: 0; }
+  /* Stopping and the rare states give way first, down to about 4em of their words. */
+  .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: calc(6px + var(--space-1) + 4em); }
+  .run-status > .run-status-align .text-num { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .run-status-say {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
   }
 }
-@media (max-width: 568.98px) {
+@media (max-width: 619.98px) {
   .run-status { --run-status-pad: calc(var(--space-3) / 2); --run-status-part-gap: var(--space-1); }
   .run-status .run-status-wide { display: none; }
   .run-status .run-status-narrow { display: inline-block; }
   .run-status-state,
   .run-status-workers { gap: var(--space-1); }
   .run-status-state:not(:has(> .run-status-words)) { flex: none; }
+  /* The one trigger that may give way here: "1 align · 0/8 decided" is the widest, so at a 344px
+     screen its count ends in an ellipsis rather than pushing the row past the edge (its full text
+     stays its accessible name). */
+  .run-status > .run-status-link.run-status-align { flex: 0 1 auto; min-width: 0; }
+  /* Stopping and the rare states give way first, down to about 4em of their words. */
+  .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: calc(6px + var(--space-1) + 4em); }
+  .run-status > .run-status-align .text-num { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .run-status-say {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;

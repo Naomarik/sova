@@ -205,6 +205,30 @@ describe("SessionSummary.align: only while the session waits on the user, with a
     assert.equal((await summaryOf(path))?.openQuestions, 1, "an answer recorded after it: waiting on q2 again");
   });
 
+  test("an open alignment far above the transcript's newest rows (over 256 KB and 60 rows of later work) still waits on the user", async () => {
+    const a = result(created, "u1");
+    const later: unknown[] = [];
+    let parent = a.id;
+    for (let i = 0; i < 80; i++) {
+      const id = `w${i}`;
+      later.push({ type: "message", id, parentId: parent, message: { role: "assistant", content: [{ type: "text", text: `working ${i} ${"z".repeat(4000)}` }], stopReason: "stop" } });
+      parent = id;
+    }
+    const path = session("far-above", [a, ...later]);
+    assert.ok(readFileSync(path).length - readFileSync(path, "utf8").indexOf(`"id":"${a.id}"`) > 256 * 1024, "over 256 KB after it");
+    assert.deepEqual(await summaryOf(path), { openDocs: 1, openQuestions: 2, questionDocs: 1, lead: { id: "al_1", title: "Export" } });
+    // Its done, far below it, ends the wait.
+    const done = calls([
+      { ops: [{ op: "create", title: "Export", summary: "Download a session.", questions: [Q("Format"), Q("Zip")] }] },
+      { ops: [{ op: "accept_all" }, { op: "status", to: "done" }] },
+    ])[1]!;
+    const closed = session("far-above-done", [a, ...later, result(done, parent)]);
+    assert.equal(await summaryOf(closed), undefined, "done");
+    // So does the user speaking again after it, however far below.
+    const spoke = session("far-above-spoke", [a, ...later, user("u2", parent, "let's do something else")]);
+    assert.equal(await summaryOf(spoke), undefined, "moved on");
+  });
+
   test("a wake nudge or a partner's link message is not the user speaking", async () => {
     const a = result(created, "u1");
     const path = session("wake", [a, user("w1", a.id, "[wake_nudge n1] Scheduled wakeup fired (set 3m ago).\nReason: check")]);

@@ -9,7 +9,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import WebSocket from "ws";
-import type { TranscriptItem } from "../shared/protocol";
+import type { AlignDocInfo, TranscriptItem } from "../shared/protocol";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-tail-hello-")));
 process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -19,7 +19,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
-const { cutTail, historyRanges, tailStart, TAIL_CHARS, HISTORY_CHUNK_CHARS } = await import("./tail-hello");
+const { cutTail, historyRanges, pullFields, tailStart, TAIL_CHARS, HISTORY_CHUNK_CHARS } = await import("./tail-hello");
 const { activeBranch, normalizeEntries, parseLines } = await import("./transcript");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
@@ -98,6 +98,39 @@ describe("historyRanges", () => {
     const ranges = historyRanges(sizes, 8, 12);
     assert.deepEqual(ranges, [[6, 8], [4, 6], [3, 4], [2, 3], [0, 2]]);
     assert.deepEqual(historyRanges(sizes, 0, 12), []);
+  });
+});
+
+describe("pullFields: the alignments open above the cut", () => {
+  const doc = (id: string, rev: number, phase: AlignDocInfo["phase"] = "open"): AlignDocInfo => ({
+    id, title: id, summary: "", findings: [], approach: [], rejected: [], questions: [], phase,
+    next: { f: 1, a: 1, x: 1, q: 1 }, rev, createdAt: "", updatedAt: "",
+  });
+  const align = (id: string, d: AlignDocInfo) => row(id, "align", "", { align: { v: 1, doc: d, changes: [], line: "" } });
+
+  test("each alignment's newest revision above the cut, last touched last; done and dropped ones absent; none below it", () => {
+    const items = [
+      row("u1"),
+      align("a1", doc("al_1", 1)),
+      align("a2", doc("al_2", 1)),
+      align("a3", doc("al_3", 1)),
+      align("a4", doc("al_1", 2)),
+      align("a5", doc("al_3", 2, "dropped")),
+      align("a6", doc("al_4", 1)),
+      align("a7", doc("al_4", 2, "done")),
+      row("u2"),
+      align("a8", doc("al_5", 1)), // below the cut: the list's own
+      row("u3"),
+    ];
+    const { olderSummary } = pullFields(items, 9, false);
+    assert.deepEqual(olderSummary.aligns?.map((a) => [a.doc.id, a.doc.rev, a.rowId]), [["al_2", 1, "a2"], ["al_1", 2, "a4"]]);
+    assert.deepEqual(olderSummary.inputs, ["u1", "u2"]);
+  });
+
+  test("no open alignment above the cut: no key at all, the summary as before", () => {
+    assert.deepEqual(pullFields([row("u1"), row("a1:0", "assistant-text"), row("u2")], 2, false).olderSummary, { inputs: ["u1"], messages: 2, replies: true });
+    const closed = pullFields([align("a1", doc("al_1", 1)), align("a2", doc("al_1", 2, "done")), row("u2")], 2, false).olderSummary;
+    assert.equal("aligns" in closed, false);
   });
 });
 

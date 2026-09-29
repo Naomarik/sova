@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { TranscriptItem, TranscriptRows } from "../../shared/protocol";
+import type { AlignDocInfo, TranscriptItem, TranscriptRows } from "../../shared/protocol";
 import { summarize } from "../../shared/row-counts";
 import { anyReply, helloRows, inputTotal, lastInput, messageTotal, newRows, type Older, OlderLoader, prependRows, WHOLE } from "./older-rows";
 import type { RowsAsk } from "./api";
@@ -42,6 +42,28 @@ test("helloRows: kept rows whose inputs don't match the summary, or more of them
   assert.equal(h.older.left, 60);
   const tooMany = helloRows(whole.slice(30), whole.slice(60), 10, summarize(whole.slice(50, 60)));
   assert.deepEqual(ids(tooMany.items), ids(whole.slice(60)));
+});
+
+test("the alignments open above the list: a hello keeps them, kept rows take theirs, a fetch's summary replaces them", () => {
+  const doc = (id: string, rev: number): AlignDocInfo => ({
+    id, title: id, summary: "", findings: [], approach: [], rejected: [], questions: [], phase: "open",
+    next: { f: 1, a: 1, x: 1, q: 1 }, rev, createdAt: "", updatedAt: "",
+  });
+  const align = (id: string, d: AlignDocInfo): TranscriptItem => ({ id, kind: "align", raw: null, toolCallId: `c-${id}`, align: { v: 1, doc: d, changes: [], line: "" } });
+  // al_1 at row 10, al_2 at row 40: both above a hello cut at 60.
+  const branch = whole.map((it, i) => (i === 10 ? align("a10", doc("al_1", 1)) : i === 40 ? align("a40", doc("al_2", 1)) : it));
+  const s = summarize(branch.slice(0, 60));
+  assert.deepEqual(s.aligns?.map((a) => a.rowId), ["a10", "a40"]);
+  assert.deepEqual(helloRows(null, branch.slice(60), 60, s).older.summary.aligns, s.aligns, "a hello keeps them");
+  // Rows 30.. kept from the last visit hold al_2's row: only al_1 is still above the list.
+  const kept = helloRows(branch.slice(30), branch.slice(60), 60, s);
+  assert.equal(kept.older.left, 30);
+  assert.deepEqual(kept.older.summary.aligns?.map((a) => a.rowId), ["a10"]);
+  // Kept rows holding every alignment: none is above the list, and the key goes.
+  assert.equal(helloRows(branch.slice(5), branch.slice(60), 60, s).older.summary.aligns, undefined);
+  // A fetch's summary is about the rows above IT: the chunk 30..60 brings al_2 into the list.
+  const fetched = prependRows(branch.slice(60), { left: 60, summary: s }, { items: branch.slice(30, 60), older: 30, olderSummary: summarize(branch.slice(0, 30)) })!;
+  assert.deepEqual(fetched.older.summary.aligns?.map((a) => a.rowId), ["a10"]);
 });
 
 test("prependRows: a chunk that ends right above the list lands; one that doesn't add up, or repeats a row, doesn't", () => {

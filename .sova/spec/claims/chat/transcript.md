@@ -682,10 +682,13 @@ machine. Nothing that's held is virtualized.
   Rows never drawn have estimated heights, so a long jump that doesn't land in the middle aims
   again once the scroll has rested, at most twice.
 - **Counts of the whole branch.** The `hello` and the snapshot also say what the counts need of
-  the rows they don't carry: the ids of their inputs, how many messages they hold, and whether
-  any is a reply; so does each fetch, of the rows above what it returns. The inputs count, Fan
-  Out's "up to message {n}" and Undo last turn count the rows held plus those, so they're right
-  from the first `hello` on, with no older row fetched.
+  the rows they don't carry: the ids of their inputs, how many messages they hold, whether
+  any is a reply, and the alignments still open among them (each one's newest revision there,
+  and its row); so does each fetch, of the rows above what it returns. The inputs count, Fan
+  Out's "up to message {n}", Undo last turn and the composer's alignment chip
+  (§chat.alignment/chip) count the rows held plus those, so they're right from the first `hello`
+  on, with no older row fetched. A newer revision among the rows held, or live, takes an
+  alignment's place: one done or dropped there is no longer open.
 - **Opening a disclosure keeps the view.** Opening or closing a tool card, thinking, a report or
   the hidden-rows disclosure never scrolls the transcript, even while following. Following is
   re-read from where the view now is, so Jump to Latest appears if the end has gone out of view.

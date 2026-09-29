@@ -42,8 +42,9 @@ after(async () => {
 
 const T = "2026-09-28T00:00:00.000Z";
 const header = (id: string) => ({ type: "session", version: 3, id, timestamp: T, cwd });
-/** 150 turns of ~8 KB, every 10th with a tool call and its result, and an /explain row early on. */
-function bigSession(name: string, extra: (lines: unknown[]) => void = () => {}): string {
+/** 150 turns of ~8 KB, every 10th with a tool call and its result, and an /explain row early on;
+    `turn` may add entries at the end of a turn. */
+function bigSession(name: string, extra: (lines: unknown[]) => void = () => {}, turn: (i: number, push: (e: Record<string, unknown>) => void) => void = () => {}): string {
   const path = canonicalPath(join(sessionsDir, `2026-09-28T00-00-00-000Z_${name}.jsonl`));
   const lines: unknown[] = [header(name)];
   let parent: string | null = null;
@@ -63,6 +64,7 @@ function bigSession(name: string, extra: (lines: unknown[]) => void = () => {}):
       id: `a${i}`,
       message: { role: "assistant", content: [{ type: "text", text: `answer ${i} ${"a".repeat(4000)}` }], provider: "anthropic", model: "m", api: "anthropic-messages", stopReason: "stop", timestamp: 0 },
     });
+    turn(i, push);
   }
   extra(lines);
   writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
@@ -234,6 +236,54 @@ async function frames(route: string, until: (got: string[]) => boolean, headers:
   return got;
 }
 const types = (got: string[]) => got.map((g) => JSON.parse(g).type as string);
+
+describe("the alignments open above each answer", async () => {
+  const { applyAlignCall } = await import("../pi-config/extensions/mode/align.ts");
+  const { foldAlignRows, isOpenDoc } = await import("../src/lib/align");
+  const alignEnv = { now: T, readFile: () => "" };
+  const Q = (topic: string) => ({ topic, ask: `${topic}?`, recommendation: { choice: "yes", why: "simpler" } });
+  // al_1 opens early and is done in the newest rows; al_2 is revised and stays open; al_3 is dropped.
+  const script: Record<number, unknown> = {
+    5: { ops: [{ op: "create", title: "One", summary: "s", questions: [Q("a")] }] },
+    10: { ops: [{ op: "create", title: "Two", summary: "s", questions: [Q("a"), Q("b")] }] },
+    12: { ops: [{ op: "create", title: "Three", summary: "s" }] },
+    20: { doc: "al_2", ops: [{ op: "decide", q: "q1", decision: "yes" }] },
+    30: { doc: "al_3", ops: [{ op: "drop_alignment", reason: "gone" }] },
+    145: { doc: "al_1", ops: [{ op: "accept_all" }, { op: "status", to: "done" }] },
+  };
+  let docs: any[] = [];
+  const path = bigSession("aligns1", () => {}, (i, push) => {
+    if (!script[i]) return;
+    const { details } = applyAlignCall(docs, script[i], alignEnv);
+    if (details.doc) docs = [...docs.filter((d) => d.id !== details.doc!.id), details.doc];
+    push({ type: "message", id: `al${i}`, message: { role: "toolResult", toolCallId: `tal${i}`, toolName: "align", content: [{ type: "text", text: "ok" }], details, isError: false, timestamp: 0 } });
+  });
+  const whole = wholeOf(path);
+  const openIds = (entries: { doc: { id: string; phase: string } }[]) => entries.filter((e) => isOpenDoc(e.doc as any)).map((e) => e.doc.id).sort();
+
+  test("the tail's summary names the ones open above it, at their newest revision there; the list's fold with it is the whole branch's", async () => {
+    const { tail, chunks } = await fetchAll(path);
+    assert.ok(whole.findIndex((it) => it.id === "al145") >= tail.older, "al_1's done is in the tail");
+    assert.deepEqual(tail.olderSummary.aligns?.map((a) => [a.doc.id, a.doc.rev, a.rowId]), [["al_1", 1, "al5"], ["al_2", 2, "al20"]]);
+    assert.deepEqual(openIds(foldAlignRows(tail.items, [], tail.olderSummary.aligns)), openIds(foldAlignRows(whole)));
+    assert.deepEqual(openIds(foldAlignRows(tail.items, [], tail.olderSummary.aligns)), ["al_2"]);
+    // Every fetch: only rows above what it returns, and nothing once it reaches the top.
+    for (const r of chunks) {
+      for (const a of r.olderSummary.aligns ?? []) assert.ok(whole.findIndex((it) => it.id === a.rowId) < r.older, `${a.rowId} above ${r.older}`);
+      assert.deepEqual(r.olderSummary, summarize(whole.slice(0, r.older)));
+    }
+    assert.equal("aligns" in chunks.at(-1)!.olderSummary, false);
+  });
+
+  test("a `before=` fetch below al_2's newest revision still names it; one above it names only what's above", async () => {
+    const at = whole.findIndex((it) => it.id === "al20");
+    const below = (await get(path, { before: whole[at + 40]!.id, chars: String(1024) })).body as TranscriptRows;
+    assert.ok(below.older > at);
+    assert.deepEqual(below.olderSummary.aligns?.map((a) => a.rowId), ["al5", "al20"]);
+    const above = (await get(path, { before: whole[at]!.id, chars: String(1024) })).body as TranscriptRows;
+    assert.deepEqual(above.olderSummary.aligns?.map((a) => [a.doc.id, a.rowId]).sort(), [["al_1", "al5"], ["al_2", "al10"], ["al_3", "al12"]]);
+  });
+});
 
 describe("/ws/chat?tail=rest", () => {
   const path = bigSession("chat1");

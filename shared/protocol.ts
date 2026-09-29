@@ -2064,6 +2064,10 @@ export interface OlderSummary {
   messages: number;
   /** Whether any is a reply's row (assistant text or a tool call). */
   replies: boolean;
+  /** The alignments open among them (§chat.alignment/chip): each document's newest revision there
+      and its row, only those not done or dropped, the last touched last. Absent when none (and
+      from older servers). A newer revision in the rows after them takes its place. */
+  aligns?: { doc: AlignDocInfo; rowId: string }[];
 }
 
 /**

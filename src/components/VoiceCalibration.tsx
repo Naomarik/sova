@@ -412,6 +412,9 @@ function Results(props: { st: VoiceStatus; run: VoiceCalibrationRun; busy: boole
       </Show>
       <Show when={shown().length > 0}>
         <p class="voice-caption">Sorted by word error, then jargon, then time.</p>
+        <Show when={run().vadSkipped}>
+          {(n) => <p class="voice-caption">Couldn't get the voice-detection model, so the {n()} settings that use it were skipped.</p>}
+        </Show>
         <ul class="list voice-results" aria-label="Calibration results">
           {/* Keyed by the row's key: every poll brings new objects, and a rebuilt row would close and lose focus. */}
           <For each={shown().map((r) => r.key)}>

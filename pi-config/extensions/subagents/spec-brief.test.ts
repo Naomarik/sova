@@ -14,7 +14,7 @@ Trusted tools: start each bash command that runs them with exactly \`core=/agent
 - never put \`§\` IDs or spec annotations in source code.
 - Every behavior change is spec'd. Exempt from drafts, not census: work changing no behavior (refactor, tests, tooling), decided from \`scope\` output, never memory; a test that fails or flakes because of product code (a race, a wrong value) is that code's behavior fix, never test-only; say you claim the exemption.
 - Behavior no claim covers gets a new claim in a feature draft before coding. Write its sentence before the first code edit; \`new\` alone isn't enough.
-- While coding, exempt work included, run \`census --changed\` (\`--spec\` your draft, if any) after your first edit, before the next file, and per new file.
+- While coding, exempt work included, edit one file per tool call (no multi-file sed, heredoc or parallel edits) and run \`census --changed\` (\`--spec\` your draft, if any) after the first edit and each new file.
 - Any § the task didn't create is foreign, your new claim's parent included, wherever you put the claim; editing one in your draft flags.
 - Flag only a contradiction, or a user-visible addition, even one your new claim describes, that its own text lacks, never a gap it already had, even one you rely on; otherwise stay silent.
 - A \`[spec census]\` note on a tool result is this census, run for you: act on it.

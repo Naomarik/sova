@@ -452,7 +452,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /on the default branch it promotes them instead\. "Spec check override: <why>" right above the last line excuses only an omission you show is wrong\./, "the override never adds a §");
 	assert.ok(spec.includes(SPEC_CHECK_OVERRIDE), "the prompt spells the override the check accepts");
 	assert.ok(spec.includes(`A \`${DIGEST_TAG}\` note on a tool result is this census`), "the automatic census is named by its tag");
-	assert.match(spec, /While coding, exempt work included, run `census --changed` \(/);
+	assert.match(spec, /While coding, exempt work included, edit one file per tool call \(no multi-file sed, heredoc or parallel edits\) and run `census --changed` \(`--spec` your draft, if any\) after the first edit and each new file\./, "q15: per tool call, so each file's census lands before the next");
 	assert.match(spec, /Trusted tools: start each bash command with exactly this, never a guessed path:\n\n```sh\n/, "the recipe, not a hard-coded agent dir");
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never flags/);
 	assert.ok(spec.split(/\s+/).length <= 1020, "short enough to ride every turn");

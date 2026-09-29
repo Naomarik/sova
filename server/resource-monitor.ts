@@ -318,8 +318,13 @@ export class ResourceMonitor {
     const dir = cg ? join(this.cgroupRoot, cg.path) : undefined;
     // Only the unit's own main process may speak for the unit: a dev server started from a shell
     // inside the unit (an agent's tool) inherits its cgroup, and must not claim its processes.
+    // systemd puts SYSTEMD_EXEC_PID=<main pid> in the unit's exec environment and children inherit
+    // it, so only the main process finds its own pid there; a backgrounded server reparented to the
+    // manager passes the parent check below but not this one.
+    const selfEnv = readSync(join(this.procRoot, String(this.serverPid), "environ")) ?? "";
+    const isMain = selfEnv.split("\0").includes(`SYSTEMD_EXEC_PID=${this.serverPid}`);
     const parentComm = st ? readSync(join(this.procRoot, String(st.ppid), "comm"))?.trim() : undefined;
-    if (cg?.unit && dir && parentComm === "systemd" && readSync(join(dir, "cgroup.procs")) !== null) {
+    if (cg?.unit && dir && isMain && parentComm === "systemd" && readSync(join(dir, "cgroup.procs")) !== null) {
       this.scope = "unit";
       this.cgroupDir = dir;
       this.unitName = cg.unit;

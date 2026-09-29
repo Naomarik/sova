@@ -35,7 +35,7 @@ interface P {
 }
 
 /** Write a fake /proc (and, for `unit`, a cgroup) holding `procs`. Rewrites stat on each call. */
-function fixture(name: string, procs: P[], opts: { unit: boolean; cgroupUsec?: number; managerComm?: string }) {
+function fixture(name: string, procs: P[], opts: { unit: boolean; cgroupUsec?: number; managerComm?: string; execPid?: number }) {
   const proc = join(root, name, "proc");
   const cg = join(root, name, "cgroup");
   mkdirSync(proc, { recursive: true });
@@ -60,7 +60,9 @@ function fixture(name: string, procs: P[], opts: { unit: boolean; cgroupUsec?: n
     writeFileSync(join(d, "status"), `Name:\tx\nVmRSS:\t${(p.rssPages ?? 256) * 4} kB\nVmSwap:\t${p.swapKb ?? 0} kB\n`);
     writeFileSync(join(d, "cmdline"), p.argv.join("\0") + "\0");
     writeFileSync(join(d, "comm"), `${p.argv[0]}\n`);
-    writeFileSync(join(d, "environ"), Object.entries(p.env ?? {}).map(([k, v]) => `${k}=${v}`).join("\0") + "\0");
+    // systemd's SYSTEMD_EXEC_PID names the unit's main process; every child inherits it.
+    const env = { ...(opts.unit ? { SYSTEMD_EXEC_PID: String(opts.execPid ?? SERVER) } : {}), ...p.env };
+    writeFileSync(join(d, "environ"), Object.entries(env).map(([k, v]) => `${k}=${v}`).join("\0") + "\0");
     writeFileSync(join(d, "cgroup"), `0::${selfPath}\n`);
     if (p.cwd) try { symlinkSync(p.cwd, join(d, "cwd")); } catch { /* exists */ }
     const kids = procs.filter((c) => c.ppid === p.pid).map((c) => c.pid).join(" ");
@@ -271,6 +273,14 @@ describe("sampler over a fixture /proc", () => {
   test("a .service cgroup the server merely inherited (started from a shell in the unit) is tree scope", () => {
     const fx = fixture("inherited", [{ pid: SERVER, ppid: 1, argv: ["node"] }], { unit: true, managerComm: "zsh" });
     const m = new ResourceMonitor({ procRoot: fx.proc, cgroupRoot: fx.cg, logDir: join(root, "inherited-log"), serverPid: SERVER,
+      eventLoop: false, platform: "linux", hosted: () => [] });
+    assert.equal(m.scope, "tree");
+  });
+
+  test("a server backgrounded from a shell in the unit and reparented to the manager is still tree scope", () => {
+    // Its parent is systemd now, but SYSTEMD_EXEC_PID (inherited) names the unit's real main process.
+    const fx = fixture("backgrounded", [{ pid: SERVER, ppid: 1, argv: ["node"] }], { unit: true, execPid: 3283333 });
+    const m = new ResourceMonitor({ procRoot: fx.proc, cgroupRoot: fx.cg, logDir: join(root, "backgrounded-log"), serverPid: SERVER,
       eventLoop: false, platform: "linux", hosted: () => [] });
     assert.equal(m.scope, "tree");
   });

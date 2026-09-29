@@ -4,7 +4,7 @@
 
 import { createSignal } from "solid-js";
 import type { HostDetails, MeshHostDetails } from "../../shared/mesh-details";
-import type { PeerStatus, SyncCategory } from "../../shared/protocol";
+import type { PeerState, PeerStatus, SyncCategory } from "../../shared/protocol";
 import { duration, relativeTime, shortDate } from "./format";
 
 export type { HostBrowserAccessResult, HostDetails, HostRenameResult, MeshDetails, MeshHostDetails } from "../../shared/mesh-details";
@@ -29,9 +29,17 @@ export const askHostFilter = (value: string | null): void => {
   setFilterAsk({ value });
 };
 
-/** Hosts answering now, this host included, out of every host: "2/3 connected". */
+/** Hosts answering now, this host included, out of every host: "2/3 connected". A host on another
+ *  version answers (it is only skewed); one that refused this host doesn't. */
 export function connectedCount(peers: readonly Pick<PeerStatus, "state">[]): { up: number; total: number } {
-  return { up: 1 + peers.filter((p) => p.state === "up").length, total: 1 + peers.length };
+  return { up: 1 + peers.filter((p) => p.state === "up" || p.state === "skewed").length, total: 1 + peers.length };
+}
+
+/** A host's dot in the host menu: its tone, and the word said beside it (none when it is up). */
+export function hostTone(state: PeerState | "self"): { tone: "up" | "skewed" | "down"; word: string | null } {
+  if (state === "up" || state === "self") return { tone: "up", word: null };
+  if (state === "skewed") return { tone: "skewed", word: "other version" };
+  return { tone: "down", word: state === "refused" ? "refused" : "down" };
 }
 
 /** 1536 → "1.5 KB"; binary steps, one decimal under 10. */

@@ -82,8 +82,9 @@
 .host-menu-panel .mode-option-check { margin-top: 0; }
 .host-menu-sep { height: 1px; margin: var(--space-1) 0; background: var(--color-border); }
 .host-filter-up { color: var(--status-success); }
+.host-filter-skewed { color: var(--status-warn); }
 .host-filter-down { color: var(--status-error); }
-.host-filter-state { color: var(--status-error); font-size: var(--fs-micro); }
+.host-filter-state { font-size: var(--fs-micro); white-space: nowrap; }
 
 /* The stale-tab banner floats over the app's top edge: it concerns the whole tab, not one pane.
    Under Sova's dialogs and toasts (50+), over the app's own chrome. */

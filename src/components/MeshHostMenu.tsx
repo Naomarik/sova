@@ -1,14 +1,14 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
-import { connectedCount, openMeshDetails } from "../lib/mesh-details";
-import { meshPeers, meshState, peerUnavailable, SELF_FILTER } from "../lib/mesh";
+import { connectedCount, hostTone, openMeshDetails } from "../lib/mesh-details";
+import { meshPeers, meshState, peerUnavailable, SELF_FILTER, type PeerState } from "../lib/mesh";
 import { Icon } from "./ui";
 
 interface Option {
   /** The stored value; null is All. */
   value: string | null;
   label: string;
-  /** Whether its host answers; undefined for All, which is no host. */
-  up?: boolean;
+  /** Its host's state; undefined for All, which is no host. */
+  state?: PeerState | "self";
   /** Why it doesn't, for the title. */
   why?: string;
 }
@@ -36,8 +36,8 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
   const selfName = () => meshState()?.self.label || meshState()?.self.hostname || "This host";
   const options = (): Option[] => [
     { value: null, label: "All hosts" },
-    { value: SELF_FILTER, label: selfName(), up: true },
-    ...meshPeers().map((p) => ({ value: p.id, label: p.label || p.id, up: p.state === "up", why: peerUnavailable(p) ?? undefined })),
+    { value: SELF_FILTER, label: selfName(), state: "self" },
+    ...meshPeers().map((p): Option => ({ value: p.id, label: p.label || p.id, state: p.state, why: peerUnavailable(p) ?? undefined })),
   ];
   const current = () => options().find((o) => o.value === props.value) ?? options()[0]!;
   const count = () => connectedCount(meshPeers());
@@ -131,9 +131,7 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
       >
         <Icon name="network" />
         <span class="insights-row-text host-menu-text">
-          <Show when={current().up !== undefined}>
-            <span class="chip-dot" classList={{ "host-filter-up": current().up, "host-filter-down": !current().up }} />
-          </Show>
+          <Show when={current().state}>{(st) => <span class={`chip-dot host-filter-${hostTone(st()).tone}`} />}</Show>
           <span class="host-menu-label">{current().label}</span>
           <Icon name="chevron-down" small />
         </span>
@@ -166,13 +164,11 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
               >
                 <Icon name="check" small class="mode-option-check" />
                 <span class="mode-option-text host-menu-option-text">
-                  <Show when={o.up !== undefined}>
-                    <span class="chip-dot" classList={{ "host-filter-up": o.up, "host-filter-down": !o.up }} />
-                  </Show>
+                  <Show when={o.state}>{(st) => <span class={`chip-dot host-filter-${hostTone(st()).tone}`} />}</Show>
                   <span class="mode-option-id">{o.label}</span>
-                  {/* Down is said in a word as well as the dot's colour. */}
-                  <Show when={o.up === false}>
-                    <span class="host-filter-state">down</span>
+                  {/* Any state but up is said in a word as well as the dot's colour. */}
+                  <Show when={o.state && hostTone(o.state).word}>
+                    {(word) => <span class={`host-filter-state host-filter-${hostTone(o.state!).tone}`}>{word()}</span>}
                   </Show>
                 </span>
               </div>

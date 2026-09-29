@@ -30,6 +30,7 @@ const { readSessionTitles, setSessionTitle } = await import("./session-titles");
 const { isWebSession, removeWebSession } = await import("./web-sessions");
 const { stateRoot } = await import("./state-root");
 const { getSessionSummary } = await import("./sessions-index");
+const { hostOf } = await import("./org-engine");
 
 after(async () => {
   await disposeAllChats();
@@ -144,6 +145,15 @@ describe("clone + attach = the whole organization", async () => {
     assert.ok(!files.some((f) => f.startsWith("charts/residence/") || f.startsWith("charts/watch/")), "nothing host-local");
     for (const f of ["overseer.json", "state.json", "started.json"]) assert.ok(files.includes(`projects/${project.id}/overseer/${f}`), f);
     assert.ok(files.some((f) => f.startsWith("sessions/") && f.endsWith(`_${overseer.id}.jsonl`)), "the overseer's transcript");
+  });
+
+  test("each project's watch starts on this host, paused, and sees its project at once (F14)", () => {
+    const sid = orgs.watchSid(b.id, project.id);
+    const conf = hostOf(b.id).configuration(sid) ?? [];
+    assert.ok(conf.includes("paused"), `paused since the attach: ${conf.join(",")}`);
+    assert.ok(conf.includes("has-overseer"), "it watches the cloned project: its overseer exists");
+    assert.ok(conf.includes("on-shelf"), "not archived");
+    assert.equal(hostOf(b.id).data(sid)?.projectName, "Portal");
   });
 
   test("the same org on the new host: id, roster with history, projects, baton row, overseer state", async () => {

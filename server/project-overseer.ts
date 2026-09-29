@@ -58,9 +58,12 @@ import {
   readOrgAbout,
   readProjects,
   readRoster,
+  operatorEnvelope,
   operatorName,
+  projectSid,
   stakeholderLine,
 } from "./orgs";
+import { hostOf } from "./org-engine";
 import { appRequest, pathOfId, promptSession, toolCatalogue } from "./overseer";
 import { RootConfinement } from "./overseer-deny";
 import { overseerFileTools } from "./overseer-file-tools";
@@ -199,6 +202,18 @@ async function dropHistory(ids: string[]): Promise<void> {
   for (const id of ids) if (await pathOfId(id)) setArchived(id, true);
 }
 
+/** The project chart's overseer region (its watch reads has-overseer from it): `overseer/start` when it has
+    none yet, `overseer/clear` for a new conversation. A chart already naming this conversation is left alone. */
+async function tellProjectChart(orgId: string, projectId: string, event: "overseer/start" | "overseer/clear", conversationId: string): Promise<void> {
+  const host = hostOf(orgId);
+  const sid = projectSid(orgId, projectId);
+  const has = host.configuration(sid)?.includes("has-overseer") ?? false;
+  if (event === "overseer/start" && has) return;
+  if ((host.data(sid)?.overseer as { id?: unknown } | undefined)?.id === conversationId) return;
+  const out = await host.act(sid, has ? "overseer/clear" : "overseer/start", { conversationId }, operatorEnvelope(orgId, projectId), { settle: true });
+  if (!out.taken) console.warn(`[project-overseer] ${sid} ${event}: ${out.refusal?.sentence ?? "refused"}`);
+}
+
 const ensuring = new Map<string, Promise<{ id: string; path: string }>>();
 
 /** The current conversation, created when there is none (or its file is gone). Single-flight per project. */
@@ -212,11 +227,15 @@ export function ensureProjectOverseer(orgId: string, projectId: string): Promise
     const st = readPoState(p);
     if (st) {
       const path = await pathOfId(st.current);
-      if (path && projectOverseerOfPath(path)) return { id: st.current, path };
+      if (path && projectOverseerOfPath(path)) {
+        await tellProjectChart(orgId, projectId, "overseer/start", st.current);
+        return { id: st.current, path };
+      }
     }
     const made = createPoFile(orgId, projectId);
     const { state, dropped } = rotateState(st, made.id);
     writePoState(p, state);
+    await tellProjectChart(orgId, projectId, st ? "overseer/clear" : "overseer/start", made.id);
     // The settings file exists from the first open on, so the repo shows what is in force.
     writePoSettings(p, readPoSettings(p));
     await dropHistory(dropped);
@@ -242,6 +261,7 @@ export async function clearProjectOverseer(orgId: string, projectId: string): Pr
   const made = createPoFile(orgId, projectId);
   const { state, dropped } = rotateState(readPoState(p), made.id);
   writePoState(p, state);
+  await tellProjectChart(orgId, projectId, "overseer/clear", made.id);
   await dropHistory(dropped);
   return projectOverseerInfo(orgId, projectId);
 }

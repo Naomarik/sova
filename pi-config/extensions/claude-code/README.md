@@ -224,6 +224,11 @@ per Claude session:
   without `--json`, the spec changed since just before it) or a `git merge` that moves the default
   branch (spec-guard's `defaultBranch`: `origin/HEAD`, else `master`, else `main`; `sova-spec.mjs foreign` over that branch's move) records the
   turn's foreign §. Merging master into a feature branch lands nothing: those § are master's own.
+  The same call runs the pi session's write guard (spec-guard's helpers; "before" is the tree the
+  previous hook call saw): an edit of the current `manifest.json` or `claims/**`, or a shell command
+  that writes them and is neither a draft tool nor git, gets "you wrote the current spec directly";
+  a git operation after which a draft's evidence commit left the branch gets the rebase note (abort
+  a rebase under way, else the exact old tip to restore with a clean tree, then merge master in).
 - `Stop`: after a promote or merge, the last line must name every computed foreign § (or carry the
   override line, which excuses only an omission); a § named beyond a list Git fully computed is an
   extra, never excused. The reply is sent back up to twice. Otherwise a warning, sent back once: a

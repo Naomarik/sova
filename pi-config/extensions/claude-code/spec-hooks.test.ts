@@ -205,6 +205,49 @@ test("a Git-computed list: a § named beyond it is an extra, sent back even behi
 	assert.equal(await runHook("stop", event(root, { last_assistant_message: "Merged.\nAlso changes: §app/x — reworded", stop_hook_active: true }), o), undefined);
 });
 
+test("write guard: an Edit on the current manifest, or a shell write to claims/, is a direct write", async () => {
+	const { root, stateDir } = project();
+	const o = { core: CORE, stateDir };
+	await runHook("turn", event(root, {}), o);
+	const manifest = path.join(root, ".sova/spec/manifest.json");
+	fs.appendFileSync(manifest, "\n");
+	const out = await runHook("post", event(root, { tool_name: "Edit", tool_input: { file_path: manifest } }), o) as any;
+	assert.match(out.hookSpecificOutput.additionalContext, /you wrote the current spec directly \(.*manifest\.json\): undo it; change claims in a draft and promote/);
+	write(root, ".sova/spec/claims/app/x.md", "# §app/x\n\nX by hand.\n");
+	const sh = await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "python3 fix.py" } }), o) as any;
+	assert.match(sh.hookSpecificOutput.additionalContext, /you wrote the current spec directly \(\.sova\/spec\/claims\/app\/x\.md\)/);
+	write(root, ".sova/spec/claims/app/x.md", "# §app/x\n\nX by git.\n");
+	const g = await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "git checkout main -- .sova" } }), o) as any;
+	assert.doesNotMatch(g?.hookSpecificOutput?.additionalContext ?? "", /wrote the current spec directly/, "git is sanctioned");
+});
+
+test("write guard: a git rebase that takes a draft's evidence commit off the branch names the sha and the restore", async () => {
+	const { root, stateDir } = project();
+	const o = { core: CORE, stateDir };
+	const c = ["-c", "user.email=t@t", "-c", "user.name=t"];
+	write(root, ".gitignore", ".sova/spec/drafts/\n.hook-state/\n");
+	git(root, ...c, "add", ".gitignore");
+	git(root, ...c, "commit", "-qm", "ignore");
+	git(root, "checkout", "-qb", "feat");
+	write(root, "src/a.txt", "b\n");
+	git(root, ...c, "commit", "-qam", "code");
+	const ev = git(root, "rev-parse", "HEAD");
+	write(root, ".sova/spec/drafts/d/draft.json", JSON.stringify({ evidence: [{ mode: "commit", commit: ev, ids: [{ id: "§app/x" }] }] }));
+	git(root, "checkout", "-q", "main");
+	write(root, "src/b.txt", "m\n");
+	git(root, ...c, "add", "src/b.txt");
+	git(root, ...c, "commit", "-qm", "main moves");
+	git(root, "checkout", "-q", "feat");
+	await runHook("turn", event(root, {}), o);
+	git(root, ...c, "rebase", "-q", "main");
+	const out = await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "git rebase main" } }), o) as any;
+	const text = out.hookSpecificOutput.additionalContext as string;
+	assert.match(text, new RegExp(`never rebase after evidence \\(PROMOTE\\.md\\): draft d's evidence commit ${ev.slice(0, 12)} \\(§app/x\\) is no longer on this branch`));
+	assert.match(text, new RegExp(`git reset --hard ${ev}\``), "the exact old tip, reset only with a clean tree");
+	assert.match(text, /With no uncommitted changes/);
+	assert.equal(text.split("never rebase after evidence").length - 1, 1, "said once, not again by the census");
+});
+
 test("stop on a normal turn: a line naming a § the census never saw touched is sent back once", async () => {
 	const { root, stateDir } = project();
 	const o = { core: CORE, stateDir };

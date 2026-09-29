@@ -30,7 +30,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-	CHECK_TAG, censusStep, checkAlsoChanges, defaultBranch, describeProblem, draftForeign, draftStamps, draftsTouched, findSpecRoot, foreignBetween, freshCensusState, gitCommits, gitMerges, gitView,
+	CHECK_TAG, censusStep, checkAlsoChanges, currentSpecPath, defaultBranch, describeProblem, directWriteNote, evidenceCommits, rebaseUnderway, rewriteNote, sanctionedSpecWrite, draftForeign, draftStamps, draftsTouched, findSpecRoot, foreignBetween, freshCensusState, gitCommits, gitMerges, gitView,
 	lastLine, localIO, parseAlsoChanges, promoteWrites, repromptText, viewChanged, type CensusState, type GitView, type SpecIO,
 } from "../mode/spec-guard.ts";
 
@@ -214,11 +214,14 @@ export async function onPost(input: HookInput, ctx: HookContext): Promise<HookOu
 			turn.foreign = union(turn.foreign, merged ?? []);
 		}
 	}
-	const step = await censusStep(state.census, { cwd, toolName: tool, input: input.tool_input ?? {}, commands: state.commands, sessionStart: state.sessionStart }, ctx.core, ctx.io);
+	const g = await writeGuard(tool, input, cwd, before, view, ctx).catch(() => ({ text: undefined, lost: [] as string[] }));
+	const guard = g.text;
+	const step = await censusStep(state.census, { cwd, toolName: tool, input: input.tool_input ?? {}, commands: state.commands, sessionStart: state.sessionStart, orphansSaid: g.lost }, ctx.core, ctx.io);
 	state.census = step.state;
-	if (step.result.failure) return { systemMessage: step.result.failure };
-	if (!step.result.text) return undefined;
-	return { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: step.result.text } };
+	if (step.result.failure) return { systemMessage: [guard, step.result.failure].filter(Boolean).join("\n") };
+	const text = [guard, step.result.text].filter(Boolean).join("\n");
+	if (!text) return undefined;
+	return { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: text } };
 }
 
 /** The checkout at `top` is on the default branch (spec-guard's defaultBranch: origin/HEAD, else master, else main). */
@@ -227,6 +230,37 @@ export async function landsOnTarget(top: string, io: SpecIO): Promise<boolean> {
 	if (!branch || branch.code !== 0) return false;
 	const target = await defaultBranch(top, io).catch(() => undefined);
 	return !!target && branch.stdout.trim() === target;
+}
+
+/**
+ * The pi session's SpecWriteGuard, for a hook that is a fresh process per call: the tree as the previous
+ * hook call left it (the turn's `view`) stands in for "before". Two notes, in the guard's own words: the
+ * current spec written by hand (an edit on it, or a shell command that is neither a draft tool nor git),
+ * and a git operation after which a draft's evidence commit is no longer on the branch.
+ */
+export async function writeGuard(tool: string, input: HookInput, cwd: string, before: GitView | undefined, view: GitView | undefined, ctx: HookContext): Promise<{ text?: string; lost: string[] }> {
+	const ti = input.tool_input ?? {};
+	if (WRITE_TOOLS.has(tool)) {
+		const file = typeof ti.file_path === "string" ? ti.file_path : typeof ti.notebook_path === "string" ? ti.notebook_path : undefined;
+		return { text: file && currentSpecPath(path.isAbsolute(file) ? file : path.join(cwd, file)) ? directWriteNote([file]) : undefined, lost: [] };
+	}
+	const command = tool === "Bash" && typeof ti.command === "string" ? ti.command : undefined;
+	if (!command || !before || !view || before.top !== view.top) return { lost: [] };
+	const notes: string[] = [], said: string[] = [];
+	if (!sanctionedSpecWrite(command)) {
+		const written = Object.keys(view.files).filter((p) => currentSpecPath(p) && before.files[p] !== view.files[p]);
+		if (written.length) notes.push(directWriteNote(written));
+	}
+	if (before.head && view.head && before.head !== view.head) {
+		const root = await findSpecRoot(cwd, (p) => ctx.io.exists(p));
+		const git = (args: string[]) => ctx.io.exec("git", args, { cwd: view.top, timeout: 10_000 });
+		const lost = [];
+		for (const e of root ? await evidenceCommits(root, ctx.io) : [])
+			if ((await git(["merge-base", "--is-ancestor", e.commit, before.head])).code === 0 && (await git(["merge-base", "--is-ancestor", e.commit, view.head])).code !== 0) lost.push(e);
+		if (lost.length) notes.push(rewriteNote(lost, before.head, await rebaseUnderway(view.top, ctx.io)));
+		said.push(...lost.map((e) => e.commit));
+	}
+	return { text: notes.length ? notes.join("\n") : undefined, lost: said };
 }
 
 /** The foreign § the drafts this turn edited change (a draft edit is a write git can't see). */

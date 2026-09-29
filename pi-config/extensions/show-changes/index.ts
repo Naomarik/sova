@@ -28,23 +28,23 @@ export const SHOW_CHANGES_DESCRIPTION = `Open Sova's changes viewer on a set of 
 scope: "dirty" = uncommitted work (index + working tree, untracked files included) vs HEAD; "worktree" = a worktree's branch vs its merge-base with its base branch (the tracked worktree's base, else master, else main, else origin/HEAD); "commit" = one commit vs its first parent (give commit, e.g. a sha or "HEAD").
 worktree: for dirty or worktree, which checkout: a tracked worktree's branch or path, or a directory; default the tracked worktree holding the session cwd, else (worktree scope) the only tracked one, else the session cwd.
 paths: limit the view to these repo-relative files or directories.
-steps: optional, the change told as a story, in reading order. Each step: a title, why (optional), buildsOn (numbers of earlier steps it depends on) and hunks: {path} for every hunk of a file, or {path, newStart} (or oldStart) naming one hunk by its @@ -a,b +c,d @@ header's c (a). Each hunk belongs to exactly one step; Sova puts hunks no step names under "Other changes".
+steps: the change told as a story, in reading order; send them unless the change is a single idea. Each step: a title, why (optional), buildsOn (numbers of earlier steps it depends on) and hunks: {path} for every hunk of a file, or {path, newStart} (or oldStart) naming one hunk by any line inside it, new side (old side), as numbered in \`git show\`/\`git diff\` @@ -a,b +c,d @@ headers at default context. A hunk named by two steps goes to the first; Sova puts hunks no step names under "Other changes".
 
 Example: {"scope": "worktree", "title": "Rate limits on the export API", "steps": [{"title": "Token bucket", "why": "one limiter shared by every route", "hunks": [{"path": "server/limit.ts"}]}, {"title": "Apply it to /export", "buildsOn": [1], "hunks": [{"path": "server/routes.ts", "newStart": 120}, {"path": "server/routes.test.ts"}]}]}`;
 
-export const SHOW_CHANGES_PROMPT_SNIPPET = "Show the user git changes (uncommitted, a worktree branch, or a commit) in Sova's diff viewer, optionally as numbered steps";
+export const SHOW_CHANGES_PROMPT_SNIPPET = "Show the user git changes (uncommitted, a worktree branch, or a commit) in Sova's diff viewer, as numbered steps";
 
 export const SHOW_CHANGES_GUIDELINES = [
-	"When the user asks to see, review or walk through changes (\"show me the diff\", \"what did you change\"), call show_changes instead of pasting diffs or running git diff for them; reply with a sentence or two, the viewer shows the rest.",
-	"Pick the scope that answers the question: dirty for uncommitted work, worktree for everything a feature branch did, commit for one commit (a merge's sha, say).",
-	"For a change spread over several files, add steps: each a coherent unit the user can review on its own (a new module, then its wiring, then its tests), ordered so each builds on earlier ones (buildsOn), with a title and a short why. Name every hunk in exactly one step; name a file by path alone when all of its hunks belong to one step, and by newStart only when a file's hunks split across steps. Skip steps for a small change.",
+	"When the user asks to see, review or walk through changes (\"show me the diff\", \"what did you change\"), call show_changes instead of pasting diffs or running git diff for them; reply with a sentence or two, the viewer shows the rest. Pick the scope: dirty for uncommitted work, worktree for a feature branch, commit for one commit. When the user names files or folders, pass them as paths.",
+	"Before calling, read the diff yourself with git's default context: `git show <sha>` (commit), `git diff <base>...<head>` (worktree branch), `git diff HEAD` (uncommitted); add `-- <path>` to narrow. Hunk numbers come from its `@@ -a,b +c,d @@` headers; never use -U0 or another context size.",
+	"Send steps whenever the change holds more than one idea, in one file or many; skip them only for a single idea (one hunk, or hunks all doing the same thing). Each step is one reviewable unit (a new module, then its wiring, then its tests) with a title and a short why, ordered so later steps build on earlier ones (buildsOn). Name a file by path alone when all its hunks share one step; otherwise name each hunk by newStart (any new-side line inside it; oldStart, any old-side line). A hunk named by two steps goes to the first; hunks no step names land under \"Other changes\".",
 ];
 
 const Hunk = Type.Object(
 	{
 		path: Type.String({ minLength: 1, description: "Repo-relative file path (the new path of a rename; the old one of a deletion)." }),
-		oldStart: Type.Optional(Type.Integer({ minimum: 0, description: "The hunk's @@ -a,b header a: names one hunk by its old side." })),
-		newStart: Type.Optional(Type.Integer({ minimum: 0, description: "The hunk's @@ +c,d header c: names one hunk by its new side. Omit both for every hunk of the file." })),
+		oldStart: Type.Optional(Type.Integer({ minimum: 0, description: "Any old-side line inside the hunk (e.g. its @@ -a,b header's a, from git's default-context diff): names that one hunk." })),
+		newStart: Type.Optional(Type.Integer({ minimum: 0, description: "Any new-side line inside the hunk (e.g. its @@ +c,d header's c, from git's default-context diff): names that one hunk. Omit both for every hunk of the file." })),
 	},
 	{ additionalProperties: false },
 );
@@ -54,7 +54,7 @@ const Step = Type.Object(
 		title: Type.String({ minLength: 1, description: 'What this step does, short: "Token bucket limiter".' }),
 		why: Type.Optional(Type.String({ minLength: 1, description: "Why, in a sentence (optional)." })),
 		buildsOn: Type.Optional(Type.Array(Type.Integer({ minimum: 1 }), { description: "Numbers (from 1) of earlier steps this one depends on." })),
-		hunks: Type.Array(Hunk, { minItems: 1, maxItems: SHOW_CHANGES_LIMITS.hunksPerStep, description: "The hunks of this step; each hunk in exactly one step." }),
+		hunks: Type.Array(Hunk, { minItems: 1, maxItems: SHOW_CHANGES_LIMITS.hunksPerStep, description: "The hunks of this step: {path} alone when all of a file's hunks are in this step, else {path, newStart} per hunk." }),
 	},
 	{ additionalProperties: false },
 );
@@ -68,7 +68,7 @@ export const SHOW_CHANGES_PARAMETERS = Type.Object(
 		worktree: Type.Optional(Type.String({ minLength: 1, description: "scope dirty or worktree: a tracked worktree's branch or path, or a directory (default: see the description)." })),
 		title: Type.Optional(Type.String({ minLength: 1, description: "One line naming the change, for the viewer's card." })),
 		paths: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: SHOW_CHANGES_LIMITS.paths, description: "Limit the view to these repo-relative files or directories." })),
-		steps: Type.Optional(Type.Array(Step, { maxItems: SHOW_CHANGES_LIMITS.steps, description: "The change as numbered steps, in reading order." })),
+		steps: Type.Optional(Type.Array(Step, { maxItems: SHOW_CHANGES_LIMITS.steps, description: "The change as numbered steps, in reading order. Send whenever the change holds more than one idea; read the diff first to name hunks." })),
 	},
 	{ additionalProperties: false },
 );

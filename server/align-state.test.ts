@@ -326,3 +326,20 @@ describe("a session written with the old op names", () => {
     assert.deepEqual(scan.summary, { openDocs: 1, openQuestions: 0, questionDocs: 0 });
   });
 });
+
+describe("readAlignScan: a file that shrank since its size was read", () => {
+  // The list reads a size, then the file is rewritten smaller before the read. A read that returned
+  // only the marker's overlap made no progress and looped forever, hanging the whole listing.
+  const bounded = <T>(p: Promise<T>) => Promise.race([p, new Promise<"hung">((done) => setTimeout(() => done("hung"), 2000))]);
+  test("from the start: a 1,900-byte file read as 5,000 bytes returns, with nothing found", async () => {
+    const path = join(sessionsDir, "shrunk-fresh.jsonl");
+    writeFileSync(path, `${"x".repeat(1899)}\n`);
+    assert.deepEqual(await bounded(readAlignScan(path, 5000, null)), { size: 5000, found: false, summary: undefined });
+  });
+  test("resuming: the search restarts at the old end, which is now the file's end", async () => {
+    const path = join(sessionsDir, "shrunk-resume.jsonl");
+    writeFileSync(path, `${"x".repeat(1899)}\n`);
+    const out = await bounded(readAlignScan(path, 1900 + 5000, { size: 1900, found: false, summary: undefined }));
+    assert.notEqual(out, "hung");
+  });
+});

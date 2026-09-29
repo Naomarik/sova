@@ -8,8 +8,8 @@ import type { OutlineConfig, SummarizerSpec } from "./types.ts";
 
 export const DEFAULT_CONFIG: OutlineConfig = {
   summarizers: [
-    { backend: "claude-code", model: "haiku", timeoutMs: 45_000, maxBudgetUsd: 0.05 },
     { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", timeoutMs: 60_000 },
+    { backend: "claude-code", model: "sonnet", timeoutMs: 45_000, maxBudgetUsd: 0.05 },
   ],
   trigger: { debounceMs: 3_000, minNewMessages: 2 },
   shareWithSessions: "now-only",

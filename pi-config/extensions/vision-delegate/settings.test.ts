@@ -20,7 +20,7 @@ test("a missing settings file yields the defaults, unshared with the constant", 
 });
 
 test("the shipped defaults name concrete vision models and a usable threshold", () => {
-	assert.deepEqual(DEFAULT_SETTINGS.fallbacks, ["zai/glm-5.3-flash", "anthropic/claude-haiku-4-5"]);
+	assert.deepEqual(DEFAULT_SETTINGS.fallbacks, ["zai/glm-5.3-flash", "ollama-cloud/kimi-k3"]);
 	assert.equal(DEFAULT_SETTINGS.exhaustedAbovePct, 90);
 	assert.equal(DEFAULT_SETTINGS.contextChars, 2000);
 });

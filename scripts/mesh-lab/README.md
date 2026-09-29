@@ -41,7 +41,7 @@ decimal string on Headscale.
   scripts/…, and build time. The images carry `sova.mesh-lab.commit` and `sova.mesh-lab.dirty`
   labels, and `lab status` and every `lab e2e` run print a "built from:" line. A PASS counts
   for acceptance only when that line says `git archive, clean`. The build installs with
-  `pnpm install --frozen-lockfile` and runs `vite build`. There is no typecheck, so a mid-branch
+  `pnpm install --frozen-lockfile` and runs `vite build` and `vite build --mode share` (the share page). There is no typecheck, so a mid-branch
   type error doesn't block the lab. Cached layers make rebuilds fast, and `lab up` recreates the
   containers whose image changed. With `--dirty`, the ignore list in `Dockerfile.dockerignore`
   applies (`node_modules`, `dist`, `.agent`, `.git`, `auth.json`, `.env*`, `*.key`, `*.pem`,

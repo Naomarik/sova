@@ -51,11 +51,12 @@ before(async () => {
 
   // One organization on b with a person, a project, an owner link (/i/) and a baton link (/h/).
   const org = await api(B, "/api/orgs", { method: "POST", body: { name: `M5 public ${Date.now()}` } });
-  const orgId = org.org.id;
+  // An org answer is its OrgDetail: `projects`/`people` are counts, the lists `projectList`/`roster`.
+  const orgId = org.id;
   const withPerson = await api(B, `/api/orgs/${orgId}/people`, { method: "POST", body: { name: "Pat Visitor" } });
-  const personId = withPerson.people.at(-1).id;
+  const personId = withPerson.roster.find((p) => p.name === "Pat Visitor").id;
   const withProject = await api(B, `/api/orgs/${orgId}/projects`, { method: "POST", body: { name: "Public links", root: "/root/work" } });
-  const projectId = withProject.projects.at(-1).id;
+  const projectId = withProject.projectList.find((p) => p.name === "Public links").id;
   await api(B, `/api/orgs/${orgId}/owner`, { method: "PUT", body: { personId } });
   iLink = (await api(B, `/api/orgs/${orgId}/owner/link`)).link;
   hLink = (await api(B, "/api/baton", { method: "POST", body: { orgId, projectId, to: personId, publicTitle: "A question", goal: "M5 lab check" } })).link;

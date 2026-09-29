@@ -46,8 +46,9 @@ async function mintOnHost(host) {
   const org = ok(await api(host, "/api/orgs", { method: "POST", body: { name: `PM4 ${stamp}`, dir: `/root/orgs/pm4-${stamp}` } }), "create org");
   const withProject = ok(await api(host, `/api/orgs/${org.id}/projects`, { method: "POST", body: { name: "Portal", root: `/root/work/pm4-${stamp}` } }), "add project");
   const withPerson = ok(await api(host, `/api/orgs/${org.id}/people`, { method: "POST", body: { name: "Tahir", role: "Finance" } }), "add person");
-  const project = withProject.projects.at(-1);
-  const person = withPerson.people.at(-1);
+  // An org answer is its OrgDetail: `projects`/`people` are counts, the lists `projectList`/`roster`.
+  const project = withProject.projectList.find((p) => p.name === "Portal");
+  const person = withPerson.roster.find((p) => p.name === "Tahir");
   const b = ok(
     await api(host, "/api/baton", { method: "POST", body: { orgId: org.id, projectId: project.id, to: person.id, publicTitle: "Dashboard", goal: "What the dashboard shows" }, timeoutMs: 60000 }),
     "start baton",

@@ -164,6 +164,13 @@ export function writeServerFields(fields: { verifiedAt?: number | null; lastKnow
   return file;
 }
 
+/** A routed host's via gateway URL as learnt (its hello or ack): kept as `lastKnownUrl`, so links
+    point there while the gateway is out of reach. Re-reads the file and writes it atomically;
+    throws on a URL that isn't a bare https origin. */
+export function recordLastKnownUrl(url: string): PublicLinksFile {
+  return writeServerFields({ lastKnownUrl: url });
+}
+
 /** The SOVA_SHARE_* variables that are set, and so win over the setting. */
 export const SHARE_ENV = ["SOVA_SHARE_PUBLIC_URL", "SOVA_SHARE_HOST", "SOVA_SHARE_PORT"] as const;
 export function pinnedByEnv(env: NodeJS.ProcessEnv = process.env): string[] {

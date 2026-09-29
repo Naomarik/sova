@@ -117,6 +117,15 @@ describe("the file", () => {
     assert.equal(store.readPublicLinks().verifiedAt, undefined);
   });
 
+  test("recordLastKnownUrl: the server's writer for a via gateway's URL; keeps the rest of the file", () => {
+    store.patchPublicLinks({ route: { via: { nodeId: "nGATEWAYCNTRL" } }, ingressPort: 4803 });
+    assert.deepEqual(store.recordLastKnownUrl("https://gw.example.com/"), { version: 1, route: { via: { nodeId: "nGATEWAYCNTRL" } }, ingressPort: 4803, lastKnownUrl: "https://gw.example.com" });
+    assert.equal(store.readPublicLinks().lastKnownUrl, "https://gw.example.com");
+    assert.equal(statSync(store.publicLinksFile()).mode & 0o777, 0o600);
+    assert.throws(() => store.recordLastKnownUrl("http://gw.example.com"));
+    assert.equal(store.readPublicLinks().lastKnownUrl, "https://gw.example.com", "a refused URL writes nothing");
+  });
+
   test("pinnedByEnv lists the SOVA_SHARE_* variables that are set", () => {
     assert.deepEqual(store.pinnedByEnv({}), []);
     assert.deepEqual(store.pinnedByEnv({ SOVA_SHARE_PUBLIC_URL: "https://a.example.com", SOVA_SHARE_PORT: "4802", SOVA_SHARE_HOST: " " }), ["SOVA_SHARE_PUBLIC_URL", "SOVA_SHARE_PORT"]);

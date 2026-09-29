@@ -81,7 +81,8 @@ so. It is not a choice in the UI. Under `workspace-write`:
   the sandbox fails closed on it. Under `read-only` nothing is shadowed and the caches are
   read-only.
 - **Hidden secrets.** Credential directories read as empty and read-only (`~/.ssh`, `~/.gnupg`,
-  `~/.aws`, `~/.docker`, `~/.config/gh`), and credential files cannot be opened at all
+  `~/.aws`, `~/.docker`, `~/.config/gh`, the agent dir's `claude-accounts/`, where every added
+  Claude login keeps its own credentials, §app.claude-logins/registry), and credential files cannot be opened at all
   (`~/.netrc`, `~/.git-credentials`, pi's `auth.json`, Claude Code's credentials). The list is
   the policy's `hidden`.
 - **Hidden service sockets.** Nothing served by a process outside the sandbox is reachable:

@@ -246,6 +246,30 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 - **Cards.** There's one card per `providers[]` entry, in the order given: Claude, OpenAI,
   Ollama Cloud, Z.ai, DeepSeek. Z.ai follows the system like every other provider: no brand color, and
   the title is "Z.ai"; so does DeepSeek, titled "DeepSeek".
+- **Claude: one card per login.** When the payload carries `claudeLogins` (every Claude login on
+  this device, §app/claude-logins, in the device's order, `default` included), Claude's place
+  holds one card per login instead of the single Claude card; an older server without the field
+  gets the single card.
+  - The title is the login's email (else its label, else "Claude Code's own login"), wrapping
+    rather than overflowing. Under it, the caption reads "Claude · {plan}" with the plan as people
+    say it ("Max 20x", "Pro"; never a billing type such as `stripe_subscription`), then the
+    login's name: "Claude Code's own login" for `default`, else its label, else — only beside
+    another login of its account, where the email can't tell them apart — "Login added {date}".
+  - The body opens with the login's standing on this device as a chip, in Settings → Accounts'
+    words (§app.claude-logins/device-order): **Ready**, **Off**, **Limited until** a time,
+    **Sign in again**, or **Not signed in**. The login a new chat would start on — the first
+    usable one in the device's order — adds a neutral `.chip.chip-count` "In use for new chats".
+  - Then its usage exactly like any provider card: meters, head chip, notes, the sign-in caption
+    (from that login's own `.credentials.json`). `default`'s reading is `providers`' `claude`; an
+    added login's is its own entry in the cache's `claudeAccounts`
+    (§app.insights/usage-refresh). A login never read yet says "Not read yet. Its usage shows at
+    the next refresh."; a login marked as needing sign-in is not fetched, keeps its last reading,
+    and without one says it is not fetched until Claude Code has signed it in again.
+  - **Grouped by account.** Logins with the same `accountUuid` share one account's usage limits,
+    so their cards sit together, where the first of them falls in the order, under a full-width
+    muted head "{email} · {n} logins, one account"; each of their cards ends with the caption
+    "Same account as {the others' names}: they share these limits." A login with no account, or alone
+    in its account, has no head.
 - **Scoped and active windows (any provider).**
   - A window with a `scope` is labeled `{window} {scope}`, e.g. "7-day Fable", the same form as
     "7-day Opus". It stays in source order, so Claude reads 5-hour, 7-day, 7-day Fable.
@@ -366,7 +390,26 @@ through the Codex CLI, a renewal time (`last_refresh`) and no expiry. API-key pr
 
 **Sova never writes a credential file and never refreshes a token.** A Claude sign-in renews only
 when Claude Code itself runs; the Usage page says so (§app.insights/usage-cards) instead of
-renewing it.
+renewing it. The one exception is Settings → Accounts (§app.claude-logins/add-remove): at the
+user's request Sova runs Claude Code's own `claude auth login` and `claude auth logout` in an added
+login's directory, and deletes that directory on removal. Claude Code writes those credentials.
+
+**Every Claude login's usage.** Claude Code's own credentials are read from its own directory
+(`$CLAUDE_CONFIG_DIR` when set, else `~/.claude`), as its spawns use it. Each other Claude login
+assigned to this device (§app/claude-logins) is fetched the same way, with the access token in
+its own directory's `.credentials.json`, only read, never refreshed or written. The cache keeps
+`claude` as Claude Code's own login, so every older reader reads what it always did, and adds
+`claudeAccounts`, keyed by login id (never `default`), each `{data?, fetchedAt?, nextFetchAt,
+error?, skipped?}`; `CACHE_SCHEMA` is unchanged, since the field is additive. Each login keeps
+its own cadence: it is fetched when its own `nextFetchAt` is due (150 seconds after a reading, 60
+after a failure) or on Refresh Usage; a failed fetch keeps its last reading and says why, and
+never shortens the other providers' refresh. A login this device marks as needing sign-in
+(`claude-accounts-state.json`) is never fetched, `default` included: it keeps its last reading,
+marked `skipped: "auth"`, until its credentials change. A login no longer assigned here drops
+out. A cache without `claudeAccounts` on a device that has added logins (an older extension
+rewrote it) is refetched once; meanwhile the server serves the logins' last readings it read.
+`GET /api/insights/usage` adds each login's sign-in data (`auth`) from its own credentials file,
+in the same numbers-only form.
 
 ## §app.insights/team-cards — Agents board
 

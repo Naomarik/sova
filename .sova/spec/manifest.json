@@ -98,12 +98,21 @@
     },
     "§app.insights/usage-cards": {
       "kind": "behavior",
+      "requires": [
+        "§app.insights/usage-refresh",
+        "§app.claude-logins/device-order",
+        "§app.claude-logins/registry"
+      ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/UsageView.tsx",
         "src/lib/insights.ts",
-        "src/lib/insights.test.ts"
+        "src/lib/insights.test.ts",
+        "server/insights.ts",
+        "shared/protocol.ts",
+        "src/design/base.css",
+        "server/insights-claude-logins.test.ts"
       ]
     },
     "§app.insights/usage-page-and-agents-page": {
@@ -3603,7 +3612,10 @@
         "src/lib/insights.ts",
         "server/usage-poll.test.ts",
         "server/auth-status.test.ts",
-        "server/insights-usage.test.ts"
+        "server/insights-usage.test.ts",
+        "pi-config/extensions/usage-status/fetch.ts",
+        "pi-config/extensions/usage-status/fetch.test.ts",
+        "server/claude-accounts.ts"
       ]
     },
     "§app.settings-dialog/claude-long-context-listed": {
@@ -6937,6 +6949,144 @@
         "shared/protocol.ts",
         "server/resource-monitor.ts",
         "src/components/ResourceMonitor.tsx"
+      ]
+    },
+    "§app.claude-logins/accounts-tab": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/AccountsSettings.tsx",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/api.ts",
+        "src/design/base.css",
+        "server/claude-accounts.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/lib/settings-nav.test.ts"
+      ],
+      "requires": [
+        "§app.claude-logins/add-remove",
+        "§app.claude-logins/device-order"
+      ]
+    },
+    "§app.claude-logins/active-login": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/spawn-selection",
+        "§app.claude-logins/device-order"
+      ],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "server/claude-login-state.ts",
+        "server/chat-manager.ts",
+        "shared/protocol.ts",
+        "src/lib/claude-login.ts",
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/design/base.css",
+        "pi-config/extensions/usage-status/index.ts",
+        "server/claude-login-state.test.ts",
+        "src/lib/claude-login.test.ts"
+      ]
+    },
+    "§app.claude-logins/add-remove": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/registry"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-accounts.ts",
+        "shared/protocol.ts",
+        "server/index.ts",
+        "src/components/AccountsSettings.tsx",
+        "src/lib/api.ts",
+        "server/claude-accounts.test.ts",
+        "scripts/fake-claude.mjs"
+      ]
+    },
+    "§app.claude-logins/device-order": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/registry"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/accounts.ts",
+        "server/claude-accounts.ts",
+        "src/components/AccountsSettings.tsx",
+        "src/lib/api.ts",
+        "server/claude-accounts.test.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts"
+      ]
+    },
+    "§app.claude-logins/failover": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/spawn-selection"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/transport.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "server/transcript.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+        "pi-config/extensions/claude-code/runner-failover.test.ts",
+        "server/claude-accounts.test.ts",
+        "pi-config/extensions/claude-code/tests/fixtures/failures/limit-rejected.ndjson"
+      ]
+    },
+    "§app.claude-logins/registry": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/accounts.ts",
+        "server/claude-accounts.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "src/components/AccountsSettings.tsx"
+      ]
+    },
+    "§app.claude-logins/spawn-selection": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/registry",
+        "§app.claude-logins/device-order"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/index.ts",
+        "pi-config/extensions/claude-code/provider/types.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/claude-code/index.ts",
+        "pi-config/extensions/claude-code/models.ts",
+        "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
+        "server/claude-accounts.ts",
+        "server/claude-models.ts",
+        "server/claude-status.ts",
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts"
+      ]
+    },
+    "§app/claude-logins": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/README.md"
       ]
     }
   },

@@ -65,6 +65,12 @@
         <span class="composer-model-level">high</span>
         <span class="icon icon-sm composer-model-caret" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
       </button>
+      <!-- a Claude Code model on a device with several Claude logins: the chat's login, not a
+           control; see §app.claude-logins/active-login -->
+      <span class="composer-login" title="This chat runs on this Claude login: …" aria-label="Claude login: own@example.com">
+        <span class="composer-login-full">own@example.com</span>
+        <span class="composer-login-short">own</span>
+      </span>
       <span class="composer-reason" id="composer-reason"><!-- reason when disabled; else empty --></span>
       <!-- chat sessions only: the mode switch, pushed to the right edge; see §chat/mode-menu -->
       <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu" …>…</button>

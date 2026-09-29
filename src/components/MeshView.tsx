@@ -1,5 +1,7 @@
 import { createEffect, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshCandidates, fetchMeshLogins, getMeshSettings, putMeshPeers, putMeshSettings } from "../lib/api";
+import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshCandidates, fetchMeshLogins, getClaudeAccounts, getMeshSettings, putMeshPeers, putMeshSettings } from "../lib/api";
+import { deviceLoginChip } from "../lib/claude-pool";
+import type { ClaudePoolInfo } from "../../shared/protocol";
 import { copyText } from "../lib/ui-state";
 import { loadPublicLinks, meshChipText, publicLinksInfo, stateChip } from "../lib/public-links";
 import { relativeTime } from "../lib/format";
@@ -52,6 +54,21 @@ const STATE_WORD: Record<PeerState, string> = { up: "Up", down: "Down", skewed: 
 const STATE_TONE: Record<PeerState, "success" | "error" | "warn"> = { up: "success", down: "error", skewed: "warn", refused: "error" };
 
 /** A peer's state in a word as well as a colour; the reason rides the title. */
+/**
+ * The Claude login a device holds from the pool (§app.claude-logins/pool), or "No Claude login",
+ * on the host's meta line; it opens Settings → Accounts. An email is not a chip word, so it is text.
+ */
+function ClaudeLoginChip(props: { pool: ClaudePoolInfo; device: string }) {
+  const chip = () => deviceLoginChip(props.pool, props.device);
+  return (
+    <p class="list-meta">
+      <button type="button" class="mesh-login-link" title={chip().title} onClick={() => openSettings("accounts")}>
+        {chip().text}
+      </button>
+    </p>
+  );
+}
+
 export function PeerStateChip(props: { peer: PeerStatus }) {
   return (
     <Chip tone={STATE_TONE[props.peer.state]} title={peerUnavailable(props.peer) ?? undefined}>
@@ -174,6 +191,11 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
     MESH_PAGE_POLL_MS,
   );
   const state = () => poll.data() ?? meshState();
+  // The pool of Claude logins: a chip per host naming what it holds. Read again with every poll.
+  const [pool] = createResource(
+    () => (meshOn() ? state() : false),
+    () => getClaudeAccounts().then((i) => i.pool ?? null).catch(() => null),
+  );
 
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
@@ -297,6 +319,7 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
               <Show when={state()?.self.listen?.error}>
                 {(e) => <p class="mesh-host-error">Peers can't reach this host yet: {e().replace(/[.\s]+$/, "")}.</p>}
               </Show>
+              <Show when={pool()}>{(pl) => <ClaudeLoginChip pool={pl()} device={pl().self} />}</Show>
             </div>
             <Chip>This host</Chip>
           </li>
@@ -320,6 +343,7 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
                     <Show when={p.state !== "up" && !p.lastSeen}> · hasn't answered yet</Show>
                   </p>
                   <Show when={peerUnavailable(p)}>{(why) => <p class="mesh-host-error">{why()}</p>}</Show>
+                  <Show when={pool()}>{(pl) => <ClaudeLoginChip pool={pl()} device={p.id} />}</Show>
                 </div>
                 <PeerStateChip peer={p} />
                 <button

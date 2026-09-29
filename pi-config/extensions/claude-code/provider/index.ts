@@ -17,6 +17,7 @@ import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-codin
 import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
 import { claudeContextWindow, withLongContextVariants } from "../context-window.ts";
 import { discoverClaudeModels } from "../models.ts";
+import { CLAUDE_LOGIN_ENTRY, hostLogins, recordedLogin } from "../accounts.ts";
 import type { BackendModel } from "../../subagents/contracts.ts";
 import { registerAutoCompact } from "./auto-compact.ts";
 import { getSessionBridge } from "./session-bridge.ts";
@@ -134,6 +135,16 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 		// sessions would be skipped by the early return below.
 		const sessionId = ctx?.sessionManager?.getSessionId?.();
 		if (sessionId && ctx?.cwd) bridge.setSessionCwd?.(sessionId, ctx.cwd);
+		// The login this session last ran on (so a restarted child keeps it), and where a change of
+		// login is recorded: a hidden `claude-login` entry, which Sova shows as a note on a switch.
+		if (sessionId) {
+			let branch: readonly unknown[] = [];
+			try { branch = ctx?.sessionManager?.getBranch?.() ?? []; } catch { /* no branch yet */ }
+			bridge.setSessionLogin?.(sessionId, recordedLogin(branch), (entry) => {
+				try { pi.appendEntry(CLAUDE_LOGIN_ENTRY, entry); } catch { /* plumbing: the next spawn still selects */ }
+				if (entry.text) { try { ctx?.ui?.notify?.(entry.text, "warning"); } catch { /* no UI */ } }
+			});
+		}
 		if (alreadyRegistered()) return;
 		pi.registerProvider(CLAUDE_PROVIDER_ID, {
 			name: "Claude Code CLI",
@@ -161,5 +172,5 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
  * registry and its exit hooks, so no CLI process starts at extension load.
  */
 export function registerClaudeCodeProvider(pi: ExtensionAPI): void {
-	registerProviderIfEnabled(pi, getSessionBridge());
+	registerProviderIfEnabled(pi, getSessionBridge({ logins: hostLogins() }));
 }

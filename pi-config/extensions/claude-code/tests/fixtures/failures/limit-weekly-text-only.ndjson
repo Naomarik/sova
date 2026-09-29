@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","session_id":"s-2"}
+{"type":"result","subtype":"success","is_error":true,"result":"Claude AI usage limit reached|1790003600","num_turns":1,"session_id":"s-2"}

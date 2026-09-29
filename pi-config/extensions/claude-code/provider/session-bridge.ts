@@ -28,9 +28,13 @@ import { join } from "node:path";
 import { claudeProjectsRoot, claudeSessionId, nextFreeLaunch } from "./session-records.ts";
 import { BRIDGE_REGISTRY, CLAUDE_FORK_ENV, decodeForkPoint, type ClaudeForkPoint } from "./fork-point.ts";
 import {
-	buildClaudeArgv, ClaudeTransport,
+	buildClaudeArgv, ClaudeFailureDetector, ClaudeTransport,
 	type ClaudeTransportLimits, type ClaudeTransportTimings, type SpawnImpl,
 } from "../transport.ts";
+import {
+	DEFAULT_LOGIN_ID, loginEntryFor, switchText,
+	type ClaudeAccountFailure, type ClaudeLoginChoice, type ClaudeLoginEntry, type ClaudeLoginSwitch,
+} from "../accounts.ts";
 import type { ImageContent, Message, TextContent, Tool } from "@earendil-works/pi-ai";
 import { PiMcpHost, type HeldMcpCall, type McpContent, type McpToolResult } from "./mcp-host.ts";
 import {
@@ -206,6 +210,26 @@ export interface SessionBridgeOptions {
 	signalGroupImpl?: (pid: number, signal: NodeJS.Signals) => void;
 	/** Diagnostics sink. Defaults to the opt-in log behind PI_CLAUDE_CODE_DEBUG=1. */
 	onDebug?: (entry: Record<string, unknown>) => void;
+	/**
+	 * The host's Claude logins (accounts.ts ClaudeLogins): which one each child runs on, and where a
+	 * turn goes on a usage limit or a failed sign-in. Absent: every child inherits the environment,
+	 * and a failure ends the turn (as before logins existed).
+	 */
+	logins?: ClaudeLoginSource;
+}
+
+/** What the bridge needs of the host's logins; accounts.ts ClaudeLogins is the real one. */
+export interface ClaudeLoginSource {
+	select(current?: string): ClaudeLoginChoice;
+	failover(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): ClaudeLoginChoice | undefined;
+	recordFailure(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): void;
+	forcedFailure?(id: string): ClaudeAccountFailure | undefined;
+}
+
+/** A pi session's login bookkeeping (setSessionLogin). */
+interface SessionLoginHooks {
+	recorded?: string;
+	onChange?: (entry: ClaudeLoginEntry) => void;
 }
 
 /** Opt-in (PI_CLAUDE_CODE_DEBUG=1) bridge diagnostics; never includes message text. */
@@ -590,6 +614,14 @@ interface TurnState {
 	dispatchTimer?: ReturnType<typeof setTimeout>;
 	signal?: AbortSignal;
 	onAbort?: () => void;
+	/** What pi asked for: a login switch sends it again. */
+	request: ClaudeTurnRequest;
+	/** The fold framing this turn's restart used (a switch before any answer is still first contact). */
+	first: boolean;
+	/** A frame reached pi: from here on a failure ends the turn rather than switching logins. */
+	surfaced: boolean;
+	/** Logins this turn already switched away from. */
+	failovers: number;
 }
 
 function deepEqual(a: unknown, b: unknown): boolean {
@@ -658,12 +690,19 @@ class CliSession {
 	 * the first child, and dropped either way.
 	 */
 	private forkSeed?: ClaudeForkPoint;
+	/** The login the live (or next) child runs on; chosen at each spawn. */
+	private login?: ClaudeLoginChoice;
+	/** The login the session last recorded; undefined until read from the hooks. */
+	private recordedLogin?: string;
+	private readonly detector = new ClaudeFailureDetector();
+	private readonly loginHooks: () => SessionLoginHooks | undefined;
 
-	constructor(piSessionId: string, options: SessionBridgeOptions, cwd: string, forkSeed?: ClaudeForkPoint) {
+	constructor(piSessionId: string, options: SessionBridgeOptions, cwd: string, forkSeed?: ClaudeForkPoint, loginHooks: () => SessionLoginHooks | undefined = () => undefined) {
 		this.piSessionId = piSessionId;
 		this.options = options;
 		this.cwd = cwd;
 		this.forkSeed = forkSeed;
+		this.loginHooks = loginHooks;
 		this.timings = { ...TIMINGS, ...options.timings };
 		this.limits = { ...LIMITS, ...options.limits };
 	}
@@ -712,8 +751,12 @@ class CliSession {
 		}
 
 		const queue = new FrameQueue();
-		const turn: TurnState = { queue, messageComplete: false, wantsTools: false, streaming: false, signal };
+		const turn: TurnState = {
+			queue, messageComplete: false, wantsTools: false, streaming: false, signal,
+			request, first: !!(plan.restart && plan.first), surfaced: false, failovers: 0,
+		};
 		this.turn = turn;
+		this.detector.reset();
 
 		if (signal) {
 			turn.onAbort = () => { void this.abortTurn(); };
@@ -893,6 +936,7 @@ class CliSession {
 
 	private async spawnFresh(request: ClaudeTurnRequest, reason: string, resume?: string): Promise<void> {
 		if (this.started) await this.teardown(`restarting: ${reason}`);
+		this.chooseLogin();
 		this.failure = undefined;
 		this.recorded = [];
 		this.meta = undefined;
@@ -974,6 +1018,7 @@ class CliSession {
 			limits: { maxLineBytes: this.limits.maxLineBytes } satisfies ClaudeTransportLimits,
 			spawnImpl: this.options.spawnImpl,
 			signalGroupImpl: this.options.signalGroupImpl,
+			...(this.login && this.options.logins?.forcedFailure?.(this.login.id) ? { simulateFailure: this.options.logins.forcedFailure(this.login.id) } : {}),
 			hooks: {
 				onEvent: (event) => { if (current()) this.onEvent(event as unknown as Record<string, unknown>); },
 				onStderr: (text) => { if (stderr.length < 4096) stderr += text; },
@@ -993,6 +1038,8 @@ class CliSession {
 			cwd: this.cwd,
 			env: {
 				...this.options.env,
+				// The login this child runs on: CLAUDE_CONFIG_DIR, or nothing for `default`.
+				...this.login?.env,
 				MCP_TOOL_TIMEOUT: String(this.options.mcpToolTimeoutMs ?? DEFAULT_MCP_TOOL_TIMEOUT_MS),
 				// pi owns compaction. A child compacting on its own would answer
 				// from a summary pi never saw, and the next restart would re-fold
@@ -1095,6 +1142,7 @@ class CliSession {
 			this.markDesynced("Claude compacted its own context");
 			return;
 		}
+		if (this.options.logins && this.accountEvent(event)) return;
 
 		let frame: ClaudeFrame | undefined;
 		try {
@@ -1113,12 +1161,103 @@ class CliSession {
 			return;
 		}
 		this.track(frame);
+		if (frame.type !== "init") turn.surfaced = true;
 		turn.queue.push(frame);
 		if (frame.type === "result") {
 			turn.queue.end();
 			return;
 		}
 		this.checkBoundary();
+	}
+
+	// -- logins -------------------------------------------------------------
+
+	/**
+	 * The login for the next child: the current one while usable, else the session's recorded one,
+	 * else this host's first usable (ClaudeLoginSource.select). A change from what the session
+	 * recorded is reported, so the session records it.
+	 */
+	private chooseLogin(): void {
+		const logins = this.options.logins;
+		if (!logins) return;
+		// Only a real entry pins the session; one never recorded takes the order's first usable
+		// login, and counts as on `default` only for deciding whether a change needs recording.
+		const recorded = this.loginHooks()?.recorded;
+		if (this.recordedLogin === undefined) this.recordedLogin = recorded ?? DEFAULT_LOGIN_ID;
+		try { this.login = logins.select(this.login?.id ?? recorded); }
+		catch (error) { debugLog({ event: "login-select-failed", session: this.piSessionId, error: String(error) }); return; }
+		this.announce(this.login);
+	}
+
+	/** Report the session's login to the extension (a `claude-login` entry), when it changed. */
+	private announce(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch): void {
+		if (!change && to.id === this.recordedLogin) return;
+		this.recordedLogin = to.id;
+		try { this.loginHooks()?.onChange?.(loginEntryFor(to, change)); } catch { /* the record is plumbing */ }
+	}
+
+	/**
+	 * Watch the turn's events for an account failure (transport.ts ClaudeFailureDetector). Returns
+	 * true when the event is consumed: the synthetic message that carries the failure is not an
+	 * answer, and the failed result is replaced by a switch of login when one is possible.
+	 */
+	private accountEvent(event: Record<string, unknown>): boolean {
+		const turn = this.turn;
+		if (!turn || turn.queue.isEnded()) return false;
+		const early = this.detector.observe(event);
+		if (early) { this.onAccountFailure(turn, early); return true; }
+		if (this.detector.isFailureMessage(event)) return true;
+		if (event.type !== "result") return false;
+		const failure = this.detector.settle(event);
+		if (!failure) return false;
+		this.abortPending = false;
+		this.onAccountFailure(turn, failure);
+		return true;
+	}
+
+	private onAccountFailure(turn: TurnState, failure: ClaudeAccountFailure): void {
+		const logins = this.options.logins!;
+		const from = this.login ?? logins.select();
+		(this.options.onDebug ?? debugLog)({ event: "account-failure", session: this.piSessionId, login: from.id, kind: failure.kind, surfaced: turn.surfaced });
+		const fail = () => {
+			// The child's conversation now ends in a failed exchange pi keeps as an error; the next
+			// turn starts a fresh child, on whichever login is usable then.
+			this.markDesynced(`Claude login ${from.label} failed (${failure.kind})`);
+			if (this.turn === turn && !turn.queue.isEnded()) {
+				turn.queue.push({ type: "result", outcome: "error", message: failure.message ?? (failure.kind === "limit" ? "Claude usage limit reached" : "Claude sign-in failed") });
+				turn.queue.end();
+			}
+		};
+		// Once pi has part of the answer, sending the turn again would duplicate it.
+		if (turn.surfaced || turn.failovers >= 16) { logins.recordFailure(from, failure); fail(); return; }
+		let to: ClaudeLoginChoice | undefined;
+		try { to = logins.failover(from, failure); } catch { to = undefined; }
+		if (!to) { fail(); return; }
+		turn.failovers++;
+		void this.switchLogin(turn, from, to, failure);
+	}
+
+	/** Restart the child on `to` the way a model change does, and send the turn again. */
+	private async switchLogin(turn: TurnState, from: ClaudeLoginChoice, to: ClaudeLoginChoice, failure: ClaudeAccountFailure): Promise<void> {
+		const change: ClaudeLoginSwitch = { from, to, failure, text: switchText(from, to, failure) };
+		this.login = to;
+		this.announce(to, change);
+		debugLog({ event: "login-switch", session: this.piSessionId, from: from.id, to: to.id, kind: failure.kind });
+		try {
+			await this.restart(turn.request, change.text);
+		} catch (error) {
+			if (this.turn === turn && !turn.queue.isEnded()) {
+				turn.queue.push({ type: "result", outcome: "error", message: error instanceof Error ? error.message : String(error) });
+				turn.queue.end();
+			}
+			return;
+		}
+		if (this.turn !== turn || turn.queue.isEnded()) return;
+		if (turn.signal?.aborted) { this.markDesynced("the turn was aborted while Claude switched logins"); turn.queue.end(); return; }
+		this.detector.reset();
+		this.deliver(turn.request, { restart: true, reason: change.text, results: [], users: [], first: turn.first });
+		this.recorded = transcriptFingerprint(turn.request.messages);
+		this.meta = turnMeta(turn.request, this.cwd);
 	}
 
 	/**
@@ -1361,6 +1500,8 @@ export class SessionBridge implements ClaudeSessionBridge {
 	 * sessions with different directories.
 	 */
 	private readonly cwds = new Map<string, string>();
+	/** pi session id -> its login record and change sink (setSessionLogin). */
+	private readonly logins = new Map<string, SessionLoginHooks>();
 	private readonly options: SessionBridgeOptions;
 	private readonly limits: SessionBridgeLimits;
 	/** This process's fork seed (`CLAUDE_FORK_ENV`), for its first conversation's child only. */
@@ -1391,6 +1532,15 @@ export class SessionBridge implements ClaudeSessionBridge {
 		if (session) session.cwd = cwd;
 	}
 
+	/**
+	 * Record the login a pi session last ran on (its newest `claude-login` entry) and where a
+	 * change is reported. Called from the extension's session_start handler.
+	 */
+	setSessionLogin(sessionId: string, recorded: string | undefined, onChange: (entry: ClaudeLoginEntry) => void): void {
+		if (!sessionId) return;
+		this.logins.set(sessionId, { recorded, onChange });
+	}
+
 	/** The cwd a session's child should run in, best known to worst. */
 	private cwdFor(sessionId: string): string {
 		return this.cwds.get(sessionId) ?? this.options.cwd ?? process.cwd();
@@ -1408,7 +1558,7 @@ export class SessionBridge implements ClaudeSessionBridge {
 			// one-shot requests (compaction, branch summaries) never do.
 			const seed = oneShot ? undefined : this.forkSeed;
 			if (seed) this.forkSeed = undefined;
-			session = new CliSession(key, this.options, this.cwdFor(key), seed);
+			session = new CliSession(key, this.options, this.cwdFor(key), seed, () => this.logins.get(key));
 			this.sessions.set(key, session);
 		}
 		this.reapIdle(key);
@@ -1436,6 +1586,7 @@ export class SessionBridge implements ClaudeSessionBridge {
 	/** Called from the extension's `session_shutdown` hook. */
 	async disposeSession(piSessionId: string, reason = "pi session shut down"): Promise<void> {
 		this.cwds.delete(piSessionId);
+		this.logins.delete(piSessionId);
 		const session = this.sessions.get(piSessionId);
 		if (!session) return;
 		this.sessions.delete(piSessionId);

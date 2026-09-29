@@ -15,6 +15,12 @@ import { spawn } from "node:child_process";
 import type { Summarizer, SummarizeInput, SummarizerResult, SummarizerSpec } from "../types.ts";
 import { SummarizerError } from "../types.ts";
 import { buildPrompt, parseSummarizerJson } from "./chain.ts";
+import { hostLogins } from "../../claude-code/accounts.ts";
+
+/** This host's first usable Claude login's environment (CLAUDE_CONFIG_DIR, or none for `default`). */
+function loginEnv(): Record<string, string> {
+  try { return hostLogins().select().env; } catch { return {}; }
+}
 
 interface ClaudeEnvelope {
   type?: string;
@@ -47,6 +53,7 @@ export function createClaudeCliSummarizer(spec: SummarizerSpec, claudeBin: strin
         delete env.CLAUDECODE;
         delete env.CLAUDE_CODE_ENTRYPOINT;
         delete env.CLAUDE_AGENT_SDK_VERSION;
+        Object.assign(env, loginEnv());
         const args = [
           "-p",
           "--model", spec.model,

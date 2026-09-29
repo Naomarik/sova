@@ -417,3 +417,18 @@ menu keeps its own 360px cap.
 
 ---
 
+## §chat.composer/file-index-deadline — The @ menu's folder read has a time limit
+
+The @ menu lists the session folder's files from `GET /api/files?cwd=…` (`server/files.ts`). One
+request spends one budget of 6 seconds on every stat, git call and directory read. When the budget
+runs out:
+
+- before there is any file to show (the folder's own stat, a git listing that never answered, or a
+  walk that had read nothing), the answer is 504, "Reading this folder took too long — try the
+  menu again", never a listing and never an empty one;
+- when a walk of a folder outside git already has files, the answer is those files marked partial
+  (`truncated`), never presented as the whole folder.
+
+Neither answer is cached. A listing is cached for 30 seconds only when it was read within the
+budget, and a read that finishes after the budget ran out never reaches the cache, so the next
+open reads the folder again.

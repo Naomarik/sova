@@ -801,6 +801,17 @@ Organizations region's own Needs you, never the global one.
 - **It travels with the repo.** `about.md` and `org-history.jsonl` are ordinary workspace files: a
   clone and attach brings both (§app.organizations/portability).
 
+## §app.organizations/host-offline — An org whose host is down
+
+The page of an organization attached on a peer (the host the mesh has learnt holds it) shows a
+warn banner above the page's content while the mesh reports that peer `down`: "{host} is offline,
+so its links can't be opened." `{host}` is the peer's label, else its id. It shows even when the
+org itself couldn't load (a down host can't answer), follows the mesh's own peer state and goes
+when the peer is back. A
+local org, and a peer that is up, skewed, refused or unknown, never shows it. A routed host's
+unreachable gateway is not this banner: it is the `unreachable` link warning
+(§mesh.public/setting).
+
 ## §app.organizations/decisions — Why it is shaped this way
 
 - **One repo per org, outside Sova.** Sova's repo is public and profiles are personal data; one

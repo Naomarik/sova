@@ -8,7 +8,7 @@ the session stays behind, closed by the scrim, Esc, or its Close button (Cancel 
 is unsaved, §app.settings-dialog/save-bar).
 
 The rail is the structure: each settings screen is one tab — General, Models, Accounts, Modes, Teams,
-Overseer, Decisions, Summaries, Organizations, Themes, Mesh, Voice, Experimental.
+Overseer, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Voice, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
 (§chat/mode-menu) opens Modes directly, and nothing else about the chat changes. Which tab is open lives in

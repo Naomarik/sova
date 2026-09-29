@@ -837,6 +837,56 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Projects tab | disclosure `Archived Projects ({n})` (collapsed; absent with none) · row: the project link · "archived {relative time}" · `Unarchive` (ghost) · every project archived, in place of "No projects yet…": "The 1 project here is archived. Unarchive one below, or add a project." / "All {n} projects here are archived. Unarchive one below, or add a project." |
 | Overseer tool refusals and notes (the model reads them; the action log keeps the refusals) | "This reaches people or ends something: ask with sova_confirm, listing {what} in its items, and act in the turn the user's click starts." · "Only the Overseer sends here. Write in the overseer's own composer." (403) · "Send words; use op clear to clear it." · "That folder is an organization's workspace; read it with sova_orgs and sova_read_session." · "No link was made: Needs you asks you to send {name} their link." |
 
+## §design.copy-deck/public-links — Public links (§mesh/public)
+
+`{gateway}` is the gateway peer's name, `{host}` a host's name, `{url}` a public address, `{port}`
+a port, `{var}` an environment variable's name, `{reason}` the answer's own sentence. The public
+page never names a host or a person.
+
+**Settings → Public links (§mesh.public/panel)**
+
+| Where | Copy |
+|---|---|
+| Title · line | Public links · People you send a link to open it at this address. |
+| State chip | `Off` · `Not verified` (warn) · `Verified` (success) · `Unreachable` (error) |
+| Address row | Address · {url}, or `None` · source `Set by environment ({var})` / `From this setting` / `From {gateway}` / `Bound address` |
+| Route legend and choices | Where links open · `Off` "Links work only on your own devices." · `This host is the gateway` "This host serves every public link, including those from hosts that go through it." · `Through {gateway}` "Links from this host open at {gateway}'s address. {gateway} must be on for them to open." |
+| Gateway fields | Public address · Front (`Your web server` · `Caddy on this host` · `Tailscale Funnel` · `Cloudflare Tunnel`) · Local port · Accept links from (`All hosts` · `These hosts`) |
+| Pinned field hint | Set by environment ({var}). Change it there, then restart Sova. |
+| Front steps | heading "Set up the front once" · "Anything that serves {url} and forwards to 127.0.0.1:{port} works. Sova doesn't run this step for you." · chip `Needs root` · `Copy Step`, toast "Copied the step." · before a save: "Save Changes to see the step for this setting." |
+| Verify | `Verify Address` (`Verifying…`) · blocked: "Save the gateway setting first." / "Save the new address first." · passed: "Verified {time}. {url} reaches this gateway." · failed (error banner): **Couldn't reach {url}.** {reason} Links still open on your devices. Check the front, then verify again. ({reason} else "It answered {status}", else "No answer") |
+| Verify reasons (server) | Timed out · Couldn't connect · It redirects; the front must forward, not redirect · Got {status}, not Sova's answer · Something else answered, not Sova · The public address must start with https:// · The public address must have no path, query or login · No public address is set. |
+| Routed hosts | heading "Hosts sending links here" · row `{n} links` (`1 link`) · `Last push {time}` / `Never pushed` · `Up` / `Down` / `Not accepted` · none: "No other host sends its links here yet." |
+| Through | "Links open only while {gateway} is on. Keep a client's organization on an always-on host." · Ingress port |
+| Field errors | Enter the public address. · The public address must start with https://. · Enter the public address as https://share.example.com. · The public address is a host only, with no path. · The local port is a whole number from 1 to 65535. · Pick the gateway. · The ingress port is a whole number from 1 to 65535. (the save bar: "Public links: {error}") |
+| Read and save failures (error banner) | **Couldn't read the public links setting.** Nothing was changed. {reason} · **Couldn't save the public links setting.** {reason} Your saved setting is unchanged. |
+| Mesh card chip (§mesh.ui/card) | `Public links: gateway` · `Public links: through {gateway}` |
+
+**`linkWarning` (§app.baton/links; `linkWarningCode` names it; the server's text, shown verbatim, with `Open Settings`)**
+
+| Code | Copy |
+|---|---|
+| (verified) | none |
+| `off` | This link can't be opened from outside yet. Turn on public links in Settings → Public links. |
+| `unverified` | This link may not open from outside yet. Verify the address in Settings → Public links. |
+| `unreachable` | {gateway} can't be reached, so this link won't open until it's back. |
+| `not-accepted` | {gateway} doesn't accept links from this host yet. Add this host in {gateway}'s Settings → Public links. |
+| `unconfirmed` | This link isn't public yet. We'll keep sending it to {gateway}, and it opens once {gateway} confirms. |
+| `sleeps` (defined; no server path sets it yet) | This link opens only while this host is awake. |
+
+{gateway} is "the gateway" when the peer isn't known; a sentence that starts with it starts with a
+capital. The baton strip's standing notice, while a person or an offer holds the session and no
+address is set, is the `off` text.
+
+**Elsewhere**
+
+| Where | Copy |
+|---|---|
+| Org page, its host down (warn banner, §app.organizations/host-offline) | {host} is offline, so its links can't be opened. |
+| Offline page shell (§mesh.public/offline) | title "Not available right now" · heading "This page can't be opened right now." · "The computer it lives on is offline. Try again in a minute." |
+| Offline API body | `{error: "offline", retryAfter: 60}` |
+| Share page, offline | Reconnecting. Your draft is kept. · a send refused: "Not sent. The page is offline; your message is still here." |
+
 ## §design.copy-deck/owner-page — Owner page (§app/owner-page)
 
 The owner is not technical: short sentences, everyday words, full words for time. `{first}` is a

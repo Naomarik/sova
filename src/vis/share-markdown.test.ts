@@ -1,9 +1,11 @@
 // The share and owner pages' replies (§app.baton/outsider-view): the business kinds are drawn, any
 // other kind and a broken block are one quiet line, never their source.
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { BROKEN_DRAWING, renderShareMarkdown, SHARE_VIS_KINDS } from "../share/markdown";
 import { SHARE_VIS_KINDS as TAUGHT } from "../../server/baton-vis-guide";
+import { WIREFRAME_ICON_FILES } from "./kinds/wireframe/icons";
 
 const fence = (info: string, body: string) => `Here it is:\n\n\`\`\`${info}\n${body}\n\`\`\`\n\nAfter.`;
 
@@ -13,6 +15,24 @@ test("a business kind becomes a placeholder with its parsed spec", () => {
   assert.equal(r.visuals[0]!.kind, "chart");
   assert.match(r.html, /<div class="md-vis" data-vis="0" data-vis-key="[0-9a-f]+"><\/div>/);
   assert.match(r.html, /After\./);
+});
+
+test("a wireframe fence becomes a share-page placeholder with its parsed screens (drawing it is the browser check's)", () => {
+  const r = renderShareMarkdown(fence("vis wireframe", 'title: Invoices\nscreen "List"\nheader "Invoices"\n  icon "search"\nlist\n  item "Invoice no." "customer" "AED —" -> "Invoice"\nscreen "Invoice"\ncard "Amount due" "AED —"'));
+  assert.equal(r.visuals.length, 1);
+  assert.equal(r.visuals[0]!.kind, "wireframe");
+  assert.equal((r.visuals[0]!.spec as unknown as { screens: unknown[] }).screens.length, 2);
+  assert.match(r.html, /<div class="md-vis" data-vis="0"/);
+});
+
+test("the share build carries every icon a drawing names: share/vis-icons.ts globs every public/icons svg, and each named file is there", () => {
+  // The glob runs only under Vite, so read what it covers.
+  const src = readFileSync(new URL("../share/vis-icons.ts", import.meta.url), "utf8");
+  assert.match(src, /import\.meta\.glob<string>\("\.\.\/\.\.\/public\/icons\/\*\.svg", \{ query: "\?url", import: "default", eager: true \}\)/);
+  const bundled = new Set(readdirSync(new URL("../../public/icons/", import.meta.url)).filter((f) => f.endsWith(".svg")).map((f) => f.slice(0, -4)));
+  for (const name of [...WIREFRAME_ICON_FILES, "alert-circle", "arrow-right", "check-circle", "info", "x-circle", "chevron-left", "chevron-right", "home", "trash", "filter", "minus"]) {
+    assert.ok(bundled.has(name), `public/icons/${name}.svg`);
+  }
 });
 
 test("html, svg and the technical kinds, and a block that doesn't parse, show one quiet line and never their source", () => {

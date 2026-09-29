@@ -166,6 +166,54 @@ export function heldLine(what: string, goesAt: number, now: number): string {
   return n > 0 ? `${stripStop(what)} starts in ${n} min unless you cancel it.` : `${stripStop(what)} is starting now.`;
 }
 
+/** What a held act waits on, from the wire (AttentionItem.held or HeldAct, times in ms). */
+export interface HeldWait {
+  what: string;
+  goesAt: number;
+  wait?: "hold" | "hours";
+  person?: string;
+  reviewSince?: number;
+}
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** A send time on the operator's clock: "14:00" today, "Tue 09:00" within 6 days, else "Mar 4 09:00". */
+export function sendAt(t: number, now: number): string {
+  const d = new Date(t);
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const n = new Date(now);
+  const day0 = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((day0(d) - day0(n)) / 86_400_000);
+  if (days === 0) return hm;
+  if (days > 0 && days < 7) return `${WEEKDAYS[d.getDay()]} ${hm}`;
+  return logStamp(d.toISOString(), now);
+}
+
+/** "in 6h", "in 25m", "in under a minute"; "" once due. */
+function inWords(t: number, now: number): string {
+  const ms = t - now;
+  if (ms <= 0) return "";
+  if (ms < 60_000) return "in under a minute";
+  return `in ${duration(ms)}`;
+}
+
+/**
+ * A held act's sentence, whatever it waits on: the hold (r2's sentence), a person's working hours
+ * (r7), or, past its hold, the overseer's review (r8, with the stall clock).
+ */
+export function heldWaitLine(h: HeldWait, now: number): string {
+  const what = stripStop(h.what);
+  if (h.reviewSince !== undefined) {
+    return `${what} is waiting for the overseer's review, for ${duration(Math.max(0, now - h.reviewSince))}. Cancel it, or it goes ahead once the overseer looks.`;
+  }
+  if (h.wait === "hours") {
+    const rel = inWords(h.goesAt, now);
+    if (!rel) return `${what} is starting now.`;
+    return `${what} waits for ${h.person ?? "their"}${h.person ? "'s" : ""} working hours: it starts at ${sendAt(h.goesAt, now)} (${rel}) unless you cancel it.`;
+  }
+  return heldLine(h.what, h.goesAt, now);
+}
+
 /** Cancel's own name, for its accessible name and title. */
 export const cancelLabel = (what: string): string => `Cancel: ${stripStop(what)}`;
 

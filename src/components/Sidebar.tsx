@@ -82,7 +82,7 @@ import { ArchiveCleanup } from "./ArchiveCleanup";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { ContextRing } from "./ContextRing";
 import { CancelHeldButton } from "./HeldAct";
-import { heldLine } from "../lib/pipeline-view";
+import { heldWaitLine } from "../lib/pipeline-view";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
@@ -2210,7 +2210,7 @@ export function Sidebar(props: {
                     <For each={orgItems()}>
                       {(it) => {
                         // Recounted on the list's clock, read at the real time: the clock lags up to a tick, and a count must never run high.
-                        const detail = () => (it.held ? heldLine(it.held.what, it.held.goesAt, Math.max(props.now, Date.now())) : it.detail);
+                        const detail = () => (it.held ? heldWaitLine(it.held, Math.max(props.now, Date.now())) : it.detail);
                         return (
                           <li classList={{ "org-needs-held": !!it.held }}>
                             <a class="list-row list-row-interactive org-needs-item" href={it.href} title={detail()}>

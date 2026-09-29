@@ -77,6 +77,12 @@ export interface HeldAct {
   /** ISO time it was held. */
   since: string;
   by?: "overseer" | "chart";
+  /** "hours": it waits for a person's working hours (r7), `goesAt` is when their window opens; absent: the hold (r2). */
+  wait?: "hold" | "hours";
+  /** An hours wait's person, by display name. */
+  person?: string;
+  /** ISO: the hold ended and it waits for the overseer's review (r8); a stall clock runs from here. */
+  reviewSince?: string;
 }
 
 export interface PipelineInfo {

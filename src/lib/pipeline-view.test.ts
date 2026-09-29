@@ -140,3 +140,24 @@ test("logStamp: 24-hour clock today, date and clock before, year when not this y
   assert.equal(logStamp(local(2025, 11, 31, 23, 59), now), "Dec 31 2025 23:59");
   assert.equal(logStamp("nope", now), "");
 });
+
+test("heldWaitLine: the hold's r2 sentence; an hours wait's send time on your clock; a review wait's stall clock (r7, r8)", async () => {
+  const { heldWaitLine, sendAt } = await import("./pipeline-view");
+  const now = new Date(2026, 8, 30, 15, 0).getTime(); // a Wednesday
+  const what = "A message to Sam Okafor";
+  assert.equal(heldWaitLine({ what, goesAt: now + 5 * 60_000 }, now), "A message to Sam Okafor starts in 5 min unless you cancel it.");
+  const tomorrow9 = new Date(2026, 9, 1, 9, 0).getTime();
+  assert.equal(
+    heldWaitLine({ what, goesAt: tomorrow9, wait: "hours", person: "Sam Okafor" }, now),
+    "A message to Sam Okafor waits for Sam Okafor's working hours: it starts at Thu 09:00 (in 18h) unless you cancel it.",
+  );
+  assert.equal(heldWaitLine({ what, goesAt: tomorrow9, wait: "hours" }, now).includes("waits for their working hours"), true);
+  assert.equal(heldWaitLine({ what, goesAt: now - 1, wait: "hours", person: "Sam" }, now), "A message to Sam Okafor is starting now.");
+  assert.equal(
+    heldWaitLine({ what, goesAt: now - 12 * 60_000, reviewSince: now - 12 * 60_000 }, now),
+    "A message to Sam Okafor is waiting for the overseer's review, for 12m. Cancel it, or it goes ahead once the overseer looks.",
+  );
+  assert.equal(sendAt(new Date(2026, 8, 30, 18, 30).getTime(), now), "18:30");
+  assert.equal(sendAt(new Date(2026, 9, 5, 9, 0).getTime(), now), "Mon 09:00");
+  assert.equal(sendAt(new Date(2026, 9, 12, 9, 0).getTime(), now), "Oct 12 09:00");
+});

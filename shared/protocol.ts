@@ -2791,7 +2791,17 @@ export interface AttentionItem {
   /** kind `held-act` only: the hold's id (for `POST /api/orgs/:id/held/:holdId/cancel`), when it goes
       ahead (ms epoch), and its noun phrase, so the row recounts "{what} starts in {n} min unless you
       cancel it." as the minutes pass. */
-  held?: { id: string; goesAt: number; what: string };
+  held?: {
+    id: string;
+    goesAt: number;
+    what: string;
+    /** "hours": it waits for a person's working hours (r7), `goesAt` is when their window opens; absent: the hold (r2). */
+    wait?: "hold" | "hours";
+    /** An hours wait's person, by display name. */
+    person?: string;
+    /** ms epoch: the hold ended and it waits for the overseer's review (r8); the row's stall clock runs from here. */
+    reviewSince?: number;
+  };
 }
 
 /** Which org (and project) an organizational session belongs to; names as they read now. `projectId`

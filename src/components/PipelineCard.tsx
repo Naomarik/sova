@@ -7,7 +7,7 @@ import { createPoll } from "../lib/poll";
 import {
   byWord,
   heldFromLine,
-  heldLine,
+  heldWaitLine,
   inPhaseFor,
   logStamp,
   moveLine,
@@ -32,6 +32,13 @@ const CLOCK_MS = 15_000;
 /** Rows carry `id` (their item id) so a poll reconciles them in place: an open timeline and focus survive. */
 type Row = PipelineRow & { id: string };
 type Info = { rows: Row[]; held: HeldAct[] };
+const heldWaitOf = (h: HeldAct) => ({
+  what: h.what,
+  goesAt: Date.parse(h.goesAt),
+  wait: h.wait,
+  person: h.person,
+  reviewSince: h.reviewSince ? Date.parse(h.reviewSince) : undefined,
+});
 const keyed = (p: PipelineInfo): Info => ({ rows: p.rows.map((r) => ({ ...r, id: r.itemId })), held: p.held });
 
 /**
@@ -82,8 +89,8 @@ export function PipelineCard(props: { orgId: string; projectId: string }) {
             <For each={held()}>
               {(h) => (
                 <li class="pipeline-held-row">
-                  <p class="pipeline-held-line" title={`Goes ahead at ${stampTime(h.goesAt)}.`}>
-                    {heldLine(h.what, Date.parse(h.goesAt), now())}
+                  <p class="pipeline-held-line" title={h.reviewSince ? undefined : `Goes ahead at ${stampTime(h.goesAt)}.`}>
+                    {heldWaitLine(heldWaitOf(h), now())}
                   </p>
                   <CancelHeldButton orgId={props.orgId} holdId={h.id} what={h.what} onDone={() => poll.refetch()} />
                 </li>

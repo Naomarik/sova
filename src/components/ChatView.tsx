@@ -18,7 +18,7 @@ import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
 import { OverseerThreadContext, QuickActions } from "./OverseerCards";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
-import { acceptAllMessage, clearPicks, composeWithPicks, pickCount, picksLabel, picksOf, prunePicks, samePicks, togglePick } from "../lib/align-picks";
+import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
 import { createFork, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
@@ -105,7 +105,7 @@ import { noteLinks } from "../lib/links-live";
 import { entryIdOf, jumpToEntry, landExplainJump, transcriptRoot } from "../lib/jump";
 import { anyReply, inputTotal, lastInput as lastInputOf, messageTotal, newestOnly, newRows } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
-import { alignRowFromDetails, foldAlignRows, type AlignEntry } from "../lib/align";
+import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
 import { Composer, type ComposerReason } from "./Composer";
 import { openCreated } from "../lib/fork-stage";
 import { FlyoutSession, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
@@ -1157,19 +1157,31 @@ export function ChatView(props: {
   };
 
   // ---- Taking recommendations from an alignment card (§chat.alignment/card) --------------
-  /** The card takes ticks and its button only with align on, in a chat whose mode the user sets
+  /** The card takes ticks, option picks and its button only with align on, in a chat whose mode the user sets
       (not the Overseer's, a project overseer's or a baton session's). */
   const alignAnswerable = () =>
     !props.overseer && !props.projectOverseer && !props.summary?.()?.baton && !props.summary?.()?.projectOverseer && !!modeState()?.minorModes.includes("align");
-  /** This session's ticks that still apply: open questions of each alignment's newest revision. */
+  /** This session's picks that still apply: open questions of each alignment's newest revision. */
   const picks = createMemo(() => (alignAnswerable() ? prunePicks(picksOf(props.path), aligns()) : {}), {}, { equals: samePicks });
   /** Whether the composer holds typed text or an attachment: the card's button then waits. */
   const [hasDraft, setHasDraft] = createSignal(false);
   const alignAnswer: AlignAnswer = {
     on: alignAnswerable,
     current: (id) => aligns().find((e) => e.doc.id === id)?.doc,
-    picked: (doc, q) => picks()[doc]?.includes(q) ?? false,
-    toggle: (doc, q, on) => togglePick(props.path, doc, q, on),
+    picked: (doc, q) => picks()[doc]?.some((p) => p.q === q && !p.option) ?? false,
+    toggle: (doc, q, on) => choosePick(props.path, doc, q, on ? { q } : null),
+    pickedOption: (doc, q) => {
+      const p = picks()[doc]?.find((x) => x.q === q);
+      if (!p) return undefined;
+      if (p.option) return p.option.index;
+      const question = alignAnswer.current(doc)?.questions.find((x) => x.id === q);
+      return question ? recommendedOption(question) : undefined;
+    },
+    pick: (doc, q, index) => {
+      const question = alignAnswer.current(doc)?.questions.find((x) => x.id === q);
+      if (index === null || !question) choosePick(props.path, doc, q, null);
+      else choosePick(props.path, doc, q, optionPick(question, index));
+    },
     tickBlocked: () => (archivedPane() ? blocked()?.text ?? null : null),
     goBlocked: () => {
       const reason = blocked()?.text;

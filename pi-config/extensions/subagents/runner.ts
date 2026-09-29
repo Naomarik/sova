@@ -224,8 +224,9 @@ export interface SpawnOptions {
 	 * Continue this worker's own backend session after a restart (agent_resume): the child
 	 * opens it (pi `--session <file>`, claude `--resume <id>`) and comes up IDLE — no task
 	 * prompt is sent and no completion is announced; `task` is only the record's label.
+	 * `startedAt` is its first spawn (ms), kept as the worker's `startedAt` across the resume.
 	 */
-	resume?: { sessionId?: string; sessionFile?: string };
+	resume?: { sessionId?: string; sessionFile?: string; startedAt?: number };
 	/** @internal Test overrides. */
 	timings?: Partial<RunnerTimings>;
 	/** @internal Test overrides. */
@@ -338,7 +339,8 @@ export class SubagentRunner implements Worker {
 	readonly wake: boolean;
 	readonly extensions: readonly string[];
 	readonly forked: boolean;
-	readonly startedAt = Date.now();
+	/** Its first spawn: now, or for a resume the original start it carries. */
+	readonly startedAt: number;
 	/** The exact pid of the tracked child, captured at spawn. Diagnostics only — we always signal the tracked child object, never a re-resolved pid. */
 	pid?: number;
 	/** Resolves once the process has closed (or failed to start). Never rejects. */
@@ -471,6 +473,7 @@ export class SubagentRunner implements Worker {
 		const adopt = options.adopt;
 		this.adopted = Boolean(adopt);
 		this.resumed = !adopt && Boolean(options.resume);
+		this.startedAt = (this.resumed ? options.resume?.startedAt : undefined) ?? Date.now();
 		// A resumed worker owes no completion, not even for a failed reopen: nothing was asked of it.
 		if (this.resumed) this.settleAnnounced = true;
 		this.reqPrefix = adopt ? `req-a${Date.now().toString(36)}-` : "req-";

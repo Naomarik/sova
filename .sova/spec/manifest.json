@@ -88,7 +88,12 @@
         "src/components/SessionDetails.tsx",
         "src/App.tsx",
         "src/components/InsightsPage.tsx",
-        "src/lib/pane-insight.ts"
+        "src/lib/pane-insight.ts",
+        "server/insights.ts",
+        "server/worker-restore.ts",
+        "shared/protocol.ts",
+        "server/insights-workers.test.ts",
+        "server/insights-restored.test.ts"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {

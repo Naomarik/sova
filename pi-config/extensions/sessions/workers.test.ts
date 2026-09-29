@@ -192,6 +192,10 @@ test("token counts pass through per worker, and the lifetime total arrives besid
 	assert.deepEqual(changes.at(-1)![0], [{ ...worker("waiting"), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 12 } }]);
 	h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1, workers: [{ ...worker("done"), usage: "lots" }] });
 	assert.deepEqual(changes.at(-1)![0], [worker("done")]);
+	// Turns ride beside usage: a non-negative integer passes, anything else is dropped, 0 stays 0.
+	h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1, workers: [{ ...worker(), id: "t1", turns: 4 }, { ...worker(), id: "t0", turns: 0 },
+		{ ...worker(), id: "tx", turns: -1 }, { ...worker(), id: "ty", turns: 1.5 }, { ...worker(), id: "tz", turns: "2" }] });
+	assert.deepEqual(changes.at(-1)![0].map(w => w.turns), [4, 0, undefined, undefined, undefined]);
 	// The Σ covers evicted workers, so it is independent of the list and of its own ordering.
 	h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1, workers: [worker()],
 		workerUsage: { input: 9000, output: 800, cacheRead: 70_000, cacheWrite: 6000, cost: 4.2, workers: 63 } });

@@ -10,13 +10,13 @@ import { visPrompt } from "../pi-config/extensions/mode/minor.ts";
  */
 
 /** The kinds a share or owner page draws (src/share/vis.ts); frames and technical kinds never. */
-export const SHARE_VIS_KINDS = ["flow", "chart", "matrix", "timeline", "tree", "steps", "layers"] as const;
+export const SHARE_VIS_KINDS = ["flow", "chart", "matrix", "timeline", "tree", "steps", "wireframe", "layers"] as const;
 
 const GUIDE_FILE = join(import.meta.dirname, "..", "pi-config", "extensions", "mode", "vis-mode.md");
 
 const OPENING = `# Drawings
 
-The person's page draws \`vis\` fences as small figures. When a picture would help the person see their own subject faster than prose (their figures side by side, the steps of their own work, a screen or layout they describe), you may put ONE drawing in a reply: a fenced block whose info string is \`vis <kind>\`, with a one-line \`caption:\`, next to a sentence that says what to notice. Most replies need none.
+The person's page draws \`vis\` fences as small figures. When a picture would help the person see their own subject faster than prose (their figures side by side, the steps of their own work, a screen or layout they describe, as a \`wireframe\`), you may put ONE drawing in a reply: a fenced block whose info string is \`vis <kind>\`, with a one-line \`caption:\`, next to a sentence that says what to notice. Most replies need none. In a wireframe, use the person's own words and figures or a placeholder like "AED —"; never invent sample names or numbers.
 
 Never draw people, roles, the roster, who decides what, who you might hand the conversation to, the goal, or how this conversation is run: those stay private, in drawings as in words. Every rule about what you may say applies to everything in a drawing (titles, labels, notes, captions). Only the kinds below are drawn; anything else shows the person "A drawing couldn't be shown here."`;
 

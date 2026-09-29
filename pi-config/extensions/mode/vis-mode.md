@@ -14,9 +14,8 @@
 The chat renders `vis` fences as drawings. When a picture explains faster than prose — a flow, an exchange between parties, a hierarchy, a history, numbers to compare, layers of a system, a screen's layout — draw one inline in your reply with a fenced block whose info string is `vis <kind>`. Use them when apt, not by default: at most 1–2 per reply, each small (a reader takes it in at a glance on a phone), next to prose that says what to notice. Give every visual a one-line `caption:`.
 
 Rules for every kind:
-- One statement per line. Lines starting with `#` are comments. Settings are `key: value` lines: every kind takes `title:` and `caption:`.
-- Ids are letters, digits, `_ . -`, starting with a letter. Labels with spaces go in "double quotes" (`\n` inside quotes breaks a line).
-- Any one text (a label, a note, a `title:`) is at most 200 characters; longer is cut short. A `caption:` is one short sentence on one line.
+- One statement per line; `#` starts a comment. Settings are `key: value` lines; every kind takes `title:` and `caption:` (one short sentence).
+- Ids are letters, digits, `_ . -`, starting with a letter. Labels with spaces go in "double quotes" (`\n` breaks a line); any text is at most 200 characters.
 - Tones (optional, never the only signal): `accent ok warn error info muted`.
 - The parser is strict: anything it doesn't understand shows the block as plain source with the error. Use only the syntax below.
 - Don't nest a vis fence in another fence; don't use Mermaid, PlantUML or ASCII art instead.

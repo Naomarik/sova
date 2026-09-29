@@ -104,7 +104,7 @@ export interface HostChange {
 }
 
 export interface HostProblem {
-  kind: "snapshot" | "journal" | "log" | "resume";
+  kind: "snapshot" | "journal" | "log" | "resume" | "timer";
   file: string;
   why: string;
   sessionId?: string;
@@ -197,6 +197,9 @@ export class OrgHost {
   private journalProblem: JournalProblem | null = null;
   /** Sessions whose resume (or the past-due timers) threw at open: reported, boot went on. */
   private readonly stuck: HostProblem[] = [];
+  /** Sessions whose due timer throws: a `timer` problem each, set aside in the engine (no call
+      delivers their due events, so no retry loop and no failed acts) until one of their steps commits. */
+  private readonly stalled = new Map<string, HostProblem>();
   private readonly logProblems: LogProblem[] = [];
   private resuming = true;
   private readyWaiters: (() => void)[] = [];
@@ -315,13 +318,12 @@ export class OrgHost {
             }
         }
       }
-      try {
-        const r = this.engine.fireDue(this.clock());
+      for (const r of this.fireTimers((f) => {
+        const r = f();
         this.commit(r);
+        return r;
+      }))
         started.push(...r.invocations);
-      } catch (err) {
-        this.stuck.push({ kind: "resume", file: this.paths.journal, why: `past-due timers: ${message(err)}` });
-      }
     }
     this.resuming = false;
     for (const w of this.readyWaiters.splice(0)) w();
@@ -425,6 +427,8 @@ export class OrgHost {
     for (const e of r.outbox) this.runEffect(e as Effect);
     for (const inv of r.invocations) this.runInvocation(inv);
     const sessions = [...new Set(r.steps.filter((s) => s.saved).map((s) => s.sessionId))];
+    // a stalled session that stepped gets its timers back (armed below); one that throws again is stalled again
+    if (sessions.some((sid) => this.stalled.delete(sid))) this.engine.setAside([...this.stalled.keys()]);
     if (sessions.length || r.steps.length) {
       for (const fn of this.listeners)
         try {
@@ -449,12 +453,29 @@ export class OrgHost {
 
   private fire(): void {
     this.timer = null;
-    if (this.closed || this.resuming) return;
+    if (this.closed || this.resuming || this.journalProblem) return;
+    this.fireTimers((f) => this.step(f));
+    this.arm();
+  }
+
+  /** Fire what is due (stalled sessions' timers aside). When that throws, each due session alone: one
+      that still throws is stalled (a `timer` problem), the others fire. `run` commits a call. */
+  private fireTimers(run: (f: () => StepResult) => StepResult): StepResult[] {
+    const now = this.clock();
     try {
-      this.step(() => this.engine.fireDue(this.clock()));
-    } catch (err) {
-      console.warn(`[org-host] ${this.orgId}: timers: ${message(err)}`);
-      this.arm();
+      return [run(() => this.engine.fireDue(now))];
+    } catch {
+      const out: StepResult[] = [];
+      for (const sid of this.engine.dueSessions(now).filter((x) => !this.stalled.has(x)))
+        try {
+          out.push(run(() => this.engine.fireDue(now, { only: [sid] })));
+        } catch (err) {
+          console.warn(`[org-host] ${this.orgId}: ${sid}'s timer: ${message(err)}`);
+          this.stalled.set(sid, { kind: "timer", file: this.index.get(sid)?.file ?? sid, why: message(err), sessionId: sid });
+          // every call fires what is due first: without this, its timer would fail every act in the org
+          this.engine.setAside([...this.stalled.keys()]);
+        }
+      return out;
     }
   }
 
@@ -688,6 +709,7 @@ export class OrgHost {
       ...(this.journalProblem ? [{ kind: "journal" as const, ...this.journalProblem }] : []),
       ...this.broken.values(),
       ...this.stuck,
+      ...this.stalled.values(),
       ...this.logProblems.map((p) => ({ kind: "log" as const, ...p })),
     ];
   }

@@ -275,10 +275,14 @@ export interface OrgCharts {
   peek(text: string): SnapshotPeek;
   /** Every held act of every loaded session (or of one). */
   holds(sessionId?: string | null): Hold[];
-  /** Earliest delayed send due across loaded sessions. */
-  nextDueAt(): number | null;
-  /** Advance the clock to `now` and deliver everything due. */
-  fireDue(now: number): StepResult;
+  /** The earliest pending delayed event of a loaded session (`except` those sessions'). */
+  nextDueAt(except?: string[]): number | null;
+  /** The loaded sessions with an event due at or before `now`. */
+  dueSessions(now: number): string[];
+  /** Sessions whose due events no call delivers (nor `nextDueAt` counts) until taken off; events a call queues for them still are. */
+  setAside(sessionIds: string[]): void;
+  /** Deliver what is due (`only` those sessions', or all `except` theirs; what the call queues is delivered either way). */
+  fireDue(now: number, opts?: { only?: string[]; except?: string[] }): StepResult;
   dump(sessionId: string): string | null;
   /** Nothing runs on load: send "sova/resumed" (and fresh facts) afterwards. */
   load(sessionId: string, snapshot: string): LoadResult;

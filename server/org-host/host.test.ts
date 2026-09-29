@@ -425,4 +425,43 @@ describe("org host", () => {
     assert.equal(host.data("p/1")?.["n"], 2);
     await host.close();
   });
+
+  test("a past-due timer that throws at open is a timer problem: the org opens, the others fire, it isn't retried until its session steps (H52)", async () => {
+    const at = place();
+    const host = await open(at);
+    await host.start("p/1", "host-probe", {}, operator);
+    await host.start("p/2", "host-probe", {}, operator);
+    await host.act("p/1", "arm-bomb", {}, operator);
+    await host.act("p/2", "wait", {}, operator);
+    await host.close();
+    await tick(120);
+    const again = await open(at);
+    assert.deepEqual(again.problems().map((p) => [p.kind, p.sessionId]), [["timer", "p/1"]]);
+    assert.match(again.problems()[0]!.why, /Step limit/);
+    assert.deepEqual(again.configuration("p/2"), ["top", "idle"], "the other past-due timer fired");
+    assert.deepEqual(again.configuration("p/1"), ["top", "bombing"]);
+    assert.equal(again.nextDueAt(), null, "the throwing timer is not armed again (no retry loop)");
+    assert.equal((await again.act("p/1", "defuse", {}, operator)).taken, true);
+    assert.deepEqual(again.problems(), [], "a step of its session clears it");
+    await again.close();
+  });
+
+  test("a timer that throws while open stalls its session only: the rest fire, no retry loop", async () => {
+    const at = place();
+    const host = await open(at);
+    await host.start("p/1", "host-probe", {}, operator);
+    await host.start("p/2", "host-probe", {}, operator);
+    await host.act("p/1", "arm-bomb", {}, operator);
+    await host.act("p/2", "wait", {}, operator);
+    const rows = () => host.log.rows().length;
+    // (the step limit's spin takes a while: wait for the outcome, not a fixed time)
+    for (let i = 0; i < 100 && (host.problems().length === 0 || host.configuration("p/2")[1] !== "idle"); i++) await tick(20);
+    assert.deepEqual(host.problems().map((p) => [p.kind, p.sessionId]), [["timer", "p/1"]]);
+    assert.deepEqual(host.configuration("p/2"), ["top", "idle"]);
+    const n = rows();
+    await tick(60);
+    assert.equal(rows(), n, "nothing retried meanwhile");
+    assert.equal(host.nextDueAt(), null);
+    await host.close();
+  });
 });

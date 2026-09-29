@@ -23,7 +23,12 @@ export const HOST_CHART = [
       ["transition", { event: "gather/start", target: "gathering" }],
       ["transition", { event: "look", target: "looking" }],
       ["transition", { event: "wait", target: "timed" }],
+      ["transition", { event: "arm-bomb", target: "bombing" }],
     ],
+    // a timer whose step always throws: `bang` enters an eventless cycle (the step limit)
+    ["state", { id: "bombing" }, ["onEntry", {}, ["send", { event: "bang", delay: 50 }]], ["transition", { event: "bang", target: "spin-a" }], ["transition", { event: "defuse", target: "idle" }]],
+    ["state", { id: "spin-a" }, ["transition", { target: "spin-b" }]],
+    ["state", { id: "spin-b" }, ["transition", { target: "spin-a" }]],
     ["state", { id: "busy" }, ["transition", { event: "effect/done", target: "idle" }, ["script", { expr: (d: Data) => assign({ done: ((d["done"] as number) ?? 0) + 1 }) }]]],
     ["state", { id: "gathering" }, ["transition", { event: "gather/close", target: "idle" }]],
     ["state", { id: "looking" }, ["invoke", { id: "look", type: "sova/look" }], ["transition", { event: "look/finished", target: "idle" }]],

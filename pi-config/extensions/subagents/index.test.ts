@@ -194,10 +194,26 @@ test("worker snapshots answer before startup and publish bounded background stat
 		assert.deepEqual(snapshots.at(-1).workers, [{ id: a.id, name: a.name,
 			status: "running", model: "test/model", preview: "No response yet.", backend: "pi", effort: "high" }]);
 		// Additive presence fields come straight from the Worker; unset/invalid values are omitted.
-		Object.assign(a, { startedAt: 1_000, lastActivity: 2_000, endedAt: Number.NaN, taskOutcome: "bogus", pid: 4242 });
+		Object.assign(a, { startedAt: 1_000, lastActivity: 2_000, endedAt: Number.NaN, taskOutcome: "bogus" });
 		request();
 		assert.deepEqual(snapshots.at(-1).workers[0], { id: a.id, name: a.name, status: "running", model: "test/model",
 			preview: "No response yet.", backend: "pi", effort: "high", startedAt: 1_000, lastActivity: 2_000 });
+		// The live process's pid rides the in-process event only (Sova's resource monitor); the
+		// sessions extension never copies it into the on-disk record (sessions/workers.test.ts).
+		// Omitted once the process is gone, and when absent or not a positive integer.
+		Object.assign(a, { pid: 4242, processAlive: true });
+		request();
+		assert.equal(snapshots.at(-1).workers[0].pid, 4242);
+		a.processAlive = false;
+		request();
+		assert.ok(!("pid" in snapshots.at(-1).workers[0]));
+		a.processAlive = true;
+		for (const pid of [0, -1, 1.5, Number.NaN, undefined]) {
+			a.pid = pid;
+			request();
+			assert.ok(!("pid" in snapshots.at(-1).workers[0]), String(pid));
+		}
+		Object.assign(a, { pid: undefined, processAlive: undefined });
 		for (const [taskOutcome, outcome] of [["success", "success"], ["error", "error"], ["aborted", "aborted"], [undefined, undefined]]) {
 			a.taskOutcome = taskOutcome;
 			request();

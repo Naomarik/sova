@@ -440,14 +440,11 @@ class World {
   }
 
   // The host's timer follows real time; the replay's clock is virtual, so it fires the due sends itself.
-  private get engine(): { nextDueAt(): number | null } {
-    return (this.host as unknown as { engine: { nextDueAt(): number | null } }).engine;
-  }
   nextDueAt(): number | null {
-    return this.engine.nextDueAt();
+    return this.host.nextDueAt();
   }
   fireDue(): void {
-    (this.host as unknown as { fire(): void }).fire();
+    this.host.fireDue();
   }
 
   configuration(sid: string): string[] {
@@ -626,6 +623,16 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
     const ids = new Set(factsOf(g).decisions.map((d) => d.id));
     return world.driven.filter((d) => mine.has(d.sessionId) || (d.sessionId === S.reconciler && d.event === "decision/promote" && d.ids.some((id) => ids.has(id)))).map((d) => ({ at: d.at - T0, session: d.sessionId, event: d.event }));
   };
+  /** The chart is further along than the stores' facts only because it made the move itself (r3): it
+      promoted (drafted → promoted) and/or started the build (awaiting-build → a build phase). */
+  const BUILD_PHASES = ["build-starting", "working", "idle", "failed", "merged", "done"];
+  const aheadByDrive = (want: string[], conf: string[], drove: { event: string }[]) => {
+    const promoted = drove.some((d) => d.event === "decision/promote");
+    const built = drove.some((d) => d.event === "build/start");
+    if (want.includes("drafted")) return promoted && (conf.includes("awaiting-build") || (built && BUILD_PHASES.some((p) => conf.includes(p))));
+    if (want.includes("awaiting-build")) return built && BUILD_PHASES.some((p) => conf.includes(p));
+    return false;
+  };
   const checkItems = () => {
     for (const g of gaps.keys()) {
       const sid = S.item(g);
@@ -636,7 +643,8 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       const want = expectedPhases(facts);
       if (conf.some((x) => x.includes("follow-up"))) {
         const fu = followUpPhase(facts);
-        if (conf.includes(fu)) pass();
+        // The call spawns its gathering in the same step: a starting follow-up is already asking.
+        if (conf.includes(fu) || (fu === "follow-up-starting" && (conf.includes("follow-up-asking") || conf.includes("follow-up-needs-operator")))) pass();
         else diverge("item-follow-up", fu, conf.filter((x) => x.includes("follow-up")), null, "the chart's follow-up region differs from the stores' latest gathering");
       }
       if (want.some((p) => conf.includes(p)) || (want.includes("dropped") && conf.length === 0) || conf.includes("on-hold")) {
@@ -651,7 +659,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       // r3: the chart acted on its own (promoted its in-area decisions at L2, started its build at L3, moved or
       // closed its gathering): it is ahead of today's stores, which waited for the overseer.
       const drove = drivenOn(g);
-      if (drove.length) {
+      if (aheadByDrive(want, conf, drove)) {
         diverge("item-position", want, leaves(conf), "ruling", "r3 (q2 drive): the chart made this move itself, at the level in force; today it waited for the overseer's call", { ruling: "r3", driven: drove });
         continue;
       }
@@ -744,7 +752,11 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
     if (!world.exists(sid)) return;
     const conf = world.configuration(sid);
     if (s.state === "promoted") {
-      if (!conf.includes("promoted")) await send("promote/done", sid, "promote/done", { textHash: "h", commit: "c0ffee" }, { by: "system" });
+      if (!conf.includes("promoted") && !conf.includes("drafted")) {
+        diverge("decision-state", "drafted", leaves(conf), "mining", `decisions.json keeps only a decision's last state: ${id} is promoted with no drafted state dated before it; synced`);
+        await fact("sync drafted", sid, "reconcile/result", { state: "drafted", authorOwnsArea: decisions.get(id)!.authorOwnsArea });
+      }
+      if (!world.configuration(sid).includes("promoted")) await send("promote/done", sid, "promote/done", { textHash: "h", commit: "c0ffee" }, { by: "system" });
       const built = s.build ?? finalBuild.get(id) ?? null;
       if (built || s.edited !== undefined) await fact("spec/facts", sid, "spec/facts", { recordPresent: true, fieldsMatch: true, editedInSpec: !!s.edited, build: built });
     } else if (s.state && s.state !== "pending" && !conf.includes(s.state === "conflict" ? "conflicted" : s.state)) {
@@ -844,7 +856,15 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       if (s.name === "sova_todos" && F.mergeReasonAndTodosOperatorOnly === false)
         return diverge("chart-vs-real", "taken", got, "drift", "sova_todos became operator-only in 77f3cdbf; this trace ran an older commit", { commits: ["77f3cdbf"] });
       // r3: the chart already made this move itself (its drive); the overseer's own call then has nothing to do.
-      const done = world.driven.filter((d) => d.event === v.event && (d.sessionId === v.sid || (Array.isArray(v.payload.ids) && d.ids.some((id) => (v.payload.ids as string[]).includes(id)))));
+      // A promote: every id it refused was promoted by the chart's own act. A build: the item's own build was started by the chart.
+      const refusedIds = [...(v.refusal ?? "").matchAll(/(\S+) \(([^)]*)\)/g)].map((m) => ({ id: m[1]!.replace(/^[:;]\s*/, ""), why: m[2]! }));
+      const drivenIds = new Set(world.driven.filter((d) => d.event === "decision/promote").flatMap((d) => d.ids));
+      const done =
+        v.event === "decision/promote"
+          ? refusedIds.length > 0 && refusedIds.every((r) => r.why.startsWith("it is promoted") && drivenIds.has(r.id))
+            ? world.driven.filter((d) => d.event === "decision/promote" && d.ids.some((id) => refusedIds.some((r) => r.id === id)))
+            : []
+          : world.driven.filter((d) => d.event === v.event && d.sessionId === v.sid);
       if (done.length) return diverge("chart-vs-real", "taken", got, "ruling", "r3 (q2 drive): the chart made this move itself before the overseer's call", { ruling: "r3", driven: done.map((d) => ({ at: d.at - T0, session: d.sessionId, event: d.event })) });
       // q7: an unlinked build starts only in a turn the operator started; today's unattended ones needed no gap.
       if (v.event === "build/start" && v.sid === S.project && !s.attended)
@@ -891,7 +911,20 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       const id = s.args.build ?? s.args.session!;
       return world.exists(S.build(id)) ? [{ sid: S.build(id), event: "build/prompt", payload: { text: "Go on" }, item: buildGap.get(id) ?? null }] : [];
     }
-    if (name === "sova_promote") return [{ sid: S.reconciler, event: "decision/promote", payload: { ids: (s.args?.ids ?? []).filter((id) => world.exists(S.decision(id))) }, item: null }];
+    if (name === "sova_promote") {
+      // decisions.json keeps a decision's last state only: one the stores show promoted next, with no drafted
+      // state dated between, was reconciled before this call. Synced (drafted) first.
+      const at = trace.events.indexOf(s);
+      for (const id of s.args?.ids ?? []) {
+        const conf = world.configuration(S.decision(id));
+        if (!conf.includes("pending")) continue;
+        const next = trace.events.slice(at + 1).find((e) => e.kind === "fact" && e.entity === "decision" && e.id === id);
+        if (next?.state !== "promoted") continue;
+        diverge("decision-state", "drafted", "pending", "mining", `decisions.json keeps only a decision's last state: ${id} went from pending to promoted with no drafted state dated between, so it was reconciled before this promote; synced`);
+        await fact("sync drafted", S.decision(id), "reconcile/result", { state: "drafted", authorOwnsArea: decisions.get(id)?.authorOwnsArea ?? false });
+      }
+      return [{ sid: S.reconciler, event: "decision/promote", payload: { ids: (s.args?.ids ?? []).filter((id) => world.exists(S.decision(id))) }, item: null }];
+    }
     if (name === "sova_reconcile") return [{ sid: S.reconciler, event: "reconcile/request", payload: { delayMs: 0, by: "overseer" }, item: null }];
     if (name === "sova_roster" && (s.args?.op === "approve" || s.args?.op === "decline") && s.args.id) return [{ sid: S.person(s.args.id), event: `person/${s.args.op}`, payload: {}, item: null }];
     if (name === "sova_owner_update") return [{ sid: S.project, event: "owner-update/post", payload: { text: "An update." }, item: null }];
@@ -1090,11 +1123,12 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
     if (s.kind === "expect") {
       await instantEnd();
       rep.coverage.expects++;
+      // The spike's project chart is now two: the watch (the loop, the pause) and the project (its shelf).
       const sid = s.session === "project" || !s.session ? S.watch : S.item(s.session);
-      const conf = world.configuration(sid);
-      const drove = s.session && s.session !== "project" ? drivenOn(s.session) : [];
+      const conf = sid === S.watch ? [...world.configuration(S.watch), ...world.configuration(S.project)] : world.configuration(sid);
+      const drove = s.session && s.session !== "project" && gaps.has(s.session) ? drivenOn(s.session) : [];
       for (const st of s.in ?? [])
-        conf.includes(st) ? pass() : st === "asking" && conf.includes("needs-operator") && s.session && gaps.has(s.session) && ((world.data(S.baton(factsOf(s.session).baton?.id ?? "")).handoffs as { question?: string }[] | undefined) ?? []).at(-1)?.question?.startsWith("(left the organization") ? diverge(`expect in ${st}`, st, leaves(conf), "mining", "the trace names no holder; the only person its stores know has left (see item-position)", { gap: s.session }) : drove.length ? diverge(`expect in ${st}`, st, leaves(conf), "ruling", "r3 (q2 drive): the chart moved on by itself since this expectation was written (before r3)", { ruling: "r3", driven: drove }) : diverge(`expect in ${st}`, st, conf, null, "the design's expectation for this edge case");
+        conf.includes(st) ? pass() : st === "asking" && conf.includes("needs-operator") && s.session && gaps.has(s.session) && ((world.data(S.baton(factsOf(s.session).baton?.id ?? "")).handoffs as { question?: string }[] | undefined) ?? []).at(-1)?.question?.startsWith("(left the organization") ? diverge(`expect in ${st}`, st, leaves(conf), "mining", "the trace names no holder; the only person its stores know has left (see item-position)", { gap: s.session }) : aheadByDrive([st === "working" || st === "merged" ? "awaiting-build" : st], conf, drove) ? diverge(`expect in ${st}`, st, leaves(conf), "ruling", "r3 (q2 drive): the chart moved on by itself since this expectation was written (before r3)", { ruling: "r3", driven: drove }) : diverge(`expect in ${st}`, st, conf, null, "the design's expectation for this edge case");
       for (const st of s.notIn ?? []) !conf.includes(st) ? pass() : diverge(`expect not in ${st}`, `not ${st}`, conf, null, "the design's expectation for this edge case");
       if (s.reasonKinds || s.noReasonKinds) {
         const d = world.data(sid);

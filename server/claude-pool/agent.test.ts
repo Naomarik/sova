@@ -18,7 +18,7 @@ import {
 import { spawn, spawnSync } from "node:child_process";
 import { PoolAgent, scanClaudeProcs, type PoolPeer } from "./agent";
 import { INCOMING_DIR_NAME } from "./creds";
-import { emptyDoc, mergeDocs, newPoolLogin, reg } from "./doc";
+import { emptyDoc, mergeDocs, newPoolLogin, poolOrder, reg } from "./doc";
 import { readJournal } from "./journal";
 
 const root = mkdtempSync(join(tmpdir(), "sova-claude-pool-test-"));
@@ -186,6 +186,59 @@ describe("pool document", () => {
     assert.equal(ab.logins[L1]!.label.value, "work");
     assert.equal(ab.logins[L1]!.holder.device, "d");
     assert.equal(ab.keeper.value, "k");
+  });
+});
+
+describe("accounts, then logins", () => {
+  test("the pool's order keeps an account's logins together, where its first falls, whatever order was saved", () => {
+    const doc = emptyDoc();
+    const add = (id: string, account: string | null, addedAt: number) => {
+      doc.logins[id] = newPoolLogin({ addedAt, identity: account ? { accountUuid: account, email: `${account}@example.com` } : null, enabled: true, device: "k", free: true, now: 1 });
+    };
+    add(L1, "acct-one", 1);
+    add(L2, "acct-two", 2);
+    add(L3, "acct-one", 3);
+    add("l-000000a4", null, 4);
+    assert.deepEqual(poolOrder(doc), [L1, L3, L2, "l-000000a4"], "by age, grouped");
+    doc.order = reg([L2, L1, "l-000000a4", L3], 5, "d");
+    assert.deepEqual(poolOrder(doc), [L2, L1, L3, "l-000000a4"], "a saved order that splits acct-one is read grouped");
+  });
+
+  test("a device follows the document for the logins it has: a rename, Use and a move made elsewhere reach its registry", async () => {
+    const { w, clock, k } = await pool(["k", "d", "e"], [[L1, "acct-one"], [L2, "acct-two"], [L3, "acct-one"]]);
+    const d = w.dev("d");
+    // d borrows twice: it holds acct-one's first login, then (after a want excluding it) another.
+    want(d);
+    await d.agent.tick();
+    want(d, { excludeLogins: [L1] });
+    await d.agent.tick();
+    const held = readAccounts(d.agentDir).value.logins.filter((l) => l.device === "d").map((l) => l.id).sort();
+    assert.equal(held.length, 2, `d holds two logins (${held.join(", ")})`);
+    // Edits made on e, which holds nothing.
+    const e = w.dev("e");
+    clock.now += 1000;
+    e.agent.setLabel(held[0]!, "Work laptop");
+    e.agent.setEnabled(held[1]!, false);
+    const order = poolOrder(e.agent.doc());
+    e.agent.setOrder([...order].reverse());
+    await w.syncAll();
+    await d.agent.tick();
+    const after = readAccounts(d.agentDir).value;
+    assert.equal(after.logins.find((l) => l.id === held[0])!.label, "Work laptop");
+    assert.equal(after.logins.find((l) => l.id === held[1])!.enabled, false);
+    const wanted = poolOrder(d.agent.doc()).filter((id) => held.includes(id));
+    assert.deepEqual(new ClaudeLogins({ agentDir: d.agentDir, env: { HOME: d.agentDir, CLAUDE_CONFIG_DIR: d.claudeDir } }).order().filter((id) => id !== "default"), wanted, "its spawns try them in the pool's order");
+    // A rename cleared elsewhere clears it here too; nothing is written when nothing differs.
+    clock.now += 1000;
+    e.agent.setLabel(held[0]!, null);
+    await w.syncAll();
+    await d.agent.tick();
+    assert.equal(readAccounts(d.agentDir).value.logins.find((l) => l.id === held[0])!.label, undefined);
+    const file = join(d.agentDir, "claude-accounts.json");
+    const before = readFileSync(file, "utf8");
+    await d.agent.tick();
+    assert.equal(readFileSync(file, "utf8"), before);
+    void k;
   });
 });
 

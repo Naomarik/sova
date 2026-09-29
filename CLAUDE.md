@@ -58,7 +58,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `claude-accounts/<id>/` (0700; `projects/`, `settings.json`, `CLAUDE.md`, `agents`, `commands`,
   `skills`, `plugins` symlinked to Claude Code's own directory so `--resume` and every transcript
   reader keep one `projects/`), this host's standing of each login `claude-accounts-state.json`,
-  the per-device order (`default`, Claude Code's own login, always last) and the one resolver
+  the per-device order (each account's logins together, `groupByAccount`, which the pool's order reads through too; `default`, Claude Code's own login, always last) and the one resolver
   login → `CLAUDE_CONFIG_DIR` that every `claude` spawn uses; written by Sova's Settings → Accounts
   and the pool agent, read by the chat provider, workers, model discovery and the topic-outline
   summarizer at each spawn. With the mesh on (`<agent dir>/sova/peers.json` lists a peer) logins

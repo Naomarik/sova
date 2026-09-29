@@ -1,4 +1,4 @@
-import type { ClaudeLoginIdentity } from "../../pi-config/extensions/claude-code/accounts.ts";
+import { groupByAccount, type ClaudeLoginIdentity } from "../../pi-config/extensions/claude-code/accounts.ts";
 
 /**
  * The pool document (§app.claude-logins/pool): what every device knows about the pool of Claude
@@ -207,12 +207,12 @@ export function newPoolLogin(opts: { addedAt: number; identity: ClaudeLoginIdent
   };
 }
 
-/** The pool's order: `order` first (known, not removed), then the rest by age. */
+/** The pool's order: `order` first (known, not removed), then the rest by age; each account's logins together. */
 export function poolOrder(doc: PoolDoc): string[] {
   const live = Object.entries(doc.logins).filter(([, l]) => !l.removed.value);
   const ids = live.sort((a, b) => a[1].addedAt - b[1].addedAt || cmp(a[0], b[0])).map(([id]) => id);
   const listed = doc.order.value.filter((id) => ids.includes(id));
-  return [...listed, ...ids.filter((id) => !listed.includes(id))];
+  return groupByAccount([...listed, ...ids.filter((id) => !listed.includes(id))], (id) => doc.logins[id]?.identity?.accountUuid);
 }
 
 /** A login's standing now: a limit shared by its whole account (any login of it limited until later). */

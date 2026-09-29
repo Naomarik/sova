@@ -130,13 +130,13 @@ test("the follow-up answer: small below 1.5 or unsure, none under the P and scor
   assert.equal(followUpOf(undefined), undefined);
 });
 
-test("R4: ready and asking 'Shall I merge it into master?' → a decide item 'Ready to merge: <branch>', not while running or archived", () => {
+test("R4: ready and asking 'Shall I merge it into master?' → an act item 'Ready to merge: <branch>', not while running or archived", () => {
   assert.equal(r.asksToMerge("1 ahead, tests pass.\n\nShall I merge it into master?"), true);
   for (const s of ["Want me to merge this now?", "It's ready to merge.", "Say merge and I'll land it.", "Should I go ahead and merge it?", "OK to merge?"]) assert.ok(r.asksToMerge(s), s);
   for (const s of ["Merged into master at abc1234.", "Want me to take it on?", "I merged the fix."]) assert.equal(r.asksToMerge(s), false, s);
   const readiness = r.sessionReadinessOf([{ path: "/wt/a", branch: "feat/a", state: "waiting-approval", why: "checks passed" }], {}, 42);
   const row = (over: Partial<SessionSummary>) => ({ id: "s", path: "/s/a.jsonl", busy: false, archived: false, readiness, ...over }) as unknown as SessionSummary;
-  assert.deepEqual(r.readinessItems(row({})), [{ tier: "decide", kind: "ready-to-merge", since: 42, detail: "Ready to merge: feat/a" }]);
+  assert.deepEqual(r.readinessItems(row({})), [{ tier: "act", kind: "ready-to-merge", since: 42, detail: "Ready to merge: feat/a" }]);
   assert.deepEqual(r.readinessItems(row({ busy: true })), []);
   assert.deepEqual(r.readinessItems(row({ archived: true })), []);
 });

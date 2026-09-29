@@ -106,3 +106,24 @@ test("a roster proposal lists although its tier is decide; other decide kinds st
   assert.deepEqual(rows.map((r) => r.session.id), ["a"]);
   assert.equal(rows[0]!.detail, "Approve Bob (IT) proposed by Tony?");
 });
+
+test("a worktree waiting for your OK and a stalled team list in Needs you; merge follow-ups and the restart item don't", () => {
+  // The shapes server/merge-readiness.ts readinessItems and server/attention.ts sessionItems emit
+  // (their own tests pin the tiers): both blockers are act tier.
+  const rows = needsYouRows(
+    digest([
+      item("merge", "act", "ready-to-merge", 30, "Ready to merge: feat/agents-row-dropdown"),
+      item("team", "act", "team-stalled", 20, "Waiting on frontend, reviewer, quiet for 16 min."),
+      item("merged", "decide", "merged-open-work", 40, "Merged with open work: not a clean pass"),
+      { ...item("server", "decide", "restart-pending", 50, "Restart pending: 1 merge changed the server since it started (feat/x)."), path: "" },
+    ]),
+    ["merge", "team", "merged", "server"].map(session),
+  );
+  assert.deepEqual(
+    rows.map((r) => [r.session.id, r.detail]),
+    [
+      ["merge", "Ready to merge: feat/agents-row-dropdown"],
+      ["team", "Waiting on frontend, reviewer, quiet for 16 min."],
+    ],
+  );
+});

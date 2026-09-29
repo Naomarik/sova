@@ -1,6 +1,7 @@
 // The sidebar's "Needs you" region: the sessions the attention digest puts in its act tier
 // (server/attention.ts — a dialog open, an errored turn, a subagent error, open alignment questions
-// waiting on you, or a decision signal that it is stuck), said once more above Recent.
+// waiting on you, a reply that asks you, a team gone quiet, a worktree waiting for your OK to merge
+// (server/merge-readiness.ts)), said once more above Recent.
 //
 // One decide-tier kind lists too: a roster proposal (§app.organizations/referrals) waits on the
 // operator's Approve or Decline and on nothing else, so it is a thing to act on here.

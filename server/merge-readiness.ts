@@ -134,13 +134,17 @@ export function sessionReadinessOf(trees: WorktreeReadiness[], flags: MergeFlags
   return { ...out, badge: "merged", branch, since, ...(followUps ? { followUps } : {}) };
 }
 
-/** The digest's merge items of one session (§app.overseer/attention-digest): decide tier. */
+/**
+ * The digest's merge items of one session (§app.overseer/attention-digest): a worktree waiting for
+ * the go-ahead is a blocker (act: the sidebar's Needs you lists it; not a push kind, so it never
+ * sends a notification); open work a merge left is a decide item.
+ */
 export function readinessItems(s: SessionSummary): { tier: AttentionTier; kind: AttentionKind; since: number; detail: string }[] {
   const r = s.readiness;
   if (!r || s.archived) return [];
   const running = s.busy || s.activity?.state === "working";
   const out: { tier: AttentionTier; kind: AttentionKind; since: number; detail: string }[] = [];
-  if (r.badge === "waiting" && r.branch && !running) out.push({ tier: "decide", kind: "ready-to-merge", since: r.since, detail: `Ready to merge: ${r.branch}` });
+  if (r.badge === "waiting" && r.branch && !running) out.push({ tier: "act", kind: "ready-to-merge", since: r.since, detail: `Ready to merge: ${r.branch}` });
   if (r.followUp?.weight === "significant") out.push({ tier: "decide", kind: "merged-open-work", since: r.since, detail: `Merged with open work: ${r.followUp.cue}` });
   return out;
 }

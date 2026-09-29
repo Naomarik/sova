@@ -21,6 +21,13 @@
 .vis-cell-mark-no { color: var(--color-ink-muted); }
 .vis-cell-mark-partial { color: var(--status-warn); }
 .vis-cell-empty { color: var(--color-ink-muted); }
+/* A toned text cell (`72% warn`): a chip in the tone's fill, led by its status icon (ok, warn,
+   error, info) and a hidden word, never hue alone. No vertical padding, so it wraps on the cell's
+   line grid; height.ts counts its side padding and the icon (CHIP). Accent adds weight, muted is ink-muted. */
+.vis-cell-chip { display: inline-flex; min-width: 0; align-items: flex-start; gap: var(--space-1); padding: 0 var(--space-1); border-radius: var(--r-xs); background: var(--vis-fill); color: var(--vis-ink); }
+.vis-cell-chip-icon.icon { width: 14px; height: 14px; margin-top: 2px; color: var(--vis-stroke); }
+.vis-cell-chip.vis-tone-accent { font-weight: var(--fw-semibold); }
+.vis-cell-chip.vis-tone-muted { padding: 0; }
 
 /* Emphasis. A row: tinted, a bar on its label (vis.css tints the row; the bar goes on the th,
    since table rows don't draw shadows everywhere). A column: its header and cells tinted. */

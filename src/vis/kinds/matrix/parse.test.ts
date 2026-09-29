@@ -43,3 +43,17 @@ test("matrix: mark a row by its label, or a column by its name", () => {
 test("matrix: a quoted column name may hold a comma", () => {
   assert.deepEqual(ok<MatrixSpec>("matrix", 'columns: "Merge, then push"\nx | yes').columns, ["Merge, then push"]);
 });
+
+test("matrix cell tones: an unquoted text cell ending in a tone word; quoted text, lone words and yes/no cells unchanged", () => {
+  const s = ok<MatrixSpec>(
+    "matrix",
+    'columns: A, B, C, D\nr1 | 72% warn | 83% ok | "works ok" | "72%" error\nr2 | ok | no error | yes "fine" | partial\nr3 | fast and good accent | - | slow muted | n/a info',
+  );
+  assert.deepEqual(s.rows[0]!.cells, [{ text: "72%", tone: "warn" }, { text: "83%", tone: "ok" }, { text: "works ok" }, { text: "72%", tone: "error" }]);
+  assert.deepEqual(s.rows[1]!.cells, [{ text: "ok" }, { mark: "no", text: "error" }, { mark: "yes", text: "fine" }, { mark: "partial" }]);
+  assert.deepEqual(s.rows[2]!.cells, [{ text: "fast and good", tone: "accent" }, {}, { text: "slow", tone: "muted" }, { text: "n/a", tone: "info" }]);
+  // A word that only starts like a tone, or a capitalised one, is text.
+  assert.deepEqual(ok<MatrixSpec>("matrix", "columns: A, B\nr | 5 okay | 5 OK").rows[0]!.cells, [{ text: "5 okay" }, { text: "5 OK" }]);
+  // An escaped pipe inside a cell doesn't shift which cells were quoted.
+  assert.deepEqual(ok<MatrixSpec>("matrix", 'columns: A, B\nr | a \\| b warn | "c ok"').rows[0]!.cells, [{ text: "a | b", tone: "warn" }, { text: "c ok" }]);
+});

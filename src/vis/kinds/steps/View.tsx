@@ -5,16 +5,15 @@
  */
 import { For, Show, createMemo } from "solid-js";
 import { emphasisMap } from "../../core/emphasis";
-import type { Tone } from "../../core/grammar";
 import { looksLikePath } from "../../core/text";
 import { EmBadge, emClass } from "../../emphasis";
 import type { ViewProps } from "../../types";
 import type { StepsSpec } from "./parse";
 import "./steps.css";
-import { visIcon } from "../../icons";
+import { TONE_ICON, visIcon } from "../../icons";
 
 /** A status never rests on hue alone: the tones that carry one also carry a shape. */
-const ICON: Partial<Record<Tone, string>> = { ok: "check-circle", warn: "alert-circle", error: "x-circle", info: "info" };
+const ICON = TONE_ICON;
 
 export default function StepsView(props: ViewProps<StepsSpec>) {
   const em = createMemo(() => emphasisMap(props.spec));

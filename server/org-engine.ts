@@ -1,3 +1,5 @@
+import type { Refusal, StampContext } from "./org-charts";
+import { OrgHost, type ActResult, type HostChange } from "./org-host";
 import { OrgError } from "./orgs";
 import type { ActBy, Envelope } from "./org-envelope";
 import { projectOfSession, stampEnvelope } from "./org-stamp";
@@ -13,97 +15,15 @@ import { defaultPoSettings, projectOverseerPaths, readPoSettings } from "./proje
  * own them (`onOrgHostOpened`), so this module imports none of them.
  */
 
-/** A chart refusal as the host answers it (engine API §3). */
-export interface Refusal {
-  sentence: string;
-  tail?: string | null;
-  stage?: string;
-  check?: string | null;
-  status?: number | null;
-  code?: string | null;
-}
+export type { Refusal } from "./org-charts";
+export type { ActResult, Effect, EffectOutcome, HostChange, HostProblem, Invocation, InvocationReport, SessionInfo } from "./org-host";
 
-export interface ActResult {
-  taken: boolean;
-  refusal: Refusal | null;
-  result: unknown;
-}
-
-export interface SessionInfo {
-  id: string;
-  chart: string;
-  configuration: string[];
-  data: Record<string, unknown>;
-  running?: boolean;
-}
-
-export interface EnabledEvent {
-  event: string;
-  enabled: boolean;
-  refusal?: Refusal;
-}
-
-export interface Effect {
-  kind: string;
-  key: string;
-  sessionId: string;
-  [field: string]: unknown;
-}
-
-export interface Invocation {
-  sessionId: string;
-  invokeId: string;
-  type: string;
-  params?: Record<string, unknown>;
-}
-
-export type InvocationReport = (outcome: "finished" | "stopped" | "not-started", detail?: string) => void;
-
-export interface HostChange {
-  sessions: string[];
-  steps: unknown[];
-}
-
-/** An act's metadata as its chart declares it (`:acts`): the level it needs, whether it counts against an allowance, … */
-export interface ActMeta {
-  needs?: string | null;
-  tool?: string;
-  counts?: string;
-  hold?: boolean;
-  correction?: boolean;
-  peopleFacing?: boolean;
-  codeFacing?: boolean;
-  [key: string]: unknown;
-}
-
-export interface ChartInfo {
-  name: string;
-  version: number;
-  acts: Record<string, ActMeta>;
-  [key: string]: unknown;
-}
-
-/** The OrgHost as the server calls it (engine API §4). */
-export interface OrgHostApi {
-  effects: { register(kind: string, fn: (effect: Effect) => Promise<unknown>): void };
-  invocations: { register(type: string, runner: { start(inv: Invocation, report: InvocationReport): void; stop(inv: Invocation): void }): void };
-  act(sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope | Record<string, unknown>): Promise<ActResult>;
-  start(sid: string, chart: string, data: Record<string, unknown>, envelope: Envelope | Record<string, unknown>): Promise<unknown>;
-  setState(sid: string, change: { states: string[]; patch?: Record<string, unknown>; reason: string }, envelope: Envelope | Record<string, unknown>): Promise<ActResult>;
-  trial(sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope | Record<string, unknown>): ActResult;
-  enabledEvents(sid: string, envelope: Envelope | Record<string, unknown>): EnabledEvent[];
-  configuration(sid: string): string[] | null;
-  data(sid: string): Record<string, unknown> | null;
-  sessions(chart?: string): SessionInfo[];
-  holds(): unknown[];
-  chartOf(sid: string): string | null;
-  /** The registry's entry for a chart (engine API §3 chartInfo): its acts with their metadata. */
-  chartInfo(name: string): ChartInfo | null;
-  problems(): { file: string; why: string }[];
-  logAct(row: Record<string, unknown>): Promise<void>;
-  onChange(fn: (change: HostChange) => void): void;
-  close(): Promise<void>;
-}
+/** The OrgHost as the server calls it (server/org-host/, the engine member's): the host itself, so
+    tests may hand in a fake with the same shape. */
+export type OrgHostApi = Pick<
+  OrgHost,
+  "effects" | "invocations" | "log" | "act" | "actNow" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "chartOf" | "chartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close"
+>;
 
 export interface OpenOptions {
   orgId: string;
@@ -115,7 +35,7 @@ export interface OpenOptions {
     (a chart's drive, a held act at its release). `who` is the act's original actor (default "chart")
     and project: an act on a person or the org (a held roster approve) is still its project's act, so
     its level, pause, archive, ledgers and hold come from that project, never from defaults. */
-export type Stamp = (sid: string, event: string, payload: Record<string, unknown>, who?: { by?: ActBy; overseerId?: string; projectId?: string }) => Envelope;
+export type Stamp = (sid: string, event: string, payload: Record<string, unknown>, who?: StampContext) => Envelope;
 
 /** The project an engine-delivered act belongs to: the original envelope's, else the payload's,
     else the target session's own. */
@@ -127,11 +47,9 @@ export function stampProject(host: Pick<OrgHostApi, "data">, sid: string, payloa
 
 type Opener = (opts: OpenOptions & { stamp: Stamp }) => Promise<OrgHostApi>;
 
-let opener: Opener = async () => {
-  throw new Error("The org engine is not available on this server.");
-};
+let opener: Opener = (opts) => OrgHost.open(opts);
 
-/** How a host is opened: server/index.ts sets the real OrgHost.open; tests set a fake. */
+/** How a host is opened: OrgHost.open, unless a test sets a fake. */
 export function setOrgHostOpener(fn: Opener): void {
   opener = fn;
 }
@@ -163,7 +81,7 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
     const stamp: Stamp = (sid, _event, payload, who) => {
       if (!self) throw new Error("The org engine stamped before it opened.");
       const pid = stampProject(self, sid, payload, who);
-      return stampEnvelope(self, opts.orgId, pid, { by: who?.by ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => readPoSettings(projectOverseerPaths(opts.orgId, projectId, opts.workspaceDir)), defaultPoSettings());
+      return stampEnvelope(self, opts.orgId, pid, { by: (who?.by as ActBy | undefined) ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => readPoSettings(projectOverseerPaths(opts.orgId, projectId, opts.workspaceDir)), defaultPoSettings());
     };
     const host = await opener({ ...opts, stamp });
     self = host;

@@ -7,7 +7,7 @@ import { stampProject, actOrThrow, closeOrgHost, hostOf, isOrgHostOpen, onOrgCha
 import { OrgError } from "./orgs";
 
 /** A host that records what it was asked and answers `next`. */
-function fakeHost(next: () => ActResult = () => ({ taken: true, refusal: null, result: {} })) {
+function fakeHost(next: () => ActResult = () => ({ taken: true, refusal: null, result: null })) {
   const calls: unknown[][] = [];
   const kinds: string[] = [];
   let changed: ((c: HostChange) => void) | null = null;
@@ -16,7 +16,7 @@ function fakeHost(next: () => ActResult = () => ({ taken: true, refusal: null, r
     effects: { register: (kind: string) => void kinds.push(kind) },
     invocations: { register: () => {} },
     act: async (...a: unknown[]) => (calls.push(a), next()),
-    start: async () => ({}),
+    start: async () => null,
     setState: async () => next(),
     trial: () => next(),
     enabledEvents: () => [],
@@ -30,7 +30,7 @@ function fakeHost(next: () => ActResult = () => ({ taken: true, refusal: null, r
     logAct: async () => {},
     onChange: (fn: (c: HostChange) => void) => void (changed = fn),
     close: async () => void closed++,
-  } satisfies OrgHostApi;
+  } as unknown as OrgHostApi;
   return { host, calls, kinds, fire: (c: HostChange) => changed?.(c), closed: () => closed };
 }
 
@@ -87,7 +87,7 @@ describe("org engines: one host per org", () => {
   test("the host gets a stamp: a chart's own act (or a named actor's), unattended, from the project's settings file", async () => {
     const f = fakeHost();
     let stamp: ((sid: string, e: string, p: Record<string, unknown>, who?: { by?: "overseer" }) => { by: string; attended: boolean; holdMs: number }) | null = null;
-    setOrgHostOpener(async (o) => ((stamp = o.stamp), f.host));
+    setOrgHostOpener(async (o) => ((stamp = o.stamp as never), f.host));
     assert.equal(stamp, null);
     await openOrgHost({ orgId: "org_s", workspaceDir: "/nonexistent-ws", stateDir: "/state" });
     const e = stamp!("watch/org_s/prj_s", "gather/start", {});
@@ -104,7 +104,7 @@ describe("org engines: one host per org", () => {
     const f = fakeHost();
     const host = { ...f.host, configuration: (sid: string) => config[sid] ?? null, sessions: (chart?: string) => (chart === "person" ? [{ id: "person/org_q/p_1", chart: "person", configuration: ["active"], data: {} }] : []) };
     let stamp: ((sid: string, e: string, p: Record<string, unknown>, who?: { by?: "overseer"; projectId?: string }) => { autonomy: string; holdMs: number; paused: boolean; projectId?: string; by: string }) | null = null;
-    setOrgHostOpener(async (o) => ((stamp = o.stamp), host));
+    setOrgHostOpener(async (o) => ((stamp = o.stamp as never), host as unknown as OrgHostApi));
     await openOrgHost({ orgId: "org_q", workspaceDir: ws, stateDir: "/state" });
     const released = stamp!("person/org_q/p_1", "person/approve", { sovaReleased: "h1" }, { by: "overseer", projectId: "prj_q" });
     assert.deepEqual([released.by, released.autonomy, released.holdMs, released.paused, released.projectId], ["overseer", "L2", 180_000, true, "prj_q"]);
@@ -150,12 +150,12 @@ describe("refusals as the routes answer them", () => {
   });
 
   test("actOrThrow sends to the org's host and throws a refusal", async () => {
-    let answer: ActResult = { taken: true, refusal: null, result: { ok: 1 } };
+    let answer: ActResult = { taken: true, refusal: null, result: null, effects: [{ kind: "k", key: "1", result: { ok: 1 } }] };
     const f = fakeHost(() => answer);
     setOrgHostOpener(async () => f.host);
     await openOrgHost(opts("org_r"));
     const out = await actOrThrow("org_r", "person/org_r/p_1", "person/approve", { personId: "p_1" }, { by: "operator" });
-    assert.deepEqual(out.result, { ok: 1 });
+    assert.deepEqual(out.effects?.[0]?.result, { ok: 1 });
     assert.deepEqual(f.calls[0], ["person/org_r/p_1", "person/approve", { personId: "p_1" }, { by: "operator" }]);
     answer = { taken: false, refusal: { sentence: "Ana is not waiting for approval.", status: 409 }, result: null };
     await assert.rejects(actOrThrow("org_r", "person/org_r/p_1", "person/approve", {}, { by: "operator" }), (e: unknown) => e instanceof OrgError && e.status === 409 && e.message === "Ana is not waiting for approval.");

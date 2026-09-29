@@ -47,6 +47,9 @@ export interface Envelope {
   /** The project the act belongs to (the facts above are its); absent for an org-level act. The
       engine keeps it with a held act, so the act is stamped for the same project at its release. */
   projectId?: string;
+  /** Per-act facts a route or tool adds (host lookups the charts can't make: `invalid`, `target`,
+      `namesTaken`, `ownerAreas`, `chosen`, `live`, `leak`). */
+  [extra: string]: unknown;
 }
 
 /** What the watch session's data says has been used (message and day ledgers, looks today). */

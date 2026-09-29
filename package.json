@@ -21,7 +21,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build && vite build --mode share",
     "start": "tsx server/index.ts",
-    "test": "tsx --test \"server/*.test.ts\" \"server/mesh/*.test.ts\" \"server/sync/*.test.ts\" \"src/lib/*.test.ts\" \"src/vis/**/*.test.ts\""
+    "test": "tsx --import ./pi-config/extensions/claude-code/tests/hermetic-env.mjs --test \"server/*.test.ts\" \"server/mesh/*.test.ts\" \"server/sync/*.test.ts\" \"server/claude-pool/*.test.ts\" \"src/lib/*.test.ts\" \"src/vis/**/*.test.ts\""
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.87.1",

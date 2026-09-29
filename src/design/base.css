@@ -5709,6 +5709,18 @@ a.subagent-row { text-decoration: none; }
 .accounts-login-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .accounts-login-toggle { gap: var(--space-2); }
 .accounts-login-confirm { flex-basis: 100%; display: flex; flex-direction: column; gap: var(--space-2); }
+/* The pool (mesh on): the keeper choice, each row's holder + standing chips, its pin, and this
+   device's own login under its own heading. */
+.accounts-keeper { display: flex; flex-direction: column; gap: var(--space-1); margin: 0 0 var(--space-3); }
+.accounts-keeper-field { max-width: 22rem; }
+.accounts-keeper .field-hint { margin: 0; }
+.accounts-login-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.accounts-pin { flex: 0 1 12rem; min-width: 9rem; }
+/* Mesh page: the Claude login a host holds, on its meta line; it opens Settings → Accounts. */
+.mesh-login-link { display: inline-block; max-width: 100%; min-height: var(--tap-min); margin: calc((var(--tap-min) - 1.45em) / -2) 0; padding: 0; border: 0; background: none; color: var(--color-accent); font: inherit; line-height: var(--tap-min); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; cursor: pointer; }
+.mesh-login-link:hover { text-decoration: underline; }
+.mesh-login-link:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.accounts-own-title { margin: var(--space-4) 0 var(--space-2); font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .accounts-flow { display: flex; flex-direction: column; gap: var(--space-3); }
 .accounts-flow-url { margin: 0; display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .accounts-flow-url a { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-caption); }

@@ -81,6 +81,7 @@ import { meshLinks } from "./mesh/links";
 import { mountLinks } from "./mesh/links-routes";
 import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinkOrigin, setLinksSource } from "./link-delivery";
 import { mountSync } from "./sync";
+import { mountClaudePool } from "./claude-pool";
 import { markSeen } from "./seen";
 import {
   attentionForWire,
@@ -1208,6 +1209,8 @@ app.get("/api/extensions", async (c) => c.json(await listExtensions()));
 meshRoutes(app);
 // Host-to-host sync (server/sync/): routes under /api/peer/* and mesh hooks only; OFF, inert.
 const sync = mountSync(app, meshApi);
+// The pool of Claude logins (server/claude-pool/): /api/peer/claude-pool/*, /api/claude/pool/*; OFF, inert.
+mountClaudePool(app, meshApi);
 // Per-host details and rename (server/mesh/details.ts): /api/mesh/details|label, /api/peer/*; OFF, 404.
 mountDetails(app, meshApi, {
   sessions: async () => (await listSessionFiles()).length,

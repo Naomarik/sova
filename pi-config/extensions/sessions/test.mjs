@@ -1,4 +1,5 @@
 // Runs against the installed Pi packages without installing duplicate dependencies.
+import '../claude-code/tests/hermetic-env.mjs'; // first: never the inherited agent dir / Claude directory
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { Hono } from "hono";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -10,6 +10,7 @@ import {
   DEFAULT_LOGIN_ID,
   LOCAL_DEVICE_ID,
   assignedHere,
+  claudeBaseEnv,
   claudeJsonPath,
   clearStanding,
   credentialsMtime,
@@ -29,6 +30,8 @@ import {
 import type { ClaudeLoginIdentity as WireIdentity } from "../shared/protocol";
 import type { ClaudeAccountsInfo, ClaudeLoginFlowState, ClaudeLoginRow } from "../shared/protocol";
 import { readPeers } from "./mesh/peers";
+import { poolAgent } from "./claude-pool";
+import type { PoolAgent } from "./claude-pool/agent";
 
 // Settings → Accounts (§app.claude-logins): this host's Claude logins, their order, and adding
 // one by driving Claude Code's own `claude auth login` for a new directory, with no terminal.
@@ -51,11 +54,15 @@ export interface ClaudeAccountsOptions {
   now?: () => number;
   /** Test seam: timeouts. */
   timeouts?: Partial<{ url: number; finish: number; flow: number; logout: number }>;
+  /** The pool agent while the mesh is on (server/claude-pool); test seam. */
+  pool?: () => PoolAgent | null;
 }
 
 interface Flow {
   id: string;
   dir: string;
+  /** Signing an existing login in again: its id (the flow runs in a fresh directory, moved over on success). */
+  target?: string;
   child: ChildProcess;
   state: ClaudeLoginFlowState;
   stdout: string;
@@ -81,6 +88,7 @@ export class ClaudeAccountsService {
   private readonly executable: string;
   private readonly timeouts: { url: number; finish: number; flow: number; logout: number };
   private readonly logins: ClaudeLogins;
+  private readonly pool: () => PoolAgent | null;
   private flow: Flow | null = null;
 
   constructor(options: ClaudeAccountsOptions = {}) {
@@ -89,6 +97,7 @@ export class ClaudeAccountsService {
     this.executable = options.executable ?? "claude";
     this.timeouts = { url: URL_TIMEOUT_MS, finish: FINISH_TIMEOUT_MS, flow: FLOW_TIMEOUT_MS, logout: LOGOUT_TIMEOUT_MS, ...options.timeouts };
     this.logins = new ClaudeLogins({ agentDir: this.agentDir, env: this.env, ...(options.now ? { now: options.now } : {}) });
+    this.pool = options.pool ?? poolAgent;
   }
 
   // -- reading -------------------------------------------------------------------------------
@@ -130,7 +139,14 @@ export class ClaudeAccountsService {
         .map((l) => ({ id: l.id, device: l.device, ...(l.label ? { label: l.label } : {}), identity: wireIdentity(l.identity) })),
       ...(read.state === "malformed" ? { error: `${read.file}: ${read.errors.join("; ")}` } : {}),
       flow: this.flow?.state ?? null,
+      ...(this.pool() ? { pool: this.pool()!.view() } : {}),
     };
+  }
+
+  /** A login of the pool (mesh on) that this device does not hold: changed through the pool document. */
+  private inPoolOnly(id: string): boolean {
+    const pool = this.pool();
+    return !!pool && !!pool.doc().logins[id] && !this.logins.order().includes(id);
   }
 
   /** The login this host's next new chat runs on: the first usable one in its order (nothing is touched). */
@@ -178,8 +194,21 @@ export class ClaudeAccountsService {
     const b = (body ?? {}) as { enabled?: unknown; label?: unknown };
     if (b.enabled !== undefined && typeof b.enabled !== "boolean") return { status: 400, body: { error: "enabled must be true or false" } };
     if (b.label !== undefined && b.label !== null && (typeof b.label !== "string" || b.label.length > MAX_LABEL)) return { status: 400, body: { error: `label must be a string of at most ${MAX_LABEL}` } };
+    if (this.inPoolOnly(id)) {
+      const pool = this.pool()!;
+      if (typeof b.enabled === "boolean") pool.setEnabled(id, b.enabled);
+      if (b.label !== undefined) pool.setLabel(id, typeof b.label === "string" && b.label.trim() ? b.label.trim() : null);
+      return { status: 200, body: this.info() };
+    }
     if (!this.logins.order().includes(id)) return { status: 404, body: { error: "No such login on this device" } };
     if (id === DEFAULT_LOGIN_ID && b.label !== undefined) return { status: 400, body: { error: "The default login takes no label" } };
+    if (id !== DEFAULT_LOGIN_ID) {
+      const pool = this.pool();
+      if (pool?.doc().logins[id]) {
+        if (typeof b.enabled === "boolean") pool.setEnabled(id, b.enabled);
+        if (b.label !== undefined) pool.setLabel(id, typeof b.label === "string" && b.label.trim() ? b.label.trim() : null);
+      }
+    }
     return this.change((accounts, device) => {
       if (id === DEFAULT_LOGIN_ID) {
         if (typeof b.enabled === "boolean") accounts.devices[device] = { order: this.logins.order(accounts), ...accounts.devices[device], defaultEnabled: b.enabled };
@@ -196,8 +225,13 @@ export class ClaudeAccountsService {
   }
 
   clear(id: string): ServiceResult {
+    if (this.inPoolOnly(id)) {
+      this.pool()!.clearStanding(id);
+      return { status: 200, body: this.info() };
+    }
     if (!this.logins.order().includes(id)) return { status: 404, body: { error: "No such login on this device" } };
     try {
+      if (id !== DEFAULT_LOGIN_ID) this.pool()?.clearStanding(id);
       clearStanding(this.agentDir, id);
     } catch (error) {
       return { status: 409, body: { error: (error as Error).message } };
@@ -208,7 +242,15 @@ export class ClaudeAccountsService {
   /** `claude auth logout` in its directory (bounded; its failure does not stop the removal), then the directory and the record. */
   async remove(id: string): Promise<ServiceResult> {
     if (id === DEFAULT_LOGIN_ID) return { status: 400, body: { error: "The default login cannot be removed" } };
-    if (!isLoginId(id) || !readAccounts(this.agentDir).value.logins.some((l) => l.id === id)) return { status: 404, body: { error: "No such login" } };
+    const pool = this.pool();
+    const here = isLoginId(id) && readAccounts(this.agentDir).value.logins.some((l) => l.id === id);
+    // In the pool: removed everywhere. The device that has it deletes its copy (after stopping
+    // every process on it), as plain files; a copy here is signed out and deleted right now.
+    if (pool && isLoginId(id) && pool.doc().logins[id]) {
+      pool.remove(id);
+      if (!here) return { status: 200, body: this.info() };
+    }
+    if (!here) return { status: 404, body: { error: "No such login" } };
     const dir = loginDir(this.agentDir, id);
     if (existsSync(join(dir, ".credentials.json"))) await this.run(["auth", "logout"], dir, this.timeouts.logout);
     const result = this.change((accounts) => {
@@ -267,10 +309,16 @@ export class ClaudeAccountsService {
   }
 
   /** Start `claude auth login` for a new directory, and answer once its URL is out (or it failed). */
-  async startFlow(): Promise<ServiceResult> {
+  async startFlow(body?: unknown): Promise<ServiceResult> {
     const running = this.flow && ["starting", "waiting", "finishing"].includes(this.flow.state.state);
     if (running) return { status: 409, body: { error: "A sign-in is already in progress; finish or cancel it first" } };
     if (readAccounts(this.agentDir).state === "malformed") return { status: 409, body: { error: "The Claude accounts file is malformed; fix it before adding a login" } };
+    // Sign an existing login in again (§app.claude-logins/stuck): one of the pool, or one here.
+    const target = (body as { login?: unknown } | null | undefined)?.login;
+    if (target !== undefined) {
+      const known = isLoginId(target) && (!!this.pool()?.doc().logins[target] || readAccounts(this.agentDir).value.logins.some((l) => l.id === target));
+      if (!known) return { status: 404, body: { error: "No such login" } };
+    }
     const id = newLoginId();
     let dir: string;
     try {
@@ -287,6 +335,7 @@ export class ClaudeAccountsService {
     }
     const flow: Flow = {
       id, dir, child, state: { state: "starting" }, stdout: "", stderr: "",
+      ...(typeof target === "string" ? { target } : {}),
       timer: setTimeout(() => this.endFlow(flow, { state: "failed", error: "The sign-in was left alone for 10 minutes and was cancelled" }), this.timeouts.flow),
       exited: new Promise((resolve) => { child.once("close", (code) => resolve(code)); child.once("error", () => resolve(null)); }),
       waiters: new Set(),
@@ -349,6 +398,7 @@ export class ClaudeAccountsService {
       return;
     }
     const identity: ClaudeLoginIdentity | null = readIdentityFile(claudeJsonPath(flow.dir, false)) ?? readIdentityFromStatus(flow.dir, this.executable);
+    if (flow.target) { this.signedInAgain(flow, flow.target, identity); return; }
     const existing = readAccounts(this.agentDir).value;
     const sharedAccount = !!identity?.accountUuid && (
       existing.logins.some((l) => l.identity?.accountUuid === identity.accountUuid)
@@ -363,14 +413,59 @@ export class ClaudeAccountsService {
       this.endFlow(flow, { state: "failed", error: (result.body as { error: string }).error });
       return;
     }
+    this.pool()?.addedHere(flow.id, { identity, addedAt: Date.now() });
     const row = this.row(flow.id, readAccounts(this.agentDir).value);
     this.endFlow(flow, { state: "done", login: row, sharedAccount }, true);
+  }
+
+  /**
+   * An existing login signed in again here: its fresh credentials replace whatever copy this
+   * device had, and this device holds it now. In the pool, a device that still has an old copy
+   * (the one it was stuck on) deletes it when it comes back.
+   */
+  private signedInAgain(flow: Flow, target: string, identity: ClaudeLoginIdentity | null): void {
+    try {
+      const dir = ensureLoginDir(this.agentDir, target, this.logins.defaultDir);
+      for (const name of [".credentials.json", ".claude.json"]) {
+        if (existsSync(join(flow.dir, name))) renameSync(join(flow.dir, name), join(dir, name));
+      }
+    } catch (error) {
+      this.endFlow(flow, { state: "failed", error: `Could not store the new sign-in: ${(error as Error).message}` });
+      return;
+    }
+    const pooled = this.pool()?.doc().logins[target];
+    const result = this.change((accounts, device) => {
+      const login = accounts.logins.find((l) => l.id === target);
+      if (login) {
+        login.device = device;
+        if (identity) login.identity = identity;
+      } else {
+        accounts.logins.push({ id: target, addedAt: pooled?.addedAt ?? Date.now(), enabled: true, device, identity: identity ?? pooled?.identity ?? null, ...(pooled?.label.value ? { label: pooled.label.value } : {}) });
+      }
+    });
+    if (result.status !== 200) {
+      this.endFlow(flow, { state: "failed", error: (result.body as { error: string }).error });
+      return;
+    }
+    try { clearStanding(this.agentDir, target); } catch { /* nothing recorded */ }
+    this.pool()?.addedHere(target, { identity, addedAt: pooled?.addedAt ?? Date.now() });
+    const row = this.row(target, readAccounts(this.agentDir).value);
+    this.endFlow(flow, { state: "done", login: row, sharedAccount: false });
   }
 
   /** Stop a running flow on shutdown, leaving nothing behind. */
   dispose(): void {
     if (this.flow && ["starting", "waiting", "finishing"].includes(this.flow.state.state)) this.endFlow(this.flow, { state: "failed", error: "Sova is shutting down" });
   }
+}
+
+/**
+ * What a server-side `claude` spawn's environment starts from: this process's, less an inherited
+ * CLAUDE_CONFIG_DIR that names an added login's directory (a server started under one would
+ * otherwise run `default` on that login).
+ */
+export function claudeBaseSpawnEnv(): NodeJS.ProcessEnv {
+  return claudeBaseEnv(process.env, getAgentDir());
 }
 
 /** The environment a server-side `claude` spawn runs with: this host's first usable login. */
@@ -393,7 +488,7 @@ async function json(c: { req: { json(): Promise<unknown> } }): Promise<unknown> 
 export function registerClaudeAccountRoutes(app: Hono, service = new ClaudeAccountsService()): ClaudeAccountsService {
   const send = (c: any, r: ServiceResult) => c.json(r.body, r.status, { "Cache-Control": "no-store" });
   app.get("/api/claude/accounts", (c) => c.json(service.info(), 200, { "Cache-Control": "no-store" }));
-  app.post("/api/claude/accounts/flow", async (c) => send(c, await service.startFlow()));
+  app.post("/api/claude/accounts/flow", async (c) => send(c, await service.startFlow(await json(c))));
   app.post("/api/claude/accounts/flow/code", async (c) => send(c, await service.submitCode(await json(c))));
   app.delete("/api/claude/accounts/flow", (c) => send(c, service.cancelFlow()));
   app.put("/api/claude/accounts/order", async (c) => send(c, service.setOrder(await json(c))));

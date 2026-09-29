@@ -1,4 +1,3 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -38,16 +37,12 @@ const PEER_CALL_TIMEOUT_MS = 5_000;
 const RECONCILE_MS = 5 * 60_000;
 
 /**
- * The Claude Code store this host syncs, or null. Only a host on the DEFAULT agent dir (a real
- * install) syncs Claude Code's own store; a hermetic agent dir (dev servers, tests) runs with the
- * real $HOME and must never touch the real ~/.claude, so it syncs Claude only when told where by
- * SOVA_SYNC_CLAUDE_DIR (the lab's simulated store).
+ * Claude Code's own store (`~/.claude`) is no longer synced (§mesh.sync/logins): each device keeps
+ * its own as its last resort, and added Claude logins move one device at a time through the pool
+ * (server/claude-pool/), never through this replicate-to-every-host sync. The store class stays
+ * for its tests; production mounts pi's `auth.json` only.
  */
-export function claudeSyncDir(env: NodeJS.ProcessEnv = process.env): string | null {
-  if (env.SOVA_SYNC_CLAUDE_DIR) return env.SOVA_SYNC_CLAUDE_DIR;
-  if (env.PI_CODING_AGENT_DIR) return null;
-  return env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
-}
+export const claudeSyncDir = (): string | null => null;
 
 /** Any request on the peer listener, verified or proxied through it: never a browser route. */
 const onPeerListener = (c: Context): boolean => !!(c.env as { meshPeer?: unknown } | undefined)?.meshPeer;

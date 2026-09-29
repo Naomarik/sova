@@ -7,6 +7,7 @@ import type {
   AttentionDigest,
   ChatModeResult,
   ClaudeAccountsInfo,
+  ClaudePoolInfo,
   ClaudeCliStatus,
   ClaudeLoginFlowState,
   ContextInfo,
@@ -216,7 +217,17 @@ export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/te
 /** Settings → Accounts: this host's Claude logins in order, their standing, and the add-login flow. */
 export const getClaudeAccounts = () => request<ClaudeAccountsInfo>("/api/claude/accounts");
 /** Start `claude auth login` for a new login; answers once its sign-in URL is out. */
-export const startClaudeLogin = () => request<ClaudeLoginFlowState>("/api/claude/accounts/flow", { method: "POST" });
+/** Add a login, or (with `login`) sign an existing one in again on this device. */
+export const startClaudeLogin = (login?: string) =>
+  request<ClaudeLoginFlowState>("/api/claude/accounts/flow", { method: "POST", ...(login ? { body: JSON.stringify({ login }) } : {}) });
+export const setClaudePoolKeeper = (device: string) =>
+  request<ClaudePoolInfo>("/api/claude/pool/keeper", { method: "PUT", body: JSON.stringify({ device }) });
+export const pinClaudePoolLogin = (id: string, pin: string | null) =>
+  request<ClaudePoolInfo>(`/api/claude/pool/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ pin }) });
+export const returnClaudePoolLogin = (id: string) =>
+  request<ClaudePoolInfo>(`/api/claude/pool/${encodeURIComponent(id)}/return`, { method: "POST" });
+export const putClaudePoolOrder = (order: string[]) =>
+  request<ClaudePoolInfo>("/api/claude/pool/order", { method: "PUT", body: JSON.stringify({ order }) });
 /** The code the sign-in page showed; answers once Claude Code finished (or refused it). */
 export const sendClaudeLoginCode = (code: string) =>
   request<ClaudeLoginFlowState>("/api/claude/accounts/flow/code", { method: "POST", body: JSON.stringify({ code }) });

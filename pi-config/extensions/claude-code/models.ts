@@ -87,6 +87,8 @@ export async function discoverClaudeModels(
 		child = (options.spawnImpl ?? spawn)(options.executable ?? "claude", buildDiscoveryArgv(),
 			{ shell: false, detached: process.platform !== "win32", env, stdio: ["pipe", "pipe", "pipe"] });
 	} catch { throw new Error("Could not spawn Claude for model discovery"); }
+	// Its login may not leave this device while it runs (accounts.ts leases).
+	try { hostLogins().leaseChild(env, child); } catch { /* no lease */ }
 	let markClosed!: () => void;
 	const closure = new Promise<void>((resolve) => { markClosed = resolve; });
 	options.trackClosure?.(closure);

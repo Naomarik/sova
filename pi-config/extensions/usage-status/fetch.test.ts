@@ -162,13 +162,14 @@ test("a cache without claudeAccounts is refetched once on a host that has added 
 test("a session with no recorded login reads the first ready login in this device's order, not always Claude Code's own", () => {
 	setup();
 	const { firstReadyLogin } = fetchMod;
-	// Order [B, default, A]: B needs sign-in, so the first ready one is `default`.
-	assert.equal(firstReadyLogin(), "default");
-	// `default` limited too: the next ready one, A.
+	// Order [B, default, A] runs as [B, A, default] (Claude Code's own login is always the last
+	// resort): B needs sign-in, so the first ready one is A.
+	assert.equal(firstReadyLogin(), A);
+	// A limited too: `default`.
 	fs.writeFileSync(
 		path.join(AGENT, "claude-accounts-state.json"),
-		JSON.stringify({ version: 1, logins: { [B]: { kind: "auth", at: Date.now() + 60_000 }, default: { kind: "limit", at: Date.now(), until: Date.now() + 3_600_000 } } }),
+		JSON.stringify({ version: 1, logins: { [B]: { kind: "auth", at: Date.now() + 60_000 }, [A]: { kind: "limit", at: Date.now(), until: Date.now() + 3_600_000 } } }),
 	);
-	assert.equal(firstReadyLogin(), A);
+	assert.equal(firstReadyLogin(), "default");
 	assert.equal(firstReadyLogin({ selectId: () => { throw new Error("unreadable registry"); } }), undefined);
 });

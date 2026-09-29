@@ -40,7 +40,8 @@ writeFileSync(
     devices: { local: { order: [B, "default", A] } },
   }),
 );
-// B is out until an hour from now: the next new chat starts on default, the first usable one.
+// B is out until an hour from now: the next new chat starts on A, the first usable one (default,
+// Claude Code's own login, is always last).
 writeFileSync(join(agentDir, "claude-accounts-state.json"), JSON.stringify({ version: 1, logins: { [B]: { kind: "limit", at: Date.now(), until: Date.now() + 3_600_000, window: "five_hour" } } }));
 
 let pad = 0;
@@ -57,8 +58,8 @@ test("one card per login on this host, in its order, with identity, standing, th
   writeCache({ claudeAccounts: { [B]: { data: { state: "ok", fiveHour: { pct: 100 } }, fetchedAt: 900, nextFetchAt: 0 }, [C]: { data: { state: "ok", fiveHour: { pct: 1 } }, nextFetchAt: 0 } } });
   const u = await getUsageInsight();
   const logins = u.claudeLogins!;
-  assert.deepEqual(logins.map((l) => l.id), [B, "default", A], "this device's order; another device's login is not listed");
-  const [b, own, a] = logins as [typeof logins[0], typeof logins[0], typeof logins[0]];
+  assert.deepEqual(logins.map((l) => l.id), [B, A, "default"], "this device's order, default last; another device's login is not listed");
+  const [b, a, own] = logins as [typeof logins[0], typeof logins[0], typeof logins[0]];
   assert.equal(b.email, "spare@example.com");
   assert.equal(b.label, "Spare");
   assert.equal(b.planLabel, "Pro");
@@ -70,7 +71,8 @@ test("one card per login on this host, in its order, with identity, standing, th
 
   assert.equal(own.email, "own@example.com");
   assert.equal(own.planLabel, "Max 20x", "the tier names the plan, not the billing type");
-  assert.equal(own.inUse, true, "B is limited, so new chats start on default");
+  assert.equal(own.inUse, false, "default is the last resort");
+  assert.equal(a.inUse, true, "B is limited, so new chats start on A");
   assert.deepEqual(own.usage.windows.map((w) => w.pct), [50], "default's reading is the provider card's `claude`");
   assert.equal(own.fetchedAt, 1000);
 
@@ -96,4 +98,30 @@ test("a login skipped while it needs sign-in keeps its last reading", async () =
   const a = (await getUsageInsight()).claudeLogins!.find((l) => l.id === A)!;
   assert.deepEqual(a.usage.windows.map((w) => w.pct), [33]);
   assert.equal(a.fetchedAt, 800);
+});
+
+test("with the pool on (mesh on), the login in use is one this device holds: never a free one it keeps, never one held elsewhere", async () => {
+  mkdirSync(join(agentDir, "sova"), { recursive: true });
+  writeFileSync(join(agentDir, "sova", "peers.json"), JSON.stringify({ version: 1, self: { id: "desk", label: "Desk" }, peers: [{ id: "phone", label: "Phone", url: "http://127.0.0.1:9" }] }));
+  writeFileSync(join(agentDir, "claude-accounts-state.json"), JSON.stringify({ version: 1, logins: {} }));
+  writeFileSync(
+    join(agentDir, "claude-accounts.json"),
+    JSON.stringify({
+      version: 1,
+      logins: [
+        { id: B, addedAt: 2, enabled: true, device: null, identity: { accountUuid: "acct-2", email: "spare@example.com" } },
+        { id: A, addedAt: 1, enabled: true, device: "desk", identity: { accountUuid: "acct-1", email: "own@example.com" } },
+        { id: C, addedAt: 3, enabled: true, device: "phone", identity: { accountUuid: "acct-3", email: "elsewhere@example.com" } },
+      ],
+      devices: { desk: { order: [B, C, "default", A] } },
+    }),
+  );
+  try {
+    writeCache({});
+    const logins = (await getUsageInsight()).claudeLogins!;
+    assert.deepEqual(logins.map((l) => l.id), [A, "default"], "only what this device holds, default last");
+    assert.deepEqual(logins.filter((l) => l.inUse).map((l) => l.id), [A]);
+  } finally {
+    rmSync(join(agentDir, "sova"), { recursive: true, force: true });
+  }
 });

@@ -12,7 +12,7 @@ import { PassThrough, Writable } from "node:stream";
 import { test } from "node:test";
 import type { ChildProcess } from "node:child_process";
 import { ClaudeRunner, type ClaudeSpawnOptions } from "./runner.ts";
-import { ClaudeLogins, loginDir, writeAccounts } from "./accounts.ts";
+import { ClaudeLogins, loginDir, loginUsers, markLeaving, readLeaving, writeAccounts } from "./accounts.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 async function until(check: () => boolean, ms = 2000): Promise<void> {
@@ -50,21 +50,27 @@ class FakeChild extends EventEmitter {
 const A = "l-0000000a", B = "l-0000000b";
 const SESSION = "00000000-0000-4000-8000-00000000f41b";
 
-function setup(t: { after: (fn: () => void) => void }, sameAccount = false) {
+function setup(t: { after: (fn: () => void) => void }, sameAccount = false, pool = false) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "claude-runner-failover-"));
 	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 	const agentDir = path.join(root, "agent");
 	fs.mkdirSync(path.join(root, "claude", "projects"), { recursive: true });
 	fs.mkdirSync(agentDir);
+	if (pool) {
+		// The mesh is on (a peer is listed): accounts.ts runs the pool's paths (failoverAsync, leases).
+		fs.mkdirSync(path.join(agentDir, "sova"));
+		fs.writeFileSync(path.join(agentDir, "sova", "peers.json"), JSON.stringify({ version: 1, self: { id: "desk", label: "Desk" }, peers: [{ id: "vps", label: "Vps", nodeId: "n-vps", dnsName: "vps.example.invalid" }] }));
+	}
 	writeAccounts(agentDir, {
 		version: 1,
 		logins: [
-			{ id: A, addedAt: 1, enabled: true, device: "local", identity: { accountUuid: "acct-a", email: "a@example.com" } },
-			{ id: B, addedAt: 2, enabled: true, device: "local", identity: { accountUuid: sameAccount ? "acct-a" : "acct-b", email: "b@example.com" } },
+			{ id: A, addedAt: 1, enabled: true, device: pool ? "desk" : "local", identity: { accountUuid: "acct-a", email: "a@example.com" } },
+			{ id: B, addedAt: 2, enabled: true, device: pool ? "desk" : "local", identity: { accountUuid: sameAccount ? "acct-a" : "acct-b", email: "b@example.com" } },
 		],
 		devices: { local: { order: [A, B, "default"], defaultEnabled: false } },
 	});
 	const logins = new ClaudeLogins({ agentDir, env: { PI_CODING_AGENT_DIR: agentDir, CLAUDE_CONFIG_DIR: path.join(root, "claude") } });
+	if (pool) for (const id of [A, B]) { fs.mkdirSync(loginDir(agentDir, id), { recursive: true }); fs.writeFileSync(path.join(loginDir(agentDir, id), ".credentials.json"), "{}"); }
 	const login = logins.select();
 	const children: FakeChild[] = [];
 	const spawn = (_c: string, argv: string[], options: any) => {
@@ -162,4 +168,62 @@ test("a worker killed while switching closes cleanly", { timeout: 8000 }, async 
 	assert.equal(s.runner.status, "killed");
 	assert.equal(s.exits, 1);
 	assert.ok(s.children.length <= 2);
+});
+
+test("the pool: a limit sends the login back (leaving) and the worker resumes on the next login", { timeout: 8000 }, async (t) => {
+	const s = setup(t, false, true);
+	await until(() => s.children.length === 1 && s.children[0]!.writes.length > 0);
+	const first = s.children[0]!;
+	first.ack();
+	await until(() => first.users().length === 1);
+	const uuid = first.users()[0]!.uuid;
+	for (const e of limitFor(uuid)) first.out(e);
+	await until(() => s.children.length === 2);
+	assert.equal(readLeaving(s.agentDir, A)?.reason, "limit", "A is marked leaving: the pool agent returns it to the keeper");
+	const second = s.children[1]!;
+	assert.equal(second.env.CLAUDE_CONFIG_DIR, loginDir(s.agentDir, B));
+	await until(() => second.writes.length > 0);
+	second.ack();
+	await until(() => second.users().length === 1);
+	second.out({ type: "result", subtype: "success", result: "DONE", user_message_uuid: second.users()[0]!.uuid, session_id: SESSION });
+	await until(() => s.settled.length === 1);
+	assert.deepEqual(s.settled, ["success:DONE"]);
+});
+
+test("the pool: with no login to move to, the failed result settles the task as before", { timeout: 8000 }, async (t) => {
+	const s = setup(t, true, true);
+	await until(() => s.children.length === 1 && s.children[0]!.writes.length > 0);
+	const first = s.children[0]!;
+	first.ack();
+	await until(() => first.users().length === 1);
+	for (const e of limitFor(first.users()[0]!.uuid)) first.out(e);
+	await until(() => s.settled.length === 1);
+	assert.equal(s.children.length, 1);
+	assert.equal(s.settled[0]!.split(":")[0], "error");
+	assert.match(s.runner.error ?? "", /hit your limit/);
+});
+
+test("the pool: an idle worker whose login leaves moves to the next login, resuming, sending nothing", { timeout: 8000 }, async (t) => {
+	const s = setup(t, false, true);
+	await until(() => s.children.length === 1 && s.children[0]!.writes.length > 0);
+	const first = s.children[0]!;
+	first.ack();
+	await until(() => first.users().length === 1);
+	first.out({ type: "result", subtype: "success", result: "DONE", user_message_uuid: first.users()[0]!.uuid, session_id: SESSION });
+	await until(() => s.settled.length === 1);
+	const lease = path.join(loginDir(s.agentDir, A), ".sova-leases", `${process.pid}.json`);
+	assert.ok(fs.existsSync(lease), "the worker holds a lease on A");
+	markLeaving(s.agentDir, A, "user");
+	loginUsers().tick();
+	await until(() => s.children.length === 2);
+	const second = s.children[1]!;
+	assert.equal(first.closed, true, "A's process stopped");
+	assert.equal(second.argv[second.argv.indexOf("--resume") + 1], SESSION, "the same Claude session, resumed");
+	assert.equal(second.env.CLAUDE_CONFIG_DIR, loginDir(s.agentDir, B));
+	await until(() => second.writes.length > 0);
+	second.ack();
+	await until(() => s.runner.login?.id === B && !fs.existsSync(lease));
+	assert.equal(second.users().length, 0, "nothing is sent: the worker stays idle");
+	assert.ok(s.runner.transcript.some((i) => i.kind === "system" && /^Claude: moved a@example.com → b@example.com/.test(i.text)));
+	assert.equal(s.settled.length, 1, "no new completion");
 });

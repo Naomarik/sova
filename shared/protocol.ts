@@ -875,7 +875,58 @@ export interface ClaudeAccountsInfo {
   /** The registry could not be read: only `default` is used, and nothing is written. */
   error?: string;
   flow: ClaudeLoginFlowState | null;
+  /** The pool of logins across the mesh (§app.claude-logins/pool); absent while the mesh is off. */
+  pool?: ClaudePoolInfo;
 }
+/** A device of the mesh, as the pool shows it. */
+export interface ClaudePoolDevice {
+  id: string;
+  label: string;
+  self: boolean;
+  /** Reachable now (this device always is). */
+  up: boolean;
+  /** Logins it holds and uses (not the free ones it keeps). */
+  logins: string[];
+}
+/** Where a login is. `stuck`: held by a device that is offline (nobody reclaims it). */
+export interface ClaudePoolHolder {
+  device: string;
+  label: string;
+  free: boolean;
+  stuck: boolean;
+  /** When it got there (the holder's clock). */
+  since: number;
+}
+export interface ClaudePoolLogin {
+  id: string;
+  label?: string;
+  identity: ClaudeLoginIdentity | null;
+  addedAt: number;
+  enabled: boolean;
+  holder: ClaudePoolHolder;
+  /** "Always give this login to" that device. */
+  pin: string | null;
+  /** As the login's last holder reported it. */
+  standing: ClaudeLoginStanding;
+  usage?: { fiveHour?: number; fiveHourResetsAt?: number; sevenDay?: number; sevenDayResetsAt?: number; at: number };
+  /** A move this device has under way for it (its own journal). */
+  moving?: { op: "lend" | "borrow" | "leave"; state: string; reason?: string; peer?: string };
+  /** Return was asked and the holder has not returned it yet. */
+  returnAsked?: boolean;
+}
+export interface ClaudePoolInfo {
+  self: string;
+  keeper: { id: string | null; label: string; up: boolean };
+  devices: ClaudePoolDevice[];
+  /** Every login of the pool, in the pool's order. */
+  logins: ClaudePoolLogin[];
+  /** This device never holds a subscription login (it syncs API keys only). */
+  apiKeysOnly?: boolean;
+}
+/** PUT /api/claude/pool/keeper */
+export interface ClaudePoolKeeperRequest { device: string }
+/** PATCH /api/claude/pool/:id */
+export interface ClaudePoolLoginPatch { pin?: string | null }
 /** The chat's Claude login, as the composer foot shows it. */
 export interface ChatClaudeLogin {
   id: string;

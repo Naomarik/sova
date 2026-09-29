@@ -95,6 +95,7 @@ export function mountClaudePool(app: Hono, mesh: MeshApi, paths: PoolPaths = def
       peerInfo,
       defaultClaudeDir: paths.claudeDir(),
       canHold,
+      ...testTimings(),
     });
     current = agent;
     void agent.start().catch((err) => console.error("[claude-pool] start failed:", err));
@@ -187,6 +188,18 @@ export function mountClaudePool(app: Hono, mesh: MeshApi, paths: PoolPaths = def
     void agent.tick();
     return c.json(agent.view(), 200, { "Cache-Control": "no-store" });
   });
+}
+
+/**
+ * Test knobs for the multi-host e2e (scripts/claude-pool-e2e): SOVA_CLAUDE_POOL_IDLE_MS,
+ * SOVA_CLAUDE_POOL_CUT_MS (both drain bounds) and SOVA_CLAUDE_POOL_TICK_MS. Unset: the real ones.
+ */
+function testTimings(env: NodeJS.ProcessEnv = process.env): { idleMs?: number; quickCutMs?: number; slowCutMs?: number; tickMs?: number } {
+  const n = (v: string | undefined) => (v && Number.isSafeInteger(Number(v)) && Number(v) > 0 ? Number(v) : undefined);
+  const idle = n(env.SOVA_CLAUDE_POOL_IDLE_MS);
+  const cut = n(env.SOVA_CLAUDE_POOL_CUT_MS);
+  const tick = n(env.SOVA_CLAUDE_POOL_TICK_MS);
+  return { ...(idle ? { idleMs: idle } : {}), ...(cut ? { quickCutMs: cut, slowCutMs: cut } : {}), ...(tick ? { tickMs: tick } : {}) };
 }
 
 /** Record each call's outcome as the peer's up-state (for "Stuck on …"). */

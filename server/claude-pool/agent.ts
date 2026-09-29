@@ -35,7 +35,7 @@ import {
   INCOMING_DIR_NAME,
   type LoginFiles,
 } from "./creds";
-import { emptyDoc, mergeDocs, newPoolLogin, parseDoc, poolOrder, reg, sameDoc, standingNow, type PoolDoc, type PoolLogin, type PoolStanding } from "./doc";
+import { emptyDoc, mergeDocs, newPoolLogin, parseDoc, poolOrder, reg, sameDoc, standingNow, type PoolDoc, type PoolLogin, type PoolStanding, type PoolUsage } from "./doc";
 import { readJournal, setOp, type JournalOp } from "./journal";
 
 /**
@@ -109,6 +109,12 @@ export interface PoolAgentOptions {
   syncMs?: number;
   /** Test seam: throws at a named step to simulate a crash there. */
   crash?: (step: string) => void;
+  /**
+   * Processes that run `claude` with CLAUDE_CONFIG_DIR = a login's directory, by directory: the
+   * safety net for processes that keep no lease (started before this version, or by hand).
+   * Default: Linux /proc; elsewhere nothing.
+   */
+  procScan?: () => Map<string, number[]>;
   log?: (message: string) => void;
 }
 
@@ -119,6 +125,36 @@ const SLOW_CUT_MS = 15 * 60_000;
 const TICK_MS = 5_000;
 const SYNC_MS = 60_000;
 const KILL_GRACE_MS = 10_000;
+
+/**
+ * `claude` processes by the CLAUDE_CONFIG_DIR in their environment (Linux /proc; this user's
+ * processes only, the rest are unreadable). A process counts when its command is `claude`, or its
+ * command line names claude (a node-run CLI). Its own descendants inherit the variable but are
+ * not counted, so a tool's shell is never taken for Claude.
+ */
+export function scanClaudeProcs(): Map<string, number[]> {
+  const out = new Map<string, number[]>();
+  if (process.platform !== "linux") return out;
+  let pids: string[] = [];
+  try { pids = readdirSync("/proc").filter((n) => /^\d+$/.test(n)); } catch { return out; }
+  for (const pid of pids) {
+    if (Number(pid) === process.pid) continue;
+    let env: string;
+    try { env = readFileSync(`/proc/${pid}/environ`, "latin1"); } catch { continue; }
+    const at = env.indexOf("CLAUDE_CONFIG_DIR=");
+    if (at < 0 || (at > 0 && env[at - 1] !== "\0")) continue;
+    const dir = env.slice(at + "CLAUDE_CONFIG_DIR=".length, env.indexOf("\0", at) < 0 ? undefined : env.indexOf("\0", at));
+    let comm = "";
+    let cmd = "";
+    try { comm = readFileSync(`/proc/${pid}/comm`, "latin1").trim(); } catch { /* gone */ }
+    try { cmd = readFileSync(`/proc/${pid}/cmdline`, "latin1"); } catch { /* gone */ }
+    if (comm !== "claude" && !/(^|[\/\0 ])claude([\0 .\-]|$)|fake-claude/.test(cmd)) continue;
+    const list = out.get(dir) ?? [];
+    list.push(Number(pid));
+    out.set(dir, list);
+  }
+  return out;
+}
 
 export const poolDocPath = (stateDir: string): string => join(stateDir, "claude-pool.json");
 
@@ -134,6 +170,8 @@ export class PoolAgent {
   private borrowing = false;
   private readonly startedAt: number;
   private ticking = false;
+  /** This pass's /proc view (scanClaudeProcs): read once per tick or incoming call, dropped after. */
+  private procs?: { at: number; map: Map<string, number[]> };
 
   constructor(options: PoolAgentOptions) {
     this.o = { idleMs: IDLE_MS, offerTtlMs: OFFER_TTL_MS, quickCutMs: QUICK_CUT_MS, slowCutMs: SLOW_CUT_MS, tickMs: TICK_MS, syncMs: SYNC_MS, ...options };
@@ -272,12 +310,12 @@ export class PoolAgent {
     if (accounts.state === "malformed") return;
     const claimed = new Set<string>();
     const rewrite = accounts.value.logins.some((l) => l.device === LOCAL_DEVICE_ID)
-      || accounts.value.logins.some((l) => l.device === null && readLoginUse(this.o.agentDir, l.id, this.alive).inUse);
+      || accounts.value.logins.some((l) => l.device === null && this.use(l.id).inUse);
     if (rewrite) {
       updateAccounts(this.o.agentDir, (a) => {
         for (const l of a.logins) {
           if (l.device === LOCAL_DEVICE_ID) l.device = self;
-          if (l.device === null && readLoginUse(this.o.agentDir, l.id, this.alive).inUse) { l.device = self; claimed.add(l.id); }
+          if (l.device === null && this.use(l.id).inUse) { l.device = self; claimed.add(l.id); }
         }
         if (a.devices[LOCAL_DEVICE_ID] && !a.devices[self]) {
           a.devices[self] = a.devices[LOCAL_DEVICE_ID]!;
@@ -314,6 +352,7 @@ export class PoolAgent {
   async tick(): Promise<void> {
     if (this.ticking) return;
     this.ticking = true;
+    this.procs = undefined;
     try {
       this.heartbeat();
       await this.recover();
@@ -323,6 +362,7 @@ export class PoolAgent {
       await this.takePinned();
       this.expireOffers();
       this.sweepIncoming();
+      this.publishUsage();
     } catch (err) {
       this.log(`tick: ${(err as Error).message}`);
     } finally {
@@ -353,6 +393,20 @@ export class PoolAgent {
       a.logins = a.logins.filter((l) => l.id !== id);
       for (const entry of Object.values(a.devices)) entry.order = entry.order.filter((x) => x !== id);
     });
+  }
+
+  /**
+   * Who runs on a login here: the leases (accounts.ts), plus any `claude` process whose
+   * environment names the login's directory (no lease: started before this version, or by hand).
+   * Such a process counts as busy: nothing says when it last worked.
+   */
+  private use(id: string): { inUse: boolean; busy: boolean; lastActiveAt: number; children: number[] } {
+    const leased = readLoginUse(this.o.agentDir, id, this.alive);
+    this.procs ??= { at: this.now(), map: (this.o.procScan ?? scanClaudeProcs)() };
+    const dir = join(this.o.agentDir, ACCOUNTS_DIR_NAME, id);
+    const extra = (this.procs.map.get(dir) ?? []).filter((pid) => !leased.children.includes(pid) && this.alive(pid));
+    if (!extra.length) return leased;
+    return { inUse: true, busy: true, lastActiveAt: this.now(), children: [...leased.children, ...extra] };
   }
 
   // ---- journal recovery -----------------------------------------------------------------------
@@ -396,7 +450,7 @@ export class PoolAgent {
       const account = l.identity?.accountUuid;
       if (account && req.excludeAccounts?.includes(account)) return false;
       if (req.only && req.only !== id) return false;
-      if (readLoginUse(this.o.agentDir, id, this.alive).inUse) return false;
+      if (this.use(id).inUse) return false;
       return true;
     };
     const order = poolOrder(doc).filter(ok);
@@ -405,6 +459,7 @@ export class PoolAgent {
 
   /** POST /api/peer/claude-pool/lend (at the keeper): offer the first lendable login. */
   async lend(asker: string, req: LendRequest): Promise<LendReply> {
+    this.procs = undefined;
     const doc = this.doc();
     if (doc.keeper.value !== this.self) return { none: "not the keeper" };
     if (typeof req?.requestId !== "string" || !req.requestId || req.requestId.length > 64) return { none: "bad request" };
@@ -427,13 +482,14 @@ export class PoolAgent {
   /** POST /api/peer/claude-pool/lend/commit: the asker staged it; drop ours and hand it over. */
   async commit(asker: string, req: CommitRequest): Promise<CommitReply> {
     if (!req || !isLoginId(req.id)) return { cancelled: "bad request" };
+    this.procs = undefined;
     const op = readJournal(this.o.stateDir).ops[req.id];
     if (op?.op === "lend" && op.requestId === req.requestId && op.peer === asker && op.seq === req.seq) {
       if (op.state === "offered") {
         // Nothing here may have run on it since the offer (the mesh was off meanwhile, say):
         // a changed copy would make the staged one stale.
         const text = credentialsText(this.o.agentDir, req.id);
-        if (!text || credentialsHash(text) !== op.credentialsHash || readLoginUse(this.o.agentDir, req.id, this.alive).inUse) {
+        if (!text || credentialsHash(text) !== op.credentialsHash || this.use(req.id).inUse) {
           setOp(this.o.stateDir, req.id, undefined);
           return { cancelled: "the login changed here since the offer" };
         }
@@ -647,7 +703,7 @@ export class PoolAgent {
       if (l.returnAsk.value !== null && l.returnAsk.value >= l.holder.seq) { this.leave(id, "return", "user"); continue; }
       if (l.pin.value && l.pin.value !== this.self) { this.leave(id, "return", "pin"); continue; }
       if (l.pin.value === this.self) continue;
-      const use = readLoginUse(this.o.agentDir, id, this.alive);
+      const use = this.use(id);
       const last = Math.max(use.lastActiveAt, l.holder.at, this.startedAt);
       if (!use.busy && now - last >= this.o.idleMs) this.leave(id, "return", "idle");
     }
@@ -673,7 +729,7 @@ export class PoolAgent {
 
   private async progressLeave(id: string, op: Extract<JournalOp, { op: "leave" }>): Promise<void> {
     if (op.state === "draining") {
-      const use = readLoginUse(this.o.agentDir, id, this.alive);
+      const use = this.use(id);
       if (use.inUse || use.children.length) {
         if (this.now() < op.cutAt) return;
         // The cut: every `claude` still on it stops; each owner continues on its next login.
@@ -799,6 +855,44 @@ export class PoolAgent {
     });
     const after = this.doc().logins[req.id];
     return after && after.holder.device === this.self ? { ok: true, doc: this.doc() } : { refused: "could not store it" };
+  }
+
+  /**
+   * The usage of each login held here, from this host's usage cache (`cache/usage-status.json`,
+   * `claudeAccounts`: numbers only), into the document, so every device's Accounts row shows it.
+   * Written only when a figure changed.
+   */
+  private publishUsage(): void {
+    let cache: { claudeAccounts?: Record<string, { data?: { state?: string; fiveHour?: { pct?: unknown; resetsAt?: unknown }; sevenDay?: { pct?: unknown; resetsAt?: unknown } } }> };
+    try {
+      cache = JSON.parse(readFileSync(join(this.o.agentDir, "cache", "usage-status.json"), "utf8"));
+    } catch {
+      return;
+    }
+    const reading = (w: { pct?: unknown; resetsAt?: unknown } | undefined) => ({
+      pct: typeof w?.pct === "number" && Number.isFinite(w.pct) ? Math.round(w.pct) : undefined,
+      resetsAt: typeof w?.resetsAt === "string" && Number.isFinite(Date.parse(w.resetsAt)) ? Date.parse(w.resetsAt) : undefined,
+    });
+    const doc = this.doc();
+    const held = [...this.registry()].filter(([, r]) => r.device === this.self).map(([id]) => id);
+    const changes: Array<[string, PoolUsage]> = [];
+    for (const id of held) {
+      const data = cache.claudeAccounts?.[id]?.data;
+      if (!doc.logins[id] || data?.state !== "ok") continue;
+      const five = reading(data.fiveHour);
+      const seven = reading(data.sevenDay);
+      const usage: PoolUsage = {
+        ...(five.pct !== undefined ? { fiveHour: five.pct } : {}),
+        ...(five.resetsAt !== undefined ? { fiveHourResetsAt: five.resetsAt } : {}),
+        ...(seven.pct !== undefined ? { sevenDay: seven.pct } : {}),
+        ...(seven.resetsAt !== undefined ? { sevenDayResetsAt: seven.resetsAt } : {}),
+      };
+      if (JSON.stringify(usage) !== JSON.stringify(doc.logins[id]!.usage.value)) changes.push([id, usage]);
+    }
+    if (!changes.length) return;
+    this.updateDoc((d) => {
+      for (const [id, usage] of changes) if (d.logins[id]) d.logins[id]!.usage = reg(usage, this.now(), this.self);
+    });
   }
 
   /** Staged copies with no journal op are leftovers of a cancelled borrow: delete them. */

@@ -15,7 +15,8 @@ import {
   writeAccounts,
   type ClaudeAccountsFile,
 } from "../../pi-config/extensions/claude-code/accounts.ts";
-import { PoolAgent, type PoolPeer } from "./agent";
+import { spawn } from "node:child_process";
+import { PoolAgent, scanClaudeProcs, type PoolPeer } from "./agent";
 import { INCOMING_DIR_NAME } from "./creds";
 import { emptyDoc, mergeDocs, newPoolLogin, reg } from "./doc";
 import { readJournal } from "./journal";
@@ -39,7 +40,7 @@ interface Device {
 }
 
 let world = 0;
-function makeWorld(ids: string[], clock: { now: number }) {
+function makeWorld(ids: string[], clock: { now: number }, procScan: () => Map<string, number[]> = () => new Map()) {
   const base = join(root, `w${++world}`);
   const devices = new Map<string, Device>();
   const killed: number[] = [];
@@ -57,6 +58,7 @@ function makeWorld(ids: string[], clock: { now: number }) {
       tickMs: 0,
       syncMs: 0,
       kill: (pid) => killed.push(pid),
+      procScan,
       crash: (step) => {
         if (devices.get(d.id)?.crashAt === step) { crashed.add(step); throw new Error(`crash at ${step}`); }
       },
@@ -155,9 +157,9 @@ const want = (d: Device, extra: Record<string, unknown> = {}) => {
 const holder = (d: Device, id: string) => d.agent.doc().logins[id]?.holder;
 
 /** Keeper `k` with L1 (and L2) kept free, `d` and `e` with nothing; everything in sync. */
-async function pool(ids = ["k", "d", "e"], logins: Array<[string, string]> = [[L1, "acct-one"], [L2, "acct-two"]]) {
+async function pool(ids = ["k", "d", "e"], logins: Array<[string, string]> = [[L1, "acct-one"], [L2, "acct-two"]], procScan?: () => Map<string, number[]>) {
   const clock = { now: 1_000_000 };
-  const w = makeWorld(ids, clock);
+  const w = makeWorld(ids, clock, procScan);
   const k = w.dev(ids[0]!);
   for (const [id, account] of logins) seedLogin(k, id, account, null);
   k.agent.migrate();
@@ -356,6 +358,15 @@ describe("returning", () => {
     assert.equal(holder(k, L1)!.free, true);
   });
 
+  test("the holder publishes its usage reading (numbers only) for every device's row", async () => {
+    const { w, d, k } = await borrowed();
+    mkdirSync(join(d.agentDir, "cache"), { recursive: true });
+    writeFileSync(join(d.agentDir, "cache", "usage-status.json"), JSON.stringify({ claudeAccounts: { [L1]: { data: { state: "ok", fiveHour: { pct: 41.6, resetsAt: "2030-01-01T00:00:00.000Z" }, sevenDay: { pct: 18 } }, nextFetchAt: 0 } } }));
+    await d.agent.tick();
+    await w.syncAll();
+    assert.deepEqual(k.agent.view().logins.find((l) => l.id === L1)!.usage, { fiveHour: 42, fiveHourResetsAt: Date.parse("2030-01-01T00:00:00.000Z"), sevenDay: 18, at: k.agent.doc().logins[L1]!.usage.at });
+  });
+
   test("idle for 30 minutes goes back; a login pinned to its holder never does", async () => {
     const { w, d, k, clock } = await borrowed();
     clock.now += 29 * MIN;
@@ -472,3 +483,53 @@ describe("accounts.ts in the pool", () => {
 });
 
 void ({} as ClaudeAccountsFile);
+
+describe("processes without a lease (started before this version, or by hand)", () => {
+  test("/proc: a claude process is found by its CLAUDE_CONFIG_DIR; a tool's shell under it is not", { skip: process.platform !== "linux" }, async () => {
+    const dir = join(root, "proc-scan", "claude-accounts", L1);
+    mkdirSync(dir, { recursive: true });
+    const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
+    const claude = spawn(process.execPath, ["-e", "setTimeout(() => {}, 20000)", "fake-claude"], { env, stdio: "ignore" });
+    const shell = spawn(process.execPath, ["-e", "setTimeout(() => {}, 20000)", "a-tool-shell"], { env, stdio: "ignore" });
+    try {
+      await new Promise((r) => setTimeout(r, 200));
+      const found = scanClaudeProcs().get(dir) ?? [];
+      assert.deepEqual(found, [claude.pid]);
+    } finally {
+      claude.kill();
+      shell.kill();
+    }
+  });
+
+  test("a login with such a process is never lent, never returned for idleness, and at the cut it is stopped", async () => {
+    let pids: number[] = [];
+    const scan = (agentDir: () => string) => () => new Map(pids.length ? [[join(agentDir(), "claude-accounts", L1), pids]] : []);
+    let keeperDir = "";
+    const { w, k, clock } = await pool(["k", "d"], [[L1, "acct-one"]], () => scan(() => keeperDir)());
+    keeperDir = k.agentDir;
+    pids = [process.pid]; // alive: a claude on the keeper's kept copy, started by hand
+    const d = w.dev("d");
+    want(d);
+    await d.agent.tick();
+    assert.deepEqual(usableOn(w, L1), [], "not lent while a claude runs on the keeper's copy");
+    pids = [];
+    want(d);
+    await d.agent.tick();
+    assert.deepEqual(usableOn(w, L1), ["d"]);
+    // On the holder now: a process without a lease keeps it from idling out.
+    keeperDir = d.agentDir;
+    pids = [process.pid];
+    clock.now += 60 * MIN;
+    await d.agent.tick();
+    assert.deepEqual(usableOn(w, L1), ["d"], "not returned for idleness while it runs");
+    markLeaving(d.agentDir, L1, "user", clock.now);
+    await d.agent.tick();
+    assert.ok(existsSync(credsPath(d, L1)), "draining");
+    clock.now += 16 * MIN;
+    await d.agent.tick();
+    assert.ok(w.killed.includes(process.pid), "the cut stops it");
+    pids = [];
+    await d.agent.tick();
+    assert.equal(existsSync(credsPath(d, L1)), false, "then the login goes back");
+  });
+});

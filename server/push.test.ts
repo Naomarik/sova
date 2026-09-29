@@ -30,6 +30,12 @@ describe("pushDecision", () => {
     assert.deepEqual([...d.announced], ["a:error"]);
   });
 
+  test("blockers that are no notification kind (a stalled team, a reply that asks) are told, never sent", () => {
+    const d = pushDecision({ ...base, current: [b("a", "team-stalled"), b("c", "asks-you"), b("d", "error")], announced: new Set() });
+    assert.deepEqual(keysOf(d), ["d:error"]);
+    assert.ok(d.announced.has("a:team-stalled") && d.announced.has("c:asks-you"));
+  });
+
   test("a new blocker is sent once, until it clears; a recurrence is new", () => {
     let d = pushDecision({ ...base, current: [b("a", "error"), b("b", "needs-input")], announced: new Set(["a:error"]) });
     assert.deepEqual(keysOf(d), ["b:needs-input"]);

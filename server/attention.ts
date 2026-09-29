@@ -123,12 +123,12 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
     const sentence = row.signalText?.sentence;
     add("act", "asks-you", at, sentence ? `Asks you: ${sentence}` : "The last reply asks you something.");
   }
-  // A stalled team (counted in code, §app.decisions/team-stall): decide, and only when the session
-  // is not already waiting on the user.
+  // A stalled team (counted in code, §app.decisions/team-stall): a blocker (act), only when the
+  // session is not already waiting on the user. Not a push kind: it never sends a notification.
   const stall = row.teamStall;
   if (stall && !questions && !asks && !running && !s.archived) {
     const who = stall.names.length > 3 ? `${stall.names.slice(0, 3).join(", ")} and ${stall.names.length - 3} more` : stall.names.join(", ");
-    add("decide", "team-stalled", stall.since, `Waiting on ${who}, quiet for ${Math.max(1, Math.round((now - stall.since) / 60_000))} min.`);
+    add("act", "team-stalled", stall.since, `Waiting on ${who}, quiet for ${Math.max(1, Math.round((now - stall.since) / 60_000))} min.`);
   }
   const ws = s.workerSignals;
   if (ws?.stuck) {

@@ -7,6 +7,7 @@ import {
   applyEvent,
   applyQueue,
   BATON_SENT_EVENT,
+  blockStreams,
   emptyLive,
   markDelivered,
   markQueued,
@@ -569,4 +570,25 @@ test("runDetail names the step the run-status row draws as an icon, with its wor
   applyEvent(set, { type: "tool_execution_end", toolCallId: "t9", toolName: "agent_spawn", result: { content: [] } });
   update({ type: "text_start", contentIndex: 2 });
   assert.deepEqual(runDetail(s), { step: "writing", text: "writing" });
+});
+
+test("a thinking block stops streaming once a later block starts, so only the reply's head pulses", () => {
+  const [s, set] = store();
+  const update = (ev: Record<string, unknown>) => applyEvent(set, { type: "message_update", assistantMessageEvent: ev });
+  const reply = () => s.entries[0] as Extract<LiveState["entries"][number], { kind: "assistant" }>;
+  const streams = () => reply().blocks.map((_, i) => blockStreams(reply(), i));
+  applyEvent(set, messageStart("zai", "glm-5.3"));
+  update({ type: "thinking_start", contentIndex: 0 });
+  update({ type: "thinking_delta", contentIndex: 0, delta: "Let me plan" });
+  assert.deepEqual(streams(), [true]);
+  update({ type: "text_start", contentIndex: 1 });
+  update({ type: "text_delta", contentIndex: 1, delta: "Here" });
+  assert.deepEqual(streams(), [false, true], "the text streams; the thinking before it is done");
+  // A later block past a hole (contentIndex skipped) still ends the thinking.
+  update({ type: "thinking_start", contentIndex: 2 });
+  update({ type: "toolcall_start", contentIndex: 4, id: "t1", toolName: "bash" });
+  assert.equal(blockStreams(reply(), 2), false);
+  assert.equal(blockStreams(reply(), 4), true, "a tool call keeps its message's streaming state");
+  applyEvent(set, { type: "message_end", message: { role: "assistant", content: [] } });
+  assert.deepEqual(reply().blocks.map((_, i) => blockStreams(reply(), i)).filter(Boolean), [], "nothing streams once the message is done");
 });

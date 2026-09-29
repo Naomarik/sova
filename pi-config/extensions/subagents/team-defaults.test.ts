@@ -18,7 +18,7 @@ import {
 /** The pinned contract, byte for byte as the Settings side writes it. */
 const CONTRACT = `{"version":1,
  "coordinator":{"enabled":true,"role":"coordinator","primary":{"backend":"claude-code","model":"opus[1m]","effort":"medium"},"fallback":null,"instructions":""},
- "monitor":{"enabled":true,"role":"monitor","primary":{"backend":"claude-code","model":"haiku","effort":"medium"},"fallback":null,"contextPct":60,"everyMinutes":10,"usage":{"enabled":true,"pausePct":90,"resumeMarginMinutes":5},"instructions":""},
+ "monitor":{"enabled":true,"role":"monitor","primary":{"backend":"pi","model":"ollama-cloud/deepseek-v4.1-flash","effort":"low"},"fallback":{"backend":"claude-code","model":"sonnet","effort":"low"},"contextPct":60,"everyMinutes":10,"usage":{"enabled":true,"pausePct":90,"resumeMarginMinutes":5},"instructions":""},
  "handover":{"retireTimeoutMinutes":10}}`;
 
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-team-defaults-"));
@@ -125,7 +125,7 @@ test("describeTeamDefaults says off, malformed (with every error) or the effecti
 	assert.match(malformed, /- x: bad\n {2}- y: worse$/);
 	const on = describeTeamDefaults({ state: "ok", file: "/a/t.json", value: DEFAULT_TEAM_DEFAULTS });
 	assert.match(on, /Coordinator: on — role "coordinator", primary claude-code · opus\[1m\] · medium, fallback none/);
-	assert.match(on, /Monitor: on — role "monitor", primary claude-code · haiku · medium/);
+	assert.match(on, /Monitor: on — role "monitor", primary pi · ollama-cloud\/deepseek-v4\.1-flash · low, fallback claude-code · sonnet · low/);
 	assert.match(on, /every 10 min · wrap-up at 60% context · usage pause at 90%, resume 5 min after reset/);
 	assert.match(on, /after 10 min/);
 	const off = describeTeamDefaults({ state: "ok", file: "/a/t.json", value: { ...DEFAULT_TEAM_DEFAULTS, coordinator: { ...DEFAULT_TEAM_DEFAULTS.coordinator, enabled: false } } });

@@ -65,6 +65,7 @@ import { SpecSettingsSection } from "./SpecSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
 import { PublicLinksSettingsSection } from "./PublicLinksSettings";
 import { PushSettingsSection } from "./PushSettings";
+import { SessionTitleSettingsSection } from "./SessionTitleSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { BatonSettingsSection } from "./BatonSettings";
 import { TeamSettingsSection } from "./TeamSettings";
@@ -260,6 +261,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "summaries"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-summaries" aria-labelledby="settings-tab-summaries">
               <SummarizerSettingsSection />
+              <SessionTitleSettingsSection />
             </div>
           </Show>
           <Show when={tab() === "organizations"}>

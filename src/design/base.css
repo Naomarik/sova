@@ -2665,11 +2665,12 @@ a.group-option { color: inherit; text-decoration: none; }
 
 /* One line at every width, the same 20px whatever it carries: the triggers' net height, so the
    composer doesn't move between idle and working or as the step changes. The margin is its own,
-   not the global `p` rule's. Two forms, by the composer's width (below): wide says it in words,
-   "● Working · running bash" and "● 1 subagent ›"; narrow is the dot plus the step's icon and a
-   worker icon plus a count, the words visually hidden. Stopping and the rare states keep their
-   words in both. In the wide form the detail is the part that gives way (ellipsis); in the narrow
-   one only the rare states' words do. */
+   not the global `p` rule's. One live dot leads it while anything works (the turn or a subagent),
+   and nothing else in it pulses. Two forms, by the composer's width (below): wide says it in
+   words, "● Working · running bash" and "◔ 1 of 5 subagents working ›"; narrow is the step's icon
+   and the ring plus a count ("◔ 1/5"), the words visually hidden. Stopping and the rare states
+   keep their words in both. In the wide form the detail is the part that gives way (ellipsis); in
+   the narrow one only the rare states' words do. */
 .run-status {
   --run-status-pad: var(--space-2);  /* the gap, and each trigger's inline padding and offset */
   --run-status-part-gap: var(--space-2);  /* between a trigger's parts */
@@ -2713,10 +2714,21 @@ a.group-option { color: inherit; text-decoration: none; }
 .run-status-workers .icon { color: var(--color-ink-muted); }
 .run-status .run-status-narrow { display: none; }
 
-/* The narrow form, below 620px of composer: the narrowest content width where the whole wide row
-   fits untruncated, measured with "● Working · running agent_spawn", "● 1 subagent ›",
-   "1 align · 0/8 decided" and "3 inputs ›" at the Medium text size. It contracts, so the container query
-   gets a @media floor (the skill's union). */
+/* The subagents trigger's ring: the working share of every worker, clockwise from 12 o'clock.
+   Static, like the context ring: the row's live dot is the one thing that moves, so the arc's
+   length is the state. The arc is ink, not accent (accent is the live dot's alone), over a track
+   that meets the 3:1 UI threshold, so the empty ring of a settled row still reads as a ring. The
+   strokes are explicit, never `currentColor`: the trigger's hover lifts its words, not its meter. */
+.workers-ring { flex: none; width: 14px; height: 14px; overflow: visible; }
+.workers-ring-track { stroke: var(--color-border-strong); stroke-width: 2; }
+.workers-ring-fill { stroke: var(--color-ink); stroke-width: 2; stroke-linecap: butt; }
+
+/* The narrow form, below 620px of composer. That was the width where the whole wide row fitted
+   untruncated before the ring's words; with them the widest row ("● Working · running agent_spawn",
+   "◔ 1 of 5 subagents working ›", "1 align · 0/8 decided", "3 inputs ›", Medium text size) needs
+   712px, and between the two its detail ends in an ellipsis ("· runni…" at 620px), as a long tool
+   name already did. Any width from 620px to 672px sorts the devices the same way. It contracts, so
+   the container query gets a @media floor (the skill's union). */
 @container composer (max-width: 619.98px) {
   .run-status { --run-status-pad: calc(var(--space-3) / 2); --run-status-part-gap: var(--space-1); }
   .run-status .run-status-wide { display: none; }
@@ -2724,12 +2736,15 @@ a.group-option { color: inherit; text-decoration: none; }
   .run-status-state,
   .run-status-workers { gap: var(--space-1); }
   .run-status-state:not(:has(> .run-status-words)) { flex: none; }
+  /* Between blocks the Working state draws nothing here (no step, its words hidden): it gives
+     back its gap, so the ring sits one gap after the dot. */
+  .run-status-state:not(:has(> .icon)):not(:has(> .run-status-words)) { margin-left: calc(var(--run-status-pad) * -1); }
   /* The one trigger that may give way here: "1 align · 0/8 decided" is the widest, so at a 344px
      screen its count ends in an ellipsis rather than pushing the row past the edge (its full text
      stays its accessible name). */
   .run-status > .run-status-link.run-status-align { flex: 0 1 auto; min-width: 0; }
   /* Stopping and the rare states give way first, down to about 4em of their words. */
-  .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: calc(6px + var(--space-1) + 4em); }
+  .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: 4em; }
   .run-status > .run-status-align .text-num { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .run-status-say {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -2743,12 +2758,15 @@ a.group-option { color: inherit; text-decoration: none; }
   .run-status-state,
   .run-status-workers { gap: var(--space-1); }
   .run-status-state:not(:has(> .run-status-words)) { flex: none; }
+  /* Between blocks the Working state draws nothing here (no step, its words hidden): it gives
+     back its gap, so the ring sits one gap after the dot. */
+  .run-status-state:not(:has(> .icon)):not(:has(> .run-status-words)) { margin-left: calc(var(--run-status-pad) * -1); }
   /* The one trigger that may give way here: "1 align · 0/8 decided" is the widest, so at a 344px
      screen its count ends in an ellipsis rather than pushing the row past the edge (its full text
      stays its accessible name). */
   .run-status > .run-status-link.run-status-align { flex: 0 1 auto; min-width: 0; }
   /* Stopping and the rare states give way first, down to about 4em of their words. */
-  .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: calc(6px + var(--space-1) + 4em); }
+  .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: 4em; }
   .run-status > .run-status-align .text-num { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .run-status-say {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -4440,11 +4458,11 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 /* =============================================================================
    SUBAGENTS PANE — this session's workers, beside the session pane: a worker
    list on the left, the selected worker's read-only transcript on the right.
-   Opened from the composer's "2 subagents working…" row.
+   Opened from the composer's "2 of 5 subagents working" row.
    ============================================================================= */
 
 /* ---- TRIGGER. The composer's subagents row, made a control. It keeps the
-   row's look (live dot + words in ink-2) and adds a chevron and a hover fill:
+   row's look (the ring + words in ink-2; never a dot, the row's own dot leads it) and adds a chevron and a hover fill:
    interactive, but never a primary or secondary button. 36px drawn, 44px hit
    area (::after), and a net 20px of layout, so the composer doesn't grow when
    it replaces the Working row. No pressed state: the open pane is the state,

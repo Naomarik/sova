@@ -10,11 +10,13 @@
     <span class="icon" style="--icon: url(/icons/image.svg)"></span><span>Drop images to attach</span>
   </div>
   <form class="composer-inner" aria-label="Message the agent">
-    <!-- while streaming only: the dot, the step's icon (shown in the narrow form only) and the words
-         (shown in the wide form, visually hidden in the narrow one), §chat.transcript/streaming;
-         Stopping and the rare states show their words in both -->
-    <p class="run-status"><span class="run-status-state" title="Working · running bash"><span class="live-dot"></span><span class="icon icon-sm run-status-narrow" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="run-status-say">Working<span class="run-status-detail">· running bash</span></span></span></p>
-    <!-- or, idle with ≥ 1 worker working: the subagents trigger, button.run-status-link (§app/subagents-pane) -->
+    <!-- the row's one live dot first, whenever anything works (a turn, Stopping, a rare state, a
+         compaction, or ≥ 1 subagent working); then, while streaming only, the step's icon (shown
+         in the narrow form only) and the words (shown in the wide form, visually hidden in the
+         narrow one), §chat.transcript/streaming; Stopping and the rare states show their words in both -->
+    <p class="run-status"><span class="live-dot" aria-hidden="true"></span><span class="run-status-state" title="Working · running bash"><span class="icon icon-sm run-status-narrow" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="run-status-say">Working<span class="run-status-detail">· running bash</span></span></span></p>
+    <!-- and, with workers: the subagents trigger, button.run-status-link, its ring meter and count
+         and no dot of its own (§app/subagents-pane) -->
     <!-- with an open alignment: the alignment chip, a menu button immediately left of the Inputs
          trigger, both at the row's right end (§chat.alignment/chip) -->
 

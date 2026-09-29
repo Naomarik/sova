@@ -3917,7 +3917,9 @@
         "server/share/routes.ts",
         "server/share/listener.ts",
         "src/share/ShareApp.tsx",
-        "server/baton-handoff.test.ts"
+        "server/baton-handoff.test.ts",
+        "server/public-links.test.ts",
+        "src/components/OwnerCard.tsx"
       ]
     },
     "§app.baton/needs-you": {
@@ -4033,7 +4035,9 @@
         "server/visits.ts",
         "server/visits.test.ts",
         "src/share/visit-tab.ts",
-        "src/share/ShareApp.tsx"
+        "src/share/ShareApp.tsx",
+        "server/share/edge.ts",
+        "server/public-links.test.ts"
       ],
       "requires": [
         "§app.baton/links",

@@ -170,8 +170,8 @@ once), **lease** (an offer's lock on its first taker).
 
 ## §app.baton/links — One link per hand-off
 
-- A link is `/h/<token>`, on the share listener's public address (`SOVA_SHARE_PUBLIC_URL`, else
-  the bound address): 32 random bytes, base64url. One is minted when a session starts with a
+- A link is `/h/<token>`, on the effective public address (§mesh.public/setting), built by the
+  one helper every link uses: 32 random bytes, base64url. One is minted when a session starts with a
   person, and when the operator asks for one (Get Link, for the current hand-off); a `hand_to`
   mints none — the host could never show it — so until the operator gets one, the session needs
   them (§app.baton/needs-you). The host stores only
@@ -188,11 +188,16 @@ once), **lease** (an offer's lock on its first taker).
   forwarded link never reveals that its person left. An unknown token answers 404. An
   open page on a link that stops reading is told `gone` and closed (4410) within 30 seconds, even
   when nothing in the session changes (a sweep; expiry changes nothing in the session).
-- With no share address known (no listener bound and no `SOVA_SHARE_PUBLIC_URL`) a link is only a
-  path nobody outside can open, and Sova says so: every response carrying a link also carries
-  `linkWarning` ("No share listener is running on this host, so this link can't be opened from
-  outside. …"), the org page's links banner shows it (warn tone), and the strip shows "Links from
-  this host can't be opened from outside." while a person or an offer holds the session.
+- Whenever a minted link may not open from outside, Sova says so: the response carrying it also
+  carries `linkWarning` and its `linkWarningCode`, one of six (`off`, `unverified`, `unreachable`,
+  `not-accepted`, `unconfirmed`, `sleeps`; texts in §design.copy-deck/public-links). The address's
+  own warning comes first (no address; one not verified; a gateway that can't be reached or
+  doesn't accept this host); else, on a host routed through a gateway, the mint's own (the gateway
+  didn't confirm it within 3 seconds, §mesh.public/registry). With no address a link is only a
+  path nobody outside can open. The links banner (the org page, the person page, the owner card,
+  the strip) shows the text verbatim in warn tone with an **Open Settings** button that opens
+  Settings → Public links, and while a person or an offer holds the session and no address is set,
+  the strip shows the `off` text as a warn banner with the same button.
 - The operator can get the current link (`GET /api/baton/:sid/link` mints a fresh one for the
   current hand-off and turns off the older ones for it: the host cannot show a token it no longer
   has) and turn it off (`POST /api/baton/:sid/revoke`). A link is shown once, with a Copy Link
@@ -324,14 +329,18 @@ once), **lease** (an offer's lock on its first taker).
 
 ## §app.baton/share-listener — The public entry point
 
-- A second HTTP server, bound only when `SOVA_SHARE_HOST` and `SOVA_SHARE_PORT` are set (no
-  listener otherwise). It serves only: `GET /h/<token>` (the share page), `GET /h/assets/*` (the
+- A second HTTP server, bound from the Public links setting (§mesh.public/setting): on
+  `127.0.0.1:<sharePort>` while this host is the public gateway, rebound without a restart when
+  the setting changes. `SOVA_SHARE_HOST` and `SOVA_SHARE_PORT` pin the address; with neither the
+  setting nor both variables there is no listener. A host routed through a gateway serves the same
+  paths on its ingress instead (§mesh.public/ingress). It serves only: `GET /h/<token>` (the share page), `GET /h/assets/*` (the
   share page's own build, never the operator app's), `GET /api/h/<token>` (the filtered view and
   state), `POST /api/h/<token>/message {text}` and the WebSocket `/ws/h?token=`, the page's
   visit id riding along as `?v=` on the view and the socket (§app.baton/visits); and, for the owner
   page, only `GET /i/<token>`, `GET /api/i/<token>` and its `/p/<q_handle>` and `/c/<k_handle>`
   (§app.owner-page/page). Every other path
-  answers 404 before any routing; the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
+  answers 404 before any routing (the path is judged raw, before any decoding: a dot segment, an
+  escape or a non-origin-form target never reaches a route); the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
   `/ext/*` are unreachable on it. The main listener never serves the share page.
 - Limits: request bodies over 16 KB (or without a length) are refused (413); a request's headers
   must arrive within 10 seconds and the whole request within 15 (408); per token 10 messages
@@ -339,17 +348,22 @@ once), **lease** (an offer's lock on its first taker).
   elsewhere; a frame over 1 KB closes it with 1009, and a share socket's error is logged, never
   an uncaught exception); per client address 60 requests a minute (429; the page shell answers a
   plain page, "Too many requests from this network. Wait a minute, then reload.", with
-  `Retry-After: 60`, and the API paths JSON). Behind a proxy on loopback or the
-  tailnet, the client address is the last `X-Forwarded-For` hop; a direct client's is its own.
+  `Retry-After: 60`, and the API paths JSON). The client address follows
+  §mesh.public/forwarded-for: the last `X-Forwarded-For` hop counts only from a loopback front, or
+  on a routed host's ingress from its admitted gateway; every other client's is its own socket
+  address.
 - Every response is `Cache-Control: no-store` and `Referrer-Policy: no-referrer` (the token is in
   the URL); the page carries a CSP allowing only its own scripts, and reply links open with no
   referrer.
 - The listener records visits (§app.baton/visits): it reads the user agent only to name a device
   family, a scanner or a link previewer, and keeps neither it nor the client address. The page
   shell resolves a token only for a known previewer's user agent, and answers the same either way.
-- The share page is its own Vite build (`vite build --mode share` → `dist-share/`).
-- Public exposure is a deployment step outside Sova: a TLS reverse proxy (e.g. Caddy on the VPS)
-  forwarding to the share port, over the tailnet when the home host is the laptop.
+- The share page is its own Vite build (`vite build --mode share` → `dist-share/`). The page and
+  its assets are served from `dist-share/` unless `SOVA_SHARE_DIST` names another build, read per
+  request (tests serve a stub page with it). With no built page, `/h/<token>` and `/i/<token>`
+  answer 503 "The share page is not built on this host."
+- Public exposure goes through a gateway (§mesh/public): a front outside Sova terminates TLS and
+  forwards to the gateway's share port, and other hosts route their links through the gateway.
 
 ## §app.baton/visits — The visit log: each time someone opened their link
 

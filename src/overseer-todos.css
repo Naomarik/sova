@@ -9,9 +9,9 @@
 /* The head's toggle: check, word, count. Narrow: icon-only with the count on its corner. */
 .overseer-todos-toggle { gap: var(--space-1); }
 .overseer-todos-toggle[aria-expanded="true"] { background: var(--color-accent-tint); color: var(--color-ink); }
-@container session-head (max-width: 479px) {
+@container session-head (max-width: 659px) {
   .overseer-todos-word { display: none; }
-  .overseer-todos-toggle { position: relative; padding: 0 var(--space-2); }
+  .overseer-todos-toggle { position: relative; min-width: var(--tap-min); padding: 0 var(--space-2); }
   .overseer-todos-toggle .chip-count {
     position: absolute;
     top: -4px;

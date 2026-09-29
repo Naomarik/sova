@@ -1000,7 +1000,7 @@ export function rewriteNote(lost: readonly EvidenceCommit[], old: string, rebasi
 
 /** The census's line for evidence HEAD lacks (census `orphanedEvidence`), when the write guard didn't say it. */
 export const orphanNote = (lost: readonly EvidenceCommit[]): string =>
-	`${lostText(lost)} A rebase under way: abort it (\`git rebase --abort\`); either way merge master in instead, and re-record evidence on the commit HEAD has.`;
+	`${lostText(lost)} A rebase under way: abort it (\`git rebase --abort\`); a finished one: restore the old tip (\`git reflog\`; \`git reset --hard ORIG_HEAD\` right after it). Either way merge master in instead, and re-record evidence on the commit HEAD has.`;
 
 /** The current-spec files Git shows changed in a tree, with their mtimes. */
 async function specFiles(top: string, io: SpecIO, signal?: AbortSignal): Promise<Record<string, number>> {

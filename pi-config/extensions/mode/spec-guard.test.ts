@@ -590,7 +590,7 @@ test("SpecWriteGuard (M2-B-s2-1's shape): a rebase after evidence and a hand edi
 		const reset = await bash("h", `git -C ${wt} reset -q --hard HEAD~2`, () => git(wt, "reset", "-q", "--hard", "HEAD~2"));
 		// A census that didn't see the guard's line relays census --changed orphanedEvidence, once.
 		const relayed = (await later.after({ cwd: wt, toolName: "bash", input: {} })).text ?? "";
-		assert.match(relayed, new RegExp(`never rebase after evidence \\(PROMOTE\\.md\\): draft d's evidence commit ${code.slice(0, 12)} \\(§a/x\\) is no longer on this branch\\. A rebase under way: abort it \\(\`git rebase --abort\`\\); either way merge master in instead, and re-record evidence on the commit HEAD has\\.`));
+		assert.match(relayed, new RegExp(`never rebase after evidence \\(PROMOTE\\.md\\): draft d's evidence commit ${code.slice(0, 12)} \\(§a/x\\) is no longer on this branch\\. A rebase under way: abort it \\(\`git rebase --abort\`\\); a finished one: restore the old tip \\(\`git reflog\`; \`git reset --hard ORIG_HEAD\` right after it\\)\\. Either way merge master in instead, and re-record evidence on the commit HEAD has\\.`));
 		put(wt, "src/c.ts", "c\n");
 		assert.doesNotMatch((await later.after({ cwd: wt, toolName: "bash", input: {} })).text ?? "", /is no longer on this branch/, "said once");
 		assert.match(reset ?? "", new RegExp(`evidence commit ${code.slice(0, 12)} \\(§a/x\\) is no longer on this branch\\. Restore the branch \\(\`git reset --hard ${tip.slice(0, 12)}\`\\) and merge master in instead\\.`));

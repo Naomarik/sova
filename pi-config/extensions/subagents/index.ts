@@ -269,8 +269,14 @@ export const MEMBER_EXTENSION = path.join(SELF_DIR, "member.ts");
  * tell it from a user session (see worker-mark.ts). Never user-facing, like MEMBER_EXTENSION.
  */
 export const MARKER_EXTENSION = path.join(SELF_DIR, "worker-mark.ts");
-/** The spawn summary names the extensions a worker was given; the marker is plumbing, not one of them. */
-const listedExtensions = (worker: Worker): string[] => worker.extensions.filter((source) => source !== MARKER_EXTENSION);
+/**
+ * The spec census hook for pi workers (mode/spec-worker.ts, a sibling extension): a code-writing pi worker
+ * of a spec-on session loads it with `-e`, under the same condition as the worker spec brief, since workers
+ * run with --no-extensions and so never have the mode extension's own census hook.
+ */
+export const SPEC_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode", "spec-worker.ts"));
+/** The spawn summary names the extensions a worker was given; the marker and the spec hook are plumbing, not among them. */
+const listedExtensions = (worker: Worker): string[] => worker.extensions.filter((source) => source !== MARKER_EXTENSION && source !== SPEC_WORKER_EXTENSION);
 /**
  * The same member tools as a stdio MCP server for claude-code members (the CLI
  * launches it from a per-worker mcp.json; Claude sees mcp__team__<tool>). It is
@@ -1208,7 +1214,10 @@ export function registerSubagents(
 			// Its worktree's own agent dir (§chat.worktrees/worktree-config): that tree's mode extension,
 			// loaded by path (discovery stays off), in normal mode with the spec minor mode.
 			const treeConfig = spec.useWorktreeConfig && tree ? worktreeConfig(tree.path, cwd) : undefined;
-			const sources = [MARKER_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(own ?? [])];
+			// Spec on: a code-writing worker gets the brief (below) and the census hook; a worktree-config worker
+			// already loads the whole mode extension, and a remote one runs its tools elsewhere.
+			const specWorker = specOn && !remote && !treeConfig && writesCode(tools);
+			const sources = [MARKER_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(own ?? [])];
 			const modeFlags = treeConfig ? { major: "normal", minor: "spec" } : undefined;
 			// A pi worker inside a tracked worktree writes only there: the sandbox extension's scope for
 			// that root, whether the parent's sandbox is on (narrowed) or off (write-only).
@@ -1236,7 +1245,7 @@ export function registerSubagents(
 				tools,
 				extensions,
 				forkSession,
-				systemPrompt: [definition?.systemPrompt, spec.systemPrompt, specOn && !remote && !treeConfig && writesCode(tools) ? workerSpecBrief(SPEC_CORE_DIR) : undefined].filter(Boolean).join("\n\n") || undefined,
+				systemPrompt: [definition?.systemPrompt, spec.systemPrompt, specWorker ? workerSpecBrief(SPEC_CORE_DIR) : undefined].filter(Boolean).join("\n\n") || undefined,
 				flags: piFlags,
 				remoteMcp: undefined,
 				treeConfig,

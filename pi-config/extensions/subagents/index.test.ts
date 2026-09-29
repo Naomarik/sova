@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import * as os from "node:os";
-import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, SPEC_CORE_DIR, SPEC_HOOK_STATE, MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
+import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
 import { CLAUDE_PROVIDER_FLAG } from "../claude-code/provider/index.ts";
 import { placeholderDir } from "../remote/argv.ts";
 import { REMOTE_MCP_ENV, REMOTE_MCP_SERVER_NAME, REMOTE_SESSION_EVENT, decodeRemoteMcpIdentity } from "../remote/workers.ts";
@@ -3673,13 +3673,18 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		await h.call("agent_spawn", { prompt: "pi task" });
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
 		assert.equal(h.workers[0].systemPrompt, undefined, "spec off: no brief");
+		assert.ok(!h.workers[0].extensions.includes(SPEC_WORKER_EXTENSION), "spec off: no census hook");
 		assert.ok(!("settingsJson" in created[0]), "spec off: no hooks");
 
 		h.bus.emit(MODE_STATE_EVENT, SPEC_ON);
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "Be terse." });
 		assert.equal(h.workers[1].systemPrompt, `Be terse.\n\n${brief}`);
+		// pi workers run with --no-extensions: the census hook comes in by -e, a sibling of subagents/.
+		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, SPEC_WORKER_EXTENSION]);
+		assert.equal(SPEC_WORKER_EXTENSION, fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "mode", "spec-worker.ts")));
 		await h.call("agent_spawn", { prompt: "reader", tools: ["read", "grep"] });
 		assert.equal(h.workers[2].systemPrompt, undefined, "a worker that cannot write gets no brief");
+		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION], "nor the census hook");
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "Own words." });
 		const claude = created[1];
 		assert.equal(claude.systemPrompt, `Own words.\n\n${brief}`);
@@ -3705,10 +3710,12 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		] });
 		assert.ok(created[4].systemPrompt.endsWith(brief) && JSON.parse(created[4].settingsJson).hooks, "a claude member");
 		assert.ok(h.workers.at(-1).systemPrompt.endsWith(brief), "a pi member");
+		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION], "a pi member gets the census hook too");
 
 		h.bus.emit(MODE_STATE_EVENT, { ...SPEC_ON, version: 2 });
 		h.bus.emit(MODE_STATE_EVENT, SPEC_OFF);
 		await h.call("agent_spawn", { prompt: "pi task" });
 		assert.equal(h.workers.at(-1).systemPrompt, undefined, "spec switched off: no brief again");
+		assert.ok(!h.workers.at(-1).extensions.includes(SPEC_WORKER_EXTENSION), "nor the census hook");
 	} finally { await h.close(); }
 });

@@ -39,6 +39,10 @@ before(async () => {
     body: { route: "self", gateway: { publicUrl: PUBLIC_URL, front: "caddy", sharePort: 4802, acceptFrom: "all" } },
   });
   assert.equal(put.status, 200, `PUT /api/public-links -> ${put.status} ${put.text}`);
+  // the lab sets no SOVA_SHARE_* pins, so the setting alone binds 127.0.0.1:4802 and names the address
+  assert.deepEqual(put.json.pinnedByEnv, [], `a has env pins: ${put.json.pinnedByEnv}`);
+  assert.equal(put.json.share.source, "setting");
+  assert.equal(put.json.share.publicUrl, PUBLIC_URL);
   assert.equal(put.json.front?.front, "caddy", "the answer carries the chosen front's guide");
   assert.ok(put.json.front.steps.some((s) => s.root && /setcap/.test(s.text)), "the caddy guide has its root setcap step");
   // the share port comes up without a restart (M1's rebind), behind the front

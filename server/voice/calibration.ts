@@ -246,7 +246,11 @@ export class Calibrator {
     const out: VoiceCalibration = { sentences: [...SENTENCES], clips: listClips(dir, device), minClips: MIN_CLIPS, scores: [] };
     const live = this.sweep && this.sweep.device === device && this.sweep.run.model === model ? this.sweep.run : null;
     const run = live ?? readRun(dir, device, model);
-    if (run) out.run = this.withApplied(run, device);
+    if (run) {
+      out.run = this.withApplied(run, device);
+      // Paused is a fact about now: a dictation clip waiting or running while this sweep runs.
+      out.run.progress = { ...run.progress, pausedForDictation: run.phase === "running" && this.o.dictationWaiting() };
+    }
     try {
       for (const f of readdirSync(join(deviceDir(dir, device), "runs"))) {
         if (!f.endsWith(".json")) continue;
@@ -441,6 +445,8 @@ export class Calibrator {
         else throw new Error(`Calibration stopped at setting ${item.setting} of ${run.rows.length}. ${(err as Error).message}`);
       } finally {
         clearInterval(tick);
+        // The clip came back, so any dictation ahead of it is done or still queued: say which.
+        run.progress.pausedForDictation = this.o.dictationWaiting();
       }
       if (abort.signal.aborted) return;
       times.push(ms);

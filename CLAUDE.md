@@ -172,9 +172,12 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   containers on an `--internal` Docker network in address-identity mode, fake `claude`, no
   Tailscale; `--down` removes it, `--keep` leaves desk on 127.0.0.1:4821): it needs the mesh lab's
   `sovamesh-plain:lab` image. `SOVA_CLAUDE_POOL_IDLE_MS` / `_CUT_MS` / `_TICK_MS` shorten the pool's
-  30-minute idle, drain bounds and 5 s tick for such runs. Run the unit tests with
-  `CLAUDE_CONFIG_DIR` unset (`env -u CLAUDE_CONFIG_DIR pnpm test`): a session that itself runs on
-  an added Claude login inherits it, and phase-1 readers then read that real login's files.
+  30-minute idle, drain bounds and 5 s tick for such runs. Every test runner starts in a throwaway
+  home (`pi-config/extensions/claude-code/tests/hermetic-env.mjs`: `pnpm test` loads it with `--import`,
+  the extension runners import it first) — a session that itself runs on an added Claude login passes
+  that login's directory down as `CLAUDE_CONFIG_DIR`, and tests falling back to the host's agent dir
+  once wrote leases into it. A new runner imports it too; `node scripts/test-sentinel.mjs -- <cmd>`
+  runs a suite against a sentinel HOME / agent dir / login dir and fails if anything there changed.
 - `pnpm run typecheck` — must pass. `pnpm run build` — must pass.
 - `pnpm run prices:update` — regenerate the checked-in price seed `shared/model-prices/seed.json` from models.dev and print
   the changes and any unpriced model (`--from <api.json>` offline, `--check` writes nothing). Aliases are hand-kept in

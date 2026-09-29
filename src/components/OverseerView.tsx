@@ -9,7 +9,7 @@ import { announce, toast } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
 import { ActionMenu, type ActionMenuApi } from "./ActionMenu";
 import type { OverseerChat, OverseerSender } from "./ChatView";
-import { ContextGauge, ContextMetaPrefix } from "./ContextGauge";
+import { ContextGauge } from "./ContextGauge";
 import { OverseerIdeas } from "./OverseerIdeas";
 import { OverseerTodos } from "./OverseerTodos";
 import type { PaneWiring } from "./GroupView";
@@ -266,12 +266,7 @@ export function OverseerView(props: {
         <p class="session-head-meta">
           <Show
             when={p.earlier}
-            fallback={
-              <>
-                <Show when={props.info}>{(info) => <ContextMetaPrefix path={info().path} />}</Show>
-                <span title={facts()}>{facts()}</span>
-              </>
-            }
+            fallback={<span title={facts()}>{facts()}</span>}
           >
             {(e) => (
               <span title={e().title}>

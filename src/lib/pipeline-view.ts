@@ -205,7 +205,7 @@ function inWords(t: number, now: number): string {
 export function heldWaitLine(h: HeldWait, now: number): string {
   const what = stripStop(h.what);
   if (h.reviewSince !== undefined) {
-    return `${what} waits for the overseer to approve it (${duration(Math.max(0, now - h.reviewSince))} so far). Cancel it here, or it goes ahead when the overseer approves.`;
+    return `${what} is waiting for the overseer's review, for ${duration(Math.max(0, now - h.reviewSince))}. It goes ahead only when the overseer approves it; you can cancel it.`;
   }
   if (h.wait === "hours") {
     const rel = inWords(h.goesAt, now);

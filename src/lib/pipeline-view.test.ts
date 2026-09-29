@@ -156,7 +156,7 @@ test("heldWaitLine: the hold's r2 sentence; an hours wait's send time on your cl
   assert.equal(heldWaitLine({ what, goesAt: now - 1, wait: "hours", person: "Sam" }, now), "A message to Sam Okafor is starting now.");
   assert.equal(
     heldWaitLine({ what, goesAt: now - 12 * 60_000, reviewSince: now - 12 * 60_000 }, now),
-    "A message to Sam Okafor waits for the overseer to approve it (12m so far). Cancel it here, or it goes ahead when the overseer approves.",
+    "A message to Sam Okafor is waiting for the overseer's review, for 12m. It goes ahead only when the overseer approves it; you can cancel it.",
   );
   assert.equal(sendAt(new Date(2026, 8, 30, 18, 30).getTime(), now), "18:30");
   assert.equal(sendAt(new Date(2026, 9, 5, 9, 0).getTime(), now), "Mon 09:00");

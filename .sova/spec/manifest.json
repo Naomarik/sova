@@ -2217,6 +2217,8 @@
         "src/components/MeshHostMenu.tsx",
         "src/components/Sidebar.tsx",
         "src/lib/mesh.ts",
+        "src/lib/mesh-details.ts",
+        "src/lib/mesh-details.test.ts",
         "src/mesh.css",
         "src/components/ui.tsx",
         "public/icons/network.svg"

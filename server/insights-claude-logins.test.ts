@@ -99,3 +99,29 @@ test("a login skipped while it needs sign-in keeps its last reading", async () =
   assert.deepEqual(a.usage.windows.map((w) => w.pct), [33]);
   assert.equal(a.fetchedAt, 800);
 });
+
+test("with the pool on (mesh on), the login in use is one this device holds: never a free one it keeps, never one held elsewhere", async () => {
+  mkdirSync(join(agentDir, "sova"), { recursive: true });
+  writeFileSync(join(agentDir, "sova", "peers.json"), JSON.stringify({ version: 1, self: { id: "desk", label: "Desk" }, peers: [{ id: "phone", label: "Phone", url: "http://127.0.0.1:9" }] }));
+  writeFileSync(join(agentDir, "claude-accounts-state.json"), JSON.stringify({ version: 1, logins: {} }));
+  writeFileSync(
+    join(agentDir, "claude-accounts.json"),
+    JSON.stringify({
+      version: 1,
+      logins: [
+        { id: B, addedAt: 2, enabled: true, device: null, identity: { accountUuid: "acct-2", email: "spare@example.com" } },
+        { id: A, addedAt: 1, enabled: true, device: "desk", identity: { accountUuid: "acct-1", email: "own@example.com" } },
+        { id: C, addedAt: 3, enabled: true, device: "phone", identity: { accountUuid: "acct-3", email: "elsewhere@example.com" } },
+      ],
+      devices: { desk: { order: [B, C, "default", A] } },
+    }),
+  );
+  try {
+    writeCache({});
+    const logins = (await getUsageInsight()).claudeLogins!;
+    assert.deepEqual(logins.map((l) => l.id), [A, "default"], "only what this device holds, default last");
+    assert.deepEqual(logins.filter((l) => l.inUse).map((l) => l.id), [A]);
+  } finally {
+    rmSync(join(agentDir, "sova"), { recursive: true, force: true });
+  }
+});

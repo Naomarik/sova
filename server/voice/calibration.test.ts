@@ -195,8 +195,13 @@ describe("ranking", () => {
     assert.deepEqual(order([row("exact", { errors: 2, jargonHits: 7 }), row("jargon", { errors: 3, jargonHits: 9 })]), ["jargon", "exact"]);
   });
 
+  it("with jargon tied, fewer word errors win before time", () => {
+    assert.deepEqual(order([row("fast", { errors: 3, jargonHits: 9, medianMs: 200 }), row("exact", { errors: 2, jargonHits: 9, medianMs: 400 })]), ["exact", "fast"]);
+    // The laptop's e2e run: 2 errors at 343 ms had ranked above 1 error at 358 ms.
+    assert.deepEqual(order([row("quick", { errors: 2, jargonHits: 13, medianMs: 343 }), row("vad", { errors: 1, jargonHits: 13, medianMs: 358 })]), ["vad", "quick"]);
+  });
+
   it("then the lower median time", () => {
-    assert.deepEqual(order([row("slow", { errors: 2, jargonHits: 9, medianMs: 400 }), row("fast", { errors: 3, jargonHits: 9, medianMs: 200 })]), ["fast", "slow"]);
     assert.deepEqual(order([row("slow", { errors: 1, jargonHits: 5, medianMs: 300 }), row("fast", { errors: 1, jargonHits: 5, medianMs: 299 })]), ["fast", "slow"]);
   });
 
@@ -207,7 +212,7 @@ describe("ranking", () => {
   it("the order doesn't depend on the input order", () => {
     const rows = [row("a", { errors: 5, jargonHits: 3 }), row("b", { errors: 2, jargonHits: 1 }), row("c", { errors: 3, jargonHits: 4, medianMs: 90 }), row("d", { errors: 3, jargonHits: 4, medianMs: 80 }), row("e", { errors: 2, jargonHits: 4, medianMs: 95 })];
     const want = order(rows);
-    assert.deepEqual(want, ["d", "c", "e", "b", "a"]);
+    assert.deepEqual(want, ["e", "d", "c", "b", "a"]);
     assert.deepEqual(order([...rows].reverse()), want);
   });
 });
@@ -453,6 +458,30 @@ describe("Parakeet (nothing to tune)", () => {
     assert.deepEqual(st.scores.map((s) => s.model), ["parakeet-tdt-0.6b-v2-q8_0"]);
     assert.equal(st.run, undefined, "no whisper run yet");
   });
+
+  it("only a completed run gives a model its score: a stopped one after a clip shows none", async () => {
+    let n = 0;
+    let stopAt = 0;
+    const r: Rig = rig({
+      transcribe: async (wav, req) => {
+        if (++n === stopAt) r.cal.stop(A);
+        return engine(req.fields ?? {}, clipN(wav));
+      },
+    });
+    record(r, A, [1, 2, 3, 4]);
+    r.set({ engine: "transcribe" });
+    r.cal.start({ id: A });
+    await r.cal.whenDone();
+    r.set({ engine: "whisper" });
+    assert.equal(r.cal.status(A).scores.length, 1);
+    r.set({ engine: "transcribe" });
+    stopAt = n + 1;
+    const again = r.cal.start({ id: A });
+    await r.cal.whenDone();
+    assert.equal(again.phase, "stopped");
+    r.set({ engine: "whisper" });
+    assert.deepEqual(r.cal.status(A).scores, []);
+  });
 });
 
 describe("apply and revert", () => {
@@ -476,6 +505,25 @@ describe("apply and revert", () => {
     // record's copy, which carries no previous: nothing further to revert to.
     assert.throws(() => r.cal.revert(A), /nothing to revert to/);
     assert.equal(readRun(r.dir, A, MODEL)!.applied, undefined);
+  });
+
+  it("a row chosen from a stopped run is saved without a calibration summary", async () => {
+    let n = 0;
+    const r: Rig = rig({
+      transcribe: async (wav, req) => {
+        if (++n === 30) r.cal.stop(A);
+        return engine(req.fields ?? {}, clipN(wav));
+      },
+    });
+    record(r, A, [1, 2, 3, 4]);
+    const run = r.cal.start({ id: A });
+    await r.cal.whenDone();
+    assert.equal(run.phase, "stopped");
+    r.cal.apply(A, "p=sentence b=5 t=0.2 v=0");
+    const rec = decodeFor(readSettings(r.settingsFile), A, MODEL).record!;
+    assert.equal(decodeKey(rec.settings), "p=sentence b=5 t=0.2 v=0");
+    assert.equal(rec.source, "chosen");
+    assert.equal(rec.calibration, undefined);
   });
 
   it("Revert right after an auto-apply goes back to the defaults", async () => {

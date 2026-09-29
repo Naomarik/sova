@@ -109,7 +109,8 @@
         ;; a hand edit), and with nothing to commit it pushes what the remote lacks. A write while
         ;; it commits is in the next commit.
         (state {:id :commits :initial :clean}
-          (dsl/act {:event :commit/now :target :committing})
+          ;; internal: an external one leaves the :regions parallel, re-entering :tenure (read-holder, claims)
+          (dsl/act {:event :commit/now :type :internal :target :committing})
           (transition {:event :effect/done :cond (fn [_ d] (#{"commit" "push"} (:kind (b/evt d))))}
             (script {:expr (fn [_ d] (commit-result-ops d))}))
           (state {:id :clean}

@@ -149,3 +149,14 @@
                                 :person {:name "Carla" :status "proposed" :role "Accountant" :contact {:email "c@x.co"}
                                          :referral {:why "Knows invoicing" :referred-by "p1" :session-id "s1" :quote "Ask Carla"}}))))
         "a referral's creation lines say referral (decidesTrusted relies on it)")))
+
+(deftest commit-now-re-enters-nothing
+  (let [sid  "residence/o1"
+        here (-> (h/start! (h/new-host) "residence" sid {:org-id "o1" :org-name "Acme" :host-id "h_me" :host-name "me" :mode "attach" :commit-every-ms 3600000})
+                 (h/send! sid :effect/done {:kind "read-holder" :result {:local {:host-id "h_other" :released-at 5}}}))
+        n    (fn [x k] (count (filter #{k} (h/kinds x sid))))
+        y    (h/send! here sid :commit/now op)]
+    (is (h/in? y sid :held-here))
+    (is (h/in? y sid :committing))
+    (is (= (n here "read-holder") (n y "read-holder")) "the tenure region is not re-entered: no second read-holder")
+    (is (= (n here "pause-overseers") (n y "pause-overseers")))))

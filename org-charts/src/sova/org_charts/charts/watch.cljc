@@ -324,9 +324,10 @@
         ;; that is not the operator's (a queued follow-up, Run Now's own) is a run-turn; the
         ;; operator's message entering its context makes it the operator's until the run ends.
         (state {:id :turn :initial :idle}
-          (transition {:event :turn/user-entered :target :operator-turn}
+          ;; internal (all three): an external one leaves the parallel and re-enters every region
+          (transition {:event :turn/user-entered :type :internal :target :operator-turn}
             (script {:expr (fn [_ _] [(ops/assign [:ledgers :message] {})])}))
-          (transition {:event :turn/ended :target :idle})
+          (transition {:event :turn/ended :type :internal :target :idle})
           (state {:id :idle}
             (on-entry {} (script {:expr (fn [_ _] [(ops/assign :turn-state "idle")])}))
             (transition {:event :turn/started :cond (fn [_ d] (true? (:look (b/evt d)))) :target :look-turn})
@@ -340,7 +341,7 @@
           ;; Run Now skips the reasons, the gap and the Watch switch, never the looks per day, a busy
           ;; overseer or an archived project. A refused one is recorded as a skipped run by the host's
           ;; `look/skipped {detail}` (a refusal takes nothing).
-          (dsl/act {:event :operator/run-now :target :running :checks [run-now-refusal]})
+          (dsl/act {:event :operator/run-now :type :internal :target :running :checks [run-now-refusal]})
           (transition {:event :look/skipped}
             (script {:expr (fn [_ d] (skip-ops d (:detail (b/evt d))))}))
 

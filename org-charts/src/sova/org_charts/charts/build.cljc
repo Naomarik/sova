@@ -169,7 +169,7 @@
             (transition {:event :turn/started :target :working})))
 
         (state {:id :tree :initial :tree-open}
-          (transition {:event :tree/removed :target :tree-removed})
+          (transition {:event :tree/removed :type :internal :target :tree-removed})
           (state {:id :tree-open} (region :tree "open") (tree-transitions :tree-open)
             (transition {:cond (fn [_ d] (some? (:in-root d))) :target :tree-root}))
           (state {:id :tree-missing} (region :tree "missing") (tree-transitions :tree-missing))

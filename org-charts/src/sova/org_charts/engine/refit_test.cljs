@@ -6,6 +6,7 @@
     [cljs.test :refer [deftest is testing]]
     [clojure.string :as str]
     [sova.org-charts.engine.core :as core]
+    [sova.org-charts.engine.dsl :as dsl]
     [com.fulcrologic.statecharts.chart :as chart]
     [com.fulcrologic.statecharts.elements :as elements]
     [sova.org-charts.engine.hold-policy :as policy]
@@ -562,12 +563,18 @@
         (elements/state {:id :a :initial :a1}
           (elements/transition {:event :bad :target :a2})
           (elements/transition {:event :good :target :a2 :type :internal})
+          (elements/transition {:event :sibling :target :b})
           (elements/state {:id :a1})
           (elements/state {:id :a2}))
         (elements/state {:id :b})))))
 
 (deftest the-reentry-lint-finds-external-self-descendant-transitions-under-a-parallel
   (is (= [["lint" [:bad] :a]] (map (fn [[c _ e s]] [c e s]) (core/reentry-hazards {"lint" {:chart lint-chart :version 1}})))))
+
+(deftest a-peek-migrates-an-older-snapshot
+  (let [eng (parent (new-eng))
+        v1  (-> (core/dump eng "par") (str/replace ":version 2" ":version 1") (str/replace ":idle" ":waiting"))]
+    (is (= [:top :idle] (:configuration (core/peek-snapshot rp/charts v1))) "P02: v1's :waiting is read as v2's :idle")))
 
 (deftest a-snapshot-can-be-read-without-loading-it
   (let [eng (parent (new-eng))]
@@ -576,3 +583,15 @@
       (is (= {:chart "refit-parent" :configuration [:top :gathering] :running true}
             (select-keys p [:chart :configuration :running])))
       (is (= 1 (:gathers (:data p)))))))
+
+(deftest a-confirm-kind-may-be-a-fn-of-the-act
+  (let [charts (assoc-in rp/charts ["refit-parent" :acts :gather/start :confirm-kind]
+                 (fn [d] (if (<= 2 (count (:to (dsl/evt d)))) "offer" "gather")))
+        eng    (core/new-engine charts {:level-check rp/level-check})
+        env    (assoc unattended :hold-ms 1000 :confirm-kinds ["offer"])]
+    (core/start! eng "par" "refit-parent" {} t0)
+    (is (true? (:confirm (:held (first (:steps (core/send! eng "par" :gather/start (assoc env :to ["a" "b"]) {:now t0}))))))
+      "two targets: an offer, which the list names")
+    (core/send! eng "par" :hold/cancel {:by "operator" :id "gather/start#0"} {:now t0})
+    (is (nil? (:confirm (:held (first (:steps (core/send! eng "par" :gather/start (assoc env :to ["a"]) {:now (+ t0 1)}))))))
+      "one target: a gather, which it doesn't")))

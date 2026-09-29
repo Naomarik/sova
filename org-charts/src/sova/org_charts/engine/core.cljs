@@ -652,7 +652,9 @@
                 [(refused-step eng sid event r)]
                 (hold-act! eng sid event orig act
                   (if held?
-                    {:confirm (policy/confirm-required? (or (:confirm-kind act) (id-str ename)) d)}
+                    {:confirm (policy/confirm-required?
+                                (let [ck (:confirm-kind act)] (cond (fn? ck) (ck view) (some? ck) ck :else (id-str ename)))
+                                d)}
                     {:wait "hours" :until off})))
               (cond-> (run-step! eng sid event)
                 off (update 0 assoc :off-hours off)))))))))

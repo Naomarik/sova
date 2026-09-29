@@ -191,8 +191,9 @@ carries `:off-hours <window>` (TS `offHours`; log rows too). A policy hold and a
 policy hold's release is then checked for hours.
 
 **Confirm-required holds (q12).** The envelope carries `:confirm-kinds ["gather" "promote" …]` (TS
-`confirmKinds`, stamped from overseer.json). An act's confirm kind is its meta `:confirm-kind`
-(else its event name). A policy-held act whose kind is listed gets `:confirm true`. At its end, with
+`confirmKinds`, stamped from overseer.json). An act's confirm kind is its meta `:confirm-kind`, a
+string or `(fn [data] kind)` over the act (e.g. "offer" with ≥2 targets, else "gather"); else its event
+name. A policy-held act whose kind is listed gets `:confirm true`. At its end, with
 `unreviewed-holds-wait?` on, it is NOT released: it stays in `holds()` with `:waiting true` (stall clock
 from `:until`) and the session receives `:hold/waiting {:id :event :kind :what}`, until
 `:hold/approve {:id :reason}` or `:hold/cancel {:id :reason}`. Non-listed holds release at their end as

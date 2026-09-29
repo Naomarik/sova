@@ -44,6 +44,9 @@ export interface Envelope {
   /** How long a held act waits (the project's holdMin, in ms; 0 = no hold). */
   holdMs: number;
   turnId?: string;
+  /** The project the act belongs to (the facts above are its); absent for an org-level act. The
+      engine keeps it with a held act, so the act is stamped for the same project at its release. */
+  projectId?: string;
 }
 
 /** What the watch session's data says has been used (message and day ledgers, looks today). */
@@ -67,6 +70,7 @@ export interface EnvelopeInput {
   codingRunning: number;
   card?: EnvelopeCard;
   turnId?: string;
+  projectId?: string;
 }
 
 const count = (v: unknown): number => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0);
@@ -94,6 +98,7 @@ export function buildEnvelope(i: EnvelopeInput): Envelope {
     ...(i.card ? { card: i.card } : {}),
     holdMs: i.settings.holdMin * 60_000,
     ...(i.turnId ? { turnId: i.turnId } : {}),
+    ...(i.projectId ? { projectId: i.projectId } : {}),
   };
 }
 

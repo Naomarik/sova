@@ -121,5 +121,5 @@ export function stampEnvelope(
   const counted = { used: ledgerOf(host.data(watchSid)), ...atOnceCounts([...host.sessions("baton"), ...host.sessions("build")], projectId) };
   const inProject = (h: HeldAct) => projectOfSession(host, h.sessionId) === projectId;
   const folded = withHolds(counted, host.holds() as HeldAct[], inProject, releasing);
-  return buildEnvelope({ ...who, settings: settings(projectId), paused, rosterActive, archived, ...folded });
+  return buildEnvelope({ ...who, settings: settings(projectId), paused, rosterActive, archived, ...folded, projectId });
 }

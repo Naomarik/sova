@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
-import { beforeEach, describe, test } from "node:test";
-import { actOrThrow, closeOrgHost, hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, openOrgHost, refusalError, resetOrgHostsForTest, setOrgHostOpener, type ActResult, type HostChange, type OrgHostApi } from "./org-engine";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, beforeEach, describe, test } from "node:test";
+import { stampProject, actOrThrow, closeOrgHost, hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, openOrgHost, refusalError, resetOrgHostsForTest, setOrgHostOpener, type ActResult, type HostChange, type OrgHostApi } from "./org-engine";
 import { OrgError } from "./orgs";
 
 /** A host that records what it was asked and answers `next`. */
@@ -89,6 +92,33 @@ describe("org engines: one host per org", () => {
     const e = stamp!("watch/org_s/prj_s", "gather/start", {});
     assert.deepEqual([e.by, e.attended, e.holdMs], ["chart", false, 600_000]);
     assert.equal(stamp!("item/org_s/prj_s/g_1", "gather/start", {}, { by: "overseer" }).by, "overseer");
+  });
+
+  test("a held act on a person is stamped for its project: that project's level, hold and pause (verifier F3)", async () => {
+    const ws = mkdtempSync(join(tmpdir(), "org-engine-stamp-"));
+    after(() => rmSync(ws, { recursive: true, force: true }));
+    mkdirSync(join(ws, "projects", "prj_q", "overseer"), { recursive: true });
+    writeFileSync(join(ws, "projects", "prj_q", "overseer", "overseer.json"), JSON.stringify({ autonomy: "L2", holdMin: 3 }));
+    const config: Record<string, string[]> = { "watch/org_q/prj_q": ["attach", "paused"], "person/org_q/p_1": ["proposed"] };
+    const f = fakeHost();
+    const host = { ...f.host, configuration: (sid: string) => config[sid] ?? null, sessions: (chart?: string) => (chart === "person" ? [{ id: "person/org_q/p_1", chart: "person", configuration: ["active"], data: {} }] : []) };
+    let stamp: ((sid: string, e: string, p: Record<string, unknown>, who?: { by?: "overseer"; projectId?: string }) => { autonomy: string; holdMs: number; paused: boolean; projectId?: string; by: string }) | null = null;
+    setOrgHostOpener(async (o) => ((stamp = o.stamp), host));
+    await openOrgHost({ orgId: "org_q", workspaceDir: ws, stateDir: "/state" });
+    const released = stamp!("person/org_q/p_1", "person/approve", { sovaReleased: "h1" }, { by: "overseer", projectId: "prj_q" });
+    assert.deepEqual([released.by, released.autonomy, released.holdMs, released.paused, released.projectId], ["overseer", "L2", 180_000, true, "prj_q"]);
+    // No project in the original envelope: the payload's, else none (an org act, at the defaults).
+    assert.equal(stamp!("person/org_q/p_1", "person/approve", { projectId: "prj_q" }).autonomy, "L2");
+    const orgAct = stamp!("person/org_q/p_1", "person/approve", {});
+    assert.deepEqual([orgAct.autonomy, orgAct.paused, orgAct.projectId], ["L1", false, undefined]);
+  });
+
+  test("stampProject: the original envelope's project, then the payload's, then the session's own", () => {
+    const h = { data: (sid: string) => (sid === "baton/o/s1" ? { projectId: "prj_b" } : null) };
+    assert.equal(stampProject(h, "baton/o/s1", { projectId: "prj_p" }, { projectId: "prj_w" }), "prj_w");
+    assert.equal(stampProject(h, "baton/o/s1", { projectId: "prj_p" }), "prj_p");
+    assert.equal(stampProject(h, "baton/o/s1", {}), "prj_b");
+    assert.equal(stampProject(h, "person/o/p_1", {}), null);
   });
 
   test("changes fan out with the org id; a throwing listener stops nothing", async () => {

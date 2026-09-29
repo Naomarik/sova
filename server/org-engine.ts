@@ -91,8 +91,18 @@ export interface OpenOptions {
 }
 
 /** The host's `stamp` option (engine API): a fresh envelope for an act the engine delivers itself
-    (a chart's drive, a held act at its release). `by` is the act's original actor (default "chart"). */
-export type Stamp = (sid: string, event: string, payload: Record<string, unknown>, who?: { by?: ActBy; overseerId?: string }) => Envelope;
+    (a chart's drive, a held act at its release). `who` is the act's original actor (default "chart")
+    and project: an act on a person or the org (a held roster approve) is still its project's act, so
+    its level, pause, archive, ledgers and hold come from that project, never from defaults. */
+export type Stamp = (sid: string, event: string, payload: Record<string, unknown>, who?: { by?: ActBy; overseerId?: string; projectId?: string }) => Envelope;
+
+/** The project an engine-delivered act belongs to: the original envelope's, else the payload's,
+    else the target session's own. */
+export function stampProject(host: Pick<OrgHostApi, "data">, sid: string, payload: Record<string, unknown>, who?: { projectId?: string }): string | null {
+  if (typeof who?.projectId === "string" && who.projectId) return who.projectId;
+  if (typeof payload.projectId === "string" && payload.projectId) return payload.projectId;
+  return projectOfSession(host, sid);
+}
 
 type Opener = (opts: OpenOptions & { stamp: Stamp }) => Promise<OrgHostApi>;
 
@@ -131,7 +141,7 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
     let self: OrgHostApi | null = null;
     const stamp: Stamp = (sid, _event, payload, who) => {
       if (!self) throw new Error("The org engine stamped before it opened.");
-      const pid = projectOfSession(self, sid);
+      const pid = stampProject(self, sid, payload, who);
       return stampEnvelope(self, opts.orgId, pid, { by: who?.by ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => readPoSettings(projectOverseerPaths(opts.orgId, projectId, opts.workspaceDir)), defaultPoSettings(), typeof payload.sovaReleased === "string" ? payload.sovaReleased : null);
     };
     const host = await opener({ ...opts, stamp });

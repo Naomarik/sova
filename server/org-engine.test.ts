@@ -25,6 +25,7 @@ function fakeHost(next: () => ActResult = () => ({ taken: true, refusal: null, r
     sessions: () => [],
     holds: () => [],
     chartOf: () => null,
+    chartInfo: () => null,
     problems: () => [],
     logAct: async () => {},
     onChange: (fn: (c: HostChange) => void) => void (changed = fn),

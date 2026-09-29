@@ -64,6 +64,25 @@ export interface HostChange {
   steps: unknown[];
 }
 
+/** An act's metadata as its chart declares it (`:acts`): the level it needs, whether it counts against an allowance, … */
+export interface ActMeta {
+  needs?: string | null;
+  tool?: string;
+  counts?: string;
+  hold?: boolean;
+  correction?: boolean;
+  peopleFacing?: boolean;
+  codeFacing?: boolean;
+  [key: string]: unknown;
+}
+
+export interface ChartInfo {
+  name: string;
+  version: number;
+  acts: Record<string, ActMeta>;
+  [key: string]: unknown;
+}
+
 /** The OrgHost as the server calls it (engine API §4). */
 export interface OrgHostApi {
   effects: { register(kind: string, fn: (effect: Effect) => Promise<unknown>): void };
@@ -78,6 +97,8 @@ export interface OrgHostApi {
   sessions(chart?: string): SessionInfo[];
   holds(): unknown[];
   chartOf(sid: string): string | null;
+  /** The registry's entry for a chart (engine API §3 chartInfo): its acts with their metadata. */
+  chartInfo(name: string): ChartInfo | null;
   problems(): { file: string; why: string }[];
   logAct(row: Record<string, unknown>): Promise<void>;
   onChange(fn: (change: HostChange) => void): void;

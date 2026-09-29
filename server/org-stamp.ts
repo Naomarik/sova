@@ -45,21 +45,25 @@ export interface HeldAct {
   until?: number;
 }
 
-/** What an act counts against (the charts' `:counts`): starting or offering a gathering, promoting
-    (one per decision id), starting a coding session, prompting one. Anything else counts nothing. */
-const COUNTS: Record<string, PoLimitKind> = {
-  "gather/start": "gather",
-  "gather/plan-start": "gather",
-  offer: "gather",
-  "decision/promote": "promote",
-  "build/start": "create",
-  "build/prompt": "prompt",
-};
+/** What an act counts against, as its chart declares it (`:counts` in the chart's acts): `null` when it
+    counts nothing. Read from the registry, never a table kept here, so a renamed act can't count
+    nothing silently. */
+export type CountsOf = (sessionId: string, event: string) => string | null;
 
-/** The kind and number a held act will take when it goes ahead, or null. */
-export function heldUse(h: HeldAct): { kind: PoLimitKind; n: number } | null {
-  const kind = COUNTS[h.event];
-  if (!kind) return null;
+export function countsFrom(host: Pick<OrgHostApi, "chartOf" | "chartInfo">): CountsOf {
+  return (sessionId, event) => {
+    const chart = host.chartOf(sessionId);
+    const counts = chart ? host.chartInfo(chart)?.acts?.[event]?.counts : undefined;
+    return typeof counts === "string" && counts ? counts : null;
+  };
+}
+
+const isKind = (k: string | null): k is PoLimitKind => !!k && (KINDS as readonly string[]).includes(k);
+
+/** The kind and number a held act will take when it goes ahead (a promotion: one per decision id), or null. */
+export function heldUse(h: HeldAct, countsOf: CountsOf): { kind: PoLimitKind; n: number } | null {
+  const kind = countsOf(h.sessionId, h.event);
+  if (!isKind(kind)) return null;
   const ids = h.data?.ids;
   return { kind, n: kind === "promote" && Array.isArray(ids) ? ids.length : 1 };
 }
@@ -76,12 +80,13 @@ export function withHolds(
   holds: readonly HeldAct[],
   inProject: (h: HeldAct) => boolean,
   releasing: string | null,
+  countsOf: CountsOf,
 ): { used: LedgerCounts; gatheringsOpen: number; codingRunning: number } {
   const day = { ...base.used.day };
   let { gatheringsOpen, codingRunning } = base;
   for (const h of holds) {
     if (h.id === releasing || !inProject(h)) continue;
-    const use = heldUse(h);
+    const use = heldUse(h, countsOf);
     if (!use) continue;
     day[use.kind] = (day[use.kind] ?? 0) + use.n;
     if (use.kind === "gather" && !h.sessionId.startsWith("baton/")) gatheringsOpen++;
@@ -101,7 +106,7 @@ export interface StampWho {
 
 /** The envelope for an act on `projectId` (or an org-level act, with the project facts at their defaults). */
 export function stampEnvelope(
-  host: Pick<OrgHostApi, "sessions" | "data" | "configuration" | "holds">,
+  host: Pick<OrgHostApi, "sessions" | "data" | "configuration" | "holds" | "chartOf" | "chartInfo">,
   orgId: string,
   projectId: string | null,
   who: StampWho,
@@ -120,6 +125,6 @@ export function stampEnvelope(
   const paused = !!host.configuration(watchSid)?.includes("paused");
   const counted = { used: ledgerOf(host.data(watchSid)), ...atOnceCounts([...host.sessions("baton"), ...host.sessions("build")], projectId) };
   const inProject = (h: HeldAct) => projectOfSession(host, h.sessionId) === projectId;
-  const folded = withHolds(counted, host.holds() as HeldAct[], inProject, releasing);
+  const folded = withHolds(counted, host.holds() as HeldAct[], inProject, releasing, countsFrom(host));
   return buildEnvelope({ ...who, settings: settings(projectId), paused, rosterActive, archived, ...folded, projectId });
 }

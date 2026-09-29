@@ -2,7 +2,18 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { DEFAULT_PO_CAPS } from "../shared/project-overseer";
 import type { SessionInfo } from "./org-engine";
-import { heldUse, ledgerOf, projectOfSession, stampEnvelope, withHolds, type HeldAct } from "./org-stamp";
+import { countsFrom, heldUse, ledgerOf, projectOfSession, stampEnvelope, withHolds, type HeldAct } from "./org-stamp";
+
+/** A registry as the charts declare it: which acts count against which allowance. */
+const ACTS: Record<string, Record<string, { counts?: string }>> = {
+  item: { "gather/start": { counts: "gather" }, "build/start": { counts: "create" }, "item/hold": {} },
+  baton: { offer: { counts: "gather" }, close: {} },
+  build: { "build/prompt": { counts: "prompt" } },
+  reconciler: { "decision/promote": { counts: "promote" } },
+};
+const chartOfId = (sid: string) => sid.split("/")[0] ?? null;
+const registry = { chartOf: chartOfId, chartInfo: (name: string) => (ACTS[name] ? { name, version: 1, acts: ACTS[name]! } : null) };
+const countsOf = countsFrom(registry);
 
 const O = "org_a";
 const P = "prj_a";
@@ -13,7 +24,8 @@ function fakeHost(sessions: SessionInfo[], holds: HeldAct[] = []) {
     sessions: (chart?: string) => sessions.filter((s) => !chart || s.chart === chart),
     data: (sid: string) => byId.get(sid)?.data ?? null,
     configuration: (sid: string) => byId.get(sid)?.configuration ?? null,
-    chartOf: (sid: string) => byId.get(sid)?.chart ?? null,
+    chartOf: (sid: string) => byId.get(sid)?.chart ?? chartOfId(sid),
+    chartInfo: registry.chartInfo,
   };
 }
 const s = (id: string, chart: string, configuration: string[], data: Record<string, unknown> = {}): SessionInfo => ({ id, chart, configuration, data });
@@ -76,22 +88,30 @@ describe("pending holds count as if they had gone ahead (F2)", () => {
   const all = () => true;
 
   test("each kind on the day ledger, promote by its ids; the message ledger untouched", () => {
-    const out = withHolds(base, [h("h1", `item/${O}/${P}/g1`, "gather/start"), h("h2", `reconciler/${O}/${P}`, "decision/promote", { ids: ["a", "b", "c"] }), h("h3", `item/${O}/${P}/g1`, "build/start"), h("h4", `build/${O}/${P}/b1`, "build/prompt")], all, null);
+    const out = withHolds(base, [h("h1", `item/${O}/${P}/g1`, "gather/start"), h("h2", `reconciler/${O}/${P}`, "decision/promote", { ids: ["a", "b", "c"] }), h("h3", `item/${O}/${P}/g1`, "build/start"), h("h4", `build/${O}/${P}/b1`, "build/prompt")], all, null, countsOf);
     assert.deepEqual(out.used.day, { gather: 3, promote: 6, create: 1, prompt: 1 });
     assert.deepEqual(out.used.message, { gather: 1 });
   });
 
   test("at-once: a held gathering start opens one, a held offer on an existing session does not; a held coding start runs one", () => {
-    const out = withHolds(base, [h("h1", `item/${O}/${P}/g1`, "gather/start"), h("h2", `baton/${O}/s1`, "offer"), h("h3", `item/${O}/${P}/g1`, "build/start"), h("h4", `build/${O}/${P}/b1`, "build/prompt")], all, null);
+    const out = withHolds(base, [h("h1", `item/${O}/${P}/g1`, "gather/start"), h("h2", `baton/${O}/s1`, "offer"), h("h3", `item/${O}/${P}/g1`, "build/start"), h("h4", `build/${O}/${P}/b1`, "build/prompt")], all, null, countsOf);
     assert.deepEqual([out.gatheringsOpen, out.codingRunning], [2, 1]);
   });
 
   test("the hold being released is not counted twice; other projects' holds and uncounted acts are not counted", () => {
     const holds = [h("mine", `item/${O}/${P}/g1`, "gather/start"), h("other", `item/${O}/prj_b/g2`, "gather/start"), h("x", `baton/${O}/s1`, "close")];
-    const out = withHolds(base, holds, (x) => x.sessionId.includes(`/${P}/`), "mine");
+    const out = withHolds(base, holds, (x) => x.sessionId.includes(`/${P}/`), "mine", countsOf);
     assert.deepEqual([out.used.day.gather, out.gatheringsOpen], [2, 1]);
-    assert.equal(heldUse(h("x", "s", "close")), null);
-    assert.deepEqual(heldUse(h("p", "s", "decision/promote", { ids: "nope" })), { kind: "promote", n: 1 });
+    assert.equal(heldUse(h("x", `baton/${O}/s1`, "close"), countsOf), null);
+    assert.deepEqual(heldUse(h("p", `reconciler/${O}/${P}`, "decision/promote", { ids: "nope" }), countsOf), { kind: "promote", n: 1 });
+  });
+
+  test("kinds come from the charts' registry: an act it doesn't declare, an unknown chart or an unknown kind counts nothing", () => {
+    assert.equal(countsOf(`item/${O}/${P}/g1`, "item/hold"), null);
+    assert.equal(countsOf(`item/${O}/${P}/g1`, "gather/offer"), null);
+    assert.equal(countsOf(`nochart/${O}/x`, "gather/start"), null);
+    const odd = countsFrom({ chartOf: () => "item", chartInfo: () => ({ name: "item", version: 1, acts: { "gather/start": { counts: "looks" } } }) });
+    assert.equal(heldUse(h("q", `item/${O}/${P}/g1`, "gather/start"), odd), null);
   });
 
   test("stampEnvelope folds its project's holds, and not the one it releases", () => {

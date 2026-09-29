@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
-import type { SlashCommand, UploadResult } from "../../shared/protocol";
+import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
+import { composerLogin } from "../lib/claude-login";
 import { runControls } from "../lib/compact";
 import { enterRunsLocal, insertCommand, localCommand, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
@@ -136,6 +137,8 @@ export function Composer(props: {
   cwd?: string | null;
   /** Chat sessions only: the flyout's model picker. */
   model?: ModelControl | null;
+  /** Chat sessions only: the chat's Claude login (WS "claude_login"), shown beside the model. */
+  claudeLogin?: () => ChatClaudeLogin | null;
   /** Chat sessions only: the flyout's Thinking ladder. */
   thinking?: ThinkingControl | null;
   /** Chat sessions only: this chat's mode switch, at the right end of the foot. */
@@ -1127,6 +1130,14 @@ export function Composer(props: {
               </Show>
               <Icon name="chevron-down" small class="composer-model-caret" />
             </button>
+          </Show>
+          <Show when={composerLogin(props.claudeLogin?.() ?? null, modelRef())}>
+            {(l) => (
+              <span class="composer-login" title={l().title} aria-label={l().label}>
+                <span class="composer-login-full">{l().text}</span>
+                <span class="composer-login-short">{l().short}</span>
+              </span>
+            )}
           </Show>
           <span class="composer-reason" id={paneId("composer-reason")}>
             <Show when={shownReason()}>

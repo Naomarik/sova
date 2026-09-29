@@ -2793,6 +2793,25 @@ a.group-option { color: inherit; text-decoration: none; }
 .composer-model[aria-disabled="true"]:hover .composer-model-id { color: var(--color-ink-2); }
 .composer-model[aria-disabled="true"]:active { transform: none; }
 
+/* The chat's Claude login (§app.claude-logins/active-login): beside the model, quiet and
+   compact, only on a Claude Code model when the device has several logins. Not a control. */
+.composer-login {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 26ch;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.composer-login-short { display: none; }
+@media (max-width: 640px) {
+  .composer-login { max-width: 12ch; }
+  .composer-login-full { display: none; }
+  .composer-login-short { display: inline; }
+}
+
 /* The sandbox shield (§chat.composer): shown only while this chat's sandbox is on. Full
    enforcement is a quiet ink glyph; anything less adds its word and a status color, so the
    state never rests on hue. It sits at the right end, before the mode switch, which then
@@ -4109,6 +4128,12 @@ a.group-option { color: inherit; text-decoration: none; }
 .usage-card-plan,
 .usage-card-caption { margin: 0; }
 .usage-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
+/* A Claude login's card (§app.insights/usage-cards): the email is the title, so it may wrap
+   anywhere rather than overflow; its standing chips lead the body. Logins of one account get a
+   quiet full-width head over their cards. */
+.usage-login-title { white-space: normal; overflow-wrap: anywhere; }
+.usage-login-standing { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; }
+.usage-account-head { grid-column: 1 / -1; margin: var(--space-2) 0 calc(var(--space-2) * -1); }
 .usage-note code { font-family: var(--font-mono); font-size: var(--fs-mono); }
 
 /* Deep link #/agents/<teamId> focuses the team's group (tabindex -1); ring on :focus,

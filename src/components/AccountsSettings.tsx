@@ -21,7 +21,7 @@ function nameOf(l: ClaudeLoginRow): string {
 
 /** Organization and plan, then where the login lives. */
 function factsOf(l: ClaudeLoginRow): string {
-  const facts = [l.label && l.identity?.email, l.identity?.orgName, l.identity?.plan].filter(Boolean) as string[];
+  const facts = [l.label && l.identity?.email, l.identity?.orgName, l.identity?.planLabel].filter(Boolean) as string[];
   if (l.id === "default") facts.push("Claude Code's own directory");
   return facts.join(" · ");
 }

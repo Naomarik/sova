@@ -13,6 +13,14 @@ const err = (body: string) => {
   assert.equal(r.ok, false);
   return r as { ok: false; line: number; message: string };
 };
+/** A fence that still draws: its first warning (parse.ts). */
+const warning = (body: string) => {
+  const r = parseVis("code", body);
+  if (!r.ok) assert.fail(`expected a drawing with a warning, got line ${r.line}: ${r.message}`);
+  assert.ok(r.warnings.length, `expected a warning for:\n${body}`);
+  assert.deepEqual(r.spec.warnings, r.warnings, "the spec carries the same warnings");
+  return r.warnings[0]!;
+};
 
 test("code: header, ---, verbatim lines; marks by displayed line number or range", () => {
   const s = ok('title: Off by one\nlang: TS\nstart: 10\nmark 11 "should be <"\nmark 12-13 warn\n---\nfor (let i = 0;\n  i <= n;\n  i++) {\n# not a comment\n}\n');
@@ -29,7 +37,7 @@ test("code: header, ---, verbatim lines; marks by displayed line number or range
 test("code: errors say what to write", () => {
   assert.match(err("x = 1").message, /---/);
   assert.match(err("lang: ts\n---\n").message, /no code/);
-  assert.match(err("mark 5\n---\na\nb").message, /no line \(lines here are 1–2\) 5/);
+  assert.match(warning("mark 5\n---\na\nb").message, /no line \(lines here are 1–2\) 5, dropped/);
   assert.match(err("x = 1\n---\na").message, /only settings/);
-  assert.match(err("mark 1-3 \"n\"\nmark 2\n---\na\nb\nc").message, /marked twice/);
+  assert.deepEqual(warning("mark 1-3 \"n\"\nmark 2\n---\na\nb\nc"), { line: 2, message: "mark 2: already marked, dropped" });
 });

@@ -51,6 +51,8 @@ export class RestoredWorker implements Worker {
 	readonly usageSource: UsageSource;
 	/** When the snapshot `usage` (or only its cost) was taken. */
 	readonly usageAsOf?: number;
+	/** Its transcript or snapshot counted its model replies (`usage.turns`); false: an older record said nothing. */
+	readonly turnsKnown: boolean;
 	/** It died mid-turn: its last known activity. */
 	readonly interruptedAt?: number;
 	readonly resumeRefusal: ResumeRefusal;
@@ -75,7 +77,8 @@ export class RestoredWorker implements Worker {
 			this.sessionFile = m.ref.locator;
 			if (m.ref.sessionId) this.sessionId = m.ref.sessionId;
 		} else if (m.ref) this.sessionId = m.ref.locator;
-		this.startedAt = summary?.startedAt ?? m.at;
+		// Its first spawn: the transcript's start, else the first record's time (never the newest's).
+		this.startedAt = summary?.startedAt ?? m.firstAt ?? m.at;
 		this.lastActivity = Math.max(summary?.lastActivityAt ?? 0, m.at);
 		// No status at all (a publication record only) is treated as alive at the restart.
 		this.status = hasEnded(m) ? (m.status as "done" | "error" | "killed") : "restored";
@@ -85,6 +88,7 @@ export class RestoredWorker implements Worker {
 		if (m.endedAt !== undefined) this.endedAt = m.endedAt;
 		const u = view.usage;
 		this.usageSource = u.source;
+		this.turnsKnown = u.source !== "none" && typeof u.turns === "number";
 		this.usageAsOf = u.source === "snapshot" ? u.asOf : u.costSource === "snapshot" ? u.costAsOf : undefined;
 		this.usage = { input: u.input, output: u.output, cacheRead: u.cacheRead, cacheWrite: u.cacheWrite, cost: u.cost ?? 0, turns: u.turns ?? 0, contextTokens: 0 };
 		this.lastText = summary?.lastAssistantText ?? "";

@@ -2663,18 +2663,117 @@ a.group-option { color: inherit; text-decoration: none; }
 
 /* ---- RUN STATUS + JUMP TO LATEST. Sit on the composer's top edge. ------- */
 
+/* One line at every width, the same 20px whatever it carries: the triggers' net height, so the
+   composer doesn't move between idle and working or as the step changes. The margin is its own,
+   not the global `p` rule's. One live dot leads it while anything works (the turn or a subagent),
+   and nothing else in it pulses. Two forms, by the composer's width (below): wide says it in
+   words, "● Working · running bash" and "◔ 1 of 5 subagents working ›"; narrow is the step's icon
+   and the ring plus a count ("◔ 1/5"), the words visually hidden. Stopping and the rare states
+   keep their words in both. In the wide form the detail is the part that gives way (ellipsis); in
+   the narrow one only the rare states' words do. */
 .run-status {
+  --run-status-pad: var(--space-2);  /* the gap, and each trigger's inline padding and offset */
+  --run-status-part-gap: var(--space-2);  /* between a trigger's parts */
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--run-status-pad);
+  height: calc(var(--control-sm) - 2 * var(--space-2));
+  margin: 0 0 var(--space-4);
   font-size: var(--fs-caption);
   color: var(--color-ink-2);
   min-width: 0;
 }
+.run-status-state,
+.run-status-workers {
+  position: relative;             /* holds the visually hidden words */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.run-status-state { flex: 0 1 auto; }
+.run-status-workers { flex: none; }
+.run-status-say {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  white-space: nowrap;
+}
 .run-status-detail {
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-mono);
   color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-status-state .icon,
+.run-status-workers .icon { color: var(--color-ink-muted); }
+.run-status .run-status-narrow { display: none; }
+
+/* The subagents trigger's ring: the working share of every worker, clockwise from 12 o'clock.
+   Static, like the context ring: the row's live dot is the one thing that moves, so the arc's
+   length is the state. The arc is ink, not accent (accent is the live dot's alone), over a track
+   that meets the 3:1 UI threshold, so the empty ring of a settled row still reads as a ring. The
+   strokes are explicit, never `currentColor`: the trigger's hover lifts its words, not its meter. */
+.workers-ring { flex: none; width: 14px; height: 14px; overflow: visible; }
+.workers-ring-track { stroke: var(--color-border-strong); stroke-width: 2; }
+.workers-ring-fill { stroke: var(--color-ink); stroke-width: 2; stroke-linecap: butt; }
+
+/* The narrow form, below 620px of composer. That was the width where the whole wide row fitted
+   untruncated before the ring's words; with them the widest row ("● Working · running agent_spawn",
+   "◔ 1 of 5 subagents working ›", "1 align · 0/8 decided", "3 inputs ›", Medium text size) needs
+   712px, and between the two its detail ends in an ellipsis ("· runni…" at 620px), as a long tool
+   name already did. Any width from 620px to 672px sorts the devices the same way. It contracts, so
+   the container query gets a @media floor (the skill's union). */
+@container composer (max-width: 619.98px) {
+  .run-status { --run-status-pad: calc(var(--space-3) / 2); --run-status-part-gap: var(--space-1); }
+  .run-status .run-status-wide { display: none; }
+  .run-status .run-status-narrow { display: inline-block; }
+  .run-status-state,
+  .run-status-workers { gap: var(--space-1); }
+  .run-status-state:not(:has(> .run-status-words)) { flex: none; }
+  /* Between blocks the Working state draws nothing here (no step, its words hidden): it gives
+     back its gap, so the ring sits one gap after the dot. */
+  .run-status-state:not(:has(> .icon)):not(:has(> .run-status-words)) { margin-left: calc(var(--run-status-pad) * -1); }
+  /* The one trigger that may give way here: "1 align · 0/8 decided" is the widest, so at a 344px
+     screen its count ends in an ellipsis rather than pushing the row past the edge (its full text
+     stays its accessible name). */
+  .run-status > .run-status-link.run-status-align { flex: 0 1 auto; min-width: 0; }
+  /* Stopping and the rare states give way first, down to about 4em of their words. */
+  .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: 4em; }
+  .run-status > .run-status-align .text-num { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run-status-say {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+}
+@media (max-width: 619.98px) {
+  .run-status { --run-status-pad: calc(var(--space-3) / 2); --run-status-part-gap: var(--space-1); }
+  .run-status .run-status-wide { display: none; }
+  .run-status .run-status-narrow { display: inline-block; }
+  .run-status-state,
+  .run-status-workers { gap: var(--space-1); }
+  .run-status-state:not(:has(> .run-status-words)) { flex: none; }
+  /* Between blocks the Working state draws nothing here (no step, its words hidden): it gives
+     back its gap, so the ring sits one gap after the dot. */
+  .run-status-state:not(:has(> .icon)):not(:has(> .run-status-words)) { margin-left: calc(var(--run-status-pad) * -1); }
+  /* The one trigger that may give way here: "1 align · 0/8 decided" is the widest, so at a 344px
+     screen its count ends in an ellipsis rather than pushing the row past the edge (its full text
+     stays its accessible name). */
+  .run-status > .run-status-link.run-status-align { flex: 0 1 auto; min-width: 0; }
+  /* Stopping and the rare states give way first, down to about 4em of their words. */
+  .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: 4em; }
+  .run-status > .run-status-align .text-num { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run-status-say {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+}
+.run-status-words {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2716,15 +2815,24 @@ a.group-option { color: inherit; text-decoration: none; }
   margin: 0 auto;
 }
 .composer-row { display: flex; align-items: flex-end; gap: var(--space-2); }
+/* The block padding is what's left of --control-md after one body line and the two borders, split
+   evenly: one line is exactly 44px with its text centred, at every text size. The border counts as
+   drawn: a width of 1px or more snaps down to whole px (1.5 draws as 1), and the 8px line is the
+   fallback where round() isn't supported. */
 .composer-input {
   flex: 1;
   min-height: var(--control-md);
   max-height: var(--composer-max);
   padding: var(--space-2) var(--space-3);
+  padding: calc((var(--control-md) - var(--fs-body) * var(--lh-body) - 2 * round(down, var(--stroke-icon), 1px)) / 2) var(--space-3);
   resize: none;
   overflow-y: auto;
   field-sizing: content;          /* native auto-grow where supported; JS fallback per the composer spec */
 }
+/* Empty, the box is one line: a placeholder longer than the box ("Steer the current turn…" beside
+   Steer and Stop) is cut, not wrapped, so a turn starting doesn't make the composer taller. */
+.composer-input:placeholder-shown { field-sizing: fixed; }
+.composer-input::placeholder { white-space: nowrap; }
 .composer-actions { display: flex; align-items: flex-end; gap: var(--space-2); flex: none; }
 .composer-foot {
   display: flex;
@@ -2792,6 +2900,25 @@ a.group-option { color: inherit; text-decoration: none; }
 .composer-model[aria-disabled="true"]:hover { background: transparent; color: var(--color-ink-muted); }
 .composer-model[aria-disabled="true"]:hover .composer-model-id { color: var(--color-ink-2); }
 .composer-model[aria-disabled="true"]:active { transform: none; }
+
+/* The chat's Claude login (§app.claude-logins/active-login): beside the model, quiet and
+   compact, only on a Claude Code model when the device has several logins. Not a control. */
+.composer-login {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 26ch;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.composer-login-short { display: none; }
+@media (max-width: 640px) {
+  .composer-login { max-width: 12ch; }
+  .composer-login-full { display: none; }
+  .composer-login-short { display: inline; }
+}
 
 /* The sandbox shield (§chat.composer): shown only while this chat's sandbox is on. Full
    enforcement is a quiet ink glyph; anything less adds its word and a status color, so the
@@ -3687,14 +3814,14 @@ a.group-option { color: inherit; text-decoration: none; }
 .hljs-emphasis { font-style: normal; text-decoration: underline; text-decoration-color: var(--color-border-strong); }
 
 
-/* ---- CONTEXT WINDOW. Plain text, not a meter: number first and
-   only — a 6px bar in a 56px head says less than "24%". It sits in the
-   head before the mode trigger (chat) / Live chip (watch) and collapses
-   with the HEAD's width, not the window's:
-     ≥720  "Context 237k / 1M · 24%"
-     ≥520  "24%"
-     <520  leaves the head; .context-meta shows "24%" first in the meta line
-   These rules contract, so each container query has a @media floor. ---- */
+/* ---- CONTEXT WINDOW. The token count with the list's ring beside it,
+   never a bar alone and never a percent (that is the title's sentence).
+   It sits in the head before the remote/TUI chips and stays in the row
+   at every width; the HEAD's width, not the window's, decides the words:
+     ≥720  ◔ "222k / 1M"
+     <720  ◔ "222k"
+   Without a window: "237k", no ring; compacted: "compacted", no ring.
+   These rules contract, so the container query has a @media floor. ---- */
 
 .session-head { container: session-head / inline-size; }
 .context-gauge {
@@ -3714,10 +3841,9 @@ a.group-option { color: inherit; text-decoration: none; }
   font-variant-numeric: tabular-nums;
   color: var(--color-ink-2);
 }
-.context-pct { display: none; }
-.context-meta { display: none; flex: none; }
-/* Toward the limit: the number is the fact, the hue repeats it; ≥95% also
-   gets the alert glyph so it never rests on hue alone. */
+/* Toward the limit: the arc and the number are the fact, the hue repeats
+   it; ≥95% also gets the alert glyph so it never rests on hue alone.
+   .context-meta is the fan-out dialog's fill (app.css), stepped the same. */
 .context-warn .context-value,
 .context-warn .context-pct,
 .context-meta.context-warn { color: var(--status-warn); }
@@ -3728,27 +3854,13 @@ a.group-option { color: inherit; text-decoration: none; }
 .context-compacted .context-value { font-family: var(--font-body); font-size: var(--fs-caption); color: var(--color-ink-muted); }
 
 @container session-head (max-width: 719px) {
-  .context-label, .context-value { display: none; }
-  .context-pct { display: inline; }
-}
-@container session-head (max-width: 519px) {
-  .context-gauge { display: none; }
-  .context-meta { display: inline; }
-  /* The head's aggregate "Team · n working" link chip repeats the
-     sidebar row chip and the Agents foot row; on a narrow head it goes. */
-  .session-head > .chip-count { display: none; }
+  .context-of { display: none; }
 }
 /* Floor: whatever else lands in the head, the title block never collapses
    to nothing — extra chips overflow before the title disappears. */
 .session-head-main { min-width: 72px; }
 @media (max-width: 719px) {
-  .context-label, .context-value { display: none; }
-  .context-pct { display: inline; }
-}
-@media (max-width: 519px) {
-  .context-gauge { display: none; }
-  .context-meta { display: inline; }
-  .session-head > .chip-count { display: none; }
+  .context-of { display: none; }
 }
 
 
@@ -4012,10 +4124,17 @@ a.group-option { color: inherit; text-decoration: none; }
   font-size: var(--fs-caption);
 }
 .insights-row[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-ink); }
-/* The Agents row and the Settings gear share one line: the glance link keeps its
-   width, the gear sits at the row's right end, clear of the text it follows. */
+/* The Usage row + Resource monitor button, and the Agents row + Settings gear:
+   each link keeps the width, its button sits at the row's right end, and the two
+   buttons share one class so they stack in one column. The link's right padding
+   drops to space-2: the 44px button already carries 14px of air around its icon.
+   The link keeps its divider and the row draws the same line under the button
+   (an inset shadow, so the row stays 44px); the last row has none, since the
+   link is never its row's :last-child. */
 .sidebar-foot-row { display: flex; align-items: stretch; }
-.sidebar-foot-link { flex: 1; min-width: 0; }
+.sidebar-foot-row:not(:last-child) { box-shadow: inset 0 calc(-1 * var(--stroke-thin)) var(--color-border); }
+.sidebar-foot-row:last-child > .sidebar-foot-link { border-bottom: 0; }
+.sidebar-foot-link { flex: 1; min-width: 0; padding-right: var(--space-2); }
 .sidebar-settings {
   flex: none;
   align-self: center;
@@ -4026,10 +4145,12 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 .sidebar-settings:hover { background: var(--color-sunken); color: var(--color-ink); }
 
-/* Usage glance: "C 47%  O 95%  OL 80%  Z 0%", one segment per provider.
-   Never wraps (4 × 100% ≈ 210px fits the 320px sidebar); clips as a guard.
+/* Usage glance: "C 47% O 95% OL 80% Z 0% DS $4", one segment per provider.
+   Never wraps; clips as a guard. Beside the monitor button the box is 215px in
+   the 320px sidebar, so segments sit space-2 apart (twice the tag-to-number gap,
+   so each still reads as one pair): a real five-provider reading is 210px.
    High = weight, not hue (no word to pair a color with); stale = muted. */
-.usage-glance { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: nowrap; }
+.usage-glance { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: nowrap; }
 .usage-glance-item { display: inline-flex; align-items: baseline; gap: var(--space-1); flex: none; }
 .usage-glance-tag { color: var(--color-ink-muted); }
 .usage-glance-item .text-num { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
@@ -4109,6 +4230,17 @@ a.group-option { color: inherit; text-decoration: none; }
 .usage-card-plan,
 .usage-card-caption { margin: 0; }
 .usage-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
+/* A Claude account's card (§app.insights/usage-cards): the email is the title, so it may wrap
+   anywhere rather than overflow. Its logins follow the meters as compact rows divided by hairlines:
+   the name, then its chips (they wrap under the name on a narrow card). */
+.usage-login-title { white-space: normal; overflow-wrap: anywhere; }
+.usage-login-standing { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; }
+.usage-logins { display: flex; flex-direction: column; gap: var(--space-1); }
+.usage-logins-caption { margin: 0; }
+.usage-logins-list { list-style: none; margin: 0; padding: 0; }
+.usage-logins-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-1) var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--color-border); }
+.usage-logins-row:last-child { padding-bottom: 0; }
+.usage-logins-name { color: var(--color-ink); font-weight: var(--fw-medium); overflow-wrap: anywhere; min-width: 0; }
 .usage-note code { font-family: var(--font-mono); font-size: var(--fs-mono); }
 
 /* Deep link #/agents/<teamId> focuses the team's group (tabindex -1); ring on :focus,
@@ -4193,19 +4325,6 @@ a.group-option { color: inherit; text-decoration: none; }
    keeps the icon at chip scale. */
 .chip-count .icon { width: 12px; height: 12px; }
 
-/* The session head's compact worker count: the figure and the worker icon are
-   one unit, so the gap is tighter than the chip's own --space-1, and the icon
-   sits a step behind the figure in muted ink. It's a link, so on hover both
-   move to ink together. */
-.session-head-working { gap: 2px; }
-.session-head-working .icon {
-  width: 12px;
-  height: 12px;
-  color: var(--color-ink-muted);
-  transition: color var(--dur-fast) var(--ease-standard);
-}
-.session-head-working:hover .icon,
-.session-head-working:focus-visible .icon { color: inherit; }
 a.chip { text-decoration: none; }
 a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong); }
 
@@ -4316,11 +4435,11 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 /* =============================================================================
    SUBAGENTS PANE — this session's workers, beside the session pane: a worker
    list on the left, the selected worker's read-only transcript on the right.
-   Opened from the composer's "2 subagents working…" row.
+   Opened from the composer's "2 of 5 subagents working" row.
    ============================================================================= */
 
 /* ---- TRIGGER. The composer's subagents row, made a control. It keeps the
-   row's look (live dot + words in ink-2) and adds a chevron and a hover fill:
+   row's look (the ring + words in ink-2; never a dot, the row's own dot leads it) and adds a chevron and a hover fill:
    interactive, but never a primary or secondary button. 36px drawn, 44px hit
    area (::after), and a net 20px of layout, so the composer doesn't grow when
    it replaces the Working row. No pressed state: the open pane is the state,
@@ -4344,6 +4463,15 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   transition:
     background-color var(--dur-fast) var(--ease-standard),
     color            var(--dur-fast) var(--ease-standard);
+}
+/* Every trigger keeps its own width: squeezed, its words ran into the next one. Its padding and
+   offset are the row's (8px wide; 6px narrow, with its parts 4px apart, so a working row with all
+   three triggers fits a 344px screen). */
+.run-status > .run-status-link {
+  flex: none;
+  gap: var(--run-status-part-gap);
+  margin-left: calc(var(--run-status-pad) * -1);
+  padding: 0 var(--run-status-pad);
 }
 .run-status-link::after {
   content: "";
@@ -4796,11 +4924,20 @@ button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offse
   column-gap: var(--space-2);
   row-gap: 2px;
 }
+/* The name and the worker id beside it, quieter; the pair takes the room the title used to. */
+.subagents-view-name {
+  flex: 1;
+  min-width: min(100%, 14ch);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.subagents-view-wid { flex: none; font-size: var(--fs-caption); }
 /* The name is who this is, so a long one wraps to a second line before it clips. It keeps room
    for a short name whole: the chips after it wrap to the next line first. */
 .subagents-view-title {
-  flex: 1;
-  min-width: min(100%, 14ch);
+  flex: 0 1 auto;
+  min-width: 0;
   margin: 0;
   font-size: var(--fs-body);
   line-height: var(--lh-body);
@@ -4820,28 +4957,23 @@ button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offse
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* Seven facts at most (id · provider · model · context · tokens · effort) don't fit a narrow
-     view on one line: they wrap to a second rather than clip the ones at the end. */
+  /* Four facts (model · effort · tokens · context) on one row: the model clips first, and only
+     a very narrow view wraps the rest to a second line rather than clip the ones at the end. */
   flex-wrap: wrap;
 }
 /* A separator belongs to the fact it introduces, so a wrap can never strand it; the gap that
    used to separate them is now inside the fact. */
 .subagents-view-meta .meta-line-sep { margin-right: var(--space-1); }
+/* The context readout sits at the line's right edge, under the status chip. */
+.subagents-view-context { margin-left: auto; padding-left: var(--space-2); }
 
-/* The view head's context readout: the chat head's gauge ("Context 64k / 1M · 6%") as one meta
-   fact. It is in no .session-head, and the head's window-width floors (CONTEXT WINDOW) would hide
-   it on a phone, where this pane is the whole screen, so they're undone here; it collapses to the
-   percent by the pane's own width instead. */
+/* The view head's context readout, compact: the list's ring and the percent ("◔ 6%"), the full
+   sentence in the title, so the meta line holds one row at a normal pane width. Without a window
+   or just after a compaction there is no ring to draw, and the words stay ("Context 64k",
+   "Context compacted"). */
 .context-readout { display: inline-flex; }
 .context-readout > .context-gauge { display: inline-flex; font-size: inherit; }
-.context-readout .context-label,
-.context-readout .context-value { display: inline; }
-.context-readout .context-pct { display: none; }
-@container subagents (max-width: 479px) {
-  .context-readout .context-label,
-  .context-readout .context-value { display: none; }
-  .context-readout .context-pct { display: inline; }
-}
+.context-compact { display: inline-flex; align-items: center; gap: var(--space-1); }
 
 /* A restored worker's note under the head: what the restart did, and Resume Worker when this
    server can do it. Sunken, like other context strips; the button sits at the end. */
@@ -5259,6 +5391,14 @@ a.subagent-row { text-decoration: none; }
 .sidebar-search-row { display: flex; align-items: center; gap: var(--space-2); }
 .sidebar-search-row > .search { flex: 1; min-width: 0; }
 
+/* Folded, the search row and the count row are one line: the eye, the count, Select and a search
+   icon. Opened, the field takes the line beside Close Search, and the count stays in it hidden
+   (the field's description and live count), so `position: relative` keeps it inside the line. */
+.sidebar-toolbar { position: relative; display: flex; align-items: center; gap: var(--space-2); min-height: var(--tap-min); }
+.sidebar-toolbar > .search { flex: 1; min-width: 0; }
+.sidebar-toolbar > .search-count { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-toolbar > .button-icon { flex: none; }
+
 /* The entry button. `position: relative` anchors its one mark: the count of
    Overseer messages you haven't read, top-right. It is aria-hidden: the button's
    name says it in words. Who needs you is the sidebar's Needs you region, not the eye. */
@@ -5310,21 +5450,71 @@ a.subagent-row { text-decoration: none; }
 .overseer-head .button-sm { flex: none; }
 .overseer-proactivity { gap: var(--space-1); }
 .action-menu-text { display: inline-flex; align-items: center; gap: var(--space-2); }
-/* "N finished" and "N drafts" in the meta line open the lists of those sessions: text-sized
-   triggers, so the line keeps its height, with the meta's own voice until hovered. */
+/* "N started" in a project overseer's meta line opens the list of those sessions: a text-sized
+   trigger, so the line keeps its height, with the meta's own voice until hovered. */
 .session-head-meta .overseer-count { flex: none; min-height: 0; padding: 0 var(--space-1); gap: var(--space-1); font-size: inherit; color: inherit; }
 /* The line clips its overflow, and with it an outset ring: this one is drawn inside. */
 .session-head-meta .overseer-count:focus-visible { outline-offset: calc(-1 * var(--focus-width)); }
 .overseer-count-state { margin: 0; padding: var(--space-2) var(--space-3); }
 @container session-head (max-width: 479px) {
   /* The counts keep their words: their icons, chevrons and separating dots go first. */
-  .overseer-proactivity .icon,
   .overseer-count > .icon:first-child,
   .overseer-count .action-menu-text > .icon,
   .overseer-count-sep { display: none; }
-  /* History keeps its clock and its name for AT; the word goes, so Clear stays on screen.
-     A direct child only: "N finished" and "N drafts" in the meta line are their words. */
-  .overseer-head > .button .action-menu-text { display: none; }
+  /* A project overseer's level keeps its icon and its name for AT; the word goes. */
+  .po-head > .button .action-menu-text { display: none; }
+}
+
+/* ---- The Overseer page's head (not a project overseer's .po-head, which also carries
+   .overseer-head), in three tiers of its OWN width, so a narrow desktop pane gets what a
+   phone gets:
+     ≥900     every control on the row; no ⋯
+     660–899  History and Clear leave the row for ⋯ (the Fold's inner screen, upright)
+     <660     the proactivity cycle leaves too; Ideas and Todos go icon-only (overseer-ideas.css)
+   ⋯ lists the same rows at every width: it is in the top layer, outside the head's container.
+   These rules contract, so each container query has a @media floor. ---- */
+/* 44px wide at every width: a flex item may shrink below its width, and the back link did. */
+.overseer-page-head > .app-back,
+.overseer-page-head > .overseer-more { flex: none; }
+.overseer-page-head > .overseer-more { display: none; }
+.overseer-mode-spacer { flex: none; width: 16px; height: 16px; }
+/* The meta line's facts ("181 sessions · 5 working · 2 need you", about 240px) show in full from
+   a 660px head up, so the row gives them the room: below 720 the context readout drops its window
+   (the CONTEXT WINDOW rules, as on every head), and below 900 Ideas and Todos drop their icons (their words
+   say what they are) and the ghost buttons keep 4px of side padding (the head's 12px gap still
+   parts their words). Each tier's floor follows its query and the narrowest tier comes last: a
+   later floor for a wider tier would undo a narrower tier's rule. */
+@container session-head (max-width: 899px) {
+  .overseer-page-head > .overseer-wide { display: none; }
+  .overseer-page-head > .overseer-more { display: inline-flex; }
+  .overseer-page-head > .button-sm.button-ghost { padding: 0 var(--space-1); }
+  .overseer-page-head .overseer-ideas-toggle > .icon,
+  .overseer-page-head .overseer-todos-toggle > .icon { display: none; }
+}
+@media (max-width: 899px) {
+  .overseer-page-head > .overseer-wide { display: none; }
+  .overseer-page-head > .overseer-more { display: inline-flex; }
+  .overseer-page-head > .button-sm.button-ghost { padding: 0 var(--space-1); }
+  .overseer-page-head .overseer-ideas-toggle > .icon,
+  .overseer-page-head .overseer-todos-toggle > .icon { display: none; }
+}
+@container session-head (max-width: 659px) {
+  .overseer-page-head > .overseer-mid { display: none; }
+  .overseer-page-head .overseer-ideas-toggle > .icon,
+  .overseer-page-head .overseer-todos-toggle > .icon { display: inline-block; }
+}
+@media (max-width: 659px) {
+  .overseer-page-head > .overseer-mid { display: none; }
+  .overseer-page-head .overseer-ideas-toggle > .icon,
+  .overseer-page-head .overseer-todos-toggle > .icon { display: inline-block; }
+}
+/* A 320px phone: the context readout stays on the row, so the gaps close past
+   overseer-ideas.css's to 2px (the 44px ghost targets already part their icons) and the side
+   padding to 4px; ⋯ keeps its 8px gap. The title block takes what is left. A media query for
+   the same reason as that one: at these widths the head is the window's width. */
+@media (max-width: 359px) {
+  .overseer-head.overseer-page-head { gap: 2px; padding-inline: var(--space-1); }
+  .overseer-head.overseer-page-head > .overseer-more { margin-left: calc(var(--space-2) - 2px); }
 }
 
 /* The Overseer's empty thread: a live fact, then the absence. */
@@ -5515,6 +5705,42 @@ a.subagent-row { text-decoration: none; }
 .push-device-name { color: var(--color-ink); font-weight: var(--fw-medium); }
 .push-device-fact { font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
 .push-device-error { color: var(--status-error); }
+/* Settings → Accounts (§app.claude-logins): this device's Claude logins, in order. */
+.accounts-logins { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.accounts-login { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
+.accounts-login-text { flex: 1 1 14rem; min-width: 0; display: flex; flex-direction: column; }
+.accounts-login-name { color: var(--color-ink); font-weight: var(--fw-medium); overflow-wrap: anywhere; }
+.accounts-login-fact { font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.accounts-login-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.accounts-login-toggle { gap: var(--space-2); }
+.accounts-login-confirm { flex-basis: 100%; display: flex; flex-direction: column; gap: var(--space-2); }
+/* One block per account (§app.claude-logins/device-order): the account's head (email, plan, how
+   many logins share its quota, Up / Down for the account), then its logins as compact sub-rows
+   divided by hairlines instead of boxes of their own. */
+.accounts-accounts { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.accounts-account { border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); padding: var(--space-2) var(--space-3); }
+.accounts-account-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding-bottom: var(--space-2); }
+.accounts-account-name { color: var(--color-ink); font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
+.accounts-account-logins { list-style: none; margin: 0; padding: 0; }
+.accounts-account-logins .accounts-login { border: 0; border-top: 1px solid var(--color-border); border-radius: 0; background: none; padding: var(--space-2) 0; }
+.accounts-login-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); }
+.accounts-rename { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.accounts-rename .input { flex: 1 1 12rem; min-width: 0; }
+/* The pool (mesh on): the keeper choice, each row's holder + standing chips, its pin, and this
+   device's own login under its own heading. */
+.accounts-keeper { display: flex; flex-direction: column; gap: var(--space-1); margin: 0 0 var(--space-3); }
+.accounts-keeper-field { max-width: 22rem; }
+.accounts-keeper .field-hint { margin: 0; }
+.accounts-login-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.accounts-pin { flex: 0 1 12rem; min-width: 9rem; }
+/* Mesh page: the Claude login a host holds, on its meta line; it opens Settings → Accounts. */
+.mesh-login-link { display: inline-block; max-width: 100%; min-height: var(--tap-min); margin: calc((var(--tap-min) - 1.45em) / -2) 0; padding: 0; border: 0; background: none; color: var(--color-accent); font: inherit; line-height: var(--tap-min); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; cursor: pointer; }
+.mesh-login-link:hover { text-decoration: underline; }
+.mesh-login-link:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.accounts-own-title { margin: var(--space-4) 0 var(--space-2); font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.accounts-flow { display: flex; flex-direction: column; gap: var(--space-3); }
+.accounts-flow-url { margin: 0; display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.accounts-flow-url a { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-caption); }
 .push-kinds { display: flex; flex-direction: column; gap: var(--space-1); }
 .push-kinds .toggle { justify-content: flex-start; align-self: flex-start; width: fit-content; }
 .push-quiet { display: flex; gap: var(--space-3); flex-wrap: wrap; }

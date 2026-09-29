@@ -70,12 +70,12 @@ function owner(): string {
       usageSnapshot: { input: 1000, output: 1000, cacheRead: 0, cacheWrite: 0, byModel: [], source: "snapshot", asOf: T0 + 5 * 60_000 },
     }),
     manifest("m1", "e1", {
-      workerId: "ag_01", backend: "pi", name: "pi-worker", status: "running",
+      workerId: "ag_01", backend: "pi", name: "pi-worker", status: "running", modes: ["spec"],
       spec: { cwd: "/tmp/restored-test", model: "zai/glm-5.3", taskPreview: "go", wake: true },
       ref: { v: 1, backend: "pi", kind: "pi-session-file", locator: piWorkerFile },
     }),
     manifest("m2", "m1", {
-      workerId: "ag_02", backend: "claude-code", name: "cc-worker", status: "waiting",
+      workerId: "ag_02", backend: "claude-code", name: "cc-worker", status: "waiting", modes: [],
       ref: { v: 1, backend: "claude-code", kind: "claude-session-id", locator: claudeId },
       // The live runner's last report: Claude's cost exists only here.
       usageSnapshot: { input: 7, output: 70, cacheRead: 700, cacheWrite: 0, cost: 0.42, byModel: [], source: "snapshot", asOf: T0 + 9 * 60_000 },
@@ -103,6 +103,13 @@ test("an unhosted session lists its active-branch workers, restored or ended, no
   assert.equal(workers.get("ag_02")!.interruptedAt, undefined, "idle at the restart: nothing was cut off");
   assert.equal(workers.get("ag_04")!.status, "done", "an ended worker keeps its ending");
   for (const w of workers.values()) assert.equal(w.resumable, undefined, "nothing can be resumed without a runtime");
+});
+
+test("a restored worker shows the modes its record names; none, or an older record, shows none", async () => {
+  const workers = byId((await getSessionInsight(owner())).workers);
+  assert.deepEqual(workers.get("ag_01")!.modes, ["spec"]);
+  assert.ok(!("modes" in workers.get("ag_02")!), "given none: no field");
+  assert.ok(!("modes" in workers.get("ag_04")!), "an older pi-config's record: no field");
 });
 
 test("usage comes from each transcript through the protocol; a snapshot says as of when; unreadable is not 0", async () => {
@@ -133,6 +140,31 @@ test("usage comes from each transcript through the protocol; a snapshot says as 
   const ccRow = subagentRows.find((m) => m.model === cc.model)!;
   assert.equal(ccRow.asOf, T0 + 9 * 60_000, "a row holding a snapshot cost says as of when");
   assert.equal(subagentRows.find((m) => m.model === pi.model)!.asOf, undefined);
+});
+
+test("restored turns come from the transcript or the snapshot; started is the transcript's start, else the first record", async () => {
+  const workers = byId((await getSessionInsight(owner())).workers);
+  assert.equal(workers.get("ag_01")!.turns, 1, "one assistant reply in its pi transcript");
+  assert.equal(workers.get("ag_02")!.turns, 1, "one Claude message, however many lines carry it");
+  assert.ok(!("turns" in workers.get("ag_03")!), "unreadable and unreported: unknown, never 0");
+  assert.ok(!("turns" in workers.get("ag_04")!), "a snapshot that never counted turns says nothing");
+  assert.equal(workers.get("ag_01")!.startedAt, T0 + 60_000, "the pi transcript's header time");
+
+  // No transcript: the FIRST record's time is its spawn; the newest record's is only its last word.
+  const path = canonicalPath(join(sessionsDir, "2026-09-24T11-00-00-000Z_owner-first.jsonl"));
+  writeFileSync(path, jsonl(
+    { type: "session", version: 3, id: "owner-first", timestamp: iso(0), cwd: "/tmp/restored-test" },
+    { type: "message", id: "e1", parentId: null, timestamp: iso(0), message: { role: "user", content: [{ type: "text", text: "hi" }] } },
+    manifest("f1", "e1", { workerId: "ag_07", backend: "future-backend", name: "later", status: "running", at: T0 + 60_000 }),
+    manifest("f2", "f1", {
+      workerId: "ag_07", backend: "future-backend", status: "waiting", at: T0 + 30 * 60_000,
+      usageSnapshot: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, turns: 3, byModel: [], source: "snapshot", asOf: T0 + 30 * 60_000 },
+    }),
+  ));
+  const later = byId((await getSessionInsight(path)).workers).get("ag_07")!;
+  assert.equal(later.startedAt, T0 + 60_000);
+  assert.equal(later.lastActivity, T0 + 30 * 60_000);
+  assert.equal(later.turns, 3, "the snapshot's count");
 });
 
 test("the lifetime Σ covers every branch and every readable worker, and names the snapshot time", async () => {

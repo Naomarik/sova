@@ -451,9 +451,23 @@ export function SubagentPane(props: {
                   <Icon name="chevron-left" />
                 </button>
                 <div class="subagents-view-id">
-                  <h3 class="subagents-view-title" title={label(w())}>
-                    {label(w())}
-                  </h3>
+                  {/* The id sits beside the name, quieter: it names the worker too, and it
+                      leaves the meta line to the facts about its run. */}
+                  <div class="subagents-view-name">
+                    <h3 class="subagents-view-title" title={label(w())}>
+                      {label(w())}
+                    </h3>
+                    <span class="subagents-view-wid text-mono text-muted">{w().id}</span>
+                  </div>
+                  {/* The minor modes it was given at its start (spec): a quiet chip right before the
+                      status chip, so the meta line keeps to one row. */}
+                  <Show when={w().modes?.length ? w().modes : undefined}>
+                    {(m) => (
+                      <span class="chip chip-count" title="The modes this worker was given when it started.">
+                        {m().join(", ")}
+                      </span>
+                    )}
+                  </Show>
                   <StatusChip worker={w()} liveSource={liveSource()} />
                   <Show when={teamOf(w())}>
                     {(t) => (
@@ -470,24 +484,15 @@ export function SubagentPane(props: {
                     )}
                   </For>
                   <p class="subagents-view-meta meta-line">
-                    <span class="text-mono">{w().id}</span>
-                    {/* The provider leads: the route that
-                        serves the model — never the part that clips. `claude code` for that
-                        backend, a pi ref's prefix or a catalog lookup otherwise. */}
-                    <Show when={w().provider}>
-                      {(p) => (
-                        <span>
-                          <MetaSep />
-                          {p()}
-                        </span>
-                      )}
-                    </Show>
+                    {/* The model leads, bare: the route that serves it (`claude code` for that
+                        backend, a pi ref's prefix or a catalog lookup otherwise) and the full id
+                        are in its title. It is the only part that clips. */}
                     <Show when={compactModel(w().model)}>
                       {(m) => (
-                        <span class="text-mono meta-line-shrink" title={w().model ?? undefined}>
-                          <Show when={w().provider}>
-                            <MetaSep />
-                          </Show>
+                        <span
+                          class="text-mono meta-line-shrink"
+                          title={[w().provider, w().model].filter(Boolean).join(" · ") || undefined}
+                        >
                           {m()}
                         </span>
                       )}
@@ -497,9 +502,9 @@ export function SubagentPane(props: {
                         that changes under the reader. */}
                     <Show when={w().effort}>
                       {(e) => (
-                        <span>
+                        <span class="text-mono" title={`effort ${e()}`}>
                           <MetaSep />
-                          effort <span class="text-mono">{e()}</span>
+                          {e()}
                         </span>
                       )}
                     </Show>
@@ -517,16 +522,15 @@ export function SubagentPane(props: {
                       {(u) => (
                         <span class="text-mono" title={usageTitle(u())}>
                           <MetaSep />
-                          {formatTokens(usageHeadline(u()))} tokens
+                          {formatTokens(usageHeadline(u()))} tok
                         </span>
                       )}
                     </Show>
-                    {/* How full its own context is, as the chat head says it — the gauge trails
-                        the facts that name the worker and what it has spent. */}
+                    {/* How full its own context is, as the chat head says it — pushed to the
+                        line's right edge, under the status chip, so it takes no dot. */}
                     <Show when={contextOf(w())}>
                       {(c) => (
-                        <span>
-                          <MetaSep />
+                        <span class="subagents-view-context">
                           <ContextReadout state={c()} />
                         </span>
                       )}

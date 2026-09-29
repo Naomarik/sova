@@ -21,6 +21,8 @@
  * WS   /ws/h?token=<token>           ShareServerMessage stream (hello, view, streaming)
  */
 
+import type { LinkWarningCode, ShareState } from "./public-links";
+
 /** `customType` of the marker a baton session's file carries (data `BatonMarkerData`). */
 export const BATON_ENTRY = "sova-baton";
 /** Beside every user message: who sent it (data `BatonSentData`). */
@@ -185,6 +187,19 @@ export interface WrapupInfo {
 }
 
 /** A row of `baton.json` in the org's workspace repo. */
+/** What a gathering session can do beyond talking (§app.baton/abilities): draw the share page's
+    drawings, and open links someone wrote in the conversation (`read_link`). */
+export interface GatheringAbilities {
+  draw: boolean;
+  readLinks: boolean;
+}
+
+/** Automatic: what a project with no setting gives its gathering sessions. */
+export const AUTOMATIC_ABILITIES: GatheringAbilities = { draw: true, readLinks: false };
+
+/** A session with no `abilities` on its row (started before them) has neither. */
+export const abilitiesOf = (row: Pick<BatonSession, "abilities">): GatheringAbilities => ({ draw: row.abilities?.draw === true, readLinks: row.abilities?.readLinks === true });
+
 export interface BatonSession {
   sessionId: string;
   /** Relative to the workspace repo: "sessions/<file>.jsonl". */
@@ -208,6 +223,8 @@ export interface BatonSession {
   budget: { messagesMax: number; messagesUsed: number };
   model?: string;
   thinking?: string;
+  /** Fixed at start, changed only by the operator from the strip; absent: neither. */
+  abilities?: GatheringAbilities;
   createdAt: string;
   closedAt?: string;
   /** The operator hid it from the org owner's page (§app.owner-page/chats). Absent: shown. */
@@ -241,6 +258,8 @@ export interface BatonStartInput {
   thinking?: string;
   /** This session's message limit (MESSAGES_MIN..MESSAGES_CAP); default: Settings' default. */
   messagesMax?: number;
+  /** Over the project's set (§app.baton/abilities); what it leaves out comes from the project. */
+  abilities?: Partial<GatheringAbilities>;
 }
 
 /** GET/PUT /api/baton/settings — the host's defaults for new baton sessions. */
@@ -265,9 +284,11 @@ export interface BatonStartResult {
   link?: string;
   /** One link per invitee when started as an offer. Shown once. */
   links?: OfferLink[];
-  /** Set when a link was minted but no share listener is known on this host: the link is only a
-      path, and nobody outside can open it until one is configured. Say so to the operator. */
+  /** Set when a minted link may not open from outside (no public address, one not verified, a
+      gateway that didn't confirm it): the text to show the operator (§design.copy-deck/public-links). */
   linkWarning?: string;
+  /** Which of those it is. */
+  linkWarningCode?: LinkWarningCode;
 }
 
 /** An offer as the operator's strip shows it. */
@@ -309,8 +330,9 @@ export interface BatonInfo {
   /** personId → when their newest live link of the current hand-off (or open offer) was minted (ISO):
       a strip still showing an older one says "Replaced by a newer link." */
   linkAt: Record<string, string>;
-  /** Whether a share listener is bound on this host, and where (for building a full URL). */
-  share: { bound: boolean; publicUrl: string | null };
+  /** Whether a share listener is bound on this host, and the effective public address (for
+      building a full URL); `state`: where links point and whether they open from outside. */
+  share: { bound: boolean; publicUrl: string | null; state?: ShareState };
   /** The current offer, else the last one; null when none was ever made. */
   offer: OfferInfo | null;
   proposed: ProposedPerson[];

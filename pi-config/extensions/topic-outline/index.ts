@@ -7,7 +7,7 @@
  * message when selected.
  *
  * Summaries are produced by a configurable chain (see ~/.pi/agent/topic-outline.json):
- * Claude Code CLI (haiku) → Pi model registry fallback (ollama-cloud/deepseek-v4.1-flash).
+ * Pi model registry (ollama-cloud/deepseek-v4.1-flash) → Claude Code CLI fallback (sonnet).
  * Every layer degrades gracefully: missing models, limits, and failures leave the
  * last good outline in place, marked stale, and never block the session.
  */

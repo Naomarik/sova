@@ -14,6 +14,7 @@ import { MEMBER_ENV, awaitResponse, decodeMemberContext, requestId, writeRequest
 import { BACKEND_REGISTER_EVENT } from "./contracts.ts";
 import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
 import { resolvedModel } from "./worker-transcript.ts";
+import { MODE_WORKER_EVENT } from "../mode/events.ts";
 
 const SNAPSHOT = "subagents:workers-snapshot";
 const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");
@@ -152,6 +153,14 @@ test("restart: every recorded worker comes back restored, with snapshot usage, s
 		assert.equal(w.usageSource, "snapshot"); assert.equal(typeof w.usageAsOf, "number");
 	}
 	assert.deepEqual([byId.ag_01.usage.input, byId.ag_02.usage.input, byId.ag_03.usage.input], [100, 40, 7]);
+	// Turns (model replies) ride top-level beside usage, from the same snapshot.
+	assert.deepEqual([byId.ag_01.turns, byId.ag_02.turns, byId.ag_03.turns], [1, 1, 1]);
+	// No transcript: started is the FIRST record's time (the spawn), never the newest record's.
+	for (const id of ["ag_01", "ag_02", "ag_03"]) {
+		const ats = file.entries.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.workerId === id).map((e) => e.data.at);
+		assert.ok(Math.max(...ats) > ats[0], `${id}: its records span time, so the two readings differ`);
+		assert.equal(byId[id].startedAt, ats[0], `${id} started at its spawn record`);
+	}
 	// Σ: each worker once; ag_02's unsettled in-flight turn was never snapshotted.
 	assert.deepEqual([m.snapshot().workerUsage.input, m.snapshot().workerUsage.workers, m.snapshot().workerUsage.restored], [147, 3, 3]);
 	// The Σ is true as of its stalest snapshot.
@@ -193,7 +202,9 @@ test("resume: idle in its own session, no prompt, no completion; usage kept as a
 	const out = await m.call("agent_resume", { id: "ag_02" });
 	assert.match(out.content[0].text, /Resumed ag_02 .* idle .*nothing was sent/);
 	const runner = m.workers.at(-1);
-	assert.deepEqual(runner.resume, { sessionFile: "/nowhere/busy.jsonl", sessionId: "busy" }, "pi reopens its own session file");
+	const spawnedAt = file.entries.find((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.workerId === "ag_02")!.data.at;
+	assert.deepEqual(runner.resume, { sessionFile: "/nowhere/busy.jsonl", sessionId: "busy", startedAt: spawnedAt },
+		"pi reopens its own session file, and keeps its first spawn as its start");
 	assert.equal(runner.id, "ag_02"); assert.equal(runner.groupId, "run_01");
 	assert.equal(runner.status, "waiting");
 	assert.equal(m.messages.length, 0, "no completion, no wake");
@@ -257,6 +268,8 @@ test("a claude-code worker resumes by session id through its backend; not loaded
 	m.start();
 	await until(() => (m.snapshot()?.workers ?? []).length === 1, "restored claude worker");
 	assert.equal(m.snapshot().workers[0].resumable, false, "claude-code is not loaded in this manager");
+	const restoredStart = m.snapshot().workers[0].startedAt;
+	assert.equal(typeof restoredStart, "number");
 	await assert.rejects(m.call("agent_resume", { id: "ag_04" }), /backend claude-code is not loaded/);
 	// Load a claude-code backend: the resume goes through its own create(), with the resume id.
 	const created: any[] = [];
@@ -278,7 +291,7 @@ test("a claude-code worker resumes by session id through its backend; not loaded
 		},
 	});
 	await m.call("agent_resume", { id: "ag_04" });
-	assert.deepEqual(created[0].resume, { sessionId: id });
+	assert.deepEqual(created[0].resume, { sessionId: id, startedAt: restoredStart }, "the restored entry's start travels with the resume");
 	assert.deepEqual([created[0].model, created[0].systemPrompt, created[0].permissionMode], ["sonnet", "be terse", "acceptEdits"]);
 	await m.shutdown();
 });
@@ -473,4 +486,37 @@ test("resume: the worktree gate applies again — refused once the worker's work
 	} finally {
 		fs.rmSync(root, { recursive: true, force: true });
 	}
+});
+
+test("resume: a worker takes the parent's CURRENT worker modes, not its first start's; restored ones show what they were given", async () => {
+	const BLOCK = "# Minor mode: spec (worker form, test)";
+	const file = sessionFile();
+	const first = manager(file);
+	first.start();
+	first.bus.emit(MODE_WORKER_EVENT, { version: 1, minorModes: ["spec"], prompt: BLOCK });
+	await first.call("agent_spawn", { agents: [{ prompt: "one", name: "a", systemPrompt: "BRIEF" }, { prompt: "two", name: "b", systemPrompt: "BRIEF" }] });
+	for (const [i, w] of first.workers.entries()) { w.identify(`/nowhere/m${i}.jsonl`); }
+	await new Promise((r) => setTimeout(r, 150));
+	for (const w of first.workers) w.settle();
+	assert.equal(first.workers[0].systemPrompt, `BRIEF\n\n${BLOCK}`);
+
+	const m = manager(file);
+	m.start();
+	await until(() => (m.snapshot()?.workers ?? []).length === 2, "restored workers");
+	assert.deepEqual(m.snapshot().workers.map((w: any) => w.modes), [["spec"], ["spec"]], "a restored worker shows the modes its record names");
+	// The parent turned spec off since: a resume gives none.
+	m.bus.emit(MODE_WORKER_EVENT, { version: 1, minorModes: [] });
+	await m.call("agent_resume", { id: "ag_01" });
+	assert.equal(m.workers.at(-1).systemPrompt, "BRIEF", "no block: the raw brief, re-applied");
+	const recordsOf = (id: string) => file.entries.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.workerId === id).map((e) => e.data);
+	assert.deepEqual(recordsOf("ag_01").find((r) => r.resumedAt)?.modes, [], "the resume records what it gave: none");
+	await until(() => m.snapshot().workers.find((w: any) => w.id === "ag_01")?.status === "waiting", "resumed snapshot");
+	assert.ok(!("modes" in m.snapshot().workers.find((w: any) => w.id === "ag_01")), "given none now: no field");
+	// And back on: the next resume carries the block once, after the brief.
+	m.bus.emit(MODE_WORKER_EVENT, { version: 1, minorModes: ["spec"], prompt: BLOCK });
+	await m.call("agent_resume", { id: "ag_02" });
+	assert.equal(m.workers.at(-1).systemPrompt, `BRIEF\n\n${BLOCK}`);
+	assert.deepEqual(recordsOf("ag_02").find((r) => r.resumedAt)?.modes, ["spec"]);
+	await m.shutdown();
+	await first.shutdown();
 });

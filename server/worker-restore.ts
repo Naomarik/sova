@@ -11,6 +11,7 @@ import { stat } from "node:fs/promises";
 import type { TokenUsage, TokenUsageTotal, WorkerInfo, WorkerStatus } from "../shared/protocol";
 import {
   type FoldedWorkerManifest,
+  manifestModes,
   readWorkerManifests,
   resolvedModel,
   resolveWorkerUsage,
@@ -148,10 +149,15 @@ function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | 
   if (provider) w.provider = provider;
   const effort = m.spec?.effort ?? summary?.effort;
   if (effort) w.effort = effort;
+  // The modes its newest start gave it; a record of an older pi-config says nothing.
+  const modes = manifestModes(m);
+  if (modes?.length) w.modes = modes;
   if (m.ref?.kind === "pi-session-file") w.sessionFile = m.ref.locator;
   const sessionId = m.ref?.kind === "claude-session-id" ? m.ref.locator : m.ref?.sessionId;
   if (sessionId) w.sessionId = sessionId;
-  if (summary?.startedAt !== undefined) w.startedAt = summary.startedAt;
+  // Its first spawn: the transcript's start, else its first record's time (the extension's rule).
+  const started = summary?.startedAt ?? m.firstAt;
+  if (started !== undefined) w.startedAt = started;
   const last = summary?.lastActivityAt ?? m.at;
   if (last) w.lastActivity = last;
   if (m.endedAt !== undefined) w.endedAt = m.endedAt;
@@ -164,6 +170,8 @@ function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | 
     w.usageSource = usage.source;
     w.usage = tokens(usage);
     if (snapshotAt !== undefined) w.usageAsOf = snapshotAt;
+    // Model replies, when its transcript or snapshot counted them; an older record says nothing.
+    if (typeof usage.turns === "number") w.turns = usage.turns;
   }
   // The extension's rule, so a hosted and an unhosted view agree: a worker that was idle when its
   // host went away is merely restored; one that was running (or lost, or never reported a status)

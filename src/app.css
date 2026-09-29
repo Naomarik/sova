@@ -54,9 +54,7 @@ html, body, #root { height: 100%; }
 }
 .entry:empty { display: none; }
 .entry:focus-within,
-.entry[data-actions-revealed],
-/* A row in the view that the transcript draws now, not a frame later (Thread `drawInView`). */
-.entry[data-in-view] { content-visibility: visible; contain: layout paint style; }
+.entry[data-actions-revealed] { content-visibility: visible; contain: layout paint style; }
 /* What a row's estimate needs from the width (lib/tail-render `rowEstimate`): a body line's height,
    and the characters a message line holds, which the transcript measures (`--entry-cols-measured`,
    Thread) and a fixed count stands in for before it has. Image tiles fold to half as many a row
@@ -297,11 +295,9 @@ html, body, #root { height: 100%; }
 }
 .workspace-pane-head > .chip { flex-shrink: 1; min-width: 0; overflow: hidden; }
 .workspace-pane-tools { flex: none; display: flex; align-items: center; gap: var(--space-1); }
-/* A pane is never a 720px head: the gauge takes its percent-only step here at
-   every width (base.css does the same under 900px for the session head). */
-.workspace-pane-head .context-label,
-.workspace-pane-head .context-value { display: none; }
-.workspace-pane-head .context-pct { display: inline; }
+/* A pane is never a 720px head: the context readout keeps its short step
+   (ring and "222k", no window) at every width, as under 720px in base.css. */
+.workspace-pane-head .context-of { display: none; }
 
 /* The Promoted chip: an undo for the gesture, sitting in the head beside the
    layout toggle until it is used or the tab forgets it. */
@@ -452,6 +448,22 @@ html, body, #root { height: 100%; }
 .org-label .org-link:hover,
 .org-label .org-link:focus-visible { color: var(--color-ink); }
 .org-label .org-link .icon { width: 16px; height: 16px; }
+/* A section head's Name sessions button (§app.session-list/auto-titles): quiet like a group's `⋯`,
+   muted until hovered or focused, with the full 44px target and a 16px glyph. At the end of a
+   region head it hangs into the head's right padding, like Groups' `+`; on a group's head it sits
+   before the `⋯`, which already takes that place. Present only while there is something to name. */
+.name-sessions {
+  flex: none;
+  color: var(--color-ink-muted);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.name-sessions .icon { width: 16px; height: 16px; }
+.name-sessions:hover,
+.name-sessions:focus-visible { color: var(--color-ink); }
+.sidebar-region-head > .name-sessions {
+  margin-left: auto;
+  margin-right: calc(var(--space-4) * -1 + var(--space-1));
+}
 /* Projects: sticky labels, not sections — one level of sticking inside the pane. */
 .org-project {
   padding-left: calc(var(--space-1) / 2);
@@ -526,6 +538,50 @@ html, body, #root { height: 100%; }
 .settings-field { max-width: 22rem; }
 .input-num { width: 7.5rem; font-variant-numeric: tabular-nums; }
 
+/* Settings → Public links (PublicLinksSettings). The Address row is one line that wraps: the
+   address, its state chip, its source. Front and Local port sit side by side where they fit. */
+.public-links-address { display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-3); margin: 0; align-items: baseline; }
+.public-links-address dt { font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-ink-2); }
+.public-links-address dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
+.public-links-url { overflow-wrap: anywhere; color: var(--color-ink); }
+.public-links-source { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* Radios, drawn round as in Themes' size choice (base.css: .toggle-radio is not ported); the row is the target. */
+.public-links-route { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.public-links-route > legend { padding: 0; margin-bottom: var(--space-1); }
+.public-links-choice { justify-content: flex-start; align-items: flex-start; gap: var(--space-3); min-height: var(--tap-min); padding: var(--space-2) 0; }
+.public-links-choice .toggle-box { border-radius: var(--r-full); flex: none; margin-top: 2px; order: -1; }
+.public-links-choice input:checked ~ .toggle-box { box-shadow: inset 0 0 0 3px var(--color-surface); }
+.public-links-choice-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.public-links-choice-name { color: var(--color-ink); }
+.public-links-choice-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.public-links-gateway { gap: var(--space-4); }
+.public-links-row { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.public-links-row .settings-field { flex: 1 1 12rem; }
+.public-links-port { max-width: 9rem; }
+.public-links-front { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-lg); background: var(--color-bg); min-width: 0; }
+.public-links-front-title { margin: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.public-links-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-3); }
+.public-links-step { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.public-links-step-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.public-links-step-label { font-weight: var(--fw-medium); color: var(--color-ink); margin-right: auto; }
+.public-links-step-text { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--r-sm); background: var(--color-sunken); font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-ink); }
+/* Folded, the rail is a horizontal strip: "Public links" stays one line like the one-word tabs. */
+@media (max-width: 767px) { .settings-tab { white-space: nowrap; } }
+.public-links-accept { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.public-links-accept > legend { padding: 0; margin-bottom: var(--space-1); }
+.public-links-accept-modes { display: flex; flex-wrap: wrap; column-gap: var(--space-5); }
+.public-links-accept-list { margin: 0; padding: 0 0 0 var(--space-3); list-style: none; }
+.public-links-check { justify-content: flex-start; gap: var(--space-3); }
+.public-links-check .toggle-box { order: -1; flex: none; }
+/* A tick, not just a filled square (never hue alone), as base.css draws .session-select's. */
+.public-links-check .toggle-box { position: relative; }
+.public-links-check input:checked ~ .toggle-box::after { content: ""; position: absolute; left: 5px; top: 1px; width: 4px; height: 9px; border: solid var(--color-on-accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.public-links-routed { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.public-links-routed-list { margin: 0; padding: 0; }
+.public-links-routed-row { display: flex; align-items: center; gap: var(--space-3); }
+.public-links-routed-row .list-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.public-links-verify { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+
 /* Session details → Repository (SessionDetails RepositorySection). The changed-path list is
    bounded and scrolls inside itself, so a repository with thousands of changes never stretches
    the panel; each row keeps its path and its line counts on one baseline. */
@@ -550,8 +606,30 @@ html, body, #root { height: 100%; }
 .git-skeleton > .skeleton-line:first-child { width: 60%; }
 .git-skeleton > .skeleton-line:last-child { width: 30%; margin-bottom: 0; }
 
-/* §chat.worktrees/pane: a tracked worktree's status and what runs there, wrapping as one group. */
-.worktree-row { align-items: flex-start; }
+/* The folder's uncommitted changes, named, with the viewer's control at the end of the line; the
+   control wraps below the text when both don't fit. */
+.git-review {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding-top: var(--space-2);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.git-review-text { flex: 1 1 12rem; min-width: 0; }
+.git-review-text p { margin: 0; }
+.git-review-title { color: var(--color-ink); font-weight: var(--fw-medium); }
+
+/* §chat.worktrees/pane: a tracked worktree's status and what runs there, wrapping as one group.
+   Review Changes sits at the row's end, or wraps below the chips on a narrow pane. */
+.worktree-row { align-items: flex-start; flex-wrap: wrap; row-gap: var(--space-2); }
+.worktree-row > .list-main { flex: 1 1 18rem; }
+.worktree-row-action,
+.git-review-action { flex: none; }
+@media (pointer: coarse) {
+  .worktree-row-action,
+  .git-review-action { min-height: var(--tap-min); }
+}
 .worktree-row .list-title { font-weight: var(--fw-medium); }
 .worktree-facts {
   display: flex;

@@ -1,12 +1,11 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { BatchRefusal, SessionSummary } from "../../shared/protocol";
 import { promptSessionGroup } from "../lib/api";
+import { createTouchMode, enterSends } from "../lib/input-mode";
 import { composerPlaceholder, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone, type Targets } from "../lib/group-prompt";
 import { announce, toast } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
-
-/** Below this the placeholder drops its key hint: the keys aren't there to press. */
-const FOLDED = "(max-width: 767px)";
+import { createVoiceInput, VoiceButton, VoiceStrip } from "./VoiceInput";
 
 /**
  * The workspace's one composer, writing to every member at once.
@@ -56,8 +55,10 @@ export function GroupComposer(props: {
   const [partial, setPartial] = createSignal<{ failed: BatchRefusal[]; sent: number; text: string } | null>(null);
   /** Whether the caret is in this box. Half of "in use"; the other half is holding text. */
   const [focused, setFocused] = createSignal(false);
-  const [folded, setFolded] = createSignal(window.matchMedia(FOLDED).matches);
-  window.matchMedia(FOLDED).addEventListener("change", (e) => setFolded(e.matches));
+  /** Tapped, Enter adds a line and Send to All sends; the placeholder drops its key hint. */
+  const { touch, onPointerDown } = createTouchMode();
+  /** The same mic as a pane composer's (§chat.voice/button); its text lands in this box. */
+  const voice = createVoiceInput({ input: () => input, announce });
 
   /**
    * "In use" is focused OR holding text, derived in ONE place. It used to be pushed
@@ -66,7 +67,7 @@ export function GroupComposer(props: {
    * collapsed again on the next keystroke. A rule with three call sites is three chances to state
    * it differently.
    */
-  createEffect(() => props.onActive(focused() || !!text()));
+  createEffect(() => props.onActive(focused() || !!text() || voice.phase() !== "idle"));
 
   const targets = createMemo<Targets>(() => withGone(targetsOf(props.members), props.gone ?? []));
   /** The group's size, not the list's: a gone member is a member until it is removed. */
@@ -216,7 +217,9 @@ export function GroupComposer(props: {
           )}
         </Show>
 
+        <VoiceStrip voice={voice} />
         <div class="composer-row">
+          <VoiceButton voice={voice} />
           <label class="visually-hidden" for="group-composer-input">
             Message every member
           </label>
@@ -225,13 +228,15 @@ export function GroupComposer(props: {
             class="input textarea composer-input"
             id="group-composer-input"
             rows={1}
-            placeholder={composerPlaceholder(totalMembers(), folded())}
+            placeholder={composerPlaceholder(totalMembers(), !touch())}
+            enterkeyhint={touch() ? "enter" : "send"}
             aria-describedby="group-composer-reason"
             onInput={(e) => edit(e.currentTarget.value)}
+            onPointerDown={onPointerDown}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+              if (enterSends(e, touch())) {
                 e.preventDefault();
                 void send();
               }

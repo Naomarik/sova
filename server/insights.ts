@@ -14,7 +14,6 @@ import type {
   SessionInsight,
   SessionOutline,
   SessionSkills,
-  SessionSummary,
   SessionUsage,
   SpendOrigin,
   TeamDuty,
@@ -23,6 +22,10 @@ import type {
   TeamMember,
   TokenUsage,
   TokenUsageTotal,
+  ClaudeLoginRow,
+  ClaudePoolInfo,
+  ClaudePoolLogin,
+  UsageClaudeLogin,
   UsageInsight,
   UsageBalance,
   UsageProvider,
@@ -34,7 +37,8 @@ import type { LinkedAgentInfo } from "../shared/mesh-links";
 // The usage-status extension's fetch/cache core. Part of the sanctioned pi-config import
 // surface (node builtins only, like extensions/mode/state.ts) — see CLAUDE.md.
 import { forceRefresh } from "../pi-config/extensions/usage-status/fetch.ts";
-import { readAuthStatus } from "./auth-status";
+import { readAuthStatus, readClaudeLoginAuth } from "./auth-status";
+import { ClaudeAccountsService } from "./claude-accounts";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
 import { readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
 import { modelProvider, sharedWorkerWindowResolver } from "./models";
@@ -61,6 +65,9 @@ type Rec = Record<string, any>;
 
 const isRec = (v: unknown): v is Rec => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+/** A worker's `modes` (sessions schema WorkerEntry): short lower-case names, else nothing at all. */
+const workerModesOf = (v: unknown): string[] | undefined =>
+  Array.isArray(v) && v.length > 0 && v.length <= 8 && v.every((m) => typeof m === "string" && m.length <= 32 && /^[a-z][a-z0-9-]*$/.test(m)) ? [...v] : undefined;
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 const count = (v: unknown): number => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0);
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
@@ -73,10 +80,19 @@ const USAGE_FILE = join(getAgentDir(), "cache", "usage-status.json");
     older than this means none of them is (the poller is failing or off, and no TUI is open). */
 const USAGE_STALE_MS = 10 * 60_000;
 
-let usageCache: { mtimeMs: number; size: number; data: Omit<UsageInsight, "stale">; absent: UsageProvider["id"][] } | null = null;
+/** One added Claude login's reading from the cache's `claudeAccounts`. */
+interface ClaudeAccountReading {
+  usage: UsageProvider;
+  fetchedAt?: number;
+  skipped?: "auth";
+}
+type ParsedUsage = { data: Omit<UsageInsight, "stale">; absent: UsageProvider["id"][]; claudeAccounts?: Record<string, ClaudeAccountReading> };
+
+let usageCache: ({ mtimeMs: number; size: number } & ParsedUsage) | null = null;
 
 const USAGE_PROVIDERS = ["claude", "openai", "ollama", "zai", "deepseek"] as const satisfies readonly UsageProvider["id"][];
-const USAGE_META_KEYS = new Set(["schemaVersion", "fetchedAt", "nextFetchAt", "errors"]);
+const USAGE_META_KEYS = new Set(["schemaVersion", "fetchedAt", "nextFetchAt", "errors", "claudeAccounts"]);
+const LOGIN_ID = /^l-[0-9a-f]{8}$/;
 
 /** Cache shapes we don't recognize are logged once per process, not on every poll. */
 const warned = new Set<string>();
@@ -207,7 +223,26 @@ function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): 
  * session rewriting the file from a pre-deepseek extension it still holds in memory (schemaVersion
  * 2), not of a provider the current extension has nothing to say about — which always writes a key.
  */
-function parseUsage(text: string): { data: Omit<UsageInsight, "stale">; absent: UsageProvider["id"][] } | null {
+/** `claudeAccounts` (usage-status fetch.ts ClaudeAccountUsage by login id), each entry read like the claude provider; anything unreadable is skipped. */
+function parseClaudeAccounts(v: unknown): Record<string, ClaudeAccountReading> | undefined {
+  if (!isRec(v)) return undefined;
+  const out: Record<string, ClaudeAccountReading> = {};
+  for (const [id, a] of Object.entries(v)) {
+    if (!LOGIN_ID.test(id) || !isRec(a)) {
+      warnOnce("shape:claudeAccounts", `usage-status.json: skipped unrecognized claudeAccounts entry`);
+      continue;
+    }
+    const fetchedAt = num(a.fetchedAt);
+    out[id] = {
+      usage: a.data === undefined ? { id: "claude", state: "error", windows: [], error: str(a.error) ?? "not read yet" } : usageProvider("claude", a.data, a.error),
+      ...(fetchedAt !== undefined ? { fetchedAt } : {}),
+      ...(a.skipped === "auth" ? { skipped: "auth" as const } : {}),
+    };
+  }
+  return out;
+}
+
+function parseUsage(text: string): ParsedUsage | null {
   let v: unknown;
   try {
     v = JSON.parse(text);
@@ -230,7 +265,105 @@ function parseUsage(text: string): { data: Omit<UsageInsight, "stale">; absent: 
       providers: USAGE_PROVIDERS.map((id) => usageProvider(id, v[id], errors[id])),
     },
     absent: USAGE_PROVIDERS.filter((id) => v[id] === undefined),
+    ...(v.claudeAccounts !== undefined ? { claudeAccounts: parseClaudeAccounts(v.claudeAccounts) } : {}),
   };
+}
+
+/**
+ * The Usage page's Claude logins: every login on this host (its order), with its identity, its
+ * standing and whether a new chat would run on it; `default`'s reading is the provider card's
+ * (`claude`), an added login's is its `claudeAccounts` entry. A login the cache has no entry for
+ * yet reads "not read yet". While the pool is on (`pool`), every login of the pool comes first, in
+ * the pool's order, each with where it is; one held elsewhere (or kept free) reads the figures its
+ * holder published, or "not read yet". The page folds them into one card per account.
+ */
+export function claudeLoginCards(
+  rows: ClaudeLoginRow[],
+  inUse: string,
+  own: UsageProvider,
+  ownFetchedAt: number | null,
+  accounts: Record<string, ClaudeAccountReading> | undefined,
+  auth: Record<string, UsageProvider["auth"]>,
+  pool?: ClaudePoolInfo,
+): UsageClaudeLogin[] {
+  const here = rows.map((r): UsageClaudeLogin => {
+    const reading = r.id === "default" ? { usage: own, ...(ownFetchedAt !== null ? { fetchedAt: ownFetchedAt } : {}) } : accounts?.[r.id];
+    let usage: UsageProvider = reading?.usage ?? { id: "claude", state: "error", windows: [], error: "not read yet" };
+    const a = r.id === "default" ? undefined : auth[r.id];
+    if (a) usage = { ...usage, auth: a };
+    const i = r.identity;
+    return {
+      id: r.id,
+      ...(r.label ? { label: r.label } : {}),
+      ...(i?.email ? { email: i.email } : {}),
+      ...(i?.accountUuid ? { accountUuid: i.accountUuid } : {}),
+      ...(i?.orgName ? { orgName: i.orgName } : {}),
+      ...(i?.planLabel ? { planLabel: i.planLabel } : {}),
+      ...(r.addedAt !== undefined ? { addedAt: r.addedAt } : {}),
+      enabled: r.enabled,
+      signedIn: r.signedIn,
+      standing: r.standing,
+      inUse: r.id === inUse,
+      usage,
+      ...(reading?.fetchedAt !== undefined ? { fetchedAt: reading.fetchedAt } : {}),
+    };
+  });
+  if (!pool) return here;
+  const pooled = pool.logins.map((l): UsageClaudeLogin => {
+    const holder = { label: l.holder.label, self: l.holder.device === pool.self && !l.holder.free, free: l.holder.free, stuck: l.holder.stuck };
+    const mine = here.find((c) => c.id === l.id);
+    if (mine) {
+      const { label: _, ...rest } = mine;
+      return { ...rest, ...(l.label ? { label: l.label } : {}), holder };
+    }
+    return { ...poolReading(l), holder };
+  });
+  return [...pooled, ...here.filter((c) => !pool.logins.some((l) => l.id === c.id))];
+}
+
+/** A pool login this device does not use: its identity, the pool's standing and its holder's published figures. */
+function poolReading(l: ClaudePoolLogin): Omit<UsageClaudeLogin, "holder"> {
+  const u = l.usage;
+  const at = (ms: number | undefined) => (ms !== undefined ? { resetsAt: new Date(ms).toISOString() } : {});
+  const windows: UsageWindow[] = [
+    ...(u?.fiveHour !== undefined ? [{ label: "5h", pct: u.fiveHour, ...at(u.fiveHourResetsAt) }] : []),
+    ...(u?.sevenDay !== undefined ? [{ label: "7d", pct: u.sevenDay, ...at(u.sevenDayResetsAt) }] : []),
+  ];
+  const i = l.identity;
+  return {
+    id: l.id,
+    ...(l.label ? { label: l.label } : {}),
+    ...(i?.email ? { email: i.email } : {}),
+    ...(i?.accountUuid ? { accountUuid: i.accountUuid } : {}),
+    ...(i?.orgName ? { orgName: i.orgName } : {}),
+    ...(i?.planLabel ? { planLabel: i.planLabel } : {}),
+    addedAt: l.addedAt,
+    enabled: l.enabled,
+    // Its holder has its credentials; whether they still work is its standing.
+    signedIn: true,
+    standing: l.standing,
+    inUse: false,
+    usage: windows.length ? { id: "claude", state: "ok", windows } : { id: "claude", state: "error", windows: [], error: "not read yet" },
+    ...(windows.length && u ? { fetchedAt: u.at } : {}),
+  };
+}
+
+let claudeAccountsService: ClaudeAccountsService | null = null;
+
+/** This host's Claude logins (and, with the pool on, the pool's), or undefined when the registry can't be listed at all. */
+async function readClaudeLogins(own: UsageProvider, ownFetchedAt: number | null, accounts: Record<string, ClaudeAccountReading> | undefined): Promise<UsageClaudeLogin[] | undefined> {
+  try {
+    claudeAccountsService ??= new ClaudeAccountsService();
+    const service = claudeAccountsService;
+    const info = service.info();
+    const rows = info.logins;
+    const auth: Record<string, UsageProvider["auth"]> = {};
+    for (const r of rows) if (r.id !== "default") auth[r.id] = await readClaudeLoginAuth(service.dirOf(r.id));
+    return claudeLoginCards(rows, service.inUse(), own, ownFetchedAt, accounts, auth, info.pool);
+  } catch (err) {
+    warnOnce("claude-logins", `Claude logins unreadable for the Usage page: ${(err as Error).message}`);
+    return undefined;
+  }
 }
 
 export async function getUsageInsight(): Promise<UsageInsight> {
@@ -249,7 +382,7 @@ export async function getUsageInsight(): Promise<UsageInsight> {
     return unavailable("missing");
   }
   if (!usageCache || usageCache.mtimeMs !== st.mtimeMs || usageCache.size !== st.size) {
-    let parsed: { data: Omit<UsageInsight, "stale">; absent: UsageProvider["id"][] } | null;
+    let parsed: ParsedUsage | null;
     try {
       parsed = parseUsage(await readFile(USAGE_FILE, "utf8"));
     } catch (err) {
@@ -258,16 +391,20 @@ export async function getUsageInsight(): Promise<UsageInsight> {
     if (!parsed) return unavailable("corrupt");
     // Once per new cache file, not per poll: the store skips the write when nothing changed.
     rememberUsage(parsed.data.providers);
-    usageCache = { mtimeMs: st.mtimeMs, size: st.size, data: parsed.data, absent: parsed.absent };
+    // A file without `claudeAccounts` (an older pi rewrote it) keeps the logins' last readings.
+    const claudeAccounts = parsed.claudeAccounts ?? usageCache?.claudeAccounts;
+    usageCache = { mtimeMs: st.mtimeMs, size: st.size, data: parsed.data, absent: parsed.absent, ...(claudeAccounts ? { claudeAccounts } : {}) };
   }
-  const { data: d, absent } = usageCache;
+  const { data: d, absent, claudeAccounts } = usageCache;
   // A key the cache doesn't carry: serve what we last read for it, said plainly. A key that IS
   // there always wins, error and "na" included — that is the extension's own answer.
   const read = absent.length === 0 ? d.providers : d.providers.map((p) => (absent.includes(p.id) ? lastKnown(p) : p));
   // Sign-in facts come from the credential files, per request (memoized there), never from the cache.
   const auth = await readAuthStatus();
   const providers = read.map((p) => (auth[p.id] ? { ...p, auth: auth[p.id] } : p));
-  return { ...d, providers, stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
+  const own = providers.find((p) => p.id === "claude");
+  const claudeLogins = own ? await readClaudeLogins(own, d.fetchedAt, claudeAccounts) : undefined;
+  return { ...d, providers, ...(claudeLogins ? { claudeLogins } : {}), stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
 }
 
 /** Single-flight: concurrent Refresh clicks share one force-fetch. */
@@ -311,7 +448,7 @@ function lastKnown(p: UsageProvider): UsageProvider {
 // Session JSONL facts: teams (subagents-team-v1), last worker reports (subagent-complete),
 // topic-outline snapshot, compactions. One parse per (mtime, size), active branch only.
 
-export const TEAM_ENTRY = "subagents-team-v1";
+const TEAM_ENTRY = "subagents-team-v1";
 /** The durable per-worker records the protocol fold reads (readWorkerManifests). */
 const WORKER_RECORD_TYPES: ReadonlySet<unknown> = new Set([WORKER_MANIFEST_ENTRY_TYPE, LEGACY_REGISTRY_ENTRY_TYPE]);
 /** The explain extension's completion entry; server/transcript.ts turns it into a report row. */
@@ -435,34 +572,6 @@ function addTeamEntry(teams: Map<string, RosterTeam>, data: unknown): void {
     if (!team) return;
     for (const m of valid) if (!team.members.some((x) => x.workerId === m.workerId)) team.members.push(m);
   }
-}
-
-/**
- * The session list's side of teams (SessionSummary.team): a branch's team entries and team events,
- * folded as extractFacts folds them, and the head chip's facts about the first team (the one the
- * head's "Team · N" names while nothing works). Undefined when the branch has no team.
- */
-export function teamChipOf(branch: readonly Rec[]): SessionSummary["team"] {
-  const teams = new Map<string, RosterTeam>();
-  const events: TeamEvent[] = [];
-  for (const e of branch) {
-    if (e.type === "custom" && e.customType === TEAM_ENTRY) addTeamEntry(teams, e.data);
-    else if (e.type === "custom" && e.customType === TEAM_EVENT_TYPE) {
-      const ev = teamEventOf(e);
-      if (ev) events.push(ev);
-    }
-  }
-  const t = teams.values().next().value;
-  if (!t) return undefined;
-  // The client's teamPause rule: the newest pause or resume of this team decides.
-  let paused: string | undefined;
-  for (let i = events.length - 1; i >= 0; i--) {
-    const ev = events[i]!;
-    if (ev.teamId !== t.id || (ev.kind !== "pause" && ev.kind !== "resume")) continue;
-    if (ev.kind === "pause") paused = ev.text;
-    break;
-  }
-  return { name: t.name, members: t.members.length, ...(paused ? { paused } : {}) };
 }
 
 // "### ag_08 (lead) — waiting · task success" (current) or "Subagent ag_02 (quick-2) finished its task." (older)
@@ -779,6 +888,8 @@ function decodeWorker(w: unknown, hosted: boolean): WorkerInfo | null {
   const provider = backend === "claude-code" ? "claude code" : modelProvider(model);
   if (provider) out.provider = provider;
   if (effort) out.effort = effort;
+  const modes = workerModesOf(w.modes);
+  if (modes) out.modes = modes;
   if (backend) out.backend = backend;
   if (preview) out.preview = preview;
   const sessionFile = str(w.sessionFile);
@@ -792,6 +903,8 @@ function decodeWorker(w: unknown, hosted: boolean): WorkerInfo | null {
   if (w.outcome === "success" || w.outcome === "error" || w.outcome === "aborted") out.outcome = w.outcome;
   const usage = decodeUsage(w.usage);
   if (usage) out.usage = usage;
+  // Top-level beside usage (the record's size trim drops usage first); absent stays unknown.
+  if (typeof w.turns === "number" && Number.isSafeInteger(w.turns) && w.turns >= 0) out.turns = w.turns;
   // Restored workers (subagents extension): where their number came from, and since when. The
   // record's "none" is the wire's "unavailable": no number, and the pane must not read 0.
   const source = w.usageSource === "none" ? "unavailable" : w.usageSource;

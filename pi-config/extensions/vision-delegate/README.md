@@ -33,7 +33,7 @@ Run `/reload` after installation.
 
 ```json
 {
-  "fallbacks": ["zai/glm-5.3-flash", "anthropic/claude-haiku-4-5"],
+  "fallbacks": ["zai/glm-5.3-flash", "ollama-cloud/kimi-k3"],
   "exhaustedAbovePct": 90,
   "contextChars": 2000
 }

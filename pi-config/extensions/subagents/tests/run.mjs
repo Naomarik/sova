@@ -1,4 +1,5 @@
 // Offline regression tests. PI_PACKAGE_DIR can override the global npm installation.
+import "../../claude-code/tests/hermetic-env.mjs"; // first: never the inherited agent dir / Claude directory
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import { jiti, root } from "./runtime.mjs";

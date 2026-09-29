@@ -39,18 +39,23 @@ working worker is never the one it leaves out.
 ```html
 <!-- after nav.sidebar-list, outside the pane -->
 <div class="sidebar-foot">
-  <a class="list-row list-row-interactive insights-row" href="#/usage" aria-current="page"
-     title="Usage: Claude 7-day 47%, OpenAI 7-day 95%, Ollama Cloud Monthly 80%, Z.ai 5-hour 0%"
-     aria-label="Usage: Claude 7-day 47%, OpenAI 7-day 95%, Ollama Cloud Monthly 80%, Z.ai 5-hour 0%">
-    <span class="icon" style="--icon: url(/icons/gauge.svg)" aria-hidden="true"></span>
-    <span class="insights-row-text usage-glance">
-      <span class="usage-glance-item"><span class="usage-glance-tag">C</span><span class="text-num">47%</span></span>
-      <span class="usage-glance-item usage-glance-item-high"><span class="usage-glance-tag">O</span><span class="text-num">95%</span></span>
-      <span class="usage-glance-item usage-glance-item-stale"><span class="usage-glance-tag">OL</span><span class="text-num">80%</span></span>
-      <span class="usage-glance-item"><span class="usage-glance-tag">Z</span><span class="text-num">0%</span></span>
-      <span class="usage-glance-item"><span class="usage-glance-tag">DS</span><span class="text-num">$4</span></span>
-    </span>
-  </a>
+  <div class="sidebar-foot-row">
+    <a class="list-row list-row-interactive insights-row sidebar-foot-link" href="#/usage" aria-current="page"
+       title="Usage: Claude 7-day 47%, OpenAI 7-day 95%, Ollama Cloud Monthly 80%, Z.ai 5-hour 0%"
+       aria-label="Usage: Claude 7-day 47%, OpenAI 7-day 95%, Ollama Cloud Monthly 80%, Z.ai 5-hour 0%">
+      <span class="icon" style="--icon: url(/icons/gauge.svg)" aria-hidden="true"></span>
+      <span class="insights-row-text usage-glance">
+        <span class="usage-glance-item"><span class="usage-glance-tag">C</span><span class="text-num">47%</span></span>
+        <span class="usage-glance-item usage-glance-item-high"><span class="usage-glance-tag">O</span><span class="text-num">95%</span></span>
+        <span class="usage-glance-item usage-glance-item-stale"><span class="usage-glance-tag">OL</span><span class="text-num">80%</span></span>
+        <span class="usage-glance-item"><span class="usage-glance-tag">Z</span><span class="text-num">0%</span></span>
+        <span class="usage-glance-item"><span class="usage-glance-tag">DS</span><span class="text-num">$4</span></span>
+      </span>
+    </a>
+    <!-- the Resource monitor button, §app.resource-monitor/entry-button -->
+    <button type="button" class="button button-icon sidebar-settings"
+            title="Resource monitor" aria-label="Resource monitor">…activity…</button>
+  </div>
   <!-- aria-current on #/agents and #/agents/* -->
   <a class="list-row list-row-interactive insights-row" href="#/agents"
      title="6 active agents in 4 sessions, 2 teams" aria-label="6 active agents in 4 sessions, 2 teams">
@@ -61,10 +66,14 @@ working worker is never the one it leaves out.
 ```
 
 The foot holds **two stacked 44px rows, and both are always present**, so the layout never
-jumps. `.list-row`'s bottom border divides them. A single row split into two links was
-rejected: 288px divided in two truncates "Claude 5-hour 96%". Neither row has a chevron. They're
-whole-row links with a hover state and the `aria-current` tint, like session rows, and the Usage
-glance needs the room.
+jumps. Each row is a `.sidebar-foot-row`: the whole-row link, then one 44px icon button at its
+right end — the **Resource monitor** button on the Usage row (§app.resource-monitor/entry-button),
+the Settings gear on the Agents row (§app/settings-dialog) — with one class between them, so the
+two buttons stack in one column. The link's own bottom border divides the rows, and the row draws
+the same line under its button, so the divider runs the full width. A single row split into two
+links was rejected: 288px divided in two truncates "Claude 5-hour 96%". Neither row has a chevron.
+They're whole-row links with a hover state and the `aria-current` tint, like session rows, and the
+Usage glance needs the room.
 
 - **Usage row, a glance at every provider:**
   - One segment per provider, in the fixed order Claude, OpenAI, Ollama Cloud, Z.ai, DeepSeek.
@@ -80,6 +89,18 @@ glance needs the room.
     are flagged). Otherwise it shows its 7-day window, and failing that, its longest. Ollama
     shows Monthly. Z.ai shows its plan window (5-hour), never MCP uses. An active window gets
     no marker in the glance ("C 55%"); the tooltip names it: "Claude 7-day Fable 55%".
+  - **Which Claude login.** A device can hold several Claude logins (§app/claude-logins), and `C`
+    reads one of them: **the open chat's recorded login** (its newest `claude-login` entry, as the
+    chat's `claude_login` message names it, §app.claude-logins/active-login), else **the login in
+    use for new chats** (`claudeLogins[].inUse`: the first ready one in the device's order) — for a
+    chat that has not recorded one yet, a TUI-watched session, a workspace pane that isn't a chat,
+    and every page with no session open. Only with neither (an older server without
+    `claudeLogins`, or no login ready) does it read `providers`' `claude`, Claude Code's own
+    login. Its reading is that login's account card on the Usage page (the account's freshest
+    reading: its logins share one quota), so the number follows a failover in the same poll. The visible segment stays `C 61%`: the glance has no room for a name. With
+    more than one login, the row's `title` and `aria-label` name it after "Claude", by its card
+    title (its email, else its label): "Usage: Claude (spare@example.com) 7-day 61%, OpenAI
+    7-day 14%". With one login nothing is named, as before.
   - **Missing data.** A provider that isn't `ok`, or has neither windows nor a balance, is left
     out. With nothing at all, the row reads "Usage".
   - **High.** At 80% or more, the item takes `.usage-glance-item-high`: semibold ink, and **no
@@ -93,12 +114,15 @@ glance needs the room.
   - **Full text.** The row's `title` and `aria-label` spell everything out, e.g. "Usage: Claude
     7-day 47%, …, DeepSeek balance $4.29" (the exact amount, not the rounded one); nothing is
     appended for a stale file.
-  - **Width.** Measured in the 320px sidebar (the glance box is 259px at a 1440px viewport):
-    a real five-provider reading (`C 83% O 97% OL 90% Z 8% DS $4`) is 226px and fits. The fifth
-    segment does spend the slack — all four windows at 100% plus `DS $4` is 263px, so the worst
-    case now overruns by a few px and `.usage-glance` clips it (it never wraps). Rounding the
-    balance to whole units is what keeps the common case comfortable; `DS $4.29` would cost
-    another ~20px.
+  - **Width.** The monitor button takes 52px of the row, so the glance is **tightened**:
+    segments sit `--space-2` apart (twice the tag-to-number gap, so each still reads as one
+    pair), and the link's right padding drops to `--space-2`, since the button carries its own
+    air around its icon. Measured in the 320px sidebar at a 1440px viewport, the glance box is
+    215px: a real five-provider reading (`C 83% O 97% OL 90% Z 8% DS $4`) is 210px and fits, and
+    so does `C 34% O 1% OL 31% Z 3% DS $0` (202px). All four windows at 100% plus `DS $4` is
+    247px, so the worst case overruns and `.usage-glance` clips it (it never wraps); the full
+    reading stays in the row's `title` and `aria-label`. Rounding the balance to whole units is
+    what keeps the common case inside; `DS $4.29` would cost another ~20px.
 - **Agents row, what is live right now:** `{agents} agents · {sessions} sessions · {teams} teams`.
   Any segment at 0 is dropped, and with nothing live at all the row reads the plain word
   "Agents". The numbers come from `activeAgentCounts` in `src/lib/workers.ts`, and each one is
@@ -138,23 +162,10 @@ ellipsis.
     left rail (`.session-rail-count`), under the row's state, when `live?.workers?.working ≥ 1`.
     Hidden at 0 or when absent. `.session-rail-count-live` pulses the icon only, and only on a
     row with no Busy dot, whose pulse would otherwise be a second moving thing.
-  - **Session head:** a link chip before Live. With a live team it stays worded —
-    `<a class="chip chip-count" href="#/agents/{teamId}">Team · {n} working</a>`, pointing at
-    the busiest live team when there are several. Without a team it matches the rail's
-    vocabulary: `<a class="chip chip-count session-head-working" href="#/agents">{n}<span
-    class="icon icon-sm" style="--icon:url(/icons/worker.svg)"></span></a>`,
-    `aria-label`/`title` "{n} subagents working now",
-    the word carried by the label rather than the box. The icon inside a `.chip-count` is 12px.
-    With nothing working and no TUI on the file, a session with a team shows its first team as
-    `Team · {members}` (a neutral `.chip-count`, not a link), adding ` · paused` while a pause is
-    in force; `title` is the team's name, then the pause's text.
-  - **Opening a session.** The head's chips are there from the view's first frame, so the context
-    gauge beside them never moves when the insight lands. Until it does, the team chip reads what
-    the session list has for THIS session (`SessionSummary.team`: its first team on the active
-    branch, the member count and the pause, folded as the insight folds them), and the working
-    chip's team comes from the app's #/agents poll, which lists a running session's teams with the
-    insight's own join. A session the list knows no team for shows no team chip and holds no space
-    for one. The insight then replaces both.
+  - **Session head:** no chip at all, working or not, team or not. The count is already the
+    sidebar row's rail count and the Agents foot row's, and the head's row goes to the title and
+    the context readout (§chat.context-window/width-budget). The Agents page, the composer's
+    subagents trigger and the subagents pane keep their own counts.
   - The count inside a sidebar session row is **never** a link, because an `<a>` can't nest in
     the row's link — and now it sits outside the link, in the rail, as a `tabindex="-1"` button.
     The foot's Agents row is still the way to the page from the sidebar.
@@ -241,9 +252,53 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 </article>
 ```
 
+- **Summary lead.** Above the grid, one `.usage-lead` line: one sentence per provider that needs
+  attention, in payload order ("Claude's 5-hour window is rate-limited — resets in 1h 58m.",
+  "DeepSeek is out of credit."), or "All providers under limits." when none does. Claude's
+  sentence reads the same login the sidebar foot's `C` does (§app.insights/sidebar-foot, **Which
+  Claude login**): with no chat open, the login in use for new chats, never a limited login that
+  no chat is on. With more than one login it names it: "Claude (spare@example.com)'s 7-day
+  window is at 90%."
 - **Cards.** There's one card per `providers[]` entry, in the order given: Claude, OpenAI,
   Ollama Cloud, Z.ai, DeepSeek. Z.ai follows the system like every other provider: no brand color, and
   the title is "Z.ai"; so does DeepSeek, titled "DeepSeek".
+- **Claude: one card per account.** When the payload carries `claudeLogins` (every Claude login on
+  this device, §app/claude-logins, in the device's order, `default` included; while the mesh is on,
+  also every other login of the pool, §app.claude-logins/pool, each with its `holder`), Claude's
+  place holds one card per **account** instead of the single Claude card: logins with the same
+  `accountUuid` share one account's usage limits, so they share one card, where the first of them
+  falls in the order (§app.claude-logins/registry, **Accounts, then logins**). A login with no
+  account is a card of its own. An older server without the field gets the single card.
+  - The title is the account's email (else the login's label, else "Claude Code's own login"),
+    wrapping rather than overflowing. Under it, the caption reads "Claude · {plan}" with the plan
+    as people say it ("Max 20x", "Pro"; never a billing type such as `stripe_subscription`), then,
+    for an account of one login, that login's name when it has one worth saying: "Claude Code's
+    own login" for `default`, else its label.
+  - The account's usage is shown **once**, exactly like any provider card: meters, head chip,
+    notes. Its reading is the freshest one among its logins (an added login's own entry in the
+    cache's `claudeAccounts`, `default`'s `providers`' `claude`, or, for a login another device
+    holds, the figures its holder published to the pool: 5-hour and 7-day), since they all read the
+    same quota (§app.insights/usage-refresh). An account of one login keeps that login's sign-in
+    caption (from its own `.credentials.json`). With no reading at all, a login never read yet says
+    "Not read yet. Its usage shows at the next refresh."; a login marked as needing sign-in is not
+    fetched and, without a kept reading, says it is not fetched until Claude Code has signed it in
+    again.
+  - **Its logins.** The body then lists the account's logins, compactly, under a caption "{n}
+    logins in the pool" (the account's logins the pool has; `default` is never one of them, so it
+    is listed but not counted) or, with none in the pool, "{n} logins on this device" — for an
+    account of one login only when that login is in the pool ("1 login in the pool"). Each row: the login's name
+    (§app.claude-logins/registry, **Names**), its standing chip, where it is while the mesh is on
+    (**This device**, the holding device's name, **Free**, or **Stuck on** a device), and, for the
+    login a new chat would start on — the first usable one in the device's order — a neutral
+    `.chip.chip-count` "In use for new chats". An account of one login outside the pool (mesh off,
+    or `default`) shows its standing and that chip above the meters instead, with no list.
+  - **Standing.** The chip speaks Settings → Accounts' words (§app.claude-logins/device-order):
+    **Ready**, **Off**, **Limited until** a time, **Sign in again**, or **Not signed in** — and it
+    never contradicts the head chip: a login whose recorded standing is ready while the account's
+    reading has a window at 100% whose reset is still ahead reads **Limited until** that reset
+    (the reading is the newer fact: the host only records a limit once a spawn has run into it). A
+    window whose reset has passed counts for neither the head chip nor the standing: it describes a
+    window that is gone.
 - **Scoped and active windows (any provider).**
   - A window with a `scope` is labeled `{window} {scope}`, e.g. "7-day Fable", the same form as
     "7-day Opus". It stays in source order, so Claude reads 5-hour, 7-day, 7-day Fable.
@@ -281,8 +336,8 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   - **Fill color.** The fill is neutral. It gets `.meter-fill-warn` at ≥80% and
     `.meter-fill-error` at ≥100%. That matches the extension's own footer threshold, and it
     always pairs with the head chip.
-- **Head chip.** The worst window decides it. The words follow the skill's model-availability
-  severities:
+- **Head chip.** The worst window decides it. A window whose reset has already passed (the meter
+  is a ghost) decides nothing. The words follow the skill's model-availability severities:
 
   | Condition | Chip |
   |---|---|
@@ -364,7 +419,26 @@ through the Codex CLI, a renewal time (`last_refresh`) and no expiry. API-key pr
 
 **Sova never writes a credential file and never refreshes a token.** A Claude sign-in renews only
 when Claude Code itself runs; the Usage page says so (§app.insights/usage-cards) instead of
-renewing it.
+renewing it. The one exception is Settings → Accounts (§app.claude-logins/add-remove): at the
+user's request Sova runs Claude Code's own `claude auth login` and `claude auth logout` in an added
+login's directory, and deletes that directory on removal. Claude Code writes those credentials.
+
+**Every Claude login's usage.** Claude Code's own credentials are read from its own directory
+(`$CLAUDE_CONFIG_DIR` when set, else `~/.claude`), as its spawns use it. Each other Claude login
+assigned to this device (§app/claude-logins) is fetched the same way, with the access token in
+its own directory's `.credentials.json`, only read, never refreshed or written. The cache keeps
+`claude` as Claude Code's own login, so every older reader reads what it always did, and adds
+`claudeAccounts`, keyed by login id (never `default`), each `{data?, fetchedAt?, nextFetchAt,
+error?, skipped?}`; `CACHE_SCHEMA` is unchanged, since the field is additive. Each login keeps
+its own cadence: it is fetched when its own `nextFetchAt` is due (150 seconds after a reading, 60
+after a failure) or on Refresh Usage; a failed fetch keeps its last reading and says why, and
+never shortens the other providers' refresh. A login this device marks as needing sign-in
+(`claude-accounts-state.json`) is never fetched, `default` included: it keeps its last reading,
+marked `skipped: "auth"`, until its credentials change. A login no longer assigned here drops
+out. A cache without `claudeAccounts` on a device that has added logins (an older extension
+rewrote it) is refetched once; meanwhile the server serves the logins' last readings it read.
+`GET /api/insights/usage` adds each login's sign-in data (`auth`) from its own credentials file,
+in the same numbers-only form.
 
 ## §app.insights/team-cards — Agents board
 
@@ -394,7 +468,19 @@ Sova that aren't archived.
         <div class="board-cell board-trees">feat/x · ↑3 ↓1 · +120 −4 · dirty dot · +1</div>
         <div class="board-cell board-actions">Open · Session details (aria-expanded) · Archive · Move into group · ⋯</div>
       </div>
-      <div class="board-detail">…one line per worker, the team, one line per worktree…</div>   <!-- open rows only -->
+      <div class="board-detail">   <!-- open rows only: in the title column, behind a guide rule under the twist -->
+        <p class="board-reason">…why it needs you…</p>
+        <ul class="board-worker-list" aria-label="Workers">
+          <li class="board-worker">
+            <span class="board-worker-name">scout</span>
+            <span class="board-worker-meta text-mono">ag_10 · opus-5.5 · <time datetime="…" title="Started Tue, Sep 29, 2026, 1:43:07 PM">1:43 PM · 2h ago</time> · <span title="Model replies so far">12 turns</span></span>
+            <span class="board-worker-preview">…while working…</span>
+            <span class="chip">…status…</span>
+          </li>
+        </ul>
+        <section class="team-group board-team">…head, objective, one board-worker per member, events…</section>
+        <ul class="board-tree-list" aria-label="Worktrees">…one line per worktree…</ul>
+      </div>
     </li>
   </ul>
 </div>
@@ -455,9 +541,20 @@ Sova that aren't archived.
   Sova only.
 - **Archive.** Only for sessions started in Sova, or already archived. Refused with its reason
   (open in a TUI, mid-turn, subagents working) before the press, never after.
-- **Open row.** One line per worker outside a team (working first): name, id and model in mono,
-  the preview while working, and the status chip (the table below); a line has no actions. Then
-  each team, then one line per worktree.
+- **Open row.** Everything it holds — the why-it-needs-you line, the workers, each team, the
+  worktree lines — starts at the title's left edge at every width, behind one thin guide rule
+  drawn down from under the twist: that rule, not width, says it belongs to the session. A
+  team's members take no further step; the team's bordered block is the second level. One line
+  per worker outside a team (working first, then last active): its name, then in mono its id, its
+  model, when it started, and its turns; the preview while working; and the status chip (the
+  table below). A line has no actions. **Started** is its first spawn, kept across resumes and
+  restarts, as a message stamp (“1:43 PM · 2h ago”, “Mar 4 1:43 PM · 3d ago” on another day, the
+  stamp alone past 7 days) in a `<time>` whose `title` is the full local date and time; a team
+  member with no live record shows when it joined its team; unknown shows nothing. **Turns** is
+  the model's replies so far, across resumes (“12 turns”, “1 turn”, `title` “Model replies so
+  far”, a restored worker's from its transcript or last report); unknown shows nothing, never 0.
+  At folded width the mono parts wrap between themselves, never inside one. Then each team, then
+  one line per worktree.
 - **Team.** A bordered block, `.team-group`, `id="team-{teamKey}"`, `tabindex="-1"`: the name,
   its id in mono, Paused (warn) when its newest pause/resume is a pause, "{n} working", the
   objective on one line, then its members one line each — coordinator (or orchestrator) first,

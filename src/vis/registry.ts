@@ -29,6 +29,8 @@ import { estimateHeight as timelineHeight } from "./kinds/timeline/height";
 import { parseTimeline } from "./kinds/timeline/parse";
 import { estimateHeight as treeHeight } from "./kinds/tree/height";
 import { parseTree } from "./kinds/tree/parse";
+import { estimateHeight as wireframeHeight } from "./kinds/wireframe/layout";
+import { parseWireframe } from "./kinds/wireframe/parse";
 
 export interface KindEntry<S extends VisBase = VisBase> {
   /** Throws VisError (core/grammar `fail`) on anything it doesn't understand. */
@@ -70,6 +72,7 @@ export const KINDS: Record<string, KindEntry> = {
   chart: kind(parseChart, view("chart"), "Chart", { size: (spec, width) => chartHeight(spec, width) }),
   timeline: kind(parseTimeline, view("timeline"), "Timeline", { size: (spec, width) => timelineHeight(spec, width) }),
   steps: kind(parseSteps, view("steps"), "Steps", { size: (spec, width) => stepsHeight(spec, width) }),
+  wireframe: kind(parseWireframe, view("wireframe"), "Wireframe", { size: (spec, width) => wireframeHeight(spec, width) }),
   matrix: kind(parseMatrix, view("matrix"), "Matrix", { size: (spec, width) => matrixHeight(spec, width) }),
   code: kind(parseCode, view("code"), "Code", { size: codeHeight }),
   html: kind(parseHtml, view("frame"), "Interactive", { framed: true, size: frameHeight }),

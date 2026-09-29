@@ -40,7 +40,10 @@ function splitBar(line: Line): [Line, Line] | null {
   return null;
 }
 
-/** The row's head: a "quoted label" or bare words, then at most one tone. */
+/**
+ * The row's head: a "quoted label" or bare words, then at most one tone. A head mixing quotes and
+ * words (`'"all"'`, `"Pi" sibling`) is its text as written, quotes and all.
+ */
 function head(line: Line): { label: string; tone?: Tone } {
   const toks = tokenize(line);
   let tone: Tone | undefined;
@@ -51,9 +54,12 @@ function head(line: Line): { label: string; tone?: Tone } {
   }
   if (toks.length === 0) fail(line.n, `${SHAPE} (the label is missing)`);
   if (toks.some((t) => t.t === "arrow")) fail(line.n, `${SHAPE} (the steps go after the |)`);
-  if (toks.length > 1 && toks.some((t) => t.t === "str")) fail(line.n, `${SHAPE} (one "quoted label", then an optional tone)`);
-  return { label: text(toks.map((t) => t.v).join(" "), line.n), ...(tone ? { tone } : {}) };
+  const label = toks.length > 1 && toks.some((t) => t.t === "str") ? literal(line, tone) : toks.map((t) => t.v).join(" ");
+  return { label: text(label, line.n), ...(tone ? { tone } : {}) };
 }
+
+/** The head as written (it ends at the row's |), less its trailing tone word. */
+const literal = (line: Line, tone: Tone | undefined): string => (tone ? line.text.slice(0, -tone.length).trimEnd() : line.text);
 
 /** `a -> "b c" -> d e`: steps between `->`s, each a quoted label or bare words. */
 function chain(line: Line): string[] {

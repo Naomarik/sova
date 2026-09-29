@@ -196,8 +196,8 @@ tokens, system prompt and tools included, so about 2.3 characters per token. The
 2 MiB fold (about 910K real tokens) overflow a 1M window. 0.85 is headroom for folds denser than that sample. With
 the hermetic runtime's system prompt (33.5K / 42.6K characters) and 19 active tools (29.6K characters), the cap is
 154,866–162,584 characters on a 200K window and 1,650,866–1,658,584 on 1M (1,712,201 and 216,201 with neither).
-2 MiB keeps the one stdin line well under the transport's 4 MiB
-`maxLineBytes` with room for JSON escaping and images. A request with no window uses `maxFoldedChars`.
+2 MiB keeps the one stdin line's text well under the transport's 4 MiB
+`maxLineBytes` with room for JSON escaping. A request with no window uses `maxFoldedChars`.
 Over budget, whole messages are dropped OLDEST first: the last user message is kept whole whatever its size,
 the first user message is kept if it fits in a quarter of the budget, then the newest messages back from the
 end until the next would not fit. The body opens with `[N earlier message(s) omitted to fit the context
@@ -207,7 +207,16 @@ dropped messages are dropped with them. The previous head-kept clip replayed the
 cut off exactly the recent messages the model had to continue from.
 
 Images cannot be folded into text, so they ride the same user message as stream-json `image` content blocks
-alongside the text block. What is lost: thinking content and signatures, exact prompt-cache state, the CLI's
+alongside the text block. They have their own byte budget: the text is sized first, and the images get what its
+serialized bytes leave of `maxLineBytes` less `FOLD_LINE_HEADROOM` (64 KiB, for the placeholders written after the
+budget is set and anything still queued on the pipe). Images are kept NEWEST first while they fit; the current
+message's (the last user message's, and the newest message's, a tool result after a restart mid-loop) are never
+dropped. Each dropped image becomes a line in its message, `[image omitted to fit the resend: read of <path>]`
+when the tool call that returned it had a `path` argument, else `[image omitted to fit the resend]`, and the
+`[N image(s) … included below]` note counts only the images still sent. The real frame is then measured as the
+transport measures it, and while it is still over, the oldest kept image goes too. Only if the current message's
+images alone are over the line does the turn fail, with an error that says so. One real session had 21 `read`
+screenshots (4.18 MB of base64) beside ~112K characters of text: a 4,409,161-byte line, refused on every restart. What is lost: thinking content and signatures, exact prompt-cache state, the CLI's
 own tool bookkeeping, and any truncated tool output. Cost/usage restarts with the new process (the probes
 established that `total_cost_usd` and `modelUsage` are per-process cumulative).
 

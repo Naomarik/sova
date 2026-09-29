@@ -1,7 +1,7 @@
 /** The delegate system-prompt text, prompt composition, and status labels. Pure functions: unit-testable. */
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateDefaults, type DelegateProfileId, type WorkerChoice } from "./delegate.ts";
 import { ALIGN_FILE_SCHEMA } from "./align.ts";
-import { buildMinorPrompt, MINOR_MODES, type MinorMode } from "./minor.ts";
+import { buildMinorPrompt, MINOR_MODES, workerMinorModes, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import type { Mode, ModeState } from "./state.ts";
 
@@ -102,7 +102,8 @@ export function composePrompt(
 }
 
 /** One minor mode's block exactly as the prompt carries it: spec gains the writer paragraph while a writer is set. */
-function minorBlock(minor: MinorMode, writer: SlotRoute | null): string {
+function minorBlock(minor: MinorMode, writer: SlotRoute | null, worker = false): string {
+	if (worker) return buildWorkerMinorPrompt(minor);
 	const block = buildMinorPrompt(minor);
 	return minor === "spec" && writer ? `${block}\n\n${buildSpecWriterPrompt(writer)}` : block;
 }
@@ -113,13 +114,15 @@ function minorBlock(minor: MinorMode, writer: SlotRoute | null): string {
  * the prompt would have carried, unless that block is already in context: in the prompt (`head`) or
  * in an earlier note since the last compaction (`guides`), when a pointer to it is enough. A mode
  * turned off gets a line saying its instructions no longer apply. Undefined when nothing changed.
- * `guides` in the result: the modes whose whole block this note carries.
+ * `guides` in the result: the modes whose whole block this note carries. `worker`: a block goes in
+ * its worker form (composeWorkerPrompt), and the caller passes only worker-scope modes.
  */
 export function buildModeNote(
 	told: readonly MinorMode[],
 	now: readonly MinorMode[],
 	known: { head: readonly MinorMode[]; guides: readonly MinorMode[] },
 	writer: SlotRoute | null = null,
+	worker = false,
 ): { text: string; guides: MinorMode[] } | undefined {
 	const where = (minor: MinorMode) => (known.head.includes(minor) ? "in your system prompt" : "given earlier in this conversation");
 	const parts: string[] = [];
@@ -135,11 +138,34 @@ export function buildModeNote(
 				parts.push(`Mode change: the user turned the ${minor} minor mode back on. Its instructions (the "# Minor mode: ${minor}" block ${where(minor)}) apply again from now on.`);
 			} else {
 				guides.push(minor);
-				parts.push(`Mode change: the user turned the ${minor} minor mode on. Its instructions follow and apply from now on, as if they were part of your system prompt.\n\n${minorBlock(minor, writer)}`);
+				parts.push(`Mode change: the user turned the ${minor} minor mode on. Its instructions follow and apply from now on, as if they were part of your system prompt.\n\n${minorBlock(minor, writer, worker)}`);
 			}
 		}
 	}
 	return parts.length > 0 ? { text: parts.join("\n\n"), guides } : undefined;
+}
+
+/**
+ * Appended to the spec block in a worker's prompt (never the parent's): spec-mode.md is written to the
+ * session that plans, promotes and briefs, and stays byte-identical, so what differs for a worker is said
+ * here. The parent promotes; the worker's brief can say otherwise.
+ */
+export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and it promotes. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Do not promote, commit, or record \`--commit\` evidence unless your brief says to; say instead what is ready to promote. Put any flags as one question in your final report, whose last line is the \`Also changes:\` line.`;
+
+/** One minor mode's block as a worker receives it: spec gets the worker note, never the writer paragraph. */
+function buildWorkerMinorPrompt(mode: MinorMode): string {
+	const block = buildMinorPrompt(mode);
+	return mode === "spec" ? `${block}\n\n${SPEC_WORKER_NOTE}` : block;
+}
+
+/**
+ * What a worker this session starts gets of its modes (§chat.mode-menu/workers): the worker-scope minor
+ * modes only (MINOR_WORKER), in registry order. No major-mode block, no Delegate+align bridge, no spec
+ * writer. undefined when none applies.
+ */
+export function composeWorkerPrompt(state: Pick<ModeState, "minorModes">): string | undefined {
+	const blocks = workerMinorModes(state.minorModes).map(buildWorkerMinorPrompt);
+	return blocks.length > 0 ? blocks.join("\n\n") : undefined;
 }
 
 /**

@@ -1,0 +1,303 @@
+/* `vis wireframe`: low-fi screens in phone or desktop frames, side by side in one sideways strip.
+   Outlines and sunken placeholders, tokens and the vis-tone-* variables only, so light and dark need
+   nothing of their own. The block sizes here are fixed in px (line heights, paddings, control
+   heights): ./layout.ts estimates the drawing's height from the same numbers, keep the two in step. */
+
+.vis-wf { display: flex; flex-direction: column; gap: var(--space-2); }
+/* The overlays' and mark badges' z-indexes stay inside the drawing: never above the page's own sticky parts (a share page's composer). */
+.vis-wf-strip { isolation: isolate; }
+
+/* ---- Screen buttons (only when the strip is wider than the pane) ------------------------- */
+.vis-wf-nav { display: flex; align-items: flex-start; gap: var(--space-2); }
+.vis-wf-nav-screens { flex: 1; min-width: 0; display: flex; gap: var(--space-1); overflow-x: auto; scrollbar-width: none; padding-block: 4px; margin-block: -4px; }
+.vis-wf-pager { flex: none; display: flex; gap: var(--space-1); }
+.vis-wf-step { width: 40px; justify-content: center; padding: 0; }
+
+.vis-wf-step:disabled { opacity: .4; cursor: default; background: var(--color-surface); }
+.vis-wf-nav-button { flex: none; }
+.vis-wf-nav-name { min-width: 0; max-width: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* On a phone: one line, the current screen named, the rest by number; the numbers are the cue, so no pager. */
+@container vis (max-width: 420px) {
+  .vis-wf-pager { display: none; }
+  .vis-wf-nav-button { min-width: 44px; justify-content: center; }
+  .vis-wf-nav-button[aria-current="true"] { flex: 0 1 auto; }
+  .vis-wf-nav-button:not([aria-current="true"]) .vis-wf-nav-name { display: none; }
+  /* No room for the current name either (View.tsx): numbers only; the screen's label under the row names it. */
+  .vis-wf-numbers .vis-wf-nav-name { display: none; }
+  /* Numbers only and still a few px short: the buttons share the row down to 36px each, their tap areas
+     spanning the gaps between them (44px at a 261px share column's six), before the row scrolls. */
+  .vis-wf-numbers .vis-wf-nav-button { flex: 0 1 44px; min-width: 36px; }
+  .vis-wf-numbers .vis-wf-nav-button::after { inset: -4px calc(var(--space-1) / -2); }
+}
+.vis-wf-nav-button {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  min-height: var(--control-sm); padding: 0 var(--space-2);
+  border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md);
+  background: var(--color-surface); color: var(--color-ink-2);
+  font: inherit; font-size: var(--fs-caption); cursor: pointer;
+  position: relative;
+}
+/* 36px to look at, 44px to tap (the row's 4px padding above and below holds the rest). */
+.vis-wf-nav-button::after { content: ""; position: absolute; inset: -4px 0; }
+/* Previous and next: 40px wide, 44 × 44 to tap (after the rule above, which it overrides). */
+.vis-wf-nav-button.vis-wf-step::after { inset: -4px -2px; }
+.vis-wf-nav-button:hover { background: var(--color-sunken); }
+.vis-wf-nav-button[aria-current="true"] { border-color: var(--color-accent); background: var(--color-accent-tint); color: var(--color-ink); }
+.vis-wf-nav-button:focus-visible, .vis-wf-go:focus-visible, .vis-wf-shot:focus-visible { outline: var(--focus-width, 2px) solid var(--color-accent); outline-offset: 2px; }
+
+/* ---- The strip --------------------------------------------------------------------------- */
+.vis-wf-view { position: relative; }
+.vis-wf-scroll { scroll-snap-type: x proximity; scroll-padding-inline: var(--space-1); }
+.vis-wf-strip { position: relative; display: flex; gap: 40px; align-items: stretch; width: max-content; margin: 0 auto; padding: 6px; box-sizing: border-box; }
+/* Several screens: a lane above the frames for arrows that go back or skip one, and room after the last frame to turn. */
+.vis-wf-many .vis-wf-strip { padding: 14px 22px 6px 6px; }
+@container vis (max-width: 420px) { .vis-wf-many .vis-wf-strip { padding-right: 6px; } }
+.vis-wf-shot { flex: none; scroll-snap-align: start; display: flex; flex-direction: column; gap: 6px; border-radius: var(--r-xs); }
+.vis-wf-shot:focus:not(:focus-visible) { outline: none; }
+/* As wide as its frame, never wider: a long name is cut short. */
+.vis-wf-shot-name { display: flex; align-items: center; gap: 6px; width: 0; min-width: 100%; min-height: 20px; font-size: var(--fs-caption); line-height: 20px; color: var(--color-ink-muted); }
+.vis-wf-shot-name > span:not(.vis-wf-n, .vis-em-badge, .vis-wf-go) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vis-wf-shot-name > .vis-em-badge { margin: 0; }
+.vis-wf-n {
+  display: inline-grid; place-items: center; flex: none; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box;
+  border-radius: var(--r-full); border: var(--stroke-thin) solid var(--color-border-strong);
+  font-size: var(--fs-micro); line-height: 1; font-weight: var(--fw-semibold); color: var(--color-ink-2); font-variant-numeric: tabular-nums;
+}
+
+/* ---- Frames ------------------------------------------------------------------------------ */
+/* The frames of one strip are as tall as the tallest; a tab bar or footer sits at the bottom. */
+.vis-wf-frame { position: relative; flex: 1 0 auto; display: flex; flex-direction: column; box-sizing: border-box; border: 1.5px solid var(--color-border-strong); background: var(--color-surface); overflow: hidden; }
+/* Frames narrow with the figure, so one fits whole where it can: a phone 300px (to 240px, a phone's
+   chat), a desktop 760px (to 560px, the chat column on a desktop). Below that the strip scrolls.
+   100cqi is the figure's content box (`container: vis`); --wf-inset is the body's padding and the
+   strip's, both sides (12px + 6px wide, 8px + 6px under 420px). */
+.vis-wf { --wf-inset: 36px; }
+@container vis (max-width: 420px) { .vis-wf { --wf-inset: 28px; } }
+.vis-wf-phone { width: clamp(240px, calc(100cqi - var(--wf-inset)), 300px); border-radius: var(--r-xl); }
+.vis-wf-desktop { width: clamp(560px, calc(100cqi - var(--wf-inset)), 760px); border-radius: var(--r-md); }
+/* A mark on a screen rings its frame, with no fill. */
+.vis-wf-frame.vis-wf-marked { box-shadow: 0 0 0 2px var(--wf-mark), 0 0 0 5px color-mix(in srgb, var(--wf-mark) 22%, transparent); }
+.vis-wf-chrome { flex: none; display: flex; align-items: center; justify-content: center; height: 18px; }
+.vis-wf-phone .vis-wf-chrome::before { content: ""; width: 40px; height: 5px; border-radius: var(--r-full); background: var(--color-border); }
+.vis-wf-desktop .vis-wf-chrome { justify-content: flex-start; gap: 5px; height: 22px; padding: 0 10px; border-bottom: var(--stroke-thin) solid var(--color-border); background: var(--color-sunken); }
+.vis-wf-desktop .vis-wf-chrome i { width: 7px; height: 7px; border-radius: var(--r-full); border: var(--stroke-thin) solid var(--color-border-strong); }
+/* The page and any overlay share one grid cell: the frame is as tall as the taller of the two. */
+.vis-wf-stage { position: relative; flex: 1 0 auto; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
+.vis-wf-stage > * { grid-area: 1 / 1; }
+.vis-wf-page { display: flex; flex-direction: column; min-width: 0; font-size: var(--fs-caption); line-height: 18px; color: var(--color-ink); }
+.vis-wf-body { flex: 1 0 auto; display: flex; min-width: 0; }
+/* The app bar across the frame, over the sidebar and the page. */
+.vis-wf-page.vis-wf-has-top > .vis-wf-header { margin: 0; padding: 6px 12px; }
+.vis-wf-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.vis-wf-page.vis-wf-has-side .vis-wf-main { padding: 12px; }
+.vis-wf-bottom { display: flex; flex-direction: column; margin: auto -10px -10px; }
+.vis-wf-has-side .vis-wf-bottom { margin: auto -12px -12px; }
+
+/* ---- Page chrome ------------------------------------------------------------------------- */
+.vis-wf-header { position: relative; display: flex; align-items: center; gap: 8px; min-height: 40px; box-sizing: border-box; margin: -10px -10px 0; padding: 6px 10px; border-bottom: var(--stroke-thin) solid var(--color-border); }
+.vis-wf-has-side .vis-wf-header { margin: -12px -12px 0; padding: 6px 12px; }
+/* The controls beside the title take their labels' width (up to 70% of the header); the title shrinks first, wrapping between words. */
+.vis-wf-header-title { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; font-size: var(--fs-heading-s); line-height: 22px; font-weight: var(--fw-semibold); overflow-wrap: break-word; }
+.vis-wf-header-title .vis-wf-sub { font-weight: var(--fw-regular); line-height: 16px; }
+.vis-wf-header-end { flex: 0 0 auto; min-width: 0; max-width: 70%; display: flex; align-items: center; gap: 6px; }
+.vis-wf-header .vis-wf-button { min-height: 28px; padding: 0 10px; min-width: 0; flex-wrap: nowrap; }
+/* In a header or beside other blocks a button keeps its label on one line, cut short if it must. */
+:is(.vis-wf-header, .vis-wf-row) > .vis-wf-button > span:first-child, .vis-wf-header-end > .vis-wf-button > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vis-wf-tabs { position: relative; display: flex; gap: 14px; min-height: 30px; box-sizing: border-box; border-bottom: var(--stroke-thin) solid var(--color-border); color: var(--color-ink-muted); }
+/* The selected tab keeps its whole label; the others shrink first (to about 3 letters), with an ellipsis. */
+.vis-wf-tabs > span:not(.vis-em-badge, .vis-wf-go) { min-width: min(3.5ch, max-content); padding: 5px 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vis-wf-tabs > span.vis-wf-cur { flex: none; }
+.vis-wf .vis-em-badge { flex: none; }
+.vis-wf-tabs .vis-wf-cur { color: var(--color-ink); font-weight: var(--fw-semibold); box-shadow: inset 0 -2px 0 var(--color-accent); }
+.vis-wf-tabbar, .vis-wf-footer { position: relative; display: flex; justify-content: space-around; align-items: center; gap: 6px; border-top: var(--stroke-thin) solid var(--color-border); font-size: var(--fs-micro); line-height: 14px; color: var(--color-ink-muted); }
+.vis-wf-tabbar { min-height: 48px; box-sizing: border-box; padding: 6px 4px; }
+.vis-wf-tabbar > span { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+.vis-wf-tabbar .vis-wf-tab-label { max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vis-wf-tabbar .vis-wf-dot.vis-wf-tab-icon { width: 14px; height: 14px; border-radius: var(--r-xs); border: 1.5px solid currentColor; background: transparent; }
+.vis-wf-tabbar .vis-wf-cur { color: var(--color-accent); font-weight: var(--fw-semibold); }
+.vis-wf-footer { min-height: 34px; box-sizing: border-box; padding: 6px 10px; flex-wrap: wrap; }
+.vis-wf-bottom > .vis-wf-tabbar + .vis-wf-footer, .vis-wf-bottom > .vis-wf-footer + .vis-wf-tabbar { border-top: 0; }
+.vis-wf-sidebar { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--color-sunken); }
+.vis-wf-has-side .vis-wf-body > .vis-wf-sidebar { flex: none; width: 200px; box-sizing: border-box; padding: 12px 10px; border-right: var(--stroke-thin) solid var(--color-border); }
+.vis-wf-main > .vis-wf-sidebar { margin: -10px -10px 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
+.vis-wf-sidebar .vis-wf-tabs { flex-direction: column; gap: 2px; border: 0; }
+.vis-wf-sidebar .vis-wf-tabs > span { padding: 4px 8px; border-radius: var(--r-sm); }
+.vis-wf-sidebar .vis-wf-tabs .vis-wf-cur { box-shadow: none; background: var(--color-accent-tint); }
+
+/* ---- Layout blocks ----------------------------------------------------------------------- */
+.vis-wf-col, .vis-wf-card, .vis-wf-modal, .vis-wf-sheet { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.vis-wf-row { position: relative; display: flex; gap: 8px; align-items: stretch; min-width: 0; }
+.vis-wf-row > * { flex: 1 1 0; min-width: 0; }
+.vis-wf-row > .vis-wf-wide { flex-grow: 2; }
+.vis-wf-row > .vis-wf-go { flex: none; align-self: center; }
+/* A button beside other blocks (a heading, a field) takes its label's width; a row of buttons shares it evenly. */
+.vis-wf-row:has(> :not(.vis-wf-button, .vis-wf-go, .vis-em-badge)):not(:has(> :nth-child(5 of :not(.vis-wf-go, .vis-em-badge)))) > .vis-wf-button { flex: 0 1 auto; }
+/* Past 4 blocks side by side (its chip and mark badge aside), a row wraps into rows of 4. */
+.vis-wf-row:has(> :nth-child(5 of :not(.vis-wf-go, .vis-em-badge))) { flex-wrap: wrap; }
+.vis-wf-row:has(> :nth-child(5 of :not(.vis-wf-go, .vis-em-badge))) > :not(.vis-wf-go, .vis-em-badge) { flex: 0 0 calc(25% - 6px); }
+.vis-wf-grid { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.vis-wf-desktop .vis-wf-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.vis-wf-grid > .vis-wf-wide { grid-column: span 2; }
+.vis-wf-card { padding: 8px 10px; border: var(--stroke-thin) solid var(--vis-stroke); border-radius: var(--r-md); background: var(--color-surface); }
+.vis-wf-card.vis-tone-none, .vis-wf-stat.vis-tone-none { --vis-stroke: var(--color-border); }
+.vis-wf-card > .vis-wf-sub { margin-top: -6px; }
+.vis-wf-title { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
+.vis-wf-title > :first-child { flex: 1; min-width: 0; }
+.vis-wf-sub { font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.vis-wf-list { position: relative; display: flex; flex-direction: column; min-width: 0; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); }
+.vis-wf-list-title { padding: 6px 10px 0; font-size: var(--fs-micro); line-height: 16px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
+.vis-wf-item { position: relative; display: flex; align-items: center; gap: 8px; min-height: 40px; box-sizing: border-box; padding: 6px 10px; }
+.vis-wf-list > .vis-wf-item + .vis-wf-item { border-top: var(--stroke-thin) solid var(--color-border); }
+.vis-wf-list > .vis-wf-item:first-child { border-top-left-radius: inherit; border-top-right-radius: inherit; }
+.vis-wf-list > .vis-wf-item:last-child { border-bottom-left-radius: inherit; border-bottom-right-radius: inherit; }
+.vis-wf-main > .vis-wf-item, .vis-wf-col > .vis-wf-item, .vis-wf-card > .vis-wf-item { padding-inline: 0; }
+.vis-wf-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.vis-wf-item-main > .vis-wf-go { margin-top: 2px; }
+.vis-wf-item-end { flex: none; max-width: 40%; font-size: var(--fs-micro); color: var(--color-ink-muted); text-align: end; overflow-wrap: anywhere; }
+.vis-wf-item.vis-wf-on { background: var(--color-accent-tint); }
+.vis-wf-item > .vis-wf-toggle, .vis-wf-item > .vis-wf-button, .vis-wf-item > .vis-wf-badge { flex: none; }
+.vis-wf-table { position: relative; min-width: 0; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); overflow: hidden; font-size: var(--fs-micro); line-height: 16px; }
+.vis-wf-table table { width: 100%; border-collapse: collapse; margin: 0; }
+.vis-wf-table th { height: 26px; box-sizing: border-box; padding: 5px 8px; overflow-wrap: break-word; text-align: left; font-weight: var(--fw-semibold); color: var(--color-ink-muted); background: var(--color-sunken); border: 0; }
+.vis-wf-table td { height: 26px; box-sizing: border-box; padding: 5px 8px; border: 0; border-top: var(--stroke-thin) solid var(--color-border); overflow-wrap: break-word; }
+/* A toned row (a diff's added or removed line, a failed check) takes its tone's fill. */
+.vis-wf-table tr:not(.vis-tone-none) td { background: var(--vis-fill); }
+.vis-wf-table tr.vis-wf-em td:first-child { box-shadow: inset 3px 0 0 var(--wf-mark); }
+.vis-wf-cell-blocks { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+/* A chip never sizes its column: it takes the cell's width and cuts its name short. */
+.vis-wf-cell-blocks .vis-wf-go { contain: inline-size; flex: 1 1 auto; min-width: 0; max-width: 100%; }
+.vis-wf-cell-blocks .vis-wf-button { min-height: 22px; padding: 0 8px; font-size: var(--fs-micro); }
+
+/* ---- Overlays: over the page, with a scrim behind a modal or sheet ------------------------ */
+.vis-wf-scrim { z-index: 1; background: color-mix(in srgb, var(--color-ink) 28%, transparent); }
+.vis-wf-modal { z-index: 2; align-self: center; margin: 16px 18px; padding: 12px; background: var(--color-surface); border: 1.5px solid var(--color-border-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-3); }
+.vis-wf-desktop .vis-wf-modal { justify-self: center; width: 360px; }
+.vis-wf-sheet { z-index: 2; align-self: end; margin-top: 40px; padding: 18px 12px 12px; background: var(--color-surface); border-top: 1.5px solid var(--color-border-strong); border-radius: var(--r-xl) var(--r-xl) 0 0; box-shadow: var(--shadow-2); }
+.vis-wf-sheet::before { content: ""; position: absolute; top: 6px; left: 50%; width: 32px; height: 4px; margin-left: -16px; border-radius: var(--r-full); background: var(--color-border-strong); }
+.vis-wf-stage > .vis-wf-toast { z-index: 3; align-self: end; margin: 0 12px 60px; }
+
+/* ---- Content ----------------------------------------------------------------------------- */
+.vis-wf-heading { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.vis-wf-heading-end { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: var(--fs-caption); line-height: 18px; font-weight: var(--fw-regular); }
+.vis-wf-heading-end .vis-wf-button { min-height: 28px; padding: 0 10px; }
+.vis-wf-heading-text > :first-child { min-width: 0; }
+.vis-wf-heading-text { display: flex; align-items: center; gap: 6px; font-size: var(--fs-body); line-height: 22px; font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
+.vis-wf-text { position: relative; color: var(--color-ink-2); overflow-wrap: anywhere; }
+.vis-wf-text.vis-tone-muted { color: var(--color-ink-muted); }
+.vis-wf-ph { display: flex; flex-direction: column; gap: 5px; padding: 3px 0; }
+.vis-wf-ph i { display: block; height: 7px; border-radius: var(--r-full); background: var(--color-sunken); border: var(--stroke-thin) solid var(--color-border); }
+.vis-wf-ph i:last-child:not(:first-child) { width: 60%; }
+.vis-wf-table .vis-wf-ph { padding: 0; }
+.vis-wf-table .vis-wf-ph i { width: 70%; }
+.vis-wf-image { position: relative; display: grid; place-items: center; min-height: 96px; box-sizing: border-box; padding: 6px; border: var(--stroke-thin) solid var(--color-border-strong); border-radius: var(--r-sm); background: var(--color-sunken); text-align: center; }
+.vis-wf-cross { position: absolute; inset: 0; width: 100%; height: 100%; }
+.vis-wf-cross path { fill: none; stroke: var(--color-border-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.vis-wf-image-label { position: relative; padding: 1px 6px; border-radius: var(--r-xs); background: var(--color-surface); font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); }
+.vis-wf-image > .vis-wf-go { position: absolute; right: 6px; bottom: 6px; }
+.vis-wf-avatar { position: relative; display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; box-sizing: border-box; border-radius: var(--r-full); border: 1.5px solid var(--color-border-strong); background: var(--color-sunken); font-size: var(--fs-micro); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.vis-wf-icon { position: relative; display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--color-ink-2); }
+.vis-wf-dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: var(--r-full); background: var(--color-border-strong); }
+.vis-wf-icon > .vis-wf-dot { margin: 4px; }
+.vis-wf-badge { position: relative; align-self: flex-start; padding: 0 7px; border-radius: var(--r-full); border: var(--stroke-thin) solid var(--vis-stroke); background: var(--vis-fill); color: var(--vis-ink); font-size: var(--fs-micro); line-height: 16px; white-space: nowrap; }
+.vis-wf-stat { position: relative; min-width: 0; padding: 6px 10px; border: var(--stroke-thin) solid var(--vis-stroke); border-radius: var(--r-md); background: var(--color-surface); }
+.vis-wf-stat-label { font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.vis-wf-stat-value { font-size: var(--fs-heading-m); line-height: 26px; font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
+.vis-wf-stat-delta { font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); }
+.vis-wf-stat:not(.vis-tone-none) .vis-wf-stat-delta { color: var(--vis-stroke); }
+.vis-wf-chart { position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 6px 10px 8px; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); }
+.vis-wf-chart-glyph { display: block; width: 100%; height: 72px; }
+.vis-wf-chart-glyph * { fill: none; stroke: var(--color-border-strong); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.vis-wf-chart-glyph .vis-wf-chart-fill { fill: var(--color-sunken); }
+.vis-wf-chart:not(.vis-tone-none) .vis-wf-chart-glyph * { stroke: var(--vis-stroke); }
+.vis-wf-progress { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.vis-wf-progress-head { display: flex; justify-content: space-between; gap: 8px; }
+.vis-wf-progress-track { display: block; height: 8px; box-sizing: border-box; border-radius: var(--r-full); border: var(--stroke-thin) solid var(--color-border-strong); overflow: hidden; }
+.vis-wf-progress-fill { display: block; height: 100%; background: var(--color-accent); }
+.vis-wf-progress:not(.vis-tone-none) .vis-wf-progress-fill { background: var(--vis-stroke); }
+
+/* ---- Controls (drawings of them: nothing here is interactive but the chips) ---------------- */
+/* A chip that doesn't fit beside the label wraps under it, never squeezing the label. */
+.vis-wf-button { position: relative; display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px 6px; align-self: flex-start; min-height: 34px; box-sizing: border-box; padding: 4px 14px; border: 1.5px solid var(--color-border-strong); border-radius: var(--r-md); font-weight: var(--fw-semibold); color: var(--color-ink); text-align: center; }
+.vis-wf-phone .vis-wf-main > .vis-wf-button, .vis-wf-row > .vis-wf-button, .vis-wf-sheet > .vis-wf-button, .vis-wf-modal > .vis-wf-button, .vis-wf-empty > .vis-wf-button { align-self: stretch; }
+.vis-wf-empty > .vis-wf-button { align-self: center; }
+.vis-wf-button.vis-tone-accent { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
+.vis-wf-button.vis-tone-accent .vis-wf-go { color: var(--color-on-accent); border-color: currentColor; }
+.vis-wf-button:is(.vis-tone-error, .vis-tone-warn, .vis-tone-ok, .vis-tone-info) { border-color: var(--vis-stroke); color: var(--vis-stroke); }
+.vis-wf-button.vis-tone-muted { color: var(--color-ink-muted); border-color: var(--color-border); }
+.vis-wf-link { position: relative; display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; color: var(--color-accent); }
+.vis-wf-link > span:first-child { text-decoration: underline; text-underline-offset: 2px; }
+.vis-wf-field { position: relative; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.vis-wf-field-label { font-size: var(--fs-micro); line-height: 16px; font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.vis-wf-field-box { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 34px; box-sizing: border-box; padding: 0 9px; border: 1.5px solid var(--vis-stroke); border-radius: var(--r-md); color: var(--color-ink-muted); }
+.vis-wf-field.vis-tone-none .vis-wf-field-box { --vis-stroke: var(--color-border-strong); }
+.vis-wf-field-value { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vis-wf-field-hint { font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); }
+.vis-wf-field:not(.vis-tone-none) .vis-wf-field-hint { color: var(--vis-stroke); }
+.vis-wf-search .vis-wf-field-box { justify-content: flex-start; border-radius: var(--r-full); }
+.vis-wf-search .vis-wf-field-value { flex: 1; }
+.vis-wf-check { position: relative; display: flex; align-items: center; gap: 8px; min-height: 20px; min-width: 0; }
+.vis-wf-check-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.vis-wf-control { position: relative; flex: none; width: 14px; height: 14px; box-sizing: border-box; border: 1.5px solid var(--color-border-strong); border-radius: var(--r-xs); background: var(--color-surface); }
+.vis-wf-radio .vis-wf-control { border-radius: var(--r-full); }
+.vis-wf-on > .vis-wf-control { border-color: var(--color-accent); background: var(--color-accent); box-shadow: inset 0 0 0 2px var(--color-surface); }
+.vis-wf-toggle { flex-direction: row-reverse; }
+.vis-wf-toggle .vis-wf-control { width: 30px; height: 18px; border-radius: var(--r-full); }
+.vis-wf-toggle .vis-wf-control::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: var(--r-full); background: var(--color-border-strong); }
+.vis-wf-toggle.vis-wf-on .vis-wf-control { box-shadow: none; }
+.vis-wf-toggle.vis-wf-on .vis-wf-control::after { left: 14px; background: var(--color-on-accent); }
+.vis-wf-item > .vis-wf-toggle { min-width: 0; flex: none; }
+.vis-wf-item > .vis-wf-toggle .vis-wf-check-label:empty { display: none; }
+
+/* ---- States ------------------------------------------------------------------------------ */
+.vis-wf-empty { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 16px 12px; border: 1.5px dashed var(--color-border-strong); border-radius: var(--r-lg); text-align: center; }
+.vis-wf-empty-mark { width: 40px; height: 40px; margin-bottom: 4px; box-sizing: border-box; border-radius: var(--r-full); border: 1.5px solid var(--color-border-strong); background: var(--color-sunken); }
+.vis-wf-empty > b { font-weight: var(--fw-semibold); }
+.vis-wf-empty > :is(.vis-wf-button, .vis-wf-link) { margin-top: 6px; }
+.vis-wf-loading { position: relative; display: flex; flex-direction: column; gap: 6px; }
+.vis-wf-alert { position: relative; padding: 7px 10px; border: var(--stroke-thin) solid var(--vis-stroke); border-radius: var(--r-md); background: var(--vis-fill); box-shadow: inset 3px 0 0 var(--vis-stroke); overflow-wrap: anywhere; }
+.vis-wf-alert.vis-tone-none { --vis-stroke: var(--status-info); --vis-fill: var(--status-info-bg); }
+.vis-wf-toast { position: relative; padding: 8px 12px; border-radius: var(--r-md); background: var(--color-ink); color: var(--color-surface); box-shadow: var(--shadow-2); overflow-wrap: anywhere; }
+.vis-wf-divider { height: 0; border-top: var(--stroke-thin) solid var(--color-border); }
+.vis-wf-divider-row { position: relative; display: flex; align-items: center; gap: 6px; }
+.vis-wf-divider-row > .vis-wf-divider { flex: 1; }
+.vis-wf-box { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 6px 8px; border: 1.5px dashed var(--color-border-strong); border-radius: var(--r-sm); color: var(--color-ink-muted); }
+.vis-wf-box-tag { font-family: var(--font-mono); font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); }
+
+/* ---- Wireflow: chips and arrows ------------------------------------------------------------ */
+.vis-wf-go {
+  display: inline-flex; align-items: center; gap: 3px; flex: none; width: fit-content; max-width: 120px; margin: 0; padding: 0 6px;
+  border: var(--stroke-thin) solid var(--color-accent); border-radius: var(--r-full); background: var(--color-surface);
+  color: var(--color-accent); font: inherit; font-size: var(--fs-micro); line-height: 16px; font-weight: var(--fw-semibold); white-space: nowrap; cursor: pointer;
+}
+/* A 16px chip, with a 44px touch target around it (the drawing around it is not interactive). In a
+   scaled frame (--wf-k, set by the View) the target grows to stay 44px on screen, but never more than
+   16px past the chip, so two chips' targets don't overlap; 3px at the sides, as chips sit 6px apart. */
+.vis-wf-go:not(.vis-wf-go-off) { position: relative; }
+.vis-wf-image > .vis-wf-go { position: absolute; }
+.vis-wf-go:not(.vis-wf-go-off)::after { content: ""; position: absolute; inset: calc(-1 * min(22px / var(--wf-k, 1) - 9px, 16px)) -3px; }
+.vis-wf-button > .vis-wf-go { max-width: 100%; }
+.vis-wf-go-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: var(--fw-regular); }
+.vis-wf-go-off { border-style: dashed; cursor: default; background: transparent; }
+.vis-wf-button.vis-tone-accent .vis-wf-go { background: transparent; }
+/* Beneath the frames: an arrow shows in the gaps and the lane, never across a screen's content; its chip marks where it starts. */
+.vis-wf-arrows { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.vis-wf-arrow { fill: none; stroke: var(--color-accent); stroke-width: 1.5; }
+.vis-wf-arrow-head { fill: var(--color-accent); }
+
+/* ---- Marks: a ring in the mark's tone, never a fill; the number outside the block's top-right corner ---- */
+.vis-wf-em-accent { --wf-mark: var(--color-accent); }
+.vis-wf-em-ok { --wf-mark: var(--status-success); }
+.vis-wf-em-warn { --wf-mark: var(--status-warn); }
+.vis-wf-em-error { --wf-mark: var(--status-error); }
+.vis-wf-em-info { --wf-mark: var(--status-info); }
+.vis-wf-em-muted { --wf-mark: var(--color-border-strong); }
+.vis-wf :is(.vis-wf-em, .vis-wf-shot-name) > .vis-em-badge { background: var(--wf-mark, var(--color-accent)); }
+/* 2px clear of the block, so the ring never touches its text. */
+.vis-wf .vis-wf-em:is(div, span) { box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--wf-mark), 0 0 0 7px color-mix(in srgb, var(--wf-mark) 22%, transparent); border-radius: var(--r-sm); }
+/* Blocks that reach the frame's edge (which clips) take the ring inside. */
+.vis-wf :is(.vis-wf-item, .vis-wf-header, .vis-wf-tabs, .vis-wf-tabbar, .vis-wf-footer, .vis-wf-sidebar, .vis-wf-sheet).vis-wf-em { box-shadow: inset 0 0 0 2px var(--wf-mark); }
+.vis-wf .vis-wf-button.vis-wf-em, .vis-wf .vis-wf-stat.vis-wf-em, .vis-wf .vis-wf-card.vis-wf-em { border-radius: var(--r-md); }
+.vis-wf .vis-wf-em > .vis-em-badge { position: absolute; top: -12px; right: -12px; z-index: 4; margin: 0; }
+/* On a ring inside the block: the number straddles its top edge, clear of the text. */
+.vis-wf :is(.vis-wf-item, .vis-wf-header, .vis-wf-tabs, .vis-wf-tabbar, .vis-wf-footer, .vis-wf-sidebar, .vis-wf-sheet).vis-wf-em > .vis-em-badge { top: -9px; right: 8px; }
+.vis-wf .vis-wf-table td > .vis-em-badge { margin-left: 6px; background: var(--wf-mark); }

@@ -11,6 +11,21 @@ source = no rebuild and no restart. Options are listed at the top of `install.sh
 Remote access over ssh is opt-in: `… | sh -s -- --ssh-key "<your public key line>"` adds the key, turns password logins
 off (key-only) and runs sshd as a runit service, so it comes back whenever Termux opens or the phone reboots.
 
+`--node-id`, `--dns`, `--tailnet-ip`, `--port` and `--peer-port` are remembered in `~/sova-mesh/.install/arg-*`: a rerun
+without one of them keeps the value given last (a new value replaces it), so a plain rerun never drops the phone's
+StableID or name from its env.
+
+From the laptop, with `--ssh-key` installed: `scripts/mesh-termux/deploy.sh [--ssh <user@host>] [--ssh-port <n>] [--rev
+<sha>] [-- <install.sh options>]` streams `git archive` of a commit of the laptop's checkout over ssh and runs that
+commit's install.sh with it (`--source-url file://…`; the target defaults to PHONE / PHONE_PORT in `local.env`). The
+host menu's resync (`§mesh.peers/resync`) runs it for a phone that is behind, with a recipe in the laptop's
+`~/.pi/agent/sova/mesh-resync.json`:
+
+    {"hosts": {"fold8": {"kind": "termux", "ssh": "u0_a123@100.64.0.3", "sshPort": 8022}}}
+
+(`"args"` adds installer options; `--source-url` and `--ref` are refused). A phone install takes minutes; the phone must be
+awake and on the tailnet.
+
 Remove everything it added (default), or keep sshd, its key, the key-only config and the wake lock:
 
     sh ~/sova-mesh/uninstall.sh [--keep-ssh]

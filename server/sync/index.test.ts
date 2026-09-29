@@ -92,12 +92,8 @@ const until = async (cond: () => boolean, ms = 3000) => {
 const auth = (h: FakeHost) => JSON.parse(readFileSync(join(h.agentDir, "auth.json"), "utf8"));
 const writeAuth = (h: FakeHost, data: unknown) => writeFileSync(join(h.agentDir, "auth.json"), JSON.stringify(data, null, 2), { mode: 0o600 });
 
-test("the Claude store is never the real ~/.claude on a hermetic agent dir", () => {
-  assert.equal(claudeSyncDir({ PI_CODING_AGENT_DIR: "/x/.agent" }), null);
-  assert.equal(claudeSyncDir({ PI_CODING_AGENT_DIR: "/x/.agent", HOME: "/home/u" }), null);
-  assert.equal(claudeSyncDir({ PI_CODING_AGENT_DIR: "/x/.agent", SOVA_SYNC_CLAUDE_DIR: "/lab/claude" }), "/lab/claude");
-  assert.equal(claudeSyncDir({ CLAUDE_CONFIG_DIR: "/cfg" }), "/cfg");
-  assert.match(claudeSyncDir({})!, /\/\.claude$/);
+test("Claude Code's own store is never synced: each device keeps its own ~/.claude", () => {
+  assert.equal(claudeSyncDir(), null);
 });
 
 test("mesh off: routes are 404 and nothing is read or written", async () => {

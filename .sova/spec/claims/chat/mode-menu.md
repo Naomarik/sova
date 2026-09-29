@@ -31,8 +31,8 @@ In chat sessions it sits in the composer foot (§chat/composer), at the right en
 indicator, the disabled reason, then this. It's in reach of the message it affects, next to the
 model and thinking level that also shape the next turn. A watched (TUI) session has no composer
 foot to show it in, and nothing to show anyway: the TUI keeps its mode in memory, so we can't say
-what it's using. The session head's right side keeps the context gauge, the subagents or team
-chip and the info button (§chat/context-window); it carries no mode.
+what it's using. The session head's right side keeps the context readout, the remote and `TUI`
+chips and the info button (§chat/context-window); it carries no mode.
 
 The Overseer is the one chat without it: it is always in the normal mode with no minor modes
 (§app.overseer/hosting), so there is nothing to switch, and its **Quick Actions** button takes
@@ -53,12 +53,8 @@ this slot (§app.overseer/quick-actions).
   no fixed cap: whatever fits reads in full, with the full text in `title` either way. Only real
   pressure in the foot shrinks it, and it shares that squeeze with the model indicator's 24ch cap
   beside it. The minors are their own span, so they ellipsize first and the major mode last.
-  Before the chat's first `mode` message arrives no row is checked (the default is not this chat's
-  state), and the label reads what the session list has for this session (`SessionSummary.mode`:
-  the newest `mode` entry in its file, else the default for sessions), so opening a session never
-  widens or narrows the trigger when that message lands; it reads just "Mode" only while the list
-  has no row for the session. The message replaces it, so a list read that disagrees (the file's
-  newest entry sits on a branch rewound away) is corrected then.
+  Before the chat's first `mode` message arrives it reads just "Mode" and no row is checked: the
+  default is not this chat's state.
 - **Name.** `aria-label` repeats the label with "Mode: " in front, so it survives when the label
   hides. A pending switch adds ", applies after this turn".
 - **Every width.** It never hides and never goes icon-only: the label is the fact. It narrows the
@@ -273,12 +269,50 @@ fold) and the next request's cache read covers the previous context; on any prov
 records no system entry for the toggle, and the provider's system prompt is byte-identical before
 and after it. The model draws `vis` fences after turning it on and none after turning it off.
 
+## §chat.mode-menu/workers — What a chat's workers get of its modes
+
+A worker is not a chat: it has no mode menu, and its parent's major mode never reaches it
+(workers spawn no workers, so Delegate has nothing to route there). Each **minor mode declares
+whether it reaches workers** (`MINOR_WORKER` in `pi-config/extensions/mode/minor.ts`, a record
+over every minor mode, so a new one cannot be added without deciding): `spec` does; `align`
+does not (aligning is a conversation with the user, which a worker doesn't have), nor does `vis`
+(its visuals are for the user, and a worker's replies are read by its parent session).
+
+- **What a worker gets.** While the parent chat has spec on, every worker it starts — pi or
+  Claude Code, plain, remote, sandboxed, hosted, or a team member — gets the spec block
+  (`spec-mode.md`, byte for byte) at the end of its system prompt, after its agent type, its
+  brief and any remote instructions, followed by a short **worker note**: the brief is its
+  go-ahead; it works in the draft its brief names (or says which it started); it doesn't promote,
+  commit or record `--commit` evidence unless the brief says so — the parent promotes; and flags
+  go as one question in its final report. Nothing else of the parent's mode reaches it: no
+  Delegate block, no align block, no Delegate+align bridge, and never the spec-writer paragraph
+  (a worker can't spawn one). With spec off the worker's prompt carries nothing from the mode.
+- **Not everyone.** A team's monitor (it has no tools) gets no spec block. A worker on its
+  worktree's own agent dir (§chat.worktrees/worktree-config) gets none from the parent either: its
+  tree's own mode extension gives it spec, always on, in its worker form (the same block and note,
+  no writer paragraph).
+- **A snapshot, taken at spawn.** The worker gets the modes the parent has when it starts; a
+  later switch in the chat doesn't reach a running worker (§chat.mode-menu/how-a-switch-reaches-the-chat:
+  there is no reload). A resumed worker takes the parent's **current** worker modes, exactly as at
+  spawn (§app.worker-restore/resume), not the ones it first started with.
+- **The card says so.** What a worker was given is recorded with it (its live record and its
+  durable record) and shown on its view head (§app.subagents-pane/transcript-view) as
+  a quiet chip on its title row reading the mode names (`spec`; several comma-joined), beside
+  its status chip. A worker given none, and one recorded by an
+  older pi-config, shows nothing.
+
+The parent learns nothing new: the mode extension publishes the parent's worker modes and the
+worker prompt on the extension bus (`mode:worker`), the way the sandbox publishes its state
+(§chat.sandbox/workers), and the subagents extension appends that text at spawn without
+interpreting it. A parent without the mode extension publishes nothing, and its workers get
+nothing.
+
 ## §chat.mode-menu/states — States
 
 | State | Shows |
 |---|---|
 | Idle | Trigger label, and this chat's rows checked |
-| No `mode` message yet | Trigger reads the session list's mode for this session ("Mode" without a row), nothing checked (the default isn't this chat's state) |
+| No `mode` message yet | Trigger reads "Mode", nothing checked (the default isn't this chat's state) |
 | Saving | Rows `aria-disabled` (the cursor is `progress`) |
 | Mid-turn switch | Info banner "Applies after this turn." (trigger name adds it too) |
 | Chat can't switch | Warn banner "This chat can't switch." |

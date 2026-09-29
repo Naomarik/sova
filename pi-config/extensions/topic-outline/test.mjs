@@ -1,5 +1,6 @@
 // Runs against the installed Pi packages without installing duplicate dependencies.
 // Mirrors the sessions extension harness: jiti aliases pi packages, node:test suites.
+import '../claude-code/tests/hermetic-env.mjs'; // first: never the inherited agent dir / Claude directory
 import { execFileSync } from 'node:child_process';
 import { realpathSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';

@@ -1,6 +1,8 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
-import type { SlashCommand, UploadResult } from "../../shared/protocol";
+import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
+import { composerLogin } from "../lib/claude-login";
 import { runControls } from "../lib/compact";
+import { createTouchMode, enterSends } from "../lib/input-mode";
 import { enterRunsLocal, insertCommand, localCommand, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import {
@@ -48,23 +50,49 @@ import { isOpenDoc, type AlignEntry } from "../lib/align";
 import { AlignChip } from "./AlignChip";
 import { dragHasRow } from "../lib/session-groups";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
-import { showWorkersLabel, teamNote, type WorkingSplit, workersRunningLabel, workersWorkingLabel } from "../lib/workers";
+import { showWorkersOfLabel, teamNote, type WorkingSplit, workersOfLabel, workersRunningLabel } from "../lib/workers";
 import { ComposerMenu, type ComposerMenuApi, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { sandboxBadge } from "../lib/sandbox";
 import type { ModelControl } from "./ModelMenu";
 import { ModeMenu, type ModeControl } from "./ModeMenu";
 import { Icon, type IconName } from "./ui";
+import type { RunDetail, RunStep } from "../lib/live";
 import { hostOf } from "../lib/mesh";
+import { createVoiceInput, VoiceButton, VoiceStrip } from "./VoiceInput";
 
 /** The session pane's element id: ONE pane, five tabs, so every trigger controls the same id. */
 const PANE_ID = "session-pane";
 
+/** The run-status row's icon for what the turn is doing (§chat.transcript/streaming). */
+const STEP_ICON: Record<RunStep, IconName> = { thinking: "bulb", writing: "pencil", tool: "wrench" };
+
+const RING_R = 6;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_R;
+
+/** The subagents trigger's meter: the working share of every worker, filled clockwise from 12
+    o'clock, empty once all have settled. Static — the row's one live dot is what moves — and
+    `aria-hidden`: the trigger's words say the same. */
+function WorkersRing(props: { working: number; total: number }) {
+  const fraction = () => (props.total > 0 ? Math.min(1, props.working / props.total) : 0);
+  return (
+    <svg class="workers-ring" viewBox="0 0 14 14" aria-hidden="true">
+      <circle class="workers-ring-track" cx="7" cy="7" r={RING_R} fill="none" />
+      <circle
+        class="workers-ring-fill"
+        cx="7"
+        cy="7"
+        r={RING_R}
+        fill="none"
+        transform="rotate(-90 7 7)"
+        style={{ "stroke-dasharray": `${RING_CIRCUMFERENCE}`, "stroke-dashoffset": `${RING_CIRCUMFERENCE * (1 - fraction())}` }}
+      />
+    </svg>
+  );
+}
+
 export interface ComposerReason {
   icon: IconName;
   text: string;
-  /** Blocks all the same, but the foot doesn't say it (yet): a first connect that is still quick,
-      whose "Connecting…" would only flash in the foot and squeeze the model and mode for a frame. */
-  quiet?: boolean;
 }
 
 /** `KB` under 1 MB, rounded; otherwise one decimal. */
@@ -86,8 +114,10 @@ export function Composer(props: {
   /** A compaction runs (§chat.slash-commands/compact): Stop and the status row, but no Steer. */
   compacting?: boolean;
   stopping: boolean;
-  /** "running bash" / "thinking" / "writing" / "Compacting context" … */
-  detail: string | null;
+  /** What the turn is doing: the row shows its icon, the words go to the tooltip and the name. */
+  detail: RunDetail | null;
+  /** A rare state that keeps its words on the row: "Compacting context", "Retrying after a provider error". */
+  activity?: string | null;
   /** Subagents working now; after the turn settles they get their own status row. */
   workersWorking?: number;
   /** Every subagent this session has, working or settled, so the row survives going idle. */
@@ -139,6 +169,8 @@ export function Composer(props: {
   cwd?: string | null;
   /** Chat sessions only: the flyout's model picker. */
   model?: ModelControl | null;
+  /** Chat sessions only: the chat's Claude login (WS "claude_login"), shown beside the model. */
+  claudeLogin?: () => ChatClaudeLogin | null;
   /** Chat sessions only: the flyout's Thinking ladder. */
   thinking?: ThinkingControl | null;
   /** Chat sessions only: this chat's mode switch, at the right end of the foot. */
@@ -156,7 +188,7 @@ export function Composer(props: {
   onAbort(): void;
   /** Queued text a Stop handed back; each new object goes ahead of the draft (TUI Esc order). */
   restored?: { text: string } | null;
-  /** Recommendations ticked on an alignment card (§chat.alignment/card), staged for the next send:
+  /** Answers picked on an alignment card (§chat.alignment/card), staged for the next send:
       the row names them, and `compose` puts their line ahead of the typed text in one message. */
   picks?: { label: string; compose(text: string): string; clear(): void } | null;
   /** Whether the draft holds anything to send (text or an attachment), as it changes. */
@@ -210,9 +242,15 @@ export function Composer(props: {
    * this composer is focused or holds a draft — a pane with text must keep it visible, and the one
    * you are typing in must not shrink under you.
    */
-  const collapsed = () => !!scope.id && groupComposerActive() && !focused() && !text();
+  const collapsed = () => !!scope.id && groupComposerActive() && !focused() && !text() && voice.phase() === "idle";
   const paneId = (base: string) => paneScopedId(scope, base);
   const announce = usePaneAnnounce();
+  /** Dictation into this box (§chat/voice): the mic in the row, its strip above it. */
+  const voice = createVoiceInput({
+    input: () => input,
+    hint: () => props.cwd?.split("/").filter(Boolean).pop() ?? null,
+    announce,
+  });
 
   /** Any local write (typing, send's clear, a restore) makes this tab's text the authority, so a
       stored draft still on its way from the server must not replace it. */
@@ -238,44 +276,31 @@ export function Composer(props: {
   /** TUI-live, connecting, reconnecting: nothing attaches and nothing sends. */
   const disabled = () => !!reason();
   /** What the foot says: the state's reason, else that an attachment is still uploading. */
-  const shownReason = (): ComposerReason | null => {
-    const r = reason();
-    return r ? (r.quiet ? null : r) : uploading() > 0 ? { icon: "clock", text: "Uploading…" } : null;
-  };
-  // The key hint lives in the placeholder, and only at unfolded width: a touch-first device has
-  // no Enter key to speak of. Live, so a resize across 768px swaps it in place.
-  const unfolded = matchMedia("(min-width: 768px)");
-  const [keyHint, setKeyHint] = createSignal(unfolded.matches);
-  const onBand = (e: MediaQueryListEvent) => setKeyHint(e.matches);
-  unfolded.addEventListener("change", onBand);
-  onCleanup(() => unfolded.removeEventListener("change", onBand));
+  const shownReason = (): ComposerReason | null => reason() ?? (uploading() > 0 ? { icon: "clock", text: "Uploading…" } : null);
+  // Tapped, Enter adds a line and Send sends; the placeholder's key hint shows exactly when
+  // Enter sends, so it swaps in place when the mode does.
+  const { touch, onPointerDown } = createTouchMode();
   const placeholder = () =>
     [props.running ? "Steer the current turn…" : "",
-      keyHint() && !props.readOnly ? "Enter sends, Shift+Enter adds a line" : ""]
+      !touch() && !props.readOnly ? "Enter sends, Shift+Enter adds a line" : ""]
       .filter(Boolean).join(" ");
   const canSend = () => !disabled() && uploading() === 0 && (text().trim().length > 0 || images().length > 0 || !!props.picks);
   createEffect(() => props.onDraft?.(text().trim().length > 0 || images().length > 0));
 
   // ---- Model indicator: this session's model and thinking level, and
   // the second trigger for the flyout that changes them. -----------------------------------
-  /** What the session runs: the chat's own word once its hello says, and until then what the
-      session list read off the file (`known`), so the indicator is final from the first frame. */
-  const runningRef = () => props.model?.model() ?? props.model?.known?.() ?? null;
   /** What the session runs, or the target it's switching to — the flyout's Model row, shortened. */
-  const modelRef = () => props.model?.pending() ?? runningRef();
-  /** The level to show, or null when this model's ladder isn't a choice. Before the hello, the
-      list's level, if the ladder has it (pi clamps a level the model lacks: the hello will say). */
+  const modelRef = () => props.model?.pending() ?? props.model?.model() ?? null;
+  /** The level to show, or null when this model's ladder isn't a choice. */
   const levelShown = () => {
     const thinking = props.thinking;
-    const ladder = thinking ? thinkingLevelsFor(runningRef(), hostOf(props.path)) : [];
-    if (!thinking || ladder.length <= 1) return null;
-    const known = thinking.known?.() ?? null;
-    return thinking.pending() ?? thinking.level() ?? (known && ladder.includes(known) ? known : null);
+    if (!thinking || thinkingLevelsFor(props.model?.model(), hostOf(props.path)).length <= 1) return null;
+    return thinking.pending() ?? thinking.level();
   };
   // The thinking ladder decides whether the level is worth showing, and it only arrives with the
   // model catalog — load it as soon as a session has a thinking control, not when the flyout opens.
   createEffect(() => {
-    if (props.thinking && runningRef() && !modelList(hostOf(props.path))) void ensureModels(hostOf(props.path)).catch(() => {});
+    if (props.thinking && props.model?.model() && !modelList(hostOf(props.path))) void ensureModels(hostOf(props.path)).catch(() => {});
   });
   /** Open by the indicator, closed by it again: one control, one state. */
   const indicatorOpen = () => !!menu()?.open() && menu()?.anchor() === indicator;
@@ -289,23 +314,40 @@ export function Composer(props: {
   };
 
   /** The subagents status row: what's working, or — once idle — what the session
-      has, so the pane stays one click away after every worker settles. While the parent's own
-      turn runs it stays too, showing the counts without repeating "working" beside the Working
-      label; a settled-workers row is only worth offering once the parent is idle. */
+      has, so the pane stays one click away after every worker settles. Its ring draws the
+      working share of every worker the session has; a settled-workers row is only worth
+      offering once the parent is idle. */
   const workersRow = () => {
     const working = props.workersWorking ?? 0;
+    // The list's total can lag the socket's working count: never draw more working than there are.
+    const total = Math.max(props.workersTotal ?? 0, working);
     if (working > 0)
       return {
-        live: true,
-        text: props.running ? workersRunningLabel(working, props.workersSplit) : workersWorkingLabel(working, props.workersSplit),
-        label: showWorkersLabel(working, props.workersSplit),
+        working,
+        total,
+        n: `${working}/${total}`,
+        text: workersOfLabel(working, total, props.workersSplit),
+        label: showWorkersOfLabel(working, total, props.workersSplit),
       };
     if (props.running) return null;
-    const total = props.workersTotal ?? 0;
     if (total === 0 || !props.onShowWorkers) return null; // settled workers are only worth a row you can open
     const text = `${total} ${total === 1 ? "subagent" : "subagents"}`;
-    return { live: false, text, label: `${text} — show subagents` };
+    return { working: 0, total, n: `${total}`, text, label: `${text} — show subagents` };
   };
+  /** The subagents trigger shows a count; its tooltip is the words, plus the split of a mix of
+      subagents and team members, and the team when there is one. */
+  const workersTitle = (words: string) => {
+    const split = props.workersSplit;
+    const mix = split && split.members > 0 && split.subagents > 0 ? workersRunningLabel(props.workersWorking ?? 0, split) : undefined;
+    return [words, mix, teamNote(split)].filter(Boolean).join("\n");
+  };
+  /** The session has work in flight: its own run status, or a subagent working. The row's one dot. */
+  const inFlight = () => controls().status || (props.workersWorking ?? 0) > 0;
+
+  /** The run-status words: the tooltip and accessible name of the icon, or, for Stopping and the
+      rare states, the row's own text. */
+  const stateWords = () =>
+    props.stopping ? "Stopping…" : props.activity ?? (props.detail ? `Working · ${props.detail.text}` : "Working");
 
   /** A status-row trigger is expanded only when the pane shows ITS tab — the pane open on any
       other tab is not this control's disclosure. `paneTab` answers when App knows the tab; null
@@ -743,13 +785,31 @@ export function Composer(props: {
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
         <Show when={controls().status || workersRow() || inputsRow() || inputsHeld() || alignRow()}>
           <p class="run-status">
+            {/* One dot leads the row while anything works — the turn, a stop, a rare state, a
+                compaction or a subagent — and nothing else in the row pulses. */}
+            <Show when={inFlight()}>
+              <span class="live-dot" aria-hidden="true" />
+            </Show>
+            {/* Two forms, picked by the composer's width in CSS (§chat.transcript/streaming): wide,
+                "Working · running bash" in words; narrow, the step's icon, the same words visually
+                hidden, so they're read once either way. Stopping and the rare states keep their
+                words in both. */}
             <Show when={controls().status}>
-              <span class="live-dot" />
-              <Show when={!props.stopping} fallback="Stopping…">
-                Working
-                <Show when={props.detail}>
-                  <span class="run-status-detail">· {props.detail}</span>
-                </Show>
+              <Show
+                when={!props.stopping && !props.activity}
+                fallback={
+                  <span class="run-status-state" title={stateWords()}>
+                    <span class="run-status-words">{stateWords()}</span>
+                  </span>
+                }
+              >
+                <span class="run-status-state" title={stateWords()}>
+                  <Show when={props.detail}>{(d) => <Icon name={STEP_ICON[d().step]} small class="run-status-narrow" />}</Show>
+                  <span class="run-status-say">
+                    Working
+                    <Show when={props.detail}>{(d) => <span class="run-status-detail">· {d().text}</span>}</Show>
+                  </span>
+                </span>
               </Show>
             </Show>
             <Show when={workersRow()}>
@@ -758,10 +818,11 @@ export function Composer(props: {
                   <Show
                     when={props.onShowWorkers}
                     fallback={
-                      <>
-                        <span class="live-dot" />
-                        <span title={teamNote(props.workersSplit)}>{row().text}</span>
-                      </>
+                      <span class="run-status-workers" title={workersTitle(row().text)}>
+                        <WorkersRing working={row().working} total={row().total} />
+                        <span class="text-num run-status-narrow" aria-hidden="true">{row().n}</span>
+                        <span class="run-status-say">{row().text}</span>
+                      </span>
                     }
                   >
                     {(show) => (
@@ -769,15 +830,14 @@ export function Composer(props: {
                         type="button"
                         class="run-status-link"
                         aria-label={row().label}
-                        title={teamNote(props.workersSplit)}
+                        title={workersTitle(row().label)}
                         aria-expanded={tabExpanded(props.workersOpen, "agents") ? "true" : "false"}
                         aria-controls={PANE_ID}
                         onClick={() => show()()}
                       >
-                        <Show when={row().live}>
-                          <span class="live-dot" />
-                        </Show>
-                        {row().text}
+                        <WorkersRing working={row().working} total={row().total} />
+                        <span class="text-num run-status-narrow">{row().n}</span>
+                        <span class="run-status-wide">{row().text}</span>
                         <Icon name="chevron-right" small />
                       </button>
                     )}
@@ -793,7 +853,7 @@ export function Composer(props: {
                 <button
                   type="button"
                   class="run-status-link"
-                  style={{ "margin-left": alignRow() ? 0 : "auto", "margin-right": 0 }}
+                  style={{ "margin-left": alignRow() ? "calc(var(--run-status-pad) * -1)" : "auto", "margin-right": 0 }}
                   aria-label={row().label}
                   aria-expanded={props.inputsOpen ? "true" : "false"}
                   aria-controls={PANE_ID}
@@ -808,7 +868,7 @@ export function Composer(props: {
               <span
                 class="run-status-link"
                 aria-hidden="true"
-                style={{ visibility: "hidden", "margin-left": alignRow() ? 0 : "auto", "margin-right": 0 }}
+                style={{ visibility: "hidden", "margin-left": alignRow() ? "calc(var(--run-status-pad) * -1)" : "auto", "margin-right": 0 }}
               >
                 {inputsText(1)}
                 <Icon name="chevron-right" small />
@@ -856,6 +916,7 @@ export function Composer(props: {
             ids={slashIds()}
             active={slashActive()}
             query={slashToken()?.query ?? ""}
+            touch={touch()}
             onPick={pickSlash}
             onHover={setSlashActive}
           />
@@ -880,10 +941,10 @@ export function Composer(props: {
 
         <Show when={props.picks}>
           {(p) => (
-            <div class="align-picks" role="group" aria-label="Staged recommendations">
+            <div class="align-picks" role="group" aria-label="Staged answers">
               <Icon name="check" small />
-              <span class="align-picks-text" title={`Taking your recommendation: ${p().label}`}>
-                Taking your recommendation: <span class="text-mono">{p().label}</span>
+              <span class="align-picks-text" title={`Answering: ${p().label}`}>
+                Answering: <span class="text-mono">{p().label}</span>
               </span>
               <button type="button" class="button button-icon button-ghost" aria-label="Clear Picks" title="Clear Picks" onClick={() => p().clear()}>
                 <Icon name="close" small />
@@ -891,6 +952,7 @@ export function Composer(props: {
             </div>
           )}
         </Show>
+        <VoiceStrip voice={voice} />
         <Show when={images().length > 0 || rejected().length > 0}>
           <ul class="attachments" aria-label="Attachments" ref={list}>
             <For each={images()}>
@@ -940,6 +1002,10 @@ export function Composer(props: {
         </Show>
 
         <div class="composer-row">
+          {/* The mic first, left of the plus; gone with the textarea's writability (§chat.voice/button). */}
+          <Show when={!props.readOnly}>
+            <VoiceButton voice={voice} />
+          </Show>
           {/* One flyout in place of the old Attach and Commands buttons. */}
           <ComposerMenu
             disabled={disabled()}
@@ -979,6 +1045,7 @@ export function Composer(props: {
             id={paneId("composer-input")}
             rows={1}
             placeholder={placeholder()}
+            enterkeyhint={touch() ? "enter" : "send"}
             aria-describedby={paneId("composer-reason")}
             aria-autocomplete={slashOpen() || mentionOpen() ? "list" : undefined}
             aria-controls={listboxControls() ?? undefined}
@@ -1001,6 +1068,7 @@ export function Composer(props: {
                 updateMention();
               }
             }}
+            onPointerDown={onPointerDown}
             onFocus={() => setFocused(true)}
             onBlur={() => {
               setFocused(false);
@@ -1016,7 +1084,9 @@ export function Composer(props: {
               addFiles(files, true);
             }}
             onKeyDown={(e) => {
-              if (slashOpen() && !e.isComposing && !enterRunsLocal(text(), e.key, e.shiftKey, localOpts())) {
+              // A bare local command runs on the Enter that would send; in touch mode it's a newline.
+              const runsLocal = enterSends(e, touch()) && enterRunsLocal(text(), e.key, e.shiftKey, localOpts());
+              if (slashOpen() && !e.isComposing && !runsLocal) {
                 const hasMatches = slashMatches().length > 0;
                 if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                   if (!hasMatches) return;
@@ -1050,8 +1120,8 @@ export function Composer(props: {
                   setMentionActive((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + n) % n);
                   return;
                 }
-                // Enter and Tab both complete: the next Enter, menu closed, sends. With no
-                // match, Enter falls through and sends the typed text as-is.
+                // Enter and Tab both complete: the next Enter, menu closed, does what Enter does.
+                // With no match, Enter falls through to that rule with the typed text as-is.
                 if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
                   if (hasMatches) {
                     e.preventDefault();
@@ -1068,7 +1138,7 @@ export function Composer(props: {
                   return;
                 }
               }
-              if (e.key === "Enter" && !e.shiftKey && !e.isComposing) void send(e);
+              if (enterSends(e, touch())) void send(e);
             }}
           />
           <div class="composer-actions">
@@ -1140,6 +1210,14 @@ export function Composer(props: {
               <Icon name="chevron-down" small class="composer-model-caret" />
             </button>
           </Show>
+          <Show when={composerLogin(props.claudeLogin?.() ?? null, modelRef())}>
+            {(l) => (
+              <span class="composer-login" title={l().title} aria-label={l().label}>
+                <span class="composer-login-full">{l().text}</span>
+                <span class="composer-login-short">{l().short}</span>
+              </span>
+            )}
+          </Show>
           <span class="composer-reason" id={paneId("composer-reason")}>
             <Show when={shownReason()}>
               {(r) => (
@@ -1150,7 +1228,7 @@ export function Composer(props: {
               )}
             </Show>
           </span>
-          <Show when={sandboxBadge(props.sandbox?.state() ?? props.sandbox?.known?.() ?? null)}>
+          <Show when={sandboxBadge(props.sandbox?.state() ?? null)}>
             {(b) => (
               <span class={`composer-sandbox composer-sandbox-${b().tone}`} title={b().label}>
                 <Icon name="shield" small />

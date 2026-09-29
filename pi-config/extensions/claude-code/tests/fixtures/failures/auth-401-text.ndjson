@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","session_id":"s-6"}
+{"type":"result","subtype":"success","is_error":true,"result":"Failed to authenticate. API Error: 401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"OAuth token has expired.\"}}","num_turns":1,"session_id":"s-6"}

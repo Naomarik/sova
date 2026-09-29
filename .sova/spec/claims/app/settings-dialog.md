@@ -7,8 +7,8 @@ each other (§design/ground-rules and §design/deviations record the deviation).
 the session stays behind, closed by the scrim, Esc, or its Close button (Cancel while anything
 is unsaved, §app.settings-dialog/save-bar).
 
-The rail is the structure: each settings screen is one tab — General, Models, Modes, Teams,
-Overseer, Decisions, Summaries, Organizations, Themes, Mesh, Experimental.
+The rail is the structure: each settings screen is one tab — General, Models, Accounts, Modes, Teams,
+Overseer, Decisions, Summaries, Organizations, Themes, Mesh, Voice, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
 (§chat/mode-menu) opens Modes directly, and nothing else about the chat changes. Which tab is open lives in
@@ -216,7 +216,7 @@ The file is `~/.pi/agent/topic-outline.json` (shown in the footnote), shared wit
 terminal. The TUI and every runtime read it once per session, at session start, so **a change
 applies to sessions started afterwards, here and in the terminal**, and the panel says so. A
 missing file, or one naming no usable summarizer, reads as the extension's built-in chain —
-Claude Code `haiku`, then pi `ollama-cloud/deepseek-v4.1-flash` — and, while nothing is staged,
+pi `ollama-cloud/deepseek-v4.1-flash`, then Claude Code `sonnet` — and, while nothing is staged,
 the section heading says those are the built-in models, beside its Reset to Defaults.
 
 - **Choices, not free text.** Model lists are Delegate's (`GET /api/settings/delegate/options`).
@@ -248,6 +248,43 @@ the section heading says those are the built-in models, beside its Reset to Defa
   so in a banner — the extras still run, and a save here keeps only the two shown. A file that
   exists but isn't a JSON object is never overwritten: an error banner quotes why, sessions run
   the built-in chain, and the selects and Save are disabled until it is fixed.
+
+**Session titles**, the tab's second section, below the summary line: whether and with which
+model Sova names sessions itself (§app.session-list/auto-titles). It is Sova's own file,
+`<state root>/session-titles-settings.json` (`~/.pi/agent/sova/`, shown in the footnote), never
+`topic-outline.json`: nothing outside Sova reads it, each host has its own, and a save applies to
+the sweep's next run.
+
+- **A switch, "Name sessions automatically", off by default.** Its hint says what it does: each
+  session is named once, from its summary line, after it has been quiet for the time below, and a
+  title you or the Overseer set is never changed. Off, no background call is made; the section
+  heads' Name sessions button works either way.
+- **Timing, two whole-minute fields**, Teams' number fields: "Check every (minutes)" (default 5,
+  1–1440; hint "How often the sweep looks for sessions to name.") and "After quiet for (minutes)"
+  (default 5, 0–1440; hint "A session is named once nothing was written in it for this long.").
+  A value outside its range, or not a whole number, replaces the hint with "A whole number of
+  minutes, {min} to {max}." and holds Save.
+- **Primary and an optional Fallback**, each the Delegate row — Backend, Model, Effort
+  (`WorkerSlotRow`), with that row's model lists and its "not offered" and "not verified" notes,
+  but without Delegate's "off for subagents" marks (a title model is not a worker) — and the same
+  Fallback switch as the summary line's; with it off, "No fallback: when the primary can't run,
+  sessions keep their titles until it can." The defaults are pi
+  `ollama-cloud/deepseek-v4.1-flash` at effort `off`, then Claude Code `sonnet` at effort `low`.
+  **Reset to Defaults** in the section heading fills them in, with the switch and timing, and
+  saves nothing; it is disabled while the form already shows them.
+- **When neither saved model can run**, a warning banner says so with each row's reason
+  ("not in pi's model registry", "no key for {provider}", "the Claude Code CLI isn't installed or
+  doesn't answer", "turned off in Settings → Models", from `GET`'s `unusable`): "Neither title
+  model can run right now." then "Primary: {reason}." and "Fallback: {reason}.". Saving is still
+  allowed.
+- **Picks wait for Save** (§app.settings-dialog/save-bar), as "Session titles" in the footer.
+  Save waits for a complete form (both minute fields valid, every row has a model and an effort,
+  the fallback is not the primary; the footer names the first of these that's missing, e.g.
+  "Session titles needs a whole number of minutes between checks."), and the server refuses the
+  same (400). A failed save keeps
+  the draft under "Couldn't save the session title settings.", with the reason.
+- **The file.** Read tolerantly (a missing or broken file, or a field in it that doesn't parse,
+  reads as that field's default), written whole and atomically on Save.
 
 ## §app.settings-dialog/themes — Themes
 
@@ -570,3 +607,64 @@ Only those two: the list rule is fixed, not learned, so it holds from the first 
 restart and never depends on having seen the CLI list them. Nothing is removed or reordered, and
 a base the CLI doesn't list gains nothing. All three surfaces apply one rule (the claude-code
 extension's `context-window.ts`).
+
+## §app.settings-dialog/voice — Voice
+
+The Voice tab sets up and looks after this host's dictation engine (§chat/voice): whisper.cpp
+`v1.9.4` and the model `ggml-large-v3-turbo-q5_0` (574,041,195 bytes, pinned sha256
+`394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2`; there is no model picker).
+It is the machine's, not this browser's: everything lives under `<state root>/voice/`
+(`SOVA_VOICE_DIR` overrides it), so any client — desktop or phone — sees the same install and the
+same progress. The composer's mic opens the same setup as a sheet when voice isn't ready; both
+render one view.
+
+- **Before setup** the view says what will happen — the GPU backend detected (Vulkan, Metal or
+  CUDA, with the device when known, else CPU), a whisper.cpp build of a few minutes (or, for CPU,
+  a prebuilt binary), and the 574 MB model download — and offers one primary, `Set Up Voice`.
+  Nothing downloads or builds before that press.
+- **One press, then automatic.** `POST /api/voice/install` (202; 409 while a job runs) starts a job
+  in the server process, one at a time, guarded by a lock file in the voice folder. It survives the
+  browser closing. Steps, in order, each shown with its state (pending, running, done, skipped,
+  failed) and a progress figure where it has one:
+  1. **Detect** — OS, architecture, package manager, build tools, and the GPU backend: Metal on
+     Apple silicon; CUDA when `nvcc` and `nvidia-smi` are both present; Vulkan when a loader and an
+     ICD are present; otherwise CPU.
+  2. **Packages** — what the build needs and is missing. Sova never runs `sudo` or a package
+     manager: when something is missing the job stops in **needs packages**, and the view shows
+     the exact one-line command for the detected package manager in a mono block with `Copy
+     Command` and `Check Again` (which re-runs the job from detection), plus `Use CPU Instead` where
+     a prebuilt CPU binary exists for this host.
+  3. **Source** — the pinned whisper.cpp tag tarball, or for CPU on Linux x64/arm64 (glibc 2.35 or
+     newer) the pinned prebuilt release with its sha256 checked; resumed with HTTP ranges.
+  4. **Build** — `cmake` with the backend's flag, static libraries, only the `whisper-server`
+     target, at low priority; progress from the build's percentages. The binary is renamed into
+     `bin/` atomically and the build tree is removed. Skipped for the prebuilt.
+  5. **Model** — first an import: a file of the exact size and sha256 already on this machine in a
+     known folder is copied (a reflink where the file system has them) instead of downloaded; then
+     a ranged, resumable download with a streaming sha256. A mismatch deletes the file and fails the
+     step. Free disk space is checked first.
+  6. **Self-test** — starts the server and transcribes a committed 3-second clip; it passes when the
+     transcript has the expected words, and records the time and whether the GPU was really used.
+  7. **Finish** — writes `install.json`, which is what "ready" means.
+  Every step checks its own result first and reports **skipped** when it is already satisfied, so
+  the job is idempotent and resumes after a cancel, a failure or a server restart. `Cancel Setup`
+  stops it where it is.
+- **Failed** shows the step and its error, `Retry` (primary), `Use CPU Instead` where a prebuilt
+  CPU binary exists and the job wasn't already CPU, and the log.
+- **The log** — the job's recent lines, 24-hour times, in a collapsible block (`Show Log`), read
+  with `GET /api/voice?since=<seq>`. The tab and the sheet poll that every second while a job runs
+  and every 10 seconds otherwise, only while mounted.
+- **Ready**, the tab shows one status line — backend and device, the self-test time, the model,
+  disk used, and whether the engine is loaded — then `Test Microphone` (records up to 3 seconds and
+  shows the transcript, inserting nothing), `Repair` (runs every step again with verification
+  forced: the model re-hashed, the binary probed, a fresh self-test; voice isn't ready until it
+  passes) and `Uninstall Voice`
+  (destructive; a confirmation says the voice folder and its size go away and system packages stay
+  installed).
+- **CLI.** `pnpm run voice:install [status|install|repair|uninstall] [--cpu] [--yes] [--dir <path>]`
+  runs the same job with a console reporter, for a headless host; it refuses while a server holds
+  the lock.
+- **Knobs** for tests and odd hosts: `SOVA_VOICE_DIR` (the folder), `SOVA_VOICE_PATH` (the PATH
+  detection and the build use), `SOVA_VOICE_IMPORT_DIRS` (the folders the import checks, `:`-separated),
+  `SOVA_VOICE_IDLE_MS` (the idle unload), and `SOVA_VOICE_WHISPER_BIN` (a stand-in server, such as
+  `scripts/fake-whisper-server.mjs`, which makes voice ready without an install).

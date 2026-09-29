@@ -2,8 +2,9 @@
 # Runs ON THE VPS as deploy (piped by deploy.sh: `ssh … bash -s`). No sudo, and nothing outside ~/$R:
 #   ~/$R/node     Node $NODE_VERSION (official tarball, sha256 checked)
 #   ~/$R/bin      caddy $CADDY_VERSION (official release, sha512 checked)
-#   ~/$R/app      the git archive staged in ~/$R/app.new, swapped in (previous kept as app.prev),
-#                 then pnpm install --frozen-lockfile + vite build (pnpm via this node's corepack)
+#   ~/$R/app      the git archive staged in ~/$R/app.new, built there (pnpm install --frozen-lockfile + vite build,
+#                 both modes; pnpm via this node's corepack), then swapped in (previous kept as app.prev); a failed
+#                 build stops before the swap
 #   ~/$R/agent    the agent dir (PI_CODING_AGENT_DIR); auth.json created EMPTY ({}, 0600) if absent, never overwritten
 #   ~/$R/home     the isolated HOME for every build and run step (deploy's own dotfiles are never read)
 #   ~/$R/tmp      TMPDIR for every build and run step (0700): nothing of ours lands in /tmp; holds jiti's extension cache,
@@ -71,16 +72,28 @@ else
 fi
 
 # --- the app --------------------------------------------------------------------------------------
+# Installed and built in app.new, beside the running app, and swapped in only once both builds
+# succeeded: a failed install or build (set -e) leaves app as it was, and the running service never
+# sees a half-built tree. (pnpm's node_modules links are relative, so the tree survives the move, as
+# on the phone, whose installer does the same.)
 [ -f "$BASE/app.new/package.json" ] || { log "no staged app in $BASE/app.new"; exit 1; }
+export HOME="$BASE/home" TMPDIR="$BASE/tmp" PATH="$BASE/node/bin:/usr/bin:/bin" COREPACK_HOME="$BASE/home/.cache/corepack" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=1
+cd "$BASE/app.new"
+log "pnpm: $(corepack pnpm --version) install --frozen-lockfile (in app.new)"
+nice -n 10 corepack pnpm install --frozen-lockfile --reporter=append-only > "$BASE/tmp/pnpm-install.log" 2>&1 \
+  || { tail -20 "$BASE/tmp/pnpm-install.log" >&2; log "pnpm install failed: the running app is unchanged"; exit 1; }
+tail -5 "$BASE/tmp/pnpm-install.log" >&2
+log "build: vite build + the share page, in app.new (typecheck runs on the laptop)"
+nice -n 10 corepack pnpm exec vite build --logLevel warn >&2 || { log "vite build failed: the running app is unchanged"; exit 1; }
+# the share page's own build (dist-share/): the share listener serves /h/ and /i/ from it
+nice -n 10 corepack pnpm exec vite build --mode share --logLevel warn >&2 || { log "share build failed: the running app is unchanged"; exit 1; }
+[ -f dist/index.html ] || { log "vite build produced no dist/index.html: the running app is unchanged"; exit 1; }
+cd "$BASE"
 rm -rf "$BASE/app.prev"
 [ -d "$BASE/app" ] && mv "$BASE/app" "$BASE/app.prev"
 mv "$BASE/app.new" "$BASE/app"
-export HOME="$BASE/home" TMPDIR="$BASE/tmp" PATH="$BASE/node/bin:/usr/bin:/bin" COREPACK_HOME="$BASE/home/.cache/corepack" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=1
 cd "$BASE/app"
-log "pnpm: $(corepack pnpm --version) install --frozen-lockfile"
-nice -n 10 corepack pnpm install --frozen-lockfile --reporter=append-only 2>&1 | tail -5 >&2
-log "build: vite build (typecheck runs on the laptop)"
-nice -n 10 corepack pnpm exec vite build --logLevel warn >&2
+log "swapped in: $(cat BUILD_COMMIT 2>/dev/null || echo 'no BUILD_COMMIT')"
 
 # --- the agent dir --------------------------------------------------------------------------------
 ln -sfn "$BASE/agent" "$BASE/app/.agent"

@@ -11,6 +11,7 @@ import {
   cpuLine,
   detailRows,
   frontDoorLine,
+  hostTone,
   joinedLine,
   labelProblem,
   loginsLine,
@@ -35,10 +36,20 @@ const details = (over: Partial<HostDetails["identity"]> = {}): HostDetails => ({
   sync: { categories: [] },
 });
 
-test("connected: this host always counts, and each peer that is up", () => {
+test("connected: this host always counts, and each peer that answers (up or on another version)", () => {
   assert.deepEqual(connectedCount([]), { up: 1, total: 1 });
   assert.deepEqual(connectedCount([{ state: "up" }, { state: "down" }]), { up: 2, total: 3 });
-  assert.deepEqual(connectedCount([{ state: "skewed" }, { state: "refused" }]), { up: 1, total: 3 }, "only up is connected");
+  assert.deepEqual(connectedCount([{ state: "skewed" }, { state: "refused" }]), { up: 2, total: 3 }, "skewed answers; refused doesn't");
+});
+
+test("host menu: each state has its own tone and word, never the colour alone", () => {
+  assert.deepEqual(hostTone("self"), { tone: "up", word: null });
+  assert.deepEqual(hostTone("up"), { tone: "up", word: null });
+  assert.deepEqual(hostTone("skewed"), { tone: "skewed", word: "other version" });
+  assert.deepEqual(hostTone("down"), { tone: "down", word: "down" });
+  assert.deepEqual(hostTone("refused"), { tone: "down", word: "refused" });
+  const words = (["up", "skewed", "down", "refused"] as const).map((s) => hostTone(s).word);
+  assert.equal(new Set(words).size, words.length, "no two states share a word");
 });
 
 test("figures read as a person says them", () => {

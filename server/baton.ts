@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { basename, join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
+  abilitiesOf,
   BATON_ENTRY,
   BATON_HANDOFF_ENTRY,
   BATON_OFFER_ENTRY,
@@ -17,6 +18,7 @@ import {
   type BatonOwner,
   type BatonSession,
   type BatonStartInput,
+  type GatheringAbilities,
   type BatonSummaryField,
   type GoneWhy,
   type Handoff,
@@ -31,7 +33,9 @@ import { openedSessions } from "./visits";
 import { emitBatonEvent } from "./baton-events";
 import { readBatonSettings } from "./baton-settings";
 import { archivedRefusal, onOrgAttached, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, readOrg, readProjects, readRoster, setOpenBatonCounter, shortId } from "./orgs";
+import { baseAbilities, operatorAbilities } from "./gathering-abilities";
 import { canonicalPath } from "./paths";
+import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 import { markSeen } from "./seen";
 import { nudgeMarks } from "./session-feed";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
@@ -358,6 +362,10 @@ export function createBaton(
   const model = typeof input.model === "string" && input.model.trim() ? input.model.trim() : undefined;
   const thinking = typeof input.thinking === "string" && input.thinking.trim() ? input.thinking.trim() : undefined;
   const messagesMax = input.messagesMax === undefined || input.messagesMax === null ? readBatonSettings().messagesMax : messageLimit(input.messagesMax);
+  // What it can do (§app.baton/abilities): the project's set, with whatever the start names over it.
+  // An overseer's arg was held to its ceiling before this; a request's is the operator's choice.
+  const abilities = operatorAbilities(input.abilities, projectAbilities(input.orgId, project.id));
+  if ("error" in abilities) throw new OrgError(abilities.error);
 
   const sessionsDir = join(dir, "sessions");
   mkdirSync(sessionsDir, { recursive: true });
@@ -395,6 +403,7 @@ export function createBaton(
     budget: { messagesMax, messagesUsed: 0 },
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
+    abilities,
     createdAt: now.toISOString(),
     ...(input.settle ? { conflict: { id: input.settle.conflictId, area: input.settle.area } } : {}),
     ...(input.startedVia === "overseer" ? { startedVia: "overseer" as const } : {}),
@@ -405,6 +414,21 @@ export function createBaton(
   const links = !mint ? undefined : offer?.to.map((personId) => ({ personId, token: mintLink({ orgId: input.orgId, sessionId: header.id, n: 1, personId, offerId: offer.id }) }));
   emitBatonEvent({ type: offer ? "offer" : "handoff", orgId: input.orgId, projectId: project.id, sessionId: header.id });
   return { path, sessionId: header.id, ...(token ? { token } : {}), ...(links ? { links } : {}) };
+}
+
+/** What a gathering session of this project started now gets: its setting, else Automatic. */
+export function projectAbilities(orgId: string, projectId: string): GatheringAbilities {
+  return baseAbilities(readPoSettings(projectOverseerPaths(orgId, projectId)).gatheringAbilities);
+}
+
+/** The operator's change from the strip (§app.baton/abilities): applies from the next run. */
+export function setAbilities(sessionId: string, v: unknown): BatonSession {
+  return update(sessionId, (r) => {
+    if (r.state === "done" || r.state === "closed") throw new OrgError(`This conversation is ${r.state}.`, 409);
+    const next = operatorAbilities(v, abilitiesOf(r));
+    if ("error" in next) throw new OrgError(next.error);
+    r.abilities = next;
+  });
 }
 
 // ---- moves -----------------------------------------------------------------------------------------------------

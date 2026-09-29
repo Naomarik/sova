@@ -12,11 +12,12 @@ import {
   resolveConflict,
   routeConflict,
   setOwnerArea,
+  settleSpecText,
   setProjectStakeholder,
   setSpecFrozen,
   unarchiveOrgProject,
 } from "../lib/api";
-import { alsoCarriesLine, areaGroups, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
+import { alsoCarriesLine, areaGroups, BUILD_CHIP, builtLine, conflictSides, DECISION_STATE, decisionsLine, emptySelection, outsideTheirArea, promotable, type PromoteSelection, refName, refreshSelection, selectAllReady, toggleSelection } from "../lib/decisions-view";
 import { promotionCommitLine } from "../lib/coding-worktrees";
 import { relativeTime } from "../lib/format";
 import { hostLabel, orgHostOf } from "../lib/mesh";
@@ -379,6 +380,7 @@ function SpecCard(props: CardProps & { onSpec(spec: DecisionsInfo["spec"]): void
       <p class="orgs-line project-spec-line">
         <Show when={s().exists} fallback="No spec in this project yet. The first promotion starts one.">
           {s().promoted} promoted · {s().drafted} in the draft
+          {builtLine(s())}
           <Show when={s().draft}>
             {(d) => (
               <>
@@ -602,6 +604,26 @@ function Provenance(props: { orgId: string; row: DecisionRow }) {
   );
 }
 
+/** A promoted decision whose record's prose was edited in the spec (§app.requirements/decisions):
+    it stays promoted; the operator keeps the spec's words or promotes the person's again. */
+function EditedInSpec(props: CardProps & { row: DecisionRow }) {
+  const run = (action: "keep" | "restore") =>
+    props.act("spec-text", () => settleSpecText(props.orgId, props.projectId, props.row.id, action), action === "keep" ? "Kept the spec's words." : `Restored ${props.row.name}'s words.`);
+  return (
+    <div class="project-edited">
+      <p class="field-hint">Edited in the spec since it was promoted.</p>
+      <div class="cluster">
+        <button type="button" class="button button-sm button-ghost" aria-disabled={props.busy ? "true" : undefined} onClick={() => void run("keep")}>
+          Keep Spec's Words
+        </button>
+        <button type="button" class="button button-sm button-ghost" aria-disabled={props.busy ? "true" : undefined} onClick={() => void run("restore")}>
+          Restore Their Words
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Who decides a decision (§app.requirements/owner-area): the operator changes it here, and the
     server re-routes a conflict it is in. */
 function OwnerAreaField(props: CardProps & { row: DecisionRow }) {
@@ -759,12 +781,22 @@ function DecisionsCard(props: CardProps) {
                         <Chip tone={DECISION_STATE[d.state].tone} title={DECISION_STATE[d.state].hint}>
                           {DECISION_STATE[d.state].word}
                         </Chip>
+                        <Show when={d.state === "promoted" && d.build}>
+                          {(b) => (
+                            <Chip tone={BUILD_CHIP[b()].tone} title={BUILD_CHIP[b()].hint}>
+                              {BUILD_CHIP[b()].word}
+                            </Chip>
+                          )}
+                        </Show>
                         <Show when={outsideTheirArea(d)}>
                           <Chip tone="warn" title={`${d.name} doesn't decide ${d.ownerArea && d.ownerArea !== OWNER_AREA_NONE ? d.ownerArea : d.area}. Select All Ready leaves it out; tick it to promote it anyway.`}>
                             Outside their area
                           </Chip>
                         </Show>
                       </div>
+                      <Show when={d.state === "promoted" && d.editedInSpec}>
+                        <EditedInSpec {...props} row={d} />
+                      </Show>
                       <Show when={d.state !== "superseded"}>
                         <OwnerAreaField {...props} row={d} />
                       </Show>

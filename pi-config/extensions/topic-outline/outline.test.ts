@@ -454,6 +454,14 @@ test("config keeps up to 3 bullets per topic by default", async () => {
   assert.equal(DEFAULT_CONFIG.limits.maxBullets, 3);
 });
 
+test("the default chain is pi deepseek-v4.1-flash, then Claude Code sonnet (server/topic-outline-settings.ts mirrors it)", async () => {
+  const { DEFAULT_CONFIG } = await import("./config.ts");
+  assert.deepEqual(DEFAULT_CONFIG.summarizers, [
+    { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", timeoutMs: 60_000 },
+    { backend: "claude-code", model: "sonnet", timeoutMs: 45_000, maxBudgetUsd: 0.05 },
+  ]);
+});
+
 test("config shareLastHeading defaults on and honors an explicit false", async () => {
   const { mkdtempSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");

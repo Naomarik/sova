@@ -1,8 +1,10 @@
-import { For, Match, Show, Switch } from "solid-js";
+import { createEffect, For, Match, onCleanup, Show, Switch } from "solid-js";
 import type { BatonViewItem } from "../../shared/baton";
 import { linkSegments } from "../lib/share-linkify";
 import "./thread.css";
-import { renderShareMarkdown } from "./markdown";
+import { createMarkdownPatcher } from "../vis/hydrate";
+import { renderShareMarkdown, type ShareVisual } from "./markdown";
+import { mountShareVisual } from "./vis";
 
 // A conversation's items as an outsider reads them: the share page and the owner page render the
 // same thread with these.
@@ -10,8 +12,19 @@ import { renderShareMarkdown } from "./markdown";
 const othersWord = (n: number) => (n === 1 ? "1 other person" : `${n} other people`);
 const peopleWord = (n: number) => (n === 1 ? "1 person" : `${n} people`);
 
-export function Reply(props: { text: string }) {
-  return <div class="share-md" innerHTML={renderShareMarkdown(props.text)} />;
+/** A reply as markdown, its drawings mounted into it. The HTML reaches the DOM one top-level block
+    at a time (vis/hydrate.tsx), so while a reply streams the drawings above stay put.
+    `streaming`: an unclosed `vis` fence is still being written. */
+export function Reply(props: { text: string; streaming?: boolean }) {
+  let el!: HTMLDivElement;
+  let patcher: ReturnType<typeof createMarkdownPatcher<ShareVisual>> | undefined;
+  createEffect(() => {
+    const r = renderShareMarkdown(props.text, !!props.streaming);
+    patcher ??= createMarkdownPatcher(el, mountShareVisual);
+    patcher.patch(r);
+  });
+  onCleanup(() => patcher?.dispose());
+  return <div ref={el} class="share-md" />;
 }
 
 /** Plain text with its explicit http(s) addresses as links: DOM nodes, never HTML. */

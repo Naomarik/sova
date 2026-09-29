@@ -3,7 +3,8 @@ import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
+import { autoTitleSessions, fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
+import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
@@ -83,7 +84,7 @@ import { ContextRing } from "./ContextRing";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
-import { Banner, Chip, Icon } from "./ui";
+import { Banner, Icon } from "./ui";
 import { showSummaries } from "../lib/summary-line";
 import {
   effectiveHostFilter,
@@ -99,6 +100,7 @@ import {
 } from "../lib/mesh";
 import { MeshHostMenu } from "./MeshHostMenu";
 import { hostFilterAsk } from "../lib/mesh-details";
+import { openMonitor } from "../lib/monitor-nav";
 
 const ARCHIVE_KEY = "sova:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
@@ -801,6 +803,7 @@ function GroupBlock(props: {
           <bdi>{group().name}</bdi>
         </span>
         <span class="text-num">{count()}</span>
+        <NameSessionsButton section={`g-${group().id}`} rows={props.sessions} onDone={props.onChanged} />
         {/* The group's own actions, on its own name row. `contain` is what makes a control inside a
             <summary> possible at all: without it every click in here would toggle the section. The
             trigger is quiet until the row is hovered or something in it takes focus (base.css), and
@@ -888,6 +891,52 @@ function GroupBlock(props: {
         />
       </Show>
     </details>
+  );
+}
+
+/**
+ * A section head's Name sessions button (§app.session-list/auto-titles): shown while the section
+ * holds a row with no stored title, it asks each row's host to name those rows, then refetches
+ * the list. Nothing else is said — no toast, no undo; the titles changing is the answer. Its click
+ * and keydown stop here, so a press inside a <summary> never toggles the section.
+ */
+function NameSessionsButton(props: { section: string; rows: readonly SessionSummary[]; onDone(): void }) {
+  const rows = createMemo(() => nameableRows(props.rows));
+  const busy = () => namingIn(props.section);
+  // While it runs, the label keeps the count it was pressed with: a poll mid-run can shrink it.
+  const [pressed, setPressed] = createSignal(0);
+  const label = () => (busy() ? nameLabel(pressed(), true) : nameLabel(rows().length));
+  const press = async () => {
+    const paths = rows().map((s) => s.path);
+    if (busy() || paths.length === 0) return;
+    setPressed(paths.length);
+    setNaming(props.section, true);
+    try {
+      await nameSessions(paths, { hostOf, post: (batch) => autoTitleSessions(batch) });
+    } finally {
+      setNaming(props.section, false);
+      props.onDone();
+    }
+  };
+  return (
+    <Show when={busy() || rows().length > 0}>
+      <button
+        type="button"
+        class="button button-icon button-ghost name-sessions"
+        aria-label={label()}
+        title={label()}
+        aria-busy={busy() ? "true" : undefined}
+        disabled={busy()}
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          void press();
+        }}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        <Icon name="pencil" small />
+      </button>
+    </Show>
   );
 }
 
@@ -994,6 +1043,9 @@ export function Sidebar(props: {
   onArchiveChanged(path: string, archived: boolean): void;
   onNew(): void;
   usage: UsageInsight | undefined;
+  /** The open chat's recorded Claude login, whose reading the glance's C shows; absent: the login
+      in use for new chats. */
+  claudeLogin?: string | null;
   agents: AgentsInsight | undefined;
   /** The insights page that's open (`#/usage` or `#/agents`), for aria-current on its foot row. */
   insightsPage: "usage" | "agents" | null;
@@ -1022,9 +1074,13 @@ export function Sidebar(props: {
   createEffect(on(hostFilterAsk, (ask) => ask && chooseHostFilter(ask.value), { defer: true }));
   /** The search field has focus: it takes the whole row, and the Overseer button steps aside. */
   const [searchFocused, setSearchFocused] = createSignal(false);
+  /** Folded, the search sits behind an icon in the list's one toolbar line; this is that line
+      opened on the field. A query keeps it open too, so a row tapped and left finds it as it was. */
+  const [searchOpen, setSearchOpen] = createSignal(false);
   const [showSkeleton, setShowSkeleton] = createSignal(false);
   const skeletonTimer = setTimeout(() => setShowSkeleton(true), 300);
   let search!: HTMLInputElement;
+  let searchToggle: HTMLButtonElement | undefined;
   let aside!: HTMLElement;
   // The tab's copy of the group list: the pane's region and the session pane's menu share it.
   onMount(() => void loadSessionGroups());
@@ -1167,6 +1223,7 @@ export function Sidebar(props: {
     if (inText) return;
     e.preventDefault();
     if (collapsed()) expandToSearch();
+    else if (!props.unfolded) openSearch();
     else search.focus();
   };
   document.addEventListener("keydown", onKey);
@@ -1477,7 +1534,7 @@ export function Sidebar(props: {
     writeKey(sessionStorage, archiveDateKey(d.id), open ? "1" : "0");
   };
   const liveCount = () => all().filter((s) => s.live).length;
-  const glance = createMemo(() => usageGlance(props.usage));
+  const glance = createMemo(() => usageGlance(props.usage, props.claudeLogin));
   /** The foot's usage glance in full words, for its tooltip and accessible name. */
   const glanceText = () => (glance().length ? `Usage: ${glance().map((p) => p.full).join(", ")}` : "");
 
@@ -1485,6 +1542,20 @@ export function Sidebar(props: {
     setQuery("");
     search.focus();
   };
+  const toolbarOpen = () => searchOpen() || query() !== "";
+  /** The folded line's search icon (and "/"): the field takes the line, with the cursor in it. */
+  const openSearch = () => {
+    setSearchOpen(true);
+    queueMicrotask(() => search.focus());
+  };
+  /** Close Search, or Escape on an empty field: the query goes, and the line folds back. */
+  const closeSearch = () => {
+    setQuery("");
+    setSearchOpen(false);
+    queueMicrotask(() => searchToggle?.focus());
+  };
+  // The unfolded layout is the two rows, always: an open folded line doesn't survive unfolding.
+  createEffect(on(() => props.unfolded, (u) => u && setSearchOpen(false), { defer: true }));
 
   /** A region count on the spine: open the pane and bring that region into view. The Archive is
       scrolled to, never forced open — its open state is the user's stored choice. */
@@ -1532,6 +1603,66 @@ export function Sidebar(props: {
       </a>
     );
   };
+
+  /** The session filter. One is mounted at a time (folded or unfolded), so its id and ref stay unique. */
+  const SearchField = () => (
+    <div class="search">
+      <Icon name="search" />
+      <input
+        ref={search}
+        class="input"
+        id="session-search"
+        type="search"
+        placeholder="Title, folder, or tag"
+        aria-describedby="session-count"
+        autocomplete="off"
+        spellcheck={false}
+        value={query()}
+        onInput={(e) => setQuery(e.currentTarget.value)}
+        onFocus={() => setSearchFocused(true)}
+        onBlur={() => setSearchFocused(false)}
+        onKeyDown={(e) => {
+          if (e.key !== "Escape") return;
+          e.preventDefault();
+          if (query()) setQuery("");
+          else if (!props.unfolded) closeSearch();
+          else search.blur();
+        }}
+      />
+      <Show when={query()}>
+        <button type="button" class="button button-icon" aria-label="Clear Search" onClick={clear}>
+          <Icon name="close" small />
+        </button>
+      </Show>
+    </div>
+  );
+  const SearchCount = (p: { hidden: boolean }) => (
+    <p class="search-count" classList={{ "visually-hidden": p.hidden }} id="session-count" aria-live="polite">
+      <Show when={props.sessions}>
+        <Show when={query().trim() || hostFilter() !== null} fallback={`${all().length} sessions`}>
+          {hits().length} of {all().length} sessions
+        </Show>
+      </Show>
+    </p>
+  );
+  /** The keyboard's (and the unsure pointer's) door into selection mode: press-and-hold is the
+      accelerator, never the only way in. */
+  const SelectStart = () => (
+    <Show when={props.sessions && all().length > 0 && !selectionMode()}>
+      <button
+        type="button"
+        class="button button-sm button-ghost sidebar-select-start"
+        title="Select several sessions to rename, group or archive them"
+        onClick={() => {
+          startSelection();
+          announce("Selecting sessions. Pick rows with their checkboxes.");
+        }}
+      >
+        <Icon name="check" small />
+        Select
+      </button>
+    </Show>
+  );
 
   /**
    * The collapsed pane: one 44px item per action the expanded pane offers, reading the same memos,
@@ -1705,6 +1836,9 @@ export function Sidebar(props: {
           >
             <Icon name="gauge" />
           </a>
+          <button type="button" class="button button-icon spine-item" title="Resource monitor" aria-label="Resource monitor" onClick={() => openMonitor()}>
+            <Icon name="activity" />
+          </button>
           <a
             class="button button-icon spine-item"
             href={agentsHref()}
@@ -1758,71 +1892,54 @@ export function Sidebar(props: {
           <label class="visually-hidden" for="session-search">
             Search sessions
           </label>
-          <div class="sidebar-search-row">
-          {/* Out of the row (and the tab order) while the search is in use: the field takes the width. */}
-          <Show when={!searchFocused() && !query()}>
-            <OverseerButton class="button-ghost" />
-          </Show>
-          <div class="search">
-            <Icon name="search" />
-            <input
-              ref={search}
-              class="input"
-              id="session-search"
-              type="search"
-              placeholder="Title, folder, or tag"
-              aria-describedby="session-count"
-              autocomplete="off"
-              spellcheck={false}
-              value={query()}
-              onInput={(e) => setQuery(e.currentTarget.value)}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              onKeyDown={(e) => {
-                if (e.key !== "Escape") return;
-                e.preventDefault();
-                if (query()) setQuery("");
-                else search.blur();
-              }}
-            />
-            <Show when={query()}>
-              <button type="button" class="button button-icon" aria-label="Clear Search" onClick={clear}>
-                <Icon name="close" small />
-              </button>
-            </Show>
-          </div>
-          </div>
-          <div class="spread">
-            <p class="search-count" id="session-count" aria-live="polite">
-              <Show when={props.sessions}>
-                <Show when={query().trim() || hostFilter() !== null} fallback={`${all().length} sessions`}>
-                  {hits().length} of {all().length} sessions
+          <Show
+            when={props.unfolded}
+            fallback={
+              /* Folded: one line. The search waits behind its icon, and opens in the line's place. */
+              <div class="sidebar-toolbar">
+                <Show when={!toolbarOpen()}>
+                  <OverseerButton class="button-ghost" />
                 </Show>
+                {/* Kept while the search is open, out of sight: the field's description, and the live count. */}
+                <SearchCount hidden={toolbarOpen()} />
+                <Show
+                  when={toolbarOpen()}
+                  fallback={
+                    <>
+                      <SelectStart />
+                      <button
+                        ref={searchToggle}
+                        type="button"
+                        class="button button-icon button-ghost"
+                        aria-label="Search sessions"
+                        title="Search sessions · /"
+                        onClick={openSearch}
+                      >
+                        <Icon name="search" />
+                      </button>
+                    </>
+                  }
+                >
+                  <SearchField />
+                  <button type="button" class="button button-icon" aria-label="Close Search" title="Close Search" onClick={closeSearch}>
+                    <Icon name="close" />
+                  </button>
+                </Show>
+              </div>
+            }
+          >
+            <div class="sidebar-search-row">
+              {/* Out of the row (and the tab order) while the search is in use: the field takes the width. */}
+              <Show when={!searchFocused() && !query()}>
+                <OverseerButton class="button-ghost" />
               </Show>
-            </p>
-            {/* Always every live session, even while the search filters. */}
-            <Show when={liveCount() > 0}>
-              <Chip tone="accent" count title="Sessions open in a TUI">
-                {liveCount()} TUI
-              </Chip>
-            </Show>
-            {/* The keyboard's (and the unsure pointer's) door into selection mode: press-and-hold is
-                the accelerator, never the only way in. */}
-            <Show when={props.sessions && all().length > 0 && !selectionMode()}>
-              <button
-                type="button"
-                class="button button-sm button-ghost sidebar-select-start"
-                title="Select several sessions to rename, group or archive them"
-                onClick={() => {
-                  startSelection();
-                  announce("Selecting sessions. Pick rows with their checkboxes.");
-                }}
-              >
-                <Icon name="check" small />
-                Select
-              </button>
-            </Show>
-          </div>
+              <SearchField />
+            </div>
+            <div class="spread">
+              <SearchCount hidden={false} />
+              <SelectStart />
+            </div>
+          </Show>
         </div>
 
         {/* Inside the sidebar, above the list: the rows it acts on stay on screen, on a phone too. */}
@@ -2025,6 +2142,7 @@ export function Sidebar(props: {
                 <span class="sidebar-region-count">
                   · {query().trim() ? `${topHits().length} of ${ordinary().length - archiveTotal()}` : topHits().length}
                 </span>
+                <NameSessionsButton section="t" rows={topHits()} onDone={props.onRefresh} />
               </h2>
               <Show
                 when={topHits().length > 0}
@@ -2062,6 +2180,7 @@ export function Sidebar(props: {
                       <span class="visually-hidden">, an agent is working here</span>
                     </span>
                   </Show>
+                  <NameSessionsButton section="o" rows={orgHits()} onDone={props.onRefresh} />
                 </h2>
               </summary>
               <Show when={orgWaitingCount() > 0}>
@@ -2195,6 +2314,7 @@ export function Sidebar(props: {
                 <span class="sidebar-region-count">
                   · {query().trim() ? `${archiveHits().length} of ${archiveTotal()}` : archiveHits().length}
                 </span>
+                <NameSessionsButton section="a" rows={archiveHits()} onDone={props.onRefresh} />
               </summary>
               <For each={archiveSections()}>
                 {(d) => (
@@ -2232,18 +2352,24 @@ export function Sidebar(props: {
           <Show when={hostFilterShown()}>
             <MeshHostMenu value={hostFilter()} onChange={chooseHostFilter} />
           </Show>
-          <a
-            class="list-row list-row-interactive insights-row"
-            href={usageHref()}
-            aria-current={props.insightsPage === "usage" ? "page" : undefined}
-            title={glanceText() || undefined}
-            aria-label={glanceText() || undefined}
-          >
-            <Icon name="gauge" />
-            <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
-              <UsageGlance parts={glance()} />
-            </span>
-          </a>
+          {/* The monitor button takes the gear's exact markup, so the two stack in one column. */}
+          <div class="sidebar-foot-row">
+            <a
+              class="list-row list-row-interactive insights-row sidebar-foot-link"
+              href={usageHref()}
+              aria-current={props.insightsPage === "usage" ? "page" : undefined}
+              title={glanceText() || undefined}
+              aria-label={glanceText() || undefined}
+            >
+              <Icon name="gauge" />
+              <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
+                <UsageGlance parts={glance()} />
+              </span>
+            </a>
+            <button type="button" class="button button-icon sidebar-settings" title="Resource monitor" aria-label="Resource monitor" onClick={() => openMonitor()}>
+              <Icon name="activity" small />
+            </button>
+          </div>
           <div class="sidebar-foot-row">
             <a
               class="list-row list-row-interactive insights-row sidebar-foot-link"

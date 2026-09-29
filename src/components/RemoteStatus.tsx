@@ -26,8 +26,7 @@ function ageText(v: RemoteView): string | undefined {
   return v.age === "never" ? "never ok" : `ok ${v.age}`;
 }
 
-/** The pane's chip keeps the host's case (.chip-count); the head's is a plain uppercase chip, since
-    the head drops every .chip-count child on a narrow head and this one must stay. */
+/** The pane's chip keeps the host's case (.chip-count); the head's is a plain uppercase chip. */
 function chipClass(v: RemoteView, extra = "") {
   return `chip${extra ? "" : " chip-count"}${v.tone ? ` chip-${v.tone}` : ""}${v.running ? " chip-live" : ""}${extra ? ` ${extra}` : ""}`;
 }
@@ -72,8 +71,7 @@ const PATH_STYLE = { "text-transform": "none", "letter-spacing": "0", overflow: 
  * The always-on remote chip: this session is remote, and where its files are. Fed by the summary's
  * `target`/`remoteCwd`, so it exists the moment the session does — before any status, and for a
  * watched or TUI-owned session with no chat socket at all. It is the identity, never the
- * connection: it shows the folder on the target. `pane` is a `.chip-count`; the head's plain chip
- * survives the narrow-head `.chip-count` rule, so the fact never disappears.
+ * connection: it shows the folder on the target. `pane` is a `.chip-count`; the head's is a plain chip.
  */
 export function RemoteChip(props: { path: string; summary: SessionSummary | undefined; pane?: boolean }) {
   ensureTargets();

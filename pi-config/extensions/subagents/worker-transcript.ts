@@ -337,6 +337,12 @@ export interface WorkerManifest {
 	 * then apply.
 	 */
 	resumedAt?: number;
+	/**
+	 * The minor modes the worker was given at its start (the mode extension's worker-scope ones, e.g.
+	 * `["spec"]`; `[]` for none), newest start winning: a resume records the ones it gave. Absent from
+	 * records of older writers, which then say nothing about modes.
+	 */
+	modes?: string[];
 	/** Extension-owned spawn spec needed to resume; opaque to every other reader. Newest replaces whole. */
 	launch?: Record<string, unknown>;
 	/** Newest record time folded in (ms epoch). */
@@ -355,6 +361,9 @@ export type WorkerManifestRecord = Partial<Omit<WorkerManifest, "v" | "workerId"
 export interface FoldedWorkerManifest extends WorkerManifest {
 	/** Some record of this worker is on the active branch (only when activeEntryIds was given). */
 	onActiveBranch?: boolean;
+	/** ms: the earliest record's time — its first spawn (`at` is the newest record's). Absent when
+	    no record carries a time (legacy records without one). */
+	firstAt?: number;
 }
 
 export interface WorkerManifestFold {
@@ -463,6 +472,8 @@ export function readWorkerManifests(entries: readonly unknown[], options: { acti
 		if (!record) continue;
 		const previous = manifests.get(record.workerId);
 		const next: FoldedWorkerManifest = mergeManifest(previous, record);
+		const first = Math.min(previous?.firstAt ?? Infinity, record.at > 0 ? record.at : Infinity);
+		if (first !== Infinity) next.firstAt = first;
 		if (options.activeEntryIds) {
 			const here = typeof e.id === "string" && options.activeEntryIds.has(e.id);
 			next.onActiveBranch = (previous?.onActiveBranch ?? false) || here;
@@ -470,6 +481,12 @@ export function readWorkerManifests(entries: readonly unknown[], options: { acti
 		manifests.set(record.workerId, next);
 	}
 	return { manifests, refused };
+}
+
+/** The minor modes a record says the worker was given, or undefined when it says nothing (older writers) or nonsense. */
+export function manifestModes(manifest: Pick<WorkerManifest, "modes">): string[] | undefined {
+	const modes: unknown = manifest.modes;
+	return Array.isArray(modes) && modes.every((m) => typeof m === "string" && /^[a-z][a-z0-9-]*$/.test(m)) ? [...modes] : undefined;
 }
 
 /** The worker was mid-turn when its owner went away: status still running, or lost. */

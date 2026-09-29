@@ -154,9 +154,17 @@ user row.
   "Earlier Overseer Conversation", its meta "{title} · {age}", the back link going to the current
   conversation ("Back to the overseer"), and the read-only line "An earlier conversation. Read only."
   It has no level, Run Now, ⋯ or status strip.
-- **Phone** (below 480px): line 1 keeps back, the title, the state chip, ⋯ and Session details; the
+- **Phone** (below 480px): line 1 keeps back, the title, the state chip, the context readout
+  (§chat.context-window/width-budget: its ring and "222k"), ⋯ and Session details; the
   meta line keeps only the project (the org and the watch word go; ⋯ says Stop or Start Watching),
   on a line of its own under line 1, lined up with the title, ending in "…" when it doesn't fit.
+  Below 420px, while the state chip shows, the row's gaps close to 2px and its side padding to
+  4px, and nothing on line 1 wraps. Below 380px, while the state chip shows, the word "Overseer"
+  would not fit beside the widest chip ("L3 in force") and the context readout, so the title is
+  the overseer's eye icon instead (the one the sidebar's Overseer button uses, 16px, never
+  cut): the heading keeps "Overseer" as its text for AT, visually hidden, the icon is
+  `aria-hidden`, and hovering it shows "Overseer · {project}". From 380px up, and without a
+  state chip at any width, the title is the word, as before.
 
 ## §app.project-overseer/autonomy-levels — What it may do on its own
 
@@ -284,7 +292,9 @@ user row.
   `sova_reconcile` runs unless the operator turned it off in Settings → Decisions.
 - L0: `sova_note`, `sova_confirm`, `sova_idea`. L1: `sova_start_gathering` (one active roster
   person, or the operator), `sova_offer` (two or more), `sova_reconcile`,
-  `sova_owner_update` (an update on the owner page, §app.owner-page/updates). L2: `sova_promote`,
+  `sova_owner_update` (an update on the owner page, §app.owner-page/updates),
+  `sova_close_gathering`; `sova_start_gathering` and `sova_offer` take an optional `abilities`
+  within the project's ceiling (§app.baton/abilities). L2: `sova_promote`,
   `sova_roster` approve/decline (history records the overseer as the writer). L3:
   `sova_create_session` (the root or a folder inside it, with a first prompt, an optional `mode` and
   `minor_modes`; in its own worktree, §app.project-overseer/coding-worktrees), `sova_send` (its
@@ -299,6 +309,19 @@ user row.
   title, and never says how its decisions will be recorded or under which owner area ("as finance
   decisions"), because the session's model may repeat it (the `goal` descriptions say so, and
   `goal_done`'s `summary` description asks for the session's own words and names only).
+- **Closing its own.** `sova_close_gathering` (a session and a required `reason`) closes a
+  gathering session or offer it started that nobody it went to has written in yet (`wroteAt`
+  unset), the same way the operator's Close does (the wrap-up is scheduled, the share page
+  refreshed); the reason is the action's note in its activity. It refuses anything else, and never
+  closes a settle session (a conflict ends by being settled or re-routed) or the operator's: "Not
+  one of your gathering sessions.", "That is a settle session: the conflict ends when it is
+  settled.", "Someone it went to has already written in it.", "It is already {done|closed}.". The prompt tells
+  it: when a newer gathering covers one nobody has answered, close the old one, so it no longer
+  counts against its limit or waits in Needs you.
+- **What is built.** `sova_decisions` shows each promoted decision as built or not built yet, and
+  edited in the spec since it was promoted (§app.requirements/decisions); `sova_project`'s spec
+  line counts them as the Requirements card does ("· 4 built, 9 not built yet"), so it can tell
+  what is left to build.
 - **Models.** A session it starts gets the model and thinking the call names, else the project's
   `codingModel`/`codingThinking` (coding sessions) or `gatheringModel`/`gatheringThinking`
   (gathering sessions and offers, Send to person… included, and every conflict's settle session,
@@ -345,7 +368,8 @@ user row.
   applies from the session's next turn, and the result says so. A terminal-owned session is
   refused, as today.
 - `strict` is never set or offered; a session keeps the strict flag it started with.
-- A gathering session is unchanged: it loads no extensions, so it has no mode (§app/baton).
+- A gathering session loads no extensions, so it has no mode; what it can do is the project's
+  gathering abilities (§app.baton/abilities).
 
 ## §app.project-overseer/coding-worktrees — Each coding session in its own worktree
 

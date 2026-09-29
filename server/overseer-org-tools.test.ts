@@ -317,6 +317,12 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const row = baton.batonById(id)!.row;
     assert.equal(baton.liveLinkCount(row), 0);
     assert.equal(row.startedVia, "overseer");
+    assert.deepEqual(row.abilities, { draw: true, readLinks: false }, "the project's set: Automatic (§app.baton/abilities)");
+    // Read links only when the project allows it: refused before the card, the cap or the session.
+    const refused = await call("sova_gather", { ...start, abilities: { read_links: true } });
+    assert.equal(refused.ok, false);
+    assert.match(refused.text, /Reading links is off for this project's gathering sessions; the operator can allow it on the project page\./);
+    assert.equal(baton.allBatons().length, before + 1, "nothing started");
     // An offer, a hand-off, take back, close: each only on the card's session and people.
     card = items(sessionItem(id), personItem(org.id, tony.id), personItem(org.id, maria.id));
     const offer = await call("sova_gather", { op: "offer", session: id, to: [tony.id, maria.id], question: "Who knows?" });

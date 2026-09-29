@@ -17,6 +17,24 @@ export const MINOR_DESCRIPTIONS: Record<MinorMode, string> = {
 	vis: "Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose",
 };
 
+/**
+ * Whether each minor mode reaches the workers a session starts (§chat.mode-menu/workers). A record over
+ * the union, so a new minor mode cannot compile without deciding. align is a conversation with the user,
+ * which a worker doesn't have; spec is a discipline a worker's edits need too; vis draws for the user, and a
+ * worker's replies are read by its parent session, not rendered for the user. Major modes never reach a
+ * worker: workers spawn no workers, so Delegate has nothing to route there.
+ */
+export const MINOR_WORKER: Record<MinorMode, boolean> = {
+	align: false,
+	spec: true,
+	vis: false,
+};
+
+/** The worker-scope subset of `minorModes`, in registry order. */
+export function workerMinorModes(minorModes: readonly MinorMode[]): MinorMode[] {
+	return MINOR_MODES.filter((mode) => MINOR_WORKER[mode] && minorModes.includes(mode));
+}
+
 export const ALIGN_INSTRUCTIONS = `# Minor mode: align
 
 Before building anything non-trivial, align with the user on what to build, and record every alignment with the \`align\` tool. Do not edit files or spawn implementation workers until the user has confirmed a plan.

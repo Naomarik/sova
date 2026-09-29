@@ -1,14 +1,17 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
-import { connectedCount, openMeshDetails } from "../lib/mesh-details";
-import { meshPeers, meshState, peerUnavailable, SELF_FILTER } from "../lib/mesh";
+import { fetchMeshResync } from "../lib/api";
+import { connectedCount, hostTone, openMeshDetails } from "../lib/mesh-details";
+import { meshPeers, meshState, peerUnavailable, SELF_FILTER, type PeerState } from "../lib/mesh";
+import { jobRunning, type MeshResync, RESYNC_POLL_MS, resyncNote, resyncView } from "../lib/mesh-resync";
+import { MeshResyncSheet } from "./MeshResyncSheet";
 import { Icon } from "./ui";
 
 interface Option {
   /** The stored value; null is All. */
   value: string | null;
   label: string;
-  /** Whether its host answers; undefined for All, which is no host. */
-  up?: boolean;
+  /** Its host's state; undefined for All, which is no host. */
+  state?: PeerState | "self";
   /** Why it doesn't, for the title. */
   why?: string;
 }
@@ -24,7 +27,9 @@ const TRIGGER_GAP = 4;
  * The session pane's host row, the first row of its foot (above the usage row): `All hosts ▾` with
  * `2/3 connected` at its right end, the whole row the menu's trigger. The menu picks one host's sessions (or All) — the choice is the filter — and ends with
  * "Mesh details…". Only rendered while the mesh is on with a peer (the caller decides), so with
- * one host the pane is unchanged.
+ * one host the pane is unchanged. A host on another version says, under its name, where its build
+ * sits against this host's, and one that is behind has Resync beside it (§mesh.peers/resync):
+ * /api/mesh/resync is read when the menu opens with a skewed host, and again while a job runs.
  */
 export function MeshHostMenu(props: { value: string | null; onChange(value: string | null): void }) {
   let trigger!: HTMLButtonElement;
@@ -36,11 +41,39 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
   const selfName = () => meshState()?.self.label || meshState()?.self.hostname || "This host";
   const options = (): Option[] => [
     { value: null, label: "All hosts" },
-    { value: SELF_FILTER, label: selfName(), up: true },
-    ...meshPeers().map((p) => ({ value: p.id, label: p.label || p.id, up: p.state === "up", why: peerUnavailable(p) ?? undefined })),
+    { value: SELF_FILTER, label: selfName(), state: "self" },
+    ...meshPeers().map((p): Option => ({ value: p.id, label: p.label || p.id, state: p.state, why: peerUnavailable(p) ?? undefined })),
   ];
   const current = () => options().find((o) => o.value === props.value) ?? options()[0]!;
   const count = () => connectedCount(meshPeers());
+
+  const [resync, setResync] = createSignal<MeshResync | null>(null);
+  const [sheet, setSheet] = createSignal<string | null>(null);
+  let resyncTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(resyncTimer));
+  const readResync = () => {
+    clearTimeout(resyncTimer);
+    if (!meshPeers().some((p) => p.state === "skewed") && !resync()?.hosts.some((h) => jobRunning(h.job))) return;
+    fetchMeshResync().then(
+      (r) => {
+        setResync(r);
+        queueMicrotask(place);
+        if (open() && r.hosts.some((h) => jobRunning(h.job))) resyncTimer = setTimeout(readResync, RESYNC_POLL_MS);
+      },
+      () => {
+        // no line and no button: the menu is what it was without resync
+      },
+    );
+  };
+  const viewOf = (id: string | null) => {
+    const r = resync();
+    return r && id !== null && id !== SELF_FILTER ? resyncView(r.hosts.find((h) => h.id === id), r.self) : { line: null, button: null };
+  };
+  const openSheet = (id: string) => {
+    chose = true;
+    closeMenu();
+    setSheet(id);
+  };
 
   const items = () => [...menu.querySelectorAll<HTMLElement>("[role^=menuitem]")];
   const focusItem = (i: number) => {
@@ -69,6 +102,7 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
     place();
     const at = options().findIndex((o) => o.value === props.value);
     queueMicrotask(() => focusItem(Math.max(0, at)));
+    readResync();
   };
   const closeMenu = () => {
     if (menu.matches(":popover-open")) menu.hidePopover();
@@ -131,9 +165,7 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
       >
         <Icon name="network" />
         <span class="insights-row-text host-menu-text">
-          <Show when={current().up !== undefined}>
-            <span class="chip-dot" classList={{ "host-filter-up": current().up, "host-filter-down": !current().up }} />
-          </Show>
+          <Show when={current().state}>{(st) => <span class={`chip-dot host-filter-${hostTone(st()).tone}`} />}</Show>
           <span class="host-menu-label">{current().label}</span>
           <Icon name="chevron-down" small />
         </span>
@@ -155,29 +187,63 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
       >
         <div class="model-menu-list" role="menu" aria-label="Host">
           <For each={options()}>
-            {(o) => (
-              <div
-                class="mode-option group-option host-menu-option"
-                role="menuitemradio"
-                aria-checked={props.value === o.value ? "true" : "false"}
-                tabindex={-1}
-                title={o.why ?? (o.value === null ? "Sessions on every host" : `Only sessions on ${o.label}`)}
-                onClick={() => choose(o.value)}
-              >
-                <Icon name="check" small class="mode-option-check" />
-                <span class="mode-option-text host-menu-option-text">
-                  <Show when={o.up !== undefined}>
-                    <span class="chip-dot" classList={{ "host-filter-up": o.up, "host-filter-down": !o.up }} />
+            {(o) => {
+              const view = () => viewOf(o.value);
+              return (
+                <div class="host-menu-row">
+                  <div
+                    class="mode-option group-option host-menu-option"
+                    role="menuitemradio"
+                    aria-checked={props.value === o.value ? "true" : "false"}
+                    tabindex={-1}
+                    title={o.why ?? (o.value === null ? "Sessions on every host" : `Only sessions on ${o.label}`)}
+                    onClick={() => choose(o.value)}
+                  >
+                    <Icon name="check" small class="mode-option-check" />
+                    <span class="host-menu-option-main">
+                      <span class="mode-option-text host-menu-option-text">
+                        <Show when={o.state}>{(st) => <span class={`chip-dot host-filter-${hostTone(st()).tone}`} />}</Show>
+                        <span class="mode-option-id">{o.label}</span>
+                        {/* Any state but up is said in a word as well as the dot's colour. */}
+                        <Show when={o.state && hostTone(o.state).word}>
+                          {(word) => <span class={`host-filter-state host-filter-${hostTone(o.state!).tone}`}>{word()}</span>}
+                        </Show>
+                      </span>
+                      <Show when={view().line}>{(line) => <span class="host-menu-resync-line">{line()}</span>}</Show>
+                    </span>
+                  </div>
+                  {/* Its own item beside the host (a menu item can't hold another): the keyboard walk reaches it. */}
+                  <Show when={view().button}>
+                    {(b) => (
+                      <button
+                        type="button"
+                        class="button button-sm host-menu-resync"
+                        role="menuitem"
+                        tabindex={-1}
+                        aria-label={`Resync ${o.label}`}
+                        aria-disabled={b().reason ? "true" : undefined}
+                        aria-describedby={resyncNote(resync()) ? "host-menu-resync-note" : undefined}
+                        title={b().reason ?? `Bring ${o.label} up to this host's build`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!b().reason && o.value) openSheet(o.value);
+                        }}
+                      >
+                        Resync
+                      </button>
+                    )}
                   </Show>
-                  <span class="mode-option-id">{o.label}</span>
-                  {/* Down is said in a word as well as the dot's colour. */}
-                  <Show when={o.up === false}>
-                    <span class="host-filter-state">down</span>
-                  </Show>
-                </span>
-              </div>
-            )}
+                </div>
+              );
+            }}
           </For>
+          <Show when={resyncNote(resync())}>
+            {(note) => (
+              <p class="host-menu-note" id="host-menu-resync-note">
+                {note()}
+              </p>
+            )}
+          </Show>
           <div class="host-menu-sep" role="separator" />
           <div class="mode-option group-option" role="menuitem" tabindex={-1} onClick={details}>
             <Icon name="info" small class="group-option-icon" />
@@ -187,6 +253,19 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
           </div>
         </div>
       </div>
+      <Show when={sheet() ? resync() : null}>
+        {(r) => (
+          <MeshResyncSheet
+            hostId={sheet()!}
+            info={r()}
+            onChanged={setResync}
+            onClose={() => {
+              setSheet(null);
+              trigger.focus();
+            }}
+          />
+        )}
+      </Show>
     </div>
   );
 }

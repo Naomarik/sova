@@ -13,6 +13,14 @@ const err = (kind: string, body: string) => {
   assert.equal(r.ok, false, `expected an error for:\n${body}`);
   return r as { ok: false; line: number; message: string };
 };
+/** A fence that still draws: its first warning (parse.ts). */
+const warning = (kind: string, body: string) => {
+  const r = parseVis(kind, body);
+  if (!r.ok) assert.fail(`expected a drawing with a warning, got line ${r.line}: ${r.message}`);
+  assert.ok(r.warnings.length, `expected a warning for:\n${body}`);
+  assert.deepEqual(r.spec.warnings, r.warnings, "the spec carries the same warnings");
+  return r.warnings[0]!;
+};
 
 test("sequence: actors in order of first use, messages, notes, dividers", () => {
   const s = ok<SequenceSpec>(
@@ -50,6 +58,28 @@ mark "c" muted`,
     { key: "actor:s", tone: "accent" },
     { key: "actor:c", tone: "muted" },
   ]);
-  assert.match(err("sequence", 'a -> b "x"\nmark 2').message, /no actor or message number 2/);
-  assert.match(err("sequence", 'a -> b "x"\nmark zed').message, /no actor or message number zed/);
+  assert.deepEqual(warning("sequence", 'a -> b "x"\nmark 2'), { line: 2, message: "mark: no actor or message 2, dropped" });
+  assert.deepEqual(warning("sequence", 'a -> b "x"\nmark zed'), { line: 2, message: "mark: no actor or message zed, dropped" });
+});
+
+test("sequence: mark a message by its exact label; numbers still count messages only", () => {
+  const body = `actor d "Store"
+actor r "Repo"
+d -> r "writes note"
+note d "remembers"
+r --> d "no: it changed"
+d -> d "marks it drafted"
+mark "no: it changed" error "compares the whole note"
+mark 3 warn
+mark 9 "past the end"`;
+  const r = parseVis("sequence", body);
+  assert.ok(r.ok);
+  // Steps: 0 msg, 1 note, 2 msg, 3 msg. The label finds step 2; number 3 is the third message, step 3.
+  assert.deepEqual(r.spec.emphasis, [
+    { key: "step:2", tone: "error", note: "compares the whole note", n: 1 },
+    { key: "step:3", tone: "warn" },
+  ]);
+  assert.deepEqual(r.warnings, [{ line: 9, message: "mark: no actor or message 9, dropped" }]);
+  // An actor's label wins over a message with the same text.
+  assert.deepEqual(ok<SequenceSpec>("sequence", 'actor a "Ping"\na -> b "Ping"\nmark "Ping"').emphasis, [{ key: "actor:a", tone: "accent" }]);
 });

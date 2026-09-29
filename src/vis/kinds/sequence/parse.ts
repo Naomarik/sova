@@ -76,13 +76,17 @@ export function parseSequence(body: string): SequenceSpec {
   if (spec.actors.length < 2) fail(0, "a sequence needs at least 2 actors");
   if (spec.actors.length > MAX_ACTORS) fail(0, `${spec.actors.length} actors; at most ${MAX_ACTORS}`);
   if (spec.steps.length > MAX_STEPS) fail(0, `${spec.steps.length} steps; at most ${MAX_STEPS}`);
+  // A number counts messages only (notes and dividers aren't counted); a name is an actor's id or
+  // label, else a message's exact label (the first message with it).
   applyMarks(spec, marks, (t) => {
     if (t.t === "number") {
       const at = spec.steps.flatMap((s, i) => (s.type === "msg" ? [i] : []))[t.value - 1];
       return at === undefined ? null : `step:${at}`;
     }
     const a = byIdOrLabel(spec.actors.map((x) => ({ key: `actor:${x.id}`, id: x.id, label: x.label })))(t);
-    return a;
-  }, "actor or message number");
+    if (a !== null || (t.t !== "label" && t.t !== "id")) return a;
+    const at = spec.steps.findIndex((s) => s.type === "msg" && s.label === t.text);
+    return at < 0 ? null : `step:${at}`;
+  }, "actor or message");
   return spec;
 }

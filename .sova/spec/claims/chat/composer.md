@@ -10,24 +10,37 @@
     <span class="icon" style="--icon: url(/icons/image.svg)"></span><span>Drop images to attach</span>
   </div>
   <form class="composer-inner" aria-label="Message the agent">
-    <!-- while streaming only -->
-    <p class="run-status"><span class="live-dot"></span>Working<span class="run-status-detail">· running bash</span></p>
-    <!-- or, idle with ≥ 1 worker working: the subagents trigger, button.run-status-link (§app/subagents-pane) -->
+    <!-- the row's one live dot first, whenever anything works (a turn, Stopping, a rare state, a
+         compaction, or ≥ 1 subagent working); then, while streaming only, the step's icon (shown
+         in the narrow form only) and the words (shown in the wide form, visually hidden in the
+         narrow one), §chat.transcript/streaming; Stopping and the rare states show their words in both -->
+    <p class="run-status"><span class="live-dot" aria-hidden="true"></span><span class="run-status-state" title="Working · running bash"><span class="icon icon-sm run-status-narrow" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="run-status-say">Working<span class="run-status-detail">· running bash</span></span></span></p>
+    <!-- and, with workers: the subagents trigger, button.run-status-link, its ring meter and count
+         and no dot of its own (§app/subagents-pane) -->
     <!-- with an open alignment: the alignment chip, a menu button immediately left of the Inputs
          trigger, both at the row's right end (§chat.alignment/chip) -->
 
-    <!-- ticked alignment recommendations, staged for the next send (§chat.alignment/card);
+    <!-- answers picked on an alignment card (recommendations ticked, options picked), staged for
+         the next send (§chat.alignment/card); each question reads "rec" or its option's letter;
          omit when there are none -->
-    <div class="align-picks" role="group" aria-label="Staged recommendations">
+    <div class="align-picks" role="group" aria-label="Staged answers">
       <span class="icon icon-sm" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
-      <span class="align-picks-text">Taking your recommendation: <span class="text-mono">al_3 q1, q3; al_4 q2</span></span>
+      <span class="align-picks-text">Answering: <span class="text-mono">al_3 q1 rec, q2 b; al_4 q2 rec</span></span>
       <button class="button button-icon button-ghost" type="button" aria-label="Clear Picks" title="Clear Picks">…close…</button>
     </div>
+
+    <!-- dictation, while recording, transcribing or showing a dictation error; omit otherwise
+         (§chat.voice/states) -->
+    <div class="voice-strip" role="group" aria-label="Dictation">…Recording 0:07, the level, Cancel Recording…</div>
 
     <!-- pending attachments; omit the <ul> when there are none; see §chat/images -->
     <ul class="attachments" aria-label="Attachments">…</ul>
 
     <div class="composer-row">
+      <!-- the mic, first in the row; hidden when read only (§chat.voice/button) -->
+      <button class="button button-icon button-ghost voice-button" type="button" aria-label="Dictate" title="Dictate">
+        <span class="icon" style="--icon: url(/icons/mic.svg)" aria-hidden="true"></span>
+      </button>
       <!-- the one flyout trigger; the menu itself is below -->
       <button class="button button-icon button-ghost composer-menu-trigger" type="button" id="composer-menu-trigger"
               aria-label="More Actions" title="More Actions" aria-haspopup="menu" aria-expanded="false"
@@ -39,8 +52,8 @@
              accept="image/png,image/jpeg,image/gif,image/webp">
       <label class="visually-hidden" for="composer-input">Message</label>
       <textarea class="input textarea composer-input" id="composer-input" rows="1"
-                placeholder="Ask pi to…—Enter sends, Shift+Enter adds a line"
-                aria-describedby="composer-reason"></textarea>   <!-- ≥768; "Ask pi to…" below -->
+                placeholder="Ask pi to…—Enter sends, Shift+Enter adds a line" enterkeyhint="send"
+                aria-describedby="composer-reason"></textarea>   <!-- touch mode: "Ask pi to…", enterkeyhint="enter" -->
       <div class="composer-actions">
         <button class="button button-primary" type="submit">
           <span class="icon" style="--icon: url(/icons/arrow-right.svg)" aria-hidden="true"></span><span class="button-label">Send</span>
@@ -63,6 +76,12 @@
         <span class="composer-model-level">high</span>
         <span class="icon icon-sm composer-model-caret" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
       </button>
+      <!-- a Claude Code model on a device with several Claude logins: the chat's login, not a
+           control; see §app.claude-logins/active-login -->
+      <span class="composer-login" title="This chat runs on this Claude login: …" aria-label="Claude login: own@example.com">
+        <span class="composer-login-full">own@example.com</span>
+        <span class="composer-login-short">own</span>
+      </span>
       <span class="composer-reason" id="composer-reason"><!-- reason when disabled; else empty --></span>
       <!-- chat sessions only: the mode switch, pushed to the right edge; see §chat/mode-menu -->
       <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu" …>…</button>
@@ -103,28 +122,37 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
   scrolls. `field-sizing: content` handles it in Chromium. As a fallback, on input set
   `style.height = "auto"` and then `style.height = scrollHeight + "px"`.
 - **Keys.**
-  - `Enter` sends.
-  - `Shift+Enter` inserts a newline.
+  - **Touch mode.** How the textarea was last pressed decides what `Enter` does. A `pointerdown`
+    on it with `pointerType` "touch" turns touch mode on; a mouse or pen press turns it off.
+    Focus by keyboard or by code leaves it as it was, and it starts off. There is no media query,
+    no user-agent sniffing, no viewport width and no setting: a tap means an on-screen keyboard,
+    whose Enter key is for lines, and the Send button is right there.
+  - `Enter` sends, except in touch mode, where it inserts a newline and Send sends.
+  - `Ctrl+Enter` / `⌘+Enter` always sends, on every device. `Shift+Enter` always inserts a
+    newline.
   - Ignore `Enter` while `event.isComposing` (IME).
-  - **The key hint is in the placeholder**, at 768px and up only: "Ask pi to…—Enter sends,
-    Shift+Enter adds a line", and while streaming "Steer the current turn…—Enter sends,
-    Shift+Enter adds a line". Below 768px it's the short string alone ("Ask pi to…" /
-    "Steer the current turn…"): a touch-first device has no Enter key to speak of. The band is
-    watched live, so a resize across 768px swaps the placeholder in place. A read-only composer
-    keeps the short string.
+  - `enterkeyhint` is "enter" in touch mode and "send" otherwise.
+  - **The key hint is in the placeholder** exactly when `Enter` sends (touch mode off), at any
+    width: "Ask pi to…—Enter sends, Shift+Enter adds a line", and while streaming "Steer the
+    current turn…—Enter sends, Shift+Enter adds a line". In touch mode it's the short string alone
+    ("Ask pi to…" / "Steer the current turn…"), swapped in place when the mode changes. A read-only
+    composer keeps the short string.
   - Empty or whitespace-only text doesn't send, and Send is `aria-disabled` with no reason text,
     because the reason is obvious.
 - **Send.** Sends `{type:"prompt"}`. Clear the textarea only after the socket accepts the message.
   Show the user bubble optimistically and resume auto-follow.
 - **While streaming.** Send stays available and its label changes to `Steer`, which sends
-  `{type:"steer"}`. The placeholder becomes "Steer the current turn…" (plus the key hint at ≥768,
-  see Keys). `Stop`
+  `{type:"steer"}`. The placeholder becomes "Steer the current turn…" (plus the key hint when Enter
+  sends, see Keys). `Stop`
   (`.button-destructive`, outlined, never filled, one word so the button stays narrow) sends
   `{type:"abort"}`. Show it only while streaming, after Steer. `Esc` does **not** abort, to prevent
-  accidental stops.
+  accidental stops. While a dictation is recording, `Esc` cancels the recording and nothing else
+  (§chat.voice/states).
 - **After Stop.** The status reads "Stopping…" until the turn settles. Then the run status
   disappears, and an info row says "Stopped by you at `14:08`."
-- **Focus.** Returns to the textarea after Send, Steer, or Stop.
+- **Focus.** Returns to the textarea after Send, Steer, or Stop. The mic never moves focus: its
+  press keeps the textarea's focus and selection, and dictated text lands at the caret
+  (§chat.voice/insertion) as part of the draft.
 - **Drafts** are never discarded. The draft survives disable/enable, reconnects, and errors, and
   it survives a reload too. Each session's draft lives in two places:
   - **In memory, per session path.** This is the authority within a tab, so switching sessions
@@ -157,15 +185,6 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
   While the composer is disabled it still shows the model and is `aria-disabled` with a dead
   click, like the flyout's own rows. It stays at every width, because it's the only place the
   model is on screen.
-- **Opening a session.** The indicator is final from the view's first frame, so the foot never
-  re-lays out when the chat's `hello` lands. Until then it reads what the session list has for THIS
-  session, in the same format: its model (`SessionSummary.model`) and its thinking level
-  (`SessionSummary.thinking`, the newest `thinking_level_change` in its file), the level shown only
-  when that model's ladder has it. The ladder comes from the model list, which the app loads once
-  for the page at start (it is the app's, not a session's); until that load lands, from the ladders
-  this browser last loaded (`localStorage`), so a session opened at once still shows its level. The
-  `hello` and the list then only confirm it, or correct a list read that disagrees (a level pi
-  clamps, a model pi can't run).
 
 ## §chat.composer/disabled-states — Disabled states
 
@@ -175,13 +194,18 @@ the skill's copy ladder.
 | Condition | Textarea | Buttons | Reason (with icon) |
 |---|---|---|---|
 | Session is live in a TUI | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
-| Chat socket connecting (first connect) | enabled (typing is fine) | Send `aria-disabled` | `clock` — "Connecting…", once the connect has taken 500ms: a quicker one, the usual case, blocks the same but says nothing, so the reason never flashes into the foot and squeezes the model indicator and the mode switch for the frames before the `hello` |
+| Chat socket connecting (first connect) | enabled (typing is fine) | Send `aria-disabled` | `clock` — "Connecting…" |
 | Chat socket dropped | enabled | Send `aria-disabled` | `clock` — "Reconnecting. Your draft is kept." |
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
 | Server `error` with `code:"busy"` | enabled | Send `aria-disabled` until the next `agent_settled` | `attention` — "pi is busy with another turn. Send when it finishes." |
 
-Send is enabled by typed text, an attachment, **or ticked alignment recommendations alone**
-(§chat.alignment/card): with ticks and no text it sends just their line. With ticks staged, a
+The mic (§chat.voice/button) follows the textarea, not Send: it is hidden when the session is live
+in a TUI, and works in every other row above, because dictating is typing. On its own it is
+`aria-disabled` only where the browser can't record (not a secure context, or no microphone API),
+with that reason in its `title` rather than in `.composer-reason`.
+
+Send is enabled by typed text, an attachment, **or answers picked on an alignment card alone**
+(§chat.alignment/card): with picks and no text it sends just their line. With picks staged, a
 typed local command (`/new`, `/tree`, `/agents`…) is sent as text after them, not run.
 
 Use `aria-disabled="true"` rather than `disabled` on buttons whose reason matters. That keeps them
@@ -191,8 +215,8 @@ read-only live case.
 
 ## §chat.composer/composer-flyout — Composer flyout
 
-Everything you do to a session that isn't typing lives behind one ghost `plus` button, first in
-`.composer-row`. It replaced the two icon buttons that used to sit there (Attach Images and
+Everything you do to a session that isn't typing lives behind one ghost `plus` button in
+`.composer-row`, right after the mic (§chat.voice/button). It replaced the two icon buttons that used to sit there (Attach Images and
 Commands) and took the model trigger and the session's own facts out of the head (§chat/transcript): the
 composer is where the session is acted on, and the head is for reading.
 
@@ -353,11 +377,7 @@ Sandbox row.
   composer is collapsed.
 - **Source.** The server sends `{type:"sandbox", on, enforcement, status}` after the hello, after
   a rewind and on every `sandbox` entry, and only when the runtime has the `/sandbox` command. No
-  such message means no shield and no flyout row. Before the chat's `hello`, the shield reads what
-  the session list has for this session (`SessionSummary.sandbox`: the newest `sandbox` entry in
-  its file, listed only while on), so opening a sandboxed session shows it from the first frame
-  instead of squeezing the mode switch when the message lands; from the `hello` on it is the
-  socket's alone.
+  such message means no shield and no flyout row.
 - **Transcript.** Sova's transcript renders the `sandbox` entry as nothing: the shield and the
   toast are the web's only sandbox signals.
 
@@ -365,7 +385,12 @@ Sandbox row.
 
 Composer ground is `--color-surface` with a top border in `--color-border`, and padding
 `--space-3` / `--space-4` plus `env(safe-area-inset-bottom)`. The textarea uses `.input`: 44px
-min, `--r-md`, `--color-border-strong` border, and an accent focus border. Send is
+min, `--r-md`, `--color-border-strong` border, and an accent focus border. Its block padding is what's
+left of `--control-md` after one body line (`--fs-body` × `--lh-body`) and the two borders as
+drawn (the 1.5px stroke snaps down to 1px), split evenly, so an empty or one-line box is exactly
+44px with its text centred at every text size; each added line grows it by one line height. Empty,
+it stays one line: a placeholder longer than the box ("Steer the current turn…" beside Steer and
+Stop) is cut, not wrapped, so a turn starting never makes the composer taller. Send is
 `.button-primary` (`--color-accent` / `--color-on-accent`). Stop is `.button-destructive`
 (`--status-error` border and label, `--status-error-bg` on hover). The reason is `--fs-caption` in
 `--color-ink-2`. The model indicator borrows the pair the foot uses — the id `--fs-mono` in `--color-ink-2`, everything else
@@ -382,6 +407,10 @@ menu keeps its own 360px cap.
 - **Contrast.** On-accent on accent (Send) is 5.61 (dark) and 6.81 (light). The control border
   (border-strong on surface) is 3.47 and 3.61, clearing 3:1. Error on surface (Stop) is 5.42
   and 6.01.
+- **Mic.** An icon-only 44×44 button named by `aria-label` ("Dictate", "Stop Recording" while
+  recording, "Transcribing" while busy). Its states read from the end state — the accent fill, the
+  stop glyph and the strip's word "Recording" — never from the live dot alone, and each is
+  announced through the polite region (§chat.voice/states).
 - **Stop placement.** It sits to the right of Steer, last in the row, with an `--space-2` gap. One
   word plus the square glyph makes it narrower than the primary it follows, so the destructive
   action reads as the smaller, secondary one. It's the only time the two appear together.

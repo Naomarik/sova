@@ -2,11 +2,15 @@ import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
-import type { MeshHello, PeerState } from "../../shared/protocol";
-import { type PeerEntry, peerUrl } from "./peers";
+import type { PeerState } from "../../shared/protocol";
+import type { MeshBuildHello } from "../../shared/mesh-resync";
+import type { AdvertisedGateway, MeshHelloPublic, ShareGatewayHello } from "../../shared/public-links";
+import { gatewayPublicUrl, isPublicUrl } from "../share/registry";
+import { type PeerEntry, peerUrl, readPeers } from "./peers";
 
 // Hello: who a Sova host is and which wire contract it speaks. The fingerprint and the package
-// version are read once, on the first hello, never at import.
+// version are read once, never at import: at boot (primeFingerprint, from server/index.ts through
+// captureBootBuild), else on the first hello.
 
 const PROTOCOL_FILE = new URL("../../shared/protocol.ts", import.meta.url);
 const PACKAGE_FILE = new URL("../../package.json", import.meta.url);
@@ -52,7 +56,33 @@ function ownBuild(): string | undefined {
   return buildCache.build;
 }
 
-export function ownHello(self: { id: string; label: string }, nodeId?: string): MeshHello {
+// The public-links gateway advertisement (§mesh.public/gateway): an optional field outside
+// MeshHello, so the fingerprint (sha256 of shared/protocol.ts) is unchanged and an older host just
+// ignores it. Discovery only: whether this gateway accepts a given host is GatewayInfo, asked by
+// that host. Only a host whose route is "self" with a gateway setting advertises.
+function ownShareGateway(): ShareGatewayHello {
+  let publicUrl: string | null = null;
+  try {
+    publicUrl = gatewayPublicUrl();
+  } catch {
+    // an unreadable setting advertises nothing; the hello itself must never fail
+  }
+  return publicUrl ? { shareGateway: { publicUrl } } : {};
+}
+
+/** Read the fingerprint now: at boot, together with the commit (mesh/build-id.ts), so the two
+    describe the same moment. Idempotent; returns the protocol hash. */
+export const primeFingerprint = (): string => ownFingerprint().protocol;
+
+// The boot commit (§mesh.peers/resync), advertised like the gateway: an optional field outside
+// MeshHello (shared/mesh-resync.ts), so the fingerprint is unchanged and an older host ignores it.
+let bootCommit: string | undefined;
+/** Set once at boot by captureBootBuild; tests reset it with undefined. */
+export const advertiseCommit = (commit: string | undefined): void => {
+  bootCommit = commit;
+};
+
+export function ownHello(self: { id: string; label: string }, nodeId?: string): MeshHelloPublic & MeshBuildHello {
   const { protocol, version } = ownFingerprint();
   const build = ownBuild();
   return {
@@ -65,6 +95,8 @@ export function ownHello(self: { id: string; label: string }, nodeId?: string): 
     pi: PI_VERSION,
     ...(build ? { build } : {}),
     ...(nodeId ? { nodeId } : {}),
+    ...ownShareGateway(),
+    ...(bootCommit ? { commit: bootCommit } : {}),
     now: Date.now(),
   };
 }
@@ -73,7 +105,8 @@ export const ownProtocol = (): string => ownFingerprint().protocol;
 
 export interface ProbeResult {
   state: PeerState;
-  hello?: MeshHello;
+  /** A gateway's hello also carries `shareGateway`, a newer build's its boot `commit` (both optional). */
+  hello?: MeshHelloPublic & MeshBuildHello;
   error?: string;
   /** Round trip of an answered hello, ms (this host's measure; never on the wire). */
   ms?: number;
@@ -92,7 +125,7 @@ export async function probeHello(base: string): Promise<ProbeResult> {
       await res.body?.cancel();
       return { state: "down", error: `hello answered ${res.status}` };
     }
-    const hello = (await res.json()) as MeshHello;
+    const hello = (await res.json()) as MeshHelloPublic & MeshBuildHello;
     const ms = Math.round(performance.now() - t0);
     if (hello?.mesh !== 1 || typeof hello.protocol !== "string") return { state: "down", error: "not a Sova hello" };
     if (hello.protocol !== ownProtocol()) return { state: "skewed", hello, error: `protocol ${hello.protocol}, this host ${ownProtocol()}`, ms };
@@ -119,6 +152,37 @@ export function probePeer(peer: PeerEntry): Promise<ProbeResult> {
   });
   probes.set(base, { at: Date.now(), result });
   return result;
+}
+
+const peersNow = (): PeerEntry[] => {
+  const read = readPeers();
+  return read.ok ? read.config.peers : [];
+};
+
+/** The peers whose hello advertises a share gateway (§mesh.public/gateway; discovery only, whether
+    one accepts this host is its GatewayInfo). Probes through probePeer, so answers are cached.
+    Only peers answering `up`: a down or skewed one is left out, and so is a publicUrl that isn't
+    exactly an https origin (isPublicUrl). `nodeId` is the peer's StableID
+    from peers.json, never the hello's. Never throws. */
+export async function advertisedGateways(peers: () => PeerEntry[] = peersNow): Promise<AdvertisedGateway[]> {
+  let list: PeerEntry[];
+  try {
+    list = peers();
+  } catch {
+    return [];
+  }
+  const found = await Promise.all(
+    list.map(async (peer): Promise<AdvertisedGateway | null> => {
+      try {
+        const r = await probePeer(peer);
+        const url = r.state === "up" ? r.hello?.shareGateway?.publicUrl : undefined;
+        return isPublicUrl(url) ? { nodeId: peer.nodeId, peer: peer.id, publicUrl: url } : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return found.filter((g): g is AdvertisedGateway => g !== null);
 }
 
 export const peerLastSeen = (id: string): number | null => lastSeen.get(id) ?? null;

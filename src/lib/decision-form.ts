@@ -322,7 +322,7 @@ export function backfillBlocked(chain: DecisionChainStatus): string | null {
   return null;
 }
 
-/** A suggestion button's label: "Use haiku (Claude Code)". A suggestion is only ever applied by its button. */
+/** A suggestion button's label: "Use sonnet (Claude Code)". A suggestion is only ever applied by its button. */
 export const suggestionLabel = (s: WorkerChoice, backends: { id: string; label: string }[]): string =>
   `Use ${s.model} (${backends.find((b) => b.id === s.backend)?.label ?? s.backend})`;
 

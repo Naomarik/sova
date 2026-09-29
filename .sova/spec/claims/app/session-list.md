@@ -29,10 +29,34 @@
     </div>
     <div class="spread">
       <p class="search-count" id="session-count" aria-live="polite">12 of 48 sessions</p>
-      <span class="chip chip-accent chip-count" title="Sessions open in a TUI">
-        <i class="chip-dot"></i>2 TUI</span>           <!-- only when ≥1 live; static, no pulse -->
     </div>
   </div>
+
+  <!-- folded (<768): the same region as ONE line (§app.session-list/search). Collapsed: -->
+  <div class="sidebar-search" role="search">
+    <label class="visually-hidden" for="session-search">Search sessions</label>
+    <div class="sidebar-toolbar">
+      <a class="button button-icon overseer-entry button-ghost" href="#/overseer" aria-label="Overseer"
+         title="Overseer · Alt+O">…eye…</a>
+      <p class="search-count" id="session-count" aria-live="polite">48 sessions</p>
+      <!-- not in selection mode -->
+      <button class="button button-sm button-ghost sidebar-select-start" type="button">…check…Select</button>
+      <button class="button button-icon button-ghost" type="button" aria-label="Search sessions"
+              title="Search sessions · /">…search…</button>
+    </div>
+  </div>
+  <!-- open (after the search icon, or while there is a query): -->
+    <div class="sidebar-toolbar">
+      <div class="search">
+        <svg class="icon" aria-hidden="true">…search…</svg>
+        <input class="input" id="session-search" type="search" placeholder="Title, folder, or tag"
+               aria-describedby="session-count" autocomplete="off" spellcheck="false">
+        <!-- only when the query is non-empty -->
+        <button class="button button-icon" type="button" aria-label="Clear Search">…close…</button>
+      </div>
+      <button class="button button-icon" type="button" aria-label="Close Search" title="Close Search">…close…</button>
+      <p class="search-count visually-hidden" id="session-count" aria-live="polite">12 of 48 sessions</p>
+    </div>
 
   <nav class="sidebar-list pane" aria-label="Session list">
     <!-- First region: Needs you (§app.session-list/needs-you), only while a session is blocked on
@@ -218,6 +242,8 @@ label a person reads says "sessions pane".
     <div class="spine-foot">
       <a class="button button-icon spine-item" href="#/usage"
          aria-label="{the usage glance sentence, else Usage}" title="{the same}">…gauge…</a>
+      <!-- §app.resource-monitor/entry-button -->
+      <button class="button button-icon spine-item" type="button" aria-label="Resource monitor" title="Resource monitor">…activity…</button>
       <a class="button button-icon spine-item" href="#/agents"
          aria-label="{the agents sentence, else Agents}" title="{the same}">…worker…</a>
       <button class="button button-icon spine-item" type="button" aria-label="Settings" title="Settings">…settings…</button>
@@ -297,12 +323,14 @@ label a person reads says "sessions pane".
 - **Live tallies.** "{n} subagents working now" — `activeAgentCounts(…).agents`: subagents
   working right now in fresh host sessions, idle and waiting workers counting 0, the same figure
   the expanded foot's Agents row shows — and
-  "{n} sessions open in a TUI" (the same count as the `N TUI` chip under the search), each only at
+  "{n} sessions open in a TUI" (every live session, whatever the search filters), each only at
   n ≥ 1, with `.spine-stats` omitted when both are 0. They are **facts, not doorways**: nothing
   opens. Pointer users get the sentence as the `title`; a tap raises the same sentence as a toast,
   the rail's precedent (§app.session-list/accessibility — there is no hover on touch).
-- **The foot** — Usage (`#/usage`), Agents (`#/agents`) and Settings, the expanded foot's three
-  doorways. The glance sentences are not dropped at 64px, only unprinted: Usage's `title` and
+- **The foot** — Usage (`#/usage`), Resource monitor, Agents (`#/agents`) and Settings, the
+  expanded foot's two doorways and two buttons, in that order: the monitor sits right after the
+  gauge, as it sits beside the Usage glance. Resource monitor opens the monitor modal, exactly as
+  the foot's button does (§app.resource-monitor/entry-button). The glance sentences are not dropped at 64px, only unprinted: Usage's `title` and
   `aria-label` are the usage glance in full words (`glanceText()`), and Agents' are the agents
   sentence (`agentsSentence()`, e.g. "3 active agents in 2 sessions, 1 team"). Each falls back to
   "Usage" / "Agents" only when its sentence is empty — no usage cache to read, no live agents.
@@ -311,8 +339,8 @@ label a person reads says "sessions pane".
 - **Layout.** Five groups top to bottom — head, tiles, regions, tallies, foot — each a column
   of 44px items centred with `--space-1` between and `--space-2` above and below, split by
   `--color-border` rules. The tiles are the scroll region (`.pane`) and take the height that's
-  left; the other four are pinned. They cost 673px with every item shown (each of the four region doors and two tallies is a 44px
-  item and its 4px gap; 625px measured at 1400×1000 with three doors, plus one door's 48px), so the tiles keep a floor of one tile (60px), and on a window shorter than that the whole spine scrolls instead.
+  left; the other four are pinned. They cost 721px with every item shown (each of the four region doors, two tallies and four foot items is a 44px
+  item and its 4px gap; 625px measured at 1400×1000 with three doors and three foot items, plus one door's 48px and the monitor item's 48px), so the tiles keep a floor of one tile (60px), and on a window shorter than that the whole spine scrolls instead.
   Neither scrollbar is drawn: a 10px bar in a 64px column pushes every item off the shared axis.
   **The cost:** nothing shows that the tiles scroll, beyond the tile cut at the edge. Recent is 5
   by default and 20 at most, and every tile is also a row in the expanded pane.
@@ -505,7 +533,7 @@ label a person reads says "sessions pane".
   are each on the first line's centre (delta 0.00, 0.01 and 0.01px).
 - **TUI chip.** Shown when `live !== null`:
   `.session-rail-item.session-rail-state.session-rail-tui.chip.chip-accent` holding the text
-  `TUI` — the same word as the session head's `TUI` chip and the sidebar's `{n} TUI` count — and
+  `TUI` — the same word as the session head's `TUI` chip — and
   no dot. It is a `--color-surface` plate with **no outline at rest**: its 1px border is
   transparent and turns `--color-border-strong` on hover (`.session-rail-tui:hover`), the rail's
   only hover outline. It measures **20.2 × 16**: the word (16.2px at 9px mono, untracked) plus
@@ -606,13 +634,8 @@ label a person reads says "sessions pane".
   or dropping the count — spends a readable state to save height we are not spending.
 - **Other placements.** None for v1. The open session already shows its own run state (the
   `.run-status` line and the author's `.live-dot`, §chat/transcript), so the session head doesn't repeat Busy.
-  It doesn't count toward the "N TUI" chip either.
-- **Live count.** `N TUI` as `.chip.chip-accent.chip-count`, shown only when N ≥ 1. It sits at
-  the right end of the count row under search (`.spread`), not in the head: at 320px the head
-  holds exactly brand and New Session. It always counts all live sessions, not just the
-  filtered ones. **It does not pulse** — `.chip-live` came off it with the rail change. A count is
-  a tally, not work in flight, and it was the one pulse on the screen that never stopped. The
-  accent dot and the word `TUI` carry it.
+- **No live count under the search.** The expanded pane has no `N TUI` tally: each live row
+  carries its own rail `TUI`, and the collapsed spine keeps its "{n} sessions open in a TUI" fact.
 - **Selection.** The row link for the open session gets `aria-current="page"`, and its shell gets
   `.session-row-shell-current`, which is what the stylesheet tints with `--color-accent-tint` —
   the tint has to cover the rail too, or the open row would read as two pieces. The tint is never
@@ -679,8 +702,7 @@ and the region has **no actions of its own** beyond its twist.
 - **Freshness.** App reads the digest once for the page, on the Overseer entry button's 10-second
   cadence (paused while the tab is hidden, again on window focus, and at once when a view's action
   asks for the session list — a baton strip's Get Link, hand-off, Take Back or Approve), and hands
-  the same read to this region and to the Overseer head's menus (§app.overseer/finished-menu). The
-  server keeps a digest for 3 seconds; an org or baton write that lands drops it, so the read right
+  that read to this region. The server keeps a digest for 3 seconds; an org or baton write that lands drops it, so the read right
   after one says what it changed.
 - **The spine** carries its door, "Needs you · {n} sessions", shown exactly when the region is
   (§app.session-list/spine).
@@ -967,7 +989,8 @@ to open. So the list itself can be picked from.
 **The way in is a press held on a row**, ~500ms, mouse or thumb alike: that row is selected and
 the sidebar enters **selection mode**. Press-and-hold is the accelerator; the **Select** button
 beside the session count is the door, for a keyboard and for anyone who has never held a row in
-their life. There is never only one way in.
+their life — on a phone it shares the one toolbar line with the count, before the search icon
+(§app.session-list/search), and leaves it while the search is open. There is never only one way in.
 
 **What a press is, and what it stops being.** A press becomes a hold only if it stays within 10px
 of where it started and nothing interrupts it. Moving further is a drag (rows still drag into
@@ -1036,6 +1059,20 @@ the same everywhere a session is named, and clearing it has something to go back
 capped at `SESSION_TITLE_MAX` (80, the derived title's own cap), trimmed, whitespace collapsed to
 one line; a deleted session's title is forgotten with its file.
 
+**Every stored title says who set it.** The store is version 2: `titles[id]` is either a bare
+string, a title from before provenance existed, or `{title, by, at}` with `by` one of `user`,
+`overseer` or `auto` and `at` the ms epoch it was set. The route takes an optional `source`
+(`user` or `overseer`, anything else is a 400): the UI sends none, so `user`, and the Overseer's
+`sova_create_session` and `sova_set_session` send `overseer`, on this host and on a peer (an older
+peer ignores the field and stores a `user` title, which protects it just the same). Nobody but
+the automatic namer (§app.session-list/auto-titles) writes `auto`. **A title is explicit when a
+user or the Overseer set it, and every bare string counts as explicit** — so every title stored
+before this rule is protected, whoever really set it. Every summary carries the stored title's
+provenance as `titleBy` (`user`, `overseer` or `auto`; a bare string reads `user`), present
+whenever a title is stored for the session, even one that equals the derived title. Clearing
+deletes the entry whatever set it; nothing remembers that a title was cleared, so a cleared session
+is unnamed again, and the automatic namer may name it.
+
 **Accessibility.** `Escape` leaves selection mode from anywhere outside a text field (inside one it
 belongs to the field: search clears, the rename field cancels). "Text field" means a caret, not
 merely an `<input>`: a row's checkbox is an input too, and Escape pressed on one — the likeliest
@@ -1044,6 +1081,93 @@ place for a keyboard to be in this mode — leaves the mode like Escape anywhere
 `<input type="checkbox">` inside its label, named "Select {title}". The toolbar is a `role="group"`
 labelled "Selected sessions", its count is a polite live region, and every disabled control carries
 the reason it is disabled before it is pressed, never after. Every target in the mode is 44px.
+
+## §app.session-list/auto-titles — Automatic session titles
+
+A session is named by its first message until someone renames it, and a first message is a
+question or an instruction, not a name. So Sova can name sessions itself, the way the Overseer does
+when asked: one short title per session from what the session became, written into Sova's own
+title store (§app.session-list/selecting-several-sessions) as an `auto` title. Never into the
+`.jsonl`, and **never over an explicit title**: a title a user or the Overseer set, or any title
+stored before provenance existed, is never replaced, by the sweep or by the button.
+
+**Two ways in.** A background **sweep**, off by default and switched on in Settings → Summaries
+(§app.settings-dialog/summaries), names sessions as they settle. A **Name sessions** button on
+section heads names a section's unnamed rows on demand, whether the sweep is on or not. Both use
+the same title call and the same writer (`server/session-autotitle.ts`).
+
+**The title call.** One model call per session, with a primary and an optional fallback from
+Settings (one attempt each, in order, no retry loop), each obeying the model policy's global switch
+like the summary line: a model turned off in Settings → Models is skipped. The system prompt is
+the title rules alone (2 to 7 words, at most 60 characters, sentence case, name the work rather
+than the process, never name the app); **no Sova or agent system prompt goes with it**, and the
+user message holds only:
+
+- the session's first user message, whitespace collapsed, at most 600 characters (a wake nudge or
+  a partner's link message is not one, as for the derived title);
+- its summary line (the last topic-outline snapshot's `overall`) and that snapshot's topic
+  headings, each with at most 2 of its bullets;
+- or, with no summary line (the button only), its first 3 user messages instead.
+
+**The session's current title is never in it**, whatever set it. On pi the call is
+`completeSimple` with that system prompt and one user message, temperature 0 and no reasoning
+unless the row's effort asks for it; on Claude Code it is `claude -p` in an empty temporary
+folder with `--system-prompt`, no tools, no setting sources, no MCP servers, no session
+persistence and no JSON schema, on this host's Claude login. The reply is one JSON object
+`{"title": "…"}`; the title is kept only if, cleaned like a typed title (trimmed, one line), it is
+2 to 9 words and at most 60 characters, with a trailing period or wrapping quotes dropped.
+Anything else leaves the session as it was.
+
+**The write is race-safe.** A title is written as `{title, by: "auto", at}` only if, on a fresh
+read of the store at write time, the session still has no explicit title. A title the user or the
+Overseer set while the call was out wins, and the model's answer is dropped.
+
+**The sweep** runs on this host, for this host's sessions, while its switch is on:
+
+- **When.** Every *interval* (default 5 minutes), and also shortly after a session's summary line
+  changes (a nudge, scheduled for when that session will have been quiet long enough). Turning the
+  switch on starts a run at once.
+- **Which.** A session with no stored title at all, with a summary line, quiet for the *quiet
+  period* (default 5 minutes, by its file's modification time), and none of: archived by hand, an
+  empty husk, a subagent's or team member's own session, a member of a fanout group Sova made, an
+  Overseer or project overseer file. Most recently active first.
+- **How much.** At most 10 sessions per run, 2 at a time. Existing unnamed sessions are backfilled
+  the same way, 10 per run, until none is left.
+- **Once.** A session the sweep named has a stored title, so no later run looks at it again, and a
+  later change to its summary line does not rename it. A session the models answered with no usable
+  title, or failed on for any other reason, is not tried again until its summary line changes
+  (remembered by this server process).
+- **Backoff.** When every model tried fails for quota, a rate limit or auth, the run stops, and
+  the sweep waits 30 minutes before its next one. When no model can run at all, the run stops.
+- **Silent.** The sweep shows nothing but the titles themselves: no toast, no notification. An
+  open sidebar picks them up through the session feed, which counts a changed title as a changed
+  row (§app.decisions/push).
+
+**The button.** On the heads of Live & web, each user group, Organizations and the Archive, a
+quiet 44px ghost icon button (`pencil`) at the head's right end, before a group's `⋯`, shown only
+while that section holds at least 1 **nameable** row: a row with no stored title (no `titleBy`,
+no `originalTitle`) that is not a draft-only row. Its `aria-label` and `title` are "Name {n}
+sessions" ("Name 1 session"), counting the section's rows as the search shows them, each session
+once. A press sends exactly those rows; while it runs the button is disabled, `aria-busy`, and
+titled "Naming {n} sessions…". When it returns the list is fetched again and the rows show their
+new titles. **No toast, no undo**: a title the user doesn't like is renamed or cleared like any
+other (§app.session-list/selecting-several-sessions). A click or keypress on the button inside a
+`<summary>` never toggles its section. A row the model failed on stays nameable, so a second press
+tries it again.
+
+`POST /api/sessions/auto-title {paths, dryRun?}` (at most 200 paths) answers
+`{results: [{path, outcome, title?, reason?}]}` in request order, 4 sessions at a time: `named`
+with the title, `would-name` on a dry run, or `skipped` with a reason — `explicit` (it has a title
+a user or the Overseer set), `not-found`, `not-listed` (a husk, a worker's session, an Overseer
+file), `no-input` (nothing to name it from), `no-model` (no title model can run) or `failed` (the
+models failed, or answered with no usable title). The route may name an archived session and one
+with no summary line, and **may redo an `auto` title**, never an explicit one; the button itself
+sends only unnamed rows.
+
+**Mesh.** Each host names its own sessions, with its own settings, models and keys. The button
+splits a section's rows by host and sends each peer's rows to that peer
+(`/peer/<id>/api/sessions/auto-title`, the usual routing); a peer whose Sova predates the route
+answers 404, and its rows are skipped silently. Each host's sweep follows that host's own switch.
 
 ## §app.session-list/regions-top-and-archive — Regions: top and Archive
 
@@ -1651,8 +1775,20 @@ record whose transcript is gone.
 - **Overseer button.** The search row also holds the Overseer entry button (§app.overseer/entry-button).
   While the filter is focused or has a query, the button is removed (not just hidden) and the
   field takes the full row; blur with an empty query brings it back.
-- **Keys.** `/` anywhere, while focus isn't in a text field, focuses search. `Esc` inside search
-  clears the query first, then blurs on a second press. Clear Search returns focus to the input.
+- **Folded (<768): one line.** On a phone the search row and the count row are one toolbar line:
+  the Overseer eye, the count, then at the far end `Select` (while not in selection mode) and a
+  wordless **search icon button**. The field is not on screen until that button is pressed; then
+  it opens **in the same line**, and the line holds only the field (with its Clear Search `×`
+  while there is a query) and a **Close Search** button — the eye, the count, `Select` and the
+  search icon are gone from it. The count stays in the DOM, visually hidden, so the field's
+  description and the live count still speak. The line stays open while there is a query, and
+  blur never closes it: tapping a row and coming back finds the field as it was left. **Close
+  Search** clears the query and folds the line back, and focus returns to the search icon.
+  Unfolding the screen drops the open state: the unfolded layout is the two rows above, always.
+- **Keys.** `/` anywhere, while focus isn't in a text field, focuses search — on a phone it opens
+  the folded line first. `Esc` inside search clears the query first; a second press blurs it
+  (unfolded) or closes the folded line, as Close Search does. Clear Search returns focus to the
+  input.
 
 ## §app.session-list/states — States
 

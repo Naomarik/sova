@@ -72,9 +72,10 @@ const REMOTE_DISCOVER_EVENT = "remote:discover";
 import { policyDenial, readPolicy } from "../subagents/policy.ts";
 import { DELEGATE_FILE_NAME, DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateKey, delegateReader, type DelegateBackend } from "./delegate.ts";
 import { WorkerProbe } from "./discovery.ts";
-import { isMinorMode, MINOR_MODES, normalizeMinorModes, parseMinorFlag, type MinorMode } from "./minor.ts";
+import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "./events.ts";
+import { isMinorMode, MINOR_MODES, normalizeMinorModes, parseMinorFlag, workerMinorModes, type MinorMode } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
-import { applyModeSection, buildModeNote, composePrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
+import { applyModeSection, buildModeNote, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
 import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import { SPEC_FILE_NAME, SPEC_WRITER_LABEL, specBackends, specKey, specReader } from "./spec.ts";
 import {
@@ -222,6 +223,17 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	const viewerShortcutClash = viewerShortcut === (config.shortcut ?? DEFAULT_MODE_SHORTCUT) || viewerShortcut === config.minorShortcuts?.align;
 	const viewerKeyHint = viewerShortcutClash ? "/align" : viewerShortcut;
 
+	/**
+	 * This session is a subagent worker (events.ts: the worker marker answered). Only a worker on its
+	 * worktree's own agent dir loads this extension (§chat.worktrees/worktree-config); it takes its modes
+	 * from the launch flags alone, worker-scope minors only, and gets the worker form of their prompt.
+	 */
+	let workerRole = false;
+	pi.events?.on(WORKER_ROLE_EVENT, (data: unknown) => {
+		if ((data as { version?: unknown } | null)?.version === 1) workerRole = true;
+	});
+	pi.events?.emit(WORKER_ROLE_DISCOVER_EVENT, { version: 1 });
+
 	pi.registerFlag("major", { description: "Start in a mode: normal | delegate", type: "string" });
 	pi.registerFlag("minor", {
 		description: `Start with minor modes on (comma-separated): ${MINOR_MODES.join(" | ")}, or none`,
@@ -254,6 +266,23 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	}
 
 	/**
+	 * What this session's workers get of its modes (§chat.mode-menu/workers), for the subagents
+	 * extension to append at spawn. Emitted on every resolve and switch, and on request.
+	 */
+	function publishWorkerModes(): void {
+		const prompt = composeWorkerPrompt(active);
+		const event: ModeWorkerEvent = { version: 1, minorModes: workerMinorModes(active.minorModes), ...(prompt === undefined ? {} : { prompt }) };
+		try {
+			pi.events?.emit(MODE_WORKER_EVENT, event);
+		} catch {
+			// Best-effort: without it, workers get no mode text.
+		}
+	}
+	pi.events?.on(MODE_WORKER_DISCOVER_EVENT, (data: unknown) => {
+		if ((data as { version?: unknown } | null)?.version === 1) publishWorkerModes();
+	});
+
+	/**
 	 * Write this state's block (or the given one, the one a turn was just built with) into the host's
 	 * base sections. pi replaces the base object when tools change, so this is re-run at every run
 	 * start and after every switch, not once. A getter whose runner was replaced is dropped.
@@ -272,8 +301,12 @@ export default function modeExtension(pi: ExtensionAPI): void {
 
 	const headMinors = (): MinorMode[] => head ?? active.minorModes;
 
-	/** The `mode` section: the major mode as it is now, the minor blocks as the head has them. */
-	const modeBlock = (): string | undefined => composePrompt(active, routes, writerRoute, headMinors());
+	/**
+	 * The `mode` section: the major mode as it is now, the minor blocks as the head has them. In a
+	 * worker, the worker form of the head's worker-scope minors (never Delegate or a writer).
+	 */
+	const modeBlock = (): string | undefined =>
+		workerRole ? composeWorkerPrompt({ minorModes: headMinors() }) : composePrompt(active, routes, writerRoute, headMinors());
 
 	/** A run is about to send the prompt: a head not sent since the start or the last compaction is the active set from now on. */
 	function fixHead(): void {
@@ -286,7 +319,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	/** The hidden note for what the model hasn't been told yet, now counted as told; undefined when there is nothing. */
 	function takeNote(): { customType: string; content: string; display: false; details: ModeNoteDetails } | undefined {
 		if (head === undefined) return undefined;
-		const note = buildModeNote(told, active.minorModes, { head, guides }, writerRoute);
+		const note = workerRole
+			? buildModeNote(workerMinorModes(told), workerMinorModes(active.minorModes), { head: workerMinorModes(head), guides }, null, true)
+			: buildModeNote(told, active.minorModes, { head, guides }, writerRoute);
 		if (!note) return undefined;
 		told = [...active.minorModes];
 		guides = normalizeMinorModes([...guides, ...note.guides]);
@@ -303,7 +338,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		const denial = (choice: { backend: DelegateBackend; model: string }) => policyDenial(policy, choice.backend, choice.model);
 		if (active.mode === "delegate") routes = routeAll(readDelegate(), discoveries, denial);
 		// The head's spec block carries the writer paragraph too, so spec turned off keeps it there.
-		writerRoute = hasMinor(active, "spec") || headMinors().includes("spec") ? routeWriter(readSpec(), discoveries, denial) : null;
+		// A worker spawns nothing, so it is never offered a writer.
+		writerRoute = (hasMinor(active, "spec") || headMinors().includes("spec")) && !workerRole ? routeWriter(readSpec(), discoveries, denial) : null;
 	}
 
 	/**
@@ -312,7 +348,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 */
 	function probeScope(): { key: string; backends: DelegateBackend[] } {
 		const delegate = active.mode === "delegate" ? readDelegate() : undefined;
-		const spec = hasMinor(active, "spec") ? readSpec() : undefined;
+		const spec = hasMinor(active, "spec") && !workerRole ? readSpec() : undefined;
 		const backends = new Set<DelegateBackend>([...(delegate ? backendsOf(delegate) : []), ...(spec ? specBackends(spec) : [])]);
 		return { key: JSON.stringify([delegate ? delegateKey(delegate) : null, spec ? specKey(spec) : null]), backends: [...backends] };
 	}
@@ -413,6 +449,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		active = { ...active, mode: next };
 		publishActive();
 		appendSwitch({ mode: next });
+		publishWorkerModes();
 		if (next === "delegate") {
 			if (active.strict) applyStrictTools();
 			recomputeRoutes();
@@ -440,6 +477,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		active = withMinor(active, minor, on);
 		publishActive();
 		appendSwitch({ minor, on });
+		publishWorkerModes();
 		if (minor === "spec") recomputeRoutes();
 		syncHostSection();
 		renderStatus(ctx);
@@ -486,11 +524,15 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		let next = activeOf(config);
 		let restored: ModeActive | undefined;
 		try {
-			restored = restoreActive(ctx.sessionManager.getBranch());
+			// A worker ignores the branch: a fork copied the parent's own snapshots onto it.
+			restored = workerRole ? undefined : restoreActive(ctx.sessionManager.getBranch());
 		} catch {
 			restored = undefined; // An unreadable branch just means "no pin yet".
 		}
-		if (restored !== undefined) {
+		if (workerRole) {
+			// Normal, not strict, and only the worker-scope minors of --minor; never mode.json's default.
+			next = { mode: "normal", strict: false, minorModes: workerMinorModes(parseMinorFlag(pi.getFlag("minor"))?.minorModes ?? []) };
+		} else if (restored !== undefined) {
 			next = restored;
 		} else if (reason === undefined || reason === "startup") {
 			// One-shot launch overrides on top of the default; never written to the file or the session.
@@ -510,9 +552,11 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		}
 		active = next;
 		publishActive();
+		publishWorkerModes();
 		let restoredHead: ReturnType<typeof restoreHead> = { head: undefined, told: undefined, guides: [] };
 		try {
-			restoredHead = restoreHead(ctx.sessionManager.getBranch());
+			// A worker's head is its own too: the copied snapshots and notes are the parent's.
+			if (!workerRole) restoredHead = restoreHead(ctx.sessionManager.getBranch());
 		} catch {
 			// An unreadable branch: the head follows the active set until the next run fixes it.
 		}
@@ -789,7 +833,11 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			const arg = args.trim();
 			// Only that: no entry, no notice, no status change. The session's mode is already restored
 			// (session_start); this puts its block into the host's base sections and keeps it there.
-			if (arg === "sync") return;
+			if (arg === "sync") {
+				// …and republishes what workers get, for a subagents extension that missed the last one.
+				publishWorkerModes();
+				return;
+			}
 			if (arg === "") {
 				if (ctx.mode === "tui") {
 					const opened = requestPaletteOpen(pi.events, ctx, [MODE_CATEGORY_ID]);

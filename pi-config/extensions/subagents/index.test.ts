@@ -14,6 +14,8 @@ import { SPEC_HOOK_SCRIPT } from "../claude-code/spec-hooks.ts";
 import { LEDGER_ENV } from "../mode/spec-guard.ts";
 import { workerSpecBrief } from "./spec-brief.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
+import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "../mode/events.ts";
+import workerMarkExtension from "./worker-mark.ts";
 import { CLAUDE_CODE_PROVIDER_FLAG, SubagentRunner } from "./runner.ts";
 import { MEMBER_ENV, awaitResponse, decodeMemberContext, memberPaths, memberToolNames, readInbox, requestId, writeRequest, type MailboxRequest } from "./mailbox.ts";
 
@@ -194,12 +196,28 @@ test("worker snapshots answer before startup and publish bounded background stat
 		await h.call("agent_spawn", { prompt: "background task", wake: false });
 		const a = h.workers[0];
 		assert.deepEqual(snapshots.at(-1).workers, [{ id: a.id, name: a.name,
-			status: "running", model: "test/model", preview: "No response yet.", backend: "pi", effort: "high" }]);
+			status: "running", model: "test/model", preview: "No response yet.", backend: "pi", effort: "high", turns: 0 }]);
 		// Additive presence fields come straight from the Worker; unset/invalid values are omitted.
-		Object.assign(a, { startedAt: 1_000, lastActivity: 2_000, endedAt: Number.NaN, taskOutcome: "bogus", pid: 4242 });
+		Object.assign(a, { startedAt: 1_000, lastActivity: 2_000, endedAt: Number.NaN, taskOutcome: "bogus" });
 		request();
 		assert.deepEqual(snapshots.at(-1).workers[0], { id: a.id, name: a.name, status: "running", model: "test/model",
-			preview: "No response yet.", backend: "pi", effort: "high", startedAt: 1_000, lastActivity: 2_000 });
+			preview: "No response yet.", backend: "pi", effort: "high", startedAt: 1_000, lastActivity: 2_000, turns: 0 });
+		// The live process's pid rides the in-process event only (Sova's resource monitor); the
+		// sessions extension never copies it into the on-disk record (sessions/workers.test.ts).
+		// Omitted once the process is gone, and when absent or not a positive integer.
+		Object.assign(a, { pid: 4242, processAlive: true });
+		request();
+		assert.equal(snapshots.at(-1).workers[0].pid, 4242);
+		a.processAlive = false;
+		request();
+		assert.ok(!("pid" in snapshots.at(-1).workers[0]));
+		a.processAlive = true;
+		for (const pid of [0, -1, 1.5, Number.NaN, undefined]) {
+			a.pid = pid;
+			request();
+			assert.ok(!("pid" in snapshots.at(-1).workers[0]), String(pid));
+		}
+		Object.assign(a, { pid: undefined, processAlive: undefined });
 		for (const [taskOutcome, outcome] of [["success", "success"], ["error", "error"], ["aborted", "aborted"], [undefined, undefined]]) {
 			a.taskOutcome = taskOutcome;
 			request();
@@ -215,7 +233,7 @@ test("worker snapshots answer before startup and publish bounded background stat
 		request();
 		assert.deepEqual(snapshots.at(-1).workers[0], { id: a.id, name: a.name, status: "running", model: "test/model",
 			preview: "No response yet.", backend: "pi", sessionFile: "/tmp/sessions/worker.jsonl", sessionId: "0199-worker",
-			effort: "high", startedAt: 1_000, lastActivity: 2_000 });
+			effort: "high", startedAt: 1_000, lastActivity: 2_000, turns: 0 });
 		Object.assign(a, { sessionFile: "", sessionId: 42 });
 		request();
 		for (const key of ["sessionFile", "sessionId"]) assert.ok(!(key in snapshots.at(-1).workers[0]), key);
@@ -295,6 +313,11 @@ test("worker snapshots carry token counts and a session-lifetime total that surv
 		const { cost, ...counts } = snapshots.at(-1).workerUsage;
 		assert.deepEqual(counts, { input: 120, output: 60, cacheRead: 1200, cacheWrite: 120, workers: 2 });
 		assert.ok(Math.abs(cost - 0.12) < 1e-9, "costs are summed as reported, not rounded");
+		// Model replies ride top-level beside usage (sessions WorkerEntry.turns), so a usage trim keeps them.
+		h.workers[0].usage.turns = 3;
+		request();
+		assert.equal(snapshots.at(-1).workers[0].turns, 3);
+		assert.equal(snapshots.at(-1).workers[1].turns, 0, "a live worker with no reply yet has a known 0");
 		// Garbage from a backend counts as 0 and never reaches a consumer.
 		Object.assign(h.workers[1].usage, { input: Number.NaN, output: -5, cacheRead: "1000", cacheWrite: Infinity, cost: undefined });
 		request();
@@ -3637,8 +3660,11 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 	h.ctx.sessionManager.getBranch = () => worktreesBranch([{ path: wt }, { path: path.join(root, "plain") }]);
 	try {
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerFlagsIn: (r: string) => ({ sandbox: "on", "sandbox-parent": r }) });
-		await h.call("agent_spawn", { prompt: "trial", cwd: wt, useWorktreeConfig: true });
+		// The parent's worker modes are on: the tree's own mode extension gives this worker spec instead.
+		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
+		await h.call("agent_spawn", { prompt: "trial", cwd: wt, useWorktreeConfig: true, systemPrompt: "BRIEF" });
 		const w = h.workers[0];
+		assert.equal(w.systemPrompt, "BRIEF", "no parent block on top of the tree's own");
 		assert.deepEqual(w.env, { PI_CODING_AGENT_DIR: path.join(wt, ".agent") });
 		assert.equal(w.sessionDir, path.join(parentAgent, "sessions", `--${wt.slice(1).replace(/\//g, "-")}--`));
 		assert.ok(fs.existsSync(w.sessionDir));
@@ -3647,6 +3673,7 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 		assert.deepEqual(w.flags, { major: "normal", minor: "spec", sandbox: "on", "sandbox-parent": wt });
 		const record = h.appended.find((e) => e.customType === "subagents-worker-manifest" && e.data.launch);
 		assert.equal(record.data.launch.useWorktreeConfig, true);
+		assert.deepEqual(record.data.modes, ["spec"], "recorded as given spec: its flags start it with spec on");
 		// Refused: not a pi worker, no tracked worktree, no .agent.
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", useWorktreeConfig: true }), /needs a cwd inside an active worktree/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", cwd: path.join(root, "plain"), useWorktreeConfig: true }), /has no \.agent directory/);
@@ -3658,8 +3685,8 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 	}
 });
 
-const SPEC_ON = { version: 1, mode: "normal", strict: false, minorModes: ["spec"] };
-const SPEC_OFF = { version: 1, mode: "normal", strict: false, minorModes: [] };
+const STATE_SPEC_ON = { version: 1, mode: "normal", strict: false, minorModes: ["spec"] };
+const STATE_SPEC_OFF = { version: 1, mode: "normal", strict: false, minorModes: [] };
 
 test("spec on: every code-writing worker (pi, claude-code, team member) gets the worker spec brief; claude-code also the spec hooks, merged over the sandbox's settings", async () => {
 	const bus = eventBus();
@@ -3677,7 +3704,7 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		assert.ok(!h.workers[0].extensions.includes(SPEC_WORKER_EXTENSION), "spec off: no census hook");
 		assert.ok(!("settingsJson" in created[0]), "spec off: no hooks");
 
-		h.bus.emit(MODE_STATE_EVENT, SPEC_ON);
+		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_ON);
 		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "Be terse." });
 		assert.equal(h.workers[1].systemPrompt, `Be terse.\n\n${brief}`);
 		// pi workers run with --no-extensions: the census hook comes in by -e, a sibling of subagents/.
@@ -3720,10 +3747,141 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		assert.equal(h.workers.at(-1).env?.[LEDGER_ENV], ledger, "and the ledger, beside its member identity");
 		assert.ok(Object.keys(h.workers.at(-1).env).length > 1);
 
-		h.bus.emit(MODE_STATE_EVENT, { ...SPEC_ON, version: 2 });
-		h.bus.emit(MODE_STATE_EVENT, SPEC_OFF);
+		h.bus.emit(MODE_STATE_EVENT, { ...STATE_SPEC_ON, version: 2 });
+		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_OFF);
 		await h.call("agent_spawn", { prompt: "pi task" });
 		assert.equal(h.workers.at(-1).systemPrompt, undefined, "spec switched off: no brief again");
 		assert.ok(!h.workers.at(-1).extensions.includes(SPEC_WORKER_EXTENSION), "nor the census hook");
+	} finally { await h.close(); }
+});
+// ── The parent's worker modes (§chat.mode-menu/workers) ─────────────────────
+
+const WORKER_BLOCK = "# Minor mode: spec (worker form, test)";
+const SPEC_ON: ModeWorkerEvent = { version: 1, minorModes: ["spec"], prompt: WORKER_BLOCK };
+const SPEC_OFF: ModeWorkerEvent = { version: 1, minorModes: [] };
+const manifestOf = (h: { appended: any[] }, id: string) => h.appended.filter((e) => e.customType === "subagents-worker-manifest" && e.data.workerId === id).map((e) => e.data);
+
+test("mode: pi and claude workers get the parent's worker prompt last, as a snapshot; the launch keeps the raw brief; modes are recorded and published", async () => {
+	const h = harness();
+	const created: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	const snapshots: any[] = [];
+	h.bus.on("subagents:workers-snapshot", (d) => snapshots.push(d));
+	try {
+		// No mode extension: exactly as before.
+		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "BRIEF" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "BRIEF" });
+		assert.equal(h.workers[0].systemPrompt, "BRIEF");
+		assert.equal(created[0].systemPrompt, "BRIEF");
+		assert.deepEqual(manifestOf(h, "ag_01")[0].modes, [], "given none: recorded as none");
+
+		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
+		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "BRIEF" });
+		await h.call("agent_spawn", { prompt: "pi task, no brief" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "BRIEF" });
+		assert.equal(h.workers[1].systemPrompt, `BRIEF\n\n${WORKER_BLOCK}`, "after the brief");
+		assert.equal(h.workers[2].systemPrompt, WORKER_BLOCK);
+		assert.equal(created[1].systemPrompt, `BRIEF\n\n${WORKER_BLOCK}`, "claude: in the prepared prompt the runner uses");
+		const record = manifestOf(h, "ag_03")[0];
+		assert.equal(record.launch.systemPrompt, "BRIEF", "the launch keeps the raw brief: a resume takes the modes afresh");
+		assert.deepEqual(record.modes, ["spec"]);
+		assert.deepEqual(manifestOf(h, "ag_05")[0].modes, ["spec"]);
+		const published = snapshots.at(-1).workers;
+		assert.deepEqual(published.find((w: any) => w.id === "ag_03").modes, ["spec"]);
+		assert.deepEqual(published.find((w: any) => w.id === "ag_05").modes, ["spec"]);
+		assert.ok(!("modes" in published.find((w: any) => w.id === "ag_01")), "given none: no field");
+
+		// Malformed or other-version announcements are ignored; the last valid one stands.
+		h.bus.emit(MODE_WORKER_EVENT, { version: 2, minorModes: [] });
+		h.bus.emit(MODE_WORKER_EVENT, { version: 1, minorModes: [7], prompt: "x" });
+		await h.call("agent_spawn", { prompt: "pi task" });
+		assert.equal(h.workers[3].systemPrompt, WORKER_BLOCK);
+
+		// Spec off: new workers get nothing; running ones keep what they started with.
+		h.bus.emit(MODE_WORKER_EVENT, SPEC_OFF);
+		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "BRIEF" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "BRIEF" });
+		assert.equal(h.workers[4].systemPrompt, "BRIEF");
+		assert.equal(created[2].systemPrompt, "BRIEF");
+		assert.equal(h.workers[1].systemPrompt, `BRIEF\n\n${WORKER_BLOCK}`, "a switch never reaches a running worker");
+		assert.deepEqual(manifestOf(h, "ag_07")[0].modes, []);
+	} finally { await h.close(); }
+});
+
+test("mode: the worker modes are asked for at load; a remote claude worker gets brief, remote instructions, then the block", async () => {
+	const bus = eventBus();
+	let asked = 0;
+	bus.on(MODE_WORKER_DISCOVER_EVENT, (d: any) => { if (d?.version === 1) { asked++; bus.emit(MODE_WORKER_EVENT, SPEC_ON); } });
+	const h = harness(bus);
+	try {
+		assert.equal(asked, 1);
+		await h.call("agent_spawn", { prompt: "pi task" });
+		assert.equal(h.workers[0].systemPrompt, WORKER_BLOCK, "a mode extension loaded first is learned by discovery");
+	} finally { await h.close(); }
+
+	const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-remote-agent-"));
+	const prev = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	const r = remoteHarness(agentDir, true);
+	const created: any[] = [];
+	r.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	try {
+		r.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
+		await r.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "be terse" });
+		const parts = created[0].systemPrompt.split("\n\n");
+		assert.equal(parts[0], "be terse");
+		assert.match(created[0].systemPrompt, /^be terse\n\n[\s\S]*remote target[\s\S]*\n\n# Minor mode: spec \(worker form, test\)$/, "brief → remote instructions → block");
+		await r.call("agent_spawn", { prompt: "pi task", systemPrompt: "be terse" });
+		assert.equal(r.workers[0].systemPrompt, `be terse\n\n${WORKER_BLOCK}`);
+	} finally {
+		await r.close();
+		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
+		fs.rmSync(agentDir, { recursive: true, force: true });
+	}
+});
+
+test("mode: team members get the block on both backends, the coordinator too; the monitor (no tools) gets none", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }, { role: "writer", prompt: "docs", backend: "claude-code", model: "sonnet" }] });
+		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02"), writer = h.worker("ag_03"), monitor = h.worker("ag_04");
+		for (const [name, w] of [["coordinator", coordinator], ["dev", dev], ["writer", writer]] as const)
+			assert.ok(w.systemPrompt.endsWith(WORKER_BLOCK), `${name} ends with the block`);
+		assert.ok(!(monitor.systemPrompt ?? "").includes(WORKER_BLOCK), "the monitor gets none");
+		assert.deepEqual(manifestOf(h, "ag_04")[0].modes, []);
+		assert.deepEqual(manifestOf(h, "ag_02")[0].modes, ["spec"]);
+	} finally { await h.cleanup(); }
+});
+
+test("worker marker: says it is a worker at load and to anyone who asks later (a tree's mode extension loads after it)", () => {
+	const bus = eventBus();
+	const heard: unknown[] = [];
+	bus.on(WORKER_ROLE_EVENT, (d) => heard.push(d));
+	workerMarkExtension({ events: bus, on() {} } as any);
+	assert.deepEqual(heard, [{ version: 1 }], "announced at load");
+	bus.emit(WORKER_ROLE_DISCOVER_EVENT, { version: 1 });
+	assert.deepEqual(heard, [{ version: 1 }, { version: 1 }], "answered when asked");
+	bus.emit(WORKER_ROLE_DISCOVER_EVENT, { version: 2 });
+	assert.equal(heard.length, 2, "an unknown question version is ignored");
+	assert.doesNotThrow(() => workerMarkExtension({ on() {} } as any), "no bus: inert");
+});
+
+test("spec on with the parent's worker modes (mode:worker) too: the spec block comes once, from the mode prompt; the census hook, hooks and ledger stay", async () => {
+	const h = harness();
+	const created: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	const brief = workerSpecBrief(SPEC_CORE_DIR);
+	try {
+		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_ON);
+		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
+		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "Be terse." });
+		assert.equal(h.workers[0].systemPrompt, `Be terse.\n\n${WORKER_BLOCK}`, "the mode prompt, no brief on top");
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, SPEC_WORKER_EXTENSION]);
+		assert.ok(typeof h.workers[0].env?.[LEDGER_ENV] === "string");
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "Own words." });
+		assert.equal(created[0].systemPrompt, `Own words.\n\n${WORKER_BLOCK}`);
+		assert.ok(!created[0].systemPrompt.includes(brief));
+		assert.ok(JSON.parse(created[0].settingsJson).hooks.Stop, "the hooks still come");
 	} finally { await h.close(); }
 });

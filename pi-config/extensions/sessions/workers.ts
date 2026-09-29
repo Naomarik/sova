@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKER_EFFORT_MAX, WORKER_OUTCOMES, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, WORKER_USAGE_SOURCES, type WorkerEntry, type WorkerUsage, type WorkerUsageTotal } from "./schema.ts";
+import { workerModes, WORKER_EFFORT_MAX, WORKER_OUTCOMES, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, WORKER_USAGE_SOURCES, type WorkerEntry, type WorkerUsage, type WorkerUsageTotal } from "./schema.ts";
 
 /** schema.ts WorkerEntry: the v1 summary plus optional backend/session/effort/timing/outcome/usage. */
 export type WorkerSummary = WorkerEntry;
@@ -61,11 +61,13 @@ function decodeSnapshot(data: unknown): WorkersSnapshot | undefined {
 			...(bounded(w.sessionFile, WORKER_SESSION_FILE_MAX) ? { sessionFile: w.sessionFile } : {}),
 			...(bounded(w.sessionId, WORKER_SESSION_ID_MAX) ? { sessionId: w.sessionId } : {}),
 			...(bounded(w.effort, WORKER_EFFORT_MAX) ? { effort: w.effort } : {}),
+			...(workerModes(w.modes) ? { modes: workerModes(w.modes) } : {}),
 			...(time(w.startedAt) ? { startedAt: w.startedAt } : {}),
 			...(time(w.lastActivity) ? { lastActivity: w.lastActivity } : {}),
 			...(time(w.endedAt) ? { endedAt: w.endedAt } : {}),
 			...((WORKER_OUTCOMES as readonly unknown[]).includes(w.outcome) ? { outcome: w.outcome as WorkerEntry["outcome"] } : {}),
 			...(usageOf(w.usage) ? { usage: usageOf(w.usage) } : {}),
+			...(Number.isSafeInteger(w.turns) && (w.turns as number) >= 0 ? { turns: w.turns as number } : {}),
 			// Restored workers (rebuilt after a restart; no process): see schema.ts WorkerEntry.
 			...(w.restored === true ? { restored: true as const } : {}),
 			...((WORKER_USAGE_SOURCES as readonly unknown[]).includes(w.usageSource) ? { usageSource: w.usageSource as WorkerEntry["usageSource"] } : {}),
@@ -93,7 +95,8 @@ function decodeSnapshot(data: unknown): WorkersSnapshot | undefined {
  * also carry optional backend, sessionFile (absolute path of the worker's own
  * transcript JSONL, ≤ 1024 chars; never its contents, and consumers must not
  * write to it), sessionId (backend session id, ≤ 64 chars), effort (the thinking/effort
- * level the worker was spawned with, ≤ 32 chars), startedAt/
+ * level the worker was spawned with, ≤ 32 chars), modes (the minor modes it was given at its
+ * start, ≤ 8 names of ≤ 32 chars), startedAt/
  * lastActivity/endedAt (ms epoch), outcome ("success"|"error"|"aborted") and
  * usage (cumulative input/output/cacheRead/cacheWrite counts, plus cost in USD
  * when the backend reports one — counts only, never text);

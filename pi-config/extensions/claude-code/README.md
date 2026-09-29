@@ -35,6 +35,72 @@ A discovery call returns within 15 seconds, and immediately when cancelled. The
 discovery process is still stopped (EOF, then SIGTERM, then SIGKILL) afterward,
 and reload/shutdown waits for it to close.
 
+## Logins
+
+Every `claude` process this extension starts (workers, the chat provider's
+children, model discovery) runs on one Claude login, chosen by `accounts.ts`:
+
+- A login is one Claude Code config directory with its own `.credentials.json`.
+  Claude Code's own directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR`) is the
+  implicit login `default` — except an inherited `$CLAUDE_CONFIG_DIR` that names
+  an added login's directory (a process started under a `claude` on one, such
+  as a pi in a worker's shell): then `default` is `~/.claude`, and its spawns
+  drop that variable. Added logins live in
+  `<agent dir>/claude-accounts/<id>/` (0700), with `projects/`, `settings.json`,
+  `CLAUDE.md`, `agents`, `commands`, `skills` and `plugins` symlinked to
+  `default`'s, so every login writes its session records into one `projects/`.
+  The registry is `<agent dir>/claude-accounts.json`; Sova's Settings → Accounts
+  writes it (adding a login runs `claude auth login` for a new directory).
+- A spawn uses this host's first usable login in its device's order (enabled,
+  and neither limited nor needing a new sign-in), by setting `CLAUDE_CONFIG_DIR`.
+  A chat session keeps the login it recorded in its `claude-login` entry while
+  that login is usable.
+- The transport classifies a turn's account failure: a usage **limit** (a
+  rejected `rate_limit_event`, an assistant error `rate_limit`/`billing_error`,
+  "usage limit reached") or an **auth** failure (`authentication_failed`,
+  repeated 401 retries, "Not logged in"). The failure is recorded for the host in
+  `<agent dir>/claude-accounts-state.json`: a limit puts every login of that
+  account out until `resetsAt`, an auth failure puts the login out until its
+  credentials file changes. A failing login is never run to see if it recovered.
+- On a failure the work moves to the next usable login (for a limit, skipping
+  logins of the same account). A chat turn that has not streamed anything yet is
+  restarted on the new login the way a model change restarts it (history
+  folded) and sent again; the session gets a `claude-login` entry whose `text`
+  is the notice (`Claude: switched A → B (5h limit, resets 15:00)`). A worker's
+  process is stopped and a new one resumes the same Claude session with
+  `--resume` on the new login; the interrupted message is sent again and the
+  worker's transcript gets the notice. With no usable login left, the failure
+  ends the turn or task as before.
+- `default` always comes last in a device's order: Claude Code's own login is
+  the last resort.
+
+**The pool (mesh on).** When `<agent dir>/sova/peers.json` lists a peer, Sova's
+server pools the added logins of every device (`server/claude-pool/`): a login
+is on one device at a time, and a registry login's `device` is the device that
+holds it (`null`: kept here for lending, never run). This extension honours the
+pool's marks at every spawn:
+
+- `<login dir>/.sova-leaving`: the login is on its way to another device. It is
+  never chosen; an idle chat child on it is torn down and an idle worker moves
+  to the next login (`--resume`), a busy one as soon as its turn or task ends.
+- `<login dir>/.sova-leases/<pid>.json`: which processes of this host still run
+  `claude` on the login (`LoginUsers`, rewritten every 5 s), so the server
+  hands a login over only once none does.
+- A spawn with nothing but `default` usable writes a borrow request
+  (`<agent dir>/claude-pool/wants/`) and waits up to 30 s for the server to
+  borrow one (`acquire`), but only while the server's heartbeat
+  (`claude-pool/agent.json`) is fresh. On a failure, `failoverAsync` marks the
+  login leaving (the server returns it to the keeper with its standing) and
+  moves on to the next login held here, else a borrowed one (not of the same
+  account on a limit), else `default`.
+
+Development switch: with `SOVA_CLAUDE_ACCOUNTS_DEV=1`,
+`<agent dir>/claude-accounts-dev.json` (`{"forceLimit": [ids], "forceAuth": [ids]}`)
+makes those logins answer every message with a synthetic failure instead of
+sending it to Claude. The classifier's fixtures (`tests/fixtures/failures/`) are
+shaped after CLI 2.1.282's own schema (read from the binary), not recorded from
+a real limit.
+
 ## Delegate
 
 ```json
@@ -382,7 +448,8 @@ divergence is stated, and are confirmed by `docs/protocol-probes.md`.
 - **Rebuild on divergence is lossy and cache-cold** (see above); a turn right
   after a rewind or compaction pays a full re-send. The fold budget is a
   2.2-characters-per-token estimate; with `PI_CLAUDE_CODE_DEBUG=1` each fold's size and budget are
-  logged (`event: "fold"`) to compare with the next call's input tokens.
+  logged (`event: "fold"`) to compare with the next call's input tokens, with
+  the images kept and dropped to fit the 4 MiB stdin line and its final bytes.
 - **Policy drift.** The control protocol is undocumented and version-sensitive;
   probes cover 2.1.276–2.1.278 only. A CLI update can change frame shapes or
   the permission handling that `--allowedTools mcp__sova` relies on; the bridge

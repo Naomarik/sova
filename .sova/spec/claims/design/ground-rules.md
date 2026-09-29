@@ -91,6 +91,13 @@ The choice is made in Settings → Themes (§app/settings-dialog), persists in `
 and is applied — custom properties written, `data-theme` set to the theme's base — before first
 paint. An id that no longer resolves falls back to `dark`.
 
+**The browser chrome follows the header.** `<meta name="theme-color">` — the Android status bar
+and the installed app's title bar — takes the worn theme's `surface`, the color of the app's top
+bars, on every apply and clear, including the pre-paint one, in the same call that writes the
+theme's properties, so the bar never shows a different color from the header under it. A theme that omits `surface` gets its base's default
+surface (`#2C2C38` on dark, `#FFFFFF` on light), and no theme at all gets `#2C2C38`. The value is
+passed through verbatim, like every other token.
+
 **A font pick sits over the theme.** Settings → Themes → Typography (§app/settings-dialog) lets this browser put
 one of a closed list of bundled faces on `--font-body` + `--font-display` (Text) and `--font-mono`
 (Code), persisted under `sova:typography` as catalogue ids — never a stack the user typed, so
@@ -121,7 +128,7 @@ and `fill="none" stroke="currentColor"`.
 
 | File (`/icons/…`) | Used for |
 |---|---|
-| `sova-mark.svg` | Brand mark in the sidebar head (accent colored). Astra's Fold, drawn on the system grid |
+| `sova-mark.svg` | Brand mark in the sidebar head (accent colored). A folded ribbon: the V and the A share their middle stroke, drawn as 3 flat-cut filled bands (not strokes) on a 32-unit viewBox, with the middle band in front and no crossbar. Through the mask, the middle band is opaque and each leg shades in alpha toward the fold where it tucks under it |
 | `plus.svg` | New Session |
 | `panel-collapse.svg` / `panel-expand.svg` | Collapse sessions pane (the head's last button) / Expand sessions pane (the spine's first item), §app.session-list/spine: a rounded square, a divider a third in, and a chevron in the wide side pointing left / right. One drawing, mirrored. New, drawn on the system grid |
 | `search.svg` | Search field glyph; tool card for `grep` / `find` / `ls` |
@@ -144,27 +151,34 @@ and `fill="none" stroke="currentColor"`.
 | `bell.svg` | The wake-nudge card in the transcript (§chat/transcript) |
 | `refresh.svg` | Refresh Usage / Refresh Agents: the icon button in the insights head (§app/insights). While a refresh it started is in flight it's `aria-disabled` and `aria-busy`. The session list has no refresh button: it updates live |
 | `arrow-right.svg` | Send |
-| `stop.svg` | Stop (composer): a rounded square |
+| `stop.svg` | Stop (composer): a rounded square; also the mic button while recording (Stop Recording) |
+| `mic.svg` | Dictate: the composer's mic button and the Settings dialog's Voice tab (§chat/voice). A capsule microphone on a stand arc with a short stem and base. New, drawn on the system grid |
 | `chat.svg` | Empty-state mark (no session selected) |
 | `attach.svg` | Attach Images (composer). New, drawn on the system grid |
 | `command.svg` | Commands button (composer, §chat/slash-commands): a `/` in a rounded square. New, drawn on the system grid |
 | `image.svg` | Tool-card image count, drop overlay. New, drawn on the system grid |
-| `pencil.svg` | Draft rows (§app/session-list): the lead of line 2, before the draft's preview. A pen at 45° with a nib, legible at `.icon-sm`. New, drawn on the system grid |
+| `pencil.svg` | Draft rows (§app/session-list): the lead of line 2, before the draft's preview; the composer's run status while the turn writes (§chat.transcript/streaming). A pen at 45° with a nib, legible at `.icon-sm`. New, drawn on the system grid |
+| `bulb.svg` | The composer's run status while the turn thinks (§chat.transcript/streaming): a light bulb with two base lines. New, drawn on the system grid |
+| `wrench.svg` | The composer's run status while the turn runs a tool (§chat.transcript/streaming): an open-jawed wrench at 45°. New, drawn on the system grid |
 | `gauge.svg` | Usage: the sidebar foot's Usage row. Sova's own, drawn on the system grid |
+| `activity.svg` | Resource monitor: the button at the right end of the sidebar foot's Usage row, and its spine item (§app.resource-monitor/entry-button). A pulse line: flat, one sharp peak and trough, flat again. New, drawn on the system grid |
 | `sliders.svg` | Mode: the mode trigger at the right end of the composer foot (§chat/mode-menu). Three tracks with an offset handle each. New, drawn on the system grid |
-| `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads (from the skill's set) |
+| `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads, and the composer's subagents trigger (§app.subagents-pane/trigger) (from the skill's set) |
 | `settings.svg` | Settings: the gear at the right end of the sidebar foot's Agents row, and the Settings dialog's tab rail. A cog on the system grid (the skill ships a sun-burst under this name)
 | `branch.svg` | The fork-point row in a forked member's transcript, the `Align to Fork` button, and the overview's `Fan Out` action card (§workspace/groups, §workspace/fanout) |
 | `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg` | Reserved. Shipped but unused in the MVP |
 
-`/favicon.svg` is the mark in white (`#FFFFFF`) on the Indigo dusk gradient, a rounded square: a
-linear gradient from `#4A43D8` at the top-left to `#1E1A5C` at the bottom-right. Link it from
+`/favicon.svg` is the mark on the Indigo dusk gradient, a rounded square: a linear gradient from
+`#4A43D8` at the top-left to `#1E1A5C` at the bottom-right. The middle band is white (`#FFFFFF`),
+and the legs are lavender, each shading from `#ECEAFF` to `#ADA7F5` toward the fold where it tucks
+under the middle band. Link it from
 `index.html`: `<link rel="icon" href="/favicon.svg" type="image/svg+xml">`. The PWA icons, which
 `scripts/pwa-icons.sh` generates into `public/icons/`, use the same design. The `any` icons are
 the favicon scaled up. The maskable and apple-touch icons are full-bleed, with the gradient over
 the whole square and the mark centred inside the 80% safe zone. The manifest's `background_color`
 is `#1E1A5C`, so the install splash matches the icon. Its `theme_color`, and the `index.html`
-`<meta name="theme-color">`, stay `#1E1E26` to match the app's dark UI.
+`<meta name="theme-color">`, hold `#2C2C38`, the default dark surface, as the launch default
+only: once the app runs, the meta follows the worn theme (§design.ground-rules/theme).
 
 ## §design.ground-rules/voice — Voice (fold-ai-dev, en-US)
 
@@ -187,9 +201,8 @@ Spend `--color-accent` on only three things:
 1. The one primary button in view (Send, or Create Session inside the dialog).
 2. The live indicator (`.chip-live` and `.live-dot`), and every TUI mark — the sidebar row's
    rail `TUI` chip (`.session-rail-tui`, the word, no dot), the spine tile's `.spine-dot-live`,
-   the session head's `TUI` chip (`.chip.chip-accent`, dot and word) and the `{n} TUI` count
-   under search (`.chip.chip-accent.chip-count`, dot and count) — all of which are accent but
-   **static** (see Motion).
+   and the session head's `TUI` chip (`.chip.chip-accent`, dot and word) — all of which are
+   accent but **static** (see Motion).
 3. Focus rings and links.
 
 Selected rows and user bubbles take `--color-accent-tint`. Anything else that "needs color" is a
@@ -210,11 +223,13 @@ fade in over `--dur-base`. Only two things loop:
 
 **TUI never pulses — Busy and running tools own the pulse.** This holds on every surface: the
 sidebar row's rail `TUI` chip (§app/session-list), the spine's `.spine-dot-live`, the session head's `TUI` chip
-(§chat/transcript), and the `{n} TUI` count under search. The three chips take `.chip-accent` **without**
+(§chat/transcript). Both chips take `.chip-accent` **without**
 `.chip-live`. A TUI holding a file open is
 *ownership*, and a count of them is a tally; neither is work in flight. What moves is our own
-run: Busy in a row, the composer's `.run-status` live dot, a Running tool card, and a
-live-sourced Working chip. This inverts the rule this file used to state ("the pulse belongs to
+run: Busy in a row, the composer's `.run-status` live dot — one per row, leading it, for the whole
+session's work in flight, its turn and its subagents alike — a Running tool card, and a
+live-sourced Working chip. The subagents trigger's ring meter beside it never animates, not even
+its fill changing: the arc's length is its state. This inverts the rule this file used to state ("the pulse belongs to
 Live alone"), and it is the reason the pulse now means something: it stops when the work does.
 
 No typing cursor blinks, and streamed text simply appears. `tokens.css` turns off every animation

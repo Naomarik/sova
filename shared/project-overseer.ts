@@ -40,6 +40,8 @@
  * POST   /api/orgs/:id/projects/:pid/overseer/worktrees/remove body { sessionId } -> ProjectOverseerInfo (remove its worktree; the branch too once merged)
  */
 
+import type { GatheringAbilities } from "./baton";
+
 /** `customType` of the marker a project overseer's file carries (data `ProjectOverseerMarkerData`). */
 export const PROJECT_OVERSEER_ENTRY = "sova-project-overseer";
 
@@ -200,6 +202,9 @@ export interface ProjectOverseerSettings {
       to; null = the overseer's own. `gatheringThinking` likewise. */
   gatheringModel: string | null;
   gatheringThinking: string | null;
+  /** What its gathering sessions can do (§app.baton/abilities); null = Automatic (draw on, read
+      links off). The overseer may never turn read links on beyond it. */
+  gatheringAbilities: GatheringAbilities | null;
   caps: ProjectOverseerCaps;
   /** It looks on its own at most every this many minutes (1–1440). */
   watchGapMin: number;
@@ -210,7 +215,7 @@ export interface ProjectOverseerSettings {
   extraSystemPrompt: string;
 }
 
-export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "watchGapMin" | "soonLookSec" | "watch" | "extraSystemPrompt">> & {
+export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "extraSystemPrompt">> & {
   caps?: Partial<ProjectOverseerCaps>;
 };
 
@@ -231,6 +236,8 @@ export interface ProjectOverseerInfo {
   settings: ProjectOverseerSettings;
   /** The mode a coding session started now gets (`settings.codingMode`, or what Automatic resolves to now). */
   codingModeNow: ProjectCodingMode;
+  /** What a gathering session started now gets (`settings.gatheringAbilities`, or Automatic). */
+  gatheringAbilitiesNow: GatheringAbilities;
   /** Coding sessions run in their own git worktree and branch when the project root is in a git
       repository; `reason` (a tail: "it isn't a Git repository.") says why not: they then run in the
       root itself. `sessions`: every coding session the project started, newest first. */

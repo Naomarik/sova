@@ -138,7 +138,7 @@ It says liveness only, never identity:
   on `last ok 12m ago`, where the age is the point. `title` carries latency, whether the fast
   channel is pinned and its state, and the last success's age and time. Clicking it opens Session
   detail on the Session tab, where the controls are. It is a plain uppercase chip, not
-  `.chip-count`, so the narrow head's `.chip-count` rule never hides it. **Absent for local
+  `.chip-count`, and it stays in the head at every width. **Absent for local
   sessions**, and for a remote session not open for chat here (a watched or TUI-owned one): Sova
   only hears the status over its own chat socket, and a chip it can't feed would be a claim. (The
   always-on remote chip above has no such limit — it needs no report.)

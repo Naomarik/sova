@@ -11,48 +11,46 @@
 -->
 # Minor mode: vis
 
-The chat renders `vis` fences as drawings. When a picture explains faster than prose — a flow, an exchange between parties, a hierarchy, a history, numbers to compare, layers of a system — draw one inline in your reply with a fenced block whose info string is `vis <kind>`. Use them when apt, not by default: at most 1–2 per reply, each small (a reader takes it in at a glance on a phone), next to prose that says what to notice. Give every visual a one-line `caption:`.
+The chat renders `vis` fences as drawings. When a picture explains faster than prose — a flow, an exchange between parties, a hierarchy, a history, numbers to compare, layers of a system, a screen's layout — draw one inline in your reply with a fenced block whose info string is `vis <kind>`. Use them when apt, not by default: at most 1–2 per reply, each small (a reader takes it in at a glance on a phone), next to prose that says what to notice. Give every visual a one-line `caption:`.
 
 Rules for every kind:
 - One statement per line. Lines starting with `#` are comments. Settings are `key: value` lines: every kind takes `title:` and `caption:`.
 - Ids are letters, digits, `_ . -`, starting with a letter. Labels with spaces go in "double quotes" (`\n` inside quotes breaks a line).
+- Any one text (a label, a note, a `title:`) is at most 200 characters; longer is cut short. A `caption:` is one short sentence on one line.
 - Tones (optional, never the only signal): `accent ok warn error info muted`.
 - The parser is strict: anything it doesn't understand shows the block as plain source with the error. Use only the syntax below.
 - Don't nest a vis fence in another fence; don't use Mermaid, PlantUML or ASCII art instead.
 
 ## Shared: emphasis
 <!-- owner: foundation. core/emphasis.ts implements this; every kind calls it. -->
-To point at the one thing that matters, add a `mark` line (at the start of a line, anywhere after the settings): `mark <target> [tone] ["short note"]`. The target is what names an item in that kind — an id, a "quoted label", a line number or a range like `3-5`; each kind below says which. The item is highlighted (tone defaults to accent); a note gets a number on the item and is listed under the drawing. Mark at most 1–3 things; a note is a phrase, not a sentence.
+To point at the one thing that matters, add a `mark` line (at the start of a line, anywhere after the settings): `mark <target> [tone] ["short note"]`. The target is what names an item in that kind — an id, a "quoted label", a line number or a range like `3-5`; each kind below says which. The item is highlighted (tone defaults to accent); a note gets a number on the item and is listed under the drawing. Mark at most 1–3 things; a note is a phrase (under 120 characters), not a sentence. A mark whose target names nothing is dropped.
 
 ## Shared: free-form limits
 <!-- owner: foundation. Enforced by kinds/frame/parse.ts (size) and srcdoc.ts (motion gate, CSP). -->
-`vis html` / `vis svg` are the fallback when no kind fits: at most 8 KB of source, no network (no external scripts, fonts, images or fetches), no autoplay — nothing moves until the reader clicks, so give animations a visible Play or Step button. See § html / svg.
+`vis html` / `vis svg` are the fallback when no kind fits. Aim under 8K characters (the document after `title:` / `caption:`); up to 16K draws marked large, beyond that only the source shows. No network (no external scripts, fonts, images or fetches), no autoplay — nothing moves until the reader clicks, so give animations a visible Play or Step button. See § html / svg.
 
 ## flow
-<!-- owner: process member. Emphasis target: node id or label. A too-wide drawing re-lays out for a phone by itself (dir: right turns down, then compact). -->
-Boxes and arrows: architecture, pipelines, request paths, decisions. Laid out automatically.
+<!-- owner: process member. Emphasis target: node id or label. A too-wide drawing re-lays out for a phone by itself (dir: right turns down, then compact). Labels: kinds/flow/parse.ts decides the style per fence (a string after a chain's first id = inline style). -->
+Boxes and arrows: architecture, pipelines, request paths, decisions. Laid out automatically. A page or screen layout is a wireframe, not a flow. Label nodes inline, where you first use them:
 ```vis flow
 title: How a prompt reaches the model
 caption: The server owns the session; the browser only streams.
-node web "Browser tab" round
-node srv "Sova server" "Hono + ws" accent
-node sdk "pi session" store
-node done "Reply streamed?" decision
-web -> srv "WS /ws/chat" -> sdk "prompt()"
+web "Browser tab" -> srv "Sova server" "WS /ws/chat" -> sdk "pi session" store
 sdk --> srv "events"
-srv -> done
+srv -> done "Reply streamed?" decision
 done -> web "yes"
 mark sdk "one writer per session file"
 ```
-- `node <id> "Label" ["second line"] [shape] [tone]`; shapes: `box` (default) `round` `store` `decision` `circle`. Undeclared ids become boxes labelled with the id.
-- Edges: `a -> b`, dashed `a --> b`, both ways `a <-> b`; a label goes in quotes after the target; chains: `a -> b "x" -> c`; a tone after a target colours that node (its own label goes on its `node` line).
-- `dir: down` (default) or `dir: right` (drawn down on a phone). Prefer under 12 nodes and short labels. `mark` a node by id.
-- Two small flows side by side (before/after, A vs B): `== Label ==` lines start panels, each laid out alone; edges stay inside a panel, ids unique across panels.
+- Inline: once any line has a string right after its first id, the first string after a node that has no label yet is its label; the next string is the edge's (`srv "Sova server" "WS /ws/chat"`). After a node already labelled, a string is the edge's label (`sdk --> srv "events"`). A shape and a tone may follow: `done "Reply streamed?" decision`.
+- `node <id> "Label" ["second line"] [shape] [tone]` for a second line; shapes: `box` (default) `round` `store` `decision` `circle`. After a target with a `node` line, a string is the edge's label.
+- With no string after any line's first id, a string after a target is always the edge's label (§ state).
+- Edges: `a -> b`, dashed `a --> b`, both ways `a <-> b`; chains `a -> b -> c`. `dir: right` (drawn down on a phone). Under 12 nodes, short labels. `mark` a node by id or label.
+- Two small flows side by side (before/after): `== Label ==` lines start panels, each laid out alone, with its own ids (the same id in two panels is two nodes).
 ```vis flow
-== Merge ==
-m1 -> m2 -> merged
-== Rebase ==
-r1 -> r2
+== Before ==
+app "App" -> db "Database"
+== After ==
+app "App" -> cache "Cache" -> db "Database"
 ```
 
 ## sequence
@@ -68,11 +66,11 @@ note c s "keys derived from the exchange"
 mark 2 "the server commits resources here"
 ```
 - `actor <id> ["Label"] [tone]` (optional; order = first use). `a -> b "msg"`, reply `a --> b "msg"`, self `a -> a "msg"`. `note a [b] "text"`, `== section ==`. At most 8 actors; 2–4 read best on a phone. Keep message labels to a few words.
-- `mark` an actor id, or a message by number: 1 is the first message; notes and dividers aren't counted.
+- `mark` an actor id, a message by its "exact label", or a message by number: 1 is the first message; notes and dividers aren't counted.
 
 ## state
 <!-- owner: process member (flow's parser, layout and View; `end` sinks to the last rank). Emphasis target: state id or label. -->
-A state machine: flow syntax, but nodes default to `round`; `node s0 start` / `node done end` are the entry and exit dots; label each edge with its event. `mark` a state by id.
+A state machine: flow syntax, but nodes default to `round`; `node s0 start` / `node done end` are the entry and exit dots. Label each edge with its event (`idle -> busy "prompt"`), so name states by id or on `node` lines, never inline. `mark` a state by id.
 ```vis state
 node s0 start
 s0 -> idle
@@ -151,6 +149,35 @@ Scenarios or journeys as chains, each with a status: `"Label" [tone] | step -> s
 mark "Tony vs Bob" "settle step not run yet"
 ```
 
+## wireframe
+<!-- owner: structure member. kinds/wireframe: DOM blocks, SVG arrow overlay. Emphasis target: a block's first text (the screen it is written under first), a screen name. -->
+Low-fi screens: what sits where on a phone or desktop page; several screens show a flow, before/after or states. One block per line: a word, its "text"s, then optional words; indent a block to put it inside the one above.
+```vis wireframe
+title: Invoices on a phone
+caption: Totals first; tapping an invoice opens it.
+screen "Invoices"
+header "Invoices"
+  icon "search"
+row
+  stat "Unpaid" "AED —" warn
+  stat "Paid this month" "AED —"
+tabs "All, Unpaid, Paid"
+list
+  item "Invoice no." "customer · due date" "AED —" -> "Invoice"
+  item "Invoice no." "customer · due date" "AED —"
+button "New invoice" accent
+screen "Invoice"
+header "Invoice no."
+  icon "back"
+card "Amount due" "AED —"
+  button "Send reminder" accent
+mark "Unpaid" "tap to filter"
+```
+- Blocks: `header "Title"`, `tabs "A, B, C"` (`*B` selects B), `tabbar "A, B, C"`, `sidebar`, `footer`; `row` (up to 4), `col`, `grid`, `card "Title" ["subtitle"]`, `list` of `item "Title" ["detail"] ["right"]`, `modal "Title"`, `sheet "Title"`; `heading`, `text`, `image "what it shows"`, `avatar`, `icon "name"`, `badge`, `stat "Label" "value"`, `chart "Label" [bar|line|pie]`, `table "Col, Col"` (its `item`s are rows), `progress "Label" "60%"`; `button`, `link`, `input "Label" ["value"] ["hint"]`, `search`, `select`, `checkbox`, `toggle`, `radio`; `empty "Message"`, `loading`, `alert "Message"`, `toast`.
+- Words after the texts: a tone (`accent`: the main action; `error` on an input: its hint is the error), `on` (checked, selected), `wide`.
+- `screen "Name" [phone|desktop]` starts a screen (up to 6; `device: desktop` sets the default). `-> "Name"` after a block: the screen a tap opens. `mark` a block by its first text or a screen by its name.
+- Only the words and numbers you were given; else a placeholder ("Name", "Order no.", "AED —"). Never make up prices, IDs, dates or times.
+
 ## matrix
 <!-- owner: data member. Emphasis target: row label (key = index) or column name (key = c<index>). -->
 Options against criteria; also capabilities by level or role (a matrix, not a flow). `columns: A, B`, then `criterion | cell | cell`; a cell is `yes`, `no`, `partial` (optionally followed by a "note"), or short text. At most 6 columns.
@@ -185,21 +212,17 @@ Only when none of the kinds above fits — usually something the reader should p
 ```vis html
 title: Bubble sort, one comparison at a time
 caption: Press Step: the larger of each pair moves right.
-<style>#bars{display:flex;gap:4px;align-items:end;height:80px}#bars div{flex:1;background:var(--color-accent-tint);border:1.5px solid var(--color-accent);border-radius:4px}#bars .cmp{background:var(--status-warn-bg);border-color:var(--status-warn)}</style>
-<div id="bars"></div>
-<p><button id="step">Step</button> <span id="msg"></span></p>
+<style>#b{display:flex;gap:4px;align-items:end;height:80px}#b i{flex:1;border:1.5px solid var(--color-accent)}#b .c{border-color:var(--status-warn)}</style>
+<div id="b"></div><button id="s">Step</button>
 <script>
-var v=[5,2,8,1,9,3],i=0,bars=document.getElementById("bars");
-function draw(){bars.innerHTML=v.map(function(x,k){return '<div class="'+(k===i||k===i+1?'cmp':'')+'" style="height:'+x*10+'%"></div>'}).join("")}
-document.getElementById("step").onclick=function(){
-  var swap=v[i]>v[i+1];if(swap){var t=v[i];v[i]=v[i+1];v[i+1]=t}
-  document.getElementById("msg").textContent=swap?"Swapped.":"In order.";
-  i=(i+1)%(v.length-1);draw();
-};
+var v=[5,2,8,1,9,3],i=0,b=document.getElementById("b");
+function draw(){b.innerHTML=v.map(function(x,k){return '<i class="'+(k==i||k==i+1?"c":"")+'" style="height:'+x*10+'%"></i>'}).join("")}
+document.getElementById("s").onclick=function(){if(v[i]>v[i+1]){var t=v[i];v[i]=v[i+1];v[i+1]=t}i=(i+1)%(v.length-1);draw()};
 draw();
 </script>
 ```
 - Colours only from the theme, so light and dark both work: `var(--color-ink)`, `--color-ink-2`, `--color-ink-muted`, `--color-surface`, `--color-sunken`, `--color-border`, `--color-border-strong`, `--color-accent`, `--color-accent-tint`, `--status-success|warn|error|info` and each with `-bg`. The theme picks the hues, so in prose name a colour by what it marks ("the newest term") or draw a legend, never by hue ("orange"). Buttons, inputs and selects are already styled; the body has padding.
 - Fit a 360px-wide phone (flex-wrap, grid with `fr`); keep it under about 500px tall.
 - Nothing moves until the reader clicks or presses a key in it: give motion a Play or Step button (in SVG, `begin="play.click"` on the animations, with a `<g id="play" role="button">`). No `setTimeout` loops.
+- Check a large draft with the `vis_check` tool before you post it.
 - It runs sandboxed: no network, no storage, no `alert`, no form submits. Handle clicks with `onclick`.

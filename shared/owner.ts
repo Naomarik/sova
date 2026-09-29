@@ -31,6 +31,7 @@
  */
 
 import type { BatonView } from "./baton";
+import type { LinkWarningCode } from "./public-links";
 
 /** A project's chip, derived, never typed: the first that applies. */
 export type OwnerStatus = "waiting-on-you" | "asking" | "building" | "quiet";
@@ -194,6 +195,7 @@ export interface OwnerLinkResult {
   createdAt: string;
   expiresAt: string;
   linkWarning?: string;
+  linkWarningCode?: LinkWarningCode;
 }
 
 /** One update in the project page's log (every post, taken-down ones included). `by`: "overseer",

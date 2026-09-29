@@ -12,7 +12,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Search label (visually hidden) | Search sessions |
 | Search placeholder | Title, folder, or tag (model still matches; the placeholder must fit the 320px field) |
 | Count | `{n} sessions` · filtered: `{visible} of {total} sessions` |
-| TUI count chip (count row under search) | `{n} TUI` (only when n ≥ 1), static — a count is not work in flight. `title`: "Sessions open in a TUI" |
+| Search icon button (folded toolbar line, §app.session-list/search) | wordless `search` · `aria-label` "Search sessions" · `title` "Search sessions · /" |
+| Close Search (folded toolbar line, while the search is open) | wordless `close` · `aria-label` and `title`: Close Search |
 | Row TUI chip (rail) | `TUI`, static, no dot · `aria-label` (replaces the visible word in the accessible name): "Open in a TUI. Pid {pid}, status {status}." · `title`: "Open in a TUI · pid {pid} · {status}" · tap: the `title` as a toast |
 | Row Busy dot (rail) | wordless, pulsing · `aria-label` and `title`: "pi is replying in this session" · tap: the same as a toast |
 | Row worker count (rail) | `{n}` + worker icon · `aria-label` and `title`: "{n} subagents working now" |
@@ -98,7 +99,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Wake nudge card, closed | `Wake nudge {id}` · {reason, or blank} · `fired {HH:MM}` (· `{late} late`, only when overdue) |
 | Wake nudge card, open | the fired message, verbatim, all four lines |
 | Wake nudge in Inputs Only / the Timeline | {reason}, or `Wake nudge {id}` when it carries none |
-| Alignment card, answerable (§chat.alignment/card) | button `Go With Recommendations` · hint "Or tick some and answer the rest below." · its reasons: the composer's blocked reason · "Wait for the turn to end." · "Send or clear your draft first." · checkbox name "Take the recommendation for {qN}." · sends `{al_N}: go with your recommendations for every open question, and go ahead.` · ticks send `{al_N}: take your recommendation on {q1}, {q2} and {q3}.` (one line per alignment) |
+| Alignment card, answerable (§chat.alignment/card) | button `Go With Recommendations` · hint "Or pick some answers and type the rest below." · its reasons: the composer's blocked reason · "Wait for the turn to end." · "Send or clear your draft first." · checkbox name "Take the recommendation for {qN}." · sends `{al_N}: go with your recommendations for every open question, and go ahead.` · ticks send `{al_N}: take your recommendation on {q1}, {q2} and {q3}.` · option picks send `{al_N}: my answers: 1b — {label}; 3b — {label}.`, after ticks `… {q3}. My answers: 2b — {label}.` (one line per alignment) · option radio name "Answer {qN} with {letter}: {label}" · staged row above the composer (group "Staged answers") `Answering: {al_N} q1 b, q2 rec; {al_M} q2 rec` · `Clear Picks` |
 | Alignment card (§chat.alignment/card) | eyebrow `{al_N} · Alignment · v{rev}` · status chips (none while aligning) Confirmed · Implementing · Done · Dropped · meta `{k} of {n} open` (none: `No questions yet`; none left open: `All {n} decided`) · `· {change line}` · question chips Open · Decided · Dropped · option letters `a` `b` `c`… · `Recommended` (small caps, no colon) `{letter} — {label}`, `{why}` on the next line (names an option) / `Recommended` `{choice}`, `{why}` on the next line · `Decided: {text} · you` / `· accepted recommendation` · `Dropped: {why}` · sections `Findings · {n}` · `Approach · {n}` · `Rejected · {n}` |
 | Alignment revision row | `{al_N} v{rev} {title} · {change line}` · change words (the extension's `changeLine`, joined by " · "): created · created from file · +q11 +f4 · q3, title edited · −f2 −a1 · q1, q3 decided · q1, q2 accepted · q3 reopened · q3 dropped · → implementing · → done · → open · dropped |
 | Alignment exempt row | No alignment needed: {why} |
@@ -136,7 +137,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | State | Surface | Copy |
 |---|---|---|
-| Connecting (first time) | composer reason (`clock`), once the connect has taken 500ms | Connecting… |
+| Connecting (first time) | composer reason (`clock`) | Connecting… |
 | Lost, retrying | chat: composer reason (`clock`) · watch: `.banner-warn` | chat: "Reconnecting. Your draft is kept." · watch: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… |
 | Gave up (retries exhausted) | `.banner-error` at the top of the transcript; composer reason "Not connected." | **Lost the connection to the Sova server.** Nothing in the session changed. Check `pnpm run dev:server` is running, then retry. · button: `Reconnect` |
 | Reconnected | nothing. The banner or reason simply disappears; no toast | — |
@@ -146,17 +147,22 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | State | Copy |
 |---|---|
 | Label (visually hidden) | Message |
-| Placeholder, idle | ≥768: Ask pi to…—Enter sends, Shift+Enter adds a line · <768 and read only: Ask pi to… |
-| Placeholder, streaming | ≥768: Steer the current turn…—Enter sends, Shift+Enter adds a line · <768: Steer the current turn… |
+| Placeholder, idle | Enter sends: Ask pi to…—Enter sends, Shift+Enter adds a line · touch mode (§chat.composer/behavior) and read only: Ask pi to… |
+| Placeholder, streaming | Enter sends: Steer the current turn…—Enter sends, Shift+Enter adds a line · touch mode: Steer the current turn… |
 | Buttons | `Send` · streaming: `Steer` + `Stop` · after Stop is pressed: "Stopping…" in run status |
-| Run status | `Working` + detail: `· thinking` / `· writing` / `· running {tool}` · stopping: `Stopping…` · while ≥ 1 worker runs, the subagents trigger beside it with the counts only: `2 subagents` · `1 subagent · 2 team members` |
-| Alignment chip (§chat.alignment/chip) | `{n} aligns · {open}/{total}` (1: `1 align · …`) · `aria-label` "{n} open alignments, {open} of {total} questions open — show alignments" · menu rows: {id} {title}, then "{decided}/{live}" (no live questions: the status word) · row `aria-label` "{id} {title}: {decided} of {live} questions decided — jump to its card" (no live questions: "{id} {title}: {status}, no questions — jump to its card") · off-screen toast: "That alignment isn't in the transcript on screen." |
+| Run status | Wide composer (≥ 620px): `Working` + detail: `· thinking` / `· writing` / `· running {tool}`, and beside it the subagents trigger: `2 of 5 subagents working` (team members among them: `2 of 5 team members working` · `3 of 5 workers working`, the split `1 subagent · 2 team members` in the tooltip), `5 subagents` once all have settled. Narrow: no visible words, the dot and the step's icon, and the trigger as its ring and a count (`2/5`, settled `5`); the same words are the tooltip and accessible name · in both: `Stopping…` · `Compacting context` · `Retrying after a provider error` · trigger name: `2 of 5 subagents working — show subagents` · settled: `5 subagents — show subagents` |
+| Alignment chip (§chat.alignment/chip) | `{n} aligns · {decided}/{total} decided` (1: `1 align · …`) · `aria-label` "{n} open alignments, {decided} of {total} questions decided — show alignments" · menu rows: {id} {title}, then "{decided}/{live}" (no live questions: the status word) · row `aria-label` "{id} {title}: {decided} of {live} questions decided — jump to its card" (no live questions: "{id} {title}: {status}, no questions — jump to its card") · off-screen toast: "That alignment isn't in the transcript on screen." |
 | Staged recommendations (§chat.alignment/card) | `Taking your recommendation: {al_N} {q1}, {q3}` (alignments joined by "; ") · group label "Staged recommendations" · `Clear Picks` |
 | Reason: TUI-live | Read only while this session is open in the TUI. |
 | Reason: busy (server `code:"busy"`) | pi is busy with another turn. Send when it finishes. |
 | Reason: connecting / reconnecting / gave up | see Connection above |
 | Busy fallback, when the message was already typed and rejected | the draft stays in the textarea (not cleared), plus the busy reason. No banner |
 | Turn error banner (in thread) | **The turn stopped with an error.** {message}. Your messages are kept. Send again to retry. |
+| Mic (§chat/voice) | `aria-label`/`title`: Dictate · recording: Stop Recording · transcribing: Transcribing · setting up: `Dictate — setting up voice, {n}%` · not set up: `title` "Dictate · Voice isn't set up on this host yet" · unsupported: `title` "Voice needs HTTPS or localhost." (no microphone API: "This browser can't record audio.") |
+| Dictation strip | Starting the mic… · `Recording {m:ss}` · `Recording {m:ss} · {s} s left` · `Transcribing {m:ss}…` · Cancel Recording · group label "Dictation" |
+| Dictation errors (strip; `Try Again` where the clip is kept, then Dismiss) | Mic blocked: "The browser blocked the microphone. Allow it for this site, then try again." · no mic: "No microphone found." · other: "Couldn't start the microphone. {message}." · nothing heard: "Didn't catch any speech. Nothing was inserted." · empty transcript: "Heard audio but no words. Nothing was inserted." · failed: "Couldn't transcribe the clip. {reason}. Your recording is kept." · voice removed meanwhile: "Voice isn't set up on this host anymore." |
+| Dictation, backgrounded (toast and announcement) | Recording stopped when the app went to the background. Transcribed {m:ss}. |
+| Dictation announcements | Recording. · Recording cancelled. · Transcribing. · `Inserted {n} words.` (1: `Inserted 1 word.`) · `{s} seconds left.` at 0:30 |
 | SR announcements | Working. · Reply finished. · The turn stopped with an error. (once per error, and it replaces that turn's "Reply finished." — an errored turn still settles, and two endings would read as two turns) |
 
 ## §design.copy-deck/composer-flyout — Composer flyout
@@ -301,10 +307,10 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Label (head ≥720px) | Context |
-| Value | `{tokens} / {window} · {pct}%` (e.g. `237k / 1M · 24%`) · window unknown: `{tokens}` |
-| Narrow (head <720px, and the meta line <520px) | `{pct}%` · window unknown: `{tokens}` |
-| Compacted | compacted |
+| Head ≥720px, beside the ring | `{tokens} / {window}` (e.g. `222k / 1M`) · window unknown: `{tokens}`, no ring |
+| Head <720px, beside the ring | `{tokens}` (e.g. `222k`) · window unknown: `{tokens}`, no ring |
+| Percent | never shown in the head; only in the Title / AT sentence below |
+| Compacted | compacted (no ring) |
 | Title / AT, with a window | Context: {tokens, comma thousands} of {window} tokens ({pct}%), as of the last reply. |
 | Title / AT, window unknown | Context: {tokens} tokens, as of the last reply. This model's limit is unknown. |
 | Title / AT, compacted | Context was compacted. The next reply reports the new size. |
@@ -332,7 +338,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Listbox `aria-label` | Commands |
 | Row name | /{name} |
 | Source chip | ext · prompt · skill |
-| Empty | 0 commands match “/{query}”. Enter sends it as a message. |
+| Empty | 0 commands match “/{query}”. Enter sends it as a message. · touch mode (§chat.composer/behavior): 0 commands match “/{query}”. |
 | Foot (≥768) | `Enter` or `Tab` to insert · `Esc` to close |
 | Announce | {n} commands available. · empty: 0 commands match. |
 | Thread row after sending | Ran `/{name} {args}` |
@@ -398,7 +404,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Teams empty, some sessions live | **{n} pi sessions running. None of them has a team.** (n = 1: **1 pi session running. It has no team.**) Teams you create in pi show up here while their session runs. |
 | Teams empty, none live | not shown: the whole Agents page is the 0-live empty state above |
 | Subagents empty | Section omitted |
-| Aggregate chips | sidebar rail: `{n}` + worker icon · session head, linked: Team · {n} working (→ `#/agents/{teamId}`) or `{n}` + worker icon, `.session-head-working` (→ `#/agents`), its words in `title`/`aria-label`: "{n} subagents working now" |
+| Aggregate chips | sidebar rail: `{n}` + worker icon · session head: none |
 | Current goal summary | Current goal · {now} · {n} topics (1 topic) |
 | Current goal state line | Updated {rel} · stale adds: " · behind the latest messages" · failed-keeping-last adds: " · the last update failed, so this is the previous summary" · updating/drafting: "Updating" + live dot |
 | Current goal jump | Jump to Message |
@@ -408,14 +414,16 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Trigger | `{n} subagents working…` (1: `1 subagent working…`) · while the parent's turn runs: the counts only, `{n} subagents` · accessible name: `{n} subagents working — show subagents` |
+| Trigger | `{w} of {n} subagents working` (1 of 1: `1 of 1 subagent working`), the same while the parent's turn runs · narrow: `{w}/{n}` · all settled: `{n} subagents`, narrow `{n}` · accessible name: `{w} of {n} subagents working — show subagents` · settled: `{n} subagents — show subagents` |
 | Pane | label and title: Subagents · chip: `{w} working` (omitted at 0) · Close `aria-label`: Close subagents |
 | Row meta | `{provider}` · `{model}` · settled: `{model} · as of {HH:MM}` · idle after a failure adds: · last task failed (the provider leads: `claude code`, `zai`, …) |
 | Row status chips | Working · Starting · Idle · Stopping · Done · Failed · Stopped · Restored · Interrupted · beside any of them, for a team member whose seat was released: Ejected |
 | Restored workers (§app.worker-restore/restore) | note: Not running since a server restart. · interrupted: Not running since a server restart; it was mid-task at `{HH:MM}`, and that turn never finished. · meta without usage: usage unavailable · snapshot cost: `$0.41 as of {HH:MM}` |
 | Usage tab | tab: Usage · headline: `{n}` tokens in and out · `$x` · Where: Main thread · Subagents · Team · footer: Main thread Σ · note: Main thread counts the active branch only. · workers: `{n}` subagents · `{w}` working (1: `1 subagent`) · nothing spent: Nothing spent in this session yet. · head chip: `{n} tokens`, accessible name `{n} tokens — show usage` |
 | Usage tab, after a restart | Cost cell: `$x*` (muted `*`, `title` "As of {HH:MM}") · note under the table: * Cost as of `{HH:MM}` (`{HH:MM} and {HH:MM}`), the last report before the restart. · Usage unavailable for `{ids}`: we couldn't read its transcript (their transcripts), so the totals above leave it (them) out. · Subagent lifetime: {n} tokens · `$x as of {HH:MM}` across {N} workers, then only as far as it applies: (includes evicted) · (includes restored) · (includes evicted and restored). |
-| View head meta | `{id}` · `{provider}` (a claude-code worker's reads `claude code`) · `{model}` · `effort {level}` (only when the worker has one) · `{tokens} tokens` · `{context fill}` — the §chat/context-window readout, trailing last: "Context `{tokens} / {window}` · `{pct}%`", "`{pct}%`" under 480px of pane, `compacted` after a compaction, nothing before a reply has measured one |
+| View head modes chip | on the title row, right before the status chip: `{a}` / `{a}, {b}` — the mode names, comma-joined (only when it was given one; hover: "The modes this worker was given when it started.") |
+| View head id | beside the title, muted mono: `{id}` (e.g. `ag_02`) |
+| View head meta | `{model}` (hover: `{provider} · {model id}` — a claude-code worker's provider reads `claude code`) · `{level}` (only when the worker has an effort; hover: "effort {level}") · `{tokens} tok` (hover: the usage breakdown) · usage unavailable (when it has none) · `{context fill}` — compact, last, at the line's right edge with no `·` before it: the context ring + "`{pct}%`", hover: the §chat/context-window sentence; "Context `{tokens}`" when the window is unknown, "Context compacted" after a compaction, nothing before a reply has measured one |
 | Transcript section `aria-label` | {name} transcript |
 | Workers the live record doesn't list (§app.subagents-pane/hidden-workers) | line: `{shown} of {total} shown` · button: Show `{n}` More (`{n}`: every hidden worker, all added at once) · while loading: Loading… · failure: the reason, in the button's `title` |
 | No workers | **0 subagents in this session.** Workers it starts show up here while they run. |
@@ -548,6 +556,29 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Loading | skeleton rows — no copy |
 
 
+## §design.copy-deck/settings-voice — Settings · Voice (§app.settings-dialog/voice)
+
+| Where | Copy |
+|---|---|
+| Tab | Voice |
+| Sheet title (from the mic) · tab heading | Set up voice · Voice |
+| Before setup | "Dictation runs on this Sova host, not in the browser. Setup builds whisper.cpp for {Vulkan · device} (a few minutes), downloads the 574 MB speech model, and tests it. Audio never leaves this host." · no GPU backend: "Dictation runs on this Sova host, not in the browser. Setup uses a prebuilt whisper.cpp for the CPU (no prebuilt: builds whisper.cpp for the CPU (a few minutes)), downloads the 574 MB speech model, and tests it. No GPU backend was found, so each clip takes longer; the self-test shows how long. Audio never leaves this host." · primary `Set Up Voice` |
+| Unsupported host | Voice setup supports Linux and macOS hosts. This host runs {os}. |
+| Steps | Detect this host · Check packages · Get whisper.cpp · Build whisper.cpp · Get the model · Self-test · Finish · state words: Waiting · Running · Done · Skipped · Failed |
+| Step notes | `{done} of {total} MB` · `{n}%` · Copied from {folder} · Already done · Prebuilt CPU binary |
+| Installing | `Setting up voice · step {i} of 7` · `Cancel Setup` |
+| Needs packages | **This host needs {n} packages to build whisper.cpp.** Run this on the Sova host, then check again. Sova never runs sudo. · `Copy Command` (after: "Copied.") · `Check Again` (primary) · `Use CPU Instead` · no known package manager: "Install these, then check again: {list}." |
+| Failed | **Setup stopped at {step, lowercase}.** {error}. Everything before it is kept. · `Retry` · `Use CPU Instead` · `Show Log` / `Hide Log` |
+| Cancelled | Setup cancelled. Everything done so far is kept; Set Up Voice picks up where it stopped. |
+| Ready status line | a success chip `Ready`, then `{Vulkan · device} · self-test {s} s · large-v3-turbo q5_0 · {size} on disk · {Loaded \| Loading \| Not loaded}` |
+| Ready (sheet) | Voice is ready. Tap the mic to dictate. · `Close` |
+| Test Microphone | `Test Microphone` · recording: `Stop ({s} s)` · then `Transcribing…` · result: "Heard: “{text}” ({s} s)" · nothing: "Heard nothing." |
+| Repair | `Repair` — "Checks every file again and reruns the self-test." |
+| Uninstall | `Uninstall Voice` · confirm (banner-warn): **Uninstall voice?** "The voice folder ({size}) goes away: whisper.cpp, the model, and the logs. System packages stay installed." · `Cancel` · `Uninstall` (destructive) |
+| Crashed too often | whisper-server stopped 3 times in a minute. Repair to try again. |
+| Load failed (banner-error) | **Couldn't read the voice status.** {message} |
+| A press refused (banner-error) | **That didn't work.** {server message} — e.g. "Setup is already running." |
+
 ## §design.copy-deck/timeline-tab — Timeline tab (§chat/timeline)
 
 | Where | Copy |
@@ -611,7 +642,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Member chips | `Working` (live dot, mid-turn — the split row's only at-a-glance sign of who is still running; the tab strip's dot covers tabs mode) · `TUI` (accent, static) · `Archived` (neutral) · `Can't open` (error) · `Busy` (warn) |
 | Member composer reasons | "This session is open in a terminal, so Sova won't write to it." · "This session is archived. Unarchive it to send." · "This session can't be opened. The banner above says why." · "Another program is writing to this session." |
 | Member file gone | **This session's file is gone.** Its transcript was deleted outside Sova, so there's nothing left to read. Removing it from the group is all that's left. · button `Remove From Group` |
-| Group composer label and placeholder | `aria-label` "Message every member" · placeholder "Ask all {n} members…—Enter sends, Shift+Enter adds a line" (below 768: "Ask all {n} members…"; 1 member: "Ask this member…") · **{n} is the group's size, never the available count**: availability belongs in the foot, where it can change without rewriting a placeholder under the caret, and "Ask this member…" in a 3-member group would be false |
+| Group composer label and placeholder | `aria-label` "Message every member" · placeholder "Ask all {n} members…—Enter sends, Shift+Enter adds a line" (in touch mode, where Enter adds a line: "Ask all {n} members…"; 1 member: "Ask this member…") · **{n} is the group's size, never the available count**: availability belongs in the foot, where it can change without rewriting a placeholder under the caret, and "Ask this member…" in a 3-member group would be false |
 | Group composer Send | `Send to All` · in flight `Sending…` · 1 member: `Send` |
 | Group composer targets line | `{n} of {m} members` then the excluded reasons, counted: `· 1 mid-turn` · `· 2 open in a terminal` · `· 1 archived` · `· 1 can't be opened` · `· 1 busy` · `· 1 file gone`. All available: `{n} members` alone |
 | Group composer off | 0 available: Send is `aria-disabled`, reason "No member can take a message right now." · 0 members: the composer isn't rendered |
@@ -698,6 +729,19 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Promote (Decisions tab, after a promotion) | "Promoted {n}. Committed {short sha} on {branch}." · skipped: the reason as §app.requirements/promotion-commit words it ("Not committed: …") · no Git: no second sentence |
 | Overseer tool refusals (the model reads them; the activity list shows them) | "Delegate is off for this project's coding sessions; the operator can allow it on the project page." · "Align needs someone to answer its questions, and nobody answers a coding session's." · "Spec is on for this project's coding sessions; only the operator can turn it off on the project page." · "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: only spec is allowed." · "Its worktree was removed, so it has no folder to work in." |
 
+## §design.copy-deck/gathering-abilities — What a gathering session can do (§app.baton/abilities, §app.baton/read-link)
+
+| Where | Copy |
+|---|---|
+| Project page, under the gathering sessions' model | label `Gathering sessions can` · options `Automatic` · `Draw` · `Draw and read links` · `Read links` · `Neither` |
+| …its hint (`.field-hint`) | "Every gathering session this project starts gets this, unless its start says otherwise. One started now: {now}." — `{now}` one of "draw", "draw, read links", "read links", "nothing extra" |
+| …saved (toast) | "Gathering sessions: {option}." — e.g. "Gathering sessions: Draw and read links." |
+| Start a Session form | `It can:` · checkboxes `Draw` · `Read links`, checked as the project's set |
+| Baton strip | `It can:` · checkboxes `Draw` · `Read links` · saved (toast): "Drawing on from its next reply." · "Drawing off from its next reply." · "Reading links on from its next reply." · "Reading links off from its next reply." · refused: the server's words |
+| Share and owner pages, a drawing that can't be drawn there | "A drawing couldn't be shown here." (muted, one line, never the source) |
+| Overseer tool refusal (the model reads it) | "Reading links is off for this project's gathering sessions; the operator can allow it on the project page." |
+| `read_link` refusals (the model reads them) | "Only a link someone wrote in this conversation can be opened." · "That address can't be opened from here." · "Not a text page: {content type}." · "This conversation has already read 10 links." · "The page didn't answer in time." · "The page answered {status}." |
+
 ## §design.copy-deck/project-limits — Project page · limits and pace (§app.project-overseer/limits)
 
 | Where | Copy |
@@ -766,6 +810,16 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Status strip, line 1 | "Last looked on its own {time}{tail}." or "It hasn't looked on its own yet." + " Waiting to look at {n} things." (1: "1 thing"; `title`: the reasons) · paused by an attach: the reason, then `Resume at {level}` · empty roster: the reason |
 | Status strip, lines 2–3 | the project page's readout ("Today on its own: …") and waiting sentences (§design.copy-deck/project-limits) · below 480px: `Details` toggles them |
 | Read-only line (earlier conversation) | "An earlier conversation. Read only." |
+
+## §design.copy-deck/overseer-head — The Overseer · page head (§app.overseer/head-layout)
+
+| Where | Copy |
+|---|---|
+| Meta line | "{n} sessions · {w} working · {a} need you" (1: "1 session", "1 needs you"; a part at 0 is left out) · below a 520px head "{pct}% · " leads it · no menus in it |
+| ⋯ menu | `aria-label` "Overseer actions" · `title` "Overseer actions" · `Proactivity…`, note the current mode (`Off` / `List Only` / `Brief Me`; `aria-label` "Proactivity: {mode}. Change it.") · `History…`, note "{n} earlier" while any (`aria-label` "History, {n} earlier conversations", 1: "conversation") · `Clear`, note "Start a new conversation. This one moves to History." (`aria-label` "Clear: start a new conversation") · an earlier conversation: `History…` only |
+| Proactivity screen | `Off` · `List Only` · `Brief Me`, each with its hint (§app.overseer/proactivity) as its note, the current one checked (`aria-label` "{mode}, {hint}" + " Chosen.") · done (announced): "Proactivity: {mode}. {hint}" · failed (toast): "Proactivity unchanged. {why}" |
+| History screen | its earlier conversations, each "{title}" ("No messages" when untitled) with its age · none: "No earlier conversations yet." |
+| Clear | done (announced): "Cleared. The previous conversation is in History." · failed (toast): "Couldn't clear the Overseer. {why}" |
 
 ## §design.copy-deck/overseer-orgs — The Overseer in organizations (§app.overseer/org-tools, §app.organizations/archive)
 

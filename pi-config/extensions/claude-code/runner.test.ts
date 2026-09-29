@@ -106,6 +106,9 @@ test("resume: --resume <id> with the sandbox settings and system prompt, idle af
 	assert.equal(f.argv[f.argv.indexOf("--permission-mode") + 1], "dontAsk");
 	assert.ok(f.argv.includes("--append-system-prompt-file"));
 	assert.equal(f.runner.sessionId, id);
+	assert.ok(f.runner.startedAt >= Date.now() - 60_000, "no start carried: now");
+	const carried = fixture({ resume: { sessionId: id, startedAt: 1_234 } }); cleanup(t, carried);
+	assert.equal(carried.runner.startedAt, 1_234, "a carried first spawn is its start");
 	assert.equal(f.runner.usageScope, "session", "its CLI usage covers the whole resumed session: the manager must add nothing on top");
 	f.child.ack(); await tick();
 	assert.equal(f.child.users().length, 0, "never auto-continues: the old task is not re-sent");

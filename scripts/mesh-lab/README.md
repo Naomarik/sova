@@ -2,7 +2,8 @@
 
 A local Docker lab for the Sova peer mesh. It runs its own Headscale control plane, N Sova hosts
 (each with its own tailscaled, agent dir, sessions and copy of this worktree), a host with no
-tailscale at all, a stranger tailnet node, a Caddy front door and the mock token server. It also
+tailscale at all, a stranger tailnet node, a Caddy front door, a public front for share links and the
+mock token server. It also
 has the chaos commands and the milestone harnesses (`e2e/m*.test.mjs`).
 
 ```sh
@@ -24,6 +25,7 @@ Needs only `docker` (no sudo) and `node`. Run `scripts/mesh-lab/lab help` for ev
 | plain | `sovamesh-plain` | Sova with **no tailscale at all** (no binaries, no tun, no socket): the mesh-off host and the non-tailnet caller | `http://127.0.0.1:4899` |
 | stranger | `sovamesh-stranger` | a tailnet node without Sova that is in nobody's peers.json (the intruder for refusal tests; has curl) | – |
 | frontdoor + caddy | `sovamesh-frontdoor`, `sovamesh-caddy` | a tailnet node, with Caddy sharing its network namespace: `lb_policy first` over the hosts' `:8443` with active health checks | `http://127.0.0.1:4890` |
+| publicfront | `sovamesh-publicfront` | public links' internet side: Caddy sharing the first host's network namespace (the gateway), plain http on `:4880` → that host's share port `127.0.0.1:4802`, with Caddy's default X-Forwarded-* headers. `plain` is the public client (`http://a:4880` on the lab network); `stranger` is the non-gateway tailnet intruder. Until the gateway binds its share port it answers 502 | `http://127.0.0.1:4889` |
 | mocktoken | `sovamesh-mocktoken` | sync-engineer's rotating-refresh-token mock (`mock-token-server/`); pi's fixed provider names resolve to it inside the hosts | `http://127.0.0.1:4888` (harness endpoints) |
 
 Each host's MagicDNS name is `<id>.mesh.lab`. Its Tailscale StableID (`lab nodeid <id>`) is a
@@ -39,7 +41,7 @@ decimal string on Headscale.
   scripts/…, and build time. The images carry `sova.mesh-lab.commit` and `sova.mesh-lab.dirty`
   labels, and `lab status` and every `lab e2e` run print a "built from:" line. A PASS counts
   for acceptance only when that line says `git archive, clean`. The build installs with
-  `pnpm install --frozen-lockfile` and runs `vite build`. There is no typecheck, so a mid-branch
+  `pnpm install --frozen-lockfile` and runs `vite build` and `vite build --mode share` (the share page). There is no typecheck, so a mid-branch
   type error doesn't block the lab. Cached layers make rebuilds fast, and `lab up` recreates the
   containers whose image changed. With `--dirty`, the ignore list in `Dockerfile.dockerignore`
   applies (`node_modules`, `dist`, `.agent`, `.git`, `auth.json`, `.env*`, `*.key`, `*.pem`,
@@ -93,7 +95,7 @@ mesh        pair [a,b,c] [--no-restart] · unpair [a,b,c] · frontdoor [order a,
 ```
 
 - `up` options: `--hosts N` (1–8) or `--hosts a,c,d`, `--auth all|none|a,b`, `--no-plain`,
-  `--no-stranger`, `--no-frontdoor`, `--no-mock`, `--no-seed`, `--no-build`. The options persist
+  `--no-stranger`, `--no-frontdoor`, `--no-publicfront`, `--no-mock`, `--no-seed`, `--no-build`. The options persist
   in `STATE/lab.json`, and a bare `up` reuses them.
 - `down` stops and removes the containers and keeps the volumes. `reset` wipes every lab volume,
   the Headscale DB, the pre-auth key and the CAs, then runs `up`. `destroy` also removes the
@@ -133,8 +135,10 @@ Everything Docker-side is named `sovamesh*` and labelled `sova.mesh-lab=1`.
 
 ## The harness
 
-`lab e2e <m>` runs `node --test e2e/<m>.test.mjs` against the running lab (`lab up` first). Tests
-drive the lab through `e2e/lib.mjs`:
+`lab e2e <m>` runs `node --test e2e/<m>.test.mjs` against the running lab (`lab up` first).
+`lab e2e all` runs m0–m4, then every `e2e/public-*.test.mjs` (one per public-links milestone,
+`public-m3.test.mjs` … `public-m7.test.mjs`), so a new public-links harness needs no lab.mjs edit.
+Tests drive the lab through `e2e/lib.mjs`:
 
 - `requireLab()`, `lab(...args)`
 - `exec` / `sh` / `execBackground` into a node

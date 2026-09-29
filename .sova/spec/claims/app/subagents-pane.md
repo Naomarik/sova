@@ -33,49 +33,76 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
 
 ```html
 <p class="run-status">
+  <!-- the row's one live dot, while anything works (§chat.transcript/streaming); never the trigger's -->
+  <span class="live-dot" aria-hidden="true"></span>
   <button type="button" class="run-status-link" aria-expanded="false" aria-controls="session-pane"
-          aria-label="2 subagents working — show subagents">
-    <span class="live-dot"></span>2 subagents working…
+          aria-label="2 of 5 subagents working — show subagents" title="2 of 5 subagents working — show subagents">
+    <!-- the ring: working of all, filled clockwise from 12 o'clock; empty once all have settled -->
+    <svg class="workers-ring" viewBox="0 0 14 14" aria-hidden="true">
+      <circle class="workers-ring-track" cx="7" cy="7" r="6" fill="none"></circle>
+      <circle class="workers-ring-fill" cx="7" cy="7" r="6" fill="none" transform="rotate(-90 7 7)"
+              style="stroke-dasharray: 37.7; stroke-dashoffset: 22.6"></circle>
+    </svg>
+    <!-- narrow form -->
+    <span class="text-num run-status-narrow">2/5</span>
+    <!-- wide form -->
+    <span class="run-status-wide">2 of 5 subagents working</span>
     <span class="icon icon-sm" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
   </button>
 </p>
 ```
 
-- **It reads as the row it was, plus two cues.** The live dot and the words keep `.run-status`'s
-  look (caption, ink-2). A muted chevron says "opens to the right", and hover fills the whole
-  control with sunken and lifts the words to ink. It never becomes a primary or secondary
-  button: it's a status you can open, and the composer already has its one primary.
+- **Words when there's room, a ring and a count when there isn't.** It follows the run-status
+  row's two forms (§chat.transcript/streaming, switched at a 620px composer). It never carries a
+  live dot: the row's one dot, before everything else in it, says work is in flight, whether the
+  parent's turn or only its workers. What the trigger shows instead is a **ring meter**: a static
+  14px ring, its arc in ink over a muted track, filled clockwise from 12 o'clock by the share of
+  the session's workers that are working now (2 of 5: two fifths), and **empty** once every one
+  has settled. Wide, the ring, the words — "2 of 5 subagents working", "5 subagents" once all have
+  settled — and the chevron; narrow, the ring and the count, "2/5" while any work, else every one
+  the session has, "5". The words are the same whether or not the parent's own turn runs. With
+  team members among the working ones the noun follows them — "2 of 5 team members working", or
+  "3 of 5 workers working" for a mix — and the tooltip adds the split, "1 subagent · 2 team
+  members", on its own line. Either way the words are the tooltip and the accessible name, and
+  the button's name is its label, so nothing is read twice; the ring is `aria-hidden`. The words
+  or count keep `.run-status`'s look (caption, ink-2). A muted chevron says "opens to the right",
+  and hover fills the whole control with sunken and lifts the words to ink. It never becomes a
+  primary or secondary button: it's a status you can open, and the composer already has its one
+  primary. It never shrinks: squeezed, its words used to run into the alignment chip beside it.
 - **Size.** 36px drawn with an `--r-md` fill, a 44px hit area (a `::after` 4px above and below),
   and a net 20px of layout, so the composer doesn't jump whether this row stands alone or rides
-  beside the Working label. It sits 8px left of the row's edge, so the dot lines up with the
-  Working row's dot.
-- **The count is in the label** and changes in place. The accessible name is the visible words
-  plus what the control does: "2 subagents working — show subagents".
+  beside the Working state. In the row its inline padding and its offset left of where it would
+  start are the row's gap — 8px wide, 6px narrow, where its parts also sit 4px apart — so its ring
+  sits one gap after the row's dot, as the Working state's icon does.
+- **The count changes in place.** The accessible name, which is also the tooltip, is the words
+  plus what the control does: "2 of 5 subagents working — show subagents" ("— show workers" once
+  team members are among them); with one team behind the count, the tooltip adds "Team · {name}"
+  on another line. A watched session with no pane to open shows the same thing as plain text: the
+  ring and the words wide; the ring and count narrow, the words visually hidden.
 
 | State | Renders |
 |---|---|
-| Parent turn running, ≥ 1 working | The Working row (§chat/transcript) **and** this trigger beside it: live dot, the counts alone — "2 subagents" · "1 subagent · 2 team members" — labelled "2 subagents working — show subagents". Working already says what's happening, so the trigger only says how many. This is how the pane is one click away mid-turn |
+| Parent turn running (or Stopping, a rare state, a compaction), ≥ 1 working | The run status (§chat/transcript) after the row's one dot, **and** this trigger beside it, with no dot of its own: the ring at 2 of 5, "2 of 5 subagents working" wide, "2/5" narrow; labelled "2 of 5 subagents working — show subagents". This is how the pane is one click away mid-turn |
 | Idle, 0 workers ever | No row, no trigger. `/agents` still opens the pane, which says so |
-| Idle, ≥ 1 working | The trigger, with the live dot: "2 subagents working…" |
-| Idle, none working, ≥ 1 settled | The trigger, **no live dot**: "2 subagents", labelled "2 subagents — show subagents". The per-worker counts and the Σ are what it's for, and they outlive the work |
-| Hover · active | Sunken fill, ink words, chevron to ink · active also moves 1px down, like `.button` |
+| Idle, ≥ 1 working | The row's one dot, then the trigger: the ring at 2 of 5, "2 of 5 subagents working" wide, "2/5" narrow; labelled "2 of 5 subagents working — show subagents" |
+| Idle, none working, ≥ 1 settled | The trigger, **no dot in the row**: the empty ring, "5 subagents" wide, "5" narrow; labelled "5 subagents — show subagents". The per-worker counts and the Σ are what it's for, and they outlive the work |
+| Hover · active | Sunken fill, ink words or count, icons to ink · active also moves 1px down, like `.button` |
 | Focus-visible | The 2px accent ring, at `--r-md` |
 | Pane open | `aria-expanded="true"`. **No pressed styling**: the open pane beside it is the state, and a tinted trigger would be one more accent-adjacent thing in a composer that has Send. Clicking again closes the pane |
 
 The pane doesn't need the trigger to stay open: it survives a turn starting or ending. While the
-parent runs, the trigger stays in the row with the counts alone, so watching the workers mid-turn
+parent runs, the trigger stays in the row beside its run status, so watching the workers mid-turn
 is one click rather than a wait for the turn to settle.
 
 Opening a chat shows the settled trigger from the view's first frame, with the count the session
-list has for it (its live record's worker total; when there is none, or it counts 0, the workers
-its own records restore: the manifests on its active branch, at most the 40 a record lists) whenever the chat's
+list has for it (its live record's worker total) whenever the chat's
 socket hasn't said otherwise: the socket's count shows while its latest `workers` message since the
 `hello` lists any, or when the list counts none; a `workers` message listing none never takes a
 count the list has down to nothing. The `hello`
 alone changes nothing on the trigger — its runtime's first `workers` can come well after it, or
 not at all while the runtime has no live record yet, or list none while its extension is still
-restoring the file's workers — so the count never blinks off and back at the `hello`. A working trigger (the live
-dot) comes only from this chat's own `workers` messages. A watched session's
+restoring its workers — so the count never blinks off and back at the `hello`. A working trigger (a filled
+arc) comes only from this chat's own `workers` messages. A watched session's
 trigger reads the same list count until its insight lands.
 
 ## §app.subagents-pane/shell-a-third-column — Shell: a third column
@@ -359,9 +386,10 @@ webapp never writes to it (CLAUDE.md: no file locking).
 ```html
 <div class="subagents-view">
   <header class="subagents-view-head">
-    <h3 class="subagents-view-title">designer</h3>
+    <div class="subagents-view-name"><h3 class="subagents-view-title">designer</h3> <span class="subagents-view-wid text-mono text-muted">ag_03</span></div>
+    <span class="chip chip-count" title="The modes this worker was given when it started.">spec</span>   <!-- only when it was given modes -->
     <span class="chip chip-accent chip-live"><i class="chip-dot"></i>Working</span>
-    <p class="subagents-view-meta meta-line"><span class="text-mono">ag_03</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> anthropic</span> <span class="text-mono meta-line-shrink" title="anthropic/claude-opus-5"><span class="meta-line-sep" aria-hidden="true">·</span> opus-5</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> effort <span class="text-mono">medium</span></span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41"><span class="meta-line-sep" aria-hidden="true">·</span> 23.7k tokens</span> <span><span class="meta-line-sep" aria-hidden="true">·</span> <span class="context-readout"><span class="context-gauge" title="{the sentence}"><span class="context-label" aria-hidden="true">Context</span> <span class="context-value" aria-hidden="true">64k / 1M · 6%</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></span></p>
+    <p class="subagents-view-meta meta-line"><span class="text-mono meta-line-shrink" title="anthropic · anthropic/claude-opus-5">opus-5</span> <span class="text-mono" title="effort medium"><span class="meta-line-sep" aria-hidden="true">·</span> medium</span> <span class="text-mono" title="18.4k in · 5.3k out · 242k cache read · 32.1k cache write · $0.41"><span class="meta-line-sep" aria-hidden="true">·</span> 23.7k tok</span> <span class="subagents-view-context"><span class="context-readout"><span class="context-compact" title="{the sentence}"><span class="context-ring" title="{the sentence}">…</span><span class="context-pct" aria-hidden="true">6%</span></span><span class="visually-hidden">{the sentence}</span></span></span></p>
   </header>
   <section class="subagents-transcript pane" tabindex="0" aria-label="designer transcript">
     <div class="subagents-banner stack-2">…banners, or nothing…</div>
@@ -373,16 +401,25 @@ webapp never writes to it (CLAUDE.md: no file locking).
 
 - **Sub-header.** `.subagents-view-head` names the worker on surface above the scroll region, so
   it never scrolls away (sticky by construction, not by `position: sticky`). The title is body
-  semibold, then the same status chip as the row, then a meta line: the id in mono, then the
-  provider, then the model, then **the effort** (`effort {level}`, the level in mono; a worker
-  that reports none shows nothing here), then the worker's tokens, and last the **context readout**
-  (§app.subagents-pane/context-fill): the gauge trails the facts that name the worker and what it
-  has spent. **The effort leads the count**: what a worker is thinking at is a fact about
+  semibold, with **the worker id** right beside it, quieter (`.subagents-view-wid`: mono, caption
+  size, muted ink); the title truncates (two lines at most) before the id or the chips go anywhere
+  odd. Then **the modes it was given** at its start as a quiet `chip chip-count`, right before
+  the status chip (§chat.mode-menu/workers: the names, comma-joined, e.g. `spec`; `title` "The
+  modes this worker was given when it started."; a worker given none, or recorded by an older
+  pi-config, shows no chip), then the same status chip as the row (then its team and badge chips,
+  when it has them), then a meta line of four short facts, so it holds one row at a normal pane
+  width: **the model** leads, bare and in mono, the only fact that clips
+  (`.meta-line-shrink`); its `title` carries the route that serves it and the full id
+  (`{provider} · {model id}`, e.g. "claude code · claude-haiku-4-5-20251001"). Then **the
+  effort**, as the bare level in mono (`low`, `title` "effort low"; a worker that reports none
+  shows nothing here), then the worker's tokens as `{n} tok` (the usage breakdown in its `title`),
+  and last the **context readout**
+  (§app.subagents-pane/context-fill), pushed to the line's right edge, under the status chip, with
+  no `·` before it: the gauge trails the facts that name the worker and what it has spent. **The effort leads the count**: what a worker is thinking at is a fact about
   the worker, where the count beside it is a running total that changes under the reader. **A
   separator belongs to the fact it introduces**: each `·` is inside its own fact's element, not a
   sibling before it, so a wrapped line starts with its own dot and no wrap can strand one. The
-  model fact's dot is shown only when a provider precedes it: a worker whose provider can't be
-  derived opens the line on its model, undotted. The
+  model opens the line, undotted. The
   token number here is the **open transcript's own**
   total, counted from the file as it is tailed (`/ws/watch` sends it with every `snapshot` and
   `append`), so it ticks while you watch instead of waiting for the next worker snapshot; it
@@ -392,15 +429,17 @@ webapp never writes to it (CLAUDE.md: no file locking).
   isn't on screen. There, the back button leads the head, and title, chips and meta sit beside
   it in `.subagents-view-id`.
 - **Context readout.** Last in the meta line, after the tokens, the meta line carries the worker's
-  context fill (§app.subagents-pane/context-fill) as the chat head says it
-  (§chat/context-window): "Context 64k / 1M · 6%", plain text, the same format, steps, glyph at
-  ≥95% and sentence (`title`, and a visually hidden copy for AT), "Context compacted" after a
-  compaction, "Context 64k" when the window is unknown, and nothing before the first reply. Like
+  context fill (§app.subagents-pane/context-fill) in **compact form**, so the meta line spends as
+  little width as it can: the worker row's ring (§chat.context-window/sidebar-ring, the
+  same component, steps and hues) followed by the percent ("6%", hued at the same steps), with
+  the full sentence (`contextSentence`, the chat head's) as the `title` and a visually hidden
+  copy for AT. Where the ring has no shape to draw, the chat head's words stay
+  (§chat/context-window): "Context compacted" after a compaction, "Context 64k" when the window
+  is unknown; nothing before the first reply. Like
   the tokens it is the **open transcript's own** value, recomputed on every `snapshot` and
   `append`, and falls back to the row's. It isn't in a `.session-head`, so the head's width
-  steps don't apply; it collapses to the percent ("6%") when the pane itself is under 480px, and
-  never disappears on a phone. The meta line wraps to a second line rather than clip the facts at
-  its end, and because each dot belongs to the fact it introduces, a wrapped line begins with that
+  steps don't apply, and it never disappears on a phone. Where even the short line doesn't fit,
+  the meta line wraps to a second line rather than clip the facts at its end, and because each dot belongs to the fact it introduces, a wrapped line begins with that
   fact's own `·` rather than leaving a dot stranded at the end of the line above.
 - **Thread.** The same §chat/transcript rows, capped at the transcript column (`--measure` + `--space-9`) and
   centred, 16px side padding. Auto-follow and Jump to Latest behave exactly as §chat.transcript/live-watch.
@@ -473,7 +512,11 @@ like any other. CC's JSONL is normalized into the same `TranscriptItem` rows, ea
 pi-shaped synthetic `raw`, so every row renders through the existing components: prose, thinking
 (redacted signature-only blocks are dropped), tool calls paired with their results (CC's `Bash`,
 `Read`, `Edit`, `Write`, `Glob`, `Grep` map to pi's names and icons; anything else keeps CC's
-name), compaction boundaries as info rows. Image blocks (`{type:"image", source:{type:"base64",
+name), compaction boundaries as info rows. A worker whose Claude login leaves the device
+(§app.claude-logins/drain) moves to the next login with `--resume` of its own session, so this
+view keeps following the same file (every login keeps its transcripts in Claude Code's own
+`projects/`); the worker's own transcript gets the line `Claude: moved {A} → {B} (the login left
+this device)`. Image blocks (`{type:"image", source:{type:"base64",
 media_type, data}}`), in a tool result or a prompt, become the row's `images` as data URLs, the
 same field a pi row fills, so a worker's image results show in its tool cards as a pi session's
 do (§chat.images/thread-thumbnails); they never become placeholder text. Sidechains (a

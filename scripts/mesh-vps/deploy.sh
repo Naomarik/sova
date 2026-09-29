@@ -2,7 +2,8 @@
 # Deploy a commit of this worktree to the VPS as deploy (no sudo, never git push):
 #   scripts/mesh-vps/deploy.sh [--rev <sha>] [--claude-bin <path>]      (default HEAD; CLAUDE_BIN from local.env)
 # `git archive <sha>` is streamed over ssh into ~/sova-mesh/app.new, then remote-setup.sh installs Node + Caddy
-# (checksummed), swaps the app in, runs pnpm install --frozen-lockfile + vite build, prepares the agent dir and
+# (checksummed), runs pnpm install --frozen-lockfile + vite build in app.new, swaps it in only once that built
+# (a failed build leaves the running app as it was), prepares the agent dir and
 # writes ~/sova-mesh/sova-mesh.env (Claude Code's directory on the unit's PATH, or a warning). If the sova-mesh user unit is running, it is restarted onto the new build.
 set -euo pipefail
 . "$(dirname "$0")/config.sh"

@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { REQUIREMENTS_NS, type DecisionRow } from "../shared/decisions";
@@ -146,6 +147,29 @@ export function renderRecord(d: DecisionRow, supersededByRecord?: string, also: 
   return `${lines.join("\n")}\n`;
 }
 
+/** The manifest fields the decisions layer owns (§app.requirements/decisions). `kind` and
+    `authority` are written only when it creates a record; every other field is the spec layer's. */
+export const DECISION_FIELDS = ["decision", "provenance", "supersededBy"] as const;
+
+/** A record's decisions-owned fields, in a fixed order: what the reconciler compares. */
+export const decisionPart = (rec: unknown): Record<string, unknown> => {
+  const r = (rec && typeof rec === "object" ? rec : {}) as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of DECISION_FIELDS) if (r[k] !== undefined) out[k] = r[k];
+  return out;
+};
+
+/** A record as the reconciler writes it over `existing`: its own fields replaced, the rest kept. */
+export function mergeRecord(existing: Record<string, unknown> | undefined, rec: Record<string, unknown>): Record<string, unknown> {
+  if (!existing) return rec;
+  const out: Record<string, unknown> = { ...existing };
+  for (const k of DECISION_FIELDS) {
+    if (rec[k] === undefined) delete out[k];
+    else out[k] = rec[k];
+  }
+  return out;
+}
+
 export function manifestRecord(d: DecisionRow, supersededByRecord?: string, also: DecisionRow[] = []): Record<string, unknown> {
   return {
     kind: "note",
@@ -159,13 +183,15 @@ export function manifestRecord(d: DecisionRow, supersededByRecord?: string, also
 // ---- editing a spec directory (a draft's spec/) ------------------------------------------------------------
 
 interface ClaimFile {
-  lede: string;
+  /** The lines before the first H2, joined; null when the file opens with one. */
+  lede: string | null;
+  /** Each H2 through the line before the next, trailing blank lines included. */
   blocks: { id: string; text: string }[];
 }
 
 function parseClaimFile(text: string): ClaimFile {
   const lines = text.split("\n");
-  const out: ClaimFile = { lede: "", blocks: [] };
+  const out: ClaimFile = { lede: null, blocks: [] };
   let cur: { id: string; lines: string[] } | null = null;
   const lede: string[] = [];
   let fence: string | null = null;
@@ -180,12 +206,48 @@ function parseClaimFile(text: string): ClaimFile {
     else lede.push(line);
   }
   if (cur) out.blocks.push({ id: cur.id, text: cur.lines.join("\n") });
-  out.lede = lede.join("\n");
+  if (lede.length) out.lede = lede.join("\n");
   return out;
 }
 
 const trimBlock = (s: string) => s.replace(/\n+$/, "");
-const joinClaimFile = (f: ClaimFile): string => `${[trimBlock(f.lede), ...f.blocks.map((b) => trimBlock(b.text))].join("\n\n")}\n`;
+/** The file's bytes again: parse then join is the identity, so untouched blocks stay as they were. */
+const joinClaimFile = (f: ClaimFile): string => [...(f.lede === null ? [] : [f.lede]), ...f.blocks.map((b) => b.text)].join("\n");
+/** A block's text with `text`'s content and `old`'s trailing blank lines (its place in the layout). */
+const keepLayout = (old: string, text: string): string => `${trimBlock(text)}${/\n*$/.exec(old)![0]}`;
+/** Append a block after the file's bytes, a blank line between (the join adds one newline; a file
+    not ending in one gets it), and the file ends with a newline. */
+function appendBlock(f: ClaimFile, id: string, text: string): void {
+  const last = f.blocks.at(-1);
+  const prev = last ? last.text : f.lede;
+  if (prev !== null && !prev.endsWith("\n")) {
+    if (last) last.text += "\n";
+    else f.lede += "\n";
+  }
+  f.blocks.push({ id, text: `${trimBlock(text)}\n` });
+}
+
+/** SHA-256 of a record's prose block, its trailing blank lines left out (`DecisionRow.promotedText`). */
+export const proseHash = (block: string): string => createHash("sha256").update(trimBlock(block)).digest("hex");
+
+/** A record's prose block in the current spec (`claims/requirements/<area>.md`), or null. */
+export function currentBlock(root: string, recordId: string): string | null {
+  const m = /^§[^.]+\.([^/]+)\//.exec(recordId);
+  if (!m) return null;
+  let claimsRoot = "claims";
+  try {
+    const manifest = JSON.parse(readFileSync(join(specDirOf(root), "manifest.json"), "utf8")) as { claimsRoot?: string };
+    if (typeof manifest.claimsRoot === "string") claimsRoot = manifest.claimsRoot.replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+  try {
+    const f = parseClaimFile(readFileSync(join(specDirOf(root), claimsRoot, REQUIREMENTS_NS, `${m[1]}.md`), "utf8"));
+    return f.blocks.find((b) => b.id === recordId)?.text ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export interface SpecEdit {
   /** Decision rows to write as records (their recordId set). */
@@ -198,13 +260,19 @@ export interface SpecEdit {
 
 /**
  * Write the records into a spec directory (manifest + claims): an area file gets its lede once,
- * then one H2 per record, appended or replaced in place. Returns the ids whose bytes changed.
+ * then one H2 per record, appended or replaced in place. Only what changes is written: a record
+ * keeps the fields the spec layer owns, a replaced block keeps its layout, other blocks keep their
+ * bytes, and a file with nothing to change is not written (the spec tools move files whole, so a
+ * byte changed outside any record would pull all of the file's records into a promotion).
+ * `proseOnly`: rewrite only the records' prose, never their manifest fields. Returns the ids whose
+ * bytes changed.
  */
-export function applyToSpecDir(specDir: string, edit: SpecEdit): string[] {
+export function applyToSpecDir(specDir: string, edit: SpecEdit, opts: { proseOnly?: boolean } = {}): string[] {
   const manifestPath = join(specDir, "manifest.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { claimsRoot?: string; claims: Record<string, Record<string, unknown>> };
   const claimsRoot = join(specDir, (manifest.claimsRoot ?? "claims").replace(/\/+$/, ""));
   const changed = new Set<string>();
+  let manifestChanged = false;
   const byArea = new Map<string, DecisionRow[]>();
   for (const d of edit.rows) {
     if (!d.recordId) throw new Error(`decision ${d.id} has no record id`);
@@ -214,31 +282,42 @@ export function applyToSpecDir(specDir: string, edit: SpecEdit): string[] {
     const file = join(claimsRoot, REQUIREMENTS_NS, `${areaKey}.md`);
     const lid = areaId(areaKey);
     let parsed: ClaimFile;
+    let fileChanged = false;
     if (existsSync(file)) parsed = parseClaimFile(readFileSync(file, "utf8"));
     else {
       parsed = { lede: renderLede(areaKey, rows[0]!.area), blocks: [] };
       changed.add(lid);
+      fileChanged = true;
     }
     if (!manifest.claims[lid]) {
       manifest.claims[lid] = { kind: "note", authority: "accepted" };
       changed.add(lid);
+      manifestChanged = true;
     }
     for (const d of rows) {
       const sup = edit.supersededBy.get(d.recordId!);
       const also = edit.also?.get(d.recordId!) ?? [];
       const text = renderRecord(d, sup, also);
-      const rec = manifestRecord(d, sup, also);
       const i = parsed.blocks.findIndex((b) => b.id === d.recordId);
-      if (i < 0) parsed.blocks.push({ id: d.recordId!, text });
-      else if (trimBlock(parsed.blocks[i]!.text) !== trimBlock(text)) parsed.blocks[i] = { id: d.recordId!, text };
-      else if (JSON.stringify(manifest.claims[d.recordId!]) === JSON.stringify(rec)) continue;
+      if (i < 0 || trimBlock(parsed.blocks[i]!.text) !== trimBlock(text)) {
+        if (i < 0) appendBlock(parsed, d.recordId!, text);
+        else parsed.blocks[i] = { id: d.recordId!, text: keepLayout(parsed.blocks[i]!.text, text) };
+        fileChanged = true;
+        changed.add(d.recordId!);
+      }
+      const existing = manifest.claims[d.recordId!];
+      if (opts.proseOnly && existing) continue;
+      const rec = mergeRecord(existing, manifestRecord(d, sup, also));
+      if (JSON.stringify(existing) === JSON.stringify(rec)) continue;
       manifest.claims[d.recordId!] = rec;
+      manifestChanged = true;
       changed.add(d.recordId!);
     }
+    if (!fileChanged) continue;
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, joinClaimFile(parsed));
   }
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  if (manifestChanged) writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   return [...changed].sort();
 }
 
@@ -288,14 +367,14 @@ export interface PromoteOutcome {
  * A promoted batch draft is kept: its draft.json is the evidence and promotion record (local only,
  * like every draft). One that promoted nothing is removed.
  */
-export async function promoteEdit(root: string, edit: SpecEdit, verification: (id: string) => string, now = new Date()): Promise<PromoteOutcome> {
+export async function promoteEdit(root: string, edit: SpecEdit, verification: (id: string) => string, now = new Date(), opts: { proseOnly?: boolean } = {}): Promise<PromoteOutcome> {
   ensureLocalOnlyIgnore(root);
   const name = `${BATCH_PREFIX}${now.toISOString().replace(/[^0-9]/g, "").slice(0, 17)}`;
   removeOwnDraft(root, name);
   let promoted = false;
   try {
     await must(root, ["new", name, "--purpose", "Promote reconciled decisions", "--write"]);
-    const changed = applyToSpecDir(draftSpecDir(root, name), edit);
+    const changed = applyToSpecDir(draftSpecDir(root, name), edit, opts);
     if (!changed.length) return { promoted: [], plan: null, draft: null };
     for (const id of changed) await must(root, ["evidence", name, "--id", id, "--by", "reconciler", "--verification", verification(id), "--doc-only", "--write"]);
     const ids = changed.flatMap((id) => ["--id", id]);

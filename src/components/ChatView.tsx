@@ -3,6 +3,7 @@ import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanu
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
+  ChatClaudeLogin,
   ChatServerMessage,
   ContextInfo,
   OverseerQuickAction,
@@ -17,7 +18,7 @@ import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
 import { OverseerThreadContext, QuickActions } from "./OverseerCards";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
-import { acceptAllMessage, clearPicks, composeWithPicks, pickCount, picksLabel, picksOf, prunePicks, samePicks, togglePick } from "../lib/align-picks";
+import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
 import { createFork, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
@@ -104,7 +105,7 @@ import { noteLinks } from "../lib/links-live";
 import { entryIdOf, jumpToEntry, landExplainJump, transcriptRoot } from "../lib/jump";
 import { anyReply, inputTotal, lastInput as lastInputOf, messageTotal, newestOnly, newRows } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
-import { alignRowFromDetails, foldAlignRows, type AlignEntry } from "../lib/align";
+import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
 import { Composer, type ComposerReason } from "./Composer";
 import { openCreated } from "../lib/fork-stage";
 import { FlyoutSession, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
@@ -113,6 +114,7 @@ import { SessionSetupCard } from "./SessionSetup";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
+import { ChangesSession } from "./ChangesViewer";
 import { type ForkMarker, HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
@@ -148,8 +150,6 @@ export interface OverseerSender {
 
 /** ui_request kinds UiDialog can show; anything else needs the terminal UI. */
 const UI_DIALOG_METHODS = ["select", "confirm", "input", "editor"];
-/** How long a first connect goes unsaid in the composer foot: most land well inside it. */
-const CONNECTING_SHOWN_AFTER_MS = 500;
 
 /**
  * Full-duplex chat with a webapp-owned session. When the server refuses to let us write
@@ -173,6 +173,9 @@ export function ChatView(props: {
   /** This runtime's subagents (WS "workers"; [] after each hello), for the subagents pane. The
       Σ is the runtime's session-lifetime worker token total, null while no server reports one. */
   onWorkers?(workers: WorkerInfo[], usage: UsageTotalView | null): void;
+  /** This chat's Claude login (WS "claude_login"; null after each hello), for the sidebar foot's
+      usage glance. */
+  onClaudeLogin?(login: ChatClaudeLogin | null): void;
   /** Toggles the subagents pane from the composer's subagents row. */
   onShowWorkers?(): void;
   /** The pane is open for this session ON THE AGENTS TAB (the subagents trigger's aria-expanded). */
@@ -357,10 +360,9 @@ export function ChatView(props: {
   const [modeState, setModeState] = createSignal<ModeState | null>(null);
   /** This chat's sandbox (WS "sandbox"), null while its runtime has no sandbox extension. */
   const [sandbox, setSandboxState] = createSignal<SandboxInfo | null>(null);
-  /** A hello has arrived: from then on the sandbox is the socket's to say (a runtime without the
-      extension sends none), not the session list's. */
-  const [sandboxSaid, setSandboxSaid] = createSignal(false);
   const [sandboxPending, setSandboxPending] = createSignal(false);
+  /** This chat's Claude login (WS "claude_login"), null until told or when the host can't name one. */
+  const [claudeLogin, setClaudeLogin] = createSignal<ChatClaudeLogin | null>(null);
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show, `note` one
       that was refused (a /compact), whose row then says why instead of "Ran". */
   const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean; note?: string }[]>([]);
@@ -567,7 +569,8 @@ export function ChatView(props: {
           });
           setModel(msg.model);
           setSandboxState(null); // a "sandbox" message follows when the runtime has the extension
-          setSandboxSaid(true);
+          setClaudeLogin(null); // a "claude_login" message follows when this host has several logins
+          props.onClaudeLogin?.(null);
           batch(() => {
             setThinking(msg.thinking);
             setPendingThinking(null);
@@ -756,6 +759,10 @@ export function ChatView(props: {
           break;
         case "sandbox":
           setSandboxState({ on: msg.on, enforcement: msg.enforcement, status: msg.status });
+          break;
+        case "claude_login":
+          setClaudeLogin(msg.login);
+          props.onClaudeLogin?.(msg.login);
           break;
         case "event":
           queue.push(msg.event);
@@ -1126,13 +1133,6 @@ export function ChatView(props: {
       action strip, so reading the list itself there rebuilt every strip's buttons on each change
       of the list (an append, a turn-end reload, each chunk of a tail-first hello's history). */
   const listHere = createMemo(() => !!items());
-  /** The first connect has taken long enough to say so. A quick one, the usual case, never shows
-      "Connecting…" in the composer foot, where it would squeeze the model indicator and the mode
-      switch for the frames until the hello (§chat.composer/disabled-states). */
-  const [connectSlow, setConnectSlow] = createSignal(false);
-  const connectSlowTimer = setTimeout(() => setConnectSlow(true), CONNECTING_SHOWN_AFTER_MS);
-  onCleanup(() => clearTimeout(connectSlowTimer));
-  const connecting = (): ComposerReason => ({ icon: "clock", text: "Connecting…", ...(connectSlow() ? {} : { quiet: true }) });
   const blocked = (): ComposerReason | null => {
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
@@ -1140,14 +1140,14 @@ export function ChatView(props: {
     if (baton) return baton;
     switch (socket.status()) {
       case "connecting":
-        return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : connecting();
+        return everOpened() ? { icon: "clock", text: "Reconnecting. Your draft is kept." } : { icon: "clock", text: "Connecting…" };
       case "reconnecting":
         return { icon: "clock", text: "Reconnecting. Your draft is kept." };
       case "failed":
       case "closed":
         return { icon: "clock", text: "Not connected." };
     }
-    if (!listHere()) return connecting();
+    if (!listHere()) return { icon: "clock", text: "Connecting…" };
     if (syncing()) return { icon: "clock", text: "Saving this turn…" };
     if (pendingModel()) return { icon: "clock", text: "Switching model…" };
     // Any compaction: this chat's /compact (asked, or already running), pi's automatic one, or an
@@ -1157,19 +1157,31 @@ export function ChatView(props: {
   };
 
   // ---- Taking recommendations from an alignment card (§chat.alignment/card) --------------
-  /** The card takes ticks and its button only with align on, in a chat whose mode the user sets
+  /** The card takes ticks, option picks and its button only with align on, in a chat whose mode the user sets
       (not the Overseer's, a project overseer's or a baton session's). */
   const alignAnswerable = () =>
     !props.overseer && !props.projectOverseer && !props.summary?.()?.baton && !props.summary?.()?.projectOverseer && !!modeState()?.minorModes.includes("align");
-  /** This session's ticks that still apply: open questions of each alignment's newest revision. */
+  /** This session's picks that still apply: open questions of each alignment's newest revision. */
   const picks = createMemo(() => (alignAnswerable() ? prunePicks(picksOf(props.path), aligns()) : {}), {}, { equals: samePicks });
   /** Whether the composer holds typed text or an attachment: the card's button then waits. */
   const [hasDraft, setHasDraft] = createSignal(false);
   const alignAnswer: AlignAnswer = {
     on: alignAnswerable,
     current: (id) => aligns().find((e) => e.doc.id === id)?.doc,
-    picked: (doc, q) => picks()[doc]?.includes(q) ?? false,
-    toggle: (doc, q, on) => togglePick(props.path, doc, q, on),
+    picked: (doc, q) => picks()[doc]?.some((p) => p.q === q && !p.option) ?? false,
+    toggle: (doc, q, on) => choosePick(props.path, doc, q, on ? { q } : null),
+    pickedOption: (doc, q) => {
+      const p = picks()[doc]?.find((x) => x.q === q);
+      if (!p) return undefined;
+      if (p.option) return p.option.index;
+      const question = alignAnswer.current(doc)?.questions.find((x) => x.id === q);
+      return question ? recommendedOption(question) : undefined;
+    },
+    pick: (doc, q, index) => {
+      const question = alignAnswer.current(doc)?.questions.find((x) => x.id === q);
+      if (index === null || !question) choosePick(props.path, doc, q, null);
+      else choosePick(props.path, doc, q, optionPick(question, index));
+    },
     tickBlocked: () => (archivedPane() ? blocked()?.text ?? null : null),
     goBlocked: () => {
       const reason = blocked()?.text;
@@ -1275,7 +1287,6 @@ export function ChatView(props: {
   };
   const thinkingControl: ThinkingControl = {
     level: thinking,
-    known: () => props.summary?.()?.thinking ?? null,
     pending: pendingThinking,
     blocked: thinkingBlocked,
     choose: (level: string) => {
@@ -1291,7 +1302,6 @@ export function ChatView(props: {
   /** The composer flyout's model panel; the header no longer carries a model trigger. */
   const modelControl: ModelControl = {
     model,
-    known: () => props.summary?.()?.model ?? null,
     pending: pendingModel,
     blocked: () => {
       if (live.running) return { title: "Model changes wait until this turn finishes.", body: "Stop or wait, then pick one." };
@@ -1301,11 +1311,10 @@ export function ChatView(props: {
     choose: chooseModel,
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
-  const modeControl: ModeControl = { state: modeState, path: props.path, known: () => props.summary?.()?.mode ?? null };
+  const modeControl: ModeControl = { state: modeState, path: props.path };
   /** The flyout's Sandbox row: the extension answers with a toast and a "sandbox" message. */
   const sandboxControl: SandboxControl = {
     state: sandbox,
-    known: () => (sandboxSaid() ? null : (props.summary?.()?.sandbox ?? null)),
     pending: sandboxPending,
     set: (on) => {
       setSandboxPending(true);
@@ -1592,6 +1601,7 @@ export function ChatView(props: {
           {(list) => (
             <OverseerThreadContext.Provider value={props.overseer ? { answer: (text, card) => send(text, false, [], card) } : null}>
             <AlignAnswerContext.Provider value={alignAnswer}>
+              <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.summary?.()?.cwd; } }}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -1604,6 +1614,7 @@ export function ChatView(props: {
                 older={olderRows.api}
                 liveAlignIds={liveAlignIds()}
               />
+              </ChangesSession.Provider>
               <LiveEntries
                 live={live}
                 author={props.author}
@@ -1684,7 +1695,8 @@ export function ChatView(props: {
         running={live.running}
         compacting={compacting()}
         stopping={live.stopping}
-        detail={live.activity ?? runDetail(live)}
+        activity={live.activity}
+        detail={runDetail(live)}
         workersWorking={workersWorking()}
         workersTotal={workersTotal()}
         workersSplit={workersSplit()}
@@ -1722,6 +1734,7 @@ export function ChatView(props: {
         onJumpAlign={jumpToAlign}
         autofocus={props.autofocus}
         model={modelControl}
+        claudeLogin={claudeLogin}
         thinking={thinkingControl}
         mode={props.overseer || props.summary?.()?.baton || props.summary?.()?.projectOverseer ? null : modeControl}
         sandbox={sandboxControl}

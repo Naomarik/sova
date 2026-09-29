@@ -539,7 +539,42 @@ independent of Delegate:
   `claims/` or `manifest.json`; the session checks its draft and promotes. An
   unavailable model means one retry on the listed fallback, disclosed, else
   asking the user — never a substitute. A writer that can't run at all is
-  rendered as Delegate renders a profile with no worker.
+  rendered as Delegate renders a profile with no worker. The paragraph is the
+  session's alone: a worker is never offered a writer (see **Workers**).
+
+## Workers
+
+A worker is not a chat, and it gets only what its parent's modes mean for it
+(`MINOR_WORKER` in `minor.ts`, a record over every minor mode, so a new one
+cannot compile without deciding):
+
+- **Major modes never reach a worker**: workers spawn no workers, so Delegate
+  has nothing to route there.
+- **`spec` does; `align` and `vis` do not** (a worker's replies are read by its
+  parent session, not rendered for the user). `composeWorkerPrompt` (`prompt.ts`) is the
+  worker-scope minors only: for spec, the `spec-mode.md` block byte for byte,
+  then `SPEC_WORKER_NOTE` (the brief is the go-ahead; the parent promotes unless
+  the brief says otherwise; flags go as one question in the final report).
+  Never the Delegate block, the align block or bridge, the vis guide, or the
+  writer paragraph.
+- **Delivered over the bus** (`events.ts`), like the sandbox's state: the
+  extension emits `mode:worker` `{version: 1, minorModes, prompt?}` whenever the
+  session's state is resolved or switched, at `/mode sync`, and on
+  `mode:worker-discover`. It follows the active modes, not the prompt head: a
+  minor toggle that reaches the chat only as a hidden note reaches the next
+  worker whole. The
+  subagents extension appends `prompt` last to each worker's system prompt at
+  spawn (pi and Claude Code alike), and takes it afresh at a resume. A switch
+  never reaches a running worker.
+- **The worker role.** A worker on its worktree's own agent dir loads that
+  tree's copy of this extension. The worker marker (`subagents/worker-mark.ts`,
+  loaded first) answers `subagents:worker-discover`, which this extension asks
+  at load; answered, it ignores `mode` snapshots on the branch (a `fork` copies
+  the parent's) and `mode.json`, runs normal with the worker-scope minors of
+  `--minor`, never strict, offers no writer and injects `composeWorkerPrompt`
+  (its prompt head is its own; a mode note, if any, carries the worker form).
+  An older extension never asks, and nothing is passed as a flag it would
+  reject.
 
 ## Limits
 

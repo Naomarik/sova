@@ -1,9 +1,17 @@
 import type {
+  VoiceStatus,
+  VoiceTranscript,
+  AutoTitleResponse,
+  SessionTitleSettings,
+  SessionTitleSettingsInfo,
   AgentsInsight,
   SessionsDirInfo,
   AttentionDigest,
   ChatModeResult,
+  ClaudeAccountsInfo,
+  ClaudePoolInfo,
   ClaudeCliStatus,
+  ClaudeLoginFlowState,
   ContextInfo,
   ExtensionInfo,
   ExplanationInfo,
@@ -61,12 +69,14 @@ import type {
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
-import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, OfferLink } from "../../shared/baton";
+import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
+import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
+import type { MonitorHistory, MonitorResolution, MonitorSnapshot } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -207,6 +217,31 @@ export const putSpecSettings = (settings: SpecSettings) =>
 /** Team defaults (Settings → Teams): the coordinator and monitor every new team gets. */
 export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/team");
 
+/** Settings → Accounts: this host's Claude logins in order, their standing, and the add-login flow. */
+export const getClaudeAccounts = () => request<ClaudeAccountsInfo>("/api/claude/accounts");
+/** Start `claude auth login` for a new login; answers once its sign-in URL is out. */
+/** Add a login, or (with `login`) sign an existing one in again on this device. */
+export const startClaudeLogin = (login?: string) =>
+  request<ClaudeLoginFlowState>("/api/claude/accounts/flow", { method: "POST", ...(login ? { body: JSON.stringify({ login }) } : {}) });
+export const setClaudePoolKeeper = (device: string) =>
+  request<ClaudePoolInfo>("/api/claude/pool/keeper", { method: "PUT", body: JSON.stringify({ device }) });
+export const pinClaudePoolLogin = (id: string, pin: string | null) =>
+  request<ClaudePoolInfo>(`/api/claude/pool/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ pin }) });
+export const returnClaudePoolLogin = (id: string) =>
+  request<ClaudePoolInfo>(`/api/claude/pool/${encodeURIComponent(id)}/return`, { method: "POST" });
+export const putClaudePoolOrder = (order: string[]) =>
+  request<ClaudePoolInfo>("/api/claude/pool/order", { method: "PUT", body: JSON.stringify({ order }) });
+/** The code the sign-in page showed; answers once Claude Code finished (or refused it). */
+export const sendClaudeLoginCode = (code: string) =>
+  request<ClaudeLoginFlowState>("/api/claude/accounts/flow/code", { method: "POST", body: JSON.stringify({ code }) });
+export const cancelClaudeLogin = () => request<ClaudeAccountsInfo>("/api/claude/accounts/flow", { method: "DELETE" });
+export const putClaudeLoginOrder = (order: string[]) =>
+  request<ClaudeAccountsInfo>("/api/claude/accounts/order", { method: "PUT", body: JSON.stringify({ order }) });
+export const patchClaudeLogin = (id: string, patch: { enabled?: boolean; label?: string | null }) =>
+  request<ClaudeAccountsInfo>(`/api/claude/accounts/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+export const clearClaudeLogin = (id: string) => request<ClaudeAccountsInfo>(`/api/claude/accounts/${encodeURIComponent(id)}/clear`, { method: "POST" });
+export const removeClaudeLogin = (id: string) => request<ClaudeAccountsInfo>(`/api/claude/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
+
 /** What each worker backend offers for the two roles: the same discovery as Delegate's. */
 export const getTeamOptions = () => request<DelegateOptions>("/api/settings/team/options");
 
@@ -220,6 +255,24 @@ export const getSummarizerSettings = () => request<SummarizerSettingsInfo>("/api
 /** Replace the chain; the file's other keys stay. Sessions started afterwards, here and in the TUI, use it. */
 export const putSummarizerSettings = (settings: SummarizerSettings) =>
   request<SummarizerSettingsInfo>("/api/settings/summarizer", { method: "PUT", body: JSON.stringify(settings) });
+
+/** Settings → Summaries → Session titles: the automatic namer's switch, timing and models (Sova's own file). */
+export const getSessionTitleSettings = () => request<SessionTitleSettingsInfo>("/api/settings/session-titles");
+
+/** Replace the whole file; the sweep picks it up at once. */
+export const putSessionTitleSettings = (settings: SessionTitleSettings) =>
+  request<SessionTitleSettingsInfo>("/api/settings/session-titles", { method: "PUT", body: JSON.stringify(settings) });
+
+/**
+ * Name these sessions with the host's title model (§app.session-list/auto-titles). All `paths`
+ * must live on one host: `request` sends them to that host, as with every path-named route.
+ */
+export const autoTitleSessions = (paths: string[], dryRun = false) =>
+  request<AutoTitleResponse>("/api/sessions/auto-title", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(dryRun ? { paths, dryRun } : { paths }),
+  });
 
 /** One session by id, listed or not (the list omits sessions with no user message). 404: no file has that id. */
 export const getSessionSummaryById = (id: string) => request<SessionSummary>(`/api/sessions/summary?id=${encodeURIComponent(id)}`);
@@ -856,6 +909,23 @@ export const claimMeshLogin = (key: string) =>
 /** Every host's own details (shared/mesh-details.ts), this host first; mesh on only. */
 export const fetchMeshDetails = () => request<MeshDetails>("/api/mesh/details", meshReadInit(true));
 
+/** Where each peer's build sits against this host's boot build, and the last resync job per host (§mesh.peers/resync). */
+export const fetchMeshResync = () => request<MeshResync>("/api/mesh/resync", { cache: "no-store" });
+
+/** Deploy this host's boot build to a peer that is behind: `commit` is the one the sheet showed, refused once it isn't. */
+export const startMeshResync = (id: string, commit: string) =>
+  request<ResyncJob>(`/api/mesh/resync/${encodeURIComponent(id)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ commit } satisfies ResyncStart),
+  });
+
+/** The Resource Monitor's latest tick (§app/resource-monitor); polled only while its modal is open. */
+export const fetchMonitor = () => request<MonitorSnapshot>("/api/monitor", { cache: "no-store" });
+/** Monitor history after `since` (epoch ms): the 5s ring, or the 30s rollups on disk. */
+export const fetchMonitorHistory = (since: number, res: MonitorResolution) =>
+  request<MonitorHistory>(`/api/monitor/history?since=${Math.floor(since)}&res=${res}`, { cache: "no-store" });
+
 /** Rename a host: this one, or a peer (which then tells its own peers). */
 export const putHostLabel = (id: string, label: string) =>
   request<HostRenameResult>("/api/mesh/label", {
@@ -981,17 +1051,19 @@ export const takeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${en
 export const closeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/close`, jsonInit("POST"));
 /** Raise the session's message limit by `by` (the operator, at the limit). */
 export const extendBaton = (sid: string, by: number) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/extend`, jsonInit("POST", { by }));
+/** What a gathering session can do, from its next reply (§app.baton/abilities). */
+export const setBatonAbilities = (sid: string, abilities: Partial<GatheringAbilities>) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/abilities`, jsonInit("POST", abilities));
 /** The host's defaults for new hand-off sessions (Settings → Organizations). */
 export const getBatonSettings = () => request<BatonSettings>("/api/baton/settings");
 export const putBatonSettings = (settings: BatonSettings) => request<BatonSettings>("/api/baton/settings", jsonInit("PUT", settings));
 export const offerBaton = (sid: string, to: string[], question?: string, briefing?: string) =>
-  request<{ links: OfferLink[]; info?: BatonInfo }>(`/api/baton/${encodeURIComponent(sid)}/offer`, jsonInit("POST", { to, ...(question ? { question } : {}), ...(briefing ? { briefing } : {}) }));
+  request<{ links: OfferLink[]; info?: BatonInfo; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/offer`, jsonInit("POST", { to, ...(question ? { question } : {}), ...(briefing ? { briefing } : {}) }));
 export const withdrawOffer = (sid: string) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/offer/withdraw`, jsonInit("POST"));
 /** A fresh link for one invitee of the open offer (their older one stops working). */
 export const inviteeLink = (sid: string, personId: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link?person=${encodeURIComponent(personId)}`);
 /** The operator hands the session to a person ("Hand this session to Bob"). */
 export const handBaton = (sid: string, to: string, question: string, briefing?: string) =>
-  request<{ info?: BatonInfo; link?: string; at?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
+  request<{ info?: BatonInfo; link?: string; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
 export const approvePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/approve`, jsonInit("POST"));
 export const declinePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/decline`, jsonInit("POST"));
 export const orgChanges = (id: string, limit = 50) => request<NamedChange[]>(`/api/orgs/${encodeURIComponent(id)}/changes?limit=${limit}`);
@@ -1010,6 +1082,9 @@ export const promoteDecisions = (orgId: string, projectId: string, ids: string[]
 /** Who decides a decision: a roster decision area or "none" (§app.requirements/owner-area). */
 export const setOwnerArea = (orgId: string, projectId: string, did: string, ownerArea: string) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/decisions/${encodeURIComponent(did)}`, jsonInit("PATCH", { ownerArea }));
+/** A promoted decision edited in the spec: keep the spec's words, or promote the person's again. */
+export const settleSpecText = (orgId: string, projectId: string, did: string, action: "keep" | "restore") =>
+  request<DecisionsInfo>(`${projectBase(orgId, projectId)}/decisions/${encodeURIComponent(did)}/text`, jsonInit("POST", { action }));
 export const routeConflict = (orgId: string, projectId: string, cid: string, to?: string) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/route`, jsonInit("POST", to ? { to } : {}));
 export const resolveConflict = (orgId: string, projectId: string, cid: string, input: ConflictResolveInput) =>
@@ -1054,3 +1129,23 @@ export const mergeCodingWorktree = (orgId: string, projectId: string, sessionId:
   request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
 export const removeCodingWorktree = (orgId: string, projectId: string, sessionId: string) =>
   request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
+
+// ---- voice input (§chat/voice, §app.settings-dialog/voice) ---------------------------------------
+
+/** The voice status, with the setup log after `since`; `size` also measures the voice folder. */
+export const getVoiceStatus = (since = 0, size = false) =>
+  request<VoiceStatus>(`/api/voice?since=${since}${size ? "&size=1" : ""}`, { cache: "no-store" });
+/** Start (or resume) setup: the detected GPU backend, or the CPU. */
+export const installVoice = (backend: "gpu" | "cpu" = "gpu") => request<VoiceStatus>("/api/voice/install", jsonInit("POST", { backend }));
+export const cancelVoiceInstall = () => request<VoiceStatus>("/api/voice/install/cancel", jsonInit("POST"));
+export const repairVoice = () => request<VoiceStatus>("/api/voice/repair", jsonInit("POST"));
+export const uninstallVoice = () => request<{ freed: number }>("/api/voice", jsonInit("DELETE"));
+/** Load whisper while the user speaks; failures surface on the transcribe. */
+export const warmVoice = () => fetch("/api/voice/warm", { method: "POST" }).catch(() => {});
+/** A 16 kHz mono WAV → its text. `hint`: the session folder's name, a prompt word. */
+export const transcribeVoice = (wav: Uint8Array, hint?: string | null) =>
+  request<VoiceTranscript>(`/api/voice/transcribe${hint ? `?hint=${encodeURIComponent(hint)}` : ""}`, {
+    method: "POST",
+    headers: { "Content-Type": "audio/wav" },
+    body: wav as Uint8Array<ArrayBuffer>,
+  });

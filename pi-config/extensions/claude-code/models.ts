@@ -2,6 +2,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process"
 import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import { buildDiscoveryArgv, claudeEnv } from "./transport.ts";
+import { hostLogins } from "./accounts.ts";
 import type { BackendModel } from "../subagents/contracts.ts";
 
 /** Test seams; production callers need only pass an optional abort signal. */
@@ -17,6 +18,12 @@ export interface ClaudeModelDiscoveryOptions {
 	maxOutputBytes?: number;
 	/** Receives the child's closure promise; the caller's result can precede it. */
 	trackClosure?: (closed: Promise<void>) => void;
+	/** The login's environment (accounts.ts); default: this host's first usable login. */
+	loginEnv?: Record<string, string>;
+}
+/** This host's first usable login's environment, or none when the registry cannot be read. */
+function selectedLoginEnv(): Record<string, string> {
+	try { return hostLogins().select().env; } catch { return {}; }
 }
 function record(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -73,12 +80,15 @@ export async function discoverClaudeModels(
 	for (const value of [timeoutMs, eofGraceMs, termGraceMs, pipeDrainMs, maxLineBytes, maxOutputBytes]) {
 		if (!Number.isSafeInteger(value) || value <= 0) throw new Error("Discovery limits/timings must be positive integers");
 	}
-	const env = claudeEnv();
+	// Discovery makes no model request, but it runs on a login like every other spawn.
+	const env = claudeEnv(options.loginEnv ?? selectedLoginEnv());
 	let child: ChildProcess;
 	try {
 		child = (options.spawnImpl ?? spawn)(options.executable ?? "claude", buildDiscoveryArgv(),
 			{ shell: false, detached: process.platform !== "win32", env, stdio: ["pipe", "pipe", "pipe"] });
 	} catch { throw new Error("Could not spawn Claude for model discovery"); }
+	// Its login may not leave this device while it runs (accounts.ts leases).
+	try { hostLogins().leaseChild(env, child); } catch { /* no lease */ }
 	let markClosed!: () => void;
 	const closure = new Promise<void>((resolve) => { markClosed = resolve; });
 	options.trackClosure?.(closure);

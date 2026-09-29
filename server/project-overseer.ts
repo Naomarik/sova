@@ -29,7 +29,8 @@ import { ORG_ABOUT_MAX } from "../shared/orgs";
 import { clockTime } from "../pi-config/extensions/stamp/format.ts";
 import type { SessionSummary } from "../shared/protocol";
 import { type BatonEvent, onBatonEvent } from "./baton-events";
-import { allBatons, batonById, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
+import { allBatons, batonById, closeBaton, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
+import { scheduleWrapup } from "./baton-loadout";
 import { noteBuildMerged } from "./build-merged";
 import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, registerSpecialLoadout, setOpeningChoice, type ChatSession } from "./chat-manager";
 import { PROCESS_START, shuttingDown } from "./wrapup-recovery";
@@ -37,6 +38,7 @@ import { listModels } from "./models";
 import { workingSubagents } from "./live";
 import { mergeMode } from "./mode-state";
 import { baseCodingMode, codingModeChoice, describeCodingMode, type ModeRequest } from "./project-coding-mode";
+import { baseAbilities, overseerAbilities } from "./gathering-abilities";
 import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, WorktreeRefusal } from "./project-worktrees";
 import {
   archivedOverseerRefusal,
@@ -73,7 +75,7 @@ import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
 import { getSessionSummary, indexedSessionPaths, listSessions } from "./sessions-index";
 import { setArchived } from "./archived-sessions";
-import { readView } from "./share/hub";
+import { readView, refreshShare } from "./share/hub";
 import { normalizeEntries, readActiveBranch } from "./transcript";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
@@ -378,6 +380,7 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
     history,
     settings,
     codingModeNow: baseCodingMode(settings.codingMode, project.root),
+    gatheringAbilitiesNow: baseAbilities(settings.gatheringAbilities),
     worktrees: { available: !("reason" in repo), ...("reason" in repo ? { reason: repo.reason } : {}), sessions: trees },
     effective: effectiveAutonomy(settings, readRoster(orgId), overseerPausedSince(orgId, projectId)),
     paused: overseerPausedSince(orgId, projectId),
@@ -515,6 +518,7 @@ function toolHost(rt: Rt): PoToolHost {
         goal: input.goal,
         question: input.question,
         ...(await gatheringChoice(orgId, projectId, input)),
+        abilities: input.abilities,
         owner: { overseerOf: projectId },
         mintLink: false,
       });
@@ -522,9 +526,16 @@ function toolHost(rt: Rt): PoToolHost {
       noteStarted(paths, made.sessionId, to.length > 1 ? "offer" : "gathering");
       return { sessionId: made.sessionId, path: made.path, invited: to.map((ref) => nameOf(orgId, ref)) };
     },
+    async closeGathering(sessionId) {
+      // As the operator's Close does (POST /api/baton/:sid/close): closed, its share page told, the wrap-up scheduled.
+      closeBaton(sessionId);
+      refreshShare(sessionId);
+      scheduleWrapup(sessionId);
+    },
     decideReferral: async (personId, approve) => decidePerson(orgId, personId, approve, { kind: "overseer", sessionId: readPoState(paths)?.current ?? "" }),
     sessions: () => listSessions(),
     transcript: async (path) => normalizeEntries(await readActiveBranch(path)),
+    gatheringAbilities: (arg) => overseerAbilities(arg, baseAbilities(settings().gatheringAbilities)),
     codingMode(req) {
       const s = settings();
       return codingModeChoice(req, baseCodingMode(s.codingMode, projectOf(orgId, projectId).root), s.codingMode);

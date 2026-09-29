@@ -39,8 +39,8 @@
 - **Head title.** Uses `.session-head-title`, a single line with the full text in `title`. The
   `h1` is sized as a heading-s on purpose: the page is dense and the title is chrome, not a
   display headline.
-- **What the head holds.** Back, the title block, the context gauge (§chat/context-window), the mode switch
-  (§chat/mode-menu), the working count and the `TUI` chip, and Archive. Nothing else: the model and the session's
+- **What the head holds.** Back, the title block, the context readout (§chat/context-window), the remote
+  chips, the `TUI` chip and Session details. No subagents or team chip (§app/insights). Nothing else: the model and the session's
   own facts moved into the composer (§chat/composer, §chat/images), which is where the session is acted on.
 - **Model.** Chat sessions read it off the composer's model indicator (§chat/composer) and change it in the
   flyout's Model row (§chat/images); neither is in the head. Watch sessions keep it in
@@ -493,16 +493,54 @@ Driven by `ChatServerMessage.event`.
   `text_delta` appends into its body; `thinking_delta` feeds a streaming `.disclosure` placed
   before it. `toolcall_start` adds a `.toolcard` with the Running chip.
 - **Run status.** Above the textarea, inside `.composer-inner`:
-  `<p class="run-status"><span class="live-dot"></span>Working<span class="run-status-detail">· running bash</span></p>`.
-  The detail names the current tool, or says "· thinking" or "· writing". This is the loading
-  pattern: say what's happening. The row is shared: it also carries the subagents trigger (§app/subagents-pane)
+  `<p class="run-status"><span class="live-dot"></span><span class="run-status-state" title="Working · running bash"><span class="icon icon-sm run-status-narrow" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="run-status-say">Working<span class="run-status-detail">· running bash</span></span></span></p>`.
+  **One live dot leads the row whenever the session has work in flight**: a turn, Stopping, a
+  rare state such as "Retrying after a provider error", a compaction, or at least 1 subagent
+  working, the parent idle included. It is the row's first child and its only pulse: nothing else
+  in the row carries a dot or moves (the subagents trigger shows a static ring, §app/subagents-pane).
+  With nothing in flight the row has no dot.
+  It is **one line at every width**, in one of two forms picked by the composer's own width (its
+  `composer` container, with a `@media` floor). Both forms' markup is always there; CSS alone
+  picks, so nothing moves when one gives way to the other.
+  - **Wide** (a composer 620px wide or more): words. The dot, "Working", and the detail
+    in mono, muted: "· running bash", "· thinking", "· writing", nothing between blocks. This is
+    the loading pattern: say what's happening. A detail longer than the room (a long tool name)
+    ends in an ellipsis rather than pushing anything; the whole text is the tooltip.
+  - **Narrow** (under 620px): icons. The dot says work is in flight and one icon after it says what
+    the turn is doing: `bulb.svg` while it thinks, `pencil.svg` while it writes, `wrench.svg` while
+    it runs a tool (never the tool's name), none between blocks. The same words are visually hidden
+    and are the tooltip.
+  620px was measured, not chosen: it was the narrowest composer content width where the whole
+  wide row — "● Working · running agent_spawn", "● 1 subagent ›", "1 align · 0/8 decided",
+  "3 inputs ›" — fitted with nothing truncated at the Medium text size. With the subagents
+  trigger's words ("◔ 1 of 5 subagents working ›") that row needs 712px; between the two the
+  wide form's detail gives way ("· runni…" at 620px) as a long tool name's does, and the rest stays
+  whole. Any threshold from 620px to 672px sorts the devices the same way, so it stays: the
+  desktop and the Fold's open portrait at 704px (672px of composer) get words; phones, the cover
+  screen, the open portrait at 616px and both open landscapes (933px and 816px, beside the
+  sidebar) get icons.
+  **Screen readers hear the words once in either form**: the one words span is visible in the wide
+  form and visually hidden in the narrow one, and the icon and the dot are `aria-hidden`.
+  **Stopping and the rare states keep their words in both forms**, after the dot: "Stopping…",
+  "Compacting context", "Retrying after a provider error". Short of room they end in an ellipsis,
+  with the whole text in the tooltip; in the narrow form they give way first, down to about 4em of
+  their words. The row is shared: it also carries the subagents trigger (§app/subagents-pane)
   and the inputs trigger ("7 inputs", which opens the Timeline with Inputs Only on, §chat/timeline), and it
   renders whenever any of the three has something to show,
-  so an idle session with messages still has one. While the parent's own turn runs, the subagents
-  trigger rides along with the counts alone (`Working · 2 subagents…`), because the row already
-  says it is working; once the parent settles it goes back to naming them in full (`§app/subagents-pane`).
+  so an idle session with messages still has one. The subagents trigger follows the same two forms
+  (words wide, its ring and a count narrow, §app/subagents-pane). The triggers never shrink, so none
+  runs its words into the next. The alignment chip doesn't either, except in the narrow form once
+  nothing else can give: its count then ends in an ellipsis ("1 align · 0/8…"), its full text still
+  its accessible name. At 344px that is every state with the subagents trigger and the inputs
+  trigger beside it; at 390px only a rare state's.
+  **Nothing moves.** The row is 20px tall whatever it carries (the triggers' net height) with its
+  own 16px bottom margin, so the textarea and the composer keep their place between idle and
+  working and as the step changes. The row's gap and each trigger's inline padding are 8px in the
+  wide form; in the narrow one they are 6px and a trigger's parts sit 4px apart, so a working row
+  with the subagents trigger, the alignment chip and the inputs trigger stays on one line inside
+  the composer at 344px.
 - **End of turn** (`agent_settled`, or `agent_end` if that's all you get). Remove the live dots
-  and the run status. Replace the optimistic items with the server's canonical ones if it sends
+  and the run status; the row's one dot stays while a subagent still works. Replace the optimistic items with the server's canonical ones if it sends
   them. Announce "Reply finished." in the polite live region; announce nothing per delta.
 - **A turn that errors** (`type:"error"`, not a refusal) announces "The turn stopped with an
   error." — the banner's own title, so the failure is heard wherever the banner isn't being read:
@@ -638,12 +676,7 @@ machine. Nothing that's held is virtualized.
   row's single image counts at the height its box will have
   (§chat.images/thread-thumbnails), two or more at an estimate of their rows of tiles. A
   row being pointed at, focused or revealed (§chat.transcript/message-actions) is always drawn
-  whole. So is every row in the view of a transcript that follows its end, from the frame it is
-  put there: when the view goes to the end (opening, new rows, a row growing), the rows then in
-  view are drawn at once, the view goes back to the end, and again while that brings rows not
-  yet drawn into view — all before the frame is painted, so opening a transcript never shows its
-  last rows at their estimates and then grows them in place. Such a row is skipped again, at the
-  height it was drawn at, once it has left the view.
+  whole.
 - **Jumps build their target first.** Whether an entry can be jumped to is asked of the rows the
   thread renders, not of what is built. Every jump builds the rows down from its target if the
   fill hasn't reached it, then scrolls and tints as before (§chat.timeline/jumping): a Timeline
@@ -1175,14 +1208,11 @@ repository around the folder. Two of its figures:
 - **Tool card.** `--color-sunken`, `--r-lg`, and `--font-mono` / `--fs-mono`. Name `--fw-semibold`
   in `--color-ink`; arg `--color-ink-muted`. `pre` sits on `--color-surface` with `--r-sm`.
   Section labels use eyebrow styling (`--fs-micro`, `--ls-eyebrow`).
-- **Tool card file content.** `write` content, each `edit` pair ("Replaced" / "With", "· n of
-  m" when several), and `read` output are highlighted by file path (never auto-detected) in
-  `pre.toolcard-code`: back on `--color-sunken`, where the syntax colors were checked, with
-  `--color-ink` and no wrapping. The path shows above in `.toolcard-path` (mono, ink-muted).
-  Edit blocks add a 3px left rule: `.toolcard-code-del` in `--diff-del-ink`,
-  `.toolcard-code-add` in `--diff-add-ink`; the label carries the meaning. Copy Code on write
-  content and on each "With" block. Unknown extensions, errors, and args still streaming stay
-  plain.
+- **Tool card file content.** `write` content and each `edit` show as a diff
+  (§chat.changes/tool-card-diff, drawn per §chat.changes/diff-renderer). `read` output is
+  highlighted by file path (never auto-detected) in `pre.toolcard-code`: back on
+  `--color-sunken`, where the syntax colors were checked, with `--color-ink` and no wrapping.
+  Unknown extensions, errors, and args still streaming stay plain.
 - **Info row.** `--fs-caption` in `--color-ink-muted`, with rules in `--color-border`.
 - **Banners.**
   - Info: `--status-info-bg` with a `--status-info` icon.

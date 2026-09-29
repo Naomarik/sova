@@ -15,6 +15,12 @@ import { spawn } from "node:child_process";
 import type { Summarizer, SummarizeInput, SummarizerResult, SummarizerSpec } from "../types.ts";
 import { SummarizerError } from "../types.ts";
 import { buildPrompt, parseSummarizerJson } from "./chain.ts";
+import { claudeBaseEnv, hostLogins } from "../../claude-code/accounts.ts";
+
+/** This host's first usable Claude login's environment (CLAUDE_CONFIG_DIR, or none for `default`). */
+function loginEnv(): Record<string, string> {
+  try { return hostLogins().select().env; } catch { return {}; }
+}
 
 interface ClaudeEnvelope {
   type?: string;
@@ -43,10 +49,12 @@ export function createClaudeCliSummarizer(spec: SummarizerSpec, claudeBin: strin
           reject(new SummarizerError(`cannot create temp dir: ${String(error)}`));
           return;
         }
-        const env = { ...process.env } as Record<string, string | undefined>;
+        // Less an inherited CLAUDE_CONFIG_DIR naming a login's directory: `default` is ~/.claude.
+        const env = claudeBaseEnv(process.env) as Record<string, string | undefined>;
         delete env.CLAUDECODE;
         delete env.CLAUDE_CODE_ENTRYPOINT;
         delete env.CLAUDE_AGENT_SDK_VERSION;
+        Object.assign(env, loginEnv());
         const args = [
           "-p",
           "--model", spec.model,
@@ -66,6 +74,8 @@ export function createClaudeCliSummarizer(spec: SummarizerSpec, claudeBin: strin
           reject(new SummarizerError(`failed to spawn claude: ${String(error)}`));
           return;
         }
+        // Its login may not leave this device while it runs (claude-code accounts.ts leases).
+        try { hostLogins().leaseChild(env as Record<string, string | undefined>, child); } catch { /* no lease */ }
         const settle = (error: Error | undefined, value?: SummarizerResult) => {
           if (settled) return;
           settled = true;

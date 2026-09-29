@@ -213,8 +213,9 @@ writes a byte into a session file. All writes are atomic tmp+rename.
 - Changes are sent when a store is written or a pane attaches, and the server compares every 5 s
   while a feed is connected, so a turn that starts in a TUI clears its mark.
 - The same comparison sends `list_changed` (no payload; never on connect) when a session appears
-  in or leaves the list, or a row's live record, running state, last activity or archived flag
-  changes. The sidebar then reads the list again: at once if its last such read was at least a
+  in or leaves the list, or a row's live record, running state, last activity, archived flag or
+  title changes (a stored title changes in Sova's title store, never in the file: the Overseer's
+  rename, the automatic namer's, §app.session-list/auto-titles). The sidebar then reads the list again: at once if its last such read was at least a
   second ago, otherwise once, a second after that read, however many more arrive meanwhile. It
   also reads the list after every reconnect of the feed, since the list may have changed while
   the socket was down. The feed adds no polling of its own. So a session started in a TUI reaches

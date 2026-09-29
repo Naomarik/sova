@@ -80,7 +80,7 @@ import {
 } from "./coordination.ts";
 import { MCP_SERVER_NAME } from "./member-mcp.ts";
 import { WorkerRegistryRecorder, type WorkerLaunchSpec } from "./registry.ts";
-import { readWorkerManifests, resolvedModel, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
+import { manifestModes, readWorkerManifests, resolvedModel, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
 import { defaultWorkerTranscriptAdapters } from "./adapters/index.ts";
 import { RestoredWorker, isRestored } from "./restored.ts";
 import { WorkerHosting, detachRequested, type HostingOptions } from "./hosting.ts";
@@ -96,6 +96,7 @@ import {
 } from "../remote/workers.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
+import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
 import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.ts";
 import { LEDGER_ENV, ledgerPath } from "../mode/spec-guard.ts";
 import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
@@ -412,7 +413,7 @@ interface BatchRequest {
 	 * session idle (SpawnOptions.resume). Its id and group are kept, no ID is reserved, it is never
 	 * hosted, and its durable record is written only once it is up (resumeWorker).
 	 */
-	resume?: { id: string; groupId: string; groupLabel: string; sessionId?: string; sessionFile?: string };
+	resume?: { id: string; groupId: string; groupLabel: string; sessionId?: string; sessionFile?: string; startedAt?: number };
 }
 /** What a member's identity carries beyond its team (mailbox.ts MemberContext). */
 interface TeamIdentity { role: string; orchestrator: boolean; duty?: MemberDuty; coordinated?: boolean; successorOf?: string }
@@ -613,14 +614,24 @@ export function registerSubagents(
 	});
 	pi.events?.emit(SANDBOX_DISCOVER_EVENT, { version: 1 });
 	// The session's active modes (pi-config's mode extension, announced on every change): while spec
-	// is on, a code-writing worker gets the worker spec brief, and a claude-code one the spec hooks.
+	// is on, a code-writing worker gets the spec census and line check (the hooks, or spec-worker.ts), and
+	// the worker spec brief when its mode prompt (below) doesn't already carry the spec block.
 	let specOn = false;
-	const unregisterModeListener = pi.events?.on(MODE_STATE_EVENT, (data: unknown) => {
+	const unregisterModeStateListener = pi.events?.on(MODE_STATE_EVENT, (data: unknown) => {
 		const e = data as ModeStateEvent | undefined;
 		if (!e || e.version !== 1 || !Array.isArray(e.minorModes)) return;
 		specOn = e.minorModes.includes("spec");
 	});
 	pi.events?.emit(MODE_DISCOVER_EVENT, { version: 1 });
+	// What this session's workers get of its modes (the mode extension's MODE_WORKER_EVENT,
+	// §chat.mode-menu/workers): the newest announcement, appended at spawn as it is. Nothing here
+	// interprets the text; without the mode extension there is none.
+	let modeWorker: ModeWorkerEvent | undefined;
+	const unregisterModeListener = pi.events?.on(MODE_WORKER_EVENT, (data: unknown) => {
+		const e = parseModeWorkerEvent(data);
+		if (e) modeWorker = e;
+	});
+	pi.events?.emit(MODE_WORKER_DISCOVER_EVENT, { version: 1 });
 	const remoteSessionFor = (ctx: ExtensionContext): RemoteSessionEvent | undefined => remoteSession ?? remoteOfPlaceholder(ctx.cwd);
 	/** One line in agent_spawn/agent_list output: the proof that this session's workers run on the target (absent in a local session). */
 	const remoteNotice = (ctx: ExtensionContext): string => {
@@ -664,6 +675,11 @@ export function registerSubagents(
 	const registry = new WorkerRegistryRecorder((customType, data) => pi.appendEntry(customType, data), lifetimeUsage);
 	// Each published worker's launch spec, written once with its first record (resume needs it).
 	const launches = new WeakMap<Worker, WorkerLaunchSpec>();
+	// The minor modes each worker of this process was given at its start (§chat.mode-menu/workers),
+	// published with it and written to its record; empty when none.
+	const workerModes = new WeakMap<Worker, string[]>();
+	/** What a worker was given: its start's, else (restored) its record's; undefined when unknown. */
+	const modesOf = (a: Worker): string[] | undefined => workerModes.get(a) ?? (isRestored(a) ? manifestModes(a.manifest) : undefined);
 	// Hosted workers re-adopted with a cwd this session no longer allows (§chat.worktrees/workers):
 	// kept running, flagged in agent_list.
 	const outsideWorktrees = new Set<string>();
@@ -812,7 +828,10 @@ export function registerSubagents(
 			status: a.status,
 			...(a.model === undefined ? {} : { model: a.model }),
 			preview: (a.error || a.finalOutput() || "No response yet.").slice(0, WORKER_PREVIEW_CHARS),
-			// Additive presence fields (still version 1). Never cwd, pid, or task text.
+			// Additive presence fields (still version 1). Never cwd or task text.
+			// The live process's pid is in-process only: the sessions extension's decodeSnapshot
+			// whitelists fields and never writes it to the live record; Sova's resource monitor reads it.
+			...(a.processAlive && Number.isSafeInteger(a.pid) && a.pid! > 0 ? { pid: a.pid } : {}),
 			...(typeof a.backend === "string" && a.backend ? { backend: a.backend } : {}),
 			// Transcript path and backend session id only, never the transcript itself.
 			...(typeof a.sessionFile === "string" && a.sessionFile ? { sessionFile: a.sessionFile } : {}),
@@ -821,6 +840,8 @@ export function registerSubagents(
 			// then the child's own reported level; claude-code: resolved, "medium" by default).
 			// Absent when the manager never learned one, e.g. a re-adopted worker spawned without it.
 			...(typeof a.effort === "string" && a.effort ? { effort: a.effort } : {}),
+			// The minor modes it was given at its start; absent when none (or unknown).
+			...(modesOf(a)?.length ? { modes: [...modesOf(a)!] } : {}),
 			...teamField(a.id),
 			...timestamps(a),
 			...(a.taskOutcome === "success" || a.taskOutcome === "error" || a.taskOutcome === "aborted"
@@ -828,6 +849,10 @@ export function registerSubagents(
 			// Token counts this worker has used so far (cumulative, both backends);
 			// a worker that has spent nothing yet carries no usage at all.
 			...(isRestored(a) && a.usageSource === "none" ? {} : usageField(a)),
+			// Model replies so far, across resumes; top-level so the record's usage trim keeps it.
+			// Unknown (a restored worker whose transcript and snapshot never counted them) publishes
+			// nothing, never 0.
+			...(isRestored(a) && !a.turnsKnown ? {} : { turns: lifetimeUsage(a).turns }),
 			...restoredFields(a),
 		})),
 	});
@@ -1104,8 +1129,17 @@ export function registerSubagents(
 		let worktreeSet: WorktreesActive | undefined;
 		try { worktreeSet = remote ? undefined : restoreWorktrees(ctx.sessionManager.getBranch()); }
 		catch { worktreeSet = undefined; }
-		const prepared = specs.map((spec) => {
+		// The parent's worker modes as they are now: a snapshot for this batch, which a later switch never
+		// reaches. A resume takes them afresh too (the spec's raw systemPrompt never carries them).
+		const modesNow = modeWorker;
+		const prepared = specs.map((spec, index) => {
 			if (!spec.prompt.trim()) throw new Error("Task must not be blank.");
+			// A team's monitor has no tools to follow them with; a worker on its worktree's own agent dir
+			// gets them from that tree's mode extension (below), never twice.
+			const modes = request.team?.members[index]?.duty === "monitor" || spec.useWorktreeConfig ? undefined : modesNow;
+			const modePrompt = modes?.prompt;
+			// The mode prompt already carries spec mode's whole worker block: the brief would repeat it.
+			const specInPrompt = Boolean(modePrompt && modes?.minorModes.includes("spec"));
 			const backendId = spec.backend ?? "pi";
 			// Remote session: the worker's cwd is a FAR path; its local cwd is the placeholder that
 			// stands for it (created if the spec names another far directory), which exists but is
@@ -1171,20 +1205,23 @@ export function registerSubagents(
 						env: { MCP_TOOL_TIMEOUT: String(REMOTE_MCP_TOOL_TIMEOUT_MS) },
 					};
 				}
-				// Spec on: a code-writing Claude worker gets the brief, plus the hooks that run census after
-				// each tool call and check its reply's last line (claude-code/spec-hooks.ts). Remote workers'
-				// files are on the target, out of the local tools' reach.
+				// Spec on: a code-writing Claude worker gets the hooks that run census after each tool call and
+				// check its reply's last line (claude-code/spec-hooks.ts), and the brief unless its mode prompt
+				// carries the spec block. Remote workers' files are on the target, out of the local tools' reach.
 				if (specOn && !remote && backendId === "claude-code" && writesCode(prepared.tools ?? spec.tools ?? DEFAULT_CLAUDE_TOOLS)) {
 					const settingsJson = (prepared as { settingsJson?: string }).settingsJson;
 					prepared = {
 						...prepared,
-						systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, workerSpecBrief(SPEC_CORE_DIR)].filter(Boolean).join("\n\n"),
+						...(specInPrompt ? {} : { systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, workerSpecBrief(SPEC_CORE_DIR)].filter(Boolean).join("\n\n") }),
 						// Its git operations go to this session's ledger, so the parent counts a worker's commit in its own tree.
 						settingsJson: withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir: path.join(agentDir(), SPEC_HOOK_STATE), ledger: ledgerPath(agentDir(), ctx.sessionManager.getSessionId?.() || unsavedSessionKey) })),
 					} as typeof prepared;
 				}
+				// Last, after the brief and any remote instructions: the prompt the runner uses is this one.
+				if (modePrompt) prepared = { ...prepared, systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, modePrompt].filter(Boolean).join("\n\n") };
 				return { spec, cwd, model: spec.model, tools: remote ? [] : spec.tools, systemPrompt: spec.systemPrompt,
-					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp, ledger: undefined };
+					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp, ledger: undefined,
+					givenModes: modePrompt ? [...modes!.minorModes] : [] };
 			}
 			if (spec.backendOptions !== undefined) throw new Error("backendOptions are not supported by the pi backend.");
 			const definition = spec.agentType !== undefined ? loadDefinition(spec.agentType) : undefined;
@@ -1247,13 +1284,15 @@ export function registerSubagents(
 				tools,
 				extensions,
 				forkSession,
-				systemPrompt: [definition?.systemPrompt, spec.systemPrompt, specWorker ? workerSpecBrief(SPEC_CORE_DIR) : undefined].filter(Boolean).join("\n\n") || undefined,
+				systemPrompt: [definition?.systemPrompt, spec.systemPrompt, specWorker && !specInPrompt ? workerSpecBrief(SPEC_CORE_DIR) : undefined, modePrompt].filter(Boolean).join("\n\n") || undefined,
 				flags: piFlags,
 				remoteMcp: undefined,
 				treeConfig,
 				// A spec-on pi worker (the census hook, or its worktree's whole mode extension) logs its git
 				// operations to this session's ledger (mode/spec-guard.ts LEDGER_ENV).
 				ledger: specOn && !remote && (specWorker || treeConfig) ? ledgerPath(agentDir(), ctx.sessionManager.getSessionId?.() || unsavedSessionKey) : undefined,
+				// A tree-config worker is started with spec on (modeFlags); older records say nothing.
+				givenModes: treeConfig ? [modeFlags!.minor] : modePrompt ? [...modes!.minorModes] : [],
 			};
 		});
 		const resuming = request.resume;
@@ -1269,7 +1308,7 @@ export function registerSubagents(
 		const launched: string[] = [];
 		const earlySettled = new Set<Worker>();
 		try {
-			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig, ledger }] of prepared.entries()) {
+			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig, ledger, givenModes }] of prepared.entries()) {
 				for (let i = 0; i < (spec.count ?? 1); i++) {
 					const base = spec.name ?? spec.agentType ?? "agent";
 					const id = resuming ? resuming.id : `ag_${String(++counter).padStart(2, "0")}`;
@@ -1323,7 +1362,7 @@ export function registerSubagents(
 							...(treeConfig ? { sessionDir: treeConfig.sessionDir, approve: true } : {}),
 							...(Object.keys(mcpServers).length ? { mcpServers } : {}),
 							...hosted,
-							...(resuming ? { resume: { ...(resuming.sessionId ? { sessionId: resuming.sessionId } : {}), ...(resuming.sessionFile ? { sessionFile: resuming.sessionFile } : {}) } } : {}),
+							...(resuming ? { resume: { ...(resuming.sessionId ? { sessionId: resuming.sessionId } : {}), ...(resuming.sessionFile ? { sessionFile: resuming.sessionFile } : {}), ...(resuming.startedAt ? { startedAt: resuming.startedAt } : {}) } } : {}),
 							id,
 							groupId,
 							name,
@@ -1339,6 +1378,7 @@ export function registerSubagents(
 					);
 					group.agents.push(runner);
 					hosting.bind(id, runner);
+					workerModes.set(runner, givenModes);
 					// What resume needs to start it again: the raw spec (resolved again against the
 					// session's state at resume time, like a spawn), with pi's inherited model written out.
 					launches.set(runner, {
@@ -1403,7 +1443,7 @@ export function registerSubagents(
 		// backend and transport gets its durable record; a resumed one once it is up.
 		if (!resuming) group.agents.forEach((worker, i) => {
 			const member = request.team?.members[i];
-			registry.track(worker, member && { teamId: request.team!.teamId, role: member.role, ...(member.orchestrator ? { orchestrator: true } : {}) }, launches.get(worker));
+			registry.track(worker, member && { teamId: request.team!.teamId, role: member.role, ...(member.orchestrator ? { orchestrator: true } : {}) }, launches.get(worker), workerModes.get(worker));
 		});
 		// Synchronous startup failures now have registered IDs; discarded batches
 		// never wake the parent. Only replay callbacks for returned workers.
@@ -2291,6 +2331,9 @@ export function registerSubagents(
 		const base = current
 			? lifetimeUsage(current)
 			: view ? { input: view.view.usage.input, output: view.view.usage.output, cacheRead: view.view.usage.cacheRead, cacheWrite: view.view.usage.cacheWrite, cost: view.view.usage.cost ?? 0, turns: view.view.usage.turns ?? 0 } : undefined;
+		// Its first spawn, kept across the resume: the listed entry's, else its view's transcript
+		// start, else the first record's time.
+		const startedAt = current?.startedAt ?? view?.view.summary?.startedAt ?? manifest.firstAt;
 		const groupLabel = current ? (groups.find((g) => g.id === current.groupId)?.label ?? `${current.groupId} · resumed`) : `${manifest.groupId ?? "run_restored"} · resumed`;
 		resumingIds.add(id);
 		// Never two entries with one ID (the live record refuses duplicate IDs): the earlier one
@@ -2300,7 +2343,7 @@ export function registerSubagents(
 		try {
 			const group = await spawnBatch(ctx, {
 				specs: [spec], team,
-				resume: { id, groupId: manifest.groupId ?? current?.groupId ?? "run_restored", groupLabel, ...identity },
+				resume: { id, groupId: manifest.groupId ?? current?.groupId ?? "run_restored", groupLabel, ...identity, ...(startedAt ? { startedAt } : {}) },
 			}, signal);
 			worker = group.agents[0];
 			if (base) usageBase.set(worker, base);
@@ -2322,7 +2365,7 @@ export function registerSubagents(
 				if (!failed.isFinished()) void failed.kill("resume did not come up");
 				throw new Error(`Could not resume ${id}: ${reason}`);
 			}
-			registry.resumed(worker);
+			registry.resumed(worker, workerModes.get(worker));
 			restoredViews.delete(id);
 			wakeRejoinedMonitor(worker);
 			return worker;
@@ -2398,6 +2441,7 @@ export function registerSubagents(
 			"Tell a worker whose report may run past about 3,500 characters to write it to a file and end with that file's path plus a short summary; the completion message quotes only the first 4,000 characters.",
 			"For Pi workers, pass extensions: [\"npm:pi-web-access\"] for web tools or fork: true for conversation history; these options are not supported by Claude workers.",
 			"A worker starts only in this session's cwd or inside an active worktree the session tracks (the worktree tool); a pi worker started inside a worktree can write only there. useWorktreeConfig: true runs a pi worker on that worktree's own .agent.",
+			"While this session's spec minor mode is on, every worker you start (a team's monitor excepted) gets the spec block and a worker note in its system prompt: brief it with the relevant passages, not the discipline.",
 			"Use agent_spawn with backend: \"claude-code\" to delegate to Claude Code when its extension is installed. Claude uses its own model IDs (e.g. sonnet, opus), native tools, and backendOptions permission/settings policy; it does not inherit Pi's model, effort, tools, or history.",
 			"Claude workers default to bypassPermissions (no permission prompts); set backendOptions.permissionMode to acceptEdits, manual, dontAsk, or plan for a restrictive policy. Do not assume a queued follow-up has executed; inspect agent_list or agent_transcript.",
 		],
@@ -3472,6 +3516,7 @@ export function registerSubagents(
 		unregisterRemoteListener?.();
 		unregisterSandboxListener?.();
 		unregisterModeListener?.();
+		unregisterModeStateListener?.();
 		unregisterDialogListener?.();
 		backends.clear();
 		activeCtx = undefined;

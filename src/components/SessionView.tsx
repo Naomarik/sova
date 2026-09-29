@@ -1,19 +1,19 @@
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
-import type { SessionSummary, WorkerInfo } from "../../shared/protocol";
+import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../../shared/protocol";
 import { agentsFeed } from "../lib/agents-feed";
-import { agentsHref, teamKey, teamPause, teamPulse } from "../lib/insights";
+import { teamPulse } from "../lib/insights";
 import { relativeTime, shortModel } from "../lib/format";
 import { sourceBlocked } from "../lib/fanout";
 import { createPaneInsight } from "../lib/pane-insight";
 import { explanationsFeed } from "../lib/explanations-feed";
-import { busiestLiveTeam, headTeam, knownAgents, knownExplanations, knownOutline, knownWorkers } from "../lib/known-before-mount";
+import { knownExplanations, knownOutline, knownWorkers } from "../lib/known-before-mount";
 import { PaneScopeProvider, type PaneScope } from "../lib/pane-scope";
 import { cwdLabel } from "../lib/remote-session";
 import type { RewindControl } from "../lib/inputs";
 import { activeTab, home } from "../lib/ui-state";
 import { sessionWorking, formatCost, type UsageTotalView, workingSplit } from "../lib/workers";
 import { ChatView, type ChatRefusal, type OverseerChat } from "./ChatView";
-import { ContextGauge, ContextMetaPrefix, contextDescribedBy } from "./ContextGauge";
+import { ContextGauge, contextDescribedBy } from "./ContextGauge";
 import { InsightStrip } from "./InsightStrip";
 import { createProjectOverseerControl, ProjectOverseerHead } from "./ProjectOverseerHead";
 import { RemoteChip, RemoteHeadChip } from "./RemoteStatus";
@@ -21,7 +21,7 @@ import type { PaneInsight, TabId } from "./SessionPane";
 import type { FanoutSource } from "./FanoutDialog";
 import type { ForkMarker } from "./Thread";
 import { WatchView } from "./WatchView";
-import { Banner, Chip, CountChip, Icon } from "./ui";
+import { Banner, Chip, Icon } from "./ui";
 import { hostLabel, hostOf } from "../lib/mesh";
 import { HostScopeProvider } from "../lib/host-scope";
 
@@ -36,9 +36,6 @@ export type Decision =
 
 /** While a session is watched, poll the list so live status (and TUI exit) shows up on its own. */
 const WATCH_POLL_MS = 10_000;
-
-/** The compact worker chip says its count in words for AT and on hover: "3 subagents working now". */
-const subagentsWorkingNow = (n: number) => `${n} ${n === 1 ? "subagent" : "subagents"} working now`;
 
 /**
  * One session on screen: its head, its outline strip, and either the chat or the read-only watch
@@ -86,6 +83,9 @@ export function SessionView(props: {
   onInsight(path: string, insight: PaneInsight | null): void;
   /** This chat's live subagents and its Σ; null list as the chat goes away. */
   onWorkers(path: string, workers: WorkerInfo[] | null, usage: UsageTotalView | null): void;
+  /** This chat's Claude login (ChatView's "claude_login"), keyed by path like onWorkers; null as
+      the chat reconnects or goes away. */
+  onClaudeLogin?(path: string, login: ChatClaudeLogin | null): void;
   /** This chat's turn-error state, keyed by path like onWorkers: the latest
    *  turn-error message, or null when there is none. State, not events — the workspace's roll-up
    *  pairs a word with colour without panning every pane, and without it a failed member reads
@@ -175,23 +175,15 @@ export function SessionView(props: {
   props.onInsight(path, insight);
   onCleanup(() => props.onInsight(path, null));
   // A team event (pause, resume, handover) or a working count can change with no turn of this
-  // session's own and no pane open: follow the #/agents poll, so the head chip is never staler
-  // than that page. A memo, so only a changed value reloads (the feed's objects are rebuilt).
+  // session's own and no pane open: follow the #/agents poll, so what this view says of its
+  // teams and workers is never staler than that page. A memo, so only a changed value reloads (the feed's objects are rebuilt).
   // loadInsight, not reloadInsight: nothing here says the transcript moved (no `changed` bump).
   const pulse = createMemo(() => teamPulse(agentsFeed(), path));
   createEffect(on(pulse, () => void loadInsight(), { defer: true }));
 
   const working = () => sessionWorking(s());
-  /** The session as the #/agents poll has it, while the insight hasn't loaded: a running
-      session's teams and workers are known there before this view's own read (lib/known-before-mount). */
-  const polled = () => (insight.data ? undefined : knownAgents(agentsFeed(), path));
-  const teams = () => insight.data?.teams ?? polled()?.teams;
-  /** The busiest live team: where the head chip links. */
-  const liveTeam = () => busiestLiveTeam(teams());
-  /** The head chip's team while nothing works; the list's until a read of this view's says. */
-  const team = () => headTeam(teams(), s().team);
   /** What's working, by kind: team members and plain subagents are different things. */
-  const split = () => workingSplit(working(), insight.data ? insight.data.workers : polled()?.workers, teams());
+  const split = () => workingSplit(working(), insight.data?.workers, insight.data?.teams);
 
   /**
    * The name this pane is known by, in the head and to AT. In a workspace it is the pre-assembled
@@ -228,11 +220,10 @@ export function SessionView(props: {
     <header class="session-head">
       {props.lead}
       <div class="session-head-main">
-        <h1 class="session-head-title" tabindex="-1" ref={props.titleRef} title={s().title} aria-describedby={contextDescribedBy(path, scope, s().context)}>
+        <h1 class="session-head-title" tabindex="-1" ref={props.titleRef} title={s().title} aria-describedby={contextDescribedBy(path, scope)}>
           {s().title}
         </h1>
         <p class="session-head-meta">
-          <ContextMetaPrefix path={path} known={s().context} />
           {/* A peer's session names its host first: the folder and everything else are that host's. */}
           <Show when={hostOf(path)}>
             {(h) => (
@@ -256,42 +247,7 @@ export function SessionView(props: {
           </Show>
         </p>
       </div>
-      <ContextGauge path={path} known={s().context} />
-      <Show
-        when={working() > 0}
-        fallback={
-          <Show when={!s().live && team()}>
-            {(t) => (
-              <CountChip title={t().paused ? `${t().name} · ${t().paused}` : t().name}>
-                Team · {t().members}
-                {t().paused ? " · paused" : ""}
-              </CountChip>
-            )}
-          </Show>
-        }
-      >
-        <Show
-          when={liveTeam()}
-          fallback={
-            <a
-              class="chip chip-count session-head-working"
-              href={agentsHref()}
-              title={subagentsWorkingNow(working())}
-              aria-label={subagentsWorkingNow(working())}
-            >
-              <span class="text-num">{working()}</span>
-              <Icon name="worker" small />
-            </a>
-          }
-        >
-          {(t) => (
-            <CountChip href={agentsHref(teamKey(t()))} title={teamPause(t()) ? `${t().name} · ${teamPause(t())!.text}` : t().name}>
-              Team · {working()} working
-              {teamPause(t()) ? " · paused" : ""}
-            </CountChip>
-          )}
-        </Show>
-      </Show>
+      <ContextGauge path={path} />
       {/* The remote identity is always present; the connection chip reports liveness separately. */}
       <RemoteChip path={path} summary={s()} />
       <RemoteHeadChip path={path} onOpen={() => props.openPane(path, "session")} />
@@ -346,7 +302,7 @@ export function SessionView(props: {
           <span class="workspace-pane-name" id={`pane-${props.paneId}-name`} title={paneTitle()}>
             {paneName()}
           </span>
-          <ContextGauge path={path} known={s().context} />
+          <ContextGauge path={path} />
           {/* Mid-turn, said at workspace level: split mode has N panes and
               no single place that says who is still working — the tab strip's dot covers tabs
               mode only. The pulse is the sanctioned one: work in flight. */}
@@ -452,7 +408,10 @@ export function SessionView(props: {
               </Match>
               <Match when={d.mode === "chat" && d}>
                 {(c) => {
-                  onCleanup(() => props.onWorkers(path, null, null));
+                  onCleanup(() => {
+                    props.onWorkers(path, null, null);
+                    props.onClaudeLogin?.(path, null);
+                  });
                   return (
                     <ChatView
                       path={path}
@@ -480,13 +439,14 @@ export function SessionView(props: {
                         reloadInsight();
                       }}
                       onWorkers={(w, usage) => props.onWorkers(path, w, usage)}
+                      onClaudeLogin={props.onClaudeLogin ? (login) => props.onClaudeLogin!(path, login) : undefined}
                       onTurnError={props.onTurnError ? (m) => props.onTurnError!(path, m) : undefined}
                       onShowWorkers={() => props.toggleSubagents(path)}
                       workersOpen={props.paneOn(path, "agents")}
                       onNewSession={() => props.onNewSession(path)}
                       overseer={props.overseer}
                       projectOverseer={poControl && !poEarlier ? { onClear: poControl.clear, onReloaded: poControl.onReloaded } : undefined}
-                      teams={teams()}
+                      teams={insight.data?.teams}
                       fork={props.fork}
                       onFanOut={
                         // Never from a TUI-live session: Sova doesn't touch a file a terminal

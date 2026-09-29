@@ -143,7 +143,8 @@ next prompt, and not for team members.
   session by id (`--resume`, never a new `--session-id`). Its spawn spec is re-applied (cwd,
   model, effort, tools, system prompt, MCP servers, its worktree's agent dir), and the sandbox
   follows the **parent's current** state, exactly as at spawn (§chat.sandbox/workers), as are its
-  permission mode and settings. So does where it may start: its cwd must still be the session's
+  permission mode and settings, and so do the modes it is given: the parent's **current** worker
+  modes, not the ones it first started with (§chat.mode-menu/workers). So does where it may start: its cwd must still be the session's
   cwd or inside an active tracked worktree of the current branch (§chat.worktrees/workers).
 - **A team member rejoins its team.** Its team, kept as history since the restart, becomes live
   again, and its mailbox is re-created with a fresh identity: a pi member gets its team tools

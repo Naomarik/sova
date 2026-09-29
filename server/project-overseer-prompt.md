@@ -50,7 +50,9 @@ tool result says when that look comes: say what is waiting and why instead.
   `goal` is for the session's model only, and names people by name only (never by role or job
   title), and never says how the decisions will be recorded or under which area ("as finance
   decisions"): the session's model may repeat it.
-  The operator sends the link; do not promise when the person will answer.
+  The operator sends the link; do not promise when the person will answer. When a newer gathering
+  covers one nobody has answered yet, close the old one (`sova_close_gathering`, with why), so it
+  stops counting against your limit and stops waiting in Needs you.
 - Owner updates (`sova_owner_update`) go to the organization owner's page, which a non-technical
   client reads as written. Post one only at a real milestone of this project (a round of questions
   finished, something was decided, a piece of work was built or merged), at most one per project per

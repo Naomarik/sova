@@ -46,8 +46,12 @@ import {
   PROJECT_DRAFT,
   areaId,
   currentClaims,
+  currentBlock,
   currentRecordIds,
+  decisionPart,
   manifestRecord,
+  proseHash,
+  renderRecord,
   projectDraftExists,
   promoteEdit,
   recordIdOf,
@@ -175,11 +179,13 @@ const markChecked = (x: DecisionRow, y: DecisionRow) => {
   y.checkedWith = [...new Set([...(y.checkedWith ?? []), x.id])];
 };
 
-/** The record a promoted row should have in the current spec, and whether the spec has it. */
+/** Whether the current spec still has a promoted row's record as the decisions layer would write
+    it: only the fields it owns are compared (§app.requirements/decisions), so a builder's
+    `evidence`, `code` or relabel never makes it promotable again. */
 function upToDate(d: DecisionRow, byId: Map<string, DecisionRow>, current: Record<string, unknown>): boolean {
-  if (!d.recordId) return false;
+  if (!d.recordId || !(d.recordId in current)) return false;
   const also = foldedRows(d, byId);
-  if (JSON.stringify(current[d.recordId]) !== JSON.stringify(manifestRecord(d, undefined, also))) return false;
+  if (JSON.stringify(decisionPart(current[d.recordId])) !== JSON.stringify(decisionPart(manifestRecord(d, undefined, also)))) return false;
   // Every promoted decision it replaced must say so in the spec, too.
   for (const s of byId.values())
     if (s.supersededBy === d.id && s.promotedAt && s.recordId && s.recordId in current) {
@@ -259,7 +265,23 @@ function settleStates(store: DecisionStore, conflicts: Conflict[], root?: string
       const peers = live.filter((o) => o.id !== d.id && o.areaKey === d.areaKey);
       d.state = d.checkedWith && peers.every((o) => checked(d, o)) ? "drafted" : "pending";
     }
+    delete d.editedInSpec;
+    delete d.build;
+    if (d.state === "promoted" && root && current && d.recordId) {
+      if (proseHash(currentBlock(root, d.recordId) ?? "") !== expectedText(d, byId)) d.editedInSpec = true;
+      d.build = builtOf(current[d.recordId]) ? "built" : "not-built";
+    }
   }
+}
+
+/** The prose hash a promoted row's record should have: as promoted or kept, else (promoted before
+    that was recorded) as the reconciler writes it. */
+const expectedText = (d: DecisionRow, byId: Map<string, DecisionRow>): string => d.promotedText ?? proseHash(renderRecord(d, undefined, foldedRows(d, byId)));
+
+/** Built, as the spec layer recorded it: `code` paths and `evidence` reviewed or verified. */
+function builtOf(rec: unknown): boolean {
+  const r = (rec ?? {}) as { code?: unknown; evidence?: unknown };
+  return Array.isArray(r.code) && r.code.length > 0 && (r.evidence === "reviewed" || r.evidence === "verified");
 }
 
 /** Give every drafted row a record id, unique in the current spec and among the rows. */
@@ -321,6 +343,8 @@ function specStatus(orgId: string, projectId: string, store: DecisionStore): Spe
     draft: projectDraftExists(root) ? PROJECT_DRAFT : null,
     promoted: [...current].filter((id) => id.startsWith(`§${REQUIREMENTS_NS}.`)).length,
     drafted: store.decisions.filter((d) => d.state === "drafted").length,
+    built: store.decisions.filter((d) => d.state === "promoted" && d.build === "built").length,
+    notBuilt: store.decisions.filter((d) => d.state === "promoted" && d.build === "not-built").length,
     ...(frozen && last !== undefined ? { editedOutside: specHash(root) !== last } : {}),
   };
 }
@@ -1103,7 +1127,10 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
           promoted.push(r.id);
         }
         store.lastPromotedSpec = specHash(project.root);
+        const byId = new Map(store.decisions.map((x) => [x.id, x]));
+        for (const r of rows) if (promoted.includes(r.id)) markPromotedText(project.root, r, byId);
         if (snap && promoted.length) commit = await commitSpec(snap, promotionMessage(rows.filter((r) => promoted.includes(r.id)))).catch((err) => ({ skipped: `Not committed: ${err instanceof Error ? err.message : String(err)}` }));
+        if (commit && "sha" in commit) for (const r of rows) if (promoted.includes(r.id)) r.promotedCommit = commit.sha;
       } catch (err) {
         const reason = err instanceof SpecToolError || err instanceof Error ? err.message : String(err);
         for (const r of rows) refused.push({ id: r.id, reason });
@@ -1115,6 +1142,55 @@ export function promoteDecisions(orgId: string, projectId: string, ids: string[]
     await refreshDraft(orgId, projectId, store).catch(() => []);
     emit({ type: "promoted", orgId, projectId, ids: promoted, by: opts.by });
     return { info: info(orgId, projectId, store, conflicts), promoted, refused, ...(draft ? { draft } : {}), ...(commit ? { commit } : {}) };
+  });
+}
+
+/** Keep what a promotion wrote as the row's `promotedText`: the record's prose now current. */
+function markPromotedText(root: string, r: DecisionRow, byId: Map<string, DecisionRow>): void {
+  if (!r.recordId) return;
+  r.promotedText = proseHash(currentBlock(root, r.recordId) ?? renderRecord(r, undefined, foldedRows(r, byId)));
+  delete r.textKept;
+}
+
+/**
+ * POST …/decisions/:did/text {action}: a promoted decision whose record's prose was edited in the
+ * spec (§app.requirements/decisions). `keep`: the spec's words stand (the row takes their hash,
+ * and who kept them). `restore`: the person's words are promoted again, prose only; the record's
+ * other fields stay, and it is committed like any promotion.
+ */
+export function settleSpecText(orgId: string, projectId: string, decisionId: string, action: unknown): Promise<DecisionsInfo> {
+  return exclusive(orgId, projectId, async () => {
+    const d = await currentDeps();
+    const project = projectOf(orgId, projectId);
+    const { store } = syncDecisions(orgId, projectId);
+    const conflicts = readConflicts(orgId, projectId);
+    if (action !== "keep" && action !== "restore") throw new OrgError('Expected { action: "keep" | "restore" }');
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
+    const row = store.decisions.find((x) => x.id === decisionId);
+    if (!row) throw new OrgError("Unknown decision", 404);
+    if (row.state !== "promoted" || !row.editedInSpec || !row.recordId) throw new OrgError("Its words in the spec are as they were promoted.", 409);
+    const byId = new Map(store.decisions.map((x) => [x.id, x]));
+    if (action === "keep") {
+      row.promotedText = proseHash(currentBlock(project.root, row.recordId) ?? "");
+      row.textKept = { at: d.now().toISOString(), by: OPERATOR, name: operatorName() };
+    } else {
+      const also = foldedRows(row, byId);
+      const edit: SpecEdit = { rows: [row], supersededBy: new Map(), also: new Map(also.length ? [[row.recordId, also]] : []) };
+      const snap = await specSnapshot(project.root).catch(() => null);
+      const verification = () => `${verificationFor(store, row.recordId!, conflicts)} Restored: its prose had been edited in the spec since it was promoted.`;
+      const out = await promoteEdit(project.root, edit, verification, d.now(), { proseOnly: true }).catch((err) => {
+        throw new OrgError(err instanceof Error ? err.message : String(err), 409);
+      });
+      if (out.promoted.length) {
+        store.lastPromotedSpec = specHash(project.root);
+        markPromotedText(project.root, row, byId);
+        const commit = snap ? await commitSpec(snap, promotionMessage([row])).catch(() => null) : null;
+        if (commit && "sha" in commit) row.promotedCommit = commit.sha;
+      }
+    }
+    settleStates(store, conflicts, project.root, orgId, project.stakeholder);
+    writeDecisionStore(orgId, projectId, store);
+    return info(orgId, projectId, store, conflicts);
   });
 }
 

@@ -1,10 +1,19 @@
-import { createSignal, For, Match, Show, Switch } from "solid-js";
-import type { UsageBalance, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
+import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
+import type { UsageBalance, UsageClaudeLogin, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
 import { refreshUsage } from "../lib/api";
 import { duration, relativeIn, relativeTime } from "../lib/format";
 import {
+  accountReading,
   authCaption,
   balanceBreakdown,
+  claudeAccountLoginsCaption,
+  claudeAccounts,
+  claudeAccountSubtitle,
+  claudeLoginHolder,
+  claudeLoginName,
+  claudeLoginNote,
+  claudeLoginStanding,
+  claudeLoginTitle,
   extraUsageMeter,
   meterReset,
   meterTone,
@@ -134,22 +143,38 @@ function UsageText(props: { line: UsageLine }) {
  * One provider's card: name, plan subtitle and chip in the head; its meters (or balance) and
  * notes in the body, or the one note that replaces them when the provider isn't ok.
  */
-function UsageCard(props: { p: UsageProvider; now: number }) {
-  const problem = () => providerProblem(props.p, props.now);
-  const signIn = () => authCaption(props.p, props.now);
-  const headId = () => `u-${props.p.id}`;
+function UsageCard(props: {
+  p: UsageProvider;
+  now: number;
+  /** A Claude login's card: its own title, caption and id instead of the provider's. */
+  title?: string;
+  plan?: string;
+  headId?: string;
+  /** Before the meters: a login's standing. */
+  lead?: JSX.Element;
+  /** Replaces the provider's own note when the card has no meters for a reason of its own. */
+  note?: string | null;
+  /** After the sign-in caption. */
+  foot?: JSX.Element;
+  /** No sign-in caption: the reading is one of several logins', each with its own sign-in. */
+  noSignIn?: boolean;
+}) {
+  const problem = (): UsageLine | null => (props.note ? { rest: props.note } : providerProblem(props.p, props.now));
+  const signIn = () => (props.noSignIn ? null : authCaption(props.p, props.now));
+  const headId = () => props.headId ?? `u-${props.p.id}`;
   return (
     <article class="card usage-card" aria-labelledby={headId()}>
       <header class="card-head">
         <div class="usage-card-heading">
-          <h3 class="card-title" id={headId()}>
-            {PROVIDER_NAME[props.p.id]}
+          <h3 class="card-title" classList={{ "usage-login-title": !!props.title }} id={headId()}>
+            {props.title ?? PROVIDER_NAME[props.p.id]}
           </h3>
-          <Show when={planLabel(props.p)}>{(plan) => <p class="usage-card-plan text-caption text-muted">{plan()}</p>}</Show>
+          <Show when={props.plan ?? planLabel(props.p)}>{(plan) => <p class="usage-card-plan text-caption text-muted">{plan()}</p>}</Show>
         </div>
-        <Show when={providerChip(props.p)}>{(c) => <Chip tone={c().tone}>{c().text}</Chip>}</Show>
+        <Show when={providerChip(props.p, props.now)}>{(c) => <Chip tone={c().tone}>{c().text}</Chip>}</Show>
       </header>
       <div class="card-body">
+        {props.lead}
         <Show
           when={problem()}
           fallback={
@@ -182,15 +207,96 @@ function UsageCard(props: { p: UsageProvider; now: number }) {
             </p>
           )}
         </Show>
+        {props.foot}
       </div>
     </article>
   );
+}
+
+/** A login's standing chip, and "In use for new chats" on the one a new chat starts on. */
+function LoginChips(props: { l: UsageClaudeLogin; now: number; reading: UsageProvider }) {
+  const standing = () => claudeLoginStanding(props.l, props.now, props.reading);
+  return (
+    <>
+      <Chip tone={standing().tone} title={standing().title}>
+        {standing().text}
+      </Chip>
+      <Show when={claudeLoginHolder(props.l)}>
+        {(h) => (
+          <Chip tone={h().tone} title="Where this login is">
+            {h().text}
+          </Chip>
+        )}
+      </Show>
+      <Show when={props.l.inUse}>
+        <span class="chip chip-count" title="The first ready login in this device's order: new chats start on it">
+          In use for new chats
+        </span>
+      </Show>
+    </>
+  );
+}
+
+/**
+ * One Claude account (§app.insights/usage-cards): its email as the title, its usage once (the
+ * freshest reading of its logins, which share one quota), then its logins as compact rows — or,
+ * for an account of one login outside the pool, that login's chips above the meters.
+ */
+function ClaudeAccountCard(props: { account: UsageClaudeLogin[]; now: number }) {
+  const reading = () => accountReading(props.account);
+  const first = () => props.account[0]!;
+  const caption = () => claudeAccountLoginsCaption(props.account);
+  const listed = () => caption() !== null;
+  return (
+    <UsageCard
+      p={reading().usage}
+      now={props.now}
+      title={claudeLoginTitle(first())}
+      plan={claudeAccountSubtitle(props.account)}
+      headId={`u-claude-${first().id}`}
+      note={claudeLoginNote(reading().login)}
+      noSignIn={props.account.length > 1}
+      lead={
+        <Show when={!listed()}>
+          <p class="usage-login-standing">
+            <LoginChips l={first()} now={props.now} reading={reading().usage} />
+          </p>
+        </Show>
+      }
+      foot={
+        <Show when={listed()}>
+          <div class="usage-logins">
+            <p class="usage-logins-caption text-caption text-muted">{caption()}</p>
+            <ul class="usage-logins-list">
+              <For each={props.account}>
+                {(l) => (
+                  <li class="usage-logins-row" data-login={l.id}>
+                    <span class="usage-logins-name">{claudeLoginName(l, props.account)}</span>
+                    <span class="usage-login-standing">
+                      <LoginChips l={l} now={props.now} reading={reading().usage} />
+                    </span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </div>
+        </Show>
+      }
+    />
+  );
+}
+
+/** Claude's cards: one per account, in the order its first login has on this device. */
+function ClaudeAccountCards(props: { logins: UsageClaudeLogin[]; now: number }) {
+  return <For each={claudeAccounts(props.logins)}>{(account) => <ClaudeAccountCard account={account} now={props.now} />}</For>;
 }
 
 /** The page body, directly in `.insights-inner`: the h1 already names it, so no section head. */
 function UsageBody(props: {
   usage: Poll<UsageInsight>;
   now: number;
+  /** The open chat's recorded Claude login, for the summary lead (as the sidebar foot). */
+  claudeLogin?: string | null;
   /** Why the last Refresh Usage failed, until one succeeds. */
   refreshError: string | null;
   refreshing: boolean;
@@ -243,9 +349,15 @@ function UsageBody(props: {
                 <Banner tone="warn" icon="clock" title={`Usage is ${duration(age())} old.`} body={`Couldn't refresh: ${failure()}`} action={retry()} />
               )}
             </Show>
-            <Show when={usageSummary(data(), props.now)}>{(lead) => <p class="usage-lead">{lead()}</p>}</Show>
+            <Show when={usageSummary(data(), props.now, props.claudeLogin)}>{(lead) => <p class="usage-lead">{lead()}</p>}</Show>
             <div class="insights-grid">
-              <For each={data().providers}>{(p) => <UsageCard p={p} now={props.now} />}</For>
+              <For each={data().providers}>
+                {(p) => (
+                  <Show when={p.id === "claude" && data().claudeLogins?.length ? data().claudeLogins : null} fallback={<UsageCard p={p} now={props.now} />}>
+                    {(logins) => <ClaudeAccountCards logins={logins()} now={props.now} />}
+                  </Show>
+                )}
+              </For>
             </div>
           </>
         )}
@@ -255,7 +367,7 @@ function UsageBody(props: {
 }
 
 /** `#/usage`: subscription usage limits, from the usage-status extension's cache file. */
-export function UsageView(props: { usage: Poll<UsageInsight>; now: number; titleRef(el: HTMLHeadingElement): void }) {
+export function UsageView(props: { usage: Poll<UsageInsight>; now: number; claudeLogin?: string | null; titleRef(el: HTMLHeadingElement): void }) {
   const fetchedAt = () => props.usage.data()?.fetchedAt ?? null;
   /** " · next refresh in 3m" while the cache's next fetch is ahead; a passed one says nothing. */
   const nextRefresh = () => {
@@ -300,7 +412,7 @@ export function UsageView(props: { usage: Poll<UsageInsight>; now: number; title
       busy={!props.usage.data() && props.usage.pending()}
       titleRef={props.titleRef}
     >
-      <UsageBody usage={props.usage} now={props.now} refreshError={refreshError()} refreshing={refreshing()} onRefresh={() => void refresh()} />
+      <UsageBody usage={props.usage} now={props.now} claudeLogin={props.claudeLogin} refreshError={refreshError()} refreshing={refreshing()} onRefresh={() => void refresh()} />
     </InsightsPage>
   );
 }

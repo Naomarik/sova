@@ -7,18 +7,23 @@
 // lockfile, so only one process fetches per ~3 minutes no matter how many pis are
 // open. Credential files are only ever read, never written.
 //
+// Claude is fetched once per login on this host (../claude-code/accounts.ts): `claude` is always
+// Claude Code's own login (`default`), as every older reader expects, and `claudeAccounts` holds
+// each added login's reading, keyed by login id. A login this host marked as needing sign-in is
+// never fetched.
+//
 // Node builtins and the global fetch only: keep it that way, it is imported from
-// outside pi (like ../mode/state.ts).
+// outside pi (like ../mode/state.ts). ../claude-code/accounts.ts is node builtins only too.
 
 import { randomBytes } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { ClaudeLogins, DEFAULT_LOGIN_ID } from "../claude-code/accounts.ts";
 
 const HOME = os.homedir();
 const PI_AUTH = path.join(HOME, ".pi/agent/auth.json"); // ollama-cloud key + openai-codex oauth + zai/deepseek keys
 const CODEX_AUTH = path.join(HOME, ".codex/auth.json");
-const CLAUDE_CREDS = path.join(HOME, ".claude/.credentials.json");
 /** pi's agent dir: $PI_CODING_AGENT_DIR when set (as pi itself resolves it), else ~/.pi/agent. */
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR || path.join(HOME, ".pi/agent");
 export const CACHE_DIR = path.join(AGENT_DIR, "cache");
@@ -94,13 +99,31 @@ export type DeepSeekData =
 	| { state: "badkey" }
 	| { state: "na" };
 
+/** One added Claude login's reading in `claudeAccounts`. */
+export interface ClaudeAccountUsage {
+	/** The last reading, kept through a failed or skipped fetch; absent until one succeeded. */
+	data?: ClaudeData;
+	/** When `data` was fetched. */
+	fetchedAt?: number;
+	/** This login's own next fetch: FRESH_MS after a reading, FAILURE_RETRY_MS after a failure. */
+	nextFetchAt: number;
+	/** Why the last fetch failed; absent after a success. */
+	error?: string;
+	/** Not fetched: this host marked the login as needing sign-in (claude-accounts-state.json). */
+	skipped?: "auth";
+}
+
 export interface CacheFile {
 	schemaVersion?: number; // missing on caches written before CACHE_SCHEMA 2
 	fetchedAt: number;
 	nextFetchAt: number;
 	ollama?: OllamaData;
 	openai?: OpenAiData;
+	/** Claude Code's own login (`default`): the one Claude reading every older reader knows. */
 	claude?: ClaudeData;
+	/** Every other Claude login assigned to this host, by login id (`l-…`). Absent in caches from
+	    before logins, and from a writer that has none; never includes `default`. */
+	claudeAccounts?: Record<string, ClaudeAccountUsage>;
 	zai?: ZaiData;
 	deepseek?: DeepSeekData;
 	errors: { ollama?: string; openai?: string; claude?: string; zai?: string; deepseek?: string };
@@ -196,12 +219,20 @@ function toWindow(section: any): Window | undefined {
 	};
 }
 
-export async function fetchClaude(): Promise<ClaudeData> {
-	const creds = await readJson(CLAUDE_CREDS);
+/** The fetch a Claude reading uses; tests pass a fake. */
+export type FetchImpl = (url: string, init: { headers: Record<string, string>; signal: AbortSignal }) => Promise<Pick<Response, "ok" | "status" | "json">>;
+
+/**
+ * One Claude login's usage, read with the access token in `<dir>/.credentials.json` (only read,
+ * never written or refreshed: Claude Code refreshes it). `dir` defaults to Claude Code's own
+ * directory (`$CLAUDE_CONFIG_DIR`, else `~/.claude`).
+ */
+export async function fetchClaude(dir: string = new ClaudeLogins().dirOf(DEFAULT_LOGIN_ID), fetchImpl: FetchImpl = fetch): Promise<ClaudeData> {
+	const creds = await readJson(path.join(dir, ".credentials.json"));
 	const token = creds?.claudeAiOauth?.accessToken;
 	if (typeof token !== "string" || !token) return { state: "nologin" };
 
-	const res = await fetch("https://api.anthropic.com/api/oauth/usage", {
+	const res = await fetchImpl("https://api.anthropic.com/api/oauth/usage", {
 		headers: {
 			Authorization: `Bearer ${token}`,
 			"anthropic-beta": "oauth-2025-04-20",
@@ -376,6 +407,10 @@ export async function readCache(): Promise<CacheFile | undefined> {
 	if (!data.zai && !data.errors.zai) data.nextFetchAt = 0;
 	// Cached shapes older than CACHE_SCHEMA lack fields the /usage screen shows: refetch once.
 	if (data.schemaVersion !== CACHE_SCHEMA) data.nextFetchAt = 0;
+	// Written without this host's added logins (before they existed, or by an older extension that
+	// dropped them): refetch once. `claudeAccounts` is additive, so CACHE_SCHEMA stays as it is and
+	// an older reader keeps reading this file as it always did.
+	if (!data.claudeAccounts && claudeLoginIds().length) data.nextFetchAt = 0;
 	return data;
 }
 
@@ -475,8 +510,91 @@ async function breakStaleLock(): Promise<boolean> {
 	}
 }
 
-export async function fetchAll(prev: CacheFile | undefined): Promise<CacheFile> {
-	const [o, x, c, z, d] = await Promise.allSettled([fetchOllama(), fetchOpenAi(), fetchClaude(), fetchZai(), fetchDeepSeek()]);
+/** How `fetchAll` reaches Claude's logins; tests pass their own. */
+export interface ClaudeFetchOptions {
+	/** This host's logins (default: the real agent dir's). */
+	logins?: Pick<ClaudeLogins, "order" | "dirOf" | "readinessOf">;
+	/** One login's reading, from its directory (default: fetchClaude). */
+	fetchLogin?: (dir: string) => Promise<ClaudeData>;
+	now?: () => number;
+}
+
+/** The added logins this host would fetch (its order, `default` left out), or [] when the registry can't say. */
+export function claudeLoginIds(logins: Pick<ClaudeLogins, "order"> = new ClaudeLogins()): string[] {
+	try {
+		return logins.order().filter((id) => id !== DEFAULT_LOGIN_ID);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * The login a session that recorded none yet will start on: the first ready one in this device's
+ * order (what the footer reads before the first Claude turn), or undefined when the registry can't
+ * say — the footer then reads Claude Code's own login, as before.
+ */
+export function firstReadyLogin(logins: Pick<ClaudeLogins, "selectId"> = new ClaudeLogins()): string | undefined {
+	try {
+		return logins.selectId();
+	} catch {
+		return undefined;
+	}
+}
+
+/** Whether this host marked a login as needing sign-in: such a login is never fetched. */
+function needsSignIn(logins: Pick<ClaudeLogins, "readinessOf">, id: string): boolean {
+	try {
+		return logins.readinessOf(id).state === "auth";
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Every added login's reading, starting from `prev` (the cache's last `claudeAccounts`). A login is
+ * fetched when its own `nextFetchAt` is due, or with `force`; never while this host marks it as
+ * needing sign-in (it keeps its last reading, `skipped: "auth"`). A failed fetch keeps the last
+ * reading, says why, and retries after FAILURE_RETRY_MS. Logins no longer on this host drop out.
+ * Undefined when this host has no added login.
+ */
+export async function fetchClaudeAccounts(prev: CacheFile["claudeAccounts"], force: boolean, options: ClaudeFetchOptions = {}): Promise<CacheFile["claudeAccounts"]> {
+	const logins = options.logins ?? new ClaudeLogins();
+	const fetchLogin = options.fetchLogin ?? ((dir: string) => fetchClaude(dir));
+	const now = options.now ?? Date.now;
+	const ids = claudeLoginIds(logins);
+	if (!ids.length) return undefined;
+	const entries = await Promise.all(
+		ids.map(async (id): Promise<[string, ClaudeAccountUsage]> => {
+			const last = prev?.[id];
+			const kept = { ...(last?.data ? { data: last.data } : {}), ...(last?.fetchedAt !== undefined ? { fetchedAt: last.fetchedAt } : {}) };
+			if (needsSignIn(logins, id)) return [id, { ...kept, nextFetchAt: now() + FRESH_MS, skipped: "auth" }];
+			if (!force && last && !last.skipped && now() < last.nextFetchAt) return [id, last];
+			try {
+				const data = await fetchLogin(logins.dirOf(id));
+				const at = now();
+				return [id, { data, fetchedAt: at, nextFetchAt: at + FRESH_MS }];
+			} catch (err) {
+				return [id, { ...kept, nextFetchAt: now() + FAILURE_RETRY_MS, error: errMessage(err) }];
+			}
+		}),
+	);
+	return Object.fromEntries(entries);
+}
+
+export async function fetchAll(prev: CacheFile | undefined, force = false, options: ClaudeFetchOptions = {}): Promise<CacheFile> {
+	const logins = options.logins ?? new ClaudeLogins();
+	// Claude Code's own login is skipped like any other while this host marks it as needing sign-in.
+	const claudeDefault = needsSignIn(logins, DEFAULT_LOGIN_ID)
+		? Promise.resolve(prev?.claude)
+		: (options.fetchLogin ?? ((dir: string) => fetchClaude(dir)))(logins.dirOf(DEFAULT_LOGIN_ID));
+	const [o, x, c, z, d, a] = await Promise.allSettled([
+		fetchOllama(),
+		fetchOpenAi(),
+		claudeDefault,
+		fetchZai(),
+		fetchDeepSeek(),
+		fetchClaudeAccounts(prev?.claudeAccounts, force, { ...options, logins }),
+	]);
 	const now = Date.now();
 	const errors: CacheFile["errors"] = {};
 	let ollama = prev?.ollama;
@@ -490,6 +608,8 @@ export async function fetchAll(prev: CacheFile | undefined): Promise<CacheFile> 
 	else errors.openai = errMessage(x.reason);
 	if (c.status === "fulfilled") claude = c.value;
 	else errors.claude = errMessage(c.reason);
+	// Each login carries its own error and retry: one failing login never shortens everyone's refresh.
+	const claudeAccounts = a.status === "fulfilled" ? a.value : prev?.claudeAccounts;
 	if (z.status === "fulfilled") zai = z.value;
 	else errors.zai = errMessage(z.reason);
 	if (d.status === "fulfilled") deepseek = d.value;
@@ -503,6 +623,7 @@ export async function fetchAll(prev: CacheFile | undefined): Promise<CacheFile> 
 		ollama,
 		openai,
 		claude,
+		...(claudeAccounts ? { claudeAccounts } : {}),
 		zai,
 		deepseek,
 		errors,
@@ -574,7 +695,7 @@ export async function refreshCache(force: boolean, prev: CacheFile | undefined, 
 			hooks.onCache?.(latest);
 			return { cache: latest, fetched: false, errors: {} };
 		}
-		const next = await fetchAll(latest);
+		const next = await fetchAll(latest, force);
 		hooks.onCache?.(next);
 		await writeCache(next);
 		const errors: RefreshResult["errors"] = {};

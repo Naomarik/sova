@@ -210,8 +210,8 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 ```
 
 - **Split.** Usage and agents never share a page. The Agents page is the board
-  (§app.insights/team-cards): one row per session, with its workers, team and worktrees folded
-  inside the row. When nothing is in view, its whole body under the bar is one `.empty`
+  (§app.insights/team-cards): one row per session, its workers counted in a column, and what
+  it's about, where it stands and its worktrees folded inside the row. When nothing is in view, its whole body under the bar is one `.empty`
   (§design/copy-deck): the live fact first ("{n} sessions live." or "No session is live right
   now."), then the absence for the chip or search in force.
 - **Head meta (Agents).** `{w} working · {l} live · {$} today · {u} unmerged`: sessions in the
@@ -460,26 +460,20 @@ Sova that aren't archived.
 <div class="card board">
   <div class="board-head" aria-hidden="true">Session · Activity · Workers · Worktrees</div>   <!-- desktop only -->
   <ul class="board-list" aria-label="Sessions">
-    <li class="board-row" data-state="working">          <!-- working | needs-you | idle | archived -->
+    <li class="board-row" data-state="working">          <!-- working | needs-you | idle | archived; a click on it opens the session -->
       <div class="board-line">
-        <div class="board-cell board-session">rail · twist (aria-expanded) · title (click to rename) · gist</div>
+        <div class="board-cell board-session">rail · twist (aria-expanded; only when the open row has something to say) · title · gist</div>
         <div class="board-cell board-activity">model · context ring · 5m ago · state chip</div>
-        <div class="board-cell board-workers">2/5 working · team chip → #/agents/{teamKey} · $1.20</div>
+        <div class="board-cell board-workers">2/5 working · team chip → its Session details pane, on Agents · $1.20</div>
         <div class="board-cell board-trees">feat/x · ↑3 ↓1 · +120 −4 · dirty dot · +1</div>
         <div class="board-cell board-actions">Open · Session details (aria-expanded) · Archive · Move into group · ⋯</div>
       </div>
       <div class="board-detail">   <!-- open rows only: in the title column, behind a guide rule under the twist -->
         <p class="board-reason">…why it needs you…</p>
-        <ul class="board-worker-list" aria-label="Workers">
-          <li class="board-worker">
-            <span class="board-worker-name">scout</span>
-            <span class="board-worker-meta text-mono">ag_10 · opus-5.5 · <time datetime="…" title="Started Tue, Sep 29, 2026, 1:43:07 PM">1:43 PM · 2h ago</time> · <span title="Model replies so far">12 turns</span></span>
-            <span class="board-worker-preview">…while working…</span>
-            <span class="chip">…status…</span>
-          </li>
-        </ul>
-        <section class="team-group board-team">…head, objective, one board-worker per member, events…</section>
-        <ul class="board-tree-list" aria-label="Worktrees">…one line per worktree…</ul>
+        <p class="board-note">…1 open question in al_2 …, or the last turn's error…</p>
+        <p class="board-now">…the full now line…</p>
+        <ul class="board-topic-list" aria-label="Recent topics">…up to 5 headings, newest first…</ul>
+        <ul class="board-tree-list" aria-label="Worktrees">…one line per worktree, when there are 2 or more or one is dirty…</ul>
       </div>
     </li>
   </ul>
@@ -502,12 +496,19 @@ Sova that aren't archived.
   branch or path. With no chip it searches every session, not only the default scope; a chip
   still narrows it.
 - **Paging.** 50 rows render; "Show {n} More" adds 50.
-- **Columns** (the `insights` container ≥1000px). Session: the title as a button that starts the
-  rename, the gist (`outlineGist`, else the now line, else the cwd in mono). Activity: the compact
+- **Row click.** A click or tap anywhere on a row that isn't a control (the title, the gist, the
+  open row, its bare surface), at every width, opens the session, as Open does. Every control
+  keeps its own action and never opens it: the twist, the team chips, the action buttons, ⋯ and
+  its menu, and the rename field with its hint. A click that ends a text selection inside the row
+  doesn't open it, nor does one with a modifier key. The row itself takes no focus: Open is its
+  keyboard target.
+- **Columns** (the `insights` container ≥1000px). Session: the title as plain text, the gist
+  (`outlineGist`, else the now line, else the cwd in mono). Activity: the compact
   model, the context ring (the sidebar row's rule: the open view's live fill wins, never without a
   window), last active in relative time, the state chip. Workers:
-  `{working}/{total} working`, a count chip per team linking to its `#/agents/{teamKey}`, the
-  workers' lifetime spend. Worktrees: see §app.insights/subagent-cards. Actions: Open, Session
+  `{working}/{total} working`, a count chip per team, the workers' lifetime spend. A team chip is
+  a link to `#/agents/{teamKey}`; a click on it opens that session's Session details pane in place
+  on its Agents tab. Worktrees: see §app.insights/subagent-cards. Actions: Open, Session
   details, Archive or Unarchive, Move into group (the session pane's group menu, icon only), and ⋯. The head's totals line (working ·
   live · spend today · unmerged, with its `title`) leaves the page head and sits right-aligned on
   the filter line (`.board-totals`); below 1000px it stays in the head.
@@ -519,16 +520,17 @@ Sova that aren't archived.
   board share the same left and right edges. Other insights pages keep 1280px.
 - **Condensed** (768–999px): Activity sits over Workers in one column; the actions are Open,
   Session details and ⋯. **Folded** (<768px): stacked rows — title with the state chip, the gist, a micro line
-  (model · workers · last active), the worktree chips — a tap on the row's bare surface opens it,
-  and ⋯ is the door to every action. Every target is 44px.
+  (model · workers · last active), the worktree chips — and ⋯ is the door to every action. Every
+  target is 44px.
 - **Session details.** The info button (`aria-controls="session-pane"`, named "Session details of
   “{title}”") opens that session's Session detail pane (§app/subagents-pane) on its Session tab in
   place: the board stays on `#/agents`, and no session view opens. `aria-expanded` says whether
   the pane shows this row's session. Its own row's button closes it; another row's switches it
-  to that session, on Session again. The pane follows the shell's bands, so from 1280px it takes a
-  column and the board beside it reflows, usually to its folded layout, where ⋯ is the door; below
-  1280px it covers the actions, and its own close comes first. A team link (`#/agents/{teamKey}`)
-  keeps it open; leaving the page closes it. With no chat on screen, workers come from the polled
+  to that session, on Session again. A team chip opens the same pane on its Agents tab, and never
+  closes it: on that session already, it only switches the tab. The pane follows the shell's
+  bands, so from 1280px it takes a column and the board beside it reflows, usually to its folded
+  layout, where ⋯ is the door; below 1280px it covers the actions, and its own close comes first.
+  Leaving the page closes it. With no chat on screen, workers come from the polled
   insight, the Timeline can't rewind ("Only a chat open in Sova can rewind."), and a row's jump
   says the message isn't in the transcript on screen.
 - **⋯ menu.** Session Details (Close Session Details while that row's pane is open), Open
@@ -536,51 +538,32 @@ Sova that aren't archived.
   cut to the title limit; off, with the reason, when there's none or it already is the title),
   Reset to Original Title (off when not renamed), Move to Group… (a screen of the groups, with
   "No group"), Archive or Unarchive, Copy Path.
-- **Rename.** In place, the sidebar's title field: Enter saves, Escape cancels, an empty field
-  restores the derived title, and leaving the field saves what's in it (empty: cancels). Kept in
-  Sova only.
+- **Rename.** Only ⋯ → Rename… renames on the board: nothing on the row starts it. In place, the
+  sidebar's title field: Enter saves, Escape cancels, an empty field restores the derived title,
+  and leaving the field saves what's in it (empty: cancels). A value equal to the title the field
+  opened with is a cancel, never a write, on Enter or on leaving, even when the row's title
+  changed while the field was open. Kept in Sova only.
 - **Archive.** Only for sessions started in Sova, or already archived. Refused with its reason
   (open in a TUI, mid-turn, subagents working) before the press, never after.
-- **Open row.** Everything it holds — the why-it-needs-you line, the workers, each team, the
-  worktree lines — starts at the title's left edge at every width, behind one thin guide rule
-  drawn down from under the twist: that rule, not width, says it belongs to the session. A
-  team's members take no further step; the team's bordered block is the second level. One line
-  per worker outside a team (working first, then last active): its name, then in mono its id, its
-  model, when it started, and its turns; the preview while working; and the status chip (the
-  table below). A line has no actions. **Started** is its first spawn, kept across resumes and
-  restarts, as a message stamp (“1:43 PM · 2h ago”, “Mar 4 1:43 PM · 3d ago” on another day, the
-  stamp alone past 7 days) in a `<time>` whose `title` is the full local date and time; a team
-  member with no live record shows when it joined its team; unknown shows nothing. **Turns** is
-  the model's replies so far, across resumes (“12 turns”, “1 turn”, `title` “Model replies so
-  far”, a restored worker's from its transcript or last report); unknown shows nothing, never 0.
-  At folded width the mono parts wrap between themselves, never inside one. Then each team, then
-  one line per worktree.
-- **Team.** A bordered block, `.team-group`, `id="team-{teamKey}"`, `tabindex="-1"`: the name,
-  its id in mono, Paused (warn) when its newest pause/resume is a pause, "{n} working", the
-  objective on one line, then its members one line each — coordinator (or orchestrator) first,
-  then members in roster order, the monitor, retired members last — with their duty or successor
-  badge and Ejected as a neutral chip beside the name, never in place of the status. Its events
-  fold under "Events ({n})", oldest first.
-- **Status.** The word is always shown. The pulse appears only when the worker is in a fresh
-  live record (a team's: its parent live and fresh).
-
-  | Source → status | Chip |
-  |---|---|
-  | live `running` | `.chip.chip-accent.chip-live` Working |
-  | live `starting` | `.chip.chip-accent.chip-live` Starting |
-  | `waiting` | `.chip` + dot, Idle. If `outcome` isn't `success`, the line adds "last task failed" |
-  | `stopping` | `.chip` + dot, Stopping |
-  | `done` | `.chip.chip-success` Done |
-  | `error` | `.chip.chip-error` Failed |
-  | `killed` | `.chip` + dot, Stopped |
-  | `restored` | `.chip` + dot, Restored (Interrupted, warn, when it died mid-turn) |
-  | retired | `.chip` + dot, Retired, as of the retirement |
-  | `worker` null, `lastReport` present | that status's chip with **no pulse**, and the line adds "as of `{HH:MM}`" |
-  | neither | neutral `.chip` No report yet |
-
+- **Open row.** What the session is about and where it stands. Only the twist opens and closes
+  it, and a row shows the twist only when its open row has something to say: a needs-you reason,
+  open alignment questions, a last turn that failed, a now line, a topic outline with at least
+  one topic (`outlineTopics`, known from the list), or worktree lines. A row with none of these
+  has no twist, and its title keeps the twist's place. In this order, each only when there is
+  one: the why-it-needs-you line; the open alignment question's lead ("1 open question in al_2
+  …", the session mark's words) and the last turn's error, each unless the reason line already
+  says it; the full now line (`outlineNow`, which the gist cuts to one line); the last 5 topic
+  headings, newest first (the Timeline's order), each with its relative time; then one line per
+  worktree (§app.insights/subagent-cards). The headings come from one read-only `GET
+  /api/insights/session` when the row opens, kept while it stays open, never polled; while it
+  runs the list says "Reading topics…", and a failed read says "Couldn't read the topics." with
+  nothing else. Workers and teams aren't in it: the Workers column counts them, and a team chip
+  or ⋯ → Open Subagents shows them. Everything starts at the title's left edge at every width,
+  behind one thin guide rule drawn down from under the twist: that rule, not width, says it
+  belongs to the session.
 - **Deep link.** `#/agents/{teamKey}` (a bare team id from an older link: the newest team with
-  that id) keeps the team's parent session on the board whatever the filter, opens its row,
-  scrolls the team into view and focuses it, tinted, once per link: polls don't take focus back.
+  that id) keeps the team's parent session on the board whatever the filter, and opens that
+  session's Session details pane on its Agents tab, once per link: polls don't open it again.
 
 ## §app.insights/subagent-cards — Board worktrees
 
@@ -597,8 +580,10 @@ banner, no toast.
   and in the `title`). More trees: a `+{n}` count chip; at ≥1600px the second tree shows too, stacked
   under the first, before it. The cell's `title` states every tree.
   No tree: "—". A tree that's gone reads "gone"; a git failure "unreadable"; no base "no base".
-- **Open row.** One line per tree: branch, the same reading, lines, "uncommitted" in words, "a
-  worker's" when a worker's cwd is the source, and the path in mono.
+- **Open row.** Worktree lines only when the session has 2 or more trees, or one with
+  uncommitted changes (a single clean tree is the cell already): one line per tree, with branch,
+  the same reading, lines, "uncommitted" in words, "a worker's" when a worker's cwd is the source,
+  and the path in mono.
 - **Folded.** The cell sits under the session as chips; a row with no tree drops it.
 
 ## §app.insights/worktrees-endpoint — Which worktrees a session touched

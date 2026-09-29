@@ -87,6 +87,13 @@
     },
     "§app.insights/team-cards": {
       "kind": "behavior",
+      "requires": [
+        "§app.insights/subagent-cards",
+        "§app.subagents-pane/tabs",
+        "§app.session-list/selecting-several-sessions",
+        "§chat.alignment/session-mark",
+        "§chat.context-window/sidebar-ring"
+      ],
       "authority": "accepted",
       "evidence": "verified",
       "code": [
@@ -105,7 +112,9 @@
         "server/worker-restore.ts",
         "shared/protocol.ts",
         "server/insights-workers.test.ts",
-        "server/insights-restored.test.ts"
+        "server/insights-restored.test.ts",
+        "src/lib/title-field.ts",
+        "src/lib/title-field.test.ts"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {

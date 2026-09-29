@@ -116,7 +116,8 @@ test("01a0e82a: merged with a significant follow-up → a decide item quoting th
   // The groups regression in 01a0eb99 is the cue there; the restart line is routine, never one.
   assert.match(cueOf(EB99_REPLY, "feat/vis-round4"), /^Weak spot, groups/);
   assert.equal(cueOf("Merged.\n\nNot live yet: needs a restart.\n\nDeferred: §x — later", "feat/x"), "Deferred: §x — later");
-  assert.equal(cueOf("Merged. Nothing else.", "feat/x"), "feat/x");
+  // No line names the work (01a0e348's shape): point at the reply, never a bare branch name.
+  assert.equal(cueOf("Merged. Nothing else.", "feat/image-size"), "see the reply after merging feat/image-size");
 });
 
 test("the follow-up answer: small below 1.5 or unsure, none under the P and score floors", async () => {

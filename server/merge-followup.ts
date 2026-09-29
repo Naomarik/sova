@@ -48,7 +48,7 @@ export interface FollowUpRecord {
   at: number;
   /** The reply it was asked about. */
   replyId: string;
-  /** The reply's own line naming open work, else its Deferred: line, else the branch. */
+  /** The reply's own line naming open work, else its Deferred: line, else "see the reply after merging <branch>". */
   cue: string;
   answers: { follow_up?: Answer; follow_up_weight?: Answer };
   provider: string;
@@ -106,12 +106,13 @@ export function followUpFor(sessionId: string, cardId: string): SessionReadiness
 const CUE_RE = /open gaps?|\bgaps?\b|not (?:yet )?(?:verified|covered|tested|checked|fixed|done)|regress|still fails?|fails on|i'?d fix|fix (?:it|that|this|them) separately|separately|follow-?up|left (?:open|to do)|\btodo\b|known (?:issue|problem|bug)|unfinished|not a clean pass/i;
 const ROUTINE_RE = /\brestart|\bpush|clean ?up|worktree remove|rebuild/i;
 
-/** The reply's own first line naming open work (≤120 characters), else its Deferred: line, else `fallback`. */
-export function cueOf(reply: string, fallback: string): string {
+/** The reply's own first line naming open work (≤120 characters), else its Deferred: line, else a
+    pointer to the reply ("see the reply after merging <branch>"): a bare branch name tells nothing. */
+export function cueOf(reply: string, branch: string): string {
   const lines = reply.split("\n").map((l) => l.replace(/^[\s>*\-•\d.)]+/, "").replace(/[*_`]/g, "").trim()).filter(Boolean);
   const hit = lines.find((l) => CUE_RE.test(l) && !ROUTINE_RE.test(l) && !/^(?:deferred|also changes|plumbing):/i.test(l));
   const deferred = lines.find((l) => /^deferred:/i.test(l));
-  const line = hit ?? deferred ?? fallback;
+  const line = hit ?? deferred ?? `see the reply after merging ${branch}`;
   return line.length > 120 ? `${line.slice(0, 119)}…` : line;
 }
 

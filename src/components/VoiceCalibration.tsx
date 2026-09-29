@@ -478,10 +478,22 @@ export function VoiceCalibration(props: { st: VoiceStatus; busy: boolean; act: A
     setFlow(first < 0 ? 0 : first);
   };
 
+  /** Parakeet only scores: its last finished run on it is the score (nothing is saved to the device). */
+  const parakeetScore = () => {
+    const r = run();
+    if (!r || r.engine !== "transcribe" || r.phase !== "done" || !r.rows[0]) return undefined;
+    return { at: r.finishedAt ?? r.startedAt, clips: r.progress.clips, row: r.rows[0] };
+  };
+
   const summary = (): string => {
     const c = calibrated();
     if (c) return `Calibrated ${shortDate(c.at)} on ${c.clips} clips · ${percentWer(c.wer)} word error · ${perClip(c.medianMs)} per clip.`;
-    if (active() && !active()!.tunable) return "Parakeet has no settings, so nothing is saved.";
+    if (active() && !active()!.tunable) {
+      const r = parakeetScore();
+      return r
+        ? `Scored ${shortDate(r.at)} on ${r.clips} clips · ${percentWer(r.row.wer)} word error · ${perClip(r.row.medianMs)} per clip.`
+        : "Parakeet has no settings to tune. Calibrating scores it on your clips, to compare with the whisper models.";
+    }
     const name = active() ? modelName(active()!) : props.st.activeModel;
     return `${name} uses the defaults on this device. Calibrating takes a few minutes: you read 6 sentences, then we try ${estimate(props.st, 6).settings === 8 ? 8 : 24} settings on them.`;
   };
@@ -522,7 +534,7 @@ export function VoiceCalibration(props: { st: VoiceStatus; busy: boolean; act: A
                         onClick={() => !why() && openFlow()}
                       >
                         <Icon name="mic" small />
-                        {calibrated() || clips() > 0 ? "Calibrate Again" : "Calibrate This Device"}
+                        {(active() && !active()!.tunable ? parakeetScore() : calibrated() || clips() > 0) ? "Calibrate Again" : "Calibrate This Device"}
                       </button>
                     </div>
                     <Show when={run() && run()!.id !== hidden() && run()}>

@@ -3,9 +3,9 @@
 // Devices are PoolAgents wired to each other in-process; a crash is an agent that throws at a named
 // step and is replaced by a fresh one over the same directories (which replays the journal).
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { isAbsolute, join, relative } from "node:path";
 import { after, describe, test } from "node:test";
 import {
   ClaudeLogins,
@@ -23,6 +23,18 @@ import { readJournal } from "./journal";
 
 const root = mkdtempSync(join(tmpdir(), "sova-claude-pool-test-"));
 after(() => rmSync(root, { recursive: true, force: true }));
+
+// `pnpm test` loads pi-config/extensions/claude-code/tests/hermetic-env.mjs with `--import`: every
+// test process gets a throwaway HOME and none of the inherited agent-dir / Claude-directory
+// variables, so no test here or elsewhere reaches the real `~/.pi/agent` or a real login's directory.
+test("unit tests run in a throwaway home, whatever they inherited", () => {
+  const home = process.env.SOVA_TEST_HOME;
+  assert.ok(home, "pnpm test did not --import tests/hermetic-env.mjs");
+  const inside = (dir: string, parent: string) => { const rel = relative(parent, dir); return !rel.startsWith("..") && !isAbsolute(rel); };
+  assert.ok(inside(realpathSync(home), realpathSync(tmpdir())), `${home} is not a temp dir`);
+  assert.ok(inside(homedir(), home), "HOME is outside the throwaway home");
+  for (const name of ["CLAUDE_CONFIG_DIR", "PI_CODING_AGENT_DIR", "PI_AGENT_DIR", "SOVA_DEVICE_ID"]) assert.equal(process.env[name], undefined, `${name} is inherited`);
+});
 
 const L1 = "l-000000a1";
 const L2 = "l-000000a2";
